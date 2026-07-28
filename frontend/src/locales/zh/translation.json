@@ -147,6 +147,12 @@
     "tagline": "智能耗材目录",
     "feedback_tooltip": "为Beta测试者提供反馈",
     "feedback_button": "Beta反馈",
+    "beta": {
+      "badge": "测试版",
+      "title": "FilamentHub 处于测试阶段",
+      "body": "服务正在持续开发中：功能会不断出现和调整，部分内容可能与预期不符。发现问题或觉得缺少什么，请告诉我们，我们会尽快处理。",
+      "action": "反馈问题"
+    },
     "nav_catalog": "目录",
     "nav_download": "插件",
     "nav_wiki": "知识库",
@@ -4084,6 +4090,15 @@
     "proOff": "Pro",
     "title": "用户管理",
     "total": "总计",
+    "searchLabel": "搜索用户",
+    "searchPlaceholder": "用户名、邮箱或姓名...",
+    "pageSize": "每页",
+    "updating": "更新中...",
+    "active": "已激活",
+    "range": "显示第 {{start}}–{{end}} 项，共 {{total}} 项",
+    "paginationLabel": "用户页码",
+    "previous": "上一页",
+    "next": "下一页",
     "loading": "加载用户中...",
     "empty": "没有用户要显示",
     "filterAll": "全部",
@@ -4125,6 +4140,27 @@
     "cancel": "取消",
     "saving": "保存中...",
     "save": "保存",
+    "feedback": {
+      "activateSuccess": "用户“{{username}}”已激活",
+      "activateError": "无法激活用户",
+      "deactivateSuccess": "用户“{{username}}”已停用",
+      "deactivateError": "无法停用用户",
+      "proGrantSuccess": "已为“{{username}}”授予 Pro 访问权限",
+      "proGrantError": "无法授予 Pro 访问权限",
+      "proRevokeSuccess": "已撤销“{{username}}”的 Pro 访问权限",
+      "proRevokeError": "无法撤销 Pro 访问权限",
+      "promoteSuccess": "用户“{{username}}”已提升为管理员",
+      "promoteError": "无法将用户提升为管理员",
+      "demoteSuccess": "已撤销“{{username}}”的管理员权限",
+      "demoteError": "无法撤销管理员权限",
+      "brandLinkSuccess": "已为“{{username}}”关联品牌",
+      "brandLinkSuccessGeneric": "品牌已关联",
+      "brandLinkError": "无法关联品牌",
+      "brandUnlinkSuccess": "用户“{{username}}”已取消品牌关联",
+      "brandUnlinkError": "无法取消品牌关联",
+      "badgesSuccess": "已保存“{{username}}”的徽章",
+      "badgesError": "无法保存徽章"
+    },
     "badgeDesc": {
       "founder": "项目创始人。授予在 FilamentHub 早期开发阶段加入的首批用户。",
       "beta_tester": "测试员。积极测试新功能，通过报告错误和建议改进来帮助改进平台的用户。",
@@ -4646,6 +4682,10 @@
   "notifications": {
     "title": "通知",
     "empty": "暂无通知",
+    "loading": "正在加载通知...",
+    "loadError": "无法加载通知",
+    "retry": "重试",
+    "unread": "未读通知",
     "newCount": "{{count}} 条新通知",
     "justNow": "刚刚",
     "minsAgo": "{{count}} 分钟前",
@@ -4664,6 +4704,28 @@
     "deleteSystemConfirm": "删除「{{name}}」？槽位将消失，其中的料盘退回库存。打印机保留。",
     "systemDeleted": "系统已删除，料盘已退回库存。",
     "link": "链接：",
+    "sources": {
+      "service": "FilamentHub 服务",
+      "orca": "OrcaSlicer 同步",
+      "administration": "FilamentHub 管理团队"
+    },
+    "types": {
+      "notification": "通知",
+      "presetUpdated": "预设更新",
+      "presetDeleted": "预设删除",
+      "localPresets": "本地预设",
+      "brandVerified": "品牌认证",
+      "brandRequestApproved": "品牌申请",
+      "brandRequestRejected": "品牌申请",
+      "adminMessage": "管理员消息",
+      "feedbackResponse": "反馈回复"
+    },
+    "actions": {
+      "open": "打开",
+      "openFilament": "打开材料",
+      "openBrand": "打开品牌",
+      "openResponse": "打开回复"
+    },
     "keys": {
       "preset_updated": "预设已更新",
       "preset_updated_message": "预设“{{preset_name}}”已更新。",
@@ -4696,7 +4758,7 @@
         "label": "错误",
         "description": "报告错误或问题",
         "subjectPlaceholder": "例如：\"在耗材页面创建预设时出错\"",
-        "messagePlaceholder": "请详细描述该问题：\n\n1. 出现错误前您正在做什么？（再现步骤）\n2. 您期望的行为是什么？\n3. 实际发生了什么？\n4. 错误发生在哪个页面/部分？\n5. 您是在手机还是桌面浏览器上使用？\n6. 您有屏幕截图或错误消息吗？\n\n提供的细节越多，我们修复的速度就越快！",
+        "messagePlaceholder": "请详细描述该问题：\n\n1. 出现错误前您正在做什么？（再现步骤）\n2. 您期望的行为是什么？\n3. 实际发生了什么？\n4. 错误发生在哪个页面/部分？\n5. 您是在手机还是桌面浏览器上使用？\n6. 如果出现了错误提示，请把提示文字粘贴到这里。\n\n提供的细节越多，我们修复的速度就越快！",
         "instructions": "对于错误报告，重要的是描述再现步骤和预期的行为"
       },
       "feature": {

@@ -73,7 +73,7 @@ from app.schemas.printer_request import (
     PrinterRequestResponse,
     PrinterRequestUpdate,
 )
-from app.schemas.user import UserResponse
+from app.schemas.user import UserListResponse, UserResponse
 from app.services.brand_slug_service import apply_brand_slug_rename, choose_brand_slug
 from app.services.database_service import (
     get_database_stats as get_database_stats_service,
@@ -464,7 +464,7 @@ async def reject_preset(
 # ==================== User Management ====================
 
 
-@router.get("/users", response_model=list[UserResponse])
+@router.get("/users", response_model=UserListResponse)
 async def list_users(
     admin: Annotated[User, Depends(get_current_admin_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -474,19 +474,18 @@ async def list_users(
     active_only: bool = Query(True),
     with_brand: bool | None = Query(None, description="Фильтр по привязке к бренду (True=только с брендом, False=только без бренда)"),
     search: str | None = Query(None, max_length=200),
-) -> list[UserResponse]:
-    """Получить список пользователей."""
+) -> UserListResponse:
+    """Получить отфильтрованный список пользователей с пагинацией."""
     from sqlalchemy.orm import selectinload
 
-    query = select(User).options(selectinload(User.brand), selectinload(User.subscription))
-
+    filters = []
     if active_only:
-        query = query.where(User.active == True)
+        filters.append(User.active == True)
     if role:
-        query = query.where(User.role == role)
+        filters.append(User.role == role)
     if search and (term := search.strip()):
         pattern = like_pattern(term)
-        query = query.where(
+        filters.append(
             or_(
                 User.email.ilike(pattern, escape="\\"),
                 User.username.ilike(pattern, escape="\\"),
@@ -495,14 +494,25 @@ async def list_users(
         )
     if with_brand is not None:
         if with_brand:
-            query = query.where(User.brand_id.isnot(None))
+            filters.append(User.brand_id.isnot(None))
         else:
-            query = query.where(User.brand_id.is_(None))
+            filters.append(User.brand_id.is_(None))
+
+    total_result = await db.execute(
+        select(func.count()).select_from(User).where(*filters)
+    )
+    total = total_result.scalar_one()
 
     offset = (page - 1) * size
-    result = await db.execute(
-        query.order_by(User.created_at.desc()).offset(offset).limit(size)
+    query = (
+        select(User)
+        .options(selectinload(User.brand), selectinload(User.subscription))
+        .where(*filters)
+        .order_by(User.created_at.desc())
+        .offset(offset)
+        .limit(size)
     )
+    result = await db.execute(query)
     users = result.scalars().all()
 
     items = []
@@ -513,7 +523,13 @@ async def list_users(
             response.brand_name = user.brand.name  # type: ignore
         items.append(response)
 
-    return items
+    return UserListResponse(
+        items=items,
+        total=total,
+        page=page,
+        size=size,
+        total_pages=(total + size - 1) // size if total else 0,
+    )
 
 
 @router.post("/users/{user_id}/activate", response_model=UserResponse)

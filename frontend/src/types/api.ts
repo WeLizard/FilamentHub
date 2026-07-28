@@ -570,6 +570,14 @@ export interface User {
   legal_onboarding_required: boolean;
 }
 
+export interface AdminUserListResponse {
+  items: User[];
+  total: number;
+  page: number;
+  size: number;
+  total_pages: number;
+}
+
 export interface AccessibleBrand {
   brand_id: number;
   brand_name: string;

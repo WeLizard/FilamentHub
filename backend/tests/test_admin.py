@@ -212,14 +212,38 @@ async def test_admin_reject_preset(client: AsyncClient, db_session: AsyncSession
 
 @pytest.mark.asyncio
 async def test_admin_list_users(client: AsyncClient, db_session: AsyncSession):
-    """Admin can list users."""
+    """Admin user list applies filters and returns a paginated contract."""
     headers, user_id = await _register_and_login(client, "admin-list-users")
     await _make_admin(db_session, user_id)
+    _, target_id = await _register_and_login(client, "admin-list-target")
 
-    response = await client.get("/api/v1/admin/users", headers=headers)
+    response = await client.get(
+        "/api/v1/admin/users",
+        headers=headers,
+        params={"page": 1, "size": 1, "active_only": False},
+    )
     assert response.status_code == 200
-    assert isinstance(response.json(), list)
-    assert len(response.json()) >= 1
+    payload = response.json()
+    assert set(payload) == {"items", "total", "page", "size", "total_pages"}
+    assert len(payload["items"]) == 1
+    assert payload["total"] >= 2
+    assert payload["page"] == 1
+    assert payload["size"] == 1
+    assert payload["total_pages"] == payload["total"]
+
+    filtered = await client.get(
+        "/api/v1/admin/users",
+        headers=headers,
+        params={
+            "search": "admin-list-target",
+            "role": "user",
+            "active_only": False,
+        },
+    )
+    assert filtered.status_code == 200
+    filtered_payload = filtered.json()
+    assert filtered_payload["total"] == 1
+    assert [user["id"] for user in filtered_payload["items"]] == [target_id]
 
 
 @pytest.mark.asyncio

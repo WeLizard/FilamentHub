@@ -1,5 +1,7 @@
 """FilamentHub FastAPI Application."""
 
+import asyncio
+from contextlib import suppress
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -40,6 +42,7 @@ async def _warm_app_settings_cache() -> None:
 
     from app.db.session import AsyncSessionLocal
     from app.services.provisional_account_service import (
+        run_provisional_account_sweeper,
         sweep_abandoned_provisional_accounts,
     )
     from app.services.subscription_service import refresh_settings_cache
@@ -50,6 +53,21 @@ async def _warm_app_settings_cache() -> None:
             await sweep_abandoned_provisional_accounts(db)
     except Exception:
         _logging.getLogger(__name__).warning("Failed to warm app-settings cache", exc_info=True)
+
+    app.state.provisional_account_sweeper_task = asyncio.create_task(
+        run_provisional_account_sweeper(AsyncSessionLocal),
+        name="provisional-account-sweeper",
+    )
+
+
+@app.on_event("shutdown")
+async def _stop_provisional_account_sweeper() -> None:
+    task = getattr(app.state, "provisional_account_sweeper_task", None)
+    if task is None:
+        return
+    task.cancel()
+    with suppress(asyncio.CancelledError):
+        await task
 
 # Maintenance mode middleware (должен быть перед CORS для блокировки запросов)
 app.add_middleware(MaintenanceMiddleware)

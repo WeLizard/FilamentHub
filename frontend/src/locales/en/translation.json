@@ -147,6 +147,12 @@
     "tagline": "Intelligent materials catalog",
     "feedback_tooltip": "Feedback for beta testers",
     "feedback_button": "Beta Feedback",
+    "beta": {
+      "badge": "Beta",
+      "title": "FilamentHub is in beta",
+      "body": "The service is under active development: features appear and change, and some things may not work as intended. Found a problem or something missing — tell us, we look into it quickly.",
+      "action": "Report a problem"
+    },
     "nav_catalog": "Catalog",
     "nav_download": "Plugin",
     "nav_wiki": "Wiki",
@@ -4088,6 +4094,15 @@
     "proOff": "Pro",
     "title": "User Management",
     "total": "Total",
+    "searchLabel": "Search users",
+    "searchPlaceholder": "Username, email, or name...",
+    "pageSize": "Per page",
+    "updating": "Updating...",
+    "active": "Active",
+    "range": "Showing {{start}}–{{end}} of {{total}}",
+    "paginationLabel": "User pages",
+    "previous": "Previous page",
+    "next": "Next page",
     "loading": "Loading users...",
     "empty": "No users to display",
     "filterAll": "All",
@@ -4129,6 +4144,27 @@
     "cancel": "Cancel",
     "saving": "Saving...",
     "save": "Save",
+    "feedback": {
+      "activateSuccess": "User “{{username}}” activated",
+      "activateError": "Could not activate the user",
+      "deactivateSuccess": "User “{{username}}” deactivated",
+      "deactivateError": "Could not deactivate the user",
+      "proGrantSuccess": "Pro access granted to “{{username}}”",
+      "proGrantError": "Could not grant Pro access",
+      "proRevokeSuccess": "Pro access revoked from “{{username}}”",
+      "proRevokeError": "Could not revoke Pro access",
+      "promoteSuccess": "User “{{username}}” promoted to admin",
+      "promoteError": "Could not promote the user to admin",
+      "demoteSuccess": "Admin rights revoked from “{{username}}”",
+      "demoteError": "Could not revoke admin rights",
+      "brandLinkSuccess": "Brand linked for “{{username}}”",
+      "brandLinkSuccessGeneric": "Brand linked",
+      "brandLinkError": "Could not link the brand",
+      "brandUnlinkSuccess": "User “{{username}}” unlinked from the brand",
+      "brandUnlinkError": "Could not unlink the brand",
+      "badgesSuccess": "Badges saved for “{{username}}”",
+      "badgesError": "Could not save badges"
+    },
     "badgeDesc": {
       "founder": "Project founder. Awarded to first users who joined FilamentHub at its early development stage.",
       "beta_tester": "Beta tester. User who actively tests new features and helps improve the platform by reporting bugs and suggesting improvements.",
@@ -4650,6 +4686,10 @@
   "notifications": {
     "title": "Notifications",
     "empty": "No notifications",
+    "loading": "Loading notifications...",
+    "loadError": "Unable to load notifications",
+    "retry": "Try again",
+    "unread": "Unread notification",
     "newCount": "{{count}} new",
     "justNow": "just now",
     "minsAgo": "{{count}} min ago",
@@ -4668,6 +4708,28 @@
     "deleteSystemConfirm": "Remove \"{{name}}\"? The slots go away and their spools return to storage. The printer stays.",
     "systemDeleted": "System removed, spools returned to storage.",
     "link": "Link:",
+    "sources": {
+      "service": "FilamentHub service",
+      "orca": "OrcaSlicer sync",
+      "administration": "FilamentHub administration"
+    },
+    "types": {
+      "notification": "Notification",
+      "presetUpdated": "Preset update",
+      "presetDeleted": "Preset removal",
+      "localPresets": "Local presets",
+      "brandVerified": "Brand verification",
+      "brandRequestApproved": "Brand request",
+      "brandRequestRejected": "Brand request",
+      "adminMessage": "Administrator message",
+      "feedbackResponse": "Feedback response"
+    },
+    "actions": {
+      "open": "Open",
+      "openFilament": "Open material",
+      "openBrand": "Open brand",
+      "openResponse": "Open response"
+    },
     "keys": {
       "preset_updated": "Preset updated",
       "preset_updated_message": "Preset \"{{preset_name}}\" was updated.",
@@ -4700,7 +4762,7 @@
         "label": "Bug",
         "description": "Report a bug or error",
         "subjectPlaceholder": "Example: \"Error when creating a preset on the filament page\"",
-        "messagePlaceholder": "Describe the issue in detail:\n\n1. What were you doing before the error occurred? (steps to reproduce)\n2. What behavior did you expect?\n3. What actually happened?\n4. On which page/section did the error occur?\n5. Are you using a browser on mobile or desktop?\n6. Do you have screenshots or error messages?\n\nThe more detail you provide, the faster we can fix it!",
+        "messagePlaceholder": "Describe the issue in detail:\n\n1. What were you doing before the error occurred? (steps to reproduce)\n2. What behavior did you expect?\n3. What actually happened?\n4. On which page/section did the error occur?\n5. Are you using a browser on mobile or desktop?\n6. If an error message appeared, paste its text here.\n\nThe more detail you provide, the faster we can fix it!",
         "instructions": "For bugs, it is important to describe the steps to reproduce and expected behavior"
       },
       "feature": {

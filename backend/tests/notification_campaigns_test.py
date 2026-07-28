@@ -48,7 +48,7 @@ async def test_campaign_uses_exact_snapshot_and_confirmation_is_idempotent(
         params={"search": "campaign_first", "active_only": True},
     )
     assert search_response.status_code == 200
-    assert [user["id"] for user in search_response.json()] == [first.id]
+    assert [user["id"] for user in search_response.json()["items"]] == [first.id]
 
     preview_response = await admin_client.post(
         "/api/v1/admin/communications/broadcasts/preview",

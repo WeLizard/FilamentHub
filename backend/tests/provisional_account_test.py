@@ -63,6 +63,32 @@ async def test_sweep_removes_only_the_sign_in_nobody_finished(db_session: AsyncS
 
 
 @pytest.mark.asyncio
+async def test_sweep_drains_every_expired_batch(db_session: AsyncSession):
+    cutoff = datetime.now(timezone.utc) - timedelta(
+        days=PROVISIONAL_ACCOUNT_TTL_DAYS + 1
+    )
+    expired = [
+        User(
+            email=f"expired-{index}@example.com",
+            username=f"expired-{index}",
+            password_hash=None,
+            active=True,
+            provisional_since=cutoff,
+        )
+        for index in range(105)
+    ]
+    db_session.add_all(expired)
+    await db_session.commit()
+
+    assert await sweep_abandoned_provisional_accounts(db_session) == 105
+    assert not (
+        await db_session.scalars(
+            select(User).where(User.email.like("expired-%@example.com"))
+        )
+    ).all()
+
+
+@pytest.mark.asyncio
 async def test_accepting_the_documents_takes_the_account_out_of_the_sweep(
     db_session: AsyncSession,
 ):

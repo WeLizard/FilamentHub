@@ -142,7 +142,7 @@ export function AdminNotificationCampaigns() {
     [i18n.language],
   );
 
-  const users = usersQuery.data ?? [];
+  const users = usersQuery.data?.items ?? [];
   const linkIsValid = !link.trim()
     || (
       link.trim().startsWith('/')

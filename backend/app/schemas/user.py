@@ -165,6 +165,16 @@ class UserResponse(UserBase):
         return instance
 
 
+class UserListResponse(BaseModel):
+    """Paginated admin user list."""
+
+    items: list[UserResponse]
+    total: int
+    page: int
+    size: int
+    total_pages: int
+
+
 class ActiveBrandUpdate(BaseModel):
     """Select or clear the user's active brand workspace."""
 

@@ -1,8 +1,19 @@
 /** Компонент уведомлений с колокольчиком */
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useId } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Bell, CheckCircle, XCircle, AlertCircle, Info, Settings, X, MessageCircle, Trash2 } from 'lucide-react';
+import {
+  AlertCircle,
+  ArrowRight,
+  Bell,
+  CheckCircle,
+  Info,
+  MessageCircle,
+  Settings,
+  Trash2,
+  X,
+  XCircle,
+} from 'lucide-react';
 import { ModalOverlay } from './ModalOverlay';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
@@ -15,12 +26,79 @@ interface NotificationsProps {
   floating?: boolean; // Плавающая версия для OrcaSlicer (когда нет хедера)
 }
 
+interface NotificationPresentation {
+  sourceKey: string;
+  typeKey: string;
+  actionKey: string;
+}
+
+const getNotificationPresentation = (
+  notification: Notification,
+): NotificationPresentation => {
+  switch (notification.type) {
+    case 'preset_updated':
+      return {
+        sourceKey: 'notifications.sources.service',
+        typeKey: 'notifications.types.presetUpdated',
+        actionKey: 'notifications.actions.openFilament',
+      };
+    case 'preset_deleted':
+      return {
+        sourceKey: 'notifications.sources.service',
+        typeKey: 'notifications.types.presetDeleted',
+        actionKey: 'notifications.actions.openFilament',
+      };
+    case 'preset_locally_deleted':
+      return {
+        sourceKey: 'notifications.sources.orca',
+        typeKey: 'notifications.types.localPresets',
+        actionKey: 'notifications.actions.open',
+      };
+    case 'brand_verified':
+      return {
+        sourceKey: 'notifications.sources.service',
+        typeKey: 'notifications.types.brandVerified',
+        actionKey: 'notifications.actions.openBrand',
+      };
+    case 'brand_request_approved':
+      return {
+        sourceKey: 'notifications.sources.service',
+        typeKey: 'notifications.types.brandRequestApproved',
+        actionKey: 'notifications.actions.openBrand',
+      };
+    case 'brand_request_rejected':
+      return {
+        sourceKey: 'notifications.sources.service',
+        typeKey: 'notifications.types.brandRequestRejected',
+        actionKey: 'notifications.actions.open',
+      };
+    case 'admin_message':
+      return {
+        sourceKey: 'notifications.sources.administration',
+        typeKey: notification.extra_data?.feedback_id
+          ? 'notifications.types.feedbackResponse'
+          : 'notifications.types.adminMessage',
+        actionKey: notification.extra_data?.feedback_id
+          ? 'notifications.actions.openResponse'
+          : 'notifications.actions.open',
+      };
+    default:
+      return {
+        sourceKey: 'notifications.sources.service',
+        typeKey: 'notifications.types.notification',
+        actionKey: 'notifications.actions.open',
+      };
+  }
+};
+
 export const Notifications: React.FC<NotificationsProps> = ({ floating = false }) => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { user, refreshUser } = useAuth();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [isOpen, setIsOpen] = useState(false);
+  const panelId = useId();
+  const detailTitleId = useId();
   const dropdownRef = useRef<HTMLDivElement>(null);
   const lastAccountRefreshNotificationId = useRef<number | null>(null);
   const [selectedNotification, setSelectedNotification] = useState<Notification | null>(null);
@@ -30,7 +108,12 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
   const [externalUnreadCount, setExternalUnreadCount] = useState<number | null>(null);
 
   // Загружаем уведомления
-  const { data: notificationsData, refetch } = useQuery({
+  const {
+    data: notificationsData,
+    isError: isNotificationsError,
+    isLoading: isNotificationsLoading,
+    refetch,
+  } = useQuery({
     queryKey: ['notifications', user?.id],
     queryFn: () => notificationsAPI.list({ page: 1, size: 50 }),
     enabled: !!user,
@@ -224,7 +307,7 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
     if (diffMins < 60) return t('notifications.minsAgo', { count: diffMins });
     if (diffHours < 24) return t('notifications.hoursAgo', { count: diffHours });
     if (diffDays < 7) return t('notifications.daysAgo', { count: diffDays });
-    return date.toLocaleDateString();
+    return date.toLocaleDateString(i18n.resolvedLanguage || i18n.language);
   };
 
   const getNotificationText = (notification: Notification) => {
@@ -241,6 +324,9 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
   };
 
   const viewNotificationText = viewNotification ? getNotificationText(viewNotification) : null;
+  const viewNotificationPresentation = viewNotification
+    ? getNotificationPresentation(viewNotification)
+    : null;
 
   // Плавающая версия (для OrcaSlicer)
   if (floating) {
@@ -252,7 +338,11 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
         <button
           onClick={() => setIsOpen(!isOpen)}
           className="relative flex items-center justify-center w-14 h-14 rounded-full bg-gradient-to-br from-purple-600 to-indigo-600 text-white shadow-2xl hover:shadow-purple-500/50 transition-all hover:scale-110 active:scale-95"
-          aria-label={t('notifications.title')}
+          aria-label={unreadCount > 0
+            ? `${t('notifications.title')}: ${t('notifications.newCount', { count: unreadCount })}`
+            : t('notifications.title')}
+          aria-expanded={isOpen}
+          aria-controls={panelId}
         >
           <Bell className="w-6 h-6" />
           {unreadCount > 0 && (
@@ -263,7 +353,12 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
         </button>
 
         {isOpen && (
-          <div className="absolute right-0 bottom-full mb-4 w-96 bg-gradient-to-br from-purple-900 to-indigo-900 rounded-xl border border-white/20 shadow-2xl z-[10000] max-h-[80vh] overflow-hidden flex flex-col">
+          <div
+            id={panelId}
+            role="region"
+            aria-label={t('notifications.title')}
+            className="absolute right-0 bottom-full mb-4 w-96 max-w-[calc(100vw-24px)] bg-gradient-to-br from-purple-900 to-indigo-900 rounded-xl border border-white/20 shadow-2xl z-[10000] max-h-[80vh] overflow-hidden flex flex-col"
+          >
             {/* Header */}
             <div className="flex items-center justify-between p-4 border-b border-white/10">
               <h3 className="text-lg font-bold text-white">{t('notifications.title')}</h3>
@@ -276,7 +371,24 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
 
             {/* Notifications List - тот же код что ниже */}
             <div className="overflow-y-auto flex-1">
-              {notifications.length === 0 ? (
+              {isNotificationsLoading && !notificationsData ? (
+                <div className="p-8 text-center text-gray-400" role="status">
+                  <div className="w-7 h-7 mx-auto mb-3 border-2 border-purple-300/30 border-t-purple-300 rounded-full animate-spin" />
+                  <p>{t('notifications.loading')}</p>
+                </div>
+              ) : isNotificationsError && notifications.length === 0 ? (
+                <div className="p-8 text-center text-gray-400" role="alert">
+                  <AlertCircle className="w-10 h-10 mx-auto mb-3 text-yellow-400/80" />
+                  <p className="mb-3">{t('notifications.loadError')}</p>
+                  <button
+                    type="button"
+                    onClick={() => void refetch()}
+                    className="text-sm font-medium text-purple-300 hover:text-purple-200 transition-colors"
+                  >
+                    {t('notifications.retry')}
+                  </button>
+                </div>
+              ) : notifications.length === 0 ? (
                 <div className="p-8 text-center text-gray-400">
                   <Bell className="w-12 h-12 mx-auto mb-3 opacity-50" />
                   <p>{t('notifications.empty')}</p>
@@ -285,6 +397,7 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
                 <div className="divide-y divide-white/10">
                   {notifications.map((notification) => {
                     const { title, message } = getNotificationText(notification);
+                    const presentation = getNotificationPresentation(notification);
                     const previewLength = 150;
                     const messagePreview = message.length > previewLength
                       ? message.substring(0, previewLength) + '...'
@@ -307,6 +420,11 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
                                 {getNotificationIcon(notification.type)}
                               </div>
                               <div className="flex-1 min-w-0">
+                                <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 mb-1 text-xs text-purple-200/75">
+                                  <span>{t(presentation.sourceKey)}</span>
+                                  <span aria-hidden="true">·</span>
+                                  <span>{t(presentation.typeKey)}</span>
+                                </div>
                                 <div className="flex items-start justify-between gap-2 mb-1">
                                   <p className="text-sm font-semibold text-white">
                                     {title}
@@ -327,20 +445,17 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
                                   </p>
                                 </div>
                                 {hasLink && (
-                                  <a
-                                    href={notification.link || '#'}
+                                  <button
+                                    type="button"
                                     onClick={(e) => {
-                                      e.preventDefault();
                                       e.stopPropagation();
                                       handleOpenLink(notification.link!);
                                     }}
-                                    className="block text-xs text-purple-400 hover:text-purple-300 hover:underline mt-1 truncate max-w-full transition-colors"
-                                    title={notification.link || undefined}
-                                    onMouseEnter={(e) => e.stopPropagation()}
-                                    onMouseLeave={(e) => e.stopPropagation()}
+                                    className="inline-flex items-center gap-1.5 text-xs font-medium text-purple-300 hover:text-purple-200 mt-2 transition-colors rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-400"
                                   >
-                                    {notification.link}
-                                  </a>
+                                    {t(presentation.actionKey)}
+                                    <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
+                                  </button>
                                 )}
                               </div>
                             </div>
@@ -416,9 +531,12 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
         )}
 
         {/* Modal for viewing notification */}
-        {viewNotification && viewNotificationText && (
+        {viewNotification && viewNotificationText && viewNotificationPresentation && (
           <ModalOverlay onClose={() => setViewNotification(null)}>
               <div
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby={detailTitleId}
                 className="bg-gradient-to-br from-purple-900 to-indigo-900 rounded-2xl max-w-2xl w-full overflow-hidden flex flex-col border border-white/20 shadow-2xl max-h-[85vh]"
               >
                 {/* Header */}
@@ -428,7 +546,12 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
                       {getNotificationIcon(viewNotification.type)}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <h3 className="text-xl font-bold text-white mb-1">
+                      <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 mb-1 text-xs text-purple-200/75">
+                        <span>{t(viewNotificationPresentation.sourceKey)}</span>
+                        <span aria-hidden="true">·</span>
+                        <span>{t(viewNotificationPresentation.typeKey)}</span>
+                      </div>
+                      <h3 id={detailTitleId} className="text-xl font-bold text-white mb-1">
                         {viewNotificationText.title}
                       </h3>
                       <p className="text-xs text-gray-400">
@@ -462,6 +585,7 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
                     <button
                       onClick={() => setViewNotification(null)}
                       className="flex-shrink-0 text-gray-400 hover:text-white transition-colors p-2 -mt-2 -mr-2"
+                      aria-label={t('common.close')}
                     >
                       <X className="w-5 h-5" />
                     </button>
@@ -477,17 +601,14 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
                   {/* Link section */}
                   {viewNotification.link && (
                     <div className="mt-6 pt-6 border-t border-white/10">
-                      <p className="text-sm text-gray-400 mb-2">{t('notifications.link')}</p>
-                      <a
-                        href={viewNotification.link}
-                        onClick={(e) => {
-                          e.preventDefault();
-                          handleOpenLink(viewNotification.link!);
-                        }}
-                        className="inline-block text-sm text-purple-400 hover:text-purple-300 hover:underline break-all transition-colors"
+                      <button
+                        type="button"
+                        onClick={() => handleOpenLink(viewNotification.link!)}
+                        className="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-semibold text-white bg-purple-600 hover:bg-purple-500 rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-300"
                       >
-                        {viewNotification.link}
-                      </a>
+                        {t(viewNotificationPresentation.actionKey)}
+                        <ArrowRight className="w-4 h-4" aria-hidden="true" />
+                      </button>
                     </div>
                   )}
                 </div>
@@ -504,7 +625,11 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
       <button
         onClick={() => setIsOpen(!isOpen)}
         className="relative flex items-center justify-center w-10 h-10 rounded-lg text-gray-300 hover:text-white hover:bg-white/10 transition-all"
-        aria-label={t('notifications.title')}
+        aria-label={unreadCount > 0
+          ? `${t('notifications.title')}: ${t('notifications.newCount', { count: unreadCount })}`
+          : t('notifications.title')}
+        aria-expanded={isOpen}
+        aria-controls={panelId}
       >
         <Bell className="w-5 h-5" />
         {unreadCount > 0 && (
@@ -515,7 +640,12 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
       </button>
 
       {isOpen && (
-        <div className="fixed md:absolute inset-x-2 md:inset-x-auto md:right-0 top-16 md:top-12 md:w-96 bg-gradient-to-br from-purple-900 to-indigo-900 rounded-xl border border-white/20 shadow-2xl z-[10000] max-h-[70vh] md:max-h-[80vh] overflow-hidden flex flex-col mx-auto md:mx-0 max-w-[calc(100vw-16px)] md:max-w-none">
+        <div
+          id={panelId}
+          role="region"
+          aria-label={t('notifications.title')}
+          className="fixed md:absolute inset-x-2 md:inset-x-auto md:right-0 top-16 md:top-12 md:w-96 bg-gradient-to-br from-purple-900 to-indigo-900 rounded-xl border border-white/20 shadow-2xl z-[10000] max-h-[70vh] md:max-h-[80vh] overflow-hidden flex flex-col mx-auto md:mx-0 max-w-[calc(100vw-16px)] md:max-w-none"
+        >
           {/* Header */}
           <div className="flex items-center justify-between p-3 md:p-4 border-b border-white/10">
             <h3 className="text-base md:text-lg font-bold text-white">{t('notifications.title')}</h3>
@@ -528,7 +658,24 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
 
           {/* Notifications List */}
           <div className="overflow-y-auto flex-1">
-            {notifications.length === 0 ? (
+            {isNotificationsLoading && !notificationsData ? (
+              <div className="p-6 md:p-8 text-center text-gray-400" role="status">
+                <div className="w-7 h-7 mx-auto mb-3 border-2 border-purple-300/30 border-t-purple-300 rounded-full animate-spin" />
+                <p className="text-sm md:text-base">{t('notifications.loading')}</p>
+              </div>
+            ) : isNotificationsError && notifications.length === 0 ? (
+              <div className="p-6 md:p-8 text-center text-gray-400" role="alert">
+                <AlertCircle className="w-10 h-10 mx-auto mb-3 text-yellow-400/80" />
+                <p className="text-sm md:text-base mb-3">{t('notifications.loadError')}</p>
+                <button
+                  type="button"
+                  onClick={() => void refetch()}
+                  className="text-sm font-medium text-purple-300 hover:text-purple-200 transition-colors"
+                >
+                  {t('notifications.retry')}
+                </button>
+              </div>
+            ) : notifications.length === 0 ? (
               <div className="p-6 md:p-8 text-center text-gray-400">
                 <Bell className="w-10 h-10 md:w-12 md:h-12 mx-auto mb-3 opacity-50" />
                 <p className="text-sm md:text-base">{t('notifications.empty')}</p>
@@ -537,6 +684,7 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
               <div className="divide-y divide-white/10">
                 {notifications.map((notification) => {
                   const { title, message } = getNotificationText(notification);
+                  const presentation = getNotificationPresentation(notification);
                   // Обрезаем текст для предпросмотра (максимум 150 символов)
                   const previewLength = 150;
                   const messagePreview = message.length > previewLength
@@ -560,6 +708,11 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
                               {getNotificationIcon(notification.type)}
                             </div>
                             <div className="flex-1 min-w-0">
+                              <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 mb-1 text-[10px] md:text-xs text-purple-200/75">
+                                <span>{t(presentation.sourceKey)}</span>
+                                <span aria-hidden="true">·</span>
+                                <span>{t(presentation.typeKey)}</span>
+                              </div>
                               <div className="flex items-start justify-between gap-2 mb-1">
                                 <p className="text-xs md:text-sm font-semibold text-white">
                                   {title}
@@ -580,20 +733,17 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
                                 </p>
                               </div>
                               {hasLink && (
-                                <a
-                                  href={notification.link || '#'}
+                                <button
+                                  type="button"
                                   onClick={(e) => {
-                                    e.preventDefault();
                                     e.stopPropagation();
                                     handleOpenLink(notification.link!);
                                   }}
-                                  className="block text-xs text-purple-400 hover:text-purple-300 hover:underline mt-1 truncate max-w-full transition-colors"
-                                  title={notification.link || undefined}
-                                  onMouseEnter={(e) => e.stopPropagation()}
-                                  onMouseLeave={(e) => e.stopPropagation()}
+                                  className="inline-flex items-center gap-1.5 text-xs font-medium text-purple-300 hover:text-purple-200 mt-2 transition-colors rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-400"
                                 >
-                                  {notification.link}
-                                </a>
+                                  {t(presentation.actionKey)}
+                                  <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
+                                </button>
                               )}
                             </div>
                           </div>
@@ -669,9 +819,12 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
       )}
 
       {/* Modal for viewing notification */}
-      {viewNotification && viewNotificationText && (
+      {viewNotification && viewNotificationText && viewNotificationPresentation && (
         <ModalOverlay onClose={() => setViewNotification(null)}>
             <div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby={detailTitleId}
               className="bg-gradient-to-br from-purple-900 to-indigo-900 rounded-t-2xl md:rounded-2xl w-full md:max-w-2xl overflow-hidden flex flex-col border-t md:border border-white/20 shadow-2xl max-h-[85vh]"
             >
               {/* Header */}
@@ -681,7 +834,12 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
                     {getNotificationIcon(viewNotification.type)}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <h3 className="text-base md:text-xl font-bold text-white mb-1">
+                    <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 mb-1 text-[10px] md:text-xs text-purple-200/75">
+                      <span>{t(viewNotificationPresentation.sourceKey)}</span>
+                      <span aria-hidden="true">·</span>
+                      <span>{t(viewNotificationPresentation.typeKey)}</span>
+                    </div>
+                    <h3 id={detailTitleId} className="text-base md:text-xl font-bold text-white mb-1">
                       {viewNotificationText.title}
                     </h3>
                     <p className="text-[10px] md:text-xs text-gray-400">
@@ -715,6 +873,7 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
                   <button
                     onClick={() => setViewNotification(null)}
                     className="flex-shrink-0 text-gray-400 hover:text-white transition-colors p-2 -mt-1 -mr-1"
+                    aria-label={t('common.close')}
                   >
                     <X className="w-5 h-5" />
                   </button>
@@ -730,17 +889,14 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
                 {/* Link section */}
                 {viewNotification.link && (
                   <div className="mt-4 md:mt-6 pt-4 md:pt-6 border-t border-white/10">
-                    <p className="text-xs md:text-sm text-gray-400 mb-2">{t('notifications.link')}</p>
-                    <a
-                      href={viewNotification.link}
-                      onClick={(e) => {
-                        e.preventDefault();
-                        handleOpenLink(viewNotification.link!);
-                      }}
-                      className="inline-block text-xs md:text-sm text-purple-400 hover:text-purple-300 hover:underline break-all transition-colors"
+                    <button
+                      type="button"
+                      onClick={() => handleOpenLink(viewNotification.link!)}
+                      className="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-semibold text-white bg-purple-600 hover:bg-purple-500 rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-300"
                     >
-                      {viewNotification.link}
-                    </a>
+                      {t(viewNotificationPresentation.actionKey)}
+                      <ArrowRight className="w-4 h-4" aria-hidden="true" />
+                    </button>
                   </div>
                 )}
               </div>
