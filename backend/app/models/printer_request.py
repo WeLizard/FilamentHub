@@ -36,7 +36,9 @@ class PrinterRequest(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
 
     # User who submitted the request
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), index=True, nullable=True
+    )
 
     # New printer data
     name: Mapped[str] = mapped_column(String(200), nullable=False)
@@ -83,7 +85,7 @@ class PrinterRequest(Base):
     )
 
     # Relationships
-    user: Mapped["User"] = relationship("User", foreign_keys=[user_id])
+    user: Mapped["User | None"] = relationship("User", foreign_keys=[user_id])
     processed_by: Mapped["User | None"] = relationship("User", foreign_keys=[processed_by_id])
 
     def __repr__(self) -> str:

@@ -45,7 +45,9 @@ class BrandRequest(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
 
     # User who submitted the request
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), index=True, nullable=True
+    )
 
     # Type of request
     request_type: Mapped[BrandRequestType] = mapped_column(String(20), index=True, nullable=False)

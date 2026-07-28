@@ -95,7 +95,7 @@ class NotificationCampaignHistoryItem(BaseModel):
     link: str | None
     recipient_count: int
     status: NotificationCampaignStatus
-    created_by_id: int
+    created_by_id: int | None = None
     created_by_name: str
     created_at: datetime
     confirmation_expires_at: datetime

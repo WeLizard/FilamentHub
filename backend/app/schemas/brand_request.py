@@ -50,7 +50,7 @@ class BrandRequestResponse(BaseModel):
     """Schema for BrandRequest response."""
 
     id: int
-    user_id: int
+    user_id: int | None = None
     user_email: str | None = None  # Email пользователя для админки
     request_type: BrandRequestType
     brand_id: int | None = None

@@ -37,7 +37,7 @@ class PrinterRequestResponse(BaseModel):
     """Schema for PrinterRequest response."""
 
     id: int
-    user_id: int
+    user_id: int | None = None
     user_email: str | None = None  # Email пользователя для админки
     name: str
     manufacturer: str

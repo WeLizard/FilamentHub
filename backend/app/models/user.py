@@ -150,7 +150,7 @@ class User(Base):
     brand: Mapped["Brand | None"] = relationship("Brand", foreign_keys=[brand_id])
     presets: Mapped[list["Preset"]] = relationship("Preset", back_populates="user")
     filament_reviews: Mapped[list["FilamentReview"]] = relationship(
-        "FilamentReview", back_populates="user", cascade="all, delete-orphan"
+        "FilamentReview", back_populates="user"
     )
     saved_presets: Mapped[list["UserSavedPreset"]] = relationship(
         "UserSavedPreset", back_populates="user", cascade="all, delete-orphan"

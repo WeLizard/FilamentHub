@@ -122,3 +122,64 @@ async def test_summary_stays_open_to_a_settled_account(
 
     response = await client.get("/api/v1/auth/deletion-stats")
     assert response.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_deleting_an_account_removes_the_row_and_frees_the_address(
+    db_session: AsyncSession,
+):
+    """"Delete" has to mean deleted, or the documents promise what we don't do."""
+    from app.services.account_deletion import delete_user_account
+
+    user = await _user(
+        db_session,
+        "goodbye@example.com",
+        terms_version_accepted=CURRENT_TERMS_VERSION,
+        personal_data_consent_version=CURRENT_PERSONAL_DATA_CONSENT_VERSION,
+    )
+    user_id = user.id
+
+    await delete_user_account(
+        user=user, delete_reviews=False, release_brand_representation=False, db=db_session
+    )
+
+    assert await db_session.get(User, user_id) is None
+    again = await _user(db_session, "goodbye@example.com")
+    assert again.email == "goodbye@example.com"
+
+
+@pytest.mark.asyncio
+async def test_a_kept_review_stays_readable_without_its_author(
+    db_session: AsyncSession,
+):
+    from app.models.brand import Brand
+    from app.models.filament import Filament
+    from app.models.filament_review import FilamentReview
+    from app.services.account_deletion import delete_user_account
+
+    user = await _user(
+        db_session,
+        "reviewer@example.com",
+        terms_version_accepted=CURRENT_TERMS_VERSION,
+        personal_data_consent_version=CURRENT_PERSONAL_DATA_CONSENT_VERSION,
+    )
+    brand = Brand(name="Leaving Brand", slug="leaving-brand", active=True)
+    filament = Filament(
+        brand=brand, name="Leaving PLA", slug="leaving-pla", material_type="PLA", active=True
+    )
+    review = FilamentReview(
+        user_id=user.id, filament=filament, rating=5, success=True, comment="Печатается отлично"
+    )
+    db_session.add_all([brand, filament, review])
+    await db_session.commit()
+    review_id = review.id
+
+    await delete_user_account(
+        user=user, delete_reviews=False, release_brand_representation=False, db=db_session
+    )
+
+    kept = await db_session.get(FilamentReview, review_id)
+    assert kept is not None
+    assert kept.user_id is None
+    assert kept.active is True
+    assert kept.comment == "Печатается отлично"

@@ -26,12 +26,6 @@ from app.models.user_spool import UserSpool
 
 
 async def _library_stats(user_id: int, db: AsyncSession) -> dict:
-    """Count what leaves with the account, not only what stays in the catalog.
-
-    Presets and reviews survive deletion without their author, so a summary
-    built from them alone tells someone with a full shelf that they have
-    nothing to lose.
-    """
     counts: dict[str, int] = {}
     for key, model, owner in (
         ("spools_count", UserSpool, UserSpool.user_id),
@@ -295,20 +289,11 @@ async def delete_user_account(
     reviews = reviews_result.scalars().all()
 
     if delete_reviews:
-        # Полностью удаляем отзывы
         for review in reviews:
-            review.active = False
-            # Можно полностью удалить через delete, но лучше пометить как неактивный
-            # для возможного восстановления
             await db.delete(review)
     else:
-        # Анонимизируем отзывы - помечаем как неактивные и скрываем пользователя
-        # user_id оставляем (NOT NULL constraint), но помечаем review.active = False
-        # И можно изменить comment на "Отзыв от удалённого пользователя"
         for review in reviews:
-            review.active = False
-            if review.comment:
-                review.comment = f"[Отзыв от удалённого пользователя] {review.comment}"
+            review.user_id = None
 
     # 3. Удаление личных закладок (UserSavedPresets)
     saved_presets_result = await db.execute(
@@ -346,14 +331,6 @@ async def delete_user_account(
     if user.role == UserRole.BRAND:
         user.role = UserRole.USER
 
-    # 6. Деактивация аккаунта (мягкое удаление)
-    # Устанавливаем active=False вместо полного удаления
-    # Это позволит восстановить аккаунт при необходимости
-    user.active = False
-    # Очищаем чувствительные данные
-    user.email = f"deleted_{user_id}_{user.email}"
-    user.username = f"deleted_{user_id}_{user.username}"
-    user.api_key = None
-    user.password_hash = ""  # Очищаем пароль
+    await db.delete(user)
 
     await db.commit()

@@ -17,7 +17,7 @@ class BundleSummary(BaseModel):
     id: int
     uuid: UUID
     source: str
-    uploaded_by_user_id: int
+    uploaded_by_user_id: int | None
     filename: str
     sha256: str
     size_bytes: int
@@ -35,7 +35,7 @@ class BundleImportSummary(BaseModel):
 
     id: int
     bundle_id: int
-    started_by_user_id: int
+    started_by_user_id: int | None
     started_at: datetime
     finished_at: datetime | None = None
     status: str

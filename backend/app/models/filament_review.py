@@ -31,7 +31,9 @@ class FilamentReview(Base):
 
     # Foreign keys
     filament_id: Mapped[int] = mapped_column(ForeignKey("filaments.id"), index=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), index=True, nullable=True
+    )
     preset_id: Mapped[int | None] = mapped_column(
         ForeignKey("presets.id"), nullable=True, index=True
     )

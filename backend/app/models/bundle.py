@@ -55,8 +55,8 @@ class Bundle(Base):
         PgUUID(as_uuid=True), unique=True, nullable=False, default=uuid4
     )
     source: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
-    uploaded_by_user_id: Mapped[int] = mapped_column(
-        ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True
+    uploaded_by_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
     )
     filename: Mapped[str] = mapped_column(String(255), nullable=False)
     storage_path: Mapped[str] = mapped_column(String(512), nullable=False)
@@ -75,7 +75,7 @@ class Bundle(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
 
-    uploader: Mapped["User"] = relationship("User", foreign_keys=[uploaded_by_user_id])
+    uploader: Mapped["User | None"] = relationship("User", foreign_keys=[uploaded_by_user_id])
     imports: Mapped[list["BundleImport"]] = relationship(
         "BundleImport",
         back_populates="bundle",
@@ -96,8 +96,8 @@ class BundleImport(Base):
     bundle_id: Mapped[int] = mapped_column(
         ForeignKey("bundles.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    started_by_user_id: Mapped[int] = mapped_column(
-        ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    started_by_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
     started_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -114,7 +114,7 @@ class BundleImport(Base):
     bundle: Mapped["Bundle"] = relationship(
         "Bundle", back_populates="imports", foreign_keys=[bundle_id]
     )
-    started_by: Mapped["User"] = relationship("User", foreign_keys=[started_by_user_id])
+    started_by: Mapped["User | None"] = relationship("User", foreign_keys=[started_by_user_id])
     rolled_back_by: Mapped["User | None"] = relationship(
         "User", foreign_keys=[rolled_back_by_user_id]
     )

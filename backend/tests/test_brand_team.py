@@ -455,6 +455,7 @@ async def test_release_preserves_brand_catalog_and_existing_qr(
     db_session: AsyncSession,
 ):
     _, brand, membership = await _workspace(db_session, auth_user, slug="release")
+    membership_id = membership.id
     filament = Filament(
         brand_id=brand.id,
         name="Release PLA",
@@ -474,9 +475,8 @@ async def test_release_preserves_brand_catalog_and_existing_qr(
     )
     preserved_brand = await db_session.get(Brand, brand.id)
     preserved_filament = await db_session.get(Filament, filament.id)
-    await db_session.refresh(membership)
     assert preserved_brand is not None
     assert preserved_brand.verified is False
     assert preserved_filament is not None
     assert preserved_filament.qr_code == "stable-existing-qr"
-    assert membership.active is False
+    assert await db_session.get(OrganizationMembership, membership_id) is None
