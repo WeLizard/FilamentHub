@@ -22,6 +22,9 @@ class EmailAttachmentResponse(BaseModel):
     content_type: str | None = None
     size: int | None = None
     downloadable: bool = False
+    content_id: str | None = None
+    # content_id: как картинка зовётся из текста письма (src="cid:...")
+    inline: bool = False
 
 
 class EmailMessageResponse(BaseModel):

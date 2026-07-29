@@ -226,6 +226,8 @@ export interface EmailAttachment {
   content_type: string | null;
   size: number | null;
   downloadable: boolean;
+  content_id: string | null; // как картинка зовётся из текста письма (src="cid:...")
+  inline: boolean;
 }
 
 export interface EmailMessage {

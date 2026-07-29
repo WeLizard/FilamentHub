@@ -24,6 +24,7 @@ import { useTranslation } from 'react-i18next';
 import type { AxiosError } from 'axios';
 import { adminCommunicationsAPI } from '../../api/client';
 import type {
+  EmailAttachment,
   EmailDeliveryStatus,
   EmailMessage,
   EmailSenderProfile,
@@ -96,12 +97,91 @@ blockquote{margin:8px 0;padding-left:12px;border-left:2px solid #cbd5e1;color:#4
 a{color:#0369a1}
 </style></head><body>${html}</body></html>`;
 
+const MAX_INLINE_IMAGES = 10;
+const MAX_INLINE_IMAGE_BYTES = 8 * 1024 * 1024;
+
+const CID_REFERENCE = /(["'(])cid:([^"')\s]+)(["')])/gi;
+
+const decodeCid = (value: string): string => {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+};
+
+const withInlineImages = (html: string, images: Map<string, string>): string =>
+  html.replace(CID_REFERENCE, (match, open: string, cid: string, close: string) => {
+    const source = images.get(decodeCid(cid)) ?? images.get(cid);
+    return source ? `${open}${source}${close}` : match;
+  });
+
+const asDataUrl = (blob: Blob): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
+
 /** A letter from a stranger is untrusted markup: it is shown inside a frame the
  * browser refuses to run scripts in, so the mail reads as a letter without
  * being able to touch the admin page around it. */
-export function InboundHtmlMessage({ html }: { html: string }) {
+export function InboundHtmlMessage({
+  html,
+  threadId,
+  messageId,
+  attachments,
+}: {
+  html: string;
+  threadId?: number;
+  messageId?: number;
+  attachments?: EmailAttachment[];
+}) {
   const frameRef = useRef<HTMLIFrameElement>(null);
   const [height, setHeight] = useState(180);
+  const [letter, setLetter] = useState(html);
+
+  useEffect(() => {
+    setLetter(html);
+    if (threadId === undefined || messageId === undefined || !attachments?.length) return;
+
+    const inlineImages = attachments.filter(
+      (attachment) =>
+        attachment.downloadable &&
+        attachment.content_id &&
+        (attachment.content_type ?? '').toLowerCase().startsWith('image/'),
+    );
+    if (!inlineImages.length || !/cid:/i.test(html)) return;
+
+    let cancelled = false;
+    void (async () => {
+      const resolved = new Map<string, string>();
+      let budget = MAX_INLINE_IMAGE_BYTES;
+      for (const attachment of inlineImages.slice(0, MAX_INLINE_IMAGES)) {
+        if (cancelled) return;
+        try {
+          const blob = await adminCommunicationsAPI.downloadEmailAttachment(
+            threadId,
+            messageId,
+            attachment.index,
+          );
+          budget -= blob.size;
+          if (budget < 0) break;
+          // Встроенная в письмо картинка: не ссылка, а сами данные — иначе кадр
+          // письма пришлось бы пускать в сеть за нашими же вложениями.
+          resolved.set(attachment.content_id as string, await asDataUrl(blob));
+        } catch {
+          // Одна не открывшаяся картинка не должна прятать письмо целиком.
+        }
+      }
+      if (!cancelled && resolved.size) setLetter(withInlineImages(html, resolved));
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [html, threadId, messageId, attachments]);
 
   const fitToContent = () => {
     // Readable only because the frame keeps our origin; scripts stay blocked,
@@ -117,7 +197,7 @@ export function InboundHtmlMessage({ html }: { html: string }) {
       ref={frameRef}
       onLoad={fitToContent}
       sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
-      srcDoc={inboundFrameDocument(html)}
+      srcDoc={inboundFrameDocument(letter)}
       title=""
       className="w-full rounded-lg border border-white/10 bg-white"
       style={{ height }}
@@ -654,7 +734,12 @@ function AdminEmailInbox() {
                         </span>
                       </div>
                       {inbound && message.html_body ? (
-                        <InboundHtmlMessage html={message.html_body} />
+                        <InboundHtmlMessage
+                          html={message.html_body}
+                          threadId={selectedThread.id}
+                          messageId={message.id}
+                          attachments={message.attachment_metadata}
+                        />
                       ) : !inbound && message.html_body ? (
                         <div
                           className="break-words text-sm leading-6 [&_blockquote]:my-2 [&_blockquote]:border-l-2 [&_blockquote]:border-cyan-300/40 [&_blockquote]:pl-3 [&_h2]:my-2 [&_h2]:text-lg [&_h2]:font-semibold [&_h3]:my-2 [&_h3]:font-semibold [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-1.5 [&_pre]:overflow-x-auto [&_pre]:rounded-lg [&_pre]:bg-black/20 [&_pre]:p-2 [&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-5"

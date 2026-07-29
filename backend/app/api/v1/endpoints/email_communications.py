@@ -73,6 +73,9 @@ _WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS = 5 * 60
 _REPLY_TOKEN_PATTERN = re.compile(r"^invite-([A-Za-z0-9_-]{20,64})$")
 _THREAD_TOKEN_PATTERN = re.compile(r"^thread-([A-Za-z0-9_-]{20,64})$")
 _RESEND_ATTACHMENT_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
+_CONTENT_ID_PATTERN = re.compile(r"^[A-Za-z0-9._@%+-]{1,190}$")
+_CID_REFERENCE_PATTERN = re.compile(r"cid:", re.IGNORECASE)
+_MAX_BACKFILLED_MESSAGES_PER_THREAD = 5
 _MANUAL_SENDER_PROFILES = {"support", "partnerships", "pr"}
 _DELIVERY_EVENT_STATUSES = {
     "email.sent": "sent",
@@ -200,6 +203,12 @@ def _plain_text(text: object, html: object) -> str:
     return parser.text()[:_MAX_BODY_CHARS]
 
 
+def _content_id(value: object) -> str | None:
+    """Read the identifier an inline image is referenced by inside the letter."""
+    raw = _header_value(value, 190).strip().lstrip("<").rstrip(">")
+    return raw if _CONTENT_ID_PATTERN.fullmatch(raw) else None
+
+
 def _attachment_metadata(value: object) -> list[dict]:
     if not isinstance(value, list):
         return []
@@ -221,6 +230,9 @@ def _attachment_metadata(value: object) -> list[dict]:
                     if _RESEND_ATTACHMENT_ID_PATTERN.fullmatch(provider_attachment_id)
                     else None
                 ),
+                "content_id": _content_id(item.get("content_id")),
+                "inline": _truncate(item.get("content_disposition"), 20).casefold() == "inline",
+                "content_id_checked": True,
             }
         )
     return attachments
@@ -317,6 +329,8 @@ def _message_response(message: EmailMessage) -> EmailMessageResponse:
                     and message.provider_message_id
                     and attachment.get("provider_attachment_id")
                 ),
+                "content_id": attachment.get("content_id") or None,
+                "inline": bool(attachment.get("inline")),
             }
         )
     return EmailMessageResponse(
@@ -420,6 +434,51 @@ async def _load_thread(db: AsyncSession, thread_id: int) -> EmailThread:
     if thread is None:
         raise_error(404, ERR_EMAIL_THREAD_NOT_FOUND)
     return thread
+
+
+async def _backfill_inline_attachment_ids(db: AsyncSession, thread: EmailThread) -> None:
+    """Restore the link between an inline image and its attachment.
+
+    Letters received before we started keeping content_id show a hole where the
+    image belongs. The provider still knows the identifiers, so ask once per
+    message and keep the answer.
+    """
+    refreshed = 0
+    for message in thread.messages:
+        if refreshed >= _MAX_BACKFILLED_MESSAGES_PER_THREAD:
+            break
+        if message.direction != "inbound" or not message.provider_message_id:
+            continue
+        if not message.html_body or not _CID_REFERENCE_PATTERN.search(message.html_body):
+            continue
+        stored = [item for item in message.attachment_metadata if isinstance(item, dict)]
+        if not stored or all(
+            item.get("content_id") or item.get("content_id_checked") for item in stored
+        ):
+            continue
+
+        try:
+            received = await run_in_threadpool(get_received_email, message.provider_message_id)
+        except Exception:
+            logger.warning(
+                "Failed to refresh inline attachment identity for inbound email %s",
+                message.provider_message_id,
+                exc_info=True,
+            )
+            continue
+
+        incoming = _attachment_metadata(received.get("attachments"))
+        # A shorter answer means the provider no longer lists the same files;
+        # keep what we stored rather than lose the filenames over an image.
+        message.attachment_metadata = (
+            incoming
+            if len(incoming) == len(stored)
+            else [{**item, "content_id_checked": True} for item in stored]
+        )
+        refreshed += 1
+
+    if refreshed:
+        await db.commit()
 
 
 @webhook_router.post("")
@@ -754,7 +813,9 @@ async def get_email_thread(
     admin: Annotated[User, Depends(get_current_admin_user)],
 ) -> EmailThreadDetailResponse:
     del admin
-    return _thread_detail(await _load_thread(db, thread_id))
+    thread = await _load_thread(db, thread_id)
+    await _backfill_inline_attachment_ids(db, thread)
+    return _thread_detail(thread)
 
 
 @admin_router.post("/email-threads/{thread_id}/read", response_model=EmailThreadDetailResponse)

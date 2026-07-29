@@ -1,9 +1,21 @@
-import { render } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { render, waitFor } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
 
 import { InboundHtmlMessage } from '../components/admin/AdminCommunications';
+import { adminCommunicationsAPI } from '../api/client';
+import type { EmailAttachment } from '../types/api';
 
 const LETTER = '<p>Hi</p><blockquote>quoted</blockquote><script>document.title="XSS"</script>';
+
+const inlineImage: EmailAttachment = {
+  index: 0,
+  filename: 'signature.png',
+  content_type: 'image/png',
+  size: 12,
+  downloadable: true,
+  content_id: 'img001',
+  inline: true,
+};
 
 describe('InboundHtmlMessage', () => {
   it('renders the letter inside a frame', () => {
@@ -23,5 +35,47 @@ describe('InboundHtmlMessage', () => {
     expect(sandbox).toBeDefined();
     expect(sandbox).not.toContain('allow-scripts');
     expect(sandbox).not.toContain('allow-top-navigation');
+  });
+
+  it('shows an image the letter refers to by its internal name', async () => {
+    const download = vi
+      .spyOn(adminCommunicationsAPI, 'downloadEmailAttachment')
+      .mockResolvedValue(new Blob(['image-bytes'], { type: 'image/png' }));
+
+    const { container } = render(
+      <InboundHtmlMessage
+        html={'<p>Look</p><img src="cid:img001">'}
+        threadId={7}
+        messageId={11}
+        attachments={[inlineImage]}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(container.querySelector('iframe')?.getAttribute('srcdoc')).toContain(
+        'src="data:image/png;base64,',
+      );
+    });
+    expect(download).toHaveBeenCalledWith(7, 11, 0);
+    download.mockRestore();
+  });
+
+  it('leaves the letter readable when the image cannot be fetched', async () => {
+    const download = vi
+      .spyOn(adminCommunicationsAPI, 'downloadEmailAttachment')
+      .mockRejectedValue(new Error('gone'));
+
+    const { container } = render(
+      <InboundHtmlMessage
+        html={'<p>Look</p><img src="cid:img001">'}
+        threadId={7}
+        messageId={11}
+        attachments={[inlineImage]}
+      />,
+    );
+
+    await waitFor(() => expect(download).toHaveBeenCalled());
+    expect(container.querySelector('iframe')?.getAttribute('srcdoc')).toContain('Look');
+    download.mockRestore();
   });
 });

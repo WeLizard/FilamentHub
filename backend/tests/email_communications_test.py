@@ -140,6 +140,9 @@ async def test_inbound_webhook_is_verified_sanitized_and_idempotent(
             "content_type": "application/pdf",
             "size": 321,
             "provider_attachment_id": "attachment-1",
+            "content_id": None,
+            "inline": False,
+            "content_id_checked": True,
         }
     ]
 
@@ -595,6 +598,8 @@ async def test_multipart_compose_sanitizes_html_sends_attachment_and_replays(
             "content_type": "application/pdf",
             "size": 26,
             "downloadable": False,
+            "content_id": None,
+            "inline": False,
         }
     ]
     assert await db_session.scalar(select(func.count(EmailThread.id))) == 1
@@ -691,6 +696,161 @@ async def test_admin_downloads_inbound_attachment_through_backend(
     assert response.headers["content-type"] == "application/pdf"
     assert response.headers["cache-control"] == "private, no-store"
     assert "price%20list.pdf" in response.headers["content-disposition"]
+
+
+def test_inline_image_keeps_the_name_the_letter_calls_it_by() -> None:
+    stored = email_communications._attachment_metadata(
+        [
+            {
+                "id": "attachment-inline-1",
+                "filename": "signature.png",
+                "content_type": "image/png",
+                "content_disposition": "inline",
+                "content_id": "<img001>",
+            },
+            {
+                "id": "attachment-plain-1",
+                "filename": "offer.pdf",
+                "content_type": "application/pdf",
+                "content_disposition": "attachment",
+            },
+        ]
+    )
+
+    assert stored[0]["content_id"] == "img001"
+    assert stored[0]["inline"] is True
+    assert stored[1]["content_id"] is None
+    assert stored[1]["inline"] is False
+
+
+@pytest.mark.asyncio
+async def test_letter_stored_before_we_kept_content_id_asks_the_provider_once(
+    admin_client: AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The image in an old letter is only a hole until the identifier comes back."""
+    thread = EmailThread(
+        participant_email="sender@example.com",
+        subject="Inline image",
+        reply_token="F" * 32,
+        sender_profile="support",
+    )
+    db_session.add(thread)
+    await db_session.flush()
+    message = EmailMessage(
+        thread_id=thread.id,
+        direction="inbound",
+        sender_email="sender@example.com",
+        recipient_emails=["support@filamenthub.test"],
+        subject=thread.subject,
+        text_body="See the picture.",
+        html_body='<p>See</p><img src="cid:img001">',
+        provider_message_id="received-inline-1",
+        attachment_metadata=[
+            {
+                "filename": "signature.png",
+                "content_type": "image/png",
+                "size": 12,
+                "provider_attachment_id": "attachment-inline-1",
+            }
+        ],
+        delivery_status="received",
+    )
+    db_session.add(message)
+    await db_session.commit()
+
+    provider_calls: list[str] = []
+
+    def _fetch(email_id: str) -> dict:
+        provider_calls.append(email_id)
+        return {
+            "attachments": [
+                {
+                    "id": "attachment-inline-1",
+                    "filename": "signature.png",
+                    "content_type": "image/png",
+                    "content_disposition": "inline",
+                    "content_id": "img001",
+                    "size": 12,
+                }
+            ]
+        }
+
+    monkeypatch.setattr(email_communications, "get_received_email", _fetch)
+
+    first = await admin_client.get(
+        f"/api/v1/admin/communications/email-threads/{thread.id}"
+    )
+    second = await admin_client.get(
+        f"/api/v1/admin/communications/email-threads/{thread.id}"
+    )
+
+    assert first.status_code == 200
+    attachment = first.json()["messages"][0]["attachment_metadata"][0]
+    assert attachment["content_id"] == "img001"
+    assert attachment["inline"] is True
+    assert attachment["downloadable"] is True
+    assert second.json()["messages"][0]["attachment_metadata"][0]["content_id"] == "img001"
+    assert provider_calls == ["received-inline-1"]
+
+
+@pytest.mark.asyncio
+async def test_provider_answer_without_the_files_keeps_what_we_stored(
+    admin_client: AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Losing the filenames over a missing image would be the worse trade."""
+    thread = EmailThread(
+        participant_email="sender@example.com",
+        subject="Inline image gone",
+        reply_token="G" * 32,
+        sender_profile="support",
+    )
+    db_session.add(thread)
+    await db_session.flush()
+    message = EmailMessage(
+        thread_id=thread.id,
+        direction="inbound",
+        sender_email="sender@example.com",
+        recipient_emails=["support@filamenthub.test"],
+        subject=thread.subject,
+        text_body="See the picture.",
+        html_body='<img src="cid:img001">',
+        provider_message_id="received-inline-2",
+        attachment_metadata=[
+            {
+                "filename": "signature.png",
+                "content_type": "image/png",
+                "size": 12,
+                "provider_attachment_id": "attachment-inline-1",
+            }
+        ],
+        delivery_status="received",
+    )
+    db_session.add(message)
+    await db_session.commit()
+
+    provider_calls: list[str] = []
+
+    def _fetch(email_id: str) -> dict:
+        provider_calls.append(email_id)
+        return {"attachments": []}
+
+    monkeypatch.setattr(email_communications, "get_received_email", _fetch)
+
+    first = await admin_client.get(
+        f"/api/v1/admin/communications/email-threads/{thread.id}"
+    )
+    second = await admin_client.get(
+        f"/api/v1/admin/communications/email-threads/{thread.id}"
+    )
+
+    assert first.json()["messages"][0]["attachment_metadata"][0]["filename"] == "signature.png"
+    assert second.json()["messages"][0]["attachment_metadata"][0]["filename"] == "signature.png"
+    assert provider_calls == ["received-inline-2"]
+
 
 @pytest.mark.asyncio
 async def test_a_web_page_reaches_the_provider_and_the_recipient_is_named(
