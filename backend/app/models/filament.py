@@ -65,7 +65,7 @@ class Filament(Base):
     #   "colors": ["#FF0000", "#00FF00", ...], // до 5 цветов
     #   "finish": "matte" | "glossy",
     #   "filler": "none" | "wood" | "carbon" | "glitter" | "metallic" | "luminescent" | "fibers" | "stone" | "glass" | "pattern1-12",
-    #   "transparency": 0-100 // прозрачность в процентах
+    #   "transparency": true | false
     # }
 
     # Physical properties
