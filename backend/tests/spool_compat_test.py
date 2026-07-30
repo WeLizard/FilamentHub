@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from httpx import AsyncClient
@@ -19,6 +19,7 @@ from app.models.brand import Brand
 from app.models.filament import Filament
 from app.models.preset import Preset, PresetModerationStatus
 from app.models.preset_gate_state import PresetGateState, PresetGateStateSource
+from app.models.preset_usage_event import PresetUsageEvent
 from app.models.user import User
 from app.models.user_printer_device import UserPrinterDevice
 from app.models.user_spool import UserSpool, UserSpoolState
@@ -218,6 +219,121 @@ async def test_spool_compat_v1_list_get_use_spool(client: AsyncClient, db_sessio
     assert use_response.status_code == 200
     used_weight = use_response.json()["used_weight"]
     assert used_weight == pytest.approx(150.0, rel=1e-6)
+
+
+@pytest.mark.asyncio
+async def test_octoprint_usage_retry_does_not_consume_twice(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    """The official plugin retries the same PUT after response loss."""
+    _user, spool, device = await _seed_spool_context(db_session)
+    endpoint = f"/api/v1/spool_compat/{device.api_key}/v1/spool/{spool.id}/use"
+
+    first = await client.put(endpoint, json={"use_length": 1_000})
+    replay = await client.put(endpoint, json={"use_length": 1_000})
+
+    assert first.status_code == 200
+    assert replay.status_code == 200
+    assert replay.headers["x-filamenthub-deduplicated"] == "true"
+    assert replay.json()["used_weight"] == pytest.approx(first.json()["used_weight"])
+
+    events = (
+        await db_session.execute(
+            select(PresetUsageEvent).where(PresetUsageEvent.spool_id == spool.id)
+        )
+    ).scalars().all()
+    assert len(events) == 1
+    assert events[0].meta["reported_weight_g"] > 0
+    assert events[0].meta["suppressed_replay_count"] == 1
+    assert events[0].meta["replay_protection"] == "octoprint_retry_window"
+
+
+@pytest.mark.asyncio
+async def test_octoprint_idempotency_key_is_durable_and_rejects_conflicts(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    _user, spool, device = await _seed_spool_context(db_session)
+    endpoint = f"/api/v1/spool_compat/{device.api_key}/v1/spool/{spool.id}/use"
+    headers = {"Idempotency-Key": "print-job-42-tool-0"}
+
+    first = await client.put(endpoint, json={"use_weight": 30}, headers=headers)
+    event = await db_session.scalar(
+        select(PresetUsageEvent).where(PresetUsageEvent.spool_id == spool.id)
+    )
+    assert event is not None
+    event.created_at = datetime.now(timezone.utc) - timedelta(minutes=5)
+    await db_session.commit()
+
+    replay = await client.put(endpoint, json={"use_weight": 30}, headers=headers)
+    conflict = await client.put(endpoint, json={"use_weight": 31}, headers=headers)
+
+    assert first.status_code == 200
+    assert replay.status_code == 200
+    assert replay.headers["x-filamenthub-deduplicated"] == "true"
+    assert replay.json()["used_weight"] == pytest.approx(first.json()["used_weight"])
+    assert conflict.status_code == 409
+
+    events = (
+        await db_session.execute(
+            select(PresetUsageEvent).where(PresetUsageEvent.spool_id == spool.id)
+        )
+    ).scalars().all()
+    assert len(events) == 1
+    assert events[0].meta["replay_protection"] == "idempotency_key"
+
+
+@pytest.mark.asyncio
+async def test_new_idempotency_key_is_not_suppressed_by_legacy_retry_window(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    _user, spool, device = await _seed_spool_context(db_session)
+    endpoint = f"/api/v1/spool_compat/{device.api_key}/v1/spool/{spool.id}/use"
+
+    legacy = await client.put(endpoint, json={"use_weight": 20})
+    keyed = await client.put(
+        endpoint,
+        json={"use_weight": 20},
+        headers={"Idempotency-Key": "new-bridge-event"},
+    )
+    keyed_replay = await client.put(
+        endpoint,
+        json={"use_weight": 20},
+        headers={"Idempotency-Key": "new-bridge-event"},
+    )
+
+    assert legacy.status_code == 200
+    assert keyed.status_code == 200
+    assert "x-filamenthub-deduplicated" not in keyed.headers
+    assert keyed.json()["used_weight"] == pytest.approx(legacy.json()["used_weight"] + 20)
+    assert keyed_replay.headers["x-filamenthub-deduplicated"] == "true"
+    assert keyed_replay.json()["used_weight"] == pytest.approx(keyed.json()["used_weight"])
+
+
+@pytest.mark.asyncio
+async def test_same_usage_after_retry_window_is_a_new_report(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    _user, spool, device = await _seed_spool_context(db_session)
+    endpoint = f"/api/v1/spool_compat/{device.api_key}/v1/spool/{spool.id}/use"
+
+    first = await client.put(endpoint, json={"use_weight": 25})
+    event = await db_session.scalar(
+        select(PresetUsageEvent).where(PresetUsageEvent.spool_id == spool.id)
+    )
+    assert event is not None
+    event.created_at = datetime.now(timezone.utc) - timedelta(minutes=5)
+    await db_session.commit()
+
+    second = await client.put(endpoint, json={"use_weight": 25})
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert "x-filamenthub-deduplicated" not in second.headers
+    assert second.json()["used_weight"] == pytest.approx(first.json()["used_weight"] + 25)
 
 
 @pytest.mark.asyncio

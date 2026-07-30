@@ -51,7 +51,12 @@ from app.services.spool_service import (
     release_spool_location,
     shelf_spool_if_unassigned,
 )
-from app.services.spool_usage_service import record_spool_usage
+from app.services.spool_usage_service import (
+    find_printer_report_replay,
+    mark_printer_report_replay,
+    octoprint_job_ref,
+    record_spool_usage,
+)
 
 from . import spool_compat_fields
 from .spool_compat_ws import spool_ws_manager
@@ -690,8 +695,23 @@ async def _sync_extra_to_gate_state(
         )
 
 
-async def _get_user_spool(db: AsyncSession, user_id: int, spool_id: int) -> UserSpool | None:
-    result = await db.execute(
+async def _get_user_spool(
+    db: AsyncSession,
+    user_id: int,
+    spool_id: int,
+    *,
+    for_update: bool = False,
+) -> UserSpool | None:
+    if for_update:
+        locked_id = await db.scalar(
+            select(UserSpool.id)
+            .where(UserSpool.id == spool_id, UserSpool.user_id == user_id)
+            .with_for_update()
+        )
+        if locked_id is None:
+            return None
+
+    query = (
         select(UserSpool)
         .options(
             joinedload(UserSpool.filament).joinedload(Filament.brand),
@@ -699,6 +719,7 @@ async def _get_user_spool(db: AsyncSession, user_id: int, spool_id: int) -> User
         )
         .where(UserSpool.id == spool_id, UserSpool.user_id == user_id)
     )
+    result = await db.execute(query)
     return result.scalar_one_or_none()
 
 
@@ -1170,12 +1191,16 @@ async def use_spool(
     spool_id: int,
     body: SpoolUseBody,
     db: Annotated[AsyncSession, Depends(get_db)],
+    idempotency_key: Annotated[
+        str | None,
+        Header(alias="Idempotency-Key", max_length=128),
+    ] = None,
 ) -> JSONResponse:
     user, _device = await _resolve_user_and_device(db, api_key)
     if user is None:
         return _err(status.HTTP_401_UNAUTHORIZED, "Invalid API key.")
 
-    spool = await _get_user_spool(db, user.id, spool_id)
+    spool = await _get_user_spool(db, user.id, spool_id, for_update=True)
     if spool is None:
         return _err(status.HTTP_404_NOT_FOUND, f"No spool with ID {spool_id} found.")
 
@@ -1197,6 +1222,40 @@ async def use_spool(
     else:
         delta_weight = body.use_weight or 0.0
 
+    normalized_idempotency_key = (
+        idempotency_key.strip() if idempotency_key is not None else None
+    )
+    if idempotency_key is not None and not normalized_idempotency_key:
+        return _err(status.HTTP_400_BAD_REQUEST, "Idempotency-Key must not be empty.")
+
+    replay, conflict, replay_reason = await find_printer_report_replay(
+        db,
+        spool_id=spool.id,
+        device_id=_device.id if _device is not None else None,
+        reported_weight_g=delta_weight,
+        idempotency_key=normalized_idempotency_key,
+    )
+    if replay is not None and conflict:
+        return _err(
+            status.HTTP_409_CONFLICT,
+            "Idempotency-Key was already used with a different usage amount.",
+        )
+    if replay is not None:
+        mark_printer_report_replay(
+            replay,
+            reason=replay_reason or "unknown",
+        )
+        await db.commit()
+        updated = await _get_user_spool(db, user.id, spool.id)
+        if updated is None:
+            return _err(status.HTTP_500_INTERNAL_SERVER_ERROR, "Failed to use spool.")
+        location_map, gate_meta_map = await _build_location_map(db, user.id)
+        payload = _to_spool_payload(updated, location_map, gate_meta_map)
+        return JSONResponse(
+            content=payload,
+            headers={"X-FilamentHub-Deduplicated": "true"},
+        )
+
     now = datetime.now(timezone.utc)
     before_used = spool.used_weight_g
     spool.used_weight_g = float(min(spool.initial_weight_g, spool.used_weight_g + delta_weight))
@@ -1206,6 +1265,11 @@ async def use_spool(
         event_type=PresetUsageEventType.printer_report,
         delta_weight_g=spool.used_weight_g - before_used,
         device_id=_device.id if _device is not None else None,
+        job_ref=(
+            octoprint_job_ref(normalized_idempotency_key)
+            if normalized_idempotency_key is not None
+            else None
+        ),
         reported_weight_g=delta_weight,
     )
     if spool.first_used_at is None:

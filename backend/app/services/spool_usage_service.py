@@ -19,26 +19,90 @@ from app.models.preset_usage_event import PresetUsageEvent, PresetUsageEventType
 from app.models.user_spool import UserSpool, UserSpoolState
 from app.schemas.spool import SpoolUsageEventResponse
 
-# A repeat of the same request looks exactly like this: one printer, the same
-# amount, seconds apart. A print cannot spend an identical amount twice that fast.
-_REPEAT_WINDOW = timedelta(seconds=60)
+_OCTOPRINT_IDEMPOTENCY_PREFIX = "octoprint:"
+_RETRY_REPLAY_WINDOW = timedelta(seconds=15)
 
 
-async def _looks_like_a_repeat(
-    db: AsyncSession, *, spool_id: int, device_id: int | None, delta_weight_g: float
-) -> bool:
-    if device_id is None or delta_weight_g <= 0:
-        return False
-    since = datetime.now(timezone.utc) - _REPEAT_WINDOW
-    twin = await db.scalar(
-        select(PresetUsageEvent.id).where(
-            PresetUsageEvent.spool_id == spool_id,
-            PresetUsageEvent.device_id == device_id,
-            PresetUsageEvent.delta_weight_g == delta_weight_g,
-            PresetUsageEvent.created_at >= since,
+def octoprint_job_ref(idempotency_key: str) -> str:
+    """Namespace a transport key before storing it in the shared job reference."""
+    return f"{_OCTOPRINT_IDEMPOTENCY_PREFIX}{idempotency_key}"
+
+
+def _reported_weight(event: PresetUsageEvent) -> float | None:
+    value = (event.meta or {}).get("reported_weight_g")
+    if isinstance(value, (int, float)):
+        return float(value)
+    return event.delta_weight_g
+
+
+async def find_printer_report_replay(
+    db: AsyncSession,
+    *,
+    spool_id: int,
+    device_id: int | None,
+    reported_weight_g: float,
+    idempotency_key: str | None = None,
+) -> tuple[PresetUsageEvent | None, bool, str | None]:
+    """Find a committed report replay.
+
+    An explicit key is durable and exact. The time-bounded fallback exists for
+    the official OctoPrint Spoolman plugin, which retries PUT after response
+    loss but currently sends no request identifier.
+    """
+    if idempotency_key is not None:
+        job_ref = octoprint_job_ref(idempotency_key)
+        existing = await db.scalar(
+            select(PresetUsageEvent).where(
+                PresetUsageEvent.spool_id == spool_id,
+                PresetUsageEvent.device_id == device_id,
+                PresetUsageEvent.event_type == PresetUsageEventType.printer_report,
+                PresetUsageEvent.job_ref == job_ref,
+            )
         )
-    )
-    return twin is not None
+        if existing is not None:
+            existing_weight = _reported_weight(existing)
+            conflict = (
+                existing_weight is None
+                or abs(existing_weight - reported_weight_g) > 1e-9
+            )
+            return existing, conflict, "idempotency_key"
+        return None, False, None
+
+    if device_id is None or reported_weight_g <= 0:
+        return None, False, None
+
+    since = datetime.now(timezone.utc) - _RETRY_REPLAY_WINDOW
+    recent = (
+        await db.execute(
+            select(PresetUsageEvent)
+            .where(
+                PresetUsageEvent.spool_id == spool_id,
+                PresetUsageEvent.device_id == device_id,
+                PresetUsageEvent.event_type == PresetUsageEventType.printer_report,
+                PresetUsageEvent.created_at >= since,
+            )
+            .order_by(PresetUsageEvent.created_at.desc(), PresetUsageEvent.id.desc())
+            .limit(4)
+        )
+    ).scalars()
+    for event in recent:
+        previous_weight = _reported_weight(event)
+        if (
+            previous_weight is not None
+            and abs(previous_weight - reported_weight_g) <= 1e-9
+        ):
+            return event, False, "octoprint_retry_window"
+
+    return None, False, None
+
+
+def mark_printer_report_replay(event: PresetUsageEvent, *, reason: str) -> None:
+    """Record suppressed transport retries without creating fake consumption."""
+    notes = dict(event.meta or {})
+    notes["suppressed_replay_count"] = int(notes.get("suppressed_replay_count", 0)) + 1
+    notes["last_suppressed_replay_at"] = datetime.now(timezone.utc).isoformat()
+    notes["replay_protection"] = reason
+    event.meta = notes
 
 
 async def record_spool_usage(
@@ -58,18 +122,13 @@ async def record_spool_usage(
     The total on the spool stays the number everything reads; this only says who
     changed it, when and by how much, so a mistake can be traced and undone.
 
-    A printer can be wrong in either direction, so what it claimed is kept next to
-    what actually fit on the spool, and a request that arrived twice is marked.
+    A printer can be wrong in either direction, so what it claimed is kept next
+    to what actually fit on the spool. Transport replays are resolved before
+    this function creates an event.
     """
     notes = dict(meta or {})
-    if reported_weight_g is not None and delta_weight_g is not None:
-        if abs(reported_weight_g - delta_weight_g) > 0.01:
-            notes["reported_weight_g"] = reported_weight_g
-    if event_type == PresetUsageEventType.printer_report and delta_weight_g is not None:
-        if await _looks_like_a_repeat(
-            db, spool_id=spool.id, device_id=device_id, delta_weight_g=delta_weight_g
-        ):
-            notes["possible_repeat"] = True
+    if reported_weight_g is not None:
+        notes["reported_weight_g"] = reported_weight_g
 
     event = PresetUsageEvent(
         user_id=spool.user_id,
