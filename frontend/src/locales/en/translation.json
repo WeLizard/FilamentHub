@@ -2672,7 +2672,7 @@
     },
     "help": {
       "button": "Help",
-      "title": "How to use your profile",
+      "title": "Workspace guide",
       "presetsTitle": "Filament Presets",
       "presetsDesc": "A preset connects one catalog filament with its print parameters. This tab contains your own, saved, and draft presets.",
       "presetsHow": "Typical workflow:",
