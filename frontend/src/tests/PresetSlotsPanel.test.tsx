@@ -1,7 +1,8 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
+import type { PhysicalPrinter } from '../api/client';
 
-const physicalPrinter = {
+const physicalPrinter: PhysicalPrinter = {
   id: 11,
   logical_id: 'printer-11',
   printer_id: null,
@@ -15,6 +16,7 @@ const physicalPrinter = {
       provider: 'manual',
       capabilities: ['write'],
       active: true,
+      declared_slot_count: 1,
       slots: [
         {
           id: 31,
@@ -29,6 +31,10 @@ const physicalPrinter = {
     },
   ],
   connectors: [],
+  has_api_key: false,
+  printer_hostname: null,
+  reports_feed: false,
+  last_seen_at: null,
   created_at: '2026-07-18T00:00:00Z',
   updated_at: '2026-07-18T00:00:00Z',
 };
@@ -112,9 +118,24 @@ describe('PresetSlotsPanel', () => {
   });
 
   it('shows a manual physical printer and resolves exact linked profile ids', async () => {
-    const { PresetSlotsPanel } = await import(
+    const { PresetSlotsPanel, shouldPollForAdapterContact } = await import(
       '../components/presetSlots/PresetSlotsPanel'
     );
+
+    expect(shouldPollForAdapterContact([
+      {
+        ...physicalPrinter,
+        has_api_key: true,
+        reports_feed: false,
+      },
+    ])).toBe(true);
+    expect(shouldPollForAdapterContact([
+      {
+        ...physicalPrinter,
+        has_api_key: true,
+        reports_feed: true,
+      },
+    ])).toBe(false);
 
     render(
       <PresetSlotsPanel

@@ -570,6 +570,14 @@ interface PresetSlotsPanelProps {
   printerProfiles?: Array<{ id: number; name: string }>;
 }
 
+export function shouldPollForAdapterContact(printers: PhysicalPrinter[]): boolean {
+  return printers.some(
+    (printer) => printer.has_api_key
+      && printer.material_systems.some((system) => system.active)
+      && !printer.reports_feed,
+  );
+}
+
 export function PresetSlotsPanel({
   compact = false,
   spools: externalSpools,
@@ -596,11 +604,7 @@ export function PresetSlotsPanel({
     // they have no reason to guess that the page needs reloading.
     refetchInterval: (query) => {
       const printers = query.state.data ?? [];
-      const waiting = printers.some(
-        (printer) => printer.has_api_key
-          && printer.material_systems.some((system) => system.active),
-      );
-      return waiting ? 10_000 : false;
+      return shouldPollForAdapterContact(printers) ? 10_000 : false;
     },
   });
 
