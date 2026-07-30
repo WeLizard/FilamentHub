@@ -297,7 +297,13 @@ async def _upsert_gate_state(
             where=and_(can_override, hh_ts_is_fresh),
         ).returning(PresetGateState)
 
-        result = await db.execute(upsert_stmt)
+        # The legacy gate may already be present in this session through the
+        # material-slot relationship. Refresh that identity from RETURNING;
+        # otherwise SQLAlchemy can hand the caller the pre-upsert values and
+        # the topology mirror writes the old assignment back immediately.
+        result = await db.execute(
+            upsert_stmt.execution_options(populate_existing=True)
+        )
         state = result.scalars().first()
         if state is not None:
             return state
@@ -624,6 +630,9 @@ async def handle_manual_assignment(
     await ensure_material_topology(
         db, resolved_device, gate_indices={payload.gate}
     )
+    # Production sessions disable autoflush. Persist the mirrored assignment
+    # deletion before asking whether the old spool is still mounted anywhere.
+    await db.flush()
 
     # Sync spool.extra with HH-format fields so HH can read gate assignments from GET /spool
     # HH reads: json.loads(extra.get('printer_name', '""')) and int(extra.get('mmu_gate_map', -1))

@@ -140,6 +140,7 @@ export function PresetAssignModal({
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['physical-printers'] }),
         queryClient.invalidateQueries({ queryKey: ['spools'] }),
+        queryClient.invalidateQueries({ queryKey: ['user-spools'] }),
       ]);
       toast.success(t('presetSlots.modal.assigned', { gate: gateIndex }));
       onAssigned();
@@ -160,6 +161,7 @@ export function PresetAssignModal({
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['physical-printers'] }),
         queryClient.invalidateQueries({ queryKey: ['spools'] }),
+        queryClient.invalidateQueries({ queryKey: ['user-spools'] }),
       ]);
       toast.success(t('presetSlots.modal.assigned', { gate: gateIndex }));
       onAssigned();

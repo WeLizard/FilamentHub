@@ -303,6 +303,7 @@ function MaterialSystemSection({ printer, system, presetsSeedMap, spools, spoolC
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['physical-printers'] }),
         queryClient.invalidateQueries({ queryKey: ['spools'] }),
+        queryClient.invalidateQueries({ queryKey: ['user-spools'] }),
         queryClient.invalidateQueries({ queryKey: ['devices'] }),
       ]);
       toast.success(t('presetSlots.systemDeleted'));
@@ -322,6 +323,7 @@ function MaterialSystemSection({ printer, system, presetsSeedMap, spools, spoolC
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['physical-printers'] }),
         queryClient.invalidateQueries({ queryKey: ['spools'] }),
+        queryClient.invalidateQueries({ queryKey: ['user-spools'] }),
       ]);
       toast.success(t('presetSlots.cleared'));
     } catch (err: any) {

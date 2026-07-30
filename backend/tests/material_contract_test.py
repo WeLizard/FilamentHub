@@ -284,6 +284,7 @@ async def test_legacy_hh_flow_dual_writes_system_slots_and_connector(
     auth_user: User,
     db_session: AsyncSession,
 ) -> None:
+    db_session.autoflush = False
     created = await auth_client.post(
         "/api/v1/devices/create-with-key", json={"name": "Legacy HH"}
     )
@@ -359,6 +360,23 @@ async def test_legacy_hh_flow_dual_writes_system_slots_and_connector(
         "updated_at": gate_state.updated_at.isoformat().replace("+00:00", "Z"),
     }
     assert physical_slots[1]["assignment"]["spool_id"] == spool.id
+
+    cleared = await auth_client.patch(
+        f"/api/v1/physical-printers/{device_id}/material-slots/{slots[1].id}",
+        json={"preset_id": None, "spool_id": None},
+    )
+    assert cleared.status_code == 200
+    cleared_slot = next(
+        slot
+        for system in cleared.json()["material_systems"]
+        for slot in system["slots"]
+        if slot["id"] == slots[1].id
+    )
+    assert cleared_slot["assignment"] is None
+    assert cleared_slot["legacy_projection"]["preset_id"] is None
+    assert cleared_slot["legacy_projection"]["spool_id"] is None
+    await db_session.refresh(spool)
+    assert spool.state == UserSpoolState.shelf
 
 
 @pytest.mark.asyncio
