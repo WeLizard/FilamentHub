@@ -125,6 +125,63 @@ function PairingStep({ gates }: { gates: AdapterViewContext['gates'] }) {
   );
 }
 
+function HappyHareCreationGuide() {
+  const { t } = useTranslation();
+
+  return (
+    <div className="mt-4 rounded-xl border border-purple-400/20 bg-purple-500/[0.07] p-4">
+      <p className="text-sm font-semibold text-purple-100">
+        {t('presetSlots.happyHare.guide.title')}
+      </p>
+      <p className="mt-1 text-xs leading-5 text-gray-400">
+        {t('presetSlots.happyHare.guide.description')}
+      </p>
+      <div className="mt-3 grid gap-2 md:grid-cols-2">
+        <div className="rounded-lg border border-white/10 bg-black/15 p-3">
+          <code className="text-xs font-semibold text-emerald-300">spoolman_support: pull</code>
+          <p className="mt-1 text-[11px] leading-4 text-gray-400">
+            {t('presetSlots.happyHare.guide.pull')}
+          </p>
+        </div>
+        <div className="rounded-lg border border-white/10 bg-black/15 p-3">
+          <code className="text-xs font-semibold text-emerald-300">t_macro_color: gatemap</code>
+          <p className="mt-1 text-[11px] leading-4 text-gray-400">
+            {t('presetSlots.happyHare.guide.gatemap')}
+          </p>
+        </div>
+      </div>
+      <details className="mt-3 text-xs text-gray-400">
+        <summary className="cursor-pointer select-none text-purple-200 hover:text-purple-100">
+          {t('presetSlots.happyHare.guide.modes')}
+        </summary>
+        <div className="mt-2 grid gap-3 md:grid-cols-2">
+          <div>
+            <p className="font-medium text-gray-300">spoolman_support</p>
+            <ul className="mt-1 space-y-1 leading-4">
+              <li>{t('presetSlots.happyHare.guide.spoolmanOff')}</li>
+              <li>{t('presetSlots.happyHare.guide.spoolmanReadonly')}</li>
+              <li>{t('presetSlots.happyHare.guide.spoolmanPush')}</li>
+              <li className="text-emerald-300">{t('presetSlots.happyHare.guide.spoolmanPull')}</li>
+            </ul>
+          </div>
+          <div>
+            <p className="font-medium text-gray-300">t_macro_color</p>
+            <ul className="mt-1 space-y-1 leading-4">
+              <li>{t('presetSlots.happyHare.guide.colorSlicer')}</li>
+              <li className="text-emerald-300">{t('presetSlots.happyHare.guide.colorGatemap')}</li>
+              <li>{t('presetSlots.happyHare.guide.colorAllgates')}</li>
+              <li>{t('presetSlots.happyHare.guide.colorOff')}</li>
+            </ul>
+          </div>
+        </div>
+      </details>
+      <p className="mt-3 text-[11px] leading-4 text-purple-200/80">
+        {t('presetSlots.happyHare.guide.next')}
+      </p>
+    </div>
+  );
+}
+
 export const happyHareAdapter: FeedAdapter = {
   id: 'happy_hare',
   labelKey: 'presetSlots.feedSystem.happy_hare',
@@ -136,6 +193,7 @@ export const happyHareAdapter: FeedAdapter = {
 server: ${baseUrl}/${apiKey}
 sync_rate: 5`,
   },
+  renderCreateHelp: () => <HappyHareCreationGuide />,
   renderSettings: ({ printer }) => <HostnameField printer={printer} />,
   renderSetup: ({ gates, linkConfirmed }) =>
     (linkConfirmed ? null : <PairingStep gates={gates} />),

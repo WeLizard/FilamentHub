@@ -965,6 +965,7 @@ async def _list_spools_impl(
 
     # Update gate_count from location data when accessed via device api_key
     if device is not None:
+        device.reports_feed = True
         await _update_device_gate_count(db, device, location_map)
         await db.commit()
 

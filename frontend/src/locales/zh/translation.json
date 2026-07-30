@@ -5731,7 +5731,23 @@
       "pairingTitle": "打印机还没有自报名称",
       "pairingDescription": "在打印机控制台执行一次此命令 — 之后它就会自行报告各槽位的内容。",
       "pairingWaiting": "把任意料盘放入槽位，命令就会出现在这里。",
-      "linkHint": "把这段粘贴到打印机的 moonraker.conf 并重启 Moonraker。"
+      "linkHint": "把这段粘贴到打印机的 moonraker.conf 并重启 Moonraker。",
+      "guide": {
+        "title": "Happy Hare 设置",
+        "description": "创建系统前请准备好这两个 Happy Hare 参数。创建后，FilamentHub 会提供可直接粘贴到 moonraker.conf 的配置块。",
+        "pull": "Happy Hare 从 FilamentHub 获取所选料盘、材料和槽位分配。",
+        "gatemap": "Mainsail 和 Fluidd 显示槽位映射中的实际料盘颜色。",
+        "modes": "其他模式的含义",
+        "spoolmanOff": "off — 禁用集成",
+        "spoolmanReadonly": "readonly — 读取料盘属性，但不同步槽位",
+        "spoolmanPush": "push — Happy Hare 发送槽位映射，但不接收网站分配",
+        "spoolmanPull": "pull — 将 FilamentHub 分配传送到 Happy Hare（推荐）",
+        "colorSlicer": "slicer — 颜色来自 G-code",
+        "colorGatemap": "gatemap — 使用 FilamentHub 中的实际料盘颜色（推荐）",
+        "colorAllgates": "allgates — 显示所有槽位颜色，包括空槽位",
+        "colorOff": "off — 在打印机界面中禁用颜色",
+        "next": "创建系统后，将生成的 [spoolman] 配置块复制到 moonraker.conf 并重启 Moonraker。"
+      }
     },
     "link": {
       "label": "与打印机的连接",

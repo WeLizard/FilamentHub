@@ -89,6 +89,7 @@ async def test_adapter_touch_persists_after_request(client: AsyncClient, db_sess
     refreshed = result.scalars().one()
     await db_session.refresh(refreshed)
     assert refreshed.last_seen_at is not None
+    assert refreshed.reports_feed is True
     assert refreshed.last_seen_at.replace(tzinfo=timezone.utc) <= datetime.now(timezone.utc)
 
 

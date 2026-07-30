@@ -82,9 +82,62 @@ function observedSlot(
   };
 }
 
-describe('GateMapGrid desired and observed state', () => {
-  it('shows an assigned spool separately from an observed-empty conflict', () => {
+describe('GateMapGrid material slots', () => {
+  it('keeps the assigned spool visible when Happy Hare has no separate snapshot', () => {
     const onGateClick = vi.fn();
+    const slot: MaterialSlot = {
+      id: 10,
+      provider_index: 0,
+      label: null,
+      kind: 'slot',
+      active: true,
+      assignment: {
+        id: 20,
+        preset_id: null,
+        spool_id: 40,
+        source: 'web_manual',
+        source_ts: '2026-07-30T00:00:00Z',
+        active: true,
+      },
+      legacy_projection: {
+        gate_state_id: 30,
+        preset_id: null,
+        spool_id: 40,
+        source: 'web_manual',
+        source_ts: '2026-07-30T00:00:00Z',
+        is_active: true,
+        hh_material: null,
+        hh_color_hex: null,
+        hh_status: null,
+        updated_at: '2026-07-30T00:00:00Z',
+      },
+    };
+
+    render(
+      <GateMapGrid
+        slots={[slot]}
+        gates={[gate]}
+        presets={{}}
+        spools={[assignedSpool]}
+        onGateClick={onGateClick}
+      />,
+    );
+
+    expect(screen.getByText('PLA')).toBeInTheDocument();
+    expect(screen.getByText('Example Signal Red')).toBeInTheDocument();
+    expect(screen.queryByText('presetSlots.observation.noData')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText('PLA'));
+    expect(onGateClick).toHaveBeenCalledWith(gate, slot);
+  });
+
+  it('shows a printer-reported empty state without hiding the desired spool', () => {
+    const onGateClick = vi.fn();
+    const observedEmptyGate: GateState = {
+      ...gate,
+      hh_status: 0,
+      source: 'hh_snapshot',
+      source_ts: '2026-07-30T00:01:00Z',
+    };
     const slot = observedSlot(
       {
         id: 20,
@@ -102,25 +155,29 @@ describe('GateMapGrid desired and observed state', () => {
     render(
       <GateMapGrid
         slots={[slot]}
-        gates={[gate]}
+        gates={[observedEmptyGate]}
         presets={{}}
         spools={[assignedSpool]}
-        providerLabel="Happy Hare"
         onGateClick={onGateClick}
       />,
     );
 
     expect(screen.getByText('PLA')).toBeInTheDocument();
     expect(screen.getByText('presetSlots.hhStatus.empty')).toBeInTheDocument();
-    const reviewButton = screen.getByText(
-      'presetSlots.observation.action.assigned_but_observed_empty',
-    );
-    fireEvent.click(reviewButton);
-    expect(onGateClick).toHaveBeenCalledWith(gate, slot);
+    fireEvent.click(screen.getByText('presetSlots.hhStatus.empty'));
+    expect(onGateClick).toHaveBeenCalledWith(observedEmptyGate, slot);
   });
 
-  it('offers spool matching without promoting observed details to an assignment', () => {
-    const unassignedGate = { ...gate, spool_id: null };
+  it('offers spool identification for material reported without a known spool', () => {
+    const unassignedGate: GateState = {
+      ...gate,
+      spool_id: null,
+      hh_material: 'PETG',
+      hh_color_hex: '00FF00',
+      hh_status: 1,
+      source: 'hh_snapshot',
+      source_ts: '2026-07-30T00:01:00Z',
+    };
     const slot = observedSlot(null, 1, 'PETG', '00FF00');
 
     render(
@@ -129,15 +186,11 @@ describe('GateMapGrid desired and observed state', () => {
         gates={[unassignedGate]}
         presets={{}}
         spools={[]}
-        providerLabel="OctoPrint"
         onGateClick={vi.fn()}
       />,
     );
 
-    expect(screen.getByText('presetSlots.assignment.notAssigned')).toBeInTheDocument();
     expect(screen.getByText('PETG')).toBeInTheDocument();
-    expect(
-      screen.getByText('presetSlots.observation.action.observed_loaded_without_spool'),
-    ).toBeInTheDocument();
+    expect(screen.getAllByText('presetSlots.identifySpool').length).toBeGreaterThan(0);
   });
 });

@@ -36,6 +36,8 @@ export interface FeedAdapter {
   capabilities: FeedAdapterCapability[];
   /** How the printer is pointed at us; null when nothing is linked at all. */
   link: FeedAdapterLink | null;
+  /** Provider-specific guidance shown while its system is being created. */
+  renderCreateHelp?: () => ReactNode;
   /** Extra controls this system needs and no other one does. */
   renderSettings?: (context: AdapterViewContext) => ReactNode;
   /** Steps left before the data starts arriving. */

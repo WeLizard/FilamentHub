@@ -120,6 +120,7 @@ function NewSystemCard({
     return (
       <div className="rounded-2xl border border-dashed border-purple-400/30 bg-white/3 p-5">
         <h2 className="mb-2 text-sm font-semibold text-white">{t('presetSlots.newSystem.keyTitle')}</h2>
+        {chosen.renderCreateHelp?.()}
         <LinkInstructions link={chosen.link} baseUrl={spoolCompatBaseUrl} apiKey={issuedKey}>
           <button
             type="button"
@@ -173,6 +174,7 @@ function NewSystemCard({
           </div>
         )}
       </div>
+      {chosen.renderCreateHelp?.()}
       <div className="mt-4 flex flex-wrap items-center gap-2">
         <button
           type="button"
@@ -555,7 +557,6 @@ function MaterialSystemSection({ printer, system, presetsSeedMap, spools, spoolC
         gates={gates}
         presets={effectivePresetsMap}
         spools={spools}
-        providerLabel={providerLabel}
         nozzleHrc={nozzleHrc}
         onGateClick={(gate, slot) => onGateClick(gate, slot, printer, system)}
       />
@@ -597,8 +598,7 @@ export function PresetSlotsPanel({
       const printers = query.state.data ?? [];
       const waiting = printers.some(
         (printer) => printer.has_api_key
-          && printer.material_systems.some((system) => system.active)
-          && !printer.reports_feed,
+          && printer.material_systems.some((system) => system.active),
       );
       return waiting ? 10_000 : false;
     },

@@ -5736,7 +5736,23 @@
       "pairingTitle": "The printer has not introduced itself yet",
       "pairingDescription": "Run this command once in the printer console — after that it starts reporting what sits in the slots.",
       "pairingWaiting": "Put any spool into a slot and the command appears here.",
-      "linkHint": "Paste this into moonraker.conf on the printer and restart Moonraker."
+      "linkHint": "Paste this into moonraker.conf on the printer and restart Moonraker.",
+      "guide": {
+        "title": "Happy Hare setup",
+        "description": "Prepare these two Happy Hare settings before creating the system. FilamentHub will then provide a ready-to-paste moonraker.conf block.",
+        "pull": "Happy Hare receives the selected spools, materials, and slot assignments from FilamentHub.",
+        "gatemap": "Mainsail and Fluidd display the actual spool colors from the gate map.",
+        "modes": "What the other modes mean",
+        "spoolmanOff": "off — integration is disabled",
+        "spoolmanReadonly": "readonly — reads spool properties without syncing slots",
+        "spoolmanPush": "push — Happy Hare sends its gate map but does not accept site assignments",
+        "spoolmanPull": "pull — FilamentHub assignments are delivered to Happy Hare (recommended)",
+        "colorSlicer": "slicer — colors come from the G-code",
+        "colorGatemap": "gatemap — uses actual FilamentHub spool colors (recommended)",
+        "colorAllgates": "allgates — displays every gate color, including empty gates",
+        "colorOff": "off — colors are disabled in the printer interface",
+        "next": "After creating the system, copy the generated [spoolman] block into moonraker.conf and restart Moonraker."
+      }
     },
     "link": {
       "label": "Link to the printer",

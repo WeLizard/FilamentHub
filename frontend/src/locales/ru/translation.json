@@ -5874,7 +5874,23 @@
       "pairingTitle": "Принтер ещё не представился",
       "pairingDescription": "Выполните эту команду один раз в консоли принтера — после неё он начнёт сам сообщать, что стоит в слотах.",
       "pairingWaiting": "Поставьте любую катушку в слот — команда появится здесь.",
-      "linkHint": "Вставьте это в moonraker.conf на принтере и перезапустите Moonraker."
+      "linkHint": "Вставьте это в moonraker.conf на принтере и перезапустите Moonraker.",
+      "guide": {
+        "title": "Настройка Happy Hare",
+        "description": "До создания системы подготовьте два параметра Happy Hare. После создания FilamentHub покажет готовый блок для moonraker.conf.",
+        "pull": "Happy Hare получает из FilamentHub выбранные катушки, материалы и назначения слотов.",
+        "gatemap": "Mainsail и Fluidd показывают цвета реальных катушек из карты слотов.",
+        "modes": "Что означают остальные режимы",
+        "spoolmanOff": "off — интеграция выключена",
+        "spoolmanReadonly": "readonly — читаются свойства катушек без синхронизации слотов",
+        "spoolmanPush": "push — Happy Hare отправляет свою карту слотов, но не принимает назначения с сайта",
+        "spoolmanPull": "pull — назначения FilamentHub передаются в Happy Hare (рекомендуется)",
+        "colorSlicer": "slicer — цвета берутся из G-code",
+        "colorGatemap": "gatemap — используются реальные цвета катушек FilamentHub (рекомендуется)",
+        "colorAllgates": "allgates — показываются цвета всех слотов, включая пустые",
+        "colorOff": "off — цвета в интерфейсе принтера отключены",
+        "next": "После создания скопируйте выданный блок [spoolman] в moonraker.conf и перезапустите Moonraker."
+      }
     },
     "link": {
       "label": "Связь с принтером",
