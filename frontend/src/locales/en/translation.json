@@ -5677,6 +5677,23 @@
       "manual_orca": "OrcaSlicer",
       "web_manual": "Web"
     },
+    "assignment": {
+      "label": "Assigned",
+      "notAssigned": "No spool assigned"
+    },
+    "observation": {
+      "noData": "No data",
+      "conflict": {
+        "assigned_but_observed_empty": "FilamentHub has an assignment, but the printer reports this slot as empty.",
+        "observed_loaded_without_spool": "The printer sees filament, but no FilamentHub spool is assigned.",
+        "observed_details_differ": "The material or color reported by the printer differs from the selected spool."
+      },
+      "action": {
+        "assigned_but_observed_empty": "Review",
+        "observed_loaded_without_spool": "Match",
+        "observed_details_differ": "Compare"
+      }
+    },
     "hhStatus": {
       "unknown": "Unknown",
       "empty": "Empty",
@@ -5696,6 +5713,7 @@
     "modal": {
       "title": "Gate {{gate}}",
       "hhInfo": "Happy Hare: {{material}}",
+      "providerInfo": "{{provider}} reports: {{observation}}",
       "searchPreset": "Search preset...",
       "noPresets": "No presets found",
       "noPresetsForFilament": "No presets in your library for this filament",

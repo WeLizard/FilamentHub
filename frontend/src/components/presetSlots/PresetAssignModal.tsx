@@ -200,6 +200,16 @@ export function PresetAssignModal({
   if (!isOpen) return null;
 
   const colorHex = gate?.hh_color_hex ? `#${gate.hh_color_hex.replace(/^#/, '')}` : null;
+  const providerLabel = t(`presetSlots.provider.${provider}`, { defaultValue: provider });
+  const observedStatus = gate?.hh_status === 0
+    ? t('presetSlots.hhStatus.empty')
+    : gate?.hh_status === 2
+      ? t('presetSlots.hhStatus.buffer')
+      : gate?.hh_status === 1
+        ? t('presetSlots.hhStatus.spool')
+        : t('presetSlots.hhStatus.unknown');
+  const observedDescription = [gate?.hh_material, observedStatus].filter(Boolean).join(' · ');
+  const hasProviderObservation = gate?.hh_status != null || gate?.hh_material != null || colorHex != null;
   const hasExistingAssignment = !!(gate?.preset_id || gate?.spool_id);
   const canSave = selectedPresetId !== null || selectedSpoolId !== null;
 
@@ -228,8 +238,8 @@ export function PresetAssignModal({
           </button>
         </div>
 
-        {/* HH data row */}
-        {(gate?.hh_material || colorHex) && (
+        {/* Provider observation — separate from the user's assignment below. */}
+        {hasProviderObservation && (
           <div className="flex items-center gap-2 border-b border-white/5 px-5 py-2.5">
             {colorHex && (
               <span
@@ -238,7 +248,10 @@ export function PresetAssignModal({
               />
             )}
             <span className="text-xs text-gray-400">
-              {t('presetSlots.modal.hhInfo', { material: gate?.hh_material ?? '' })}
+              {t('presetSlots.modal.providerInfo', {
+                provider: providerLabel,
+                observation: observedDescription,
+              })}
             </span>
           </div>
         )}

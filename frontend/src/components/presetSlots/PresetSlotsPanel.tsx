@@ -555,6 +555,7 @@ function MaterialSystemSection({ printer, system, presetsSeedMap, spools, spoolC
         gates={gates}
         presets={effectivePresetsMap}
         spools={spools}
+        providerLabel={providerLabel}
         nozzleHrc={nozzleHrc}
         onGateClick={(gate, slot) => onGateClick(gate, slot, printer, system)}
       />

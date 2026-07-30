@@ -5672,6 +5672,23 @@
       "manual_orca": "OrcaSlicer",
       "web_manual": "Web"
     },
+    "assignment": {
+      "label": "已分配",
+      "notAssigned": "未分配线轴"
+    },
+    "observation": {
+      "noData": "暂无数据",
+      "conflict": {
+        "assigned_but_observed_empty": "FilamentHub 已分配材料，但打印机报告该槽位为空。",
+        "observed_loaded_without_spool": "打印机检测到耗材，但尚未分配 FilamentHub 线轴。",
+        "observed_details_differ": "打印机报告的材料或颜色与所选线轴不同。"
+      },
+      "action": {
+        "assigned_but_observed_empty": "检查",
+        "observed_loaded_without_spool": "匹配",
+        "observed_details_differ": "核对"
+      }
+    },
     "hhStatus": {
       "unknown": "未知",
       "empty": "空",
@@ -5691,6 +5708,7 @@
     "modal": {
       "title": "位置 {{gate}}",
       "hhInfo": "Happy Hare: {{material}}",
+      "providerInfo": "{{provider}} 报告：{{observation}}",
       "searchPreset": "搜索预设...",
       "noPresets": "未找到预设",
       "noPresetsForFilament": "您的库中没有该耗材的预设",

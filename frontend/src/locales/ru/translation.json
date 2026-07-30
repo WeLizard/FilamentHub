@@ -5815,6 +5815,23 @@
       "manual_orca": "OrcaSlicer",
       "web_manual": "Web"
     },
+    "assignment": {
+      "label": "Назначено",
+      "notAssigned": "Катушка не назначена"
+    },
+    "observation": {
+      "noData": "Нет данных",
+      "conflict": {
+        "assigned_but_observed_empty": "В FilamentHub назначен материал, но принтер сообщает, что слот пуст.",
+        "observed_loaded_without_spool": "Принтер видит филамент, но катушка FilamentHub не указана.",
+        "observed_details_differ": "Материал или цвет, сообщённые принтером, отличаются от выбранной катушки."
+      },
+      "action": {
+        "assigned_but_observed_empty": "Проверить",
+        "observed_loaded_without_spool": "Сопоставить",
+        "observed_details_differ": "Сверить"
+      }
+    },
     "hhStatus": {
       "unknown": "Неизвестно",
       "empty": "Пусто",
@@ -5834,6 +5851,7 @@
     "modal": {
       "title": "Слот {{gate}}",
       "hhInfo": "Happy Hare: {{material}}",
+      "providerInfo": "{{provider}} сообщает: {{observation}}",
       "searchPreset": "Поиск пресета...",
       "noPresets": "Пресеты не найдены",
       "noPresetsForFilament": "В вашей библиотеке нет пресетов для этого филамента",

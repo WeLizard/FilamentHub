@@ -1,0 +1,140 @@
+import { describe, expect, it } from 'vitest';
+import type { GateState, MaterialSlot, UserSpool } from '../api/client';
+import { compareMaterialSlot } from './materialSlotComparison';
+
+function slot(
+  assignment: MaterialSlot['assignment'],
+  observation: MaterialSlot['legacy_projection'],
+): MaterialSlot {
+  return {
+    id: 10,
+    provider_index: 0,
+    label: null,
+    kind: 'slot',
+    active: true,
+    assignment,
+    legacy_projection: observation,
+  };
+}
+
+function gate(presetId: number | null, spoolId: number | null): GateState {
+  return {
+    id: 30,
+    gate_index: 0,
+    preset_id: presetId,
+    spool_id: spoolId,
+    hh_material: null,
+    hh_color_hex: null,
+    hh_status: null,
+    source: 'web_manual',
+    source_ts: '2026-07-30T00:00:00Z',
+    is_active: true,
+    updated_at: '2026-07-30T00:00:00Z',
+  };
+}
+
+function assignment(spoolId: number | null, presetId: number | null = null) {
+  return {
+    id: 20,
+    preset_id: presetId,
+    spool_id: spoolId,
+    source: 'web_manual',
+    source_ts: '2026-07-30T00:00:00Z',
+    active: true,
+  };
+}
+
+function observation(status: number, material: string | null, colorHex: string | null) {
+  return {
+    gate_state_id: 30,
+    preset_id: null,
+    spool_id: null,
+    source: 'hh_snapshot',
+    source_ts: '2026-07-30T00:01:00Z',
+    is_active: true,
+    hh_material: material,
+    hh_color_hex: colorHex,
+    hh_status: status,
+    updated_at: '2026-07-30T00:01:00Z',
+  };
+}
+
+function spoolFixture(material: string, colorHex: string): UserSpool {
+  return {
+    id: 40,
+    user_id: 1,
+    filament_id: 50,
+    filament: {
+      id: 50,
+      name: 'Test filament',
+      material_type: material,
+      color_name: null,
+      color_hex: colorHex,
+      brand_name: 'Test',
+      price_per_kg: null,
+      currency: null,
+      required_nozzle_hrc: null,
+    },
+    initial_weight_g: 1000,
+    used_weight_g: 100,
+    remaining_weight_g: 900,
+    remaining_pct: 90,
+    price: null,
+    currency: null,
+    state: 'active',
+    source: 'manual',
+    lot_nr: null,
+    comment: null,
+    created_at: '2026-07-30T00:00:00Z',
+    updated_at: '2026-07-30T00:00:00Z',
+    last_used_at: null,
+    extra: null,
+  };
+}
+
+describe('compareMaterialSlot', () => {
+  it('keeps a desired assignment when the provider reports an empty slot and flags review', () => {
+    const result = compareMaterialSlot(
+      slot(assignment(40, 60), observation(0, null, null)),
+      gate(60, 40),
+      spoolFixture('PLA', 'FF0000'),
+    );
+
+    expect(result.desiredSpoolId).toBe(40);
+    expect(result.observationState).toBe('empty');
+    expect(result.conflict).toBe('assigned_but_observed_empty');
+  });
+
+  it('does not infer a spool identity from provider material and color', () => {
+    const result = compareMaterialSlot(
+      slot(null, observation(1, 'PLA', 'FF0000')),
+      gate(null, null),
+      null,
+    );
+
+    expect(result.desiredSpoolId).toBeNull();
+    expect(result.observedMaterial).toBe('PLA');
+    expect(result.conflict).toBe('observed_loaded_without_spool');
+  });
+
+  it('accepts matching supporting details without treating them as identity', () => {
+    const result = compareMaterialSlot(
+      slot(assignment(40), observation(1, ' pla ', '#ff0000')),
+      gate(null, 40),
+      spoolFixture('PLA', 'FF0000'),
+    );
+
+    expect(result.conflict).toBeNull();
+    expect(result.desiredSpoolId).toBe(40);
+  });
+
+  it('flags differing material or color for explicit review', () => {
+    const result = compareMaterialSlot(
+      slot(assignment(40), observation(1, 'PETG', '00FF00')),
+      gate(null, 40),
+      spoolFixture('PLA', 'FF0000'),
+    );
+
+    expect(result.conflict).toBe('observed_details_differ');
+  });
+});
