@@ -51,6 +51,7 @@ import { NozzleRequirementBadge } from '../components/NozzleRequirementBadge';
 import api from '../api/client';
 import { translateApiError } from '../utils/translateApiError';
 import { getSpoolCurrentLocation, getSpoolLastLocation } from '../utils/spoolLocation';
+import { formatImportedPresetTemperature } from '../utils/presetImport';
 import { notifyProfileChanged } from '../utils/pluginBridge';
 import { downloadBlob } from '../utils/download';
 const CreatePresetModal = lazy(() =>
@@ -3515,11 +3516,25 @@ const PresetCard: React.FC<PresetCardProps> = ({ preset, onEdit, onView, onDelet
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 mb-4 text-sm">
         <div className="flex items-start space-x-2 min-w-0">
           <Thermometer className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
-          <span className="text-gray-300 leading-tight break-words">{t('profilePage.preset.nozzle')}: {preset.extruder_temp}°C</span>
+          <span className="text-gray-300 leading-tight break-words">
+            {t('profilePage.preset.nozzle')}:{' '}
+            {formatImportedPresetTemperature(
+              preset.orcaslicer_settings,
+              'extruder_temp',
+              preset.extruder_temp,
+            )}
+          </span>
         </div>
         <div className="flex items-start space-x-2 min-w-0">
           <Thermometer className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
-          <span className="text-gray-300 leading-tight break-words">{t('profilePage.preset.bed')}: {preset.bed_temp}°C</span>
+          <span className="text-gray-300 leading-tight break-words">
+            {t('profilePage.preset.bed')}:{' '}
+            {formatImportedPresetTemperature(
+              preset.orcaslicer_settings,
+              'bed_temp',
+              preset.bed_temp,
+            )}
+          </span>
         </div>
         {preset.flow_rate && (
           <div className="flex items-start space-x-2 min-w-0">
