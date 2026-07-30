@@ -51,6 +51,7 @@ import { NozzleRequirementBadge } from '../components/NozzleRequirementBadge';
 import api from '../api/client';
 import { translateApiError } from '../utils/translateApiError';
 import { getSpoolCurrentLocation, getSpoolLastLocation } from '../utils/spoolLocation';
+import { currencySymbol, normalizeCurrency } from '../utils/currency';
 import { formatImportedPresetTemperature } from '../utils/presetImport';
 import { notifyProfileChanged } from '../utils/pluginBridge';
 import { downloadBlob } from '../utils/download';
@@ -2081,6 +2082,13 @@ const SpoolForm: React.FC<SpoolFormProps> = ({
   const [selectedDeviceId, setSelectedDeviceId] = useState<string>('');
   const [selectedGate, setSelectedGate] = useState<string>('');
   const [assigning, setAssigning] = useState(false);
+  const priceCurrency = currencySymbol(
+    normalizeCurrency(
+      spool?.extra?.currency
+      || spool?.filament?.currency
+      || BASIC_CURRENCY_SYMBOL,
+    ),
+  );
 
   const { data: filamentsData } = useQuery({
     queryKey: ['spool-form-filaments'],
@@ -2721,7 +2729,9 @@ const SpoolForm: React.FC<SpoolFormProps> = ({
         )}
 
         <div>
-          <label className={labelCls}>{t('profilePage.spoolAddModal.price')}</label>
+          <label className={labelCls}>
+            {t('profilePage.spoolAddModal.price', { currency: priceCurrency })}
+          </label>
           <input type="number" min="0" step="1" value={price}
             onChange={e => setPrice(e.target.value)}
             placeholder={t('profilePage.spoolAddModal.pricePlaceholder')} className={inputCls} />

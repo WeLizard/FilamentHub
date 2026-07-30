@@ -2669,7 +2669,7 @@
       "state": "State",
       "lotNr": "Lot number",
       "comment": "Comment",
-      "price": "Purchase price (₽)",
+      "price": "Purchase price ({{currency}})",
       "pricePlaceholder": "optional",
       "optional": "optional",
       "submit": "Add",

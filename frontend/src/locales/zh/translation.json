@@ -2666,7 +2666,7 @@
       "state": "状态",
       "lotNr": "批次号",
       "comment": "评论",
-      "price": "购买价格 (₽)",
+      "price": "购买价格 ({{currency}})",
       "pricePlaceholder": "可选",
       "optional": "可选",
       "submit": "添加",
