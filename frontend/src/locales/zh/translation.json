@@ -990,7 +990,6 @@
     "heroSubtitle": "包含官方制造商预设和社区认证设置的材料数据库",
     "loading": "加载材料中...",
     "error": "加载材料出错",
-    "searchPlaceholder": "搜索...",
     "searchPlaceholder": "按名称、品牌、材料、颜色、成分或特性搜索...",
     "allTypes": "所有类型",
     "allBrands": "所有品牌",
@@ -1022,7 +1021,6 @@
     "allPrinters": "所有打印机",
     "fitsPrinter": "有该打印机的配置",
     "myPrintersGroup": "我的打印机",
-    "allPrintersGroup": "所有打印机"
     "allPrintersGroup": "所有打印机",
     "resultsRange": "第 {{start}}–{{end}} 项，共 {{total}} 项",
     "loadMore": "显示更多",
@@ -4912,7 +4910,6 @@
     "sectionLabel": "材料颜色",
     "colorName": "颜色名称",
     "notSpecified": "未指定",
-    "hexColor": "HEX 颜色"
     "hexColor": "HEX 颜色",
     "ralCode": "RAL Classic",
     "ralHint": "可选的 RAL Classic 参考色号。预览颜色仍由 HEX 单独控制。"

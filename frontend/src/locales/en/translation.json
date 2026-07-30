@@ -990,7 +990,6 @@
     "heroSubtitle": "Materials database with official manufacturer presets and community-verified settings",
     "loading": "Loading materials...",
     "error": "Error loading materials",
-    "searchPlaceholder": "Search...",
     "searchPlaceholder": "Name, brand, material, color, composition, or property...",
     "allTypes": "All types",
     "allBrands": "All brands",
@@ -1022,7 +1021,6 @@
     "allPrinters": "All printers",
     "fitsPrinter": "Has presets for this printer",
     "myPrintersGroup": "My printers",
-    "allPrintersGroup": "All printers"
     "allPrintersGroup": "All printers",
     "resultsRange": "{{start}}–{{end}} of {{total}}",
     "loadMore": "Show more",
@@ -4916,7 +4914,6 @@
     "sectionLabel": "Material color",
     "colorName": "Color name",
     "notSpecified": "Not specified",
-    "hexColor": "HEX color"
     "hexColor": "HEX color",
     "ralCode": "RAL Classic",
     "ralHint": "Optional RAL Classic reference code. The preview color is controlled separately by HEX."

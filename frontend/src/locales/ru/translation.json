@@ -1146,7 +1146,6 @@
     "heroSubtitle": "База данных материалов с официальными пресетами от производителей и проверенными настройками от сообщества",
     "loading": "Загрузка материалов...",
     "error": "Ошибка загрузки материалов",
-    "searchPlaceholder": "Поиск...",
     "searchPlaceholder": "Название, бренд, материал, цвет, состав или свойство...",
     "allTypes": "Все типы",
     "allBrands": "Все бренды",
@@ -1178,7 +1177,6 @@
     "allPrinters": "Все принтеры",
     "fitsPrinter": "Есть пресеты под этот принтер",
     "myPrintersGroup": "Мои принтеры",
-    "allPrintersGroup": "Все принтеры"
     "allPrintersGroup": "Все принтеры",
     "resultsRange": "{{start}}–{{end}} из {{total}}",
     "loadMore": "Показать ещё",
@@ -5054,7 +5052,6 @@
     "sectionLabel": "Цвет материала",
     "colorName": "Название цвета",
     "notSpecified": "Не указано",
-    "hexColor": "Цвет HEX"
     "hexColor": "Цвет HEX",
     "ralCode": "RAL Classic",
     "ralHint": "Необязательный справочный код RAL Classic. Цвет предпросмотра задаётся отдельно через HEX."
