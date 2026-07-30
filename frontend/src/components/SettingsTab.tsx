@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Settings, Lock, Mail, Save, CheckCircle, XCircle, Loader2, User as UserIcon, Eye, EyeOff, AlertTriangle, Trash2, Globe } from 'lucide-react';
+import { Settings, Lock, Mail, Save, CheckCircle, XCircle, Loader2, User as UserIcon, Eye, EyeOff, AlertTriangle, Trash2, Globe, Pencil } from 'lucide-react';
 import { authAPI, calculatorAPI } from '../api/client';
 import { currencySymbol, normalizeCurrency, CURRENCY_CODES } from '../utils/currency';
 import { sortedCountries } from '../utils/countries';
@@ -98,6 +98,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
   });
   const [usernameError, setUsernameError] = useState<string | null>(null);
   const [usernameSuccess, setUsernameSuccess] = useState(false);
+  const [isUsernameEditing, setIsUsernameEditing] = useState(false);
 
   // Состояния для формы изменения пароля
   const [passwordForm, setPasswordForm] = useState({
@@ -107,6 +108,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
   });
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [passwordSuccess, setPasswordSuccess] = useState(false);
+  const [isPasswordEditing, setIsPasswordEditing] = useState(false);
   const [showPasswords, setShowPasswords] = useState({
     current: false,
     new: false,
@@ -119,6 +121,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
   });
   const [emailError, setEmailError] = useState<string | null>(null);
   const [emailSuccess, setEmailSuccess] = useState(false);
+  const [isEmailEditing, setIsEmailEditing] = useState(false);
 
   // Мутация для обновления настроек
   const updateSettingsMutation = useMutation({
@@ -134,7 +137,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
     mutationFn: authAPI.updateUsername,
     onSuccess: () => {
       setUsernameSuccess(true);
-      setUsernameForm({ new_username: user.username });
+      setIsUsernameEditing(false);
       setUsernameError(null);
       refreshUser();
       queryClient.invalidateQueries({ queryKey: ['user'] });
@@ -151,6 +154,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
     mutationFn: authAPI.updatePassword,
     onSuccess: () => {
       setPasswordSuccess(true);
+      setIsPasswordEditing(false);
       setPasswordForm({ current_password: '', new_password: '', confirm_password: '' });
       setPasswordError(null);
       setTimeout(() => setPasswordSuccess(false), 3000);
@@ -166,6 +170,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
     mutationFn: authAPI.updateEmail,
     onSuccess: () => {
       setEmailSuccess(true);
+      setIsEmailEditing(false);
       setEmailError(null);
       // Email не меняется сразу — показываем сообщение "проверьте почту"
       // Не вызываем refreshUser() — email ещё не изменён
@@ -304,9 +309,10 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
   });
 
   return (
-    <div className="max-w-7xl mx-auto space-y-6">
+    <div className="max-w-6xl mx-auto space-y-5">
+      <div className="grid grid-cols-1 overflow-hidden rounded-[1.75rem] border border-white/10 bg-slate-950/55 shadow-2xl shadow-black/20 lg:grid-cols-2">
       {/* Язык, валюта и страна */}
-      <section className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-2xl p-6 shadow-xl">
+      <section className="order-2 border-t border-white/10 p-5 md:p-6 lg:border-l lg:border-t-0">
         <div className="flex items-center gap-3 mb-5">
           <div className="p-2 bg-gradient-to-r from-purple-500/20 to-blue-500/20 rounded-lg">
             <Globe className="w-5 h-5 text-purple-400" />
@@ -316,7 +322,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
             <p className="text-xs text-gray-400 mt-0.5">{t('settings.regionDescription')}</p>
           </div>
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="space-y-4">
           <div>
             <label className="block text-xs text-gray-400 mb-1.5">{t('settings.language')}</label>
             <LanguageSwitcher />
@@ -354,124 +360,199 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
         </div>
       </section>
 
-      {/* Все настройки в одну строку */}
-      <div className="grid grid-cols-1 lg:grid-cols-[2fr_1.5fr_2.5fr] gap-6">
-        {/* Профиль (Username и Email) */}
-        <section className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-2xl p-6 shadow-xl">
+      {/* Учётная запись и безопасность */}
+      <div className="order-1 grid grid-cols-1">
+        {/* Профиль */}
+        <section className="p-5 md:p-6">
         <div className="flex items-center gap-3 mb-6">
           <div className="p-2 bg-gradient-to-r from-purple-500/20 to-blue-500/20 rounded-lg">
             <UserIcon className="w-5 h-5 text-purple-400" />
           </div>
-          <h3 className="text-xl font-bold text-white">{t('settings.profile')}</h3>
+          <h3 className="text-lg font-bold text-white">{t('settings.profile')}</h3>
         </div>
         
-        <div className="space-y-4">
-          {/* Username */}
-          <form onSubmit={handleUsernameSubmit} className="space-y-3">
-            <div className="flex items-start gap-4">
-              <div className="flex-1">
-                <div className="flex items-center gap-2 mb-2">
-                  <UserIcon className="w-4 h-4 text-purple-400" />
-                  <label className="text-sm font-medium text-gray-300">{t('settings.username')}</label>
-                  <span className="text-xs text-gray-500">({user.username})</span>
+        <div className="divide-y divide-white/10 overflow-hidden rounded-xl border border-white/10 bg-white/[0.035]">
+          <div className="p-4">
+            <div className="flex items-center justify-between gap-4">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 text-sm font-medium text-gray-300">
+                  <UserIcon className="h-4 w-4 text-purple-400" />
+                  {t('settings.username')}
                 </div>
+                <p className="mt-1 truncate text-sm text-white">{user.username}</p>
+              </div>
+              {!isUsernameEditing && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setUsernameForm({ new_username: user.username });
+                    setUsernameError(null);
+                    setUsernameSuccess(false);
+                    setIsUsernameEditing(true);
+                  }}
+                  className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs font-medium text-gray-300 transition hover:bg-white/10 hover:text-white"
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                  {t('settings.edit')}
+                </button>
+              )}
+            </div>
+
+            {isUsernameEditing && (
+              <form onSubmit={handleUsernameSubmit} className="mt-4 space-y-3">
                 <input
                   type="text"
                   value={usernameForm.new_username}
                   onChange={(e) => setUsernameForm({ new_username: e.target.value })}
                   required
                   minLength={3}
-                  className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  autoFocus
+                  className="w-full rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-sm text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
                   placeholder={t('settings.newUsernamePlaceholder')}
                 />
-              </div>
-              <button
-                type="submit"
-                disabled={updateUsernameMutation.isPending}
-                className="h-[38px] px-4 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white text-sm rounded-lg transition-all shadow-lg shadow-purple-500/25 hover:shadow-purple-500/40 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap mt-7 flex items-center justify-center"
-              >
-                {updateUsernameMutation.isPending ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Save className="w-4 h-4" />
+                {usernameError && (
+                  <div className="flex items-center gap-2 text-xs text-red-400">
+                    <XCircle className="h-3 w-3" />
+                    <span>{usernameError}</span>
+                  </div>
                 )}
-              </button>
-            </div>
-            {usernameError && (
-              <div className="flex items-center gap-2 text-red-400 text-xs">
-                <XCircle className="w-3 h-3" />
-                <span>{usernameError}</span>
-              </div>
+                <div className="flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setUsernameForm({ new_username: user.username });
+                      setUsernameError(null);
+                      setIsUsernameEditing(false);
+                    }}
+                    className="rounded-lg px-3 py-2 text-xs font-medium text-gray-400 transition hover:bg-white/5 hover:text-white"
+                  >
+                    {t('common.cancel')}
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={updateUsernameMutation.isPending}
+                    className="inline-flex items-center gap-2 rounded-lg bg-purple-600 px-3 py-2 text-xs font-medium text-white transition hover:bg-purple-500 disabled:opacity-50"
+                  >
+                    {updateUsernameMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                    {t('settings.save')}
+                  </button>
+                </div>
+              </form>
             )}
-            {usernameSuccess && (
-              <div className="flex items-center gap-2 text-green-400 text-xs">
-                <CheckCircle className="w-3 h-3" />
+            {usernameSuccess && !isUsernameEditing && (
+              <div className="mt-2 flex items-center gap-2 text-xs text-green-400">
+                <CheckCircle className="h-3 w-3" />
                 <span>{t('settings.success')}</span>
               </div>
             )}
-          </form>
+          </div>
 
-          {/* Email */}
-          <form onSubmit={handleEmailSubmit} className="space-y-3">
-            <div className="flex items-start gap-4">
-              <div className="flex-1">
-                <div className="flex items-center gap-2 mb-2">
-                  <Mail className="w-4 h-4 text-blue-400" />
-                  <label className="text-sm font-medium text-gray-300">{t('settings.email')}</label>
-                  <span className="text-xs text-gray-500">({user.email})</span>
+          <div className="p-4">
+            <div className="flex items-center justify-between gap-4">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 text-sm font-medium text-gray-300">
+                  <Mail className="h-4 w-4 text-blue-400" />
+                  {t('settings.email')}
                 </div>
+                <p className="mt-1 truncate text-sm text-white">{user.email}</p>
+              </div>
+              {!isEmailEditing && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEmailForm({ new_email: user.email });
+                    setEmailError(null);
+                    setEmailSuccess(false);
+                    setIsEmailEditing(true);
+                  }}
+                  className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs font-medium text-gray-300 transition hover:bg-white/10 hover:text-white"
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                  {t('settings.edit')}
+                </button>
+              )}
+            </div>
+
+            {isEmailEditing && (
+              <form onSubmit={handleEmailSubmit} className="mt-4 space-y-3">
                 <input
                   type="email"
                   value={emailForm.new_email}
                   onChange={(e) => setEmailForm({ new_email: e.target.value })}
                   required
-                  className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  autoFocus
+                  className="w-full rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-sm text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
                   placeholder={t('settings.newEmailPlaceholder')}
                 />
-                <p className="text-xs text-blue-300/80 mt-1">
-                  {t('settings.emailConfirmationHint')}
-                </p>
-              </div>
-              <button
-                type="submit"
-                disabled={updateEmailMutation.isPending}
-                className="h-[38px] px-4 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white text-sm rounded-lg transition-all shadow-lg shadow-purple-500/25 hover:shadow-purple-500/40 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap mt-7 flex items-center justify-center"
-              >
-                {updateEmailMutation.isPending ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Save className="w-4 h-4" />
+                <p className="text-xs text-blue-300/80">{t('settings.emailConfirmationHint')}</p>
+                {emailError && (
+                  <div className="flex items-center gap-2 text-xs text-red-400">
+                    <XCircle className="h-3 w-3" />
+                    <span>{emailError}</span>
+                  </div>
                 )}
-              </button>
-            </div>
-            {emailError && (
-              <div className="flex items-center gap-2 text-red-400 text-xs">
-                <XCircle className="w-3 h-3" />
-                <span>{emailError}</span>
-              </div>
+                <div className="flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEmailForm({ new_email: user.email });
+                      setEmailError(null);
+                      setIsEmailEditing(false);
+                    }}
+                    className="rounded-lg px-3 py-2 text-xs font-medium text-gray-400 transition hover:bg-white/5 hover:text-white"
+                  >
+                    {t('common.cancel')}
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={updateEmailMutation.isPending}
+                    className="inline-flex items-center gap-2 rounded-lg bg-purple-600 px-3 py-2 text-xs font-medium text-white transition hover:bg-purple-500 disabled:opacity-50"
+                  >
+                    {updateEmailMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                    {t('settings.save')}
+                  </button>
+                </div>
+              </form>
             )}
-            {emailSuccess && (
-              <div className="flex items-center gap-2 text-green-400 text-xs">
-                <CheckCircle className="w-3 h-3" />
+            {emailSuccess && !isEmailEditing && (
+              <div className="mt-2 flex items-center gap-2 text-xs text-green-400">
+                <CheckCircle className="h-3 w-3" />
                 <span>{t('settings.emailConfirmationSent')}</span>
               </div>
             )}
-          </form>
-        </div>
-      </section>
-
-      {/* Изменение Пароля */}
-      <section className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-2xl p-6 shadow-xl">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="p-2 bg-pink-500/20 rounded-lg">
-              <Lock className="w-5 h-5 text-pink-400" />
-            </div>
-            <h3 className="text-lg font-bold text-white">
-              {user.has_password ? t('settings.password') : t('settings.setPassword')}
-            </h3>
           </div>
 
-          <form onSubmit={handlePasswordSubmit} className="space-y-3">
+          <div className="p-4">
+            <div className="flex items-center justify-between gap-4">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 text-sm font-medium text-gray-300">
+                  <Lock className="h-4 w-4 text-pink-400" />
+                  {t('settings.password')}
+                </div>
+                <p className="mt-1 text-sm text-white">
+                  {user.has_password ? t('settings.passwordConfigured') : t('settings.passwordNotConfigured')}
+                </p>
+                <p className="mt-1 text-xs text-gray-400">{t('settings.passwordHint')}</p>
+              </div>
+              {!isPasswordEditing && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPasswordForm({ current_password: '', new_password: '', confirm_password: '' });
+                    setPasswordError(null);
+                    setPasswordSuccess(false);
+                    setIsPasswordEditing(true);
+                  }}
+                  className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs font-medium text-gray-300 transition hover:bg-white/10 hover:text-white"
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                  {user.has_password ? t('settings.edit') : t('settings.setPassword')}
+                </button>
+              )}
+            </div>
+
+          {isPasswordEditing && (
+          <form onSubmit={handlePasswordSubmit} className="mt-4 space-y-3 border-t border-white/10 pt-4">
             {user.has_password && (
             <div>
               <label className="block text-gray-300 mb-1.5 text-xs font-medium">{t('settings.currentPassword')}</label>
@@ -558,35 +639,46 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
               </div>
             )}
 
-            {passwordSuccess && (
-              <div className="flex items-center gap-2 text-green-400 text-xs">
-                <CheckCircle className="w-3 h-3" />
-                <span>{t('settings.success')}</span>
-              </div>
-            )}
-
-            <button
-              type="submit"
-              disabled={updatePasswordMutation.isPending}
-              className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white text-sm rounded-lg transition-all shadow-lg shadow-purple-500/25 hover:shadow-purple-500/40 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {updatePasswordMutation.isPending ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>{t('settings.changing')}</span>
-                </>
-              ) : (
-                <>
-                  <Save className="w-4 h-4" />
-                  <span>{user.has_password ? t('settings.changePassword') : t('settings.setPassword')}</span>
-                </>
-              )}
-            </button>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setPasswordForm({ current_password: '', new_password: '', confirm_password: '' });
+                  setPasswordError(null);
+                  setIsPasswordEditing(false);
+                }}
+                className="rounded-lg px-3 py-2 text-xs font-medium text-gray-400 transition hover:bg-white/5 hover:text-white"
+              >
+                {t('common.cancel')}
+              </button>
+              <button
+                type="submit"
+                disabled={updatePasswordMutation.isPending}
+                className="inline-flex items-center justify-center gap-2 rounded-lg bg-purple-600 px-4 py-2 text-xs font-medium text-white transition hover:bg-purple-500 disabled:opacity-50"
+              >
+                {updatePasswordMutation.isPending ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Save className="h-3.5 w-3.5" />
+                )}
+                <span>{user.has_password ? t('settings.changePassword') : t('settings.setPassword')}</span>
+              </button>
+            </div>
           </form>
+          )}
+          {passwordSuccess && !isPasswordEditing && (
+            <div className="mt-3 flex items-center gap-2 text-xs text-green-400">
+              <CheckCircle className="h-3 w-3" />
+              <span>{t('settings.success')}</span>
+            </div>
+          )}
+          </div>
+        </div>
         </section>
+      </div>
 
       {/* Настройки синхронизации - компактный вид */}
-      <section className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-2xl p-6 shadow-xl">
+      <section className="order-3 border-t border-white/10 p-5 md:p-6 lg:col-span-2">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-purple-500/20 rounded-lg">
@@ -701,12 +793,12 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
       </div>
 
       {/* Опасная зона */}
-      <section className="bg-red-500/5 backdrop-blur-sm border border-red-500/20 rounded-2xl p-6 shadow-xl">
+      <section className="rounded-2xl border border-red-500/15 bg-red-500/[0.04] p-5 md:p-6">
         <div className="flex items-center gap-3 mb-4">
           <div className="p-2 bg-red-500/20 rounded-lg">
             <AlertTriangle className="w-5 h-5 text-red-400" />
           </div>
-          <h3 className="text-xl font-bold text-red-400">{t('settings.dangerZone')}</h3>
+          <h3 className="text-lg font-bold text-red-300">{t('settings.dangerZone')}</h3>
         </div>
 
         <p className="text-sm text-gray-400 mb-4">

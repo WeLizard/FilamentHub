@@ -26,7 +26,6 @@ import {
   Clock,
   RotateCcw,
   Cog,
-  Layers,
   ChevronDown,
   ChevronUp,
   CheckCircle,
@@ -35,7 +34,6 @@ import {
   BookOpen,
   Zap,
   Shield,
-  RefreshCw,
   QrCode,
   Camera,
   Lock,
@@ -1580,7 +1578,7 @@ export const ProfilePage: React.FC = () => {
             </div>
             <div className="overflow-y-auto p-5 space-y-4" style={{ maxHeight: 'calc(85vh - 70px)' }}>
 
-              <HelpSection icon={Package} title={t('profilePage.help.presetsTitle')}>
+              <HelpSection icon={Settings} title={t('profilePage.help.presetsTitle')}>
                 <p>{t('profilePage.help.presetsDesc')}</p>
                 <p className="mt-2 text-gray-400 text-sm">{t('profilePage.help.presetsHow')}</p>
                 <ul className="list-disc list-inside space-y-1 text-gray-400 text-sm mt-2">
@@ -1602,6 +1600,15 @@ export const ProfilePage: React.FC = () => {
                 <p className="mt-2 text-gray-400 text-sm">{t('profilePage.help.printersNote')}</p>
               </HelpSection>
 
+              <HelpSection icon={Package} title={t('profilePage.help.spoolsTitle')}>
+                <p>{t('profilePage.help.spoolsDesc')}</p>
+                <ul className="list-disc list-inside space-y-1 text-gray-400 text-sm mt-2">
+                  <li>{t('profilePage.help.spoolsStep1')}</li>
+                  <li>{t('profilePage.help.spoolsStep2')}</li>
+                  <li>{t('profilePage.help.spoolsStep3')}</li>
+                </ul>
+              </HelpSection>
+
               <HelpSection icon={Calculator} title={t('profilePage.help.calculatorTitle')}>
                 <p>{t('profilePage.help.calculatorDesc')}</p>
                 <ul className="list-disc list-inside space-y-1 text-gray-400 text-sm mt-2">
@@ -1609,16 +1616,6 @@ export const ProfilePage: React.FC = () => {
                   <li>{t('profilePage.help.calculatorStep2')}</li>
                   <li>{t('profilePage.help.calculatorStep3')}</li>
                 </ul>
-              </HelpSection>
-
-              <HelpSection icon={RefreshCw} title={t('profilePage.help.syncTitle')}>
-                <p>{t('profilePage.help.syncDesc')}</p>
-                <ul className="list-disc list-inside space-y-1 text-gray-400 text-sm mt-2">
-                  <li>{t('profilePage.help.syncStep1')}</li>
-                  <li>{t('profilePage.help.syncStep2')}</li>
-                  <li>{t('profilePage.help.syncStep3')}</li>
-                </ul>
-                <p className="mt-2 text-gray-400 text-sm">{t('profilePage.help.syncNote')}</p>
               </HelpSection>
 
               <HelpSection icon={Shield} title={t('profilePage.help.brandTitle')}>
@@ -1637,35 +1634,6 @@ export const ProfilePage: React.FC = () => {
                   <li>{t('profilePage.help.settingsStep2')}</li>
                   <li>{t('profilePage.help.settingsStep3')}</li>
                 </ul>
-              </HelpSection>
-
-              <HelpSection icon={Layers} title={t('profilePage.help.hhTitle')}>
-                <p>{t('profilePage.help.hhDesc')}</p>
-
-                <p className="mt-3 text-gray-400 text-sm font-medium">{t('profilePage.help.hhConnectHow')}</p>
-                <ul className="list-disc list-inside space-y-1 text-gray-400 text-sm mt-1">
-                  <li>{t('profilePage.help.hhConnectStep1')}</li>
-                  <li>{t('profilePage.help.hhConnectStep2')}</li>
-                  <li>{t('profilePage.help.hhConnectStep3')}</li>
-                </ul>
-
-                <p className="mt-3 text-gray-400 text-sm font-medium">{t('profilePage.help.hhSpoolmanTitle')}</p>
-                <ul className="space-y-1 text-sm mt-1 ml-2">
-                  <li className="text-gray-500">{t('profilePage.help.hhSpoolmanOff')}</li>
-                  <li className="text-gray-500">{t('profilePage.help.hhSpoolmanReadonly')}</li>
-                  <li className="text-gray-500">{t('profilePage.help.hhSpoolmanPush')}</li>
-                  <li className="text-green-400 font-medium">{t('profilePage.help.hhSpoolmanPull')}</li>
-                </ul>
-
-                <p className="mt-3 text-gray-400 text-sm font-medium">{t('profilePage.help.hhColorTitle')}</p>
-                <ul className="space-y-1 text-sm mt-1 ml-2">
-                  <li className="text-gray-500">{t('profilePage.help.hhColorSlicer')}</li>
-                  <li className="text-green-400 font-medium">{t('profilePage.help.hhColorGatemap')}</li>
-                  <li className="text-gray-500">{t('profilePage.help.hhColorAllgates')}</li>
-                  <li className="text-gray-500">{t('profilePage.help.hhColorOff')}</li>
-                </ul>
-
-                <p className="mt-3 text-purple-300 text-sm">{t('profilePage.help.hhWorkflow')}</p>
               </HelpSection>
 
               <HelpSection icon={Zap} title={t('profilePage.help.tipsTitle')}>
