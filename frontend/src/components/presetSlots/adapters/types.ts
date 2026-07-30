@@ -1,6 +1,14 @@
 import type { ReactNode } from 'react';
 import type { GateState, PhysicalPrinter, MaterialSystem } from '../../../api/client';
 
+export type FeedAdapterCapability =
+  | 'read'
+  | 'write'
+  | 'presence'
+  | 'spool_identity'
+  | 'consumption'
+  | 'local_command';
+
 export interface AdapterViewContext {
   printer: PhysicalPrinter;
   system: MaterialSystem;
@@ -22,6 +30,8 @@ export interface FeedAdapter {
   labelKey: string;
   /** Systems with a fixed shape do not ask how many slots they have. */
   fixedSlots: number | null;
+  /** Capabilities provided by this integration path, not hoped-for future features. */
+  capabilities: FeedAdapterCapability[];
   /** How the printer is pointed at us; null when nothing is linked at all. */
   link: FeedAdapterLink | null;
   /** Extra controls this system needs and no other one does. */

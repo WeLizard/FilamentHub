@@ -77,6 +77,27 @@ vi.mock('../components/Toast', () => ({
 }));
 
 describe('PresetSlotsPanel', () => {
+  it('declares only the capabilities supported by each feed adapter', async () => {
+    const { feedAdapterFor } = await import(
+      '../components/presetSlots/adapters'
+    );
+
+    expect(feedAdapterFor('manual').capabilities).toEqual([]);
+    expect(feedAdapterFor('happy_hare').capabilities).toEqual([
+      'read',
+      'write',
+      'presence',
+      'spool_identity',
+      'consumption',
+    ]);
+    expect(feedAdapterFor('octoprint').capabilities).toEqual([
+      'read',
+      'write',
+      'spool_identity',
+      'consumption',
+    ]);
+  });
+
   it('shows a manual physical printer and resolves exact linked profile ids', async () => {
     const { PresetSlotsPanel } = await import(
       '../components/presetSlots/PresetSlotsPanel'

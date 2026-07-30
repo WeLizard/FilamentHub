@@ -3027,7 +3027,13 @@ export const physicalPrintersAPI = {
 
   createSystem: async (
     physicalPrinterId: number,
-    payload: { name: string; kind: string; provider: string; slot_count: number },
+    payload: {
+      name: string;
+      kind: string;
+      provider: string;
+      capabilities: Array<'read' | 'write' | 'presence' | 'spool_identity' | 'consumption' | 'local_command'>;
+      slot_count: number;
+    },
   ): Promise<PhysicalPrinter> => {
     const response = await api.post<PhysicalPrinter>(
       `/physical-printers/${physicalPrinterId}/material-systems`,

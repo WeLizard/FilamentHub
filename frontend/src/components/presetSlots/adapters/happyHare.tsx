@@ -129,6 +129,7 @@ export const happyHareAdapter: FeedAdapter = {
   id: 'happy_hare',
   labelKey: 'presetSlots.feedSystem.happy_hare',
   fixedSlots: null,
+  capabilities: ['read', 'write', 'presence', 'spool_identity', 'consumption'],
   link: {
     hintKey: 'presetSlots.happyHare.linkHint',
     snippet: (url) => `[spoolman]

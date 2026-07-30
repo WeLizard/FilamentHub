@@ -36,6 +36,7 @@ export const octoprintAdapter: FeedAdapter = {
   id: 'octoprint',
   labelKey: 'presetSlots.feedSystem.octoprint',
   fixedSlots: null,
+  capabilities: ['read', 'write', 'spool_identity', 'consumption'],
   link: {
     hintKey: 'presetSlots.octoprint.linkHint',
     // The plugin appends the Spoolman path itself, so it takes the bare address.

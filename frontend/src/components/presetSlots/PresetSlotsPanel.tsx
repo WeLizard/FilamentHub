@@ -98,6 +98,7 @@ function NewSystemCard({
         name: t(chosen.labelKey),
         kind: count > 1 ? 'mmu' : 'direct_feed',
         provider: chosen.id,
+        capabilities: chosen.capabilities,
         slot_count: count,
       });
       // A printer that already holds a key is already linked; issuing a new one
