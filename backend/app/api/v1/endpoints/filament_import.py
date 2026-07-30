@@ -22,6 +22,7 @@ from app.models.user import User
 from app.schemas.filament import (
     FilamentImportResult,
     FilamentImportRowResult,
+    normalize_ral_code,
 )
 from app.services.organization_access import can_edit_brand_catalog
 from app.services.preset_moderation import validate_text_field
@@ -30,7 +31,7 @@ from app.services.slug_service import generate_unique_slug
 router = APIRouter(prefix="/filament-import", tags=["filament-import"])
 
 CSV_COLUMNS = [
-    "name", "material_type", "color_name", "color_hex",
+    "name", "material_type", "color_name", "color_hex", "ral_code",
     "price_per_kg", "spool_weight", "line", "availability",
 ]
 
@@ -56,7 +57,7 @@ async def download_template() -> Response:
     buffer = io.StringIO()
     writer = csv.writer(buffer)
     writer.writerow(CSV_COLUMNS)
-    writer.writerow(["PLA Basic Red", "PLA", "Red", "#FF0000", "1500", "1000", "PLA Basic", "available"])
+    writer.writerow(["PLA Basic Red", "PLA", "Red", "#FF0000", "3020", "1500", "1000", "PLA Basic", "available"])
     # BOM — чтобы Excel распознал UTF-8; "sep=," — чтобы Excel (в т.ч. RU-локаль,
     # где разделитель по умолчанию ";") разбил файл на колонки по запятой.
     content = "﻿" + "sep=,\r\n" + buffer.getvalue()
@@ -126,6 +127,8 @@ async def import_filaments(
 
         color_name = (row.get("color_name") or "").strip() or None
         color_hex = (row.get("color_hex") or "").strip().upper() or None
+        ral_code_value = normalize_ral_code(row.get("ral_code"))
+        ral_code = ral_code_value if isinstance(ral_code_value, str) and ral_code_value.isdigit() and len(ral_code_value) == 4 else None
         price_per_kg = _parse_float(row.get("price_per_kg"))
         spool_weight = _parse_float(row.get("spool_weight"))
 
@@ -175,6 +178,7 @@ async def import_filaments(
             material_type=material_type,
             color_name=color_name,
             color_hex=color_hex if color_hex and color_hex.startswith("#") else None,
+            ral_code=ral_code,
             price_per_kg=price_per_kg,
             spool_weight=spool_weight,
             availability=availability,

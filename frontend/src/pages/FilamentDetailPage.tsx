@@ -412,7 +412,7 @@ export const FilamentDetailPage: React.FC = () => {
               </div>
             </div>
           )}
-          {(filament.color_hex || filament.color_name) && (
+          {(filament.color_hex || filament.color_name || filament.ral_code) && (
             <div className="flex items-center gap-2 md:gap-3 text-gray-300 min-w-0">
               <div
                 className="w-6 h-6 md:w-8 md:h-8 shrink-0 rounded-full border-2 border-white/20"
@@ -421,6 +421,7 @@ export const FilamentDetailPage: React.FC = () => {
               <div className="min-w-0">
                 <div className="text-[10px] md:text-sm">{t('filamentDetailPage.color')}</div>
                 <div className="text-base md:text-xl font-bold text-white truncate" title={filament.color_name || ''}>{filament.color_name || '—'}</div>
+                {filament.ral_code && <div className="font-mono text-[10px] text-gray-400 md:text-xs">RAL {filament.ral_code}</div>}
               </div>
             </div>
           )}

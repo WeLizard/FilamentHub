@@ -2156,6 +2156,7 @@ const SpoolForm: React.FC<SpoolFormProps> = ({
         recommended_nozzle_temp_max: null,
         recommended_bed_temp_min: null,
         recommended_bed_temp_max: null,
+        ral_code: null,
         required_nozzle_hrc: null,
         description: null,
         views_count: null,

@@ -2,6 +2,8 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { CustomSelect } from './CustomSelect';
 import { InfoHint } from './InfoHint';
+import { ABRASIVE_ADDITIVE_CODES } from '../data/filamentFeatures';
+import type { FilamentAdditive } from '../types/api';
 
 /**
  * Nozzle type → required nozzle hardness (Orca `required_nozzle_HRC`, a minimum
@@ -45,8 +47,10 @@ export const NozzleHardnessField: React.FC<{
   value: number | null;
   onChange: (value: number | null) => void;
   filler?: string | null;
+  effects?: string[];
+  additives?: FilamentAdditive[];
   materialType?: string | null;
-}> = ({ value, onChange, filler, materialType }) => {
+}> = ({ value, onChange, filler, effects = [], additives = [], materialType }) => {
   const { t } = useTranslation();
 
   const options = [
@@ -57,7 +61,10 @@ export const NozzleHardnessField: React.FC<{
     })),
   ];
 
-  const abrasive = (!!filler && ABRASIVE_FILLERS.has(filler)) || isAbrasiveMaterialType(materialType);
+  const abrasive = (!!filler && ABRASIVE_FILLERS.has(filler))
+    || effects.some(effect => ABRASIVE_FILLERS.has(effect))
+    || additives.some(additive => ABRASIVE_ADDITIVE_CODES.has(additive.code))
+    || isAbrasiveMaterialType(materialType);
   const showHint = abrasive && (value === null || value < HARDENED_HRC);
 
   return (

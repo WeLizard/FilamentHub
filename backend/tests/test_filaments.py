@@ -41,6 +41,7 @@ async def test_create_filament(auth_client: AsyncClient, db_session: AsyncSessio
         "material_type": "PLA",
         "color_name": "Red",
         "color_hex": "#FF0000",
+        "ral_code": "RAL 3020",
         "diameter": 1.75,
         "density": 1.24,
         "price_per_kg": 800.0,
@@ -52,8 +53,13 @@ async def test_create_filament(auth_client: AsyncClient, db_session: AsyncSessio
     data = response.json()
     assert data["name"] == filament_data["name"]
     assert data["material_type"] == filament_data["material_type"]
+    assert data["ral_code"] == "3020"
     assert data["id"] is not None
     assert data["availability"] == "available"
+
+    search_response = await auth_client.get("/api/v1/filaments/?search=RAL%203020")
+    assert search_response.status_code == 200
+    assert [item["id"] for item in search_response.json()["items"]] == [data["id"]]
 
 
 @pytest.mark.asyncio
@@ -132,6 +138,84 @@ async def test_create_filament_custom_filler_allowed_for_verified(
     )
     assert response.status_code == 201
     assert response.json()["visual_settings"]["filler"] == "ceramic"
+    assert response.json()["visual_settings"]["effects"] == ["ceramic"]
+
+
+@pytest.mark.asyncio
+async def test_create_filament_with_combined_material_features(
+    admin_client: AsyncClient, db_session: AsyncSession
+):
+    """Composition, claims, and independent visual effects round-trip together."""
+    brand = Brand(name="Feature Brand", slug="feature-brand", verified=True, active=True)
+    db_session.add(brand)
+    await db_session.commit()
+    await db_session.refresh(brand)
+
+    response = await admin_client.post(
+        "/api/v1/filaments/",
+        json={
+            "brand_id": brand.id,
+            "name": "PA612-CF ESD Sparkle",
+            "material_type": "PA612",
+            "visual_settings": {"effects": ["carbon", "glitter"]},
+            "additives": [
+                {"code": "carbon_fiber", "content_percent": 10, "content_basis": "weight"},
+                {"code": "carbon_nanotubes"},
+            ],
+            "property_claims": [
+                {"code": "esd", "standard": "IEC 61340", "rating": "10^6-10^9 ohm"},
+            ],
+        },
+    )
+
+    assert response.status_code == 201
+    data = response.json()
+    assert data["visual_settings"]["filler"] == "carbon"
+    assert data["visual_settings"]["effects"] == ["carbon", "glitter"]
+    assert [item["code"] for item in data["additives"]] == ["carbon_fiber", "carbon_nanotubes"]
+    assert data["property_claims"][0]["standard"] == "IEC 61340"
+
+    update = await admin_client.patch(
+        f"/api/v1/filaments/{data['id']}",
+        json={
+            "visual_settings": {
+                "filler": "carbon",
+                "effects": ["carbon", "glitter"],
+            },
+            "additives": [{"code": "glass_fiber", "content_percent": 15}],
+            "property_claims": [{"code": "flame_retardant", "rating": "UL94 V-0"}],
+        },
+    )
+    assert update.status_code == 200
+    updated = update.json()
+    assert updated["visual_settings"]["effects"] == ["carbon", "glitter"]
+    assert updated["additives"] == [
+        {"code": "glass_fiber", "content_percent": 15.0, "content_basis": None}
+    ]
+    assert updated["property_claims"][0]["rating"] == "UL94 V-0"
+
+
+@pytest.mark.asyncio
+async def test_custom_material_feature_rejected_for_unverified_brand(
+    auth_client: AsyncClient, db_session: AsyncSession
+):
+    brand = Brand(name="Closed Features", slug="closed-features", verified=False, active=True)
+    db_session.add(brand)
+    await db_session.commit()
+    await db_session.refresh(brand)
+
+    response = await auth_client.post(
+        "/api/v1/filaments/",
+        json={
+            "brand_id": brand.id,
+            "name": "Unknown Blend",
+            "material_type": "PLA",
+            "additives": [{"code": "moon_dust"}],
+        },
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"]["code"] == "ERR_CUSTOM_MATERIAL_FEATURE_VERIFIED_ONLY"
 
 
 @pytest.mark.asyncio
@@ -215,6 +299,9 @@ async def test_filament_line_palette(admin_client: AsyncClient, db_session: Asyn
 
     payload = {
         "material_type": "PLA",
+        "visual_settings": {"effects": ["metallic", "glitter"]},
+        "additives": [{"code": "glass_fiber", "content_percent": 10}],
+        "property_claims": [{"code": "flame_retardant", "rating": "UL94 V-0"}],
         "diameter": 1.75,
         "price_per_kg": 1500,
         "variants": [
@@ -232,6 +319,10 @@ async def test_filament_line_palette(admin_client: AsyncClient, db_session: Asyn
     assert "PLA Basic Red" in names
     assert "PLA Basic Blue" in names
     assert "Custom Green" in names
+    for item in fil_list.json()["items"]:
+        assert item["visual_settings"]["effects"] == ["metallic", "glitter"]
+        assert item["additives"][0]["code"] == "glass_fiber"
+        assert item["property_claims"][0]["rating"] == "UL94 V-0"
 
     lines = await admin_client.get(f"/api/v1/filament-lines?brand_id={brand.id}")
     assert lines.json()[0]["filaments_count"] == 3
@@ -395,6 +486,101 @@ async def test_list_filaments_filter_by_material_type(
     data = response.json()
     assert data["total"] == 1
     assert data["items"][0]["material_type"] == "PLA"
+
+
+@pytest.mark.asyncio
+async def test_list_filaments_searches_catalog_fields(
+    client: AsyncClient, db_session: AsyncSession
+):
+    """Search covers material, brand, type, the original color name and filler."""
+    searchable_brand = Brand(
+        name="Polymaker Search Brand",
+        slug="polymaker-search-brand",
+        active=True,
+    )
+    other_brand = Brand(name="Other Search Brand", slug="other-search-brand", active=True)
+    db_session.add_all([searchable_brand, other_brand])
+    await db_session.commit()
+    await db_session.refresh(searchable_brand)
+    await db_session.refresh(other_brand)
+
+    db_session.add_all(
+        [
+            Filament(
+                brand_id=searchable_brand.id,
+                name="Engineering Material",
+                slug="engineering-material",
+                material_type="PETG-CF",
+                color_name="Galaxy Black",
+                visual_settings={"filler": "carbon", "effects": ["carbon"]},
+                additives=[{"code": "carbon_fiber"}, {"code": "carbon_nanotubes"}],
+                property_claims=[{"code": "esd", "standard": "IEC 61340"}],
+                active=True,
+            ),
+            Filament(
+                brand_id=other_brand.id,
+                name="Decorative Material",
+                slug="decorative-material",
+                material_type="PLA",
+                color_name="Sakura Pink",
+                active=True,
+            ),
+        ]
+    )
+    await db_session.commit()
+
+    for term, expected_name in [
+        ("Polymaker", "Engineering Material"),
+        ("engineering", "Engineering Material"),
+        ("petg-cf", "Engineering Material"),
+        ("Sakura", "Decorative Material"),
+        ("carbon", "Engineering Material"),
+        ("nanotubes", "Engineering Material"),
+        ("IEC 61340", "Engineering Material"),
+    ]:
+        response = await client.get("/api/v1/filaments/", params={"search": term})
+        assert response.status_code == 200
+        data = response.json()
+        assert data["total"] == 1
+        assert data["items"][0]["name"] == expected_name
+
+
+@pytest.mark.asyncio
+async def test_list_filaments_can_reach_items_after_first_hundred(
+    client: AsyncClient, db_session: AsyncSession
+):
+    """Catalog pagination exposes records beyond the former frontend limit of 100."""
+    brand = Brand(name="Large Catalog Brand", slug="large-catalog-brand", active=True)
+    db_session.add(brand)
+    await db_session.commit()
+    await db_session.refresh(brand)
+
+    db_session.add_all(
+        [
+            Filament(
+                brand_id=brand.id,
+                name=f"Material {index:03d}",
+                slug=f"material-{index:03d}",
+                material_type="PLA",
+                active=True,
+            )
+            for index in range(105)
+        ]
+    )
+    await db_session.commit()
+
+    response = await client.get("/api/v1/filaments/", params={"page": 2, "size": 100})
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total"] == 105
+    assert data["pages"] == 2
+    assert [item["name"] for item in data["items"]] == [
+        "Material 100",
+        "Material 101",
+        "Material 102",
+        "Material 103",
+        "Material 104",
+    ]
 
 
 @pytest.mark.asyncio

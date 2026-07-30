@@ -9,9 +9,9 @@ import { translateApiError } from '../utils/translateApiError';
 import { MATERIAL_DENSITY } from '../utils/materialDensity';
 import { ColorMaterialSection } from './ColorMaterialSection';
 import { FilamentPaletteForm } from './FilamentPaletteForm';
-import { HSLColorPicker } from './HSLColorPicker';
+import { FloatingHSLColorPicker } from './FloatingHSLColorPicker';
 import { PriceUnitField } from './PriceUnitField';
-import type { FilamentVisualSettings } from '../types/api';
+import type { FilamentAdditive, FilamentPropertyClaim, FilamentVisualSettings } from '../types/api';
 import { Dropdown } from './Dropdown';
 import { sortMaterialTypes } from '../data/materialDefaults';
 import { currencySymbol } from '../utils/currency';
@@ -25,6 +25,8 @@ import { NozzleHardnessField } from './NozzleHardnessField';
 import { ModalOverlay } from './ModalOverlay';
 import { ConfirmModal } from './ConfirmModal';
 import { InfoHint } from './InfoHint';
+import { FilamentFeaturesEditor } from './FilamentFeaturesEditor';
+import { deriveVisualEffectsFromAdditives, mergeVisualEffects } from '../data/filamentFeatures';
 import type { AxiosError } from 'axios';
 
 interface CreateFilamentModalProps {
@@ -33,15 +35,6 @@ interface CreateFilamentModalProps {
   filament?: Filament | null; // Если передан, то редактирование, иначе создание
   brandId?: number; // ID бренда (если создание нового материала)
 }
-
-// Известные наполнители (совпадает с backend KNOWN_FILLERS). Значение вне набора —
-// кастомный наполнитель, доступный только верифицированному бренду.
-const KNOWN_FILLERS = new Set([
-  'none', 'wood', 'carbon', 'glitter', 'metallic', 'luminescent',
-  'fibers', 'stone', 'glass', 'pattern1', 'pattern2', 'pattern3',
-  'pattern4', 'pattern5', 'pattern6', 'pattern7', 'pattern8',
-  'pattern9', 'pattern10', 'pattern11', 'pattern12',
-]);
 
 export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
   isOpen,
@@ -63,17 +56,20 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
   const [customMaterialType, setCustomMaterialType] = useState('');
   const [colorName, setColorName] = useState('');
   const [colorHex, setColorHex] = useState('#808080');
+  const [ralCode, setRalCode] = useState('');
   // Расширенные характеристики цвета
   const [visualColorType, setVisualColorType] = useState<'single' | 'two' | 'three' | 'gradient' | 'transition' | 'thermochromic'>('single');
   const [visualColors, setVisualColors] = useState<string[]>(['#808080']);
   const [visualFinish, setVisualFinish] = useState<'matte' | 'glossy'>('matte');
-  const [visualFiller, setVisualFiller] = useState<string>('none');
-  const [customFiller, setCustomFiller] = useState('');
+  const [visualEffects, setVisualEffects] = useState<string[]>([]);
+  const [additives, setAdditives] = useState<FilamentAdditive[]>([]);
+  const [propertyClaims, setPropertyClaims] = useState<FilamentPropertyClaim[]>([]);
   const [lineId, setLineId] = useState<number | ''>('');
   const [newLineName, setNewLineName] = useState('');
   const [visualTransparency, setVisualTransparency] = useState(false);
   const [showAdvancedVisual, setShowAdvancedVisual] = useState(false); // Collapsible секция
   const [openColorPickers, setOpenColorPickers] = useState<boolean[]>([]);
+  const colorPickerButtonRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const [diameter, setDiameter] = useState(1.75);
   const [density, setDensity] = useState(1.24);
   const [priceMode, setPriceMode] = useState<'per_kg' | 'per_spool'>('per_kg');
@@ -156,8 +152,8 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
     enabled: isOpen,
   });
 
-  // Свой наполнитель «Другое» доступен только верифицированному бренду.
-  const isBrandVerified = Boolean(
+  // Custom material features are available to administrators and verified brands.
+  const canUseCustomFeatures = user?.role === 'admin' || Boolean(
     brandsData?.items.find((b: Brand) => b.id === brandIdValue)?.verified,
   );
 
@@ -176,8 +172,24 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
       setNewLineName('');
     },
   });
-  // Реальное значение наполнителя: для «Другое» — введённый текст, иначе само значение.
-  const effectiveFiller = visualFiller === 'custom' ? (customFiller.trim() || 'none') : visualFiller;
+  const resolvedVisualEffects = mergeVisualEffects(visualEffects, additives);
+  // Old clients still read one primary effect from ``filler``.
+  const effectiveFiller = resolvedVisualEffects[0] || 'none';
+  const hasVisualSettings = showAdvancedVisual
+    || resolvedVisualEffects.length > 0
+    || visualColorType !== 'single'
+    || visualFinish !== 'matte'
+    || visualTransparency;
+  const currentVisualSettings: FilamentVisualSettings | undefined = hasVisualSettings
+    ? {
+        color_type: visualColorType,
+        colors: visualColors,
+        finish: visualFinish,
+        filler: effectiveFiller,
+        effects: resolvedVisualEffects,
+        transparency: visualTransparency,
+      }
+    : undefined;
 
   // Загружаем уникальные типы материалов из БД
   const { data: materialTypes = [] } = useQuery({
@@ -207,33 +219,31 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
       }
       setColorName(filament.color_name || '');
       setColorHex(filament.color_hex || '#FFFFFF');
+      setRalCode(filament.ral_code || '');
+      const nextAdditives = filament.additives || [];
       // Инициализация расширенных визуальных эффектов
       if (filament.visual_settings) {
         const vs = filament.visual_settings;
+        const storedEffects = vs.effects?.length
+          ? vs.effects
+          : (vs.filler && vs.filler !== 'none' ? [vs.filler] : []);
+        const derivedEffectSet = new Set(deriveVisualEffectsFromAdditives(nextAdditives));
         setVisualColorType(vs.color_type || 'single');
         setVisualColors(vs.colors || [filament.color_hex || '#FFFFFF']);
         setVisualFinish(vs.finish || 'matte');
-        {
-          const f = vs.filler || 'none';
-          if (KNOWN_FILLERS.has(f)) {
-            setVisualFiller(f);
-            setCustomFiller('');
-          } else {
-            setVisualFiller('custom');
-            setCustomFiller(f);
-          }
-        }
+        setVisualEffects(storedEffects.filter(effect => !derivedEffectSet.has(effect)));
         setVisualTransparency(vs.transparency ?? false);
         setShowAdvancedVisual(true);
       } else {
         setVisualColorType('single');
         setVisualColors([filament.color_hex || '#FFFFFF']);
         setVisualFinish('matte');
-        setVisualFiller('none');
-        setCustomFiller('');
-      setVisualTransparency(false);
-      setShowAdvancedVisual(false);
+        setVisualEffects([]);
+        setVisualTransparency(false);
+        setShowAdvancedVisual(false);
       }
+      setAdditives(nextAdditives);
+      setPropertyClaims(filament.property_claims || []);
       setOpenColorPickers([]);
       setDiameter(filament.diameter || 1.75);
       setDensity(filament.density || 1.24);
@@ -266,12 +276,14 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
       setCustomMaterialType('');
       setColorName('');
       setColorHex('#808080');
+      setRalCode('');
       // Сброс расширенных визуальных эффектов
       setVisualColorType('single');
       setVisualColors(['#808080']);
       setVisualFinish('matte');
-      setVisualFiller('none');
-      setCustomFiller('');
+      setVisualEffects([]);
+      setAdditives([]);
+      setPropertyClaims([]);
       setVisualTransparency(false);
       setShowAdvancedVisual(false);
       setOpenColorPickers([]);
@@ -335,7 +347,10 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
       material_type: string;
       color_name?: string;
       color_hex?: string;
+      ral_code?: string | null;
       visual_settings?: FilamentVisualSettings | null;
+      additives?: FilamentAdditive[];
+      property_claims?: FilamentPropertyClaim[];
       diameter?: number;
       density?: number;
       price_per_kg?: number;
@@ -385,7 +400,10 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
         material_type?: string;
         color_name?: string;
         color_hex?: string;
+        ral_code?: string | null;
         visual_settings?: FilamentVisualSettings | null;
+        additives?: FilamentAdditive[];
+        property_claims?: FilamentPropertyClaim[];
         diameter?: number;
         density?: number;
         price_per_kg?: number;
@@ -446,12 +464,13 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
         return;
       }
       // Формируем visual_settings если есть расширенные эффекты
-      const visualSettings: FilamentVisualSettings | undefined = showAdvancedVisual || effectiveFiller !== 'none' || visualColorType !== 'single' || visualFinish !== 'matte' || visualTransparency
+      const visualSettings: FilamentVisualSettings | undefined = showAdvancedVisual || resolvedVisualEffects.length > 0 || visualColorType !== 'single' || visualFinish !== 'matte' || visualTransparency
         ? {
             color_type: visualColorType,
             colors: visualColors,
             finish: visualFinish,
             filler: effectiveFiller,
+            effects: resolvedVisualEffects,
             transparency: visualTransparency,
           }
         : undefined;
@@ -463,7 +482,10 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
           material_type: finalMaterialType,
           color_name: colorName || undefined,
           color_hex: colorHex || undefined,
+          ral_code: ralCode || null,
           visual_settings: visualSettings,
+          additives,
+          property_claims: propertyClaims,
           diameter,
           density,
           price_per_kg: priceKg || undefined,
@@ -488,12 +510,13 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
         return;
       }
       // Формируем visual_settings если есть расширенные эффекты
-      const visualSettings: FilamentVisualSettings | undefined = showAdvancedVisual || effectiveFiller !== 'none' || visualColorType !== 'single' || visualFinish !== 'matte' || visualTransparency
+      const visualSettings: FilamentVisualSettings | undefined = showAdvancedVisual || resolvedVisualEffects.length > 0 || visualColorType !== 'single' || visualFinish !== 'matte' || visualTransparency
         ? {
             color_type: visualColorType,
             colors: visualColors,
             finish: visualFinish,
             filler: effectiveFiller,
+            effects: resolvedVisualEffects,
             transparency: visualTransparency,
           }
         : undefined;
@@ -504,7 +527,10 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
         material_type: finalMaterialType,
         color_name: colorName || undefined,
         color_hex: colorHex || undefined,
+        ral_code: ralCode || undefined,
         visual_settings: visualSettings,
+        additives,
+        property_claims: propertyClaims,
         diameter,
         density,
         price_per_kg: priceKg || undefined,
@@ -532,7 +558,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <ModalOverlay onClose={requestClose}>
+    <ModalOverlay onClose={requestClose} closeOnOverlayClick={false}>
       <div
         className="bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 rounded-2xl w-full max-w-5xl max-h-[90vh] overflow-hidden flex flex-col border border-white/20 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
@@ -652,7 +678,11 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
                 </div>
               )}
               {formMode === 'palette' && !filament && brandIdValue ? (
-                <FilamentPaletteForm brandId={brandIdValue} onClose={onClose} />
+                <FilamentPaletteForm
+                  brandId={brandIdValue}
+                  onClose={onClose}
+                  allowCustomFeatures={canUseCustomFeatures}
+                />
               ) : (
             // Form
             <form onSubmit={handleSubmit} className="space-y-6">
@@ -751,17 +781,9 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
             onColorNameChange={setColorName}
             colorHex={colorHex}
             onColorHexChange={setColorHex}
-            visualSettings={
-              showAdvancedVisual || effectiveFiller !== 'none' || visualColorType !== 'single' || visualFinish !== 'matte' || visualTransparency
-                ? {
-                    color_type: visualColorType,
-                    colors: visualColors,
-                    finish: visualFinish,
-                    filler: effectiveFiller,
-                    transparency: visualTransparency,
-                  }
-                : undefined
-            }
+            ralCode={ralCode}
+            onRalCodeChange={setRalCode}
+            visualSettings={currentVisualSettings}
             previewSize="medium"
             rightButton={
               <button
@@ -778,12 +800,13 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
 
           {/* Расширенные характеристики цвета (collapsible) */}
           {showAdvancedVisual && (
-            <div className="border border-white/10 rounded-xl p-4 bg-white/5 mt-4">
-              <div className="space-y-4">
+            <div className="mt-4 overflow-visible rounded-2xl border border-white/10 bg-white/[0.035] p-3">
+              <div className="grid items-start gap-3 lg:grid-cols-[minmax(18rem,1.15fr)_minmax(0,2fr)]">
+                <aside className="space-y-3 md:sticky md:top-0">
                 {/* Тип цвета */}
                 <div>
-                  <label className="block text-gray-300 mb-2 text-sm font-medium">{t('createFilament.colorTypeLabel')}</label>
-                  <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+                  <label className="mb-1.5 block text-sm font-medium text-gray-300">{t('createFilament.colorTypeLabel')}</label>
+                  <div className="grid grid-cols-2 gap-2">
                     {(['single', 'two', 'three', 'gradient', 'transition', 'thermochromic'] as const).map((type) => (
                       <button
                         key={type}
@@ -813,7 +836,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
                           // Сбрасываем состояние открытых пикеров при смене типа
                           setOpenColorPickers([]);
                         }}
-                        className={`px-4 py-2 rounded-lg border transition-all ${
+                        className={`rounded-lg border px-3 py-1.5 text-sm transition-all ${
                           visualColorType === type
                             ? 'bg-purple-600 border-purple-400 text-white'
                             : 'bg-white/10 border-white/20 text-gray-300 hover:bg-white/20'
@@ -840,7 +863,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
 
                 {/* Цвета (до 5) */}
                 <div>
-                  <label className="block text-gray-300 mb-2 text-sm font-medium">
+                  <label className="mb-1.5 block text-sm font-medium text-gray-300">
                     {t('createFilament.colors')} ({visualColorType === 'single' ? 1 : visualColorType === 'two' ? 2 : visualColorType === 'three' ? 3 : visualColorType === 'transition' || visualColorType === 'thermochromic' ? 2 : 5})
                   </label>
                   <div className="grid grid-cols-5 gap-2">
@@ -849,10 +872,13 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
                       const isPickerOpen = openColorPickers[idx] || false;
                       
                       return (
-                        <div key={idx} className="flex flex-col gap-2">
+                          <div key={idx} className="flex flex-col gap-1.5">
                           {/* Кнопка с цветным квадратом для открытия HSL пикера */}
                           <div className="relative">
                             <button
+                              ref={(element) => {
+                                colorPickerButtonRefs.current[idx] = element;
+                              }}
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation(); // Предотвращаем всплытие события
@@ -861,7 +887,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
                                 newOpenStates[idx] = !openColorPickers[idx];
                                 setOpenColorPickers(newOpenStates);
                               }}
-                              className="w-full h-12 rounded-lg border border-white/20 cursor-pointer hover:opacity-80 transition-opacity relative overflow-visible"
+                              className="relative h-10 w-full cursor-pointer overflow-visible rounded-lg border border-white/20 transition-opacity hover:opacity-80"
                               style={{ backgroundColor: currentColor }}
                               title={t('createFilament.clickToPickColor')}
                             >
@@ -870,30 +896,26 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
                               </div>
                             </button>
                             
-                            {/* HSL Color Picker - появляется над кнопкой */}
-                            {isPickerOpen && (
-                              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-[100]">
-                                <HSLColorPicker
-                                  color={currentColor}
-                                  onChange={(hex) => {
-                                    const newColors = [...visualColors];
-                                    newColors[idx] = hex;
-                                    setVisualColors(newColors);
-                                    // Синхронизируем основной цвет, если меняем первый цвет в расширенных настройках
-                                    if (idx === 0) {
-                                      isInternalColorChangeRef.current = true; // Помечаем как внутреннее изменение
-                                      setColorHex(hex);
-                                    }
-                                  }}
-                                  isOpen={isPickerOpen}
-                                  onToggle={(isOpen) => {
-                                    const newOpenStates = [...openColorPickers];
-                                    newOpenStates[idx] = isOpen;
-                                    setOpenColorPickers(newOpenStates);
-                                  }}
-                                />
-                              </div>
-                            )}
+                            <FloatingHSLColorPicker
+                              anchorElement={colorPickerButtonRefs.current[idx]}
+                              color={currentColor}
+                              isOpen={isPickerOpen}
+                              onChange={(hex) => {
+                                const newColors = [...visualColors];
+                                newColors[idx] = hex;
+                                setVisualColors(newColors);
+                                // Синхронизируем основной цвет, если меняем первый цвет в расширенных настройках
+                                if (idx === 0) {
+                                  isInternalColorChangeRef.current = true; // Помечаем как внутреннее изменение
+                                  setColorHex(hex);
+                                }
+                              }}
+                              onToggle={(isOpen) => {
+                                const newOpenStates = [...openColorPickers];
+                                newOpenStates[idx] = isOpen;
+                                setOpenColorPickers(newOpenStates);
+                              }}
+                            />
                           </div>
                           {/* HEX-инпут под значком — дублирует цвет, двусторонняя привязка */}
                           <input
@@ -920,14 +942,14 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
 
                 {/* Финиш */}
                 <div>
-                  <label className="block text-gray-300 mb-2 text-sm font-medium">{t('createFilament.surfaceTypeLabel')}</label>
-                  <div className="flex gap-2">
+                  <label className="mb-1.5 block text-sm font-medium text-gray-300">{t('createFilament.surfaceTypeLabel')}</label>
+                  <div className="inline-grid grid-cols-2 gap-1 rounded-xl border border-white/10 bg-black/15 p-1">
                     {(['matte', 'glossy'] as const).map((finish) => (
                       <button
                         key={finish}
                         type="button"
                         onClick={() => setVisualFinish(finish)}
-                        className={`flex-1 px-4 py-2 rounded-lg border transition-all ${
+                        className={`min-w-24 rounded-lg border px-3 py-1.5 text-sm transition-all ${
                           visualFinish === finish
                             ? 'bg-purple-600 border-purple-400 text-white'
                             : 'bg-white/10 border-white/20 text-gray-300 hover:bg-white/20'
@@ -938,64 +960,31 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
                     ))}
                   </div>
                 </div>
+                </aside>
 
-                {/* Наполнитель */}
-                <div>
-                  <label className="block text-gray-300 mb-2 text-sm font-medium">{t('createFilament.fillerLabel')}</label>
-                  <Dropdown
-                    value={visualFiller}
-                    onChange={(val) => setVisualFiller(String(val))}
-                    options={[
-                      { value: 'none', label: t('createFilament.filler.none') },
-                      { value: 'wood', label: t('createFilament.filler.wood') },
-                      { value: 'carbon', label: t('createFilament.filler.carbon') },
-                      { value: 'glass', label: t('createFilament.filler.glass') },
-                      { value: 'metallic', label: t('createFilament.filler.metallic') },
-                      { value: 'luminescent', label: t('createFilament.filler.luminescent') },
-                      { value: 'glitter', label: t('createFilament.filler.glitter') },
-                      { value: 'fibers', label: t('createFilament.filler.fibers') },
-                      { value: 'stone', label: t('createFilament.filler.stone') },
-                      // Паттерны временно отключены (не удалены, чтобы сохранить совместимость с существующими данными)
-                      // { value: 'pattern1', label: 'Паттерн 1' },
-                      // { value: 'pattern2', label: 'Паттерн 2' },
-                      // { value: 'pattern3', label: 'Паттерн 3' },
-                      // { value: 'pattern4', label: 'Паттерн 4' },
-                      // { value: 'pattern5', label: 'Паттерн 5' },
-                      // { value: 'pattern6', label: 'Паттерн 6' },
-                      // { value: 'pattern7', label: 'Паттерн 7' },
-                      // { value: 'pattern8', label: 'Паттерн 8' },
-                      // { value: 'pattern9', label: 'Паттерн 9' },
-                      // { value: 'pattern10', label: 'Паттерн 10' },
-                      // { value: 'pattern11', label: 'Паттерн 11' },
-                      // { value: 'pattern12', label: 'Паттерн 12' },
-                      ...(isBrandVerified ? [{ value: 'custom', label: t('createFilament.filler.custom') }] : []),
-                    ]}
-                    placeholder={t('createFilament.selectFiller')}
-                  />
-                  {visualFiller === 'custom' && (
-                    <input
-                      type="text"
-                      value={customFiller}
-                      onChange={(e) => setCustomFiller(e.target.value)}
-                      maxLength={40}
-                      placeholder={t('createFilament.filler.customPlaceholder')}
-                      className="mt-2 w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
-                    />
-                  )}
-                </div>
-
-                {/* Прозрачность */}
-                <div>
-                  <label className="flex items-center space-x-2 text-gray-300 mb-2 text-sm font-medium">
+                <section className="min-w-0 space-y-3">
+                  <label className="flex cursor-pointer items-center justify-between gap-4 rounded-xl border border-white/10 bg-black/10 px-3 py-2 text-sm font-medium text-gray-200 transition-colors hover:bg-white/[0.06]">
+                    <span>{t('createFilament.transparentMaterial')}</span>
                     <input
                       type="checkbox"
                       checked={visualTransparency}
                       onChange={(e) => setVisualTransparency(e.target.checked)}
-                      className="w-4 h-4 rounded border-white/20 bg-white/10 text-purple-500 focus:ring-purple-500"
+                      className="peer sr-only"
                     />
-                    <span>{t('createFilament.transparentMaterial')}</span>
+                    <span className="relative h-6 w-11 shrink-0 rounded-full border border-white/15 bg-white/10 transition-colors after:absolute after:left-0.5 after:top-0.5 after:h-[18px] after:w-[18px] after:rounded-full after:bg-gray-300 after:shadow-sm after:transition-transform peer-checked:border-cyan-300/40 peer-checked:bg-cyan-400/25 peer-checked:after:translate-x-5 peer-checked:after:bg-cyan-100 peer-focus-visible:ring-2 peer-focus-visible:ring-cyan-300/60" />
                   </label>
-                </div>
+
+                  <FilamentFeaturesEditor
+                    effects={visualEffects}
+                    onEffectsChange={setVisualEffects}
+                    additives={additives}
+                    onAdditivesChange={setAdditives}
+                    propertyClaims={propertyClaims}
+                    onPropertyClaimsChange={setPropertyClaims}
+                    allowCustom={canUseCustomFeatures}
+                    compact
+                  />
+                </section>
               </div>
             </div>
           )}
@@ -1037,6 +1026,8 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
             value={nozzleHrc}
             onChange={setNozzleHrc}
             filler={effectiveFiller}
+            effects={resolvedVisualEffects}
+            additives={additives}
             materialType={materialType === 'custom' ? customMaterialType : materialType}
           />
 

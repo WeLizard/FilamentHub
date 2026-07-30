@@ -744,6 +744,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
                 <li><code className="text-purple-300">material_type</code> — {t('brandProfile.csvColMaterial')}</li>
                 <li><code className="text-purple-300">color_name</code> — {t('brandProfile.csvColColorName')}</li>
                 <li><code className="text-purple-300">color_hex</code> — {t('brandProfile.csvColColorHex')}</li>
+                <li><code className="text-purple-300">ral_code</code> — {t('brandProfile.csvColRal')}</li>
                 <li><code className="text-purple-300">price_per_kg</code> — {t('brandProfile.csvColPrice')}</li>
                 <li><code className="text-purple-300">spool_weight</code> — {t('brandProfile.csvColSpool')}</li>
                 <li><code className="text-purple-300">line</code> — {t('brandProfile.csvColLine')}</li>
@@ -1391,6 +1392,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
                 brandId={user.brand_id}
                 sourceFilament={addColorsFilament}
                 onClose={() => setAddColorsFilament(null)}
+                allowCustomFeatures={Boolean(brandData.verified)}
               />
             </div>
           </div>
@@ -3356,6 +3358,9 @@ const FilamentCard: React.FC<FilamentCardProps> = ({ filament, onEdit, onDelete,
                     {filament.color_name}
                   </span>
                 )}
+                {filament.ral_code && (
+                  <span className="shrink-0 font-mono text-[11px] text-gray-500">RAL {filament.ral_code}</span>
+                )}
               </div>
               <div className="flex items-center gap-3 text-xs text-gray-400">
                 {officialPreset && (
@@ -3434,7 +3439,7 @@ const FilamentCard: React.FC<FilamentCardProps> = ({ filament, onEdit, onDelete,
   }
 
   return (
-    <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 shadow-xl hover:shadow-2xl hover:border-white/30 transition-all group">
+    <div className="bg-white/10 rounded-2xl p-6 border border-white/20 shadow-xl hover:shadow-2xl hover:border-white/30 transition-all group">
       {/* Header with actions */}
       <div className="flex items-start justify-between mb-4">
         <div className="flex-1 min-w-0">
@@ -3443,6 +3448,9 @@ const FilamentCard: React.FC<FilamentCardProps> = ({ filament, onEdit, onDelete,
           </h4>
           {filament.color_name && (
             <p className="text-gray-400 text-sm mt-1">{filament.color_name}</p>
+          )}
+          {filament.ral_code && (
+            <p className="mt-1 font-mono text-xs text-gray-500">RAL {filament.ral_code}</p>
           )}
         </div>
         <div className="flex space-x-2 ml-2">

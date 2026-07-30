@@ -40,7 +40,21 @@ export interface FilamentVisualSettings {
   colors?: string[]; // До 5 цветов для градиента/перехода
   finish?: 'matte' | 'glossy';
   filler?: string; // известный набор (none/wood/carbon/...) или кастомное значение (только верифиц. бренд)
+  effects?: string[]; // независимые визуальные эффекты; filler остаётся legacy primary
   transparency?: boolean; // Прозрачный/непрозрачный (да/нет)
+}
+
+export interface FilamentAdditive {
+  code: string;
+  content_percent?: number | null;
+  content_basis?: 'weight' | 'volume' | null;
+}
+
+export interface FilamentPropertyClaim {
+  code: string;
+  value?: string | null;
+  standard?: string | null;
+  rating?: string | null;
 }
 
 export interface FilamentPresetSummary {
@@ -63,12 +77,17 @@ export type FilamentAvailability = 'available' | 'out_of_stock' | 'discontinued'
 export interface Filament {
   id: number;
   brand_id: number;
-  brand_name: string | null; // Added
+  brand_name: string | null;
+  brand_slug?: string | null;
+  brand_verified?: boolean;
   name: string;
   material_type: string;
   color_name: string | null;
   color_hex: string | null;
+  ral_code: string | null;
   visual_settings: FilamentVisualSettings | null; // Расширенные визуальные эффекты (только для сайта)
+  additives?: FilamentAdditive[];
+  property_claims?: FilamentPropertyClaim[];
   diameter: number;
   density: number | null;
   price_per_kg: number | null;
@@ -127,12 +146,15 @@ export interface FilamentImportResult {
 export interface FilamentPaletteVariant {
   color_name: string;
   color_hex?: string | null;
+  ral_code?: string | null;
   name?: string | null; // переопределение авто-имени «<Линейка> <Цвет>»
 }
 
 export interface FilamentPalettePayload {
   material_type: string;
   visual_settings?: FilamentVisualSettings | null;
+  additives?: FilamentAdditive[];
+  property_claims?: FilamentPropertyClaim[];
   diameter?: number;
   density?: number | null;
   price_per_kg?: number | null;

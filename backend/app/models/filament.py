@@ -57,6 +57,8 @@ class Filament(Base):
     color_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
     color_hex: Mapped[str | None] = mapped_column(String(7), nullable=True)
     # color_hex: #FF0000 (базовый цвет, используется в OrcaSlicer)
+    ral_code: Mapped[str | None] = mapped_column(String(4), nullable=True, index=True)
+    # ral_code: необязательный четырёхзначный код RAL Classic; не заменяет HEX
 
     # Extended visual settings (JSON) - только для сайта
     visual_settings: Mapped[dict | None] = mapped_column(JSON, nullable=True)
@@ -64,9 +66,15 @@ class Filament(Base):
     #   "color_type": "single" | "two" | "three" | "gradient" | "transition" | "thermochromic",
     #   "colors": ["#FF0000", "#00FF00", ...], // до 5 цветов
     #   "finish": "matte" | "glossy",
-    #   "filler": "none" | "wood" | "carbon" | "glitter" | "metallic" | "luminescent" | "fibers" | "stone" | "glass" | "pattern1-12",
+    #   "filler": "none" | ... (legacy primary visual effect),
+    #   "effects": ["metallic", "glitter", ...],
     #   "transparency": true | false
     # }
+
+    # Physical composition and declared functional properties are separate from
+    # visual rendering. A material may combine several additives and claims.
+    additives: Mapped[list[dict]] = mapped_column(JSON, default=list, server_default="[]", nullable=False)
+    property_claims: Mapped[list[dict]] = mapped_column(JSON, default=list, server_default="[]", nullable=False)
 
     # Physical properties
     diameter: Mapped[float] = mapped_column(Float, default=1.75)
@@ -151,4 +159,3 @@ class Filament(Base):
     def __repr__(self) -> str:
         """String representation."""
         return f"<Filament(id={self.id}, name='{self.name}', type='{self.material_type}')>"
-

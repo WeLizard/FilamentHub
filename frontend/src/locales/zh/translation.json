@@ -991,6 +991,7 @@
     "loading": "加载材料中...",
     "error": "加载材料出错",
     "searchPlaceholder": "搜索...",
+    "searchPlaceholder": "按名称、品牌、材料、颜色、成分或特性搜索...",
     "allTypes": "所有类型",
     "allBrands": "所有品牌",
     "noResults": "未找到材料",
@@ -1022,6 +1023,12 @@
     "fitsPrinter": "有该打印机的配置",
     "myPrintersGroup": "我的打印机",
     "allPrintersGroup": "所有打印机"
+    "allPrintersGroup": "所有打印机",
+    "resultsRange": "第 {{start}}–{{end}} 项，共 {{total}} 项",
+    "loadMore": "显示更多",
+    "loadingMore": "加载中...",
+    "loadMoreError": "无法加载下一批目录内容，请重试。",
+    "endOfCatalog": "已显示所有匹配的材料"
   },
   "brandDetailPage": {
     "loading": "正在加载品牌信息...",
@@ -1396,6 +1403,53 @@
     "skipped": "已跳过",
     "errorsCount": "错误",
     "close": "关闭"
+  },
+  "filamentFeatures": {
+    "visualEffects": "外观细节",
+    "visualEffectsHint": "这里只添加闪粉、夜光或金属质感等外观效果；下方选择的填料会自动更新预览。",
+    "selectEffects": "选择附加效果",
+    "composition": "成分与外观",
+    "physicalComposition": "填料与增强材料",
+    "compositionHint": "在一个列表中选择填料、增强材料和外观细节。成分会自动更新预览，无需重复选择。",
+    "automaticPreview": "预览已自动配置",
+    "livePreview": "实时预览",
+    "selectAdditives": "选择成分与外观细节",
+    "functionalProperties": "功能特性",
+    "functionalPropertiesHint": "材料声明的特性。可为每项添加标准和等级。",
+    "selectProperties": "选择特性",
+    "customPlaceholder": "自定义值",
+    "addCustom": "添加自定义值",
+    "percent": "含量，%",
+    "contentBasis": "含量基准",
+    "basisUnknown": "未注明百分比",
+    "weightBasis": "质量百分比",
+    "volumeBasis": "体积百分比",
+    "remove": "删除",
+    "addDetails": "添加详情",
+    "value": "值",
+    "standard": "标准，例如 IEC 61340",
+    "rating": "等级 / 评级",
+    "effects": {
+      "wood": "木纹", "carbon": "碳纤纹理", "glass": "玻璃纤维",
+      "metallic": "金属质感", "luminescent": "夜光", "glitter": "闪粉",
+      "fibers": "纤维纹理", "stone": "石纹",
+      "carbonaceous": "碳颗粒", "microspheres": "微球", "particles": "细颗粒"
+    },
+    "additives": {
+      "carbon_fiber": "碳纤维", "glass_fiber": "玻璃纤维", "aramid_fiber": "芳纶纤维",
+      "basalt_fiber": "玄武岩纤维", "natural_fiber": "天然纤维", "wood": "木粉",
+      "bamboo": "竹纤维", "cork": "软木", "metal_powder": "金属粉末",
+      "mineral": "矿物填料", "ceramic": "陶瓷填料", "glass_beads": "玻璃微珠",
+      "carbon_nanotubes": "碳纳米管", "carbon_black": "炭黑", "graphene": "石墨烯",
+      "hollow_spheres": "空心微球", "ptfe": "PTFE"
+    },
+    "claims": {
+      "esd": "防静电", "electrically_conductive": "导电", "emi_shielding": "EMI 屏蔽",
+      "flame_retardant": "阻燃", "uv_resistant": "抗紫外线", "wear_resistant": "耐磨",
+      "low_friction": "低摩擦", "lightweight": "轻量化", "foaming": "可发泡",
+      "antimicrobial": "抗菌", "food_contact": "食品接触", "heat_resistant": "耐热",
+      "chemical_resistant": "耐化学品", "magnetically_detectable": "可磁性检测"
+    }
   },
   "nozzleHardness": {
     "label": "所需喷嘴硬度",
@@ -3578,6 +3632,7 @@
     "csvColMaterial": "类型：PLA、PETG 等（必填）",
     "csvColColorName": "颜色名称",
     "csvColColorHex": "十六进制颜色，例如 #FF0000",
+    "csvColRal": "可选的 RAL Classic 色号，例如 3020",
     "csvColPrice": "每公斤价格",
     "csvColSpool": "线轴重量（克）",
     "csvColLine": "产品线 — 同一产品的颜色组",
@@ -4858,6 +4913,9 @@
     "colorName": "颜色名称",
     "notSpecified": "未指定",
     "hexColor": "HEX 颜色"
+    "hexColor": "HEX 颜色",
+    "ralCode": "RAL Classic",
+    "ralHint": "可选的 RAL Classic 参考色号。预览颜色仍由 HEX 单独控制。"
   },
   "printerRequest": {
     "title": "打印机添加申请",
@@ -5355,6 +5413,7 @@
     "ERR_ONLY_OWN_BRAND_OFFICIAL": "官方预设只能为您自己的品牌创建",
     "ERR_OFFICIAL_VERIFIED_ONLY": "官方状态仅对已认证品牌可用",
     "ERR_CUSTOM_FILLER_VERIFIED_ONLY": "自定义填充物仅对已认证品牌可用",
+    "ERR_CUSTOM_MATERIAL_FEATURE_VERIFIED_ONLY": "自定义效果、成分和特性仅对已认证品牌可用",
     "ERR_FILE_EXT_NOT_ALLOWED": "不允许文件扩展名 {{ext}}。允许的：{{allowed}}",
     "ERR_FILE_CONTENT_MISMATCH": "文件内容与其 {{ext}} 扩展名不匹配",
     "ERR_MAX_FILES_EXCEEDED": "文件限制已超出：最多 {{max}} 个",

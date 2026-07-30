@@ -545,8 +545,11 @@ export const filamentsAPI = {
     name: string;
     material_type: string;
     visual_settings?: FilamentVisualSettings | null;
+    additives?: FilamentAdditive[];
+    property_claims?: FilamentPropertyClaim[];
     color_name?: string;
     color_hex?: string;
+    ral_code?: string | null;
     diameter?: number;
     density?: number;
     price_per_kg?: number;
@@ -566,7 +569,10 @@ export const filamentsAPI = {
     material_type?: string;
     color_name?: string;
     color_hex?: string;
+    ral_code?: string | null;
     visual_settings?: FilamentVisualSettings | null;
+    additives?: FilamentAdditive[];
+    property_claims?: FilamentPropertyClaim[];
     diameter?: number;
     density?: number;
     price_per_kg?: number;

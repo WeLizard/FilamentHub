@@ -6,6 +6,7 @@ import { createPortal } from 'react-dom';
 import { FilamentPreview } from './FilamentPreview';
 import { HSLColorPicker } from './HSLColorPicker';
 import type { FilamentVisualSettings } from '../types/api';
+import { formatRalCode, normalizeRalCode } from '../utils/ralCode';
 
 interface ColorMaterialSectionProps {
   /** Режим работы: preview (только отображение) или edit (редактирование) */
@@ -20,6 +21,11 @@ interface ColorMaterialSectionProps {
   colorHex: string;
   /** Callback при изменении HEX цвета (только в режиме edit) */
   onColorHexChange?: (value: string) => void;
+
+  /** Необязательный четырёхзначный код RAL Classic */
+  ralCode?: string;
+  /** Callback при изменении RAL-кода */
+  onRalCodeChange?: (value: string) => void;
   
   /** Расширенные визуальные настройки (опционально) */
   visualSettings?: FilamentVisualSettings | null;
@@ -40,6 +46,8 @@ export const ColorMaterialSection: React.FC<ColorMaterialSectionProps> = ({
   onColorNameChange,
   colorHex,
   onColorHexChange,
+  ralCode = '',
+  onRalCodeChange,
   visualSettings,
   previewSize = 'medium',
   className = '',
@@ -90,9 +98,9 @@ export const ColorMaterialSection: React.FC<ColorMaterialSectionProps> = ({
       <label className="block text-gray-300 mb-2 text-sm font-medium">{t('colorMaterial.sectionLabel')}</label>
       
       {/* Flex layout: Название цвета | Preview | HEX - все выровнены по высоте */}
-      <div className="flex items-end gap-4 justify-between">
+      <div className="grid grid-cols-1 items-end gap-3 sm:grid-cols-[minmax(12rem,1fr)_auto_8rem_7rem_auto]">
         {/* Инпут названия цвета (слева) */}
-        <div className="flex-[0_1_auto] min-w-[250px]">
+        <div className="min-w-0">
           <label className="block text-gray-400 mb-1 text-xs font-medium">{t('colorMaterial.colorName')}</label>
           {isEditMode ? (
             <input
@@ -185,6 +193,27 @@ export const ColorMaterialSection: React.FC<ColorMaterialSectionProps> = ({
           ) : (
             <div className="h-12 px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white flex items-center font-mono text-sm">
               {colorHex || <span className="text-gray-400 italic">#000000</span>}
+            </div>
+          )}
+        </div>
+
+        {/* RAL — справочный код; экранный цвет по-прежнему задаётся HEX */}
+        <div className="w-28">
+          <label className="mb-1 block text-xs font-medium text-gray-400">{t('colorMaterial.ralCode')}</label>
+          {isEditMode ? (
+            <input
+              type="text"
+              value={ralCode}
+              onChange={(event) => onRalCodeChange?.(event.target.value)}
+              onBlur={(event) => onRalCodeChange?.(normalizeRalCode(event.target.value))}
+              placeholder="RAL 3020"
+              maxLength={8}
+              className="h-12 w-full rounded-xl border border-white/20 bg-white/10 px-3 py-3 text-center font-mono text-sm text-white placeholder-gray-500 transition-all focus:border-transparent focus:outline-none focus:ring-2 focus:ring-purple-500"
+              title={t('colorMaterial.ralHint')}
+            />
+          ) : (
+            <div className="flex h-12 items-center rounded-xl border border-white/10 bg-white/5 px-3 font-mono text-sm text-white">
+              {ralCode ? formatRalCode(ralCode) : <span className="text-gray-400">—</span>}
             </div>
           )}
         </div>

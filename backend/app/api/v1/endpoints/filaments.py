@@ -4,7 +4,7 @@ import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import case, desc, func, or_, select
+from sqlalchemy import String, case, cast, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -12,6 +12,7 @@ from app.core.dependencies import get_current_user
 from app.core.errors import (
     ERR_BRAND_NOT_FOUND,
     ERR_CUSTOM_FILLER_VERIFIED_ONLY,
+    ERR_CUSTOM_MATERIAL_FEATURE_VERIFIED_ONLY,
     ERR_FILAMENT_ALREADY_EXISTS,
     ERR_FILAMENT_LINE_INVALID,
     ERR_FILAMENT_NOT_FOUND,
@@ -27,11 +28,14 @@ from app.models.filament_line import FilamentLine
 from app.models.printer import Printer
 from app.models.user import User, UserRole
 from app.schemas.filament import (
+    KNOWN_ADDITIVES,
     KNOWN_FILLERS,
+    KNOWN_PROPERTY_CLAIMS,
     FilamentCreate,
     FilamentListResponse,
     FilamentResponse,
     FilamentUpdate,
+    normalize_ral_code,
 )
 from app.services.organization_access import can_edit_brand_catalog
 
@@ -75,6 +79,54 @@ async def _validate_custom_filler(
         raise HTTPException(status_code=400, detail=error_msg)
 
 
+async def _validate_material_features(
+    visual_settings: object,
+    additives: list[object] | None,
+    property_claims: list[object] | None,
+    brand: Brand | None,
+    current_user: User,
+    db: AsyncSession,
+) -> None:
+    """Validate custom visual, composition and property codes as one contract."""
+    custom_values: list[tuple[str, str]] = []
+    has_custom_visual = False
+
+    if visual_settings:
+        effects = getattr(visual_settings, "effects", None) or []
+        filler = getattr(visual_settings, "filler", None) or "none"
+        for effect in dict.fromkeys([filler, *effects]):
+            if effect != "none" and effect not in KNOWN_FILLERS:
+                custom_values.append((effect, "visual_effect"))
+                has_custom_visual = True
+
+    for additive in additives or []:
+        code = getattr(additive, "code", None)
+        if code and code not in KNOWN_ADDITIVES:
+            custom_values.append((code, "filament_additive"))
+
+    for claim in property_claims or []:
+        code = getattr(claim, "code", None)
+        if code and code not in KNOWN_PROPERTY_CLAIMS:
+            custom_values.append((code, "filament_property"))
+
+    if not custom_values:
+        return
+    if current_user.role != UserRole.ADMIN and not (brand and brand.verified):
+        raise_error(
+            403,
+            ERR_CUSTOM_FILLER_VERIFIED_ONLY
+            if has_custom_visual
+            else ERR_CUSTOM_MATERIAL_FEATURE_VERIFIED_ONLY,
+        )
+
+    from app.services.preset_moderation import validate_text_field
+
+    for value, field_name in dict.fromkeys(custom_values):
+        is_valid, error_msg = await validate_text_field(value, db, field_name)
+        if not is_valid:
+            raise HTTPException(status_code=400, detail=error_msg)
+
+
 def _same_filament_color(
     existing_color_name: str | None,
     existing_color_hex: str | None,
@@ -105,7 +157,10 @@ async def list_filaments(
     brand_id: int | None = Query(None),
     material_type: str | None = Query(None),
     printer_id: int | None = Query(None, gt=0),
-    search: str | None = Query(None, description="Поиск по названию материала"),
+    search: str | None = Query(
+        None,
+        description="Поиск по материалу, бренду, типу, цвету, составу, эффекту или свойству",
+    ),
 ) -> FilamentListResponse:
     """Получить список материалов.
 
@@ -120,13 +175,21 @@ async def list_filaments(
         query = query.where(Filament.brand_id == brand_id)
     if material_type:
         query = query.where(Filament.material_type == material_type)
-    if search:
-        search_term = like_pattern(search)
-        # Search in filament name AND brand name (LEFT JOIN чтобы не потерять филаменты без бренда)
+    normalized_search = search.strip() if search else None
+    if normalized_search:
+        search_term = like_pattern(normalized_search)
+        ral_search_term = like_pattern(str(normalize_ral_code(normalized_search)))
         query = query.outerjoin(Brand).where(
             or_(
                 Filament.name.ilike(search_term),
-                Brand.name.ilike(search_term)
+                Brand.name.ilike(search_term),
+                Filament.material_type.ilike(search_term),
+                Filament.color_name.ilike(search_term),
+                Filament.ral_code.ilike(ral_search_term),
+                Filament.visual_settings["filler"].as_string().ilike(search_term),
+                Filament.visual_settings["effects"].as_string().ilike(search_term),
+                cast(Filament.additives, String).ilike(search_term),
+                cast(Filament.property_claims, String).ilike(search_term),
             )
         )
 
@@ -138,13 +201,20 @@ async def list_filaments(
         count_query = count_query.where(Filament.brand_id == brand_id)
     if material_type:
         count_query = count_query.where(Filament.material_type == material_type)
-    if search:
-        search_term = like_pattern(search)
-        # Search in filament name AND brand name (LEFT JOIN чтобы не потерять филаменты без бренда)
+    if normalized_search:
+        search_term = like_pattern(normalized_search)
+        ral_search_term = like_pattern(str(normalize_ral_code(normalized_search)))
         count_query = count_query.outerjoin(Brand).where(
             or_(
                 Filament.name.ilike(search_term),
-                Brand.name.ilike(search_term)
+                Brand.name.ilike(search_term),
+                Filament.material_type.ilike(search_term),
+                Filament.color_name.ilike(search_term),
+                Filament.ral_code.ilike(ral_search_term),
+                Filament.visual_settings["filler"].as_string().ilike(search_term),
+                Filament.visual_settings["effects"].as_string().ilike(search_term),
+                cast(Filament.additives, String).ilike(search_term),
+                cast(Filament.property_claims, String).ilike(search_term),
             )
         )
     total_result = await db.execute(count_query)
@@ -253,6 +323,8 @@ async def list_filaments(
     for filament in filaments:
         filament_dict = FilamentResponse.model_validate(filament).model_dump()
         filament_dict["brand_name"] = filament.brand.name if filament.brand else None
+        filament_dict["brand_slug"] = filament.brand.slug if filament.brand else None
+        filament_dict["brand_verified"] = filament.brand.verified if filament.brand else False
         filament_dict["line_name"] = filament.line.name if filament.line else None
         filament_dict["currency"] = filament.brand.currency if filament.brand else "RUB"
         filament_dict["price_hidden"] = filament.brand.price_hidden if filament.brand else False
@@ -498,7 +570,14 @@ async def create_filament(
         if not is_valid:
             raise HTTPException(status_code=400, detail=error_msg)
 
-    await _validate_custom_filler(data.visual_settings, brand, current_user, db)
+    await _validate_material_features(
+        data.visual_settings,
+        data.additives,
+        data.property_claims,
+        brand,
+        current_user,
+        db,
+    )
 
     if data.line_id is not None:
         line = await db.scalar(select(FilamentLine).where(FilamentLine.id == data.line_id))
@@ -546,6 +625,7 @@ async def create_filament(
                 "material_type": duplicate_filament.material_type,
                 "color_name": duplicate_filament.color_name,
                 "color_hex": duplicate_filament.color_hex,
+                "ral_code": duplicate_filament.ral_code,
             },
         )
 
@@ -659,10 +739,19 @@ async def update_filament(
     if update_data.get("availability") is not None:
         update_data["availability"] = FilamentAvailability(update_data["availability"])
 
-    if data.visual_settings is not None:
+    if (
+        data.visual_settings is not None
+        or data.additives is not None
+        or data.property_claims is not None
+    ):
         brand_result = await db.execute(select(Brand).where(Brand.id == filament.brand_id))
-        await _validate_custom_filler(
-            data.visual_settings, brand_result.scalar_one_or_none(), current_user, db
+        await _validate_material_features(
+            data.visual_settings,
+            data.additives,
+            data.property_claims,
+            brand_result.scalar_one_or_none(),
+            current_user,
+            db,
         )
 
     if update_data.get("line_id") is not None:

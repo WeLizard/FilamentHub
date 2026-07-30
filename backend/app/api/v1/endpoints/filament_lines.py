@@ -112,7 +112,7 @@ async def create_line_variants(
     Каждый цвет становится отдельным материалом (со своим QR у верифиц. бренда),
     но в одной линейке. Имя по умолчанию — «⟨Линейка⟩ ⟨Цвет⟩», можно переопределить.
     """
-    from app.api.v1.endpoints.filaments import _validate_custom_filler
+    from app.api.v1.endpoints.filaments import _validate_material_features
 
     line = await db.scalar(select(FilamentLine).where(FilamentLine.id == line_id))
     if line is None:
@@ -123,8 +123,15 @@ async def create_line_variants(
     if not await can_edit_brand_catalog(db, current_user, line.brand_id):
         raise_error(403, ERR_NO_PERMISSION_EDIT_FILAMENT)
 
-    # Кастомный наполнитель — только для верифицированного бренда (проверяем один раз).
-    await _validate_custom_filler(data.visual_settings, brand, current_user, db)
+    # Custom material features are available only to a verified brand.
+    await _validate_material_features(
+        data.visual_settings,
+        data.additives,
+        data.property_claims,
+        brand,
+        current_user,
+        db,
+    )
 
     material_type = data.material_type.strip()
     availability = FilamentAvailability(data.availability)
@@ -182,7 +189,10 @@ async def create_line_variants(
             material_type=material_type,
             color_name=color_name,
             color_hex=color_hex if color_hex and color_hex.startswith("#") else None,
+            ral_code=variant.ral_code,
             visual_settings=visual,
+            additives=[item.model_dump() for item in data.additives],
+            property_claims=[item.model_dump() for item in data.property_claims],
             diameter=data.diameter,
             density=data.density,
             price_per_kg=data.price_per_kg,

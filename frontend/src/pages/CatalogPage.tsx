@@ -1,7 +1,7 @@
 /** Страница каталога материалов */
 
-import { useState, useEffect, useMemo } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useState, useEffect, useMemo, useRef } from 'react';
+import { useInfiniteQuery, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
@@ -26,9 +26,12 @@ import { Dropdown } from '../components/Dropdown';
 import { FilamentPreview } from '../components/FilamentPreview';
 import { NozzleRequirementBadge } from '../components/NozzleRequirementBadge';
 import { useConfiguredNozzleHrc } from '../hooks/useConfiguredNozzleHrc';
+import { useDebounce } from '../hooks/useDebounce';
 import { SEOHead } from '../components/SEOHead';
 import type { Filament } from '../types/api';
 import type { AxiosError } from 'axios';
+
+const CATALOG_PAGE_SIZE = 24;
 
 export const CatalogPage: React.FC = () => {
   const { t } = useTranslation();
@@ -37,9 +40,12 @@ export const CatalogPage: React.FC = () => {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = useState('');
+  const debouncedSearchQuery = useDebounce(searchQuery.trim(), 250);
   const [_printerModel, _setPrinterModel] = useState('Ender 3 Pro');
   const [materialTypeFilter, setMaterialTypeFilter] = useState<string | null>(null);
   const [brandFilter, setBrandFilter] = useState<number | null>(null);
+  const [brandSearch, setBrandSearch] = useState('');
+  const debouncedBrandSearch = useDebounce(brandSearch.trim(), 250);
   const [printerFilter, setPrinterFilter] = useState<number | null>(null);
   const [printerSearch, setPrinterSearch] = useState('');
   const configuredNozzleHrc = useConfiguredNozzleHrc();
@@ -152,52 +158,101 @@ export const CatalogPage: React.FC = () => {
   const {
     data: filamentsData,
     isLoading: isLoadingFilaments,
+    isFetching: isFetchingFilaments,
+    isFetchingNextPage,
+    isFetchNextPageError,
+    fetchNextPage,
+    hasNextPage,
     error: filamentsError,
-  } = useQuery({
+  } = useInfiniteQuery({
     queryKey: [
       'filaments',
-      { material_type: materialTypeFilter, brand_id: brandFilter, printer_id: printerFilter },
+      {
+        search: debouncedSearchQuery,
+        material_type: materialTypeFilter,
+        brand_id: brandFilter,
+        printer_id: printerFilter,
+      },
     ],
-    queryFn: () =>
+    queryFn: ({ pageParam }) =>
       filamentsAPI.list({
         active_only: true,
+        search: debouncedSearchQuery || undefined,
         material_type: materialTypeFilter || undefined,
         brand_id: brandFilter || undefined,
         printer_id: printerFilter || undefined,
-        page: 1,
-        size: 100,
+        page: pageParam,
+        size: CATALOG_PAGE_SIZE,
       }),
+    initialPageParam: 1,
+    getNextPageParam: (lastPage) =>
+      lastPage.page < lastPage.pages ? lastPage.page + 1 : undefined,
+    placeholderData: (previousData) => previousData,
   });
 
   const printerMatchedIds = useMemo(
-    () => new Set(filamentsData?.printer_matched_ids ?? []),
+    () =>
+      new Set(
+        filamentsData?.pages.flatMap((catalogPage) => catalogPage.printer_matched_ids ?? []) ?? [],
+      ),
     [filamentsData],
   );
 
-  // Загружаем бренды для фильтра и отображения
+  // Загружаем бренды для фильтра.
   const { data: brandsData } = useQuery({
-    queryKey: ['brands'],
-    queryFn: () => brandsAPI.list({ active_only: true, page: 1, size: 100 }),
+    queryKey: ['brands', 'catalog-filter', debouncedBrandSearch],
+    queryFn: () => brandsAPI.list({
+      active_only: true,
+      page: 1,
+      size: 50,
+      search: debouncedBrandSearch || undefined,
+    }),
+  });
+  const { data: selectedBrand } = useQuery({
+    queryKey: ['brand', brandFilter],
+    queryFn: () => brandsAPI.get(brandFilter as number),
+    enabled: brandFilter !== null,
+  });
+  const brandOptions = useMemo(() => {
+    const byId = new Map<number, string>();
+    if (selectedBrand) {
+      byId.set(selectedBrand.id, selectedBrand.name);
+    }
+    for (const brand of brandsData?.items ?? []) {
+      byId.set(brand.id, brand.name);
+    }
+    return Array.from(byId, ([value, label]) => ({ value, label }));
+  }, [brandsData, selectedBrand]);
+
+  const { data: materialTypes = [] } = useQuery({
+    queryKey: ['filament-material-types'],
+    queryFn: filamentsAPI.getMaterialTypes,
   });
 
-  // Создаем мапу брендов для быстрого доступа
-  const brandsMap = new Map(brandsData?.items.map((b) => [b.id, b]) || []);
+  const filaments = useMemo(
+    () => filamentsData?.pages.flatMap((catalogPage) => catalogPage.items) ?? [],
+    [filamentsData],
+  );
+  const total = filamentsData?.pages[0]?.total ?? 0;
+  const loadMoreRef = useRef<HTMLDivElement | null>(null);
 
-  // Фильтруем материалы по поисковому запросу
-  const filteredFilaments = filamentsData?.items.filter((filament) => {
-    if (!searchQuery) return true;
-    const query = searchQuery.toLowerCase();
-    return (
-      filament.name.toLowerCase().includes(query) ||
-      filament.material_type.toLowerCase().includes(query) ||
-      filament.color_name?.toLowerCase().includes(query)
+  useEffect(() => {
+    const target = loadMoreRef.current;
+    if (!target || !hasNextPage || typeof IntersectionObserver === 'undefined') {
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting && !isFetchingFilaments) {
+          void fetchNextPage();
+        }
+      },
+      { rootMargin: '400px 0px' },
     );
-  }) || [];
-
-  // Получаем уникальные типы материалов для фильтра
-  const materialTypes = Array.from(
-    new Set(filamentsData?.items.map((f) => f.material_type) || [])
-  ).sort();
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [fetchNextPage, hasNextPage, isFetchingFilaments]);
 
   if (isLoadingFilaments) {
     return (
@@ -207,7 +262,7 @@ export const CatalogPage: React.FC = () => {
     );
   }
 
-  if (filamentsError) {
+  if (filamentsError && !filamentsData) {
     // В embed-режиме (WebView плагина, DevTools нет) показываем техдетали ошибки.
     const axiosError = filamentsError as AxiosError<{ detail?: unknown }>;
     let responseDetail = '';
@@ -277,7 +332,9 @@ export const CatalogPage: React.FC = () => {
           <div className="grid gap-2 sm:gap-4 grid-cols-2 sm:grid-cols-3">
             <Dropdown
               value={materialTypeFilter || ''}
-              onChange={(val) => setMaterialTypeFilter(val === '' ? null : (val as string))}
+              onChange={(val) => {
+                setMaterialTypeFilter(val === '' ? null : (val as string));
+              }}
               options={[
                 { value: '', label: t('catalogPage.allTypes') },
                 ...materialTypes.map((type) => ({ value: type, label: type })),
@@ -286,16 +343,23 @@ export const CatalogPage: React.FC = () => {
             />
             <Dropdown
               value={brandFilter || ''}
-              onChange={(val) => setBrandFilter(val === '' ? null : Number(val))}
+              onChange={(val) => {
+                setBrandFilter(val === '' ? null : Number(val));
+              }}
               options={[
                 { value: '', label: t('catalogPage.allBrands') },
-                ...(brandsData?.items.map((brand) => ({ value: brand.id, label: brand.name })) || []),
+                ...brandOptions,
               ]}
               placeholder={t('catalogPage.allBrands')}
+              filterable
+              filterValue={brandSearch}
+              onFilterChange={setBrandSearch}
             />
             <Dropdown
               value={printerFilter ?? ''}
-              onChange={(value) => setPrinterFilter(value === '' ? null : Number(value))}
+              onChange={(value) => {
+                setPrinterFilter(value === '' ? null : Number(value));
+              }}
               options={printerOptions}
               placeholder={t('catalogPage.allPrinters')}
               filterable
@@ -307,12 +371,16 @@ export const CatalogPage: React.FC = () => {
       </div>
 
       {/* Material Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {filteredFilaments.map((filament) => (
+      <div
+        className={`grid grid-cols-1 lg:grid-cols-2 gap-6 transition-opacity ${
+          isFetchingFilaments ? 'opacity-60' : 'opacity-100'
+        }`}
+        aria-busy={isFetchingFilaments}
+      >
+        {filaments.map((filament) => (
           <MaterialCard
             key={filament.id}
             filament={filament}
-            brand={brandsMap.get(filament.brand_id)}
             isSelected={selectedFilament === filament.id}
             onSelect={handleSavePreset}
             onShowQR={() => setShowQR(showQR === filament.id ? null : filament.id)}
@@ -325,11 +393,46 @@ export const CatalogPage: React.FC = () => {
         ))}
       </div>
 
-      {filteredFilaments.length === 0 && (
+      {filaments.length === 0 && (
         <div className="text-center py-12">
           <Package className="w-16 h-16 text-gray-400 mx-auto mb-4" />
           <p className="text-gray-400 text-xl">{t('catalogPage.noResults')}</p>
         </div>
+      )}
+
+      {total > 0 && (
+        <footer
+          ref={loadMoreRef}
+          className="flex flex-col items-center gap-3 rounded-xl border border-white/10 bg-white/[0.04] px-4 py-4"
+        >
+          <p className="text-sm text-gray-400">
+            {t('catalogPage.resultsRange', {
+              start: 1,
+              end: filaments.length,
+              total,
+            })}
+          </p>
+          {hasNextPage && (
+            <button
+              type="button"
+              onClick={() => void fetchNextPage()}
+              disabled={isFetchingNextPage}
+              className="inline-flex min-h-10 items-center justify-center rounded-xl border border-purple-400/25 bg-purple-500/10 px-5 py-2 text-sm font-medium text-purple-100 transition hover:border-purple-300/40 hover:bg-purple-500/20 disabled:cursor-wait disabled:opacity-60"
+            >
+              {isFetchingNextPage
+                ? t('catalogPage.loadingMore')
+                : t('catalogPage.loadMore')}
+            </button>
+          )}
+          {isFetchNextPageError && (
+            <p className="text-sm text-rose-300" role="alert">
+              {t('catalogPage.loadMoreError')}
+            </p>
+          )}
+          {!hasNextPage && filaments.length > CATALOG_PAGE_SIZE && (
+            <p className="text-xs text-gray-500">{t('catalogPage.endOfCatalog')}</p>
+          )}
+        </footer>
       )}
       </div>
     </>
@@ -338,7 +441,6 @@ export const CatalogPage: React.FC = () => {
 
 interface MaterialCardProps {
   filament: Filament;
-  brand?: import('../types/api').Brand;
   isSelected: boolean;
   onSelect: (presetId: number) => void;
   onShowQR: () => void;
@@ -351,7 +453,6 @@ interface MaterialCardProps {
 
 const MaterialCard: React.FC<MaterialCardProps> = ({
   filament,
-  brand,
   isSelected,
   onSelect,
   onShowQR,
@@ -372,6 +473,13 @@ const MaterialCard: React.FC<MaterialCardProps> = ({
   const hasCarousel = presetSummaries.length > 1;
   const currentPreset = presetSummaries[currentPresetIndex] ?? null;
   const isPresetSaved = currentPreset ? savedPresetIds.has(currentPreset.id) : false;
+  const brand = filament.brand_name && filament.brand_slug
+    ? {
+        name: filament.brand_name,
+        slug: filament.brand_slug,
+        verified: filament.brand_verified,
+      }
+    : null;
 
   useEffect(() => {
     setCurrentPresetIndex(0);
@@ -561,6 +669,11 @@ const MaterialCard: React.FC<MaterialCardProps> = ({
           <div className="flex items-center gap-1 sm:gap-2 bg-white/5 border border-white/10 rounded-full px-2 sm:px-3 py-0.5 sm:py-1">
             <Palette className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-amber-300" />
             <span className="text-white font-semibold text-[10px] sm:text-xs truncate max-w-[80px] sm:max-w-[220px]">{filament.color_name}</span>
+          </div>
+        )}
+        {filament.ral_code && (
+          <div className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 font-mono text-[10px] font-semibold text-gray-200 sm:px-3 sm:py-1 sm:text-xs">
+            RAL {filament.ral_code}
           </div>
         )}
       </div>

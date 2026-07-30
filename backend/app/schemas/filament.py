@@ -3,18 +3,76 @@
 from __future__ import annotations
 
 from datetime import datetime
+import re
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-# Известные наполнители. Кастомное значение вне этого набора разрешено только
-# верифицированному бренду (проверяет эндпоинт филаментов).
+# Legacy visual filler values. New clients use ``effects`` but ``filler`` remains
+# in the contract so old Orca/plugin and web clients continue to round-trip data.
 KNOWN_FILLERS = frozenset({
     "none", "wood", "carbon", "glitter", "metallic", "luminescent",
     "fibers", "stone", "glass", "pattern1", "pattern2", "pattern3",
     "pattern4", "pattern5", "pattern6", "pattern7", "pattern8",
     "pattern9", "pattern10", "pattern11", "pattern12",
 })
+
+KNOWN_ADDITIVES = frozenset({
+    "aramid_fiber", "bamboo", "basalt_fiber", "carbon_black", "carbon_fiber",
+    "carbon_nanotubes", "ceramic", "cork", "glass_beads", "glass_fiber",
+    "graphene", "hollow_spheres", "metal_powder", "mineral", "natural_fiber",
+    "ptfe", "wood",
+})
+
+KNOWN_PROPERTY_CLAIMS = frozenset({
+    "antimicrobial", "chemical_resistant", "electrically_conductive",
+    "emi_shielding", "esd", "flame_retardant", "food_contact", "foaming",
+    "heat_resistant", "lightweight", "low_friction", "magnetically_detectable",
+    "uv_resistant", "wear_resistant",
+})
+
+
+def _normalize_code(value: object) -> object:
+    if isinstance(value, str):
+        return value.strip().lower().replace(" ", "_")
+    return value
+
+
+_RAL_CODE_RE = re.compile(r"^(?:RAL[\s_-]*)?(\d{4})$", re.IGNORECASE)
+
+
+def normalize_ral_code(value: object) -> object:
+    """Normalize optional RAL Classic input without claiming palette membership."""
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        return value
+    stripped = value.strip()
+    if not stripped:
+        return None
+    match = _RAL_CODE_RE.fullmatch(stripped)
+    return match.group(1) if match else stripped.upper()
+
+
+class FilamentAdditive(BaseModel):
+    """A physical additive or reinforcement declared for a filament."""
+
+    code: str = Field(..., min_length=1, max_length=40)
+    content_percent: float | None = Field(None, ge=0, le=100)
+    content_basis: Literal["weight", "volume"] | None = None
+
+    _normalize_additive_code = field_validator("code", mode="before")(_normalize_code)
+
+
+class FilamentPropertyClaim(BaseModel):
+    """A functional property claim, optionally accompanied by its evidence label."""
+
+    code: str = Field(..., min_length=1, max_length=40)
+    value: str | None = Field(None, max_length=100)
+    standard: str | None = Field(None, max_length=100)
+    rating: str | None = Field(None, max_length=80)
+
+    _normalize_claim_code = field_validator("code", mode="before")(_normalize_code)
 
 
 class FilamentVisualSettings(BaseModel):
@@ -35,8 +93,10 @@ class FilamentVisualSettings(BaseModel):
     # Финиш поверхности: матовый или глянцевый
 
     filler: str = Field("none", max_length=40)
-    # Наполнитель: одно из KNOWN_FILLERS или кастомное значение (только для
-    # верифицированного бренда — это проверяет эндпоинт; неверифиц. → только известные)
+    # Legacy primary visual effect. Kept for backward compatibility.
+
+    effects: list[str] = Field(default_factory=list, max_length=12)
+    # Independent visual effects. More than one may be rendered at the same time.
 
     transparency: bool = Field(False)
     # Прозрачность: да/нет (True = прозрачный, False = непрозрачный)
@@ -48,8 +108,30 @@ class FilamentVisualSettings(BaseModel):
         if v is None or (isinstance(v, str) and not v.strip()):
             return "none"
         if isinstance(v, str):
-            return v.strip()
+            return _normalize_code(v)
         return v
+
+    @field_validator("effects", mode="before")
+    @classmethod
+    def _normalize_effects(cls, value: object) -> object:
+        if value is None:
+            return []
+        if not isinstance(value, list):
+            return value
+        normalized: list[str] = []
+        for item in value:
+            code = _normalize_code(item)
+            if isinstance(code, str) and code and code != "none" and code not in normalized:
+                normalized.append(code)
+        return normalized
+
+    @model_validator(mode="after")
+    def _sync_legacy_filler(self) -> "FilamentVisualSettings":
+        if self.effects:
+            self.filler = self.effects[0]
+        elif self.filler != "none":
+            self.effects = [self.filler]
+        return self
 
 
 class FilamentBase(BaseModel):
@@ -60,8 +142,12 @@ class FilamentBase(BaseModel):
     color_name: str | None = Field(None, max_length=100)
     color_hex: str | None = Field(None, pattern=r"^#[0-9A-Fa-f]{6}$")
     # color_hex: базовый цвет, используется в OrcaSlicer
+    ral_code: str | None = Field(None, pattern=r"^\d{4}$")
+    # RAL Classic reference supplied by the contributor; no embedded palette lookup.
     visual_settings: FilamentVisualSettings | None = Field(None)
     # visual_settings: расширенные визуальные эффекты (только для сайта)
+    additives: list[FilamentAdditive] = Field(default_factory=list, max_length=24)
+    property_claims: list[FilamentPropertyClaim] = Field(default_factory=list, max_length=24)
     diameter: float = Field(1.75, ge=1.0, le=3.5)
     density: float | None = Field(None, gt=0)
     price_per_kg: float | None = Field(None, ge=0)
@@ -78,6 +164,8 @@ class FilamentBase(BaseModel):
     price_display_unit: Literal["per_kg", "per_spool"] = Field("per_kg")
     line_id: int | None = Field(None, gt=0)  # линейка (группировка вариантов-цвета)
 
+    _normalize_ral_code = field_validator("ral_code", mode="before")(normalize_ral_code)
+
 
 class FilamentCreate(FilamentBase):
     """Schema for creating Filament."""
@@ -92,7 +180,10 @@ class FilamentUpdate(BaseModel):
     material_type: str | None = Field(None, max_length=50)
     color_name: str | None = Field(None, max_length=100)
     color_hex: str | None = Field(None, pattern=r"^#[0-9A-Fa-f]{6}$")
+    ral_code: str | None = Field(None, pattern=r"^\d{4}$")
     visual_settings: FilamentVisualSettings | None = None
+    additives: list[FilamentAdditive] | None = Field(None, max_length=24)
+    property_claims: list[FilamentPropertyClaim] | None = Field(None, max_length=24)
     diameter: float | None = Field(None, ge=1.0, le=3.5)
     density: float | None = Field(None, gt=0)
     price_per_kg: float | None = Field(None, ge=0)
@@ -108,6 +199,8 @@ class FilamentUpdate(BaseModel):
     availability: Literal["available", "out_of_stock", "discontinued", "coming_soon"] | None = None
     price_display_unit: Literal["per_kg", "per_spool"] | None = None
     line_id: int | None = Field(None, gt=0)  # null — снять с линейки
+
+    _normalize_ral_code = field_validator("ral_code", mode="before")(normalize_ral_code)
 
 
 class FilamentPresetSummary(BaseModel):
@@ -135,6 +228,8 @@ class FilamentResponse(FilamentBase):
     id: int
     brand_id: int
     brand_name: str | None = Field(None)
+    brand_slug: str | None = Field(None)
+    brand_verified: bool = Field(False)
     line_name: str | None = Field(None)  # имя линейки (денормализовано)
     currency: str = Field("RUB")  # валюта бренда (денормализовано)
     price_hidden: bool = Field(False)  # бренд скрыл цену (денормализовано)
@@ -213,7 +308,10 @@ class FilamentPaletteVariant(BaseModel):
 
     color_name: str = Field(..., min_length=1, max_length=100)
     color_hex: str | None = Field(None, pattern=r"^#[0-9A-Fa-f]{6}$")
+    ral_code: str | None = Field(None, pattern=r"^\d{4}$")
     name: str | None = Field(None, min_length=1, max_length=200)  # переопределение авто-имени
+
+    _normalize_ral_code = field_validator("ral_code", mode="before")(normalize_ral_code)
 
 
 class FilamentPaletteCreate(BaseModel):
@@ -221,6 +319,8 @@ class FilamentPaletteCreate(BaseModel):
 
     material_type: str = Field(..., max_length=50)
     visual_settings: FilamentVisualSettings | None = Field(None)
+    additives: list[FilamentAdditive] = Field(default_factory=list, max_length=24)
+    property_claims: list[FilamentPropertyClaim] = Field(default_factory=list, max_length=24)
     diameter: float = Field(1.75, ge=1.0, le=3.5)
     density: float | None = Field(None, gt=0)
     price_per_kg: float | None = Field(None, ge=0)

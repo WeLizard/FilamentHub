@@ -1147,6 +1147,7 @@
     "loading": "Загрузка материалов...",
     "error": "Ошибка загрузки материалов",
     "searchPlaceholder": "Поиск...",
+    "searchPlaceholder": "Название, бренд, материал, цвет, состав или свойство...",
     "allTypes": "Все типы",
     "allBrands": "Все бренды",
     "noResults": "Материалы не найдены",
@@ -1178,6 +1179,12 @@
     "fitsPrinter": "Есть пресеты под этот принтер",
     "myPrintersGroup": "Мои принтеры",
     "allPrintersGroup": "Все принтеры"
+    "allPrintersGroup": "Все принтеры",
+    "resultsRange": "{{start}}–{{end}} из {{total}}",
+    "loadMore": "Показать ещё",
+    "loadingMore": "Загружаем...",
+    "loadMoreError": "Не удалось загрузить следующую часть каталога. Попробуйте ещё раз.",
+    "endOfCatalog": "Вы посмотрели все найденные материалы"
   },
   "downloadPage": {
     "seoTitle": "FilamentHub в OrcaSlicer — плагин",
@@ -1535,6 +1542,53 @@
     "skipped": "Пропущено",
     "errorsCount": "Ошибок",
     "close": "Закрыть"
+  },
+  "filamentFeatures": {
+    "visualEffects": "Особенности внешнего вида",
+    "visualEffectsHint": "Добавьте только особенности внешнего вида — блёстки, свечение или металлик. Наполнители ниже применятся к предпросмотру автоматически.",
+    "selectEffects": "Выберите дополнительные эффекты",
+    "composition": "Состав и внешний вид",
+    "physicalComposition": "Наполнители и армирование",
+    "compositionHint": "Выберите наполнители, армирование и особенности внешнего вида в одном списке. Состав сразу меняет предпросмотр — дублировать выбор не нужно.",
+    "automaticPreview": "Предпросмотр настроен автоматически",
+    "livePreview": "Живой предпросмотр",
+    "selectAdditives": "Выберите состав и особенности",
+    "functionalProperties": "Функциональные свойства",
+    "functionalPropertiesHint": "Заявленные свойства материала. Стандарт и рейтинг можно раскрыть отдельно для каждого свойства.",
+    "selectProperties": "Выберите свойства",
+    "customPlaceholder": "Своё значение",
+    "addCustom": "Добавить своё значение",
+    "percent": "Доля, %",
+    "contentBasis": "Способ расчёта доли",
+    "basisUnknown": "% не указан",
+    "weightBasis": "% массы",
+    "volumeBasis": "% объёма",
+    "remove": "Удалить",
+    "addDetails": "Добавить детали",
+    "value": "Значение",
+    "standard": "Стандарт, например IEC 61340",
+    "rating": "Класс / рейтинг",
+    "effects": {
+      "wood": "Древесная текстура", "carbon": "Карбоновая текстура", "glass": "Стеклянные волокна",
+      "metallic": "Металлик", "luminescent": "Свечение", "glitter": "Блёстки",
+      "fibers": "Волокнистая текстура", "stone": "Каменная текстура",
+      "carbonaceous": "Углеродные частицы", "microspheres": "Микросферы", "particles": "Мелкодисперсные частицы"
+    },
+    "additives": {
+      "carbon_fiber": "Углеродное волокно", "glass_fiber": "Стекловолокно", "aramid_fiber": "Арамидное волокно",
+      "basalt_fiber": "Базальтовое волокно", "natural_fiber": "Натуральное волокно", "wood": "Древесная мука",
+      "bamboo": "Бамбуковое волокно", "cork": "Пробка", "metal_powder": "Металлический порошок",
+      "mineral": "Минеральный наполнитель", "ceramic": "Керамический наполнитель", "glass_beads": "Стеклянные микросферы",
+      "carbon_nanotubes": "Углеродные нанотрубки", "carbon_black": "Технический углерод", "graphene": "Графен",
+      "hollow_spheres": "Полые микросферы", "ptfe": "ПТФЭ"
+    },
+    "claims": {
+      "esd": "ESD-безопасный", "electrically_conductive": "Электропроводящий", "emi_shielding": "Экранирование EMI",
+      "flame_retardant": "Огнестойкий", "uv_resistant": "УФ-стойкий", "wear_resistant": "Износостойкий",
+      "low_friction": "Низкое трение", "lightweight": "Облегчённый", "foaming": "Вспениваемый",
+      "antimicrobial": "Антимикробный", "food_contact": "Для контакта с пищей", "heat_resistant": "Термостойкий",
+      "chemical_resistant": "Химически стойкий", "magnetically_detectable": "Магнитно обнаруживаемый"
+    }
   },
   "nozzleHardness": {
     "label": "Требуемая твёрдость сопла",
@@ -3718,6 +3772,7 @@
     "csvColMaterial": "тип: PLA, PETG и т.д. (обязательно)",
     "csvColColorName": "название цвета",
     "csvColColorHex": "цвет в HEX, например #FF0000",
+    "csvColRal": "необязательный код RAL Classic, например 3020",
     "csvColPrice": "цена за килограмм",
     "csvColSpool": "вес катушки в граммах",
     "csvColLine": "линейка - для группировки цветов одного продукта",
@@ -5000,6 +5055,9 @@
     "colorName": "Название цвета",
     "notSpecified": "Не указано",
     "hexColor": "Цвет HEX"
+    "hexColor": "Цвет HEX",
+    "ralCode": "RAL Classic",
+    "ralHint": "Необязательный справочный код RAL Classic. Цвет предпросмотра задаётся отдельно через HEX."
   },
   "printerRequest": {
     "title": "Запрос на добавление принтера",
@@ -5497,6 +5555,7 @@
     "ERR_ONLY_OWN_BRAND_OFFICIAL": "Официальные пресеты можно создавать только для своего бренда",
     "ERR_OFFICIAL_VERIFIED_ONLY": "Официальный статус доступен только верифицированным брендам",
     "ERR_CUSTOM_FILLER_VERIFIED_ONLY": "Свой наполнитель доступен только верифицированным брендам",
+    "ERR_CUSTOM_MATERIAL_FEATURE_VERIFIED_ONLY": "Свои эффекты, компоненты и свойства доступны только верифицированным брендам",
     "ERR_FILE_EXT_NOT_ALLOWED": "Расширение файла {{ext}} не разрешено. Допустимые: {{allowed}}",
     "ERR_FILE_CONTENT_MISMATCH": "Содержимое файла не соответствует расширению {{ext}}",
     "ERR_MAX_FILES_EXCEEDED": "Превышен лимит файлов: максимум {{max}}",

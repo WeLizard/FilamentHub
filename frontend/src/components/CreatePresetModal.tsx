@@ -8,7 +8,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { presetsAPI, filamentsAPI, brandsAPI, printersAPI } from '../api/client';
 import { translateApiError } from '../utils/translateApiError';
 import { useAuth } from '../contexts/AuthContext';
-import type { Preset, Filament, Brand, Printer } from '../types/api';
+import type { FilamentAdditive, FilamentPropertyClaim, Preset, Filament, Brand, Printer } from '../types/api';
 import { applyMaterialDefaults, sortMaterialTypes } from '../data/materialDefaults';
 import { type SettingMode, isVisibleAtMode } from '../data/orcaFieldModes';
 import { safeStorage } from '../utils/storage';
@@ -27,7 +27,9 @@ import type { RecommendedTemps } from './RecommendedTempsField';
 import { NozzleHardnessField } from './NozzleHardnessField';
 import { useDebounce } from '../hooks/useDebounce';
 import { ColorMaterialSection } from './ColorMaterialSection';
-import { HSLColorPicker } from './HSLColorPicker';
+import { FloatingHSLColorPicker } from './FloatingHSLColorPicker';
+import { FilamentFeaturesEditor } from './FilamentFeaturesEditor';
+import { mergeVisualEffects } from '../data/filamentFeatures';
 
 import { FilamentSummaryCard } from './FilamentSummaryCard';
 import type { AxiosError } from 'axios';
@@ -275,15 +277,20 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
   const [filamentName, setFilamentName] = useState('');
   const [filamentColorName, setFilamentColorName] = useState('');
   const [filamentColorHex, setFilamentColorHex] = useState('#FF0000');
+  const [filamentRalCode, setFilamentRalCode] = useState('');
   // Расширенные характеристики цвета для нового филамента
   const [filamentVisualColorType, setFilamentVisualColorType] = useState<'single' | 'two' | 'three' | 'gradient' | 'transition' | 'thermochromic'>('single');
   const [filamentVisualColors, setFilamentVisualColors] = useState<string[]>(['#FF0000']);
   const [filamentVisualFinish, setFilamentVisualFinish] = useState<'matte' | 'glossy'>('matte');
-  const [filamentVisualFiller, setFilamentVisualFiller] = useState<'none' | 'wood' | 'carbon' | 'glitter' | 'metallic' | 'luminescent' | 'fibers' | 'stone' | 'glass' | 'pattern1' | 'pattern2' | 'pattern3' | 'pattern4' | 'pattern5' | 'pattern6' | 'pattern7' | 'pattern8' | 'pattern9' | 'pattern10' | 'pattern11' | 'pattern12'>('none');
+  const [filamentVisualEffects, setFilamentVisualEffects] = useState<string[]>([]);
+  const [filamentAdditives, setFilamentAdditives] = useState<FilamentAdditive[]>([]);
+  const resolvedFilamentVisualEffects = mergeVisualEffects(filamentVisualEffects, filamentAdditives);
+  const [filamentPropertyClaims, setFilamentPropertyClaims] = useState<FilamentPropertyClaim[]>([]);
   const [filamentVisualTransparency, setFilamentVisualTransparency] = useState(false);
   const [showFilamentAdvancedVisual, setShowFilamentAdvancedVisual] = useState(false);
   // Состояния для открытия/закрытия HSL пикеров для каждого цвета в расширенных настройках
   const [openColorPickers, setOpenColorPickers] = useState<boolean[]>([]);
+  const colorPickerButtonRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const [filamentDiameter, setFilamentDiameter] = useState('1.75');
   const [filamentDensity, setFilamentDensity] = useState<number | ''>('');
   const [canEditDensity, setCanEditDensity] = useState(false); // Можно ли редактировать плотность (только для неизвестных типов)
@@ -843,13 +850,16 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
       setFilamentName('');
       setFilamentColorName('');
       setFilamentColorHex('#FF0000');
+      setFilamentRalCode('');
       setFilamentRecTemps(EMPTY_RECOMMENDED_TEMPS);
       setFilamentNozzleHrc(null);
       // Сброс расширенных визуальных эффектов
       setFilamentVisualColorType('single');
       setFilamentVisualColors(['#FF0000']);
       setFilamentVisualFinish('matte');
-      setFilamentVisualFiller('none');
+      setFilamentVisualEffects([]);
+      setFilamentAdditives([]);
+      setFilamentPropertyClaims([]);
       setFilamentVisualTransparency(false);
       setShowFilamentAdvancedVisual(false);
       setFilamentSearch('');
@@ -1048,7 +1058,10 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
       material_type: string;
       color_name?: string;
       color_hex?: string;
+      ral_code?: string | null;
       visual_settings?: FilamentVisualSettings | null;
+      additives?: FilamentAdditive[];
+      property_claims?: FilamentPropertyClaim[];
       diameter?: number;
       density?: number;
       price_per_kg?: number;
@@ -1556,12 +1569,13 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
 
       try {
         // Формируем visual_settings если есть расширенные эффекты
-        const visualSettings: FilamentVisualSettings | undefined = showFilamentAdvancedVisual || filamentVisualFiller !== 'none' || filamentVisualColorType !== 'single' || filamentVisualFinish !== 'matte' || filamentVisualTransparency
+        const visualSettings: FilamentVisualSettings | undefined = showFilamentAdvancedVisual || resolvedFilamentVisualEffects.length > 0 || filamentVisualColorType !== 'single' || filamentVisualFinish !== 'matte' || filamentVisualTransparency
           ? {
               color_type: filamentVisualColorType,
               colors: filamentVisualColors,
               finish: filamentVisualFinish,
-              filler: filamentVisualFiller,
+              filler: resolvedFilamentVisualEffects[0] || 'none',
+              effects: resolvedFilamentVisualEffects,
               transparency: filamentVisualTransparency,
             }
           : undefined;
@@ -1572,7 +1586,10 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
           material_type: finalMaterialType,
           color_name: filamentColorName || undefined,
           color_hex: filamentColorHex,
+          ral_code: filamentRalCode || undefined,
           visual_settings: visualSettings,
+          additives: filamentAdditives,
+          property_claims: filamentPropertyClaims,
           diameter: Number(filamentDiameter),
           density: finalDensity,
           price_per_kg: canCreateOfficial && filamentPricePerKg !== ''
@@ -2162,13 +2179,16 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                     onColorNameChange={setFilamentColorName}
                     colorHex={filamentColorHex}
                     onColorHexChange={setFilamentColorHex}
+                    ralCode={filamentRalCode}
+                    onRalCodeChange={setFilamentRalCode}
                     visualSettings={
-                      showFilamentAdvancedVisual || filamentVisualFiller !== 'none' || filamentVisualColorType !== 'single' || filamentVisualFinish !== 'matte' || filamentVisualTransparency
+                      showFilamentAdvancedVisual || resolvedFilamentVisualEffects.length > 0 || filamentVisualColorType !== 'single' || filamentVisualFinish !== 'matte' || filamentVisualTransparency
                         ? {
                             color_type: filamentVisualColorType,
                             colors: filamentVisualColors,
                             finish: filamentVisualFinish,
-                            filler: filamentVisualFiller,
+                            filler: resolvedFilamentVisualEffects[0] || 'none',
+                            effects: resolvedFilamentVisualEffects,
                             transparency: filamentVisualTransparency,
                           }
                         : undefined
@@ -2189,11 +2209,12 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
 
                   {/* Расширенные характеристики цвета (collapsible) - меню остается здесь */}
                   {showFilamentAdvancedVisual && (
-                    <div className="border border-white/10 rounded-xl p-4 bg-white/5 mt-4">
-                      <div className="space-y-4">
+                    <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.035] p-3">
+                      <div className="grid items-start gap-3 lg:grid-cols-[minmax(18rem,1.15fr)_minmax(0,2fr)]">
+                        <div className="space-y-3">
                         {/* Тип цвета */}
                         <div>
-                          <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+                          <div className="grid grid-cols-2 gap-2">
                             {(['single', 'two', 'three', 'gradient', 'transition', 'thermochromic'] as const).map((type) => (
                               <button
                                 key={type}
@@ -2222,7 +2243,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                                   });
                                   setOpenColorPickers([]);
                                 }}
-                                className={`px-4 py-2 rounded-lg border transition-all ${
+                                className={`rounded-lg border px-3 py-1.5 text-sm transition-all ${
                                   filamentVisualColorType === type
                                     ? 'bg-purple-600 border-purple-400 text-white'
                                     : 'bg-white/10 border-white/20 text-gray-300 hover:bg-white/20'
@@ -2262,6 +2283,9 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                                   {/* Кнопка с цветным квадратом для открытия HSL пикера */}
                                   <div className="relative">
                                     <button
+                                      ref={(element) => {
+                                        colorPickerButtonRefs.current[idx] = element;
+                                      }}
                                       type="button"
                                       onClick={(e) => {
                                         e.stopPropagation(); // Предотвращаем всплытие события
@@ -2279,30 +2303,26 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                                       </div>
                                     </button>
                                     
-                                    {/* HSL Color Picker - появляется над кнопкой */}
-                                    {isPickerOpen && (
-                                      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-50">
-                                        <HSLColorPicker
-                                          color={currentColor}
-                                          onChange={(hex) => {
-                                            const newColors = [...filamentVisualColors];
-                                            newColors[idx] = hex;
-                                            setFilamentVisualColors(newColors);
-                                            // Синхронизируем основной цвет, если меняем первый цвет в расширенных настройках
-                                            if (idx === 0) {
-                                              isInternalColorChangeRef.current = true; // Помечаем как внутреннее изменение
-                                              setFilamentColorHex(hex);
-                                            }
-                                          }}
-                                          isOpen={isPickerOpen}
-                                          onToggle={(isOpen) => {
-                                            const newOpenStates = [...openColorPickers];
-                                            newOpenStates[idx] = isOpen;
-                                            setOpenColorPickers(newOpenStates);
-                                          }}
-                                        />
-                                      </div>
-                                    )}
+                                    <FloatingHSLColorPicker
+                                      anchorElement={colorPickerButtonRefs.current[idx]}
+                                      color={currentColor}
+                                      isOpen={isPickerOpen}
+                                      onChange={(hex) => {
+                                        const newColors = [...filamentVisualColors];
+                                        newColors[idx] = hex;
+                                        setFilamentVisualColors(newColors);
+                                        // Синхронизируем основной цвет, если меняем первый цвет в расширенных настройках
+                                        if (idx === 0) {
+                                          isInternalColorChangeRef.current = true; // Помечаем как внутреннее изменение
+                                          setFilamentColorHex(hex);
+                                        }
+                                      }}
+                                      onToggle={(isOpen) => {
+                                        const newOpenStates = [...openColorPickers];
+                                        newOpenStates[idx] = isOpen;
+                                        setOpenColorPickers(newOpenStates);
+                                      }}
+                                    />
                                   </div>
                                   {/* HEX-инпут под значком — дублирует цвет, двусторонняя привязка */}
                                   <input
@@ -2330,13 +2350,13 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                         {/* Финиш */}
                         <div>
                           <label className="block text-gray-300 mb-2 text-sm font-medium">{t('presetModal.surfaceType')}</label>
-                          <div className="flex gap-2">
+                          <div className="inline-grid grid-cols-2 gap-1 rounded-xl border border-white/10 bg-black/15 p-1">
                             {(['matte', 'glossy'] as const).map((finish) => (
                               <button
                                 key={finish}
                                 type="button"
                                 onClick={() => setFilamentVisualFinish(finish)}
-                                className={`flex-1 px-4 py-2 rounded-lg border transition-all ${
+                                className={`min-w-24 rounded-lg border px-3 py-1.5 text-sm transition-all ${
                                   filamentVisualFinish === finish
                                     ? 'bg-purple-600 border-purple-400 text-white'
                                     : 'bg-white/10 border-white/20 text-gray-300 hover:bg-white/20'
@@ -2347,52 +2367,32 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                             ))}
                           </div>
                         </div>
-
-                        {/* Наполнитель */}
-                        <div>
-                          <label className="block text-gray-300 mb-2 text-sm font-medium">{t('presetModal.filler')}</label>
-                          <Dropdown
-                            value={filamentVisualFiller}
-                            onChange={(val) => setFilamentVisualFiller(val as typeof filamentVisualFiller)}
-                            options={[
-                              { value: 'none', label: t('presetModal.fillerNone') },
-                              { value: 'wood', label: t('presetModal.fillerWood') },
-                              { value: 'carbon', label: t('presetModal.fillerCarbon') },
-                              { value: 'glass', label: t('presetModal.fillerGlass') },
-                              { value: 'metallic', label: t('presetModal.fillerMetallic') },
-                              { value: 'luminescent', label: t('presetModal.fillerLuminescent') },
-                              { value: 'glitter', label: t('presetModal.fillerGlitter') },
-                              { value: 'fibers', label: t('presetModal.fillerFibers') },
-                              { value: 'stone', label: t('presetModal.fillerStone') },
-                              // Паттерны временно отключены (не удалены, чтобы сохранить совместимость с существующими данными)
-                              // { value: 'pattern1', label: 'Паттерн 1' },
-                              // { value: 'pattern2', label: 'Паттерн 2' },
-                              // { value: 'pattern3', label: 'Паттерн 3' },
-                              // { value: 'pattern4', label: 'Паттерн 4' },
-                              // { value: 'pattern5', label: 'Паттерн 5' },
-                              // { value: 'pattern6', label: 'Паттерн 6' },
-                              // { value: 'pattern7', label: 'Паттерн 7' },
-                              // { value: 'pattern8', label: 'Паттерн 8' },
-                              // { value: 'pattern9', label: 'Паттерн 9' },
-                              // { value: 'pattern10', label: 'Паттерн 10' },
-                              // { value: 'pattern11', label: 'Паттерн 11' },
-                              // { value: 'pattern12', label: 'Паттерн 12' },
-                            ]}
-                            placeholder={t('presetModal.selectFiller')}
-                          />
                         </div>
 
+                        <div className="min-w-0 space-y-3">
+
                         {/* Прозрачность */}
-                        <div>
-                          <label className="flex items-center space-x-2 text-gray-300 mb-2 text-sm font-medium">
-                            <input
-                              type="checkbox"
-                              checked={filamentVisualTransparency}
-                              onChange={(e) => { setFilamentVisualTransparency(e.target.checked); }}
-                              className="w-4 h-4 rounded border-white/20 bg-white/10 text-purple-500 focus:ring-purple-500"
-                            />
-                            <span>{t('presetModal.transparentMaterial')}</span>
-                          </label>
+                        <label className="flex cursor-pointer items-center justify-between gap-4 rounded-xl border border-white/10 bg-black/10 px-3 py-2 text-sm font-medium text-gray-200 transition-colors hover:bg-white/[0.06]">
+                          <span>{t('presetModal.transparentMaterial')}</span>
+                          <input
+                            type="checkbox"
+                            checked={filamentVisualTransparency}
+                            onChange={(e) => { setFilamentVisualTransparency(e.target.checked); }}
+                            className="peer sr-only"
+                          />
+                          <span className="relative h-6 w-11 shrink-0 rounded-full border border-white/15 bg-white/10 transition-colors after:absolute after:left-0.5 after:top-0.5 after:h-[18px] after:w-[18px] after:rounded-full after:bg-gray-300 after:shadow-sm after:transition-transform peer-checked:border-cyan-300/40 peer-checked:bg-cyan-400/25 peer-checked:after:translate-x-5 peer-checked:after:bg-cyan-100 peer-focus-visible:ring-2 peer-focus-visible:ring-cyan-300/60" />
+                        </label>
+
+                        <FilamentFeaturesEditor
+                          effects={filamentVisualEffects}
+                          onEffectsChange={setFilamentVisualEffects}
+                          additives={filamentAdditives}
+                          onAdditivesChange={setFilamentAdditives}
+                          propertyClaims={filamentPropertyClaims}
+                          onPropertyClaimsChange={setFilamentPropertyClaims}
+                          allowCustom={canCreateOfficial}
+                          compact
+                        />
                         </div>
                       </div>
                     </div>
@@ -2477,7 +2477,9 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                   <NozzleHardnessField
                     value={filamentNozzleHrc}
                     onChange={setFilamentNozzleHrc}
-                    filler={filamentVisualFiller}
+                    filler={resolvedFilamentVisualEffects[0] || 'none'}
+                    effects={resolvedFilamentVisualEffects}
+                    additives={filamentAdditives}
                     materialType={materialType}
                   />
 

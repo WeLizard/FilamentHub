@@ -13,12 +13,24 @@ import { DensityField } from './DensityField';
 import { PriceUnitField } from './PriceUnitField';
 import { RecommendedTempsField, RecommendedTemps } from './RecommendedTempsField';
 import { NozzleHardnessField } from './NozzleHardnessField';
+import { FilamentFeaturesEditor } from './FilamentFeaturesEditor';
+import { deriveVisualEffectsFromAdditives, mergeVisualEffects } from '../data/filamentFeatures';
 import { translateApiError } from '../utils/translateApiError';
-import type { Filament, FilamentAvailability, FilamentImportResult, FilamentPalettePayload } from '../types/api';
+import { normalizeRalCode } from '../utils/ralCode';
+import type {
+  Filament,
+  FilamentAdditive,
+  FilamentAvailability,
+  FilamentImportResult,
+  FilamentPalettePayload,
+  FilamentPropertyClaim,
+  FilamentVisualSettings,
+} from '../types/api';
 
 interface PaletteEntry {
   color_name: string;
   color_hex: string;
+  ral_code: string;
   name: string; // переопределение авто-имени (пусто = авто)
 }
 
@@ -27,12 +39,18 @@ interface FilamentPaletteFormProps {
   onClose: () => void;
   /** Режим «добавить цвета к готовому материалу»: параметры и линейка берутся из него. */
   sourceFilament?: Filament;
+  allowCustomFeatures?: boolean;
 }
 
-const emptyEntry = (): PaletteEntry => ({ color_name: '', color_hex: '#808080', name: '' });
+const emptyEntry = (): PaletteEntry => ({ color_name: '', color_hex: '#808080', ral_code: '', name: '' });
 
 /** Создание набора цветов-вариантов в одной линейке (палитра). */
-export function FilamentPaletteForm({ brandId, onClose, sourceFilament }: FilamentPaletteFormProps) {
+export function FilamentPaletteForm({
+  brandId,
+  onClose,
+  sourceFilament,
+  allowCustomFeatures = false,
+}: FilamentPaletteFormProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
 
@@ -64,6 +82,22 @@ export function FilamentPaletteForm({ brandId, onClose, sourceFilament }: Filame
   });
   const [nozzleHrc, setNozzleHrc] = useState<number | null>(sourceFilament?.required_nozzle_hrc ?? null);
   const [availability, setAvailability] = useState<FilamentAvailability>(sourceFilament?.availability ?? 'available');
+  const sourceVisualSettings = sourceFilament?.visual_settings;
+  const sourceAdditives = sourceFilament?.additives ?? [];
+  const sourceDerivedEffects = new Set(deriveVisualEffectsFromAdditives(sourceAdditives));
+  const sourceStoredEffects = sourceVisualSettings?.effects?.length
+    ? sourceVisualSettings.effects
+    : (sourceVisualSettings?.filler && sourceVisualSettings.filler !== 'none'
+        ? [sourceVisualSettings.filler]
+        : []);
+  const [visualEffects, setVisualEffects] = useState<string[]>(
+    sourceStoredEffects.filter(effect => !sourceDerivedEffects.has(effect)),
+  );
+  const [additives, setAdditives] = useState<FilamentAdditive[]>(sourceAdditives);
+  const resolvedVisualEffects = mergeVisualEffects(visualEffects, additives);
+  const [propertyClaims, setPropertyClaims] = useState<FilamentPropertyClaim[]>(
+    sourceFilament?.property_claims ?? [],
+  );
   const [entries, setEntries] = useState<PaletteEntry[]>([emptyEntry(), emptyEntry(), emptyEntry()]);
   const [openPicker, setOpenPicker] = useState<number | null>(null);
   const [pasteText, setPasteText] = useState('');
@@ -147,6 +181,21 @@ export function FilamentPaletteForm({ brandId, onClose, sourceFilament }: Filame
 
       const payload: FilamentPalettePayload = {
         material_type: materialType.trim(),
+        visual_settings: (
+          sourceVisualSettings
+          || resolvedVisualEffects.length > 0
+        ) ? {
+          ...(sourceVisualSettings ?? {
+            color_type: 'single',
+            colors: ['#808080'],
+            finish: 'matte',
+            transparency: false,
+          }),
+          filler: resolvedVisualEffects[0] || 'none',
+          effects: resolvedVisualEffects,
+        } as FilamentVisualSettings : undefined,
+        additives,
+        property_claims: propertyClaims,
         diameter,
         density: density || null,
         price_per_kg: pricePerKg || null,
@@ -162,6 +211,7 @@ export function FilamentPaletteForm({ brandId, onClose, sourceFilament }: Filame
         variants: filledEntries.map((e) => ({
           color_name: e.color_name.trim(),
           color_hex: e.color_hex || null,
+          ral_code: normalizeRalCode(e.ral_code) || null,
           name: e.name.trim() || null,
         })),
       };
@@ -300,8 +350,21 @@ export function FilamentPaletteForm({ brandId, onClose, sourceFilament }: Filame
           <NozzleHardnessField
             value={nozzleHrc}
             onChange={setNozzleHrc}
-            filler={sourceFilament?.visual_settings?.filler}
+            filler={resolvedVisualEffects[0] || 'none'}
+            effects={resolvedVisualEffects}
+            additives={additives}
             materialType={sourceFilament?.material_type}
+          />
+        </div>
+        <div className="mt-4 rounded-xl border border-white/10 bg-white/[0.03] p-4">
+          <FilamentFeaturesEditor
+            effects={visualEffects}
+            onEffectsChange={setVisualEffects}
+            additives={additives}
+            onAdditivesChange={setAdditives}
+            propertyClaims={propertyClaims}
+            onPropertyClaimsChange={setPropertyClaims}
+            allowCustom={allowCustomFeatures}
           />
         </div>
       </div>
@@ -344,6 +407,16 @@ export function FilamentPaletteForm({ brandId, onClose, sourceFilament }: Filame
                 placeholder={t('palette.colorNamePlaceholder')}
                 maxLength={100}
                 className="w-full px-2 py-1 text-sm text-center bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-purple-500"
+              />
+              <input
+                type="text"
+                value={entry.ral_code}
+                onChange={(e) => updateEntry(i, { ral_code: e.target.value })}
+                onBlur={(e) => updateEntry(i, { ral_code: normalizeRalCode(e.target.value) })}
+                placeholder="RAL 3020"
+                maxLength={8}
+                title={t('colorMaterial.ralHint')}
+                className="w-full rounded-lg border border-white/20 bg-white/10 px-2 py-1 text-center font-mono text-xs text-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-purple-500"
               />
               {entry.color_name.trim() && (
                 <span className="text-[11px] text-gray-500 text-center truncate w-full" title={`${lineName} ${entry.color_name}`.trim()}>

@@ -199,6 +199,7 @@ type FillerDefResult = {
   bodyPatternFill: string | null;
   endPatternFill: string | null;
   patternOpacity: number;
+  endPatternOpacity: number;
   glowFilterId: string | null;
 };
 
@@ -207,6 +208,7 @@ const createFillerDefinitions = (filler: string, colors: string[], idPrefix: str
   let bodyPatternFill: string | null = null;
   let endPatternFill: string | null = null;
   let patternOpacity = 0.35;
+  let endPatternOpacity = patternOpacity;
   let glowFilterId: string | null = null;
   const makeId = (name: string) => `${idPrefix}-${name}`;
 
@@ -229,11 +231,31 @@ const createFillerDefinitions = (filler: string, colors: string[], idPrefix: str
     </pattern>
   );
 
+  const addCutPattern = (
+    id: string,
+    strokeColor: string,
+    fillColor: string,
+    opacity = 0.45,
+  ) => (
+    <pattern id={id} key={id} width="14" height="14" patternUnits="userSpaceOnUse">
+      <circle cx="3" cy="3" r="1" fill={fillColor} fillOpacity={opacity} />
+      <circle cx="11" cy="9" r="0.8" fill={fillColor} fillOpacity={opacity * 0.8} />
+      <path
+        d="M7 2 l3 2 M2 10 l3 -1 M8 12 l2 -2"
+        stroke={strokeColor}
+        strokeWidth="1"
+        strokeLinecap="round"
+        strokeOpacity={opacity}
+      />
+    </pattern>
+  );
+
   switch (filler) {
     case 'none':
-      return { defs, bodyPatternFill, endPatternFill, patternOpacity, glowFilterId };
+      return { defs, bodyPatternFill, endPatternFill, patternOpacity, endPatternOpacity, glowFilterId };
     case 'carbon': {
       const patternId = makeId('carbon');
+      const endPatternId = makeId('carbon-end');
       defs.push(
         <pattern id={patternId} key={patternId} width="8" height="8" patternUnits="userSpaceOnUse">
           <rect width="8" height="8" fill="#1A1A1A" />
@@ -241,28 +263,65 @@ const createFillerDefinitions = (filler: string, colors: string[], idPrefix: str
           <path d="M0 4 L8 4" stroke="#0F0F0F" strokeWidth="1" strokeOpacity="0.4" />
         </pattern>,
       );
+      defs.push(
+        <pattern id={endPatternId} key={endPatternId} width="14" height="14" patternUnits="userSpaceOnUse">
+          <rect width="14" height="14" fill="#1A1A1A" />
+          <circle cx="3" cy="3" r="1" fill="#030712" fillOpacity="0.9" />
+          <circle cx="11" cy="9" r="0.8" fill="#030712" fillOpacity="0.75" />
+          <path d="M7 2 l3 2 M2 10 l3 -1 M8 12 l2 -2" stroke="#2E2E2E" strokeWidth="1" strokeLinecap="round" />
+        </pattern>,
+      );
       bodyPatternFill = `url(#${patternId})`;
-      endPatternFill = bodyPatternFill;
+      endPatternFill = `url(#${endPatternId})`;
       patternOpacity = 0.55;
+      endPatternOpacity = 0.92;
+      break;
+    }
+    case 'carbonaceous': {
+      const bodyPatternId = makeId('carbonaceous');
+      const endPatternId = makeId('carbonaceous-end');
+      defs.push(
+        <pattern id={bodyPatternId} key={bodyPatternId} width="18" height="14" patternUnits="userSpaceOnUse">
+          <rect width="18" height="14" fill="#111827" fillOpacity="0.72" />
+          <circle cx="3" cy="4" r="0.65" fill="#000000" fillOpacity="0.7" />
+          <circle cx="12" cy="3" r="0.45" fill="#374151" fillOpacity="0.75" />
+          <circle cx="8" cy="11" r="0.55" fill="#030712" fillOpacity="0.8" />
+          <circle cx="16" cy="9" r="0.4" fill="#4B5563" fillOpacity="0.55" />
+        </pattern>,
+      );
+      defs.push(
+        <pattern id={endPatternId} key={endPatternId} width="12" height="12" patternUnits="userSpaceOnUse">
+          <rect width="12" height="12" fill="#111827" fillOpacity="0.72" />
+          <circle cx="2" cy="3" r="0.7" fill="#000000" fillOpacity="0.78" />
+          <circle cx="8" cy="2" r="0.45" fill="#4B5563" fillOpacity="0.62" />
+          <circle cx="6" cy="8" r="0.6" fill="#030712" fillOpacity="0.82" />
+          <circle cx="11" cy="10" r="0.4" fill="#374151" fillOpacity="0.7" />
+        </pattern>,
+      );
+      bodyPatternFill = `url(#${bodyPatternId})`;
+      endPatternFill = `url(#${endPatternId})`;
+      patternOpacity = 0.48;
       break;
     }
     case 'glass': {
       const patternId = makeId('glass');
+      const endPatternId = makeId('glass-end');
       defs.push(
-        <pattern
-          id={patternId}
-          key={patternId}
-          width="6"
-          height="8"
-          patternUnits="userSpaceOnUse"
-          patternTransform="rotate(-26)"
-        >
-          <rect width="2" height="8" fill="#FFFFFF" fillOpacity="0.25" />
+        <pattern id={patternId} key={patternId} width="19" height="15" patternUnits="userSpaceOnUse">
+          <path
+            d="M1 3 l8 3 M12 2 l5 2 M4 12 l7 -3 M13 11 l5 2 M1 8 l4 1"
+            stroke="#FFFFFF"
+            strokeWidth="0.75"
+            strokeLinecap="round"
+            strokeOpacity="0.48"
+          />
+          <circle cx="10" cy="4" r="0.7" fill="#FFFFFF" fillOpacity="0.52" />
         </pattern>,
       );
+      defs.push(addCutPattern(endPatternId, '#FFFFFF', '#E5E7EB', 0.58));
       bodyPatternFill = `url(#${patternId})`;
-      endPatternFill = bodyPatternFill;
-      patternOpacity = 0.45;
+      endPatternFill = `url(#${endPatternId})`;
+      patternOpacity = 0.72;
       break;
     }
     case 'metallic': {
@@ -295,84 +354,177 @@ const createFillerDefinitions = (filler: string, colors: string[], idPrefix: str
     }
     case 'wood': {
       const patternId = makeId('wood');
+      const endPatternId = makeId('wood-end');
+      const base = sanitizeColor(colors[0] ?? '#9A6B4A');
+      const grain = adjustLightness(base, -0.3);
+      const grainLight = adjustLightness(base, 0.24);
       defs.push(
-        <pattern id={patternId} key={patternId} width="20" height="20" patternUnits="userSpaceOnUse">
-          <rect width="20" height="20" fill="none" />
-          <path d="M0 10 Q10 4 20 10" stroke="#a1887f" strokeWidth="2" strokeOpacity="0.35" fill="none" />
-          <path d="M0 6 Q10 0 20 6" stroke="#d7ccc8" strokeWidth="1" strokeOpacity="0.25" fill="none" />
-          <circle cx="6" cy="6" r="2" fill="#8d6e63" fillOpacity="0.25" />
-          <circle cx="14" cy="14" r="3" fill="#6d4c41" fillOpacity="0.25" />
+        <pattern id={patternId} key={patternId} width="46" height="18" patternUnits="userSpaceOnUse">
+          <path
+            d="M0 5 C12 2 22 8 46 4 M0 12 C16 7 27 16 46 11"
+            fill="none"
+            stroke={grain}
+            strokeWidth="1.1"
+            strokeOpacity="0.58"
+          />
+          <path
+            d="M8 7 C12 4 16 4 20 7 S28 10 32 7"
+            fill="none"
+            stroke={grainLight}
+            strokeWidth="0.55"
+            strokeOpacity="0.45"
+          />
+          <circle cx="37" cy="6" r="1" fill={grain} fillOpacity="0.5" />
         </pattern>,
       );
+      defs.push(addCutPattern(endPatternId, grain, grainLight, 0.52));
       bodyPatternFill = `url(#${patternId})`;
-      endPatternFill = bodyPatternFill;
-      patternOpacity = 0.5;
+      endPatternFill = `url(#${endPatternId})`;
+      patternOpacity = 0.72;
+      break;
+    }
+    case 'microspheres': {
+      const bodyPatternId = makeId('microspheres');
+      const endPatternId = makeId('microspheres-end');
+      defs.push(
+        <pattern id={bodyPatternId} key={bodyPatternId} width="22" height="18" patternUnits="userSpaceOnUse">
+          <circle cx="4" cy="5" r="1.5" fill="none" stroke="#FFFFFF" strokeWidth="0.7" strokeOpacity="0.58" />
+          <circle cx="15" cy="4" r="1" fill="#FFFFFF" fillOpacity="0.28" />
+          <circle cx="10" cy="14" r="1.8" fill="none" stroke="#E5E7EB" strokeWidth="0.65" strokeOpacity="0.52" />
+          <circle cx="20" cy="12" r="0.8" fill="#FFFFFF" fillOpacity="0.36" />
+        </pattern>,
+      );
+      defs.push(
+        <pattern id={endPatternId} key={endPatternId} width="16" height="16" patternUnits="userSpaceOnUse">
+          <circle cx="3" cy="4" r="1.6" fill="none" stroke="#FFFFFF" strokeWidth="0.7" strokeOpacity="0.65" />
+          <circle cx="11" cy="3" r="1" fill="#FFFFFF" fillOpacity="0.34" />
+          <circle cx="8" cy="11" r="1.9" fill="none" stroke="#E5E7EB" strokeWidth="0.65" strokeOpacity="0.58" />
+          <circle cx="15" cy="13" r="0.8" fill="#FFFFFF" fillOpacity="0.42" />
+        </pattern>,
+      );
+      bodyPatternFill = `url(#${bodyPatternId})`;
+      endPatternFill = `url(#${endPatternId})`;
+      patternOpacity = 0.72;
+      break;
+    }
+    case 'particles': {
+      const bodyPatternId = makeId('particles');
+      const endPatternId = makeId('particles-end');
+      defs.push(
+        <pattern id={bodyPatternId} key={bodyPatternId} width="20" height="16" patternUnits="userSpaceOnUse">
+          <circle cx="3" cy="4" r="0.9" fill="#FFFFFF" fillOpacity="0.5" />
+          <circle cx="12" cy="3" r="0.55" fill="#F3F4F6" fillOpacity="0.38" />
+          <circle cx="8" cy="12" r="0.75" fill="#FFFFFF" fillOpacity="0.46" />
+          <circle cx="18" cy="10" r="0.45" fill="#D1D5DB" fillOpacity="0.42" />
+        </pattern>,
+      );
+      defs.push(addCutPattern(endPatternId, '#F9FAFB', '#FFFFFF', 0.5));
+      bodyPatternFill = `url(#${bodyPatternId})`;
+      endPatternFill = `url(#${endPatternId})`;
+      patternOpacity = 0.6;
       break;
     }
     case 'glitter': {
       const patternId = makeId('glitter');
+      const endPatternId = makeId('glitter-end');
       defs.push(
-        <pattern id={patternId} key={patternId} width="24" height="24" patternUnits="userSpaceOnUse">
-          <circle cx="6" cy="6" r="1.6" fill="#FFFFFF" fillOpacity="0.85" />
-          <circle cx="18" cy="9" r="1.2" fill="#FFD700" fillOpacity="0.8" />
-          <circle cx="12" cy="18" r="1.1" fill="#FFA500" fillOpacity="0.7" />
-          <circle cx="20" cy="20" r="0.9" fill="#FFFFFF" fillOpacity="0.6" />
-          <circle cx="4" cy="16" r="1" fill="#FFE066" fillOpacity="0.75" />
+        <pattern id={patternId} key={patternId} width="30" height="25" patternUnits="userSpaceOnUse">
+          <path d="M5 3 l1.4 2.5 L5 8 l-1.4 -2.5 Z" fill="#FFFFFF" fillOpacity="0.9" />
+          <path d="M21 5 l2 1 l-1 2 l-2 -1 Z" fill="#FFD700" fillOpacity="0.86" />
+          <path d="M13 18 l1.2 2.2 l-1.2 2.2 l-1.2 -2.2 Z" fill="#FFA500" fillOpacity="0.78" />
+          <circle cx="27" cy="18" r="0.8" fill="#FFFFFF" fillOpacity="0.65" />
+        </pattern>,
+      );
+      defs.push(
+        <pattern id={endPatternId} key={endPatternId} width="22" height="22" patternUnits="userSpaceOnUse">
+          <path d="M4 5 l1.2 2 L4 9 l-1.2 -2 Z" fill="#FFFFFF" fillOpacity="0.88" />
+          <path d="M15 3 l2 1 l-1 2 l-2 -1 Z" fill="#FFD700" fillOpacity="0.82" />
+          <path d="M11 15 l1.2 2 l-1.2 2 l-1.2 -2 Z" fill="#FFA500" fillOpacity="0.74" />
+          <circle cx="19" cy="16" r="0.7" fill="#FFFFFF" fillOpacity="0.58" />
         </pattern>,
       );
       bodyPatternFill = `url(#${patternId})`;
-      endPatternFill = bodyPatternFill;
+      endPatternFill = `url(#${endPatternId})`;
       patternOpacity = 1;
       break;
     }
     case 'fibers': {
       const patternId = makeId('fibers');
+      const endPatternId = makeId('fibers-end');
       defs.push(
-        <pattern
-          id={patternId}
-          key={patternId}
-          width="6"
-          height="6"
-          patternUnits="userSpaceOnUse"
-          patternTransform="rotate(45)"
-        >
-          <rect width="2" height="6" fill="#6d4c41" fillOpacity="0.6" />
+        <pattern id={patternId} key={patternId} width="26" height="21" patternUnits="userSpaceOnUse">
+          <path
+            d="M2 5 l10 3 M15 3 l8 5 M5 17 l12 -4 M19 17 l5 2 M1 12 l6 -1"
+            stroke="#4B5563"
+            strokeWidth="1.35"
+            strokeLinecap="round"
+            strokeOpacity="0.72"
+          />
+          <path d="M9 2 l4 2 M14 19 l5 -2" stroke="#FFFFFF" strokeWidth="0.7" strokeOpacity="0.28" />
         </pattern>,
       );
+      defs.push(addCutPattern(endPatternId, '#4B5563', '#D1D5DB', 0.64));
       bodyPatternFill = `url(#${patternId})`;
-      endPatternFill = bodyPatternFill;
-      patternOpacity = 0.55;
+      endPatternFill = `url(#${endPatternId})`;
+      patternOpacity = 0.72;
       break;
     }
     case 'stone': {
       const patternId = makeId('stone');
+      const endPatternId = makeId('stone-end');
       defs.push(
-        <pattern id={patternId} key={patternId} width="40" height="40" patternUnits="userSpaceOnUse">
-          <rect width="40" height="40" fill="none" />
-          <path d="M0 20 Q10 10 20 20 T40 20" stroke="#FFFFFF" strokeOpacity="0.2" strokeWidth="2" fill="none" />
-          <path d="M0 30 Q15 24 30 30 T40 30" stroke="#C8C8C8" strokeOpacity="0.2" strokeWidth="3" fill="none" />
-          <ellipse cx="12" cy="14" rx="6" ry="3" fill="#FFFFFF" fillOpacity="0.12" />
-          <ellipse cx="30" cy="28" rx="8" ry="4" fill="#D0D0D0" fillOpacity="0.12" />
+        <pattern id={patternId} key={patternId} width="28" height="24" patternUnits="userSpaceOnUse">
+          <circle cx="4" cy="5" r="1.4" fill="#111827" fillOpacity="0.62" />
+          <circle cx="17" cy="4" r="0.8" fill="#FFFFFF" fillOpacity="0.42" />
+          <circle cx="9" cy="16" r="1" fill="#9CA3AF" fillOpacity="0.48" />
+          <circle cx="23" cy="14" r="1.8" fill="#030712" fillOpacity="0.45" />
+          <path d="M18 20 l3 1 M2 21 l2 -1 M25 6 l2 1" stroke="#FFFFFF" strokeWidth="0.7" strokeOpacity="0.38" />
+        </pattern>,
+      );
+      defs.push(
+        <pattern id={endPatternId} key={endPatternId} width="20" height="20" patternUnits="userSpaceOnUse">
+          <circle cx="3" cy="4" r="1" fill="#111827" fillOpacity="0.6" />
+          <circle cx="13" cy="3" r="1.4" fill="#FFFFFF" fillOpacity="0.35" />
+          <circle cx="8" cy="13" r="1.7" fill="#030712" fillOpacity="0.42" />
+          <circle cx="17" cy="14" r="0.8" fill="#D1D5DB" fillOpacity="0.5" />
         </pattern>,
       );
       bodyPatternFill = `url(#${patternId})`;
-      endPatternFill = bodyPatternFill;
-      patternOpacity = 0.7;
+      endPatternFill = `url(#${endPatternId})`;
+      patternOpacity = 0.72;
       break;
     }
     case 'luminescent': {
       const filterId = makeId('glow');
+      const bodyGradientId = makeId('luminescent-body');
+      const endGradientId = makeId('luminescent-end');
       defs.push(
         <filter id={filterId} key={filterId} x="-50%" y="-50%" width="200%" height="200%">
-          <feGaussianBlur in="SourceGraphic" stdDeviation="6" result="blur" />
+          <feGaussianBlur in="SourceGraphic" stdDeviation="4" result="blur" />
           <feMerge>
             <feMergeNode in="blur" />
             <feMergeNode in="SourceGraphic" />
           </feMerge>
         </filter>,
       );
+      defs.push(
+        <linearGradient id={bodyGradientId} key={bodyGradientId} x1="0%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" stopColor="#FFFFFF" stopOpacity="0.34" />
+          <stop offset="42%" stopColor={colors[0] ?? '#C7FF90'} stopOpacity="0.85" />
+          <stop offset="100%" stopColor="#000000" stopOpacity="0.18" />
+        </linearGradient>,
+      );
+      defs.push(
+        <radialGradient id={endGradientId} key={endGradientId} cx="42%" cy="38%" r="72%">
+          <stop offset="0%" stopColor="#FFFFFF" stopOpacity="0.5" />
+          <stop offset="48%" stopColor={colors[0] ?? '#C7FF90'} stopOpacity="0.9" />
+          <stop offset="100%" stopColor="#000000" stopOpacity="0.2" />
+        </radialGradient>,
+      );
+      bodyPatternFill = `url(#${bodyGradientId})`;
+      endPatternFill = `url(#${endGradientId})`;
       glowFilterId = filterId;
-      patternOpacity = 0;
+      patternOpacity = 0.78;
       break;
     }
     default: {
@@ -394,15 +546,18 @@ const createFillerDefinitions = (filler: string, colors: string[], idPrefix: str
       if (config) {
         const [angle, width, gap] = config;
         const patternId = makeId(filler);
+        const endPatternId = makeId(`${filler}-end`);
         defs.push(addStripePattern(patternId, width, gap, angle));
+        defs.push(addCutPattern(endPatternId, '#FFFFFF', '#D1D5DB', 0.42));
         bodyPatternFill = `url(#${patternId})`;
-        endPatternFill = bodyPatternFill;
+        endPatternFill = `url(#${endPatternId})`;
         patternOpacity = 0.4;
       }
     }
   }
 
-  return { defs, bodyPatternFill, endPatternFill, patternOpacity, glowFilterId };
+  if (endPatternOpacity === 0.35) endPatternOpacity = patternOpacity;
+  return { defs, bodyPatternFill, endPatternFill, patternOpacity, endPatternOpacity, glowFilterId };
 };
 
 interface FilamentPreviewProps {
@@ -437,6 +592,25 @@ export const FilamentPreview: React.FC<FilamentPreviewProps> = ({
   const colorType = visualSettings?.color_type || 'single';
   const finish = visualSettings?.finish || 'matte';
   const filler = visualSettings?.filler || 'none';
+  const effects = useMemo(() => {
+    const source = visualSettings?.effects?.length
+      ? visualSettings.effects
+      : (filler !== 'none' ? [filler] : []);
+    const layerOrder: Record<string, number> = {
+      metallic: 10,
+      carbon: 20,
+      carbonaceous: 20,
+      glass: 20,
+      microspheres: 20,
+      particles: 20,
+      fibers: 20,
+      wood: 20,
+      stone: 20,
+      luminescent: 30,
+      glitter: 40,
+    };
+    return [...new Set(source)].sort((left, right) => (layerOrder[left] ?? 25) - (layerOrder[right] ?? 25));
+  }, [visualSettings?.effects, filler]);
   const isGlossy = finish === 'glossy';
   const isTransparent = visualSettings?.transparency ?? false;
   const mainColor = colors[0] ?? '#FFFFFF';
@@ -464,8 +638,16 @@ export const FilamentPreview: React.FC<FilamentPreviewProps> = ({
     [colors, colorType, svgId, baseHex, bodyLength, bodyStart, bodyEnd, radius],
   );
 
-  const { defs: fillerDefs, bodyPatternFill, endPatternFill, patternOpacity, glowFilterId } =
-    useMemo(() => createFillerDefinitions(filler, colors, svgId), [filler, colors, svgId]);
+  const fillerLayers = useMemo(
+    () => effects.map((effect, index) => createFillerDefinitions(
+      effect,
+      colors,
+      effects.length === 1 ? svgId : `${svgId}-effect-${index}`,
+    )),
+    [effects, colors, svgId],
+  );
+  const fillerDefs = useMemo(() => fillerLayers.flatMap(layer => layer.defs), [fillerLayers]);
+  const glowFilterId = fillerLayers.find(layer => layer.glowFilterId)?.glowFilterId ?? null;
 
   const highlightDefs = useMemo(() => {
     if (!isGlossy) {
@@ -473,66 +655,48 @@ export const FilamentPreview: React.FC<FilamentPreviewProps> = ({
         defs: [] as React.ReactNode[],
         bodyHighlightId: null as string | null,
         endHighlightId: null as string | null,
-        bodySpecularId: null as string | null,
-        endSpecularId: null as string | null,
         bodyShadowId: null as string | null,
         endShadowId: null as string | null,
+        bodySoftnessId: null as string | null,
+        endSoftnessId: null as string | null,
+        bodyGlossClipId: null as string | null,
+        endGlossClipId: null as string | null,
       };
     }
 
     const bodyHighlightId = `${svgId}-body-highlight`;
     const endHighlightId = `${svgId}-end-highlight`;
-    const bodySpecularId = `${svgId}-body-specular`;
-    const endSpecularId = `${svgId}-end-specular`;
     const bodyShadowId = `${svgId}-body-shadow`;
     const endShadowId = `${svgId}-end-shadow`;
+    const bodySoftnessId = `${svgId}-body-softness`;
+    const endSoftnessId = `${svgId}-end-softness`;
+    const bodyGlossClipId = `${svgId}-body-gloss-clip`;
+    const endGlossClipId = `${svgId}-end-gloss-clip`;
     return {
       bodyHighlightId,
       endHighlightId,
-      bodySpecularId,
-      endSpecularId,
       bodyShadowId,
       endShadowId,
+      bodySoftnessId,
+      endSoftnessId,
+      bodyGlossClipId,
+      endGlossClipId,
       defs: [
         <linearGradient id={bodyHighlightId} key={bodyHighlightId} x1="0%" y1="0%" x2="0%" y2="100%">
-          <stop offset="0%" stopColor="#FFFFFF" stopOpacity="0.35" />
+          <stop offset="0%" stopColor="#FFFFFF" stopOpacity="0.48" />
           <stop offset="42%" stopColor="#FFFFFF" stopOpacity="0.18" />
-          <stop offset="65%" stopColor="#FFFFFF" stopOpacity="0.05" />
+          <stop offset="72%" stopColor="#FFFFFF" stopOpacity="0" />
           <stop offset="100%" stopColor="#FFFFFF" stopOpacity="0" />
         </linearGradient>,
-        <radialGradient id={endHighlightId} key={endHighlightId} cx="25%" cy="25%" r="100%">
-          <stop offset="0%" stopColor="#FFFFFF" stopOpacity="0.35" />
+        <radialGradient id={endHighlightId} key={endHighlightId} cx="28%" cy="24%" r="90%">
+          <stop offset="0%" stopColor="#FFFFFF" stopOpacity="0.55" />
           <stop offset="55%" stopColor="#FFFFFF" stopOpacity="0.12" />
-          <stop offset="100%" stopColor="#FFFFFF" stopOpacity="0" />
-        </radialGradient>,
-        <radialGradient
-          id={bodySpecularId}
-          key={bodySpecularId}
-          cx={bodyEnd - radius * 1.2}
-          cy={radius * 0.4}
-          r={radius * 1.6}
-          gradientUnits="userSpaceOnUse"
-        >
-          <stop offset="0%" stopColor="#FFFFFF" stopOpacity="0.6" />
-          <stop offset="45%" stopColor="#FFFFFF" stopOpacity="0.18" />
-          <stop offset="100%" stopColor="#FFFFFF" stopOpacity="0" />
-        </radialGradient>,
-        <radialGradient
-          id={endSpecularId}
-          key={endSpecularId}
-          cx={bodyEnd + radius * 0.35}
-          cy={radius * 0.25}
-          r={radius * 0.9}
-          gradientUnits="userSpaceOnUse"
-        >
-          <stop offset="0%" stopColor="#FFFFFF" stopOpacity="0.6" />
-          <stop offset="60%" stopColor="#FFFFFF" stopOpacity="0.2" />
-          <stop offset="100%" stopColor="#FFFFFF" stopOpacity="0" />
+          <stop offset="100%" stopColor="#000000" stopOpacity="0.24" />
         </radialGradient>,
         <linearGradient id={bodyShadowId} key={bodyShadowId} x1="0%" y1="0%" x2="0%" y2="100%">
           <stop offset="0%" stopColor="#000000" stopOpacity="0" />
-          <stop offset="65%" stopColor="#000000" stopOpacity="0" />
-          <stop offset="100%" stopColor="#000000" stopOpacity="0.25" />
+          <stop offset="58%" stopColor="#000000" stopOpacity="0" />
+          <stop offset="100%" stopColor="#000000" stopOpacity="0.28" />
         </linearGradient>,
         <radialGradient
           id={endShadowId}
@@ -546,9 +710,21 @@ export const FilamentPreview: React.FC<FilamentPreviewProps> = ({
           <stop offset="75%" stopColor="#000000" stopOpacity="0.15" />
           <stop offset="100%" stopColor="#000000" stopOpacity="0.35" />
         </radialGradient>,
+        <filter id={bodySoftnessId} key={bodySoftnessId} x="-20%" y="-35%" width="140%" height="170%">
+          <feGaussianBlur stdDeviation={radius * 0.1} />
+        </filter>,
+        <filter id={endSoftnessId} key={endSoftnessId} x="-35%" y="-35%" width="170%" height="170%">
+          <feGaussianBlur stdDeviation={radius * 0.1} />
+        </filter>,
+        <clipPath id={bodyGlossClipId} key={bodyGlossClipId}>
+          <rect x="0" y="0" width={bodyEnd + radius} height={height} rx={radius} />
+        </clipPath>,
+        <clipPath id={endGlossClipId} key={endGlossClipId}>
+          <circle cx={bodyEnd} cy={radius} r={radius} />
+        </clipPath>,
       ],
     };
-  }, [isGlossy, svgId, bodyEnd, radius]);
+  }, [isGlossy, svgId, bodyEnd, radius, height]);
 
   const defs = useMemo(
     () => [...colorDefs, ...fillerDefs, ...highlightDefs.defs],
@@ -622,22 +798,30 @@ export const FilamentPreview: React.FC<FilamentPreviewProps> = ({
           )}
           <g filter={glowFilterId ? `url(#${glowFilterId})` : undefined}>
             <path d={bodyPath} fill={bodyFill} fillOpacity={bodyFillOpacity} />
-            {bodyPatternFill && patternOpacity > 0 && (
-              <path d={bodyPath} fill={bodyPatternFill} fillOpacity={patternOpacity} />
+            {fillerLayers.map((layer, index) => layer.bodyPatternFill && layer.patternOpacity > 0 ? (
+              <path
+                key={`body-effect-${index}`}
+                d={bodyPath}
+                fill={layer.bodyPatternFill}
+                fillOpacity={layer.patternOpacity}
+              />
+            ) : null)}
+            {highlightDefs.bodyShadowId && (
+              <path
+                d={bodyPath}
+                fill={`url(#${highlightDefs.bodyShadowId})`}
+                opacity={isTransparent ? 0.35 : 0.9}
+              />
             )}
             {highlightDefs.bodyHighlightId && (
-              <path
-                d={bodyPath}
-                fill={`url(#${highlightDefs.bodyHighlightId})`}
-                opacity={isTransparent ? 0.4 : 0.75}
-              />
-            )}
-            {highlightDefs.bodySpecularId && (
-              <path
-                d={bodyPath}
-                fill={`url(#${highlightDefs.bodySpecularId})`}
-                opacity={isTransparent ? 0.25 : 0.55}
-              />
+              <g clipPath={highlightDefs.bodyGlossClipId ? `url(#${highlightDefs.bodyGlossClipId})` : undefined}>
+                <path
+                  d={bodyPath}
+                  fill={`url(#${highlightDefs.bodyHighlightId})`}
+                  opacity={isTransparent ? 0.45 : 0.8}
+                  filter={highlightDefs.bodySoftnessId ? `url(#${highlightDefs.bodySoftnessId})` : undefined}
+                />
+              </g>
             )}
             <path d={bodyPath} fill="none" stroke={borderColor} strokeWidth={strokeWidth} />
             <circle
@@ -653,32 +837,36 @@ export const FilamentPreview: React.FC<FilamentPreviewProps> = ({
                 fill={segment.color}
               />
             ))}
-            {endPatternFill && patternOpacity > 0 && (
+            {fillerLayers.map((layer, index) => layer.endPatternFill && layer.endPatternOpacity > 0 ? (
+              <circle
+                key={`end-effect-${index}`}
+                cx={bodyEnd}
+                cy={radius}
+                r={radius}
+                fill={layer.endPatternFill}
+                fillOpacity={layer.endPatternOpacity}
+              />
+            ) : null)}
+            {highlightDefs.endShadowId && (
               <circle
                 cx={bodyEnd}
                 cy={radius}
                 r={radius}
-                fill={endPatternFill}
-                fillOpacity={patternOpacity}
+                fill={`url(#${highlightDefs.endShadowId})`}
+                opacity={isTransparent ? 0.3 : 0.8}
               />
             )}
             {highlightDefs.endHighlightId && (
-              <circle
-                cx={bodyEnd}
-                cy={radius}
-                r={radius}
-                fill={`url(#${highlightDefs.endHighlightId})`}
-                opacity={isTransparent ? 0.35 : 0.7}
-            />
-          )}
-            {highlightDefs.endSpecularId && (
-              <circle
-                cx={bodyEnd}
-                cy={radius}
-                r={radius}
-                fill={`url(#${highlightDefs.endSpecularId})`}
-                opacity={isTransparent ? 0.15 : 0.4}
-              />
+              <g clipPath={highlightDefs.endGlossClipId ? `url(#${highlightDefs.endGlossClipId})` : undefined}>
+                <circle
+                  cx={bodyEnd}
+                  cy={radius}
+                  r={radius}
+                  fill={`url(#${highlightDefs.endHighlightId})`}
+                  opacity={isTransparent ? 0.45 : 0.8}
+                  filter={highlightDefs.endSoftnessId ? `url(#${highlightDefs.endSoftnessId})` : undefined}
+                />
+              </g>
             )}
             <circle
               cx={bodyEnd}
