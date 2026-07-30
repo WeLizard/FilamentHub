@@ -132,8 +132,8 @@ export const happyHareAdapter: FeedAdapter = {
   capabilities: ['read', 'write', 'presence', 'spool_identity', 'consumption'],
   link: {
     hintKey: 'presetSlots.happyHare.linkHint',
-    snippet: (url) => `[spoolman]
-server: ${url}
+    snippet: (baseUrl, apiKey) => `[spoolman]
+server: ${baseUrl}/${apiKey}
 sync_rate: 5`,
   },
   renderSettings: ({ printer }) => <HostnameField printer={printer} />,

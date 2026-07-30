@@ -5717,18 +5717,22 @@
       "label": "Link to the printer",
       "issue": "Issue a key",
       "reissue": "Issue a new one",
-      "onceHint": "The link is shown once. A new one can be issued from the system card — the old one stops working then.",
+      "onceHint": "Connection details are shown once. A new key can be issued from the system card — the old one stops working then.",
       "notSet": "Link not set up",
-      "waiting": "Waiting for the printer"
+      "waiting": "Waiting for the printer",
+      "address": "Address",
+      "apiKeyHeader": "Header",
+      "apiKeyValue": "API key",
+      "config": "Configuration"
     },
     "gates_one": "{{count}} slot",
     "gates_other": "{{count}} slots",
     "gateNoData": "No data",
     "octoprint": {
-      "linkHint": "In OctoPrint open the Spoolman plugin settings and paste this link into the Spoolman address field.",
+      "linkHint": "In the Spoolman settings, enter the address below, enable API key, and copy the header and key into their matching fields.",
       "setupTitle": "The Spoolman plugin is needed in OctoPrint",
       "pluginPage": "Plugin page",
-      "setupDescription": "The plugin is installed from the OctoPrint repository. After that, usage is subtracted automatically after every print. Which spool belongs to which slot is recorded here: the plugin does not send that."
+      "setupDescription": "Install the plugin from the OctoPrint repository. It stores the key separately from the address and subtracts usage automatically after each print. Spool-to-slot assignments stay here because the plugin does not report them."
     }
   },
   "confirmEmailChange": {

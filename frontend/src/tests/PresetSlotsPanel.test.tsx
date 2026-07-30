@@ -96,6 +96,14 @@ describe('PresetSlotsPanel', () => {
       'spool_identity',
       'consumption',
     ]);
+
+    const happyHareLink = feedAdapterFor('happy_hare').link;
+    const octoprintLink = feedAdapterFor('octoprint').link;
+    expect(happyHareLink?.snippet('https://fh.example/spool_compat', 'device-secret'))
+      .toContain('https://fh.example/spool_compat/device-secret');
+    expect(octoprintLink?.snippet('https://fh.example/spool_compat', 'device-secret'))
+      .toBe('https://fh.example/spool_compat');
+    expect(octoprintLink?.apiKeyHeader).toBe('X-API-Key');
   });
 
   it('shows a manual physical printer and resolves exact linked profile ids', async () => {

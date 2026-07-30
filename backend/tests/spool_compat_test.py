@@ -222,6 +222,33 @@ async def test_spool_compat_v1_list_get_use_spool(client: AsyncClient, db_sessio
 
 
 @pytest.mark.asyncio
+async def test_octoprint_spoolman_uses_header_key_without_secret_in_url(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    """The official OctoPrint plugin supports a dedicated API-key header."""
+    _user, spool, device = await _seed_spool_context(db_session)
+    base_url = "/api/v1/spool_compat/api/v1"
+
+    listed = await client.get(
+        f"{base_url}/spool",
+        headers={"X-API-Key": device.api_key},
+    )
+    missing = await client.put(f"{base_url}/spool/{spool.id}/use", json={"use_weight": 25})
+    used = await client.put(
+        f"{base_url}/spool/{spool.id}/use",
+        json={"use_weight": 25},
+        headers={"X-API-Key": device.api_key},
+    )
+
+    assert listed.status_code == 200
+    assert [item["id"] for item in listed.json()] == [spool.id]
+    assert missing.status_code == 401
+    assert used.status_code == 200
+    assert used.json()["used_weight"] == pytest.approx(125.0, rel=1e-6)
+
+
+@pytest.mark.asyncio
 async def test_octoprint_usage_retry_does_not_consume_twice(
     client: AsyncClient,
     db_session: AsyncSession,

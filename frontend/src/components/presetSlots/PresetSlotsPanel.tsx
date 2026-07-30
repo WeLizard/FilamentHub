@@ -120,7 +120,7 @@ function NewSystemCard({
     return (
       <div className="rounded-2xl border border-dashed border-purple-400/30 bg-white/3 p-5">
         <h2 className="mb-2 text-sm font-semibold text-white">{t('presetSlots.newSystem.keyTitle')}</h2>
-        <LinkInstructions link={chosen.link} url={`${spoolCompatBaseUrl}/${issuedKey}`}>
+        <LinkInstructions link={chosen.link} baseUrl={spoolCompatBaseUrl} apiKey={issuedKey}>
           <button
             type="button"
             onClick={onDone}
@@ -501,7 +501,8 @@ function MaterialSystemSection({ printer, system, presetsSeedMap, spools, spoolC
         <div className="mb-4 rounded-xl border border-white/10 bg-white/5 p-4">
           <LinkInstructions
             link={adapter.link}
-            url={`${spoolCompatBaseUrl}/${issuedKey}`}
+            baseUrl={spoolCompatBaseUrl}
+            apiKey={issuedKey}
             onClose={() => setIssuedKey(null)}
           />
         </div>

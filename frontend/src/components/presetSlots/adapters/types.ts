@@ -20,7 +20,9 @@ export interface FeedAdapterLink {
   /** Locale key telling where this address goes on the printer. */
   hintKey: string;
   /** What a person copies: a config block, a bare address, whatever fits. */
-  snippet: (url: string) => string;
+  snippet: (baseUrl: string, apiKey: string) => string;
+  /** Providers supporting a separate secret keep it out of URLs and access logs. */
+  apiKeyHeader?: string;
 }
 
 export interface FeedAdapter {

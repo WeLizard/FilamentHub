@@ -5712,17 +5712,21 @@
       "label": "与打印机的连接",
       "issue": "签发密钥",
       "reissue": "重新签发",
-      "onceHint": "链接只显示一次。可在系统卡片中重新签发 — 届时旧链接失效。",
+      "onceHint": "连接信息只显示一次。可在系统卡片中重新签发密钥 — 届时旧密钥失效。",
       "notSet": "未建立连接",
-      "waiting": "等待打印机"
+      "waiting": "等待打印机",
+      "address": "地址",
+      "apiKeyHeader": "请求头",
+      "apiKeyValue": "API 密钥",
+      "config": "配置"
     },
     "gates_other": "{{count}} 个槽位",
     "gateNoData": "无数据",
     "octoprint": {
-      "linkHint": "在 OctoPrint 中打开 Spoolman 插件设置，把此链接填入 Spoolman 地址字段。",
+      "linkHint": "在 Spoolman 设置中填入下方地址，启用 API 密钥，并把请求头和密钥复制到对应字段。",
       "setupTitle": "OctoPrint 需要安装 Spoolman 插件",
       "pluginPage": "插件页面",
-      "setupDescription": "插件从 OctoPrint 插件库安装。之后每次打印后用量会自动扣减。哪卷料对应哪个槽位在此记录：插件不会发送该信息。"
+      "setupDescription": "插件从 OctoPrint 插件库安装。它将密钥与地址分开保存，并在每次打印后自动扣减用量。料卷与槽位的对应关系仍在此记录，因为插件不会上报这些信息。"
     }
   },
   "confirmEmailChange": {

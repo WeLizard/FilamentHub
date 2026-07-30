@@ -39,8 +39,10 @@ export const octoprintAdapter: FeedAdapter = {
   capabilities: ['read', 'write', 'spool_identity', 'consumption'],
   link: {
     hintKey: 'presetSlots.octoprint.linkHint',
-    // The plugin appends the Spoolman path itself, so it takes the bare address.
-    snippet: (url) => url,
+    // The plugin appends /api/v1 itself and supports keeping the secret in a
+    // dedicated request header instead of leaking it through its URL.
+    snippet: (baseUrl) => baseUrl,
+    apiKeyHeader: 'X-API-Key',
   },
   renderSetup: ({ linkConfirmed }) => (linkConfirmed ? null : <SetupStep />),
 };

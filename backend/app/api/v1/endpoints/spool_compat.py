@@ -834,6 +834,7 @@ async def spool_ws_scoped(websocket: WebSocket, api_key: str) -> None:
 
 
 @router.get("/v1/spool")
+@router.get("/api/v1/spool")
 async def list_spools_with_header_key(
     db: Annotated[AsyncSession, Depends(get_db)],
     x_api_key: Annotated[str | None, Query(alias="api_key")] = None,
@@ -1004,6 +1005,7 @@ async def _get_spool_impl(
 
 
 @router.get("/v1/spool/{spool_id}")
+@router.get("/api/v1/spool/{spool_id}")
 async def get_spool_with_header_key(
     spool_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -1184,17 +1186,12 @@ async def patch_spool(
     return JSONResponse(content=payload)
 
 
-@router.put("/{api_key}/v1/spool/{spool_id}/use")
-@router.put("/{api_key}/api/v1/spool/{spool_id}/use")
-async def use_spool(
+async def _use_spool_impl(
     api_key: str,
     spool_id: int,
     body: SpoolUseBody,
-    db: Annotated[AsyncSession, Depends(get_db)],
-    idempotency_key: Annotated[
-        str | None,
-        Header(alias="Idempotency-Key", max_length=128),
-    ] = None,
+    db: AsyncSession,
+    idempotency_key: str | None,
 ) -> JSONResponse:
     user, _device = await _resolve_user_and_device(db, api_key)
     if user is None:
@@ -1288,6 +1285,54 @@ async def use_spool(
     payload = _to_spool_payload(updated, location_map, gate_meta_map)
     await _broadcast_spool_event(user.id, "updated", payload)
     return JSONResponse(content=payload)
+
+
+@router.put("/v1/spool/{spool_id}/use")
+@router.put("/api/v1/spool/{spool_id}/use")
+async def use_spool_with_header_key(
+    spool_id: int,
+    body: SpoolUseBody,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    x_api_key: Annotated[str | None, Query(alias="api_key")] = None,
+    header_api_key: Annotated[str | None, Header(alias="X-API-Key")] = None,
+    idempotency_key: Annotated[
+        str | None,
+        Header(alias="Idempotency-Key", max_length=128),
+    ] = None,
+) -> JSONResponse:
+    """Commit OctoPrint usage without putting its device secret in the URL."""
+    api_key = x_api_key or header_api_key
+    if api_key is None:
+        return _err(status.HTTP_401_UNAUTHORIZED, "Invalid or missing API key.")
+    return await _use_spool_impl(
+        api_key=api_key,
+        spool_id=spool_id,
+        body=body,
+        db=db,
+        idempotency_key=idempotency_key,
+    )
+
+
+@router.put("/{api_key}/v1/spool/{spool_id}/use")
+@router.put("/{api_key}/api/v1/spool/{spool_id}/use")
+async def use_spool(
+    api_key: str,
+    spool_id: int,
+    body: SpoolUseBody,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    idempotency_key: Annotated[
+        str | None,
+        Header(alias="Idempotency-Key", max_length=128),
+    ] = None,
+) -> JSONResponse:
+    """Compatibility path for clients which cannot send an API-key header."""
+    return await _use_spool_impl(
+        api_key=api_key,
+        spool_id=spool_id,
+        body=body,
+        db=db,
+        idempotency_key=idempotency_key,
+    )
 
 
 @router.put("/{api_key}/v1/spool/{spool_id}/measure")
