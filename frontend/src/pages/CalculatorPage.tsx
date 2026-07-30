@@ -52,6 +52,7 @@ import { isPluginEmbed, requestSliceParse, subscribeToPluginSliceParse } from '.
 import { ConfirmDeleteModal } from '../components/ConfirmDeleteModal';
 import { useAuth } from '../contexts/AuthContext';
 import { useHeaderVisible } from '../hooks/useHeaderVisible';
+import { USER_PREFERENCES_QUERY_KEY } from '../hooks/useUserCurrency';
 import { translateApiError } from '../utils/translateApiError';
 import { currencySymbol, normalizeCurrency, CURRENCY_CODES, defaultCurrencyForLanguage } from '../utils/currency';
 import {
@@ -415,6 +416,15 @@ const deriveUserSpoolDefaults = (
   return { spoolPrice, spoolWeightKg };
 };
 
+const resolveUserSpoolPriceCurrency = (spool: UserSpool): string | null => {
+  if (spool.price != null) {
+    // Prices created before per-spool currency was persisted were entered under
+    // the old fixed RUB label. Keep that meaning instead of relabelling them.
+    return normalizeCurrency(spool.currency || spool.extra?.currency || 'RUB');
+  }
+  return spool.filament?.currency ? normalizeCurrency(spool.filament.currency) : null;
+};
+
 const buildSpoolLabel = (spool: UserSpool): string => {
   if (!spool.filament) {
     return `#${spool.id}`;
@@ -429,6 +439,7 @@ export const buildEstimateRequest = (
   parsedJobs: ParsedJobState[] = [],
   jobConfigs: CalculatorJobConfig[] = [],
   printerEconomics: PrinterEconomics | null = null,
+  calculationCurrency: string | null = null,
 ): CalculatorEstimateRequest => {
   const requestData: CalculatorEstimateRequest = {
     pricing_method: 'combined',
@@ -530,7 +541,11 @@ export const buildEstimateRequest = (
   requestData.bed_prep_cost_per_print = form.bedPrepCostPerPrint || undefined;
   requestData.min_order_price = form.minOrderPrice || undefined;
 
-  if (printerEconomics && printerEconomics.configured) {
+  const printerCurrencyMatches =
+    !printerEconomics?.economics_currency
+    || !calculationCurrency
+    || normalizeCurrency(printerEconomics.economics_currency) === normalizeCurrency(calculationCurrency);
+  if (printerEconomics && printerEconomics.configured && printerCurrencyMatches) {
     requestData.printer_power_w = printerEconomics.calculator_printer_power_w || undefined;
     requestData.printing_rate_per_hour = printerEconomics.calculator_printing_rate_per_hour;
     requestData.amortization_rate_per_hour = printerEconomics.calculator_amortization_rate_per_hour;
@@ -891,8 +906,16 @@ const buildHistoryPayload = (
   parsedJobs: ParsedJobState[] = [],
   jobConfigs: CalculatorJobConfig[] = [],
   printerEconomics: PrinterEconomics | null = null,
+  calculationCurrency: string | null = null,
 ): CalculatorHistoryEntryCreate => ({
-  request_data: buildEstimateRequest(form, materialLines, parsedJobs, jobConfigs, printerEconomics),
+  request_data: buildEstimateRequest(
+    form,
+    materialLines,
+    parsedJobs,
+    jobConfigs,
+    printerEconomics,
+    calculationCurrency,
+  ),
   result_data: result,
   parsed_gcode: parsedGcode
     ? {
@@ -1653,6 +1676,7 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
     void calculatorAPI
       .getProfile()
       .then((profile) => {
+        const profileCurrency = normalizeCurrency(profile.currency);
         setForm((prev) => ({
           ...prev,
           electricityCostPerKwh: profile.electricity_cost_per_kwh,
@@ -1677,6 +1701,17 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
           powerSteppersW: profile.power_steppers_w,
           powerElectronicsW: profile.power_electronics_w,
         }));
+        setQuoteProfile((prev) => ({
+          ...prev,
+          currency: profileCurrency,
+        }));
+        setQuoteParties((prev) => ({
+          ...prev,
+          currency: profileCurrency,
+        }));
+        queryClient.setQueryData(USER_PREFERENCES_QUERY_KEY, {
+          currency: profileCurrency,
+        });
       })
       .catch(() => {
       });
@@ -1693,17 +1728,13 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
       }
 
       const defaults = deriveUserSpoolDefaults(selectedSpool);
-      const usesBrandFallback =
-        selectedSpool.price == null && selectedSpool.filament?.price_per_kg != null;
-      const spoolBrandCurrency = selectedSpool.filament?.currency
-        ? normalizeCurrency(selectedSpool.filament.currency)
-        : null;
+      const priceCurrency = resolveUserSpoolPriceCurrency(selectedSpool);
       const fallbackCurrencyOk =
-        !usesBrandFallback || !spoolBrandCurrency || spoolBrandCurrency === calcCurrencyRef.current;
+        !priceCurrency || priceCurrency === calcCurrencyRef.current;
 
       setForm((prev) => ({
         ...prev,
-        spoolPrice: fallbackCurrencyOk ? (defaults.spoolPrice ?? prev.spoolPrice) : prev.spoolPrice,
+        spoolPrice: fallbackCurrencyOk ? (defaults.spoolPrice ?? 0) : 0,
         spoolWeightKg: defaults.spoolWeightKg ?? prev.spoolWeightKg,
       }));
       if (fallbackCurrencyOk && defaults.spoolPrice != null) {
@@ -1734,11 +1765,11 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
 
     setForm((prev) => ({
       ...prev,
-      spoolPrice: currencyMatches ? (defaults.spoolPrice ?? prev.spoolPrice) : prev.spoolPrice,
+      spoolPrice: currencyMatches ? (defaults.spoolPrice ?? 0) : 0,
       spoolWeightKg: defaults.spoolWeightKg ?? prev.spoolWeightKg,
     }));
     setMaterialPriceSource(currencyMatches && defaults.spoolPrice != null ? 'filamenthub' : 'unset');
-  }, [selectedCatalogFilament, selectedSpool]);
+  }, [quoteProfile.currency, selectedCatalogFilament, selectedSpool]);
 
   useEffect(() => {
     const stored = loadStoredQuoteProfile();
@@ -1911,11 +1942,9 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
           const spool = availableSpools.find((item) => item.id === spoolId);
           if (!spool) return line;
           const defaults = deriveUserSpoolDefaults(spool);
-          const brandCurrency = spool.filament?.currency
-            ? normalizeCurrency(spool.filament.currency)
-            : null;
+          const priceCurrency = resolveUserSpoolPriceCurrency(spool);
           const currencyMatches =
-            spool.price != null || !brandCurrency || brandCurrency === calcCurrencyRef.current;
+            !priceCurrency || priceCurrency === calcCurrencyRef.current;
           return {
             ...line,
             selectionValue,
@@ -2038,6 +2067,11 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
     if (field === 'currency' && hasCalculatorAccess) {
       void calculatorAPI
         .updateProfile({ currency: value as string })
+        .then((profile) => {
+          queryClient.setQueryData(USER_PREFERENCES_QUERY_KEY, {
+            currency: normalizeCurrency(profile.currency),
+          });
+        })
         .catch(() => {
         });
     }
@@ -2054,7 +2088,14 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
     }
     setMaterialLinesError(null);
     calculateMutation.mutate(
-      buildEstimateRequest(form, materialLines, parsedJobs, jobConfigs, printerEconomics),
+      buildEstimateRequest(
+        form,
+        materialLines,
+        parsedJobs,
+        jobConfigs,
+        printerEconomics,
+        quoteProfile.currency,
+      ),
     );
   };
 
@@ -2172,6 +2213,7 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
           parsedJobs,
           jobConfigs,
           printerEconomics,
+          quoteProfile.currency,
         ),
       );
       setHistoryFeedback({ kind: 'success', message: tc('historySaved') });
@@ -2486,6 +2528,7 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
           parsedJobs,
           jobConfigs,
           printerEconomics,
+          quoteProfile.currency,
         )
       : null;
 
@@ -2572,7 +2615,7 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
   const handleCloudSave = async () => {
     setIsCloudBusy(true);
     try {
-      await calculatorAPI.updateProfile({
+      const profile = await calculatorAPI.updateProfile({
         seller_name: quoteProfile.sellerName,
         seller_inn: quoteProfile.sellerInn,
         seller_phone: quoteProfile.sellerPhone,
@@ -2586,6 +2629,9 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
         disclaimer_mode: quoteProfile.disclaimerMode,
         currency: quoteProfile.currency,
         quote_number_prefix: quoteProfile.quoteNumberPrefix,
+      });
+      queryClient.setQueryData(USER_PREFERENCES_QUERY_KEY, {
+        currency: normalizeCurrency(profile.currency),
       });
       setHistoryFeedback({ kind: 'success', message: tc('cloudSaveSuccess') });
     } catch {
@@ -2720,11 +2766,9 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
             const spool = availableSpools.find((item) => item.id === candidate.spoolIds[0]);
             if (spool) {
               const defaults = deriveUserSpoolDefaults(spool);
-              const brandCurrency = spool.filament?.currency
-                ? normalizeCurrency(spool.filament.currency)
-                : null;
+              const priceCurrency = resolveUserSpoolPriceCurrency(spool);
               const currencyMatches =
-                spool.price != null || !brandCurrency || brandCurrency === calcCurrencyRef.current;
+                !priceCurrency || priceCurrency === calcCurrencyRef.current;
               baseLine.selectionValue = `spool:${spool.id}`;
               baseLine.spool_id = spool.id;
               baseLine.filament_id = spool.filament_id;
@@ -3336,11 +3380,22 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
         low: tc('materialMatchConfidenceLow'),
       }[autoMaterialMatch.confidence]
     : null;
+  const selectedSpoolPriceCurrency = selectedSpool
+    ? resolveUserSpoolPriceCurrency(selectedSpool)
+    : null;
   const catalogBrandCurrency = !selectedSpool && selectedCatalogFilament?.currency
     ? normalizeCurrency(selectedCatalogFilament.currency)
     : null;
   const catalogPriceMismatch =
-    catalogBrandCurrency && catalogBrandCurrency !== quoteProfile.currency && selectedCatalogFilament
+    selectedSpool
+    && selectedSpool.price != null
+    && selectedSpoolPriceCurrency
+    && selectedSpoolPriceCurrency !== quoteProfile.currency
+      ? {
+          brandSymbol: currencySymbol(selectedSpoolPriceCurrency),
+          reference: selectedSpool.price,
+        }
+      : catalogBrandCurrency && catalogBrandCurrency !== quoteProfile.currency && selectedCatalogFilament
       ? {
           brandSymbol: currencySymbol(catalogBrandCurrency),
           reference: deriveCatalogFilamentDefaults(selectedCatalogFilament).spoolPrice,
@@ -3349,13 +3404,15 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
   const materialSummary =
     selectedSpool
       ? [
-          selectedSpool.price != null ? formatCurrency(selectedSpool.price) : tc('materialPriceUnknown'),
+          selectedSpool.price != null
+            ? makeCurrencyFormatter(selectedSpoolPriceCurrency || quoteProfile.currency)(selectedSpool.price)
+            : tc('materialPriceUnknown'),
           `${Math.round(selectedSpool.initial_weight_g)} ${tc('grams')}`,
           `${Math.round(selectedSpool.remaining_weight_g)} ${tc('grams')} ${tc('remainingShort')}`,
         ].join(' · ')
       : selectedCatalogFilament &&
           (selectedCatalogFilament.price_per_kg != null || selectedCatalogFilament.spool_weight != null)
-        ? `${selectedCatalogFilament.price_per_kg != null ? `${selectedCatalogFilament.price_per_kg.toFixed(0)} ${currencySymbol(quoteProfile.currency)}/${tc('kg')}` : '—'} · ${
+        ? `${selectedCatalogFilament.price_per_kg != null ? `${selectedCatalogFilament.price_per_kg.toFixed(0)} ${currencySymbol(catalogBrandCurrency || quoteProfile.currency)}/${tc('kg')}` : '—'} · ${
             selectedCatalogFilament.spool_weight != null
               ? `${selectedCatalogFilament.spool_weight.toFixed(0)} ${tc('grams')}`
               : '—'

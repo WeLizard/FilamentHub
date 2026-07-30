@@ -43,6 +43,7 @@ import {
 import { Printer3DIcon } from '../components/icons/Printer3DIcon';
 import { useAuth } from '../contexts/AuthContext';
 import { useHeaderVisible } from '../hooks/useHeaderVisible';
+import { useUserCurrency } from '../hooks/useUserCurrency';
 import { presetsAPI, filamentsAPI, brandsAPI, savedPresetsAPI, filamentReviewsAPI, printerProfilesAPI, printProfilesAPI, authAPI, spoolsAPI, qrAPI, devicesAPI, presetSlotsAPI, calculatorAPI, crmAPI, physicalPrintersAPI } from '../api/client';
 import { extractQrShortCode, createQrFrameDecoder } from '../utils/qrScanner';
 import type { UserSpool, SpoolState, UserPrinterDevice } from '../api/client';
@@ -1827,6 +1828,7 @@ const SpoolCard: React.FC<SpoolCardProps> = ({
   onResolveImport,
 }) => {
   const { t } = useTranslation();
+  const { currency: userCurrency } = useUserCurrency();
   const [showUsage, setShowUsage] = useState(false);
   const pct = Math.max(0, Math.min(100, spool.remaining_pct));
   const stateKey = `profilePage.spoolState.${spool.state}` as const;
@@ -1837,7 +1839,16 @@ const SpoolCard: React.FC<SpoolCardProps> = ({
   const importedDetails = [spool.extra?.vendor, spool.extra?.material]
     .filter(Boolean)
     .join(' · ');
-  const spoolCurrency = spool.extra?.currency || spool.filament?.currency || BASIC_CURRENCY_SYMBOL;
+  const purchaseCurrency = currencySymbol(
+    normalizeCurrency(
+      spool.currency
+      || spool.extra?.currency
+      || (spool.price != null ? 'RUB' : userCurrency),
+    ),
+  );
+  const catalogCurrency = currencySymbol(
+    normalizeCurrency(spool.filament?.currency || userCurrency),
+  );
   const pctToneClass = pct <= 10 ? 'text-red-300' : pct <= 30 ? 'text-yellow-300' : 'text-green-300';
   const importDraftId = Number(spool.extra?.import_draft_id);
   const canResolveImport =
@@ -1920,12 +1931,12 @@ const SpoolCard: React.FC<SpoolCardProps> = ({
             <span className="text-gray-500">{t('profilePage.spoolPrice')}: </span>
             <span className="font-medium">
               {spool.price != null
-                ? `${spool.price.toFixed(0)} ${spoolCurrency}`
-                : `${((spool.filament!.price_per_kg! * spool.initial_weight_g) / 1000).toFixed(0)} ${spoolCurrency}`}
+                ? `${spool.price.toFixed(0)} ${purchaseCurrency}`
+                : `${((spool.filament!.price_per_kg! * spool.initial_weight_g) / 1000).toFixed(0)} ${catalogCurrency}`}
             </span>
             {spool.price == null && spool.filament?.price_per_kg != null && (
               <span className="text-gray-600 ml-1">
-                ({spool.filament.price_per_kg.toFixed(0)} {spoolCurrency}/кг, рек.)
+                ({spool.filament.price_per_kg.toFixed(0)} {catalogCurrency}/кг, рек.)
               </span>
             )}
           </p>
@@ -2082,13 +2093,13 @@ const SpoolForm: React.FC<SpoolFormProps> = ({
   const [selectedDeviceId, setSelectedDeviceId] = useState<string>('');
   const [selectedGate, setSelectedGate] = useState<string>('');
   const [assigning, setAssigning] = useState(false);
-  const priceCurrency = currencySymbol(
-    normalizeCurrency(
-      spool?.extra?.currency
-      || spool?.filament?.currency
-      || BASIC_CURRENCY_SYMBOL,
-    ),
+  const { currency: userCurrency } = useUserCurrency();
+  const priceCurrencyCode = normalizeCurrency(
+    spool?.currency
+    || spool?.extra?.currency
+    || (spool?.price != null ? 'RUB' : userCurrency),
   );
+  const priceCurrency = currencySymbol(priceCurrencyCode);
 
   const { data: filamentsData } = useQuery({
     queryKey: ['spool-form-filaments'],
@@ -2411,11 +2422,13 @@ const SpoolForm: React.FC<SpoolFormProps> = ({
     setSaving(true);
     try {
       const parsedPrice = price !== '' ? parseFloat(price) : null;
+      const savedPrice = parsedPrice != null && Number.isFinite(parsedPrice) ? parsedPrice : null;
       const payload = {
         filament_id: filamentId ? Number(filamentId) : null,
         initial_weight_g: parsedInitial,
         used_weight_g: parsedUsed,
-        price: parsedPrice != null && Number.isFinite(parsedPrice) ? parsedPrice : null,
+        price: savedPrice,
+        currency: savedPrice == null ? null : priceCurrencyCode,
         state,
         ...(mode === 'create' ? { source } : {}),
         lot_nr: lotNr || null,
@@ -3600,8 +3613,6 @@ const PresetCard: React.FC<PresetCardProps> = ({ preset, onEdit, onView, onDelet
   );
 };
 
-
-const BASIC_CURRENCY_SYMBOL = '₽';
 
 const ProfileSectionLoader: React.FC = () => {
   const { t } = useTranslation();

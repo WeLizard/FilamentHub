@@ -7,17 +7,17 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Coins, Loader2, Save, Wifi, X, Link2Off, SlidersHorizontal, Trash2 } from 'lucide-react';
 import type { AxiosError } from 'axios';
-import { calculatorAPI, physicalPrintersAPI, printerProfilesAPI, printersAPI } from '../api/client';
+import { physicalPrintersAPI, printerProfilesAPI, printersAPI } from '../api/client';
 import type { PhysicalPrinter, PrinterConnectionBinding } from '../api/client';
 import type { PrinterProfile } from '../types/api';
 import { useAuth } from '../contexts/AuthContext';
 import { useDebounce } from '../hooks/useDebounce';
+import { useUserCurrency } from '../hooks/useUserCurrency';
 import { ModalOverlay } from './ModalOverlay';
 import { PrinterCostModal } from './calculator/PrinterCostModal';
 import { ConfirmModal } from './ConfirmModal';
 import { Dropdown } from './Dropdown';
 import { configLabel } from '../utils/printerConfig';
-import { defaultCurrencyForLanguage, normalizeCurrency } from '../utils/currency';
 import { formatLastSeen } from '../utils/deviceLink';
 import { translateApiError } from '../utils/translateApiError';
 
@@ -62,20 +62,7 @@ export const PhysicalPrinterSettingsModal: React.FC<PhysicalPrinterSettingsModal
     queryFn: () => (printerId ? printersAPI.get(printerId) : null),
     enabled: isOpen && !!printerId,
   });
-  // The person's own currency lives with the calculator profile; a machine's
-  // money is entered in that same currency.
-  const { data: calculatorProfile } = useQuery({
-    queryKey: ['calculator-profile', 'currency'],
-    queryFn: () => calculatorAPI.getProfile(),
-    staleTime: 300_000,
-    enabled: costModalOpen,
-    retry: false,
-  });
-  // The person's own currency, with the same language-based default the
-  // calculator uses when they have not chosen one yet.
-  const economicsCurrency = normalizeCurrency(
-    calculatorProfile?.currency || defaultCurrencyForLanguage(i18n.language),
-  );
+  const { currency: economicsCurrency } = useUserCurrency();
 
   const { data: profilesList } = useQuery({
     queryKey: ['printer-profiles', 'all-owned', user?.id],

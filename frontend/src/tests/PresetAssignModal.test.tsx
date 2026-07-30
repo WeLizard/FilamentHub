@@ -109,6 +109,7 @@ describe('PresetAssignModal', () => {
             state: 'shelf',
             source: 'manual',
             price: null,
+            currency: null,
             lot_nr: null,
             comment: null,
             extra: null,

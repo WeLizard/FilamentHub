@@ -80,6 +80,18 @@ class UserSettingsUpdate(BaseModel):
     auto_import_local_presets: bool | None = None
 
 
+class UserPreferencesResponse(BaseModel):
+    """Account-wide preferences shared by free and paid product areas."""
+
+    currency: str | None = None
+
+
+class UserPreferencesUpdate(BaseModel):
+    """Update account-wide preferences."""
+
+    currency: str = Field(..., pattern=r"^[A-Z]{3}$")
+
+
 class UserPasswordUpdate(BaseModel):
     """Schema for updating user password."""
 

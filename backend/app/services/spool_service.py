@@ -292,6 +292,9 @@ def _build_response(spool: UserSpool, filament: Filament | None) -> SpoolRespons
             currency=filament.brand.currency if filament.brand is not None else None,
             required_nozzle_hrc=filament.required_nozzle_hrc,
         )
+    extra = spool.extra or {}
+    raw_currency = extra.get("currency")
+    currency = raw_currency if isinstance(raw_currency, str) and raw_currency else None
     return SpoolResponse(
         id=spool.id,
         user_id=spool.user_id,
@@ -302,6 +305,7 @@ def _build_response(spool: UserSpool, filament: Filament | None) -> SpoolRespons
         remaining_weight_g=spool.remaining_weight_g,
         remaining_pct=spool.remaining_pct,
         price=spool.price,
+        currency=currency,
         state=spool.state.value,
         source=spool.source,
         lot_nr=spool.lot_nr,
@@ -360,6 +364,7 @@ async def create_spool(
         initial_weight_g=payload.initial_weight_g,
         used_weight_g=payload.used_weight_g,
         price=payload.price,
+        extra={"currency": payload.currency} if payload.currency is not None else {},
         state=UserSpoolState(payload.state),
         source=payload.source,
         lot_nr=payload.lot_nr,
@@ -412,6 +417,13 @@ async def update_spool(
         spool.state = UserSpoolState(payload.state)
     if "price" in payload.model_fields_set:
         spool.price = payload.price
+    if "currency" in payload.model_fields_set:
+        next_extra = dict(spool.extra or {})
+        if payload.currency is None:
+            next_extra.pop("currency", None)
+        else:
+            next_extra["currency"] = payload.currency
+        spool.extra = next_extra
     if "lot_nr" in payload.model_fields_set:
         spool.lot_nr = payload.lot_nr
     if "comment" in payload.model_fields_set:

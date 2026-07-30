@@ -313,6 +313,16 @@ export const authAPI = {
     return response.data;
   },
 
+  getPreferences: async () => {
+    const response = await api.get<import('../types/api').UserPreferences>('/auth/me/preferences');
+    return response.data;
+  },
+
+  updatePreferences: async (data: import('../types/api').UserPreferences) => {
+    const response = await api.patch<import('../types/api').UserPreferences>('/auth/me/preferences', data);
+    return response.data;
+  },
+
   getAccessibleBrands: async (): Promise<AccessibleBrand[]> => {
     const response = await api.get<AccessibleBrand[]>('/auth/me/brands');
     return response.data;
@@ -2406,6 +2416,7 @@ export interface UserSpool {
   remaining_weight_g: number;
   remaining_pct: number;
   price: number | null;
+  currency: string | null;
   state: SpoolState;
   source: string;
   lot_nr: string | null;
@@ -2421,6 +2432,7 @@ export interface SpoolCreatePayload {
   initial_weight_g: number;
   used_weight_g?: number;
   price?: number | null;
+  currency?: string | null;
   state?: SpoolState;
   source?: string;
   lot_nr?: string | null;
@@ -2432,6 +2444,7 @@ export interface SpoolUpdatePayload {
   initial_weight_g?: number;
   used_weight_g?: number;
   price?: number | null;
+  currency?: string | null;
   state?: SpoolState;
   lot_nr?: string | null;
   comment?: string | null;

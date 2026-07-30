@@ -2,14 +2,15 @@
 
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Settings, Lock, Mail, Save, CheckCircle, XCircle, Loader2, User as UserIcon, Eye, EyeOff, AlertTriangle, Trash2, Globe, Pencil } from 'lucide-react';
-import { authAPI, calculatorAPI } from '../api/client';
-import { currencySymbol, normalizeCurrency, CURRENCY_CODES } from '../utils/currency';
+import { authAPI } from '../api/client';
+import { currencySymbol, CURRENCY_CODES } from '../utils/currency';
 import { sortedCountries } from '../utils/countries';
 import { translateApiError } from '../utils/translateApiError';
 import type { User } from '../types/api';
 import { useAuth } from '../contexts/AuthContext';
+import { USER_PREFERENCES_QUERY_KEY, useUserCurrency } from '../hooks/useUserCurrency';
 import { DeleteAccountModal } from './DeleteAccountModal';
 import { LanguageSwitcher } from './LanguageSwitcher';
 import type { AxiosError } from 'axios';
@@ -289,14 +290,13 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
     }
   };
 
-  const { data: calcProfile } = useQuery({
-    queryKey: ['calculator-profile'],
-    queryFn: () => calculatorAPI.getProfile(),
-  });
-  const currency = normalizeCurrency(calcProfile?.currency);
+  const { currency } = useUserCurrency();
   const updateCurrencyMutation = useMutation({
-    mutationFn: (code: string) => calculatorAPI.updateProfile({ currency: code }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['calculator-profile'] }),
+    mutationFn: (code: string) => authAPI.updatePreferences({ currency: code }),
+    onSuccess: (preferences) => {
+      queryClient.setQueryData(USER_PREFERENCES_QUERY_KEY, preferences);
+      queryClient.invalidateQueries({ queryKey: ['calculator-profile'] });
+    },
   });
 
   const countryOptions = useMemo(() => sortedCountries(i18n.language), [i18n.language]);

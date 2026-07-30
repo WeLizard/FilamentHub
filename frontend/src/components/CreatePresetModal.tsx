@@ -30,6 +30,7 @@ import { ColorMaterialSection } from './ColorMaterialSection';
 import { FloatingHSLColorPicker } from './FloatingHSLColorPicker';
 import { FilamentFeaturesEditor } from './FilamentFeaturesEditor';
 import { mergeVisualEffects } from '../data/filamentFeatures';
+import { currencySymbol } from '../utils/currency';
 
 import { FilamentSummaryCard } from './FilamentSummaryCard';
 import type { AxiosError } from 'axios';
@@ -382,6 +383,11 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
     }),
     enabled: isOpen && showFilamentForm && !!selectedBrandId && filamentName.length > 0,
   });
+  const filamentPriceCurrency = currencySymbol(
+    currentBrandData?.currency
+    || brandsData?.items.find((brand: Brand) => brand.id === selectedBrandId)?.currency
+    || ownBrandData?.currency,
+  );
 
   const uniqueSimilarFilaments = useMemo(() => {
     const items = similarFilamentsData?.items ?? [];
@@ -2440,7 +2446,14 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                     <div className="grid grid-cols-2 gap-4">
                       <div>
                         <div className="flex items-center justify-between mb-2 gap-2">
-                          <label className="text-gray-300 text-sm font-medium">{t(filamentPriceUnit === 'per_spool' ? 'presetModal.pricePerSpool' : 'presetModal.pricePerKg')}</label>
+                          <label className="text-gray-300 text-sm font-medium">
+                            {t(
+                              filamentPriceUnit === 'per_spool'
+                                ? 'presetModal.pricePerSpool'
+                                : 'presetModal.pricePerKg',
+                              { currency: filamentPriceCurrency },
+                            )}
+                          </label>
                           <div className="flex rounded-lg overflow-hidden border border-white/20 text-[11px] shrink-0">
                             <button type="button" onClick={() => setFilamentPriceUnit('per_kg')} className={`px-2 py-0.5 transition-all ${filamentPriceUnit === 'per_kg' ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'}`}>{t('presetModal.perKgShort')}</button>
                             <button type="button" onClick={() => setFilamentPriceUnit('per_spool')} className={`px-2 py-0.5 transition-all ${filamentPriceUnit === 'per_spool' ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'}`}>{t('presetModal.perSpoolShort')}</button>

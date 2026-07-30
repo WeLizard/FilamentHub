@@ -117,6 +117,36 @@ async def test_create_spool_defaults_to_shelf_and_allows_repeat_purchase(
 
 
 @pytest.mark.asyncio
+async def test_spool_purchase_currency_is_persisted_and_can_be_changed(
+    db_session: AsyncSession,
+):
+    user, _, filament = await _seed_spool_for_patch_test(db_session)
+
+    created = await create_spool(
+        db_session,
+        user,
+        SpoolCreateRequest(
+            filament_id=filament.id,
+            initial_weight_g=1000,
+            price=12,
+            currency="EUR",
+        ),
+    )
+    assert created.price == 12
+    assert created.currency == "EUR"
+    assert created.extra["currency"] == "EUR"
+
+    updated = await update_spool(
+        db_session,
+        user,
+        created.id,
+        SpoolUpdateRequest(currency="USD"),
+    )
+    assert updated.currency == "USD"
+    assert updated.extra["currency"] == "USD"
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("used_weight_g", "state"),
     [

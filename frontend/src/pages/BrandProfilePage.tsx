@@ -1392,6 +1392,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
                 brandId={user.brand_id}
                 sourceFilament={addColorsFilament}
                 onClose={() => setAddColorsFilament(null)}
+                priceCurrencySymbol={currencySymbol(addColorsFilament.currency || brandData.currency)}
                 allowCustomFeatures={Boolean(brandData.verified)}
               />
             </div>

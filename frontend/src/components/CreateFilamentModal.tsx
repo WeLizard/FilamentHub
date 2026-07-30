@@ -681,6 +681,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
                 <FilamentPaletteForm
                   brandId={brandIdValue}
                   onClose={onClose}
+                  priceCurrencySymbol={priceCurrencySymbol}
                   allowCustomFeatures={canUseCustomFeatures}
                 />
               ) : (

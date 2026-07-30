@@ -44,6 +44,7 @@ vi.mock('@tanstack/react-query', () => ({
 }));
 
 vi.mock('../api/client', () => ({
+  authAPI: { getPreferences: vi.fn().mockResolvedValue({ currency: 'RUB' }) },
   physicalPrintersAPI: { update: updateMock, setConfigurations: setConfigurationsMock },
   printerProfilesAPI: { list: vi.fn() },
   printersAPI: { list: vi.fn(), get: vi.fn() },

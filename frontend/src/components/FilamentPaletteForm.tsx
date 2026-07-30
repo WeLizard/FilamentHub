@@ -4,7 +4,6 @@ import { useTranslation } from 'react-i18next';
 import { Plus, X, Loader2, CheckCircle } from 'lucide-react';
 import { filamentLinesAPI, filamentsAPI } from '../api/client';
 import { densityForMaterial, STANDARD_DIAMETERS } from '../utils/materialDensity';
-import { currencySymbol } from '../utils/currency';
 import { HSLColorPicker } from './HSLColorPicker';
 import { Dropdown } from './Dropdown';
 import { MaterialTypeSelect } from './MaterialTypeSelect';
@@ -37,6 +36,7 @@ interface PaletteEntry {
 interface FilamentPaletteFormProps {
   brandId: number;
   onClose: () => void;
+  priceCurrencySymbol: string;
   /** Режим «добавить цвета к готовому материалу»: параметры и линейка берутся из него. */
   sourceFilament?: Filament;
   allowCustomFeatures?: boolean;
@@ -48,6 +48,7 @@ const emptyEntry = (): PaletteEntry => ({ color_name: '', color_hex: '#808080', 
 export function FilamentPaletteForm({
   brandId,
   onClose,
+  priceCurrencySymbol,
   sourceFilament,
   allowCustomFeatures = false,
 }: FilamentPaletteFormProps) {
@@ -341,7 +342,7 @@ export function FilamentPaletteForm({
             onSpoolWeightChange={setSpoolWeight}
             emptySpoolWeight={emptySpoolWeight}
             onEmptySpoolWeightChange={setEmptySpoolWeight}
-            currencySymbol={currencySymbol('RUB')}
+            currencySymbol={priceCurrencySymbol}
           />
         </div>
         <div className="mt-3">

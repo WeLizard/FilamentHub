@@ -596,6 +596,10 @@ export interface User {
   legal_previously_accepted?: boolean;
 }
 
+export interface UserPreferences {
+  currency: string | null;
+}
+
 export interface AdminUserListResponse {
   items: User[];
   total: number;

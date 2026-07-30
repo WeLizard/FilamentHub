@@ -70,7 +70,7 @@ describe('buildEstimateRequest with a chosen machine', () => {
   });
 
   it('charges the machine for this order only', () => {
-    const request = buildEstimateRequest(form, [], [], [], economics());
+    const request = buildEstimateRequest(form, [], [], [], economics(), 'RUB');
 
     expect(request.printer_power_w).toBe(400);
     expect(request.printing_rate_per_hour).toBe(19.74);
@@ -79,6 +79,14 @@ describe('buildEstimateRequest with a chosen machine', () => {
     // rewriting the account-wide economics.
     expect(form.printingRatePerHour).toBe(170);
     expect(form.amortizationRatePerHour).toBe(16);
+  });
+
+  it('does not relabel machine economics from another currency', () => {
+    const request = buildEstimateRequest(form, [], [], [], economics(), 'EUR');
+
+    expect(request.printer_power_w).toBe(350);
+    expect(request.printing_rate_per_hour).toBe(170);
+    expect(request.amortization_rate_per_hour).toBe(16);
   });
 
   it('never lets a rate under its own cost make an order cheaper', () => {

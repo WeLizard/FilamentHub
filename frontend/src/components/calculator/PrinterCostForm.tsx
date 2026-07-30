@@ -40,7 +40,6 @@ export const PrinterCostForm: React.FC<PrinterCostFormProps> = ({
 }) => {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
-  const symbol = currencySymbol(currency);
 
   const [usage, setUsage] = useState<Usage>('regular');
   const [values, setValues] = useState<EconomicsValues>({
@@ -67,6 +66,8 @@ export const PrinterCostForm: React.FC<PrinterCostFormProps> = ({
 
   const saved = economicsQuery.data;
   const suggestion = suggestionQuery.data;
+  const economicsCurrency = saved?.economics_currency || currency;
+  const symbol = currencySymbol(economicsCurrency);
 
   useEffect(() => {
     if (!saved) {
@@ -160,7 +161,7 @@ export const PrinterCostForm: React.FC<PrinterCostFormProps> = ({
         power_electronics_w: (nextParts ?? parts).electronics || null,
         maintenance_cost_per_hour: next.maintenance > 0 ? next.maintenance : null,
         machine_hour_rate: next.rate > 0 ? next.rate : null,
-        economics_currency: currency,
+        economics_currency: economicsCurrency,
       }),
     onSuccess: async (economics) => {
       onStatusChange?.('saved');

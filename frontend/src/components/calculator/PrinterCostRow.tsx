@@ -25,7 +25,7 @@ export const PrinterCostRow: React.FC<PrinterCostRowProps> = ({
   pickedFromLabel = null,
 }) => {
   const { t } = useTranslation();
-  const symbol = currencySymbol(currency);
+  const symbol = currencySymbol(economics?.economics_currency || currency);
 
   return (
     <div

@@ -46,6 +46,7 @@ from app.core.security import (
 )
 from app.db.session import get_db
 from app.models.brand import Brand
+from app.models.calculator_profile import UserCalculatorProfile
 from app.models.preset import Preset
 from app.models.revoked_token import RevokedToken
 from app.models.user import User, UserRole
@@ -77,6 +78,8 @@ from app.schemas.user import (
     Token,
     UserEmailUpdate,
     UserPasswordUpdate,
+    UserPreferencesResponse,
+    UserPreferencesUpdate,
     UserResponse,
     UserSettingsUpdate,
     UserUpdate,
@@ -1144,6 +1147,41 @@ async def update_user_settings(
     await db.refresh(current_user)
 
     return UserResponse.model_validate(current_user)
+
+
+@router.get("/me/preferences", response_model=UserPreferencesResponse)
+async def get_user_preferences(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> UserPreferencesResponse:
+    """Return account-wide preferences without requiring a paid entitlement."""
+    currency = await db.scalar(
+        select(UserCalculatorProfile.currency).where(
+            UserCalculatorProfile.user_id == current_user.id
+        )
+    )
+    return UserPreferencesResponse(currency=currency)
+
+
+@router.patch("/me/preferences", response_model=UserPreferencesResponse)
+async def update_user_preferences(
+    data: UserPreferencesUpdate,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> UserPreferencesResponse:
+    """Persist account-wide preferences independently of calculator access."""
+    profile = await db.scalar(
+        select(UserCalculatorProfile).where(
+            UserCalculatorProfile.user_id == current_user.id
+        )
+    )
+    if profile is None:
+        profile = UserCalculatorProfile(user_id=current_user.id)
+        db.add(profile)
+
+    profile.currency = data.currency
+    await db.commit()
+    return UserPreferencesResponse(currency=profile.currency)
 
 
 @router.patch("/me/password", response_model=UserResponse)
