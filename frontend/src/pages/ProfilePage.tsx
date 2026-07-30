@@ -39,6 +39,7 @@ import {
   Lock,
   BriefcaseBusiness,
   FileText,
+  Upload,
   UsersRound, History } from 'lucide-react';
 import { Printer3DIcon } from '../components/icons/Printer3DIcon';
 import { useAuth } from '../contexts/AuthContext';
@@ -3005,14 +3006,41 @@ const SpoolsTab: React.FC<SpoolsTabProps> = ({
       </div>
 
       {isHelpOpen && (
-        <div className="bg-blue-500/10 border border-blue-500/20 rounded-2xl p-4 text-sm text-gray-300 space-y-2">
-          <p className="font-semibold text-white">{t('profilePage.spoolHelp.title')}</p>
-          <ul className="space-y-1 list-disc list-inside text-gray-400">
-            <li>{t('profilePage.spoolHelp.line1')}</li>
-            <li>{t('profilePage.spoolHelp.line2')}</li>
-            <li>{t('profilePage.spoolHelp.line3')}</li>
-            <li>{t('profilePage.spoolHelp.line4')}</li>
-          </ul>
+        <div className="space-y-3 rounded-2xl border border-blue-500/20 bg-blue-500/10 p-4 text-sm text-gray-300">
+          <div>
+            <p className="font-semibold text-white">{t('profilePage.spoolHelp.title')}</p>
+            <p className="mt-1 text-xs leading-relaxed text-gray-400">
+              {t('profilePage.spoolHelp.description')}
+            </p>
+          </div>
+          <div className="grid gap-3 lg:grid-cols-2">
+            <div className="rounded-xl border border-white/10 bg-black/10 p-3">
+              <div className="mb-2 flex items-center gap-2 font-medium text-gray-200">
+                <Plus className="h-4 w-4 text-blue-300" />
+                {t('profilePage.spoolHelp.manualTitle')}
+              </div>
+              <ul className="space-y-1.5 text-xs leading-relaxed text-gray-400">
+                <li>{t('profilePage.spoolHelp.line1')}</li>
+                <li>{t('profilePage.spoolHelp.line2')}</li>
+                <li>{t('profilePage.spoolHelp.line3')}</li>
+                <li>{t('profilePage.spoolHelp.line4')}</li>
+              </ul>
+            </div>
+            <div className="rounded-xl border border-purple-400/20 bg-purple-500/10 p-3">
+              <div className="mb-2 flex items-center gap-2 font-medium text-purple-100">
+                <Upload className="h-4 w-4 text-purple-300" />
+                {t('profilePage.spoolHelp.importTitle')}
+              </div>
+              <ul className="space-y-1.5 text-xs leading-relaxed text-gray-300">
+                <li>{t('profilePage.spoolHelp.importLine1')}</li>
+                <li>{t('profilePage.spoolHelp.importLine2')}</li>
+                <li>{t('profilePage.spoolHelp.importLine3')}</li>
+              </ul>
+              <p className="mt-2 border-t border-white/10 pt-2 text-[11px] leading-relaxed text-purple-200/70">
+                {t('profilePage.spoolHelp.importNote')}
+              </p>
+            </div>
+          </div>
         </div>
       )}
 

@@ -2700,10 +2700,17 @@
     "spoolHelp": {
       "toggle": "How does this work?",
       "title": "My Filaments — how it works",
+      "description": "Add spools one at a time or bring several across from another inventory system.",
+      "manualTitle": "Manual or QR code",
       "line1": "Add a spool by hand or from its QR code — the material is matched against the catalog.",
       "line2": "The spool price is calculated automatically: price per kilogram × initial weight.",
       "line3": "If the printer has a feed system described, a spool can be assigned to a slot right away.",
-      "line4": "Slots are assigned here, on the site. The printer receives them through the link you entered in its settings."
+      "line4": "Slots are assigned here, on the site. The printer receives them through the link you entered in its settings.",
+      "importTitle": "CSV import",
+      "importLine1": "Upload an OctoPrint SpoolManager export or a CSV from another system.",
+      "importLine2": "Known formats are detected automatically; for other files, map the columns.",
+      "importLine3": "Review the preview and matched materials, then select the spools to import.",
+      "importNote": "Import never creates public catalog materials. Print settings are kept as a private preset draft, and importing the same file again does not duplicate existing spools."
     },
     "deviceSetup": {
       "title": "Material systems",
