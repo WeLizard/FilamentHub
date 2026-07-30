@@ -1,7 +1,9 @@
 import { useTranslation } from 'react-i18next';
+import { AlertTriangle, CheckCircle2 } from 'lucide-react';
 import type { GateState, MaterialSlot, UserSpool } from '../../api/client';
 import type { Preset } from '../../types/api';
 import { isUnidentifiedHHFilament } from '../../utils/hhGateState';
+import { compareMaterialSlot } from '../../utils/materialSlotComparison';
 import { NozzleRequirementBadge } from '../NozzleRequirementBadge';
 
 interface GateMapGridProps {
@@ -9,6 +11,7 @@ interface GateMapGridProps {
   gates: GateState[];
   presets: Record<number, Pick<Preset, 'id' | 'name' | 'extruder_temp' | 'bed_temp'>>;
   spools: UserSpool[];
+  providerLabel: string;
   nozzleHrc?: number | null;
   onGateClick: (gate: GateState | null, slot: MaterialSlot) => void;
 }
@@ -85,14 +88,31 @@ function SpoolIcon({
   );
 }
 
-function hhStatusBadge(status: number | null, t: (k: string) => string): { label: string; cls: string } | null {
-  if (status === null || status === -1 || status === 1) return null;
-  if (status === 0) return { label: t('presetSlots.hhStatus.empty'), cls: 'bg-gray-700/50 text-gray-400' };
-  if (status === 2) return { label: t('presetSlots.hhStatus.buffer'), cls: 'bg-amber-500/15 text-amber-400' };
-  return null;
+function observationLabel(
+  state: ReturnType<typeof compareMaterialSlot>['observationState'],
+  material: string | null,
+  t: (key: string) => string,
+): string {
+  if (state === 'empty') return t('presetSlots.hhStatus.empty');
+  if (state === 'buffer') {
+    return material
+      ? `${material} · ${t('presetSlots.hhStatus.buffer')}`
+      : t('presetSlots.hhStatus.buffer');
+  }
+  if (state === 'loaded') return material ?? t('presetSlots.hhStatus.spool');
+  if (state === 'unknown') return t('presetSlots.hhStatus.unknown');
+  return t('presetSlots.observation.noData');
 }
 
-export function GateMapGrid({ slots, gates, presets, spools, nozzleHrc = null, onGateClick }: GateMapGridProps) {
+export function GateMapGrid({
+  slots,
+  gates,
+  presets,
+  spools,
+  providerLabel,
+  nozzleHrc = null,
+  onGateClick,
+}: GateMapGridProps) {
   const { t } = useTranslation();
 
   const gateMap = new Map<number, GateState>(gates.map((g) => [g.gate_index, g]));
@@ -106,18 +126,28 @@ export function GateMapGrid({ slots, gates, presets, spools, nozzleHrc = null, o
     <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4 xl:grid-cols-8">
       {sortedSlots.map((slot) => {
         const gate = gateMap.get(slot.provider_index) ?? null;
-        const preset = gate?.preset_id != null ? presets[gate.preset_id] : null;
-        const spool = gate?.spool_id != null ? spoolMap.get(gate.spool_id) : null;
+        const desiredSpoolId = slot.assignment?.spool_id ?? gate?.spool_id ?? null;
+        const spool = desiredSpoolId != null ? spoolMap.get(desiredSpoolId) ?? null : null;
+        const comparison = compareMaterialSlot(slot, gate, spool);
+        const preset = comparison.desiredPresetId != null
+          ? presets[comparison.desiredPresetId]
+          : null;
 
         const spoolColor = spool?.filament?.color_hex
           ? `#${spool.filament.color_hex.replace(/^#/, '')}`
           : null;
-        const hhColor = gate?.hh_color_hex ? `#${gate.hh_color_hex.replace(/^#/, '')}` : null;
+        const observedColor = comparison.observedColorHex
+          ? `#${comparison.observedColorHex}`
+          : null;
         const isUnidentified = isUnidentifiedHHFilament(gate);
-        const displayColor = spoolColor ?? hhColor ?? (isUnidentified ? '#F59E0B' : null);
-        const displayMaterial = spool?.filament?.material_type ?? gate?.hh_material ?? null;
-        const hasContent = !!(gate?.preset_id || gate?.spool_id || displayMaterial || isUnidentified);
-        const hhBadge = gate ? hhStatusBadge(gate.hh_status, t) : null;
+        const displayColor = spoolColor ?? (isUnidentified ? '#F59E0B' : null);
+        const displayMaterial = spool?.filament?.material_type ?? null;
+        const hasContent = comparison.desiredPresetId != null || comparison.desiredSpoolId != null;
+        const hasObservation = comparison.observationState !== 'none';
+        const hasConflict = comparison.conflict != null;
+        const actionKey = comparison.conflict
+          ? `presetSlots.observation.action.${comparison.conflict}`
+          : null;
 
         return (
           <button
@@ -128,7 +158,7 @@ export function GateMapGrid({ slots, gates, presets, spools, nozzleHrc = null, o
             className={[
               'group relative flex flex-col items-center gap-1 rounded-xl border px-2 py-2 text-center transition',
               'hover:border-purple-500/50 hover:bg-purple-500/8 focus:outline-none focus:ring-2 focus:ring-purple-500/40',
-              isUnidentified
+              hasConflict || isUnidentified
                 ? 'border-amber-400/35 bg-amber-500/[0.07]'
                 : hasContent
                 ? 'border-purple-500/25 bg-purple-500/[0.04]'
@@ -144,11 +174,9 @@ export function GateMapGrid({ slots, gates, presets, spools, nozzleHrc = null, o
               >
                 {slot.provider_index}
               </span>
-              {gate && (
-                <span className="text-[9px] font-medium text-gray-400">
-                  {gate.source === 'hh_snapshot' ? 'HH' : gate.source === 'manual_orca' ? 'Orca' : ''}
-                </span>
-              )}
+              <span className="text-[9px] font-medium uppercase tracking-wide text-gray-500">
+                {t('presetSlots.assignment.label')}
+              </span>
             </div>
 
             <div className="py-0.5">
@@ -162,11 +190,9 @@ export function GateMapGrid({ slots, gates, presets, spools, nozzleHrc = null, o
 
             {displayMaterial ? (
               <span className="text-xs font-medium text-gray-200">{displayMaterial}</span>
-            ) : isUnidentified ? (
-              <span className="text-[11px] font-medium text-amber-200">{t('presetSlots.unknownFilament')}</span>
             ) : (
               <span className="text-[11px] text-gray-400">
-                {t(gate?.hh_status === 0 ? 'presetSlots.gateEmpty' : 'presetSlots.gateNoData')}
+                {t('presetSlots.assignment.notAssigned')}
               </span>
             )}
 
@@ -189,12 +215,6 @@ export function GateMapGrid({ slots, gates, presets, spools, nozzleHrc = null, o
               </p>
             )}
 
-            {hhBadge && (
-              <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-medium ${hhBadge.cls}`}>
-                {hhBadge.label}
-              </span>
-            )}
-
             {spool && (
               <span className="text-[10px] tabular-nums text-gray-300">
                 {spool.remaining_weight_g.toFixed(0)}g &middot; {spool.remaining_pct.toFixed(0)}%
@@ -209,6 +229,54 @@ export function GateMapGrid({ slots, gates, presets, spools, nozzleHrc = null, o
                 </p>
               </div>
             )}
+
+            <div
+              title={comparison.conflict
+                ? t(`presetSlots.observation.conflict.${comparison.conflict}`)
+                : undefined}
+              className={[
+                'mt-1 flex w-full min-w-0 items-center gap-1.5 rounded-lg border px-2 py-1.5 text-left',
+                hasConflict
+                  ? 'border-amber-400/20 bg-amber-500/10'
+                  : hasObservation
+                    ? 'border-emerald-400/10 bg-emerald-500/[0.06]'
+                    : 'border-white/[0.05] bg-black/10',
+              ].join(' ')}
+            >
+              {hasConflict ? (
+                <AlertTriangle className="h-3 w-3 shrink-0 text-amber-300" />
+              ) : hasObservation ? (
+                <CheckCircle2 className="h-3 w-3 shrink-0 text-emerald-400/80" />
+              ) : (
+                <span className="h-2 w-2 shrink-0 rounded-full bg-gray-600" />
+              )}
+              {observedColor && comparison.observationState !== 'empty' && (
+                <span
+                  className="h-2.5 w-2.5 shrink-0 rounded-full border border-white/20"
+                  style={{ backgroundColor: observedColor }}
+                />
+              )}
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[8px] uppercase tracking-wide text-gray-500">
+                  {providerLabel}
+                </span>
+                <span className={[
+                  'block truncate text-[9px]',
+                  hasConflict ? 'text-amber-200' : 'text-gray-300',
+                ].join(' ')}>
+                  {observationLabel(
+                    comparison.observationState,
+                    comparison.observedMaterial,
+                    t,
+                  )}
+                </span>
+              </span>
+              {actionKey && (
+                <span className="shrink-0 text-[9px] font-medium text-amber-200 underline decoration-amber-300/40 underline-offset-2">
+                  {t(actionKey)}
+                </span>
+              )}
+            </div>
 
             <span className="absolute inset-0 flex items-center justify-center rounded-xl opacity-0 transition group-hover:opacity-100">
               <span className="rounded-lg bg-purple-600/90 px-2.5 py-1 text-[10px] font-medium text-white shadow-lg backdrop-blur-sm">

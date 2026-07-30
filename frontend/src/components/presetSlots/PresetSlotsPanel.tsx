@@ -13,7 +13,7 @@ import { LinkInstructions } from './LinkInstructions';
 import { PresetAssignModal } from './PresetAssignModal';
 import { toast } from '../Toast';
 import { translateApiError } from '../../utils/translateApiError';
-import { formatLastSeen, getDeviceLinkState, useNow } from '../../utils/deviceLink';
+import { formatLastSeen, getDeviceLinkState, latestDeviceContact, useNow } from '../../utils/deviceLink';
 import { configuredNozzleHrc } from '../../utils/nozzleHardness';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -217,7 +217,7 @@ function MaterialSystemSection({ printer, system, presetsSeedMap, spools, spoolC
   ) ?? null;
   // The key belongs to the printer, so a system without its own connector still
   // hears from it; falling back keeps a reporting printer from looking silent.
-  const lastSeenAt = connector?.last_seen_at ?? printer.last_seen_at;
+  const lastSeenAt = latestDeviceContact(connector?.last_seen_at, printer.last_seen_at);
   const linkState = getDeviceLinkState(lastSeenAt, now);
   const adapter = feedAdapterFor(system.provider);
   const linkConfirmed = printer.reports_feed;
@@ -557,6 +557,7 @@ function MaterialSystemSection({ printer, system, presetsSeedMap, spools, spoolC
         gates={gates}
         presets={effectivePresetsMap}
         spools={spools}
+        providerLabel={providerLabel}
         nozzleHrc={nozzleHrc}
         onGateClick={(gate, slot) => onGateClick(gate, slot, printer, system)}
       />
@@ -600,6 +601,7 @@ export function PresetSlotsPanel({
     queryKey: ['physical-printers'],
     queryFn: physicalPrintersAPI.list,
     staleTime: 10_000,
+    refetchOnWindowFocus: true,
     // Someone who just pasted the key sits and waits for the printer to answer;
     // they have no reason to guess that the page needs reloading.
     refetchInterval: (query) => {

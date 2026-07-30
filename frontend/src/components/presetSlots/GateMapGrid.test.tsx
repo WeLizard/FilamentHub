@@ -119,13 +119,15 @@ describe('GateMapGrid material slots', () => {
         gates={[gate]}
         presets={{}}
         spools={[assignedSpool]}
+        providerLabel="Happy Hare"
         onGateClick={onGateClick}
       />,
     );
 
     expect(screen.getByText('PLA')).toBeInTheDocument();
     expect(screen.getByText('Example Signal Red')).toBeInTheDocument();
-    expect(screen.queryByText('presetSlots.observation.noData')).not.toBeInTheDocument();
+    expect(screen.getByText('Happy Hare')).toBeInTheDocument();
+    expect(screen.getByText('presetSlots.observation.noData')).toBeInTheDocument();
     fireEvent.click(screen.getByText('PLA'));
     expect(onGateClick).toHaveBeenCalledWith(gate, slot);
   });
@@ -158,6 +160,7 @@ describe('GateMapGrid material slots', () => {
         gates={[observedEmptyGate]}
         presets={{}}
         spools={[assignedSpool]}
+        providerLabel="Happy Hare"
         onGateClick={onGateClick}
       />,
     );
@@ -186,6 +189,7 @@ describe('GateMapGrid material slots', () => {
         gates={[unassignedGate]}
         presets={{}}
         spools={[]}
+        providerLabel="Happy Hare"
         onGateClick={vi.fn()}
       />,
     );

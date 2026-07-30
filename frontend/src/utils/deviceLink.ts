@@ -17,6 +17,23 @@ export type DeviceLinkState = 'active' | 'delayed' | 'inactive' | 'never';
 export const DEVICE_LINK_ACTIVE_MS = 60_000;
 export const DEVICE_LINK_DELAYED_MS = 300_000;
 
+/** Pick the freshest contact when both the printer and its connector report one. */
+export function latestDeviceContact(
+  ...timestamps: Array<string | null | undefined>
+): string | null {
+  let latest: string | null = null;
+  let latestTime = Number.NEGATIVE_INFINITY;
+  for (const timestamp of timestamps) {
+    if (!timestamp) continue;
+    const time = new Date(timestamp).getTime();
+    if (Number.isFinite(time) && time > latestTime) {
+      latest = timestamp;
+      latestTime = time;
+    }
+  }
+  return latest;
+}
+
 export function getDeviceLinkState(lastSeenAt: string | null, now: number = Date.now()): DeviceLinkState {
   if (!lastSeenAt) return 'never';
   const diff = now - new Date(lastSeenAt).getTime();

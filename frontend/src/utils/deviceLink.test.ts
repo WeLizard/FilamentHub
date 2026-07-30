@@ -4,6 +4,7 @@ import {
   DEVICE_LINK_DELAYED_MS,
   formatLastSeen,
   getDeviceLinkState,
+  latestDeviceContact,
 } from './deviceLink';
 
 const NOW = Date.parse('2026-07-17T12:00:00Z');
@@ -27,6 +28,16 @@ describe('getDeviceLinkState', () => {
   it('is inactive past the delayed window — not "printer offline"', () => {
     expect(getDeviceLinkState(iso(DEVICE_LINK_DELAYED_MS), NOW)).toBe('inactive');
     expect(getDeviceLinkState(iso(86_400_000), NOW)).toBe('inactive');
+  });
+});
+
+describe('latestDeviceContact', () => {
+  it('uses the freshest valid printer or connector contact', () => {
+    expect(latestDeviceContact(
+      '2026-07-17T11:00:00Z',
+      '2026-07-17T11:59:00Z',
+    )).toBe('2026-07-17T11:59:00Z');
+    expect(latestDeviceContact(null, 'invalid')).toBeNull();
   });
 });
 
