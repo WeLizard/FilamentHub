@@ -249,6 +249,46 @@ async def test_octoprint_spoolman_uses_header_key_without_secret_in_url(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("header_key_auth", [False, True])
+async def test_spoolman_client_printer_name_bootstraps_gate_map(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    header_key_auth: bool,
+):
+    user, spool, device = await _seed_spool_context(db_session)
+    db_session.add(
+        PresetGateState(
+            user_id=user.id,
+            device_id=device.id,
+            gate_index=2,
+            spool_id=spool.id,
+            source=PresetGateStateSource.web_manual,
+            source_ts=datetime.now(timezone.utc),
+            is_active=True,
+        )
+    )
+    await db_session.commit()
+
+    if header_key_auth:
+        endpoint = "/api/v1/spool_compat/api/v1/spool"
+        headers = {
+            "X-API-Key": device.api_key,
+            "X-Printer-Name": "  voron  ",
+        }
+    else:
+        endpoint = f"/api/v1/spool_compat/{device.api_key}/api/v1/spool"
+        headers = {"X-Printer-Name": "  voron  "}
+
+    response = await client.get(endpoint, headers=headers)
+
+    assert response.status_code == 200
+    assert response.json()[0]["extra"]["printer_name"] == '"voron"'
+    assert response.json()[0]["extra"]["mmu_gate_map"] == "2"
+    await db_session.refresh(device)
+    assert device.printer_hostname == "voron"
+
+
+@pytest.mark.asyncio
 async def test_octoprint_usage_retry_does_not_consume_twice(
     client: AsyncClient,
     db_session: AsyncSession,

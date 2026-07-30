@@ -324,6 +324,18 @@ async def _resolve_user_and_device(
     return user, device
 
 
+async def _accept_printer_name_hint(
+    db: AsyncSession,
+    device: UserPrinterDevice,
+    printer_name: str | None,
+) -> None:
+    normalized = printer_name.strip() if printer_name is not None else ""
+    if not normalized:
+        return
+    await claim_printer_hostname(db, device, normalized)
+    await db.flush()
+
+
 async def _update_device_gate_count(db: AsyncSession, device: UserPrinterDevice, location_map: dict[int, str]) -> None:
     """Derive gate_count from the highest gate index seen in location map."""
     max_gate = -1
@@ -839,6 +851,10 @@ async def list_spools_with_header_key(
     db: Annotated[AsyncSession, Depends(get_db)],
     x_api_key: Annotated[str | None, Query(alias="api_key")] = None,
     header_api_key: Annotated[str | None, Header(alias="X-API-Key")] = None,
+    printer_name: Annotated[
+        str | None,
+        Header(alias="X-Printer-Name", max_length=200),
+    ] = None,
     allow_archived: bool = False,
     location: str | None = None,
     lot_nr: str | None = None,
@@ -853,8 +869,9 @@ async def list_spools_with_header_key(
 ) -> JSONResponse:
     api_key = x_api_key or header_api_key
     user, _device = await _resolve_user_and_device(db, api_key)
-    if user is None:
+    if user is None or _device is None:
         return _err(status.HTTP_401_UNAUTHORIZED, "Invalid or missing API key.")
+    await _accept_printer_name_hint(db, _device, printer_name)
 
     return await _list_spools_impl(
         db=db,
@@ -870,6 +887,7 @@ async def list_spools_with_header_key(
         sort=sort,
         limit=limit,
         offset=offset,
+        device=_device,
     )
 
 
@@ -878,6 +896,10 @@ async def list_spools_with_header_key(
 async def list_spools(
     api_key: str,
     db: Annotated[AsyncSession, Depends(get_db)],
+    printer_name: Annotated[
+        str | None,
+        Header(alias="X-Printer-Name", max_length=200),
+    ] = None,
     allow_archived: bool = False,
     location: str | None = None,
     lot_nr: str | None = None,
@@ -891,8 +913,9 @@ async def list_spools(
     offset: int = Query(default=0, ge=0),
 ) -> JSONResponse:
     user, _device = await _resolve_user_and_device(db, api_key)
-    if user is None:
+    if user is None or _device is None:
         return _err(status.HTTP_401_UNAUTHORIZED, "Invalid API key.")
+    await _accept_printer_name_hint(db, _device, printer_name)
 
     return await _list_spools_impl(
         db=db,
