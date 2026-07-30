@@ -572,12 +572,16 @@ async def test_issuing_a_key_leaves_another_providers_system_alone(
 
     device = await db_session.get(UserPrinterDevice, printer_id)
     device.gate_count = 7
+    device.reports_feed = True
+    device.last_seen_at = datetime.now(timezone.utc)
     await db_session.commit()
 
     reissued = await auth_client.post(f"/api/v1/devices/{printer_id}/regenerate-key")
     assert reissued.status_code == 200
 
     physical = await auth_client.get(f"/api/v1/physical-printers/{printer_id}")
+    assert physical.json()["reports_feed"] is False
+    assert physical.json()["last_seen_at"] is None
     systems = physical.json()["material_systems"]
     assert [system["provider"] for system in systems] == ["octoprint"]
     assert len(systems[0]["slots"]) == 2
