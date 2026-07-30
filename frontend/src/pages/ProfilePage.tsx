@@ -64,6 +64,7 @@ import { toast } from '../components/Toast';
 import { OrcaSettingsView } from '../components/OrcaSettingsView';
 import { CreatePrinterRequestModal } from '../components/CreatePrinterRequestModal';
 import { SettingsTab } from '../components/SettingsTab';
+import { SpoolImportButton } from '../components/SpoolManagerImportButton';
 import { ExportFromOrcaSlicerButton } from '../components/ExportFromOrcaSlicerButton';
 import { ExportPrinterProfilesButton } from '../components/ExportPrinterProfilesButton';
 import { MyPrintersList } from '../components/MyPrintersList';
@@ -1035,6 +1036,15 @@ export const ProfilePage: React.FC = () => {
           setIsAddOpen={setAddSpoolOpen}
           initialFilamentId={spoolIntakeFilamentId}
           initialSource={spoolIntakeSource}
+          onResolveImport={(draftId) => {
+            const draft = userPresets.find((preset) => preset.id === draftId);
+            if (draft) {
+              handleEditPreset(draft);
+            } else {
+              toast.error(t('profilePage.spoolManagerImport.draftNotReady'));
+              queryClient.invalidateQueries({ queryKey: ['user-presets'] });
+            }
+          }}
         />
       )}
 
@@ -1802,17 +1812,34 @@ interface SpoolCardProps {
   onUse?: () => void;
   onDelete?: () => void;
   onStateChange?: (state: SpoolState) => void;
+  onResolveImport?: (draftId: number) => void;
 }
 
-const SpoolCard: React.FC<SpoolCardProps> = ({ spool, isBusy = false, onEdit, onUse, onDelete, onStateChange }) => {
+const SpoolCard: React.FC<SpoolCardProps> = ({
+  spool,
+  isBusy = false,
+  onEdit,
+  onUse,
+  onDelete,
+  onStateChange,
+  onResolveImport,
+}) => {
   const { t } = useTranslation();
   const [showUsage, setShowUsage] = useState(false);
   const pct = Math.max(0, Math.min(100, spool.remaining_pct));
   const stateKey = `profilePage.spoolState.${spool.state}` as const;
   const iconColor = spool.filament?.color_hex
     ? `#${spool.filament.color_hex.replace('#', '')}`
-    : '#9333ea';
+    : spool.extra?.color_hex || '#9333ea';
+  const displayName = spool.filament?.name || spool.extra?.display_name || t('profilePage.spoolNoFilament');
+  const importedDetails = [spool.extra?.vendor, spool.extra?.material]
+    .filter(Boolean)
+    .join(' · ');
+  const spoolCurrency = spool.extra?.currency || spool.filament?.currency || BASIC_CURRENCY_SYMBOL;
   const pctToneClass = pct <= 10 ? 'text-red-300' : pct <= 30 ? 'text-yellow-300' : 'text-green-300';
+  const importDraftId = Number(spool.extra?.import_draft_id);
+  const canResolveImport =
+    !spool.filament && Number.isInteger(importDraftId) && importDraftId > 0;
 
   return (
     <div className="bg-white/10 backdrop-blur-sm border border-white/15 rounded-2xl p-4 shadow-xl flex gap-4 items-stretch">
@@ -1833,7 +1860,7 @@ const SpoolCard: React.FC<SpoolCardProps> = ({ spool, isBusy = false, onEdit, on
         {/* Name + state badge */}
         <div className="flex items-start justify-between gap-2">
           <p className="text-white font-semibold text-sm leading-tight truncate">
-            {spool.filament ? spool.filament.name : t('profilePage.spoolNoFilament')}
+            {displayName}
           </p>
           <span className={`text-xs px-2 py-0.5 rounded-full border flex-shrink-0 ${SPOOL_STATE_COLORS[spool.state] ?? ''}`}>
             {t(stateKey)}
@@ -1849,6 +1876,9 @@ const SpoolCard: React.FC<SpoolCardProps> = ({ spool, isBusy = false, onEdit, on
             </p>
             <NozzleRequirementBadge requiredHrc={spool.filament.required_nozzle_hrc} size="tight" />
           </div>
+        )}
+        {!spool.filament && importedDetails && (
+          <p className="text-gray-400 text-xs truncate">{importedDetails}</p>
         )}
 
         {/* Weight stats */}
@@ -1888,12 +1918,12 @@ const SpoolCard: React.FC<SpoolCardProps> = ({ spool, isBusy = false, onEdit, on
             <span className="text-gray-500">{t('profilePage.spoolPrice')}: </span>
             <span className="font-medium">
               {spool.price != null
-                ? `${spool.price.toFixed(0)} ${BASIC_CURRENCY_SYMBOL}`
-                : `${((spool.filament!.price_per_kg! * spool.initial_weight_g) / 1000).toFixed(0)} ${BASIC_CURRENCY_SYMBOL}`}
+                ? `${spool.price.toFixed(0)} ${spoolCurrency}`
+                : `${((spool.filament!.price_per_kg! * spool.initial_weight_g) / 1000).toFixed(0)} ${spoolCurrency}`}
             </span>
             {spool.price == null && spool.filament?.price_per_kg != null && (
               <span className="text-gray-600 ml-1">
-                ({spool.filament.price_per_kg.toFixed(0)} {BASIC_CURRENCY_SYMBOL}/кг, рек.)
+                ({spool.filament.price_per_kg.toFixed(0)} {spoolCurrency}/кг, рек.)
               </span>
             )}
           </p>
@@ -1934,6 +1964,18 @@ const SpoolCard: React.FC<SpoolCardProps> = ({ spool, isBusy = false, onEdit, on
             </span>
           );
         })()}
+
+        {canResolveImport && (
+          <button
+            type="button"
+            onClick={() => onResolveImport?.(importDraftId)}
+            disabled={!onResolveImport || isBusy}
+            className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-amber-400/30 bg-amber-500/10 px-3 py-1.5 text-[11px] font-medium text-amber-200 transition hover:bg-amber-500/20 disabled:opacity-50"
+          >
+            <FileText className="h-3.5 w-3.5" />
+            {t('profilePage.spoolManagerImport.completeImport')}
+          </button>
+        )}
 
         <div className="grid grid-cols-2 gap-2 pt-1">
           <button
@@ -2114,6 +2156,7 @@ const SpoolForm: React.FC<SpoolFormProps> = ({
         material_type: spool.filament.material_type,
         color_name: spool.filament.color_name,
         color_hex: spool.filament.color_hex,
+        ral_code: null,
         visual_settings: null,
         diameter: 1.75,
         density: null,
@@ -2124,7 +2167,6 @@ const SpoolForm: React.FC<SpoolFormProps> = ({
         recommended_nozzle_temp_max: null,
         recommended_bed_temp_min: null,
         recommended_bed_temp_max: null,
-        ral_code: null,
         required_nozzle_hrc: null,
         description: null,
         views_count: null,
@@ -2807,6 +2849,7 @@ interface SpoolsTabProps {
   setIsAddOpen: (v: boolean) => void;
   initialFilamentId?: number | null;
   initialSource?: 'manual' | 'qr';
+  onResolveImport: (draftId: number) => void;
 }
 
 const SpoolsTab: React.FC<SpoolsTabProps> = ({
@@ -2817,6 +2860,7 @@ const SpoolsTab: React.FC<SpoolsTabProps> = ({
   setIsAddOpen,
   initialFilamentId = null,
   initialSource = 'manual',
+  onResolveImport,
 }) => {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -2913,6 +2957,15 @@ const SpoolsTab: React.FC<SpoolsTabProps> = ({
           </button>
         </div>
         <div className="flex items-center gap-2">
+          <SpoolImportButton
+            onImported={() => {
+              queryClient.invalidateQueries({ queryKey: ['user-spools'] });
+              queryClient.invalidateQueries({ queryKey: ['user-presets'] });
+              queryClient.invalidateQueries({ queryKey: ['saved-presets'] });
+              queryClient.invalidateQueries({ queryKey: ['saved-presets-details'] });
+              onRefetch();
+            }}
+          />
           <button
             onClick={() => {
               setEditingSpool(null);
@@ -3079,6 +3132,7 @@ const SpoolsTab: React.FC<SpoolsTabProps> = ({
                 }}
                 onDelete={() => handleDelete(spool.id)}
                 onStateChange={(state) => handleStateChange(spool.id, state)}
+                onResolveImport={onResolveImport}
               />
             ))}
           </div>
@@ -3121,17 +3175,25 @@ const RecentSpools: React.FC<RecentSpoolsProps> = ({ spools, onViewAll }) => {
           spools.map(spool => {
             const iconColor = spool.filament?.color_hex
               ? `#${spool.filament.color_hex.replace('#', '')}`
-              : '#9333ea';
+              : spool.extra?.color_hex || '#9333ea';
+            const importedDetails = [spool.extra?.vendor, spool.extra?.material]
+              .filter(Boolean)
+              .join(' · ');
             return (
               <div key={spool.id} className="flex items-center gap-2.5 p-2 bg-white/5 rounded-xl">
                 <SpoolIcon pct={spool.remaining_pct} color={iconColor} size={38} />
                 <div className="flex-1 min-w-0">
                   <p className="text-white text-xs font-medium truncate leading-tight">
-                    {spool.filament?.name ?? t('profilePage.spoolNoFilament')}
+                    {spool.filament?.name ?? spool.extra?.display_name ?? t('profilePage.spoolNoFilament')}
                   </p>
                   {spool.filament && (
                     <p className="text-gray-500 text-xs truncate leading-tight">
                       {spool.filament.material_type}
+                    </p>
+                  )}
+                  {!spool.filament && importedDetails && (
+                    <p className="text-gray-500 text-xs truncate leading-tight">
+                      {importedDetails}
                     </p>
                   )}
                 </div>

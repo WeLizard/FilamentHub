@@ -2,7 +2,7 @@
 
 import axios from 'axios';
 import type { InternalAxiosRequestConfig } from 'axios';
-import type { AccessibleBrand, AdminUserListResponse, AuthMethods, Brand, BrandUsage, BrandRequest, BrandRequestStatus, BrandTeamInvite, BrandTeamRole, BrandTeamWorkspace, Filament, FilamentLine, FilamentImportResult, FilamentListResponse, FilamentPalettePayload, BrandInvitePublic, BrandInviteAdmin, BrandInviteAcceptResult, BrandInviteBatchPreview, BrandInviteBatchSendResult, FilamentAvailability, FilamentVisualSettings, FilamentReview, FilamentRatingStats, Notification, NotificationListResponse, Preset, RecommendedPreset, RecommendedForPrinterResponse, Printer, PrinterProfile, PrintProfile, PrinterRequest, User, Token, RefreshTokenRequest, RefreshTokenResponse, ListResponse, AccountDeletionStats, UserSavedPreset, CalculatorEstimateRequest, CalculatorEstimateResponse, CalculatorProfileResponse, CalculatorProfileUpdate, Feedback, FeedbackListResponse, FeedbackType, CompatiblePrinter, CompatibleFilament, DownloadVersion, DownloadVersionsResponse, WikiCategory, WikiCategoryListResponse, WikiArticle, WikiArticleListResponse, WikiFeedbackStats, WikiFeedbackCreate, WikiFeedback, EmailThreadDetail, EmailThreadListResponse, EmailThreadStatus, EmailMessage, EmailSenderProfile, NotificationCampaignAudience, NotificationCampaignHistoryResponse, NotificationCampaignPreview, NotificationCampaignSendResult, LegalAcceptancePayload, LegalRequirements, RegistrationPayload, SpoolUsageEvent, OrcaSliceReport } from '../types/api';
+import type { AccessibleBrand, AdminUserListResponse, AuthMethods, Brand, BrandUsage, BrandRequest, BrandRequestStatus, BrandTeamInvite, BrandTeamRole, BrandTeamWorkspace, Filament, FilamentAdditive, FilamentPropertyClaim, FilamentLine, FilamentImportResult, FilamentListResponse, FilamentPalettePayload, BrandInvitePublic, BrandInviteAdmin, BrandInviteAcceptResult, BrandInviteBatchPreview, BrandInviteBatchSendResult, FilamentAvailability, FilamentVisualSettings, FilamentReview, FilamentRatingStats, Notification, NotificationListResponse, Preset, RecommendedPreset, RecommendedForPrinterResponse, Printer, PrinterProfile, PrintProfile, PrinterRequest, User, Token, RefreshTokenRequest, RefreshTokenResponse, ListResponse, AccountDeletionStats, UserSavedPreset, CalculatorEstimateRequest, CalculatorEstimateResponse, CalculatorProfileResponse, CalculatorProfileUpdate, Feedback, FeedbackListResponse, FeedbackType, CompatiblePrinter, CompatibleFilament, DownloadVersion, DownloadVersionsResponse, WikiCategory, WikiCategoryListResponse, WikiArticle, WikiArticleListResponse, WikiFeedbackStats, WikiFeedbackCreate, WikiFeedback, EmailThreadDetail, EmailThreadListResponse, EmailThreadStatus, EmailMessage, EmailSenderProfile, NotificationCampaignAudience, NotificationCampaignHistoryResponse, NotificationCampaignPreview, NotificationCampaignSendResult, LegalAcceptancePayload, LegalRequirements, RegistrationPayload, SpoolUsageEvent, OrcaSliceReport } from '../types/api';
 import { getCsrfToken, getRefreshToken, getToken, isCookieAuthMode, isJwtAuthMode, isOrcaEmbedded, removeToken, setToken, shouldPersistTokensLocally } from '../utils/auth';
 import { isPluginEmbed, reportPluginSessionToPlugin } from '../utils/pluginBridge';
 import { downloadBlob } from '../utils/download';
@@ -2437,6 +2437,109 @@ export interface SpoolUpdatePayload {
   comment?: string | null;
 }
 
+export interface SpoolManagerFilamentMatch {
+  id: number;
+  name: string;
+  brand_name: string;
+  material_type: string;
+  color_name: string | null;
+  color_hex: string | null;
+  reason: 'name' | 'color_hex' | 'color_name';
+}
+
+export interface SpoolManagerPreviewRow {
+  row_number: number;
+  fingerprint: string;
+  status: 'ready' | 'already_imported' | 'invalid';
+  spool_name: string;
+  vendor: string | null;
+  material: string | null;
+  color_name: string | null;
+  color_hex: string | null;
+  serial_number: string | null;
+  initial_weight_g: number | null;
+  used_weight_g: number | null;
+  remaining_weight_g: number | null;
+  empty_spool_weight_g: number | null;
+  price: number | null;
+  currency: string | null;
+  suggested_filament: SpoolManagerFilamentMatch | null;
+  warnings: string[];
+}
+
+export interface SpoolManagerPreviewResponse {
+  file_name: string;
+  file_sha256: string;
+  total_rows: number;
+  importable_rows: number;
+  matched_rows: number;
+  unmatched_rows: number;
+  duplicate_rows: number;
+  invalid_rows: number;
+  rows: SpoolManagerPreviewRow[];
+}
+
+export interface SpoolManagerImportResponse {
+  created: number;
+  skipped_existing: number;
+  skipped_unselected: number;
+  invalid: number;
+  created_spool_ids: number[];
+  created_draft_ids: number[];
+}
+
+export type SpoolImportSemanticField =
+  | 'spool_name'
+  | 'vendor'
+  | 'material'
+  | 'color_name'
+  | 'color_hex'
+  | 'serial_number'
+  | 'initial_weight'
+  | 'used_weight'
+  | 'remaining_weight'
+  | 'empty_spool_weight'
+  | 'price'
+  | 'currency'
+  | 'note'
+  | 'density'
+  | 'diameter'
+  | 'diameter_tolerance'
+  | 'flow_rate_compensation'
+  | 'nozzle_temperature'
+  | 'bed_temperature'
+  | 'enclosure_temperature'
+  | 'nozzle_temperature_offset'
+  | 'bed_temperature_offset'
+  | 'enclosure_temperature_offset'
+  | 'total_length'
+  | 'used_length'
+  | 'first_use'
+  | 'last_use'
+  | 'purchased_from'
+  | 'purchased_on';
+
+export type SpoolImportUnit = 'g' | 'kg' | 'mm' | 'm';
+
+export interface SpoolImportColumnMapping {
+  fields: Partial<Record<SpoolImportSemanticField, string>>;
+  units: Partial<Record<SpoolImportSemanticField, SpoolImportUnit>>;
+}
+
+export interface SpoolImportPreviewResponse extends SpoolManagerPreviewResponse {
+  detected_format: 'octoprint_spoolmanager_csv' | 'custom_csv' | null;
+  detected_label: string | null;
+  mapping_required: boolean;
+  available_columns: string[];
+  sample_rows: Array<Record<string, string>>;
+  suggested_mapping: SpoolImportColumnMapping | null;
+  required_fields: SpoolImportSemanticField[];
+}
+
+export interface SpoolImportResponse extends SpoolManagerImportResponse {
+  detected_format: 'octoprint_spoolmanager_csv' | 'custom_csv';
+}
+
 export const orcaSlicesAPI = {
   list: async (limit = 20): Promise<OrcaSliceReport[]> => {
     const response = await api.get<OrcaSliceReport[]>('/orcaslicer/slices', { params: { limit } });
@@ -2483,6 +2586,64 @@ export const spoolsAPI = {
 
   delete: async (id: number): Promise<void> => {
     await api.delete(`/spools/${id}`);
+  },
+
+  previewImport: async (
+    file: File,
+    mapping?: SpoolImportColumnMapping,
+  ): Promise<SpoolImportPreviewResponse> => {
+    const form = new FormData();
+    form.append('file', file);
+    if (mapping) form.append('mapping', JSON.stringify(mapping));
+    const response = await api.post<SpoolImportPreviewResponse>(
+      '/spools/import/preview',
+      form,
+      { headers: { 'Content-Type': 'multipart/form-data' } },
+    );
+    return response.data;
+  },
+
+  importFile: async (
+    file: File,
+    fingerprints: string[],
+    mapping?: SpoolImportColumnMapping,
+  ): Promise<SpoolImportResponse> => {
+    const form = new FormData();
+    form.append('file', file);
+    form.append('selected_fingerprints', JSON.stringify(fingerprints));
+    if (mapping) form.append('mapping', JSON.stringify(mapping));
+    const response = await api.post<SpoolImportResponse>(
+      '/spools/import',
+      form,
+      { headers: { 'Content-Type': 'multipart/form-data' } },
+    );
+    return response.data;
+  },
+
+  previewSpoolManager: async (file: File): Promise<SpoolManagerPreviewResponse> => {
+    const form = new FormData();
+    form.append('file', file);
+    const response = await api.post<SpoolManagerPreviewResponse>(
+      '/spools/import/spoolmanager/preview',
+      form,
+      { headers: { 'Content-Type': 'multipart/form-data' } },
+    );
+    return response.data;
+  },
+
+  importSpoolManager: async (
+    file: File,
+    fingerprints: string[],
+  ): Promise<SpoolManagerImportResponse> => {
+    const form = new FormData();
+    form.append('file', file);
+    form.append('selected_fingerprints', JSON.stringify(fingerprints));
+    const response = await api.post<SpoolManagerImportResponse>(
+      '/spools/import/spoolmanager',
+      form,
+      { headers: { 'Content-Type': 'multipart/form-data' } },
+    );
+    return response.data;
   },
 };
 

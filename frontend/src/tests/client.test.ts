@@ -218,3 +218,61 @@ describe('admin email uploads', () => {
     expect(config.headers['Content-Type']).toBe('multipart/form-data');
   });
 });
+
+describe('SpoolManager CSV uploads', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    vi.clearAllMocks();
+  });
+
+  it('sends preview and confirmed import as multipart forms', async () => {
+    const { spoolsAPI } = await loadClientModule();
+    axiosState.apiInstance.post.mockResolvedValue({ data: {} });
+    const file = new File(['csv'], 'spools.csv', { type: 'text/csv' });
+
+    await spoolsAPI.previewSpoolManager(file);
+    await spoolsAPI.importSpoolManager(file, ['row-fingerprint']);
+
+    const [, previewPayload, previewConfig] = axiosState.apiInstance.post.mock.calls[0];
+    expect(previewPayload).toBeInstanceOf(FormData);
+    expect((previewPayload as FormData).get('file')).toBe(file);
+    expect(previewConfig.headers['Content-Type']).toBe('multipart/form-data');
+
+    const [, importPayload, importConfig] = axiosState.apiInstance.post.mock.calls[1];
+    expect(importPayload).toBeInstanceOf(FormData);
+    expect((importPayload as FormData).get('file')).toBe(file);
+    expect((importPayload as FormData).get('selected_fingerprints')).toBe(
+      '["row-fingerprint"]',
+    );
+    expect(importConfig.headers['Content-Type']).toBe('multipart/form-data');
+  });
+
+  it('sends provider-neutral mapping with generic preview and import', async () => {
+    const { spoolsAPI } = await loadClientModule();
+    axiosState.apiInstance.post.mockResolvedValue({ data: {} });
+    const file = new File(['csv'], 'inventory.csv', { type: 'text/csv' });
+    const mapping = {
+      fields: {
+        spool_name: 'Name',
+        remaining_weight: 'Remaining kg',
+      },
+      units: {
+        remaining_weight: 'kg' as const,
+      },
+    };
+
+    await spoolsAPI.previewImport(file, mapping);
+    await spoolsAPI.importFile(file, ['mapped-row'], mapping);
+
+    const [previewUrl, previewPayload] = axiosState.apiInstance.post.mock.calls[0];
+    expect(previewUrl).toBe('/spools/import/preview');
+    expect((previewPayload as FormData).get('mapping')).toBe(JSON.stringify(mapping));
+
+    const [importUrl, importPayload] = axiosState.apiInstance.post.mock.calls[1];
+    expect(importUrl).toBe('/spools/import');
+    expect((importPayload as FormData).get('selected_fingerprints')).toBe(
+      '["mapped-row"]',
+    );
+    expect((importPayload as FormData).get('mapping')).toBe(JSON.stringify(mapping));
+  });
+});

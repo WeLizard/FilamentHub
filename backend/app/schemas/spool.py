@@ -8,7 +8,47 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 SpoolState = Literal["active", "shelf", "archived", "empty"]
-SpoolSource = Literal["manual", "qr", "catalog", "orca_import"]
+SpoolSource = Literal[
+    "manual",
+    "qr",
+    "catalog",
+    "orca_import",
+    "octoprint_spoolmanager",
+    "csv_import",
+]
+
+SpoolImportSemanticField = Literal[
+    "spool_name",
+    "vendor",
+    "material",
+    "color_name",
+    "color_hex",
+    "serial_number",
+    "initial_weight",
+    "used_weight",
+    "remaining_weight",
+    "empty_spool_weight",
+    "price",
+    "currency",
+    "note",
+    "density",
+    "diameter",
+    "diameter_tolerance",
+    "flow_rate_compensation",
+    "nozzle_temperature",
+    "bed_temperature",
+    "enclosure_temperature",
+    "nozzle_temperature_offset",
+    "bed_temperature_offset",
+    "enclosure_temperature_offset",
+    "total_length",
+    "used_length",
+    "first_use",
+    "last_use",
+    "purchased_from",
+    "purchased_on",
+]
+SpoolImportUnit = Literal["g", "kg", "mm", "m"]
 
 
 class SpoolFilamentInfo(BaseModel):
@@ -95,3 +135,89 @@ class SpoolUsageEventResponse(BaseModel):
     # Что именно не сошлось: заявленный принтером вес, признак повтора,
     # результат замера, пометка об отмене.
     meta: dict | None = None
+
+
+class SpoolManagerFilamentMatch(BaseModel):
+    """One conservative, unambiguous catalog match for an imported row."""
+
+    id: int
+    name: str
+    brand_name: str
+    material_type: str
+    color_name: str | None = None
+    color_hex: str | None = None
+    reason: Literal["name", "color_hex", "color_name"]
+
+
+class SpoolManagerPreviewRow(BaseModel):
+    """Normalized preview of one OctoPrint SpoolManager CSV row."""
+
+    row_number: int
+    fingerprint: str
+    status: Literal["ready", "already_imported", "invalid"]
+    spool_name: str
+    vendor: str | None = None
+    material: str | None = None
+    color_name: str | None = None
+    color_hex: str | None = None
+    serial_number: str | None = None
+    initial_weight_g: float | None = None
+    used_weight_g: float | None = None
+    remaining_weight_g: float | None = None
+    empty_spool_weight_g: float | None = None
+    price: float | None = None
+    currency: str | None = None
+    suggested_filament: SpoolManagerFilamentMatch | None = None
+    warnings: list[str] = Field(default_factory=list)
+
+
+class SpoolManagerPreviewResponse(BaseModel):
+    """Preview and validation summary for a SpoolManager CSV."""
+
+    file_name: str
+    file_sha256: str
+    total_rows: int
+    importable_rows: int
+    matched_rows: int
+    unmatched_rows: int
+    duplicate_rows: int
+    invalid_rows: int
+    rows: list[SpoolManagerPreviewRow]
+
+
+class SpoolManagerImportResponse(BaseModel):
+    """Result of an explicitly confirmed SpoolManager CSV import."""
+
+    created: int
+    skipped_existing: int
+    skipped_unselected: int
+    invalid: int
+    created_spool_ids: list[int]
+    created_draft_ids: list[int] = Field(default_factory=list)
+
+
+class SpoolImportColumnMapping(BaseModel):
+    """User-confirmed mapping from safe semantic fields to CSV columns."""
+
+    fields: dict[SpoolImportSemanticField, str] = Field(default_factory=dict)
+    units: dict[SpoolImportSemanticField, SpoolImportUnit] = Field(
+        default_factory=dict
+    )
+
+
+class SpoolImportPreviewResponse(SpoolManagerPreviewResponse):
+    """Provider-neutral preview for a detected or manually mapped file."""
+
+    detected_format: Literal["octoprint_spoolmanager_csv", "custom_csv"] | None
+    detected_label: str | None = None
+    mapping_required: bool = False
+    available_columns: list[str] = Field(default_factory=list)
+    sample_rows: list[dict[str, str]] = Field(default_factory=list)
+    suggested_mapping: SpoolImportColumnMapping | None = None
+    required_fields: list[SpoolImportSemanticField] = Field(default_factory=list)
+
+
+class SpoolImportResponse(SpoolManagerImportResponse):
+    """Result of a provider-neutral spool file import."""
+
+    detected_format: Literal["octoprint_spoolmanager_csv", "custom_csv"]

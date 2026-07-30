@@ -31,6 +31,7 @@ from app.core.errors import (
     ERR_INVALID_FILE_PATH,
     ERR_NOTIFICATION_PREVIEW_REQUIRED,
     ERR_PRESET_NOT_FOUND,
+    ERR_PRESET_FILAMENT_REQUIRED,
     ERR_PRINTER_NOT_FOUND,
     ERR_PRINTER_REQUEST_NOT_FOUND,
     ERR_PRINTER_SLUG_EXISTS,
@@ -423,6 +424,8 @@ async def approve_preset(
 
     if not preset:
         raise_error(status.HTTP_404_NOT_FOUND, ERR_PRESET_NOT_FOUND)
+    if preset.filament_id is None:
+        raise_error(status.HTTP_400_BAD_REQUEST, ERR_PRESET_FILAMENT_REQUIRED)
 
     preset.moderation_status = PresetModerationStatus.APPROVED
     preset.moderated_by = admin.id

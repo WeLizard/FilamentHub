@@ -27,6 +27,7 @@ from app.core.errors import (
     ERR_OFFICIAL_VERIFIED_ONLY,
     ERR_ONLY_OWN_BRAND_OFFICIAL,
     ERR_PRESET_ALREADY_ACTIVE,
+    ERR_PRESET_FILAMENT_REQUIRED,
     ERR_PRESET_NOT_FOUND,
     ERR_PRESET_NOT_OWNER,
     ERR_PRINTER_NOT_FOUND,
@@ -538,6 +539,9 @@ async def update_preset(
     # Определяем filament_id: из update_data (если передан) или из preset
     # Для черновиков filament_id может быть None, и мы его обновляем через update_data
     target_filament_id = update_data.get("filament_id") or preset.filament_id
+    target_active = update_data.get("active", preset.active)
+    if target_active and target_filament_id is None:
+        raise_error(400, ERR_PRESET_FILAMENT_REQUIRED)
 
     # Получаем filament для автомодерации (только если есть filament_id)
     filament = None
@@ -597,6 +601,13 @@ async def update_preset(
             f"saved derived_from_external_id={old_external_id}, derived_from_draft_id={old_draft_id}, "
             f"added fhub_id={preset.id} and fhub_source='filamenthub'"
         )
+
+    if preset.filament_id is not None:
+        from app.services.spoolmanager_import_service import (
+            link_imported_spools_to_preset,
+        )
+
+        await link_imported_spools_to_preset(db, preset)
 
     # Автоматическая модерация при обновлении (только для пользовательских пресетов с filament)
     if not preset.is_official and filament:
@@ -768,6 +779,12 @@ async def activate_preset(
 
     preset.filament_id = body.filament_id
     preset.active = True
+
+    from app.services.spoolmanager_import_service import (
+        link_imported_spools_to_preset,
+    )
+
+    await link_imported_spools_to_preset(db, preset)
 
     # Clean up orphaned metadata
     if preset.orcaslicer_settings:
