@@ -99,6 +99,7 @@ a{color:#0369a1}
 
 const MAX_INLINE_IMAGES = 10;
 const MAX_INLINE_IMAGE_BYTES = 8 * 1024 * 1024;
+const SAFE_INLINE_IMAGE_TYPES = new Set(['image/gif', 'image/jpeg', 'image/png', 'image/webp']);
 
 const CID_REFERENCE = /(["'(])cid:([^"')\s]+)(["')])/gi;
 
@@ -149,8 +150,7 @@ export function InboundHtmlMessage({
     const inlineImages = attachments.filter(
       (attachment) =>
         attachment.downloadable &&
-        attachment.content_id &&
-        (attachment.content_type ?? '').toLowerCase().startsWith('image/'),
+        attachment.content_id,
     );
     if (!inlineImages.length || !/cid:/i.test(html)) return;
 
@@ -168,6 +168,7 @@ export function InboundHtmlMessage({
           );
           budget -= blob.size;
           if (budget < 0) break;
+          if (!SAFE_INLINE_IMAGE_TYPES.has(blob.type.toLowerCase())) continue;
           // Встроенная в письмо картинка: не ссылка, а сами данные — иначе кадр
           // письма пришлось бы пускать в сеть за нашими же вложениями.
           resolved.set(attachment.content_id as string, await asDataUrl(blob));

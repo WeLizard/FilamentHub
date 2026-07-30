@@ -20,6 +20,7 @@ _TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates" / "email"
 _RESEND_EMAILS_URL = "https://api.resend.com/emails"
 _RESEND_RECEIVING_URL = "https://api.resend.com/emails/receiving"
 _RESEND_EMAIL_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
+_RESEND_ATTACHMENT_DOWNLOAD_HOSTS = {"cdn.resend.app"}
 _MAX_RECEIVED_ATTACHMENT_BYTES = 15 * 1024 * 1024
 _ADMIN_EMAIL_TAGS = {
     "a",
@@ -71,6 +72,18 @@ class ReceivedEmailAttachment:
 
     content: bytes
     content_type: str | None
+
+
+def _received_attachment_content_type(content: bytes, declared: str | None) -> str | None:
+    if content.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if content.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if content.startswith((b"GIF87a", b"GIF89a")):
+        return "image/gif"
+    if content.startswith(b"RIFF") and content[8:12] == b"WEBP":
+        return "image/webp"
+    return declared
 
 
 def _get_from(profile: str = "transactional") -> str:
@@ -233,7 +246,9 @@ def get_received_email_attachment(email_id: str, attachment_id: str) -> Received
     parsed_url = urlparse(str(download_url or ""))
     hostname = (parsed_url.hostname or "").casefold()
     if parsed_url.scheme != "https" or not (
-        hostname == "resend.com" or hostname.endswith(".resend.com")
+        hostname in _RESEND_ATTACHMENT_DOWNLOAD_HOSTS
+        or hostname == "resend.com"
+        or hostname.endswith(".resend.com")
     ):
         raise RuntimeError("Unexpected Resend attachment download URL")
 
@@ -250,7 +265,11 @@ def get_received_email_attachment(email_id: str, attachment_id: str) -> Received
                 raise RuntimeError("Inbound attachment exceeds the download limit")
             chunks.append(chunk)
         content_type = response.headers.get("content-type")
-    return ReceivedEmailAttachment(content=b"".join(chunks), content_type=content_type)
+    content = b"".join(chunks)
+    return ReceivedEmailAttachment(
+        content=content,
+        content_type=_received_attachment_content_type(content, content_type),
+    )
 
 
 def sanitize_admin_email_html(value: str | None) -> str | None:

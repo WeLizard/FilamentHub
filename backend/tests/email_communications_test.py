@@ -5,8 +5,10 @@ import hashlib
 import hmac
 import json
 import time
+from contextlib import nullcontext
 from datetime import datetime, timedelta
 
+import httpx
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import func, select
@@ -696,6 +698,61 @@ async def test_admin_downloads_inbound_attachment_through_backend(
     assert response.headers["content-type"] == "application/pdf"
     assert response.headers["cache-control"] == "private, no-store"
     assert "price%20list.pdf" in response.headers["content-disposition"]
+
+
+def test_received_attachment_downloads_from_current_resend_cdn(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    metadata_response = httpx.Response(
+        200,
+        json={
+            "content_type": "application/octet-stream",
+            "download_url": "https://cdn.resend.app/email-1/attachments/image-1?signature=x",
+        },
+        request=httpx.Request("GET", "https://api.resend.com"),
+    )
+    download_response = httpx.Response(
+        200,
+        content=b"\x89PNG\r\n\x1a\ncontent",
+        headers={"content-type": "application/octet-stream"},
+        request=httpx.Request("GET", "https://cdn.resend.app"),
+    )
+    monkeypatch.setattr(settings, "RESEND_API_KEY", "re_test")
+    monkeypatch.setattr(email_service.httpx, "get", lambda *args, **kwargs: metadata_response)
+    monkeypatch.setattr(
+        email_service.httpx,
+        "stream",
+        lambda *args, **kwargs: nullcontext(download_response),
+    )
+
+    attachment = email_service.get_received_email_attachment("email-1", "image-1")
+
+    assert attachment.content == b"\x89PNG\r\n\x1a\ncontent"
+    assert attachment.content_type == "image/png"
+
+
+def test_received_attachment_rejects_lookalike_resend_cdn(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    metadata_response = httpx.Response(
+        200,
+        json={"download_url": "https://cdn.resend.app.attacker.example/image-1"},
+        request=httpx.Request("GET", "https://api.resend.com"),
+    )
+    stream_called = False
+
+    def _unexpected_stream(*args: object, **kwargs: object) -> None:
+        nonlocal stream_called
+        stream_called = True
+
+    monkeypatch.setattr(settings, "RESEND_API_KEY", "re_test")
+    monkeypatch.setattr(email_service.httpx, "get", lambda *args, **kwargs: metadata_response)
+    monkeypatch.setattr(email_service.httpx, "stream", _unexpected_stream)
+
+    with pytest.raises(RuntimeError, match="Unexpected Resend attachment download URL"):
+        email_service.get_received_email_attachment("email-1", "image-1")
+
+    assert stream_called is False
 
 
 def test_inline_image_keeps_the_name_the_letter_calls_it_by() -> None:

@@ -10,7 +10,7 @@ const LETTER = '<p>Hi</p><blockquote>quoted</blockquote><script>document.title="
 const inlineImage: EmailAttachment = {
   index: 0,
   filename: 'signature.png',
-  content_type: 'image/png',
+  content_type: 'application/octet-stream',
   size: 12,
   downloadable: true,
   content_id: 'img001',
@@ -76,6 +76,27 @@ describe('InboundHtmlMessage', () => {
 
     await waitFor(() => expect(download).toHaveBeenCalled());
     expect(container.querySelector('iframe')?.getAttribute('srcdoc')).toContain('Look');
+    download.mockRestore();
+  });
+
+  it('does not embed a downloaded inline file that is not a safe raster image', async () => {
+    const download = vi
+      .spyOn(adminCommunicationsAPI, 'downloadEmailAttachment')
+      .mockResolvedValue(new Blob(['<svg></svg>'], { type: 'image/svg+xml' }));
+
+    const { container } = render(
+      <InboundHtmlMessage
+        html={'<p>Look</p><img src="cid:img001">'}
+        threadId={7}
+        messageId={11}
+        attachments={[inlineImage]}
+      />,
+    );
+
+    await waitFor(() => expect(download).toHaveBeenCalled());
+    expect(container.querySelector('iframe')?.getAttribute('srcdoc')).toContain(
+      'src="cid:img001"',
+    );
     download.mockRestore();
   });
 });
