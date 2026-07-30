@@ -46,7 +46,7 @@ normal flow. Account tokens are held in memory only — never written to disk.
               write {data_dir}/user/<active>/_local/filamenthub/filament/<name>.json
                   --> host restart dialog
 
-Runtime surface used (confirmed against upstream/feat/plugin-feature):
+Runtime surface used (confirmed against the current upstream plugin API):
   * orca.script.ScriptPluginCapabilityBase.execute()       — entry point
   * orca.host.ui.create_window(html, on_message, on_close)  — the shell window
   * orca.host.ui.message(...)                               — restart notice
@@ -62,6 +62,7 @@ import hashlib
 import http.server
 import json
 import os
+import queue
 import re
 import secrets
 import shutil
@@ -74,6 +75,71 @@ import urllib.request
 import webbrowser
 
 import orca
+
+
+class ReusableDaemonWorker:
+    """Run background jobs serially on one short-lived, reusable daemon thread.
+
+    Orca's UI callback must stay responsive, but creating a fresh Python thread
+    for every sync/import/result check produces unnecessary runtime events. The
+    worker remains alive while the plugin is active and retires after an idle
+    period, so reload/exit never waits for it.
+    """
+
+    def __init__(self, name, idle_timeout=60.0):
+        self._name = name
+        self._idle_timeout = idle_timeout
+        self._jobs = queue.Queue()
+        self._lock = threading.Lock()
+        self._thread = None
+
+    def submit(self, function, *args, **kwargs):
+        self._jobs.put((function, args, kwargs))
+        with self._lock:
+            if self._thread is None or not self._thread.is_alive():
+                self._thread = threading.Thread(
+                    target=self._run,
+                    name=self._name,
+                    daemon=True,
+                )
+                self._thread.start()
+
+    def _run(self):
+        current = threading.current_thread()
+        while True:
+            try:
+                function, args, kwargs = self._jobs.get(timeout=self._idle_timeout)
+            except queue.Empty:
+                with self._lock:
+                    if self._jobs.empty():
+                        if self._thread is current:
+                            self._thread = None
+                        return
+                continue
+            try:
+                function(*args, **kwargs)
+            except Exception as exc:
+                logger = globals().get("fh_log")
+                if logger is not None:
+                    logger("background job failed: %s" % exc)
+            finally:
+                self._jobs.task_done()
+
+
+BACKGROUND_WORKER = ReusableDaemonWorker("filamenthub-worker")
+
+
+def post_window(window, payload):
+    """Best-effort host push, safe against a window closing during a worker job."""
+    try:
+        post = getattr(window, "post", None)
+        if window is None or not window.is_open() or not callable(post):
+            return False
+        post(payload)
+        return True
+    except Exception:
+        return False
+
 
 # --------------------------------------------------------------------------- #
 # Configuration
@@ -245,22 +311,71 @@ def resolve_plugin_dir():
 
 
 PLUGIN_DIR = resolve_plugin_dir()
-# Tab icon. Embedded here rather than shipped as a sibling file so it survives a
-# single-file install: OrcaSlicer copies only the .py, not adjacent assets. It is
-# materialized next to the plugin on first use and handed to create_panel by path.
+PLUGIN_STORAGE_DIR = PLUGIN_DIR
+# Use a packaged adjacent icon when one exists. A wheel/single-file install falls
+# back to Orca's default instead of writing an asset during normal plugin load.
 ICON_PATH = os.path.join(PLUGIN_DIR, "filamenthub.svg")
-ICON_SVG = r'''<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20"><path d="M8.19,2.15c-3.11.84-5.49,3.22-6.15,6.18-.7,3.16.86,5.68,1.21,6.21" style="fill:none;stroke:#fff;stroke-linecap:round;stroke-miterlimit:10"/><line x1="8.19" y1="10" x2="1.87" y2="10" style="fill:none;stroke:#fff;stroke-linecap:round;stroke-miterlimit:10"/><line x1="10.95" y1="2.15" x2="10.95" y2="17.85" style="fill:none;stroke:#fff;stroke-linecap:round;stroke-miterlimit:10"/><path d="M16.91,6c.37.65,1.08,2.08,1.09,4.01.02,2.28-.94,3.92-1.35,4.54" style="fill:none;stroke:#fff;stroke-linecap:round;stroke-miterlimit:10"/><line x1="10.95" y1="10" x2="18" y2="10" style="fill:none;stroke:#fff;stroke-miterlimit:10"/></svg>'''
 
 
 def ensure_icon():
-    """Write the embedded tab icon next to the plugin if it's absent, and return
-    its path — or "" if it can't be written, so the host uses its default icon."""
+    return ICON_PATH if os.path.isfile(ICON_PATH) else ""
+
+
+def configure_plugin_storage():
+    """Use Orca's private plugin storage when the host exposes it.
+
+    Existing sidecar state is copied once and retained as a rollback fallback.
+    The API is called from register_capabilities(), where Orca can attribute the
+    request to the plugin; importing this module must stay host-version agnostic.
+    """
+    global PLUGIN_STORAGE_DIR
+    global SYNC_LOG_FILE, AUTH_FILE, IMPORTED_DRAFTS_FILE, SYNC_STATE_FILE
+    global _SLICE_INDEX_FILE, _SLICE_CACHE_DIR
+
+    plugin_host = getattr(getattr(orca, "host", None), "plugin", None)
+    storage = getattr(plugin_host, "storage", None)
+    if not callable(storage):
+        return False
     try:
-        if not os.path.exists(ICON_PATH):
-            write_bytes_atomic(ICON_PATH, ICON_SVG.encode("utf-8"))
-        return ICON_PATH
-    except OSError:
-        return ""
+        target_root = os.path.abspath(storage())
+        if not target_root:
+            return False
+        os.makedirs(target_root, exist_ok=True)
+    except (OSError, RuntimeError, TypeError, ValueError):
+        return False
+
+    file_names = (
+        ".fh_sync.log",
+        ".auth.json",
+        ".fh_imported.json",
+        ".fh_sync.json",
+        ".fh_slices.json",
+    )
+    for name in file_names:
+        source = os.path.join(PLUGIN_DIR, name)
+        target = os.path.join(target_root, name)
+        if source != target and os.path.isfile(source) and not os.path.exists(target):
+            try:
+                shutil.copy2(source, target)
+            except OSError:
+                pass
+
+    legacy_cache = os.path.join(PLUGIN_DIR, "slices")
+    target_cache = os.path.join(target_root, "slices")
+    if legacy_cache != target_cache and os.path.isdir(legacy_cache) and not os.path.exists(target_cache):
+        try:
+            shutil.copytree(legacy_cache, target_cache)
+        except OSError:
+            pass
+
+    PLUGIN_STORAGE_DIR = target_root
+    SYNC_LOG_FILE = os.path.join(target_root, ".fh_sync.log")
+    AUTH_FILE = os.path.join(target_root, ".auth.json")
+    IMPORTED_DRAFTS_FILE = os.path.join(target_root, ".fh_imported.json")
+    SYNC_STATE_FILE = os.path.join(target_root, ".fh_sync.json")
+    _SLICE_INDEX_FILE = os.path.join(target_root, ".fh_slices.json")
+    _SLICE_CACHE_DIR = target_cache
+    return True
 
 
 SYNC_LOG_FILE = os.path.join(PLUGIN_DIR, ".fh_sync.log")
@@ -351,6 +466,7 @@ class ShellServer:
 
     def __init__(self):
         self._server = None
+        self._server_stop = None
         self._html = b""
         self._path = ""
         # OAuth handoff: Google/Yandex refuse to render their consent pages in an
@@ -470,6 +586,15 @@ class ShellServer:
             state["delivered"] = {"access": access, "refresh": refresh}
             return True
 
+    @staticmethod
+    def _serve(server, stop_event):
+        server.timeout = 0.25
+        try:
+            while not stop_event.is_set():
+                server.handle_request()
+        finally:
+            server.server_close()
+
     def url_for(self, html):
         self._html = html.encode("utf-8")
         if self._server is None:
@@ -526,22 +651,44 @@ class ShellServer:
                 def log_message(self, *args):
                     pass  # keep the secret paths out of stderr
 
-            self._server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-            threading.Thread(target=self._server.serve_forever, daemon=True).start()
+            # Requests are tiny loopback shell/OAuth hand-offs. A single server
+            # thread is sufficient and avoids creating one Python thread for
+            # every status request.
+            self._server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+            self._server_stop = threading.Event()
+            server = self._server
+            stop_event = self._server_stop
+            worker = threading.Thread(
+                target=self._serve,
+                args=(server, stop_event),
+                name="filamenthub-loopback",
+                daemon=True,
+            )
+            try:
+                worker.start()
+            except Exception:
+                stop_event.set()
+                server.server_close()
+                self._server = None
+                self._server_stop = None
+                raise
         return "http://127.0.0.1:%d%s" % (self._server.server_address[1], self._path)
 
     def stop(self):
         server, self._server = self._server, None
+        stop_event, self._server_stop = self._server_stop, None
         with self._oauth_lock:
             self._oauth = None
-        if server is not None:
-            threading.Thread(target=server.shutdown, daemon=True).start()
+        if server is not None and stop_event is not None:
+            stop_event.set()
 
 
 SHELL_SERVER = ShellServer()
 
 
 def load_saved_auth():
+    if not os.path.isfile(AUTH_FILE):
+        return None
     try:
         with open(AUTH_FILE, "r", encoding="utf-8") as fh:
             data = json.load(fh)
@@ -894,11 +1041,35 @@ def scan_recovery_filaments():
     return [{"name": name, "profile": profile} for name, profile in by_name.items()]
 
 
+def preset_config_dict(preset, include_metadata=False):
+    """Return the host-resolved, JSON-safe configuration for one preset.
+
+    This is the normal integration path: Orca owns preset loading and
+    inheritance, while the plugin consumes the public Preset API. Metadata that
+    is not a config option is copied only when the host exposes it directly.
+    """
+    settings = {}
+    for key in preset.config_keys():
+        try:
+            value = preset.config_value(key)
+        except Exception:
+            continue
+        if value is None or isinstance(value, (str, int, float, bool, list, dict)):
+            settings[key] = value
+    if include_metadata:
+        name = str(getattr(preset, "name", "") or "")
+        if name:
+            settings["name"] = name
+        bundle_id = str(getattr(preset, "bundle_id", "") or "")
+        if bundle_id:
+            settings["bundle_id"] = bundle_id
+    return settings
+
+
 def scan_active_user_filaments():
     """The loaded account's own filament presets (UI thread — reads preset_bundle).
-    Mirrors the fork: keep is_user() presets, skip system/vendor and our [fh] ones.
-    Authoritative user/system split, active account only. The file is read for its
-    exact content; the bundle is used only for the is_user() decision."""
+    Keep is_user() presets, skip system/vendor and our [fh] ones. Configuration
+    comes from Orca's Preset API instead of reopening the backing JSON file."""
     candidates = []
     try:
         filaments = orca.host.preset_bundle().filaments
@@ -911,15 +1082,8 @@ def scan_active_user_filaments():
                 continue
             if preset_id_from_bundle(getattr(preset, "bundle_id", "")) is not None:
                 continue
-            path = preset.file
-            if not path or not os.path.exists(path):
-                continue
-            try:
-                with open(path, "r", encoding="utf-8") as fh:
-                    profile = json.load(fh)
-            except (OSError, ValueError):
-                continue
-            if isinstance(profile, dict) and profile:
+            profile = preset_config_dict(preset, include_metadata=True)
+            if profile:
                 candidates.append({"name": name, "profile": profile})
     except Exception:
         pass
@@ -1143,14 +1307,7 @@ def scan_user_profiles(kind):
                 continue
             if str(getattr(preset, "bundle_id", "") or "").startswith(BUNDLE_ID):
                 continue
-            settings = {}
-            for key in preset.config_keys():
-                try:
-                    value = preset.config_value(key)
-                except Exception:
-                    continue
-                if value is None or isinstance(value, (str, int, float, bool, list, dict)):
-                    settings[key] = value
+            settings = preset_config_dict(preset)
             if settings:
                 out.append({"name": name, "settings": settings})
     except Exception:
@@ -1305,6 +1462,7 @@ var SLICE_ALIVE_PATH = '__SLICE_ALIVE_PATH__';
 var LOG_PATH = '__LOG_PATH__';
 var frame = document.getElementById('fh');
 var wasLoggedIn = false;
+var hostPush = false;
 var oauthPollTimer = null;
 var oauthDeadline = 0;
 var catalogReady = false;
@@ -1582,6 +1740,7 @@ function stopSyncPolling() {
   if (syncPollTimer) { clearTimeout(syncPollTimer); syncPollTimer = null; }
 }
 function startSyncPolling() {
+  if (hostPush) return;
   stopSyncPolling();
   syncDeadline = Date.now() + 30 * 1000;
   pollSyncOnce();
@@ -1616,6 +1775,7 @@ function stopRecoverPolling() {
   if (recoverPollTimer) { clearTimeout(recoverPollTimer); recoverPollTimer = null; }
 }
 function startRecoverPolling() {
+  if (hostPush) return;
   stopRecoverPolling();
   recoverDeadline = Date.now() + 30 * 1000;
   pollRecoverOnce();
@@ -1648,6 +1808,7 @@ function stopSlicePolling() {
   if (slicePollTimer) { clearTimeout(slicePollTimer); slicePollTimer = null; }
 }
 function startSlicePolling() {
+  if (hostPush) return;
   stopSlicePolling();
   // A big slice takes a while to travel and parse.
   sliceDeadline = Date.now() + 180 * 1000;
@@ -1674,6 +1835,7 @@ function pollSliceOnce() {
 var sliceKeysTimer = null;
 var sliceKeysDeadline = 0;
 function startSliceKeysPolling() {
+  if (hostPush) return;
   if (sliceKeysTimer) { clearTimeout(sliceKeysTimer); sliceKeysTimer = null; }
   sliceKeysDeadline = Date.now() + 20 * 1000;
   pollSliceKeysOnce();
@@ -1710,18 +1872,61 @@ function relayNote(text) {
       { source: 'filamenthub-plugin', type: 'sync-result', text: text }, SITE_ORIGIN);
   } catch (e) { /* iframe not ready */ }
 }
+function copyDiagnostics(text) {
+  if (!text) {
+    relayNote('The plugin log is empty — run Sync once, then copy it again.');
+    return;
+  }
+  navigator.clipboard.writeText(text).then(function () {
+    relayNote('Plugin log copied. Paste it into your beta feedback.');
+  }, function () {
+    relayNote('Could not copy the plugin log.');
+  });
+}
+// The host handle can push worker results directly into this page. Keep the
+// loopback status endpoints only as a compatibility fallback for older builds.
+try {
+  orca.onMessage(function (data) {
+    if (!data || data.source !== 'filamenthub-host') return;
+    hostPush = true;
+    if (data.type === 'transport') return;
+    if (data.type === 'sync-result') {
+      stopSyncPolling();
+      relayNote(data.text || '');
+    } else if (data.type === 'recover-list') {
+      stopRecoverPolling();
+      try {
+        frame.contentWindow.postMessage(
+          { source: 'filamenthub-plugin', type: 'recover-list', items: data.items || [] },
+          SITE_ORIGIN);
+      } catch (e) { /* iframe not ready */ }
+    } else if (data.type === 'parsed-slice') {
+      stopSlicePolling();
+      relaySliceResult(data.result || { error: 'empty' });
+    } else if (data.type === 'slices-alive') {
+      if (sliceKeysTimer) { clearTimeout(sliceKeysTimer); sliceKeysTimer = null; }
+      try {
+        frame.contentWindow.postMessage(
+          { source: 'filamenthub-plugin', type: 'slices-alive',
+            keys: data.keys || [], hook: data.hook || null },
+          SITE_ORIGIN);
+      } catch (e) { /* iframe not ready */ }
+    } else if (data.type === 'diagnostics') {
+      copyDiagnostics(data.text || '');
+    }
+  });
+  orca.postMessage({ source: 'filamenthub-plugin', type: 'host-ready' });
+} catch (e) { /* old bridge: loopback polling remains available */ }
 document.getElementById('diag').addEventListener('click', function () {
+  if (hostPush) {
+    try {
+      orca.postMessage({ source: 'filamenthub-plugin', type: 'read-diagnostics' });
+      return;
+    } catch (e) { /* use the loopback fallback below */ }
+  }
   fetch(LOG_PATH, { cache: 'no-store' })
     .then(function (r) { return r.text(); })
-    .then(function (text) {
-      if (!text) {
-        relayNote('The plugin log is empty — run Sync once, then copy it again.');
-        return;
-      }
-      return navigator.clipboard.writeText(text).then(function () {
-        relayNote('Plugin log copied. Paste it into your beta feedback.');
-      });
-    })
+    .then(copyDiagnostics)
     .catch(function () { relayNote('Could not read the plugin log.'); });
 });
 
@@ -1971,16 +2176,11 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
     def get_name(self):
         return "FilamentHub Catalog"
 
-    def _supports_panel(self):
-        # Docked main-window tab where the host offers it (our create_panel
-        # prototype / future upstream API); floating window on stock builds.
-        return getattr(orca.host.ui, "create_panel", None)
-
     def _open(self):
-        # Idempotent: if the surface is already open, keep it (a docked tab must
-        # not spawn duplicates on repeated Run / on_load).
+        # Idempotent: repeated Run keeps the existing host-managed window.
         if self.win is not None and self.win.is_open():
             return False
+        self._session_sync_started = False
         # Hop from the host's opaque-origin SetPage document onto the loopback
         # server, so the shell gains a real origin the site CSP can allow.
         shell_url = SHELL_SERVER.url_for(PAGE)
@@ -1989,36 +2189,15 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
             + json.dumps(shell_url)
             + ");</script></body></html>"
         )
-        create_panel = self._supports_panel()
-        if create_panel is not None:
-            self.win = create_panel(
-                title="FilamentHub",
-                html=html,
-                on_message=self.on_message,
-                on_close=self.on_close,
-                icon=ensure_icon(),
-            )
-        else:
-            self.win = orca.host.ui.create_window(
-                title="FilamentHub",
-                html=html,
-                width=1080,
-                height=760,
-                on_message=self.on_message,
-                on_close=self.on_close,
-            )
+        self.win = orca.host.ui.create_window(
+            title="FilamentHub",
+            html=html,
+            width=1080,
+            height=760,
+            on_message=self.on_message,
+            on_close=self.on_close,
+        )
         return True
-
-    def on_load(self):
-        # Auto-mount the docked tab when the plugin is enabled (incl. at startup),
-        # so it behaves like a native tab. Only for the docked surface — we do not
-        # pop a floating window unprompted on stock builds.
-        if self._supports_panel() is not None:
-            try:
-                self._open()
-            except Exception:
-                pass  # main window not ready yet; the user can still Run it
-        self._auto_sync()  # pull the signed-in user's presets on open, silently
 
     def _auto_sync(self, announce=False):
         # Reconcile presets automatically when the tab opens (and after sign-in),
@@ -2034,15 +2213,18 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
         observations = observe_printer_presets()  # UI thread: read printer connection data
         active_filaments = scan_active_user_filaments()  # UI thread: loaded account's user presets
         host_profiles = self._host_profiles()  # UI thread: machine/process presets
-        threading.Thread(target=self._do_sync,
-                         args=(token, known, announce, active_filaments, host_profiles, observations),
-                         daemon=True).start()
+        BACKGROUND_WORKER.submit(
+            self._do_sync,
+            token,
+            known,
+            announce,
+            active_filaments,
+            host_profiles,
+            observations,
+        )
 
     def execute(self):
-        created = self._open()
-        if self._supports_panel() is not None:
-            return orca.ExecutionResult.success(
-                "FilamentHub catalog docked." if created else "FilamentHub catalog is already open.")
+        self._open()
         return orca.ExecutionResult.success("FilamentHub catalog opened.")
 
     def on_close(self):
@@ -2089,15 +2271,37 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
         # handed to the worker that reports them to FilamentHub.
         return {kind: scan_user_profiles(kind) for kind in PROFILE_KINDS}
 
+    def _deliver(self, message_type, **data):
+        payload = {"source": "filamenthub-host", "type": message_type}
+        payload.update(data)
+        return post_window(self.win, payload)
+
+    def _deliver_sync_result(self, text):
+        if not self._deliver("sync-result", text=text):
+            SHELL_SERVER.set_sync_result(text)
+
+    def _deliver_recovery(self, items):
+        if not self._deliver("recover-list", items=items):
+            SHELL_SERVER.set_recover_items(items)
+
+    def _deliver_slice_result(self, result):
+        if not self._deliver("parsed-slice", result=result):
+            SHELL_SERVER.set_slice_parse(result)
+
+    def _do_check_slices(self, wanted, hook):
+        alive = [key for key in wanted if slice_path_for_key(key)]
+        if not self._deliver("slices-alive", keys=alive, hook=hook):
+            SHELL_SERVER.set_slice_alive(alive, hook)
+
     # on_message runs on the UI thread — offload network + disk work to a worker.
     def _do_parse_slice(self, key, token, file_name=""):
         entry = slice_entry_for_key(key)
         path = entry["path"] if entry else ""
         if not path:
-            SHELL_SERVER.set_slice_parse({"error": "gone"})
+            self._deliver_slice_result({"error": "gone"})
             return
         if not token:
-            SHELL_SERVER.set_slice_parse({"error": "auth"})
+            self._deliver_slice_result({"error": "auth"})
             return
         # The list is what a person is looking at, so the name they see there
         # wins; the remembered one covers slices seen before names were kept.
@@ -2106,14 +2310,14 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
         )
         if status != 200:
             fh_log("slice parse HTTP %s for %s" % (status, os.path.basename(path)))
-            SHELL_SERVER.set_slice_parse({"error": "http", "status": status})
+            self._deliver_slice_result({"error": "http", "status": status})
             return
         try:
             parsed = json.loads(body.decode("utf-8"))
         except (ValueError, UnicodeDecodeError):
-            SHELL_SERVER.set_slice_parse({"error": "body"})
+            self._deliver_slice_result({"error": "body"})
             return
-        SHELL_SERVER.set_slice_parse({"parsed": parsed})
+        self._deliver_slice_result({"parsed": parsed})
 
     def on_message(self, msg):
         if not isinstance(msg, dict):
@@ -2121,7 +2325,16 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
         if msg.get("source") != "filamenthub-plugin":
             return
         msg_type = msg.get("type")
-        if msg_type == "import-preset":
+        if msg_type == "host-ready":
+            self._deliver("transport", push=True)
+            if not getattr(self, "_session_sync_started", False):
+                self._session_sync_started = True
+                self._auto_sync()
+        elif msg_type == "read-diagnostics":
+            BACKGROUND_WORKER.submit(
+                lambda: self._deliver("diagnostics", text=read_sync_log())
+            )
+        elif msg_type == "import-preset":
             preset_id = msg.get("presetId")
             token = msg.get("token") or ""
             if not isinstance(token, str) or len(token) > MAX_TOKEN_LENGTH:
@@ -2133,7 +2346,7 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
                 token = (load_saved_auth() or {}).get("accessToken") or ""
             known = self._known_filament_preset_names()  # host read on the UI thread
             refresh_user_preset_folder()
-            threading.Thread(target=self._do_import, args=(preset_id, token, known), daemon=True).start()
+            BACKGROUND_WORKER.submit(self._do_import, preset_id, token, known)
         elif msg_type == "check-slices":
             # The list on the site outlives the files behind it; answer which of
             # those slices can still be turned into a calculation.
@@ -2142,12 +2355,7 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
                 return
             wanted = [k for k in keys if isinstance(k, str) and k][:50]
             hook = self._slice_hook_state()  # host read on the UI thread
-            threading.Thread(
-                target=lambda: SHELL_SERVER.set_slice_alive(
-                    [k for k in wanted if slice_path_for_key(k)], hook
-                ),
-                daemon=True,
-            ).start()
+            BACKGROUND_WORKER.submit(self._do_check_slices, wanted, hook)
         elif msg_type == "parse-slice":
             # The page cannot open a file on disk, so it asks by key and this
             # side sends the G-code straight to FilamentHub's own parser.
@@ -2157,9 +2365,7 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
             shown = msg.get("fileName")
             shown = os.path.basename(shown)[:300] if isinstance(shown, str) else ""
             token = (load_saved_auth() or {}).get("accessToken") or ""
-            threading.Thread(
-                target=self._do_parse_slice, args=(key, token, shown), daemon=True
-            ).start()
+            BACKGROUND_WORKER.submit(self._do_parse_slice, key, token, shown)
         elif msg_type == "sync":
             saved = load_saved_auth() or {}
             token = saved.get("accessToken") or ""
@@ -2168,9 +2374,15 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
             active_filaments = scan_active_user_filaments()  # UI thread: loaded account's user presets
             host_profiles = self._host_profiles()  # UI thread: machine/process presets
             observations = observe_printer_presets()  # UI thread: printer connection data
-            threading.Thread(target=self._do_sync,
-                             args=(token, known, True, active_filaments, host_profiles, observations),
-                             daemon=True).start()
+            BACKGROUND_WORKER.submit(
+                self._do_sync,
+                token,
+                known,
+                True,
+                active_filaments,
+                host_profiles,
+                observations,
+            )
         elif msg_type == "auth-token":
             # Login / token refresh in the catalog — persist for session restore,
             # then reconcile presets automatically (silently).
@@ -2188,23 +2400,23 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
             clear_auth()
         elif msg_type == "recover":
             token = (load_saved_auth() or {}).get("accessToken") or ""
-            threading.Thread(target=self._do_recover_scan, args=(token,), daemon=True).start()
+            BACKGROUND_WORKER.submit(self._do_recover_scan, token)
         elif msg_type == "recover-import":
             token = (load_saved_auth() or {}).get("accessToken") or ""
-            threading.Thread(target=self._do_recover_import, args=(token, msg.get("names")), daemon=True).start()
+            BACKGROUND_WORKER.submit(self._do_recover_import, token, msg.get("names"))
 
     def _do_recover_scan(self, token):
         # Disk-only scan across every account + version backup; hand the list to the
         # embed (via loopback) to show its checkbox picker. Marks already-imported.
         candidates = scan_recovery_filaments()
         imported = load_imported_draft_ids()
-        SHELL_SERVER.set_recover_items(
+        self._deliver_recovery(
             [{"name": c["name"], "imported": _draft_id(c["name"]) in imported} for c in candidates])
 
     def _do_recover_import(self, token, names):
         # Push only the presets the user checked in the embed picker as drafts.
         if not token or not isinstance(names, list) or not names:
-            SHELL_SERVER.set_sync_result("Recovery: nothing selected.")
+            self._deliver_sync_result("Recovery: nothing selected.")
             return
         wanted = {str(n) for n in names}
         candidates = [c for c in scan_recovery_filaments() if c["name"] in wanted]
@@ -2214,7 +2426,7 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
             for did in sent_ids:
                 imported[did] = 1
             save_imported_draft_ids(imported)
-        SHELL_SERVER.set_sync_result("Recovered %d preset(s) as drafts." % len(sent_ids))
+        self._deliver_sync_result("Recovered %d preset(s) as drafts." % len(sent_ids))
 
     def _start_external_oauth(self, provider):
         # Google/Yandex block their consent pages in embedded WebViews, so run the
@@ -2554,12 +2766,15 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
             note = ("\n\nThe filament dropdown is up to date." if reload_host_presets()
                     else "\n\nRestart OrcaSlicer to apply the changes in the filament dropdown.")
         if announce:
-            SHELL_SERVER.set_sync_result(("Sync complete: %s.%s" % (summary, note)).replace("\n\n", " "))
+            self._deliver_sync_result(
+                ("Sync complete: %s.%s" % (summary, note)).replace("\n\n", " ")
+            )
 
 
 @orca.plugin
 class FilamentHubPlugin(orca.base):
     def register_capabilities(self):
+        configure_plugin_storage()
         orca.register_capability(FilamentHubCatalog)
         if FilamentHubSliceReporter is not None:
             orca.register_capability(FilamentHubSliceReporter)

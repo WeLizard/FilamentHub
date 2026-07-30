@@ -4,6 +4,7 @@ import hashlib
 import importlib.util
 import json
 import sys
+import threading
 import tomllib
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
@@ -77,6 +78,77 @@ def test_plugin_hub_version_rejects_prerelease_suffix(plugin_module):
 def test_shell_accepts_messages_only_from_catalog_frame(plugin_module):
     assert "event.source !== frame.contentWindow" in plugin_module.PAGE
     assert "event.origin !== SITE_ORIGIN" in plugin_module.PAGE
+
+
+def test_worker_results_use_host_push_with_loopback_fallback(plugin_module):
+    page = plugin_module.PAGE
+    assert "orca.onMessage(function (data)" in page
+    assert "data.source !== 'filamenthub-host'" in page
+    assert "type: 'host-ready'" in page
+    assert "if (hostPush) return;" in page
+    assert "http.server.ThreadingHTTPServer" not in PLUGIN_PATH.read_text(encoding="utf-8")
+
+
+def test_post_window_tolerates_closed_or_legacy_handles(plugin_module):
+    posted = []
+
+    class Window:
+        def is_open(self):
+            return True
+
+        def post(self, payload):
+            posted.append(payload)
+
+    assert plugin_module.post_window(Window(), {"type": "done"})
+    assert posted == [{"type": "done"}]
+    assert not plugin_module.post_window(None, {})
+    assert not plugin_module.post_window(SimpleNamespace(is_open=lambda: True), {})
+
+
+def test_background_worker_reuses_one_thread_for_bursty_jobs(plugin_module):
+    worker = plugin_module.ReusableDaemonWorker("filamenthub-test-worker", idle_timeout=0.2)
+    done = threading.Event()
+    thread_ids = []
+
+    def record():
+        thread_ids.append(threading.get_ident())
+        if len(thread_ids) == 2:
+            done.set()
+
+    worker.submit(record)
+    worker.submit(record)
+
+    assert done.wait(2)
+    assert len(set(thread_ids)) == 1
+
+
+def test_shell_server_stops_without_starting_a_shutdown_worker(plugin_module):
+    server = plugin_module.ShellServer()
+    url = server.url_for("<!doctype html><title>fixture</title>")
+    stop_event = server._server_stop
+
+    assert url.startswith("http://127.0.0.1:")
+    assert stop_event is not None
+    server.stop()
+    assert stop_event.is_set()
+    assert server._server is None
+
+
+def test_shell_server_recovers_when_the_host_denies_thread_start(plugin_module, monkeypatch):
+    class DeniedThread:
+        def __init__(self, **_kwargs):
+            pass
+
+        def start(self):
+            raise PermissionError("denied by fixture")
+
+    monkeypatch.setattr(plugin_module.threading, "Thread", DeniedThread)
+    server = plugin_module.ShellServer()
+
+    with pytest.raises(PermissionError, match="denied by fixture"):
+        server.url_for("<!doctype html><title>fixture</title>")
+    assert server._server is None
+    assert server._server_stop is None
 
 
 def test_shell_replaces_webview_errors_with_maintenance_status(plugin_module):
@@ -167,6 +239,69 @@ def test_profile_change_reports_automatic_sync_result(plugin_module):
     })
 
     assert calls == [True]
+
+
+def test_plugin_load_never_opens_a_window_automatically(plugin_module):
+    assert "on_load" not in plugin_module.FilamentHubCatalog.__dict__
+
+
+def test_host_ready_starts_sync_once(plugin_module):
+    capability = plugin_module.FilamentHubCatalog()
+    calls = []
+    capability._auto_sync = lambda announce=False: calls.append(announce)
+
+    capability.on_message({
+        "source": "filamenthub-plugin",
+        "type": "host-ready",
+    })
+    capability.on_message({
+        "source": "filamenthub-plugin",
+        "type": "host-ready",
+    })
+    assert calls == [False]
+
+
+def test_active_filaments_use_the_host_preset_api(plugin_module, monkeypatch):
+    class Preset:
+        name = "Local PETG"
+        bundle_id = "user-bundle"
+        file = "Z:/this/file/does/not/need/to/exist.json"
+
+        @staticmethod
+        def is_user():
+            return True
+
+        @staticmethod
+        def config_keys():
+            return ["filament_type", "nozzle_temperature"]
+
+        @staticmethod
+        def config_value(key):
+            return {
+                "filament_type": ["PETG"],
+                "nozzle_temperature": ["245"],
+            }[key]
+
+    collection = SimpleNamespace(
+        size=lambda: 1,
+        preset=lambda _index: Preset(),
+    )
+    monkeypatch.setattr(
+        plugin_module.orca.host,
+        "preset_bundle",
+        lambda: SimpleNamespace(filaments=collection),
+        raising=False,
+    )
+
+    assert plugin_module.scan_active_user_filaments() == [{
+        "name": "Local PETG",
+        "profile": {
+            "filament_type": ["PETG"],
+            "nozzle_temperature": ["245"],
+            "name": "Local PETG",
+            "bundle_id": "user-bundle",
+        },
+    }]
 
 
 def test_profile_payload_must_be_an_object(plugin_module):
@@ -400,3 +535,45 @@ def test_the_reporter_is_registered_only_where_the_host_can_slice():
 def test_without_the_pipeline_the_plugin_still_registers_its_window(plugin_module):
     assert plugin_module.FilamentHubSliceReporter is None
     plugin_module.FilamentHubPlugin().register_capabilities()
+
+
+def test_host_storage_migrates_mutable_state_without_deleting_legacy(
+    plugin_module, tmp_path, monkeypatch
+):
+    legacy = tmp_path / "plugin"
+    storage = tmp_path / "plugin_data" / "filamenthub"
+    legacy.mkdir()
+    (legacy / ".auth.json").write_text('{"accessToken":"fixture"}', encoding="utf-8")
+    (legacy / ".fh_sync.json").write_text('{"known":true}', encoding="utf-8")
+    (legacy / "slices").mkdir()
+    (legacy / "slices" / "fixture.gcode").write_text("G28", encoding="utf-8")
+
+    monkeypatch.setattr(plugin_module, "PLUGIN_DIR", str(legacy))
+    monkeypatch.setattr(plugin_module, "PLUGIN_STORAGE_DIR", str(legacy))
+    monkeypatch.setattr(plugin_module, "SYNC_LOG_FILE", str(legacy / ".fh_sync.log"))
+    monkeypatch.setattr(plugin_module, "AUTH_FILE", str(legacy / ".auth.json"))
+    monkeypatch.setattr(
+        plugin_module, "IMPORTED_DRAFTS_FILE", str(legacy / ".fh_imported.json")
+    )
+    monkeypatch.setattr(plugin_module, "SYNC_STATE_FILE", str(legacy / ".fh_sync.json"))
+    monkeypatch.setattr(plugin_module, "_SLICE_INDEX_FILE", str(legacy / ".fh_slices.json"))
+    monkeypatch.setattr(plugin_module, "_SLICE_CACHE_DIR", str(legacy / "slices"))
+    monkeypatch.setattr(
+        plugin_module.orca.host,
+        "plugin",
+        SimpleNamespace(storage=lambda: str(storage)),
+        raising=False,
+    )
+
+    plugin_module.FilamentHubPlugin().register_capabilities()
+
+    assert plugin_module.PLUGIN_STORAGE_DIR == str(storage)
+    assert plugin_module.AUTH_FILE == str(storage / ".auth.json")
+    assert plugin_module.SYNC_STATE_FILE == str(storage / ".fh_sync.json")
+    assert plugin_module._SLICE_CACHE_DIR == str(storage / "slices")
+    assert (storage / ".auth.json").read_text(encoding="utf-8") == (
+        '{"accessToken":"fixture"}'
+    )
+    assert (storage / "slices" / "fixture.gcode").read_text(encoding="utf-8") == "G28"
+    assert (legacy / ".auth.json").exists()
+    assert (legacy / "slices" / "fixture.gcode").exists()

@@ -79,11 +79,12 @@ role:
 { source, type: 'auth-restore', accessToken, refreshToken }   // shell replies
 ```
 
-Python stores only the short-lived plugin capability in `.auth.json` next to the
-plugin (inside `data_dir`, the allowed write root) and bakes it into the shell
-page on `execute()`. Account access/refresh credentials are never stored there.
-The label comes ready-made (i18n happens in the SPA) from the same
-`/auth/me/presets-stats` endpoint the fork's panel used.
+Python stores only the short-lived plugin capability in `.auth.json` under
+OrcaSlicer's private plugin storage when `orca.host.plugin.storage()` is
+available, with the install directory retained as a compatibility fallback.
+Account access/refresh credentials are never stored there. The label comes
+ready-made (i18n happens in the SPA) from the same `/auth/me/presets-stats`
+endpoint the fork's panel used.
 
 ### Frontend embed route (in this repo)
 
@@ -114,7 +115,7 @@ The label comes ready-made (i18n happens in the SPA) from the same
 # name = "FilamentHub"
 # description = "Browse and sync community-rated filament profiles from FilamentHub, with spool inventory and print-cost tools."
 # author = "FilamentHub"
-# version = "0.0.5"
+# version = "0.0.8"
 # network = ["filamenthub.ru", "*.filamenthub.ru"]   # proposed; ignored by current host
 # ///
 ```
@@ -143,7 +144,7 @@ python -m pytest orca-plugin/tests -q
 Output:
 
 ```text
-orca-plugin/dist/filamenthub-0.0.5/
+orca-plugin/dist/filamenthub-0.0.8/
   filamenthub_plugin.py       # install this file
   package-metadata.json       # build provenance
   SHA256SUMS                  # integrity check
@@ -160,7 +161,7 @@ it before a release:
 curl -sI https://filamenthub.ru/embed/catalog   # 200, and NO "X-Frame-Options" header
 ```
 
-Then, with an OrcaSlicer build from `feat/plugin-feature`:
+Then, with the exact OrcaSlicer build or pull-request artifact being tested:
 
 1. Build the package and copy `filamenthub_plugin.py` to
    `<isolated-data-dir>/orca_plugins/filamenthub/filamenthub_plugin.py`.
@@ -197,7 +198,7 @@ with a retry action. Local OrcaSlicer presets remain available.
 | 1 | **No preset-install / hot-reload host API.** `orca.host` is read-only; `PluginType.Importer` has no capability base. | Import needs an **app restart**. Not a publish blocker; rough UX. | Atomic file-write to `data_dir/user/<active>/_local/filamenthub/filament/` + native "restart" dialog. Ask upstream for `orca.host.presets.install(...)` / `reload_user_presets()`. |
 | 2 | **A short-lived plugin capability crosses the iframe boundary** with `targetOrigin: '*'` because the `file://` parent has an opaque origin. | The shell rejects every message not originating from the exact catalog iframe and `https://filamenthub.ru`; account access/refresh credentials never cross. | Keep the origin/source regression test and rotate the capability every 30 minutes. |
 | 3 | **Outbound HTTPS is ungated today** and the declared network allow-list is not enforced yet. | A future host policy may require an explicit permission contract. | Keep `network = [...]` declared and follow the host's audit-first permission design. |
-| 4 | **Package updates recreate the plugin install directory.** | Sidecar auth/sync caches are not guaranteed to survive an update. | The embedded cookie session mints a fresh scoped plugin capability, and sync rebuilds identity from managed preset content; migrate durable state to the host storage API when it lands. |
+| 4 | **Package updates may recreate the plugin install directory on older hosts.** | Sidecar auth/sync caches are not guaranteed to survive an update without host storage. | Feature-detect `orca.host.plugin.storage()` from #14923, copy legacy mutable state without deleting it, and retain the install-directory fallback on older builds. |
 
 These limitations are disclosed in the alpha listing. Gap #1
 (restart-to-see-import on stock upstream) remains the main user-visible one.
