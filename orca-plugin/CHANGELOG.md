@@ -2,6 +2,11 @@
 
 Newest first. The top entry is the text pasted into the Plugin Hub on release.
 
+## 0.0.9
+- Follows OrcaSlicer's interface language for connection and error messages, with a fallback for older builds.
+- Uses OrcaSlicer's private plugin storage and preset APIs when available instead of reopening host files.
+- Reuses background workers and shuts down its local bridge cleanly, reducing permission prompts and exit hangs on current plugin-system builds.
+
 ## 0.0.8
 - Fixed the plugin connecting to the wrong address, which left it unable to reach FilamentHub. If 0.0.7 did nothing for you, this is why.
 

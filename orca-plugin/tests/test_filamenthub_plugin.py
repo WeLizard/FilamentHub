@@ -166,6 +166,40 @@ def test_shell_replaces_webview_errors_with_maintenance_status(plugin_module):
     assert "#service-retry:focus-visible" in page
 
 
+@pytest.mark.parametrize(
+    ("host_language", "expected"),
+    [
+        ("ru_RU", "ru"),
+        ("zh_CN", "zh"),
+        ("en_US", "en"),
+        ("de_DE", "en"),
+    ],
+)
+def test_shell_uses_orca_ui_language(plugin_module, monkeypatch, host_language, expected):
+    monkeypatch.setattr(
+        plugin_module.orca.host,
+        "app_language",
+        lambda: host_language,
+        raising=False,
+    )
+
+    rendered = plugin_module.render_page()
+
+    assert f"var hostLanguage = '{expected}';" in rendered
+    assert "__HOST_UI_LANGUAGE__" not in rendered
+
+
+def test_shell_language_falls_back_on_older_or_uninitialized_hosts(plugin_module, monkeypatch):
+    monkeypatch.delattr(plugin_module.orca.host, "app_language", raising=False)
+    assert "var hostLanguage = '';" in plugin_module.render_page()
+
+    def unavailable():
+        raise RuntimeError("OrcaSlicer application is not initialized")
+
+    monkeypatch.setattr(plugin_module.orca.host, "app_language", unavailable, raising=False)
+    assert "var hostLanguage = '';" in plugin_module.render_page()
+
+
 def test_safe_filename_handles_windows_names_and_bounds(plugin_module):
     assert plugin_module.safe_filename("CON") == "_CON"
     assert plugin_module.safe_filename('bad<>:"/\\|?* name. ') == "bad_________ name"

@@ -7,7 +7,7 @@
 # name = "FilamentHub"
 # description = "Browse and sync community-rated filament profiles from FilamentHub, with spool inventory and print-cost tools."
 # author = "FilamentHub"
-# version = "0.0.8"
+# version = "0.0.9"
 #
 # # Proposed forward-looking key (see README gap). The current
 # # host reads only name/description/author/version/dependencies and ignores unknown
@@ -144,7 +144,7 @@ def post_window(window, payload):
 # --------------------------------------------------------------------------- #
 # Configuration
 # --------------------------------------------------------------------------- #
-PLUGIN_VERSION = "0.0.8"
+PLUGIN_VERSION = "0.0.9"
 PROD_SITE_URL = "https://filamenthub.ru"
 SITE_URL = os.environ.get("FILAMENTHUB_SITE_URL", "http://localhost:3000").rstrip("/")
 DEV_CONTOUR = SITE_URL != PROD_SITE_URL
@@ -155,6 +155,22 @@ MAX_RESPONSE_BYTES = 5 * 1024 * 1024
 MAX_TOKEN_LENGTH = 8192
 MAX_FILENAME_LENGTH = 120
 _SSL_CTX = ssl.create_default_context()
+
+
+def host_ui_language():
+    """Return the supported Orca UI language, or defer to the WebView."""
+    app_language = getattr(getattr(orca, "host", None), "app_language", None)
+    if not callable(app_language):
+        return ""
+    try:
+        language = str(app_language()).lower()
+    except (AttributeError, RuntimeError):
+        return ""
+    if language.startswith("ru"):
+        return "ru"
+    if language.startswith("zh"):
+        return "zh"
+    return "en"
 
 
 def _temporary_path(path):
@@ -1490,7 +1506,8 @@ var STATUS_COPY = {
     retry: '重试'
   }
 };
-var browserLanguage = (navigator.language || 'en').toLowerCase();
+var hostLanguage = '__HOST_UI_LANGUAGE__';
+var browserLanguage = (hostLanguage || navigator.language || 'en').toLowerCase();
 var statusLocale = browserLanguage.indexOf('ru') === 0
   ? 'ru'
   : browserLanguage.indexOf('zh') === 0
@@ -1951,6 +1968,10 @@ document.getElementById('logout').addEventListener('click', function () {
     "__DIAG_HIDDEN__", "" if DEV_CONTOUR else "hidden")
 
 
+def render_page():
+    return PAGE.replace("__HOST_UI_LANGUAGE__", host_ui_language())
+
+
 # --------------------------------------------------------------------------- #
 # Slices leaving the slicer
 # --------------------------------------------------------------------------- #
@@ -2183,7 +2204,7 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
         self._session_sync_started = False
         # Hop from the host's opaque-origin SetPage document onto the loopback
         # server, so the shell gains a real origin the site CSP can allow.
-        shell_url = SHELL_SERVER.url_for(PAGE)
+        shell_url = SHELL_SERVER.url_for(render_page())
         html = (
             "<!DOCTYPE html><html><body><script>location.replace("
             + json.dumps(shell_url)
