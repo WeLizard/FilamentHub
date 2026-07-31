@@ -1,8 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter()]
-    [ValidatePattern('^plugins-v\d+\.\d+\.\d+(?:[-.][0-9A-Za-z.-]+)?$')]
-    [string]$Tag = 'plugins-v0.1.0',
+    [string]$Tag,
 
     [Parameter()]
     [string]$Remote = 'origin',
@@ -30,6 +29,40 @@ function Assert-Command {
     if (-not (Get-Command $Name -ErrorAction SilentlyContinue)) {
         throw "Required command '$Name' was not found in PATH."
     }
+}
+
+function Get-BridgeVersion {
+    $pyprojectPath = 'octoprint-plugin/pyproject.toml'
+    $pluginPath = 'octoprint-plugin/octoprint_filamenthub_bridge/__init__.py'
+
+    $pyprojectContent = Get-Content -LiteralPath $pyprojectPath -Raw
+    $pyprojectMatch = [regex]::Match(
+        $pyprojectContent,
+        '(?m)^version\s*=\s*"(?<version>[^"]+)"\s*$'
+    )
+    if (-not $pyprojectMatch.Success) {
+        throw "Could not read the package version from '$pyprojectPath'."
+    }
+
+    $pluginContent = Get-Content -LiteralPath $pluginPath -Raw
+    $pluginMatch = [regex]::Match(
+        $pluginContent,
+        '(?m)^PLUGIN_VERSION\s*=\s*"(?<version>[^"]+)"\s*$'
+    )
+    if (-not $pluginMatch.Success) {
+        throw "Could not read PLUGIN_VERSION from '$pluginPath'."
+    }
+
+    $packageVersion = $pyprojectMatch.Groups['version'].Value
+    $runtimeVersion = $pluginMatch.Groups['version'].Value
+    if ($packageVersion -ne $runtimeVersion) {
+        throw "Bridge version mismatch: pyproject.toml=$packageVersion, PLUGIN_VERSION=$runtimeVersion."
+    }
+    if ($packageVersion -notmatch '^\d+\.\d+\.\d+(?:[-.][0-9A-Za-z.-]+)?$') {
+        throw "Bridge version '$packageVersion' cannot be used as a release version."
+    }
+
+    return $packageVersion
 }
 
 function Invoke-Checked {
@@ -91,12 +124,16 @@ function Get-RemoteTagCommit {
 }
 
 function Assert-ReleaseAssets {
-    param([Parameter(Mandatory)]$Release)
+    param(
+        [Parameter(Mandatory)]$Release,
+        [Parameter(Mandatory)][string]$BridgeVersion
+    )
 
     $assetNames = @($Release.assets | ForEach-Object { $_.name })
+    $escapedVersion = [regex]::Escape($BridgeVersion)
     $requiredPatterns = @(
-        '^octoprint_filamenthubbridge-.*\.whl$',
-        '^octoprint_filamenthubbridge-.*\.tar\.gz$',
+        "^octoprint_filamenthubbridge-$escapedVersion-.*\.whl$",
+        "^octoprint_filamenthubbridge-$escapedVersion\.tar\.gz$",
         '^SHA256SUMS$'
     )
 
@@ -113,16 +150,45 @@ Assert-Command -Name gh
 $repositoryRoot = Invoke-Checked -FilePath git -Arguments @('rev-parse', '--show-toplevel') -Capture
 Set-Location -LiteralPath $repositoryRoot
 
+$versionFiles = @(
+    'octoprint-plugin/pyproject.toml',
+    'octoprint-plugin/octoprint_filamenthub_bridge/__init__.py'
+)
+& git diff --quiet -- $versionFiles
+if ($LASTEXITCODE -ne 0) {
+    throw 'Commit the Bridge version changes before preparing a release.'
+}
+& git diff --cached --quiet -- $versionFiles
+if ($LASTEXITCODE -ne 0) {
+    throw 'Commit the staged Bridge version changes before preparing a release.'
+}
+
+$bridgeVersion = Get-BridgeVersion
+$expectedTag = "plugins-v$bridgeVersion"
+if ([string]::IsNullOrWhiteSpace($Tag)) {
+    $Tag = $expectedTag
+} elseif ($Tag -notmatch '^plugins-v\d+\.\d+\.\d+(?:[-.][0-9A-Za-z.-]+)?$') {
+    throw "Tag '$Tag' does not match the plugins-vX.Y.Z release format."
+} elseif ($Tag -ne $expectedTag) {
+    throw "Tag '$Tag' does not match the committed Bridge version '$bridgeVersion' (expected '$expectedTag')."
+}
+
 $currentBranch = Invoke-Checked -FilePath git -Arguments @('branch', '--show-current') -Capture
 if ($currentBranch -ne $Branch) {
     throw "Current branch is '$currentBranch'. Switch to '$Branch' before preparing a release."
 }
 
 $headCommit = Invoke-Checked -FilePath git -Arguments @('rev-parse', 'HEAD') -Capture
-$tagCommit = Invoke-Checked -FilePath git -Arguments @('rev-list', '-n', '1', $Tag) -Capture
-& git merge-base --is-ancestor $tagCommit $headCommit
-if ($LASTEXITCODE -ne 0) {
-    throw "Tag '$Tag' ($tagCommit) is not part of the current '$Branch' history."
+$localTag = Invoke-Checked -FilePath git -Arguments @('tag', '--list', $Tag) -Capture
+$tagExistsLocally = -not [string]::IsNullOrWhiteSpace($localTag)
+if ($tagExistsLocally) {
+    $tagCommit = Invoke-Checked -FilePath git -Arguments @('rev-list', '-n', '1', $Tag) -Capture
+    & git merge-base --is-ancestor $tagCommit $headCommit
+    if ($LASTEXITCODE -ne 0) {
+        throw "Tag '$Tag' ($tagCommit) is not part of the current '$Branch' history."
+    }
+} else {
+    $tagCommit = $headCommit
 }
 
 $repository = Invoke-Checked -FilePath gh -Arguments @('repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner') -Capture
@@ -135,12 +201,19 @@ if ($pendingChanges) {
 
 Write-Host "Repository : $repository"
 Write-Host "Branch     : $Branch ($headCommit)"
-Write-Host "Release tag: $Tag ($tagCommit)"
+Write-Host "Version    : $bridgeVersion"
+Write-Host "Release tag: $Tag ($tagCommit)$(if (-not $tagExistsLocally) { ' [will be created]' })"
 Write-Host "Mode       : $(if ($Publish) { 'prepare and publish' } else { 'prepare draft only' })"
 
 if ($DryRun) {
     Write-Host 'Dry run complete. No pushes, workflow runs, or release changes were made.'
     return
+}
+
+if (-not $tagExistsLocally) {
+    Invoke-Checked -FilePath git -Arguments @('tag', '-a', $Tag, '-m', "FilamentHub plugins $bridgeVersion")
+    $tagCommit = Invoke-Checked -FilePath git -Arguments @('rev-list', '-n', '1', $Tag) -Capture
+    Write-Host "Created local release tag '$Tag' at $tagCommit."
 }
 
 Invoke-Checked -FilePath git -Arguments @('push', $Remote, $Branch)
@@ -193,7 +266,7 @@ if (-not $release) {
     throw "Workflow completed but release '$Tag' was not found."
 }
 
-Assert-ReleaseAssets -Release $release
+Assert-ReleaseAssets -Release $release -BridgeVersion $bridgeVersion
 
 if (-not $release.isDraft) {
     Write-Host "Release is already published: $($release.url)"
