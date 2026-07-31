@@ -16,7 +16,7 @@ permissions:
 
 jobs:
   build-and-release:
-    name: Build and publish plugin packages
+    name: Build plugin packages and prepare draft release
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ github.token }}
@@ -79,6 +79,3 @@ jobs:
           gh release upload "$RELEASE_TAG" "$RUNNER_TEMP"/release/assets/* \
             --repo "$GITHUB_REPOSITORY" \
             --clobber
-
-      - name: Publish release
-        run: gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false
