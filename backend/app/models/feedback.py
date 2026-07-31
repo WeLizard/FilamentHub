@@ -4,7 +4,7 @@ from datetime import datetime
 from enum import Enum
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
@@ -37,6 +37,7 @@ class Feedback(Base):
     """Модель обратной связи от пользователей."""
 
     __tablename__ = "feedback"
+    __table_args__ = (Index("ix_feedback_updated_at", "updated_at"),)
 
     # Primary key
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
@@ -104,9 +105,58 @@ class Feedback(Base):
     responder: Mapped["User | None"] = relationship(
         "User", foreign_keys=[responded_by]
     )
+    messages: Mapped[list["FeedbackMessage"]] = relationship(
+        "FeedbackMessage",
+        back_populates="feedback",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by="FeedbackMessage.created_at, FeedbackMessage.id",
+    )
 
     def __repr__(self) -> str:
         """String representation."""
         return f"<Feedback(id={self.id}, type={self.type.value}, status={self.status.value})>"
+
+
+class FeedbackMessage(Base):
+    """One message in a feedback conversation."""
+
+    __tablename__ = "feedback_messages"
+    __table_args__ = (
+        UniqueConstraint(
+            "feedback_id",
+            "author_user_id",
+            "idempotency_key",
+            name="uq_fb_msg_idempotency",
+        ),
+        Index("ix_fb_msg_thread", "feedback_id", "created_at", "id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    feedback_id: Mapped[int] = mapped_column(
+        ForeignKey("feedback.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    author_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    author_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    idempotency_key: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+    feedback: Mapped["Feedback"] = relationship("Feedback", back_populates="messages")
+    author: Mapped["User | None"] = relationship("User", foreign_keys=[author_user_id])
+
+    def __repr__(self) -> str:
+        return (
+            f"<FeedbackMessage(id={self.id}, feedback_id={self.feedback_id}, "
+            f"author_type={self.author_type})>"
+        )
 
 

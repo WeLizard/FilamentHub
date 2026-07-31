@@ -859,6 +859,18 @@ export interface Feedback {
   updated_at: string;
 }
 
+export interface FeedbackMessage {
+  id: number;
+  author_user_id: number | null;
+  author_type: 'user' | 'admin';
+  message: string;
+  created_at: string;
+}
+
+export interface FeedbackDetail extends Feedback {
+  messages: FeedbackMessage[];
+}
+
 export interface FeedbackListResponse {
   items: Feedback[];
   total: number;

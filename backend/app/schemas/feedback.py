@@ -2,6 +2,7 @@
 
 from datetime import datetime
 from enum import Enum
+from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -65,6 +66,35 @@ class FeedbackUpdate(BaseModel):
 
     status: FeedbackStatus | None = None
     admin_response: str | None = None
+    reply_idempotency_key: UUID | None = None
+
+
+class FeedbackMessageCreate(BaseModel):
+    """Schema for adding a message to an existing feedback conversation."""
+
+    message: str = Field(..., min_length=1, max_length=10_000)
+    idempotency_key: UUID
+
+    @field_validator("message")
+    @classmethod
+    def strip_message(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Message cannot be empty")
+        return value
+
+
+class FeedbackMessageResponse(BaseModel):
+    """One message in a feedback conversation."""
+
+    id: int
+    author_user_id: int | None
+    author_type: str
+    message: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
 
 
 class FeedbackResponse(BaseModel):
@@ -92,6 +122,12 @@ class FeedbackResponse(BaseModel):
         from_attributes = True
 
 
+class FeedbackDetailResponse(FeedbackResponse):
+    """Feedback with its ordered conversation."""
+
+    messages: list[FeedbackMessageResponse]
+
+
 class FeedbackListResponse(BaseModel):
     """Схема списка обратной связи."""
 
@@ -100,4 +136,3 @@ class FeedbackListResponse(BaseModel):
     page: int
     size: int
     pages: int
-

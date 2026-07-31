@@ -10,17 +10,19 @@ import { useTranslation } from 'react-i18next';
 import { toast } from '../Toast';
 import { ConfirmDeleteModal } from '../ConfirmDeleteModal';
 import { translateApiError } from '../../utils/translateApiError';
+import { createIdempotencyKey } from '../../utils/idempotencyKey';
 import type { AxiosError } from 'axios';
 
 export function AdminFeedback() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const queryClient = useQueryClient();
   const [selectedStatus, setSelectedStatus] = useState<FeedbackStatus | 'all'>('all');
   const [selectedType, setSelectedType] = useState<FeedbackType | 'all'>('all');
   const [selectedFeedback, setSelectedFeedback] = useState<Feedback | null>(null);
   const [page, setPage] = useState(1);
   const [adminResponse, setAdminResponse] = useState('');
-  const [responseStatus, setResponseStatus] = useState<FeedbackStatus>('resolved');
+  const [replyIdempotencyKey, setReplyIdempotencyKey] = useState(createIdempotencyKey);
+  const [responseStatus, setResponseStatus] = useState<FeedbackStatus>('in_progress');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -35,17 +37,41 @@ export function AdminFeedback() {
     }),
   });
 
+  const selectedFeedbackQuery = useQuery({
+    queryKey: ['admin-feedback-detail', selectedFeedback?.id],
+    queryFn: () => adminFeedbackAPI.get(selectedFeedback!.id),
+    enabled: selectedFeedback !== null,
+  });
+
   // Обновление обратной связи (ответ админа)
   const updateMutation = useMutation({
-    mutationFn: ({ id, status, response }: { id: number; status?: FeedbackStatus; response?: string }) =>
+    mutationFn: ({
+      id,
+      status,
+      response,
+      idempotencyKey,
+    }: {
+      id: number;
+      status?: FeedbackStatus;
+      response?: string;
+      idempotencyKey?: string;
+    }) =>
       adminFeedbackAPI.update(id, {
         status: status || undefined,
         admin_response: response || undefined,
+        reply_idempotency_key: response ? idempotencyKey : undefined,
       }),
-    onSuccess: () => {
+    onSuccess: (updatedFeedback) => {
       queryClient.invalidateQueries({ queryKey: ['admin-feedback'] });
-      setSelectedFeedback(null);
+      queryClient.setQueryData(
+        ['admin-feedback-detail', updatedFeedback.id],
+        updatedFeedback,
+      );
+      setSelectedFeedback(updatedFeedback);
       setAdminResponse('');
+      setReplyIdempotencyKey(createIdempotencyKey());
+      setResponseStatus(updatedFeedback.status);
+      toast.success(t('adminFeedback.replySent'));
     },
     onError: (error: AxiosError<{ detail: unknown }>) => {
       toast.error(translateApiError(t, error?.response?.data?.detail, t('adminFeedback.updateError')));
@@ -68,8 +94,19 @@ export function AdminFeedback() {
       toast.error(t('adminFeedback.alert_enter_response'));
       return;
     }
-    updateMutation.mutate({ id, status: responseStatus, response: adminResponse });
+    updateMutation.mutate({
+      id,
+      status: responseStatus,
+      response: adminResponse,
+      idempotencyKey: replyIdempotencyKey,
+    });
   };
+
+  const formatDate = (value: string) =>
+    new Intl.DateTimeFormat(i18n.resolvedLanguage || i18n.language, {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    }).format(new Date(value));
 
   const getStatusBadge = (status: FeedbackStatus) => {
     switch (status) {
@@ -113,6 +150,27 @@ export function AdminFeedback() {
   const feedbackItems = data?.items || [];
   const total = data?.total || 0;
   const pages = data?.pages || 0;
+  const selectedFeedbackView = selectedFeedbackQuery.data ?? selectedFeedback;
+  const threadMessages = selectedFeedbackQuery.data?.messages ?? (
+    selectedFeedback
+      ? [
+          {
+            id: `initial-${selectedFeedback.id}`,
+            author_type: 'user' as const,
+            message: selectedFeedback.message,
+            created_at: selectedFeedback.created_at,
+          },
+          ...(selectedFeedback.admin_response
+            ? [{
+                id: `legacy-admin-${selectedFeedback.id}`,
+                author_type: 'admin' as const,
+                message: selectedFeedback.admin_response,
+                created_at: selectedFeedback.admin_response_at ?? selectedFeedback.updated_at,
+              }]
+            : []),
+        ]
+      : []
+  );
 
   // Фильтруем по поисковому запросу (если есть)
   const filteredItems = searchQuery
@@ -213,7 +271,12 @@ export function AdminFeedback() {
                 <div
                   key={feedback.id}
                   className="bg-white/5 border border-white/10 rounded-lg p-4 hover:bg-white/10 transition-all cursor-pointer"
-                  onClick={() => setSelectedFeedback(feedback)}
+                  onClick={() => {
+                    setSelectedFeedback(feedback);
+                    setAdminResponse('');
+                    setReplyIdempotencyKey(createIdempotencyKey());
+                    setResponseStatus('in_progress');
+                  }}
                 >
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex-1">
@@ -230,7 +293,7 @@ export function AdminFeedback() {
                       <h3 className="text-white font-medium mb-1">{feedback.subject}</h3>
                       <p className="text-gray-400 text-sm line-clamp-2">{feedback.message}</p>
                       <div className="flex items-center gap-4 mt-2 text-xs text-gray-500">
-                        <span>{new Date(feedback.created_at).toLocaleString('ru-RU')}</span>
+                        <span>{formatDate(feedback.created_at)}</span>
                         {feedback.email && <span>{t('adminFeedback.email', { email: feedback.email })}</span>}
                         {feedback.admin_response && (
                           <span className="text-green-400">{t('adminFeedback.responded')}</span>
@@ -270,7 +333,7 @@ export function AdminFeedback() {
       )}
 
       {/* Модалка просмотра и ответа */}
-      {selectedFeedback && (
+      {selectedFeedbackView && (
         <ModalOverlay onClose={() => { setSelectedFeedback(null); setAdminResponse(''); }} className="!bg-black/60">
               <div
                 className="bg-gradient-to-br from-gray-900 to-gray-800 rounded-2xl shadow-2xl border border-white/20 max-w-3xl w-full max-h-[90vh] overflow-hidden flex flex-col"
@@ -281,19 +344,19 @@ export function AdminFeedback() {
                   <div className="flex-1">
                     <div className="flex items-center gap-2 mb-2">
                       {(() => {
-                        const TypeIcon = getTypeIcon(selectedFeedback.type);
+                        const TypeIcon = getTypeIcon(selectedFeedbackView.type);
                         return <TypeIcon className="w-5 h-5 text-purple-400" />;
                       })()}
-                      <span className="text-sm text-gray-400">{getTypeLabel(selectedFeedback.type)}</span>
-                      {getStatusBadge(selectedFeedback.status)}
+                      <span className="text-sm text-gray-400">{getTypeLabel(selectedFeedbackView.type)}</span>
+                      {getStatusBadge(selectedFeedbackView.status)}
                     </div>
-                    <h2 className="text-2xl font-semibold text-white">{selectedFeedback.subject}</h2>
+                    <h2 className="text-2xl font-semibold text-white">{selectedFeedbackView.subject}</h2>
                     <div className="flex items-center gap-4 mt-2 text-sm text-gray-400">
-                      <span>{new Date(selectedFeedback.created_at).toLocaleString('ru-RU')}</span>
-                      {selectedFeedback.user_id ? (
-                        <span>{t('adminFeedback.user_id', { id: selectedFeedback.user_id })}</span>
+                      <span>{formatDate(selectedFeedbackView.created_at)}</span>
+                      {selectedFeedbackView.user_id ? (
+                        <span>{t('adminFeedback.user_id', { id: selectedFeedbackView.user_id })}</span>
                       ) : (
-                        <span>{t('adminFeedback.anonymous')} • {selectedFeedback.email}</span>
+                        <span>{t('adminFeedback.anonymous')} • {selectedFeedbackView.email}</span>
                       )}
                     </div>
                   </div>
@@ -310,25 +373,45 @@ export function AdminFeedback() {
 
                 {/* Content */}
                 <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4 custom-scrollbar">
-                  {/* Сообщение пользователя */}
                   <div>
-                    <h3 className="text-sm font-medium text-gray-300 mb-2">{t('adminFeedback.modal_user_message')}</h3>
-                    <div className="bg-white/5 border border-white/10 rounded-lg p-4 text-gray-300 whitespace-pre-wrap">
-                      {selectedFeedback.message}
+                    <h3 className="mb-3 text-sm font-medium text-gray-300">
+                      {t('adminFeedback.conversation')}
+                    </h3>
+                    <div className="space-y-3">
+                      {threadMessages.map((threadMessage) => {
+                        const fromAdmin = threadMessage.author_type === 'admin';
+                        return (
+                          <div
+                            key={threadMessage.id}
+                            className={`flex ${fromAdmin ? 'justify-end' : 'justify-start'}`}
+                          >
+                            <div className="max-w-[85%]">
+                              <div
+                                className={`mb-1 text-xs ${
+                                  fromAdmin ? 'text-right text-purple-300' : 'text-cyan-300'
+                                }`}
+                              >
+                                {fromAdmin
+                                  ? t('adminFeedback.you')
+                                  : t('adminFeedback.user')}
+                                {' · '}
+                                {formatDate(threadMessage.created_at)}
+                              </div>
+                              <div
+                                className={`whitespace-pre-wrap break-words rounded-xl border p-3 text-sm leading-6 text-gray-200 ${
+                                  fromAdmin
+                                    ? 'rounded-tr-sm border-purple-400/25 bg-purple-500/10'
+                                    : 'rounded-tl-sm border-cyan-400/20 bg-cyan-500/10'
+                                }`}
+                              >
+                                {threadMessage.message}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
-
-                  {/* Ответ админа (если есть) */}
-                  {selectedFeedback.admin_response && (
-                    <div>
-                      <h3 className="text-sm font-medium text-gray-300 mb-2">
-                        {t('adminFeedback.modal_your_response', { date: selectedFeedback.admin_response_at && new Date(selectedFeedback.admin_response_at).toLocaleString('ru-RU') })}:
-                      </h3>
-                      <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-4 text-gray-300 whitespace-pre-wrap">
-                        {selectedFeedback.admin_response}
-                      </div>
-                    </div>
-                  )}
 
                   {/* Форма ответа */}
                   <div>
@@ -357,6 +440,9 @@ export function AdminFeedback() {
                       <option value="resolved">{t('adminFeedback.filter_resolved')}</option>
                       <option value="closed">{t('adminFeedback.filter_closed')}</option>
                     </select>
+                    <p className="mt-2 text-xs leading-5 text-gray-400">
+                      {t('adminFeedback.statusReplyHint')}
+                    </p>
                   </div>
                 </div>
 
@@ -381,7 +467,7 @@ export function AdminFeedback() {
                     {t('adminFeedback.modal_close_button')}
                   </button>
                   <button
-                    onClick={() => handleResponse(selectedFeedback.id)}
+                    onClick={() => handleResponse(selectedFeedbackView.id)}
                     disabled={!adminResponse.trim() || updateMutation.isPending}
                     className="px-4 py-2 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                   >

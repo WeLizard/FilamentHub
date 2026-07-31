@@ -35,6 +35,7 @@ const WikiCategoryPage = lazy(() => import('./pages/WikiCategoryPage').then(m =>
 const WikiArticlePage = lazy(() => import('./pages/WikiArticlePage').then(m => ({ default: m.WikiArticlePage })));
 const PrivacyPolicyPage = lazy(() => import('./pages/PrivacyPolicyPage').then(m => ({ default: m.PrivacyPolicyPage })));
 const SharedQuotePage = lazy(() => import('./pages/SharedQuotePage').then(m => ({ default: m.SharedQuotePage })));
+const FeedbackThreadPage = lazy(() => import('./pages/FeedbackThreadPage').then(m => ({ default: m.FeedbackThreadPage })));
 
 // Prefetch all lazy chunks after initial page load so navigation feels instant
 if (typeof window !== 'undefined') {
@@ -49,6 +50,7 @@ if (typeof window !== 'undefined') {
       import('./pages/WikiCategoryPage');
       import('./pages/WikiArticlePage');
       import('./pages/PrivacyPolicyPage');
+      import('./pages/FeedbackThreadPage');
       import('./components/CreatePresetModal');
       import('./components/CreatePrinterProfileModal');
     }, 2000);
@@ -194,6 +196,18 @@ function AppContent() {
               <Layout>
                 <Suspense fallback={<PageLoader />}>
                   <CalculatorPage />
+                </Suspense>
+              </Layout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/feedback/:feedbackId"
+          element={
+            <ProtectedRoute>
+              <Layout>
+                <Suspense fallback={<PageLoader />}>
+                  <FeedbackThreadPage />
                 </Suspense>
               </Layout>
             </ProtectedRoute>
