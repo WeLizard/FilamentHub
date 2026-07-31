@@ -243,8 +243,17 @@ class FilamentHubBridgePlugin(
         except Exception:
             return "unknown"
 
-    def _request(self, method: str, path: str, payload=None, extra_headers=None):
-        server_url = self._settings.get(["server_url"])
+    def _request(
+        self,
+        method: str,
+        path: str,
+        payload=None,
+        extra_headers=None,
+        *,
+        server_url: Optional[str] = None,
+        include_token: bool = True,
+    ):
+        server_url = server_url or self._settings.get(["server_url"])
         if not server_url:
             raise RuntimeError("FilamentHub address is not configured.")
         headers = {
@@ -255,7 +264,7 @@ class FilamentHubBridgePlugin(
         if payload is not None:
             body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
             headers["Content-Type"] = "application/json"
-        token = self._settings.get(["bridge_token"])
+        token = self._settings.get(["bridge_token"]) if include_token else None
         if token:
             headers["X-FilamentHub-Bridge-Token"] = token
         headers.update(extra_headers or {})
@@ -281,11 +290,8 @@ class FilamentHubBridgePlugin(
             raise RuntimeError(f"Cannot reach FilamentHub: {exc.reason}") from exc
 
     def _pair(self, server_url: str, pairing_code: str) -> None:
-        self._settings.set(["server_url"], self._normalize_server_url(server_url))
+        normalized_server_url = self._normalize_server_url(server_url)
         instance_id = self._settings.get(["instance_id"]) or str(uuid.uuid4())
-        self._settings.set(["instance_id"], instance_id)
-        self._settings.set(["bridge_token"], None)
-        self._settings.save()
         _, _, response = self._request(
             "POST",
             "/pair",
@@ -296,7 +302,11 @@ class FilamentHubBridgePlugin(
                 "octoprint_version": self._octoprint_version(),
                 "capabilities": CAPABILITIES,
             },
+            server_url=normalized_server_url,
+            include_token=False,
         )
+        self._settings.set(["server_url"], normalized_server_url)
+        self._settings.set(["instance_id"], instance_id)
         self._settings.set(["bridge_token"], response["bridge_token"])
         self._settings.set(["last_error"], None)
         self._settings.save()

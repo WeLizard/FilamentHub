@@ -8,6 +8,9 @@ from octoprint_filamenthub_bridge import FilamentHubBridgePlugin
 class FakeSettings:
     def __init__(self):
         self.values = {
+            "server_url": "https://filamenthub.ru",
+            "bridge_token": "existing-token",
+            "instance_id": "existing-instance",
             "snapshot": {
                 "slots": [
                     {
@@ -107,3 +110,47 @@ def test_outbox_flush_preserves_event_appended_during_request():
 
     assert sent == [first, second]
     assert plugin._settings.get(["outbox"]) == []
+
+
+def test_failed_pairing_preserves_existing_connection():
+    plugin = FilamentHubBridgePlugin()
+    plugin._settings = FakeSettings()
+    plugin._logger = logging.getLogger("filamenthub-bridge-test")
+
+    def failed_request(*args, **kwargs):
+        raise RuntimeError("pairing failed")
+
+    plugin._request = failed_request
+
+    try:
+        plugin._pair("https://other.example", "FH-FAILED")
+    except RuntimeError as exc:
+        assert str(exc) == "pairing failed"
+    else:
+        raise AssertionError("Pairing must fail in this test")
+
+    assert plugin._settings.get(["server_url"]) == "https://filamenthub.ru"
+    assert plugin._settings.get(["bridge_token"]) == "existing-token"
+    assert plugin._settings.get(["instance_id"]) == "existing-instance"
+
+
+def test_successful_pairing_replaces_connection_atomically():
+    plugin = FilamentHubBridgePlugin()
+    plugin._settings = FakeSettings()
+    plugin._logger = logging.getLogger("filamenthub-bridge-test")
+    calls = []
+
+    def successful_request(method, path, payload, **kwargs):
+        calls.append((method, path, payload, kwargs))
+        return 200, {}, {"bridge_token": "replacement-token"}
+
+    plugin._request = successful_request
+    plugin._pair("https://new.example/", "FH-SUCCESS")
+
+    assert calls[0][3] == {
+        "server_url": "https://new.example",
+        "include_token": False,
+    }
+    assert plugin._settings.get(["server_url"]) == "https://new.example"
+    assert plugin._settings.get(["bridge_token"]) == "replacement-token"
+    assert plugin._settings.get(["instance_id"]) == "existing-instance"

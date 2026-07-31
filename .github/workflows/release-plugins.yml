@@ -1,0 +1,84 @@
+name: Release plugins
+
+on:
+  push:
+    tags:
+      - 'plugins-v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'GitHub release tag (for example: plugins-v0.1.0)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build and publish plugin packages
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: |
+            orca-plugin/pyproject.toml
+            octoprint-plugin/pyproject.toml
+
+      - name: Install packaging tools
+        run: python -m pip install build pytest "OctoPrint==1.11.8"
+
+      - name: Test OctoPrint bridge
+        run: python -m pytest octoprint-plugin/tests
+        env:
+          PYTHONPATH: octoprint-plugin
+
+      - name: Build OrcaSlicer plugin
+        run: python orca-plugin/build_package.py --output "$RUNNER_TEMP/release/orca"
+
+      - name: Build OctoPrint bridge
+        run: python -m build --wheel --sdist --outdir "$RUNNER_TEMP/release/octoprint" octoprint-plugin
+
+      - name: Collect release assets and checksums
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/release/assets"
+          cp "$RUNNER_TEMP"/release/orca/wheels/*.whl "$RUNNER_TEMP/release/assets/"
+          cp "$RUNNER_TEMP"/release/octoprint/* "$RUNNER_TEMP/release/assets/"
+          cd "$RUNNER_TEMP/release/assets"
+          sha256sum ./* > SHA256SUMS
+
+      - name: Prepare draft release
+        shell: bash
+        run: |
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            if [[ "$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)" != "true" ]]; then
+              echo "Release $RELEASE_TAG is already published; use a new tag instead of replacing its packages." >&2
+              exit 1
+            fi
+          else
+            gh release create "$RELEASE_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" \
+              --title "FilamentHub plugins $RELEASE_TAG" \
+              --notes "FilamentHub plugin packages for OrcaSlicer and OctoPrint. See SHA256SUMS for file checksums." \
+              --draft
+          fi
+
+      - name: Upload plugin packages to release
+        shell: bash
+        run: |
+          gh release upload "$RELEASE_TAG" "$RUNNER_TEMP"/release/assets/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --clobber
+
+      - name: Publish release
+        run: gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false

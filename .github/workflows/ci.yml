@@ -66,3 +66,32 @@ jobs:
 
       - name: Tests (vitest)
         run: npm test
+
+  plugins:
+    name: Plugins (tests + package build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: |
+            orca-plugin/pyproject.toml
+            octoprint-plugin/pyproject.toml
+
+      - name: Install packaging tools
+        run: python -m pip install build pytest "OctoPrint==1.11.8"
+
+      - name: Test OctoPrint bridge
+        run: python -m pytest octoprint-plugin/tests
+        env:
+          PYTHONPATH: octoprint-plugin
+
+      - name: Build OrcaSlicer plugin
+        run: python orca-plugin/build_package.py --output "$RUNNER_TEMP/plugins/orca"
+
+      - name: Build OctoPrint bridge
+        run: python -m build --wheel --sdist --outdir "$RUNNER_TEMP/plugins/octoprint" octoprint-plugin

@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Native outbound bridge between OctoPrint and FilamentHub"
 readme = "README.md"
 requires-python = ">=3.9,<4"
-license = {text = "AGPL-3.0-or-later"}
+license = "AGPL-3.0-or-later"
 authors = [{name = "FilamentHub"}]
 dependencies = []
 
@@ -17,7 +17,14 @@ filamenthub_bridge = "octoprint_filamenthub_bridge"
 
 [tool.setuptools]
 packages = ["octoprint_filamenthub_bridge"]
-include-package-data = true
+include-package-data = false
+
+[tool.setuptools.package-data]
+octoprint_filamenthub_bridge = [
+    "static/css/*.css",
+    "static/js/*.js",
+    "templates/*.jinja2",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

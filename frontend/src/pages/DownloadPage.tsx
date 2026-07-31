@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Download, CheckCircle, Package, Code, Zap, Globe, Monitor, Smartphone, Terminal, Image as ImageIcon, Play, Loader2, ExternalLink, X } from 'lucide-react';
+import { Download, CheckCircle, Package, Code, Zap, Globe, Monitor, Smartphone, Terminal, Image as ImageIcon, Play, Loader2, ExternalLink, X, Server, ShieldCheck, RefreshCw, Archive, ChevronDown } from 'lucide-react';
 import { downloadsAPI } from '../api/client';
 import type { DownloadVersionsResponse } from '../types/api';
 import { ModalOverlay } from '../components/ModalOverlay';
@@ -13,10 +13,27 @@ import { SEOHead } from '../components/SEOHead';
 const ORCA_OFFICIAL_DOWNLOAD_URL = 'https://www.orcaslicer.com/download/';
 const ORCA_RELEASES_LATEST_URL = 'https://github.com/OrcaSlicer/OrcaSlicer/releases/latest';
 const FILAMENTHUB_PLUGIN_HUB_URL = 'https://cloud.orcaslicer.com/app/plugins/plugin-hub/34c1321c-7d46-4c5a-a8e9-f6c78fa9898e';
-// The plugin wheel is served as a GitHub release asset (built locally, attached to a
-// release). We resolve the latest .whl at runtime so the side-load link is always
-// current — and render nothing when no wheel is published, to avoid a dead button.
 const FILAMENTHUB_PLUGIN_REPO = 'WeLizard/FilamentHub';
+const FILAMENTHUB_RELEASES_URL = `https://github.com/${FILAMENTHUB_PLUGIN_REPO}/releases`;
+
+type PluginReleaseAsset = {
+  url: string;
+  name: string;
+  tag: string;
+};
+
+type GitHubReleaseAsset = {
+  name?: string;
+  browser_download_url?: string;
+};
+
+const isOrcaPluginWheel = (asset: GitHubReleaseAsset) =>
+  /^filamenthub-.*\.whl$/i.test(asset.name || '');
+
+const isOctoPrintBridgeWheel = (asset: GitHubReleaseAsset) => {
+  const name = (asset.name || '').toLowerCase().replaceAll('-', '_');
+  return name.startsWith('octoprint_filamenthubbridge_') && name.endsWith('.whl');
+};
 
 type DownloadScreenshotCardImageProps = {
   src: string;
@@ -83,7 +100,10 @@ export function DownloadPage() {
   const [error, setError] = useState<string | null>(null);
   const [previewImage, setPreviewImage] = useState<{ src: string; alt: string } | null>(null);
   const [orcaRelease, setOrcaRelease] = useState<{ tag: string; url: string } | null>(null);
-  const [pluginWheel, setPluginWheel] = useState<{ url: string; name: string; tag: string } | null>(null);
+  const [pluginsReleaseUrl, setPluginsReleaseUrl] = useState(FILAMENTHUB_RELEASES_URL);
+  const [orcaPluginWheel, setOrcaPluginWheel] = useState<PluginReleaseAsset | null>(null);
+  const [octoPrintBridgeWheel, setOctoPrintBridgeWheel] = useState<PluginReleaseAsset | null>(null);
+  const [archiveOpen, setArchiveOpen] = useState(false);
 
   // Latest official OrcaSlicer release for the dynamic "get OrcaSlicer" link.
   // Best-effort: if GitHub is unreachable we fall back to the releases/latest URL.
@@ -106,21 +126,39 @@ export function DownloadPage() {
     };
   }, []);
 
-  // Latest plugin wheel published as a GitHub release asset, for the manual
-  // (side-load) install fallback. The button renders only when a .whl exists.
+  // Both plugins are published in a plugins-v* release. Search recent releases
+  // instead of /latest so an unrelated application release cannot hide them.
   useEffect(() => {
     let cancelled = false;
-    fetch(`https://api.github.com/repos/${FILAMENTHUB_PLUGIN_REPO}/releases/latest`, {
+    fetch(`https://api.github.com/repos/${FILAMENTHUB_PLUGIN_REPO}/releases?per_page=20`, {
       headers: { Accept: 'application/vnd.github+json' },
     })
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
-        if (cancelled || !data) return;
-        const asset = (data.assets || []).find(
-          (a: { name?: string }) => a?.name?.toLowerCase().endsWith('.whl'),
+        if (cancelled || !Array.isArray(data)) return;
+        const release = data.find((candidate: { assets?: GitHubReleaseAsset[] }) =>
+          (candidate.assets || []).some(
+            (asset) => isOrcaPluginWheel(asset) || isOctoPrintBridgeWheel(asset),
+          ),
         );
-        if (asset?.browser_download_url) {
-          setPluginWheel({ url: asset.browser_download_url, name: asset.name, tag: data.tag_name || '' });
+        if (!release) return;
+        setPluginsReleaseUrl(release.html_url || FILAMENTHUB_RELEASES_URL);
+        const assets = (release.assets || []) as GitHubReleaseAsset[];
+        const orcaAsset = assets.find(isOrcaPluginWheel);
+        const octoPrintAsset = assets.find(isOctoPrintBridgeWheel);
+        if (orcaAsset?.browser_download_url && orcaAsset.name) {
+          setOrcaPluginWheel({
+            url: orcaAsset.browser_download_url,
+            name: orcaAsset.name,
+            tag: release.tag_name || '',
+          });
+        }
+        if (octoPrintAsset?.browser_download_url && octoPrintAsset.name) {
+          setOctoPrintBridgeWheel({
+            url: octoPrintAsset.browser_download_url,
+            name: octoPrintAsset.name,
+            tag: release.tag_name || '',
+          });
         }
       })
       .catch(() => {});
@@ -131,6 +169,8 @@ export function DownloadPage() {
 
   // Загружаем данные с API
   useEffect(() => {
+    if (!archiveOpen || downloadsData || error) return;
+
     const loadDownloads = async () => {
       try {
         setIsLoading(true);
@@ -146,7 +186,7 @@ export function DownloadPage() {
     };
 
     loadDownloads();
-  }, []);
+  }, [archiveOpen, downloadsData, error, t]);
 
   // Определяем доступность платформы из данных API
   const isPlatformAvailable = (platform: string) =>
@@ -327,15 +367,16 @@ export function DownloadPage() {
                 <span>{t('downloadPage.step2Cta')}</span>
                 <ExternalLink className="w-3 h-3" />
               </a>
-              {pluginWheel && (
+              {orcaPluginWheel && (
                 <a
-                  href={pluginWheel.url}
+                  href={orcaPluginWheel.url}
+                  download={orcaPluginWheel.name}
                   className="inline-flex items-center gap-1 text-xs text-purple-300 hover:text-purple-200 transition-colors"
                 >
                   <Download className="w-3 h-3" />
                   <span>
-                    {pluginWheel.tag
-                      ? t('downloadPage.step2WheelCta', { tag: pluginWheel.tag })
+                    {orcaPluginWheel.tag
+                      ? t('downloadPage.step2WheelCta', { tag: orcaPluginWheel.tag })
                       : t('downloadPage.step2WheelCtaPlain')}
                   </span>
                 </a>
@@ -361,6 +402,89 @@ export function DownloadPage() {
           </div>
         </div>
       </div>
+
+      {/* OctoPrint companion plugin */}
+      <section className="relative mb-12 overflow-hidden rounded-2xl border border-cyan-400/20 bg-slate-950/45 shadow-[0_24px_80px_rgba(6,182,212,0.08)]">
+        <div className="pointer-events-none absolute -right-24 -top-24 h-64 w-64 rounded-full bg-cyan-400/10 blur-3xl" />
+        <div className="relative grid gap-0 lg:grid-cols-[1.05fr_0.95fr]">
+          <div className="p-6 md:p-8">
+            <div className="mb-5 flex flex-wrap items-center gap-3">
+              <span className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-cyan-300/20 bg-cyan-400/10 text-cyan-200">
+                <Server className="h-6 w-6" />
+              </span>
+              <div>
+                <div className="mb-1 flex flex-wrap items-center gap-2">
+                  <h2 className="text-xl font-bold text-white md:text-2xl">
+                    {t('downloadPage.octoTitle')}
+                  </h2>
+                  <span className="rounded-full border border-cyan-300/20 bg-cyan-400/10 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-200">
+                    OctoPrint
+                  </span>
+                </div>
+                <p className="text-sm text-slate-400">{t('downloadPage.octoTagline')}</p>
+              </div>
+            </div>
+
+            <p className="max-w-2xl text-sm leading-6 text-slate-300 md:text-base">
+              {t('downloadPage.octoDesc')}
+            </p>
+
+            <div className="mt-6 grid gap-3 sm:grid-cols-3">
+              <div className="border-l-2 border-cyan-400/50 pl-3">
+                <ShieldCheck className="mb-2 h-4 w-4 text-cyan-300" />
+                <p className="text-xs leading-5 text-slate-300">{t('downloadPage.octoFeatureOutbound')}</p>
+              </div>
+              <div className="border-l-2 border-purple-400/50 pl-3">
+                <RefreshCw className="mb-2 h-4 w-4 text-purple-300" />
+                <p className="text-xs leading-5 text-slate-300">{t('downloadPage.octoFeatureSync')}</p>
+              </div>
+              <div className="border-l-2 border-emerald-400/50 pl-3">
+                <CheckCircle className="mb-2 h-4 w-4 text-emerald-300" />
+                <p className="text-xs leading-5 text-slate-300">{t('downloadPage.octoFeatureUsage')}</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="border-t border-white/10 bg-white/[0.035] p-6 md:p-8 lg:border-l lg:border-t-0">
+            <p className="mb-4 text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+              {t('downloadPage.octoInstallTitle')}
+            </p>
+            <ol className="mb-6 space-y-3 text-sm text-slate-300">
+              <li className="flex gap-3">
+                <span className="text-cyan-300">01</span>
+                <span>{t('downloadPage.octoInstall1')}</span>
+              </li>
+              <li className="flex gap-3">
+                <span className="text-cyan-300">02</span>
+                <span>{t('downloadPage.octoInstall2')}</span>
+              </li>
+              <li className="flex gap-3">
+                <span className="text-cyan-300">03</span>
+                <span>{t('downloadPage.octoInstall3')}</span>
+              </li>
+            </ol>
+
+            <a
+              href={octoPrintBridgeWheel?.url || pluginsReleaseUrl}
+              download={octoPrintBridgeWheel?.name}
+              target={octoPrintBridgeWheel ? undefined : '_blank'}
+              rel={octoPrintBridgeWheel ? undefined : 'noopener noreferrer'}
+              className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-cyan-500 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-400 focus:outline-none focus:ring-2 focus:ring-cyan-300/70"
+            >
+              <Download className="h-4 w-4" />
+              <span>
+                {octoPrintBridgeWheel
+                  ? t('downloadPage.octoDownload', { tag: octoPrintBridgeWheel.tag })
+                  : t('downloadPage.octoOpenReleases')}
+              </span>
+              {!octoPrintBridgeWheel && <ExternalLink className="h-3.5 w-3.5" />}
+            </a>
+            <p className="mt-3 break-all text-center text-[11px] text-slate-500">
+              {octoPrintBridgeWheel?.name || t('downloadPage.octoReleasePending')}
+            </p>
+          </div>
+        </div>
+      </section>
 
       {/* Screenshots Section */}
       <div className="mb-12 bg-white/5 backdrop-blur-sm rounded-2xl p-8 border border-white/10">
@@ -560,16 +684,27 @@ export function DownloadPage() {
         </div>
       </div>
 
-      {/* Archival fallback — the prebuilt FilamentHub Edition fork */}
-      <div className="mt-12 mb-6 rounded-2xl border border-amber-500/25 bg-amber-500/5 p-5 md:p-6">
-        <div className="flex items-start gap-3">
-          <Package className="w-5 h-5 text-amber-300 flex-shrink-0 mt-0.5" />
-          <div>
-            <h2 className="text-xl font-bold text-amber-200 mb-1">{t('downloadPage.fallbackTitle')}</h2>
-            <p className="text-sm text-amber-100/70">{t('downloadPage.fallbackDesc')}</p>
-          </div>
-        </div>
-      </div>
+      {/* The retired fork remains available without competing with current plugins. */}
+      <details
+        className="group mt-12 rounded-2xl border border-white/10 bg-black/15"
+        onToggle={(event) => setArchiveOpen(event.currentTarget.open)}
+      >
+        <summary className="flex cursor-pointer list-none items-center gap-4 p-5 text-left marker:content-none md:p-6 [&::-webkit-details-marker]:hidden">
+          <span className="inline-flex h-10 w-10 flex-none items-center justify-center rounded-xl border border-white/10 bg-white/5 text-slate-400">
+            <Archive className="h-5 w-5" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-base font-semibold text-slate-200 md:text-lg">
+              {t('downloadPage.fallbackTitle')}
+            </span>
+            <span className="mt-1 block text-sm leading-5 text-slate-500">
+              {t('downloadPage.fallbackDesc')}
+            </span>
+          </span>
+          <ChevronDown className="h-5 w-5 flex-none text-slate-500 transition-transform duration-200 group-open:rotate-180" />
+        </summary>
+
+        <div className="space-y-12 border-t border-white/10 p-5 md:p-6">
 
       {/* Download Section (archival fork build) */}
       <div className="bg-gradient-to-br from-purple-900/50 to-indigo-900/50 backdrop-blur-sm rounded-2xl p-8 border border-white/20 shadow-xl">
@@ -966,6 +1101,8 @@ export function DownloadPage() {
           </div>
         </div>
       </div>
+        </div>
+      </details>
     </div>
     </>
   );
