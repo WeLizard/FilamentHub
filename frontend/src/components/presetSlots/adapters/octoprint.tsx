@@ -1,25 +1,145 @@
+import { useEffect, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { AlertTriangle, CheckCircle2, ExternalLink, Info } from 'lucide-react';
+import {
+  AlertTriangle,
+  Check,
+  CheckCircle2,
+  Copy,
+  ExternalLink,
+  Info,
+  Link2,
+  Loader2,
+  Unplug,
+} from 'lucide-react';
 
-import type { FeedAdapter } from './types';
+import { octoprintBridgeAPI } from '../../../api/client';
+import { toast } from '../../Toast';
+import { translateApiError } from '../../../utils/translateApiError';
+import type { AdapterViewContext, FeedAdapter } from './types';
 
-const PLUGIN_PAGE = 'https://plugins.octoprint.org/plugins/Spoolman/';
+const BRIDGE_DOCS = 'https://github.com/WeLizard/FilamentHub/tree/main/octoprint-plugin';
 
-function SetupStep({ linkConfirmed }: { linkConfirmed: boolean }) {
-  const { t } = useTranslation();
+function BridgeSetup({ printer, system }: AdapterViewContext) {
+  const { t, i18n } = useTranslation();
+  const queryClient = useQueryClient();
+  const [pairingCode, setPairingCode] = useState<string | null>(null);
+  const [pairingExpiresAt, setPairingExpiresAt] = useState<string | null>(null);
+  const [issuing, setIssuing] = useState(false);
+  const [revoking, setRevoking] = useState(false);
+  const [copied, setCopied] = useState(false);
 
-  if (linkConfirmed) {
+  const statusQuery = useQuery({
+    queryKey: ['octoprint-bridge-status', printer.id, system.id],
+    queryFn: () => octoprintBridgeAPI.status(printer.id, system.id),
+    staleTime: 10_000,
+    refetchOnWindowFocus: true,
+    // Fast only while the user is visibly pairing. A settled Bridge is checked
+    // at its own bounded cadence instead of making every open tab hammer FH.
+    refetchInterval: (query) => {
+      const status = query.state.data;
+      if (pairingCode && !status?.paired) return 5_000;
+      return status?.paired ? 120_000 : false;
+    },
+  });
+  const status = statusQuery.data;
+
+  useEffect(() => {
+    if (!status?.paired) return;
+    setPairingCode(null);
+    setPairingExpiresAt(null);
+    void queryClient.invalidateQueries({ queryKey: ['physical-printers'] });
+  }, [queryClient, status?.paired]);
+
+  const issueCode = async () => {
+    setIssuing(true);
+    try {
+      const result = await octoprintBridgeAPI.issuePairingCode(printer.id, system.id);
+      setPairingCode(result.pairing_code);
+      setPairingExpiresAt(result.expires_at);
+      await Promise.all([
+        statusQuery.refetch(),
+        queryClient.invalidateQueries({ queryKey: ['physical-printers'] }),
+      ]);
+    } catch (err: any) {
+      toast.error(translateApiError(t, err?.response?.data?.detail, t('common.error')));
+    } finally {
+      setIssuing(false);
+    }
+  };
+
+  const copyCode = async () => {
+    if (!pairingCode) return;
+    try {
+      await navigator.clipboard.writeText(pairingCode);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1800);
+    } catch {
+      toast.error(t('common.error'));
+    }
+  };
+
+  const revoke = async () => {
+    setRevoking(true);
+    try {
+      await octoprintBridgeAPI.revoke(printer.id, system.id);
+      await Promise.all([
+        statusQuery.refetch(),
+        queryClient.invalidateQueries({ queryKey: ['physical-printers'] }),
+      ]);
+      toast.success(t('presetSlots.octoprint.disconnected'));
+    } catch (err: any) {
+      toast.error(translateApiError(t, err?.response?.data?.detail, t('common.error')));
+    } finally {
+      setRevoking(false);
+    }
+  };
+
+  if (statusQuery.isLoading) {
+    return (
+      <div className="mb-3 flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-gray-400">
+        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+        {t('presetSlots.octoprint.checking')}
+      </div>
+    );
+  }
+
+  if (status?.paired) {
     return (
       <div className="mb-3 rounded-lg border border-emerald-400/15 bg-emerald-500/[0.06] px-3 py-2">
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-300" />
           <span className="text-xs font-medium text-emerald-100">
             {t('presetSlots.octoprint.connectedTitle')}
           </span>
+          {status.octoprint_version && (
+            <span className="rounded-full bg-white/5 px-2 py-0.5 text-[10px] text-gray-400">
+              OctoPrint {status.octoprint_version}
+            </span>
+          )}
+          {status.plugin_version && (
+            <span className="rounded-full bg-white/5 px-2 py-0.5 text-[10px] text-gray-400">
+              Bridge {status.plugin_version}
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={revoke}
+            disabled={revoking}
+            className="ml-auto inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] text-gray-400 transition hover:bg-white/10 hover:text-red-300 disabled:opacity-40"
+          >
+            {revoking ? <Loader2 className="h-3 w-3 animate-spin" /> : <Unplug className="h-3 w-3" />}
+            {t('presetSlots.octoprint.disconnect')}
+          </button>
         </div>
         <p className="mt-1 text-[11px] leading-4 text-gray-400">
           {t('presetSlots.octoprint.connectedDescription')}
         </p>
+        {status.active_slot_index != null && (
+          <p className="mt-1 text-[11px] text-emerald-200/75">
+            {t('presetSlots.octoprint.activeSlot', { count: status.active_slot_index + 1 })}
+          </p>
+        )}
       </div>
     );
   }
@@ -32,18 +152,54 @@ function SetupStep({ linkConfirmed }: { linkConfirmed: boolean }) {
           {t('presetSlots.octoprint.setupTitle')}
         </span>
         <a
-          href={PLUGIN_PAGE}
+          href={BRIDGE_DOCS}
           target="_blank"
           rel="noreferrer"
           className="inline-flex items-center gap-1 rounded px-1 py-0.5 text-[11px] text-amber-200 transition hover:bg-white/10 hover:text-amber-100"
         >
           <ExternalLink className="h-3.5 w-3.5" />
-          {t('presetSlots.octoprint.pluginPage')}
+          {t('presetSlots.octoprint.bridgeDocs')}
         </a>
       </div>
       <p className="mt-1 text-[11px] leading-4 text-amber-100/70">
         {t('presetSlots.octoprint.setupDescription')}
       </p>
+
+      {pairingCode ? (
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <code className="rounded-lg border border-amber-300/20 bg-black/30 px-3 py-1.5 text-sm font-semibold tracking-wider text-white">
+            {pairingCode}
+          </code>
+          <button
+            type="button"
+            onClick={copyCode}
+            className="rounded-lg border border-white/10 p-1.5 text-amber-200 transition hover:bg-white/10"
+            title={t('presetSlots.pairing.copy')}
+          >
+            {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+          </button>
+          {pairingExpiresAt && (
+            <span className="text-[10px] text-amber-100/60">
+              {t('presetSlots.octoprint.codeExpires', {
+                time: new Date(pairingExpiresAt).toLocaleTimeString(i18n.language, {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                }),
+              })}
+            </span>
+          )}
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={issueCode}
+          disabled={issuing}
+          className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-amber-300/15 px-3 py-1.5 text-xs font-medium text-amber-100 transition hover:bg-amber-300/25 disabled:opacity-40"
+        >
+          {issuing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Link2 className="h-3.5 w-3.5" />}
+          {t('presetSlots.octoprint.issueCode')}
+        </button>
+      )}
     </div>
   );
 }
@@ -65,17 +221,11 @@ export const octoprintAdapter: FeedAdapter = {
   id: 'octoprint',
   labelKey: 'presetSlots.feedSystem.octoprint',
   fixedSlots: null,
-  capabilities: ['read', 'write', 'spool_identity', 'consumption'],
-  contactMode: 'on_demand',
-  slotCountLabelKey: 'presetSlots.octoprint.toolCount',
-  slotCountSummaryKey: 'presetSlots.octoprint.tools',
-  link: {
-    hintKey: 'presetSlots.octoprint.linkHint',
-    // The plugin appends /api/v1 itself and supports keeping the secret in a
-    // dedicated request header instead of leaking it through its URL.
-    snippet: (baseUrl) => baseUrl,
-    apiKeyHeader: 'X-API-Key',
-  },
+  capabilities: ['read', 'write', 'presence', 'spool_identity', 'consumption'],
+  contactMode: 'periodic',
+  slotCountLabelKey: 'presetSlots.octoprint.slotCount',
+  slotCountSummaryKey: 'presetSlots.gates',
+  link: null,
   renderCreateHelp: () => <CreationGuide />,
-  renderSetup: ({ linkConfirmed }) => <SetupStep linkConfirmed={linkConfirmed} />,
+  renderSetup: (context) => <BridgeSetup {...context} />,
 };

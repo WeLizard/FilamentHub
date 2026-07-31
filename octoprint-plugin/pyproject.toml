@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "OctoPrint-FilamentHubBridge"
+version = "0.1.0"
+description = "Native outbound bridge between OctoPrint and FilamentHub"
+readme = "README.md"
+requires-python = ">=3.9,<4"
+license = {text = "AGPL-3.0-or-later"}
+authors = [{name = "FilamentHub"}]
+dependencies = []
+
+[project.entry-points."octoprint.plugin"]
+filamenthub_bridge = "octoprint_filamenthub_bridge"
+
+[tool.setuptools]
+packages = ["octoprint_filamenthub_bridge"]
+include-package-data = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

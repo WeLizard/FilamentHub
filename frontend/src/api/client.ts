@@ -2803,6 +2803,22 @@ export interface PhysicalPrinter {
   updated_at: string;
 }
 
+export interface OctoPrintBridgeStatus {
+  configured: boolean;
+  paired: boolean;
+  pairing_expires_at: string | null;
+  last_seen_at: string | null;
+  active_slot_index: number | null;
+  instance_id: string | null;
+  plugin_version: string | null;
+  octoprint_version: string | null;
+}
+
+export interface OctoPrintPairingCode {
+  pairing_code: string;
+  expires_at: string;
+}
+
 /** What a machine costs to run, and what the calculator will charge for it. */
 export interface PrinterEconomics {
   printer_id: number;
@@ -3087,6 +3103,37 @@ export const physicalPrintersAPI = {
       `/physical-printers/${physicalPrinterId}/material-systems/${materialSystemId}/clear`,
     );
     return response.data;
+  },
+};
+
+export const octoprintBridgeAPI = {
+  status: async (
+    physicalPrinterId: number,
+    materialSystemId: number,
+  ): Promise<OctoPrintBridgeStatus> => {
+    const response = await api.get<OctoPrintBridgeStatus>(
+      `/octoprint-bridge/connections/${physicalPrinterId}/${materialSystemId}`,
+    );
+    return response.data;
+  },
+
+  issuePairingCode: async (
+    physicalPrinterId: number,
+    materialSystemId: number,
+  ): Promise<OctoPrintPairingCode> => {
+    const response = await api.post<OctoPrintPairingCode>(
+      `/octoprint-bridge/connections/${physicalPrinterId}/${materialSystemId}/pairing-code`,
+    );
+    return response.data;
+  },
+
+  revoke: async (
+    physicalPrinterId: number,
+    materialSystemId: number,
+  ): Promise<void> => {
+    await api.delete(
+      `/octoprint-bridge/connections/${physicalPrinterId}/${materialSystemId}`,
+    );
   },
 };
 

@@ -62,6 +62,7 @@ vi.mock('@tanstack/react-query', () => ({
 
 vi.mock('../api/client', () => ({
   physicalPrintersAPI: { list: vi.fn(), clearSystem: vi.fn() },
+  octoprintBridgeAPI: { status: vi.fn(), issuePairingCode: vi.fn(), revoke: vi.fn() },
   presetsAPI: { list: vi.fn(), get: vi.fn() },
   spoolsAPI: { list: vi.fn() },
 }));
@@ -99,20 +100,18 @@ describe('PresetSlotsPanel', () => {
     expect(feedAdapterFor('octoprint').capabilities).toEqual([
       'read',
       'write',
+      'presence',
       'spool_identity',
       'consumption',
     ]);
 
     const happyHareLink = feedAdapterFor('happy_hare').link;
-    const octoprintLink = feedAdapterFor('octoprint').link;
     expect(happyHareLink?.snippet('https://fh.example/spool_compat', 'device-secret'))
       .toContain('https://fh.example/spool_compat/device-secret');
-    expect(octoprintLink?.snippet('https://fh.example/spool_compat', 'device-secret'))
-      .toBe('https://fh.example/spool_compat');
-    expect(octoprintLink?.apiKeyHeader).toBe('X-API-Key');
-    expect(feedAdapterFor('octoprint').contactMode).toBe('on_demand');
+    expect(feedAdapterFor('octoprint').link).toBeNull();
+    expect(feedAdapterFor('octoprint').contactMode).toBe('periodic');
     expect(feedAdapterFor('octoprint').slotCountLabelKey)
-      .toBe('presetSlots.octoprint.toolCount');
+      .toBe('presetSlots.octoprint.slotCount');
 
     render(<>{feedAdapterFor('happy_hare').renderCreateHelp?.()}</>);
     expect(screen.getByText('presetSlots.happyHare.guide.title')).toBeInTheDocument();

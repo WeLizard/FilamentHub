@@ -1,0 +1,2 @@
+recursive-include octoprint_filamenthub_bridge/static *
+recursive-include octoprint_filamenthub_bridge/templates *

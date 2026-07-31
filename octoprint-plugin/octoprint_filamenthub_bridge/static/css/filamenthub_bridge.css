@@ -1,0 +1,22 @@
+.fhb-shell { padding: 20px 12px 32px; max-width: 920px; }
+.fhb-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.fhb-heading h3 { margin-bottom: 4px; }
+.fhb-heading p { color: #6b7280; }
+.fhb-status { border-radius: 999px; padding: 4px 10px; font-size: 12px; font-weight: 600; }
+.fhb-status.idle { background: #e5e7eb; color: #4b5563; }
+.fhb-status.connected { background: #d1fae5; color: #047857; }
+.fhb-status.error { background: #fee2e2; color: #b91c1c; }
+.fhb-card { margin-top: 18px; padding: 18px; border: 1px solid #d7dce2; border-radius: 10px; background: #fafafa; }
+.fhb-card label { display: block; margin-top: 10px; font-weight: 600; }
+.fhb-code { font-family: monospace; letter-spacing: .08em; text-transform: uppercase; }
+.fhb-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin: 18px 0 12px; }
+.fhb-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 10px; }
+.fhb-slot { display: flex; align-items: center; gap: 10px; width: 100%; padding: 12px; border: 1px solid #d7dce2; border-radius: 9px; background: #fff; color: inherit; text-align: left; }
+.fhb-slot:hover { border-color: #8b5cf6; }
+.fhb-slot.active { border-color: #7c3aed; box-shadow: 0 0 0 2px rgba(124,58,237,.15); }
+.fhb-swatch { width: 18px; height: 42px; flex: 0 0 18px; border-radius: 6px; border: 1px solid rgba(0,0,0,.2); }
+.fhb-slot-copy { display: flex; min-width: 0; flex: 1; flex-direction: column; }
+.fhb-slot-copy small { overflow: hidden; color: #6b7280; text-overflow: ellipsis; white-space: nowrap; }
+.fhb-weight { color: #6b7280; font-size: 12px; white-space: nowrap; }
+.fhb-meta { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; margin-top: 12px; color: #6b7280; font-size: 12px; }
+.fhb-unpair { margin-top: 8px; color: #b91c1c; }

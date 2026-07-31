@@ -1,0 +1,48 @@
+<div id="tab_plugin_filamenthub_bridge" class="tab-pane">
+  <div class="fhb-shell">
+    <div class="fhb-heading">
+      <div>
+        <h3>FilamentHub Bridge</h3>
+        <p>Spool assignments and measured usage, connected directly to FilamentHub.</p>
+      </div>
+      <span class="fhb-status" data-bind="text: statusText, css: statusClass"></span>
+    </div>
+
+    <div class="fhb-card" data-bind="visible: !paired()">
+      <h4>Connect this OctoPrint</h4>
+      <label>FilamentHub address</label>
+      <input type="url" class="input-block-level" data-bind="value: serverUrl" placeholder="https://filamenthub.ru">
+      <label>Pairing code</label>
+      <input type="text" class="input-block-level fhb-code" data-bind="value: pairingCode" placeholder="FH-ABCDE-12345">
+      <button class="btn btn-primary" data-bind="click: pair, disable: busy">Connect</button>
+    </div>
+
+    <div data-bind="visible: paired">
+      <div class="fhb-toolbar">
+        <label class="checkbox">
+          <input type="checkbox" data-bind="checked: mapToolsToSlots, event: { change: saveMappingMode }">
+          Map OctoPrint tools T0, T1… to slots with the same number
+        </label>
+        <button class="btn" data-bind="click: sync, disable: busy">Sync now</button>
+      </div>
+
+      <div class="fhb-grid" data-bind="foreach: slots">
+        <button class="fhb-slot" data-bind="click: $parent.selectSlot, css: { active: index === $parent.activeSlot() }">
+          <span class="fhb-swatch" data-bind="style: { backgroundColor: spool && spool.color_hex ? spool.color_hex : '#64748b' }"></span>
+          <span class="fhb-slot-copy">
+            <strong data-bind="text: label || ('Slot ' + (index + 1))"></strong>
+            <small data-bind="text: spool ? ([spool.brand, spool.name].filter(Boolean).join(' · ')) : 'No spool assigned'"></small>
+          </span>
+          <span class="fhb-weight" data-bind="text: spool ? (Math.round(spool.remaining_weight_g) + ' g') : ''"></span>
+        </button>
+      </div>
+
+      <div class="fhb-meta">
+        <span data-bind="text: lastSyncText"></span>
+        <span data-bind="visible: outboxSize">Pending events: <b data-bind="text: outboxSize"></b></span>
+      </div>
+      <div class="alert alert-error" data-bind="visible: lastError, text: lastError"></div>
+      <button class="btn btn-link fhb-unpair" data-bind="click: unpair, disable: busy">Disconnect Bridge</button>
+    </div>
+  </div>
+</div>

@@ -22,6 +22,7 @@ from app.api.v1.endpoints import (
     filaments,
     notification_campaigns,
     notifications,
+    octoprint_bridge,
     orca_preset_slot_sync,
     orca_slices,
     orca_sync,
@@ -74,6 +75,7 @@ api_router.include_router(catalog_bundles.router)
 api_router.include_router(saved_presets.router)
 api_router.include_router(filament_reviews.router)
 api_router.include_router(notifications.router)
+api_router.include_router(octoprint_bridge.router)
 api_router.include_router(notification_campaigns.router)
 api_router.include_router(orca_sync.router)
 api_router.include_router(orca_preset_slot_sync.router)
