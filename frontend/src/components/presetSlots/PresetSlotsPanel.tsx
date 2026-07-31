@@ -339,7 +339,7 @@ function MaterialSystemSection({ printer, system, presetsSeedMap, spools, spoolC
 
   return (
     <div className="rounded-2xl border border-white/10 bg-white/3 p-5">
-      <div className="mb-4 flex flex-wrap items-start justify-between gap-3 md:grid md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-3 md:grid md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]">
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-purple-500/20">
             <Cpu className="h-5 w-5 text-purple-300" />
@@ -357,8 +357,8 @@ function MaterialSystemSection({ printer, system, presetsSeedMap, spools, spoolC
           </div>
         </div>
 
-        <div className="flex min-w-0 flex-col items-start gap-1.5">
-          <div className="flex flex-wrap items-center gap-1.5">
+        <div className="flex min-w-0 flex-col items-start gap-1.5 md:items-center md:justify-self-center">
+          <div className="flex flex-wrap items-center gap-1.5 md:justify-center">
             <span
               title={t(linkState === 'ready' ? 'deviceLink.onDemandTooltip' : 'deviceLink.tooltip')}
               className={[
@@ -430,7 +430,7 @@ function MaterialSystemSection({ printer, system, presetsSeedMap, spools, spoolC
           </div>
 
           {!adapter.link ? null : (
-            <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-gray-400">
+            <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-gray-400 md:justify-center">
               <span className="flex items-center gap-1">
                 {!printer.has_api_key ? (
                   <>
