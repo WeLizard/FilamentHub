@@ -2,7 +2,7 @@
 
 import axios from 'axios';
 import type { InternalAxiosRequestConfig } from 'axios';
-import type { AccessibleBrand, AdminUserListResponse, AuthMethods, Brand, BrandUsage, BrandRequest, BrandRequestStatus, BrandTeamInvite, BrandTeamRole, BrandTeamWorkspace, Filament, FilamentAdditive, FilamentPropertyClaim, FilamentLine, FilamentImportResult, FilamentListResponse, FilamentPalettePayload, BrandInvitePublic, BrandInviteAdmin, BrandInviteAcceptResult, BrandInviteBatchPreview, BrandInviteBatchSendResult, FilamentAvailability, FilamentVisualSettings, FilamentReview, FilamentRatingStats, Notification, NotificationListResponse, Preset, RecommendedPreset, RecommendedForPrinterResponse, Printer, PrinterProfile, PrintProfile, PrinterRequest, User, Token, RefreshTokenRequest, RefreshTokenResponse, ListResponse, AccountDeletionStats, UserSavedPreset, CalculatorEstimateRequest, CalculatorEstimateResponse, CalculatorProfileResponse, CalculatorProfileUpdate, Feedback, FeedbackDetail, FeedbackListResponse, FeedbackType, CompatiblePrinter, CompatibleFilament, DownloadVersion, DownloadVersionsResponse, WikiCategory, WikiCategoryListResponse, WikiArticle, WikiArticleListResponse, WikiFeedbackStats, WikiFeedbackCreate, WikiFeedback, EmailThreadDetail, EmailThreadListResponse, EmailThreadStatus, EmailMessage, EmailSenderProfile, NotificationCampaignAudience, NotificationCampaignHistoryResponse, NotificationCampaignPreview, NotificationCampaignSendResult, LegalAcceptancePayload, LegalRequirements, RegistrationPayload, SpoolUsageEvent, OrcaSliceReport } from '../types/api';
+import type { AccessibleBrand, AdminUserListResponse, AuthMethods, Brand, BrandUsage, BrandRequest, BrandRequestStatus, BrandTeamInvite, BrandTeamRole, BrandTeamWorkspace, Filament, FilamentAdditive, FilamentPropertyClaim, FilamentLine, FilamentImportResult, FilamentListResponse, FilamentPalettePayload, BrandInvitePublic, BrandInviteAdmin, BrandInviteAcceptResult, BrandInviteBatchPreview, BrandInviteBatchSendResult, FilamentAvailability, FilamentVisualSettings, FilamentReview, FilamentRatingStats, Notification, NotificationListResponse, Preset, RecommendedPreset, RecommendedForPrinterResponse, Printer, PrinterProfile, PrintProfile, PrinterRequest, User, Token, RefreshTokenRequest, RefreshTokenResponse, ListResponse, AccountDeletionStats, UserSavedPreset, CalculatorEstimateRequest, CalculatorEstimateResponse, CalculatorProfileResponse, CalculatorProfileUpdate, Feedback, FeedbackDetail, FeedbackListResponse, FeedbackType, CompatiblePrinter, CompatibleFilament, DownloadVersion, DownloadVersionsResponse, PluginDownloadsResponse, WikiCategory, WikiCategoryListResponse, WikiArticle, WikiArticleListResponse, WikiFeedbackStats, WikiFeedbackCreate, WikiFeedback, EmailThreadDetail, EmailThreadListResponse, EmailThreadStatus, EmailMessage, EmailSenderProfile, NotificationCampaignAudience, NotificationCampaignHistoryResponse, NotificationCampaignPreview, NotificationCampaignSendResult, LegalAcceptancePayload, LegalRequirements, RegistrationPayload, SpoolUsageEvent, OrcaSliceReport } from '../types/api';
 import { getCsrfToken, getRefreshToken, getToken, isCookieAuthMode, isJwtAuthMode, isOrcaEmbedded, removeToken, setToken, shouldPersistTokensLocally } from '../utils/auth';
 import { isPluginEmbed, reportPluginSessionToPlugin } from '../utils/pluginBridge';
 import { downloadBlob } from '../utils/download';
@@ -2283,6 +2283,11 @@ export const downloadsAPI = {
     architecture: 'x64' | 'arm64'
   ): Promise<DownloadVersion> => {
     const response = await api.get(`/downloads/orcaslicer/${platform}/${architecture}`);
+    return response.data;
+  },
+
+  getPluginDownloads: async (): Promise<PluginDownloadsResponse> => {
+    const response = await api.get('/downloads/plugins');
     return response.data;
   },
 };

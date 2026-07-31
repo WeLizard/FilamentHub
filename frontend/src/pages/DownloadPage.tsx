@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Download, CheckCircle, Package, Code, Zap, Globe, Monitor, Smartphone, Terminal, Image as ImageIcon, Play, Loader2, ExternalLink, X, Server, ShieldCheck, RefreshCw, Archive, ChevronDown } from 'lucide-react';
 import { downloadsAPI } from '../api/client';
-import type { DownloadVersionsResponse } from '../types/api';
+import type { DownloadVersionsResponse, PluginDownload } from '../types/api';
 import { ModalOverlay } from '../components/ModalOverlay';
 import { SEOHead } from '../components/SEOHead';
 
@@ -128,15 +128,39 @@ export function DownloadPage() {
     };
   }, []);
 
-  // Both plugins are published in a plugins-v* release. Search recent releases
-  // instead of /latest so an unrelated application release cannot hide them.
+  // Two independent ways to the same packages. Our own server answers first: it
+  // stays reachable where GitHub is blocked or rate-limited. Reading the release
+  // straight from GitHub remains as the fallback for when our API cannot answer.
   useEffect(() => {
     let cancelled = false;
-    fetch(`https://api.github.com/repos/${FILAMENTHUB_PLUGIN_REPO}/releases?per_page=20`, {
-      headers: { Accept: 'application/vnd.github+json' },
-    })
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
+
+    const fromFilamentHub = async () => {
+      try {
+        const data = await downloadsAPI.getPluginDownloads();
+        if (cancelled || !data.packages.length) return false;
+        if (data.release_url) setPluginsReleaseUrl(data.release_url);
+        const orca = data.packages.find((item: PluginDownload) => item.plugin === 'orcaslicer');
+        const octoPrint = data.packages.find((item: PluginDownload) => item.plugin === 'octoprint');
+        if (orca) setOrcaPluginWheel({ url: orca.download_url, name: orca.filename });
+        if (octoPrint) {
+          setOctoPrintBridgeWheel({ url: octoPrint.download_url, name: octoPrint.filename });
+        }
+        return Boolean(orca || octoPrint);
+      } catch {
+        return false;
+      }
+    };
+
+    // Search recent releases instead of /latest so an unrelated application
+    // release cannot hide the plugins.
+    const fromGitHub = async () => {
+      try {
+        const response = await fetch(
+          `https://api.github.com/repos/${FILAMENTHUB_PLUGIN_REPO}/releases?per_page=20`,
+          { headers: { Accept: 'application/vnd.github+json' } },
+        );
+        if (!response.ok) return;
+        const data = await response.json();
         if (cancelled || !Array.isArray(data)) return;
         const release = data.find((candidate: { assets?: GitHubReleaseAsset[] }) =>
           (candidate.assets || []).some(
@@ -160,8 +184,16 @@ export function DownloadPage() {
             name: octoPrintAsset.name,
           });
         }
-      })
-      .catch(() => {});
+      } catch {
+        // Both ways failed; the releases link stays as the way out.
+      }
+    };
+
+    void (async () => {
+      const served = await fromFilamentHub();
+      if (!served && !cancelled) await fromGitHub();
+    })();
+
     return () => {
       cancelled = true;
     };

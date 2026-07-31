@@ -1407,6 +1407,21 @@ export interface DownloadVersionsResponse {
   latest_version: string;
 }
 
+export interface PluginDownload {
+  plugin: 'orcaslicer' | 'octoprint';
+  filename: string;
+  version: string;
+  file_size: string;
+  checksum: string | null;
+  download_url: string;
+  github_url: string | null;
+}
+
+export interface PluginDownloadsResponse {
+  packages: PluginDownload[];
+  release_url: string | null;
+}
+
 // ============================================================================
 // Wiki Types
 // ============================================================================

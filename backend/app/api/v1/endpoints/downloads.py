@@ -8,10 +8,12 @@ from typing import Literal
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, Query, Request, status
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from app.core.config import settings
 from app.core.errors import ERR_DOWNLOAD_UNAVAILABLE, raise_error
+from app.services import plugin_release_service
 
 router = APIRouter(prefix="/downloads", tags=["downloads"])
 
@@ -122,18 +124,22 @@ def _file_exists(filepath: Path) -> bool:
     return filepath.exists() and filepath.is_file()
 
 
-def _get_file_size(filepath: Path) -> str:
-    """Получить размер файла в читаемом формате."""
-    if not _file_exists(filepath):
-        return "N/A"
-
-    size_bytes = filepath.stat().st_size
+def _format_size(size_bytes: int) -> str:
+    """Размер в читаемом формате."""
     size_mb = size_bytes / (1024 * 1024)
 
     if size_mb < 1:
         return f"{size_bytes / 1024:.1f} KB"
     else:
         return f"{size_mb:.1f} MB"
+
+
+def _get_file_size(filepath: Path) -> str:
+    """Получить размер файла в читаемом формате."""
+    if not _file_exists(filepath):
+        return "N/A"
+
+    return _format_size(filepath.stat().st_size)
 
 
 def _calculate_sha256(filepath: Path) -> str | None:
@@ -338,8 +344,8 @@ def _allowed_download_hosts() -> frozenset[str]:
     return frozenset(hosts)
 
 
-def _get_download_url_from_file(request: Request, filepath: Path) -> str:
-    """Получить URL для скачивания. Хост берём из клиентских заголовков только если он в allowlist
+def _safe_base_url(request: Request) -> str:
+    """Хост берём из клиентских заголовков только если он в allowlist
     (CORS_ORIGINS + BASE_URL) — иначе фолбэк на BASE_URL. Защита от Host-header injection."""
     forwarded_proto = request.headers.get("X-Forwarded-Proto", "https")
     candidate = request.headers.get("X-Forwarded-Host") or request.headers.get("Host") or ""
@@ -347,13 +353,17 @@ def _get_download_url_from_file(request: Request, filepath: Path) -> str:
 
     if hostname and hostname in _allowed_download_hosts():
         proto = "https" if "filamenthub.ru" in hostname else forwarded_proto
-        base_url = f"{proto}://{candidate}".rstrip("/")
-    else:
-        base_url = settings.BASE_URL.rstrip("/")
-        if base_url.startswith("http://") and "filamenthub.ru" in base_url:
-            base_url = base_url.replace("http://", "https://")
+        return f"{proto}://{candidate}".rstrip("/")
 
-    return f"{base_url}/distributions/orcaslicer/{filepath.name}"
+    base_url = settings.BASE_URL.rstrip("/")
+    if base_url.startswith("http://") and "filamenthub.ru" in base_url:
+        base_url = base_url.replace("http://", "https://")
+    return base_url
+
+
+def _get_download_url_from_file(request: Request, filepath: Path) -> str:
+    """Получить URL для скачивания сборки OrcaSlicer."""
+    return f"{_safe_base_url(request)}/distributions/orcaslicer/{filepath.name}"
 
 
 @router.get("/orcaslicer/{platform}/{architecture}", response_model=DownloadVersion)
@@ -403,4 +413,71 @@ async def get_orcaslicer_download(
         status.HTTP_404_NOT_FOUND,
         ERR_DOWNLOAD_UNAVAILABLE,
         {"platform": platform, "arch": architecture, "type": download_type},
+    )
+
+
+class PluginDownload(BaseModel):
+    """One plugin package the site can hand out."""
+
+    plugin: Literal["orcaslicer", "octoprint"]
+    filename: str
+    version: str
+    file_size: str
+    checksum: str | None
+    download_url: str
+    github_url: str | None
+
+
+class PluginDownloadsResponse(BaseModel):
+    """Plugin packages of the newest published release."""
+
+    packages: list[PluginDownload]
+    release_url: str | None
+
+
+@router.get("/plugins", response_model=PluginDownloadsResponse)
+async def get_plugin_downloads(request: Request) -> PluginDownloadsResponse:
+    """List the published plugin packages.
+
+    The release is read server-side so a visitor's browser never has to reach
+    GitHub, which is blocked for part of our audience and rate-limited for the
+    rest.
+    """
+    packages = await plugin_release_service.get_packages()
+    base_url = _safe_base_url(request)
+    return PluginDownloadsResponse(
+        packages=[
+            PluginDownload(
+                plugin=package.plugin,
+                filename=package.filename,
+                version=package.version,
+                file_size=_format_size(package.size_bytes),
+                checksum=package.sha256,
+                download_url=f"{base_url}/api/v1/downloads/plugins/{package.filename}",
+                github_url=package.release_url or None,
+            )
+            for package in packages
+        ],
+        release_url=packages[0].release_url if packages else None,
+    )
+
+
+@router.get("/plugins/{filename}")
+async def download_plugin_package(filename: str) -> FileResponse:
+    """Serve our own copy of a plugin package, fetching it once if needed."""
+    packages = await plugin_release_service.get_packages()
+    # Only names the release itself published are served; the request never
+    # chooses a path.
+    package = next((item for item in packages if item.filename == filename), None)
+    if package is None:
+        raise_error(status.HTTP_404_NOT_FOUND, ERR_DOWNLOAD_UNAVAILABLE, {"file": filename})
+
+    path = await plugin_release_service.ensure_local_copy(package)
+    if path is None:
+        raise_error(status.HTTP_503_SERVICE_UNAVAILABLE, ERR_DOWNLOAD_UNAVAILABLE, {"file": filename})
+
+    return FileResponse(
+        path,
+        media_type="application/octet-stream",
+        filename=package.filename,
     )
