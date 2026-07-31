@@ -4,7 +4,6 @@ import { useTranslation } from 'react-i18next';
 import {
   AlertTriangle,
   Check,
-  CheckCircle2,
   Copy,
   ExternalLink,
   Info,
@@ -20,13 +19,75 @@ import type { AdapterViewContext, FeedAdapter } from './types';
 
 const BRIDGE_DOCS = 'https://github.com/WeLizard/FilamentHub/tree/main/octoprint-plugin';
 
+function BridgeConnectionStatus({ printer, system }: AdapterViewContext) {
+  const { t } = useTranslation();
+  const queryClient = useQueryClient();
+  const [revoking, setRevoking] = useState(false);
+
+  const statusQuery = useQuery({
+    queryKey: ['octoprint-bridge-status', printer.id, system.id],
+    queryFn: () => octoprintBridgeAPI.status(printer.id, system.id),
+    staleTime: 10_000,
+    refetchOnWindowFocus: false,
+  });
+  const status = statusQuery.data;
+
+  const revoke = async () => {
+    setRevoking(true);
+    try {
+      await octoprintBridgeAPI.revoke(printer.id, system.id);
+      await Promise.all([
+        statusQuery.refetch(),
+        queryClient.invalidateQueries({ queryKey: ['physical-printers'] }),
+      ]);
+      toast.success(t('presetSlots.octoprint.disconnected'));
+    } catch (err: any) {
+      toast.error(translateApiError(t, err?.response?.data?.detail, t('common.error')));
+    } finally {
+      setRevoking(false);
+    }
+  };
+
+  if (!status?.paired) return null;
+
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-gray-400">
+      <span className="inline-flex items-center gap-1">
+        <Check className="h-3 w-3 shrink-0 text-emerald-400" />
+        {t('presetSlots.link.label')}
+      </span>
+      <span className="text-gray-200">FilamentHub Bridge</span>
+      {status.octoprint_version && (
+        <span>OctoPrint {status.octoprint_version}</span>
+      )}
+      {status.plugin_version && (
+        <span>Bridge {status.plugin_version}</span>
+      )}
+      {status.active_slot_index != null && (
+        <span className="text-emerald-200/75">
+          {t('presetSlots.octoprint.activeSlot', { count: status.active_slot_index + 1 })}
+        </span>
+      )}
+      <button
+        type="button"
+        onClick={revoke}
+        disabled={revoking}
+        title={t('presetSlots.octoprint.disconnect')}
+        aria-label={t('presetSlots.octoprint.disconnect')}
+        className="inline-flex rounded p-1 text-gray-500 transition hover:bg-white/10 hover:text-red-300 disabled:opacity-40"
+      >
+        {revoking ? <Loader2 className="h-3 w-3 animate-spin" /> : <Unplug className="h-3 w-3" />}
+      </button>
+    </div>
+  );
+}
+
 function BridgeSetup({ printer, system }: AdapterViewContext) {
   const { t, i18n } = useTranslation();
   const queryClient = useQueryClient();
   const [pairingCode, setPairingCode] = useState<string | null>(null);
   const [pairingExpiresAt, setPairingExpiresAt] = useState<string | null>(null);
   const [issuing, setIssuing] = useState(false);
-  const [revoking, setRevoking] = useState(false);
   const [copied, setCopied] = useState(false);
 
   const statusQuery = useQuery({
@@ -79,22 +140,6 @@ function BridgeSetup({ printer, system }: AdapterViewContext) {
     }
   };
 
-  const revoke = async () => {
-    setRevoking(true);
-    try {
-      await octoprintBridgeAPI.revoke(printer.id, system.id);
-      await Promise.all([
-        statusQuery.refetch(),
-        queryClient.invalidateQueries({ queryKey: ['physical-printers'] }),
-      ]);
-      toast.success(t('presetSlots.octoprint.disconnected'));
-    } catch (err: any) {
-      toast.error(translateApiError(t, err?.response?.data?.detail, t('common.error')));
-    } finally {
-      setRevoking(false);
-    }
-  };
-
   if (statusQuery.isLoading) {
     return (
       <div className="mb-3 flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-gray-400">
@@ -104,37 +149,7 @@ function BridgeSetup({ printer, system }: AdapterViewContext) {
     );
   }
 
-  if (status?.paired) {
-    return (
-      <div className="mb-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-gray-400">
-        <span className="inline-flex items-center gap-1 text-emerald-200">
-          <CheckCircle2 className="h-3 w-3 shrink-0 text-emerald-400" />
-          {t('presetSlots.octoprint.connectedTitle')}
-        </span>
-        {status.octoprint_version && (
-          <span>OctoPrint {status.octoprint_version}</span>
-        )}
-        {status.plugin_version && (
-          <span>Bridge {status.plugin_version}</span>
-        )}
-        {status.active_slot_index != null && (
-          <span className="text-emerald-200/75">
-            {t('presetSlots.octoprint.activeSlot', { count: status.active_slot_index + 1 })}
-          </span>
-        )}
-        <button
-          type="button"
-          onClick={revoke}
-          disabled={revoking}
-          title={t('presetSlots.octoprint.disconnect')}
-          aria-label={t('presetSlots.octoprint.disconnect')}
-          className="inline-flex rounded p-1 text-gray-500 transition hover:bg-white/10 hover:text-red-300 disabled:opacity-40"
-        >
-          {revoking ? <Loader2 className="h-3 w-3 animate-spin" /> : <Unplug className="h-3 w-3" />}
-        </button>
-      </div>
-    );
-  }
+  if (status?.paired) return null;
 
   return (
     <div className="mb-3 rounded-lg border border-amber-400/25 bg-amber-500/10 px-3 py-2">
@@ -219,5 +234,6 @@ export const octoprintAdapter: FeedAdapter = {
   slotCountSummaryKey: 'presetSlots.gates',
   link: null,
   renderCreateHelp: () => <CreationGuide />,
+  renderSettings: (context) => <BridgeConnectionStatus {...context} />,
   renderSetup: (context) => <BridgeSetup {...context} />,
 };

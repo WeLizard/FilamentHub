@@ -461,6 +461,7 @@ function MaterialSystemSection({ printer, system, presetsSeedMap, spools, spoolC
               </button>
             </div>
           )}
+          {!adapter.link && adapter.renderSettings?.({ printer, system, gates, linkConfirmed })}
         </div>
 
         <div className="flex flex-wrap items-center gap-2">

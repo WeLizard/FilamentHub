@@ -56,6 +56,18 @@ vi.mock('@tanstack/react-query', () => ({
     if (queryKey[0] === 'presets') {
       return { data: { items: [] }, isLoading: false };
     }
+    if (queryKey[0] === 'octoprint-bridge-status') {
+      return {
+        data: {
+          paired: true,
+          octoprint_version: '1.11.8',
+          plugin_version: '0.1.0',
+          active_slot_index: 0,
+        },
+        isLoading: false,
+        refetch: vi.fn(),
+      };
+    }
     return { data: [], isLoading: false };
   },
 }));
@@ -120,6 +132,21 @@ describe('PresetSlotsPanel', () => {
 
     render(<>{feedAdapterFor('octoprint').renderCreateHelp?.()}</>);
     expect(screen.getByText('presetSlots.octoprint.createDescription')).toBeInTheDocument();
+
+    const octoprintSystem = {
+      ...physicalPrinter.material_systems[0],
+      provider: 'octoprint',
+    };
+    render(<>{feedAdapterFor('octoprint').renderSettings?.({
+      printer: { ...physicalPrinter, material_systems: [octoprintSystem] },
+      system: octoprintSystem,
+      gates: [],
+      linkConfirmed: true,
+    })}</>);
+    expect(screen.getByText('presetSlots.link.label')).toBeInTheDocument();
+    expect(screen.getByText('FilamentHub Bridge')).toBeInTheDocument();
+    expect(screen.getByText('OctoPrint 1.11.8')).toBeInTheDocument();
+    expect(screen.getByText('Bridge 0.1.0')).toBeInTheDocument();
   });
 
   it('shows a manual physical printer and resolves exact linked profile ids', async () => {
