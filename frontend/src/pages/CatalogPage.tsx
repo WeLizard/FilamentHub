@@ -627,26 +627,39 @@ const MaterialCard: React.FC<MaterialCardProps> = ({
               )}
             </div>
         </div>
-        {filament.price_hidden ? null : (filament.price_per_kg || filament.spool_weight) ? (
-          <div className="text-right ml-2 sm:ml-4 flex-shrink-0">
-            {filament.price_per_kg && filament.spool_weight && filament.spool_weight !== 1000 ? (
-              <>
+        <div className="ml-2 flex flex-shrink-0 items-start gap-2 sm:ml-4">
+          {filament.price_hidden ? null : (filament.price_per_kg || filament.spool_weight) ? (
+            <div className="text-right">
+              {filament.price_per_kg && filament.spool_weight && filament.spool_weight !== 1000 ? (
+                <>
+                  <p className="text-xs sm:text-sm font-medium text-gray-300">
+                    {Math.round((filament.price_per_kg * filament.spool_weight) / 1000)} {currencySymbol(filament.currency)}<span className="text-gray-400">/{Math.round(filament.spool_weight)} {t('catalogPage.units.g')}</span>
+                  </p>
+                  <p className="text-[10px] sm:text-xs text-gray-500">
+                    ≈ {Math.round(filament.price_per_kg)} {currencySymbol(filament.currency)}/{t('catalogPage.units.kg')}
+                  </p>
+                </>
+              ) : filament.price_per_kg ? (
                 <p className="text-xs sm:text-sm font-medium text-gray-300">
-                  {Math.round((filament.price_per_kg * filament.spool_weight) / 1000)} {currencySymbol(filament.currency)}<span className="text-gray-400">/{Math.round(filament.spool_weight)} {t('catalogPage.units.g')}</span>
+                  {Math.round(filament.price_per_kg)} {currencySymbol(filament.currency)}<span className="text-gray-400">/{t('catalogPage.units.kg')}</span>
                 </p>
-                <p className="text-[10px] sm:text-xs text-gray-500">
-                  ≈ {Math.round(filament.price_per_kg)} {currencySymbol(filament.currency)}/{t('catalogPage.units.kg')}
-                </p>
-              </>
-            ) : filament.price_per_kg ? (
-              <p className="text-xs sm:text-sm font-medium text-gray-300">
-                {Math.round(filament.price_per_kg)} {currencySymbol(filament.currency)}<span className="text-gray-400">/{t('catalogPage.units.kg')}</span>
-              </p>
-            ) : (
-              <p className="text-xs sm:text-sm text-gray-400">{Math.round(filament.spool_weight!)} {t('catalogPage.units.g')}</p>
-            )}
-          </div>
-        ) : null}
+              ) : (
+                <p className="text-xs sm:text-sm text-gray-400">{Math.round(filament.spool_weight!)} {t('catalogPage.units.g')}</p>
+              )}
+            </div>
+          ) : null}
+          {canShowQR && (
+            <button
+              type="button"
+              onClick={onShowQR}
+              className="rounded-xl border border-white/20 bg-white/10 p-2 text-white transition-all hover:bg-white/20 sm:p-2.5"
+              aria-label={t('catalogPage.qrCode')}
+              title={t('catalogPage.qrCode')}
+            >
+              <QrCode className="h-4 w-4 sm:h-5 sm:w-5" />
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Детали материала в компактном виде */}
@@ -779,18 +792,6 @@ const MaterialCard: React.FC<MaterialCardProps> = ({
         </div>
       )}
       
-      {/* Actions */}
-      <div className="flex space-x-3 mt-4">
-        {canShowQR && (
-          <button
-            onClick={onShowQR}
-            className="px-4 py-3 bg-white/10 hover:bg-white/20 text-white rounded-xl transition-all border border-white/20"
-          >
-            <QrCode className="w-5 h-5" />
-          </button>
-        )}
-      </div>
-
       {/* QR Code */}
       {canShowQR && showQR && (
         <div className="mt-4 p-4 bg-white/5 rounded-xl border border-white/10">
