@@ -57,6 +57,7 @@ import { currencySymbol, normalizeCurrency } from '../utils/currency';
 import { formatImportedPresetTemperature } from '../utils/presetImport';
 import { notifyProfileChanged } from '../utils/pluginBridge';
 import { downloadBlob } from '../utils/download';
+import { formatDecimalInput, parseDecimalInput } from '../utils/decimalInput';
 const CreatePresetModal = lazy(() =>
   import('../components/CreatePresetModal').then(m => ({ default: m.CreatePresetModal }))
 );
@@ -2056,8 +2057,14 @@ const SpoolForm: React.FC<SpoolFormProps> = ({
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [filamentId, setFilamentId] = useState<string>(spool?.filament_id ? String(spool.filament_id) : '');
-  const [initialWeight, setInitialWeight] = useState<string>(spool ? String(spool.initial_weight_g) : '1000');
-  const [usedWeight, setUsedWeight] = useState<string>(spool ? String(spool.used_weight_g) : '0');
+  const [initialWeight, setInitialWeight] = useState<string>(
+    spool ? formatDecimalInput(spool.initial_weight_g) : '1000',
+  );
+  const [usedWeight, setUsedWeight] = useState<string>(
+    spool ? formatDecimalInput(spool.used_weight_g) : '0',
+  );
+  const initialWeightEditedRef = useRef(false);
+  const usedWeightEditedRef = useRef(false);
   const [state, setState] = useState<SpoolState>(spool?.state ?? 'shelf');
   const [source, setSource] = useState(spool?.source ?? initialSource);
   const [price, setPrice] = useState<string>(spool?.price != null ? String(spool.price) : '');
@@ -2207,8 +2214,10 @@ const SpoolForm: React.FC<SpoolFormProps> = ({
       return;
     }
     setFilamentId(spool.filament_id ? String(spool.filament_id) : '');
-    setInitialWeight(String(spool.initial_weight_g));
-    setUsedWeight(String(spool.used_weight_g));
+    setInitialWeight(formatDecimalInput(spool.initial_weight_g));
+    setUsedWeight(formatDecimalInput(spool.used_weight_g));
+    initialWeightEditedRef.current = false;
+    usedWeightEditedRef.current = false;
     setState(spool.state);
     setSource(spool.source);
     setPrice(spool.price != null ? String(spool.price) : '');
@@ -2400,14 +2409,20 @@ const SpoolForm: React.FC<SpoolFormProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorText(null);
-    const parsedInitial = parseFloat(initialWeight);
-    const parsedUsed = parseFloat(usedWeight || '0');
+    const parsedInitialInput = parseDecimalInput(initialWeight);
+    const parsedUsedInput = parseDecimalInput(usedWeight || '0');
+    const parsedInitial = mode === 'edit' && spool && !initialWeightEditedRef.current
+      ? spool.initial_weight_g
+      : parsedInitialInput;
+    const parsedUsed = mode === 'edit' && spool && !usedWeightEditedRef.current
+      ? spool.used_weight_g
+      : parsedUsedInput;
 
-    if (!Number.isFinite(parsedInitial) || parsedInitial <= 0) {
+    if (!Number.isFinite(parsedInitial) || parsedInitial <= 0 || parsedInitial > 10_000) {
       setErrorText(t('profilePage.spoolActions.invalidInitialWeight'));
       return;
     }
-    if (!Number.isFinite(parsedUsed) || parsedUsed < 0) {
+    if (!Number.isFinite(parsedUsed) || parsedUsed < 0 || parsedUsed > 10_000) {
       setErrorText(t('profilePage.spoolActions.invalidUsedWeight'));
       return;
     }
@@ -2720,13 +2735,19 @@ const SpoolForm: React.FC<SpoolFormProps> = ({
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <div>
           <label className={labelCls}>{t('profilePage.spoolAddModal.initialWeight')}</label>
-          <input type="number" min="1" max="10000" step="1" value={initialWeight}
-            onChange={e => setInitialWeight(e.target.value)} className={inputCls} required />
+          <input type="text" inputMode="decimal" pattern="[0-9]+([.,][0-9]+)?" value={initialWeight}
+            onChange={e => {
+              initialWeightEditedRef.current = true;
+              setInitialWeight(e.target.value);
+            }} className={inputCls} required />
         </div>
         <div>
           <label className={labelCls}>{t('profilePage.spoolAddModal.usedWeight')}</label>
-          <input type="number" min="0" max="10000" step="1" value={usedWeight}
-            onChange={e => setUsedWeight(e.target.value)} className={inputCls} />
+          <input type="text" inputMode="decimal" pattern="[0-9]+([.,][0-9]+)?" value={usedWeight}
+            onChange={e => {
+              usedWeightEditedRef.current = true;
+              setUsedWeight(e.target.value);
+            }} className={inputCls} />
         </div>
       </div>
 
