@@ -589,25 +589,25 @@ const MaterialCard: React.FC<MaterialCardProps> = ({
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             <span className="px-2 py-0.5 sm:py-1 bg-purple-500/20 text-purple-300 text-xs rounded-full border border-purple-500/30">
-                {filament.material_type}
+              {filament.material_type}
+            </span>
+            {fitsPrinter && (
+              <span className="px-2 py-0.5 sm:py-1 bg-emerald-500/15 text-emerald-300 text-xs rounded-full border border-emerald-500/30">
+                {t('catalogPage.fitsPrinter')}
               </span>
-              {fitsPrinter && (
-                <span className="px-2 py-0.5 sm:py-1 bg-emerald-500/15 text-emerald-300 text-xs rounded-full border border-emerald-500/30">
-                  {t('catalogPage.fitsPrinter')}
-                </span>
-              )}
-              {filament.availability && filament.availability !== 'available' && (
-                <span className="px-2 py-0.5 sm:py-1 bg-amber-500/20 text-amber-300 text-xs rounded-full border border-amber-500/30">
-                  {t(`createFilament.availability.${filament.availability}`)}
-                </span>
-              )}
-              <NozzleRequirementBadge
-                requiredHrc={filament.required_nozzle_hrc}
-                configuredHrc={configuredNozzleHrc}
-                compact
-              />
+            )}
+            {filament.availability && filament.availability !== 'available' && (
+              <span className="px-2 py-0.5 sm:py-1 bg-amber-500/20 text-amber-300 text-xs rounded-full border border-amber-500/30">
+                {t(`createFilament.availability.${filament.availability}`)}
+              </span>
+            )}
+            <NozzleRequirementBadge
+              requiredHrc={filament.required_nozzle_hrc}
+              configuredHrc={configuredNozzleHrc}
+              compact
+            />
 
-              {(filament.color_hex || filament.visual_settings) && (
+            {(filament.color_hex || filament.visual_settings) && (
               <span className="inline-flex items-center justify-center w-16 sm:w-24">
                 <div style={{ transform: 'scale(0.35)', transformOrigin: 'center center' }} className="sm:hidden">
                   <FilamentPreview
@@ -625,41 +625,39 @@ const MaterialCard: React.FC<MaterialCardProps> = ({
                   </div>
                 </span>
               )}
-            </div>
-        </div>
-        <div className="ml-2 flex flex-shrink-0 items-start gap-2 sm:ml-4">
-          {filament.price_hidden ? null : (filament.price_per_kg || filament.spool_weight) ? (
-            <div className="text-right">
-              {filament.price_per_kg && filament.spool_weight && filament.spool_weight !== 1000 ? (
-                <>
-                  <p className="text-xs sm:text-sm font-medium text-gray-300">
-                    {Math.round((filament.price_per_kg * filament.spool_weight) / 1000)} {currencySymbol(filament.currency)}<span className="text-gray-400">/{Math.round(filament.spool_weight)} {t('catalogPage.units.g')}</span>
-                  </p>
-                  <p className="text-[10px] sm:text-xs text-gray-500">
-                    ≈ {Math.round(filament.price_per_kg)} {currencySymbol(filament.currency)}/{t('catalogPage.units.kg')}
-                  </p>
-                </>
-              ) : filament.price_per_kg ? (
-                <p className="text-xs sm:text-sm font-medium text-gray-300">
-                  {Math.round(filament.price_per_kg)} {currencySymbol(filament.currency)}<span className="text-gray-400">/{t('catalogPage.units.kg')}</span>
-                </p>
-              ) : (
-                <p className="text-xs sm:text-sm text-gray-400">{Math.round(filament.spool_weight!)} {t('catalogPage.units.g')}</p>
+              {canShowQR && (
+                <button
+                  type="button"
+                  onClick={onShowQR}
+                  className="flex-shrink-0 rounded-lg border border-white/20 bg-white/10 p-2 text-white transition-all hover:bg-white/20"
+                  aria-label={t('catalogPage.qrCode')}
+                  title={t('catalogPage.qrCode')}
+                >
+                  <QrCode className="h-4 w-4" />
+                </button>
               )}
-            </div>
-          ) : null}
-          {canShowQR && (
-            <button
-              type="button"
-              onClick={onShowQR}
-              className="rounded-xl border border-white/20 bg-white/10 p-2 text-white transition-all hover:bg-white/20 sm:p-2.5"
-              aria-label={t('catalogPage.qrCode')}
-              title={t('catalogPage.qrCode')}
-            >
-              <QrCode className="h-4 w-4 sm:h-5 sm:w-5" />
-            </button>
-          )}
+          </div>
         </div>
+        {filament.price_hidden ? null : (filament.price_per_kg || filament.spool_weight) ? (
+          <div className="ml-2 flex-shrink-0 text-right sm:ml-4">
+            {filament.price_per_kg && filament.spool_weight && filament.spool_weight !== 1000 ? (
+              <>
+                <p className="text-xs sm:text-sm font-medium text-gray-300">
+                  {Math.round((filament.price_per_kg * filament.spool_weight) / 1000)} {currencySymbol(filament.currency)}<span className="text-gray-400">/{Math.round(filament.spool_weight)} {t('catalogPage.units.g')}</span>
+                </p>
+                <p className="text-[10px] sm:text-xs text-gray-500">
+                  ≈ {Math.round(filament.price_per_kg)} {currencySymbol(filament.currency)}/{t('catalogPage.units.kg')}
+                </p>
+              </>
+            ) : filament.price_per_kg ? (
+              <p className="text-xs sm:text-sm font-medium text-gray-300">
+                {Math.round(filament.price_per_kg)} {currencySymbol(filament.currency)}<span className="text-gray-400">/{t('catalogPage.units.kg')}</span>
+              </p>
+            ) : (
+              <p className="text-xs sm:text-sm text-gray-400">{Math.round(filament.spool_weight!)} {t('catalogPage.units.g')}</p>
+            )}
+          </div>
+        ) : null}
       </div>
 
       {/* Детали материала в компактном виде */}
