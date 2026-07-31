@@ -644,3 +644,111 @@ def test_host_storage_migrates_mutable_state_without_deleting_legacy(
     assert (storage / "slices" / "fixture.gcode").read_text(encoding="utf-8") == "G28"
     assert (legacy / ".auth.json").exists()
     assert (legacy / "slices" / "fixture.gcode").exists()
+
+
+def _bambu_report(**overrides):
+    report = {
+        "ams": {
+            "tray_now": "1",
+            "tray_exist_bits": "3",
+            "ams": [
+                {
+                    "id": "0",
+                    "tray": [
+                        {
+                            "id": "0",
+                            "tray_type": "PLA",
+                            "tray_color": "FF6A13FF",
+                            "remain": 100,
+                            "remain_g": 812,
+                            "tray_uuid": "D1E2F3",
+                        },
+                        {
+                            "id": "1",
+                            "tray_type": "PETG",
+                            "tray_color": "1F8A70FF",
+                            "remain": -1,
+                            "remain_g": -1,
+                            "tray_uuid": "00000000",
+                        },
+                        {
+                            "id": "2",
+                            "tray_type": "",
+                            "tray_color": "00000000",
+                            "remain": -1,
+                            "tray_uuid": "00000000",
+                        },
+                    ],
+                }
+            ],
+        }
+    }
+    report.update(overrides)
+    return report
+
+
+def test_bambu_feed_reports_only_what_the_printer_measured(plugin_module):
+    feed = plugin_module.parse_bambu_feed(_bambu_report())
+
+    by_index = {slot["index"]: slot for slot in feed["slots"]}
+    assert feed["active_index"] == 1
+    assert by_index[0]["material"] == "PLA"
+    assert by_index[0]["color_hex"] == "FF6A13"
+    assert by_index[0]["remaining_g"] == 812
+    assert by_index[0]["provider_uid"] == "D1E2F3"
+
+    # A third-party spool sits in the tray and the printer says so, but it cannot
+    # weigh it. Reporting 0 here would read as an empty slot.
+    assert by_index[1]["material"] == "PETG"
+    assert by_index[1]["remaining_pct"] is None
+    assert by_index[1]["remaining_g"] is None
+    assert by_index[1]["provider_uid"] is None
+
+
+def test_bambu_empty_tray_is_neither_coloured_nor_present(plugin_module):
+    feed = plugin_module.parse_bambu_feed(_bambu_report())
+    empty = next(slot for slot in feed["slots"] if slot["index"] == 2)
+
+    assert empty["present"] is False
+    assert empty["material"] is None
+    assert empty["color_hex"] is None
+
+
+def test_bambu_partial_push_does_not_erase_the_feed(plugin_module):
+    assert plugin_module.parse_bambu_feed({"nozzle_temper": 218.5}) is None
+    assert plugin_module.parse_bambu_feed({}) is None
+    assert plugin_module.parse_bambu_feed(None) is None
+
+
+def test_bambu_slot_numbers_stay_the_printers_own(plugin_module):
+    assert plugin_module.bambu_slot_index(0, 3) == 3
+    assert plugin_module.bambu_slot_index(2, 1) == 9
+    # The external holders and single-slot units carry their own flat number.
+    assert plugin_module.bambu_slot_index(plugin_module.BAMBU_EXTERNAL_TRAY_MAIN, 0) == 255
+    assert plugin_module.bambu_slot_index(plugin_module.BAMBU_WIDE_UNIT_BASE, 0) == 128
+
+
+def test_bambu_external_spool_holder_becomes_a_slot(plugin_module):
+    report = _bambu_report(
+        vt_tray={
+            "id": "255",
+            "tray_type": "ABS",
+            "tray_color": "1A1A1AFF",
+            "remain": -1,
+        }
+    )
+    feed = plugin_module.parse_bambu_feed(report)
+    external = next(slot for slot in feed["slots"] if slot["index"] == 255)
+
+    assert external["present"] is True
+    assert external["material"] == "ABS"
+    assert external["color_hex"] == "1A1A1A"
+
+
+def test_bambu_feed_without_any_ams_still_reads_the_holder(plugin_module):
+    feed = plugin_module.parse_bambu_feed(
+        {"vt_tray": {"id": "255", "tray_type": "PLA", "tray_color": "FFFFFFFF"}}
+    )
+
+    assert [slot["index"] for slot in feed["slots"]] == [255]
+    assert feed["active_index"] is None
