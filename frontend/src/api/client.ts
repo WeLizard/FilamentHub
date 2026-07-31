@@ -2710,7 +2710,7 @@ export interface GateState {
   hh_material: string | null;
   hh_color_hex: string | null;
   hh_status: number | null;
-  source: 'hh_snapshot' | 'manual_orca' | 'web_manual';
+  source: 'hh_snapshot' | 'manual_orca' | 'web_manual' | 'provider_report';
   source_ts: string;
   is_active: boolean;
   updated_at: string;

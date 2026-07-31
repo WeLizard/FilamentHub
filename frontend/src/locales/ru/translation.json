@@ -1228,8 +1228,8 @@
     "step2Title": "Установите плагин",
     "step2Desc": "Подпишитесь на плагин FilamentHub в Plugin Hub — после этого он появится в OrcaSlicer в диалоге Plugins для установки.",
     "step2Cta": "Открыть в Plugin Hub",
-    "step2WheelCta": "Скачать .whl для ручной установки ({{tag}})",
-    "step2WheelCtaPlain": "Скачать .whl для ручной установки",
+    "step2WheelCta": "Скачать FilamentHub {{version}} (.whl)",
+    "step2WheelCtaPlain": "Скачать FilamentHub (.whl)",
     "step2Sideload": "Не появился для вашей версии? Плагин можно установить вручную (side-load wheel).",
     "step2ShotAlt": "Скриншот: подписка на плагин FilamentHub в Plugin Hub",
     "step3Title": "Откройте FilamentHub",
@@ -1245,7 +1245,7 @@
     "octoInstall1": "Скачайте .whl и загрузите его в Plugin Manager вашего OctoPrint.",
     "octoInstall2": "В FilamentHub добавьте систему подачи с адаптером OctoPrint и получите код.",
     "octoInstall3": "Введите адрес FilamentHub и код во вкладке Bridge — слоты можно использовать сразу.",
-    "octoDownload": "Скачать Bridge .whl ({{tag}})",
+    "octoDownload": "Скачать FilamentHub Bridge {{version}} (.whl)",
     "octoOpenReleases": "Открыть релизы плагинов",
     "octoReleasePending": "Bridge появится здесь после публикации первого релиза",
     "fallbackTitle": "FilamentHub Edition (архивная сборка)",
@@ -5862,7 +5862,8 @@
     "source": {
       "hh_snapshot": "Happy Hare",
       "manual_orca": "OrcaSlicer",
-      "web_manual": "Web"
+      "web_manual": "Web",
+      "provider_report": "Отчёт адаптера"
     },
     "assignment": {
       "label": "Назначено",

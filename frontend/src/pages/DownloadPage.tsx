@@ -19,7 +19,6 @@ const FILAMENTHUB_RELEASES_URL = `https://github.com/${FILAMENTHUB_PLUGIN_REPO}/
 type PluginReleaseAsset = {
   url: string;
   name: string;
-  tag: string;
 };
 
 type GitHubReleaseAsset = {
@@ -34,6 +33,9 @@ const isOctoPrintBridgeWheel = (asset: GitHubReleaseAsset) => {
   const name = (asset.name || '').toLowerCase().replaceAll('-', '_');
   return name.startsWith('octoprint_filamenthubbridge_') && name.endsWith('.whl');
 };
+
+const wheelPackageVersion = (assetName: string): string | null =>
+  assetName.match(/^[A-Za-z0-9_]+-([^-]+)-/)?.[1] ?? null;
 
 type DownloadScreenshotCardImageProps = {
   src: string;
@@ -150,14 +152,12 @@ export function DownloadPage() {
           setOrcaPluginWheel({
             url: orcaAsset.browser_download_url,
             name: orcaAsset.name,
-            tag: release.tag_name || '',
           });
         }
         if (octoPrintAsset?.browser_download_url && octoPrintAsset.name) {
           setOctoPrintBridgeWheel({
             url: octoPrintAsset.browser_download_url,
             name: octoPrintAsset.name,
-            tag: release.tag_name || '',
           });
         }
       })
@@ -375,8 +375,10 @@ export function DownloadPage() {
                 >
                   <Download className="w-3 h-3" />
                   <span>
-                    {orcaPluginWheel.tag
-                      ? t('downloadPage.step2WheelCta', { tag: orcaPluginWheel.tag })
+                    {wheelPackageVersion(orcaPluginWheel.name)
+                      ? t('downloadPage.step2WheelCta', {
+                        version: wheelPackageVersion(orcaPluginWheel.name),
+                      })
                       : t('downloadPage.step2WheelCtaPlain')}
                   </span>
                 </a>
@@ -474,7 +476,9 @@ export function DownloadPage() {
               <Download className="h-4 w-4" />
               <span>
                 {octoPrintBridgeWheel
-                  ? t('downloadPage.octoDownload', { tag: octoPrintBridgeWheel.tag })
+                  ? t('downloadPage.octoDownload', {
+                    version: wheelPackageVersion(octoPrintBridgeWheel.name),
+                  })
                   : t('downloadPage.octoOpenReleases')}
               </span>
               {!octoPrintBridgeWheel && <ExternalLink className="h-3.5 w-3.5" />}

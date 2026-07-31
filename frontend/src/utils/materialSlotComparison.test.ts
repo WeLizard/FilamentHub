@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { GateState, MaterialSlot, UserSpool } from '../api/client';
-import { compareMaterialSlot } from './materialSlotComparison';
+import {
+  compareMaterialSlot,
+  MATERIAL_SLOT_OBSERVATION_FRESH_MS,
+} from './materialSlotComparison';
+
+const NOW = Date.parse('2026-07-30T00:02:00Z');
 
 function slot(
   assignment: MaterialSlot['assignment'],
@@ -93,7 +98,7 @@ function spoolFixture(material: string, colorHex: string): UserSpool {
 }
 
 describe('compareMaterialSlot', () => {
-  it('treats a provider-confirmed Spoolman gate assignment as an observation', () => {
+  it('does not treat a provider-side assignment as proof that filament is loaded', () => {
     const providerAssignment = {
       ...observation(1, null, null),
       spool_id: 40,
@@ -103,9 +108,28 @@ describe('compareMaterialSlot', () => {
       slot(assignment(40), providerAssignment),
       gate(null, 40),
       spoolFixture('PLA', 'FF0000'),
+      NOW,
     );
 
-    expect(result.observationState).toBe('loaded');
+    expect(result.observationState).toBe('none');
+    expect(result.conflict).toBeNull();
+  });
+
+  it('does not call a cleared assignment an observed empty hardware gate', () => {
+    const clearedProviderAssignment = {
+      ...observation(1, null, null),
+      preset_id: 60,
+      spool_id: null,
+      hh_status: null,
+    };
+    const result = compareMaterialSlot(
+      slot(assignment(null, 60), clearedProviderAssignment),
+      gate(60, null),
+      null,
+      NOW,
+    );
+
+    expect(result.observationState).toBe('none');
     expect(result.conflict).toBeNull();
   });
 
@@ -120,6 +144,7 @@ describe('compareMaterialSlot', () => {
       slot(assignment(40), manualProjection),
       gate(null, 40),
       spoolFixture('PLA', 'FF0000'),
+      NOW,
     );
 
     expect(result.observationState).toBe('none');
@@ -130,6 +155,7 @@ describe('compareMaterialSlot', () => {
       slot(assignment(40, 60), observation(0, null, null)),
       gate(60, 40),
       spoolFixture('PLA', 'FF0000'),
+      NOW,
     );
 
     expect(result.desiredSpoolId).toBe(40);
@@ -142,6 +168,7 @@ describe('compareMaterialSlot', () => {
       slot(null, observation(1, 'PLA', 'FF0000')),
       gate(null, null),
       null,
+      NOW,
     );
 
     expect(result.desiredSpoolId).toBeNull();
@@ -154,6 +181,7 @@ describe('compareMaterialSlot', () => {
       slot(assignment(40), observation(1, ' pla ', '#ff0000')),
       gate(null, 40),
       spoolFixture('PLA', 'FF0000'),
+      NOW,
     );
 
     expect(result.conflict).toBeNull();
@@ -165,8 +193,21 @@ describe('compareMaterialSlot', () => {
       slot(assignment(40), observation(1, 'PETG', '00FF00')),
       gate(null, 40),
       spoolFixture('PLA', 'FF0000'),
+      NOW,
     );
 
     expect(result.conflict).toBe('observed_details_differ');
+  });
+
+  it('ignores provider observations after their freshness window', () => {
+    const result = compareMaterialSlot(
+      slot(assignment(40), observation(0, null, null)),
+      gate(null, 40),
+      spoolFixture('PLA', 'FF0000'),
+      Date.parse('2026-07-30T00:01:00Z') + MATERIAL_SLOT_OBSERVATION_FRESH_MS + 1,
+    );
+
+    expect(result.observationState).toBe('none');
+    expect(result.conflict).toBeNull();
   });
 });

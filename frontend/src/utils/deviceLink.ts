@@ -15,7 +15,9 @@ export type DeviceContactMode = 'periodic' | 'on_demand';
 // The real touch source is the adapter's own request cadence (Moonraker's
 // Spoolman polling, plugin sync), not a fixed heartbeat — thresholds are
 // deliberately generous.
-export const DEVICE_LINK_ACTIVE_MS = 60_000;
+// Native OctoPrint Bridge sends every 45 seconds. Keep enough headroom for a
+// delayed scheduler/network cycle so a healthy link does not flicker to delayed.
+export const DEVICE_LINK_ACTIVE_MS = 120_000;
 export const DEVICE_LINK_DELAYED_MS = 300_000;
 
 /** Pick the freshest contact when both the printer and its connector report one. */

@@ -34,6 +34,7 @@ class PresetGateStateSource(str, enum.Enum):
     hh_snapshot = "hh_snapshot"
     manual_orca = "manual_orca"
     web_manual = "web_manual"
+    provider_report = "provider_report"
 
 
 class HHGateStatus(int, enum.Enum):

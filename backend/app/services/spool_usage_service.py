@@ -40,6 +40,7 @@ async def find_printer_report_replay(
     *,
     spool_id: int,
     device_id: int | None,
+    provider: str | None,
     reported_weight_g: float,
     idempotency_key: str | None = None,
 ) -> tuple[PresetUsageEvent | None, bool, str | None]:
@@ -68,7 +69,7 @@ async def find_printer_report_replay(
             return existing, conflict, "idempotency_key"
         return None, False, None
 
-    if device_id is None or reported_weight_g <= 0:
+    if device_id is None or provider != "octoprint" or reported_weight_g <= 0:
         return None, False, None
 
     since = datetime.now(timezone.utc) - _RETRY_REPLAY_WINDOW

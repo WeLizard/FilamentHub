@@ -115,6 +115,93 @@ async def test_upsert_gate_state_should_preserve_priority_and_ignore_old_hh_snap
 
 
 @pytest.mark.asyncio
+async def test_hh_upsert_updates_explicit_assignment_fields_on_sqlite_too(
+    db_session: AsyncSession,
+):
+    """SQLite fallback must match the PostgreSQL upsert for provided fields."""
+    user, device = await _seed_user_device(db_session)
+    first_spool = UserSpool(
+        user_id=user.id,
+        initial_weight_g=1000,
+        used_weight_g=0,
+        state=UserSpoolState.active,
+        source="manual",
+    )
+    second_spool = UserSpool(
+        user_id=user.id,
+        initial_weight_g=1000,
+        used_weight_g=0,
+        state=UserSpoolState.active,
+        source="manual",
+    )
+    db_session.add_all([first_spool, second_spool])
+    await db_session.flush()
+    now = datetime.now(timezone.utc)
+
+    await _upsert_gate_state(
+        db_session,
+        user_id=user.id,
+        device_id=device.id,
+        gate_index=0,
+        source=PresetGateStateSource.web_manual,
+        source_ts=now,
+        spool_id=first_spool.id,
+        spool_id_provided=True,
+    )
+    await db_session.flush()
+    state = await _upsert_gate_state(
+        db_session,
+        user_id=user.id,
+        device_id=device.id,
+        gate_index=0,
+        source=PresetGateStateSource.hh_snapshot,
+        source_ts=now + timedelta(seconds=1),
+        spool_id=second_spool.id,
+        spool_id_provided=True,
+        hh_material="PETG",
+        hh_color_hex="00FF00",
+        hh_status=1,
+    )
+    await db_session.flush()
+
+    assert state.spool_id == second_spool.id
+    assert state.hh_material == "PETG"
+    assert state.hh_color_hex == "00FF00"
+    assert state.hh_status == 1
+
+
+@pytest.mark.asyncio
+async def test_web_assignment_can_override_a_provider_report_source(
+    db_session: AsyncSession,
+):
+    user, device = await _seed_user_device(db_session)
+    now = datetime.now(timezone.utc)
+    await _upsert_gate_state(
+        db_session,
+        user_id=user.id,
+        device_id=device.id,
+        gate_index=0,
+        source=PresetGateStateSource.provider_report,
+        source_ts=now,
+        preset_id_provided=False,
+        spool_id_provided=False,
+    )
+    await db_session.flush()
+    state = await _upsert_gate_state(
+        db_session,
+        user_id=user.id,
+        device_id=device.id,
+        gate_index=0,
+        source=PresetGateStateSource.web_manual,
+        source_ts=now + timedelta(seconds=1),
+        preset_id_provided=False,
+        spool_id_provided=False,
+    )
+
+    assert state.source == PresetGateStateSource.web_manual
+
+
+@pytest.mark.asyncio
 async def test_clear_device_slots_should_bulk_clear_and_set_web_manual_source(
     db_session: AsyncSession,
 ):

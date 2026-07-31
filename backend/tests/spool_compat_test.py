@@ -17,6 +17,7 @@ from app.api.v1.endpoints.spool_compat import (
 from app.core.config import settings
 from app.models.brand import Brand
 from app.models.filament import Filament
+from app.models.material_system import MaterialSystem
 from app.models.preset import Preset, PresetModerationStatus
 from app.models.preset_gate_state import PresetGateState, PresetGateStateSource
 from app.models.preset_usage_event import PresetUsageEvent
@@ -69,6 +70,25 @@ async def _seed_spool_context(db: AsyncSession) -> tuple[User, UserSpool, UserPr
     await db.refresh(spool)
     await db.refresh(device)
     return user, spool, device
+
+
+async def _set_material_system_provider(
+    db: AsyncSession,
+    user: User,
+    device: UserPrinterDevice,
+    provider: str,
+) -> None:
+    db.add(
+        MaterialSystem(
+            user_id=user.id,
+            physical_printer_id=device.id,
+            name=f"{provider} test system",
+            kind="mmu",
+            provider=provider,
+            capabilities=[],
+        )
+    )
+    await db.commit()
 
 
 @pytest.mark.asyncio
@@ -228,7 +248,8 @@ async def test_octoprint_spoolman_uses_header_key_without_secret_in_url(
     db_session: AsyncSession,
 ):
     """The official OctoPrint plugin supports a dedicated API-key header."""
-    _user, spool, device = await _seed_spool_context(db_session)
+    user, spool, device = await _seed_spool_context(db_session)
+    await _set_material_system_provider(db_session, user, device, "octoprint")
     base_url = "/api/v1/spool_compat/api/v1"
 
     listed = await client.get(
@@ -295,7 +316,8 @@ async def test_octoprint_usage_retry_does_not_consume_twice(
     db_session: AsyncSession,
 ):
     """The official plugin retries the same PUT after response loss."""
-    _user, spool, device = await _seed_spool_context(db_session)
+    user, spool, device = await _seed_spool_context(db_session)
+    await _set_material_system_provider(db_session, user, device, "octoprint")
     endpoint = f"/api/v1/spool_compat/{device.api_key}/v1/spool/{spool.id}/use"
 
     first = await client.put(endpoint, json={"use_length": 1_000})
@@ -385,7 +407,8 @@ async def test_same_usage_after_retry_window_is_a_new_report(
     client: AsyncClient,
     db_session: AsyncSession,
 ):
-    _user, spool, device = await _seed_spool_context(db_session)
+    user, spool, device = await _seed_spool_context(db_session)
+    await _set_material_system_provider(db_session, user, device, "octoprint")
     endpoint = f"/api/v1/spool_compat/{device.api_key}/v1/spool/{spool.id}/use"
 
     first = await client.put(endpoint, json={"use_weight": 25})
@@ -402,6 +425,62 @@ async def test_same_usage_after_retry_window_is_a_new_report(
     assert second.status_code == 200
     assert "x-filamenthub-deduplicated" not in second.headers
     assert second.json()["used_weight"] == pytest.approx(first.json()["used_weight"] + 25)
+
+
+@pytest.mark.asyncio
+async def test_happy_hare_equal_usage_reports_are_not_octoprint_retry_suppressed(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    user, spool, device = await _seed_spool_context(db_session)
+    await _set_material_system_provider(db_session, user, device, "happy_hare")
+    endpoint = f"/api/v1/spool_compat/{device.api_key}/v1/spool/{spool.id}/use"
+
+    first = await client.put(endpoint, json={"use_weight": 20})
+    second = await client.put(endpoint, json={"use_weight": 20})
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert "x-filamenthub-deduplicated" not in second.headers
+    assert second.json()["used_weight"] == pytest.approx(first.json()["used_weight"] + 20)
+    events = list(
+        (
+            await db_session.execute(
+                select(PresetUsageEvent).where(PresetUsageEvent.spool_id == spool.id)
+            )
+        ).scalars()
+    )
+    assert len(events) == 2
+
+
+@pytest.mark.asyncio
+async def test_adapter_exhaustion_records_provider_provenance_when_clearing_slot(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    user, spool, device = await _seed_spool_context(db_session)
+    await _set_material_system_provider(db_session, user, device, "happy_hare")
+    gate_state = PresetGateState(
+        user_id=user.id,
+        device_id=device.id,
+        gate_index=0,
+        spool_id=spool.id,
+        source=PresetGateStateSource.web_manual,
+        source_ts=datetime.now(timezone.utc),
+        is_active=True,
+    )
+    db_session.add(gate_state)
+    await db_session.commit()
+
+    response = await client.put(
+        f"/api/v1/spool_compat/{device.api_key}/v1/spool/{spool.id}/use",
+        json={"use_weight": 900},
+    )
+
+    assert response.status_code == 200
+    await db_session.refresh(gate_state)
+    assert gate_state.spool_id is None
+    assert gate_state.source == PresetGateStateSource.provider_report
 
 
 @pytest.mark.asyncio

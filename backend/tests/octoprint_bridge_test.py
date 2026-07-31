@@ -228,3 +228,22 @@ async def test_pairing_code_is_single_use(
     second = await auth_client.post("/api/v1/octoprint-bridge/pair", json=payload)
     assert second.status_code == 401
     assert second.json()["detail"]["code"] == "ERR_OCTOPRINT_BRIDGE_PAIRING_INVALID"
+
+
+@pytest.mark.asyncio
+async def test_issuing_a_new_pairing_code_keeps_the_live_bridge_connected(
+    auth_client: AsyncClient,
+) -> None:
+    printer_id, system_id = await _create_octoprint_system(auth_client)
+    live_token = await _pair(auth_client, printer_id, system_id)
+
+    code_response = await auth_client.post(
+        f"/api/v1/octoprint-bridge/connections/{printer_id}/{system_id}/pairing-code"
+    )
+    assert code_response.status_code == 200
+    still_connected = await auth_client.get(
+        "/api/v1/octoprint-bridge/snapshot",
+        headers={"X-FilamentHub-Bridge-Token": live_token},
+    )
+
+    assert still_connected.status_code == 200

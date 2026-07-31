@@ -42,7 +42,12 @@ const GENERATED_SYSTEM_NAMES = new Set([
 ]);
 
 function gateSource(value: string | undefined): GateState['source'] {
-  if (value === 'hh_snapshot' || value === 'manual_orca' || value === 'web_manual') {
+  if (
+    value === 'hh_snapshot'
+    || value === 'manual_orca'
+    || value === 'web_manual'
+    || value === 'provider_report'
+  ) {
     return value;
   }
   return 'web_manual';

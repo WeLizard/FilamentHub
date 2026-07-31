@@ -31,6 +31,7 @@ from app.core.config import settings
 from app.db.session import AsyncSessionLocal, get_db
 from app.models.brand import Brand
 from app.models.filament import Filament
+from app.models.material_system import MaterialSystem
 from app.models.preset import PUBLIC_PRESET_STATUSES, Preset
 from app.models.preset_gate_state import PresetGateState, PresetGateStateSource
 from app.models.preset_usage_event import PresetUsageEventType
@@ -1195,7 +1196,9 @@ async def patch_spool(
         await _sync_extra_to_gate_state(db, user, spool, device=_device)
 
     if spool.state in {UserSpoolState.archived, UserSpoolState.empty}:
-        await clear_spool_gate_assignments(db, spool)
+        await clear_spool_gate_assignments(
+            db, spool, source=PresetGateStateSource.provider_report
+        )
         clear_spool_location_projection(spool)
     elif body.archived is False and "location" not in fields_set and "extra" not in fields_set:
         await shelf_spool_if_unassigned(db, spool)
@@ -1249,10 +1252,19 @@ async def _use_spool_impl(
     if idempotency_key is not None and not normalized_idempotency_key:
         return _err(status.HTTP_400_BAD_REQUEST, "Idempotency-Key must not be empty.")
 
+    provider = None
+    if _device is not None and normalized_idempotency_key is None:
+        provider = await db.scalar(
+            select(MaterialSystem.provider)
+            .where(MaterialSystem.physical_printer_id == _device.id)
+            .order_by(MaterialSystem.id)
+        )
+
     replay, conflict, replay_reason = await find_printer_report_replay(
         db,
         spool_id=spool.id,
         device_id=_device.id if _device is not None else None,
+        provider=provider,
         reported_weight_g=delta_weight,
         idempotency_key=normalized_idempotency_key,
     )
@@ -1298,7 +1310,9 @@ async def _use_spool_impl(
     spool.last_used_at = now
     if spool.used_weight_g >= spool.initial_weight_g:
         spool.state = UserSpoolState.empty
-        await clear_spool_gate_assignments(db, spool)
+        await clear_spool_gate_assignments(
+            db, spool, source=PresetGateStateSource.provider_report
+        )
         clear_spool_location_projection(spool)
 
     await db.commit()
@@ -1399,7 +1413,9 @@ async def measure_spool(
     spool.last_used_at = now
     if spool.used_weight_g >= spool.initial_weight_g:
         spool.state = UserSpoolState.empty
-        await clear_spool_gate_assignments(db, spool)
+        await clear_spool_gate_assignments(
+            db, spool, source=PresetGateStateSource.provider_report
+        )
         clear_spool_location_projection(spool)
 
     await db.commit()

@@ -33,6 +33,7 @@ from app.models.filament import Filament
 from app.models.material_slot_assignment import MaterialSlotAssignment
 from app.models.material_system import MaterialSlot, MaterialSystem, PhysicalPrinterConnector
 from app.models.octoprint_bridge import OctoPrintBridgeConnection, OctoPrintBridgeEvent
+from app.models.preset_gate_state import PresetGateStateSource
 from app.models.preset_usage_event import PresetUsageEventType
 from app.models.user_spool import UserSpool, UserSpoolState
 from app.schemas.octoprint_bridge import (
@@ -626,7 +627,9 @@ async def record_usage_event(
         )
         if spool.remaining_weight_g <= 0:
             spool.state = UserSpoolState.empty
-            await clear_spool_gate_assignments(db, spool)
+            await clear_spool_gate_assignments(
+                db, spool, source=PresetGateStateSource.provider_report
+            )
             clear_spool_location_projection(spool)
 
     db.add(

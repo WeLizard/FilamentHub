@@ -8,6 +8,8 @@ export type MaterialSlotConflict =
 
 export type MaterialSlotObservationState = 'none' | 'unknown' | 'empty' | 'loaded' | 'buffer';
 
+export const MATERIAL_SLOT_OBSERVATION_FRESH_MS = 5 * 60_000;
+
 export interface MaterialSlotComparison {
   desiredPresetId: number | null;
   desiredSpoolId: number | null;
@@ -27,20 +29,30 @@ function normalizeHex(value: string | null | undefined): string | null {
   return normalized && /^[0-9A-F]{6}$/.test(normalized) ? normalized : null;
 }
 
-function observationState(slot: MaterialSlot): MaterialSlotObservationState {
+function observationState(
+  slot: MaterialSlot,
+  now: number,
+): MaterialSlotObservationState {
   const observation = slot.legacy_projection;
+  if (observation?.source !== 'hh_snapshot') return 'none';
+
+  const observedAt = new Date(observation.source_ts).getTime();
+  const age = now - observedAt;
+  if (
+    !Number.isFinite(observedAt)
+    || age > MATERIAL_SLOT_OBSERVATION_FRESH_MS
+    || age < -60_000
+  ) {
+    return 'none';
+  }
+
   if (
     observation?.hh_status == null
     && observation?.hh_material == null
     && observation?.hh_color_hex == null
   ) {
-    // Happy Hare's Spoolman-compatible path can confirm a gate assignment
-    // without sending the richer legacy material/color/status snapshot. The
-    // source still proves that this state came from the provider rather than
-    // from a click in FilamentHub.
-    if (observation?.source === 'hh_snapshot') {
-      return observation.spool_id != null ? 'loaded' : 'empty';
-    }
+    // A provider-side spool association is evidence about an assignment, not
+    // proof that hardware currently has filament loaded or that a gate is empty.
     return 'none';
   }
   if (observation.hh_status === 0) return 'empty';
@@ -65,11 +77,12 @@ export function compareMaterialSlot(
   slot: MaterialSlot,
   gate: GateState | null,
   desiredSpool: UserSpool | null,
+  now: number = Date.now(),
 ): MaterialSlotComparison {
   const desiredPresetId = slot.assignment?.preset_id ?? gate?.preset_id ?? null;
   const desiredSpoolId = slot.assignment?.spool_id ?? gate?.spool_id ?? null;
   const observation = slot.legacy_projection;
-  const state = observationState(slot);
+  const state = observationState(slot, now);
 
   let conflict: MaterialSlotConflict = null;
   if (state === 'empty' && (desiredPresetId != null || desiredSpoolId != null)) {

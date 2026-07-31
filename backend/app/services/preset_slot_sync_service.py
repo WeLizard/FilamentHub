@@ -228,6 +228,7 @@ async def _upsert_gate_state(
         PresetGateStateSource.hh_snapshot: 3,
         PresetGateStateSource.manual_orca: 2,
         PresetGateStateSource.web_manual: 3,  # explicit user action always overrides
+        PresetGateStateSource.provider_report: 3,
     }
     source_ts = _normalize_utc(source_ts)
 
@@ -252,12 +253,14 @@ async def _upsert_gate_state(
         incoming_priority = case(
             (excluded.source == PresetGateStateSource.hh_snapshot, 3),
             (excluded.source == PresetGateStateSource.web_manual, 3),
+            (excluded.source == PresetGateStateSource.provider_report, 3),
             (excluded.source == PresetGateStateSource.manual_orca, 2),
             else_=1,
         )
         current_priority = case(
             (PresetGateState.source == PresetGateStateSource.hh_snapshot, 3),
             (PresetGateState.source == PresetGateStateSource.web_manual, 3),
+            (PresetGateState.source == PresetGateStateSource.provider_report, 3),
             (PresetGateState.source == PresetGateStateSource.manual_orca, 2),
             else_=1,
         )
@@ -360,11 +363,10 @@ async def _upsert_gate_state(
             state.hh_material = hh_material
             state.hh_color_hex = hh_color_hex
             state.hh_status = hh_status
-        else:
-            if preset_id_provided:
-                state.preset_id = preset_id
-            if spool_id_provided:
-                state.spool_id = spool_id
+        if preset_id_provided:
+            state.preset_id = preset_id
+        if spool_id_provided:
+            state.spool_id = spool_id
 
     state.is_active = True
     return state

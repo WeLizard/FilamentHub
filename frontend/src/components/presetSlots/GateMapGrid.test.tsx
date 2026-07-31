@@ -3,6 +3,8 @@ import { describe, expect, it, vi } from 'vitest';
 import type { GateState, MaterialSlot, UserSpool } from '../../api/client';
 import { GateMapGrid } from './GateMapGrid';
 
+const FRESH_SOURCE_TS = new Date().toISOString();
+
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string) => key,
@@ -72,12 +74,12 @@ function observedSlot(
       preset_id: assignment?.preset_id ?? null,
       spool_id: assignment?.spool_id ?? null,
       source: 'hh_snapshot',
-      source_ts: '2026-07-30T00:01:00Z',
+      source_ts: FRESH_SOURCE_TS,
       is_active: true,
       hh_material: material,
       hh_color_hex: colorHex,
       hh_status: status,
-      updated_at: '2026-07-30T00:01:00Z',
+      updated_at: FRESH_SOURCE_TS,
     },
   };
 }
@@ -137,7 +139,7 @@ describe('GateMapGrid material slots', () => {
       ...gate,
       hh_status: 0,
       source: 'hh_snapshot',
-      source_ts: '2026-07-30T00:01:00Z',
+      source_ts: FRESH_SOURCE_TS,
     };
     const slot = observedSlot(
       {
@@ -177,7 +179,7 @@ describe('GateMapGrid material slots', () => {
       hh_color_hex: '00FF00',
       hh_status: 1,
       source: 'hh_snapshot',
-      source_ts: '2026-07-30T00:01:00Z',
+      source_ts: FRESH_SOURCE_TS,
     };
     const slot = observedSlot(null, 1, 'PETG', '00FF00');
 
@@ -195,7 +197,7 @@ describe('GateMapGrid material slots', () => {
     expect(screen.getAllByText('presetSlots.identifySpool').length).toBeGreaterThan(0);
   });
 
-  it('shows a compact provider confirmation from the Spoolman-compatible path', () => {
+  it('does not invent provider telemetry from a Spoolman-compatible assignment', () => {
     const slot: MaterialSlot = {
       id: 10,
       provider_index: 0,
@@ -207,7 +209,7 @@ describe('GateMapGrid material slots', () => {
         preset_id: null,
         spool_id: 40,
         source: 'hh_snapshot',
-        source_ts: '2026-07-30T00:01:00Z',
+        source_ts: FRESH_SOURCE_TS,
         active: true,
       },
       legacy_projection: {
@@ -215,12 +217,12 @@ describe('GateMapGrid material slots', () => {
         preset_id: null,
         spool_id: 40,
         source: 'hh_snapshot',
-        source_ts: '2026-07-30T00:01:00Z',
+        source_ts: FRESH_SOURCE_TS,
         is_active: true,
         hh_material: null,
         hh_color_hex: null,
         hh_status: null,
-        updated_at: '2026-07-30T00:01:00Z',
+        updated_at: FRESH_SOURCE_TS,
       },
     };
 
@@ -234,7 +236,7 @@ describe('GateMapGrid material slots', () => {
       />,
     );
 
-    expect(screen.getByText('presetSlots.hhStatus.spool')).toBeInTheDocument();
+    expect(screen.queryByText('presetSlots.hhStatus.spool')).not.toBeInTheDocument();
     expect(screen.queryByText('presetSlots.observation.noData')).not.toBeInTheDocument();
   });
 });
