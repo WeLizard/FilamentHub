@@ -10,9 +10,6 @@ The Bridge does not expose OctoPrint to the public internet. It initiates HTTPS
 requests to the FilamentHub instance configured by the user. It does not require
 Spoolman or SpoolManager and does not copy their local databases.
 
-This integration is developed by FilamentHub and is not affiliated with or
-endorsed by the OctoPrint project.
-
 ## Pairing
 
 1. Add an OctoPrint material system to an existing printer in FilamentHub.
