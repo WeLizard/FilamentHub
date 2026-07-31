@@ -162,7 +162,9 @@ function NewSystemCard({
         </div>
         {chosen.fixedSlots == null && (
           <div className="min-w-0">
-            <p className="mb-1 text-xs text-gray-400">{t('presetSlots.newSystem.slotCount')}</p>
+            <p className="mb-1 text-xs text-gray-400">
+              {t(chosen.slotCountLabelKey ?? 'presetSlots.newSystem.slotCount')}
+            </p>
             <input
               type="number"
               min={1}
@@ -215,11 +217,11 @@ function MaterialSystemSection({ printer, system, presetsSeedMap, spools, spoolC
   const connector = printer.connectors.find(
     (item) => item.material_system_id === system.id && item.active,
   ) ?? null;
+  const adapter = feedAdapterFor(system.provider);
   // The key belongs to the printer, so a system without its own connector still
   // hears from it; falling back keeps a reporting printer from looking silent.
   const lastSeenAt = latestDeviceContact(connector?.last_seen_at, printer.last_seen_at);
-  const linkState = getDeviceLinkState(lastSeenAt, now);
-  const adapter = feedAdapterFor(system.provider);
+  const linkState = getDeviceLinkState(lastSeenAt, now, adapter.contactMode);
   const linkConfirmed = printer.reports_feed;
   const providerLabel = t(`presetSlots.provider.${system.provider}`, {
     defaultValue: system.provider,
@@ -358,10 +360,10 @@ function MaterialSystemSection({ printer, system, presetsSeedMap, spools, spoolC
         <div className="flex flex-col items-start gap-1.5 sm:items-end">
           <div className="flex flex-wrap items-center gap-1.5">
             <span
-              title={t('deviceLink.tooltip')}
+              title={t(linkState === 'ready' ? 'deviceLink.onDemandTooltip' : 'deviceLink.tooltip')}
               className={[
                 'flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium',
-                linkState === 'active'
+                linkState === 'active' || linkState === 'ready'
                   ? 'bg-emerald-500/15 text-emerald-300'
                   : linkState === 'delayed'
                     ? 'bg-amber-500/15 text-amber-300'
@@ -372,6 +374,8 @@ function MaterialSystemSection({ printer, system, presetsSeedMap, spools, spoolC
             >
               {linkState === 'active' ? (
                 <Wifi className="h-3 w-3" />
+              ) : linkState === 'ready' ? (
+                <Check className="h-3 w-3" />
               ) : linkState === 'delayed' ? (
                 <AlertTriangle className="h-3 w-3" />
               ) : linkState === 'inactive' ? (
@@ -413,7 +417,9 @@ function MaterialSystemSection({ printer, system, presetsSeedMap, spools, spoolC
                 title={t('presetSlots.slotCount.change')}
                 className="rounded-full bg-white/5 px-2 py-0.5 text-[11px] text-gray-400 transition hover:bg-white/10 hover:text-white"
               >
-                {t('presetSlots.gates', { count: system.slots.length })}
+                {t(adapter.slotCountSummaryKey ?? 'presetSlots.gates', {
+                  count: system.slots.length,
+                })}
               </button>
             )}
             {lastSeenAt && (

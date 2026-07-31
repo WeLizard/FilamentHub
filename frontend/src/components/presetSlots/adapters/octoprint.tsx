@@ -1,12 +1,28 @@
 import { useTranslation } from 'react-i18next';
-import { AlertTriangle, ExternalLink } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ExternalLink, Info } from 'lucide-react';
 
 import type { FeedAdapter } from './types';
 
 const PLUGIN_PAGE = 'https://plugins.octoprint.org/plugins/Spoolman/';
 
-function SetupStep() {
+function SetupStep({ linkConfirmed }: { linkConfirmed: boolean }) {
   const { t } = useTranslation();
+
+  if (linkConfirmed) {
+    return (
+      <div className="mb-3 rounded-lg border border-emerald-400/15 bg-emerald-500/[0.06] px-3 py-2">
+        <div className="flex items-center gap-2">
+          <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-300" />
+          <span className="text-xs font-medium text-emerald-100">
+            {t('presetSlots.octoprint.connectedTitle')}
+          </span>
+        </div>
+        <p className="mt-1 text-[11px] leading-4 text-gray-400">
+          {t('presetSlots.octoprint.connectedDescription')}
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="mb-3 rounded-lg border border-amber-400/25 bg-amber-500/10 px-3 py-2">
@@ -32,11 +48,27 @@ function SetupStep() {
   );
 }
 
+function CreationGuide() {
+  const { t } = useTranslation();
+
+  return (
+    <div className="mt-4 flex gap-2 rounded-lg border border-sky-400/15 bg-sky-500/[0.06] px-3 py-2">
+      <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-sky-300" />
+      <p className="text-[11px] leading-4 text-gray-400">
+        {t('presetSlots.octoprint.createDescription')}
+      </p>
+    </div>
+  );
+}
+
 export const octoprintAdapter: FeedAdapter = {
   id: 'octoprint',
   labelKey: 'presetSlots.feedSystem.octoprint',
   fixedSlots: null,
   capabilities: ['read', 'write', 'spool_identity', 'consumption'],
+  contactMode: 'on_demand',
+  slotCountLabelKey: 'presetSlots.octoprint.toolCount',
+  slotCountSummaryKey: 'presetSlots.octoprint.tools',
   link: {
     hintKey: 'presetSlots.octoprint.linkHint',
     // The plugin appends /api/v1 itself and supports keeping the secret in a
@@ -44,5 +76,6 @@ export const octoprintAdapter: FeedAdapter = {
     snippet: (baseUrl) => baseUrl,
     apiKeyHeader: 'X-API-Key',
   },
-  renderSetup: ({ linkConfirmed }) => (linkConfirmed ? null : <SetupStep />),
+  renderCreateHelp: () => <CreationGuide />,
+  renderSetup: ({ linkConfirmed }) => <SetupStep linkConfirmed={linkConfirmed} />,
 };

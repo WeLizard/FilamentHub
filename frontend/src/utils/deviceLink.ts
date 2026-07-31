@@ -9,7 +9,8 @@
 
 import { useEffect, useState } from 'react';
 
-export type DeviceLinkState = 'active' | 'delayed' | 'inactive' | 'never';
+export type DeviceLinkState = 'active' | 'delayed' | 'inactive' | 'never' | 'ready';
+export type DeviceContactMode = 'periodic' | 'on_demand';
 
 // The real touch source is the adapter's own request cadence (Moonraker's
 // Spoolman polling, plugin sync), not a fixed heartbeat — thresholds are
@@ -34,8 +35,16 @@ export function latestDeviceContact(
   return latest;
 }
 
-export function getDeviceLinkState(lastSeenAt: string | null, now: number = Date.now()): DeviceLinkState {
+export function getDeviceLinkState(
+  lastSeenAt: string | null,
+  now: number = Date.now(),
+  contactMode: DeviceContactMode = 'periodic',
+): DeviceLinkState {
   if (!lastSeenAt) return 'never';
+  // Some providers contact FH only when their local UI requests the spool list
+  // or when a print reports usage. Silence between those actions is expected,
+  // not delayed data.
+  if (contactMode === 'on_demand') return 'ready';
   const diff = now - new Date(lastSeenAt).getTime();
   if (diff < DEVICE_LINK_ACTIVE_MS) return 'active';
   if (diff < DEVICE_LINK_DELAYED_MS) return 'delayed';

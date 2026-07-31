@@ -29,6 +29,12 @@ describe('getDeviceLinkState', () => {
     expect(getDeviceLinkState(iso(DEVICE_LINK_DELAYED_MS), NOW)).toBe('inactive');
     expect(getDeviceLinkState(iso(86_400_000), NOW)).toBe('inactive');
   });
+
+  it('keeps an on-demand provider ready between explicit requests', () => {
+    expect(getDeviceLinkState(iso(0), NOW, 'on_demand')).toBe('ready');
+    expect(getDeviceLinkState(iso(7 * 86_400_000), NOW, 'on_demand')).toBe('ready');
+    expect(getDeviceLinkState(null, NOW, 'on_demand')).toBe('never');
+  });
 });
 
 describe('latestDeviceContact', () => {

@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import type { GateState, PhysicalPrinter, MaterialSystem } from '../../../api/client';
+import type { DeviceContactMode } from '../../../utils/deviceLink';
 
 export type FeedAdapterCapability =
   | 'read'
@@ -34,6 +35,11 @@ export interface FeedAdapter {
   fixedSlots: number | null;
   /** Capabilities provided by this integration path, not hoped-for future features. */
   capabilities: FeedAdapterCapability[];
+  /** Whether silence between provider requests is expected. */
+  contactMode?: DeviceContactMode;
+  /** Provider-specific wording for the topology field and its saved summary. */
+  slotCountLabelKey?: string;
+  slotCountSummaryKey?: string;
   /** How the printer is pointed at us; null when nothing is linked at all. */
   link: FeedAdapterLink | null;
   /** Provider-specific guidance shown while its system is being created. */

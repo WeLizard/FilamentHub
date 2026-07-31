@@ -5613,10 +5613,12 @@
   "deviceLink": {
     "label": "插件连接",
     "active": "连接正常",
+    "ready": "按需连接",
     "delayed": "数据延迟",
     "inactive": "暂无最新数据",
     "never": "尚未连接",
     "tooltip": "插件与 FilamentHub 的连接状态，不代表打印机是否开机。",
+    "onDemandTooltip": "该插件仅在请求料盘或上报用量时连接 FilamentHub，操作之间没有请求是正常的。",
     "lastData": "最近数据：{{time}}",
     "time": {
       "ltMinute": "< 1 分钟",
@@ -5767,7 +5769,12 @@
       "linkHint": "在 Spoolman 设置中填入下方地址，启用 API 密钥，并把请求头和密钥复制到对应字段。",
       "setupTitle": "OctoPrint 需要安装 Spoolman 插件",
       "pluginPage": "插件页面",
-      "setupDescription": "插件从 OctoPrint 插件库安装。它将密钥与地址分开保存，并在每次打印后自动扣减用量。料卷与槽位的对应关系仍在此记录，因为插件不会上报这些信息。"
+      "setupDescription": "插件从 OctoPrint 插件库安装。它会读取 FilamentHub 料盘库，并在每次打印后自动扣减用量。",
+      "connectedTitle": "OctoPrint 按需连接",
+      "connectedDescription": "添加或修改料盘后，请打开 Spoolman 料盘选择器并点击刷新。插件按工具/挤出机在本地保存选择；FilamentHub 槽位分配不会推送到插件。",
+      "createDescription": "使用官方 Spoolman 插件时，每个位置代表 OctoPrint 工具/挤出机，而不是 MMU 通道。单喷嘴打印机请填写 1。",
+      "toolCount": "工具 / 挤出机",
+      "tools_other": "{{count}} 个工具"
     }
   },
   "confirmEmailChange": {

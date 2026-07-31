@@ -5617,10 +5617,12 @@
   "deviceLink": {
     "label": "Plugin link",
     "active": "Link active",
+    "ready": "Connected on demand",
     "delayed": "Data delayed",
     "inactive": "No recent data",
     "never": "Never connected",
     "tooltip": "Freshness of the plugin's link to FilamentHub. Does not indicate whether the printer is powered on.",
+    "onDemandTooltip": "This plugin contacts FilamentHub only when it requests spools or reports usage. Quiet periods are normal.",
     "lastData": "Last data: {{time}}",
     "time": {
       "ltMinute": "< 1 min",
@@ -5773,7 +5775,13 @@
       "linkHint": "In the Spoolman settings, enter the address below, enable API key, and copy the header and key into their matching fields.",
       "setupTitle": "The Spoolman plugin is needed in OctoPrint",
       "pluginPage": "Plugin page",
-      "setupDescription": "Install the plugin from the OctoPrint repository. It stores the key separately from the address and subtracts usage automatically after each print. Spool-to-slot assignments stay here because the plugin does not report them."
+      "setupDescription": "Install the plugin from the OctoPrint repository. It reads your FilamentHub spool library and subtracts usage automatically after each print.",
+      "connectedTitle": "OctoPrint is connected on demand",
+      "connectedDescription": "Open the Spoolman spool selector and press Refresh after adding or changing spools. The plugin keeps selected spools locally per tool/extruder; FilamentHub slot assignments are not pushed into it.",
+      "createDescription": "With the official Spoolman plugin, each position represents an OctoPrint tool/extruder, not an MMU gate. Use 1 for a single-nozzle printer.",
+      "toolCount": "Tools / extruders",
+      "tools_one": "{{count}} tool",
+      "tools_other": "{{count}} tools"
     }
   },
   "confirmEmailChange": {
