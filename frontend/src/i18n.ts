@@ -29,9 +29,10 @@ i18n
     nonExplicitSupportedLngs: true,
     load: 'languageOnly',
     detection: {
-      // Read order: an explicit user choice (written to localStorage by
-      // LanguageSwitcher) wins; otherwise fall back to the browser language.
-      order: ['localStorage', 'navigator', 'htmlTag'],
+      // The OrcaSlicer plugin passes its host UI language as ?lng=. Outside the
+      // embedded catalog, an explicit site choice still wins over the browser.
+      order: ['querystring', 'localStorage', 'navigator', 'htmlTag'],
+      lookupQuerystring: 'lng',
       // Do NOT cache auto-detected language — that would lock the first-visit
       // detection and ignore later browser-language changes. Only an explicit
       // manual choice is persisted (by LanguageSwitcher), so until then the

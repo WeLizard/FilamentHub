@@ -173,6 +173,218 @@ def host_ui_language():
     return "en"
 
 
+UI_COPY = {
+    "en": {
+        "signIn": "Sign in",
+        "signInTitle": "Sign in to FilamentHub",
+        "signOut": "Sign out",
+        "catalog": "Catalog",
+        "profile": "Profile",
+        "wiki": "Wiki",
+        "sync": "Sync",
+        "syncTitle": "Sync your FilamentHub presets with OrcaSlicer",
+        "recover": "Recover",
+        "recoverTitle": "Find local OrcaSlicer filament presets and import selected ones as drafts",
+        "log": "Log",
+        "logTitle": "Copy the plugin log to the clipboard",
+        "catalogTitle": "FilamentHub catalog",
+        "connectTitle": "Connecting to FilamentHub...",
+        "connectMessage": "Please wait while the catalog is loaded.",
+        "unavailableTitle": "FilamentHub is temporarily unavailable",
+        "unavailableMessage": "The service may be undergoing maintenance. Your local OrcaSlicer presets are safe. Please try again later.",
+        "retry": "Try again",
+        "oauthTitle": "Finish signing in in your web browser",
+        "oauthHint": "Your browser should have opened. If it did not, copy this link and open it in your browser, then return here.",
+        "copyLink": "Copy link",
+        "copied": "Copied",
+        "cancel": "Cancel",
+        "logEmpty": "The plugin log is empty — run Sync once, then copy it again.",
+        "logCopied": "Plugin log copied. Paste it into your beta feedback.",
+        "logCopyFailed": "Could not copy the plugin log.",
+        "logReadFailed": "Could not read the plugin log.",
+        "catalogOpened": "FilamentHub catalog opened.",
+        "sliceWrongStep": "Not the G-code post-process step",
+        "sliceNotReady": "G-code file not ready",
+        "sliceUnreadable": "Could not read G-code",
+        "sliceNotSignedIn": "Not signed in to FilamentHub",
+        "sliceReportFailed": "Report failed",
+        "sliceReported": "Reported {name} to FilamentHub",
+        "recoveryNone": "Recovery: nothing selected.",
+        "recoveryDone": "Recovered as drafts: {count}.",
+        "importSignIn": "Please sign in to FilamentHub in the window, then import again.",
+        "sessionExpired": "Your FilamentHub session expired. Sign in again in the window.",
+        "exportFailed": "Export failed (HTTP {status}).",
+        "importedLive": "Imported '{name}' — it is now in the FilamentHub group of the filament dropdown.",
+        "importedRestart": "Imported '{name}' into your filament presets.\n\nRestart OrcaSlicer to see it in the filament dropdown.",
+        "importFailed": "Import failed: {error}",
+        "syncSignIn": "Sign in to FilamentHub in the window, then sync.",
+        "syncFailed": "Sync failed (HTTP {status}).",
+        "syncUnexpected": "Sync failed: unexpected response.",
+        "summaryNew": "new: {count}",
+        "summaryUpdated": "updated: {count}",
+        "summarySent": "sent to FilamentHub: {count}",
+        "summaryRemoved": "removed: {count}",
+        "summaryRenamed": "renamed: {count}",
+        "summaryCurrent": "up to date: {count}",
+        "summaryFailed": "failed: {count}",
+        "summaryDrafts": "imported as drafts: {count}",
+        "summaryNothing": "nothing to sync",
+        "profileMachine": "printer profiles",
+        "profileProcess": "print profiles",
+        "dropdownCurrent": "The filament dropdown is up to date.",
+        "dropdownRestart": "Restart OrcaSlicer to apply the changes in the filament dropdown.",
+        "syncComplete": "Sync complete: {summary}. {note}",
+    },
+    "ru": {
+        "signIn": "Войти",
+        "signInTitle": "Войти в FilamentHub",
+        "signOut": "Выйти",
+        "catalog": "Каталог",
+        "profile": "Профиль",
+        "wiki": "База знаний",
+        "sync": "Синхронизация",
+        "syncTitle": "Синхронизировать профили FilamentHub с OrcaSlicer",
+        "recover": "Восстановить",
+        "recoverTitle": "Найти локальные профили филамента OrcaSlicer и импортировать выбранные как черновики",
+        "log": "Журнал",
+        "logTitle": "Скопировать журнал плагина в буфер обмена",
+        "catalogTitle": "Каталог FilamentHub",
+        "connectTitle": "Подключение к FilamentHub…",
+        "connectMessage": "Подождите, пока загрузится каталог.",
+        "unavailableTitle": "FilamentHub временно недоступен",
+        "unavailableMessage": "Возможно, сейчас идут технические работы. Ваши локальные профили OrcaSlicer в безопасности. Попробуйте ещё раз позже.",
+        "retry": "Повторить",
+        "oauthTitle": "Завершите вход в браузере",
+        "oauthHint": "Браузер должен был открыться. Если этого не произошло, скопируйте ссылку, откройте её в браузере и вернитесь сюда.",
+        "copyLink": "Копировать ссылку",
+        "copied": "Скопировано",
+        "cancel": "Отмена",
+        "logEmpty": "Журнал плагина пуст — один раз запустите синхронизацию и повторите.",
+        "logCopied": "Журнал плагина скопирован. Вставьте его в отзыв о бета-версии.",
+        "logCopyFailed": "Не удалось скопировать журнал плагина.",
+        "logReadFailed": "Не удалось прочитать журнал плагина.",
+        "catalogOpened": "Каталог FilamentHub открыт.",
+        "sliceWrongStep": "Это не этап постобработки G-code",
+        "sliceNotReady": "Файл G-code ещё не готов",
+        "sliceUnreadable": "Не удалось прочитать G-code",
+        "sliceNotSignedIn": "Вход в FilamentHub не выполнен",
+        "sliceReportFailed": "Не удалось передать данные о нарезке",
+        "sliceReported": "Данные о {name} переданы в FilamentHub",
+        "recoveryNone": "Восстановление: ничего не выбрано.",
+        "recoveryDone": "Восстановлено как черновики: {count}.",
+        "importSignIn": "Войдите в FilamentHub в окне плагина и повторите импорт.",
+        "sessionExpired": "Сессия FilamentHub истекла. Войдите снова в окне плагина.",
+        "exportFailed": "Не удалось экспортировать профиль (HTTP {status}).",
+        "importedLive": "Профиль «{name}» импортирован в группу FilamentHub списка филаментов.",
+        "importedRestart": "Профиль «{name}» импортирован.\n\nПерезапустите OrcaSlicer, чтобы увидеть его в списке филаментов.",
+        "importFailed": "Не удалось импортировать профиль: {error}",
+        "syncSignIn": "Войдите в FilamentHub в окне плагина и повторите синхронизацию.",
+        "syncFailed": "Синхронизация не выполнена (HTTP {status}).",
+        "syncUnexpected": "Синхронизация не выполнена: неожиданный ответ сервера.",
+        "summaryNew": "новые: {count}",
+        "summaryUpdated": "обновлены: {count}",
+        "summarySent": "отправлены в FilamentHub: {count}",
+        "summaryRemoved": "удалены: {count}",
+        "summaryRenamed": "переименованы: {count}",
+        "summaryCurrent": "актуальны: {count}",
+        "summaryFailed": "ошибки: {count}",
+        "summaryDrafts": "импортированы как черновики: {count}",
+        "summaryNothing": "синхронизировать нечего",
+        "profileMachine": "профили принтеров",
+        "profileProcess": "профили печати",
+        "dropdownCurrent": "Список филаментов обновлён.",
+        "dropdownRestart": "Перезапустите OrcaSlicer, чтобы применить изменения в списке филаментов.",
+        "syncComplete": "Синхронизация завершена: {summary}. {note}",
+    },
+    "zh": {
+        "signIn": "登录",
+        "signInTitle": "登录 FilamentHub",
+        "signOut": "退出登录",
+        "catalog": "目录",
+        "profile": "个人资料",
+        "wiki": "知识库",
+        "sync": "同步",
+        "syncTitle": "将 FilamentHub 预设与 OrcaSlicer 同步",
+        "recover": "恢复",
+        "recoverTitle": "查找本地 OrcaSlicer 耗材预设，并将选中的预设作为草稿导入",
+        "log": "日志",
+        "logTitle": "将插件日志复制到剪贴板",
+        "catalogTitle": "FilamentHub 目录",
+        "connectTitle": "正在连接 FilamentHub…",
+        "connectMessage": "请稍候，目录正在加载。",
+        "unavailableTitle": "FilamentHub 暂时不可用",
+        "unavailableMessage": "服务可能正在维护中。您的本地 OrcaSlicer 预设不会受到影响，请稍后重试。",
+        "retry": "重试",
+        "oauthTitle": "请在浏览器中完成登录",
+        "oauthHint": "浏览器应该已经打开。如果没有，请复制此链接并在浏览器中打开，然后返回此处。",
+        "copyLink": "复制链接",
+        "copied": "已复制",
+        "cancel": "取消",
+        "logEmpty": "插件日志为空。请先运行一次同步，然后再复制。",
+        "logCopied": "插件日志已复制，请将其粘贴到测试反馈中。",
+        "logCopyFailed": "无法复制插件日志。",
+        "logReadFailed": "无法读取插件日志。",
+        "catalogOpened": "FilamentHub 目录已打开。",
+        "sliceWrongStep": "当前步骤不是 G-code 后处理步骤",
+        "sliceNotReady": "G-code 文件尚未就绪",
+        "sliceUnreadable": "无法读取 G-code",
+        "sliceNotSignedIn": "尚未登录 FilamentHub",
+        "sliceReportFailed": "无法报告切片结果",
+        "sliceReported": "已将 {name} 报告给 FilamentHub",
+        "recoveryNone": "恢复：未选择任何项目。",
+        "recoveryDone": "已恢复为草稿：{count}。",
+        "importSignIn": "请在插件窗口中登录 FilamentHub，然后重试导入。",
+        "sessionExpired": "FilamentHub 会话已过期，请在插件窗口中重新登录。",
+        "exportFailed": "导出失败（HTTP {status}）。",
+        "importedLive": "已导入“{name}”，可在耗材下拉列表的 FilamentHub 分组中找到。",
+        "importedRestart": "已将“{name}”导入耗材预设。\n\n请重启 OrcaSlicer，以便在耗材下拉列表中显示。",
+        "importFailed": "导入失败：{error}",
+        "syncSignIn": "请在插件窗口中登录 FilamentHub，然后重试同步。",
+        "syncFailed": "同步失败（HTTP {status}）。",
+        "syncUnexpected": "同步失败：服务器返回了意外响应。",
+        "summaryNew": "新增：{count}",
+        "summaryUpdated": "已更新：{count}",
+        "summarySent": "已发送到 FilamentHub：{count}",
+        "summaryRemoved": "已删除：{count}",
+        "summaryRenamed": "已重命名：{count}",
+        "summaryCurrent": "已是最新：{count}",
+        "summaryFailed": "失败：{count}",
+        "summaryDrafts": "已导入为草稿：{count}",
+        "summaryNothing": "无需同步",
+        "profileMachine": "打印机配置",
+        "profileProcess": "打印配置",
+        "dropdownCurrent": "耗材下拉列表已更新。",
+        "dropdownRestart": "请重启 OrcaSlicer，以应用耗材下拉列表中的更改。",
+        "syncComplete": "同步完成：{summary}。{note}",
+    },
+}
+
+_CACHED_UI_LANGUAGE = ""
+
+
+def refresh_ui_language():
+    """Read the host on its UI thread and cache the result for worker messages."""
+    global _CACHED_UI_LANGUAGE
+    language = host_ui_language()
+    if language:
+        _CACHED_UI_LANGUAGE = language
+    return language
+
+
+def ui_text(key, **values):
+    language = _CACHED_UI_LANGUAGE or "en"
+    template = UI_COPY.get(language, UI_COPY["en"])[key]
+    return template.format(**values)
+
+
+def localized_embed_url(language=None):
+    language = host_ui_language() if language is None else language
+    if not language:
+        return EMBED_URL
+    separator = "&" if "?" in EMBED_URL else "?"
+    return EMBED_URL + separator + urllib.parse.urlencode({"lng": language})
+
+
 def _temporary_path(path):
     return "%s.tmp.%d.%d" % (path, os.getpid(), threading.get_ident())
 
@@ -1448,9 +1660,9 @@ PAGE = r"""<!DOCTYPE html>
       <span id="brand">Sign in</span>
       <button id="logout" title="Sign out">Sign out</button>
     </span>
-    <button data-path="/" class="active">Catalog</button>
-    <button data-path="/profile">Profile</button>
-    <button data-path="/wiki">Wiki</button>
+    <button id="catalog" data-path="/" class="active">Catalog</button>
+    <button id="profile" data-path="/profile">Profile</button>
+    <button id="wiki" data-path="/wiki">Wiki</button>
     <button id="sync" title="Sync your FilamentHub presets with OrcaSlicer">Sync</button>
     <button id="recover" title="Find your local OrcaSlicer filament presets and import the ones you pick as drafts">Recover</button>
     <button id="diag" __DIAG_HIDDEN__ title="Copy the plugin log to the clipboard">Log</button>
@@ -1483,38 +1695,37 @@ var oauthPollTimer = null;
 var oauthDeadline = 0;
 var catalogReady = false;
 var catalogReadyTimer = null;
-var STATUS_COPY = {
-  en: {
-    connectTitle: 'Connecting to FilamentHub...',
-    connectMessage: 'Please wait while the catalog is loaded.',
-    unavailableTitle: 'FilamentHub is temporarily unavailable',
-    unavailableMessage: 'The service may be undergoing maintenance. Your local OrcaSlicer presets are safe. Please try again later.',
-    retry: 'Try again'
-  },
-  ru: {
-    connectTitle: 'Подключение к FilamentHub…',
-    connectMessage: 'Подождите, пока загрузится каталог.',
-    unavailableTitle: 'FilamentHub временно недоступен',
-    unavailableMessage: 'Возможно, сейчас идут технические работы. Ваши локальные профили OrcaSlicer в безопасности. Попробуйте ещё раз позже.',
-    retry: 'Повторить'
-  },
-  zh: {
-    connectTitle: '正在连接 FilamentHub…',
-    connectMessage: '请稍候，目录正在加载。',
-    unavailableTitle: 'FilamentHub 暂时不可用',
-    unavailableMessage: '服务可能正在维护中。您的本地 OrcaSlicer 预设不会受到影响，请稍后重试。',
-    retry: '重试'
-  }
-};
+var UI_COPY = __UI_COPY__;
 var hostLanguage = '__HOST_UI_LANGUAGE__';
 var browserLanguage = (hostLanguage || navigator.language || 'en').toLowerCase();
-var statusLocale = browserLanguage.indexOf('ru') === 0
+var uiLocale = browserLanguage.indexOf('ru') === 0
   ? 'ru'
   : browserLanguage.indexOf('zh') === 0
     ? 'zh'
     : 'en';
-var statusCopy = STATUS_COPY[statusLocale];
-document.documentElement.lang = statusLocale;
+var uiCopy = UI_COPY[uiLocale];
+document.documentElement.lang = uiLocale;
+
+function applyShellCopy() {
+  var setText = function (id, text) {
+    var element = document.getElementById(id);
+    if (element) element.textContent = text;
+  };
+  setText('brand', uiCopy.signIn);
+  setText('logout', uiCopy.signOut);
+  setText('catalog', uiCopy.catalog);
+  setText('profile', uiCopy.profile);
+  setText('wiki', uiCopy.wiki);
+  setText('sync', uiCopy.sync);
+  setText('recover', uiCopy.recover);
+  setText('diag', uiCopy.log);
+  document.getElementById('logout').title = uiCopy.signOut;
+  document.getElementById('sync').title = uiCopy.syncTitle;
+  document.getElementById('recover').title = uiCopy.recoverTitle;
+  document.getElementById('diag').title = uiCopy.logTitle;
+  frame.title = uiCopy.catalogTitle;
+}
+applyShellCopy();
 
 
 function showCatalogStatus(mode) {
@@ -1522,12 +1733,12 @@ function showCatalogStatus(mode) {
   document.getElementById('service-status').style.display = 'flex';
   document.getElementById('service-spinner').style.display = unavailable ? 'none' : 'block';
   document.getElementById('service-status-title').textContent = unavailable
-    ? statusCopy.unavailableTitle
-    : statusCopy.connectTitle;
+    ? uiCopy.unavailableTitle
+    : uiCopy.connectTitle;
   document.getElementById('service-status-message').textContent = unavailable
-    ? statusCopy.unavailableMessage
-    : statusCopy.connectMessage;
-  document.getElementById('service-retry').textContent = statusCopy.retry;
+    ? uiCopy.unavailableMessage
+    : uiCopy.connectMessage;
+  document.getElementById('service-retry').textContent = uiCopy.retry;
   document.getElementById('service-retry').style.display = unavailable ? 'block' : 'none';
 }
 function waitForCatalog() {
@@ -1565,7 +1776,7 @@ function setAuthControls(loggedIn) {
   if (recoverBtn) recoverBtn.style.display = loggedIn ? 'inline-block' : 'none';
   var brand = document.getElementById('brand');
   brand.style.cursor = loggedIn ? 'default' : 'pointer';
-  brand.title = loggedIn ? '' : 'Sign in to FilamentHub';
+  brand.title = loggedIn ? '' : uiCopy.signInTitle;
   // Signed out: make the label read as an actionable button (accent colour).
   brand.style.color = loggedIn ? 'var(--orca-fg,#e0e0e0)' : 'var(--orca-accent,#8b7cf8)';
 }
@@ -1595,7 +1806,7 @@ window.addEventListener('message', function (event) {
     // auth-only controls (Profile, Sync). On a fresh sign-in, return the catalog
     // to the active tab so the user isn't dropped on the app's default page.
     var loggedIn = !!data.label;
-    document.getElementById('brand').textContent = data.label || 'Sign in';
+    document.getElementById('brand').textContent = data.label || uiCopy.signIn;
     document.getElementById('logout').style.display = loggedIn ? 'inline-block' : 'none';
     setAuthControls(loggedIn);
     if (loggedIn && !wasLoggedIn) navigateActive();
@@ -1678,11 +1889,10 @@ function showOAuthOverlay(url) {
     'background:var(--orca-bg,#1e1e2e);color:var(--orca-fg,#e0e0e0);' +
     'border:1px solid var(--orca-border,#3c3c4c);font-size:13px;';
   var title = document.createElement('div');
-  title.textContent = 'Finish signing in in your web browser';
+  title.textContent = uiCopy.oauthTitle;
   title.style.cssText = 'font-weight:600;margin-bottom:8px;';
   var hint = document.createElement('div');
-  hint.textContent = 'Your browser should have opened. If it did not, copy this ' +
-    'link and open it in your browser, then return here.';
+  hint.textContent = uiCopy.oauthHint;
   hint.style.cssText = 'margin-bottom:10px;color:var(--orca-muted,#a0a0a0);';
   var input = document.createElement('input');
   input.id = 'oauth-url';
@@ -1694,14 +1904,14 @@ function showOAuthOverlay(url) {
   var row = document.createElement('div');
   row.style.cssText = 'display:flex;gap:8px;justify-content:flex-end;';
   var copy = document.createElement('button');
-  copy.textContent = 'Copy link';
+  copy.textContent = uiCopy.copyLink;
   copy.style.cssText = 'padding:6px 14px;border-radius:6px;cursor:pointer;' +
     'border:1px solid var(--orca-accent,#8b7cf8);background:transparent;' +
     'color:var(--orca-accent,#8b7cf8);font:inherit;';
   copy.addEventListener('click', function () {
     input.focus();
     input.select();
-    var done = function () { copy.textContent = 'Copied'; };
+    var done = function () { copy.textContent = uiCopy.copied; };
     try {
       if (navigator.clipboard && navigator.clipboard.writeText) {
         navigator.clipboard.writeText(input.value).then(done, function () {
@@ -1711,7 +1921,7 @@ function showOAuthOverlay(url) {
     } catch (e) {}
   });
   var close = document.createElement('button');
-  close.textContent = 'Cancel';
+  close.textContent = uiCopy.cancel;
   close.style.cssText = 'padding:6px 14px;border-radius:6px;cursor:pointer;' +
     'border:1px solid var(--orca-border,#3c3c4c);background:transparent;' +
     'color:var(--orca-fg,#e0e0e0);font:inherit;';
@@ -1891,13 +2101,13 @@ function relayNote(text) {
 }
 function copyDiagnostics(text) {
   if (!text) {
-    relayNote('The plugin log is empty — run Sync once, then copy it again.');
+    relayNote(uiCopy.logEmpty);
     return;
   }
   navigator.clipboard.writeText(text).then(function () {
-    relayNote('Plugin log copied. Paste it into your beta feedback.');
+    relayNote(uiCopy.logCopied);
   }, function () {
-    relayNote('Could not copy the plugin log.');
+    relayNote(uiCopy.logCopyFailed);
   });
 }
 // The host handle can push worker results directly into this page. Keep the
@@ -1944,7 +2154,7 @@ document.getElementById('diag').addEventListener('click', function () {
   fetch(LOG_PATH, { cache: 'no-store' })
     .then(function (r) { return r.text(); })
     .then(copyDiagnostics)
-    .catch(function () { relayNote('Could not read the plugin log.'); });
+    .catch(function () { relayNote(uiCopy.logReadFailed); });
 });
 
 // Sign out: tell the catalog to log out; it clears the session and reports back
@@ -1958,7 +2168,8 @@ document.getElementById('logout').addEventListener('click', function () {
 </script>
 </body>
 </html>
-""".replace("__EMBED_URL__", EMBED_URL).replace("__SITE_ORIGIN__", SITE_URL).replace(
+""".replace("__SITE_ORIGIN__", SITE_URL).replace(
+    "__UI_COPY__", json.dumps(UI_COPY, ensure_ascii=False).replace("</", "<\\/")).replace(
     "__OAUTH_STATUS_PATH__", SHELL_SERVER.status_path()).replace(
     "__SYNC_STATUS_PATH__", SHELL_SERVER.sync_status_path()).replace(
     "__RECOVER_STATUS_PATH__", SHELL_SERVER.recover_status_path()).replace(
@@ -1969,7 +2180,9 @@ document.getElementById('logout').addEventListener('click', function () {
 
 
 def render_page():
-    return PAGE.replace("__HOST_UI_LANGUAGE__", host_ui_language())
+    language = refresh_ui_language()
+    return PAGE.replace("__HOST_UI_LANGUAGE__", language).replace(
+        "__EMBED_URL__", localized_embed_url(language))
 
 
 # --------------------------------------------------------------------------- #
@@ -2129,10 +2342,10 @@ def report_slice(gcode_path, output_name="", host=""):
     """Tell FilamentHub a slice exists. Returns (sent, reason)."""
     identity = _read_slice_identity(gcode_path)
     if identity is None:
-        return False, "unreadable G-code"
+        return False, ui_text("sliceUnreadable")
     token = (load_saved_auth() or {}).get("accessToken") or ""
     if not token:
-        return False, "not signed in"
+        return False, ui_text("sliceNotSignedIn")
     identity["file_name"] = (
         os.path.basename(output_name or gcode_path) or "print.gcode"
     )[:300]
@@ -2160,11 +2373,11 @@ class _SliceReporterMixin:
         if post is None:
             post = getattr(_SLICING, "psGCodePostProcess", None)
         if step is not None and post is not None and step != post:
-            return orca.ExecutionResult.skipped("Not the G-code post-process step")
+            return orca.ExecutionResult.skipped(ui_text("sliceWrongStep"))
 
         path = getattr(ctx, "gcode_path", "") or ""
         if not path or not os.path.exists(path):
-            return orca.ExecutionResult.skipped("G-code file not ready")
+            return orca.ExecutionResult.skipped(ui_text("sliceNotReady"))
 
         try:
             sent, reason = report_slice(
@@ -2175,10 +2388,10 @@ class _SliceReporterMixin:
         except Exception as exc:
             # A failed report must never spoil an export the person asked for.
             fh_log("slice report failed: %s" % exc)
-            return orca.ExecutionResult.skipped("Report failed")
+            return orca.ExecutionResult.skipped(ui_text("sliceReportFailed"))
         if not sent:
             return orca.ExecutionResult.skipped(reason)
-        return orca.ExecutionResult.success("Reported %s to FilamentHub" % reason)
+        return orca.ExecutionResult.success(ui_text("sliceReported", name=reason))
 
 
 if _SLICE_CAPABILITY_BASE is not None:
@@ -2246,7 +2459,7 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
 
     def execute(self):
         self._open()
-        return orca.ExecutionResult.success("FilamentHub catalog opened.")
+        return orca.ExecutionResult.success(ui_text("catalogOpened"))
 
     def on_close(self):
         self.win = None
@@ -2437,7 +2650,7 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
     def _do_recover_import(self, token, names):
         # Push only the presets the user checked in the embed picker as drafts.
         if not token or not isinstance(names, list) or not names:
-            self._deliver_sync_result("Recovery: nothing selected.")
+            self._deliver_sync_result(ui_text("recoveryNone"))
             return
         wanted = {str(n) for n in names}
         candidates = [c for c in scan_recovery_filaments() if c["name"] in wanted]
@@ -2447,7 +2660,7 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
             for did in sent_ids:
                 imported[did] = 1
             save_imported_draft_ids(imported)
-        self._deliver_sync_result("Recovered %d preset(s) as drafts." % len(sent_ids))
+        self._deliver_sync_result(ui_text("recoveryDone", count=len(sent_ids)))
 
     def _start_external_oauth(self, provider):
         # Google/Yandex block their consent pages in embedded WebViews, so run the
@@ -2492,7 +2705,7 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
             return
         if not token:
             orca.host.ui.message(
-                "Please sign in to FilamentHub in the window, then import again.",
+                ui_text("importSignIn"),
                 title="FilamentHub", icon="warning")
             return
         try:
@@ -2500,11 +2713,11 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
             if status == 401:
                 clear_auth()
                 orca.host.ui.message(
-                    "Your FilamentHub session expired. Sign in again in the window.",
+                    ui_text("sessionExpired"),
                     title="FilamentHub", icon="warning")
                 return
             if status != 200:
-                orca.host.ui.message("Export failed (HTTP %s)." % status,
+                orca.host.ui.message(ui_text("exportFailed", status=status),
                                      title="FilamentHub", icon="error")
                 return
 
@@ -2534,15 +2747,15 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
 
             if reload_host_presets():
                 orca.host.ui.message(
-                    "Imported '%s' — now in the FilamentHub group of the filament dropdown." % name,
+                    ui_text("importedLive", name=name),
                     title="FilamentHub", icon="info")
             else:
                 orca.host.ui.message(
-                    "Imported '%s' into your filament presets.\n\n"
-                    "Restart OrcaSlicer to see it in the filament dropdown." % name,
+                    ui_text("importedRestart", name=name),
                     title="FilamentHub", icon="info")
         except Exception as exc:
-            orca.host.ui.message("Import failed: %s" % exc, title="FilamentHub", icon="error")
+            orca.host.ui.message(
+                ui_text("importFailed", error=exc), title="FilamentHub", icon="error")
 
     # --- two-way sync (plugin-side) ------------------------------------------ #
     def _pull_one(self, pid, token, known_presets, folder, remote):
@@ -2605,7 +2818,7 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
                  host_profiles=None, observations=None):
         if not token:
             if announce:
-                orca.host.ui.message("Sign in to FilamentHub in the window, then Sync.",
+                orca.host.ui.message(ui_text("syncSignIn"),
                                      title="FilamentHub", icon="warning")
             return
         ensure_bundle_metadata()
@@ -2618,18 +2831,20 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
         if status == 401:
             clear_auth()
             if announce:
-                orca.host.ui.message("Your FilamentHub session expired. Sign in again in the window.",
+                orca.host.ui.message(ui_text("sessionExpired"),
                                      title="FilamentHub", icon="warning")
             return
         if status != 200:
             if announce:
-                orca.host.ui.message("Sync failed (HTTP %s)." % status, title="FilamentHub", icon="error")
+                orca.host.ui.message(
+                    ui_text("syncFailed", status=status), title="FilamentHub", icon="error")
             return
         try:
             remote_items = (json.loads(body.decode("utf-8")) or {}).get("items") or []
         except ValueError:
             if announce:
-                orca.host.ui.message("Sync failed: unexpected response.", title="FilamentHub", icon="error")
+                orca.host.ui.message(
+                    ui_text("syncUnexpected"), title="FilamentHub", icon="error")
             return
 
         local = scan_local_fh_presets(folder)
@@ -2743,11 +2958,12 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
                 kind, token, (host_profiles or {}).get(kind) or [], state)
             bits = []
             if kind_sent:
-                bits.append("%d sent to FilamentHub" % kind_sent)
+                bits.append(ui_text("summarySent", count=kind_sent))
             if kind_failed:
-                bits.append("%d failed" % kind_failed)
+                bits.append(ui_text("summaryFailed", count=kind_failed))
             if bits:
-                profile_parts.append("%s profiles: %s" % (PROFILE_KINDS[kind]["label"], ", ".join(bits)))
+                label_key = "profileMachine" if kind == "machine" else "profileProcess"
+                profile_parts.append("%s: %s" % (ui_text(label_key), ", ".join(bits)))
         save_sync_state(state)
         # After the profiles, never before: FilamentHub ties an observed printer to
         # its profile by the Orca preset id, so the profile has to exist first or
@@ -2756,19 +2972,19 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
 
         parts = []
         if pulled:
-            parts.append("%d new" % pulled)
+            parts.append(ui_text("summaryNew", count=pulled))
         if updated:
-            parts.append("%d updated" % updated)
+            parts.append(ui_text("summaryUpdated", count=updated))
         if pushed:
-            parts.append("%d sent to FilamentHub" % pushed)
+            parts.append(ui_text("summarySent", count=pushed))
         if removed:
-            parts.append("%d removed" % removed)
+            parts.append(ui_text("summaryRemoved", count=removed))
         if renamed:
-            parts.append("%d renamed" % renamed)
+            parts.append(ui_text("summaryRenamed", count=renamed))
         if skipped:
-            parts.append("%d up to date" % skipped)
+            parts.append(ui_text("summaryCurrent", count=skipped))
         if failed:
-            parts.append("%d failed" % failed)
+            parts.append(ui_text("summaryFailed", count=failed))
         if active_filaments and _auto_import_enabled(token):
             imported = load_imported_draft_ids()
             fresh = [c for c in active_filaments if _draft_id(c["name"]) not in imported]
@@ -2778,23 +2994,23 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
                 for did in sent_ids:
                     imported[did] = 1
                 save_imported_draft_ids(imported)
-                parts.append("%d imported as drafts" % len(sent_ids))
+                parts.append(ui_text("summaryDrafts", count=len(sent_ids)))
         parts.extend(profile_parts)
-        summary = ", ".join(parts) or "nothing to sync"
-        fh_log("sync done: %s (pull=%d upd=%d push=%d rm=%d ren=%d skip=%d fail=%d)" % (summary, pulled, updated, pushed, removed, renamed, skipped, failed))
+        summary = ", ".join(parts) or ui_text("summaryNothing")
+        fh_log("sync done: pull=%d upd=%d push=%d rm=%d ren=%d skip=%d fail=%d" %
+               (pulled, updated, pushed, removed, renamed, skipped, failed))
         note = ""
         if pulled or updated or removed or renamed:
-            note = ("\n\nThe filament dropdown is up to date." if reload_host_presets()
-                    else "\n\nRestart OrcaSlicer to apply the changes in the filament dropdown.")
+            note = (ui_text("dropdownCurrent") if reload_host_presets()
+                    else ui_text("dropdownRestart"))
         if announce:
-            self._deliver_sync_result(
-                ("Sync complete: %s.%s" % (summary, note)).replace("\n\n", " ")
-            )
+            self._deliver_sync_result(ui_text("syncComplete", summary=summary, note=note).strip())
 
 
 @orca.plugin
 class FilamentHubPlugin(orca.base):
     def register_capabilities(self):
+        refresh_ui_language()
         configure_plugin_storage()
         orca.register_capability(FilamentHubCatalog)
         if FilamentHubSliceReporter is not None:

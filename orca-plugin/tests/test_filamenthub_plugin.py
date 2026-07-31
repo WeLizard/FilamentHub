@@ -167,15 +167,17 @@ def test_shell_replaces_webview_errors_with_maintenance_status(plugin_module):
 
 
 @pytest.mark.parametrize(
-    ("host_language", "expected"),
+    ("host_language", "expected", "catalog_label"),
     [
-        ("ru_RU", "ru"),
-        ("zh_CN", "zh"),
-        ("en_US", "en"),
-        ("de_DE", "en"),
+        ("ru_RU", "ru", "Каталог"),
+        ("zh_CN", "zh", "目录"),
+        ("en_US", "en", "Catalog"),
+        ("de_DE", "en", "Catalog"),
     ],
 )
-def test_shell_uses_orca_ui_language(plugin_module, monkeypatch, host_language, expected):
+def test_shell_uses_orca_ui_language(
+    plugin_module, monkeypatch, host_language, expected, catalog_label
+):
     monkeypatch.setattr(
         plugin_module.orca.host,
         "app_language",
@@ -186,18 +188,49 @@ def test_shell_uses_orca_ui_language(plugin_module, monkeypatch, host_language, 
     rendered = plugin_module.render_page()
 
     assert f"var hostLanguage = '{expected}';" in rendered
+    assert f"?lng={expected}" in rendered
+    assert json.dumps(catalog_label, ensure_ascii=False) in rendered
     assert "__HOST_UI_LANGUAGE__" not in rendered
+    assert "__EMBED_URL__" not in rendered
 
 
 def test_shell_language_falls_back_on_older_or_uninitialized_hosts(plugin_module, monkeypatch):
     monkeypatch.delattr(plugin_module.orca.host, "app_language", raising=False)
-    assert "var hostLanguage = '';" in plugin_module.render_page()
+    rendered = plugin_module.render_page()
+    assert "var hostLanguage = '';" in rendered
+    assert "?lng=" not in rendered
 
     def unavailable():
         raise RuntimeError("OrcaSlicer application is not initialized")
 
     monkeypatch.setattr(plugin_module.orca.host, "app_language", unavailable, raising=False)
-    assert "var hostLanguage = '';" in plugin_module.render_page()
+    rendered = plugin_module.render_page()
+    assert "var hostLanguage = '';" in rendered
+    assert "?lng=" not in rendered
+
+
+def test_native_plugin_messages_follow_orca_ui_language(plugin_module, monkeypatch):
+    messages = []
+    monkeypatch.setattr(
+        plugin_module.orca.host,
+        "app_language",
+        lambda: "ru_RU",
+        raising=False,
+    )
+    monkeypatch.setattr(
+        plugin_module.orca.host.ui,
+        "message",
+        lambda text, **kwargs: messages.append((text, kwargs)),
+        raising=False,
+    )
+    plugin_module.refresh_ui_language()
+
+    plugin_module.FilamentHubCatalog()._do_sync("", set(), announce=True)
+
+    assert messages == [(
+        "Войдите в FilamentHub в окне плагина и повторите синхронизацию.",
+        {"title": "FilamentHub", "icon": "warning"},
+    )]
 
 
 def test_safe_filename_handles_windows_names_and_bounds(plugin_module):
