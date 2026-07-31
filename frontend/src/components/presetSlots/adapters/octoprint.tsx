@@ -106,40 +106,32 @@ function BridgeSetup({ printer, system }: AdapterViewContext) {
 
   if (status?.paired) {
     return (
-      <div className="mb-3 rounded-lg border border-emerald-400/15 bg-emerald-500/[0.06] px-3 py-2">
-        <div className="flex flex-wrap items-center gap-2">
-          <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-300" />
-          <span className="text-xs font-medium text-emerald-100">
-            {t('presetSlots.octoprint.connectedTitle')}
-          </span>
-          {status.octoprint_version && (
-            <span className="rounded-full bg-white/5 px-2 py-0.5 text-[10px] text-gray-400">
-              OctoPrint {status.octoprint_version}
-            </span>
-          )}
-          {status.plugin_version && (
-            <span className="rounded-full bg-white/5 px-2 py-0.5 text-[10px] text-gray-400">
-              Bridge {status.plugin_version}
-            </span>
-          )}
-          <button
-            type="button"
-            onClick={revoke}
-            disabled={revoking}
-            className="ml-auto inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] text-gray-400 transition hover:bg-white/10 hover:text-red-300 disabled:opacity-40"
-          >
-            {revoking ? <Loader2 className="h-3 w-3 animate-spin" /> : <Unplug className="h-3 w-3" />}
-            {t('presetSlots.octoprint.disconnect')}
-          </button>
-        </div>
-        <p className="mt-1 text-[11px] leading-4 text-gray-400">
-          {t('presetSlots.octoprint.connectedDescription')}
-        </p>
-        {status.active_slot_index != null && (
-          <p className="mt-1 text-[11px] text-emerald-200/75">
-            {t('presetSlots.octoprint.activeSlot', { count: status.active_slot_index + 1 })}
-          </p>
+      <div className="mb-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-gray-400">
+        <span className="inline-flex items-center gap-1 text-emerald-200">
+          <CheckCircle2 className="h-3 w-3 shrink-0 text-emerald-400" />
+          {t('presetSlots.octoprint.connectedTitle')}
+        </span>
+        {status.octoprint_version && (
+          <span>OctoPrint {status.octoprint_version}</span>
         )}
+        {status.plugin_version && (
+          <span>Bridge {status.plugin_version}</span>
+        )}
+        {status.active_slot_index != null && (
+          <span className="text-emerald-200/75">
+            {t('presetSlots.octoprint.activeSlot', { count: status.active_slot_index + 1 })}
+          </span>
+        )}
+        <button
+          type="button"
+          onClick={revoke}
+          disabled={revoking}
+          title={t('presetSlots.octoprint.disconnect')}
+          aria-label={t('presetSlots.octoprint.disconnect')}
+          className="inline-flex rounded p-1 text-gray-500 transition hover:bg-white/10 hover:text-red-300 disabled:opacity-40"
+        >
+          {revoking ? <Loader2 className="h-3 w-3 animate-spin" /> : <Unplug className="h-3 w-3" />}
+        </button>
       </div>
     );
   }
