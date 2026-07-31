@@ -212,7 +212,7 @@ export const Dropdown: React.FC<DropdownProps> = ({
               onChange={(e) => handleInputChange(e.target.value)}
               onFocus={() => {
                 setIsOpen(true);
-                if (!filter && selectedOption) {
+                if (!filter && hasSelection && selectedOption) {
                   setFilter(selectedOption.label);
                 }
               }}
