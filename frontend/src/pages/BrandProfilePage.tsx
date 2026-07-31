@@ -60,6 +60,7 @@ import { FilamentPreview } from '../components/FilamentPreview';
 import { BrandTeamPanel } from '../components/BrandTeamPanel';
 import { BrandLogoFrame } from '../components/BrandLogoFrame';
 import { useDebounce } from '../hooks/useDebounce';
+import { externalUrl } from '../utils/externalUrl';
 import type { Filament, FilamentAvailability, Brand, BrandRequest, Preset } from '../types/api';
 import type { AxiosError } from 'axios';
 
@@ -592,9 +593,9 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
                 </button>
               </div>
             </div>
-            {brandData.website && (
+            {externalUrl(brandData.website) && (
               <a
-                href={brandData.website.startsWith('http') ? brandData.website : `https://${brandData.website}`}
+                href={externalUrl(brandData.website)!}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="mt-1 inline-block max-w-full truncate text-sm text-purple-400 hover:text-purple-300"
@@ -1483,15 +1484,8 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
               </div>
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wide text-purple-300/80 mb-2">{t('brandProfile.sectionLogo')}</p>
-                <label className="block text-gray-300 mb-2 text-sm font-medium">{t('brandProfile.logoUrlLabel')}</label>
-                <div className="flex gap-2">
-                  <input
-                    type="url"
-                    value={profileLogoUrl}
-                    onChange={(e) => setProfileLogoUrl(e.target.value)}
-                    className="flex-1 px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
-                    placeholder="https://example.com/logo.png"
-                  />
+                <label className="block text-gray-300 mb-2 text-sm font-medium">{t('brandProfile.logoFileLabel')}</label>
+                <div className="flex flex-wrap gap-2">
                   <label className="px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-gray-300 hover:text-white hover:bg-white/20 cursor-pointer transition-all flex items-center gap-2 whitespace-nowrap">
                     {isUploadingLogo ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
                     <span className="text-sm">{t('brandProfile.uploadLogo')}</span>
@@ -1503,7 +1497,17 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
                       disabled={isUploadingLogo}
                     />
                   </label>
+                  {profileLogoUrl && (
+                    <button
+                      type="button"
+                      onClick={() => setProfileLogoUrl('')}
+                      className="px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-gray-300 hover:text-white hover:bg-white/20 transition-all text-sm whitespace-nowrap"
+                    >
+                      {t('brandProfile.removeLogo')}
+                    </button>
+                  )}
                 </div>
+                <p className="text-gray-500 text-xs mt-1">{t('brandProfile.logoFileHint')}</p>
                 <div className="mt-3">
                   <label className="block text-gray-300 mb-2 text-sm font-medium">{t('brandProfile.logoBgLabel')}</label>
                   <div className="flex items-center gap-3">

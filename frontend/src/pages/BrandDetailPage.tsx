@@ -19,14 +19,7 @@ import { Dropdown } from '../components/Dropdown';
 import { SEOHead } from '../components/SEOHead';
 import { SocialIcon } from '../components/socialIcons';
 import { BrandLogoFrame } from '../components/BrandLogoFrame';
-
-const hostOf = (url: string): string => {
-  try {
-    return new URL(url).hostname.replace(/^www\./, '');
-  } catch {
-    return url;
-  }
-};
+import { externalUrl, externalUrlHost } from '../utils/externalUrl';
 
 export const BrandDetailPage: React.FC = () => {
   const { t } = useTranslation();
@@ -151,6 +144,7 @@ export const BrandDetailPage: React.FC = () => {
   const seoDescription = brand.description
     ? brand.description.slice(0, 160)
     : t('brandDetailPage.seoDescription', { name: brand.name, count: totalFilaments });
+  const websiteUrl = externalUrl(brand.website);
 
   return (
     <>
@@ -219,44 +213,48 @@ export const BrandDetailPage: React.FC = () => {
 
             {/* Ссылки — иконки соцсетей/маркетплейсов */}
             <div className="flex flex-wrap items-center gap-2">
-              {brand.website && (
+              {websiteUrl && (
                 <a
-                  href={brand.website}
+                  href={websiteUrl}
                   target="_blank"
                   rel="noopener noreferrer"
                   title={t('brandDetailPage.website')}
                   className="flex items-center gap-2 h-10 px-3 bg-white/10 hover:bg-white/20 text-white rounded-lg transition-all"
                 >
-                  <SocialIcon url={brand.website} className="w-5 h-5 flex-shrink-0" />
-                  <span className="text-sm truncate max-w-[200px]">{hostOf(brand.website)}</span>
+                  <SocialIcon url={websiteUrl} className="w-5 h-5 flex-shrink-0" />
+                  <span className="text-sm truncate max-w-[200px]">{externalUrlHost(brand.website)}</span>
                 </a>
               )}
-              {brand.shop_links?.map((shop, i) =>
-                shop.url ? (
+              {brand.shop_links?.map((shop, i) => {
+                const shopUrl = externalUrl(shop.url);
+                return shopUrl ? (
                   <a
                     key={`shop-${i}`}
-                    href={shop.url}
+                    href={shopUrl}
                     target="_blank"
                     rel="noopener noreferrer"
                     title={shop.platform || t('brandDetailPage.shop')}
                     className="w-10 h-10 flex items-center justify-center bg-white/10 hover:bg-white/20 text-white rounded-lg transition-all"
                   >
-                    <SocialIcon url={shop.url} kind="shop" className="w-5 h-5" />
+                    <SocialIcon url={shopUrl} kind="shop" className="w-5 h-5" />
                   </a>
-                ) : null,
-              )}
-              {brand.social_media_urls?.map((url, i) => (
-                <a
-                  key={`social-${i}`}
-                  href={url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  title={hostOf(url)}
-                  className="w-10 h-10 flex items-center justify-center bg-white/10 hover:bg-white/20 text-white rounded-lg transition-all"
-                >
-                  <SocialIcon url={url} className="w-5 h-5" />
-                </a>
-              ))}
+                ) : null;
+              })}
+              {brand.social_media_urls?.map((url, i) => {
+                const socialUrl = externalUrl(url);
+                return socialUrl ? (
+                  <a
+                    key={`social-${i}`}
+                    href={socialUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title={externalUrlHost(url)}
+                    className="w-10 h-10 flex items-center justify-center bg-white/10 hover:bg-white/20 text-white rounded-lg transition-all"
+                  >
+                    <SocialIcon url={socialUrl} className="w-5 h-5" />
+                  </a>
+                ) : null;
+              })}
             </div>
           </div>
         </div>

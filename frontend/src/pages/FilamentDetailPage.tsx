@@ -40,6 +40,7 @@ import { toast } from '../components/Toast';
 import { PresetSyncToggle } from '../components/PresetSyncToggle';
 import { ViewPresetModal } from '../components/ViewPresetModal';
 import { SEOHead } from '../components/SEOHead';
+import { externalUrl, externalUrlHost } from '../utils/externalUrl';
 import { FilamentReview } from '../types/api';
 import type { Preset } from '../types/api';
 import type { AxiosError } from 'axios';
@@ -244,6 +245,8 @@ export const FilamentDetailPage: React.FC = () => {
       getOrcaNumber(primaryPreset.orcaslicer_settings, 'required_nozzle_hrc')
     : null;
 
+  const brandWebsiteUrl = externalUrl(brandData?.website);
+
   // JSON-LD structured data для филамента
   const jsonLd = filament && brandData
     ? {
@@ -359,17 +362,17 @@ export const FilamentDetailPage: React.FC = () => {
           </div>
 
           <div className="flex md:flex-col items-center md:items-end gap-3 md:gap-0 md:text-right md:ml-8">
-            {brandData?.website && (
+            {brandWebsiteUrl && (
               <a
-                href={brandData.website}
+                href={brandWebsiteUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="hidden md:inline-flex items-center justify-end space-x-2 text-purple-400 hover:text-purple-300 transition-colors mb-2"
-                title={brandData.website}
+                title={brandWebsiteUrl}
               >
                 <ExternalLink className="w-5 h-5" />
                 <span className="text-sm">
-                  {brandData.website.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '')}
+                  {externalUrlHost(brandData?.website)}
                 </span>
               </a>
             )}

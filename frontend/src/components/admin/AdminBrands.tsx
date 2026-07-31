@@ -9,6 +9,7 @@ import { ModalOverlay } from '../ModalOverlay';
 import { BrandLogoFrame } from '../BrandLogoFrame';
 import { adminAPI, brandInvitesAPI } from '../../api/client';
 import { translateApiError } from '../../utils/translateApiError';
+import { externalUrl } from '../../utils/externalUrl';
 import type { Brand, BrandInviteBatchPreview, BrandInviteBatchSendResult } from '../../types/api';
 import type { AxiosError } from 'axios';
 
@@ -367,9 +368,9 @@ export function AdminBrands() {
                   {brand.description && (
                     <p className="text-sm text-gray-400 mb-2">{brand.description}</p>
                   )}
-                  {brand.website && (
+                  {externalUrl(brand.website) && (
                     <a
-                      href={brand.website}
+                      href={externalUrl(brand.website)!}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="text-sm text-purple-400 hover:text-purple-300 underline"
