@@ -10,6 +10,11 @@ from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_active_user
+from app.core.errors import (
+    ERR_SPOOL_IMPORT_FILE_TOO_LARGE,
+    ERR_SPOOL_IMPORT_INVALID_CSV,
+    raise_error,
+)
 from app.db.session import get_db
 from app.models.user import User
 from app.schemas.spool import (
@@ -24,11 +29,7 @@ from app.schemas.spool import (
     SpoolUsageEventResponse,
     SpoolUseRequest,
 )
-from app.core.errors import (
-    ERR_SPOOL_IMPORT_FILE_TOO_LARGE,
-    ERR_SPOOL_IMPORT_INVALID_CSV,
-    raise_error,
-)
+from app.services.spool_import_service import import_spool_file, preview_spool_import
 from app.services.spool_service import (
     create_spool,
     delete_spool,
@@ -41,7 +42,6 @@ from app.services.spoolmanager_import_service import (
     import_spoolmanager_csv,
     preview_spoolmanager_import,
 )
-from app.services.spool_import_service import import_spool_file, preview_spool_import
 
 router = APIRouter(prefix="/spools", tags=["spools"])
 MAX_SPOOLMANAGER_CSV_BYTES = 2 * 1024 * 1024
