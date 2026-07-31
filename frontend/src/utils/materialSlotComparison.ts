@@ -34,6 +34,13 @@ function observationState(slot: MaterialSlot): MaterialSlotObservationState {
     && observation?.hh_material == null
     && observation?.hh_color_hex == null
   ) {
+    // Happy Hare's Spoolman-compatible path can confirm a gate assignment
+    // without sending the richer legacy material/color/status snapshot. The
+    // source still proves that this state came from the provider rather than
+    // from a click in FilamentHub.
+    if (observation?.source === 'hh_snapshot') {
+      return observation.spool_id != null ? 'loaded' : 'empty';
+    }
     return 'none';
   }
   if (observation.hh_status === 0) return 'empty';

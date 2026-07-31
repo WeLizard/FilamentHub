@@ -339,7 +339,7 @@ function MaterialSystemSection({ printer, system, presetsSeedMap, spools, spoolC
 
   return (
     <div className="rounded-2xl border border-white/10 bg-white/3 p-5">
-      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-3 md:grid md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-purple-500/20">
             <Cpu className="h-5 w-5 text-purple-300" />
@@ -357,7 +357,7 @@ function MaterialSystemSection({ printer, system, presetsSeedMap, spools, spoolC
           </div>
         </div>
 
-        <div className="flex flex-col items-start gap-1.5 sm:items-end">
+        <div className="flex min-w-0 flex-col items-start gap-1.5">
           <div className="flex flex-wrap items-center gap-1.5">
             <span
               title={t(linkState === 'ready' ? 'deviceLink.onDemandTooltip' : 'deviceLink.tooltip')}
@@ -464,7 +464,7 @@ function MaterialSystemSection({ printer, system, presetsSeedMap, spools, spoolC
           {!adapter.link && adapter.renderSettings?.({ printer, system, gates, linkConfirmed })}
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 md:justify-self-end">
           <button
             type="button"
             onClick={handleClearAll}
@@ -564,7 +564,6 @@ function MaterialSystemSection({ printer, system, presetsSeedMap, spools, spoolC
         gates={gates}
         presets={effectivePresetsMap}
         spools={spools}
-        providerLabel={providerLabel}
         nozzleHrc={nozzleHrc}
         onGateClick={(gate, slot) => onGateClick(gate, slot, printer, system)}
       />

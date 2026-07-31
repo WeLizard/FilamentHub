@@ -11,7 +11,6 @@ interface GateMapGridProps {
   gates: GateState[];
   presets: Record<number, Pick<Preset, 'id' | 'name' | 'extruder_temp' | 'bed_temp'>>;
   spools: UserSpool[];
-  providerLabel: string;
   nozzleHrc?: number | null;
   onGateClick: (gate: GateState | null, slot: MaterialSlot) => void;
 }
@@ -109,7 +108,6 @@ export function GateMapGrid({
   gates,
   presets,
   spools,
-  providerLabel,
   nozzleHrc = null,
   onGateClick,
 }: GateMapGridProps) {
@@ -174,9 +172,35 @@ export function GateMapGrid({
               >
                 {slot.provider_index}
               </span>
-              <span className="text-[9px] font-medium uppercase tracking-wide text-gray-500">
-                {t('presetSlots.assignment.label')}
-              </span>
+              {hasObservation && !hasConflict ? (
+                <span
+                  title={observationLabel(
+                    comparison.observationState,
+                    comparison.observedMaterial,
+                    t,
+                  )}
+                  className="inline-flex min-w-0 max-w-[7rem] items-center gap-1 rounded-full bg-emerald-500/[0.08] px-1.5 py-0.5 text-[9px] text-emerald-200/80"
+                >
+                  <CheckCircle2 className="h-2.5 w-2.5 shrink-0" />
+                  {observedColor && comparison.observationState !== 'empty' && (
+                    <span
+                      className="h-2 w-2 shrink-0 rounded-full border border-white/20"
+                      style={{ backgroundColor: observedColor }}
+                    />
+                  )}
+                  <span className="truncate">
+                    {observationLabel(
+                      comparison.observationState,
+                      comparison.observedMaterial,
+                      t,
+                    )}
+                  </span>
+                </span>
+              ) : (
+                <span className="text-[9px] font-medium uppercase tracking-wide text-gray-500">
+                  {t('presetSlots.assignment.label')}
+                </span>
+              )}
             </div>
 
             <div className="py-0.5">
@@ -230,53 +254,32 @@ export function GateMapGrid({
               </div>
             )}
 
-            <div
-              title={comparison.conflict
-                ? t(`presetSlots.observation.conflict.${comparison.conflict}`)
-                : undefined}
-              className={[
-                'mt-1 flex w-full min-w-0 items-center gap-1.5 rounded-lg border px-2 py-1.5 text-left',
-                hasConflict
-                  ? 'border-amber-400/20 bg-amber-500/10'
-                  : hasObservation
-                    ? 'border-emerald-400/10 bg-emerald-500/[0.06]'
-                    : 'border-white/[0.05] bg-black/10',
-              ].join(' ')}
-            >
-              {hasConflict ? (
+            {hasConflict && (
+              <div
+                title={t(`presetSlots.observation.conflict.${comparison.conflict}`)}
+                className="mt-1 flex w-full min-w-0 items-center gap-1.5 rounded-lg border border-amber-400/20 bg-amber-500/10 px-2 py-1.5 text-left"
+              >
                 <AlertTriangle className="h-3 w-3 shrink-0 text-amber-300" />
-              ) : hasObservation ? (
-                <CheckCircle2 className="h-3 w-3 shrink-0 text-emerald-400/80" />
-              ) : (
-                <span className="h-2 w-2 shrink-0 rounded-full bg-gray-600" />
-              )}
-              {observedColor && comparison.observationState !== 'empty' && (
-                <span
-                  className="h-2.5 w-2.5 shrink-0 rounded-full border border-white/20"
-                  style={{ backgroundColor: observedColor }}
-                />
-              )}
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-[8px] uppercase tracking-wide text-gray-500">
-                  {providerLabel}
-                </span>
-                <span className={[
-                  'block truncate text-[9px]',
-                  hasConflict ? 'text-amber-200' : 'text-gray-300',
-                ].join(' ')}>
+                {observedColor && comparison.observationState !== 'empty' && (
+                  <span
+                    className="h-2.5 w-2.5 shrink-0 rounded-full border border-white/20"
+                    style={{ backgroundColor: observedColor }}
+                  />
+                )}
+                <span className="min-w-0 flex-1 truncate text-[9px] text-amber-200">
                   {observationLabel(
                     comparison.observationState,
                     comparison.observedMaterial,
                     t,
                   )}
                 </span>
-              </span>
-              {actionKey && (
-                <span className="shrink-0 text-[9px] font-medium text-amber-200 underline decoration-amber-300/40 underline-offset-2">
-                  {t(actionKey)}
-                </span>
-              )}
-            </div>
+                {actionKey && (
+                  <span className="shrink-0 text-[9px] font-medium text-amber-200 underline decoration-amber-300/40 underline-offset-2">
+                    {t(actionKey)}
+                  </span>
+                )}
+              </div>
+            )}
 
             <span className="absolute inset-0 flex items-center justify-center rounded-xl opacity-0 transition group-hover:opacity-100">
               <span className="rounded-lg bg-purple-600/90 px-2.5 py-1 text-[10px] font-medium text-white shadow-lg backdrop-blur-sm">

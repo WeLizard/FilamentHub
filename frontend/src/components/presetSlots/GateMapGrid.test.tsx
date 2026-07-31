@@ -119,15 +119,14 @@ describe('GateMapGrid material slots', () => {
         gates={[gate]}
         presets={{}}
         spools={[assignedSpool]}
-        providerLabel="Happy Hare"
         onGateClick={onGateClick}
       />,
     );
 
     expect(screen.getByText('PLA')).toBeInTheDocument();
     expect(screen.getByText('Example Signal Red')).toBeInTheDocument();
-    expect(screen.getByText('Happy Hare')).toBeInTheDocument();
-    expect(screen.getByText('presetSlots.observation.noData')).toBeInTheDocument();
+    expect(screen.queryByText('Happy Hare')).not.toBeInTheDocument();
+    expect(screen.queryByText('presetSlots.observation.noData')).not.toBeInTheDocument();
     fireEvent.click(screen.getByText('PLA'));
     expect(onGateClick).toHaveBeenCalledWith(gate, slot);
   });
@@ -160,7 +159,6 @@ describe('GateMapGrid material slots', () => {
         gates={[observedEmptyGate]}
         presets={{}}
         spools={[assignedSpool]}
-        providerLabel="Happy Hare"
         onGateClick={onGateClick}
       />,
     );
@@ -189,12 +187,54 @@ describe('GateMapGrid material slots', () => {
         gates={[unassignedGate]}
         presets={{}}
         spools={[]}
-        providerLabel="Happy Hare"
         onGateClick={vi.fn()}
       />,
     );
 
     expect(screen.getByText('PETG')).toBeInTheDocument();
     expect(screen.getAllByText('presetSlots.identifySpool').length).toBeGreaterThan(0);
+  });
+
+  it('shows a compact provider confirmation from the Spoolman-compatible path', () => {
+    const slot: MaterialSlot = {
+      id: 10,
+      provider_index: 0,
+      label: null,
+      kind: 'slot',
+      active: true,
+      assignment: {
+        id: 20,
+        preset_id: null,
+        spool_id: 40,
+        source: 'hh_snapshot',
+        source_ts: '2026-07-30T00:01:00Z',
+        active: true,
+      },
+      legacy_projection: {
+        gate_state_id: 30,
+        preset_id: null,
+        spool_id: 40,
+        source: 'hh_snapshot',
+        source_ts: '2026-07-30T00:01:00Z',
+        is_active: true,
+        hh_material: null,
+        hh_color_hex: null,
+        hh_status: null,
+        updated_at: '2026-07-30T00:01:00Z',
+      },
+    };
+
+    render(
+      <GateMapGrid
+        slots={[slot]}
+        gates={[{ ...gate, source: 'hh_snapshot' }]}
+        presets={{}}
+        spools={[assignedSpool]}
+        onGateClick={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText('presetSlots.hhStatus.spool')).toBeInTheDocument();
+    expect(screen.queryByText('presetSlots.observation.noData')).not.toBeInTheDocument();
   });
 });

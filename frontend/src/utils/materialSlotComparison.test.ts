@@ -93,6 +93,38 @@ function spoolFixture(material: string, colorHex: string): UserSpool {
 }
 
 describe('compareMaterialSlot', () => {
+  it('treats a provider-confirmed Spoolman gate assignment as an observation', () => {
+    const providerAssignment = {
+      ...observation(1, null, null),
+      spool_id: 40,
+      hh_status: null,
+    };
+    const result = compareMaterialSlot(
+      slot(assignment(40), providerAssignment),
+      gate(null, 40),
+      spoolFixture('PLA', 'FF0000'),
+    );
+
+    expect(result.observationState).toBe('loaded');
+    expect(result.conflict).toBeNull();
+  });
+
+  it('does not present a manual assignment as provider telemetry', () => {
+    const manualProjection = {
+      ...observation(1, null, null),
+      spool_id: 40,
+      source: 'web_manual',
+      hh_status: null,
+    };
+    const result = compareMaterialSlot(
+      slot(assignment(40), manualProjection),
+      gate(null, 40),
+      spoolFixture('PLA', 'FF0000'),
+    );
+
+    expect(result.observationState).toBe('none');
+  });
+
   it('keeps a desired assignment when the provider reports an empty slot and flags review', () => {
     const result = compareMaterialSlot(
       slot(assignment(40, 60), observation(0, null, null)),
