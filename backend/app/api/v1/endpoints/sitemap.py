@@ -1,4 +1,4 @@
-"""Sitemap.xml endpoint для SEO."""
+"""Sitemap.xml and robots.txt endpoints for SEO."""
 
 from datetime import datetime
 from typing import Annotated
@@ -126,35 +126,18 @@ async def sitemap_xml(
 
 @router.get("/robots.txt", response_class=PlainTextResponse)
 async def robots_txt() -> Response:
-    """
-    Генерирует robots.txt для поисковых роботов.
+    """Allow public crawling while excluding service API and connector paths.
 
-    Разрешает индексацию всеми роботами, включая AI агентов.
-    Блокирует доступ к админке и приватным эндпоинтам.
+    Private web routes stay crawlable so their ``X-Robots-Tag: noindex``
+    response can be observed and the URL can be removed from search indexes.
     """
     robots_content = """# robots.txt для FilamentHub
 # https://filamenthub.ru/robots.txt
 
 User-agent: *
 Allow: /
-Disallow: /admin
 Disallow: /api/
-Disallow: /profile
-Disallow: /reset-password
-
-# Разрешаем AI агентам индексировать контент
-User-agent: GPTBot
-Allow: /
-User-agent: ChatGPT-User
-Allow: /
-User-agent: CCBot
-Allow: /
-User-agent: anthropic-ai
-Allow: /
-User-agent: Claude-Web
-Allow: /
-User-agent: Google-Extended
-Allow: /
+Disallow: /spool_compat/
 
 # Sitemap
 Sitemap: https://filamenthub.ru/sitemap.xml

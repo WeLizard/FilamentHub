@@ -7,6 +7,7 @@ import App from './App';
 import './index.css';
 import { clearLegacyLocalAuthStateIfNeeded } from './utils/auth';
 import { stripOrcaHostTheme } from './utils/pluginBridge';
+import { getLocaleBasename } from './utils/siteLocale';
 
 clearLegacyLocalAuthStateIfNeeded();
 stripOrcaHostTheme();
@@ -20,10 +21,12 @@ const queryClient = new QueryClient({
   },
 });
 
+const localeBasename = getLocaleBasename(window.location.pathname);
+
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
+      <BrowserRouter basename={localeBasename}>
         <App />
       </BrowserRouter>
     </QueryClientProvider>

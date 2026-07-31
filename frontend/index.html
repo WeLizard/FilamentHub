@@ -1,32 +1,37 @@
 <!doctype html>
-<html lang="ru">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=5" sizes="any" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-    <!-- Static crawler fallback; SEOHead updates these tags after the app loads. -->
-    <meta data-seo-base="true" name="description" content="FilamentHub (ФиламентХаб, Филамент Хаб) — каталог филаментов и материалов для 3D-печати с профилями, пресетами, отзывами и интеграцией с OrcaSlicer." />
-    <meta data-seo-base="true" name="keywords" content="FilamentHub, ФиламентХаб, Филамент Хаб, каталог филаментов, материалы для 3D-печати, PLA, PETG, ABS, OrcaSlicer, настройки печати, пресеты слайсера" />
+    <!-- x-default crawler fallback; production also emits en/ru/zh static variants. -->
+    <meta data-seo-base="true" data-seo-field="description" name="description" content="Explore 3D printing filaments, use ready-to-import slicer presets, manage physical spools, and connect OrcaSlicer, OctoPrint, and material systems." />
+    <meta data-seo-base="true" data-seo-field="keywords" name="keywords" content="3D printing filaments, filament catalog, slicer presets, spool management, OrcaSlicer, OctoPrint, PLA, PETG, ABS, TPU" />
     <meta data-seo-base="true" name="author" content="FilamentHub" />
     <meta name="theme-color" content="#7c3aed" />
 
     <!-- Open Graph base -->
-    <meta data-seo-base="true" property="og:title" content="FilamentHub — каталог филаментов и настроек 3D-печати" />
-    <meta data-seo-base="true" property="og:description" content="Каталог материалов для 3D-печати, профилей и пресетов с интеграцией в OrcaSlicer." />
-    <meta data-seo-base="true" property="og:url" content="https://filamenthub.ru/" />
+    <meta data-seo-base="true" data-seo-field="title" property="og:title" content="3D Printing Filaments and Presets | FilamentHub" />
+    <meta data-seo-base="true" data-seo-field="description" property="og:description" content="Explore 3D printing filaments, use ready-to-import slicer presets, manage physical spools, and connect OrcaSlicer, OctoPrint, and material systems." />
+    <meta data-seo-base="true" property="og:image" content="https://filamenthub.ru/email/hero.jpg" />
+    <meta data-seo-base="true" data-seo-field="imageAlt" property="og:image:alt" content="FilamentHub — 3D printing filaments and presets" />
+    <meta data-seo-base="true" property="og:image:width" content="1120" />
+    <meta data-seo-base="true" property="og:image:height" content="625" />
+    <meta data-seo-base="true" data-seo-field="canonicalUrl" property="og:url" content="https://filamenthub.ru/" />
     <meta data-seo-base="true" property="og:type" content="website" />
     <meta data-seo-base="true" property="og:site_name" content="FilamentHub" />
-    <meta data-seo-base="true" property="og:locale" content="ru_RU" />
-    <meta property="og:locale:alternate" content="ru_RU" />
-    <meta property="og:locale:alternate" content="en_US" />
-    <meta property="og:locale:alternate" content="zh_CN" />
+    <meta data-seo-base="true" data-seo-field="ogLocale" property="og:locale" content="en_US" />
+    <meta data-seo-base="true" data-seo-og-alternate="true" property="og:locale:alternate" content="ru_RU" />
+    <meta data-seo-base="true" data-seo-og-alternate="true" property="og:locale:alternate" content="zh_CN" />
 
     <!-- Twitter Card base -->
     <meta data-seo-base="true" name="twitter:card" content="summary_large_image" />
-    <meta data-seo-base="true" name="twitter:title" content="FilamentHub — каталог филаментов и настроек 3D-печати" />
-    <meta data-seo-base="true" name="twitter:description" content="Каталог материалов для 3D-печати, профилей и пресетов с интеграцией в OrcaSlicer." />
+    <meta data-seo-base="true" data-seo-field="title" name="twitter:title" content="3D Printing Filaments and Presets | FilamentHub" />
+    <meta data-seo-base="true" data-seo-field="description" name="twitter:description" content="Explore 3D printing filaments, use ready-to-import slicer presets, manage physical spools, and connect OrcaSlicer, OctoPrint, and material systems." />
+    <meta data-seo-base="true" name="twitter:image" content="https://filamenthub.ru/email/hero.jpg" />
+    <meta data-seo-base="true" data-seo-field="imageAlt" name="twitter:image:alt" content="FilamentHub — 3D printing filaments and presets" />
 
     <!-- Webmaster verification -->
     <meta name="yandex-verification" content="a36e9671900c9269" />
@@ -38,8 +43,12 @@
     <meta data-seo-base="true" name="bingbot" content="index, follow" />
 
     <link data-seo-base="true" rel="canonical" href="https://filamenthub.ru/" />
+    <link data-seo-hreflang="x-default" rel="alternate" hreflang="x-default" href="https://filamenthub.ru/" />
+    <link data-seo-hreflang="en" rel="alternate" hreflang="en" href="https://filamenthub.ru/en/" />
+    <link data-seo-hreflang="ru" rel="alternate" hreflang="ru" href="https://filamenthub.ru/ru/" />
+    <link data-seo-hreflang="zh" rel="alternate" hreflang="zh" href="https://filamenthub.ru/zh/" />
 
-    <script type="application/ld+json">
+    <script data-seo-base-jsonld="website" type="application/ld+json">
       {
         "@context": "https://schema.org",
         "@type": "WebSite",
@@ -47,14 +56,14 @@
         "url": "https://filamenthub.ru/",
         "name": "FilamentHub",
         "alternateName": ["Filament Hub", "ФиламентХаб", "Филамент Хаб"],
-        "description": "Каталог филаментов, профилей и настроек для 3D-печати с интеграцией в OrcaSlicer.",
-        "inLanguage": ["ru", "en", "zh"]
+        "description": "Explore 3D printing filaments, use ready-to-import slicer presets, manage physical spools, and connect OrcaSlicer, OctoPrint, and material systems.",
+        "inLanguage": "en"
       }
     </script>
 
     <script src="/rotor-settings.js"></script>
 
-    <title>FilamentHub — каталог филаментов и настроек 3D-печати</title>
+    <title data-seo-field="title">3D Printing Filaments and Presets | FilamentHub</title>
   </head>
   <body>
     <div id="root"></div>

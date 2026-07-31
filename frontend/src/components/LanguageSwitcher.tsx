@@ -7,6 +7,8 @@
  */
 
 import { useTranslation } from 'react-i18next';
+import { isPluginEmbed } from '../utils/pluginBridge';
+import { normalizeSiteLocale, withLocalePrefix } from '../utils/siteLocale';
 
 // Must match i18next-browser-languagedetector's lookupLocalStorage key.
 const LANG_STORAGE_KEY = 'i18nextLng';
@@ -36,7 +38,21 @@ export const LanguageSwitcher: React.FC<LanguageSwitcherProps> = ({ className = 
     } catch {
       // Private mode / storage disabled — language still switches for this session.
     }
-    i18n.changeLanguage(code);
+    const locale = normalizeSiteLocale(code);
+    if (!locale) {
+      return;
+    }
+
+    if (isPluginEmbed()) {
+      const embedUrl = new URL(window.location.href);
+      embedUrl.searchParams.set('lng', locale);
+      window.history.replaceState(window.history.state, '', `${embedUrl.pathname}${embedUrl.search}${embedUrl.hash}`);
+      i18n.changeLanguage(locale);
+      return;
+    }
+
+    const currentPath = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+    window.location.assign(withLocalePrefix(currentPath, locale));
   };
 
   return (

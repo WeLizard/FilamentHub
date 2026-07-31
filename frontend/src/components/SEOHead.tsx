@@ -1,7 +1,15 @@
 /** Компонент для управления SEO meta тегами, Open Graph и Twitter Cards */
 
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import {
+  SITE_LOCALES,
+  absoluteLocalizedUrl,
+  absoluteSiteUrl,
+  getPathLocale,
+  normalizeSiteLocale,
+  withoutLocalePrefix,
+} from '../utils/siteLocale';
 
 interface SEOHeadProps {
   title?: string;
@@ -23,8 +31,15 @@ interface SEOHeadProps {
   allowAI?: boolean;
 }
 
-const DEFAULT_IMAGE = '/logo.svg';
+const DEFAULT_IMAGE = '/email/hero.jpg';
 const BASE_URL = 'https://filamenthub.ru';
+const DEFAULT_IMAGE_WIDTH = '1120';
+const DEFAULT_IMAGE_HEIGHT = '625';
+const OG_LOCALES = {
+  en: 'en_US',
+  ru: 'ru_RU',
+  zh: 'zh_CN',
+} as const;
 
 export const SEOHead: React.FC<SEOHeadProps> = ({
   title,
@@ -45,13 +60,28 @@ export const SEOHead: React.FC<SEOHeadProps> = ({
   const { t, i18n } = useTranslation();
   const fullTitle = title ? `${title} | FilamentHub` : t('seo.defaultTitle');
   const fullDescription = description || t('seo.defaultDescription');
-  const ogLocale = i18n.language?.startsWith('ru')
-    ? 'ru_RU'
-    : i18n.language?.startsWith('zh')
-      ? 'zh_CN'
-      : 'en_US';
+  const activeLocale = normalizeSiteLocale(i18n.resolvedLanguage || i18n.language) || 'en';
+  const ogLocale = OG_LOCALES[activeLocale];
+  const ogLocaleAlternates = useMemo(
+    () => SITE_LOCALES
+      .filter((locale) => locale !== activeLocale)
+      .map((locale) => OG_LOCALES[locale]),
+    [activeLocale],
+  );
   const fullImage = image ? (image.startsWith('http') ? image : `${BASE_URL}${image}`) : `${BASE_URL}${DEFAULT_IMAGE}`;
-  const fullUrl = url ? (url.startsWith('http') ? url : `${BASE_URL}${url}`) : BASE_URL;
+  const requestedPage = url || window.location.pathname;
+  const basePagePath = withoutLocalePrefix(requestedPage);
+  const pathLocale = getPathLocale(window.location.pathname);
+  const fullUrl = pathLocale
+    ? absoluteLocalizedUrl(basePagePath, pathLocale)
+    : absoluteSiteUrl(basePagePath);
+  const alternateUrls = useMemo(
+    () => [
+      { locale: 'x-default', href: absoluteSiteUrl(basePagePath) },
+      ...SITE_LOCALES.map((locale) => ({ locale, href: absoluteLocalizedUrl(basePagePath, locale) })),
+    ],
+    [basePagePath],
+  );
 
   useEffect(() => {
     // Обновляем title
@@ -98,10 +128,35 @@ export const SEOHead: React.FC<SEOHeadProps> = ({
     addMeta('og:title', fullTitle, true);
     addMeta('og:description', fullDescription, true);
     addMeta('og:image', fullImage, true);
+    addMeta('og:image:alt', fullTitle, true);
+    if (!image) {
+      addMeta('og:image:width', DEFAULT_IMAGE_WIDTH, true);
+      addMeta('og:image:height', DEFAULT_IMAGE_HEIGHT, true);
+    }
     addMeta('og:url', fullUrl, true);
     addMeta('og:type', type, true);
     addMeta('og:site_name', 'FilamentHub', true);
     addMeta('og:locale', ogLocale, true);
+
+    const staticOgAlternateSlots = Array.from(
+      document.head.querySelectorAll<HTMLMetaElement>('meta[data-seo-og-alternate="true"]'),
+    );
+    ogLocaleAlternates.forEach((locale, index) => {
+      const existing = staticOgAlternateSlots[index];
+      if (existing) {
+        if (existing.dataset.seoOriginalContent === undefined) {
+          existing.dataset.seoOriginalContent = existing.content;
+        }
+        existing.content = locale;
+        existing.dataset.seoManaged = 'true';
+        return;
+      }
+      const alternate = document.createElement('meta');
+      alternate.setAttribute('property', 'og:locale:alternate');
+      alternate.setAttribute('content', locale);
+      alternate.setAttribute('data-seo', 'true');
+      document.head.appendChild(alternate);
+    });
 
     // Для статей
     if (type === 'article') {
@@ -121,7 +176,7 @@ export const SEOHead: React.FC<SEOHeadProps> = ({
     addMeta('twitter:title', fullTitle);
     addMeta('twitter:description', fullDescription);
     addMeta('twitter:image', fullImage);
-    addMeta('twitter:site', '@FilamentHub'); // Если будет Twitter аккаунт
+    addMeta('twitter:image:alt', fullTitle);
 
     // Для AI агентов и поисковых роботов
     if (allowAI) {
@@ -129,8 +184,6 @@ export const SEOHead: React.FC<SEOHeadProps> = ({
       // Разрешаем AI индексацию (Google AI, ChatGPT, и т.д.)
       addMeta('googlebot', 'index, follow');
       addMeta('bingbot', 'index, follow');
-      // Для ChatGPT и других AI агентов
-      addMeta('ai:index', 'allow');
     } else {
       addMeta('robots', 'noindex, nofollow');
     }
@@ -152,6 +205,26 @@ export const SEOHead: React.FC<SEOHeadProps> = ({
       canonical.setAttribute('data-seo', 'true');
       document.head.appendChild(canonical);
     }
+
+    alternateUrls.forEach(({ locale, href }) => {
+      const existing = document.head.querySelector<HTMLLinkElement>(
+        `link[rel="alternate"][data-seo-hreflang="${locale}"]`,
+      );
+      if (existing) {
+        if (existing.dataset.seoOriginalHref === undefined) {
+          existing.dataset.seoOriginalHref = existing.href;
+        }
+        existing.href = href;
+        existing.dataset.seoManaged = 'true';
+        return;
+      }
+      const alternate = document.createElement('link');
+      alternate.rel = 'alternate';
+      alternate.hreflang = locale;
+      alternate.href = href;
+      alternate.setAttribute('data-seo', 'true');
+      document.head.appendChild(alternate);
+    });
 
     // Дополнительные meta теги
     additionalMeta.forEach(({ name, content }) => {
@@ -185,8 +258,8 @@ export const SEOHead: React.FC<SEOHeadProps> = ({
         delete meta.dataset.seoOriginalContent;
         delete meta.dataset.seoManaged;
       });
-      const canonicalLink = document.querySelector('link[rel="canonical"][data-seo]');
-      if (canonicalLink) canonicalLink.remove();
+      const dynamicLinks = document.querySelectorAll<HTMLLinkElement>('link[data-seo="true"]');
+      dynamicLinks.forEach((link) => link.remove());
       const managedBaseCanonical = document.querySelector<HTMLLinkElement>('link[rel="canonical"][data-seo-managed="true"]');
       if (managedBaseCanonical) {
         if (managedBaseCanonical.dataset.seoOriginalHref !== undefined) {
@@ -195,6 +268,16 @@ export const SEOHead: React.FC<SEOHeadProps> = ({
         delete managedBaseCanonical.dataset.seoOriginalHref;
         delete managedBaseCanonical.dataset.seoManaged;
       }
+      const managedBaseAlternates = document.querySelectorAll<HTMLLinkElement>(
+        'link[rel="alternate"][data-seo-managed="true"]',
+      );
+      managedBaseAlternates.forEach((alternate) => {
+        if (alternate.dataset.seoOriginalHref !== undefined) {
+          alternate.href = alternate.dataset.seoOriginalHref;
+        }
+        delete alternate.dataset.seoOriginalHref;
+        delete alternate.dataset.seoManaged;
+      });
       const jsonLdScript = document.querySelector('script[type="application/ld+json"][data-seo]');
       if (jsonLdScript) {
         jsonLdScript.remove();
@@ -216,6 +299,8 @@ export const SEOHead: React.FC<SEOHeadProps> = ({
     additionalMeta,
     allowAI,
     ogLocale,
+    ogLocaleAlternates,
+    alternateUrls,
   ]);
 
   return null; // Компонент не рендерит ничего

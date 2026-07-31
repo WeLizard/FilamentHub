@@ -6,6 +6,7 @@ import LanguageDetector from 'i18next-browser-languagedetector';
 import translationEN from './locales/en/translation.json';
 import translationRU from './locales/ru/translation.json';
 import translationZH from './locales/zh/translation.json';
+import { getPathLocale } from './utils/siteLocale';
 
 const resources = {
   en: {
@@ -19,8 +20,14 @@ const resources = {
   },
 };
 
+const languageDetector = new LanguageDetector();
+languageDetector.addDetector({
+  name: 'siteLocalePath',
+  lookup: () => getPathLocale(window.location.pathname) ?? undefined,
+});
+
 i18n
-  .use(LanguageDetector)
+  .use(languageDetector)
   .use(initReactI18next)
   .init({
     resources,
@@ -31,7 +38,10 @@ i18n
     detection: {
       // The OrcaSlicer plugin passes its host UI language as ?lng=. Outside the
       // embedded catalog, an explicit site choice still wins over the browser.
-      order: ['querystring', 'localStorage', 'navigator', 'htmlTag'],
+      // A locale-prefixed URL is an explicit, shareable language choice. The
+      // OrcaSlicer embed keeps its host-controlled ?lng= fallback on unprefixed
+      // routes. Otherwise a saved manual choice wins over browser detection.
+      order: ['siteLocalePath', 'querystring', 'localStorage', 'navigator', 'htmlTag'],
       lookupQuerystring: 'lng',
       // Do NOT cache auto-detected language — that would lock the first-visit
       // detection and ignore later browser-language changes. Only an explicit

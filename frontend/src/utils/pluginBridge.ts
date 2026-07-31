@@ -9,6 +9,8 @@
  * тот WebView-мост не трогаем, он продолжает работать как раньше.
  */
 
+import { stripLocalePrefix } from './siteLocale';
+
 export const PLUGIN_MESSAGE_SOURCE = 'filamenthub-plugin';
 
 const EMBED_FLAG = 'fh_plugin_embed';
@@ -29,7 +31,7 @@ export function isPluginEmbed(): boolean {
   if (typeof window === 'undefined') {
     return false;
   }
-  if (window.location.pathname.startsWith('/embed')) {
+  if (stripLocalePrefix(window.location.pathname).startsWith('/embed')) {
     embedSessionFlag = true;
     try {
       sessionStorage.setItem(EMBED_FLAG, '1');

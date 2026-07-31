@@ -1011,9 +1011,9 @@
     "exported": "exported"
   },
   "catalogPage": {
-    "seoTitle": "3D Printing Materials Catalog",
-    "seoDescription": "Find perfect settings for your filament. Catalog of PLA, PETG, ABS, TPU and other materials with ready-to-use slicer presets.",
-    "seoKeywords": "filament catalog, 3D printing, PLA, PETG, ABS, print settings, slicer presets",
+    "seoTitle": "3D Printing Filaments and Presets",
+    "seoDescription": "Explore 3D printing filaments, use ready-to-import slicer presets, manage physical spools, and connect OrcaSlicer, OctoPrint, and material systems.",
+    "seoKeywords": "3D printing filaments, filament catalog, slicer presets, spool management, OrcaSlicer, OctoPrint, PLA, PETG, ABS, TPU",
     "heroTitle": "Find perfect settings for your filament",
     "heroSubtitle": "Materials database with official manufacturer presets and community-verified settings",
     "loading": "Loading materials...",
@@ -4844,8 +4844,8 @@
     "printProblems": "Print problems"
   },
   "seo": {
-    "defaultTitle": "FilamentHub - 3D Printing Platform",
-    "defaultDescription": "Filament catalog, printer profiles and print settings for 3D printers"
+    "defaultTitle": "FilamentHub — 3D Printing Filaments and Presets",
+    "defaultDescription": "Explore 3D printing filaments, use ready-to-import slicer presets, manage physical spools, and connect OrcaSlicer, OctoPrint, and material systems."
   },
   "filamentSummary": {
     "noColor": "No color",

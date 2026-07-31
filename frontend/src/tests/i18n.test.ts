@@ -16,4 +16,14 @@ describe('embedded catalog language', () => {
     expect(i18n.resolvedLanguage).toBe('ru');
     expect(document.documentElement.lang).toBe('ru');
   });
+
+  it('uses an explicit locale path before query and saved preferences', async () => {
+    window.localStorage.setItem('i18nextLng', 'ru');
+    window.history.replaceState({}, '', '/zh/wiki?lng=en');
+
+    const { default: i18n } = await import('../i18n');
+
+    expect(i18n.resolvedLanguage).toBe('zh');
+    expect(document.documentElement.lang).toBe('zh');
+  });
 });

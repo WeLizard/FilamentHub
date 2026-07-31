@@ -1011,9 +1011,9 @@
     "exported": "已导出"
   },
   "catalogPage": {
-    "seoTitle": "3D 打印耗材目录",
-    "seoDescription": "为您的耗材找到完美的设置。包含 PLA、PETG、ABS、TPU 和其他材料的目录，附带即用型切片机预设。",
-    "seoKeywords": "耗材目录、3D 打印、PLA、PETG、ABS、打印设置、切片机预设",
+    "seoTitle": "3D 打印耗材与预设",
+    "seoDescription": "浏览 3D 打印耗材，使用可直接导入的切片预设，管理实体线轴，并连接 OrcaSlicer、OctoPrint 与供料系统。",
+    "seoKeywords": "3D 打印耗材, 耗材目录, 切片预设, 线轴管理, OrcaSlicer, OctoPrint, PLA, PETG, ABS, TPU",
     "heroTitle": "为您的耗材找到完美的设置",
     "heroSubtitle": "包含官方制造商预设和社区认证设置的材料数据库",
     "loading": "加载材料中...",
@@ -4840,8 +4840,8 @@
     "printProblems": "打印问题"
   },
   "seo": {
-    "defaultTitle": "FilamentHub — 3D 打印平台",
-    "defaultDescription": "为 3D 打印机提供耗材目录、打印机配置和打印设置"
+    "defaultTitle": "FilamentHub — 3D 打印耗材与预设",
+    "defaultDescription": "浏览 3D 打印耗材，使用可直接导入的切片预设，管理实体线轴，并连接 OrcaSlicer、OctoPrint 与供料系统。"
   },
   "filamentSummary": {
     "noColor": "暂无颜色",
