@@ -111,25 +111,22 @@ class Settings(BaseSettings):
     YANDEX_CLIENT_ID: str = ""
     YANDEX_CLIENT_SECRET: str = ""
 
-    # Email (Resend — empty = disabled)
-    # Outgoing mail goes through an SMTP relay; inbound still arrives through the
-    # Resend webhook until the receiving side moves too.
+    # Email. Outgoing messages use the Russian SMTP relay; incoming messages are
+    # delivered by the local mail server into INBOUND_MAIL_DIR.
     SMTP_HOST: str = "postbox.cloud.yandex.net"
     SMTP_PORT: int = 587
     SMTP_USER: str = ""
     SMTP_PASSWORD: str = ""
     SMTP_TIMEOUT_SECONDS: int = 20
-    RESEND_API_KEY: str = ""
     EMAIL_FROM: str = "noreply@filamenthub.ru"
     EMAIL_FROM_NAME: str = "FilamentHub"
     EMAIL_CONTACT: str = "support@filamenthub.ru"  # реальный ящик для ответов (не noreply)
     EMAIL_PARTNERSHIPS_FROM: str = "partners@filamenthub.ru"
     EMAIL_PR_FROM: str = "pr@filamenthub.ru"
-    EMAIL_INBOUND_DOMAIN: str = ""  # e.g. reply.filamenthub.ru after Resend MX setup
+    EMAIL_INBOUND_DOMAIN: str = ""  # e.g. reply.filamenthub.ru
     # Where the mail server drops delivered letters for the poller to pick up.
     INBOUND_MAIL_DIR: str = "/app/inbound_mail"
     INBOUND_MAIL_POLL_SECONDS: int = 30
-    RESEND_WEBHOOK_SECRET: str = ""
 
     model_config = SettingsConfigDict(
         env_file=".env",

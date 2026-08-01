@@ -1,17 +1,18 @@
-"""Outgoing mail over SMTP; inbound still arrives through the Resend webhook."""
+"""Outgoing mail over SMTP.
+
+Inbound messages are delivered to the local mail spool and parsed by
+``inbound_mail_service``; this module has no dependency on the receiving side.
+"""
 
 import base64
 import logging
-import re
 import smtplib
 import ssl
 from dataclasses import dataclass
 from email.message import EmailMessage
 from email.utils import make_msgid
 from pathlib import Path
-from urllib.parse import urlparse
 
-import httpx
 import nh3
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from markupsafe import Markup
@@ -22,10 +23,6 @@ from app.core.i18n import resolve_language, translate, translate_html, translate
 logger = logging.getLogger(__name__)
 
 _TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates" / "email"
-_RESEND_RECEIVING_URL = "https://api.resend.com/emails/receiving"
-_RESEND_EMAIL_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
-_RESEND_ATTACHMENT_DOWNLOAD_HOSTS = {"cdn.resend.app"}
-_MAX_RECEIVED_ATTACHMENT_BYTES = 15 * 1024 * 1024
 _ADMIN_EMAIL_TAGS = {
     "a",
     "blockquote",
@@ -66,11 +63,6 @@ def _is_configured() -> bool:
     return bool(settings.SMTP_USER and settings.SMTP_PASSWORD)
 
 
-def _is_inbound_configured() -> bool:
-    """Inbound still goes through the Resend API and has its own credential."""
-    return bool(settings.RESEND_API_KEY)
-
-
 @dataclass(frozen=True)
 class EmailSendResult:
     """Provider result kept explicit for admin delivery tracking."""
@@ -81,27 +73,6 @@ class EmailSendResult:
 
     def __bool__(self) -> bool:
         return self.sent
-
-
-@dataclass(frozen=True)
-class ReceivedEmailAttachment:
-    """Bounded content downloaded from an authenticated Resend attachment URL."""
-
-    content: bytes
-    content_type: str | None
-
-
-def _received_attachment_content_type(content: bytes, declared: str | None) -> str | None:
-    if content.startswith(b"\x89PNG\r\n\x1a\n"):
-        return "image/png"
-    if content.startswith(b"\xff\xd8\xff"):
-        return "image/jpeg"
-    if content.startswith((b"GIF87a", b"GIF89a")):
-        return "image/gif"
-    if content.startswith(b"RIFF") and content[8:12] == b"WEBP":
-        return "image/webp"
-    return declared
-
 
 def _get_from(profile: str = "transactional") -> str:
     addresses = {
@@ -258,74 +229,6 @@ def send_email_tracked(
 def get_email_sender(profile: str) -> str:
     """Return the configured sender identity for persistence and UI display."""
     return _get_from(profile)
-
-
-def get_received_email(email_id: str) -> dict:
-    """Retrieve full content for a verified Resend inbound event."""
-    if not _is_inbound_configured():
-        raise RuntimeError("RESEND_API_KEY is not configured")
-    if not _RESEND_EMAIL_ID_PATTERN.fullmatch(email_id):
-        raise ValueError("Invalid Resend received email ID")
-
-    response = httpx.get(
-        f"{_RESEND_RECEIVING_URL}/{email_id}",
-        headers={"Authorization": f"Bearer {settings.RESEND_API_KEY}"},
-        params={"html_format": "cid"},
-        timeout=15.0,
-    )
-    response.raise_for_status()
-    payload = response.json()
-    if not isinstance(payload, dict):
-        raise RuntimeError("Unexpected Resend received email response")
-    return payload
-
-
-def get_received_email_attachment(email_id: str, attachment_id: str) -> ReceivedEmailAttachment:
-    """Retrieve one inbound attachment without exposing the provider's signed URL."""
-    if not _is_inbound_configured():
-        raise RuntimeError("RESEND_API_KEY is not configured")
-    if not _RESEND_EMAIL_ID_PATTERN.fullmatch(email_id) or not _RESEND_EMAIL_ID_PATTERN.fullmatch(
-        attachment_id
-    ):
-        raise ValueError("Invalid Resend attachment identity")
-
-    metadata_response = httpx.get(
-        f"{_RESEND_RECEIVING_URL}/{email_id}/attachments/{attachment_id}",
-        headers={"Authorization": f"Bearer {settings.RESEND_API_KEY}"},
-        timeout=15.0,
-    )
-    metadata_response.raise_for_status()
-    metadata = metadata_response.json()
-    if not isinstance(metadata, dict):
-        raise RuntimeError("Unexpected Resend attachment response")
-    download_url = metadata.get("download_url")
-    parsed_url = urlparse(str(download_url or ""))
-    hostname = (parsed_url.hostname or "").casefold()
-    if parsed_url.scheme != "https" or not (
-        hostname in _RESEND_ATTACHMENT_DOWNLOAD_HOSTS
-        or hostname == "resend.com"
-        or hostname.endswith(".resend.com")
-    ):
-        raise RuntimeError("Unexpected Resend attachment download URL")
-
-    chunks: list[bytes] = []
-    size = 0
-    with httpx.stream("GET", str(download_url), timeout=20.0, follow_redirects=False) as response:
-        response.raise_for_status()
-        content_length = response.headers.get("content-length")
-        if content_length and content_length.isdigit() and int(content_length) > _MAX_RECEIVED_ATTACHMENT_BYTES:
-            raise RuntimeError("Inbound attachment exceeds the download limit")
-        for chunk in response.iter_bytes():
-            size += len(chunk)
-            if size > _MAX_RECEIVED_ATTACHMENT_BYTES:
-                raise RuntimeError("Inbound attachment exceeds the download limit")
-            chunks.append(chunk)
-        content_type = response.headers.get("content-type")
-    content = b"".join(chunks)
-    return ReceivedEmailAttachment(
-        content=content,
-        content_type=_received_attachment_content_type(content, content_type),
-    )
 
 
 def sanitize_admin_email_html(value: str | None) -> str | None:

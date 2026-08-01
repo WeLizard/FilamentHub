@@ -1,4 +1,4 @@
-"""Locally delivered mail must reach the same threads the webhook path fills."""
+"""Locally delivered mail must reach the administrative communication inbox."""
 
 from email.message import EmailMessage
 
@@ -110,7 +110,7 @@ def test_stored_path_refuses_to_escape_its_directory(tmp_path, monkeypatch):
 
     assert inbound.stored_message_path("local:../../etc/passwd") is None
     assert inbound.stored_message_path("local:sub/dir") is None
-    assert inbound.stored_message_path("resend-event-id") is None
+    assert inbound.stored_message_path("external-event-id") is None
 
 
 @pytest.mark.asyncio

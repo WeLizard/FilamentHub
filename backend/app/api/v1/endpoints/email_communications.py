@@ -1,14 +1,9 @@
-"""Verified Resend inbound webhook and the administrative communication inbox."""
+"""Administrative communication inbox backed by locally delivered mail."""
 
-import base64
-import binascii
-import hashlib
-import hmac
 import json
 import logging
 import re
 import secrets
-import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from email.utils import parseaddr
@@ -30,14 +25,10 @@ from starlette.datastructures import UploadFile
 from app.core.config import settings
 from app.core.dependencies import get_current_admin_user
 from app.core.errors import (
-    ERR_EMAIL_ATTACHMENT_FETCH_FAILED,
     ERR_EMAIL_ATTACHMENT_NOT_FOUND,
     ERR_EMAIL_DELIVERY_FAILED,
     ERR_EMAIL_IDEMPOTENCY_CONFLICT,
-    ERR_EMAIL_INBOUND_FETCH_FAILED,
     ERR_EMAIL_THREAD_NOT_FOUND,
-    ERR_EMAIL_WEBHOOK_INVALID,
-    ERR_EMAIL_WEBHOOK_NOT_CONFIGURED,
     raise_error,
 )
 from app.core.i18n import DEFAULT_LANGUAGE
@@ -58,35 +49,18 @@ from app.schemas.email_communication import (
 from app.services.email_attachment_service import prepare_email_attachments
 from app.services.email_service import (
     get_email_sender,
-    get_received_email,
-    get_received_email_attachment,
     sanitize_admin_email_html,
     send_admin_reply_email,
 )
 
 logger = logging.getLogger(__name__)
 
-webhook_router = APIRouter(prefix="/webhooks/resend", tags=["webhooks"])
 admin_router = APIRouter(prefix="/admin/communications", tags=["admin"])
 
-_MAX_WEBHOOK_BYTES = 256 * 1024
 _MAX_BODY_CHARS = 100_000
-_WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS = 5 * 60
 _REPLY_TOKEN_PATTERN = re.compile(r"^invite-([A-Za-z0-9_-]{20,64})$")
 _THREAD_TOKEN_PATTERN = re.compile(r"^thread-([A-Za-z0-9_-]{20,64})$")
-_RESEND_ATTACHMENT_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
-_CONTENT_ID_PATTERN = re.compile(r"^[A-Za-z0-9._@%+-]{1,190}$")
-_CID_REFERENCE_PATTERN = re.compile(r"cid:", re.IGNORECASE)
-_MAX_BACKFILLED_MESSAGES_PER_THREAD = 5
 _MANUAL_SENDER_PROFILES = {"support", "partnerships", "pr"}
-_DELIVERY_EVENT_STATUSES = {
-    "email.sent": "sent",
-    "email.delivered": "delivered",
-    "email.delivery_delayed": "delayed",
-    "email.bounced": "bounced",
-    "email.complained": "complained",
-}
-_DELIVERY_STATUS_RANK = {"sent": 1, "delayed": 2, "delivered": 3}
 _EmailPayload = TypeVar("_EmailPayload", bound=BaseModel)
 
 
@@ -132,63 +106,6 @@ def _header_value(value: object, limit: int) -> str:
     return re.sub(r"[\x00-\x1f\x7f]+", " ", str(value or "")).strip()[:limit]
 
 
-def _verify_svix_signature(
-    *,
-    raw_body: bytes,
-    event_id: str,
-    timestamp: str,
-    signature: str,
-    secret: str,
-) -> None:
-    """Verify a Resend/Svix signature without requiring a newer Resend SDK."""
-    if (
-        not secret.startswith("whsec_")
-        or len(event_id) > 200
-        or len(timestamp) > 20
-        or len(signature) > 2048
-    ):
-        raise ValueError("Invalid webhook signature metadata")
-
-    try:
-        timestamp_value = int(timestamp)
-    except ValueError as exc:
-        raise ValueError("Invalid webhook timestamp") from exc
-    if abs(int(time.time()) - timestamp_value) > _WEBHOOK_TIMESTAMP_TOLERANCE_SECONDS:
-        raise ValueError("Webhook timestamp is outside the accepted window")
-
-    encoded_secret = secret.removeprefix("whsec_")
-    encoded_secret += "=" * (-len(encoded_secret) % 4)
-    try:
-        secret_bytes = base64.b64decode(
-            encoded_secret,
-            altchars=b"-_",
-            validate=True,
-        )
-    except (binascii.Error, ValueError) as exc:
-        raise ValueError("Invalid webhook signing secret") from exc
-    if not secret_bytes:
-        raise ValueError("Invalid webhook signing secret")
-
-    signed_payload = f"{event_id}.{timestamp}.".encode() + raw_body
-    expected_signature = base64.b64encode(
-        hmac.new(secret_bytes, signed_payload, hashlib.sha256).digest()
-    ).decode()
-    valid = False
-    for candidate in signature.split():
-        version, separator, value = candidate.partition(",")
-        if separator and version == "v1" and hmac.compare_digest(value, expected_signature):
-            valid = True
-            break
-    if not valid:
-        raise ValueError("Invalid webhook signature")
-
-
-def _string_list(value: object, *, limit: int = 50) -> list[str]:
-    if not isinstance(value, list):
-        return []
-    return [_truncate(item, 500) for item in value[:limit] if _truncate(item, 500)]
-
-
 def _plain_text(text: object, html: object) -> str:
     normalized = _truncate(text, _MAX_BODY_CHARS)
     if normalized:
@@ -203,51 +120,6 @@ def _plain_text(text: object, html: object) -> str:
         logger.warning("Failed to convert inbound email HTML to text", exc_info=True)
         return ""
     return parser.text()[:_MAX_BODY_CHARS]
-
-
-def _content_id(value: object) -> str | None:
-    """Read the identifier an inline image is referenced by inside the letter."""
-    raw = _header_value(value, 190).strip().lstrip("<").rstrip(">")
-    return raw if _CONTENT_ID_PATTERN.fullmatch(raw) else None
-
-
-def _attachment_metadata(value: object) -> list[dict]:
-    if not isinstance(value, list):
-        return []
-    attachments: list[dict] = []
-    for item in value[:50]:
-        if not isinstance(item, dict):
-            continue
-        raw_name = _header_value(item.get("filename"), 255).replace("\\", "/")
-        filename = raw_name.rsplit("/", 1)[-1] or "attachment"
-        size = item.get("size")
-        provider_attachment_id = _header_value(item.get("id"), 128)
-        attachments.append(
-            {
-                "filename": filename,
-                "content_type": _truncate(item.get("content_type"), 100) or None,
-                "size": size if isinstance(size, int) and size >= 0 else None,
-                "provider_attachment_id": (
-                    provider_attachment_id
-                    if _RESEND_ATTACHMENT_ID_PATTERN.fullmatch(provider_attachment_id)
-                    else None
-                ),
-                "content_id": _content_id(item.get("content_id")),
-                "inline": _truncate(item.get("content_disposition"), 20).casefold() == "inline",
-                "content_id_checked": True,
-            }
-        )
-    return attachments
-
-
-def _parse_datetime(value: object) -> datetime:
-    if isinstance(value, str):
-        try:
-            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-            return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
-        except ValueError:
-            pass
-    return datetime.now(timezone.utc)
 
 
 def _reply_token(recipients: list[str]) -> str | None:
@@ -306,16 +178,6 @@ def _thread_reply_address(thread: EmailThread) -> str:
     return f"thread-{_ensure_thread_reply_token(thread)}@{inbound_domain}"
 
 
-def _advance_delivery_status(current: str | None, incoming: str) -> str:
-    if current in {"bounced", "complained"}:
-        return current
-    if incoming in {"bounced", "complained"}:
-        return incoming
-    if _DELIVERY_STATUS_RANK.get(incoming, 0) >= _DELIVERY_STATUS_RANK.get(current or "", 0):
-        return incoming
-    return current or incoming
-
-
 def _message_response(message: EmailMessage) -> EmailMessageResponse:
     attachments = []
     for index, raw_attachment in enumerate(message.attachment_metadata):
@@ -328,8 +190,7 @@ def _message_response(message: EmailMessage) -> EmailMessageResponse:
                 "size": attachment.get("size"),
                 "downloadable": bool(
                     message.direction == "inbound"
-                    and message.provider_message_id
-                    and attachment.get("provider_attachment_id")
+                    and (message.provider_event_id or "").startswith("local:")
                 ),
                 "content_id": attachment.get("content_id") or None,
                 "inline": bool(attachment.get("inline")),
@@ -437,51 +298,6 @@ async def _load_thread(db: AsyncSession, thread_id: int) -> EmailThread:
     if thread is None:
         raise_error(404, ERR_EMAIL_THREAD_NOT_FOUND)
     return thread
-
-
-async def _backfill_inline_attachment_ids(db: AsyncSession, thread: EmailThread) -> None:
-    """Restore the link between an inline image and its attachment.
-
-    Letters received before we started keeping content_id show a hole where the
-    image belongs. The provider still knows the identifiers, so ask once per
-    message and keep the answer.
-    """
-    refreshed = 0
-    for message in thread.messages:
-        if refreshed >= _MAX_BACKFILLED_MESSAGES_PER_THREAD:
-            break
-        if message.direction != "inbound" or not message.provider_message_id:
-            continue
-        if not message.html_body or not _CID_REFERENCE_PATTERN.search(message.html_body):
-            continue
-        stored = [item for item in message.attachment_metadata if isinstance(item, dict)]
-        if not stored or all(
-            item.get("content_id") or item.get("content_id_checked") for item in stored
-        ):
-            continue
-
-        try:
-            received = await run_in_threadpool(get_received_email, message.provider_message_id)
-        except Exception:
-            logger.warning(
-                "Failed to refresh inline attachment identity for inbound email %s",
-                message.provider_message_id,
-                exc_info=True,
-            )
-            continue
-
-        incoming = _attachment_metadata(received.get("attachments"))
-        # A shorter answer means the provider no longer lists the same files;
-        # keep what we stored rather than lose the filenames over an image.
-        message.attachment_metadata = (
-            incoming
-            if len(incoming) == len(stored)
-            else [{**item, "content_id_checked": True} for item in stored]
-        )
-        refreshed += 1
-
-    if refreshed:
-        await db.commit()
 
 
 @dataclass(frozen=True)
@@ -603,120 +419,6 @@ async def ingest_inbound_email(db: AsyncSession, data: InboundEmailData) -> None
     except IntegrityError:
         await db.rollback()
         logger.info("Ignored duplicate inbound email event %s", stored_event_id)
-
-
-@webhook_router.post("")
-async def receive_resend_webhook(
-    request: Request,
-    db: Annotated[AsyncSession, Depends(get_db)],
-) -> dict[str, bool]:
-    """Verify, deduplicate and persist a Resend inbound email event."""
-    if not settings.RESEND_WEBHOOK_SECRET or not settings.RESEND_API_KEY:
-        raise_error(503, ERR_EMAIL_WEBHOOK_NOT_CONFIGURED)
-
-    content_length = request.headers.get("content-length")
-    if content_length and content_length.isdigit() and int(content_length) > _MAX_WEBHOOK_BYTES:
-        raise_error(413, ERR_EMAIL_WEBHOOK_INVALID)
-
-    raw_body = await request.body()
-    if not raw_body or len(raw_body) > _MAX_WEBHOOK_BYTES:
-        raise_error(400, ERR_EMAIL_WEBHOOK_INVALID)
-
-    event_id = request.headers.get("svix-id")
-    timestamp = request.headers.get("svix-timestamp")
-    signature = request.headers.get("svix-signature")
-    if not event_id or not timestamp or not signature:
-        raise_error(400, ERR_EMAIL_WEBHOOK_INVALID)
-
-    try:
-        payload_text = raw_body.decode("utf-8")
-        _verify_svix_signature(
-            raw_body=raw_body,
-            event_id=event_id,
-            timestamp=timestamp,
-            signature=signature,
-            secret=settings.RESEND_WEBHOOK_SECRET,
-        )
-        payload = json.loads(payload_text)
-        if not isinstance(payload, dict):
-            raise ValueError("Webhook payload must be an object")
-    except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
-        logger.warning("Rejected invalid Resend webhook")
-        raise_error(400, ERR_EMAIL_WEBHOOK_INVALID)
-
-    event_type = _header_value(payload.get("type"), 100)
-    if event_type != "email.received":
-        delivery_status = _DELIVERY_EVENT_STATUSES.get(event_type)
-        event_data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
-        provider_email_id = _header_value(event_data.get("email_id"), 100)
-        if delivery_status and provider_email_id:
-            message = await db.scalar(
-                select(EmailMessage).where(
-                    EmailMessage.provider_message_id == provider_email_id,
-                    EmailMessage.direction == "outbound",
-                )
-            )
-            if message is not None:
-                message.delivery_status = _advance_delivery_status(
-                    message.delivery_status,
-                    delivery_status,
-                )
-                await db.commit()
-        return {"received": True}
-
-    stored_event_id = _header_value(event_id, 100)
-    existing_event = await db.scalar(
-        select(EmailMessage.id).where(EmailMessage.provider_event_id == stored_event_id)
-    )
-    if existing_event is not None:
-        return {"received": True}
-
-    event_data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
-    provider_email_id = _header_value(event_data.get("email_id"), 100)
-    if not provider_email_id:
-        raise_error(400, ERR_EMAIL_WEBHOOK_INVALID)
-
-    existing_email = await db.scalar(
-        select(EmailMessage.id).where(EmailMessage.provider_message_id == provider_email_id)
-    )
-    if existing_email is not None:
-        return {"received": True}
-
-    try:
-        received = await run_in_threadpool(get_received_email, provider_email_id)
-    except Exception:
-        logger.error("Failed to retrieve inbound email %s", provider_email_id, exc_info=True)
-        raise_error(502, ERR_EMAIL_INBOUND_FETCH_FAILED)
-
-    recipients = _string_list(received.get("to") or event_data.get("to"))
-    sender_raw = _truncate(received.get("from") or event_data.get("from"), 500)
-    participant_name, participant_address = parseaddr(sender_raw)
-    participant_email = _header_value(participant_address or sender_raw, 255).casefold()
-    if not participant_email or "@" not in participant_email:
-        raise_error(400, ERR_EMAIL_WEBHOOK_INVALID)
-    headers = received.get("headers") if isinstance(received.get("headers"), dict) else {}
-
-    await ingest_inbound_email(
-        db,
-        InboundEmailData(
-            participant_email=participant_email,
-            participant_name=_header_value(participant_name, 200) or None,
-            subject=_header_value(received.get("subject") or event_data.get("subject"), 500)
-            or "(no subject)",
-            body=_plain_text(received.get("text"), received.get("html")),
-            recipients=recipients,
-            created_at=_parse_datetime(received.get("created_at") or event_data.get("created_at")),
-            provider_message_id=provider_email_id,
-            provider_event_id=stored_event_id,
-            internet_message_id=_header_value(
-                received.get("message_id") or event_data.get("message_id"), 500
-            )
-            or None,
-            in_reply_to=_header_value(headers.get("in-reply-to"), 500) or None,
-            attachment_metadata=_attachment_metadata(received.get("attachments")),
-        ),
-    )
-    return {"received": True}
 
 
 @admin_router.get("/email-threads", response_model=EmailThreadListResponse)
@@ -863,7 +565,6 @@ async def get_email_thread(
 ) -> EmailThreadDetailResponse:
     del admin
     thread = await _load_thread(db, thread_id)
-    await _backfill_inline_attachment_ids(db, thread)
     return _thread_detail(thread)
 
 
@@ -949,7 +650,7 @@ async def download_email_attachment(
     if not isinstance(raw_attachment, dict):
         raise_error(404, ERR_EMAIL_ATTACHMENT_NOT_FOUND)
     # Locally delivered mail keeps the whole letter on disk, so the attachment is
-    # read straight out of it instead of being fetched from a provider.
+    # read straight out of it without exposing the mail spool to the browser.
     from app.services.inbound_mail_service import read_stored_attachment
 
     local = await run_in_threadpool(
@@ -970,39 +671,10 @@ async def download_email_attachment(
             },
         )
 
-    attachment_id = str(raw_attachment.get("provider_attachment_id") or "")
-    if not _RESEND_ATTACHMENT_ID_PATTERN.fullmatch(attachment_id):
-        raise_error(404, ERR_EMAIL_ATTACHMENT_NOT_FOUND)
-
-    try:
-        attachment = await run_in_threadpool(
-            get_received_email_attachment,
-            message.provider_message_id,
-            attachment_id,
-        )
-    except Exception:
-        logger.error(
-            "Failed to retrieve attachment %s for inbound email %s",
-            attachment_id,
-            message.provider_message_id,
-            exc_info=True,
-        )
-        raise_error(502, ERR_EMAIL_ATTACHMENT_FETCH_FAILED)
-
-    filename = _header_value(raw_attachment.get("filename"), 180) or "attachment"
-    encoded_filename = quote(filename, safe="")
-    content_type = attachment.content_type or raw_attachment.get("content_type")
-    return Response(
-        content=attachment.content,
-        media_type=str(content_type or "application/octet-stream"),
-        headers={
-            "Content-Disposition": (
-                f"attachment; filename=\"attachment\"; filename*=UTF-8''{encoded_filename}"
-            ),
-            "Cache-Control": "private, no-store",
-            "X-Content-Type-Options": "nosniff",
-        },
-    )
+    # Historical provider-backed messages may still contain attachment metadata,
+    # but their remote content is intentionally no longer fetched after the
+    # receiving path moved to our own server.
+    raise_error(404, ERR_EMAIL_ATTACHMENT_NOT_FOUND)
 
 
 @admin_router.post("/email-threads/{thread_id}/reply", response_model=EmailMessageResponse)
@@ -1013,7 +685,7 @@ async def reply_to_email_thread(
     db: Annotated[AsyncSession, Depends(get_db)],
     admin: Annotated[User, Depends(get_current_admin_user)],
 ) -> EmailMessageResponse:
-    """Reply through Resend while preserving the external email thread."""
+    """Reply through the configured SMTP relay while preserving the email thread."""
     data, uploads = await _parse_email_payload(request, EmailThreadReplyCreate)
     existing_message = await db.scalar(
         select(EmailMessage).where(
