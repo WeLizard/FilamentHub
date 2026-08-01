@@ -40,11 +40,19 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440  # 24 часа — не банк, удобство важнее
     REFRESH_TOKEN_EXPIRE_DAYS: int = 90  # 90 дней для refresh token
     PLUGIN_TOKEN_EXPIRE_MINUTES: int = 30
-    # Hashing a password occupies a core for a fifth of a second, so a crowd
+    # Hashing a password occupies a core for a fraction of a second, so a crowd
     # arriving at once queues on the processor rather than on the database.
     # Counted per worker process: four workers allow four times this many.
     PASSWORD_HASH_CONCURRENCY: int = 2
     PASSWORD_HASH_WAIT_SECONDS: float = 2.0
+    # Argon2id cost, measured against the production machine: this costs 0.19s
+    # there, less than the bcrypt it replaces, while asking an attacker for far
+    # more than any of the OWASP minimum sets. The memory is claimed for the
+    # duration of each hash, so the ceiling above also caps it: 64 MiB times the
+    # workers times the number allowed at once.
+    PASSWORD_ARGON2_MEMORY_KIB: int = 65536
+    PASSWORD_ARGON2_TIME_COST: int = 3
+    PASSWORD_ARGON2_PARALLELISM: int = 1
     AUTH_WEB_MODE: str = "jwt"  # jwt | cookie | dual
     AUTH_ORCA_MODE: str = "bearer"  # bearer (reserved for explicit mode control)
     AUTH_ACCESS_COOKIE_NAME: str = "fh_access_token"

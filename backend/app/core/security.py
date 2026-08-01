@@ -7,6 +7,7 @@ import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+import argon2
 import bcrypt
 import jwt
 from jwt.exceptions import ExpiredSignatureError, InvalidTokenError
@@ -18,21 +19,64 @@ logger = logging.getLogger(__name__)
 # Algorithm for JWT
 ALGORITHM = settings.ALGORITHM
 
+# Argon2id is what a stolen database should have to face: bcrypt only costs an
+# attacker processor time, which graphics cards sell cheaply, while this also
+# demands memory, which they do not. Cost is tuned in settings against the
+# machine that runs it.
+_argon2 = argon2.PasswordHasher(
+    time_cost=settings.PASSWORD_ARGON2_TIME_COST,
+    memory_cost=settings.PASSWORD_ARGON2_MEMORY_KIB,
+    parallelism=settings.PASSWORD_ARGON2_PARALLELISM,
+)
+
+_ARGON2_PREFIX = "$argon2"
+
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Verify a password against a hash."""
-    return bcrypt.checkpw(
-        plain_password.encode("utf-8"),
-        hashed_password.encode("utf-8"),
-    )
+    """Verify a password against a hash, whichever algorithm wrote it."""
+    if not hashed_password:
+        return False
+
+    if hashed_password.startswith(_ARGON2_PREFIX):
+        try:
+            return _argon2.verify(hashed_password, plain_password)
+        except argon2.exceptions.VerificationError:
+            return False
+        except argon2.exceptions.InvalidHashError:
+            logger.warning("Stored password hash is not readable")
+            return False
+
+    try:
+        return bcrypt.checkpw(
+            plain_password.encode("utf-8"),
+            hashed_password.encode("utf-8"),
+        )
+    except ValueError:
+        logger.warning("Stored password hash is not readable")
+        return False
 
 
 def get_password_hash(password: str) -> str:
     """Hash a password."""
-    return bcrypt.hashpw(
-        password.encode("utf-8"),
-        bcrypt.gensalt(),
-    ).decode("utf-8")
+    return _argon2.hash(password)
+
+
+def password_hash_is_outdated(hashed_password: str) -> bool:
+    """Whether this hash should be rewritten the next time the password is known.
+
+    True for everything bcrypt wrote, and for Argon2id hashes made with costs we
+    have since raised.
+    """
+    if not hashed_password:
+        return False
+
+    if not hashed_password.startswith(_ARGON2_PREFIX):
+        return True
+
+    try:
+        return _argon2.check_needs_rehash(hashed_password)
+    except argon2.exceptions.InvalidHashError:
+        return False
 
 
 def token_fingerprint(token: str) -> str:

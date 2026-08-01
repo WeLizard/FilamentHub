@@ -16,6 +16,9 @@ dependencies = [
     "pydantic-settings~=2.7.0",
     "email-validator~=2.2.0",
     "PyJWT[crypto]~=2.12.0",
+    "argon2-cffi~=25.1.0",
+    # Kept to read passwords hashed before the move to Argon2id; they are
+    # rewritten the next time their owner signs in.
     "bcrypt~=5.0.0",
     "python-multipart~=0.0.22",
     "redis~=5.2.0",

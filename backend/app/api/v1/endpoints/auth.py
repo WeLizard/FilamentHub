@@ -43,6 +43,7 @@ from app.core.security import (
     generate_email_change_token,
     generate_email_verification_token,
     generate_password_reset_token,
+    password_hash_is_outdated,
     token_fingerprint,
 )
 from app.core.utils import normalize_email
@@ -569,6 +570,15 @@ async def login(
 
     if not user.active:
         raise_error(status.HTTP_403_FORBIDDEN, ERR_ACCOUNT_INACTIVE)
+
+    # Signing in is the only moment the password is known, so it is the only
+    # moment a hash written by an older algorithm can be replaced. Nobody is
+    # asked to change anything, and a failure here must not cost them the login.
+    if password_hash_is_outdated(user.password_hash):
+        try:
+            user.password_hash = await hash_password(data.password)
+        except Exception:  # noqa: BLE001
+            logger.warning("Could not rewrite the password hash on sign-in", exc_info=True)
 
     # Update last login
     user.last_login = datetime.now(timezone.utc)
