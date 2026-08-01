@@ -21,6 +21,7 @@ import asyncio
 import os
 import random
 import sys
+import time
 from pathlib import Path
 
 # Settings read the backend's own .env; the repository root has a different one.
@@ -39,6 +40,10 @@ COLOURS = ["Red", "Black", "White", "Blue", "Green", "Grey", "Orange", "Purple",
 
 
 async def seed(filaments: int, presets_per_filament: int, brands: int) -> int:
+    # Each run stamps its own rows: development data is kept, not wiped, so a
+    # second run must add to the pile instead of colliding with the first.
+    run = f"{int(time.time()):x}"
+
     from app.core.config import settings
     from app.db.session import AsyncSessionLocal
     from app.models.brand import Brand
@@ -57,8 +62,8 @@ async def seed(filaments: int, presets_per_filament: int, brands: int) -> int:
         made_brands = []
         for index in range(brands):
             brand = Brand(
-                name=f"SeedBrand {index:04d}",
-                slug=f"seed-brand-{index:04d}",
+                name=f"SeedBrand {run} {index:04d}",
+                slug=f"seed-brand-{run}-{index:04d}",
                 verified=index % 3 == 0,
             )
             db.add(brand)
@@ -73,8 +78,8 @@ async def seed(filaments: int, presets_per_filament: int, brands: int) -> int:
             colour = random.choice(COLOURS)
             filament = Filament(
                 brand_id=brand.id,
-                name=f"{material} {colour} {index:05d}",
-                slug=f"seed-{index:05d}-{material.lower()}-{colour.lower()}",
+                name=f"{material} {colour} {run}-{index:05d}",
+                slug=f"seed-{run}-{index:05d}-{material.lower()}-{colour.lower()}",
                 material_type=material,
                 diameter=1.75,
                 density=round(random.uniform(1.0, 1.4), 2),
