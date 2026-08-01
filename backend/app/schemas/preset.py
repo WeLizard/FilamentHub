@@ -23,9 +23,9 @@ class PresetBase(BaseModel):
 
     # Filament settings (material scope). print/travel speed и layer heights —
     # process-scope (Orca print profile), не свойства филамента: на пресете их нет.
-    extruder_temp: float = Field(..., ge=0, le=400)
-    bed_temp: float = Field(..., ge=0, le=150)
-    flow_rate: float | None = Field(None, ge=50, le=150)
+    extruder_temp: float = Field(..., ge=0, le=1500)
+    bed_temp: float = Field(..., ge=0, le=300)
+    flow_rate: float | None = Field(None, gt=0, le=200)
     # flow_rate: % от стандартного
 
     # Cooling
@@ -33,8 +33,8 @@ class PresetBase(BaseModel):
     # fan_speed: 0-100%
 
     # Retraction
-    retraction_length: float | None = Field(None, ge=0, le=10)
-    retraction_speed: float | None = Field(None, ge=1, le=100)
+    retraction_length: float | None = Field(None, ge=0, le=20)
+    retraction_speed: float | None = Field(None, ge=0, le=200)
 
     # Extended OrcaSlicer parameters (JSON)
     orcaslicer_settings: dict[str, Any] | None = Field(None, description="Расширенные параметры OrcaSlicer в формате JSON")
@@ -51,7 +51,6 @@ class PresetBase(BaseModel):
         if not normalized:
             raise ValueError("Preset name cannot be empty")
         return normalized
-
 
 class PresetCreate(PresetBase):
     """Schema for creating Preset."""
@@ -72,12 +71,12 @@ class PresetUpdate(BaseModel):
     filament_id: int | None = Field(None, gt=0, description="ID филамента (для привязки черновика)")
 
     # Filament settings (material scope)
-    extruder_temp: float | None = Field(None, ge=0, le=400)
-    bed_temp: float | None = Field(None, ge=0, le=150)
-    flow_rate: float | None = Field(None, ge=50, le=150)
+    extruder_temp: float | None = Field(None, ge=0, le=1500)
+    bed_temp: float | None = Field(None, ge=0, le=300)
+    flow_rate: float | None = Field(None, gt=0, le=200)
     fan_speed: int | None = Field(None, ge=0, le=100)
-    retraction_length: float | None = Field(None, ge=0, le=10)
-    retraction_speed: float | None = Field(None, ge=1, le=100)
+    retraction_length: float | None = Field(None, ge=0, le=20)
+    retraction_speed: float | None = Field(None, ge=0, le=200)
 
     # Extended OrcaSlicer parameters (JSON)
     orcaslicer_settings: dict[str, Any] | None = Field(None, description="Расширенные параметры OrcaSlicer в формате JSON")
@@ -92,13 +91,20 @@ class PresetUpdate(BaseModel):
 
     @field_validator("name")
     @classmethod
-    def validate_name_not_blank(cls, value: str | None) -> str | None:
+    def validate_name_not_blank(cls, value: str | None) -> str:
         if value is None:
-            return None
+            raise ValueError("Preset name cannot be cleared")
         normalized = value.strip()
         if not normalized:
             raise ValueError("Preset name cannot be empty")
         return normalized
+
+    @field_validator("extruder_temp", "bed_temp")
+    @classmethod
+    def required_temperatures_cannot_be_cleared(cls, value: float | None) -> float | None:
+        if value is None:
+            raise ValueError("Preset temperatures cannot be cleared")
+        return value
 
 
 class PresetActivateRequest(BaseModel):
@@ -146,12 +152,12 @@ class RecommendedPresetResponse(BaseModel):
     filament_id: int
 
     # Calculated optimal values (material scope only)
-    extruder_temp: float = Field(..., ge=0, le=400)
-    bed_temp: float = Field(..., ge=0, le=150)
-    flow_rate: float | None = Field(None, ge=50, le=150)
+    extruder_temp: float = Field(..., ge=0, le=1500)
+    bed_temp: float = Field(..., ge=0, le=300)
+    flow_rate: float | None = Field(None, gt=0, le=200)
     fan_speed: int | None = Field(None, ge=0, le=100)
-    retraction_length: float | None = Field(None, ge=0, le=10)
-    retraction_speed: float | None = Field(None, ge=1, le=100)
+    retraction_length: float | None = Field(None, ge=0, le=20)
+    retraction_speed: float | None = Field(None, ge=0, le=200)
 
     # Statistics
     presets_count: int = Field(..., ge=0, description="Number of presets used for calculation")
@@ -177,4 +183,3 @@ class RecommendedForPrinterResponse(BaseModel):
     printer_id: int
     printer_name: str
     items: list[RecommendedPresetItem]
-

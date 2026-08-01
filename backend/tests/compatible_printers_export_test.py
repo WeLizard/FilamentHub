@@ -100,3 +100,21 @@ async def test_export_sets_condition_and_empty_list(db_session: AsyncSession):
     profile = await preset_to_orcaslicer_json(preset, export_filament, db=db_session)
     assert profile["compatible_printers"] == []
     assert profile["compatible_printers_condition"] == 'printer_model=="Bambu Lab X1 Carbon"'
+
+
+@pytest.mark.asyncio
+async def test_export_preserves_imported_hard_compatibility_without_fh_links(db_session: AsyncSession):
+    preset = await _seed_preset(db_session)
+    preset.orcaslicer_settings = {
+        "compatible_printers": ["Creality The Machine Spirit 0.4 nozzle"],
+        "compatible_printers_condition": 'printer_model=="Creality The Machine Spirit"',
+    }
+    await db_session.commit()
+
+    export_filament = Filament(id=preset.filament_id, name="Compat PLA", material_type="PLA", diameter=1.75)
+    profile = await preset_to_orcaslicer_json(preset, export_filament, db=db_session)
+
+    assert profile["compatible_printers"] == ["Creality The Machine Spirit 0.4 nozzle"]
+    assert profile["compatible_printers_condition"] == (
+        'printer_model=="Creality The Machine Spirit"'
+    )

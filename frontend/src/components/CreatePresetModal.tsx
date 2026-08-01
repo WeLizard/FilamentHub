@@ -31,6 +31,19 @@ import { FloatingHSLColorPicker } from './FloatingHSLColorPicker';
 import { FilamentFeaturesEditor } from './FilamentFeaturesEditor';
 import { mergeVisualEffects } from '../data/filamentFeatures';
 import { currencySymbol } from '../utils/currency';
+import {
+  applyOrcaLinesFromUi,
+  applyOrcaUiSetting,
+  cloneOrcaSettings,
+  firstOrcaSetting,
+  formatOrcaFlowRatio,
+  isOrcaBedTemperatureSentinel,
+  normalizeOrcaSettingsForUi,
+  ORCA_MAX_BED_TEMPERATURE,
+  ORCA_MAX_NOZZLE_TEMPERATURE,
+  readOrcaNumber,
+  readOrcaText,
+} from '../utils/orcaPresetSettings';
 
 import { FilamentSummaryCard } from './FilamentSummaryCard';
 import type { AxiosError } from 'axios';
@@ -470,25 +483,50 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
       setIsOfficial(preset.is_official);
       setExtruderTemp(preset.extruder_temp);
       setBedTemp(preset.bed_temp);
-      setFlowRate(preset.flow_rate || 100);
-      setFanSpeed(preset.fan_speed || 100);
-      setRetractionLength(preset.retraction_length || 5.0);
-      setRetractionSpeed(preset.retraction_speed || 45.0);
+      setFlowRate(preset.flow_rate ?? 100);
+      setFanSpeed(preset.fan_speed ?? 100);
+      setRetractionLength(preset.retraction_length ?? 5.0);
+      setRetractionSpeed(preset.retraction_speed ?? 45.0);
       
       // Загружаем расширенные параметры из JSON
       if (preset.orcaslicer_settings) {
-        const settings = preset.orcaslicer_settings;
-        setTempRangeLow(settings.nozzle_temperature_range_low?.[0] ? Number(settings.nozzle_temperature_range_low[0]) : '');
-        setTempRangeHigh(settings.nozzle_temperature_range_high?.[0] ? Number(settings.nozzle_temperature_range_high[0]) : '');
-        setVolumetricSpeed(settings.filament_max_volumetric_speed?.[0] ? Number(settings.filament_max_volumetric_speed[0]) : '');
-        setFanMinSpeed(settings.fan_min_speed?.[0] ? Number(settings.fan_min_speed[0]) : '');
-        setFanMaxSpeed(settings.fan_max_speed?.[0] ? Number(settings.fan_max_speed[0]) : '');
+        const rawSettings = preset.orcaslicer_settings;
+        const settings = normalizeOrcaSettingsForUi(rawSettings);
+        const numericSetting = (key: string): number | '' => readOrcaNumber(rawSettings, key) ?? '';
+        const textSetting = (key: string): string => readOrcaText(rawSettings, key);
+        const percentSetting = (key: string): string => textSetting(key).replace('%', '');
+        setTempRangeLow(numericSetting('nozzle_temperature_range_low'));
+        setTempRangeHigh(numericSetting('nozzle_temperature_range_high'));
+        setVolumetricSpeed(numericSetting('filament_max_volumetric_speed'));
+        setFanMinSpeed(numericSetting('fan_min_speed'));
+        const rawFanMaxSpeed = readOrcaNumber(rawSettings, 'fan_max_speed');
+        setFanMaxSpeed(
+          rawFanMaxSpeed != null && rawFanMaxSpeed <= 100 ? rawFanMaxSpeed : '',
+        );
+        if (preset.flow_rate == null) {
+          const rawFlowRatio = readOrcaNumber(rawSettings, 'filament_flow_ratio');
+          if (rawFlowRatio != null) {
+            setFlowRate(rawFlowRatio <= 2 ? rawFlowRatio * 100 : rawFlowRatio);
+          }
+        }
+        if (preset.fan_speed == null) {
+          const rawFanSpeed = readOrcaNumber(rawSettings, 'fan_min_speed');
+          if (rawFanSpeed != null) setFanSpeed(rawFanSpeed);
+        }
+        if (preset.retraction_length == null) {
+          const rawRetractionLength = readOrcaNumber(rawSettings, 'filament_retraction_length');
+          if (rawRetractionLength != null) setRetractionLength(rawRetractionLength);
+        }
+        if (preset.retraction_speed == null) {
+          const rawRetractionSpeed = readOrcaNumber(rawSettings, 'filament_retraction_speed');
+          if (rawRetractionSpeed != null) setRetractionSpeed(rawRetractionSpeed);
+        }
         setReduceFanStopStartFreq(settings.reduce_fan_stop_start_freq?.[0] === '1' || settings.reduce_fan_stop_start_freq?.[0] === 1);
-        setPressureAdvance(settings.pressure_advance?.[0] ? Number(settings.pressure_advance[0]) : '');
+        setPressureAdvance(numericSetting('pressure_advance'));
         setEnablePressureAdvance(settings.enable_pressure_advance?.[0] === '1' || settings.enable_pressure_advance?.[0] === 1);
-        setIdleTemperature(settings.idle_temperature?.[0] ? Number(settings.idle_temperature[0]) : '');
-        setSofteningTemperature(settings.temperature_vitrification?.[0] ? Number(settings.temperature_vitrification[0]) : '');
-        setChamberTemp(settings.chamber_temperature?.[0] ? Number(settings.chamber_temperature[0]) : '');
+        setIdleTemperature(numericSetting('idle_temperature'));
+        setSofteningTemperature(numericSetting('temperature_vitrification'));
+        setChamberTemp(numericSetting('chamber_temperature'));
         setEnableChamberControl(settings.activate_chamber_temp_control?.[0] === '1' || settings.activate_chamber_temp_control?.[0] === 1);
         
         // G-code
@@ -537,99 +575,99 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
         };
         setNozzleTempInitialLayer(parseNumericSetting(settings.nozzle_temperature_initial_layer?.[0]));
         const bedInitialLayerValue =
+          settings.bed_temperature_initial_layer?.[0] ??
           settings.hot_plate_temp_initial_layer?.[0] ??
           settings.cool_plate_temp_initial_layer?.[0] ??
           settings.eng_plate_temp_initial_layer?.[0] ??
           settings.textured_plate_temp_initial_layer?.[0] ??
+          settings.supertack_plate_temp_initial_layer?.[0] ??
+          settings.textured_cool_plate_temp_initial_layer?.[0] ??
+          settings.customized_plate_temp_initial_layer?.[0] ??
+          settings.epoxy_resin_plate_temp_initial_layer?.[0] ??
           '';
         setBedTempInitialLayer(parseNumericSetting(bedInitialLayerValue));
-        setBedTempInitialLayer(settings.bed_temperature_initial_layer?.[0] ? Number(settings.bed_temperature_initial_layer[0]) : '');
         setAdaptiveVolumetricSpeed(settings.filament_adaptive_volumetric_speed?.[0] === '1' || settings.filament_adaptive_volumetric_speed?.[0] === 1);
-        setVolumetricSpeedCoefficients(settings.volumetric_speed_coefficients?.[0] ? String(settings.volumetric_speed_coefficients[0]) : '');
+        setVolumetricSpeedCoefficients(textSetting('volumetric_speed_coefficients'));
         // Процентные значения (убираем % при загрузке)
-        const shrink = settings.filament_shrink?.[0];
-        setFilamentShrink(typeof shrink === 'string' ? shrink.replace('%', '') : shrink ? String(shrink).replace('%', '') : '');
-        const shrinkZ = settings.filament_shrinkage_compensation_z?.[0];
-        setFilamentShrinkageCompensationZ(typeof shrinkZ === 'string' ? shrinkZ.replace('%', '') : shrinkZ ? String(shrinkZ).replace('%', '') : '');
-        setDefaultFilamentColour(settings.default_filament_colour?.[0] ? String(settings.default_filament_colour[0]) : '');
-        setFilamentAdhesivenessCategory(settings.filament_adhesiveness_category?.[0] ? Number(settings.filament_adhesiveness_category[0]) : '');
+        setFilamentShrink(percentSetting('filament_shrink'));
+        setFilamentShrinkageCompensationZ(percentSetting('filament_shrinkage_compensation_z'));
+        setDefaultFilamentColour(textSetting('default_filament_colour'));
+        setFilamentAdhesivenessCategory(numericSetting('filament_adhesiveness_category'));
         setFilamentIsSupport(settings.filament_is_support?.[0] === '1' || settings.filament_is_support?.[0] === 1);
         setFilamentSoluble(settings.filament_soluble?.[0] === '1' || settings.filament_soluble?.[0] === 1);
-        setFilamentPrintable(settings.filament_printable?.[0] ? Number(settings.filament_printable[0]) : '');
+        setFilamentPrintable(numericSetting('filament_printable'));
         
         // Ретракт (дополнительные параметры)
-        setDeretractionSpeed(settings.filament_deretraction_speed?.[0] ? Number(settings.filament_deretraction_speed[0]) : '');
-        setRetractionMinimumTravel(settings.filament_retraction_minimum_travel?.[0] ? Number(settings.filament_retraction_minimum_travel[0]) : '');
-        const retractBeforeWipeVal = settings.filament_retract_before_wipe?.[0];
-        setRetractBeforeWipe(typeof retractBeforeWipeVal === 'string' ? retractBeforeWipeVal.replace('%', '') : retractBeforeWipeVal ? String(retractBeforeWipeVal).replace('%', '') : '');
+        setDeretractionSpeed(numericSetting('filament_deretraction_speed'));
+        setRetractionMinimumTravel(numericSetting('filament_retraction_minimum_travel'));
+        setRetractBeforeWipe(percentSetting('filament_retract_before_wipe'));
         setRetractWhenChangingLayer(settings.filament_retract_when_changing_layer?.[0] === '1' || settings.filament_retract_when_changing_layer?.[0] === 1);
-        setRetractRestartExtra(settings.filament_retract_restart_extra?.[0] ? Number(settings.filament_retract_restart_extra[0]) : '');
+        setRetractRestartExtra(numericSetting('filament_retract_restart_extra'));
         
         // Lift (подъем Z)
-        setFilamentZHop(settings.filament_z_hop?.[0] ? Number(settings.filament_z_hop[0]) : '');
-        setFilamentZHopTypes(settings.filament_z_hop_types?.[0] ? String(settings.filament_z_hop_types[0]) : '');
-        setRetractLiftAbove(settings.filament_retract_lift_above?.[0] ? Number(settings.filament_retract_lift_above[0]) : '');
-        setRetractLiftBelow(settings.filament_retract_lift_below?.[0] ? Number(settings.filament_retract_lift_below[0]) : '');
-        setRetractLiftEnforce(settings.filament_retract_lift_enforce?.[0] ? String(settings.filament_retract_lift_enforce[0]) : '');
+        setFilamentZHop(numericSetting('filament_z_hop'));
+        setFilamentZHopTypes(textSetting('filament_z_hop_types'));
+        setRetractLiftAbove(numericSetting('filament_retract_lift_above'));
+        setRetractLiftBelow(numericSetting('filament_retract_lift_below'));
+        setRetractLiftEnforce(textSetting('filament_retract_lift_enforce'));
         
         // Wipe
         setFilamentWipe(settings.filament_wipe?.[0] === '1' || settings.filament_wipe?.[0] === 1);
-        setFilamentWipeDistance(settings.filament_wipe_distance?.[0] ? Number(settings.filament_wipe_distance[0]) : '');
-        setFilamentFlushTemp(settings.filament_flush_temp?.[0] ? Number(settings.filament_flush_temp[0]) : '');
-        setFilamentFlushVolumetricSpeed(settings.filament_flush_volumetric_speed?.[0] ? Number(settings.filament_flush_volumetric_speed[0]) : '');
+        setFilamentWipeDistance(numericSetting('filament_wipe_distance'));
+        setFilamentFlushTemp(numericSetting('filament_flush_temp'));
+        setFilamentFlushVolumetricSpeed(numericSetting('filament_flush_volumetric_speed'));
         
         // Pressure Advance (дополнительные параметры)
         setAdaptivePressureAdvance(settings.adaptive_pressure_advance?.[0] === '1' || settings.adaptive_pressure_advance?.[0] === 1);
-        setAdaptivePABridges(settings.adaptive_pressure_advance_bridges?.[0] ? Number(settings.adaptive_pressure_advance_bridges[0]) : '');
+        setAdaptivePABridges(numericSetting('adaptive_pressure_advance_bridges'));
         setAdaptivePAOverhangs(settings.adaptive_pressure_advance_overhangs?.[0] === '1' || settings.adaptive_pressure_advance_overhangs?.[0] === 1);
         
         // === ВКЛАДКА "ОХЛАЖДЕНИЕ" - дополнительные параметры ===
-        setFanCoolingLayerTime(settings.fan_cooling_layer_time?.[0] ? Number(settings.fan_cooling_layer_time[0]) : '');
-        setFanMaxSpeedLayerTime(settings.slow_down_layer_time?.[0] ? Number(settings.slow_down_layer_time[0]) : ''); // slow_down_layer_time используется для fanMaxSpeedLayerTime
-        setFullFanSpeedLayer(settings.full_fan_speed_layer?.[0] ? Number(settings.full_fan_speed_layer[0]) : '');
-        setCloseFanFirstXLayers(settings.close_fan_the_first_x_layers?.[0] ? Number(settings.close_fan_the_first_x_layers[0]) : '');
+        setFanCoolingLayerTime(numericSetting('fan_cooling_layer_time'));
+        setFanMaxSpeedLayerTime(numericSetting('slow_down_layer_time')); // slow_down_layer_time используется для fanMaxSpeedLayerTime
+        setFullFanSpeedLayer(numericSetting('full_fan_speed_layer'));
+        setCloseFanFirstXLayers(numericSetting('close_fan_the_first_x_layers'));
         setSlowDownForLayerCooling(settings.slow_down_for_layer_cooling?.[0] === '1' || settings.slow_down_for_layer_cooling?.[0] === 1);
         setEnableOverhangBridgeFan(settings.enable_overhang_bridge_fan?.[0] === '1' || settings.enable_overhang_bridge_fan?.[0] === 1);
-        setOverhangFanSpeed(settings.overhang_fan_speed?.[0] ? Number(settings.overhang_fan_speed[0]) : '');
-        const overhangThreshold = settings.overhang_fan_threshold?.[0];
-        setOverhangFanThreshold(typeof overhangThreshold === 'string' ? overhangThreshold.replace('%', '') : overhangThreshold ? String(overhangThreshold).replace('%', '') : '');
-        setInternalBridgeFanSpeed(settings.internal_bridge_fan_speed?.[0] ? Number(settings.internal_bridge_fan_speed[0]) : '');
-        setIroningFanSpeed(settings.ironing_fan_speed?.[0] ? Number(settings.ironing_fan_speed[0]) : '');
-        setSupportMaterialInterfaceFanSpeed(settings.support_material_interface_fan_speed?.[0] ? Number(settings.support_material_interface_fan_speed[0]) : '');
-        setAdditionalCoolingFanSpeed(settings.additional_cooling_fan_speed?.[0] ? Number(settings.additional_cooling_fan_speed[0]) : '');
+        setOverhangFanSpeed(numericSetting('overhang_fan_speed'));
+        setOverhangFanThreshold(percentSetting('overhang_fan_threshold'));
+        setInternalBridgeFanSpeed(numericSetting('internal_bridge_fan_speed'));
+        setIroningFanSpeed(numericSetting('ironing_fan_speed'));
+        setSupportMaterialInterfaceFanSpeed(numericSetting('support_material_interface_fan_speed'));
+        setAdditionalCoolingFanSpeed(numericSetting('additional_cooling_fan_speed'));
         setEnableExhaustFan(settings.enable_exhaust_fan?.[0] === '1' || settings.enable_exhaust_fan?.[0] === 1 || !!settings.during_print_exhaust_fan_speed || !!settings.complete_print_exhaust_fan_speed);
-        setDuringPrintExhaustFanSpeed(settings.during_print_exhaust_fan_speed?.[0] ? Number(settings.during_print_exhaust_fan_speed[0]) : '');
-        setCompletePrintExhaustFanSpeed(settings.complete_print_exhaust_fan_speed?.[0] ? Number(settings.complete_print_exhaust_fan_speed[0]) : '');
+        setDuringPrintExhaustFanSpeed(numericSetting('during_print_exhaust_fan_speed'));
+        setCompletePrintExhaustFanSpeed(numericSetting('complete_print_exhaust_fan_speed'));
         setActivateAirFiltration(settings.activate_air_filtration?.[0] === '1' || settings.activate_air_filtration?.[0] === 1);
         
         // === ВКЛАДКА "ПЕРЕОПРЕДЕЛЕНИЕ ПАРАМЕТРОВ" ===
-        setSlowDownMinSpeed(settings.slow_down_min_speed?.[0] ? Number(settings.slow_down_min_speed[0]) : '');
+        setSlowDownMinSpeed(numericSetting('slow_down_min_speed'));
         setDontSlowDownOuterWall(settings.dont_slow_down_outer_wall?.[0] === '1' || settings.dont_slow_down_outer_wall?.[0] === 1);
-        setRetractionDistancesWhenCut(settings.filament_retraction_distances_when_cut?.[0] ? String(settings.filament_retraction_distances_when_cut[0]) : '');
-        setLongRetractionsWhenCut(settings.filament_long_retractions_when_cut?.[0] ? String(settings.filament_long_retractions_when_cut[0]) : '');
+        setRetractionDistancesWhenCut(textSetting('filament_retraction_distances_when_cut'));
+        setLongRetractionsWhenCut(textSetting('filament_long_retractions_when_cut'));
         setLongRetractionsWhenEC(settings.long_retractions_when_ec?.[0] === '1' || settings.long_retractions_when_ec?.[0] === 1);
-        setRetractionDistancesWhenEC(settings.retraction_distances_when_ec?.[0] ? Number(settings.retraction_distances_when_ec[0]) : '');
+        setRetractionDistancesWhenEC(numericSetting('retraction_distances_when_ec'));
         
         // === ВКЛАДКА "ДОПОЛНИТЕЛЬНО" - дополнительные параметры ===
         setFilamentMultitoolRamming(settings.filament_multitool_ramming?.[0] === '1' || settings.filament_multitool_ramming?.[0] === 1);
-        setFilamentMultitoolRammingFlow(settings.filament_multitool_ramming_flow?.[0] ? Number(settings.filament_multitool_ramming_flow[0]) : '');
-        setFilamentMultitoolRammingVolume(settings.filament_multitool_ramming_volume?.[0] ? Number(settings.filament_multitool_ramming_volume[0]) : '');
-        setFilamentToolchangeDelay(settings.filament_toolchange_delay?.[0] ? Number(settings.filament_toolchange_delay[0]) : '');
-        setFilamentLoadingSpeed(settings.filament_loading_speed?.[0] ? Number(settings.filament_loading_speed[0]) : '');
-        setFilamentLoadingSpeedStart(settings.filament_loading_speed_start?.[0] ? Number(settings.filament_loading_speed_start[0]) : '');
-        setFilamentUnloadingSpeed(settings.filament_unloading_speed?.[0] ? Number(settings.filament_unloading_speed[0]) : '');
-        setFilamentUnloadingSpeedStart(settings.filament_unloading_speed_start?.[0] ? Number(settings.filament_unloading_speed_start[0]) : '');
-        setFilamentChangeLength(settings.filament_change_length?.[0] ? Number(settings.filament_change_length[0]) : '');
-        setFilamentCoolingInitialSpeed(settings.filament_cooling_initial_speed?.[0] ? Number(settings.filament_cooling_initial_speed[0]) : '');
-        setFilamentCoolingFinalSpeed(settings.filament_cooling_final_speed?.[0] ? Number(settings.filament_cooling_final_speed[0]) : '');
-        setFilamentCoolingMoves(settings.filament_cooling_moves?.[0] ? Number(settings.filament_cooling_moves[0]) : '');
-        setFilamentStampingDistance(settings.filament_stamping_distance?.[0] ? Number(settings.filament_stamping_distance[0]) : '');
-        setFilamentStampingLoadingSpeed(settings.filament_stamping_loading_speed?.[0] ? Number(settings.filament_stamping_loading_speed[0]) : '');
-        setFilamentMinimalPurgeOnWipeTower(settings.filament_minimal_purge_on_wipe_tower?.[0] ? Number(settings.filament_minimal_purge_on_wipe_tower[0]) : '');
-        setPelletFlowCoefficient(settings.pellet_flow_coefficient?.[0] ? Number(settings.pellet_flow_coefficient[0]) : '');
+        setFilamentMultitoolRammingFlow(numericSetting('filament_multitool_ramming_flow'));
+        setFilamentMultitoolRammingVolume(numericSetting('filament_multitool_ramming_volume'));
+        setFilamentToolchangeDelay(numericSetting('filament_toolchange_delay'));
+        setFilamentLoadingSpeed(numericSetting('filament_loading_speed'));
+        setFilamentLoadingSpeedStart(numericSetting('filament_loading_speed_start'));
+        setFilamentUnloadingSpeed(numericSetting('filament_unloading_speed'));
+        setFilamentUnloadingSpeedStart(numericSetting('filament_unloading_speed_start'));
+        setFilamentChangeLength(numericSetting('filament_change_length'));
+        setFilamentCoolingInitialSpeed(numericSetting('filament_cooling_initial_speed'));
+        setFilamentCoolingFinalSpeed(numericSetting('filament_cooling_final_speed'));
+        setFilamentCoolingMoves(numericSetting('filament_cooling_moves'));
+        setFilamentStampingDistance(numericSetting('filament_stamping_distance'));
+        setFilamentStampingLoadingSpeed(numericSetting('filament_stamping_loading_speed'));
+        setFilamentMinimalPurgeOnWipeTower(numericSetting('filament_minimal_purge_on_wipe_tower'));
+        setPelletFlowCoefficient(numericSetting('pellet_flow_coefficient'));
         
         // === ВКЛАДКА "ЭКСТРУДЕР ММ" ===
-        setFilamentExtruderVariant(settings.filament_extruder_variant?.[0] ? String(settings.filament_extruder_variant[0]) : '');
+        setFilamentExtruderVariant(textSetting('filament_extruder_variant'));
         
         // === ВКЛАДКА "ЗАВИСИМОСТИ" ===
         if (settings.compatible_printers && Array.isArray(settings.compatible_printers)) {
@@ -637,13 +675,38 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
         } else {
           setCompatiblePrinters('');
         }
-        setCompatiblePrintersCondition(settings.compatible_printers_condition?.[0] ? String(settings.compatible_printers_condition[0]) : '');
+        setCompatiblePrintersCondition(textSetting('compatible_printers_condition'));
         if (settings.compatible_prints && Array.isArray(settings.compatible_prints)) {
           setCompatiblePrints(settings.compatible_prints.join(', '));
         } else {
           setCompatiblePrints('');
         }
-        setCompatiblePrintsCondition(settings.compatible_prints_condition?.[0] ? String(settings.compatible_prints_condition[0]) : '');
+        setCompatiblePrintsCondition(textSetting('compatible_prints_condition'));
+
+        if (isDraft && !preset.filament_id) {
+          const nozzleMin = readOrcaNumber(rawSettings, 'nozzle_temperature_range_low');
+          const nozzleMax = readOrcaNumber(rawSettings, 'nozzle_temperature_range_high');
+          const bedKeys = [
+            'bed_temperature',
+            'hot_plate_temp',
+            'cool_plate_temp',
+            'eng_plate_temp',
+            'textured_plate_temp',
+            'supertack_plate_temp',
+            'textured_cool_plate_temp',
+            'customized_plate_temp',
+            'epoxy_resin_plate_temp',
+          ];
+          const bedValues = bedKeys
+            .map((key) => readOrcaNumber(rawSettings, key))
+            .filter((value): value is number => value != null && value > 0);
+          setFilamentRecTemps({
+            nozzleMin,
+            nozzleMax,
+            bedMin: bedValues.length > 0 ? Math.min(...bedValues) : null,
+            bedMax: bedValues.length > 0 ? Math.max(...bedValues) : null,
+          });
+        }
         
         // showAdvancedSettings - устаревшая переменная, больше не используется (используем вкладки)
       } else {
@@ -1258,57 +1321,152 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
     },
   });
 
+  const originalFlowRatio = readOrcaNumber(preset?.orcaslicer_settings, 'filament_flow_ratio');
+  const originalFlowRate = preset?.flow_rate
+    ?? (originalFlowRatio == null ? 100 : originalFlowRatio <= 2 ? originalFlowRatio * 100 : originalFlowRatio);
+  const originalFanSpeed = preset?.fan_speed
+    ?? readOrcaNumber(preset?.orcaslicer_settings, 'fan_min_speed')
+    ?? 100;
+  const originalFanMaxSpeed = readOrcaNumber(
+    preset?.orcaslicer_settings,
+    'fan_max_speed',
+  );
+  const originalRetractionLength = preset?.retraction_length
+    ?? readOrcaNumber(preset?.orcaslicer_settings, 'filament_retraction_length')
+    ?? 5;
+  const originalRetractionSpeed = preset?.retraction_speed
+    ?? readOrcaNumber(preset?.orcaslicer_settings, 'filament_retraction_speed')
+    ?? 45;
+
   // Функция для построения JSON расширенных параметров из UI полей
   // Собирает ВСЕ параметры OrcaSlicer по всем вкладкам
   const buildOrcaslicerSettings = (filamentColorHex?: string | null): Record<string, any> | null => {
-    const settings: Record<string, any> = {};
-    let hasSettings = false;
+    const sourceSettings = cloneOrcaSettings(preset?.orcaslicer_settings);
+    const settings: Record<string, any> = { ...sourceSettings };
+    let hasSettings = Object.keys(settings).length > 0;
 
     // Вспомогательная функция для добавления параметра
     const addParam = (key: string, value: string | number | string[] | null | undefined) => {
-      if (value !== '' && value !== null && value !== undefined) {
-        settings[key] = Array.isArray(value) ? value : [String(value)];
-        hasSettings = true;
-      }
+      applyOrcaUiSetting(settings, sourceSettings, key, value);
     };
 
     // Вспомогательная функция для добавления boolean параметра
     const addBoolParam = (key: string, value: boolean) => {
+      const target = value ? '1' : '0';
+      const hasOriginal = Object.prototype.hasOwnProperty.call(sourceSettings, key);
+      const original = firstOrcaSetting(sourceSettings, key);
+      if (hasOriginal && String(original) === target) {
+        return;
+      }
       if (value) {
         settings[key] = ['1'];
         hasSettings = true;
+      } else if (hasOriginal) {
+        if (String(original).toLowerCase() !== 'nil') {
+          settings[key] = ['0'];
+        }
+      } else {
+        delete settings[key];
       }
     };
 
     // Вспомогательная функция для добавления процентного значения
     const addPercentParam = (key: string, value: string) => {
       if (value && value.trim() !== '') {
-        settings[key] = [value.trim().endsWith('%') ? value.trim() : `${value.trim()}%`];
+        const normalized = value.trim().endsWith('%') ? value.trim() : `${value.trim()}%`;
+        if (
+          Object.prototype.hasOwnProperty.call(sourceSettings, key)
+          && String(firstOrcaSetting(sourceSettings, key)) === normalized
+        ) {
+          return;
+        }
+        settings[key] = [normalized];
         hasSettings = true;
+      } else if (
+        String(firstOrcaSetting(sourceSettings, key)).trim().toLowerCase() === 'nil'
+      ) {
+        return;
+      } else {
+        delete settings[key];
       }
+    };
+
+    const addLinesParam = (key: string, value: string) => {
+      applyOrcaLinesFromUi(settings, sourceSettings, key, value);
     };
 
     // === ВКЛАДКА "ПРОФИЛЬ ПРУТКА" ===
     
     // Температуры
+    if (
+      !preset
+      || preset.extruder_temp !== extruderTemp
+      || !Object.prototype.hasOwnProperty.call(sourceSettings, 'nozzle_temperature')
+    ) {
+      addParam('nozzle_temperature', extruderTemp);
+    }
     addParam('nozzle_temperature_range_low', tempRangeLow);
     addParam('nozzle_temperature_range_high', tempRangeHigh);
     addParam('nozzle_temperature_initial_layer', nozzleTempInitialLayer);
+    const bedKeys = [
+      'bed_temperature',
+      'hot_plate_temp',
+      'cool_plate_temp',
+      'eng_plate_temp',
+      'textured_plate_temp',
+      'supertack_plate_temp',
+      'textured_cool_plate_temp',
+      'customized_plate_temp',
+      'epoxy_resin_plate_temp',
+    ];
+    const hasRawBedTemperature = bedKeys.some(
+      (key) => firstOrcaSetting(sourceSettings, key) != null,
+    );
+    if (!preset || preset.bed_temp !== bedTemp || !hasRawBedTemperature) {
+      bedKeys.forEach((key) => addParam(key, bedTemp));
+    }
     const bedInitialTemp =
       bedTempInitialLayer !== '' && bedTempInitialLayer !== null ? bedTempInitialLayer : bedTemp;
-    addParam('hot_plate_temp_initial_layer', bedInitialTemp);
-    addParam('cool_plate_temp_initial_layer', bedInitialTemp);
-    addParam('eng_plate_temp_initial_layer', bedInitialTemp);
-    addParam('textured_plate_temp_initial_layer', bedInitialTemp);
-    // Новые типы пластин Orca (supertack PEI, текстурированная холодная)
-    addParam('supertack_plate_temp_initial_layer', bedInitialTemp);
-    addParam('textured_cool_plate_temp_initial_layer', bedInitialTemp);
+    const originalBedInitial = [
+      'bed_temperature_initial_layer',
+      'hot_plate_temp_initial_layer',
+      'cool_plate_temp_initial_layer',
+      'eng_plate_temp_initial_layer',
+      'textured_plate_temp_initial_layer',
+      'supertack_plate_temp_initial_layer',
+      'textured_cool_plate_temp_initial_layer',
+      'customized_plate_temp_initial_layer',
+      'epoxy_resin_plate_temp_initial_layer',
+    ].map((key) => firstOrcaSetting(sourceSettings, key)).find((value) => value != null && value !== '');
+    const preserveInheritedBedInitial = bedTempInitialLayer === ''
+      && isOrcaBedTemperatureSentinel(originalBedInitial);
+    if (
+      !preserveInheritedBedInitial
+      && (originalBedInitial == null || String(originalBedInitial) !== String(bedInitialTemp))
+    ) {
+      delete settings.bed_temperature_initial_layer;
+      addParam('hot_plate_temp_initial_layer', bedInitialTemp);
+      addParam('cool_plate_temp_initial_layer', bedInitialTemp);
+      addParam('eng_plate_temp_initial_layer', bedInitialTemp);
+      addParam('textured_plate_temp_initial_layer', bedInitialTemp);
+      addParam('supertack_plate_temp_initial_layer', bedInitialTemp);
+      addParam('textured_cool_plate_temp_initial_layer', bedInitialTemp);
+      addParam('customized_plate_temp_initial_layer', bedInitialTemp);
+      addParam('epoxy_resin_plate_temp_initial_layer', bedInitialTemp);
+    }
     addParam('idle_temperature', idleTemperature); // Температура ожидания
     addParam('temperature_vitrification', softeningTemperature); // Температура витрификации (размягчения)
     addParam('chamber_temperature', chamberTemp);
     addBoolParam('activate_chamber_temp_control', enableChamberControl);
 
     // Свойства филамента
+    if (
+      !preset
+      || originalFlowRate !== flowRate
+      || !Object.prototype.hasOwnProperty.call(sourceSettings, 'filament_flow_ratio')
+    ) {
+      addParam('filament_flow_ratio', formatOrcaFlowRatio(flowRate));
+    }
     addParam('filament_max_volumetric_speed', volumetricSpeed);
     addBoolParam('filament_adaptive_volumetric_speed', adaptiveVolumetricSpeed);
     addParam('volumetric_speed_coefficients', volumetricSpeedCoefficients);
@@ -1319,8 +1477,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
     // При редактировании/выборе существующего - используется цвет филамента если defaultFilamentColour не задан
     const finalColor = defaultFilamentColour || filamentColorHex;
     if (finalColor && finalColor.trim() !== '' && finalColor !== '#000000') {
-      settings.default_filament_colour = [finalColor];
-      hasSettings = true;
+      addParam('default_filament_colour', finalColor);
     }
     addParam('filament_adhesiveness_category', filamentAdhesivenessCategory);
     addBoolParam('filament_is_support', filamentIsSupport);
@@ -1328,6 +1485,20 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
     addParam('filament_printable', filamentPrintable);
 
     // Ретракт
+    if (
+      !preset
+      || originalRetractionLength !== retractionLength
+      || !Object.prototype.hasOwnProperty.call(sourceSettings, 'filament_retraction_length')
+    ) {
+      addParam('filament_retraction_length', retractionLength);
+    }
+    if (
+      !preset
+      || originalRetractionSpeed !== retractionSpeed
+      || !Object.prototype.hasOwnProperty.call(sourceSettings, 'filament_retraction_speed')
+    ) {
+      addParam('filament_retraction_speed', retractionSpeed);
+    }
     addParam('filament_deretraction_speed', deretractionSpeed);
     addParam('filament_retraction_minimum_travel', retractionMinimumTravel);
     addPercentParam('filament_retract_before_wipe', retractBeforeWipe);
@@ -1357,14 +1528,21 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
     // === ВКЛАДКА "ОХЛАЖДЕНИЕ" ===
     
     // Обдув модели
-    addParam('fan_min_speed', fanMinSpeed);
-    addParam('fan_max_speed', fanMaxSpeed);
+    const hasRawFanMinSpeed = Object.prototype.hasOwnProperty.call(sourceSettings, 'fan_min_speed');
+    addParam(
+      'fan_min_speed',
+      fanMinSpeed !== '' || hasRawFanMinSpeed ? fanMinSpeed : fanSpeed,
+    );
+    const preserveOutOfRangeFanMax = fanMaxSpeed === ''
+      && originalFanMaxSpeed != null
+      && originalFanMaxSpeed > 100;
+    if (!preserveOutOfRangeFanMax) {
+      addParam('fan_max_speed', fanMaxSpeed);
+    }
     addParam('fan_cooling_layer_time', fanCoolingLayerTime); // Время слоя для мин. скорости (порог мин. скорости)
     // slow_down_layer_time используется для макс. скорости вентилятора (порог макс. скорости)
     // Используем fanMaxSpeedLayerTime для порога макс. скорости вентилятора, если он задан
-    if (fanMaxSpeedLayerTime !== '') {
-      addParam('slow_down_layer_time', fanMaxSpeedLayerTime);
-    }
+    addParam('slow_down_layer_time', fanMaxSpeedLayerTime);
     // reduce_fan_stop_start_freq = "Keep fan always on" в OrcaSlicer (вентилятор включён всегда)
     addBoolParam('reduce_fan_stop_start_freq', reduceFanStopStartFreq);
     addParam('full_fan_speed_layer', fullFanSpeedLayer); // Полная скорость вентилятора на слое
@@ -1383,19 +1561,14 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
     }
     // Скорость вентилятора для внутренних мостов (-1 = по умолчанию)
     if (internalBridgeFanSpeed !== '' || enableOverhangBridgeFan) {
-      settings.internal_bridge_fan_speed = internalBridgeFanSpeed !== '' ? [String(internalBridgeFanSpeed)] : ['-1'];
-      hasSettings = true;
+      addParam('internal_bridge_fan_speed', internalBridgeFanSpeed !== '' ? internalBridgeFanSpeed : -1);
+    } else {
+      addParam('internal_bridge_fan_speed', '');
     }
     // Скорость вентилятора на связующем слое (-1 = по умолчанию)
-    if (supportMaterialInterfaceFanSpeed !== '') {
-      settings.support_material_interface_fan_speed = [String(supportMaterialInterfaceFanSpeed)];
-      hasSettings = true;
-    }
+    addParam('support_material_interface_fan_speed', supportMaterialInterfaceFanSpeed);
     // Ironing fan speed (-1 = по умолчанию)
-    if (ironingFanSpeed !== '') {
-      settings.ironing_fan_speed = [String(ironingFanSpeed)];
-      hasSettings = true;
-    }
+    addParam('ironing_fan_speed', ironingFanSpeed);
 
     // Вспомогательный вентилятор модели
     addParam('additional_cooling_fan_speed', additionalCoolingFanSpeed);
@@ -1428,23 +1601,18 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
     // === ВКЛАДКА "ДОПОЛНИТЕЛЬНО" ===
     
     // G-code
-    if (filamentStartGcode && filamentStartGcode.trim() !== '') {
-      // OrcaSlicer использует массив строк для G-code, каждая строка - отдельный элемент
-      // Преобразуем многострочный текст в массив строк
-      const startGcodeLines = filamentStartGcode.split('\n').filter(line => line.trim() !== '');
-      if (startGcodeLines.length > 0) {
-        settings.filament_start_gcode = startGcodeLines;
-        hasSettings = true;
-      }
-    }
-    if (filamentEndGcode && filamentEndGcode.trim() !== '') {
-      // Преобразуем многострочный текст в массив строк
-      const endGcodeLines = filamentEndGcode.split('\n').filter(line => line.trim() !== '');
-      if (endGcodeLines.length > 0) {
-        settings.filament_end_gcode = endGcodeLines;
-        hasSettings = true;
-      }
-    }
+    const startGcodeKey = Object.prototype.hasOwnProperty.call(sourceSettings, 'filament_start_gcode')
+      ? 'filament_start_gcode'
+      : Object.prototype.hasOwnProperty.call(sourceSettings, 'start_filament_gcode')
+        ? 'start_filament_gcode'
+        : 'filament_start_gcode';
+    const endGcodeKey = Object.prototype.hasOwnProperty.call(sourceSettings, 'filament_end_gcode')
+      ? 'filament_end_gcode'
+      : Object.prototype.hasOwnProperty.call(sourceSettings, 'end_filament_gcode')
+        ? 'end_filament_gcode'
+        : 'filament_end_gcode';
+    addLinesParam(startGcodeKey, filamentStartGcode);
+    addLinesParam(endGcodeKey, filamentEndGcode);
     
     // Мультитул
     addBoolParam('filament_multitool_ramming', filamentMultitoolRamming);
@@ -1480,17 +1648,22 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
     if (compatiblePrinters.trim() !== '') {
       settings.compatible_printers = compatiblePrinters.split(',').map(s => s.trim()).filter(s => s);
       hasSettings = true;
+    } else {
+      delete settings.compatible_printers;
     }
     addParam('compatible_printers_condition', compatiblePrintersCondition);
     if (compatiblePrints.trim() !== '') {
       settings.compatible_prints = compatiblePrints.split(',').map(s => s.trim()).filter(s => s);
       hasSettings = true;
+    } else {
+      delete settings.compatible_prints;
     }
     addParam('compatible_prints_condition', compatiblePrintsCondition);
 
     // === ВКЛАДКА "ЗАМЕТКИ" ===
-    addParam('filament_notes', filamentNotes);
+    addLinesParam('filament_notes', filamentNotes);
 
+    hasSettings = Object.keys(settings).length > 0;
     return hasSettings ? settings : null;
   };
 
@@ -1630,12 +1803,12 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
             const updateData: {
               name: string;
               description?: string;
-              extruder_temp: number;
-              bed_temp: number;
-              flow_rate: number;
-              fan_speed: number;
-              retraction_length: number;
-              retraction_speed: number;
+              extruder_temp?: number;
+              bed_temp?: number;
+              flow_rate?: number;
+              fan_speed?: number;
+              retraction_length?: number;
+              retraction_speed?: number;
               orcaslicer_settings?: Record<string, unknown> | null;
               printer_ids: number[];
               filament_id: number;
@@ -1643,17 +1816,17 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
             } = {
               name,
               description: description || undefined,
-              extruder_temp: extruderTemp,
-              bed_temp: bedTemp,
-              flow_rate: flowRate,
-              fan_speed: fanSpeed,
-              retraction_length: retractionLength,
-              retraction_speed: retractionSpeed,
               orcaslicer_settings: orcaslicerSettings,
               printer_ids: selectedPrinterIds.length > 0 ? selectedPrinterIds : [],
               filament_id: newFilament.id,
               active: isDraft ? true : undefined,
             };
+            if (preset.extruder_temp !== extruderTemp) updateData.extruder_temp = extruderTemp;
+            if (preset.bed_temp !== bedTemp) updateData.bed_temp = bedTemp;
+            if (originalFlowRate !== flowRate) updateData.flow_rate = flowRate;
+            if (originalFanSpeed !== fanSpeed) updateData.fan_speed = fanSpeed;
+            if (originalRetractionLength !== retractionLength) updateData.retraction_length = retractionLength;
+            if (originalRetractionSpeed !== retractionSpeed) updateData.retraction_speed = retractionSpeed;
 
             await updateMutation.mutateAsync({
               id: preset.id,
@@ -1716,12 +1889,12 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
       const updateData: {
         name: string;
         description?: string;
-        extruder_temp: number;
-        bed_temp: number;
-        flow_rate: number;
-        fan_speed: number;
-        retraction_length: number;
-        retraction_speed: number;
+        extruder_temp?: number;
+        bed_temp?: number;
+        flow_rate?: number;
+        fan_speed?: number;
+        retraction_length?: number;
+        retraction_speed?: number;
         orcaslicer_settings?: Record<string, unknown> | null;
         printer_ids: number[];
         filament_id?: number;
@@ -1729,15 +1902,15 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
       } = {
         name,
         description: description || undefined,
-        extruder_temp: extruderTemp,
-        bed_temp: bedTemp,
-        flow_rate: flowRate,
-        fan_speed: fanSpeed,
-        retraction_length: retractionLength,
-        retraction_speed: retractionSpeed,
         orcaslicer_settings: orcaslicerSettings,
         printer_ids: selectedPrinterIds.length > 0 ? selectedPrinterIds : [],
       };
+      if (preset.extruder_temp !== extruderTemp) updateData.extruder_temp = extruderTemp;
+      if (preset.bed_temp !== bedTemp) updateData.bed_temp = bedTemp;
+      if (originalFlowRate !== flowRate) updateData.flow_rate = flowRate;
+      if (originalFanSpeed !== fanSpeed) updateData.fan_speed = fanSpeed;
+      if (originalRetractionLength !== retractionLength) updateData.retraction_length = retractionLength;
+      if (originalRetractionSpeed !== retractionSpeed) updateData.retraction_speed = retractionSpeed;
       
       // Если это черновик и выбран филамент - активируем пресет
       if (isDraft && selectedFilamentId) {
@@ -2644,7 +2817,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                 onChange={(e) => { setExtruderTemp(Number(e.target.value)); }}
                 required
                 min={150}
-                max={300}
+                max={ORCA_MAX_NOZZLE_TEMPERATURE}
                 step="1"
                 className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
               />
@@ -2664,7 +2837,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                 onChange={(e) => { setBedTemp(Number(e.target.value)); }}
                 required
                 min={0}
-                max={120}
+                max={ORCA_MAX_BED_TEMPERATURE}
                 step="1"
                 className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
               />
@@ -2680,9 +2853,9 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                 type="number"
                 value={flowRate}
                 onChange={(e) => { setFlowRate(Number(e.target.value)); }}
-                min={50}
-                max={150}
-                step="0.1"
+                min={0.1}
+                max={200}
+                step="any"
                 className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
               />
             </div>
@@ -2691,7 +2864,11 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
               <input
                 type="number"
                 value={fanSpeed}
-                onChange={(e) => { setFanSpeed(Number(e.target.value)); }}
+                onChange={(e) => {
+                  const value = Number(e.target.value);
+                  setFanSpeed(value);
+                  setFanMinSpeed(value);
+                }}
                 min={0}
                 max={100}
                 step="1"
@@ -3039,7 +3216,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                           value={tempRangeLow}
                           onChange={(e) => { setTempRangeLow(e.target.value === '' ? '' : Number(e.target.value)); }}
                           min={150}
-                          max={300}
+                          max={ORCA_MAX_NOZZLE_TEMPERATURE}
                           step="1"
                           placeholder="220"
                           className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
@@ -3052,7 +3229,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                           value={tempRangeHigh}
                           onChange={(e) => { setTempRangeHigh(e.target.value === '' ? '' : Number(e.target.value)); }}
                           min={150}
-                          max={300}
+                          max={ORCA_MAX_NOZZLE_TEMPERATURE}
                           step="1"
                           placeholder="260"
                           className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
@@ -3071,11 +3248,11 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                       <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.modelFlowRatio')} <InfoHint text={t('paramHints.flow')} /></label>
                       <input
                         type="number"
-                        value={flowRate !== 100 ? parseFloat((flowRate / 100).toFixed(3)) : 0.95}
-                        onChange={(e) => { setFlowRate(e.target.value === '' ? 100 : parseFloat((Number(e.target.value) * 100).toFixed(1))); }}
-                        min={0.5}
-                        max={1.5}
-                        step="0.001"
+                        value={parseFloat((flowRate / 100).toFixed(6))}
+                        onChange={(e) => { setFlowRate(e.target.value === '' ? 100 : parseFloat((Number(e.target.value) * 100).toFixed(6))); }}
+                        min={0.001}
+                        max={2}
+                        step="any"
                         placeholder="0.95"
                         className={`w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                       />
@@ -3231,7 +3408,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                               value={nozzleTempInitialLayer !== '' ? nozzleTempInitialLayer : extruderTemp}
                               onChange={(e) => { setNozzleTempInitialLayer(e.target.value === '' ? '' : Number(e.target.value)); }}
                               min={150}
-                              max={300}
+                              max={ORCA_MAX_NOZZLE_TEMPERATURE}
                               step="1"
                               placeholder="250"
                               className={`w-full pl-3 pr-10 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
@@ -3256,7 +3433,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                               setBedTempInitialLayer(e.target.value === '' ? '' : Number(e.target.value));
                             }}
                             min={0}
-                            max={120}
+                            max={ORCA_MAX_BED_TEMPERATURE}
                             step="1"
                             placeholder="90"
                             className={`w-full pl-3 pr-10 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
@@ -3367,7 +3544,11 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                               <input
                                 type="number"
                                 value={fanMinSpeed}
-                                onChange={(e) => { setFanMinSpeed(e.target.value === '' ? '' : Number(e.target.value)); }}
+                                onChange={(e) => {
+                                  const value = e.target.value === '' ? '' : Number(e.target.value);
+                                  setFanMinSpeed(value);
+                                  if (value !== '') setFanSpeed(value);
+                                }}
                                 min={0}
                                 max={100}
                                 step="1"
@@ -3725,8 +3906,8 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                               value={retractionLength}
                               onChange={(e) => { setRetractionLength(Number(e.target.value)); }}
                               min={0}
-                              max={10}
-                              step="0.1"
+                              max={20}
+                              step="any"
                               placeholder="0.8"
                               className={`w-full pl-3 pr-12 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                             />
@@ -3741,8 +3922,8 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                               value={retractionSpeed}
                               onChange={(e) => { setRetractionSpeed(Number(e.target.value)); }}
                               min={0}
-                              max={100}
-                              step="1"
+                              max={200}
+                              step="any"
                               placeholder="30"
                               className={`w-full pl-3 pr-12 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                             />

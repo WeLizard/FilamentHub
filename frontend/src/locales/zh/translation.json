@@ -5562,6 +5562,7 @@
     "ERR_FILENAME_REQUIRED": "需要文件名",
     "ERR_DB_IMPORT_ERROR": "数据库导入错误",
     "ERR_INVALID_FILENAME": "无效的文件名",
+    "ERR_INVALID_PRESET_SETTINGS": "预设包含无效的 OrcaSlicer 参数",
     "ERR_TABLE_STRUCTURE_ERROR": "表结构错误",
     "ERR_TABLE_DATA_ERROR": "表数据错误",
     "ERR_PRIMARY_KEY_REQUIRED": "需要主键",

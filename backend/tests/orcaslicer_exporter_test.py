@@ -10,7 +10,7 @@ import pytest
 
 from app.models.filament import Filament
 from app.models.preset import Preset
-from app.services.orcaslicer_exporter import preset_to_orcaslicer_json
+from app.services.orcaslicer_exporter import generate_profile_info, preset_to_orcaslicer_json
 
 
 def _filament() -> Filament:
@@ -107,3 +107,32 @@ async def test_required_nozzle_hrc_exported_from_material():
     fil.required_nozzle_hrc = 50
     profile = await preset_to_orcaslicer_json(_preset({}), fil, db=None)
     assert profile.get("required_nozzle_HRC") == ["50"]
+
+
+@pytest.mark.asyncio
+async def test_structured_flow_ratio_keeps_orca_precision():
+    preset = _preset({})
+    preset.flow_rate = 92.6
+    profile = await preset_to_orcaslicer_json(preset, _filament(), db=None)
+    assert profile["filament_flow_ratio"] == ["0.926"]
+
+
+@pytest.mark.asyncio
+async def test_structured_retraction_preserves_zero_and_fractional_speed():
+    preset = _preset({})
+    preset.retraction_length = 0
+    preset.retraction_speed = 0.4
+
+    profile = await preset_to_orcaslicer_json(preset, _filament(), db=None)
+
+    assert profile["filament_retraction_length"] == ["0"]
+    assert profile["filament_retraction_speed"] == ["0.4"]
+
+
+def test_info_marker_identifies_every_filamenthub_managed_preset():
+    preset = _preset({})
+    preset.user_id = None
+
+    info = generate_profile_info(preset, _filament())
+
+    assert "sync_info = filamenthub:preset:1" in info

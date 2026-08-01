@@ -29,6 +29,7 @@ from app.core.errors import (
     ERR_IMPORT_PRINT_DISABLED,
     ERR_IMPORT_PRINTER_DISABLED,
     ERR_INTERNAL_ERROR,
+    ERR_INVALID_FILENAME,
     ERR_NO_NOTIFICATION_DATA,
     ERR_NOTIFICATION_NOT_FOUND,
     ERR_PRESET_IDS_REQUIRED,
@@ -68,6 +69,10 @@ from app.schemas.orca_sync import (
 from app.schemas.print_profile import PrintProfileListResponse, PrintProfileResponse
 from app.schemas.printer_profile import PrinterProfileListResponse, PrinterProfileResponse
 from app.services.notification_service import create_notification
+from app.services.orcaslicer_preset_contract import (
+    extract_structured_filament_values,
+    is_allowed_orca_preset_name,
+)
 from app.services.orcaslicer_service import (
     get_user_deleted_preset_rule,
     is_preset_created_by_user,
@@ -81,6 +86,19 @@ from app.services.slug_service import generate_unique_slug
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/orcaslicer", tags=["orcaslicer"])
+
+
+def _preset_id_from_sync_info(value: str | None) -> int | None:
+    if not value:
+        return None
+    normalized = value.strip()
+    if normalized.startswith("filamenthub:preset:"):
+        tail = normalized[len("filamenthub:preset:"):]
+        return int(tail) if tail.isdigit() else None
+    if normalized.startswith("fhub:"):
+        parts = normalized.split(":")
+        return int(parts[1]) if len(parts) >= 2 and parts[1].isdigit() else None
+    return None
 
 
 def _serialize_moderation_reason(reason: Any) -> str | None:
@@ -1991,79 +2009,8 @@ async def _find_existing_filament(
 
 
 def _extract_values_from_orcaslicer_settings(settings: dict) -> dict:
-    """Извлечь реальные значения параметров печати из OrcaSlicer JSON.
-
-    OrcaSlicer хранит значения как массивы строк, например: ["220"], ["0.98"].
-    Функция обрабатывает массивы, скаляры и строки.
-    """
-    def _first_float(val) -> float | None:
-        """Извлечь первое числовое значение из значения OrcaSlicer."""
-        if val is None:
-            return None
-        if isinstance(val, (list, tuple)):
-            if not val:
-                return None
-            val = val[0]
-        try:
-            return float(val)
-        except (ValueError, TypeError):
-            return None
-
-    def _first_int(val) -> int | None:
-        """Извлечь первое целочисленное значение из значения OrcaSlicer."""
-        f = _first_float(val)
-        return int(f) if f is not None else None
-
-    result: dict = {}
-
-    # extruder_temp: nozzle_temperature → fallback nozzle_temperature_initial_layer
-    ext_temp = _first_float(settings.get("nozzle_temperature"))
-    if ext_temp is None:
-        ext_temp = _first_float(settings.get("nozzle_temperature_initial_layer"))
-    if ext_temp is not None:
-        result["extruder_temp"] = ext_temp
-
-    # bed_temp: hot_plate_temp → fallback cool_plate_temp → eng_plate_temp → textured_plate_temp
-    bed_temp = _first_float(settings.get("hot_plate_temp"))
-    if bed_temp is None:
-        bed_temp = _first_float(settings.get("cool_plate_temp"))
-    if bed_temp is None:
-        bed_temp = _first_float(settings.get("eng_plate_temp"))
-    if bed_temp is None:
-        bed_temp = _first_float(settings.get("textured_plate_temp"))
-    if bed_temp is not None:
-        result["bed_temp"] = bed_temp
-
-    # flow_rate: filament_flow_ratio (множитель 0.xx → процент)
-    flow_ratio = _first_float(settings.get("filament_flow_ratio"))
-    if flow_ratio is not None:
-        # OrcaSlicer хранит как множитель (например 0.98), мы храним как процент (98)
-        if flow_ratio <= 2.0:
-            result["flow_rate"] = round(flow_ratio * 100, 1)
-        else:
-            result["flow_rate"] = flow_ratio  # Уже в процентах
-
-    # fan_speed: fan_min_speed (это базовый fan speed в OrcaSlicer) → fallback fan_max_speed
-    fan = _first_int(settings.get("fan_min_speed"))
-    if fan is None:
-        fan = _first_int(settings.get("fan_max_speed"))
-    if fan is not None:
-        result["fan_speed"] = fan
-
-    # retraction_length: filament_retraction_length
-    retract_len = _first_float(settings.get("filament_retraction_length"))
-    if retract_len is not None:
-        result["retraction_length"] = retract_len
-
-    # retraction_speed: filament_retraction_speed
-    retract_spd = _first_float(settings.get("filament_retraction_speed"))
-    if retract_spd is not None:
-        result["retraction_speed"] = retract_spd
-
-    # print_speed, travel_speed, layer_height — НЕТ в филамент-пресетах OrcaSlicer
-    # (они в print/printer profile, не в filament profile)
-
-    return result
+    """Extract and validate FH's structured projection of raw Orca settings."""
+    return extract_structured_filament_values(settings)
 
 
 async def _upsert_filament_preset(
@@ -2077,6 +2024,11 @@ async def _upsert_filament_preset(
 
     if not isinstance(payload, OrcaFilamentPresetPayload):
         raise ValueError("Invalid payload type for filament preset import")
+
+    # Validate the raw Orca values before any ORM object is mutated. The batch
+    # endpoint handles one invalid item as an error without committing partial
+    # changes made while processing that item.
+    extracted = _extract_values_from_orcaslicer_settings(payload.orcaslicer_settings or {})
 
     # Логика определения типа пресета:
     # 1. [fh] или @fh в названии - наши пресеты (активные)
@@ -2129,14 +2081,11 @@ async def _upsert_filament_preset(
             line = line.strip()
             if line.startswith('sync_info = '):
                 sync_info = line.split(' = ', 1)[1].strip()
-                if sync_info.startswith('fhub:'):
-                    parts = sync_info.split(':')
-                    if len(parts) >= 2:
-                        try:
-                            fhub_id_from_info = int(parts[1])
-                            logger.info(f"Extracted fhub_id from .info file: {fhub_id_from_info}")
-                        except ValueError:
-                            logger.warning(f"Failed to parse fhub_id from sync_info: {sync_info}")
+                fhub_id_from_info = _preset_id_from_sync_info(sync_info)
+                if fhub_id_from_info is not None:
+                    logger.info(f"Extracted fhub_id from .info file: {fhub_id_from_info}")
+                else:
+                    logger.warning(f"Failed to parse fhub_id from sync_info: {sync_info}")
                 break
 
     # Метки из orcaslicer_settings
@@ -2291,6 +2240,17 @@ async def _upsert_filament_preset(
     # 2. ОПРЕДЕЛИТЬ FILAMENT
     # Если пресет уже существует и привязан к филаменту — переиспользуем его
     # =====================================================================
+    if not is_allowed_orca_preset_name(
+        payload.name,
+        preset.name if preset is not None else None,
+    ):
+        return OrcaSyncResult(
+            external_id=payload.external_id,
+            fhub_id=preset.id if preset is not None else payload.fhub_id,
+            status="error",
+            message=ERR_INVALID_FILENAME,
+        )
+
     filament: Filament | None = None
 
     if preset and preset.filament_id:
@@ -2607,8 +2567,7 @@ async def _upsert_filament_preset(
                 preset.filament_id = filament.id
             if payload.description is not None:
                 preset.description = payload.description
-            # Извлекаем реальные значения из orcaslicer_settings для fallback
-            extracted = _extract_values_from_orcaslicer_settings(payload.orcaslicer_settings or {})
+            # Используем проверенные реальные значения из orcaslicer_settings для fallback
             if payload.extruder_temp is not None:
                 preset.extruder_temp = payload.extruder_temp
             elif extracted.get("extruder_temp") is not None:
@@ -2619,19 +2578,19 @@ async def _upsert_filament_preset(
                 preset.bed_temp = extracted["bed_temp"]
             if payload.flow_rate is not None:
                 preset.flow_rate = payload.flow_rate
-            elif extracted.get("flow_rate") is not None:
+            elif "flow_rate" in extracted:
                 preset.flow_rate = extracted["flow_rate"]
             if payload.fan_speed is not None:
                 preset.fan_speed = payload.fan_speed
-            elif extracted.get("fan_speed") is not None:
+            elif "fan_speed" in extracted:
                 preset.fan_speed = extracted["fan_speed"]
             if payload.retraction_length is not None:
                 preset.retraction_length = payload.retraction_length
-            elif extracted.get("retraction_length") is not None:
+            elif "retraction_length" in extracted:
                 preset.retraction_length = extracted["retraction_length"]
             if payload.retraction_speed is not None:
                 preset.retraction_speed = payload.retraction_speed
-            elif extracted.get("retraction_speed") is not None:
+            elif "retraction_speed" in extracted:
                 preset.retraction_speed = extracted["retraction_speed"]
             if payload.orcaslicer_settings:
                 # Сохраняем метки FilamentHub при обновлении
@@ -2726,8 +2685,7 @@ async def _upsert_filament_preset(
             preset.name = update_name
             if payload.description is not None:
                 preset.description = payload.description
-            # Извлекаем реальные значения из orcaslicer_settings для fallback
-            extracted = _extract_values_from_orcaslicer_settings(payload.orcaslicer_settings or {})
+            # Используем проверенные реальные значения из orcaslicer_settings для fallback
             if payload.extruder_temp is not None:
                 preset.extruder_temp = payload.extruder_temp
             elif extracted.get("extruder_temp") is not None:
@@ -2738,19 +2696,19 @@ async def _upsert_filament_preset(
                 preset.bed_temp = extracted["bed_temp"]
             if payload.flow_rate is not None:
                 preset.flow_rate = payload.flow_rate
-            elif extracted.get("flow_rate") is not None:
+            elif "flow_rate" in extracted:
                 preset.flow_rate = extracted["flow_rate"]
             if payload.fan_speed is not None:
                 preset.fan_speed = payload.fan_speed
-            elif extracted.get("fan_speed") is not None:
+            elif "fan_speed" in extracted:
                 preset.fan_speed = extracted["fan_speed"]
             if payload.retraction_length is not None:
                 preset.retraction_length = payload.retraction_length
-            elif extracted.get("retraction_length") is not None:
+            elif "retraction_length" in extracted:
                 preset.retraction_length = extracted["retraction_length"]
             if payload.retraction_speed is not None:
                 preset.retraction_speed = payload.retraction_speed
-            elif extracted.get("retraction_speed") is not None:
+            elif "retraction_speed" in extracted:
                 preset.retraction_speed = extracted["retraction_speed"]
             if payload.orcaslicer_settings:
                 # Сохраняем метки FilamentHub при обновлении
@@ -2789,10 +2747,11 @@ async def _upsert_filament_preset(
         # Создаем новый пресет (черновик)
         # Примечание: Preset не имеет поля slug (только Filament имеет slug)
 
-        # Извлекаем реальные значения из orcaslicer_settings
-        extracted = _extract_values_from_orcaslicer_settings(payload.orcaslicer_settings or {})
-        extruder_temp = payload.extruder_temp or extracted.get("extruder_temp") or 200.0
-        bed_temp = payload.bed_temp or extracted.get("bed_temp") or 60.0
+        # Используем проверенные реальные значения из orcaslicer_settings
+        extruder_temp = payload.extruder_temp if payload.extruder_temp is not None else extracted.get("extruder_temp")
+        bed_temp = payload.bed_temp if payload.bed_temp is not None else extracted.get("bed_temp")
+        extruder_temp = 200.0 if extruder_temp is None else extruder_temp
+        bed_temp = 60.0 if bed_temp is None else bed_temp
 
         # Убираем постфиксы FilamentHub из названия для отображения на сайте
         clean_name = payload.name if payload.name else 'Unnamed Preset'
@@ -2834,10 +2793,18 @@ async def _upsert_filament_preset(
             user_id=current_user.id,
             extruder_temp=extruder_temp,
             bed_temp=bed_temp,
-            flow_rate=payload.flow_rate or extracted.get("flow_rate"),
+            flow_rate=payload.flow_rate if payload.flow_rate is not None else extracted.get("flow_rate"),
             fan_speed=payload.fan_speed if payload.fan_speed is not None else extracted.get("fan_speed"),
-            retraction_length=payload.retraction_length or extracted.get("retraction_length"),
-            retraction_speed=payload.retraction_speed or extracted.get("retraction_speed"),
+            retraction_length=(
+                payload.retraction_length
+                if payload.retraction_length is not None
+                else extracted.get("retraction_length")
+            ),
+            retraction_speed=(
+                payload.retraction_speed
+                if payload.retraction_speed is not None
+                else extracted.get("retraction_speed")
+            ),
             orcaslicer_settings=preset_orcaslicer_settings,
             is_official=False,
             # ВАЖНО: Для пресетов с @FilamentHub всегда active=True (это наши пресеты из каталога)

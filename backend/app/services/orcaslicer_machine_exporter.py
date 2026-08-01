@@ -501,11 +501,10 @@ async def print_profile_to_orca_json(
     settings["print_settings_id"] = orca_name
     settings.setdefault("version", ORCA_PROFILE_VERSION)
     settings["from"] = "system" if profile.is_official else profile.source or "user"
-    settings["instantiation"] = (
-        settings.get("instantiation", "true")
-        if profile.is_official
-        else settings.get("instantiation", "false")
-    )
+    # Missing means a normal visible user preset. Preserve an explicit false for
+    # genuine templates, but never turn an imported user profile into a hidden
+    # template merely because the source file omitted this optional header.
+    settings["instantiation"] = settings.get("instantiation", "true")
 
     if profile.setting_id:
         settings["setting_id"] = profile.setting_id

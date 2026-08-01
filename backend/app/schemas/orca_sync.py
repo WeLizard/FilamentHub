@@ -154,12 +154,12 @@ class OrcaFilamentPresetPayload(BaseModel):
     )
 
     # Базовые параметры печати (material scope; process-скорости/высоты слоёв на пресете нет)
-    extruder_temp: float | None = Field(default=None, description="Температура экструдера (°C).")
-    bed_temp: float | None = Field(default=None, description="Температура стола (°C).")
-    flow_rate: float | None = Field(default=None, description="Поток материала (%).")
+    extruder_temp: float | None = Field(default=None, ge=0, le=1500, description="Температура экструдера (°C).")
+    bed_temp: float | None = Field(default=None, ge=0, le=300, description="Температура стола (°C).")
+    flow_rate: float | None = Field(default=None, gt=0, le=200, description="Поток материала (%).")
     fan_speed: int | None = Field(default=None, ge=0, le=100, description="Скорость вентилятора (0-100%).")
-    retraction_length: float | None = Field(default=None, description="Длина ретракции (мм).")
-    retraction_speed: float | None = Field(default=None, description="Скорость ретракции (мм/с).")
+    retraction_length: float | None = Field(default=None, ge=0, le=20, description="Длина ретракции (мм).")
+    retraction_speed: float | None = Field(default=None, ge=0, le=200, description="Скорость ретракции (мм/с).")
 
     # OrcaSlicer JSON формат
     orcaslicer_settings: dict[str, Any] = Field(
@@ -305,4 +305,3 @@ class BatchExportResponse(BaseModel):
     """Response with batch-exported presets."""
 
     profiles: list[BatchExportItem]
-

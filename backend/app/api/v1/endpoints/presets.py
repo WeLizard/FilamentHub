@@ -22,6 +22,8 @@ from app.core.errors import (
     ERR_EXPORT_PRESET_ERROR,
     ERR_FILAMENT_NO_PRESETS,
     ERR_FILAMENT_NOT_FOUND,
+    ERR_INVALID_FILENAME,
+    ERR_INVALID_PRESET_SETTINGS,
     ERR_NO_PERMISSION_DELETE_PRESET,
     ERR_NO_PERMISSION_EDIT_PRESET,
     ERR_OFFICIAL_VERIFIED_ONLY,
@@ -60,6 +62,13 @@ from app.schemas.preset import (
 from app.schemas.printer import PrinterResponse
 from app.services.notification_service import notify_preset_deleted, notify_preset_updated
 from app.services.orcaslicer_exporter import generate_profile_info, preset_to_orcaslicer_json
+from app.services.orcaslicer_preset_contract import (
+    apply_structured_filament_updates,
+    extract_structured_filament_values,
+    is_allowed_orca_preset_name,
+    is_valid_orca_preset_name,
+    validate_orca_filament_settings,
+)
 from app.services.preset_matcher import get_recommended_presets
 from app.services.preset_moderation import moderate_preset
 from app.services.preset_recommender import get_recommended_preset_values
@@ -367,6 +376,13 @@ async def create_preset(
     if not filament:
         raise_error(404, ERR_FILAMENT_NOT_FOUND)
 
+    if not is_valid_orca_preset_name(data.name):
+        raise_error(400, ERR_INVALID_FILENAME)
+    try:
+        validate_orca_filament_settings(data.orcaslicer_settings)
+    except ValueError:
+        raise_error(422, ERR_INVALID_PRESET_SETTINGS)
+
     # Проверка прав на создание официального пресета
     if data.is_official:
         from app.services.organization_access import can_edit_brand_catalog
@@ -535,6 +551,40 @@ async def update_preset(
     # Обновляем только переданные поля
     update_data = data.model_dump(exclude_unset=True)
     printer_ids = update_data.pop("printer_ids", None)
+
+    requested_name = update_data.get("name")
+    if requested_name is not None:
+        if not is_allowed_orca_preset_name(requested_name, preset.name):
+            raise_error(400, ERR_INVALID_FILENAME)
+
+    explicit_structured_changes = {
+        key: update_data[key]
+        for key in (
+            "extruder_temp",
+            "bed_temp",
+            "flow_rate",
+            "fan_speed",
+            "retraction_length",
+            "retraction_speed",
+        )
+        if key in update_data
+    }
+    if "orcaslicer_settings" in update_data and update_data["orcaslicer_settings"] is not None:
+        try:
+            extracted_changes = extract_structured_filament_values(
+                update_data["orcaslicer_settings"]
+            )
+        except ValueError:
+            raise_error(422, ERR_INVALID_PRESET_SETTINGS)
+        for key, value in extracted_changes.items():
+            update_data.setdefault(key, value)
+
+    if explicit_structured_changes:
+        raw_settings = update_data.get("orcaslicer_settings", preset.orcaslicer_settings)
+        update_data["orcaslicer_settings"] = apply_structured_filament_updates(
+            raw_settings,
+            explicit_structured_changes,
+        )
 
     # Определяем filament_id: из update_data (если передан) или из preset
     # Для черновиков filament_id может быть None, и мы его обновляем через update_data

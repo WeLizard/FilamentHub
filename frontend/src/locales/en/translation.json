@@ -5566,6 +5566,7 @@
     "ERR_FILENAME_REQUIRED": "Filename is required",
     "ERR_DB_IMPORT_ERROR": "Database import error",
     "ERR_INVALID_FILENAME": "Invalid filename",
+    "ERR_INVALID_PRESET_SETTINGS": "The preset contains invalid OrcaSlicer settings",
     "ERR_TABLE_STRUCTURE_ERROR": "Table structure error",
     "ERR_TABLE_DATA_ERROR": "Table data error",
     "ERR_PRIMARY_KEY_REQUIRED": "Primary key is required",

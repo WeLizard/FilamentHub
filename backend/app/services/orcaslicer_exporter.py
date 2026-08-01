@@ -17,6 +17,10 @@ from app.services.orca_printer_identity import (
     is_orca_system_printer,
     resolve_orca_printer_model,
 )
+from app.services.orcaslicer_preset_contract import (
+    format_orca_flow_ratio,
+    format_orca_number,
+)
 from app.services.profile_validator import (
     log_validation_result,
     validate_filament_profile,
@@ -29,6 +33,8 @@ logger = logging.getLogger(__name__)
 # but a small set of metadata keys must remain scalar values.
 ORCASLICER_SCALAR_SETTING_KEYS = {
     "inherits",
+    "compatible_printers_condition",
+    "compatible_prints_condition",
 }
 
 # Identity / profile-header fields set authoritatively from the FilamentHub preset
@@ -327,17 +333,20 @@ async def preset_to_orcaslicer_json(
         profile["filament_vendor"] = to_array(filament.brand.name)
 
     # Retraction
-    if preset.retraction_length:
-        profile["filament_retraction_length"] = to_array(str(preset.retraction_length))
+    if preset.retraction_length is not None:
+        profile["filament_retraction_length"] = to_array(
+            format_orca_number(preset.retraction_length)
+        )
 
-    if preset.retraction_speed:
-        profile["filament_retraction_speed"] = to_array(str(int(preset.retraction_speed)))
+    if preset.retraction_speed is not None:
+        profile["filament_retraction_speed"] = to_array(
+            format_orca_number(preset.retraction_speed)
+        )
 
     # Flow ratio (коэффициент потока)
-    # БД хранит проценты (50-150), OrcaSlicer ожидает множитель (0.5-1.5)
+    # БД хранит проценты (>0-200), OrcaSlicer ожидает множитель (>0-2.0)
     if preset.flow_rate is not None:
-        flow_ratio = preset.flow_rate / 100.0
-        profile["filament_flow_ratio"] = to_array(str(round(flow_ratio, 2)))
+        profile["filament_flow_ratio"] = to_array(format_orca_flow_ratio(preset.flow_rate))
 
     # Расширенные параметры из JSON поля orcaslicer_settings
     # Эти параметры имеют приоритет над базовыми и добавляются в конец
@@ -374,25 +383,24 @@ async def preset_to_orcaslicer_json(
                     # Пропускаем проблемный ключ
                     continue
 
-    # Авторитетные поля из БД FilamentHub — ВСЕГДА перезаписывают orcaslicer_settings.
-    # orcaslicer_settings может содержать стейл данные от обратного синка из OrcaSlicer
-    # (например filament_vendor: "Generic" вместо реального производителя).
-    # БД FilamentHub — источник истины для этих полей.
+    # Material identity from FilamentHub is authoritative over imported raw
+    # metadata. Preset values remain represented in both structured columns and
+    # raw Orca settings so per-plate distinctions can round-trip losslessly.
     profile["filament_type"] = to_array(filament.material_type)
     if hasattr(filament, 'brand') and filament.brand is not None:
         profile["filament_vendor"] = to_array(filament.brand.name)
     if filament.color_hex:
         profile["default_filament_colour"] = [filament.color_hex]
 
-    # Совместимые принтеры. Приоритет — library scope пользователя:
+    # Совместимые принтеры. Приоритет — явно заданный library scope пользователя:
     # targeted/compatible пресет сужается до его собственных machine-профилей
     # (RFC §3.3), у остальных авторитет — авторская привязка PresetPrinter:
-    # по умолчанию пусто (совместим со всеми), condition сужает по каноничному
-    # printer_model привязанных системных принтеров. Переживает переименования
-    # пресетов и перетирает стейл-condition из обратного синка.
-    profile["compatible_printers"] = []
+    # condition сужает по каноничному printer_model привязанных системных
+    # принтеров. Если FH scope не задан, исходные hard-ограничения Orca остаются
+    # нетронутыми: рекомендации FH не должны молча расширять профиль.
     condition = None
     if target_profiles:
+        profile["compatible_printers"] = []
         condition = _target_profiles_condition(target_profiles)
         if condition is None:
             # Хотя бы один профиль без разрешимой системной модели (самосбор,
@@ -403,8 +411,9 @@ async def preset_to_orcaslicer_json(
     elif db is not None and preset.id is not None:
         condition = await build_compatible_printers_condition(preset, db)
     if condition:
+        profile["compatible_printers"] = []
         profile["compatible_printers_condition"] = condition
-    else:
+    elif target_profiles:
         profile.pop("compatible_printers_condition", None)
 
     # Bundle metadata — совместимость с upstream OrcaSlicer 2.4 (Orca Cloud) bundle model.
@@ -487,12 +496,10 @@ def generate_profile_info(preset: Preset, filament: Filament) -> str:
     # user_id - ID пользователя из FilamentHub (если есть)
     user_id = str(preset.user_id) if preset.user_id else ""
 
-    # sync_info - для FilamentHub пресетов указываем источник синхронизации
-    # Формат: "filamenthub:preset:{preset_id}"
-    if preset.user_id:  # Если пресет принадлежит пользователю (не системный)
-        sync_info = f"filamenthub:preset:{preset.id}"
-    else:
-        sync_info = ""
+    # Stable ownership marker for every preset managed by FilamentHub. Orca
+    # preserves sync_info when it rewrites a user preset but drops unknown JSON
+    # headers such as bundle_id, so the plugin uses this as the durable fallback.
+    sync_info = f"filamenthub:preset:{preset.id}"
 
     # updated_time - timestamp последнего обновления
     if preset.updated_at:

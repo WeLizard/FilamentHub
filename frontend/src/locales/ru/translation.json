@@ -5732,6 +5732,7 @@
     "ERR_FILENAME_REQUIRED": "Укажите имя файла",
     "ERR_DB_IMPORT_ERROR": "Ошибка импорта базы данных",
     "ERR_INVALID_FILENAME": "Недопустимое имя файла",
+    "ERR_INVALID_PRESET_SETTINGS": "Пресет содержит недопустимые параметры OrcaSlicer",
     "ERR_TABLE_STRUCTURE_ERROR": "Ошибка структуры таблицы",
     "ERR_TABLE_DATA_ERROR": "Ошибка данных таблицы",
     "ERR_PRIMARY_KEY_REQUIRED": "Требуется первичный ключ",

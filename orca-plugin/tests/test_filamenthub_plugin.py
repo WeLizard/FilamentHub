@@ -236,6 +236,7 @@ def test_native_plugin_messages_follow_orca_ui_language(plugin_module, monkeypat
 def test_safe_filename_handles_windows_names_and_bounds(plugin_module):
     assert plugin_module.safe_filename("CON") == "_CON"
     assert plugin_module.safe_filename('bad<>:"/\\|?* name. ') == "bad_________ name"
+    assert plugin_module.safe_filename("Legacy [fh]") == "Legacy _fh"
     assert len(plugin_module.safe_filename("x" * 500)) == plugin_module.MAX_FILENAME_LENGTH
 
 
@@ -257,7 +258,51 @@ def test_preset_paths_are_stable_and_collision_resistant(plugin_module, tmp_path
     assert foreign.endswith("User PETG (FH-12).json")
 
 
-def test_recover_sync_record_never_treats_lost_state_as_remote_newer(plugin_module):
+def test_info_marker_keeps_managed_identity_after_orca_save(plugin_module, tmp_path):
+    path = tmp_path / "Managed PLA.json"
+    path.write_text(json.dumps({"name": "Managed PLA"}), encoding="utf-8")
+    (tmp_path / "Managed PLA.info").write_text(
+        "sync_info = filamenthub:preset:42\n", encoding="utf-8"
+    )
+
+    assert plugin_module.managed_preset_id(str(path), {"name": "Managed PLA"}) == 42
+    assert plugin_module.preset_file_path(str(tmp_path), "Managed PLA", 42) == str(path)
+    assert plugin_module.scan_local_fh_presets(str(tmp_path))[42]["path"] == str(path)
+
+
+def test_pull_keeps_managed_identity_when_server_info_is_unavailable(
+    plugin_module, monkeypatch, tmp_path
+):
+    profile = {
+        "name": "Managed PLA",
+        "inherits": "fdm_filament_common",
+        "filament_type": ["PLA"],
+    }
+
+    def fake_http_get(path, token=None, **kwargs):
+        if path.endswith(".json"):
+            return 200, json.dumps(profile).encode("utf-8")
+        return 503, b""
+
+    monkeypatch.setattr(plugin_module, "http_get", fake_http_get)
+    result = plugin_module.FilamentHubCatalog()._pull_one(
+        42,
+        "token",
+        {"fdm_filament_common"},
+        str(tmp_path),
+        {"updated_at": "2026-08-01"},
+    )
+
+    assert result is not None
+    path = tmp_path / "Managed PLA.json"
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    saved.pop("bundle_id")
+    path.write_text(json.dumps(saved), encoding="utf-8")
+    assert plugin_module.managed_preset_id(str(path), saved) == 42
+    assert plugin_module.scan_local_fh_presets(str(tmp_path))[42]["path"] == str(path)
+
+
+def test_recover_sync_record_never_treats_lost_state_as_remote_newer(plugin_module, monkeypatch):
     # The state file dies with plugin updates; a local file without a record
     # must be adopted when identical and pushed when edited — never re-pulled.
     remote = {"name": "PLA", "inherits": "fdm_filament_common", "nozzle_temperature": ["210"]}
@@ -265,7 +310,7 @@ def test_recover_sync_record_never_treats_lost_state_as_remote_newer(plugin_modu
     def fake_http_get(path, token=None, **kw):
         return 200, json.dumps(remote).encode("utf-8")
 
-    plugin_module.http_get = fake_http_get
+    monkeypatch.setattr(plugin_module, "http_get", fake_http_get)
     normalized = dict(remote)
     plugin_module.ensure_parent_exists(normalized, {"fdm_filament_common"})
     plugin_module.ensure_filament_colour(normalized)
@@ -278,12 +323,54 @@ def test_recover_sync_record_never_treats_lost_state_as_remote_newer(plugin_modu
     local_edited = {"hash": "deadbeef", "profile": {"name": "PLA"}}
     assert plugin_module.recover_sync_record(5, "tok", {"fdm_filament_common"}, local_edited, "2026-07-16") is False
 
-    plugin_module.http_get = lambda path, token=None, **kw: (503, b"")
+    monkeypatch.setattr(plugin_module, "http_get", lambda path, token=None, **kw: (503, b""))
     assert plugin_module.recover_sync_record(5, "tok", set(), local_same, "2026-07-16") is None
 
 
-def test_stale_preset_files_are_removed_after_rename(plugin_module, tmp_path):
-    plugin_module.remove_host_filament = lambda name: False
+def test_push_preserves_legacy_remote_name_and_canonical_parent(
+    plugin_module, monkeypatch, tmp_path
+):
+    local_path = tmp_path / "PLA_0.4.json"
+    local_profile = {
+        "name": "PLA_0.4",
+        "filament_settings_id": ["PLA_0.4"],
+        "inherits": plugin_module.FALLBACK_PARENT,
+        "nozzle_temperature": ["220"],
+    }
+    local_path.write_text(json.dumps(local_profile), encoding="utf-8")
+    captured = {}
+
+    def fake_get(path, token=None, **kwargs):
+        assert path == "/presets/42/export/orcaslicer.json"
+        return 200, json.dumps({"inherits": "Original Vendor PLA"}).encode("utf-8")
+
+    def fake_post(path, token, payload):
+        captured.update(payload["profiles"][0])
+        return 200, b"{}"
+
+    monkeypatch.setattr(plugin_module, "http_get", fake_get)
+    monkeypatch.setattr(plugin_module, "http_post_json", fake_post)
+    entry = {
+        "path": str(local_path),
+        "profile": local_profile,
+        "hash": plugin_module.preset_content_hash(local_profile),
+    }
+
+    result = plugin_module.FilamentHubCatalog()._push_one(
+        42,
+        "token",
+        entry,
+        {"name": "PLA/0.4", "updated_at": "2026-08-01"},
+    )
+
+    assert captured["name"] == "PLA/0.4"
+    assert captured["orcaslicer_settings"]["name"] == "PLA/0.4"
+    assert captured["orcaslicer_settings"]["inherits"] == "Original Vendor PLA"
+    assert result["updated_at"] == "2026-08-01"
+
+
+def test_stale_preset_files_are_removed_after_rename(plugin_module, monkeypatch, tmp_path):
+    monkeypatch.setattr(plugin_module, "remove_host_filament", lambda name: False)
     (tmp_path / "Old Name__fh_10.json").write_text(
         json.dumps({"bundle_id": "filamenthub:10"}), encoding="utf-8"
     )

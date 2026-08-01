@@ -979,7 +979,7 @@ def remove_host_filament(bare_name):
 
 def safe_filename(name):
     cleaned = "".join(
-        "_" if ch in '<>:"/\\|?*' or ord(ch) < 32 else ch
+        "_" if ch in '<>[]:"/\\|?*' or ord(ch) < 32 else ch
         for ch in (name or "preset")
     ).strip(" ._")
     cleaned = cleaned[:MAX_FILENAME_LENGTH].rstrip(" ._") or "preset"
@@ -989,6 +989,67 @@ def safe_filename(name):
     if cleaned.split(".", 1)[0].upper() in reserved:
         cleaned = "_" + cleaned
     return cleaned
+
+
+def preset_id_from_sync_info(value):
+    if not isinstance(value, str):
+        return None
+    value = value.strip()
+    if value.startswith("filamenthub:preset:"):
+        tail = value[len("filamenthub:preset:"):]
+        return int(tail) if tail.isdigit() else None
+    if value.startswith("fhub:") and value.endswith(":filamenthub"):
+        tail = value[len("fhub:"):-len(":filamenthub")]
+        return int(tail) if tail.isdigit() else None
+    return None
+
+
+def preset_id_from_info_content(content):
+    if not isinstance(content, str):
+        return None
+    for line in content.splitlines():
+        key, separator, value = line.partition("=")
+        if separator and key.strip() == "sync_info":
+            return preset_id_from_sync_info(value)
+    return None
+
+
+def preset_id_from_info_file(path):
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            return preset_id_from_info_content(fh.read())
+    except OSError:
+        pass
+    return None
+
+
+def managed_info_bytes(preset_id):
+    return ("sync_info = filamenthub:preset:%d\n" % preset_id).encode("utf-8")
+
+
+def write_managed_info(base, preset_id, token):
+    """Persist durable identity even if the optional server .info is unavailable."""
+    target = base + ".info"
+    write_bytes_atomic(target, managed_info_bytes(preset_id))
+    try:
+        status, info = http_get(
+            "/presets/%d/export/orcaslicer.info" % preset_id,
+            token=token,
+        )
+        if status != 200:
+            return
+        decoded = info.decode("utf-8")
+        if preset_id_from_info_content(decoded) == preset_id:
+            write_bytes_atomic(target, info)
+    except (OSError, UnicodeDecodeError):
+        pass
+
+
+def managed_preset_id(json_path, profile):
+    pid = preset_id_from_bundle(profile.get("bundle_id")) if isinstance(profile, dict) else None
+    if pid is not None:
+        return pid
+    return preset_id_from_info_file(json_path[:-len(".json")] + ".info")
 
 
 def validate_filament_profile(profile):
@@ -1013,18 +1074,26 @@ def preset_file_path(folder, name, preset_id):
     try:
         with open(candidate, "r", encoding="utf-8") as fh:
             existing = json.load(fh)
-        if isinstance(existing, dict) and preset_id_from_bundle(existing.get("bundle_id")) == int(preset_id):
+        if isinstance(existing, dict) and managed_preset_id(candidate, existing) == int(preset_id):
             return candidate
     except (OSError, ValueError):
         pass
     return os.path.join(folder, "%s (FH-%d).json" % (stem, int(preset_id)))
 
 
+def apply_managed_filename_identity(profile, path):
+    """Keep Orca's JSON identity aligned with the filesystem-safe display stem."""
+    name = os.path.basename(path)[:-len(".json")]
+    profile["name"] = name
+    profile["filament_settings_id"] = [name]
+    return name
+
+
 def remove_stale_preset_files(folder, preset_id, keep_path):
-    """Delete other files carrying this preset's bundle_id — the old
+    """Delete other files carrying this preset's managed identity — the old
     `__fh_<id>`-suffixed naming and leftovers from a rename on FilamentHub —
     so one preset never shows up twice in the dropdown. Touches only files
-    whose bundle_id we own."""
+    whose bundle_id or .info sync marker we own."""
     try:
         names = os.listdir(folder)
     except OSError:
@@ -1041,7 +1110,7 @@ def remove_stale_preset_files(folder, preset_id, keep_path):
                 profile = json.load(fh)
         except (OSError, ValueError):
             continue
-        if not isinstance(profile, dict) or preset_id_from_bundle(profile.get("bundle_id")) != int(preset_id):
+        if not isinstance(profile, dict) or managed_preset_id(path, profile) != int(preset_id):
             continue
         try:
             remove_host_filament(fn[:-len(".json")])  # best-effort live removal
@@ -1071,6 +1140,40 @@ def ensure_parent_exists(profile, known_presets):
         inherits = inherits[0] if inherits else ""
     if not inherits or inherits not in known_presets:
         profile["inherits"] = FALLBACK_PARENT
+
+
+def restore_remote_parent_for_upload(profile, preset_id, token):
+    """Do not persist a local fallback parent as the canonical FH parent.
+
+    The fallback only makes a preset usable when its original vendor parent is
+    unavailable on this Orca installation. A later local edit must not replace
+    that original parent in FilamentHub.
+    """
+    upload = dict(profile)
+    inherits = upload.get("inherits")
+    if isinstance(inherits, list):
+        inherits = inherits[0] if inherits else ""
+    if inherits != FALLBACK_PARENT:
+        return upload
+
+    status, body = http_get(
+        "/presets/%d/export/orcaslicer.json" % int(preset_id), token=token)
+    if status != 200:
+        return None
+    try:
+        remote = json.loads(body.decode("utf-8"))
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(remote, dict):
+        return None
+    remote_parent = remote.get("inherits")
+    if isinstance(remote_parent, list):
+        remote_parent = remote_parent[0] if remote_parent else ""
+    if remote_parent and remote_parent != FALLBACK_PARENT:
+        upload["inherits"] = remote_parent
+    elif not remote_parent:
+        upload.pop("inherits", None)
+    return upload
 
 
 def ensure_filament_colour(profile):
@@ -1233,8 +1336,9 @@ def _collect_filament_presets(root, into, only_new):
             for fn in files:
                 if not fn.endswith(".json"):
                     continue
+                path = os.path.join(dirpath, fn)
                 try:
-                    with open(os.path.join(dirpath, fn), "r", encoding="utf-8") as fh:
+                    with open(path, "r", encoding="utf-8") as fh:
                         profile = json.load(fh)
                 except (OSError, ValueError):
                     continue
@@ -1243,7 +1347,7 @@ def _collect_filament_presets(root, into, only_new):
                 name = profile.get("name") or fn[:-len(".json")]
                 if "[fh]" in name or "@fh" in name:
                     continue
-                if preset_id_from_bundle(profile.get("bundle_id")) is not None:
+                if managed_preset_id(path, profile) is not None:
                     continue
                 if only_new and name in into:
                     continue
@@ -1299,6 +1403,9 @@ def scan_active_user_filaments():
     Keep is_user() presets, skip system/vendor and our [fh] ones. Configuration
     comes from Orca's Preset API instead of reopening the backing JSON file."""
     candidates = []
+    managed_names = set()
+    for entry in scan_local_fh_presets(user_filament_dir()).values():
+        managed_names.add(os.path.basename(entry["path"])[:-len(".json")])
     try:
         filaments = orca.host.preset_bundle().filaments
         for i in range(filaments.size()):
@@ -1306,7 +1413,7 @@ def scan_active_user_filaments():
             if not preset.is_user():
                 continue
             name = preset.name or ""
-            if "[fh]" in name or "@fh" in name:
+            if "[fh]" in name or "@fh" in name or name in managed_names:
                 continue
             if preset_id_from_bundle(getattr(preset, "bundle_id", "")) is not None:
                 continue
@@ -1384,8 +1491,9 @@ def push_filament_drafts(token, candidates):
 
 # --------------------------------------------------------------------------- #
 # Two-way sync (all plugin-side; the host is never touched). Mirrors the fork's
-# model: identity is the "filamenthub:<id>" bundle_id; the FilamentHub version is
-# preset.updated_at; a local edit is detected by a content hash. A small state
+# model: identity is the "filamenthub:<id>" bundle_id while present, with the
+# persistent .info sync_info as fallback after Orca saves the preset. The
+# FilamentHub version is preset.updated_at; a local edit is detected by a content hash. A small state
 # file next to the plugin records, per preset, the (updated_at, hash) at the last
 # sync so we can tell "remote changed" from "edited in OrcaSlicer".
 #   * remote newer than last sync  -> pull (download + overwrite local)
@@ -1451,6 +1559,9 @@ def recover_sync_record(pid, token, known_presets, local_entry, remote_updated):
     ensure_parent_exists(remote, known_presets)
     ensure_filament_colour(remote)
     remote["bundle_id"] = "%s%d" % (BUNDLE_PREFIX, pid)
+    local_path = local_entry.get("path")
+    if local_path:
+        apply_managed_filename_identity(remote, local_path)
     if preset_content_hash(remote) != local_entry["hash"]:
         return False
     return {"updated_at": remote_updated or "",
@@ -1459,8 +1570,9 @@ def recover_sync_record(pid, token, known_presets, local_entry, remote_updated):
 
 
 def scan_local_fh_presets(folder):
-    # Map preset_id -> {path, profile, hash} for every local file that carries a
-    # filamenthub bundle_id. These are the presets under our sync management.
+    # Map preset_id -> {path, profile, hash} for every managed local file. Orca
+    # drops unknown JSON headers when the user saves a preset, so the persistent
+    # .info sync_info marker is the fallback identity after bundle_id disappears.
     out = {}
     try:
         names = os.listdir(folder)
@@ -1477,7 +1589,7 @@ def scan_local_fh_presets(folder):
             continue
         if not isinstance(profile, dict):
             continue
-        pid = preset_id_from_bundle(profile.get("bundle_id"))
+        pid = managed_preset_id(path, profile)
         if pid is not None:
             out[pid] = {"path": path, "profile": profile, "hash": preset_content_hash(profile)}
     return out
@@ -2869,17 +2981,11 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
             ensure_bundle_metadata()
             target_dir = user_filament_dir()
             profile_path = preset_file_path(target_dir, name, preset_id)
+            name = apply_managed_filename_identity(profile, profile_path)
             base = profile_path[:-len(".json")]
+            write_managed_info(base, preset_id, token)
             write_json_atomic(profile_path, profile)
             remove_stale_preset_files(target_dir, preset_id, profile_path)
-
-            # Best-effort .info sidecar (sync metadata; not required to load).
-            try:
-                istatus, info = http_get("/presets/%d/export/orcaslicer.info" % preset_id, token=token)
-                if istatus == 200:
-                    write_bytes_atomic(base + ".info", info)
-            except Exception:
-                pass
 
             if reload_host_presets():
                 orca.host.ui.message(
@@ -2911,19 +3017,15 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
         profile["bundle_id"] = "%s%d" % (BUNDLE_PREFIX, pid)
         name = profile.get("name") or ("FilamentHub preset %d" % pid)
         profile_path = preset_file_path(folder, name, pid)
+        name = apply_managed_filename_identity(profile, profile_path)
         base = profile_path[:-len(".json")]
         try:
+            write_managed_info(base, pid, token)
             write_json_atomic(profile_path, profile)
         except OSError as exc:
             fh_log("pull %d FAILED: write error at %s: %r" % (pid, profile_path, exc))
             return None
         remove_stale_preset_files(folder, pid, profile_path)
-        try:
-            istatus, info = http_get("/presets/%d/export/orcaslicer.info" % pid, token=token)
-            if istatus == 200:
-                write_bytes_atomic(base + ".info", info)
-        except Exception:
-            pass
         return {"updated_at": (remote or {}).get("updated_at") or "",
                 "hash": preset_content_hash(profile), "name": name}
 
@@ -2931,10 +3033,24 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
         # Send a locally-edited preset back to FilamentHub. The backend updates the
         # user's own preset or forks a non-owned one into a new user preset.
         profile = local_entry["profile"]
+        local_name = profile.get("name") or ("FilamentHub preset %d" % pid)
+        remote_name = (remote or {}).get("name") or ""
+        normalized_remote_name = safe_filename(remote_name) if remote_name else ""
+        automatic_local_names = {
+            normalized_remote_name,
+            "%s (FH-%d)" % (normalized_remote_name, pid),
+        }
+        upload_name = remote_name if local_name in automatic_local_names else local_name
+        upload_profile = restore_remote_parent_for_upload(profile, pid, token)
+        if upload_profile is None:
+            fh_log("push %d deferred: canonical parent could not be verified" % pid)
+            return None
+        upload_profile["name"] = upload_name
+        upload_profile["filament_settings_id"] = [upload_name]
         item = {
             "fhub_id": pid,
-            "name": (profile.get("name") or ("FilamentHub preset %d" % pid))[:200],
-            "orcaslicer_settings": profile,
+            "name": upload_name[:200],
+            "orcaslicer_settings": upload_profile,
             "source": "orcaslicer",
         }
         info_path = local_entry["path"][:-len(".json")] + ".info"

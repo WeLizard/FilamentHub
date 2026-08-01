@@ -56,7 +56,7 @@ async def test_create_preset(client: AsyncClient, db_session: AsyncSession):
     db_session.add(brand)
     await db_session.commit()
     await db_session.refresh(brand)
-    
+
     filament = Filament(
         brand_id=brand.id,
         name="Test Filament",
@@ -67,7 +67,7 @@ async def test_create_preset(client: AsyncClient, db_session: AsyncSession):
     db_session.add(filament)
     await db_session.commit()
     await db_session.refresh(filament)
-    
+
     # Create preset
     preset_data = {
         "filament_id": filament.id,
@@ -121,7 +121,7 @@ async def test_create_official_preset(client: AsyncClient, db_session: AsyncSess
     user = user_result.scalar_one()
     await grant_brand_owner_membership(db_session, brand=brand, user=user)
     await db_session.commit()
-    
+
     # Create official preset
     preset_data = {
         "filament_id": filament.id,
@@ -186,7 +186,7 @@ async def test_get_preset(client: AsyncClient, db_session: AsyncSession):
     db_session.add(brand)
     await db_session.commit()
     await db_session.refresh(brand)
-    
+
     filament = Filament(
         brand_id=brand.id,
         name="Test Filament",
@@ -197,7 +197,7 @@ async def test_get_preset(client: AsyncClient, db_session: AsyncSession):
     db_session.add(filament)
     await db_session.commit()
     await db_session.refresh(filament)
-    
+
     preset = Preset(
         filament_id=filament.id,
         name="Test Preset",
@@ -210,7 +210,7 @@ async def test_get_preset(client: AsyncClient, db_session: AsyncSession):
     db_session.add(preset)
     await db_session.commit()
     await db_session.refresh(preset)
-    
+
     # Get preset via API
     response = await client.get(f"/api/v1/presets/{preset.id}")
     assert response.status_code == 200
@@ -236,7 +236,7 @@ async def test_list_presets_filter_by_filament(
     db_session.add(brand)
     await db_session.commit()
     await db_session.refresh(brand)
-    
+
     filament1 = Filament(
         brand_id=brand.id,
         name="Filament 1",
@@ -255,7 +255,7 @@ async def test_list_presets_filter_by_filament(
     await db_session.commit()
     await db_session.refresh(filament1)
     await db_session.refresh(filament2)
-    
+
     # Create presets
     preset1 = Preset(
         filament_id=filament1.id,
@@ -277,7 +277,7 @@ async def test_list_presets_filter_by_filament(
     )
     db_session.add_all([preset1, preset2])
     await db_session.commit()
-    
+
     # Filter by filament1
     response = await client.get(f"/api/v1/presets/?filament_id={filament1.id}")
     assert response.status_code == 200
@@ -296,7 +296,7 @@ async def test_list_presets_filter_by_official(
     db_session.add(brand)
     await db_session.commit()
     await db_session.refresh(brand)
-    
+
     filament = Filament(
         brand_id=brand.id,
         name="Test Filament",
@@ -307,7 +307,7 @@ async def test_list_presets_filter_by_official(
     db_session.add(filament)
     await db_session.commit()
     await db_session.refresh(filament)
-    
+
     # Create official and community presets
     official_preset = Preset(
         filament_id=filament.id,
@@ -329,7 +329,7 @@ async def test_list_presets_filter_by_official(
     )
     db_session.add_all([official_preset, community_preset])
     await db_session.commit()
-    
+
     # Filter by official
     response = await client.get("/api/v1/presets/?is_official=true")
     assert response.status_code == 200
@@ -395,7 +395,7 @@ async def test_get_preset_recommend(client: AsyncClient, db_session: AsyncSessio
     db_session.add(brand)
     await db_session.commit()
     await db_session.refresh(brand)
-    
+
     filament = Filament(
         brand_id=brand.id,
         name="Test Filament",
@@ -406,7 +406,7 @@ async def test_get_preset_recommend(client: AsyncClient, db_session: AsyncSessio
     db_session.add(filament)
     await db_session.commit()
     await db_session.refresh(filament)
-    
+
     # Create presets with ratings
     preset1 = Preset(
         filament_id=filament.id,
@@ -432,7 +432,7 @@ async def test_get_preset_recommend(client: AsyncClient, db_session: AsyncSessio
     )
     db_session.add_all([preset1, preset2])
     await db_session.commit()
-    
+
     # Get recommended preset
     response = await client.get(f"/api/v1/presets/recommended/{filament.id}")
     assert response.status_code == 200
@@ -453,7 +453,7 @@ async def test_update_preset(client: AsyncClient, db_session: AsyncSession):
     db_session.add(brand)
     await db_session.commit()
     await db_session.refresh(brand)
-    
+
     filament = Filament(
         brand_id=brand.id,
         name="Test Filament",
@@ -464,7 +464,7 @@ async def test_update_preset(client: AsyncClient, db_session: AsyncSession):
     db_session.add(filament)
     await db_session.commit()
     await db_session.refresh(filament)
-    
+
     user_result = await db_session.execute(select(User).where(User.email == email))
     user = user_result.scalar_one()
 
@@ -481,7 +481,7 @@ async def test_update_preset(client: AsyncClient, db_session: AsyncSession):
     db_session.add(preset)
     await db_session.commit()
     await db_session.refresh(preset)
-    
+
     # Update preset
     update_data = {
         "name": "Updated Name",
@@ -494,6 +494,60 @@ async def test_update_preset(client: AsyncClient, db_session: AsyncSession):
     data = response.json()
     assert data["name"] == update_data["name"]
     assert data["extruder_temp"] == update_data["extruder_temp"]
+
+    raw_settings = {
+        "nozzle_temperature": ["245", "250"],
+        "bed_temperature": ["85"],
+        "filament_flow_ratio": ["0.926"],
+        "fan_min_speed": ["0"],
+        "filament_retraction_length": ["nil"],
+        "plugin_owned": {"keep": True},
+    }
+    response = await client.patch(
+        f"/api/v1/presets/{preset.id}",
+        json={"orcaslicer_settings": raw_settings},
+        headers=headers,
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["extruder_temp"] == 245
+    assert data["bed_temp"] == 85
+    assert data["flow_rate"] == 92.6
+    assert data["fan_speed"] == 0
+    assert data["retraction_length"] is None
+    assert data["orcaslicer_settings"] == raw_settings
+
+    response = await client.patch(
+        f"/api/v1/presets/{preset.id}",
+        json={
+            "flow_rate": 103.48,
+            "orcaslicer_settings": {
+                **raw_settings,
+                "filament_flow_ratio": ["0.8"],
+            },
+        },
+        headers=headers,
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["flow_rate"] == 103.48
+    assert data["orcaslicer_settings"]["filament_flow_ratio"] == ["1.0348"]
+    assert data["orcaslicer_settings"]["plugin_owned"] == {"keep": True}
+
+    response = await client.patch(
+        f"/api/v1/presets/{preset.id}",
+        json={
+            "orcaslicer_settings": {
+                **raw_settings,
+                "nozzle_temperature": ["245", "999999"],
+            }
+        },
+        headers=headers,
+    )
+    assert response.status_code == 422
+    await db_session.refresh(preset)
+    assert preset.extruder_temp == 245
+    assert preset.orcaslicer_settings["filament_flow_ratio"] == ["1.0348"]
 
 
 
