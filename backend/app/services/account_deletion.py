@@ -265,24 +265,17 @@ async def delete_user_account(
     presets = presets_result.scalars().all()
 
     for preset in presets:
-        # Всегда сохраняем официальные пресеты - анонимизируем
-        if preset.is_official:
+        # Что осталось людям — остаётся, но без автора: официальные пресеты и
+        # одобренные, которые кто-то уже сохранил себе или использует.
+        if preset.is_official or preset.moderation_status == PresetModerationStatus.APPROVED:
             preset.user_id = None
 
-        # Одобренные пресеты, используемые другими - анонимизируем
-        elif preset.moderation_status == PresetModerationStatus.APPROVED:
-            # Проверяем, используется ли пресет другими
-            saved_count = len([sp for sp in preset.saved_by_users if sp.user_id != user_id])
-            if saved_count > 0 or preset.usage_count > 0:
-                preset.user_id = None
-            else:
-                # Можно удалить, если не используется - анонимизируем для безопасности
-                preset.user_id = None
-
-        # Неодобренные/отклоненные пресеты - помечаем как неактивные и анонимизируем
+        # Всё прочее — черновики, ожидающие и отклонённые — удаляется. Никто, кроме
+        # владельца, их не видел, а оставленные без владельца они становятся
+        # недостижимыми навсегда: ни в каталоге, ни в чьём-либо профиле. И это не
+        # обезличивание: имя и описание человек писал сам и мог указать там себя.
         else:
-            preset.active = False
-            preset.user_id = None
+            await db.delete(preset)
 
     # 2. Обработка отзывов
     reviews_result = await db.execute(

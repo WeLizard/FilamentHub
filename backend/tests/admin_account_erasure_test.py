@@ -96,3 +96,66 @@ async def test_an_ordinary_account_cannot_erase_anyone(
 
     assert refused.status_code in (401, 403)
     assert await db_session.scalar(select(User).where(User.id == victim.id)) is not None
+
+
+@pytest.mark.asyncio
+async def test_erasure_removes_private_drafts_and_keeps_what_others_rely_on(
+    client: AsyncClient, db_session: AsyncSession
+):
+    """A draft nobody could reach is deleted; a published preset survives without its author."""
+    from app.models.brand import Brand
+    from app.models.filament import Filament
+    from app.models.preset import Preset, PresetModerationStatus
+
+    admin = await _account(db_session, name="erasing_admin", role=UserRole.ADMIN)
+    person = await _account(db_session, name="leaving_person")
+    brand = Brand(name="Erasure Brand", slug="erasure-brand", verified=True)
+    db_session.add(brand)
+    await db_session.flush()
+    filament = Filament(
+        brand_id=brand.id,
+        name="Erasure PLA",
+        slug="erasure-pla",
+        material_type="PLA",
+        diameter=1.75,
+        active=True,
+    )
+    db_session.add(filament)
+    await db_session.flush()
+
+    draft = Preset(
+        name="Мой личный черновик",
+        filament_id=None,
+        user_id=person.id,
+        extruder_temp=210,
+        bed_temp=60,
+        active=False,
+        moderation_status=PresetModerationStatus.PENDING,
+    )
+    published = Preset(
+        name="Общий пресет",
+        filament_id=filament.id,
+        user_id=person.id,
+        extruder_temp=205,
+        bed_temp=60,
+        active=True,
+        moderation_status=PresetModerationStatus.APPROVED,
+    )
+    db_session.add_all([draft, published])
+    await db_session.commit()
+    draft_id, published_id = draft.id, published.id
+
+    erased = await client.request(
+        "DELETE",
+        f"/api/v1/admin/users/{person.id}",
+        headers=_as(admin),
+        json={"delete_reviews": True},
+    )
+    assert erased.status_code == 200
+
+    db_session.expire_all()
+    assert await db_session.scalar(select(Preset).where(Preset.id == draft_id)) is None
+    survivor = await db_session.scalar(select(Preset).where(Preset.id == published_id))
+    assert survivor is not None
+    assert survivor.user_id is None
+    assert survivor.active is True
