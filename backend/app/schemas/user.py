@@ -154,6 +154,9 @@ class UserResponse(UserBase):
     updated_at: datetime
     last_login: datetime | None = None
     legal_onboarding_required: bool = False
+    required_legal_acceptances: list[
+        Literal["terms", "personal_data_consent"]
+    ] = Field(default_factory=list)
     legal_document_pack: Literal["ru", "eu", "intl"] | None = None
     # True when the account accepted some earlier version, so the mandatory
     # screen is a re-ask rather than a first-time one.
@@ -179,10 +182,15 @@ class UserResponse(UserBase):
             instance.subscription_info = subscription_summary(obj)
         if hasattr(obj, "terms_version_accepted"):
             from app.services.legal_acceptance_service import (
-                requires_current_legal_acceptance,
+                required_current_legal_acceptances,
             )
 
-            instance.legal_onboarding_required = requires_current_legal_acceptance(obj)
+            required_acceptances = required_current_legal_acceptances(obj)
+            instance.legal_onboarding_required = bool(required_acceptances)
+            instance.required_legal_acceptances = [
+                document_type.value
+                for document_type in required_acceptances
+            ]
             instance.legal_previously_accepted = bool(obj.terms_version_accepted)
         return instance
 
@@ -311,8 +319,8 @@ class AuthMethodsResponse(BaseModel):
 class LegalAcceptanceRequest(BaseModel):
     """Separate affirmative choices for the current mandatory documents."""
 
-    terms_accepted: Literal[True]
-    personal_data_consent: Literal[True]
+    terms_accepted: Literal[True] | None = None
+    personal_data_consent: Literal[True] | None = None
     terms_version: str = Field(..., max_length=32)
     personal_data_consent_version: str = Field(..., max_length=32)
     privacy_policy_version: str = Field(..., max_length=32)

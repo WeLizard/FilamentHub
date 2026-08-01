@@ -457,6 +457,108 @@ async def test_existing_or_oauth_user_must_accept_before_private_features(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("stale_field", "required_type", "acceptance_field", "existing_type"),
+    [
+        (
+            "terms_version_accepted",
+            "terms",
+            "terms_accepted",
+            "personal_data_consent",
+        ),
+        (
+            "personal_data_consent_version",
+            "personal_data_consent",
+            "personal_data_consent",
+            "terms",
+        ),
+    ],
+)
+async def test_reacceptance_only_requires_the_changed_document(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    stale_field: str,
+    required_type: str,
+    acceptance_field: str,
+    existing_type: str,
+):
+    from app.core.security import create_access_token
+
+    suffix = "terms" if required_type == "terms" else "consent"
+    user = User(
+        email=f"granular-{suffix}@example.com",
+        username=f"granular_{suffix}",
+        active=True,
+        email_verified=True,
+        terms_version_accepted=CURRENT_TERMS_VERSION,
+        personal_data_consent_version=CURRENT_PERSONAL_DATA_CONSENT_VERSION,
+        privacy_policy_version_presented=CURRENT_PRIVACY_POLICY_VERSION,
+        legal_document_pack="intl",
+        legal_acceptance_language="en",
+    )
+    setattr(user, stale_field, "stale")
+    db_session.add(user)
+    await db_session.flush()
+    existing_version = (
+        CURRENT_TERMS_VERSION
+        if existing_type == "terms"
+        else CURRENT_PERSONAL_DATA_CONSENT_VERSION
+    )
+    db_session.add(
+        UserLegalAcceptance(
+            user_id=user.id,
+            document_type=existing_type,
+            document_version=existing_version,
+            related_privacy_policy_version=CURRENT_PRIVACY_POLICY_VERSION,
+            legal_document_pack="intl",
+            acceptance_source="previous_onboarding",
+            language="en",
+        )
+    )
+    await db_session.commit()
+    await db_session.refresh(user)
+
+    token = create_access_token({"sub": user.email, "user_id": user.id})
+    headers = {"Authorization": f"Bearer {token}"}
+    me = await client.get("/api/v1/auth/me", headers=headers)
+
+    assert me.status_code == 200
+    assert me.json()["required_legal_acceptances"] == [required_type]
+
+    version_fields = {
+        key: value
+        for key, value in LEGAL_REGISTRATION_FIELDS.items()
+        if key not in {"terms_accepted", "personal_data_consent"}
+    }
+    missing = await client.post(
+        "/api/v1/auth/legal-acceptance",
+        headers=headers,
+        json=version_fields,
+    )
+    assert missing.status_code == 403
+    assert missing.json()["detail"]["code"] == "ERR_LEGAL_ACCEPTANCE_REQUIRED"
+
+    accepted = await client.post(
+        "/api/v1/auth/legal-acceptance",
+        headers=headers,
+        json={**version_fields, acceptance_field: True},
+    )
+    assert accepted.status_code == 200
+    assert accepted.json()["legal_onboarding_required"] is False
+    assert accepted.json()["required_legal_acceptances"] == []
+
+    rows = (
+        await db_session.execute(
+            select(UserLegalAcceptance).where(UserLegalAcceptance.user_id == user.id)
+        )
+    ).scalars().all()
+    assert {row.document_type for row in rows} == {
+        "terms",
+        "personal_data_consent",
+    }
+
+
+@pytest.mark.asyncio
 async def test_register_user(client: AsyncClient):
     """Test user registration."""
     user_data = {

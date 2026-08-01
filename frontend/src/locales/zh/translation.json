@@ -236,6 +236,7 @@
     "description": "使用个人功能前，请分别接受当前服务条款并同意个人数据处理。",
     "updated": "我们更新了条款——自 {{date}} 起生效的版本。",
     "noReregistration": "无需重新注册。",
+    "confirmOnlyChanged": "仅确认下方显示的已更改文件。",
     "acceptTerms": "我接受",
     "acceptPersonalData": "我另行同意",
     "privacyNote": "FilamentHub 处理数据的方式见",

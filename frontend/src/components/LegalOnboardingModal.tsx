@@ -39,6 +39,18 @@ export function LegalOnboardingModal() {
   }, [t, user?.legal_document_pack]);
 
   const isReacceptance = Boolean(user?.legal_previously_accepted);
+  const requiredAcceptances = user?.required_legal_acceptances;
+  // During a rolling deployment, an older backend does not return the granular
+  // list yet. Falling back to both choices preserves the previous safe flow.
+  const needsTermsAcceptance = requiredAcceptances
+    ? requiredAcceptances.includes('terms')
+    : true;
+  const needsPersonalDataConsent = requiredAcceptances
+    ? requiredAcceptances.includes('personal_data_consent')
+    : true;
+  const canContinue = Boolean(requirements)
+    && (!needsTermsAcceptance || termsAccepted)
+    && (!needsPersonalDataConsent || personalDataConsent);
   const effectiveDate = requirements
     ? new Intl.DateTimeFormat(i18n.resolvedLanguage || i18n.language, {
         day: 'numeric',
@@ -48,15 +60,15 @@ export function LegalOnboardingModal() {
     : '';
 
   const handleAccept = async () => {
-    if (!requirements || !termsAccepted || !personalDataConsent) {
+    if (!requirements || !canContinue) {
       return;
     }
     setIsSubmitting(true);
     setError(null);
     try {
       await acceptLegalDocuments({
-        terms_accepted: true,
-        personal_data_consent: true,
+        ...(needsTermsAcceptance ? { terms_accepted: true as const } : {}),
+        ...(needsPersonalDataConsent ? { personal_data_consent: true as const } : {}),
         terms_version: requirements.terms_version,
         personal_data_consent_version: requirements.personal_data_consent_version,
         privacy_policy_version: requirements.privacy_policy_version,
@@ -107,6 +119,7 @@ export function LegalOnboardingModal() {
           <div className="mb-4 rounded-xl border border-purple-400/25 bg-purple-500/10 px-4 py-3 text-sm leading-6 text-purple-100">
             <p>{t('legalOnboarding.updated', { date: effectiveDate })}</p>
             <p className="text-slate-300">{t('legalOnboarding.noReregistration')}</p>
+            <p className="text-slate-300">{t('legalOnboarding.confirmOnlyChanged')}</p>
             {requirements.legal_update_note && (
               <p className="mt-1 text-slate-300">{requirements.legal_update_note}</p>
             )}
@@ -120,53 +133,57 @@ export function LegalOnboardingModal() {
         )}
 
         <div className="space-y-3">
-          <div className="flex w-full items-start gap-3 rounded-xl border border-white/10 bg-white/5 p-4">
-            <button
-              type="button"
-              role="checkbox"
-              aria-label={t('legalOnboarding.acceptTerms')}
-              aria-checked={termsAccepted}
-              onClick={() => setTermsAccepted((value) => !value)}
-              className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded ${termsAccepted ? 'bg-purple-600 text-white' : 'border border-white/25 text-transparent'}`}
-            >
-              <Check className="h-4 w-4" />
-            </button>
-            <span className="text-sm leading-6 text-slate-200">
-              {t('legalOnboarding.acceptTerms')}{' '}
-              <Link
-                to={requirements?.terms_url || '/user-agreement'}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-purple-300 underline hover:text-purple-200"
+          {needsTermsAcceptance && (
+            <div className="flex w-full items-start gap-3 rounded-xl border border-white/10 bg-white/5 p-4">
+              <button
+                type="button"
+                role="checkbox"
+                aria-label={t('legalOnboarding.acceptTerms')}
+                aria-checked={termsAccepted}
+                onClick={() => setTermsAccepted((value) => !value)}
+                className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded ${termsAccepted ? 'bg-purple-600 text-white' : 'border border-white/25 text-transparent'}`}
               >
-                {t('authModal.agree_terms_user_agreement')}
-              </Link>
-            </span>
-          </div>
+                <Check className="h-4 w-4" />
+              </button>
+              <span className="text-sm leading-6 text-slate-200">
+                {t('legalOnboarding.acceptTerms')}{' '}
+                <Link
+                  to={requirements?.terms_url || '/user-agreement'}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-purple-300 underline hover:text-purple-200"
+                >
+                  {t('authModal.agree_terms_user_agreement')}
+                </Link>
+              </span>
+            </div>
+          )}
 
-          <div className="flex w-full items-start gap-3 rounded-xl border border-white/10 bg-white/5 p-4">
-            <button
-              type="button"
-              role="checkbox"
-              aria-label={t('legalOnboarding.acceptPersonalData')}
-              aria-checked={personalDataConsent}
-              onClick={() => setPersonalDataConsent((value) => !value)}
-              className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded ${personalDataConsent ? 'bg-purple-600 text-white' : 'border border-white/25 text-transparent'}`}
-            >
-              <Check className="h-4 w-4" />
-            </button>
-            <span className="text-sm leading-6 text-slate-200">
-              {t('legalOnboarding.acceptPersonalData')}{' '}
-              <Link
-                to={requirements?.personal_data_consent_url || '/personal-data-consent'}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-purple-300 underline hover:text-purple-200"
+          {needsPersonalDataConsent && (
+            <div className="flex w-full items-start gap-3 rounded-xl border border-white/10 bg-white/5 p-4">
+              <button
+                type="button"
+                role="checkbox"
+                aria-label={t('legalOnboarding.acceptPersonalData')}
+                aria-checked={personalDataConsent}
+                onClick={() => setPersonalDataConsent((value) => !value)}
+                className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded ${personalDataConsent ? 'bg-purple-600 text-white' : 'border border-white/25 text-transparent'}`}
               >
-                {t('authModal.agree_terms_personal_data')}
-              </Link>
-            </span>
-          </div>
+                <Check className="h-4 w-4" />
+              </button>
+              <span className="text-sm leading-6 text-slate-200">
+                {t('legalOnboarding.acceptPersonalData')}{' '}
+                <Link
+                  to={requirements?.personal_data_consent_url || '/personal-data-consent'}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-purple-300 underline hover:text-purple-200"
+                >
+                  {t('authModal.agree_terms_personal_data')}
+                </Link>
+              </span>
+            </div>
+          )}
         </div>
 
         <p className="mt-4 text-xs leading-5 text-slate-400">
@@ -209,7 +226,7 @@ export function LegalOnboardingModal() {
           <button
             type="button"
             onClick={() => void handleAccept()}
-            disabled={!requirements || !termsAccepted || !personalDataConsent || isSubmitting}
+            disabled={!canContinue || isSubmitting}
             className="inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-purple-600 to-pink-600 px-6 py-2.5 text-sm font-medium text-white shadow-lg shadow-purple-600/20 transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
           >
             {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}

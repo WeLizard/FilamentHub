@@ -35,33 +35,54 @@ CURRENT_PRIVACY_POLICY_VERSION = str(
 LEGAL_UPDATE_EFFECTIVE_DATE = _DEFAULT_REQUIREMENTS["legal_update_effective_date"]
 LEGAL_UPDATE_NOTE = str(_DEFAULT_REQUIREMENTS["legal_update_note"])
 
+_MANDATORY_ACCEPTANCE_DOCUMENTS = (
+    LegalDocumentType.TERMS,
+    LegalDocumentType.PERSONAL_DATA_CONSENT,
+)
 
-def requires_current_legal_acceptance(user: User) -> bool:
-    """Return whether the account still needs the current mandatory documents."""
+
+def required_current_legal_acceptances(
+    user: User,
+) -> tuple[LegalDocumentType, ...]:
+    """Return the mandatory documents whose current versions are not accepted."""
     if user.legal_document_pack:
         try:
             edition = get_active_edition(user.legal_document_pack)
-            terms_version = edition.acceptance_versions[LegalDocumentType.TERMS]
-            consent_version = edition.acceptance_versions[
-                LegalDocumentType.PERSONAL_DATA_CONSENT
-            ]
+            current_versions = edition.acceptance_versions
         except LegalContentError:
-            return True
+            return _MANDATORY_ACCEPTANCE_DOCUMENTS
     else:
-        # Rows created before regional packs are valid while every active pack
-        # shares the same mandatory versions. The first regional divergence
-        # safely asks these legacy accounts to accept their resolved pack.
+        # Before legal packs were stored on the user, one shared set of active
+        # versions was enough to resolve acceptance without request context.
+        # If packs have diverged, require both documents and let onboarding pin
+        # the account to the request-resolved pack.
         try:
             terms_version, consent_version, _privacy_version = (
                 legacy_acceptance_versions()
             )
+            current_versions = {
+                LegalDocumentType.TERMS: terms_version,
+                LegalDocumentType.PERSONAL_DATA_CONSENT: consent_version,
+            }
         except LegalContentError:
-            return True
+            return _MANDATORY_ACCEPTANCE_DOCUMENTS
 
-    return (
-        user.terms_version_accepted != terms_version
-        or user.personal_data_consent_version != consent_version
+    accepted_versions = {
+        LegalDocumentType.TERMS: user.terms_version_accepted,
+        LegalDocumentType.PERSONAL_DATA_CONSENT: (
+            user.personal_data_consent_version
+        ),
+    }
+    return tuple(
+        document_type
+        for document_type in _MANDATORY_ACCEPTANCE_DOCUMENTS
+        if accepted_versions[document_type] != current_versions[document_type]
     )
+
+
+def requires_current_legal_acceptance(user: User) -> bool:
+    """Return whether the account still needs the current mandatory documents."""
+    return bool(required_current_legal_acceptances(user))
 
 
 def current_legal_requirements(
@@ -78,33 +99,40 @@ async def record_current_legal_acceptance(
     language: str,
     source: str,
     legal_pack: str | LegalPack = LegalPack.INTL,
+    accepted_document_types: set[LegalDocumentType] | None = None,
 ) -> None:
-    """Record both separately accepted documents without duplicating retries."""
+    """Record selected mandatory documents without duplicating retries."""
     normalized_pack = normalize_legal_pack(legal_pack)
     edition = get_active_edition(normalized_pack)
     accepted_at = datetime.now(timezone.utc)
-    documents = (
-        (
-            LegalDocumentType.TERMS.value,
-            edition.acceptance_versions[LegalDocumentType.TERMS],
-        ),
-        (
-            LegalDocumentType.PERSONAL_DATA_CONSENT.value,
-            edition.acceptance_versions[LegalDocumentType.PERSONAL_DATA_CONSENT],
-        ),
+    selected_documents = (
+        set(_MANDATORY_ACCEPTANCE_DOCUMENTS)
+        if accepted_document_types is None
+        else set(accepted_document_types)
+    )
+    unsupported = selected_documents.difference(_MANDATORY_ACCEPTANCE_DOCUMENTS)
+    if unsupported:
+        raise LegalContentError("Unsupported legal acceptance document")
+
+    documents = tuple(
+        (document_type.value, edition.acceptance_versions[document_type])
+        for document_type in _MANDATORY_ACCEPTANCE_DOCUMENTS
+        if document_type in selected_documents
     )
 
-    existing_rows = await db.execute(
-        select(
-            UserLegalAcceptance.document_type,
-            UserLegalAcceptance.document_version,
-        ).where(
-            UserLegalAcceptance.user_id == user.id,
-            UserLegalAcceptance.document_type.in_([item[0] for item in documents]),
-            UserLegalAcceptance.legal_document_pack == normalized_pack.value,
+    existing: set[tuple[str, str]] = set()
+    if documents:
+        existing_rows = await db.execute(
+            select(
+                UserLegalAcceptance.document_type,
+                UserLegalAcceptance.document_version,
+            ).where(
+                UserLegalAcceptance.user_id == user.id,
+                UserLegalAcceptance.document_type.in_([item[0] for item in documents]),
+                UserLegalAcceptance.legal_document_pack == normalized_pack.value,
+            )
         )
-    )
-    existing = set(existing_rows.all())
+        existing = set(existing_rows.all())
 
     for document_type, document_version in documents:
         if (document_type, document_version) not in existing:
@@ -123,10 +151,14 @@ async def record_current_legal_acceptance(
                 )
             )
 
-    user.terms_version_accepted = edition.acceptance_versions[LegalDocumentType.TERMS]
-    user.personal_data_consent_version = edition.acceptance_versions[
-        LegalDocumentType.PERSONAL_DATA_CONSENT
-    ]
+    if LegalDocumentType.TERMS in selected_documents:
+        user.terms_version_accepted = edition.acceptance_versions[
+            LegalDocumentType.TERMS
+        ]
+    if LegalDocumentType.PERSONAL_DATA_CONSENT in selected_documents:
+        user.personal_data_consent_version = edition.acceptance_versions[
+            LegalDocumentType.PERSONAL_DATA_CONSENT
+        ]
     user.privacy_policy_version_presented = edition.acceptance_versions[
         LegalDocumentType.PRIVACY_POLICY
     ]

@@ -99,10 +99,12 @@ from app.services.email_validator import validate_email_domain
 from app.services.legal_acceptance_service import (
     current_legal_requirements,
     record_current_legal_acceptance,
+    required_current_legal_acceptances,
     requires_current_legal_acceptance,
 )
 from app.services.legal_document_service import (
     LegalContentError,
+    LegalDocumentType,
     LegalPack,
     get_legal_document,
     normalize_legal_pack,
@@ -131,6 +133,7 @@ from app.core.errors import (
     ERR_INVALID_REFRESH_TOKEN,
     ERR_INVALID_RESET_TOKEN,
     ERR_INVALID_VERIFICATION_TOKEN,
+    ERR_LEGAL_ACCEPTANCE_REQUIRED,
     ERR_LEGAL_DOCUMENT_VERSION_MISMATCH,
     ERR_OAUTH_EMAIL_MISSING,
     ERR_OAUTH_EMAIL_TAKEN,
@@ -329,12 +332,22 @@ async def accept_legal_documents(
         personal_data_consent_version=data.personal_data_consent_version,
         privacy_policy_version=data.privacy_policy_version,
     )
+    required_documents = set(required_current_legal_acceptances(current_user))
+    if (
+        LegalDocumentType.TERMS in required_documents
+        and data.terms_accepted is not True
+    ) or (
+        LegalDocumentType.PERSONAL_DATA_CONSENT in required_documents
+        and data.personal_data_consent is not True
+    ):
+        raise_error(status.HTTP_403_FORBIDDEN, ERR_LEGAL_ACCEPTANCE_REQUIRED)
     await record_current_legal_acceptance(
         db=db,
         user=current_user,
         language=data.legal_language,
         source="onboarding",
         legal_pack=expected_pack,
+        accepted_document_types=required_documents,
     )
     await db.commit()
     await db.refresh(current_user)

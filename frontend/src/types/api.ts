@@ -595,6 +595,8 @@ export interface User {
   updated_at: string;
   last_login: string | null; // Дата последнего входа
   legal_onboarding_required: boolean;
+  /** Mandatory documents whose current versions still need affirmative acceptance. */
+  required_legal_acceptances?: Array<'terms' | 'personal_data_consent'>;
   legal_document_pack?: LegalPack | null;
   /** Аккаунт уже принимал более раннюю редакцию — значит это повторный показ. */
   legal_previously_accepted?: boolean;
@@ -727,14 +729,17 @@ export interface AuthMethods {
   registration_captcha: 'recaptcha' | null;
 }
 
-export interface LegalAcceptancePayload {
-  terms_accepted: true;
-  personal_data_consent: true;
+interface LegalDocumentVersionsPayload {
   terms_version: string;
   personal_data_consent_version: string;
   privacy_policy_version: string;
   legal_language: string;
   legal_pack?: LegalPack;
+}
+
+export interface LegalAcceptancePayload extends LegalDocumentVersionsPayload {
+  terms_accepted?: true;
+  personal_data_consent?: true;
 }
 
 export interface LegalDocument {
@@ -747,11 +752,13 @@ export interface LegalDocument {
   markdown: string;
 }
 
-export interface RegistrationPayload extends LegalAcceptancePayload {
+export interface RegistrationPayload extends LegalDocumentVersionsPayload {
   email: string;
   username: string;
   password: string;
   role: string;
+  terms_accepted: true;
+  personal_data_consent: true;
   recaptcha_token?: string;
 }
 
