@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import JSON, BigInteger, Boolean, DateTime, Float, ForeignKey, String, Text
+from sqlalchemy import JSON, BigInteger, Boolean, DateTime, Float, ForeignKey, Index, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
@@ -19,6 +19,12 @@ class PrintProfile(Base):
     """Настройки печати (Print Settings) для OrcaSlicer."""
 
     __tablename__ = "print_profiles"
+
+    __table_args__ = (
+        # One OrcaSlicer profile is one row in its owner's account. Official
+        # profiles have no owner, so a NULL keeps them out of the comparison.
+        Index("uq_print_profiles_owner_external", "owner_user_id", "external_id", unique=True),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
 

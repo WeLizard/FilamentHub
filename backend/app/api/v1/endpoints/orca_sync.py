@@ -69,6 +69,7 @@ from app.schemas.orca_sync import (
 from app.schemas.print_profile import PrintProfileListResponse, PrintProfileResponse
 from app.schemas.printer_profile import PrinterProfileListResponse, PrinterProfileResponse
 from app.services.notification_service import create_notification
+from app.services.orca_import_guard import hold_account_import_lock
 from app.services.orca_schema_observer import observe_orca_schema_fields
 from app.services.orcaslicer_preset_contract import (
     extract_structured_filament_values,
@@ -1804,6 +1805,8 @@ async def import_printer_profiles(
     if not current_user.allow_printer_profiles_import:
         raise_error(status.HTTP_403_FORBIDDEN, ERR_IMPORT_PRINTER_DISABLED)
 
+    await hold_account_import_lock(db, current_user.id)
+
     results: list[OrcaSyncResult] = []
 
     for item in payload.profiles:
@@ -1855,6 +1858,8 @@ async def import_print_profiles(
     # Проверяем разрешение на импорт профилей печати
     if not current_user.allow_print_profiles_import:
         raise_error(status.HTTP_403_FORBIDDEN, ERR_IMPORT_PRINT_DISABLED)
+
+    await hold_account_import_lock(db, current_user.id)
 
     results: list[OrcaSyncResult] = []
 
@@ -2747,8 +2752,10 @@ async def _upsert_filament_preset(
             # КРИТИЧНО: НЕ меняем sync_enabled автоматически! Это исключительно пользовательский выбор.
             await _apply_orca_import_moderation(preset, filament, db)
 
-            await db.commit()
-            await db.refresh(preset)
+            # Flush, not commit: the whole batch is one transaction, so a failure
+            # on a later preset cannot leave half of the sync applied — and the
+            # account lock lives until that transaction ends.
+            await db.flush()
 
             return OrcaSyncResult(
                 external_id=payload.external_id,
@@ -2913,6 +2920,8 @@ async def import_filament_presets(
                 ERR_TOO_MANY_PROFILES,
                 {"count": len(payload.profiles), "max": MAX_PROFILES_PER_REQUEST},
             )
+
+        await hold_account_import_lock(db, current_user.id)
 
         results: list[OrcaSyncResult] = []
 

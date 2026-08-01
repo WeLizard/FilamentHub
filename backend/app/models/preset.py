@@ -4,7 +4,7 @@ from datetime import datetime
 from enum import Enum
 from typing import TYPE_CHECKING
 
-from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text
 from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
@@ -45,6 +45,12 @@ class Preset(Base):
     """
 
     __tablename__ = "presets"
+
+    __table_args__ = (
+        # One OrcaSlicer preset is one row in its owner's account. Rows without an
+        # owner or without an OrcaSlicer id contain a NULL and so never collide.
+        Index("uq_presets_user_external_id", "user_id", "external_id", unique=True),
+    )
 
     # Primary key
     id: Mapped[int] = mapped_column(primary_key=True, index=True)

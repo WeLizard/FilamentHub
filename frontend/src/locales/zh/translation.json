@@ -5500,6 +5500,7 @@
     "ERR_USER_NOT_IN_BRAND": "用户不是此品牌的成员",
     "ERR_REQUEST_NOT_PENDING": "请求已处理",
     "ERR_SLUG_EXISTS": "路由已在使用中",
+    "ERR_EXTERNAL_ID_EXISTS": "您已有使用该 OrcaSlicer 标识的配置",
     "ERR_CATEGORY_SLUG_EXISTS": "已存在使用此路由的分类",
     "ERR_CATEGORY_NAME_EXISTS": "已存在此名称的分类",
     "ERR_CATEGORY_SLUG_OR_NAME_EXISTS": "已存在使用此路由或名称的分类",

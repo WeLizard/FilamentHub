@@ -12,6 +12,7 @@ from app.core.dependencies import get_current_active_user
 from app.core.errors import (
     ERR_CANNOT_ASSIGN_OTHER_OWNER,
     ERR_EXPORT_PRINTER_PROFILE_ERROR,
+    ERR_EXTERNAL_ID_EXISTS,
     ERR_NO_PERMISSION,
     ERR_ONLY_ADMIN_OFFICIAL,
     ERR_ONLY_ADMIN_REASSIGN,
@@ -29,6 +30,7 @@ from app.schemas.printer_profile import (
     PrinterProfileResponse,
     PrinterProfileUpdate,
 )
+from app.services.orca_import_guard import profile_external_id_taken
 from app.services.orcaslicer_machine_exporter import export_printer_profile
 
 logger = logging.getLogger(__name__)
@@ -127,6 +129,14 @@ async def create_printer_profile(
     if existing_slug.scalar_one_or_none():
         raise_error(status.HTTP_400_BAD_REQUEST, ERR_SLUG_EXISTS)
 
+    if await profile_external_id_taken(
+        db,
+        PrinterProfile,
+        owner_user_id=owner_user_id,
+        external_id=data.external_id,
+    ):
+        raise_error(status.HTTP_400_BAD_REQUEST, ERR_EXTERNAL_ID_EXISTS)
+
     from app.services.preset_moderation import validate_text_field
 
     is_valid, error_msg = await validate_text_field(data.name, db, "printer_profile_name")
@@ -194,6 +204,16 @@ async def update_printer_profile(
         slug_result = await db.execute(select(PrinterProfile).where(PrinterProfile.slug == update_data["slug"], PrinterProfile.id != profile_id))
         if slug_result.scalar_one_or_none():
             raise_error(status.HTTP_400_BAD_REQUEST, ERR_SLUG_EXISTS)
+
+    if "external_id" in update_data or "owner_user_id" in update_data:
+        if await profile_external_id_taken(
+            db,
+            PrinterProfile,
+            owner_user_id=update_data.get("owner_user_id", profile.owner_user_id),
+            external_id=update_data.get("external_id", profile.external_id),
+            exclude_id=profile_id,
+        ):
+            raise_error(status.HTTP_400_BAD_REQUEST, ERR_EXTERNAL_ID_EXISTS)
 
     if "is_official" in update_data and update_data["is_official"] and current_user.role != UserRole.ADMIN:
         raise_error(status.HTTP_403_FORBIDDEN, ERR_ONLY_ADMIN_OFFICIAL)
