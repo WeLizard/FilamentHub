@@ -194,6 +194,7 @@ export interface BrandInviteAdmin {
   purpose: 'representative' | 'team';
   all_brands: boolean;
   sender_profile: 'partnerships' | 'pr' | 'transactional';
+  language: EmailLanguage;
   batch_id: string | null;
   send_status: 'pending' | 'sent' | 'failed';
   send_error: string | null;
@@ -240,6 +241,7 @@ export interface BrandInviteAcceptResult {
 export type EmailThreadStatus = 'open' | 'closed';
 export type EmailMessageDirection = 'inbound' | 'outbound';
 export type EmailSenderProfile = 'support' | 'partnerships' | 'pr';
+export type EmailLanguage = 'ru' | 'en' | 'zh';
 export type EmailDeliveryStatus = 'received' | 'sent' | 'delivered' | 'delayed' | 'bounced' | 'complained';
 
 export interface EmailAttachment {
@@ -280,6 +282,7 @@ export interface EmailThreadSummary {
   latest_preview: string;
   latest_direction: EmailMessageDirection | null;
   suggested_sender_profile: EmailSenderProfile;
+  language: EmailLanguage;
 }
 
 export interface EmailThreadDetail extends EmailThreadSummary {

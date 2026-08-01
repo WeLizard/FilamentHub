@@ -28,6 +28,7 @@ from app.core.dependencies import (
     is_token_revoked,
     require_preset_read,
 )
+from app.core.i18n import resolve_language
 from app.core.security import (
     create_access_token,
     create_plugin_token,
@@ -1064,7 +1065,11 @@ async def forgot_password(
     if user and user.active:
         reset_token = generate_password_reset_token(user.id, user.email)
         reset_url = f"{settings.BASE_URL}/reset-password?token={reset_token}"
-        sent = send_password_reset_email(to=user.email, reset_url=reset_url)
+        sent = send_password_reset_email(
+            to=user.email,
+            reset_url=reset_url,
+            language=resolve_language(data.language, user.legal_acceptance_language),
+        )
         if not sent:
             logger.warning("Password reset email delivery failed: user_id=%d", user.id)
 
@@ -1259,7 +1264,11 @@ async def update_user_email(
 
     token = generate_email_change_token(current_user.id, data.new_email)
     confirm_url = f"{settings.BASE_URL}/confirm-email-change?token={token}"
-    sent = send_email_change_email(to=data.new_email, confirm_url=confirm_url)
+    sent = send_email_change_email(
+        to=data.new_email,
+        confirm_url=confirm_url,
+        language=resolve_language(data.language, current_user.legal_acceptance_language),
+    )
     if not sent:
         logger.info(f"Email change confirmation link (email not sent): {confirm_url}")
 

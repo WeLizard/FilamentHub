@@ -37,6 +37,11 @@ class EmailThread(Base):
         String(64), nullable=True, unique=True, index=True
     )
     sender_profile: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    # Language of the wrapper around admin-authored text, chosen when the thread
+    # starts and kept for every reply. Threads that predate the column were Russian.
+    language: Mapped[str] = mapped_column(
+        String(2), nullable=False, default="en", server_default="ru"
+    )
     status: Mapped[str] = mapped_column(
         String(16), nullable=False, default="open", server_default="open", index=True
     )

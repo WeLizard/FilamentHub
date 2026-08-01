@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
 BrandInviteTargetType = Literal["new", "existing"]
 BrandInviteMemberRole = Literal["owner", "editor"]
 BrandInviteSenderProfile = Literal["partnerships", "pr", "transactional"]
+BrandInviteLanguage = Literal["ru", "en", "zh"]
 
 
 class BrandInviteCreate(BaseModel):
@@ -21,6 +22,7 @@ class BrandInviteCreate(BaseModel):
     organization_name: str | None = Field(None, min_length=1, max_length=150)
     member_role: BrandInviteMemberRole = "owner"
     sender_profile: BrandInviteSenderProfile = "partnerships"
+    language: BrandInviteLanguage = "en"
     expires_days: int = Field(14, ge=1, le=90)
 
     @model_validator(mode="after")
@@ -44,6 +46,7 @@ class BrandInviteBatchCreate(BaseModel):
     organization_name: str | None = Field(None, min_length=1, max_length=150)
     member_role: BrandInviteMemberRole = "owner"
     sender_profile: BrandInviteSenderProfile = "partnerships"
+    language: BrandInviteLanguage = "en"
     expires_days: int = Field(14, ge=1, le=90)
 
     @model_validator(mode="after")
@@ -115,6 +118,7 @@ class BrandInviteAdminResponse(BaseModel):
     purpose: str
     all_brands: bool
     sender_profile: str
+    language: str
     batch_id: str | None = None
     send_status: str
     send_error: str | None = None

@@ -55,6 +55,7 @@ class EmailThreadSummaryResponse(BaseModel):
     latest_preview: str
     latest_direction: Literal["inbound", "outbound"] | None
     suggested_sender_profile: EmailSenderProfile
+    language: str
 
 
 class EmailThreadDetailResponse(EmailThreadSummaryResponse):
@@ -81,6 +82,7 @@ class EmailThreadCreate(BaseModel):
     body: str = Field(..., min_length=1, max_length=20_000)
     html_body: str | None = Field(default=None, max_length=50_000)
     sender_profile: EmailSenderProfile = "support"
+    language: Literal["ru", "en", "zh"] = "en"
     idempotency_key: str = Field(..., min_length=16, max_length=128, pattern=r"^[A-Za-z0-9._:-]+$")
 
     @field_validator("participant_name")

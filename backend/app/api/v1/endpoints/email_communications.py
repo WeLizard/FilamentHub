@@ -39,6 +39,7 @@ from app.core.errors import (
     ERR_EMAIL_WEBHOOK_NOT_CONFIGURED,
     raise_error,
 )
+from app.core.i18n import DEFAULT_LANGUAGE
 from app.core.limiter import limiter
 from app.db.session import get_db
 from app.models.brand_invite import BrandInvite
@@ -409,6 +410,7 @@ def _thread_summary(
         latest_preview=preview,
         latest_direction=latest.direction if latest else None,
         suggested_sender_profile=suggested_sender_profile,
+        language=thread.language,
     )
 
 
@@ -615,6 +617,7 @@ async def receive_resend_webhook(
                 if invite and invite.sender_profile in _MANUAL_SENDER_PROFILES
                 else _sender_profile_for_recipients(recipients)
             ),
+            language=invite.language if invite else DEFAULT_LANGUAGE,
             status="open",
             unread_count=0,
             last_message_at=created_at,
@@ -748,6 +751,7 @@ async def create_email_thread(
         subject=data.subject,
         reply_token=secrets.token_urlsafe(24),
         sender_profile=data.sender_profile,
+        language=data.language,
         status="open",
         unread_count=0,
         last_message_at=now,
@@ -767,6 +771,7 @@ async def create_email_thread(
         headers=None,
         attachments=[attachment.provider_payload() for attachment in attachments],
         idempotency_key=data.idempotency_key,
+        language=data.language,
     )
     if not result.sent:
         await db.rollback()
@@ -991,6 +996,7 @@ async def reply_to_email_thread(
         headers=headers,
         attachments=[attachment.provider_payload() for attachment in attachments],
         idempotency_key=data.idempotency_key,
+        language=thread.language,
     )
     if not result.sent:
         logger.error("Failed to send admin email reply for thread %s: %s", thread.id, result.error)

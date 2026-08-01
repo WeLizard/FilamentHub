@@ -1,0 +1,67 @@
+{
+  "passwordReset": {
+    "subject": "Reset your FilamentHub password",
+    "heading": "Password reset",
+    "intro": "We received a request to reset the password for your account. Press the button below to set a new one.",
+    "button": "Reset password",
+    "note": "The link is valid for 1 hour. If you did not request a password reset, simply ignore this email."
+  },
+  "emailChange": {
+    "subject": "Confirm your new email — FilamentHub",
+    "heading": "Confirm your new email",
+    "intro": "You requested an email address change on FilamentHub. Press the button below to confirm this address.",
+    "button": "Confirm email",
+    "note": "The link is valid for 24 hours. If you did not request an email change, simply ignore this email."
+  },
+  "brandStatus": {
+    "subjectApproved": "Brand “{brand_name}” approved — FilamentHub",
+    "subjectRejected": "Brand request for “{brand_name}” declined — FilamentHub",
+    "badgeApproved": "Request approved",
+    "badgeRejected": "Request declined",
+    "heading": "Brand “{brand_name}”",
+    "messageApproved": "Congratulations! Your request to represent the brand has been approved.",
+    "messageRejected": "Unfortunately, your request to represent the brand has been declined.",
+    "reason": "Reason: {reason}"
+  },
+  "brandInvite": {
+    "subject": "An invitation to officially represent {brand_name} on FilamentHub",
+    "subjectGeneric": "An invitation to officially represent your brand on FilamentHub",
+    "brandFallback": "your brand",
+    "preheader": "An invitation to officially represent your brand on FilamentHub. Free for manufacturers.",
+    "heading": "An invitation to officially represent {brand_display} on FilamentHub",
+    "intro": "Hello! My name is Ilya, and I am building FilamentHub — a platform for 3D-printing materials.",
+    "pitch": "We bring filament information together in one place: specifications, printing recommendations, profiles and user reviews. I invite <span style=\"color:#f3f4f6; font-weight:600;\">{brand_display}</span> to represent its materials here officially.",
+    "benefitsIntro": "Once you accept the invitation, you can:",
+    "benefits": [
+      "run official material pages and keep their specifications and descriptions up to date;",
+      "publish recommended printing profiles;",
+      "link to your website, documentation and stores;",
+      "receive user reviews of your materials;",
+      "use QR codes on the packaging: a customer scans the code and the material appears in their library together with the current recommended profile, ready to import into OrcaSlicer."
+    ],
+    "thumbCatalog": "Material catalog",
+    "thumbProfiles": "Printing profiles",
+    "thumbQr": "QR code on a spool",
+    "closing": "The project is growing right now, so I invite manufacturers personally — so that material information comes straight from the brands and is presented officially.",
+    "free": "Taking part is free for manufacturers and carries no obligations.",
+    "buttonAccept": "Accept the invitation",
+    "buttonVisit": "Visit the project",
+    "fallbackLink": "Button not working? Copy the link:",
+    "thanks": "Thank you for your time!",
+    "signature": "Ilya",
+    "footer": "You received this email because we are inviting {brand_display} to our material catalog. If this is a mistake, write to us at {contact_link} and we will not disturb you again."
+  },
+  "brandTeamInvite": {
+    "subject": "An invitation to the {brand_name} team on FilamentHub",
+    "heading": "You have been invited to the {brand_name} team",
+    "intro": "Once you accept the invitation you will get the <strong style=\"color:#fff\">{role_label}</strong> role and will be able to work with the brand's official catalog.",
+    "note": "The invitation is bound to the address it was sent to. Sign in or register on FilamentHub with that same email.",
+    "button": "Accept the invitation",
+    "roleOwner": "owner",
+    "roleEditor": "editor"
+  },
+  "adminReply": {
+    "footer": "Sent by the FilamentHub team · {contact_email}",
+    "footerPlain": "FilamentHub · {contact_email}"
+  }
+}

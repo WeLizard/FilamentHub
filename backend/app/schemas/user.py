@@ -108,6 +108,11 @@ class UserEmailUpdate(BaseModel):
     """Schema for updating user email."""
 
     new_email: EmailStr = Field(..., description="Новый email")
+    language: str | None = Field(
+        default=None,
+        pattern=r"^[a-z]{2}$",
+        description="Interface language of the request, used for the confirmation email",
+    )
 
 
 class UserUsernameUpdate(BaseModel):
@@ -211,18 +216,6 @@ class AccessibleBrandResponse(BaseModel):
     organization_name: str
     membership_role: OrganizationMemberRole | None = None
     is_active: bool
-
-
-class UserPublic(UserBase):
-    """Schema for public User info (без sensitive данных)."""
-
-    email: str  # output schema — see UserResponse.email
-    id: int
-    username: str
-    full_name: str | None = None
-    badges: list[str] | None = None  # Бейджи пользователя (публично видны)
-
-    model_config = ConfigDict(from_attributes=True)
 
 
 class Token(BaseModel):
@@ -396,6 +389,11 @@ class ForgotPasswordRequest(BaseModel):
     """Schema for forgot password request."""
 
     email: EmailStr = Field(..., description="Email пользователя для восстановления пароля")
+    language: str | None = Field(
+        default=None,
+        pattern=r"^[a-z]{2}$",
+        description="Interface language of the request, used for the reset email",
+    )
 
 
 class ForgotPasswordResponse(BaseModel):

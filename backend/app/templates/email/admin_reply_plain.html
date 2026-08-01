@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="{{ lang }}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -13,7 +13,7 @@
       <div style="white-space:pre-wrap;">{{ body }}</div>
     {% endif %}
     <div style="margin-top:28px;color:#6b7280;font-size:13px;line-height:1.5;">
-      FilamentHub · {{ contact_email }}
+      {{ t('adminReply.footerPlain', contact_email=contact_email) }}
     </div>
   </div>
 </body>

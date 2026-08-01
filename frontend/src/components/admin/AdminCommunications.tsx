@@ -26,12 +26,14 @@ import { adminCommunicationsAPI } from '../../api/client';
 import type {
   EmailAttachment,
   EmailDeliveryStatus,
+  EmailLanguage,
   EmailMessage,
   EmailSenderProfile,
   EmailThreadDetail,
   EmailThreadStatus,
 } from '../../types/api';
 import { translateApiError } from '../../utils/translateApiError';
+import { currentRequestLanguage } from '../../utils/requestLanguage';
 import { downloadBlob } from '../../utils/download';
 import { toast } from '../Toast';
 import { ModalOverlay } from '../ModalOverlay';
@@ -219,6 +221,7 @@ function EmailComposeModal({
   const [subject, setSubject] = useState('');
   const [draft, setDraft] = useState<EmailComposerValue>(emptyEmailComposerValue);
   const [profile, setProfile] = useState<EmailSenderProfile>('support');
+  const [language, setLanguage] = useState<EmailLanguage>(currentRequestLanguage);
   const idempotencyState = useRef<IdempotencyState>({
     fingerprint: '',
     key: crypto.randomUUID(),
@@ -230,7 +233,7 @@ function EmailComposeModal({
       const name = participantName.trim();
       const normalizedSubject = subject.trim();
       const fingerprint = emailDraftFingerprint(
-        [recipient, name, normalizedSubject, profile],
+        [recipient, name, normalizedSubject, profile, language],
         draft,
       );
       return adminCommunicationsAPI.createEmailThread({
@@ -240,6 +243,7 @@ function EmailComposeModal({
         body: draft.text,
         html_body: draft.html || undefined,
         sender_profile: profile,
+        language,
         idempotency_key: `email.create.${idempotencyKeyFor(idempotencyState, fingerprint)}`,
         attachments: draft.attachments,
       });
@@ -301,6 +305,20 @@ function EmailComposeModal({
               </select>
             </label>
           </div>
+
+          <label className="block text-xs font-medium text-gray-300">
+            {t('adminCommunications.compose.language')}
+            <select
+              value={language}
+              onChange={(event) => setLanguage(event.target.value as EmailLanguage)}
+              className="mt-2 w-full rounded-xl border border-white/10 bg-[#19172d] px-3.5 py-2.5 text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-cyan-400/40"
+            >
+              <option value="ru">{t('adminCommunications.compose.languageRu')}</option>
+              <option value="en">{t('adminCommunications.compose.languageEn')}</option>
+              <option value="zh">{t('adminCommunications.compose.languageZh')}</option>
+            </select>
+            <p className="mt-1.5 text-[11px] text-gray-500">{t('adminCommunications.compose.languageHint')}</p>
+          </label>
 
           <label className="block text-xs font-medium text-gray-300">
             {t('adminCommunications.compose.name')}

@@ -192,6 +192,7 @@ describe('admin email uploads', () => {
       subject: 'Subject',
       body: 'Body',
       sender_profile: 'support',
+      language: 'en',
       idempotency_key: 'email.create.1',
       attachments: [new File(['<html></html>'], 'application.html', { type: 'text/html' })],
     });
@@ -199,6 +200,7 @@ describe('admin email uploads', () => {
     const [, payload, config] = axiosState.apiInstance.post.mock.calls[0];
     expect(payload).toBeInstanceOf(FormData);
     expect((payload as FormData).getAll('attachments')).toHaveLength(1);
+    expect((payload as FormData).get('language')).toBe('en');
     expect(config.headers['Content-Type']).toBe('multipart/form-data');
   });
 

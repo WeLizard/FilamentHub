@@ -10,7 +10,8 @@ import { BrandLogoFrame } from '../BrandLogoFrame';
 import { adminAPI, brandInvitesAPI } from '../../api/client';
 import { translateApiError } from '../../utils/translateApiError';
 import { externalUrl } from '../../utils/externalUrl';
-import type { Brand, BrandInviteBatchPreview, BrandInviteBatchSendResult } from '../../types/api';
+import { currentRequestLanguage } from '../../utils/requestLanguage';
+import type { Brand, BrandInviteBatchPreview, BrandInviteBatchSendResult, EmailLanguage } from '../../types/api';
 import type { AxiosError } from 'axios';
 
 type FilterType = 'all' | 'verified' | 'unverified';
@@ -41,6 +42,7 @@ export function AdminBrands() {
   const [inviteBrandId, setInviteBrandId] = useState<number | null>(null);
   const [inviteBrandFocused, setInviteBrandFocused] = useState(false);
   const [inviteSenderProfile, setInviteSenderProfile] = useState<'partnerships' | 'pr' | 'transactional'>('partnerships');
+  const [inviteLanguage, setInviteLanguage] = useState<EmailLanguage>(currentRequestLanguage);
   const [invitePreview, setInvitePreview] = useState<BrandInviteBatchPreview | null>(null);
   const [inviteResult, setInviteResult] = useState<BrandInviteBatchSendResult | null>(null);
   const [inviteError, setInviteError] = useState<string | null>(null);
@@ -102,6 +104,7 @@ export function AdminBrands() {
         brand_name: existingBrand ? null : inviteBrandName.trim(),
         member_role: 'owner',
         sender_profile: inviteSenderProfile,
+        language: inviteLanguage,
       });
       setInviteResult(result);
       setInvitePreview(null);
@@ -120,6 +123,7 @@ export function AdminBrands() {
     setInviteBrandId(null);
     setInviteBrandFocused(false);
     setInviteSenderProfile('partnerships');
+    setInviteLanguage(currentRequestLanguage());
     setInvitePreview(null);
     setInviteResult(null);
     setInviteError(null);
@@ -847,6 +851,19 @@ export function AdminBrands() {
                     <option value="pr">{t('adminBrands.inviteSenderPr')}</option>
                     <option value="transactional">{t('adminBrands.inviteSenderTransactional')}</option>
                   </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">{t('adminBrands.inviteLanguage')}</label>
+                  <select
+                    value={inviteLanguage}
+                    onChange={(e) => setInviteLanguage(e.target.value as EmailLanguage)}
+                    className="w-full rounded-lg border border-white/20 bg-gray-900 px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  >
+                    <option value="ru">{t('adminBrands.inviteLanguageRu')}</option>
+                    <option value="en">{t('adminBrands.inviteLanguageEn')}</option>
+                    <option value="zh">{t('adminBrands.inviteLanguageZh')}</option>
+                  </select>
+                  <p className="mt-1.5 text-xs text-gray-400">{t('adminBrands.inviteLanguageHint')}</p>
                 </div>
                 {invitePreview && (
                   <div className="space-y-3 rounded-xl border border-white/15 bg-black/20 p-4">

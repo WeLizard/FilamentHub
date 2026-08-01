@@ -322,6 +322,7 @@ async def _build_invite(
     organization_id: int | None,
     member_role: str,
     sender_profile: str,
+    language: str,
     expires_days: int,
     admin_id: int,
     batch_id: str | None,
@@ -347,6 +348,7 @@ async def _build_invite(
         member_role=member_role,
         pre_verified=True,
         sender_profile=sender_profile,
+        language=language,
         batch_id=batch_id,
         reply_token=secrets.token_urlsafe(24),
         invited_by_id=admin_id,
@@ -371,6 +373,7 @@ async def _deliver_invite(db: AsyncSession, invite: BrandInvite) -> None:
             site_url=settings.BASE_URL,
             role=invite.member_role,
             reply_to=_reply_to(invite),
+            language=invite.language,
         )
     else:
         result = await run_in_threadpool(
@@ -381,6 +384,7 @@ async def _deliver_invite(db: AsyncSession, invite: BrandInvite) -> None:
             site_url=settings.BASE_URL,
             sender_profile=invite.sender_profile,
             reply_to=_reply_to(invite),
+            language=invite.language,
         )
     invite.send_status = "sent" if result.sent else "failed"
     invite.sent_at = _now() if result.sent else None
@@ -655,6 +659,7 @@ async def create_brand_invite(
         organization_id=data.organization_id,
         member_role=data.member_role,
         sender_profile=data.sender_profile,
+        language=data.language,
         expires_days=data.expires_days,
         admin_id=admin.id,
         batch_id=None,
@@ -801,6 +806,7 @@ async def create_brand_invite_batch(
             organization_id=data.organization_id,
             member_role=data.member_role,
             sender_profile=data.sender_profile,
+            language=data.language,
             expires_days=data.expires_days,
             admin_id=admin.id,
             batch_id=batch_id,

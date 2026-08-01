@@ -23,6 +23,7 @@ from app.core.errors import (
     ERR_USER_NOT_FOUND,
     raise_error,
 )
+from app.core.i18n import resolve_language
 from app.db.session import get_db
 from app.models.brand import Brand
 from app.models.brand_invite import BrandInvite
@@ -362,6 +363,7 @@ async def create_team_invite(
         all_brands=data.all_brands or data.role == "owner",
         pre_verified=False,
         sender_profile="transactional",
+        language=resolve_language(current_user.legal_acceptance_language),
         send_status="pending",
         reply_token=secrets.token_urlsafe(24),
         invited_by_id=current_user.id,

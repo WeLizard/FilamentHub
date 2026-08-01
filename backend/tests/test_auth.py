@@ -431,19 +431,21 @@ async def test_oauth_only_user_can_set_local_password_via_reset(
 
     sent: dict[str, str] = {}
 
-    def capture_reset_email(*, to: str, reset_url: str) -> bool:
+    def capture_reset_email(*, to: str, reset_url: str, language: str) -> bool:
         sent["to"] = to
         sent["reset_url"] = reset_url
+        sent["language"] = language
         return True
 
     monkeypatch.setattr(auth_module, "send_password_reset_email", capture_reset_email)
 
     forgot = await client.post(
         "/api/v1/auth/forgot-password",
-        json={"email": user.email},
+        json={"email": user.email, "language": "zh"},
     )
     assert forgot.status_code == 200
     assert sent["to"] == user.email
+    assert sent["language"] == "zh"
 
     reset_token = sent["reset_url"].rsplit("token=", 1)[1]
     reset = await client.post(

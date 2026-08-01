@@ -1,0 +1,67 @@
+{
+  "passwordReset": {
+    "subject": "重置您的 FilamentHub 密码",
+    "heading": "重置密码",
+    "intro": "我们收到了重置您账户密码的请求。请点击下方按钮设置新密码。",
+    "button": "重置密码",
+    "note": "链接有效期为 1 小时。如果您没有请求重置密码，请忽略此邮件。"
+  },
+  "emailChange": {
+    "subject": "确认您的新邮箱 — FilamentHub",
+    "heading": "确认新邮箱",
+    "intro": "您在 FilamentHub 请求更换邮箱地址。请点击下方按钮确认此地址。",
+    "button": "确认邮箱",
+    "note": "链接有效期为 24 小时。如果您没有请求更换邮箱，请忽略此邮件。"
+  },
+  "brandStatus": {
+    "subjectApproved": "品牌“{brand_name}”已通过审核 — FilamentHub",
+    "subjectRejected": "品牌“{brand_name}”的申请已被拒绝 — FilamentHub",
+    "badgeApproved": "申请已通过",
+    "badgeRejected": "申请被拒绝",
+    "heading": "品牌“{brand_name}”",
+    "messageApproved": "恭喜！您代表该品牌的申请已获管理员批准。",
+    "messageRejected": "很遗憾，您代表该品牌的申请未获批准。",
+    "reason": "原因：{reason}"
+  },
+  "brandInvite": {
+    "subject": "邀请 {brand_name} 正式入驻 FilamentHub",
+    "subjectGeneric": "邀请贵品牌正式入驻 FilamentHub",
+    "brandFallback": "贵品牌",
+    "preheader": "邀请贵品牌正式入驻 FilamentHub。对制造商免费。",
+    "heading": "邀请 {brand_display} 正式入驻 FilamentHub",
+    "intro": "您好！我叫 Ilya，是 FilamentHub 的开发者 —— 这是一个面向 3D 打印材料的平台。",
+    "pitch": "我们把耗材信息集中在一处：参数、打印建议、配置文件和用户评价。诚邀 <span style=\"color:#f3f4f6; font-weight:600;\">{brand_display}</span> 在此正式展示自己的材料。",
+    "benefitsIntro": "接受邀请后，您可以：",
+    "benefits": [
+      "管理材料的官方页面，随时更新参数与说明；",
+      "发布推荐的打印配置文件；",
+      "添加官网、技术文档和店铺链接；",
+      "收到用户对贵公司材料的评价；",
+      "在包装上使用二维码：用户扫码后，该材料连同当前推荐配置一起出现在他的材料库中，可直接导入 OrcaSlicer。"
+    ],
+    "thumbCatalog": "材料目录",
+    "thumbProfiles": "打印配置文件",
+    "thumbQr": "料盘上的二维码",
+    "closing": "项目正在成长阶段，因此我亲自邀请制造商加入，让材料信息直接来自品牌方并以官方身份呈现。",
+    "free": "制造商参与完全免费，且不承担任何义务。",
+    "buttonAccept": "接受邀请",
+    "buttonVisit": "浏览项目",
+    "fallbackLink": "按钮无法打开？请复制链接：",
+    "thanks": "感谢您抽出时间！",
+    "signature": "Ilya",
+    "footer": "您收到此邮件，是因为我们邀请 {brand_display} 加入我们的材料目录。如果这是误发，请写信至 {contact_link}，我们将不再打扰。"
+  },
+  "brandTeamInvite": {
+    "subject": "邀请您加入 FilamentHub 上的 {brand_name} 团队",
+    "heading": "您被邀请加入 {brand_name} 团队",
+    "intro": "接受邀请后，您将获得<strong style=\"color:#fff\">{role_label}</strong>角色，并可以管理该品牌的官方目录。",
+    "note": "此邀请与收到本邮件的邮箱绑定。请使用同一邮箱登录或注册 FilamentHub。",
+    "button": "接受邀请",
+    "roleOwner": "所有者",
+    "roleEditor": "编辑者"
+  },
+  "adminReply": {
+    "footer": "由 FilamentHub 团队发送 · {contact_email}",
+    "footerPlain": "FilamentHub · {contact_email}"
+  }
+}

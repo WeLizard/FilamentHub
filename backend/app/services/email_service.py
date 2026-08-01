@@ -13,6 +13,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from markupsafe import Markup
 
 from app.core.config import settings
+from app.core.i18n import resolve_language, translate, translate_html, translate_list
 
 logger = logging.getLogger(__name__)
 
@@ -45,9 +46,16 @@ _jinja_env = Environment(
 )
 
 
-def _render(template_name: str, **context: object) -> str:
-    """Render an email template from app/templates/email."""
-    return _jinja_env.get_template(template_name).render(**context)
+def _render(template_name: str, *, language: str | None = None, **context: object) -> str:
+    """Render an email template from app/templates/email in the recipient's language."""
+    lang = resolve_language(language)
+    return _jinja_env.get_template(template_name).render(
+        lang=lang,
+        t=lambda key, **params: translate(key, lang, **params),
+        t_html=lambda key, **params: translate_html(key, lang, **params),
+        t_list=lambda key: translate_list(key, lang),
+        **context,
+    )
 
 
 def _is_configured() -> bool:
@@ -300,11 +308,13 @@ def send_admin_reply_email(
     headers: dict[str, str] | None = None,
     attachments: list[dict[str, str]] | None = None,
     idempotency_key: str | None = None,
+    language: str | None = None,
 ) -> EmailSendResult:
     """Send sanitized authored content using the shared branded email template."""
     sanitized_html = sanitize_admin_email_html(html_body)
     html = _render(
         ADMIN_REPLY_TEMPLATES.get(sender_profile, "admin_reply.html"),
+        language=language,
         subject=subject,
         body=body,
         body_html=Markup(sanitized_html) if sanitized_html else None,
@@ -323,29 +333,37 @@ def send_admin_reply_email(
     )
 
 
-def send_password_reset_email(*, to: str, reset_url: str) -> bool:
+def send_password_reset_email(*, to: str, reset_url: str, language: str | None = None) -> bool:
     """Send password reset link."""
-    subject = "Восстановление пароля FilamentHub"
-    html = _render("password_reset.html", subject=subject, reset_url=reset_url)
+    subject = translate("passwordReset.subject", language)
+    html = _render("password_reset.html", language=language, subject=subject, reset_url=reset_url)
     return send_email(to=to, subject=subject, html=html)
 
 
-def send_email_change_email(*, to: str, confirm_url: str) -> bool:
+def send_email_change_email(*, to: str, confirm_url: str, language: str | None = None) -> bool:
     """Send email change confirmation to the new address."""
-    subject = "Подтвердите новый email — FilamentHub"
-    html = _render("email_change.html", subject=subject, confirm_url=confirm_url)
+    subject = translate("emailChange.subject", language)
+    html = _render("email_change.html", language=language, subject=subject, confirm_url=confirm_url)
     return send_email(to=to, subject=subject, html=html)
 
 
-def send_brand_status_email(*, to: str, brand_name: str, approved: bool, reason: str | None = None) -> bool:
+def send_brand_status_email(
+    *,
+    to: str,
+    brand_name: str,
+    approved: bool,
+    reason: str | None = None,
+    language: str | None = None,
+) -> bool:
     """Send brand verification status notification."""
-    subject = (
-        f"Бренд «{brand_name}» подтверждён — FilamentHub"
-        if approved
-        else f"Заявка на бренд «{brand_name}» отклонена — FilamentHub"
+    subject = translate(
+        "brandStatus.subjectApproved" if approved else "brandStatus.subjectRejected",
+        language,
+        brand_name=brand_name,
     )
     html = _render(
         "brand_status.html",
+        language=language,
         subject=subject,
         brand_name=brand_name,
         approved=approved,
@@ -362,16 +380,18 @@ def send_brand_invite_email(
     site_url: str,
     sender_profile: str = "partnerships",
     reply_to: str | None = None,
+    language: str | None = None,
 ) -> EmailSendResult:
     """Send a pre-verified brand invitation to a manufacturer's corporate email."""
-    brand_display = brand_name or "ваш бренд"
+    brand_display = brand_name or translate("brandInvite.brandFallback", language)
     subject = (
-        f"Приглашение официально представить {brand_name} в FilamentHub"
+        translate("brandInvite.subject", language, brand_name=brand_name)
         if brand_name
-        else "Приглашение официально представить бренд в FilamentHub"
+        else translate("brandInvite.subjectGeneric", language)
     )
     html = _render(
         "brand_invite.html",
+        language=language,
         subject=subject,
         brand_display=brand_display,
         invite_url=invite_url,
@@ -395,16 +415,21 @@ def send_brand_team_invite_email(
     site_url: str,
     role: str,
     reply_to: str | None = None,
+    language: str | None = None,
 ) -> EmailSendResult:
     """Invite one exact email address to an existing manufacturer team."""
-    subject = f"Приглашение в команду {brand_name} в FilamentHub"
+    subject = translate("brandTeamInvite.subject", language, brand_name=brand_name)
     html = _render(
         "brand_team_invite.html",
+        language=language,
         subject=subject,
         brand_name=brand_name,
         invite_url=invite_url,
         site_url=site_url,
-        role_label="владельца" if role == "owner" else "редактора",
+        role_label=translate(
+            "brandTeamInvite.roleOwner" if role == "owner" else "brandTeamInvite.roleEditor",
+            language,
+        ),
     )
     return send_email_tracked(
         to=to,

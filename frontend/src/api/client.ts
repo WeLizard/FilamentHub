@@ -2,10 +2,11 @@
 
 import axios from 'axios';
 import type { InternalAxiosRequestConfig } from 'axios';
-import type { AccessibleBrand, AdminUserListResponse, AuthMethods, Brand, BrandUsage, BrandRequest, BrandRequestStatus, BrandTeamInvite, BrandTeamRole, BrandTeamWorkspace, Filament, FilamentAdditive, FilamentPropertyClaim, FilamentLine, FilamentImportResult, FilamentListResponse, FilamentPalettePayload, BrandInvitePublic, BrandInviteAdmin, BrandInviteAcceptResult, BrandInviteBatchPreview, BrandInviteBatchSendResult, FilamentAvailability, FilamentVisualSettings, FilamentReview, FilamentRatingStats, Notification, NotificationListResponse, Preset, RecommendedPreset, RecommendedForPrinterResponse, Printer, PrinterProfile, PrintProfile, PrinterRequest, User, Token, RefreshTokenRequest, RefreshTokenResponse, ListResponse, AccountDeletionStats, UserSavedPreset, CalculatorEstimateRequest, CalculatorEstimateResponse, CalculatorProfileResponse, CalculatorProfileUpdate, Feedback, FeedbackDetail, FeedbackListResponse, FeedbackType, CompatiblePrinter, CompatibleFilament, DownloadVersion, DownloadVersionsResponse, PluginDownloadsResponse, WikiCategory, WikiCategoryListResponse, WikiArticle, WikiArticleListResponse, WikiFeedbackStats, WikiFeedbackCreate, WikiFeedback, EmailThreadDetail, EmailThreadListResponse, EmailThreadStatus, EmailMessage, EmailSenderProfile, NotificationCampaignAudience, NotificationCampaignHistoryResponse, NotificationCampaignPreview, NotificationCampaignSendResult, LegalAcceptancePayload, LegalRequirements, RegistrationPayload, SpoolUsageEvent, OrcaSliceReport } from '../types/api';
+import type { AccessibleBrand, AdminUserListResponse, AuthMethods, Brand, BrandUsage, BrandRequest, BrandRequestStatus, BrandTeamInvite, BrandTeamRole, BrandTeamWorkspace, Filament, FilamentAdditive, FilamentPropertyClaim, FilamentLine, FilamentImportResult, FilamentListResponse, FilamentPalettePayload, BrandInvitePublic, BrandInviteAdmin, BrandInviteAcceptResult, BrandInviteBatchPreview, BrandInviteBatchSendResult, FilamentAvailability, FilamentVisualSettings, FilamentReview, FilamentRatingStats, Notification, NotificationListResponse, Preset, RecommendedPreset, RecommendedForPrinterResponse, Printer, PrinterProfile, PrintProfile, PrinterRequest, User, Token, RefreshTokenRequest, RefreshTokenResponse, ListResponse, AccountDeletionStats, UserSavedPreset, CalculatorEstimateRequest, CalculatorEstimateResponse, CalculatorProfileResponse, CalculatorProfileUpdate, Feedback, FeedbackDetail, FeedbackListResponse, FeedbackType, CompatiblePrinter, CompatibleFilament, DownloadVersion, DownloadVersionsResponse, PluginDownloadsResponse, WikiCategory, WikiCategoryListResponse, WikiArticle, WikiArticleListResponse, WikiFeedbackStats, WikiFeedbackCreate, WikiFeedback, EmailThreadDetail, EmailThreadListResponse, EmailThreadStatus, EmailMessage, EmailSenderProfile, EmailLanguage, NotificationCampaignAudience, NotificationCampaignHistoryResponse, NotificationCampaignPreview, NotificationCampaignSendResult, LegalAcceptancePayload, LegalRequirements, RegistrationPayload, SpoolUsageEvent, OrcaSliceReport } from '../types/api';
 import { getCsrfToken, getRefreshToken, getToken, isCookieAuthMode, isJwtAuthMode, isOrcaEmbedded, removeToken, setToken, shouldPersistTokensLocally } from '../utils/auth';
 import { isPluginEmbed, reportPluginSessionToPlugin } from '../utils/pluginBridge';
 import { downloadBlob } from '../utils/download';
+import { currentRequestLanguage } from '../utils/requestLanguage';
 
 const API_BASE_URL = '/api/v1';
 const COOKIE_AUTH_MODE = isCookieAuthMode();
@@ -368,7 +369,10 @@ export const authAPI = {
   },
 
   forgotPassword: async (email: string) => {
-    const response = await api.post<{ message: string }>('/auth/forgot-password', { email });
+    const response = await api.post<{ message: string }>('/auth/forgot-password', {
+      email,
+      language: currentRequestLanguage(),
+    });
     return response.data;
   },
 
@@ -404,7 +408,10 @@ export const authAPI = {
   updateEmail: async (data: {
     new_email: string;
   }) => {
-    const response = await api.patch<{ message: string }>('/auth/me/email', data);
+    const response = await api.patch<{ message: string }>('/auth/me/email', {
+      ...data,
+      language: currentRequestLanguage(),
+    });
     return response.data;
   },
 
@@ -663,6 +670,7 @@ export const brandInvitesAPI = {
     brand_name?: string | null;
     member_role?: 'owner' | 'editor';
     sender_profile?: 'partnerships' | 'pr' | 'transactional';
+    language?: EmailLanguage;
     expires_days?: number;
   }): Promise<BrandInviteAdmin> => {
     const response = await api.post<BrandInviteAdmin>('/admin/brand-invites', payload);
@@ -688,6 +696,7 @@ export const brandInvitesAPI = {
     brand_name?: string | null;
     member_role?: 'owner' | 'editor';
     sender_profile?: 'partnerships' | 'pr' | 'transactional';
+    language?: EmailLanguage;
     expires_days?: number;
   }): Promise<BrandInviteBatchSendResult> => {
     const response = await api.post<BrandInviteBatchSendResult>('/admin/brand-invites/batch', payload);
@@ -2199,6 +2208,7 @@ export const adminCommunicationsAPI = {
     body: string;
     html_body?: string;
     sender_profile: EmailSenderProfile;
+    language: EmailLanguage;
     idempotency_key: string;
     attachments?: File[];
   }): Promise<EmailThreadDetail> => {
@@ -2209,6 +2219,7 @@ export const adminCommunicationsAPI = {
     form.append('body', data.body);
     if (data.html_body) form.append('html_body', data.html_body);
     form.append('sender_profile', data.sender_profile);
+    form.append('language', data.language);
     form.append('idempotency_key', data.idempotency_key);
     data.attachments?.forEach((file) => form.append('attachments', file, file.name));
     const response = await api.post<EmailThreadDetail>('/admin/communications/email-threads', form, {

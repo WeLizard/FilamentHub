@@ -15,18 +15,14 @@
               <div style="margin:0 0 18px;font-size:16px;font-weight:600;letter-spacing:0.3px;color:#a78bfa;">
                 Filament<span style="color:#34d399;">Hub</span>
               </div>
-              <div style="color:#cbd5e1;font-size:15px;line-height:1.65;">
-                {% if body_html %}
-                  {{ body_html }}
-                {% else %}
-                  <div style="white-space:pre-wrap;">{{ body }}</div>
-                {% endif %}
-              </div>
+              {% block content %}{% endblock %}
             </td>
           </tr>
           <tr>
-            <td style="padding:16px 32px;border-top:1px solid rgba(255,255,255,0.08);color:#64748b;font-size:12px;line-height:1.5;">
-              {{ t('adminReply.footer', contact_email=contact_email) }}
+            <td style="padding:20px 32px;border-top:1px solid rgba(255,255,255,0.08);text-align:center;">
+              <p style="margin:0;color:#475569;font-size:12px;">
+                © FilamentHub · <a href="https://filamenthub.ru" style="color:#7c3aed;text-decoration:none;">filamenthub.ru</a>
+              </p>
             </td>
           </tr>
         </table>

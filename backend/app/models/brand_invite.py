@@ -51,6 +51,11 @@ class BrandInvite(Base):
     sender_profile: Mapped[str] = mapped_column(
         String(32), default="partnerships", server_default="partnerships"
     )
+    # Invitations go to companies that have no account yet, so the language is the
+    # administrator's choice at send time rather than a recipient preference.
+    # server_default backfills the rows sent before this column existed, which were
+    # all Russian; every new row carries an explicit choice from the admin panel.
+    language: Mapped[str] = mapped_column(String(2), default="en", server_default="ru")
     batch_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     send_status: Mapped[str] = mapped_column(
         String(16), default="pending", server_default="pending"
