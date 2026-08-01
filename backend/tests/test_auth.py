@@ -1025,3 +1025,61 @@ async def test_plugin_session_is_short_lived_and_endpoint_scoped(
     )
     assert denied_write.status_code == 403
     assert denied_write.json()["detail"]["code"] == "ERR_ACCESS_DENIED"
+
+
+@pytest.mark.asyncio
+async def test_password_reset_finds_the_account_whatever_case_was_typed(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch,
+):
+    """A mailbox is one account regardless of how the address is capitalised."""
+    from app.api.v1.endpoints import auth as auth_module
+
+    registration = await client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "Mixed.Case@Example.com",
+            "username": "mixed_case_user",
+            "password": "Password123",
+            "role": "user",
+            **LEGAL_REGISTRATION_FIELDS,
+        },
+    )
+    assert registration.status_code == 201
+
+    stored = await db_session.scalar(
+        select(User).where(User.username == "mixed_case_user")
+    )
+    assert stored is not None
+    # The validator lowercases the domain, the local part is kept as typed;
+    # only matching ignores case.
+    assert stored.email == "Mixed.Case@example.com"
+
+    duplicate = await client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "MIXED.CASE@example.com",
+            "username": "duplicate_user",
+            "password": "Password123",
+            "role": "user",
+            **LEGAL_REGISTRATION_FIELDS,
+        },
+    )
+    assert duplicate.status_code == 400
+    assert duplicate.json()["detail"]["code"] == "ERR_EMAIL_EXISTS"
+
+    sent: dict[str, str] = {}
+
+    def capture_reset_email(*, to: str, reset_url: str, language: str) -> bool:
+        sent["to"] = to
+        return True
+
+    monkeypatch.setattr(auth_module, "send_password_reset_email", capture_reset_email)
+    forgot = await client.post(
+        "/api/v1/auth/forgot-password",
+        json={"email": "mIxEd.cAsE@ExAmPlE.com"},
+    )
+
+    assert forgot.status_code == 200
+    assert sent["to"] == "Mixed.Case@example.com"

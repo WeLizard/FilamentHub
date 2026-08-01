@@ -45,6 +45,7 @@ from app.core.security import (
     token_fingerprint,
     verify_password,
 )
+from app.core.utils import normalize_email
 from app.db.session import get_db
 from app.models.brand import Brand
 from app.models.calculator_profile import UserCalculatorProfile
@@ -375,7 +376,10 @@ async def register(
             raise_error(status.HTTP_400_BAD_REQUEST, ERR_RECAPTCHA_FAILED)
 
     # Проверка существования email
-    result = await db.execute(select(User).where(User.email == data.email))
+    normalized_email = normalize_email(data.email)
+    result = await db.execute(
+        select(User).where(func.lower(User.email) == normalized_email)
+    )
     existing_user = result.scalar_one_or_none()
     if existing_user:
         raise_error(status.HTTP_400_BAD_REQUEST, ERR_EMAIL_EXISTS)
@@ -542,7 +546,9 @@ async def refresh_token(
         raise_error(status.HTTP_401_UNAUTHORIZED, ERR_INVALID_REFRESH_TOKEN, headers={"WWW-Authenticate": "Bearer"})
 
     # Проверяем существование пользователя
-    result = await db.execute(select(User).where(User.email == email))
+    result = await db.execute(
+        select(User).where(func.lower(User.email) == normalize_email(email))
+    )
     user = result.scalar_one_or_none()
 
     if user is None:
@@ -1128,7 +1134,9 @@ async def forgot_password(
     logger = logging.getLogger(__name__)
 
     # Ищем пользователя по email
-    result = await db.execute(select(User).where(User.email == data.email))
+    result = await db.execute(
+        select(User).where(func.lower(User.email) == normalize_email(data.email))
+    )
     user = result.scalar_one_or_none()
 
     if user and user.active:
@@ -1323,10 +1331,13 @@ async def update_user_email(
     import logging
     logger = logging.getLogger(__name__)
 
-    if data.new_email == current_user.email:
+    requested_email = normalize_email(data.new_email)
+    if requested_email == normalize_email(current_user.email):
         raise_error(status.HTTP_400_BAD_REQUEST, ERR_EMAIL_EXISTS)
 
-    result = await db.execute(select(User).where(User.email == data.new_email))
+    result = await db.execute(
+        select(User).where(func.lower(User.email) == requested_email)
+    )
     existing_user = result.scalar_one_or_none()
     if existing_user:
         raise_error(status.HTTP_400_BAD_REQUEST, ERR_EMAIL_EXISTS)
@@ -1368,7 +1379,9 @@ async def confirm_email_change(
         raise_error(status.HTTP_404_NOT_FOUND, ERR_USER_NOT_FOUND)
 
     # Check the new email isn't taken (someone else could have registered during the 24h window)
-    taken = await db.execute(select(User).where(User.email == new_email, User.id != user_id))
+    taken = await db.execute(
+        select(User).where(func.lower(User.email) == normalize_email(new_email), User.id != user_id)
+    )
     if taken.scalar_one_or_none():
         raise_error(status.HTTP_400_BAD_REQUEST, ERR_EMAIL_EXISTS)
 

@@ -9,6 +9,11 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 
+def normalize_email(value: str) -> str:
+    """Store and compare addresses the way mail servers resolve them: case-insensitively."""
+    return value.strip().casefold()
+
+
 async def verify_recaptcha(token: str, remote_ip: str | None = None) -> bool:
     """Проверить reCAPTCHA v3 токен через Google API.
 
