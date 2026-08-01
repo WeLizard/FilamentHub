@@ -51,6 +51,7 @@ class PreparedEmailAttachment:
         return {
             "filename": self.filename,
             "content": base64.b64encode(self.content).decode("ascii"),
+            "content_type": self.content_type,
         }
 
     def metadata(self) -> dict[str, object]:

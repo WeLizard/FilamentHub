@@ -1,14 +1,18 @@
-"""Email sending service via Resend."""
+"""Outgoing mail over SMTP; inbound still arrives through the Resend webhook."""
 
+import base64
 import logging
 import re
+import smtplib
+import ssl
 from dataclasses import dataclass
+from email.message import EmailMessage
+from email.utils import make_msgid
 from pathlib import Path
 from urllib.parse import urlparse
 
 import httpx
 import nh3
-import resend
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from markupsafe import Markup
 
@@ -18,7 +22,6 @@ from app.core.i18n import resolve_language, translate, translate_html, translate
 logger = logging.getLogger(__name__)
 
 _TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates" / "email"
-_RESEND_EMAILS_URL = "https://api.resend.com/emails"
 _RESEND_RECEIVING_URL = "https://api.resend.com/emails/receiving"
 _RESEND_EMAIL_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
 _RESEND_ATTACHMENT_DOWNLOAD_HOSTS = {"cdn.resend.app"}
@@ -59,6 +62,12 @@ def _render(template_name: str, *, language: str | None = None, **context: objec
 
 
 def _is_configured() -> bool:
+    """Whether outgoing mail can be handed to the relay."""
+    return bool(settings.SMTP_USER and settings.SMTP_PASSWORD)
+
+
+def _is_inbound_configured() -> bool:
+    """Inbound still goes through the Resend API and has its own credential."""
     return bool(settings.RESEND_API_KEY)
 
 
@@ -106,20 +115,76 @@ def _get_from(profile: str = "transactional") -> str:
     return f"{settings.EMAIL_FROM_NAME} <{addresses[profile]}>"
 
 
+def _sender_domain() -> str:
+    return settings.EMAIL_FROM.rpartition("@")[2] or "filamenthub.ru"
+
+
+def _build_message(
+    *,
+    from_address: str,
+    to: str,
+    subject: str,
+    html: str,
+    text: str | None = None,
+    reply_to: str | None = None,
+    headers: dict[str, str] | None = None,
+    attachments: list[dict[str, str]] | None = None,
+) -> EmailMessage:
+    """Assemble the MIME message the relay will hand over verbatim."""
+    message = EmailMessage()
+    message["From"] = from_address
+    message["To"] = to
+    message["Subject"] = subject
+    message["Message-ID"] = make_msgid(domain=_sender_domain())
+    if reply_to:
+        message["Reply-To"] = reply_to
+    for name, value in (headers or {}).items():
+        # Threading headers are set by the caller and must not be duplicated.
+        del message[name]
+        message[name] = value
+
+    if text:
+        message.set_content(text)
+        message.add_alternative(html, subtype="html")
+    else:
+        message.set_content(html, subtype="html")
+
+    for attachment in attachments or []:
+        maintype, _, subtype = (attachment.get("content_type") or "application/octet-stream").partition("/")
+        message.add_attachment(
+            base64.b64decode(attachment["content"]),
+            maintype=maintype,
+            subtype=subtype or "octet-stream",
+            filename=attachment["filename"],
+        )
+    return message
+
+
+def _deliver(message: EmailMessage) -> None:
+    """Hand the message to the relay, raising on any delivery problem."""
+    context = ssl.create_default_context()
+    timeout = settings.SMTP_TIMEOUT_SECONDS
+    if settings.SMTP_PORT == 465:
+        with smtplib.SMTP_SSL(
+            settings.SMTP_HOST, settings.SMTP_PORT, timeout=timeout, context=context
+        ) as smtp:
+            smtp.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
+            smtp.send_message(message)
+        return
+    with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=timeout) as smtp:
+        smtp.starttls(context=context)
+        smtp.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
+        smtp.send_message(message)
+
+
 def send_email(*, to: str, subject: str, html: str) -> bool:
     """Send a single email. Returns True on success, False if not configured or on error."""
     if not _is_configured():
-        logger.warning("Email sending skipped: RESEND_API_KEY not configured")
+        logger.warning("Email sending skipped: SMTP credentials are not configured")
         return False
 
-    resend.api_key = settings.RESEND_API_KEY
     try:
-        resend.Emails.send({
-            "from": _get_from(),
-            "to": [to],
-            "subject": subject,
-            "html": html,
-        })
+        _deliver(_build_message(from_address=_get_from(), to=to, subject=subject, html=html))
         return True
     except Exception:
         logger.error("Failed to send email to %s", to, exc_info=True)
@@ -158,50 +223,33 @@ def send_email_tracked(
     attachments: list[dict[str, str]] | None = None,
     idempotency_key: str | None = None,
 ) -> EmailSendResult:
-    """Send email and return a trackable provider result."""
+    """Send email and return a trackable result.
+
+    `idempotency_key` is accepted for call-site symmetry but no longer travels to
+    a provider: duplicate suppression is the unique index on the stored key.
+    """
     if not _is_configured():
-        logger.warning("Email sending skipped: RESEND_API_KEY not configured")
-        return EmailSendResult(sent=False, error="RESEND_API_KEY is not configured")
+        logger.warning("Email sending skipped: SMTP credentials are not configured")
+        return EmailSendResult(sent=False, error="SMTP credentials are not configured")
 
     try:
         from_address = _get_from(sender_profile)
     except ValueError as exc:
         return EmailSendResult(sent=False, error=str(exc))
 
-    params: dict[str, object] = {
-        "from": from_address,
-        "to": [to],
-        "subject": subject,
-        "html": html,
-    }
-    if text:
-        params["text"] = text
-    if reply_to:
-        params["reply_to"] = [reply_to]
-    if headers:
-        params["headers"] = headers
-    if attachments:
-        params["attachments"] = attachments
-
-    resend.api_key = settings.RESEND_API_KEY
     try:
-        if idempotency_key:
-            http_response = httpx.post(
-                _RESEND_EMAILS_URL,
-                headers={
-                    "Authorization": f"Bearer {settings.RESEND_API_KEY}",
-                    "Idempotency-Key": idempotency_key,
-                    "User-Agent": f"FilamentHub/{settings.VERSION}",
-                },
-                json=params,
-                timeout=20.0,
-            )
-            http_response.raise_for_status()
-            response = http_response.json()
-        else:
-            response = resend.Emails.send(params)  # type: ignore[arg-type]
-        provider_id = response.get("id") if isinstance(response, dict) else None
-        return EmailSendResult(sent=True, provider_message_id=provider_id)
+        message = _build_message(
+            from_address=from_address,
+            to=to,
+            subject=subject,
+            html=html,
+            text=text,
+            reply_to=reply_to,
+            headers=headers,
+            attachments=attachments,
+        )
+        _deliver(message)
+        return EmailSendResult(sent=True, provider_message_id=message["Message-ID"].strip("<>"))
     except Exception as exc:
         logger.error("Failed to send tracked email to %s", to, exc_info=True)
         return EmailSendResult(sent=False, error=str(exc)[:500])
@@ -214,7 +262,7 @@ def get_email_sender(profile: str) -> str:
 
 def get_received_email(email_id: str) -> dict:
     """Retrieve full content for a verified Resend inbound event."""
-    if not _is_configured():
+    if not _is_inbound_configured():
         raise RuntimeError("RESEND_API_KEY is not configured")
     if not _RESEND_EMAIL_ID_PATTERN.fullmatch(email_id):
         raise ValueError("Invalid Resend received email ID")
@@ -234,7 +282,7 @@ def get_received_email(email_id: str) -> dict:
 
 def get_received_email_attachment(email_id: str, attachment_id: str) -> ReceivedEmailAttachment:
     """Retrieve one inbound attachment without exposing the provider's signed URL."""
-    if not _is_configured():
+    if not _is_inbound_configured():
         raise RuntimeError("RESEND_API_KEY is not configured")
     if not _RESEND_EMAIL_ID_PATTERN.fullmatch(email_id) or not _RESEND_EMAIL_ID_PATTERN.fullmatch(
         attachment_id
@@ -404,6 +452,9 @@ def send_brand_invite_email(
         html=html,
         sender_profile=sender_profile,
         reply_to=reply_to,
+        # The only unsolicited letter we send. A mail client shows this as an
+        # unsubscribe button, which keeps recipients from reaching for "spam".
+        headers={"List-Unsubscribe": f"<mailto:{settings.EMAIL_CONTACT}?subject=unsubscribe>"},
     )
 
 

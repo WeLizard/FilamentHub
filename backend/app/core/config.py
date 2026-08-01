@@ -112,6 +112,13 @@ class Settings(BaseSettings):
     YANDEX_CLIENT_SECRET: str = ""
 
     # Email (Resend — empty = disabled)
+    # Outgoing mail goes through an SMTP relay; inbound still arrives through the
+    # Resend webhook until the receiving side moves too.
+    SMTP_HOST: str = "postbox.cloud.yandex.net"
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_TIMEOUT_SECONDS: int = 20
     RESEND_API_KEY: str = ""
     EMAIL_FROM: str = "noreply@filamenthub.ru"
     EMAIL_FROM_NAME: str = "FilamentHub"

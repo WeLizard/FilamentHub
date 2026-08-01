@@ -230,44 +230,62 @@ def test_received_email_uses_compatible_resend_api(
     assert captured["params"] == {"html_format": "cid"}
 
 
-def test_tracked_email_uses_http_idempotency_header(
+def test_tracked_email_is_handed_to_the_relay_as_mime(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(settings, "RESEND_API_KEY", "re_test")
-    captured: dict[str, object] = {}
+    monkeypatch.setattr(settings, "SMTP_USER", "smtp-user")
+    monkeypatch.setattr(settings, "SMTP_PASSWORD", "smtp-secret")
+    delivered: dict[str, object] = {}
 
-    class FakeResponse:
-        def raise_for_status(self) -> None:
-            return None
+    def fake_deliver(message: object) -> None:
+        delivered["message"] = message
 
-        def json(self) -> dict[str, str]:
-            return {"id": "sent-idempotent-1"}
-
-    def fake_post(url: str, **kwargs: object) -> FakeResponse:
-        captured["url"] = url
-        captured.update(kwargs)
-        return FakeResponse()
-
-    monkeypatch.setattr(email_service.httpx, "post", fake_post)
+    monkeypatch.setattr(email_service, "_deliver", fake_deliver)
     result = email_service.send_email_tracked(
-        to="recipient@example.com",
-        subject="Idempotent send",
+        to='"Brand" <recipient@example.com>',
+        subject="Threaded reply",
         html="<p>Hello</p>",
         text="Hello",
         sender_profile="support",
-        attachments=[{"filename": "note.txt", "content": "SGVsbG8="}],
+        reply_to="thread-token@reply.filamenthub.ru",
+        headers={"In-Reply-To": "<inbound-1@example.com>"},
+        attachments=[
+            {"filename": "note.txt", "content": "SGVsbG8=", "content_type": "text/plain"}
+        ],
         idempotency_key="email.create.http-header-0001",
     )
 
+    message = delivered["message"]
     assert result.sent is True
-    assert result.provider_message_id == "sent-idempotent-1"
-    assert captured["url"] == "https://api.resend.com/emails"
-    assert captured["headers"] == {
-        "Authorization": "Bearer re_test",
-        "Idempotency-Key": "email.create.http-header-0001",
-        "User-Agent": f"FilamentHub/{settings.VERSION}",
-    }
-    assert captured["json"]["attachments"][0]["filename"] == "note.txt"
+    assert result.provider_message_id == message["Message-ID"].strip("<>")
+    assert message["Subject"] == "Threaded reply"
+    assert message["Reply-To"] == "thread-token@reply.filamenthub.ru"
+    assert message["In-Reply-To"] == "<inbound-1@example.com>"
+    assert settings.EMAIL_CONTACT in message["From"]
+
+    parts = {part.get_content_type() for part in message.walk()}
+    assert {"text/plain", "text/html"} <= parts
+    attachments = [part for part in message.walk() if part.get_filename()]
+    assert [part.get_filename() for part in attachments] == ["note.txt"]
+    assert attachments[0].get_content_type() == "text/plain"
+
+
+def test_outgoing_mail_stops_when_smtp_is_not_configured(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "SMTP_USER", "")
+    monkeypatch.setattr(settings, "SMTP_PASSWORD", "")
+
+    def explode(message: object) -> None:
+        raise AssertionError("delivery must not be attempted without credentials")
+
+    monkeypatch.setattr(email_service, "_deliver", explode)
+    result = email_service.send_email_tracked(
+        to="recipient@example.com", subject="No relay", html="<p>Hello</p>"
+    )
+
+    assert result.sent is False
+    assert "SMTP" in (result.error or "")
 
 
 @pytest.mark.asyncio
