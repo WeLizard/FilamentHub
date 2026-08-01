@@ -43,7 +43,7 @@ def test_active_catalog_has_three_complete_logical_packs() -> None:
     assert set(catalog.packs) == {LegalPack.RU, LegalPack.EU, LegalPack.INTL}
     for edition in catalog.packs.values():
         assert len(edition.documents) == len(LegalDocumentType) * 3
-        assert edition.acceptance_versions[LegalDocumentType.TERMS] == "2026-07-25"
+        assert edition.acceptance_versions[LegalDocumentType.TERMS] == "2026-08-01"
 
 
 def test_staged_edition_validation_reads_all_nine_documents() -> None:

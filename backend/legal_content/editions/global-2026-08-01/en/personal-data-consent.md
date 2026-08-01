@@ -1,21 +1,22 @@
 # Consent to Personal Data Processing
 
-_Last updated: July 25, 2026_
+_Last updated: August 1, 2026_
 
 Acting freely, of my own will and in my own interest, and confirming my legal capacity, I give Kuzmin I.I., an individual applying the special tax regime “Tax on Professional Income” (NPD taxpayer), contact email: support@filamenthub.ru (the Operator), consent to process my personal data through a separate explicit action under the following conditions:
 
 ## 1. General Provisions
 
-1.1. This Consent is given for the processing of personal data both with and without the use of automation tools.
+1.1. This Consent covers automated processing. Individual requests may be reviewed by the Operator through Service interfaces and email. It does not cover personal data about clients or counterparties entered by the User into professional features; for those data, the User is the controller/operator and the Operator acts on the User’s instructions under the Terms of Service.
 
 1.2. Consent is given for the processing of the following personal data of mine:
 
 - Email address;
 - Nickname (username);
-- Full name (only if voluntarily provided by the User in the profile or when contacting the Operator);
-- Other profile data voluntarily provided by the User (for example, the “about me” field, avatar, and country selected for regional features);
+- Display name, including a name received from the selected authentication service or voluntarily entered by the User;
+- Other profile data voluntarily provided by the User: avatar and country selected for regional features;
 - Data received from the authentication service selected by the User: account identifier, email address, name, and other information within the permissions granted;
 - Personal library and selected Service feature data: spools, printers, material systems, presets, profiles, calculations, and history of related actions;
+- Professional and payment particulars saved by the User in a contractor profile where they relate to the User as an individual, self-employed taxpayer, or individual entrepreneur: contractor name, taxpayer number, registration number, address, phone number, bank details, payment terms, and quotation-format settings;
 - Reviews, ratings, profiles, and other community materials published by the User where they are linked to the User’s nickname or another identifier;
 - Requests to and correspondence with the Operator, including addresses, message content, delivery metadata, and attachments submitted by the User;
 - Data provided when applying for verification as a representative of a brand or manufacturer:
@@ -24,7 +25,7 @@ Acting freely, of my own will and in my own interest, and confirming my legal ca
   - Official website;
   - Links to the brand’s social media;
   - Scans/files of supporting documents (power of attorney, extract from the Unified State Register of Legal Entities / Individual Entrepreneurs, letter on company letterhead, etc.).
-  The specified data is processed exclusively for the purposes of verifying the User’s authority and administering the manufacturer’s cabinet. Brand data does not relate to the User’s personal data, but is provided by the User voluntarily and with the User’s consent.
+  The specified data is processed exclusively to verify the User’s authority and administer the manufacturer’s cabinet. Information relating only to a brand or legal entity may not itself be personal data. Personal data contained in supporting materials is processed only for authority verification and cabinet administration.
 - Technical data processed when using the Service: IP address, the current network connection country derived from it, user-agent, request date and time, and service technical identifiers. The connection country is used only to select available sign-in methods and security measures and is not treated as citizenship or profile country.
 - Printing settings transmitted when using the synchronization function: material presets, printer profiles, print profiles, and related technical parameters (temperatures, speeds, flow ratios, etc.).
 
@@ -37,8 +38,7 @@ Acting freely, of my own will and in my own interest, and confirming my legal ca
 - Sending service (transactional) notifications to the User (email confirmation, password reset, system notifications);
 - Selecting available sign-in methods and registration safeguards based on the current network connection country;
 - Ensuring the security of using the Service;
-- Improving the quality of the services provided;
-- Statistics and analytics of Service usage.
+- Improving the Service and producing depersonalized, aggregated usage statistics.
 
 ## 3. Actions with Personal Data
 
@@ -87,6 +87,10 @@ Acting freely, of my own will and in my own interest, and confirming my legal ca
 6.2. The Operator takes necessary legal, organizational, and technical measures to protect personal data from unauthorized or accidental access, destruction, modification, blocking, copying, provision, distribution, and from other unlawful actions in relation to personal data.
 
 6.3. The Operator maintains the confidentiality of personal data and limits disclosure to cases with a lawful basis or those necessary for a feature selected by the User.
+
+6.4. Google authentication is not provided to Users connecting from the Russian Federation. Google sign-in and Google reCAPTCHA are used only for connections from outside the Russian Federation, both when an Account is created and at each later sign-in. The server does not use these functions for Russian or undetermined connections.
+
+6.5. Cross-border transfer may occur to Ireland and the USA for Google sign-in and Google reCAPTCHA under clause 6.4. When addressed correspondence is delivered to a recipient using a foreign mail system, a message may be transferred to the country of the recipient or its mail provider to the extent needed to deliver that particular message. Such transfer is performed under Article 12 of Russian Federal Law No. 152-FZ and is not used to host a foreign copy of the primary Account database.
 
 ## 7. Notice on the Use of Cookies
 

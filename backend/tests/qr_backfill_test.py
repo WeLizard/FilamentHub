@@ -76,9 +76,9 @@ async def test_backfill_endpoint_forbidden_for_non_owner(client: AsyncClient, db
         "email": email, "username": "qr_backfill", "password": password, "role": "user",
         "terms_accepted": True,
         "personal_data_consent": True,
-        "terms_version": "2026-07-25",
-        "personal_data_consent_version": "2026-07-25",
-        "privacy_policy_version": "2026-07-25",
+        "terms_version": "2026-08-01",
+        "personal_data_consent_version": "2026-08-01",
+        "privacy_policy_version": "2026-08-01",
         "legal_language": "en",
     })
     login = await client.post("/api/v1/auth/login", json={"email": email, "password": password})

@@ -1,6 +1,6 @@
 # Terms of Service
 
-_Last updated: July 25, 2026_
+_Last updated: August 1, 2026_
 
 ## 1. Subject of the Agreement
 
@@ -54,7 +54,9 @@ _Last updated: July 25, 2026_
 
 4.8. The User is responsible for possible loss or distortion of data, as well as other consequences of any nature that may occur due to the User’s violation of the provisions of the Agreement.
 
-4.9. Where a method is available under technical and applicable legal restrictions, the User may authenticate through Google or Yandex (Third-Party Account). Information about data processing when using third-party authentication services is set out in the Privacy Policy.
+4.9. The User may authenticate through Yandex regardless of the current network connection country. Google authentication is not provided to Users connecting from the Russian Federation: it is available only when connecting from outside the Russian Federation and is neither offered nor accepted when the connection is from Russia or the country cannot be determined, both when creating an Account and at each later sign-in. The Administration does not request citizenship and does not infer it from a name, language, email address, or other indirect attributes. Information about processing by third-party authentication services is set out in the Privacy Policy.
+
+4.10. By starting sign-in through a third-party service, the User initiates the minimum operations needed for identification and entry into this Agreement. Until the Agreement and the separate personal-data consent are confirmed, the Account remains restricted and personal features are unavailable. The User can delete the record immediately; an unfinished registration is automatically deleted after 30 days.
 
 ## 5. User Data
 
@@ -63,6 +65,14 @@ _Last updated: July 25, 2026_
 5.2. When applying for access to the manufacturer’s cabinet, the User may provide data related to the brand or legal entity represented by the User. Such data is processed in accordance with the Consent to Personal Data Processing and is used exclusively for the purposes of verification and operation of the manufacturer’s cabinet.
 
 Detailed information about consent to the processing of personal data is available on the [consent to personal data processing](/personal-data-consent) page ([/personal-data-consent](/personal-data-consent)).
+
+5.3. If the User enters information about clients, representatives, or counterparties in a client address book, quotation, or another professional feature, the User determines the purposes and scope of that processing and acts as the controller/operator of those personal data. This clause instructs the Administration to process them on the User’s behalf under Part 3 of Article 6 of Russian Federal Law No. 152-FZ. The User’s own consent does not cover those third-party data.
+
+5.4. The instruction covers information entered for contacts, calculations, and quotations: a contact person’s name or designation, contact details, particulars, document content, and other information needed for the selected feature. Permitted operations are collection, recording, organization, accumulation, storage, correction, retrieval, use for the selected feature, provision back to the User, restriction, deletion, and destruction. A quotation is published through a public link only on the User’s separate command. The purpose is technical provision of the selected feature, and the instruction lasts only while the relevant record or Account exists.
+
+5.5. The Administration maintains confidentiality, complies with the applicable localization and accountability duties, and protects the data under Article 19 of Russian Federal Law No. 152-FZ. On request, the Administration provides the User with information confirming the measures taken, reports relevant incidents without undue delay, and deletes the data after the instruction ends unless retention is required by law. Persons listed in the Privacy Policy may be engaged only within the purposes and data described there.
+
+5.6. The User is responsible for having a lawful basis to enter such information, informing the relevant individuals, keeping the data minimal and accurate, and handling requests from those individuals. The Administration provides reasonable technical assistance.
 
 ## 6. Account Termination
 

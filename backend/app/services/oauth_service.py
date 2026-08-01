@@ -76,7 +76,6 @@ def get_google_auth_url(state: str) -> str | None:
         "response_type": "code",
         "scope": GOOGLE_SCOPES,
         "state": state,
-        "access_type": "offline",
         "prompt": "select_account",
     }
     return f"{GOOGLE_AUTH_URL}?{urlencode(params)}"

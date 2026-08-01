@@ -1,5 +1,7 @@
 """Tests for authentication endpoints."""
 
+from urllib.parse import parse_qs, urlparse
+
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
@@ -11,10 +13,12 @@ from app.models.user import User
 from app.models.user_legal_acceptance import UserLegalAcceptance
 from app.services.legal_acceptance_service import (
     CURRENT_PERSONAL_DATA_CONSENT_VERSION,
+    CURRENT_PRIVACY_POLICY_VERSION,
     CURRENT_TERMS_VERSION,
     LEGAL_UPDATE_EFFECTIVE_DATE,
     LEGAL_UPDATE_NOTE,
 )
+from app.services.oauth_service import get_google_auth_url
 from app.services.organization_access import grant_brand_owner_membership
 
 LEGAL_REGISTRATION_FIELDS = {
@@ -22,9 +26,22 @@ LEGAL_REGISTRATION_FIELDS = {
     "personal_data_consent": True,
     "terms_version": CURRENT_TERMS_VERSION,
     "personal_data_consent_version": CURRENT_PERSONAL_DATA_CONSENT_VERSION,
-    "privacy_policy_version": "2026-07-25",
+    "privacy_policy_version": CURRENT_PRIVACY_POLICY_VERSION,
     "legal_language": "en",
 }
+
+
+def test_google_oauth_requests_only_basic_identity_without_offline_access(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(settings, "GOOGLE_CLIENT_ID", "google-id")
+
+    url = get_google_auth_url("state-token")
+
+    assert url is not None
+    query = parse_qs(urlparse(url).query)
+    assert set(query["scope"][0].split()) == {"openid", "email", "profile"}
+    assert "access_type" not in query
 
 
 @pytest.mark.asyncio
@@ -153,7 +170,7 @@ async def test_legal_requirements_are_public_and_versioned(
         "edition_id": "global-2026-08-01",
         "terms_version": CURRENT_TERMS_VERSION,
         "personal_data_consent_version": CURRENT_PERSONAL_DATA_CONSENT_VERSION,
-        "privacy_policy_version": "2026-07-25",
+        "privacy_policy_version": CURRENT_PRIVACY_POLICY_VERSION,
         "terms_url": "/user-agreement?pack=intl&edition=global-2026-08-01",
         "personal_data_consent_url": (
             "/personal-data-consent?pack=intl&edition=global-2026-08-01"
@@ -265,8 +282,10 @@ async def test_registration_records_separate_legal_evidence(
     ]
     assert {row.acceptance_source for row in rows} == {"registration"}
     assert {row.language for row in rows} == {"en"}
-    assert {row.related_privacy_policy_version for row in rows} == {"2026-07-25"}
-    assert user.privacy_policy_version_presented == "2026-07-25"
+    assert {row.related_privacy_policy_version for row in rows} == {
+        CURRENT_PRIVACY_POLICY_VERSION
+    }
+    assert user.privacy_policy_version_presented == CURRENT_PRIVACY_POLICY_VERSION
 
 
 @pytest.mark.asyncio
