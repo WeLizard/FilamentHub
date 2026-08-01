@@ -20,6 +20,7 @@ from fastapi import (
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+from starlette.concurrency import run_in_threadpool
 
 from app.core.config import settings
 from app.core.dependencies import (
@@ -412,7 +413,7 @@ async def register(
 
     # Хеширование пароля
     try:
-        password_hash = get_password_hash(data.password)
+        password_hash = await run_in_threadpool(get_password_hash, data.password)
     except Exception as e:
         logger.error(f"Error hashing password: {str(e)}", exc_info=True)
         raise_error(status.HTTP_500_INTERNAL_SERVER_ERROR, ERR_PASSWORD_HASH_ERROR)
@@ -547,7 +548,10 @@ async def login(
     )
     user = result.scalar_one_or_none()
 
-    if not user or not user.password_hash or not verify_password(data.password, user.password_hash):
+    password_matches = bool(user and user.password_hash) and await run_in_threadpool(
+        verify_password, data.password, user.password_hash
+    )
+    if not password_matches:
         raise_error(status.HTTP_401_UNAUTHORIZED, ERR_WRONG_PASSWORD, headers={"WWW-Authenticate": "Bearer"})
 
     if not user.active:
@@ -969,7 +973,9 @@ async def update_current_user(
 
     # Если обновляется пароль, хешируем его
     if "password" in update_data and update_data["password"]:
-        update_data["password_hash"] = get_password_hash(update_data.pop("password"))
+        update_data["password_hash"] = await run_in_threadpool(
+            get_password_hash, update_data.pop("password")
+        )
 
     if "username" in update_data and update_data["username"]:
         result = await db.execute(select(User).where(User.username == update_data["username"]))
@@ -1167,7 +1173,10 @@ async def delete_account(
 
     # Проверяем пароль (только если у пользователя есть пароль)
     if current_user.password_hash:
-        if not data.password_confirm or not verify_password(data.password_confirm, current_user.password_hash):
+        confirmed = bool(data.password_confirm) and await run_in_threadpool(
+            verify_password, data.password_confirm, current_user.password_hash
+        )
+        if not confirmed:
             raise_error(status.HTTP_401_UNAUTHORIZED, ERR_WRONG_PASSWORD)
 
     # Выполняем удаление аккаунта
@@ -1262,7 +1271,7 @@ async def reset_password(
 
     # Хешируем новый пароль
     try:
-        password_hash = get_password_hash(data.new_password)
+        password_hash = await run_in_threadpool(get_password_hash, data.new_password)
     except Exception as e:
         logger.error(f"Error hashing password: {str(e)}", exc_info=True)
         raise_error(status.HTTP_500_INTERNAL_SERVER_ERROR, ERR_PASSWORD_HASH_ERROR)
@@ -1342,13 +1351,15 @@ async def update_user_password(
         # Обычный пользователь — требуем текущий пароль
         if not data.current_password:
             raise_error(status.HTTP_401_UNAUTHORIZED, ERR_WRONG_PASSWORD)
-        if not verify_password(data.current_password, current_user.password_hash):
+        if not await run_in_threadpool(
+            verify_password, data.current_password, current_user.password_hash
+        ):
             raise_error(status.HTTP_401_UNAUTHORIZED, ERR_WRONG_PASSWORD)
     # OAuth-пользователь без пароля — current_password не нужен, просто устанавливаем
 
     # Хешируем новый пароль
     try:
-        password_hash = get_password_hash(data.new_password)
+        password_hash = await run_in_threadpool(get_password_hash, data.new_password)
     except Exception as e:
         import logging
         logger = logging.getLogger(__name__)
