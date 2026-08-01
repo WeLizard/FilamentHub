@@ -9,6 +9,7 @@ import logging
 import re
 import secrets
 import time
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from email.utils import parseaddr
 from html.parser import HTMLParser
@@ -483,6 +484,127 @@ async def _backfill_inline_attachment_ids(db: AsyncSession, thread: EmailThread)
         await db.commit()
 
 
+@dataclass(frozen=True)
+class InboundEmailData:
+    """One received email, already normalized by whichever transport delivered it."""
+
+    participant_email: str
+    participant_name: str | None
+    subject: str
+    body: str
+    recipients: list[str]
+    created_at: datetime
+    provider_message_id: str
+    provider_event_id: str | None
+    internet_message_id: str | None
+    in_reply_to: str | None
+    attachment_metadata: list[dict]
+
+
+async def ingest_inbound_email(db: AsyncSession, data: InboundEmailData) -> None:
+    """Attach a received email to its thread, creating the thread when needed."""
+    recipients = data.recipients
+    participant_email = data.participant_email
+    participant_name = data.participant_name
+    subject = data.subject
+    body = data.body
+    created_at = data.created_at
+    provider_email_id = data.provider_message_id
+    stored_event_id = data.provider_event_id
+
+    thread = None
+    thread_token = _thread_token(recipients)
+    if thread_token:
+        thread = await db.scalar(
+            select(EmailThread).where(EmailThread.reply_token == thread_token)
+        )
+        if thread is not None and thread.participant_email.casefold() != participant_email:
+            logger.warning(
+                "Inbound sender %s does not match email thread %s participant",
+                participant_email,
+                thread.id,
+            )
+            thread = None
+
+    token = _reply_token(recipients)
+    invite = None
+    if thread is None and token:
+        invite = await db.scalar(select(BrandInvite).where(BrandInvite.reply_token == token))
+
+    invite_id = invite.id if invite else None
+    invite_brand_id = invite.brand_id if invite else None
+    if thread is None and invite is not None:
+        thread = await db.scalar(
+            select(EmailThread)
+            .where(EmailThread.invite_id == invite_id)
+        )
+    if thread is None:
+        thread = EmailThread(
+            invite_id=invite_id,
+            brand_id=invite_brand_id,
+            participant_email=participant_email,
+            participant_name=participant_name,
+            subject=subject,
+            reply_token=secrets.token_urlsafe(24),
+            sender_profile=(
+                invite.sender_profile
+                if invite and invite.sender_profile in _MANUAL_SENDER_PROFILES
+                else _sender_profile_for_recipients(recipients)
+            ),
+            language=invite.language if invite else DEFAULT_LANGUAGE,
+            status="open",
+            unread_count=0,
+            last_message_at=created_at,
+        )
+        db.add(thread)
+        try:
+            await db.flush()
+        except IntegrityError:
+            await db.rollback()
+            if invite_id is None:
+                raise
+            # Two replies for the same invitation can arrive concurrently.
+            # Keep both messages by reusing the thread created by the winner.
+            thread = await db.scalar(
+                select(EmailThread).where(EmailThread.invite_id == invite_id)
+            )
+            if thread is None:
+                raise
+
+    if thread.sender_profile not in _MANUAL_SENDER_PROFILES:
+        thread.sender_profile = _sender_profile_for_recipients(recipients)
+    _ensure_thread_reply_token(thread)
+    message = EmailMessage(
+        thread_id=thread.id,
+        direction="inbound",
+        sender_email=participant_email,
+        recipient_emails=recipients,
+        subject=subject,
+        text_body=body,
+        provider_message_id=provider_email_id,
+        provider_event_id=stored_event_id,
+        internet_message_id=data.internet_message_id,
+        in_reply_to=data.in_reply_to,
+        attachment_metadata=data.attachment_metadata,
+        delivery_status="received",
+        created_at=created_at,
+    )
+    db.add(message)
+    thread.participant_email = participant_email
+    thread.participant_name = participant_name or thread.participant_name
+    thread.subject = subject
+    thread.status = "open"
+    thread.unread_count += 1
+    thread.last_message_at = created_at
+    thread.updated_at = datetime.now(timezone.utc)
+
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        logger.info("Ignored duplicate inbound email event %s", stored_event_id)
+
+
 @webhook_router.post("")
 async def receive_resend_webhook(
     request: Request,
@@ -572,106 +694,28 @@ async def receive_resend_webhook(
     participant_email = _header_value(participant_address or sender_raw, 255).casefold()
     if not participant_email or "@" not in participant_email:
         raise_error(400, ERR_EMAIL_WEBHOOK_INVALID)
-    participant_name = _header_value(participant_name, 200) or None
-    subject = _header_value(received.get("subject") or event_data.get("subject"), 500) or "(no subject)"
-    body = _plain_text(received.get("text"), received.get("html"))
-    created_at = _parse_datetime(received.get("created_at") or event_data.get("created_at"))
     headers = received.get("headers") if isinstance(received.get("headers"), dict) else {}
 
-    thread = None
-    thread_token = _thread_token(recipients)
-    if thread_token:
-        thread = await db.scalar(
-            select(EmailThread).where(EmailThread.reply_token == thread_token)
-        )
-        if thread is not None and thread.participant_email.casefold() != participant_email:
-            logger.warning(
-                "Inbound sender %s does not match email thread %s participant",
-                participant_email,
-                thread.id,
-            )
-            thread = None
-
-    token = _reply_token(recipients)
-    invite = None
-    if thread is None and token:
-        invite = await db.scalar(select(BrandInvite).where(BrandInvite.reply_token == token))
-
-    invite_id = invite.id if invite else None
-    invite_brand_id = invite.brand_id if invite else None
-    if thread is None and invite is not None:
-        thread = await db.scalar(
-            select(EmailThread)
-            .where(EmailThread.invite_id == invite_id)
-        )
-    if thread is None:
-        thread = EmailThread(
-            invite_id=invite_id,
-            brand_id=invite_brand_id,
+    await ingest_inbound_email(
+        db,
+        InboundEmailData(
             participant_email=participant_email,
-            participant_name=participant_name,
-            subject=subject,
-            reply_token=secrets.token_urlsafe(24),
-            sender_profile=(
-                invite.sender_profile
-                if invite and invite.sender_profile in _MANUAL_SENDER_PROFILES
-                else _sender_profile_for_recipients(recipients)
-            ),
-            language=invite.language if invite else DEFAULT_LANGUAGE,
-            status="open",
-            unread_count=0,
-            last_message_at=created_at,
-        )
-        db.add(thread)
-        try:
-            await db.flush()
-        except IntegrityError:
-            await db.rollback()
-            if invite_id is None:
-                raise
-            # Two replies for the same invitation can arrive concurrently.
-            # Keep both messages by reusing the thread created by the winner.
-            thread = await db.scalar(
-                select(EmailThread).where(EmailThread.invite_id == invite_id)
+            participant_name=_header_value(participant_name, 200) or None,
+            subject=_header_value(received.get("subject") or event_data.get("subject"), 500)
+            or "(no subject)",
+            body=_plain_text(received.get("text"), received.get("html")),
+            recipients=recipients,
+            created_at=_parse_datetime(received.get("created_at") or event_data.get("created_at")),
+            provider_message_id=provider_email_id,
+            provider_event_id=stored_event_id,
+            internet_message_id=_header_value(
+                received.get("message_id") or event_data.get("message_id"), 500
             )
-            if thread is None:
-                raise
-
-    if thread.sender_profile not in _MANUAL_SENDER_PROFILES:
-        thread.sender_profile = _sender_profile_for_recipients(recipients)
-    _ensure_thread_reply_token(thread)
-    message = EmailMessage(
-        thread_id=thread.id,
-        direction="inbound",
-        sender_email=participant_email,
-        recipient_emails=recipients,
-        subject=subject,
-        text_body=body,
-        provider_message_id=provider_email_id,
-        provider_event_id=stored_event_id,
-        internet_message_id=_header_value(
-            received.get("message_id") or event_data.get("message_id"), 500
-        )
-        or None,
-        in_reply_to=_header_value(headers.get("in-reply-to"), 500) or None,
-        attachment_metadata=_attachment_metadata(received.get("attachments")),
-        delivery_status="received",
-        created_at=created_at,
+            or None,
+            in_reply_to=_header_value(headers.get("in-reply-to"), 500) or None,
+            attachment_metadata=_attachment_metadata(received.get("attachments")),
+        ),
     )
-    db.add(message)
-    thread.participant_email = participant_email
-    thread.participant_name = participant_name or thread.participant_name
-    thread.subject = subject
-    thread.status = "open"
-    thread.unread_count += 1
-    thread.last_message_at = created_at
-    thread.updated_at = datetime.now(timezone.utc)
-
-    try:
-        await db.commit()
-    except IntegrityError:
-        await db.rollback()
-        logger.info("Ignored duplicate Resend inbound event %s", stored_event_id)
     return {"received": True}
 
 
@@ -904,6 +948,28 @@ async def download_email_attachment(
     raw_attachment = message.attachment_metadata[attachment_index]
     if not isinstance(raw_attachment, dict):
         raise_error(404, ERR_EMAIL_ATTACHMENT_NOT_FOUND)
+    # Locally delivered mail keeps the whole letter on disk, so the attachment is
+    # read straight out of it instead of being fetched from a provider.
+    from app.services.inbound_mail_service import read_stored_attachment
+
+    local = await run_in_threadpool(
+        read_stored_attachment, message.provider_event_id or "", attachment_index
+    )
+    if local is not None:
+        content, content_type, local_name = local
+        encoded_local_name = quote(local_name, safe="")
+        return Response(
+            content=content,
+            media_type=content_type or "application/octet-stream",
+            headers={
+                "Content-Disposition": (
+                    f"attachment; filename=\"attachment\"; filename*=UTF-8''{encoded_local_name}"
+                ),
+                "Cache-Control": "private, no-store",
+                "X-Content-Type-Options": "nosniff",
+            },
+        )
+
     attachment_id = str(raw_attachment.get("provider_attachment_id") or "")
     if not _RESEND_ATTACHMENT_ID_PATTERN.fullmatch(attachment_id):
         raise_error(404, ERR_EMAIL_ATTACHMENT_NOT_FOUND)

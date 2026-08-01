@@ -2,7 +2,9 @@ services:
   postgres:
     image: postgres:15-alpine
     container_name: filamenthub_postgres_prod
-    command: postgres -c log_checkpoints=off -c log_min_messages=warning
+    # 4 uvicorn workers can each open pool_size + max_overflow connections, so the
+    # ceiling must stay above their sum with room left for migrations and backups.
+    command: postgres -c max_connections=200 -c log_checkpoints=off -c log_min_messages=warning
     env_file:
       - .env
     environment:
@@ -70,6 +72,8 @@ services:
       - ./backend/legal_content:/app/legal_content:ro
       # DB-IP Country Lite MMDB (binary is local and not committed).
       - ./backend/data/geoip:/app/data/geoip:ro
+      # Письма, доставленные почтовым сервером хоста: он пишет сюда, бэкенд читает.
+      - ./inbound-mail:/app/inbound_mail
       # Дампы из админки — в ту же папку, куда пишет бэкап деплоя.
       # Без этого они остаются внутри контейнера и пропадают при пересоздании.
       - ./backups:/app/backups

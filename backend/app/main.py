@@ -59,15 +59,23 @@ async def _warm_app_settings_cache() -> None:
         name="provisional-account-sweeper",
     )
 
+    from app.services.inbound_mail_service import run_inbound_mail_poller
+
+    app.state.inbound_mail_task = asyncio.create_task(
+        run_inbound_mail_poller(AsyncSessionLocal),
+        name="inbound-mail-poller",
+    )
+
 
 @app.on_event("shutdown")
 async def _stop_provisional_account_sweeper() -> None:
-    task = getattr(app.state, "provisional_account_sweeper_task", None)
-    if task is None:
-        return
-    task.cancel()
-    with suppress(asyncio.CancelledError):
-        await task
+    for name in ("provisional_account_sweeper_task", "inbound_mail_task"):
+        task = getattr(app.state, name, None)
+        if task is None:
+            continue
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
 
 # Maintenance mode middleware (должен быть перед CORS для блокировки запросов)
 app.add_middleware(MaintenanceMiddleware)

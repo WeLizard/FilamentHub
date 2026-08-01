@@ -126,6 +126,9 @@ class Settings(BaseSettings):
     EMAIL_PARTNERSHIPS_FROM: str = "partners@filamenthub.ru"
     EMAIL_PR_FROM: str = "pr@filamenthub.ru"
     EMAIL_INBOUND_DOMAIN: str = ""  # e.g. reply.filamenthub.ru after Resend MX setup
+    # Where the mail server drops delivered letters for the poller to pick up.
+    INBOUND_MAIL_DIR: str = "/app/inbound_mail"
+    INBOUND_MAIL_POLL_SECONDS: int = 30
     RESEND_WEBHOOK_SECRET: str = ""
 
     model_config = SettingsConfigDict(
