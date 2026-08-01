@@ -19,6 +19,7 @@ import {
   Unlink,
   UserRound,
   Users,
+  Trash2,
   XCircle,
 } from 'lucide-react';
 import { adminAPI, brandsAPI } from '../../api/client';
@@ -99,6 +100,19 @@ export function AdminUsers() {
     onError: (error: AxiosError<{ detail: unknown }>) =>
       showActionError(error, 'adminUsers.feedback.deactivateError'),
   });
+
+  // Удаление аккаунта по требованию человека: закон обязывает его исполнить,
+  // а отключение аккаунта ничего не стирает.
+  const eraseMutation = useMutation({
+    mutationFn: (userId: number) => adminAPI.deleteUserAccount(userId, true),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-users'] });
+      showActionSuccess(t('adminUsers.feedback.eraseSuccess'));
+    },
+    onError: (error: AxiosError<{ detail: unknown }>) =>
+      showActionError(error, 'adminUsers.feedback.eraseError'),
+  });
+
 
   // Комплиментарный Pro-доступ к калькулятору (выдать/отозвать)
   const proAccessMutation = useMutation({
@@ -208,6 +222,12 @@ export function AdminUsers() {
   // Состояния для модалок подтверждения
   const [confirmActivate, setConfirmActivate] = useState<{ userId: number; username: string } | null>(null);
   const [confirmDeactivate, setConfirmDeactivate] = useState<{ userId: number; username: string } | null>(null);
+  const [confirmErase, setConfirmErase] = useState<{ userId: number; username: string } | null>(null);
+  const { data: erasePreview } = useQuery({
+    queryKey: ['admin-user-deletion-preview', confirmErase?.userId],
+    queryFn: () => adminAPI.previewUserDeletion(confirmErase!.userId),
+    enabled: !!confirmErase,
+  });
   const [confirmPromote, setConfirmPromote] = useState<{ userId: number; username: string } | null>(null);
   const [confirmDemote, setConfirmDemote] = useState<{ userId: number; username: string } | null>(null);
   const [confirmUnlink, setConfirmUnlink] = useState<{ userId: number; username: string; brandName: string } | null>(null);
@@ -405,6 +425,16 @@ export function AdminUsers() {
                   <div className="flex flex-wrap items-center gap-1 lg:justify-end">
                     <button
                       type="button"
+                      onClick={() => setConfirmErase({ userId: user.id, username: user.username })}
+                      disabled={user.role === 'admin' || eraseMutation.isPending}
+                      className={`${actionButtonClass} hover:border-rose-400/25 hover:text-rose-300 disabled:opacity-40`}
+                      title={t('adminUsers.eraseTitle')}
+                      aria-label={t('adminUsers.eraseTitle')}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => user.active
                         ? setConfirmDeactivate({ userId: user.id, username: user.username })
                         : setConfirmActivate({ userId: user.id, username: user.username })}
@@ -595,6 +625,28 @@ export function AdminUsers() {
         isLoading={activateMutation.isPending}
         variant="success"
         icon={<CheckCircle className="w-5 h-5" />}
+      />
+
+      <ConfirmModal
+        isOpen={!!confirmErase}
+        onClose={() => setConfirmErase(null)}
+        onConfirm={() => {
+          if (confirmErase) {
+            eraseMutation.mutate(confirmErase.userId);
+            setConfirmErase(null);
+          }
+        }}
+        title={t('adminUsers.eraseTitle')}
+        message={t('adminUsers.confirmErase', {
+          username: confirmErase?.username,
+          presets: erasePreview?.presets_count ?? '…',
+          spools: erasePreview?.spools_count ?? '…',
+          reviews: erasePreview?.reviews_count ?? '…',
+        })}
+        confirmText={t('adminUsers.erase')}
+        isLoading={eraseMutation.isPending}
+        variant="danger"
+        icon={<Trash2 className="w-5 h-5" />}
       />
 
       <ConfirmModal

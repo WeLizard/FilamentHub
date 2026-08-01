@@ -1641,6 +1641,18 @@ export const adminAPI = {
     return response.data;
   },
   
+  previewUserDeletion: async (userId: number): Promise<AccountDeletionStats> => {
+    const response = await api.get<AccountDeletionStats>(`/admin/users/${userId}/deletion-preview`);
+    return response.data;
+  },
+
+  deleteUserAccount: async (userId: number, deleteReviews: boolean): Promise<{ deleted: boolean }> => {
+    const response = await api.delete<{ deleted: boolean }>(`/admin/users/${userId}`, {
+      data: { delete_reviews: deleteReviews },
+    });
+    return response.data;
+  },
+
   deactivateUser: async (userId: number): Promise<User> => {
     const response = await api.post<User>(`/admin/users/${userId}/deactivate`);
     return response.data;

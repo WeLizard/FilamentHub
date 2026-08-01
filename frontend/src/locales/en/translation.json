@@ -4391,7 +4391,9 @@
       "brandUnlinkSuccess": "User “{{username}}” unlinked from the brand",
       "brandUnlinkError": "Could not unlink the brand",
       "badgesSuccess": "Badges saved for “{{username}}”",
-      "badgesError": "Could not save badges"
+      "badgesError": "Could not save badges",
+      "eraseSuccess": "Account erased",
+      "eraseError": "Could not erase the account"
     },
     "badgeDesc": {
       "founder": "Project founder. Awarded to first users who joined FilamentHub at its early development stage.",
@@ -4400,7 +4402,10 @@
       "verified": "Verified manufacturer. Official representative of a 3D printing materials brand who confirmed their affiliation with the company.",
       "early_adopter": "Early adopter. User who started using FilamentHub in the first months after launch and actively participates in the community.",
       "supporter": "Project supporter. User who financially or otherwise supported the development of FilamentHub."
-    }
+    },
+    "eraseTitle": "Erase account",
+    "erase": "Erase permanently",
+    "confirmErase": "Erase the account “{{username}}” and all of its data? This removes {{presets}} presets, {{spools}} spools and {{reviews}} reviews. The action cannot be undone and exists to carry out a person's erasure request."
   },
   "adminSubscriptions": {
     "title": "Subscriptions"

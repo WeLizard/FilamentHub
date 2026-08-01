@@ -4387,7 +4387,9 @@
       "brandUnlinkSuccess": "用户“{{username}}”已取消品牌关联",
       "brandUnlinkError": "无法取消品牌关联",
       "badgesSuccess": "已保存“{{username}}”的徽章",
-      "badgesError": "无法保存徽章"
+      "badgesError": "无法保存徽章",
+      "eraseSuccess": "账户已删除",
+      "eraseError": "删除账户失败"
     },
     "badgeDesc": {
       "founder": "项目创始人。授予在 FilamentHub 早期开发阶段加入的首批用户。",
@@ -4396,7 +4398,10 @@
       "verified": "已认证制造商。确认了与公司关联的 3D 打印材料品牌的官方代表。",
       "early_adopter": "早期采用者。在 FilamentHub 推出后的头几个月开始使用并积极参与社区的用户。",
       "supporter": "项目支持者。在财务上或以其他方式支持 FilamentHub 开发的用户。"
-    }
+    },
+    "eraseTitle": "删除账户",
+    "erase": "永久删除",
+    "confirmErase": "删除账户“{{username}}”及其全部数据？将移除 {{presets}} 个配置、{{spools}} 个料盘和 {{reviews}} 条评价。此操作不可撤销，用于执行用户的删除请求。"
   },
   "adminSubscriptions": {
     "title": "订阅"

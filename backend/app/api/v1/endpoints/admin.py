@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_admin_user
 from app.core.errors import (
+    ERR_ACCESS_DENIED,
     ERR_ARTICLE_NOT_FOUND,
     ERR_BANNED_WORD_EXISTS,
     ERR_BANNED_WORD_NOT_FOUND,
@@ -74,7 +75,7 @@ from app.schemas.printer_request import (
     PrinterRequestResponse,
     PrinterRequestUpdate,
 )
-from app.schemas.user import UserListResponse, UserResponse
+from app.schemas.user import AccountDeletionStats, UserListResponse, UserResponse
 from app.services.brand_slug_service import apply_brand_slug_rename, choose_brand_slug
 from app.services.database_service import (
     get_database_stats as get_database_stats_service,
@@ -1786,6 +1787,68 @@ async def set_maintenance_status(
 # ============================================================================
 # Calculator Pro / subscriptions
 # ============================================================================
+
+@router.get("/users/{user_id}/deletion-preview", response_model=AccountDeletionStats)
+async def preview_user_deletion(
+    user_id: int,
+    admin: Annotated[User, Depends(get_current_admin_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> AccountDeletionStats:
+    """Show what disappears with this account before anyone presses delete."""
+    del admin
+    from app.services.account_deletion import get_deletion_stats
+
+    user = await db.scalar(select(User).where(User.id == user_id))
+    if user is None:
+        raise_error(status.HTTP_404_NOT_FOUND, ERR_USER_NOT_FOUND)
+    return AccountDeletionStats(**await get_deletion_stats(user_id, db))
+
+
+@router.delete("/users/{user_id}", status_code=status.HTTP_200_OK)
+async def delete_user_as_admin(
+    user_id: int,
+    admin: Annotated[User, Depends(get_current_admin_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    delete_reviews: bool = Body(
+        default=False,
+        embed=True,
+        description="Удалить отзывы полностью (true) или обезличить их (false)",
+    ),
+) -> dict[str, bool]:
+    """Erase an account on the person's request.
+
+    The law obliges us to delete personal data when asked, and until now the
+    panel could only switch an account off — which erases nothing. This runs the
+    same routine the person's own profile runs, so related data is handled the
+    same way rather than left as broken references.
+    """
+    user = await db.scalar(select(User).where(User.id == user_id))
+    if user is None:
+        raise_error(status.HTTP_404_NOT_FOUND, ERR_USER_NOT_FOUND)
+    if user.id == admin.id:
+        # Deleting yourself from the panel leaves the project without an owner.
+        raise_error(status.HTTP_400_BAD_REQUEST, ERR_ACCESS_DENIED)
+    if user.role == UserRole.ADMIN:
+        raise_error(status.HTTP_400_BAD_REQUEST, ERR_ACCESS_DENIED)
+
+    from app.services.account_deletion import delete_user_account
+
+    # Written before the row disappears: this is the record that the request was
+    # carried out, and afterwards there is nothing left to point at.
+    logger.info(
+        "Account erased by admin: admin_id=%d target_user_id=%d reviews_deleted=%s",
+        admin.id,
+        user.id,
+        delete_reviews,
+    )
+    await delete_user_account(
+        user=user,
+        delete_reviews=delete_reviews,
+        release_brand_representation=True,
+        db=db,
+    )
+    return {"deleted": True}
+
 
 @router.patch("/users/{user_id}/pro-access", response_model=UserResponse)
 async def set_user_pro_access(
