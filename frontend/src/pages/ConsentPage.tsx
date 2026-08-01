@@ -71,6 +71,7 @@ export const ConsentPage = () => {
                 <li>{t('consentPage.sections.general.personalData.profileData')}</li>
                 <li>{t('consentPage.sections.general.personalData.oauthData')}</li>
                 <li>{t('consentPage.sections.general.personalData.accountData')}</li>
+                <li>{t('consentPage.sections.general.personalData.sellerProfile')}</li>
                 <li>{t('consentPage.sections.general.personalData.publishedContent')}</li>
                 <li>{t('consentPage.sections.general.personalData.supportCorrespondence')}</li>
                 <li>
@@ -144,6 +145,8 @@ export const ConsentPage = () => {
               <p className="mb-2">{t('consentPage.sections.protection.paragraphs.0')}</p>
               <p className="mb-2">{t('consentPage.sections.protection.paragraphs.1')}</p>
               <p className="mb-2">{t('consentPage.sections.protection.paragraphs.2')}</p>
+              <p className="mb-2">{t('consentPage.sections.protection.paragraphs.3')}</p>
+              <p className="mb-2">{t('consentPage.sections.protection.paragraphs.4')}</p>
             </section>
 
             <section>

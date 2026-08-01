@@ -91,6 +91,21 @@ export const PrivacyPolicyPage = () => {
               <p className="mb-2">{t('privacyPage.sections.purposes.legalBasis')}</p>
             </section>
 
+            {/* Which sign-in methods a connection may use, and where data lives. */}
+            <section>
+              <h2 className="text-2xl font-bold text-white mb-4">{t('privacyPage.sections.authRegion.title')}</h2>
+              {(t('privacyPage.sections.authRegion.paragraphs', { returnObjects: true }) as string[]).map((p, i) => (
+                <p key={i} className="mb-2">{p}</p>
+              ))}
+            </section>
+
+            <section>
+              <h2 className="text-2xl font-bold text-white mb-4">{t('privacyPage.sections.dataLocation.title')}</h2>
+              {(t('privacyPage.sections.dataLocation.paragraphs', { returnObjects: true }) as string[]).map((p, i) => (
+                <p key={i} className="mb-2">{p}</p>
+              ))}
+            </section>
+
             {/* 4. Third-Party Services */}
             <section>
               <h2 className="text-2xl font-bold text-white mb-4">{t('privacyPage.sections.thirdParty.title')}</h2>

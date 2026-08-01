@@ -11,11 +11,9 @@ const TERM_ITEM_KEYS = [
   'authData',
   'content',
   'profile',
-  'paidServices',
   'registration',
   'site',
   'service',
-  'moderator',
 ] as const;
 
 export const TermsPage = () => {
@@ -110,6 +108,7 @@ export const TermsPage = () => {
               <p className="mb-2">{t('termsPage.sections.registration.paragraphs.6')}</p>
               <p className="mb-2">{t('termsPage.sections.registration.paragraphs.7')}</p>
               <p className="mb-2">{t('termsPage.sections.registration.paragraphs.8')}</p>
+              <p className="mb-2">{t('termsPage.sections.registration.paragraphs.9')}</p>
             </section>
 
             <section>
@@ -135,6 +134,10 @@ export const TermsPage = () => {
                   }}
                 />
               </p>
+              <p className="mb-2">{t('termsPage.sections.userData.paragraphs.3')}</p>
+              <p className="mb-2">{t('termsPage.sections.userData.paragraphs.4')}</p>
+              <p className="mb-2">{t('termsPage.sections.userData.paragraphs.5')}</p>
+              <p className="mb-2">{t('termsPage.sections.userData.paragraphs.6')}</p>
             </section>
 
             <section>
@@ -187,6 +190,8 @@ export const TermsPage = () => {
               <p className="mb-2">{t('termsPage.sections.advertising.paragraphs.2')}</p>
               <p className="mb-2">{t('termsPage.sections.advertising.paragraphs.3')}</p>
               <p className="mb-2">{t('termsPage.sections.advertising.paragraphs.4')}</p>
+              <p className="mb-2">{t('termsPage.sections.advertising.paragraphs.5')}</p>
+              <p className="mb-2">{t('termsPage.sections.advertising.paragraphs.6')}</p>
             </section>
 
             <section>
