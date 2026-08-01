@@ -17,7 +17,6 @@ from app.services.legal_acceptance_service import (
 )
 from app.services.organization_access import grant_brand_owner_membership
 
-
 LEGAL_REGISTRATION_FIELDS = {
     "terms_accepted": True,
     "personal_data_consent": True,
@@ -141,20 +140,53 @@ async def test_ru_registration_never_invokes_google_recaptcha(
 
 
 @pytest.mark.asyncio
-async def test_legal_requirements_are_public_and_versioned(client: AsyncClient):
+async def test_legal_requirements_are_public_and_versioned(
+    client: AsyncClient,
+    monkeypatch,
+):
+    monkeypatch.setattr(settings, "AUTH_REGION_MODE", "static_intl")
     response = await client.get("/api/v1/auth/legal-requirements")
 
     assert response.status_code == 200
     assert response.json() == {
+        "legal_pack": "intl",
+        "edition_id": "global-2026-08-01",
         "terms_version": CURRENT_TERMS_VERSION,
         "personal_data_consent_version": CURRENT_PERSONAL_DATA_CONSENT_VERSION,
         "privacy_policy_version": "2026-07-25",
-        "terms_url": "/user-agreement",
-        "personal_data_consent_url": "/personal-data-consent",
-        "privacy_policy_url": "/privacy-policy",
+        "terms_url": "/user-agreement?pack=intl&edition=global-2026-08-01",
+        "personal_data_consent_url": (
+            "/personal-data-consent?pack=intl&edition=global-2026-08-01"
+        ),
+        "privacy_policy_url": (
+            "/privacy-policy?pack=intl&edition=global-2026-08-01"
+        ),
         "legal_update_effective_date": LEGAL_UPDATE_EFFECTIVE_DATE.isoformat(),
         "legal_update_note": LEGAL_UPDATE_NOTE,
     }
+
+
+@pytest.mark.asyncio
+async def test_legal_document_is_public_and_pinned_to_an_edition(client: AsyncClient):
+    response = await client.get(
+        "/api/v1/auth/legal-documents/terms",
+        params={
+            "language": "ru",
+            "pack": "ru",
+            "edition": "global-2026-08-01",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["Cache-Control"] == "public, max-age=31536000, immutable"
+    body = response.json()
+    assert body["legal_pack"] == "ru"
+    assert body["edition_id"] == "global-2026-08-01"
+    assert body["document_type"] == "terms"
+    assert body["language"] == "ru"
+    assert body["title"] == "Пользовательское соглашение"
+    assert body["revision_label"] == "Редакция от 1 августа 2026 года"
+    assert "## 1. Предмет Соглашения" in body["markdown"]
 
 
 @pytest.mark.asyncio
@@ -353,7 +385,7 @@ async def test_register_duplicate_email(client: AsyncClient):
     # First registration
     response = await client.post("/api/v1/auth/register", json=user_data)
     assert response.status_code == 201
-    
+
     # Try to register again with same email
     user_data["username"] = "user2"  # Different username
     response = await client.post("/api/v1/auth/register", json=user_data)
@@ -373,7 +405,7 @@ async def test_login(client: AsyncClient):
         **LEGAL_REGISTRATION_FIELDS,
     }
     await client.post("/api/v1/auth/register", json=user_data)
-    
+
     # Login
     login_data = {
         "email": user_data["email"],
@@ -398,7 +430,7 @@ async def test_login_wrong_password(client: AsyncClient):
         **LEGAL_REGISTRATION_FIELDS,
     }
     await client.post("/api/v1/auth/register", json=user_data)
-    
+
     # Try to login with wrong password
     login_data = {
         "email": user_data["email"],
@@ -474,13 +506,13 @@ async def test_get_current_user(client: AsyncClient):
         **LEGAL_REGISTRATION_FIELDS,
     }
     await client.post("/api/v1/auth/register", json=user_data)
-    
+
     login_response = await client.post(
         "/api/v1/auth/login",
         json={"email": user_data["email"], "password": user_data["password"]},
     )
     token = login_response.json()["access_token"]
-    
+
     # Get current user
     headers = {"Authorization": f"Bearer {token}"}
     response = await client.get("/api/v1/auth/me", headers=headers)

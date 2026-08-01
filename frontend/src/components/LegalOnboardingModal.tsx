@@ -22,7 +22,7 @@ export function LegalOnboardingModal() {
 
   useEffect(() => {
     let cancelled = false;
-    void authAPI.getLegalRequirements()
+    void authAPI.getLegalRequirements(user?.legal_document_pack)
       .then((value) => {
         if (!cancelled) {
           setRequirements(value);
@@ -36,7 +36,7 @@ export function LegalOnboardingModal() {
     return () => {
       cancelled = true;
     };
-  }, [t]);
+  }, [t, user?.legal_document_pack]);
 
   const isReacceptance = Boolean(user?.legal_previously_accepted);
   const effectiveDate = requirements
@@ -61,6 +61,7 @@ export function LegalOnboardingModal() {
         personal_data_consent_version: requirements.personal_data_consent_version,
         privacy_policy_version: requirements.privacy_policy_version,
         legal_language: (i18n.resolvedLanguage || i18n.language || 'en').slice(0, 2).toLowerCase(),
+        legal_pack: requirements.legal_pack,
       });
     } catch (err: any) {
       setError(

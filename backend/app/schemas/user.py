@@ -154,6 +154,7 @@ class UserResponse(UserBase):
     updated_at: datetime
     last_login: datetime | None = None
     legal_onboarding_required: bool = False
+    legal_document_pack: Literal["ru", "eu", "intl"] | None = None
     # True when the account accepted some earlier version, so the mandatory
     # screen is a re-ask rather than a first-time one.
     legal_previously_accepted: bool = False
@@ -279,11 +280,14 @@ class RegisterRequest(UserCreate):
     personal_data_consent_version: str = Field(..., max_length=32)
     privacy_policy_version: str = Field(..., max_length=32)
     legal_language: str = Field(default="en", pattern=r"^[a-z]{2}$")
+    legal_pack: Literal["ru", "eu", "intl"] | None = None
 
 
 class LegalRequirementsResponse(BaseModel):
     """Current public legal document versions and routes."""
 
+    legal_pack: Literal["ru", "eu", "intl"]
+    edition_id: str
     terms_version: str
     personal_data_consent_version: str
     privacy_policy_version: str
@@ -313,6 +317,19 @@ class LegalAcceptanceRequest(BaseModel):
     personal_data_consent_version: str = Field(..., max_length=32)
     privacy_policy_version: str = Field(..., max_length=32)
     legal_language: str = Field(default="en", pattern=r"^[a-z]{2}$")
+    legal_pack: Literal["ru", "eu", "intl"] | None = None
+
+
+class LegalDocumentResponse(BaseModel):
+    """One immutable legal-document translation from a published edition."""
+
+    legal_pack: Literal["ru", "eu", "intl"]
+    edition_id: str
+    document_type: Literal["terms", "personal_data_consent", "privacy_policy"]
+    language: Literal["ru", "en", "zh"]
+    title: str
+    revision_label: str
+    markdown: str
 
 
 class OAuthUrlResponse(BaseModel):

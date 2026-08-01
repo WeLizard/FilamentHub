@@ -170,6 +170,12 @@
     "footer_copyright": "© {{year}} FilamentHub",
     "pluginPresetsStats": "Пресеты: {{total}} (синхр.: {{synced}})"
   },
+  "legalDocument": {
+    "backHome": "Вернуться на главную",
+    "loading": "Загружаем документ…",
+    "loadError": "Не удалось загрузить документ. Попробуйте ещё раз.",
+    "retry": "Повторить"
+  },
   "authModal": {
     "password_strength_weak": "Слабый",
     "password_strength_medium": "Средний",

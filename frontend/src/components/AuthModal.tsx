@@ -192,6 +192,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
           personal_data_consent_version: legalRequirements.personal_data_consent_version,
           privacy_policy_version: legalRequirements.privacy_policy_version,
           legal_language: (i18n.resolvedLanguage || i18n.language || 'en').slice(0, 2).toLowerCase(),
+          legal_pack: legalRequirements.legal_pack,
         });
         
         // Успешная регистрация - закрываем модальное окно
@@ -508,7 +509,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                   <label className="text-gray-300 text-sm cursor-pointer flex-1">
                     {t('authModal.accept_terms')}{' '}
                     <Link
-                      to="/user-agreement"
+                      to={legalRequirements?.terms_url || '/user-agreement'}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="text-purple-400 hover:text-purple-300 underline"
@@ -534,7 +535,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                   <label className="text-gray-300 text-sm cursor-pointer flex-1">
                     {t('authModal.accept_personal_data')}{' '}
                     <Link
-                      to="/personal-data-consent"
+                      to={legalRequirements?.personal_data_consent_url || '/personal-data-consent'}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="text-purple-400 hover:text-purple-300 underline"
@@ -546,7 +547,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                 <p className="text-xs text-gray-400">
                   {t('authModal.privacy_notice')}{' '}
                   <Link
-                    to="/privacy-policy"
+                    to={legalRequirements?.privacy_policy_url || '/privacy-policy'}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-purple-400 hover:text-purple-300 underline"

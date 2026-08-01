@@ -170,6 +170,12 @@
     "footer_copyright": "© {{year}} FilamentHub",
     "pluginPresetsStats": "预设：{{total}}（已同步 {{synced}}）"
   },
+  "legalDocument": {
+    "backHome": "返回首页",
+    "loading": "正在加载文档…",
+    "loadError": "无法加载文档，请重试。",
+    "retry": "重试"
+  },
   "authModal": {
     "password_strength_weak": "弱",
     "password_strength_medium": "中等",

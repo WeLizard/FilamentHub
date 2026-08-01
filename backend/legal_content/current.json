@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "packs": {
+    "ru": "global-2026-08-01",
+    "eu": "global-2026-08-01",
+    "intl": "global-2026-08-01"
+  },
+  "published_editions": [
+    "global-2026-08-01"
+  ]
+}

@@ -169,6 +169,32 @@ def _lookup_country_code(
         return None
 
 
+def resolve_request_country_code(request: Request) -> str | None:
+    """Return the transient ISO country code for server-side policy selection.
+
+    The value is cached only for the lifetime of the request and is not exposed
+    to the client or written to the user profile.
+    """
+    cached = getattr(request.state, "request_country_code", None)
+    if cached is not None:
+        return cached or None
+
+    if settings.AUTH_REGION_MODE == "static_ru":
+        country_code = "RU"
+    elif settings.AUTH_REGION_MODE in {"static_intl", "development"}:
+        country_code = None
+    else:
+        client_ip = get_request_client_ip(request)
+        country_code = (
+            _lookup_country_code(client_ip)
+            if client_ip is not None and client_ip.is_global
+            else None
+        )
+
+    request.state.request_country_code = country_code or ""
+    return country_code
+
+
 def geoip_database_health() -> dict[str, str | bool | int | None]:
     """Return a coarse readiness signal without exposing the database path."""
     mode = settings.AUTH_REGION_MODE
@@ -219,11 +245,7 @@ def resolve_access_region(request: Request) -> AccessRegion:
     if settings.AUTH_REGION_MODE in {"static_intl", "development"}:
         return AccessRegion.INTL
 
-    client_ip = get_request_client_ip(request)
-    if client_ip is None or not client_ip.is_global:
-        return AccessRegion.UNKNOWN
-
-    country_code = _lookup_country_code(client_ip)
+    country_code = resolve_request_country_code(request)
     if not country_code:
         return AccessRegion.UNKNOWN
     if country_code.upper() == "RU":

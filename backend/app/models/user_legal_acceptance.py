@@ -21,8 +21,9 @@ class UserLegalAcceptance(Base):
         UniqueConstraint(
             "user_id",
             "document_type",
+            "legal_document_pack",
             "document_version",
-            name="uq_user_legal_acceptance_version",
+            name="uq_user_legal_acceptance_pack_version",
         ),
     )
 
@@ -36,6 +37,9 @@ class UserLegalAcceptance(Base):
     document_version: Mapped[str] = mapped_column(String(32), nullable=False)
     related_privacy_policy_version: Mapped[str] = mapped_column(
         String(32), nullable=False
+    )
+    legal_document_pack: Mapped[str] = mapped_column(
+        String(16), nullable=False, server_default="legacy"
     )
     acceptance_source: Mapped[str] = mapped_column(String(32), nullable=False)
     language: Mapped[str] = mapped_column(String(8), nullable=False)

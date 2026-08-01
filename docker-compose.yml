@@ -65,6 +65,9 @@ services:
       - ./backend/logs:/app/logs
       # Wiki content - чтобы можно было редактировать без пересборки
       - ./backend/wiki_content:/app/wiki_content
+      # Versioned legal editions are read-only in the app and can be switched
+      # atomically by replacing legal_content/current.json after validation.
+      - ./backend/legal_content:/app/legal_content:ro
       # DB-IP Country Lite MMDB (binary is local and not committed).
       - ./backend/data/geoip:/app/data/geoip:ro
       # Дампы из админки — в ту же папку, куда пишет бэкап деплоя.

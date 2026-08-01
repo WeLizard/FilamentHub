@@ -3,7 +3,7 @@
 import logging
 import secrets
 from datetime import datetime, timezone
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import (
     APIRouter,
@@ -65,6 +65,7 @@ from app.schemas.user import (
     ForgotPasswordRequest,
     ForgotPasswordResponse,
     LegalAcceptanceRequest,
+    LegalDocumentResponse,
     LegalRequirementsResponse,
     LoginRequest,
     LogoutRequest,
@@ -89,12 +90,16 @@ from app.schemas.user import (
 from app.services.email_service import send_email_change_email, send_password_reset_email
 from app.services.email_validator import validate_email_domain
 from app.services.legal_acceptance_service import (
-    CURRENT_PERSONAL_DATA_CONSENT_VERSION,
-    CURRENT_PRIVACY_POLICY_VERSION,
-    CURRENT_TERMS_VERSION,
     current_legal_requirements,
     record_current_legal_acceptance,
     requires_current_legal_acceptance,
+)
+from app.services.legal_document_service import (
+    LegalContentError,
+    LegalPack,
+    get_legal_document,
+    normalize_legal_pack,
+    resolve_legal_pack,
 )
 from app.services.organization_access import can_select_active_brand, list_accessible_brands
 from app.services.provisional_account_service import sweep_abandoned_provisional_accounts
@@ -143,15 +148,17 @@ from app.core.limiter import limiter
 
 def _validate_legal_document_versions(
     *,
+    legal_pack: LegalPack,
     terms_version: str,
     personal_data_consent_version: str,
     privacy_policy_version: str,
 ) -> None:
+    requirements = current_legal_requirements(legal_pack)
     if (
-        terms_version != CURRENT_TERMS_VERSION
+        terms_version != requirements["terms_version"]
         or personal_data_consent_version
-        != CURRENT_PERSONAL_DATA_CONSENT_VERSION
-        or privacy_policy_version != CURRENT_PRIVACY_POLICY_VERSION
+        != requirements["personal_data_consent_version"]
+        or privacy_policy_version != requirements["privacy_policy_version"]
     ):
         raise_error(
             status.HTTP_409_CONFLICT,
@@ -242,19 +249,75 @@ def _clear_auth_cookies(response: Response) -> None:
 
 
 @router.get("/legal-requirements", response_model=LegalRequirementsResponse)
-async def get_legal_requirements() -> LegalRequirementsResponse:
+async def get_legal_requirements(
+    request: Request,
+    response: Response,
+    pack: Literal["ru", "eu", "intl"] | None = Query(default=None),
+) -> LegalRequirementsResponse:
     """Return the current public legal document versions and routes."""
-    return LegalRequirementsResponse(**current_legal_requirements())
+    selected_pack = normalize_legal_pack(pack) if pack else resolve_legal_pack(request)
+    response.headers["Cache-Control"] = "private, no-store"
+    return LegalRequirementsResponse(**current_legal_requirements(selected_pack))
+
+
+@router.get(
+    "/legal-documents/{document_type}",
+    response_model=LegalDocumentResponse,
+)
+async def read_legal_document(
+    document_type: Literal["terms", "personal_data_consent", "privacy_policy"],
+    request: Request,
+    response: Response,
+    language: str = Query(default="en", pattern=r"^[A-Za-z-]{2,16}$"),
+    pack: Literal["ru", "eu", "intl"] | None = Query(default=None),
+    edition: str | None = Query(default=None, min_length=1, max_length=64),
+) -> LegalDocumentResponse:
+    """Return one public Markdown document from the selected immutable edition."""
+    selected_pack = normalize_legal_pack(pack) if pack else resolve_legal_pack(request)
+    try:
+        normalized_pack, selected_edition, document = get_legal_document(
+            pack=selected_pack,
+            document_type=document_type,
+            language=language,
+            edition_id=edition,
+        )
+    except LegalContentError:
+        logger.warning("Legal document request could not be resolved", exc_info=True)
+        raise_error(status.HTTP_503_SERVICE_UNAVAILABLE, ERR_RESPONSE_ERROR)
+
+    response.headers["Cache-Control"] = (
+        "public, max-age=31536000, immutable"
+        if edition is not None
+        else "public, max-age=60, must-revalidate"
+    )
+    return LegalDocumentResponse(
+        legal_pack=normalized_pack.value,
+        edition_id=selected_edition.edition_id,
+        document_type=document.document_type.value,
+        language=document.language,
+        title=document.title,
+        revision_label=document.revision_label,
+        markdown=document.markdown,
+    )
 
 
 @router.post("/legal-acceptance", response_model=UserResponse)
 async def accept_legal_documents(
     data: LegalAcceptanceRequest,
+    request: Request,
     current_user: Annotated[User, Depends(get_current_user_for_legal_onboarding)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> UserResponse:
     """Record separate acceptance of the current mandatory documents."""
+    expected_pack = (
+        normalize_legal_pack(current_user.legal_document_pack)
+        if current_user.legal_document_pack
+        else resolve_legal_pack(request)
+    )
+    if data.legal_pack and normalize_legal_pack(data.legal_pack) != expected_pack:
+        raise_error(status.HTTP_409_CONFLICT, ERR_LEGAL_DOCUMENT_VERSION_MISMATCH)
     _validate_legal_document_versions(
+        legal_pack=expected_pack,
         terms_version=data.terms_version,
         personal_data_consent_version=data.personal_data_consent_version,
         privacy_policy_version=data.privacy_policy_version,
@@ -264,6 +327,7 @@ async def accept_legal_documents(
         user=current_user,
         language=data.legal_language,
         source="onboarding",
+        legal_pack=expected_pack,
     )
     await db.commit()
     await db.refresh(current_user)
@@ -282,7 +346,11 @@ async def register(
     import logging
     logger = logging.getLogger(__name__)
 
+    legal_pack = resolve_legal_pack(request)
+    if data.legal_pack and normalize_legal_pack(data.legal_pack) != legal_pack:
+        raise_error(status.HTTP_409_CONFLICT, ERR_LEGAL_DOCUMENT_VERSION_MISMATCH)
     _validate_legal_document_versions(
+        legal_pack=legal_pack,
         terms_version=data.terms_version,
         personal_data_consent_version=data.personal_data_consent_version,
         privacy_policy_version=data.privacy_policy_version,
@@ -360,6 +428,7 @@ async def register(
             user=user,
             language=data.legal_language,
             source="registration",
+            legal_pack=legal_pack,
         )
         await db.commit()
         await db.refresh(user)

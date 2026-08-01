@@ -595,6 +595,7 @@ export interface User {
   updated_at: string;
   last_login: string | null; // Дата последнего входа
   legal_onboarding_required: boolean;
+  legal_document_pack?: LegalPack | null;
   /** Аккаунт уже принимал более раннюю редакцию — значит это повторный показ. */
   legal_previously_accepted?: boolean;
 }
@@ -701,7 +702,12 @@ export interface Token {
   legal_onboarding_required?: boolean;
 }
 
+export type LegalPack = 'ru' | 'eu' | 'intl';
+export type LegalDocumentType = 'terms' | 'personal_data_consent' | 'privacy_policy';
+
 export interface LegalRequirements {
+  legal_pack: LegalPack;
+  edition_id: string;
   terms_version: string;
   personal_data_consent_version: string;
   privacy_policy_version: string;
@@ -728,6 +734,17 @@ export interface LegalAcceptancePayload {
   personal_data_consent_version: string;
   privacy_policy_version: string;
   legal_language: string;
+  legal_pack?: LegalPack;
+}
+
+export interface LegalDocument {
+  legal_pack: LegalPack;
+  edition_id: string;
+  document_type: LegalDocumentType;
+  language: 'ru' | 'en' | 'zh';
+  title: string;
+  revision_label: string;
+  markdown: string;
 }
 
 export interface RegistrationPayload extends LegalAcceptancePayload {

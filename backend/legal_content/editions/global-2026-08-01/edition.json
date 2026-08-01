@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "edition_id": "global-2026-08-01",
+  "effective_date": "2026-08-01",
+  "update_note": "",
+  "acceptance_versions": {
+    "terms": "2026-07-25",
+    "personal_data_consent": "2026-07-25",
+    "privacy_policy": "2026-07-25"
+  },
+  "documents": {
+    "terms": {
+      "ru": "ru/user-agreement.md",
+      "en": "en/user-agreement.md",
+      "zh": "zh/user-agreement.md"
+    },
+    "personal_data_consent": {
+      "ru": "ru/personal-data-consent.md",
+      "en": "en/personal-data-consent.md",
+      "zh": "zh/personal-data-consent.md"
+    },
+    "privacy_policy": {
+      "ru": "ru/privacy-policy.md",
+      "en": "en/privacy-policy.md",
+      "zh": "zh/privacy-policy.md"
+    }
+  }
+}

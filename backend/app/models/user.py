@@ -101,6 +101,9 @@ class User(Base):
     legal_acceptance_language: Mapped[str | None] = mapped_column(
         String(8), nullable=True
     )
+    legal_document_pack: Mapped[str | None] = mapped_column(
+        String(16), nullable=True
+    )
 
     # Wiki editing permission
     can_edit_wiki: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
