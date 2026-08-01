@@ -6,8 +6,10 @@ report its own death, and a check from the same network cannot tell a broken
 site from a broken route to it.
 
 Checks the site, the API, how long the certificate has left and whether last
-night's backup arrived. Notifies through Telegram, which stays reachable when
-our own infrastructure does not.
+night's backup arrived. Given a way in, it also asks the watched machine how
+much memory and disk it has left — those are the failures worth hearing about
+before they become an outage rather than after. Notifies through Telegram,
+which stays reachable when our own infrastructure does not.
 
 Reports only changes — a service that says "still fine" every five minutes is
 a service nobody reads. A certificate running out is repeated once a day,
@@ -36,6 +38,15 @@ STATE_FILE = Path(os.environ.get("WATCHDOG_STATE", "/home/lizard/watchdog-state.
 BACKUP_MAX_AGE = timedelta(hours=36)
 CERT_WARN_DAYS = 14
 TIMEOUT = 20
+
+# The machine being watched, as ssh would address it, and the key to reach it
+# with. Left unset, the two checks that need to look inside are skipped.
+SERVER = os.environ.get("WATCHDOG_SERVER", "")
+SERVER_KEY = os.environ.get("WATCHDOG_SERVER_KEY", "")
+# Hashing a password claims 64 MiB for as long as it runs, and four workers can
+# be doing that at once, so the floor has to leave room for a crowd.
+MEMORY_WARN_MIB = 600
+DISK_WARN_PERCENT = 85
 
 
 def check_site() -> str | None:
@@ -91,11 +102,68 @@ def check_backup() -> str | None:
     return None
 
 
+def _ask_server(command: str) -> str | None:
+    """Run a read-only command on the watched machine, or None if it stays silent."""
+    if not SERVER:
+        return None
+
+    ssh = ["ssh", "-o", "BatchMode=yes", "-o", f"ConnectTimeout={TIMEOUT}"]
+    if SERVER_KEY:
+        ssh += ["-i", SERVER_KEY]
+
+    try:
+        result = subprocess.run(
+            [*ssh, SERVER, command],
+            capture_output=True,
+            text=True,
+            timeout=TIMEOUT + 10,
+        )
+    except Exception:  # noqa: BLE001 — an unreachable machine is the answer
+        return None
+    return result.stdout.strip() if result.returncode == 0 else None
+
+
+def check_memory() -> str | None:
+    if not SERVER:
+        return None
+
+    answer = _ask_server("free -m | awk '/^Mem:/ {print $7}'")
+    if answer is None:
+        return "не удалось спросить сервер"
+    try:
+        available = int(answer)
+    except ValueError:
+        return "сервер ответил непонятно"
+
+    if available < MEMORY_WARN_MIB:
+        return f"свободно всего {available} МБ"
+    return None
+
+
+def check_disk() -> str | None:
+    if not SERVER:
+        return None
+
+    answer = _ask_server("df --output=pcent / | tail -1")
+    if answer is None:
+        return "не удалось спросить сервер"
+    try:
+        used = int(answer.strip().rstrip("%"))
+    except ValueError:
+        return "сервер ответил непонятно"
+
+    if used >= DISK_WARN_PERCENT:
+        return f"занято {used}%"
+    return None
+
+
 CHECKS = {
     "сайт": check_site,
     "API": check_api,
     "сертификат": check_certificate,
     "резервные копии": check_backup,
+    "память": check_memory,
+    "диск": check_disk,
 }
 
 
