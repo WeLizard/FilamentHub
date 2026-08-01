@@ -4,9 +4,9 @@ import { useTranslation } from 'react-i18next';
 import {
   AlertTriangle,
   BookOpen,
+  ChevronDown,
   Eye,
   FilePenLine,
-  Info,
   Loader2,
   Save,
   Send,
@@ -24,6 +24,8 @@ import { translateApiError } from '../../utils/translateApiError';
 import { ModalOverlay } from '../ModalOverlay';
 import { toast } from '../Toast';
 import { WikiContentRenderer } from './WikiContentRenderer';
+import { WikiMarkdownEditor } from './WikiMarkdownEditor';
+import { plainWikiSummary, withoutLeadingArticleHeading } from './wikiMarkdown';
 
 
 interface WikiAuthoringModalProps {
@@ -54,7 +56,7 @@ export function WikiAuthoringModal({
   const existingContent = revision ?? article;
   const isNewArticle = !article && !revision;
   const [title, setTitle] = useState(existingContent?.title ?? '');
-  const [summary, setSummary] = useState(existingContent?.summary ?? '');
+  const [summary, setSummary] = useState(plainWikiSummary(existingContent?.summary ?? ''));
   const [content, setContent] = useState(existingContent?.content ?? '');
   const [tags, setTags] = useState((existingContent?.tags ?? []).join(', '));
   const [editSummary, setEditSummary] = useState(revision?.edit_summary ?? '');
@@ -71,6 +73,7 @@ export function WikiAuthoringModal({
   const [discardPrompt, setDiscardPrompt] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [savedRevision, setSavedRevision] = useState<WikiRevision | null>(revision);
+  const [detailsOpen, setDetailsOpen] = useState(false);
 
   const initialFingerprint = useMemo(
     () => JSON.stringify({ title, summary, content, tags, editSummary, categoryId, language }),
@@ -109,6 +112,7 @@ export function WikiAuthoringModal({
       return false;
     }
     if (nextIntent === 'review' && !isNewArticle && !editSummary.trim()) {
+      setDetailsOpen(true);
       setValidationError(t('wikiAuthoring.validationEditSummary'));
       return false;
     }
@@ -172,23 +176,29 @@ export function WikiAuthoringModal({
     : article
       ? t('wikiAuthoring.proposeEdit')
       : t('wikiAuthoring.newArticle');
+  const selectedCategory = categories.find((category) => category.id === categoryId);
+  const categoryLabel = selectedCategory
+    ? t(`wikiAuthoring.categories.${selectedCategory.slug}`, { defaultValue: selectedCategory.name })
+    : '';
+  const languageLabel = language === 'ru' ? 'Русский' : language === 'zh' ? '中文' : 'English';
+  const previewContent = withoutLeadingArticleHeading(content);
 
   return (
     <ModalOverlay
       onClose={requestClose}
       closeOnOverlayClick={false}
       closeOnEscape={false}
-      contentClassName="min-h-full flex items-center justify-center p-3 md:p-6"
+      contentClassName="min-h-full flex items-center justify-center p-0 sm:p-3 md:p-6"
     >
-      <div className="w-full max-w-7xl max-h-[94vh] overflow-hidden rounded-3xl border border-white/15 bg-[#111827] shadow-2xl shadow-purple-950/60">
-        <header className="flex items-center justify-between gap-4 border-b border-white/10 bg-gradient-to-r from-blue-500/10 via-purple-500/10 to-transparent px-5 py-4 md:px-7">
+      <div className="flex h-[100dvh] w-full max-w-[1500px] flex-col overflow-hidden border border-white/15 bg-[#111827] shadow-2xl shadow-purple-950/60 sm:h-[94vh] sm:rounded-3xl">
+        <header className="flex shrink-0 items-center justify-between gap-4 border-b border-white/10 bg-gradient-to-r from-blue-500/10 via-purple-500/10 to-transparent px-4 py-3 md:px-6">
           <div className="flex min-w-0 items-center gap-3">
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-500/15 text-blue-300 ring-1 ring-blue-400/20">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-500/15 text-blue-300 ring-1 ring-blue-400/20">
               <FilePenLine className="h-5 w-5" />
             </span>
             <div className="min-w-0">
               <h2 className="truncate text-lg font-semibold text-white md:text-xl">{modalTitle}</h2>
-              <p className="text-xs text-slate-400 md:text-sm">{t('wikiAuthoring.safePublication')}</p>
+              <p className="hidden text-xs text-slate-400 sm:block">{t('wikiAuthoring.safePublication')}</p>
             </div>
           </div>
           <button
@@ -202,9 +212,9 @@ export function WikiAuthoringModal({
           </button>
         </header>
 
-        <div className="grid max-h-[calc(94vh-148px)] overflow-y-auto lg:grid-cols-[minmax(0,1.05fr)_minmax(360px,0.95fr)] lg:overflow-hidden">
-          <section className={`${mobilePane === 'preview' ? 'hidden lg:block' : 'block'} overflow-y-auto p-5 md:p-7`}>
-            <div className="mb-5 flex rounded-xl border border-white/10 bg-white/5 p-1 lg:hidden">
+        <div className="grid min-h-0 flex-1 lg:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)]">
+          <section className={`${mobilePane === 'preview' ? 'hidden lg:flex' : 'flex'} min-h-0 flex-col overflow-hidden`}>
+            <div className="m-3 mb-0 flex shrink-0 rounded-xl border border-white/10 bg-white/5 p-1 lg:hidden">
               <button type="button" onClick={() => setMobilePane('editor')} className="flex-1 rounded-lg bg-blue-500 px-3 py-2 text-sm font-medium text-white">
                 {t('wikiAuthoring.editor')}
               </button>
@@ -213,72 +223,88 @@ export function WikiAuthoringModal({
               </button>
             </div>
 
-            <div className="mb-5 flex items-start gap-3 rounded-2xl border border-cyan-400/15 bg-cyan-400/5 p-4 text-sm text-cyan-100/80">
-              <Info className="mt-0.5 h-4 w-4 shrink-0 text-cyan-300" />
-              <p>{isNewArticle ? t('wikiAuthoring.knowledgeNotice') : t('wikiAuthoring.revisionNotice')}</p>
+            <div className="shrink-0 border-b border-white/10 px-4 pb-3 pt-3 md:px-5">
+              <div className={`grid gap-3 ${isNewArticle ? 'xl:grid-cols-[minmax(0,1fr)_220px_140px]' : 'xl:grid-cols-[minmax(0,1fr)_auto]'}`}>
+                <label className="block min-w-0">
+                  <span className="mb-1 block text-xs font-medium text-slate-400">{t('wikiAuthoring.title')}</span>
+                  <input value={title} onChange={(event) => setTitle(event.target.value)} maxLength={200} className="w-full rounded-xl border border-white/15 bg-white/5 px-3.5 py-2.5 text-white outline-none transition placeholder:text-slate-600 focus:border-blue-400/70 focus:ring-2 focus:ring-blue-500/20" placeholder={t('wikiAuthoring.titlePlaceholder')} />
+                </label>
+                {isNewArticle ? (
+                  <>
+                    <label className="block">
+                      <span className="mb-1 block text-xs font-medium text-slate-400">{t('wikiAuthoring.category')}</span>
+                      <select value={categoryId} onChange={(event) => setCategoryId(Number(event.target.value))} className="w-full rounded-xl border border-white/15 bg-[#192235] px-3.5 py-2.5 text-white outline-none focus:border-blue-400/70">
+                        {categories.map((category) => <option key={category.id} value={category.id}>{t(`wikiAuthoring.categories.${category.slug}`, { defaultValue: category.name })}</option>)}
+                      </select>
+                    </label>
+                    <label className="block">
+                      <span className="mb-1 block text-xs font-medium text-slate-400">{t('wikiAuthoring.language')}</span>
+                      <select value={language} onChange={(event) => setLanguage(event.target.value as WikiLanguage)} className="w-full rounded-xl border border-white/15 bg-[#192235] px-3.5 py-2.5 text-white outline-none focus:border-blue-400/70">
+                        <option value="ru">Русский</option>
+                        <option value="en">English</option>
+                        <option value="zh">中文</option>
+                      </select>
+                    </label>
+                  </>
+                ) : (
+                  <div className="flex items-end gap-2 pb-0.5">
+                    <span className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-300">{categoryLabel}</span>
+                    <span className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-300">{languageLabel}</span>
+                  </div>
+                )}
+              </div>
+              <label className="mt-3 block">
+                <span className="mb-1 flex items-center justify-between gap-3 text-xs font-medium text-slate-400">
+                  <span>{t('wikiAuthoring.summary')} · {t('wikiAuthoring.summaryHint')}</span>
+                  <span className="tabular-nums text-slate-600">{summary.length}/1000</span>
+                </span>
+                <textarea value={summary} onChange={(event) => setSummary(event.target.value)} maxLength={1000} rows={2} className="w-full resize-none rounded-xl border border-white/15 bg-white/5 px-3.5 py-2.5 text-sm leading-5 text-white outline-none transition placeholder:text-slate-600 focus:border-blue-400/70 focus:ring-2 focus:ring-blue-500/20" placeholder={t('wikiAuthoring.summaryPlaceholder')} />
+              </label>
             </div>
 
-            <div className="grid gap-4 md:grid-cols-[1fr_180px]">
-              <label className="block">
-                <span className="mb-1.5 block text-sm font-medium text-slate-200">{t('wikiAuthoring.title')}</span>
-                <input value={title} onChange={(event) => setTitle(event.target.value)} maxLength={200} className="w-full rounded-xl border border-white/15 bg-white/5 px-4 py-3 text-white outline-none transition placeholder:text-slate-600 focus:border-blue-400/70 focus:ring-2 focus:ring-blue-500/20" placeholder={t('wikiAuthoring.titlePlaceholder')} />
-              </label>
-              <label className="block">
-                <span className="mb-1.5 block text-sm font-medium text-slate-200">{t('wikiAuthoring.language')}</span>
-                <select value={language} onChange={(event) => setLanguage(event.target.value as WikiLanguage)} disabled={!isNewArticle} className="w-full rounded-xl border border-white/15 bg-[#192235] px-4 py-3 text-white outline-none focus:border-blue-400/70 disabled:cursor-not-allowed disabled:opacity-60">
-                  <option value="ru">Русский</option>
-                  <option value="en">English</option>
-                  <option value="zh">中文</option>
-                </select>
-              </label>
+            <div className="flex min-h-0 flex-1 flex-col px-4 py-3 md:px-5">
+              <div className="mb-1.5 flex items-center justify-between gap-3">
+                <span className="text-sm font-medium text-slate-200">{t('wikiAuthoring.content')}</span>
+                <span className="text-xs text-slate-600">{t('wikiAuthoring.editorHint')}</span>
+              </div>
+              <WikiMarkdownEditor value={content} onChange={setContent} placeholder={t('wikiAuthoring.contentPlaceholder')} />
             </div>
 
-            <label className="mt-4 block">
-              <span className="mb-1.5 block text-sm font-medium text-slate-200">{t('wikiAuthoring.category')}</span>
-              <select value={categoryId} onChange={(event) => setCategoryId(Number(event.target.value))} disabled={!isNewArticle} className="w-full rounded-xl border border-white/15 bg-[#192235] px-4 py-3 text-white outline-none focus:border-blue-400/70 disabled:cursor-not-allowed disabled:opacity-60">
-                {categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
-              </select>
-            </label>
-
-            <label className="mt-4 block">
-              <span className="mb-1.5 block text-sm font-medium text-slate-200">{t('wikiAuthoring.summary')}</span>
-              <textarea value={summary} onChange={(event) => setSummary(event.target.value)} maxLength={1000} rows={3} className="w-full resize-y rounded-xl border border-white/15 bg-white/5 px-4 py-3 text-white outline-none transition placeholder:text-slate-600 focus:border-blue-400/70 focus:ring-2 focus:ring-blue-500/20" placeholder={t('wikiAuthoring.summaryPlaceholder')} />
-            </label>
-
-            <label className="mt-4 block">
-              <span className="mb-1.5 flex items-center justify-between gap-3 text-sm font-medium text-slate-200">
-                {t('wikiAuthoring.content')}
-                <span className="font-normal text-slate-500">Markdown</span>
-              </span>
-              <textarea value={content} onChange={(event) => setContent(event.target.value)} rows={16} className="w-full resize-y rounded-xl border border-white/15 bg-[#0b1220] px-4 py-3 font-mono text-sm leading-6 text-slate-200 outline-none transition placeholder:text-slate-600 focus:border-blue-400/70 focus:ring-2 focus:ring-blue-500/20" placeholder={t('wikiAuthoring.contentPlaceholder')} />
-            </label>
-
-            <label className="mt-4 block">
-              <span className="mb-1.5 block text-sm font-medium text-slate-200">{t('wikiAuthoring.tags')}</span>
-              <input value={tags} onChange={(event) => setTags(event.target.value)} className="w-full rounded-xl border border-white/15 bg-white/5 px-4 py-3 text-white outline-none transition placeholder:text-slate-600 focus:border-blue-400/70 focus:ring-2 focus:ring-blue-500/20" placeholder={t('wikiAuthoring.tagsPlaceholder')} />
-            </label>
-
-            {!isNewArticle && (
-              <label className="mt-4 block">
-                <span className="mb-1.5 block text-sm font-medium text-slate-200">{t('wikiAuthoring.editSummary')}</span>
-                <textarea value={editSummary} onChange={(event) => setEditSummary(event.target.value)} maxLength={1000} rows={2} className="w-full resize-y rounded-xl border border-white/15 bg-white/5 px-4 py-3 text-white outline-none transition placeholder:text-slate-600 focus:border-blue-400/70 focus:ring-2 focus:ring-blue-500/20" placeholder={t('wikiAuthoring.editSummaryPlaceholder')} />
-              </label>
-            )}
+            <div className="shrink-0 border-t border-white/10 px-4 py-2 md:px-5">
+              <button type="button" onClick={() => setDetailsOpen((open) => !open)} className="flex w-full items-center justify-between gap-3 rounded-lg px-1 py-1.5 text-left text-xs font-medium text-slate-400 transition hover:text-slate-200">
+                <span>{t('wikiAuthoring.additionalDetails')}</span>
+                <ChevronDown className={`h-4 w-4 transition-transform ${detailsOpen ? 'rotate-180' : ''}`} />
+              </button>
+              {detailsOpen && (
+                <div className={`grid gap-3 pb-2 pt-2 ${isNewArticle ? '' : 'lg:grid-cols-2'}`}>
+                  <label className="block">
+                    <span className="mb-1 block text-xs font-medium text-slate-400">{t('wikiAuthoring.tags')}</span>
+                    <input value={tags} onChange={(event) => setTags(event.target.value)} className="w-full rounded-xl border border-white/15 bg-white/5 px-3.5 py-2.5 text-sm text-white outline-none placeholder:text-slate-600 focus:border-blue-400/70" placeholder={t('wikiAuthoring.tagsPlaceholder')} />
+                  </label>
+                  {!isNewArticle && (
+                    <label className="block">
+                      <span className="mb-1 block text-xs font-medium text-slate-400">{t('wikiAuthoring.editSummary')}</span>
+                      <input value={editSummary} onChange={(event) => setEditSummary(event.target.value)} maxLength={1000} className="w-full rounded-xl border border-white/15 bg-white/5 px-3.5 py-2.5 text-sm text-white outline-none placeholder:text-slate-600 focus:border-blue-400/70" placeholder={t('wikiAuthoring.editSummaryPlaceholder')} />
+                    </label>
+                  )}
+                </div>
+              )}
+            </div>
           </section>
 
-          <aside className={`${mobilePane === 'editor' ? 'hidden lg:flex' : 'flex'} min-h-[480px] flex-col border-l border-white/10 bg-[#0b1220]/80`}>
-            <div className="flex items-center justify-between border-b border-white/10 px-5 py-4 md:px-7">
+          <aside className={`${mobilePane === 'editor' ? 'hidden lg:flex' : 'flex'} min-h-0 flex-col border-l border-white/10 bg-[#0b1220]/80`}>
+            <div className="flex shrink-0 items-center justify-between border-b border-white/10 px-5 py-3 md:px-6">
               <div className="flex items-center gap-2 text-sm font-medium text-slate-200"><Eye className="h-4 w-4 text-purple-300" />{t('wikiAuthoring.preview')}</div>
               <button type="button" onClick={() => setMobilePane('editor')} className="rounded-lg px-3 py-1.5 text-xs text-slate-400 hover:bg-white/10 hover:text-white lg:hidden">{t('wikiAuthoring.backToEditor')}</button>
             </div>
-            <div className="flex-1 overflow-y-auto p-5 md:p-7">
+            <div className="min-h-0 flex-1 overflow-y-auto p-5 md:p-6">
               <div className="mb-5 border-b border-white/10 pb-5">
                 <div className="mb-3 inline-flex items-center gap-2 rounded-full bg-blue-500/10 px-3 py-1 text-xs text-blue-300"><BookOpen className="h-3.5 w-3.5" />{t('wikiAuthoring.knowledgeBase')}</div>
                 <h3 className="text-2xl font-bold leading-tight text-white">{title || t('wikiAuthoring.untitled')}</h3>
                 {summary && <p className="mt-3 text-sm leading-6 text-slate-400">{summary}</p>}
               </div>
-              {content ? (
-                <WikiContentRenderer content={content} className="text-sm" />
+              {previewContent ? (
+                <WikiContentRenderer content={previewContent} className="text-sm" />
               ) : (
                 <div className="rounded-2xl border border-dashed border-white/15 px-5 py-12 text-center text-sm text-slate-500">{t('wikiAuthoring.previewEmpty')}</div>
               )}
@@ -286,7 +312,7 @@ export function WikiAuthoringModal({
           </aside>
         </div>
 
-        <footer className="border-t border-white/10 bg-[#111827] px-5 py-4 md:px-7">
+        <footer className="shrink-0 border-t border-white/10 bg-[#111827] px-4 py-3 md:px-6">
           {validationError && <div className="mb-3 flex items-center gap-2 text-sm text-amber-300"><AlertTriangle className="h-4 w-4" />{validationError}</div>}
           {discardPrompt ? (
             <div className="flex flex-wrap items-center justify-between gap-3">

@@ -1,5 +1,6 @@
 """Service for syncing Wiki content from Markdown files to database."""
 
+import json
 import re
 from pathlib import Path
 from typing import Any
@@ -15,6 +16,7 @@ from app.models.wiki_article import (
 )
 from app.models.wiki_category import WikiCategory
 from app.models.wiki_space import GUIDES_SPACE_ID, KNOWLEDGE_SPACE_ID
+from app.services.wiki_markdown import derive_wiki_summary
 from app.services.wiki_revision_service import publish_editorial_snapshot
 
 
@@ -154,9 +156,7 @@ async def sync_article(
 
     author_id = metadata.get("author_id", 1)
 
-    # Generate summary
-    summary_text = content.replace("#", "").strip()
-    summary = summary_text[:200] + "..." if len(summary_text) > 200 else summary_text
+    summary = derive_wiki_summary(content, metadata.get("summary"))
 
     action = "updated" if article else "created"
 
@@ -252,6 +252,7 @@ def generate_frontmatter(article: "WikiArticle", category_slug: str) -> str:
     lines = [
         "---",
         f'title: "{article.title}"',
+        f"summary: {json.dumps(article.summary, ensure_ascii=False)}",
         f"category: {category_slug}",
         f"slug: {article.slug}",
         f"tags: {tags_str}",

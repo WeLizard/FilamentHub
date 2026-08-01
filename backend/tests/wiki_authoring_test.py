@@ -525,6 +525,7 @@ async def test_markdown_sync_versions_changes_but_not_identical_content(
     await _seed_wiki(db_session)
     metadata = {
         "title": "Synchronized article",
+        "summary": "A focused **summary** for cards.",
         "slug": "synchronized-article",
         "category": "materials",
         "status": "published",
@@ -549,6 +550,7 @@ async def test_markdown_sync_versions_changes_but_not_identical_content(
         )
     ).scalar_one()
     assert article.content == "Corrected body"
+    assert article.summary == "A focused summary for cards."
 
 
 async def test_markdown_sync_respects_space_and_language_metadata(

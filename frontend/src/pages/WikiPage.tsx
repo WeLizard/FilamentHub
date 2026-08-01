@@ -8,6 +8,7 @@ import { BookOpen, Search, TrendingUp, Clock, Eye, ChevronRight, Loader2, X, Fil
 import { wikiAPI } from '../api/client';
 import { SEOHead } from '../components/SEOHead';
 import { WikiAuthoringModal, WikiPeerReviewModal } from '../components/wiki';
+import { plainWikiSummary } from '../components/wiki/wikiMarkdown';
 import { toast } from '../components/Toast';
 import { useAuth } from '../contexts/AuthContext';
 import type { WikiCategory, WikiArticleSummary, WikiLanguage, WikiRevision } from '../types/api';
@@ -203,9 +204,9 @@ export function WikiPage() {
                 <span className="flex items-center gap-2"><Files className="h-3.5 w-3.5" />{t('wikiAuthoring.yourWork')}</span>
                 <button type="button" onClick={() => navigate('/wiki/workspace')} className="inline-flex items-center gap-1 text-blue-300 transition hover:text-blue-200">{t('wikiAuthoring.viewAllWork')}<ChevronRight className="h-3.5 w-3.5" /></button>
               </div>
-              <div className="flex gap-2 overflow-x-auto pb-1">
-                {ownRevisions.items.map((revision) => (
-                  <button key={revision.id} type="button" disabled={revision.status !== 'draft' && revision.status !== 'rejected'} onClick={() => revision.status === 'rejected' ? retryRevision.mutate(revision.id) : setAuthoringRevision(revision)} className="min-w-[210px] rounded-xl border border-white/10 bg-black/10 px-3 py-2.5 text-left transition hover:border-blue-400/30 hover:bg-white/5 disabled:cursor-default disabled:hover:border-white/10">
+              <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                {ownRevisions.items.slice(0, 3).map((revision) => (
+                  <button key={revision.id} type="button" disabled={revision.status !== 'draft' && revision.status !== 'rejected'} onClick={() => revision.status === 'rejected' ? retryRevision.mutate(revision.id) : setAuthoringRevision(revision)} className="min-w-0 rounded-xl border border-white/10 bg-black/10 px-3 py-2.5 text-left transition hover:border-blue-400/30 hover:bg-white/5 disabled:cursor-default disabled:hover:border-white/10">
                     <div className="truncate text-sm font-medium text-slate-200">{revision.title}</div>
                     <div className="mt-1 flex items-center justify-between gap-2 text-xs text-slate-500"><span>v{revision.revision_number}</span><span className={revision.status === 'pending_review' ? 'text-amber-300' : revision.status === 'published' ? 'text-emerald-300' : 'text-blue-300'}>{t(`wikiAuthoring.status.${revision.status}`)}</span></div>
                     {revision.status === 'rejected' && <div className="mt-2 border-t border-white/10 pt-2 text-xs text-amber-200/80">{retryRevision.isPending && retryRevision.variables === revision.id ? t('wikiAuthoring.preparingRevision') : revision.review_note || t('wikiAuthoring.fixRevision')}</div>}
@@ -290,7 +291,7 @@ export function WikiPage() {
                   <h3 className="text-base font-semibold text-white mb-2 group-hover:text-blue-300 transition-colors line-clamp-2">
                     {article.title}
                   </h3>
-                  <p className="text-sm text-gray-300 mb-3 line-clamp-2">{article.summary}</p>
+                  <p className="text-sm text-gray-300 mb-3 line-clamp-2">{plainWikiSummary(article.summary)}</p>
                   <div className="flex items-center justify-between text-xs text-gray-400">
                     <div className="flex items-center gap-1">
                       <Eye className="w-3.5 h-3.5" />
@@ -335,7 +336,7 @@ export function WikiPage() {
                 <span className="absolute right-4 top-3 text-5xl font-black text-white/[0.035]">{String(index + 1).padStart(2, '0')}</span>
                 <div className="mb-5 flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-cyan-400 text-white shadow-lg shadow-cyan-950/30"><Compass className="h-5 w-5" /></div>
                 <h3 className="relative text-base font-semibold text-white transition group-hover:text-cyan-200">{article.title}</h3>
-                <p className="relative mt-2 line-clamp-3 text-sm leading-6 text-slate-400">{article.summary}</p>
+                <p className="relative mt-2 line-clamp-3 text-sm leading-6 text-slate-400">{plainWikiSummary(article.summary)}</p>
                 <span className="relative mt-5 inline-flex items-center gap-1 text-xs font-medium text-cyan-300">{t('wikiPage.openGuide')}<ChevronRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" /></span>
               </button>
             ))}
@@ -352,24 +353,25 @@ export function WikiPage() {
           <BookOpen className="w-6 h-6 text-blue-400" />
           {t('wikiPage.categories')}
         </h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
           {categories.map((category) => {
             const IconComponent = getIconComponent(category.icon);
             return (
               <button
                 key={category.id}
                 onClick={() => navigate(`/wiki/${category.slug}`)}
-                className="group bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl p-6 hover:bg-white/15 transition-all hover:scale-105 text-left"
+                className="group relative flex aspect-[3/4] min-h-[250px] flex-col overflow-hidden rounded-l-md rounded-r-2xl border border-white/15 bg-gradient-to-br from-white/[0.11] to-white/[0.045] p-5 pl-7 text-left shadow-xl shadow-purple-950/15 transition hover:-translate-y-1 hover:border-cyan-300/30 hover:shadow-2xl hover:shadow-purple-950/30"
               >
-                <div className="flex items-start justify-between mb-3">
-                  <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-lg flex items-center justify-center">
+                <span className="absolute inset-y-0 left-0 w-3 border-r border-white/10 bg-black/15 shadow-[3px_0_12px_rgba(0,0,0,0.18)]" />
+                <div className="flex items-start justify-between">
+                  <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-cyan-500 shadow-lg shadow-blue-950/30">
                     <IconComponent className="w-6 h-6 text-white" />
                   </div>
-                  <ChevronRight className="w-5 h-5 text-gray-400 group-hover:text-white transition-colors" />
+                  <ChevronRight className="h-5 w-5 text-slate-500 transition group-hover:translate-x-0.5 group-hover:text-cyan-200" />
                 </div>
-                <h3 className="text-lg font-semibold text-white mb-2">{category.name}</h3>
-                <p className="text-sm text-gray-300 mb-3 line-clamp-2">{category.description}</p>
-                <div className="text-xs text-gray-400">
+                <h3 className="mt-6 text-lg font-semibold leading-tight text-white">{t(`wikiAuthoring.categories.${category.slug}`, { defaultValue: category.name })}</h3>
+                <p className="mt-3 line-clamp-4 text-sm leading-6 text-slate-400">{category.description}</p>
+                <div className="mt-auto border-t border-white/10 pt-4 text-xs text-slate-500">
                   {category.articles_count} {t('wikiPage.articles')}
                 </div>
               </button>
@@ -395,7 +397,7 @@ export function WikiPage() {
                 <h3 className="text-base font-semibold text-white mb-2 group-hover:text-blue-300 transition-colors line-clamp-2">
                   {article.title}
                 </h3>
-                <p className="text-sm text-gray-300 mb-3 line-clamp-2">{article.summary}</p>
+                <p className="text-sm text-gray-300 mb-3 line-clamp-2">{plainWikiSummary(article.summary)}</p>
                 <div className="flex items-center justify-between text-xs text-gray-400">
                   <div className="flex items-center gap-1">
                     <Eye className="w-3.5 h-3.5" />
@@ -428,7 +430,7 @@ export function WikiPage() {
                 <h3 className="text-base font-semibold text-white mb-2 group-hover:text-blue-300 transition-colors line-clamp-2">
                   {article.title}
                 </h3>
-                <p className="text-sm text-gray-300 mb-3 line-clamp-2">{article.summary}</p>
+                <p className="text-sm text-gray-300 mb-3 line-clamp-2">{plainWikiSummary(article.summary)}</p>
                 <div className="flex items-center justify-between text-xs text-gray-400">
                   <span>{new Date(article.created_at).toLocaleDateString(i18n.resolvedLanguage)}</span>
                   {article.author && (

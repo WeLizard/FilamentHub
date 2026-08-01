@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.session import AsyncSessionLocal
 from app.models.wiki_article import WikiArticle, WikiArticleStatus
 from app.models.wiki_category import WikiCategory
+from app.services.wiki_markdown import derive_wiki_summary
 
 
 def parse_frontmatter(content: str) -> tuple[dict[str, Any], str]:
@@ -138,9 +139,7 @@ async def sync_article(
     # Get author_id (default to 1 = admin)
     author_id = metadata.get("author_id", 1)
 
-    # Generate summary from first 200 chars of content (strip markdown headers)
-    summary_text = content.replace("#", "").strip()
-    summary = summary_text[:200] + "..." if len(summary_text) > 200 else summary_text
+    summary = derive_wiki_summary(content, metadata.get("summary"))
 
     if article:
         # Update existing
@@ -236,4 +235,3 @@ async def main() -> None:
 
 if __name__ == "__main__":
     asyncio.run(main())
-

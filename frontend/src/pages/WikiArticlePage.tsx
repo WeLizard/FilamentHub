@@ -30,6 +30,7 @@ import { TableOfContents, extractHeadings } from '../components/wiki/TableOfCont
 import { MobileTocDrawer } from '../components/wiki/MobileTocDrawer';
 import { WikiAuthoringModal } from '../components/wiki/WikiAuthoringModal';
 import { WikiContentRenderer } from '../components/wiki/WikiContentRenderer';
+import { withoutLeadingArticleHeading } from '../components/wiki/wikiMarkdown';
 
 export function WikiArticlePage() {
   const { t, i18n } = useTranslation();
@@ -142,6 +143,8 @@ export function WikiArticlePage() {
       </div>
     );
   }
+
+  const articleContent = withoutLeadingArticleHeading(article.content);
 
   // JSON-LD structured data для поисковиков
   const jsonLd = article
@@ -287,7 +290,7 @@ export function WikiArticlePage() {
             {/* Article Content (Markdown) */}
             <article className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-2xl p-6 md:p-8 mb-8 overflow-hidden">
               <WikiContentRenderer
-                content={article.content}
+                content={articleContent}
                 taskStorageKey={slug ? `wiki-checkboxes-${slug}` : undefined}
               />
             </article>
@@ -338,11 +341,11 @@ export function WikiArticlePage() {
           </div>
 
           {/* Desktop Sidebar TOC */}
-          {extractHeadings(article.content).length > 0 && (
+          {extractHeadings(articleContent).length > 0 && (
             <aside className="hidden lg:block">
               <div className="sticky top-24">
                 <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl p-4 max-h-[calc(100vh-8rem)] overflow-y-auto scrollbar-thin scrollbar-track-transparent scrollbar-thumb-white/10">
-                  <TableOfContents content={article.content} />
+                  <TableOfContents content={articleContent} />
                 </div>
               </div>
             </aside>
@@ -369,7 +372,7 @@ export function WikiArticlePage() {
       )}
 
       {/* Mobile TOC Drawer */}
-      <MobileTocDrawer content={article.content} articleTitle={article.title} />
+      <MobileTocDrawer content={articleContent} articleTitle={article.title} />
     </>
   );
 }

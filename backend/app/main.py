@@ -14,6 +14,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.core.config import settings
 from app.core.limiter import limiter
+from app.middleware.catalogue_cache import CatalogueCacheMiddleware
 from app.middleware.maintenance import MaintenanceMiddleware
 from app.services.file_service import ensure_upload_dir_compatibility, get_upload_root_dir
 from app.services.maintenance_service import get_maintenance_info
@@ -98,6 +99,10 @@ async def _stop_provisional_account_sweeper() -> None:
         task.cancel()
         with suppress(asyncio.CancelledError):
             await task
+
+# Catalogue caching sits inside maintenance and CORS: a maintenance block must
+# never be cached, and the CORS headers must reach even a 304.
+app.add_middleware(CatalogueCacheMiddleware)
 
 # Maintenance mode middleware (должен быть перед CORS для блокировки запросов)
 app.add_middleware(MaintenanceMiddleware)
