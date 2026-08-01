@@ -3,18 +3,25 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
-import { BookOpen, Search, TrendingUp, Clock, Eye, ChevronRight, Loader2, X } from 'lucide-react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { BookOpen, Search, TrendingUp, Clock, Eye, ChevronRight, Loader2, X, FilePenLine, Files, Compass, LibraryBig, ShieldCheck, SearchCheck } from 'lucide-react';
 import { wikiAPI } from '../api/client';
 import { SEOHead } from '../components/SEOHead';
-import type { WikiCategory, WikiArticleSummary } from '../types/api';
+import { WikiAuthoringModal, WikiPeerReviewModal } from '../components/wiki';
+import { toast } from '../components/Toast';
+import { useAuth } from '../contexts/AuthContext';
+import type { WikiCategory, WikiArticleSummary, WikiLanguage, WikiRevision } from '../types/api';
 
 // Маппинг названий иконок Lucide на компоненты
 import * as LucideIcons from 'lucide-react';
 
 export function WikiPage() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const { user } = useAuth();
   const [categories, setCategories] = useState<WikiCategory[]>([]);
+  const [guideArticles, setGuideArticles] = useState<WikiArticleSummary[]>([]);
   const [popularArticles, setPopularArticles] = useState<WikiArticleSummary[]>([]);
   const [recentArticles, setRecentArticles] = useState<WikiArticleSummary[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -22,22 +29,59 @@ export function WikiPage() {
   const [isSearching, setIsSearching] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [authoringRevision, setAuthoringRevision] = useState<WikiRevision | 'new' | null>(null);
+  const [reviewRevision, setReviewRevision] = useState<WikiRevision | null>(null);
+  const languageCode = i18n.resolvedLanguage?.split('-')[0];
+  const currentLanguage: WikiLanguage = languageCode === 'ru' || languageCode === 'zh' ? languageCode : 'en';
+
+  const { data: ownRevisions } = useQuery({
+    queryKey: ['wiki-own-revisions', user?.id],
+    queryFn: () => wikiAPI.listOwnRevisions({ page: 1, page_size: 6 }),
+    enabled: Boolean(user),
+    staleTime: 30_000,
+  });
+
+  const { data: reviewableRevisions } = useQuery({
+    queryKey: ['wiki-reviewable-revisions', user?.id],
+    queryFn: () => wikiAPI.listReviewableRevisions({ page: 1, page_size: 4 }),
+    enabled: Boolean(user),
+    staleTime: 30_000,
+  });
+
+  const retryRevision = useMutation({
+    mutationFn: (revisionId: number) => wikiAPI.retryRevision(revisionId),
+    onSuccess: (revision) => {
+      queryClient.invalidateQueries({ queryKey: ['wiki-own-revisions'] });
+      setAuthoringRevision(revision);
+    },
+    onError: () => toast.error(t('wikiAuthoring.retryError')),
+  });
 
   useEffect(() => {
-    loadData();
-  }, []);
+    void loadData();
+  }, [currentLanguage]);
 
   const loadData = async () => {
     try {
       setIsLoading(true);
       setError(null);
 
-      // Загружаем категории
-      const categoriesData = await wikiAPI.listCategories({ page: 1, page_size: 50 });
+      let [categoriesData, guidesData, articlesData] = await Promise.all([
+        wikiAPI.listCategories({ page: 1, page_size: 50, space: 'knowledge', language: currentLanguage }),
+        wikiAPI.listArticles({ page: 1, page_size: 6, published_only: true, space: 'guides', language: currentLanguage }),
+        wikiAPI.listArticles({ page: 1, page_size: 12, published_only: true, space: 'knowledge', language: currentLanguage }),
+      ]);
+      if (currentLanguage !== 'ru' && articlesData.total === 0) {
+        [categoriesData, articlesData] = await Promise.all([
+          wikiAPI.listCategories({ page: 1, page_size: 50, space: 'knowledge', language: 'ru' }),
+          wikiAPI.listArticles({ page: 1, page_size: 12, published_only: true, space: 'knowledge', language: 'ru' }),
+        ]);
+      }
+      if (currentLanguage !== 'ru' && guidesData.total === 0) {
+        guidesData = await wikiAPI.listArticles({ page: 1, page_size: 6, published_only: true, space: 'guides', language: 'ru' });
+      }
       setCategories(categoriesData.items);
-
-      // Загружаем популярные статьи (TODO: сортировка по views на бэке)
-      const articlesData = await wikiAPI.listArticles({ page: 1, page_size: 6, published_only: true });
+      setGuideArticles(guidesData.items);
       
       // Сортируем по просмотрам локально
       const sortedByViews = [...articlesData.items].sort((a, b) => b.views - a.views);
@@ -63,7 +107,10 @@ export function WikiPage() {
 
     try {
       setIsSearching(true);
-      const response = await wikiAPI.searchArticles(searchQuery);
+      let response = await wikiAPI.searchArticles(searchQuery, { language: currentLanguage });
+      if (currentLanguage !== 'ru' && response.total === 0) {
+        response = await wikiAPI.searchArticles(searchQuery, { language: 'ru' });
+      }
       setSearchResults(response.items);
     } catch (err) {
       console.error('Search failed:', err);
@@ -131,6 +178,50 @@ export function WikiPage() {
         </p>
       </div>
 
+      {user && (
+        <section className="mb-8 overflow-hidden rounded-2xl border border-blue-400/15 bg-gradient-to-r from-blue-500/10 via-purple-500/10 to-white/[0.03] p-4 md:mb-10 md:p-5">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div className="flex items-start gap-3">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-500/15 text-blue-300 ring-1 ring-blue-400/20"><FilePenLine className="h-5 w-5" /></span>
+              <div>
+                <h2 className="font-semibold text-white">{t('wikiAuthoring.contributeTitle')}</h2>
+                <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-400">{t('wikiAuthoring.contributeDescription')}</p>
+              </div>
+            </div>
+            <button type="button" onClick={() => setAuthoringRevision('new')} className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-blue-500 to-purple-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-purple-950/30 transition hover:brightness-110">
+              <FilePenLine className="h-4 w-4" />{t('wikiAuthoring.writeArticle')}
+            </button>
+          </div>
+          {ownRevisions && ownRevisions.items.length > 0 && (
+            <div className="mt-4 border-t border-white/10 pt-4">
+              <div className="mb-2 flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-slate-500"><Files className="h-3.5 w-3.5" />{t('wikiAuthoring.yourWork')}</div>
+              <div className="flex gap-2 overflow-x-auto pb-1">
+                {ownRevisions.items.map((revision) => (
+                  <button key={revision.id} type="button" disabled={revision.status !== 'draft' && revision.status !== 'rejected'} onClick={() => revision.status === 'rejected' ? retryRevision.mutate(revision.id) : setAuthoringRevision(revision)} className="min-w-[210px] rounded-xl border border-white/10 bg-black/10 px-3 py-2.5 text-left transition hover:border-blue-400/30 hover:bg-white/5 disabled:cursor-default disabled:hover:border-white/10">
+                    <div className="truncate text-sm font-medium text-slate-200">{revision.title}</div>
+                    <div className="mt-1 flex items-center justify-between gap-2 text-xs text-slate-500"><span>v{revision.revision_number}</span><span className={revision.status === 'pending_review' ? 'text-amber-300' : revision.status === 'published' ? 'text-emerald-300' : 'text-blue-300'}>{t(`wikiAuthoring.status.${revision.status}`)}</span></div>
+                    {revision.status === 'rejected' && <div className="mt-2 border-t border-white/10 pt-2 text-xs text-amber-200/80">{retryRevision.isPending && retryRevision.variables === revision.id ? t('wikiAuthoring.preparingRevision') : revision.review_note || t('wikiAuthoring.fixRevision')}</div>}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          {reviewableRevisions && reviewableRevisions.items.length > 0 && (
+            <div className="mt-4 border-t border-white/10 pt-4">
+              <div className="mb-2 flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-cyan-300/70"><SearchCheck className="h-3.5 w-3.5" />{t('wikiPeerReview.availableTitle')}</div>
+              <p className="mb-3 text-xs leading-5 text-slate-500">{t('wikiPeerReview.availableDescription')}</p>
+              <div className="grid gap-2 md:grid-cols-2">
+                {reviewableRevisions.items.map((revision) => (
+                  <button key={revision.id} type="button" onClick={() => setReviewRevision(revision)} className="group rounded-xl border border-cyan-300/10 bg-cyan-500/[0.035] px-3 py-3 text-left transition hover:border-cyan-300/25 hover:bg-cyan-500/[0.07]">
+                    <div className="flex items-start justify-between gap-3"><div className="min-w-0"><div className="truncate text-sm font-medium text-slate-200 group-hover:text-cyan-100">{revision.title}</div><div className="mt-1 line-clamp-1 text-xs text-slate-500">{revision.edit_summary || revision.summary}</div></div><SearchCheck className="h-4 w-4 shrink-0 text-cyan-300" /></div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </section>
+      )}
+
       {/* Search Bar */}
       <form onSubmit={handleSearch} className="mb-8 md:mb-12">
         <div className="relative max-w-2xl mx-auto">
@@ -184,6 +275,10 @@ export function WikiPage() {
                   onClick={() => navigate(`/wiki/articles/${article.slug}`)}
                   className="group bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl p-5 hover:bg-white/15 transition-all text-left"
                 >
+                  <div className="mb-3 inline-flex items-center gap-1.5 rounded-full bg-white/[0.07] px-2.5 py-1 text-[11px] font-medium text-slate-400">
+                    {article.space_key === 'guides' ? <Compass className="h-3 w-3 text-cyan-300" /> : <LibraryBig className="h-3 w-3 text-purple-300" />}
+                    {article.space_key === 'guides' ? t('wikiPage.guideBadge') : t('wikiPage.knowledgeBadge')}
+                  </div>
                   <h3 className="text-base font-semibold text-white mb-2 group-hover:text-blue-300 transition-colors line-clamp-2">
                     {article.title}
                   </h3>
@@ -193,7 +288,7 @@ export function WikiPage() {
                       <Eye className="w-3.5 h-3.5" />
                       <span>{article.views}</span>
                     </div>
-                    {article.tags.length > 0 && (
+                    {article.tags && article.tags.length > 0 && (
                       <div className="flex gap-1">
                         {article.tags.slice(0, 2).map((tag) => (
                           <span key={tag} className="px-1.5 py-0.5 bg-white/10 rounded text-gray-400">
@@ -217,6 +312,33 @@ export function WikiPage() {
 
       {/* Main content (hidden during search) */}
       {searchResults === null && (<>
+      {guideArticles.length > 0 && (
+        <section className="mb-12 overflow-hidden rounded-3xl border border-cyan-300/15 bg-gradient-to-br from-blue-500/15 via-cyan-500/[0.08] to-purple-500/10 p-5 shadow-2xl shadow-blue-950/20 md:p-7">
+          <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+            <div>
+              <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-cyan-300/15 bg-cyan-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.15em] text-cyan-200"><ShieldCheck className="h-3.5 w-3.5" />{t('wikiPage.officialGuides')}</div>
+              <h2 className="flex items-center gap-3 text-2xl font-bold text-white"><Compass className="h-6 w-6 text-cyan-300" />{t('wikiPage.guidesTitle')}</h2>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">{t('wikiPage.guidesDescription')}</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {guideArticles.map((article, index) => (
+              <button key={article.id} type="button" onClick={() => navigate(`/wiki/articles/${article.slug}`)} className="group relative overflow-hidden rounded-2xl border border-white/10 bg-[#0b1730]/70 p-5 text-left transition hover:-translate-y-0.5 hover:border-cyan-300/30 hover:bg-[#10203d]">
+                <span className="absolute right-4 top-3 text-5xl font-black text-white/[0.035]">{String(index + 1).padStart(2, '0')}</span>
+                <div className="mb-5 flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-cyan-400 text-white shadow-lg shadow-cyan-950/30"><Compass className="h-5 w-5" /></div>
+                <h3 className="relative text-base font-semibold text-white transition group-hover:text-cyan-200">{article.title}</h3>
+                <p className="relative mt-2 line-clamp-3 text-sm leading-6 text-slate-400">{article.summary}</p>
+                <span className="relative mt-5 inline-flex items-center gap-1 text-xs font-medium text-cyan-300">{t('wikiPage.openGuide')}<ChevronRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" /></span>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+
+      <div className="mb-6 flex items-center gap-3">
+        <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-purple-500/15 text-purple-200 ring-1 ring-purple-400/20"><LibraryBig className="h-5 w-5" /></span>
+        <div><h2 className="text-2xl font-bold text-white">{t('wikiPage.knowledgeTitle')}</h2><p className="mt-1 text-sm text-slate-400">{t('wikiPage.knowledgeDescription')}</p></div>
+      </div>
       <div className="mb-12">
         <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-2">
           <BookOpen className="w-6 h-6 text-blue-400" />
@@ -300,7 +422,7 @@ export function WikiPage() {
                 </h3>
                 <p className="text-sm text-gray-300 mb-3 line-clamp-2">{article.summary}</p>
                 <div className="flex items-center justify-between text-xs text-gray-400">
-                  <span>{new Date(article.created_at).toLocaleDateString('ru-RU')}</span>
+                  <span>{new Date(article.created_at).toLocaleDateString(i18n.resolvedLanguage)}</span>
                   {article.author && (
                     <span className="text-gray-500">{article.author}</span>
                   )}
@@ -312,7 +434,7 @@ export function WikiPage() {
       )}
 
       {/* Empty State */}
-      {categories.length === 0 && popularArticles.length === 0 && (
+      {categories.length === 0 && popularArticles.length === 0 && guideArticles.length === 0 && (
         <div className="text-center py-12 bg-white/5 backdrop-blur-sm rounded-2xl border border-white/10">
           <BookOpen className="w-16 h-16 text-gray-400 mx-auto mb-4" />
           <h3 className="text-xl font-semibold text-white mb-2">{t('wikiPage.emptyTitle')}</h3>
@@ -323,6 +445,17 @@ export function WikiPage() {
       )}
       </>)}
       </div>
+      {authoringRevision && (
+        <WikiAuthoringModal
+          categories={categories}
+          revision={authoringRevision === 'new' ? null : authoringRevision}
+          onClose={() => setAuthoringRevision(null)}
+          onSaved={() => {
+            queryClient.invalidateQueries({ queryKey: ['wiki-own-revisions'] });
+          }}
+        />
+      )}
+      {reviewRevision && <WikiPeerReviewModal revision={reviewRevision} onClose={() => setReviewRevision(null)} />}
     </>
   );
 }

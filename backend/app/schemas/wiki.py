@@ -121,6 +121,9 @@ class WikiArticleSummary(BaseModel):
 
     id: int
     category_id: int
+    space_key: str = "knowledge"
+    language: str = "ru"
+    provenance: str = "editorial"
     title: str
     slug: str
     summary: str
@@ -207,4 +210,3 @@ class WikiFeedbackStats(BaseModel):
     helpful_count: int = Field(default=0, description="Number of 'helpful' marks")
     feedback_count: int = Field(default=0, description="Number of feedback comments")
     user_marked_helpful: bool = Field(default=False, description="Whether current user marked as helpful")
-

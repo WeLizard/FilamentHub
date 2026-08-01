@@ -2,7 +2,7 @@
 
 import axios from 'axios';
 import type { InternalAxiosRequestConfig } from 'axios';
-import type { AccessibleBrand, AdminUserListResponse, AuthMethods, Brand, BrandUsage, BrandRequest, BrandRequestStatus, BrandTeamInvite, BrandTeamRole, BrandTeamWorkspace, Filament, FilamentAdditive, FilamentPropertyClaim, FilamentLine, FilamentImportResult, FilamentListResponse, FilamentPalettePayload, BrandInvitePublic, BrandInviteAdmin, BrandInviteAcceptResult, BrandInviteBatchPreview, BrandInviteBatchSendResult, FilamentAvailability, FilamentVisualSettings, FilamentReview, FilamentRatingStats, Notification, NotificationListResponse, Preset, RecommendedPreset, RecommendedForPrinterResponse, Printer, PrinterProfile, PrintProfile, PrinterRequest, User, Token, RefreshTokenRequest, RefreshTokenResponse, ListResponse, AccountDeletionStats, UserSavedPreset, CalculatorEstimateRequest, CalculatorEstimateResponse, CalculatorProfileResponse, CalculatorProfileUpdate, Feedback, FeedbackDetail, FeedbackListResponse, FeedbackType, CompatiblePrinter, CompatibleFilament, DownloadVersion, DownloadVersionsResponse, PluginDownloadsResponse, WikiCategory, WikiCategoryListResponse, WikiArticle, WikiArticleListResponse, WikiFeedbackStats, WikiFeedbackCreate, WikiFeedback, EmailThreadDetail, EmailThreadListResponse, EmailThreadStatus, EmailMessage, EmailSenderProfile, EmailLanguage, NotificationCampaignAudience, NotificationCampaignHistoryResponse, NotificationCampaignPreview, NotificationCampaignSendResult, LegalAcceptancePayload, LegalDocument, LegalDocumentType, LegalPack, LegalRequirements, RegistrationPayload, SpoolUsageEvent, OrcaSliceReport, OrcaPresetScope, OrcaSchemaObservation, OrcaSchemaObservationListResponse, OrcaSchemaObservationStatus } from '../types/api';
+import type { AccessibleBrand, AdminUserListResponse, AuthMethods, Brand, BrandUsage, BrandRequest, BrandRequestStatus, BrandTeamInvite, BrandTeamRole, BrandTeamWorkspace, Filament, FilamentAdditive, FilamentPropertyClaim, FilamentLine, FilamentImportResult, FilamentListResponse, FilamentPalettePayload, BrandInvitePublic, BrandInviteAdmin, BrandInviteAcceptResult, BrandInviteBatchPreview, BrandInviteBatchSendResult, FilamentAvailability, FilamentVisualSettings, FilamentReview, FilamentRatingStats, Notification, NotificationListResponse, Preset, RecommendedPreset, RecommendedForPrinterResponse, Printer, PrinterProfile, PrintProfile, PrinterRequest, User, Token, RefreshTokenRequest, RefreshTokenResponse, ListResponse, AccountDeletionStats, UserSavedPreset, CalculatorEstimateRequest, CalculatorEstimateResponse, CalculatorProfileResponse, CalculatorProfileUpdate, Feedback, FeedbackDetail, FeedbackListResponse, FeedbackType, CompatiblePrinter, CompatibleFilament, DownloadVersion, DownloadVersionsResponse, PluginDownloadsResponse, WikiCategory, WikiCategoryListResponse, WikiArticle, WikiArticleListResponse, WikiFeedbackStats, WikiFeedbackCreate, WikiFeedback, WikiLanguage, WikiReviewVerdict, WikiRevision, WikiRevisionListResponse, WikiRevisionStatus, WikiSpace, WikiSpaceKey, EmailThreadDetail, EmailThreadListResponse, EmailThreadStatus, EmailMessage, EmailSenderProfile, EmailLanguage, NotificationCampaignAudience, NotificationCampaignHistoryResponse, NotificationCampaignPreview, NotificationCampaignSendResult, LegalAcceptancePayload, LegalDocument, LegalDocumentType, LegalPack, LegalRequirements, RegistrationPayload, SpoolUsageEvent, OrcaSliceReport, OrcaPresetScope, OrcaSchemaObservation, OrcaSchemaObservationListResponse, OrcaSchemaObservationStatus } from '../types/api';
 import { getCsrfToken, getRefreshToken, getToken, isCookieAuthMode, isJwtAuthMode, isOrcaEmbedded, removeToken, setToken, shouldPersistTokensLocally } from '../utils/auth';
 import { isPluginEmbed, reportPluginSessionToPlugin } from '../utils/pluginBridge';
 import { downloadBlob } from '../utils/download';
@@ -2375,7 +2375,7 @@ export const downloadsAPI = {
 // Wiki API
 export const wikiAPI = {
   // Categories
-  listCategories: async (params?: { page?: number; page_size?: number }): Promise<WikiCategoryListResponse> => {
+  listCategories: async (params?: { page?: number; page_size?: number; space?: WikiSpaceKey; language?: WikiLanguage }): Promise<WikiCategoryListResponse> => {
     const response = await api.get('/wiki/categories', { params });
     return response.data;
   },
@@ -2392,6 +2392,8 @@ export const wikiAPI = {
     category_slug?: string;
     search?: string;
     published_only?: boolean;
+    space?: WikiSpaceKey;
+    language?: WikiLanguage;
   }): Promise<WikiArticleListResponse> => {
     const response = await api.get('/wiki/articles', { params });
     return response.data;
@@ -2402,7 +2404,7 @@ export const wikiAPI = {
     return response.data;
   },
   
-  searchArticles: async (q: string, params?: { page?: number; page_size?: number }): Promise<WikiArticleListResponse> => {
+  searchArticles: async (q: string, params?: { page?: number; page_size?: number; space?: WikiSpaceKey; language?: WikiLanguage }): Promise<WikiArticleListResponse> => {
     const response = await api.get('/wiki/search', { params: { q, ...params } });
     return response.data;
   },
@@ -2424,6 +2426,109 @@ export const wikiAPI = {
 
   listFeedback: async (articleSlug: string, params?: { page?: number; page_size?: number }): Promise<WikiFeedback[]> => {
     const response = await api.get(`/wiki/articles/${articleSlug}/feedback`, { params });
+    return response.data;
+  },
+
+  listSpaces: async (): Promise<WikiSpace[]> => {
+    const response = await api.get('/wiki/spaces');
+    return response.data;
+  },
+
+  createAuthoredArticle: async (data: {
+    category_id: number;
+    space_key?: WikiSpaceKey;
+    language?: WikiLanguage;
+    title: string;
+    slug?: string | null;
+    summary: string;
+    content: string;
+    tags?: string[] | null;
+    edit_summary?: string | null;
+    publish?: boolean;
+  }): Promise<WikiRevision> => {
+    const response = await api.post('/wiki/author/articles', data);
+    return response.data;
+  },
+
+  createRevision: async (articleId: number, data: {
+    title?: string;
+    summary?: string;
+    content?: string;
+    tags?: string[] | null;
+    edit_summary?: string | null;
+  }): Promise<WikiRevision> => {
+    const response = await api.post(`/wiki/author/articles/${articleId}/revisions`, data);
+    return response.data;
+  },
+
+  updateRevision: async (revisionId: number, data: {
+    title?: string;
+    summary?: string;
+    content?: string;
+    tags?: string[] | null;
+    edit_summary?: string | null;
+  }): Promise<WikiRevision> => {
+    const response = await api.patch(`/wiki/author/revisions/${revisionId}`, data);
+    return response.data;
+  },
+
+  submitRevision: async (revisionId: number, editSummary?: string | null): Promise<WikiRevision> => {
+    const response = await api.post(`/wiki/author/revisions/${revisionId}/submit`, {
+      edit_summary: editSummary ?? null,
+    });
+    return response.data;
+  },
+
+  retryRevision: async (revisionId: number): Promise<WikiRevision> => {
+    const response = await api.post(`/wiki/author/revisions/${revisionId}/retry`);
+    return response.data;
+  },
+
+  listReviewableRevisions: async (params?: { page?: number; page_size?: number }): Promise<WikiRevisionListResponse> => {
+    const response = await api.get('/wiki/revisions/reviewable', { params });
+    return response.data;
+  },
+
+  reviewRevision: async (revisionId: number, data: {
+    verdict: WikiReviewVerdict;
+    comment?: string | null;
+    evidence_url?: string | null;
+  }): Promise<WikiRevision> => {
+    const response = await api.post(`/wiki/revisions/${revisionId}/reviews`, data);
+    return response.data;
+  },
+
+  listOwnRevisions: async (params?: {
+    status?: WikiRevisionStatus;
+    page?: number;
+    page_size?: number;
+  }): Promise<WikiRevisionListResponse> => {
+    const response = await api.get('/wiki/author/revisions', { params });
+    return response.data;
+  },
+
+  listModerationRevisions: async (params?: {
+    status?: WikiRevisionStatus;
+    page?: number;
+    page_size?: number;
+  }): Promise<WikiRevisionListResponse> => {
+    const response = await api.get('/wiki/moderation/revisions', { params });
+    return response.data;
+  },
+
+  decideRevision: async (
+    revisionId: number,
+    data: { decision: 'publish' | 'reject'; review_note?: string | null },
+  ): Promise<WikiRevision> => {
+    const response = await api.post(`/wiki/moderation/revisions/${revisionId}/decision`, data);
+    return response.data;
+  },
+
+  listRevisionHistory: async (
+    articleSlug: string,
+    params?: { page?: number; page_size?: number },
+  ): Promise<WikiRevisionListResponse> => {
+    const response = await api.get(`/wiki/articles/${articleSlug}/history`, { params });
     return response.data;
   },
 

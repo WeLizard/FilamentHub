@@ -8,6 +8,7 @@ import {
   BookOpen, FolderOpen, Settings, Plus, Edit, Trash2, Download,
   RefreshCw, Upload, Loader2, X, Save, Eye,
   CheckCircle, XCircle, AlertCircle, FileText,
+  ShieldCheck,
 } from 'lucide-react';
 import { wikiAPI, adminAPI } from '../../api/client';
 import type { WikiArticle, WikiArticleSummary, WikiCategory } from '../../types/api';
@@ -15,8 +16,9 @@ import { toast } from '../Toast';
 import { ConfirmDeleteModal } from '../ConfirmDeleteModal';
 import { Dropdown } from '../Dropdown';
 import { translateApiError } from '../../utils/translateApiError';
+import { AdminWikiModeration } from './AdminWikiModeration';
 
-type WikiSection = 'articles' | 'categories' | 'operations';
+type WikiSection = 'articles' | 'moderation' | 'categories' | 'operations';
 
 interface ArticleFormData {
   id?: number;
@@ -541,6 +543,7 @@ export function AdminWiki() {
 
   const sectionTabs = [
     { id: 'articles' as WikiSection, label: t('adminWiki.articles'), icon: FileText },
+    { id: 'moderation' as WikiSection, label: t('adminWiki.moderation.tab'), icon: ShieldCheck },
     { id: 'categories' as WikiSection, label: t('adminWiki.categories'), icon: FolderOpen },
     { id: 'operations' as WikiSection, label: t('adminWiki.operations'), icon: Settings },
   ];
@@ -713,6 +716,8 @@ export function AdminWiki() {
           )}
         </div>
       )}
+
+      {section === 'moderation' && <AdminWikiModeration />}
 
       {/* ==================== Categories Section ==================== */}
       {section === 'categories' && (

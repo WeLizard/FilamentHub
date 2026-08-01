@@ -7,6 +7,7 @@ from typing import Annotated, Optional
 from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy import String, cast, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.dependencies import (
     get_current_active_user_optional,
@@ -32,6 +33,7 @@ from app.models.user import User, UserRole
 from app.models.wiki_article import WikiArticle, WikiArticleStatus
 from app.models.wiki_category import WikiCategory
 from app.models.wiki_feedback import WikiArticleFeedback, WikiFeedbackType
+from app.models.wiki_space import WikiSpace
 from app.schemas.wiki import (
     WikiArticleCreate,
     WikiArticleListResponse,
@@ -46,6 +48,10 @@ from app.schemas.wiki import (
     WikiFeedbackResponse,
     WikiFeedbackStats,
 )
+from app.services.wiki_revision_service import (
+    create_article_with_revision,
+    publish_editorial_snapshot,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +65,8 @@ router = APIRouter(prefix="/wiki", tags=["wiki"])
 @router.get("/categories", response_model=WikiCategoryListResponse)
 async def list_categories(
     db: Annotated[AsyncSession, Depends(get_db)],
+    space: str | None = Query(None, pattern="^(guides|knowledge)$"),
+    language: str | None = Query(None, pattern="^(ru|en|zh)$"),
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(50, ge=1, le=100, description="Items per page"),
 ) -> WikiCategoryListResponse:
@@ -71,13 +79,27 @@ async def list_categories(
     count_result = await db.execute(select(func.count(WikiCategory.id)))
     total = count_result.scalar_one()
 
-    # Получение категорий с подсчетом опубликованных статей
+    article_match = (
+        (WikiArticle.category_id == WikiCategory.id)
+        & (WikiArticle.status == WikiArticleStatus.PUBLISHED)
+    )
+    if space:
+        space_id = (
+            select(WikiSpace.id).where(WikiSpace.key == space).scalar_subquery()
+        )
+        article_match &= WikiArticle.space_id == space_id
+    if language:
+        article_match &= WikiArticle.language == language
+
+    # Получение категорий с подсчетом опубликованных статей нужного пространства.
+    # Пустые категории сохраняются в ответе, чтобы редактор новой статьи мог
+    # использовать уже настроенную таксономию.
     query = (
         select(
             WikiCategory,
             func.count(WikiArticle.id).label("articles_count")
         )
-        .outerjoin(WikiArticle, (WikiArticle.category_id == WikiCategory.id) & (WikiArticle.status == WikiArticleStatus.PUBLISHED))
+        .outerjoin(WikiArticle, article_match)
         .group_by(WikiCategory.id)
         .order_by(WikiCategory.order.asc(), WikiCategory.name.asc())
         .offset((page - 1) * page_size)
@@ -274,6 +296,8 @@ async def list_articles(
     category_slug: str | None = Query(None, description="Filter by category slug"),
     search: str | None = Query(None, description="Search in title, summary, and tags"),
     published_only: bool = Query(True, description="Show only published articles"),
+    space: str | None = Query(None, pattern="^(guides|knowledge)$"),
+    language: str | None = Query(None, pattern="^(ru|en|zh)$"),
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(20, ge=1, le=100, description="Items per page"),
 ) -> WikiArticleListResponse:
@@ -285,7 +309,12 @@ async def list_articles(
     - **published_only**: показывать только опубликованные статьи
     """
     # Базовый запрос
-    query = select(WikiArticle)
+    query = select(WikiArticle).options(selectinload(WikiArticle.space))
+
+    if space:
+        query = query.join(WikiSpace).where(WikiSpace.key == space)
+    if language:
+        query = query.where(WikiArticle.language == language)
 
     # Фильтр по категории
     if category_slug:
@@ -335,6 +364,9 @@ async def list_articles(
         article_dict = {
             "id": article.id,
             "category_id": article.category_id,
+            "space_key": article.space.key,
+            "language": article.language,
+            "provenance": article.provenance,
             "title": article.title,
             "slug": article.slug,
             "summary": article.summary,
@@ -370,7 +402,9 @@ async def get_article(
     Админы могут получить любую статью (включая черновики).
     """
     result = await db.execute(
-        select(WikiArticle).where(WikiArticle.slug == article_slug)
+        select(WikiArticle)
+        .options(selectinload(WikiArticle.space))
+        .where(WikiArticle.slug == article_slug)
     )
     article = result.scalar_one_or_none()
 
@@ -405,6 +439,9 @@ async def get_article(
     article_dict = {
         "id": article.id,
         "category_id": article.category_id,
+        "space_key": article.space.key,
+        "language": article.language,
+        "provenance": article.provenance,
         "title": article.title,
         "slug": article.slug,
         "summary": article.summary,
@@ -444,21 +481,32 @@ async def create_article(
     if existing.scalar_one_or_none():
         raise_error(400, ERR_ARTICLE_SLUG_EXISTS)
 
-    # Создание статьи
-    article_data = data.model_dump()
-    # Конвертируем published bool в status enum
-    if "published" in article_data:
-        article_data["status"] = WikiArticleStatus.PUBLISHED if article_data.pop("published") else WikiArticleStatus.DRAFT
-    article = WikiArticle(**article_data)
-    article.created_by_id = _current_user.id
-    article.updated_by_id = _current_user.id
-    db.add(article)
+    revision = await create_article_with_revision(
+        db,
+        user=_current_user,
+        category_id=data.category_id,
+        space_key="knowledge",
+        language="ru",
+        title=data.title,
+        slug=data.slug,
+        summary=data.summary,
+        content=data.content,
+        tags=data.tags,
+        edit_summary="Created from the Wiki administration interface",
+        publish=data.published,
+        display_author=data.author,
+        order=data.order,
+    )
     await db.commit()
+    article = revision.article
     await db.refresh(article)
 
     return WikiArticleResponse(
         id=article.id,
         category_id=article.category_id,
+        space_key=article.space.key,
+        language=article.language,
+        provenance=article.provenance,
         title=article.title,
         slug=article.slug,
         summary=article.summary,
@@ -482,7 +530,11 @@ async def update_article(
     _current_user: Annotated[User, Depends(get_current_admin_user)],
 ) -> WikiArticleResponse:
     """Обновить статью (только для администраторов)."""
-    result = await db.execute(select(WikiArticle).where(WikiArticle.id == article_id))
+    result = await db.execute(
+        select(WikiArticle)
+        .options(selectinload(WikiArticle.space))
+        .where(WikiArticle.id == article_id)
+    )
     article = result.scalar_one_or_none()
 
     if not article:
@@ -490,10 +542,6 @@ async def update_article(
 
     # Обновление полей
     update_data = data.model_dump(exclude_unset=True)
-
-    # Конвертируем published bool в status enum
-    if "published" in update_data:
-        update_data["status"] = WikiArticleStatus.PUBLISHED if update_data.pop("published") else WikiArticleStatus.DRAFT
 
     # Проверка существования новой категории
     if "category_id" in update_data:
@@ -511,7 +559,21 @@ async def update_article(
         if existing.scalar_one_or_none():
             raise_error(400, ERR_ARTICLE_SLUG_EXISTS)
 
-    # Обновляем поля
+    content_fields = {"title", "summary", "content", "tags", "published"}
+    if content_fields.intersection(update_data):
+        await publish_editorial_snapshot(
+            db,
+            article=article,
+            actor_id=_current_user.id,
+            title=update_data.pop("title", article.title),
+            summary=update_data.pop("summary", article.summary),
+            content=update_data.pop("content", article.content),
+            tags=update_data.pop("tags", article.tags),
+            publish=update_data.pop("published", article.published),
+            edit_summary="Updated from the Wiki administration interface",
+        )
+
+    # Metadata is not revision content, but remains part of the article identity.
     for field, value in update_data.items():
         setattr(article, field, value)
 
@@ -530,6 +592,9 @@ async def update_article(
     return WikiArticleResponse(
         id=article.id,
         category_id=article.category_id,
+        space_key=article.space.key,
+        language=article.language,
+        provenance=article.provenance,
         title=article.title,
         slug=article.slug,
         summary=article.summary,
@@ -572,6 +637,8 @@ async def delete_article(
 async def search_articles(
     db: Annotated[AsyncSession, Depends(get_db)],
     q: str = Query(..., min_length=2, description="Search query"),
+    space: str | None = Query(None, pattern="^(guides|knowledge)$"),
+    language: str | None = Query(None, pattern="^(ru|en|zh)$"),
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(20, ge=1, le=100, description="Items per page"),
 ) -> WikiArticleListResponse:
@@ -584,7 +651,7 @@ async def search_articles(
 
     # tags это JSON поле, поэтому используем cast для поиска
     from sqlalchemy import String, cast
-    query = select(WikiArticle).where(
+    query = select(WikiArticle).options(selectinload(WikiArticle.space)).where(
         WikiArticle.status == WikiArticleStatus.PUBLISHED,
         or_(
             WikiArticle.title.ilike(search_pattern),
@@ -593,6 +660,10 @@ async def search_articles(
             cast(WikiArticle.tags, String).ilike(search_pattern),
         )
     )
+    if space:
+        query = query.join(WikiSpace).where(WikiSpace.key == space)
+    if language:
+        query = query.where(WikiArticle.language == language)
 
     # Подсчет total
     count_query = select(func.count()).select_from(query.subquery())
@@ -617,6 +688,9 @@ async def search_articles(
         article_dict = {
             "id": article.id,
             "category_id": article.category_id,
+            "space_key": article.space.key,
+            "language": article.language,
+            "provenance": article.provenance,
             "title": article.title,
             "slug": article.slug,
             "summary": article.summary,
@@ -901,4 +975,3 @@ async def list_article_feedback(
         )
         for feedback, username in rows
     ]
-

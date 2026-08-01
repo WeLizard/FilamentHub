@@ -6,11 +6,11 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { BookOpen, ArrowLeft, Eye, Clock, User, Loader2, AlertCircle } from 'lucide-react';
 import { wikiAPI } from '../api/client';
 import { SEOHead } from '../components/SEOHead';
-import type { WikiCategory, WikiArticleSummary } from '../types/api';
+import type { WikiCategory, WikiArticleSummary, WikiLanguage } from '../types/api';
 import * as LucideIcons from 'lucide-react';
 
 export function WikiCategoryPage() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
 
@@ -20,10 +20,12 @@ export function WikiCategoryPage() {
   const [error, setError] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
+  const languageCode = i18n.resolvedLanguage?.split('-')[0];
+  const currentLanguage: WikiLanguage = languageCode === 'ru' || languageCode === 'zh' ? languageCode : 'en';
 
   useEffect(() => {
     loadCategoryAndArticles();
-  }, [slug, currentPage]);
+  }, [slug, currentPage, currentLanguage]);
 
   const loadCategoryAndArticles = async () => {
     if (!slug) return;
@@ -33,23 +35,39 @@ export function WikiCategoryPage() {
       setError(null);
 
       // Загружаем категорию
-      const categoriesData = await wikiAPI.listCategories({ page: 1, page_size: 100 });
-      const foundCategory = categoriesData.items.find((cat: WikiCategory) => cat.slug === slug);
+      let categoriesData = await wikiAPI.listCategories({ page: 1, page_size: 100, space: 'knowledge', language: currentLanguage });
+      let foundCategory = categoriesData.items.find((cat: WikiCategory) => cat.slug === slug);
 
       if (!foundCategory) {
         setError(t('wikiCategoryPage.notFound'));
         return;
       }
 
-      setCategory(foundCategory);
-
       // Загружаем статьи категории
-      const articlesData = await wikiAPI.listArticles({
+      let articlesData = await wikiAPI.listArticles({
         category_slug: foundCategory.slug,
         published_only: true,
+        space: 'knowledge',
+        language: currentLanguage,
         page: currentPage,
         page_size: 12,
       });
+      if (currentLanguage !== 'ru' && articlesData.total === 0) {
+        [categoriesData, articlesData] = await Promise.all([
+          wikiAPI.listCategories({ page: 1, page_size: 100, space: 'knowledge', language: 'ru' }),
+          wikiAPI.listArticles({
+            category_slug: foundCategory.slug,
+            published_only: true,
+            space: 'knowledge',
+            language: 'ru',
+            page: currentPage,
+            page_size: 12,
+          }),
+        ]);
+        foundCategory = categoriesData.items.find((cat: WikiCategory) => cat.slug === slug) || foundCategory;
+      }
+
+      setCategory(foundCategory);
 
       setArticles(articlesData.items);
       setTotalPages(articlesData.total_pages);
@@ -163,7 +181,7 @@ export function WikiCategoryPage() {
                     </div>
                     <div className="flex items-center gap-1">
                       <Clock className="w-3.5 h-3.5" />
-                      <span>{new Date(article.created_at).toLocaleDateString('ru-RU')}</span>
+                      <span>{new Date(article.created_at).toLocaleDateString(i18n.resolvedLanguage)}</span>
                     </div>
                   </div>
 

@@ -1469,10 +1469,13 @@ export interface WikiCategoryListResponse {
 export interface WikiArticleSummary {
   id: number;
   category_id: number;
+  space_key: WikiSpaceKey;
+  language: WikiLanguage;
+  provenance: WikiRevisionAuthorship;
   title: string;
   slug: string;
   summary: string;
-  tags: string[];
+  tags: string[] | null;
   author: string | null;
   published: boolean;
   views: number;
@@ -1516,6 +1519,71 @@ export interface WikiFeedback {
   comment: string | null;
   created_at: string;
   username: string | null;
+}
+
+export type WikiSpaceKey = 'guides' | 'knowledge';
+export type WikiLanguage = 'ru' | 'en' | 'zh';
+export type WikiRevisionStatus = 'draft' | 'pending_review' | 'published' | 'rejected' | 'withdrawn';
+export type WikiRevisionAuthorship = 'editorial' | 'community';
+export type WikiReviewVerdict = 'support' | 'needs_changes';
+
+export interface WikiSpace {
+  key: WikiSpaceKey;
+  order: number;
+  allows_community_authors: boolean;
+}
+
+export interface WikiRevisionReview {
+  id: number;
+  reviewer_id: number | null;
+  reviewer_username: string | null;
+  verdict: WikiReviewVerdict;
+  comment: string | null;
+  evidence_url: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface WikiRevision {
+  id: number;
+  article_id: number;
+  article_category_id: number;
+  article_slug: string;
+  article_title: string;
+  article_space_key: WikiSpaceKey;
+  article_language: WikiLanguage;
+  article_provenance: WikiRevisionAuthorship;
+    revision_number: number;
+    base_revision_id: number | null;
+    base_title: string | null;
+    base_summary: string | null;
+    base_content: string | null;
+  created_by_id: number | null;
+  created_by_username: string | null;
+  reviewed_by_id: number | null;
+  reviewed_by_username: string | null;
+  status: WikiRevisionStatus;
+  authorship: WikiRevisionAuthorship;
+  title: string;
+  summary: string;
+  content: string;
+  tags: string[] | null;
+  edit_summary: string | null;
+  review_note: string | null;
+  submitted_at: string | null;
+  reviewed_at: string | null;
+  published_at: string | null;
+  created_at: string;
+  updated_at: string;
+  peer_reviews: WikiRevisionReview[];
+}
+
+export interface WikiRevisionListResponse {
+  items: WikiRevision[];
+  total: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
 }
 
 export type OrcaPresetScope = 'filament' | 'process' | 'machine';

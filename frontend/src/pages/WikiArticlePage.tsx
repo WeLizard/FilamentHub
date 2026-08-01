@@ -16,6 +16,9 @@ import {
   ThumbsUp,
   MessageSquare,
   Check,
+  FilePenLine,
+  Compass,
+  LibraryBig,
 } from 'lucide-react';
 import { wikiAPI } from '../api/client';
 import { safeStorage } from '../utils/storage';
@@ -32,6 +35,7 @@ import { WikiFeedbackModal } from '../components/WikiFeedbackModal';
 import { useAuth } from '../contexts/AuthContext';
 import { TableOfContents, generateHeadingId, extractHeadings } from '../components/wiki/TableOfContents';
 import { MobileTocDrawer } from '../components/wiki/MobileTocDrawer';
+import { WikiAuthoringModal } from '../components/wiki/WikiAuthoringModal';
 
 // Mermaid диаграмма компонент
 function MermaidDiagram({ chart, id }: { chart: string; id: string }) {
@@ -64,7 +68,7 @@ function MermaidDiagram({ chart, id }: { chart: string; id: string }) {
 }
 
 export function WikiArticlePage() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -74,6 +78,7 @@ export function WikiArticlePage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
+  const [showAuthoringModal, setShowAuthoringModal] = useState(false);
   const [checkboxStates, setCheckboxStates] = useState<Record<string, boolean>>({});
 
   // Загружаем состояние чекбоксов из localStorage (safeStorage — в iframe
@@ -150,6 +155,13 @@ export function WikiArticlePage() {
     queryFn: () => wikiAPI.getFeedbackStats(slug!),
     enabled: !!slug && !!article,
     staleTime: 30000, // 30 секунд
+  });
+
+  const { data: authoringCategories } = useQuery({
+    queryKey: ['wiki-categories-authoring'],
+    queryFn: () => wikiAPI.listCategories({ page: 1, page_size: 100 }),
+    enabled: showAuthoringModal,
+    staleTime: 60_000,
   });
 
   // Мутация для добавления "Полезно"
@@ -280,19 +292,31 @@ export function WikiArticlePage() {
                 <span className="hidden sm:inline">{t('wikiArticlePage.back')}</span>
               </button>
 
-              <ShareMenu title={article.title} description={article.summary} />
+              <div className="flex items-center gap-2">
+                {user && (
+                  <button type="button" onClick={() => setShowAuthoringModal(true)} className="inline-flex items-center gap-2 rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-slate-300 transition hover:border-blue-400/30 hover:bg-blue-500/10 hover:text-white">
+                    <FilePenLine className="h-4 w-4" />
+                    <span className="hidden sm:inline">{t('wikiAuthoring.proposeEdit')}</span>
+                  </button>
+                )}
+                <ShareMenu title={article.title} description={article.summary} />
+              </div>
             </div>
 
             {/* Article Header */}
             <div className="mb-8">
-              {/* Category Badge */}
-              {article.category_name && (
-                <div className="mb-4">
+              <div className="mb-4 flex flex-wrap items-center gap-2">
+                <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-sm ${article.space_key === 'guides' ? 'bg-cyan-500/15 text-cyan-200' : 'bg-purple-500/15 text-purple-200'}`}>
+                  {article.space_key === 'guides' ? <Compass className="h-3.5 w-3.5" /> : <LibraryBig className="h-3.5 w-3.5" />}
+                  {article.space_key === 'guides' ? t('wikiPage.guideBadge') : t('wikiPage.knowledgeBadge')}
+                </span>
+                {article.category_name && (
                   <span className="inline-flex items-center gap-2 px-3 py-1 bg-blue-500/20 text-blue-300 rounded-full text-sm">
                     {article.category_name}
                   </span>
-                </div>
-              )}
+                )}
+                <span className="rounded-full border border-white/10 px-3 py-1 text-xs text-slate-400">{t(`wikiAuthoring.authorship.${article.provenance}`)}</span>
+              </div>
 
               {/* Title */}
               <h1 className="text-3xl md:text-4xl lg:text-5xl font-bold text-white mb-4 leading-tight">
@@ -310,7 +334,7 @@ export function WikiArticlePage() {
                 <div className="flex items-center gap-2">
                   <Clock className="w-4 h-4" />
                   <span>
-                    {new Date(article.created_at).toLocaleDateString('ru-RU', {
+                    {new Date(article.created_at).toLocaleDateString(i18n.resolvedLanguage, {
                       year: 'numeric',
                       month: 'long',
                       day: 'numeric',
@@ -591,6 +615,16 @@ export function WikiArticlePage() {
         articleSlug={article.slug}
         articleTitle={article.title}
       />
+      {showAuthoringModal && authoringCategories && (
+        <WikiAuthoringModal
+          categories={authoringCategories.items}
+          article={article}
+          onClose={() => setShowAuthoringModal(false)}
+          onSaved={() => {
+            queryClient.invalidateQueries({ queryKey: ['wiki-own-revisions'] });
+          }}
+        />
+      )}
 
       {/* Mobile TOC Drawer */}
       <MobileTocDrawer content={article.content} articleTitle={article.title} />

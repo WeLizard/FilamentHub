@@ -8,8 +8,14 @@ import yaml
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.wiki_article import WikiArticle, WikiArticleStatus
+from app.models.wiki_article import (
+    WikiArticle,
+    WikiArticleProvenance,
+    WikiArticleStatus,
+)
 from app.models.wiki_category import WikiCategory
+from app.models.wiki_space import GUIDES_SPACE_ID, KNOWLEDGE_SPACE_ID
+from app.services.wiki_revision_service import publish_editorial_snapshot
 
 
 def parse_frontmatter(content: str) -> tuple[dict[str, Any], str]:
@@ -99,6 +105,25 @@ async def sync_article(
 
     category = await get_or_create_category(db, category_slug)
 
+    space_key = metadata.get("space", "knowledge")
+    space_ids = {
+        "guides": GUIDES_SPACE_ID,
+        "knowledge": KNOWLEDGE_SPACE_ID,
+    }
+    if space_key not in space_ids:
+        return {
+            "file": file_path.name,
+            "status": "skipped",
+            "reason": "space must be guides or knowledge",
+        }
+    language = metadata.get("language", "ru")
+    if language not in {"ru", "en", "zh"}:
+        return {
+            "file": file_path.name,
+            "status": "skipped",
+            "reason": "language must be ru, en, or zh",
+        }
+
     result = await db.execute(
         select(WikiArticle).where(WikiArticle.slug == slug)
     )
@@ -126,13 +151,42 @@ async def sync_article(
     action = "updated" if article else "created"
 
     if article:
-        article.title = title
-        article.summary = summary
-        article.content = content
+        content_changed = any(
+            (
+                article.title != title,
+                article.summary != summary,
+                article.content != content,
+                article.tags != tags_json,
+                article.published != (status == WikiArticleStatus.PUBLISHED),
+            )
+        )
+        metadata_changed = any(
+            (
+                article.category_id != category.id,
+                article.space_id != space_ids[space_key],
+                article.language != language,
+            )
+        )
         article.category_id = category.id
-        article.tags = tags_json
-        article.status = status
+        article.space_id = space_ids[space_key]
+        article.language = language
         article.updated_by_id = author_id
+        if content_changed:
+            await publish_editorial_snapshot(
+                db,
+                article=article,
+                actor_id=author_id,
+                title=title,
+                summary=summary,
+                content=content,
+                tags=tags_json,
+                publish=status == WikiArticleStatus.PUBLISHED,
+                edit_summary=f"Synchronized from {file_path.name}",
+            )
+            if status != WikiArticleStatus.PUBLISHED:
+                article.status = status
+        elif not metadata_changed:
+            action = "unchanged"
     else:
         article = WikiArticle(
             title=title,
@@ -140,12 +194,30 @@ async def sync_article(
             summary=summary,
             content=content,
             category_id=category.id,
+            space_id=space_ids[space_key],
+            language=language,
+            provenance=WikiArticleProvenance.EDITORIAL.value,
             tags=tags_json,
-            status=status,
+            status=WikiArticleStatus.DRAFT,
+            published=False,
             created_by_id=author_id,
             updated_by_id=author_id
         )
         db.add(article)
+        await db.flush()
+        await publish_editorial_snapshot(
+            db,
+            article=article,
+            actor_id=author_id,
+            title=title,
+            summary=summary,
+            content=content,
+            tags=tags_json,
+            publish=status == WikiArticleStatus.PUBLISHED,
+            edit_summary=f"Synchronized from {file_path.name}",
+        )
+        if status != WikiArticleStatus.PUBLISHED:
+            article.status = status
 
     await db.commit()
 
@@ -174,6 +246,8 @@ def generate_frontmatter(article: "WikiArticle", category_slug: str) -> str:
         f"slug: {article.slug}",
         f"tags: {tags_str}",
         f"status: {article.status.value}",
+        f"space: {article.space.key}",
+        f"language: {article.language}",
         f"author_id: {article.created_by_id or 1}",
         "---",
     ]
@@ -190,7 +264,10 @@ async def export_article_to_markdown(
     result = await db.execute(
         select(WikiArticle)
         .where(WikiArticle.id == article_id)
-        .options(selectinload(WikiArticle.category))
+        .options(
+            selectinload(WikiArticle.category),
+            selectinload(WikiArticle.space),
+        )
     )
     article = result.scalar_one_or_none()
 
@@ -217,7 +294,10 @@ async def export_articles_to_markdown(db: AsyncSession) -> dict[str, Any]:
     wiki_content_path = backend_dir / "wiki_content"
 
     result = await db.execute(
-        select(WikiArticle).options(selectinload(WikiArticle.category))
+        select(WikiArticle).options(
+            selectinload(WikiArticle.category),
+            selectinload(WikiArticle.space),
+        )
     )
     articles = result.scalars().all()
 

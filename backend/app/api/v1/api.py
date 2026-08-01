@@ -40,6 +40,7 @@ from app.api.v1.endpoints import (
     spool_compat,
     spools,
     wiki,
+    wiki_authoring,
 )
 
 api_router = APIRouter()
@@ -83,3 +84,4 @@ api_router.include_router(spools.router)
 api_router.include_router(feedback.router)
 api_router.include_router(downloads.router)
 api_router.include_router(wiki.router)
+api_router.include_router(wiki_authoring.router)

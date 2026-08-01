@@ -16,6 +16,8 @@ if TYPE_CHECKING:
     from app.models.user import User
     from app.models.wiki_category import WikiCategory
     from app.models.wiki_feedback import WikiArticleFeedback
+    from app.models.wiki_revision import WikiRevision
+    from app.models.wiki_space import WikiSpace
 
 
 class WikiArticleStatus(str, Enum):
@@ -25,6 +27,13 @@ class WikiArticleStatus(str, Enum):
     PENDING_REVIEW = "pending_review"  # На модерации
     PUBLISHED = "published"  # Опубликовано
     REJECTED = "rejected"  # Отклонено
+
+
+class WikiArticleProvenance(str, Enum):
+    """Who is responsible for the published article identity."""
+
+    EDITORIAL = "editorial"
+    COMMUNITY = "community"
 
 
 class WikiArticle(Base):
@@ -38,6 +47,18 @@ class WikiArticle(Base):
     # Foreign keys
     category_id: Mapped[int] = mapped_column(
         ForeignKey("wiki_categories.id"), nullable=False, index=True
+    )
+    space_id: Mapped[int] = mapped_column(
+        ForeignKey("wiki_spaces.id"), nullable=False, default=2, server_default="2", index=True
+    )
+    published_revision_id: Mapped[int | None] = mapped_column(
+        ForeignKey(
+            "wiki_revisions.id",
+            ondelete="SET NULL",
+            use_alter=True,
+            name="fk_wiki_article_published_revision",
+        ),
+        nullable=True,
     )
 
     created_by_id: Mapped[int | None] = mapped_column(
@@ -65,6 +86,17 @@ class WikiArticle(Base):
 
     content: Mapped[str] = mapped_column(Text, nullable=False)
     # content: полный текст статьи в Markdown формате
+
+    language: Mapped[str] = mapped_column(
+        String(8), nullable=False, default="ru", server_default="ru", index=True
+    )
+    provenance: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default=WikiArticleProvenance.EDITORIAL.value,
+        server_default=WikiArticleProvenance.EDITORIAL.value,
+        index=True,
+    )
 
     tags: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     # tags: массив тегов (например, ["PLA", "температура", "новичкам"])
@@ -112,6 +144,18 @@ class WikiArticle(Base):
 
     # Relationships
     category: Mapped["WikiCategory"] = relationship("WikiCategory", back_populates="articles")
+    space: Mapped["WikiSpace"] = relationship("WikiSpace", back_populates="articles")
+    revisions: Mapped[list["WikiRevision"]] = relationship(
+        "WikiRevision",
+        back_populates="article",
+        cascade="all, delete-orphan",
+        foreign_keys="WikiRevision.article_id",
+    )
+    published_revision: Mapped["WikiRevision | None"] = relationship(
+        "WikiRevision",
+        foreign_keys=[published_revision_id],
+        post_update=True,
+    )
     created_by: Mapped["User"] = relationship("User", foreign_keys=[created_by_id])
     updated_by: Mapped["User"] = relationship("User", foreign_keys=[updated_by_id])
     reviewed_by: Mapped["User"] = relationship("User", foreign_keys=[reviewed_by_id])
@@ -122,4 +166,3 @@ class WikiArticle(Base):
     def __repr__(self) -> str:
         """String representation."""
         return f"<WikiArticle(id={self.id}, title={self.title}, slug={self.slug}, status={self.status.value})>"
-
