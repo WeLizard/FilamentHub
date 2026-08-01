@@ -120,15 +120,41 @@ async def browse(client: httpx.AsyncClient, headers: dict, recorder: Recorder) -
     return filament["id"]
 
 
-async def sync_slicer(client: httpx.AsyncClient, headers: dict, recorder: Recorder, _: int | None) -> None:
-    """Someone who came from the plugin and lets it sync."""
-    await timed(recorder, "синк: сохранённые", client.get("/api/v1/saved-presets/", headers=headers))
+async def sync_slicer(
+    client: httpx.AsyncClient, headers: dict, recorder: Recorder, filament_id: int | None
+) -> None:
+    """Someone who came from the plugin.
+
+    These are the calls the plugin actually makes — its own presets, the sync
+    preferences, and the export it fetches when a preset is saved from the
+    embedded catalogue.
+    """
+    await timed(recorder, "плагин: мои пресеты", client.get("/api/v1/auth/my-presets", headers=headers))
+    await timed(
+        recorder, "плагин: настройки синка", client.get("/api/v1/orcaslicer/sync-prefs", headers=headers)
+    )
+
+    if filament_id is None:
+        return
+    catalogue = await timed(
+        recorder,
+        "плагин: пресеты материала",
+        client.get(f"/api/v1/filaments/{filament_id}/presets", headers=headers),
+    )
+    if catalogue is None:
+        return
+    presets = catalogue.json()
+    items = presets.get("items") if isinstance(presets, dict) else presets
+    if not items:
+        return
+    await asyncio.sleep(random.uniform(0.3, 1.0))
     await timed(
         recorder,
-        "синк: профили принтера",
-        client.get("/api/v1/orcaslicer/printer-profiles", headers=headers),
+        "плагин: выгрузка пресета",
+        client.get(
+            f"/api/v1/presets/{random.choice(items)['id']}/export/orcaslicer.json", headers=headers
+        ),
     )
-    await timed(recorder, "синк: настройки", client.get("/api/v1/orcaslicer/sync-prefs", headers=headers))
 
 
 async def publish_preset(
