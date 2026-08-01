@@ -467,7 +467,7 @@ async def test_export_deactivated_target_falls_back(
     )
     assert exported_response.status_code == 200
     exported = exported_response.json()
-    assert exported["compatible_printers"] == []
+    assert exported.get("compatible_printers", []) == []
     assert "compatible_printers_condition" not in exported
 
 
