@@ -70,16 +70,15 @@ def test_client_ip_rejects_multi_value_dedicated_header(monkeypatch):
 
 def test_geoip_region_resolution_is_ru_intl_or_fail_closed(monkeypatch):
     monkeypatch.setattr(settings, "AUTH_REGION_MODE", "geoip")
-    request = _request("8.8.8.8")
 
     monkeypatch.setattr(request_region_service, "_lookup_country_code", lambda _ip: "RU")
-    assert resolve_access_region(request) == AccessRegion.RU
+    assert resolve_access_region(_request("8.8.8.8")) == AccessRegion.RU
 
     monkeypatch.setattr(request_region_service, "_lookup_country_code", lambda _ip: "DE")
-    assert resolve_access_region(request) == AccessRegion.INTL
+    assert resolve_access_region(_request("8.8.8.8")) == AccessRegion.INTL
 
     monkeypatch.setattr(request_region_service, "_lookup_country_code", lambda _ip: None)
-    assert resolve_access_region(request) == AccessRegion.UNKNOWN
+    assert resolve_access_region(_request("8.8.8.8")) == AccessRegion.UNKNOWN
 
 
 def test_private_or_local_address_is_unknown_without_geoip_lookup(monkeypatch):
