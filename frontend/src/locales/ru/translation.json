@@ -4385,6 +4385,12 @@
   },
   "settings": {
     "profile": "Профиль",
+    "fullName": "Имя и фамилия",
+    "fullNamePlaceholder": "Например, Иван Петров",
+    "fullNameHint": "Можно изменить имя, полученное от OAuth-провайдера, или оставить поле пустым.",
+    "fullNameChangeError": "Ошибка при изменении имени",
+    "fullNameMustDiffer": "Новое имя должно отличаться от текущего",
+    "notSpecified": "Не указано",
     "username": "Имя пользователя",
     "newUsernamePlaceholder": "Новое имя пользователя",
     "email": "Эл. почта",

@@ -101,6 +101,12 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
   const [usernameSuccess, setUsernameSuccess] = useState(false);
   const [isUsernameEditing, setIsUsernameEditing] = useState(false);
 
+  // Имя из OAuth — обычное поле профиля: пользователь может исправить или удалить его.
+  const [fullNameForm, setFullNameForm] = useState(user.full_name ?? '');
+  const [fullNameError, setFullNameError] = useState<string | null>(null);
+  const [fullNameSuccess, setFullNameSuccess] = useState(false);
+  const [isFullNameEditing, setIsFullNameEditing] = useState(false);
+
   // Состояния для формы изменения пароля
   const [passwordForm, setPasswordForm] = useState({
     current_password: '',
@@ -147,6 +153,23 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
     onError: (error: AxiosError<{ detail: unknown }>) => {
       setUsernameError(translateApiError(t, error.response?.data?.detail, t('settings.usernameChangeError')));
       setUsernameSuccess(false);
+    },
+  });
+
+  const updateFullNameMutation = useMutation({
+    mutationFn: (fullName: string | null) => authAPI.updateProfile({ full_name: fullName }),
+    onSuccess: async () => {
+      setFullNameSuccess(true);
+      setIsFullNameEditing(false);
+      setFullNameError(null);
+      await refreshUser();
+      onUserUpdate();
+      queryClient.invalidateQueries({ queryKey: ['user'] });
+      setTimeout(() => setFullNameSuccess(false), 3000);
+    },
+    onError: (error: AxiosError<{ detail: unknown }>) => {
+      setFullNameError(translateApiError(t, error.response?.data?.detail, t('settings.fullNameChangeError')));
+      setFullNameSuccess(false);
     },
   });
 
@@ -214,6 +237,24 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
       await updateUsernameMutation.mutateAsync({
         new_username: usernameForm.new_username,
       });
+    } catch (error) {
+      // Ошибка обрабатывается в onError мутации
+    }
+  };
+
+  const handleFullNameSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setFullNameError(null);
+    setFullNameSuccess(false);
+
+    const normalizedFullName = fullNameForm.trim();
+    if (normalizedFullName === (user.full_name ?? '')) {
+      setFullNameError(t('settings.fullNameMustDiffer'));
+      return;
+    }
+
+    try {
+      await updateFullNameMutation.mutateAsync(normalizedFullName || null);
     } catch (error) {
       // Ошибка обрабатывается в onError мутации
     }
@@ -372,6 +413,83 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
         </div>
         
         <div className="divide-y divide-white/10 overflow-hidden rounded-xl border border-white/10 bg-white/[0.035]">
+          <div className="p-4">
+            <div className="flex items-center justify-between gap-4">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 text-sm font-medium text-gray-300">
+                  <UserIcon className="h-4 w-4 text-fuchsia-400" />
+                  {t('settings.fullName')}
+                </div>
+                <p className="mt-1 truncate text-sm text-white">
+                  {user.full_name || t('settings.notSpecified')}
+                </p>
+              </div>
+              {!isFullNameEditing && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFullNameForm(user.full_name ?? '');
+                    setFullNameError(null);
+                    setFullNameSuccess(false);
+                    setIsFullNameEditing(true);
+                  }}
+                  className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs font-medium text-gray-300 transition hover:bg-white/10 hover:text-white"
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                  {t('settings.edit')}
+                </button>
+              )}
+            </div>
+
+            {isFullNameEditing && (
+              <form onSubmit={handleFullNameSubmit} className="mt-4 space-y-3">
+                <input
+                  type="text"
+                  value={fullNameForm}
+                  onChange={(e) => setFullNameForm(e.target.value)}
+                  maxLength={255}
+                  autoFocus
+                  className="w-full rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-sm text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  placeholder={t('settings.fullNamePlaceholder')}
+                />
+                <p className="text-xs text-gray-400">{t('settings.fullNameHint')}</p>
+                {fullNameError && (
+                  <div className="flex items-center gap-2 text-xs text-red-400">
+                    <XCircle className="h-3 w-3" />
+                    <span>{fullNameError}</span>
+                  </div>
+                )}
+                <div className="flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFullNameForm(user.full_name ?? '');
+                      setFullNameError(null);
+                      setIsFullNameEditing(false);
+                    }}
+                    className="rounded-lg px-3 py-2 text-xs font-medium text-gray-400 transition hover:bg-white/5 hover:text-white"
+                  >
+                    {t('common.cancel')}
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={updateFullNameMutation.isPending}
+                    className="inline-flex items-center gap-2 rounded-lg bg-purple-600 px-3 py-2 text-xs font-medium text-white transition hover:bg-purple-500 disabled:opacity-50"
+                  >
+                    {updateFullNameMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                    {t('settings.save')}
+                  </button>
+                </div>
+              </form>
+            )}
+            {fullNameSuccess && !isFullNameEditing && (
+              <div className="mt-2 flex items-center gap-2 text-xs text-green-400">
+                <CheckCircle className="h-3 w-3" />
+                <span>{t('settings.success')}</span>
+              </div>
+            )}
+          </div>
+
           <div className="p-4">
             <div className="flex items-center justify-between gap-4">
               <div className="min-w-0">

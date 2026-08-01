@@ -4219,6 +4219,12 @@
   },
   "settings": {
     "profile": "Profile",
+    "fullName": "Full name",
+    "fullNamePlaceholder": "For example, Alex Smith",
+    "fullNameHint": "You can change the name received from your OAuth provider or leave this field empty.",
+    "fullNameChangeError": "Error changing full name",
+    "fullNameMustDiffer": "The new full name must differ from the current one",
+    "notSpecified": "Not specified",
     "username": "Username",
     "newUsernamePlaceholder": "New username",
     "email": "Email",

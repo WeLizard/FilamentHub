@@ -4215,6 +4215,12 @@
   },
   "settings": {
     "profile": "配置文件",
+    "fullName": "姓名",
+    "fullNamePlaceholder": "例如：张伟",
+    "fullNameHint": "您可以修改 OAuth 提供商返回的姓名，或将此字段留空。",
+    "fullNameChangeError": "修改姓名时出错",
+    "fullNameMustDiffer": "新姓名必须与当前姓名不同",
+    "notSpecified": "未填写",
     "username": "用户名",
     "newUsernamePlaceholder": "新用户名",
     "email": "邮箱",
