@@ -65,6 +65,11 @@ services:
       AUTH_WEB_MODE: dual
       AUTH_COOKIE_SAMESITE: lax
       AUTH_COOKIE_SECURE: "false"
+      # Dev only: trust the client-IP header from anywhere, so a load rehearsal
+      # can present each simulated visitor as its own address and exercise the
+      # per-visitor rate limits instead of piling into one shared counter.
+      # Production keeps this pinned to the frontend proxy.
+      AUTH_TRUSTED_PROXY_NETWORKS: 0.0.0.0/0
     networks:
       - filamenthub_dev
 

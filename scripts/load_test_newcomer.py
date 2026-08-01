@@ -26,6 +26,13 @@ from urllib.parse import urlparse
 
 import httpx
 
+# A Windows console defaults to a codepage that cannot print the report, and a
+# tool must not die at the moment it finally has something to say.
+for stream in (sys.stdout, sys.stderr):
+    reconfigure = getattr(stream, "reconfigure", None)
+    if reconfigure is not None:
+        reconfigure(encoding="utf-8", errors="replace")
+
 LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1", "0.0.0.0"}
 # Reserved documentation domain: it resolves, so registration's domain check
 # passes, and nobody can ever receive mail at it.
@@ -50,7 +57,7 @@ class Recorder:
         for step in sorted(set(self.samples) | set(self.failures)):
             values = sorted(self.samples.get(step, []))
             failures = self.failures.get(step, {})
-            summary = ", ".join(f"{reason}×{count}" for reason, count in failures.items())
+            summary = ", ".join(f"{reason} x{count}" for reason, count in failures.items())
             if values:
                 index = min(len(values) - 1, int(len(values) * 0.95))
                 print(
@@ -88,13 +95,15 @@ async def timed(recorder: Recorder, step: str, coro) -> httpx.Response | None:
 async def browse(client: httpx.AsyncClient, headers: dict, recorder: Recorder) -> int | None:
     """What everyone does: opens the catalogue and looks at one material."""
     listing = await timed(
-        recorder, "каталог", client.get("/api/v1/filaments/", params={"size": 20})
+        recorder, "каталог", client.get("/api/v1/filaments/", params={"size": 20}, headers=headers)
     )
     await asyncio.sleep(random.uniform(0.3, 1.5))
     await timed(
         recorder,
         "каталог с фильтром",
-        client.get("/api/v1/filaments/", params={"size": 20, "material_type": "PLA"}),
+        client.get(
+            "/api/v1/filaments/", params={"size": 20, "material_type": "PLA"}, headers=headers
+        ),
     )
     if listing is None:
         return None
@@ -103,7 +112,11 @@ async def browse(client: httpx.AsyncClient, headers: dict, recorder: Recorder) -
         return None
     filament = random.choice(items)
     await asyncio.sleep(random.uniform(0.3, 1.5))
-    await timed(recorder, "карточка филамента", client.get(f"/api/v1/filaments/{filament['id']}"))
+    await timed(
+        recorder,
+        "карточка филамента",
+        client.get(f"/api/v1/filaments/{filament['id']}", headers=headers),
+    )
     return filament["id"]
 
 
@@ -192,7 +205,21 @@ ROLES: list[tuple[str, int, object]] = [
 ]
 
 
-async def newcomer(client: httpx.AsyncClient, legal: dict, recorder: Recorder) -> None:
+def _pretend_address(index: int) -> str:
+    """Give each simulated visitor its own address.
+
+    Everything here leaves one machine, so without this the per-visitor rate
+    limits would all count into a single bucket and the rehearsal would measure
+    the limiter rather than the application. The development stack is
+    configured to trust this header; production trusts it only from its own
+    proxy.
+    """
+    return f"198.51.{(index // 250) % 250}.{index % 250 + 1}"
+
+
+async def newcomer(
+    client: httpx.AsyncClient, legal: dict, recorder: Recorder, index: int
+) -> None:
     """One person: signs up, looks around, and then does their own thing."""
     handle = uuid.uuid4().hex[:12]
     email = f"load-{handle}@{EMAIL_DOMAIN}"
@@ -208,19 +235,28 @@ async def newcomer(client: httpx.AsyncClient, legal: dict, recorder: Recorder) -
         "privacy_policy_version": legal["privacy_policy_version"],
         "legal_language": "ru",
     }
-    if await timed(recorder, "регистрация", client.post("/api/v1/auth/register", json=payload)) is None:
+    visitor = {"X-FilamentHub-Client-IP": _pretend_address(index)}
+    if await timed(
+        recorder, "регистрация", client.post("/api/v1/auth/register", json=payload, headers=visitor)
+    ) is None:
         return
 
     await asyncio.sleep(random.uniform(0.5, 2.0))
     login = await timed(
         recorder,
         "вход",
-        client.post("/api/v1/auth/login", json={"email": email, "password": PASSWORD}),
+        client.post(
+            "/api/v1/auth/login",
+            json={"email": email, "password": PASSWORD},
+            headers=visitor,
+        ),
     )
     if login is None:
         return
     token = login.json().get("access_token")
-    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    headers = dict(visitor)
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
 
     await asyncio.sleep(random.uniform(0.5, 2.0))
     filament_id = await browse(client, headers, recorder)
@@ -263,7 +299,7 @@ async def main() -> int:
 
         async def arrival(index: int) -> None:
             await asyncio.sleep(index * delay)
-            await newcomer(client, legal, recorder)
+            await newcomer(client, legal, recorder, index)
 
         await asyncio.gather(*(arrival(i) for i in range(args.users)))
         print(f"прогон занял {time.perf_counter() - started:.0f} с")
