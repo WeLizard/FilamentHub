@@ -61,6 +61,9 @@ class Settings(BaseSettings):
     GEOIP_COUNTRY_DB_PATH: str = "/app/data/geoip/dbip-country-lite.mmdb"
     AUTH_CLIENT_IP_HEADER: str = "X-FilamentHub-Client-IP"
     AUTH_TRUSTED_PROXY_NETWORKS: str = "172.30.0.10/32"
+    # Operational/legal kill switch for Google OAuth and reCAPTCHA in INTL
+    # authentication flows. Fail closed when the variable is absent.
+    INTL_GOOGLE_SERVICES_ENABLED: bool = False
 
     # CORS
     CORS_ORIGINS: list[str] = [

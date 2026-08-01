@@ -31,9 +31,17 @@ LEGAL_REGISTRATION_FIELDS = {
 }
 
 
+def test_google_oauth_url_is_disabled_by_operational_flag(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "INTL_GOOGLE_SERVICES_ENABLED", False)
+    monkeypatch.setattr(settings, "GOOGLE_CLIENT_ID", "google-id")
+
+    assert get_google_auth_url("state-token") is None
+
+
 def test_google_oauth_requests_only_basic_identity_without_offline_access(
     monkeypatch,
 ) -> None:
+    monkeypatch.setattr(settings, "INTL_GOOGLE_SERVICES_ENABLED", True)
     monkeypatch.setattr(settings, "GOOGLE_CLIENT_ID", "google-id")
 
     url = get_google_auth_url("state-token")
@@ -54,6 +62,7 @@ async def test_auth_methods_are_server_authoritative(
     monkeypatch.setattr(settings, "YANDEX_CLIENT_ID", "yandex-id")
     monkeypatch.setattr(settings, "YANDEX_CLIENT_SECRET", "yandex-secret")
     monkeypatch.setattr(settings, "RECAPTCHA_SECRET_KEY", "recaptcha-secret")
+    monkeypatch.setattr(settings, "INTL_GOOGLE_SERVICES_ENABLED", True)
 
     monkeypatch.setattr(settings, "AUTH_REGION_MODE", "static_ru")
     ru_response = await client.get("/api/v1/auth/methods")
@@ -100,6 +109,7 @@ async def test_oauth_provider_policy_is_enforced_on_direct_api_calls(
     monkeypatch.setattr(settings, "GOOGLE_CLIENT_SECRET", "google-secret")
     monkeypatch.setattr(settings, "YANDEX_CLIENT_ID", "yandex-id")
     monkeypatch.setattr(settings, "YANDEX_CLIENT_SECRET", "yandex-secret")
+    monkeypatch.setattr(settings, "INTL_GOOGLE_SERVICES_ENABLED", True)
 
     monkeypatch.setattr(settings, "AUTH_REGION_MODE", "static_ru")
     blocked_google = await client.get("/api/v1/auth/oauth/google/url")
@@ -121,6 +131,80 @@ async def test_oauth_provider_policy_is_enforced_on_direct_api_calls(
     monkeypatch.setattr(settings, "AUTH_REGION_MODE", "static_intl")
     allowed_yandex = await client.get("/api/v1/auth/oauth/yandex/url")
     assert allowed_yandex.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_intl_google_services_flag_disables_google_and_recaptcha(
+    client: AsyncClient,
+    monkeypatch,
+):
+    monkeypatch.setattr(settings, "AUTH_REGION_MODE", "static_intl")
+    monkeypatch.setattr(settings, "INTL_GOOGLE_SERVICES_ENABLED", False)
+    monkeypatch.setattr(settings, "GOOGLE_CLIENT_ID", "google-id")
+    monkeypatch.setattr(settings, "GOOGLE_CLIENT_SECRET", "google-secret")
+    monkeypatch.setattr(settings, "YANDEX_CLIENT_ID", "yandex-id")
+    monkeypatch.setattr(settings, "YANDEX_CLIENT_SECRET", "yandex-secret")
+    monkeypatch.setattr(settings, "RECAPTCHA_SECRET_KEY", "recaptcha-secret")
+
+    methods = await client.get("/api/v1/auth/methods")
+    assert methods.status_code == 200
+    assert methods.json() == {
+        "access_region": "intl",
+        "local_login": True,
+        "local_registration": True,
+        "oauth_providers": ["yandex"],
+        "registration_captcha": None,
+    }
+
+    blocked_google = await client.get("/api/v1/auth/oauth/google/url")
+    assert blocked_google.status_code == 403
+    assert blocked_google.json()["detail"] == {
+        "code": "ERR_OAUTH_PROVIDER_NOT_AVAILABLE",
+        "params": {"provider": "google"},
+    }
+
+    blocked_google_callback = await client.post(
+        "/api/v1/auth/oauth/google/callback",
+        json={"code": "unused", "state": "unused"},
+    )
+    assert blocked_google_callback.status_code == 403
+    assert blocked_google_callback.json()["detail"]["code"] == (
+        "ERR_OAUTH_PROVIDER_NOT_AVAILABLE"
+    )
+
+
+@pytest.mark.asyncio
+async def test_intl_registration_skips_recaptcha_when_google_services_are_disabled(
+    client: AsyncClient,
+    monkeypatch,
+):
+    from app.core import utils as core_utils
+
+    calls = 0
+
+    async def rejected_recaptcha(token: str, remote_ip: str | None = None) -> bool:
+        nonlocal calls
+        calls += 1
+        return False
+
+    monkeypatch.setattr(core_utils, "verify_recaptcha", rejected_recaptcha)
+    monkeypatch.setattr(settings, "AUTH_REGION_MODE", "static_intl")
+    monkeypatch.setattr(settings, "INTL_GOOGLE_SERVICES_ENABLED", False)
+    monkeypatch.setattr(settings, "RECAPTCHA_SECRET_KEY", "recaptcha-secret")
+
+    response = await client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "intl-no-google@example.com",
+            "username": "intl_no_google",
+            "password": "Password123",
+            "role": "user",
+            **LEGAL_REGISTRATION_FIELDS,
+        },
+    )
+
+    assert response.status_code == 201
+    assert calls == 0
 
 
 @pytest.mark.asyncio
@@ -946,6 +1030,7 @@ async def test_oauth_callback_validates_state(client: AsyncClient, monkeypatch):
     from app.services.oauth_service import OAuthUserInfo
 
     monkeypatch.setattr(settings, "AUTH_REGION_MODE", "static_intl")
+    monkeypatch.setattr(settings, "INTL_GOOGLE_SERVICES_ENABLED", True)
     monkeypatch.setattr(auth_module, "is_provider_configured", lambda provider: True)
     monkeypatch.setattr(
         auth_module,

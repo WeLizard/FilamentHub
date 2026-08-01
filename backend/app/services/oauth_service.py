@@ -67,7 +67,7 @@ def _build_redirect_uri(provider: str) -> str:
 
 def get_google_auth_url(state: str) -> str | None:
     """Build Google OAuth authorization URL. Returns None if not configured."""
-    if not settings.GOOGLE_CLIENT_ID:
+    if not settings.INTL_GOOGLE_SERVICES_ENABLED or not settings.GOOGLE_CLIENT_ID:
         return None
 
     params = {
@@ -198,7 +198,11 @@ def generate_username_from_email(email: str) -> str:
 def is_provider_configured(provider: str) -> bool:
     """Check if an OAuth provider is configured."""
     if provider == "google":
-        return bool(settings.GOOGLE_CLIENT_ID and settings.GOOGLE_CLIENT_SECRET)
+        return bool(
+            settings.INTL_GOOGLE_SERVICES_ENABLED
+            and settings.GOOGLE_CLIENT_ID
+            and settings.GOOGLE_CLIENT_SECRET
+        )
     if provider == "yandex":
         return bool(settings.YANDEX_CLIENT_ID and settings.YANDEX_CLIENT_SECRET)
     return False
@@ -206,7 +210,7 @@ def is_provider_configured(provider: str) -> bool:
 
 def oauth_provider_policy(access_region: AccessRegion) -> tuple[str, ...]:
     """Return providers permitted for this request's resolved region."""
-    if access_region == AccessRegion.INTL:
+    if access_region == AccessRegion.INTL and settings.INTL_GOOGLE_SERVICES_ENABLED:
         return ("google", "yandex")
     return ("yandex",)
 
@@ -232,6 +236,10 @@ def registration_captcha_provider(access_region: AccessRegion) -> str | None:
     remain protected by existing request rate limits until the local CAPTCHA
     phase is implemented.
     """
-    if access_region != AccessRegion.INTL or not settings.RECAPTCHA_SECRET_KEY:
+    if (
+        access_region != AccessRegion.INTL
+        or not settings.INTL_GOOGLE_SERVICES_ENABLED
+        or not settings.RECAPTCHA_SECRET_KEY
+    ):
         return None
     return "recaptcha"

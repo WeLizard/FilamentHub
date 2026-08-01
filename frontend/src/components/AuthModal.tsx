@@ -175,7 +175,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
           return;
         }
         
-        const freshRecaptchaToken = authMethods?.registration_captcha === 'recaptcha'
+        // Re-read the server policy at submit time so an already open modal
+        // observes an operational Google-services shutdown immediately.
+        const currentAuthMethods = await authAPI.getAuthMethods();
+        setAuthMethods(currentAuthMethods);
+        const freshRecaptchaToken = currentAuthMethods.registration_captcha === 'recaptcha'
           ? await getRecaptchaToken('register')
           : null;
 
