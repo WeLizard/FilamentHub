@@ -1,7 +1,15 @@
 services:
+  # The development stack is held inside the production machine's envelope: two
+  # cores and its share of four gigabytes, with the three services pinned to the
+  # same pair of cores so they compete for them exactly as they do on the server.
+  # A workstation with sixteen cores would otherwise make every measurement taken
+  # here a pleasant fiction.
   postgres-dev:
     image: postgres:15-alpine
     container_name: filamenthub_postgres_dev
+    command: postgres -c max_connections=200 -c log_checkpoints=off -c log_min_messages=warning
+    cpuset: "0,1"
+    mem_limit: 1g
     environment:
       POSTGRES_DB: filamenthub_dev
       POSTGRES_USER: filamenthub
@@ -22,6 +30,8 @@ services:
     image: redis:7-alpine
     container_name: filamenthub_redis_dev
     command: redis-server --requirepass devredis123
+    cpuset: "0,1"
+    mem_limit: 256m
     ports:
       - "6380:6379"
     healthcheck:
@@ -37,6 +47,8 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: filamenthub_backend_dev
+    cpuset: "0,1"
+    mem_limit: 2g
     volumes:
       - ./backend:/app
     ports:
@@ -70,12 +82,21 @@ services:
       # per-visitor rate limits instead of piling into one shared counter.
       # Production keeps this pinned to the frontend proxy.
       AUTH_TRUSTED_PROXY_NETWORKS: 0.0.0.0/0
+      # Production runs four workers, each allowing two password checks at once.
+      # Reload mode forces a single worker here, so the whole allowance is given
+      # to it — otherwise dev would refuse a crowd four times sooner than the
+      # server does.
+      PASSWORD_HASH_CONCURRENCY: 8
     networks:
       - filamenthub_dev
 
   frontend-dev:
     image: node:20-alpine
     container_name: filamenthub_frontend_dev
+    # Kept off the mirrored pair: production serves the built site from nginx and
+    # has no bundler running, so letting one compete for those cores here would
+    # tax every measurement with work the server never does.
+    cpuset: "2,3"
     working_dir: /app
     volumes:
       - ./frontend:/app
