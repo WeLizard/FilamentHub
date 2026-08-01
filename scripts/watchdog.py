@@ -22,6 +22,7 @@ import json
 import os
 import socket
 import ssl
+import subprocess
 import sys
 import urllib.error
 import urllib.parse
@@ -103,12 +104,33 @@ def notify(text: str) -> None:
     if not token or not chat:
         print(f"[без Telegram] {text}")
         return
-    data = urllib.parse.urlencode({"chat_id": chat, "text": text}).encode()
-    request = urllib.request.Request(
-        f"https://api.telegram.org/bot{token}/sendMessage", data=data
-    )
+
+    # Telegram is not reachable directly from here, so the request goes through
+    # the same proxy the other bot on this machine uses. curl speaks SOCKS5
+    # without extra packages, and its options arrive on stdin so the token never
+    # appears in the process list.
+    proxy = os.environ.get("TELEGRAM_PROXY_URL") or os.environ.get("TELEGRAM_PROXY")
+    options = [
+        f'url = "https://api.telegram.org/bot{token}/sendMessage"',
+        f'data-urlencode = "chat_id={chat}"',
+        f'data-urlencode = "text={text}"',
+        f"max-time = {TIMEOUT}",
+        "silent",
+        "show-error",
+    ]
+    if proxy:
+        options.append(f'proxy = "{proxy}"')
+
     try:
-        urllib.request.urlopen(request, timeout=TIMEOUT).read()
+        result = subprocess.run(
+            ["curl", "--config", "-"],
+            input="\n".join(options),
+            capture_output=True,
+            text=True,
+            timeout=TIMEOUT + 10,
+        )
+        if result.returncode != 0:
+            print(f"не удалось отправить в Telegram: {result.stderr.strip()}", file=sys.stderr)
     except Exception as exc:  # noqa: BLE001
         print(f"не удалось отправить в Telegram: {exc}", file=sys.stderr)
 
