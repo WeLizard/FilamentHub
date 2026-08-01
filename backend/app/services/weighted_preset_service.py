@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.filament import Filament
 from app.models.preset import Preset, PresetModerationStatus
-from app.services.preset_recommender import get_recommended_preset_values
+from app.services.preset_recommender import get_recommended_preset_values, trusted_contribution
 
 
 async def create_or_update_weighted_preset(
@@ -40,6 +40,9 @@ async def create_or_update_weighted_preset(
         Preset.active == True,
         Preset.is_weighted == False,  # Исключаем взвешенные пресеты
         Preset.moderation_status == PresetModerationStatus.APPROVED,
+        # The count that decides whether an average exists must use the same
+        # contributions the average itself is computed from.
+        trusted_contribution(),
     )
     result = await db.execute(query)
     presets = result.scalars().all()
