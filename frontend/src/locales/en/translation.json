@@ -5623,6 +5623,7 @@
     "ERR_REQUEST_NOT_PENDING": "Request has already been processed",
     "ERR_SLUG_EXISTS": "Slug is already in use",
     "ERR_EXTERNAL_ID_EXISTS": "You already have a profile with this OrcaSlicer identifier",
+    "ERR_SERVER_BUSY": "Too many requests right now. Please try again in a minute",
     "ERR_CATEGORY_SLUG_EXISTS": "A category with this slug already exists",
     "ERR_CATEGORY_NAME_EXISTS": "A category with this name already exists",
     "ERR_CATEGORY_SLUG_OR_NAME_EXISTS": "A category with this slug or name already exists",

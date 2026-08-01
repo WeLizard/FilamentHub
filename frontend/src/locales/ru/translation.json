@@ -5789,6 +5789,7 @@
     "ERR_REQUEST_NOT_PENDING": "Заявка уже обработана",
     "ERR_SLUG_EXISTS": "Slug уже используется",
     "ERR_EXTERNAL_ID_EXISTS": "Профиль с таким идентификатором OrcaSlicer у вас уже есть",
+    "ERR_SERVER_BUSY": "Сейчас много запросов. Попробуйте через минуту",
     "ERR_CATEGORY_SLUG_EXISTS": "Категория с таким slug уже существует",
     "ERR_CATEGORY_NAME_EXISTS": "Категория с таким названием уже существует",
     "ERR_CATEGORY_SLUG_OR_NAME_EXISTS": "Категория с таким slug или названием уже существует",

@@ -141,6 +141,9 @@ ERR_WIKI_SELF_REVIEW_FORBIDDEN = "ERR_WIKI_SELF_REVIEW_FORBIDDEN"
 # 500 — Server errors
 ERR_INTERNAL_ERROR = "ERR_INTERNAL_ERROR"
 
+# 503 — Temporarily out of capacity
+ERR_SERVER_BUSY = "ERR_SERVER_BUSY"
+
 # --- New constants for hardcoded strings ---
 
 # auth.py
