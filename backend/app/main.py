@@ -66,10 +66,32 @@ async def _warm_app_settings_cache() -> None:
         name="inbound-mail-poller",
     )
 
+    # The document renderer is a heavy native library loaded on first use, which
+    # made the first person to ask for a quote after every deploy wait a second
+    # and a half for someone else's import. Pay it here, in the background,
+    # where nobody is waiting.
+    app.state.pdf_warmup_task = asyncio.create_task(
+        _warm_pdf_renderer(), name="pdf-renderer-warmup"
+    )
+
+
+async def _warm_pdf_renderer() -> None:
+    import logging as _logging
+
+    from starlette.concurrency import run_in_threadpool
+
+    def load() -> None:
+        from weasyprint import HTML  # noqa: F401
+
+    try:
+        await run_in_threadpool(load)
+    except Exception:  # noqa: BLE001 — a missing renderer must not stop the server
+        _logging.getLogger(__name__).warning("PDF renderer unavailable", exc_info=True)
+
 
 @app.on_event("shutdown")
 async def _stop_provisional_account_sweeper() -> None:
-    for name in ("provisional_account_sweeper_task", "inbound_mail_task"):
+    for name in ("provisional_account_sweeper_task", "inbound_mail_task", "pdf_warmup_task"):
         task = getattr(app.state, name, None)
         if task is None:
             continue

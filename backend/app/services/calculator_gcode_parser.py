@@ -170,7 +170,9 @@ def _parse_plain_gcode_payload(file_name: str, raw_bytes: bytes) -> dict[str, An
 
     for line in lines:
         stripped = line.strip()
-        if stripped.upper().startswith("EXCLUDE_OBJECT_DEFINE"):
+        # First character, then the prefix — never an upper-cased copy of the
+        # whole line, which is what this cost on every movement command.
+        if stripped[:1] in ("E", "e") and stripped[:21].upper() == "EXCLUDE_OBJECT_DEFINE":
             _collect_object_metadata(parsed, collector, stripped)
             continue
 
@@ -857,6 +859,12 @@ def _apply_cura_ini_block(parsed: dict[str, Any], block: str) -> None:
 
 
 def _collect_inline_command_metadata(parsed: dict[str, Any], collector: dict[str, Any], line: str) -> None:
+    # The pattern cannot match without one, and almost every line in a sliced
+    # model is a movement command that has none. Asking first costs nothing and
+    # spares the regex engine millions of walks over lines it would reject.
+    if "=" not in line:
+        return
+
     assignments = {match.group(1).lower(): match.group(2) for match in _INLINE_ASSIGNMENT_RE.finditer(line)}
     if not assignments:
         return
@@ -872,6 +880,12 @@ def _collect_inline_command_metadata(parsed: dict[str, Any], collector: dict[str
 
 
 def _collect_temperature_command_metadata(parsed: dict[str, Any], line: str) -> None:
+    # All three things looked for here are anchored to the start of the line:
+    # PRINT_START, M104/M109, M140/M190. A movement command begins with G, so
+    # one character decides it without copying the line or running a pattern.
+    if not line or line[0] not in "MmPp":
+        return
+
     if line.upper().startswith("PRINT_START"):
         for parameter, raw_value in _PRINT_START_PARAMETER_RE.findall(line):
             parsed_value = _parse_first_float(raw_value)
@@ -1087,38 +1101,53 @@ def _apply_extrusion_role_usage(parsed: dict[str, Any], lines: list[str]) -> Non
     extrusion_by_tool_role: dict[int, dict[str, float]] = {}
     extrusion_by_tool_object: dict[int, dict[str, float]] = {}
 
+    # Every pattern below is anchored to the start of the line and each begins
+    # with a letter of its own, so the first character decides which one can
+    # possibly match. A sliced model is millions of movement commands, and
+    # asking the regex engine about each of them was most of the parsing time.
     for raw_line in lines:
         stripped = raw_line.strip()
         if not stripped:
             continue
 
-        role_match = _EXTRUSION_ROLE_RE.match(stripped)
-        if role_match:
-            current_role = role_match.group(1).strip().lower()
+        if stripped[0] == ";":
+            role_match = _EXTRUSION_ROLE_RE.match(stripped)
+            if role_match:
+                current_role = role_match.group(1).strip().lower()
             continue
 
-        command = stripped.split(";", 1)[0].strip()
-        if not command:
-            continue
-        upper_command = command.upper()
-        if upper_command == "M82":
-            relative_extrusion = False
-            continue
-        if upper_command == "M83":
-            relative_extrusion = True
+        if ";" in stripped:
+            command = stripped.split(";", 1)[0].strip()
+            if not command:
+                continue
+        else:
+            command = stripped
+
+        head = command[0]
+
+        if head in "Mm":
+            upper_command = command.upper()
+            if upper_command == "M82":
+                relative_extrusion = False
+            elif upper_command == "M83":
+                relative_extrusion = True
             continue
 
-        object_start_match = _EXCLUDE_OBJECT_START_RE.match(command)
-        if object_start_match:
-            current_object = object_start_match.group(1)
-            continue
-        if _EXCLUDE_OBJECT_END_RE.match(command):
-            current_object = None
+        if head in "Ee":
+            object_start_match = _EXCLUDE_OBJECT_START_RE.match(command)
+            if object_start_match:
+                current_object = object_start_match.group(1)
+            elif _EXCLUDE_OBJECT_END_RE.match(command):
+                current_object = None
             continue
 
-        tool_match = _TOOL_CHANGE_RE.match(command)
-        if tool_match:
-            current_tool = int(tool_match.group(1))
+        if head in "Tt":
+            tool_match = _TOOL_CHANGE_RE.match(command)
+            if tool_match:
+                current_tool = int(tool_match.group(1))
+            continue
+
+        if head not in "Gg":
             continue
 
         reset_match = _EXTRUSION_RESET_RE.match(command)

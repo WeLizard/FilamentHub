@@ -53,6 +53,18 @@ class Settings(BaseSettings):
     PASSWORD_ARGON2_MEMORY_KIB: int = 65536
     PASSWORD_ARGON2_TIME_COST: int = 3
     PASSWORD_ARGON2_PARALLELISM: int = 1
+
+    # Rendering a quote takes a fifth of a second and reading a sliced model can
+    # take eight, and both hold a core throughout. Same reasoning as above: a few
+    # at a time, a short wait, then an honest answer. Reading a model is given a
+    # longer wait because it is a deliberate act with a file already uploaded.
+    PDF_RENDER_CONCURRENCY: int = 2
+    PDF_RENDER_WAIT_SECONDS: float = 5.0
+    # One per worker, not two: reading a sliced model takes seconds rather than
+    # a fraction of one, and these numbers are per worker — four of them would
+    # otherwise put eight multi-second scans on two cores at once.
+    GCODE_PARSE_CONCURRENCY: int = 1
+    GCODE_PARSE_WAIT_SECONDS: float = 15.0
     AUTH_WEB_MODE: str = "jwt"  # jwt | cookie | dual
     AUTH_ORCA_MODE: str = "bearer"  # bearer (reserved for explicit mode control)
     AUTH_ACCESS_COOKIE_NAME: str = "fh_access_token"

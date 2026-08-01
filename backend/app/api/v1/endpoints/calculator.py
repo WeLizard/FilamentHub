@@ -1,6 +1,5 @@
 """Calculator endpoints."""
 
-import asyncio
 import logging
 import math
 import re
@@ -8,11 +7,12 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from fastapi.responses import HTMLResponse, Response
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.capacity import Gate
 from app.core.config import settings
 from app.core.dependencies import get_current_verified_user, require_calculator_access
 from app.core.errors import (
@@ -68,6 +68,18 @@ from app.services.usage_metrics_service import record_calculator_estimate
 
 router = APIRouter(prefix="/calculator", tags=["calculator"])
 logger = logging.getLogger(__name__)
+
+_pdf_gate = Gate("pdf", settings.PDF_RENDER_CONCURRENCY, settings.PDF_RENDER_WAIT_SECONDS)
+_gcode_gate = Gate(
+    "gcode", settings.GCODE_PARSE_CONCURRENCY, settings.GCODE_PARSE_WAIT_SECONDS
+)
+
+
+def _parse_gcode_bytes(file_name: str, raw_bytes: bytes, plate_index: int | None):
+    """Named so the gate has something to call with plain arguments."""
+    return parse_gcode_payload(
+        file_name=file_name, raw_bytes=raw_bytes, plate_index=plate_index
+    )
 
 
 @router.post("/start-trial", response_model=UserResponse)
@@ -618,10 +630,14 @@ async def parse_uploaded_gcode(
         raise_error(status.HTTP_400_BAD_REQUEST, ERR_FILE_TOO_LARGE, {"max_size": f"{settings.MAX_UPLOAD_SIZE_MB}MB"})
 
     try:
-        parsed = parse_gcode_payload(
-            file_name=file.filename or "gcode",
-            raw_bytes=raw_bytes,
-            plate_index=plate_index,
+        # Reading a sliced model walks every line of it — eight seconds for a
+        # large one — so it happens off the event loop and a few at a time.
+        # Left in the request path it would stop this worker answering anyone.
+        parsed = await _gcode_gate.run(
+            _parse_gcode_bytes,
+            file.filename or "gcode",
+            raw_bytes,
+            plate_index,
         )
     except ValueError as exc:
         logger.warning("Calculator G-code parse failed for %s: %s", file.filename, exc)
@@ -844,7 +860,9 @@ async def generate_quote_pdf(
     from app.services.pdf_service import generate_pdf_from_html
 
     try:
-        pdf_bytes = await asyncio.to_thread(generate_pdf_from_html, data.html_content)
+        pdf_bytes = await _pdf_gate.run(generate_pdf_from_html, data.html_content)
+    except HTTPException:
+        raise
     except Exception:
         logger.warning("PDF generation failed", exc_info=True)
         raise_error(status.HTTP_500_INTERNAL_SERVER_ERROR, ERR_PDF_GENERATION_FAILED)

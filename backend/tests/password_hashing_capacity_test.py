@@ -1,26 +1,20 @@
-"""Under a crowd, a password check answers plainly instead of leaving people waiting."""
+"""Under a crowd, heavy work answers plainly instead of leaving people waiting."""
 
 import asyncio
+import time
 
 import pytest
 from fastapi import HTTPException
 from httpx import AsyncClient
 
 from app.core import password_hashing
-from app.core.config import settings
+from app.core.capacity import Gate
 from tests.conftest import registration_payload
 
 
-@pytest.fixture(autouse=True)
-def _fresh_limiter():
-    """Each test starts with its own limiter, sized by that test."""
-    password_hashing._limiters.clear()
-    concurrency = settings.PASSWORD_HASH_CONCURRENCY
-    wait = settings.PASSWORD_HASH_WAIT_SECONDS
-    yield
-    settings.PASSWORD_HASH_CONCURRENCY = concurrency
-    settings.PASSWORD_HASH_WAIT_SECONDS = wait
-    password_hashing._limiters.clear()
+def _slow_work(_: str) -> str:
+    time.sleep(0.05)
+    return "done"
 
 
 @pytest.mark.asyncio
@@ -32,44 +26,35 @@ async def test_a_password_is_hashed_and_recognised():
 
 
 @pytest.mark.asyncio
-async def test_only_the_allowed_number_of_checks_run_at_once():
-    settings.PASSWORD_HASH_CONCURRENCY = 2
-    settings.PASSWORD_HASH_WAIT_SECONDS = 30
-    password_hashing._limiters.clear()
-
+async def test_only_the_allowed_number_runs_at_once():
+    gate = Gate("test", slots=2, wait_seconds=30)
     running = 0
     peak = 0
 
-    def slow_work(_: str) -> str:
+    def watched(_: str) -> str:
         nonlocal running, peak
         running += 1
         peak = max(peak, running)
-        import time
-
         time.sleep(0.05)
         running -= 1
         return "done"
 
-    await asyncio.gather(*(password_hashing._in_turn(slow_work, "x") for _ in range(8)))
+    await asyncio.gather(*(gate.run(watched, "x") for _ in range(8)))
 
     assert peak <= 2
 
 
 @pytest.mark.asyncio
 async def test_waiting_too_long_for_a_turn_is_answered_not_endured():
-    settings.PASSWORD_HASH_CONCURRENCY = 1
-    settings.PASSWORD_HASH_WAIT_SECONDS = 0.05
-    password_hashing._limiters.clear()
+    gate = Gate("test", slots=1, wait_seconds=0.05)
 
-    def slow_work(_: str) -> str:
-        import time
-
+    def very_slow(_: str) -> str:
         time.sleep(0.4)
         return "done"
 
     async def attempt() -> object:
         try:
-            return await password_hashing._in_turn(slow_work, "x")
+            return await gate.run(very_slow, "x")
         except HTTPException as exc:
             return exc
 
@@ -84,11 +69,12 @@ async def test_waiting_too_long_for_a_turn_is_answered_not_endured():
 
 @pytest.mark.asyncio
 async def test_registration_says_it_is_busy_rather_than_hanging(client: AsyncClient):
-    settings.PASSWORD_HASH_CONCURRENCY = 1
-    settings.PASSWORD_HASH_WAIT_SECONDS = 0.01
-    password_hashing._limiters.clear()
+    gate = password_hashing._gate
+    slots, wait = gate.slots, gate.wait_seconds
+    gate.slots, gate.wait_seconds = 1, 0.01
+    gate.reset()
 
-    limiter = password_hashing._limiter()
+    limiter = gate._limiter()
     await limiter.acquire()
     try:
         response = await client.post(
@@ -99,6 +85,8 @@ async def test_registration_says_it_is_busy_rather_than_hanging(client: AsyncCli
         )
     finally:
         limiter.release()
+        gate.slots, gate.wait_seconds = slots, wait
+        gate.reset()
 
     assert response.status_code == 503
     assert response.json()["detail"]["code"] == "ERR_SERVER_BUSY"
