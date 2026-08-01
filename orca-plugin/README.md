@@ -207,8 +207,10 @@ These limitations are disclosed in the alpha listing. Gap #1
 
 ## Files
 
-- `filamenthub_plugin.py` — the plugin (PEP 723, single file, zero deps).
+- `filamenthub_plugin.py` — the dependency-free plugin runtime.
+- `filamenthub_locales/` — bundled native-shell translations with English fallback.
 - `build_package.py` — deterministic package/metadata/checksum builder.
+- `validate_locales.py` / `TRANSLATING.md` — catalog validation and community workflow.
 - `tests/test_filamenthub_plugin.py` — package, origin, filesystem and payload tests.
 - `README.md` — this file.
 - Frontend embed support: `frontend/src/utils/pluginBridge.ts`,

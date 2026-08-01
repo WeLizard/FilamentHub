@@ -15,6 +15,7 @@ import pytest
 PLUGIN_ROOT = Path(__file__).resolve().parents[1]
 PLUGIN_PATH = PLUGIN_ROOT / "filamenthub_plugin.py"
 BUILD_PATH = PLUGIN_ROOT / "build_package.py"
+LOCALE_VALIDATOR_PATH = PLUGIN_ROOT / "validate_locales.py"
 
 
 def _load_module(path: Path, name: str):
@@ -170,9 +171,10 @@ def test_shell_replaces_webview_errors_with_maintenance_status(plugin_module):
     ("host_language", "expected", "catalog_label"),
     [
         ("ru_RU", "ru", "Каталог"),
-        ("zh_CN", "zh", "目录"),
+        ("zh_CN", "zh_CN", "目录"),
+        ("zh-TW", "zh_TW", "目錄"),
         ("en_US", "en", "Catalog"),
-        ("de_DE", "en", "Catalog"),
+        ("de_DE", "de", "Catalog"),
     ],
 )
 def test_shell_uses_orca_ui_language(
@@ -231,6 +233,46 @@ def test_native_plugin_messages_follow_orca_ui_language(plugin_module, monkeypat
         "Войдите в FilamentHub в окне плагина и повторите синхронизацию.",
         {"title": "FilamentHub", "icon": "warning"},
     )]
+
+
+def test_every_orca_locale_is_preserved_and_missing_catalogs_fall_back_per_key(
+    plugin_module, tmp_path, monkeypatch
+):
+    for locale in plugin_module.ORCA_UI_LOCALES:
+        assert plugin_module.normalize_ui_language(locale) == locale
+
+    (tmp_path / "en.json").write_text(
+        json.dumps({"shared": "English", "englishOnly": "Fallback"}),
+        encoding="utf-8",
+    )
+    (tmp_path / "de.json").write_text(
+        json.dumps({"shared": "Deutsch"}),
+        encoding="utf-8",
+    )
+    catalogs = plugin_module.load_ui_catalogs(str(tmp_path))
+    monkeypatch.setattr(plugin_module, "UI_COPY", catalogs)
+
+    assert plugin_module.resolved_ui_catalog("de_DE") == {
+        "shared": "Deutsch",
+        "englishOnly": "Fallback",
+    }
+    assert plugin_module.resolved_ui_catalog("pt_BR") == {
+        "shared": "English",
+        "englishOnly": "Fallback",
+    }
+
+
+def test_invalid_optional_catalog_cannot_break_plugin_startup(plugin_module, tmp_path):
+    (tmp_path / "en.json").write_text('{"ready":"Ready"}', encoding="utf-8")
+    (tmp_path / "ru.json").write_text("not-json", encoding="utf-8")
+    (tmp_path / "xx.json").write_text('{"ready":"Unknown"}', encoding="utf-8")
+
+    assert plugin_module.load_ui_catalogs(str(tmp_path)) == {"en": {"ready": "Ready"}}
+
+
+def test_bundled_locale_catalogs_are_valid():
+    validator = _load_module(LOCALE_VALIDATOR_PATH, "filamenthub_locale_validator_test")
+    assert validator.validate_catalogs() == []
 
 
 def test_safe_filename_handles_windows_names_and_bounds(plugin_module):
@@ -478,7 +520,7 @@ def test_atomic_json_write_replaces_complete_file(plugin_module, tmp_path):
     assert list(tmp_path.glob("*.tmp.*")) == []
 
 
-def test_build_produces_single_file_package_and_checksum(plugin_module, tmp_path):
+def test_build_packages_locale_catalogs_and_checksums(plugin_module, tmp_path):
     builder = _load_module(BUILD_PATH, "filamenthub_build_package_test")
     package_dir = builder.build(tmp_path)
     package = package_dir / "filamenthub_plugin.py"
@@ -487,9 +529,14 @@ def test_build_produces_single_file_package_and_checksum(plugin_module, tmp_path
     assert metadata["version"] == plugin_module.PLUGIN_VERSION
     assert metadata["network"] == ["filamenthub.ru", "*.filamenthub.ru"]
     assert metadata["sha256"] == digest
-    assert (package_dir / "SHA256SUMS").read_text(encoding="utf-8") == (
-        f"{digest}  filamenthub_plugin.py\n"
-    )
+    assert metadata["locales"] == ["en", "ru", "zh_CN", "zh_TW"]
+    locale_dir = package_dir / "filamenthub_locales"
+    assert {path.name for path in locale_dir.glob("*.json")} == {
+        "en.json", "ru.json", "zh_CN.json", "zh_TW.json"
+    }
+    checksums = (package_dir / "SHA256SUMS").read_text(encoding="utf-8")
+    assert f"{digest}  filamenthub_plugin.py\n" in checksums
+    assert "filamenthub_locales/ru.json" in checksums
 
 
 def test_printer_profiles_never_leave_with_host_credentials(plugin_module, monkeypatch):

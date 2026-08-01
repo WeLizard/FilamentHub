@@ -158,206 +158,94 @@ _SSL_CTX = ssl.create_default_context()
 
 
 def host_ui_language():
-    """Return the supported Orca UI language, or defer to the WebView."""
+    """Return Orca's canonical UI locale, or defer to the WebView."""
     app_language = getattr(getattr(orca, "host", None), "app_language", None)
     if not callable(app_language):
         return ""
     try:
-        language = str(app_language()).lower()
+        language = app_language()
     except (AttributeError, RuntimeError):
         return ""
-    if language.startswith("ru"):
-        return "ru"
-    if language.startswith("zh"):
-        return "zh"
-    return "en"
+    return normalize_ui_language(language)
 
 
-UI_COPY = {
-    "en": {
-        "signIn": "Sign in",
-        "signInTitle": "Sign in to FilamentHub",
-        "signOut": "Sign out",
-        "catalog": "Catalog",
-        "profile": "Profile",
-        "wiki": "Wiki",
-        "sync": "Sync",
-        "syncTitle": "Sync your FilamentHub presets with OrcaSlicer",
-        "recover": "Recover",
-        "recoverTitle": "Find local OrcaSlicer filament presets and import selected ones as drafts",
-        "log": "Log",
-        "logTitle": "Copy the plugin log to the clipboard",
-        "catalogTitle": "FilamentHub catalog",
-        "connectTitle": "Connecting to FilamentHub...",
-        "connectMessage": "Please wait while the catalog is loaded.",
-        "unavailableTitle": "FilamentHub is temporarily unavailable",
-        "unavailableMessage": "The service may be undergoing maintenance. Your local OrcaSlicer presets are safe. Please try again later.",
-        "retry": "Try again",
-        "oauthTitle": "Finish signing in in your web browser",
-        "oauthHint": "Your browser should have opened. If it did not, copy this link and open it in your browser, then return here.",
-        "copyLink": "Copy link",
-        "copied": "Copied",
-        "cancel": "Cancel",
-        "logEmpty": "The plugin log is empty — run Sync once, then copy it again.",
-        "logCopied": "Plugin log copied. Paste it into your beta feedback.",
-        "logCopyFailed": "Could not copy the plugin log.",
-        "logReadFailed": "Could not read the plugin log.",
-        "catalogOpened": "FilamentHub catalog opened.",
-        "sliceWrongStep": "Not the G-code post-process step",
-        "sliceNotReady": "G-code file not ready",
-        "sliceUnreadable": "Could not read G-code",
-        "sliceNotSignedIn": "Not signed in to FilamentHub",
-        "sliceReportFailed": "Report failed",
-        "sliceReported": "Reported {name} to FilamentHub",
-        "recoveryNone": "Recovery: nothing selected.",
-        "recoveryDone": "Recovered as drafts: {count}.",
-        "importSignIn": "Please sign in to FilamentHub in the window, then import again.",
-        "sessionExpired": "Your FilamentHub session expired. Sign in again in the window.",
-        "exportFailed": "Export failed (HTTP {status}).",
-        "importedLive": "Imported '{name}' — it is now in the FilamentHub group of the filament dropdown.",
-        "importedRestart": "Imported '{name}' into your filament presets.\n\nRestart OrcaSlicer to see it in the filament dropdown.",
-        "importFailed": "Import failed: {error}",
-        "syncSignIn": "Sign in to FilamentHub in the window, then sync.",
-        "syncFailed": "Sync failed (HTTP {status}).",
-        "syncUnexpected": "Sync failed: unexpected response.",
-        "summaryNew": "new: {count}",
-        "summaryUpdated": "updated: {count}",
-        "summarySent": "sent to FilamentHub: {count}",
-        "summaryRemoved": "removed: {count}",
-        "summaryRenamed": "renamed: {count}",
-        "summaryCurrent": "up to date: {count}",
-        "summaryFailed": "failed: {count}",
-        "summaryDrafts": "imported as drafts: {count}",
-        "summaryNothing": "nothing to sync",
-        "profileMachine": "printer profiles",
-        "profileProcess": "print profiles",
-        "dropdownCurrent": "The filament dropdown is up to date.",
-        "dropdownRestart": "Restart OrcaSlicer to apply the changes in the filament dropdown.",
-        "syncComplete": "Sync complete: {summary}. {note}",
-    },
-    "ru": {
-        "signIn": "Войти",
-        "signInTitle": "Войти в FilamentHub",
-        "signOut": "Выйти",
-        "catalog": "Каталог",
-        "profile": "Профиль",
-        "wiki": "База знаний",
-        "sync": "Синхронизация",
-        "syncTitle": "Синхронизировать профили FilamentHub с OrcaSlicer",
-        "recover": "Восстановить",
-        "recoverTitle": "Найти локальные профили филамента OrcaSlicer и импортировать выбранные как черновики",
-        "log": "Журнал",
-        "logTitle": "Скопировать журнал плагина в буфер обмена",
-        "catalogTitle": "Каталог FilamentHub",
-        "connectTitle": "Подключение к FilamentHub…",
-        "connectMessage": "Подождите, пока загрузится каталог.",
-        "unavailableTitle": "FilamentHub временно недоступен",
-        "unavailableMessage": "Возможно, сейчас идут технические работы. Ваши локальные профили OrcaSlicer в безопасности. Попробуйте ещё раз позже.",
-        "retry": "Повторить",
-        "oauthTitle": "Завершите вход в браузере",
-        "oauthHint": "Браузер должен был открыться. Если этого не произошло, скопируйте ссылку, откройте её в браузере и вернитесь сюда.",
-        "copyLink": "Копировать ссылку",
-        "copied": "Скопировано",
-        "cancel": "Отмена",
-        "logEmpty": "Журнал плагина пуст — один раз запустите синхронизацию и повторите.",
-        "logCopied": "Журнал плагина скопирован. Вставьте его в отзыв о бета-версии.",
-        "logCopyFailed": "Не удалось скопировать журнал плагина.",
-        "logReadFailed": "Не удалось прочитать журнал плагина.",
-        "catalogOpened": "Каталог FilamentHub открыт.",
-        "sliceWrongStep": "Это не этап постобработки G-code",
-        "sliceNotReady": "Файл G-code ещё не готов",
-        "sliceUnreadable": "Не удалось прочитать G-code",
-        "sliceNotSignedIn": "Вход в FilamentHub не выполнен",
-        "sliceReportFailed": "Не удалось передать данные о нарезке",
-        "sliceReported": "Данные о {name} переданы в FilamentHub",
-        "recoveryNone": "Восстановление: ничего не выбрано.",
-        "recoveryDone": "Восстановлено как черновики: {count}.",
-        "importSignIn": "Войдите в FilamentHub в окне плагина и повторите импорт.",
-        "sessionExpired": "Сессия FilamentHub истекла. Войдите снова в окне плагина.",
-        "exportFailed": "Не удалось экспортировать профиль (HTTP {status}).",
-        "importedLive": "Профиль «{name}» импортирован в группу FilamentHub списка филаментов.",
-        "importedRestart": "Профиль «{name}» импортирован.\n\nПерезапустите OrcaSlicer, чтобы увидеть его в списке филаментов.",
-        "importFailed": "Не удалось импортировать профиль: {error}",
-        "syncSignIn": "Войдите в FilamentHub в окне плагина и повторите синхронизацию.",
-        "syncFailed": "Синхронизация не выполнена (HTTP {status}).",
-        "syncUnexpected": "Синхронизация не выполнена: неожиданный ответ сервера.",
-        "summaryNew": "новые: {count}",
-        "summaryUpdated": "обновлены: {count}",
-        "summarySent": "отправлены в FilamentHub: {count}",
-        "summaryRemoved": "удалены: {count}",
-        "summaryRenamed": "переименованы: {count}",
-        "summaryCurrent": "актуальны: {count}",
-        "summaryFailed": "ошибки: {count}",
-        "summaryDrafts": "импортированы как черновики: {count}",
-        "summaryNothing": "синхронизировать нечего",
-        "profileMachine": "профили принтеров",
-        "profileProcess": "профили печати",
-        "dropdownCurrent": "Список филаментов обновлён.",
-        "dropdownRestart": "Перезапустите OrcaSlicer, чтобы применить изменения в списке филаментов.",
-        "syncComplete": "Синхронизация завершена: {summary}. {note}",
-    },
-    "zh": {
-        "signIn": "登录",
-        "signInTitle": "登录 FilamentHub",
-        "signOut": "退出登录",
-        "catalog": "目录",
-        "profile": "个人资料",
-        "wiki": "知识库",
-        "sync": "同步",
-        "syncTitle": "将 FilamentHub 预设与 OrcaSlicer 同步",
-        "recover": "恢复",
-        "recoverTitle": "查找本地 OrcaSlicer 耗材预设，并将选中的预设作为草稿导入",
-        "log": "日志",
-        "logTitle": "将插件日志复制到剪贴板",
-        "catalogTitle": "FilamentHub 目录",
-        "connectTitle": "正在连接 FilamentHub…",
-        "connectMessage": "请稍候，目录正在加载。",
-        "unavailableTitle": "FilamentHub 暂时不可用",
-        "unavailableMessage": "服务可能正在维护中。您的本地 OrcaSlicer 预设不会受到影响，请稍后重试。",
-        "retry": "重试",
-        "oauthTitle": "请在浏览器中完成登录",
-        "oauthHint": "浏览器应该已经打开。如果没有，请复制此链接并在浏览器中打开，然后返回此处。",
-        "copyLink": "复制链接",
-        "copied": "已复制",
-        "cancel": "取消",
-        "logEmpty": "插件日志为空。请先运行一次同步，然后再复制。",
-        "logCopied": "插件日志已复制，请将其粘贴到测试反馈中。",
-        "logCopyFailed": "无法复制插件日志。",
-        "logReadFailed": "无法读取插件日志。",
-        "catalogOpened": "FilamentHub 目录已打开。",
-        "sliceWrongStep": "当前步骤不是 G-code 后处理步骤",
-        "sliceNotReady": "G-code 文件尚未就绪",
-        "sliceUnreadable": "无法读取 G-code",
-        "sliceNotSignedIn": "尚未登录 FilamentHub",
-        "sliceReportFailed": "无法报告切片结果",
-        "sliceReported": "已将 {name} 报告给 FilamentHub",
-        "recoveryNone": "恢复：未选择任何项目。",
-        "recoveryDone": "已恢复为草稿：{count}。",
-        "importSignIn": "请在插件窗口中登录 FilamentHub，然后重试导入。",
-        "sessionExpired": "FilamentHub 会话已过期，请在插件窗口中重新登录。",
-        "exportFailed": "导出失败（HTTP {status}）。",
-        "importedLive": "已导入“{name}”，可在耗材下拉列表的 FilamentHub 分组中找到。",
-        "importedRestart": "已将“{name}”导入耗材预设。\n\n请重启 OrcaSlicer，以便在耗材下拉列表中显示。",
-        "importFailed": "导入失败：{error}",
-        "syncSignIn": "请在插件窗口中登录 FilamentHub，然后重试同步。",
-        "syncFailed": "同步失败（HTTP {status}）。",
-        "syncUnexpected": "同步失败：服务器返回了意外响应。",
-        "summaryNew": "新增：{count}",
-        "summaryUpdated": "已更新：{count}",
-        "summarySent": "已发送到 FilamentHub：{count}",
-        "summaryRemoved": "已删除：{count}",
-        "summaryRenamed": "已重命名：{count}",
-        "summaryCurrent": "已是最新：{count}",
-        "summaryFailed": "失败：{count}",
-        "summaryDrafts": "已导入为草稿：{count}",
-        "summaryNothing": "无需同步",
-        "profileMachine": "打印机配置",
-        "profileProcess": "打印配置",
-        "dropdownCurrent": "耗材下拉列表已更新。",
-        "dropdownRestart": "请重启 OrcaSlicer，以应用耗材下拉列表中的更改。",
-        "syncComplete": "同步完成：{summary}。{note}",
-    },
+ORCA_UI_LOCALES = (
+    "ca", "cs", "de", "en", "es", "eu", "fr", "hu", "it", "ja", "ko",
+    "lt", "nl", "pl", "pt_BR", "ru", "sv", "th", "tr", "uk", "vi",
+    "zh_CN", "zh_TW",
+)
+_CANONICAL_UI_LOCALES = {locale.lower(): locale for locale in ORCA_UI_LOCALES}
+_UI_LOCALE_ALIASES = {
+    "zh": "zh_CN",
+    "zh_hans": "zh_CN",
+    "zh_hans_cn": "zh_CN",
+    "zh_hant": "zh_TW",
+    "zh_hant_tw": "zh_TW",
 }
+_LOCALE_DIR = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)),
+    "filamenthub_locales",
+)
+
+
+def normalize_ui_language(language):
+    """Return Orca's canonical locale, preserving regional variants."""
+    if not language:
+        return ""
+    token = str(language).strip().replace("-", "_")
+    lowered = token.lower()
+    alias = _UI_LOCALE_ALIASES.get(lowered)
+    if alias:
+        return alias
+    exact = _CANONICAL_UI_LOCALES.get(lowered)
+    if exact:
+        return exact
+    base = lowered.split("_", 1)[0]
+    return _CANONICAL_UI_LOCALES.get(base, "en")
+
+
+def load_ui_catalogs(directory=None):
+    """Load bundled UTF-8 catalogs; invalid optional files cannot break startup."""
+    root = directory or _LOCALE_DIR
+    catalogs = {}
+    try:
+        names = sorted(os.listdir(root))
+    except OSError:
+        names = []
+    for name in names:
+        if not name.endswith(".json"):
+            continue
+        locale = name[:-5]
+        if locale not in ORCA_UI_LOCALES:
+            continue
+        try:
+            with open(os.path.join(root, name), "r", encoding="utf-8") as handle:
+                data = json.load(handle)
+        except (OSError, ValueError):
+            continue
+        if not isinstance(data, dict) or not all(
+            isinstance(key, str) and isinstance(value, str)
+            for key, value in data.items()
+        ):
+            continue
+        catalogs[locale] = data
+    catalogs.setdefault("en", {})
+    return catalogs
+
+
+def resolved_ui_catalog(language):
+    """Overlay exact and base catalogs on English for per-key fallback."""
+    locale = normalize_ui_language(language) or "en"
+    resolved = dict(UI_COPY.get("en", {}))
+    base = locale.split("_", 1)[0]
+    if base != "en":
+        resolved.update(UI_COPY.get(base, {}))
+    if locale not in {"en", base}:
+        resolved.update(UI_COPY.get(locale, {}))
+    return resolved
+
+
+UI_COPY = load_ui_catalogs()
 
 _CACHED_UI_LANGUAGE = ""
 
@@ -373,7 +261,7 @@ def refresh_ui_language():
 
 def ui_text(key, **values):
     language = _CACHED_UI_LANGUAGE or "en"
-    template = UI_COPY.get(language, UI_COPY["en"])[key]
+    template = resolved_ui_catalog(language).get(key, key)
     return template.format(**values)
 
 
@@ -1809,13 +1697,26 @@ var catalogReady = false;
 var catalogReadyTimer = null;
 var UI_COPY = __UI_COPY__;
 var hostLanguage = '__HOST_UI_LANGUAGE__';
-var browserLanguage = (hostLanguage || navigator.language || 'en').toLowerCase();
-var uiLocale = browserLanguage.indexOf('ru') === 0
-  ? 'ru'
-  : browserLanguage.indexOf('zh') === 0
-    ? 'zh'
-    : 'en';
-var uiCopy = UI_COPY[uiLocale];
+function normalizeUiLocale(value) {
+  var token = String(value || '').replace(/-/g, '_');
+  var lowered = token.toLowerCase();
+  var aliases = { zh: 'zh_CN', zh_hans: 'zh_CN', zh_hans_cn: 'zh_CN',
+                  zh_hant: 'zh_TW', zh_hant_tw: 'zh_TW' };
+  if (aliases[lowered]) return aliases[lowered];
+  var exact = Object.keys(UI_COPY).find(function(key) {
+    return key.toLowerCase() === lowered;
+  });
+  if (exact) return exact;
+  var base = lowered.split('_', 1)[0];
+  return Object.prototype.hasOwnProperty.call(UI_COPY, base) ? base : 'en';
+}
+function resolveUiCopy(value) {
+  var locale = normalizeUiLocale(value);
+  var base = locale.split('_', 1)[0];
+  return Object.assign({}, UI_COPY.en || {}, UI_COPY[base] || {}, UI_COPY[locale] || {});
+}
+var uiLocale = normalizeUiLocale(hostLanguage || navigator.language || 'en');
+var uiCopy = resolveUiCopy(uiLocale);
 document.documentElement.lang = uiLocale;
 
 function applyShellCopy() {
