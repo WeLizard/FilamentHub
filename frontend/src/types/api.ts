@@ -1565,6 +1565,7 @@ export interface WikiRevision {
     base_title: string | null;
     base_summary: string | null;
     base_content: string | null;
+    base_tags: string[] | null;
   created_by_id: number | null;
   created_by_username: string | null;
   reviewed_by_id: number | null;
@@ -1587,6 +1588,30 @@ export interface WikiRevision {
 
 export interface WikiRevisionListResponse {
   items: WikiRevision[];
+  total: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
+}
+
+export interface WikiPublicRevision {
+  id: number;
+  revision_number: number;
+  base_revision_id: number | null;
+  created_by_username: string | null;
+  authorship: WikiRevisionAuthorship;
+  title: string;
+  summary: string;
+  content: string;
+  tags: string[] | null;
+  edit_summary: string | null;
+  published_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface WikiPublicRevisionListResponse {
+  items: WikiPublicRevision[];
   total: number;
   page: number;
   page_size: number;

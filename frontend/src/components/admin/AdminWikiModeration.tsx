@@ -2,8 +2,6 @@ import { useState } from 'react';
 import type { AxiosError } from 'axios';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 import {
   CheckCircle2,
   Clock3,
@@ -21,18 +19,8 @@ import type { WikiRevision } from '../../types/api';
 import { translateApiError } from '../../utils/translateApiError';
 import { ModalOverlay } from '../ModalOverlay';
 import { toast } from '../Toast';
-
-
-function MarkdownPanel({ title, content, muted = false }: { title: string; content: string; muted?: boolean }) {
-  return (
-    <section className={`min-w-0 rounded-2xl border p-4 md:p-5 ${muted ? 'border-white/10 bg-black/10' : 'border-purple-400/20 bg-purple-500/[0.06]'}`}>
-      <h4 className="mb-4 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">{title}</h4>
-      <div className="prose prose-invert max-w-none break-words text-sm text-slate-200 [&_a]:text-blue-400 [&_blockquote]:border-l-4 [&_blockquote]:border-blue-500 [&_blockquote]:pl-4 [&_code]:rounded [&_code]:bg-black/40 [&_code]:px-1 [&_h1]:text-white [&_h2]:text-white [&_h3]:text-white [&_pre]:overflow-x-auto [&_pre]:rounded-xl [&_pre]:bg-black/50 [&_pre]:p-4">
-        <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
-      </div>
-    </section>
-  );
-}
+import { WikiContentRenderer } from '../wiki/WikiContentRenderer';
+import { WikiRevisionDiff, WikiRevisionMetadataDiff } from '../wiki/WikiRevisionDiff';
 
 function ModerationModal({ revision, onClose }: { revision: WikiRevision; onClose: () => void }) {
   const { t } = useTranslation();
@@ -91,10 +79,31 @@ function ModerationModal({ revision, onClose }: { revision: WikiRevision; onClos
             </div>
           )}
 
-          <div className={`grid gap-4 ${currentContent ? 'xl:grid-cols-2' : 'grid-cols-1'}`}>
-            {currentContent && <MarkdownPanel title={t('adminWiki.moderation.currentVersion')} content={currentContent} muted />}
-            <MarkdownPanel title={currentContent ? t('adminWiki.moderation.proposedVersion') : t('adminWiki.moderation.newArticle')} content={revision.content} />
-          </div>
+          {currentContent && (
+            <>
+              <WikiRevisionMetadataDiff
+                title={t('wikiDiff.metadata')}
+                items={[
+                  { label: t('wikiAuthoring.title'), before: revision.base_title || '', after: revision.title },
+                  { label: t('wikiAuthoring.summary'), before: revision.base_summary || '', after: revision.summary },
+                  { label: t('wikiAuthoring.tags'), before: (revision.base_tags || []).join(', '), after: (revision.tags || []).join(', ') },
+                ]}
+              />
+              <WikiRevisionDiff
+                before={currentContent}
+                after={revision.content}
+                title={t('wikiDiff.changes')}
+                emptyLabel={t('wikiDiff.noChanges')}
+              />
+            </>
+          )}
+
+          <section className={`${currentContent ? 'mt-5' : ''} min-w-0 rounded-2xl border border-purple-400/20 bg-purple-500/[0.06] p-4 md:p-5`}>
+            <h4 className="mb-4 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+              {currentContent ? t('wikiDiff.proposedPreview') : t('adminWiki.moderation.newArticle')}
+            </h4>
+            <WikiContentRenderer content={revision.content} className="text-sm" />
+          </section>
 
           {revision.peer_reviews.length > 0 && (
             <section className="mt-5 rounded-2xl border border-white/10 bg-white/[0.03] p-4">

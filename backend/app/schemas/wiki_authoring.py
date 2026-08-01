@@ -155,6 +155,7 @@ class WikiRevisionResponse(BaseModel):
     base_title: str | None = None
     base_summary: str | None = None
     base_content: str | None = None
+    base_tags: list[str] | None = None
     created_by_id: int | None
     created_by_username: str | None = None
     reviewed_by_id: int | None
@@ -177,6 +178,32 @@ class WikiRevisionResponse(BaseModel):
 
 class WikiRevisionListResponse(BaseModel):
     items: list[WikiRevisionResponse]
+    total: int
+    page: int
+    page_size: int
+    total_pages: int
+
+
+class WikiPublicRevisionResponse(BaseModel):
+    """Published revision data that is safe to expose without authentication."""
+
+    id: int
+    revision_number: int
+    base_revision_id: int | None
+    created_by_username: str | None = None
+    authorship: WikiRevisionAuthorship
+    title: str
+    summary: str
+    content: str
+    tags: list[str] | None
+    edit_summary: str | None
+    published_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class WikiPublicRevisionListResponse(BaseModel):
+    items: list[WikiPublicRevisionResponse]
     total: int
     page: int
     page_size: int

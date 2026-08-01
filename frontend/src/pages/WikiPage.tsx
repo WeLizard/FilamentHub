@@ -188,13 +188,21 @@ export function WikiPage() {
                 <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-400">{t('wikiAuthoring.contributeDescription')}</p>
               </div>
             </div>
-            <button type="button" onClick={() => setAuthoringRevision('new')} className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-blue-500 to-purple-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-purple-950/30 transition hover:brightness-110">
-              <FilePenLine className="h-4 w-4" />{t('wikiAuthoring.writeArticle')}
-            </button>
+            <div className="flex shrink-0 flex-wrap gap-2">
+              <button type="button" onClick={() => navigate('/wiki/workspace')} className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/[0.05] px-4 py-2.5 text-sm font-medium text-slate-200 transition hover:bg-white/10 hover:text-white">
+                <Files className="h-4 w-4" />{t('wikiAuthoring.openWorkspace')}
+              </button>
+              <button type="button" onClick={() => setAuthoringRevision('new')} className="inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-blue-500 to-purple-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-purple-950/30 transition hover:brightness-110">
+                <FilePenLine className="h-4 w-4" />{t('wikiAuthoring.writeArticle')}
+              </button>
+            </div>
           </div>
           {ownRevisions && ownRevisions.items.length > 0 && (
             <div className="mt-4 border-t border-white/10 pt-4">
-              <div className="mb-2 flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-slate-500"><Files className="h-3.5 w-3.5" />{t('wikiAuthoring.yourWork')}</div>
+              <div className="mb-2 flex items-center justify-between gap-3 text-xs font-medium uppercase tracking-wider text-slate-500">
+                <span className="flex items-center gap-2"><Files className="h-3.5 w-3.5" />{t('wikiAuthoring.yourWork')}</span>
+                <button type="button" onClick={() => navigate('/wiki/workspace')} className="inline-flex items-center gap-1 text-blue-300 transition hover:text-blue-200">{t('wikiAuthoring.viewAllWork')}<ChevronRight className="h-3.5 w-3.5" /></button>
+              </div>
               <div className="flex gap-2 overflow-x-auto pb-1">
                 {ownRevisions.items.map((revision) => (
                   <button key={revision.id} type="button" disabled={revision.status !== 'draft' && revision.status !== 'rejected'} onClick={() => revision.status === 'rejected' ? retryRevision.mutate(revision.id) : setAuthoringRevision(revision)} className="min-w-[210px] rounded-xl border border-white/10 bg-black/10 px-3 py-2.5 text-left transition hover:border-blue-400/30 hover:bg-white/5 disabled:cursor-default disabled:hover:border-white/10">

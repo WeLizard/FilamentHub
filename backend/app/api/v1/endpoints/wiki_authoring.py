@@ -22,6 +22,8 @@ from app.models.wiki_space import WikiSpace
 from app.schemas.wiki_authoring import (
     WikiArticleDraftCreate,
     WikiModerationDecision,
+    WikiPublicRevisionListResponse,
+    WikiPublicRevisionResponse,
     WikiRevisionCreate,
     WikiRevisionListResponse,
     WikiRevisionResponse,
@@ -71,6 +73,7 @@ def _revision_response(revision: WikiRevision) -> WikiRevisionResponse:
         base_title=(revision.base_revision.title if revision.base_revision else None),
         base_summary=(revision.base_revision.summary if revision.base_revision else None),
         base_content=(revision.base_revision.content if revision.base_revision else None),
+        base_tags=(revision.base_revision.tags if revision.base_revision else None),
         created_by_id=revision.created_by_id,
         created_by_username=(
             revision.created_by.username if revision.created_by is not None else None
@@ -107,6 +110,28 @@ def _revision_response(revision: WikiRevision) -> WikiRevisionResponse:
             )
             for review in sorted(revision.peer_reviews, key=lambda item: item.created_at)
         ],
+    )
+
+
+def _public_revision_response(revision: WikiRevision) -> WikiPublicRevisionResponse:
+    """Serialize only published attribution and content, never review internals."""
+
+    return WikiPublicRevisionResponse(
+        id=revision.id,
+        revision_number=revision.revision_number,
+        base_revision_id=revision.base_revision_id,
+        created_by_username=(
+            revision.created_by.username if revision.created_by is not None else None
+        ),
+        authorship=revision.authorship,
+        title=revision.title,
+        summary=revision.summary,
+        content=revision.content,
+        tags=revision.tags,
+        edit_summary=revision.edit_summary,
+        published_at=revision.published_at,
+        created_at=revision.created_at,
+        updated_at=revision.updated_at,
     )
 
 
@@ -400,14 +425,14 @@ async def decide_revision(
 
 
 @router.get(
-    "/articles/{article_slug}/history", response_model=WikiRevisionListResponse
+    "/articles/{article_slug}/history", response_model=WikiPublicRevisionListResponse
 )
 async def list_public_revision_history(
     article_slug: str,
     db: Annotated[AsyncSession, Depends(get_db)],
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
-) -> WikiRevisionListResponse:
+) -> WikiPublicRevisionListResponse:
     article_id = (
         await db.execute(
             select(WikiArticle.id).where(
@@ -418,12 +443,26 @@ async def list_public_revision_history(
     ).scalar_one_or_none()
     if article_id is None:
         raise_error(status.HTTP_404_NOT_FOUND, ERR_ARTICLE_NOT_FOUND)
-    return await _revision_page(
-        db,
-        select(WikiRevision).where(
-            WikiRevision.article_id == article_id,
-            WikiRevision.status == WikiRevisionStatus.PUBLISHED,
-        ),
+    statement = select(WikiRevision).where(
+        WikiRevision.article_id == article_id,
+        WikiRevision.status == WikiRevisionStatus.PUBLISHED,
+    )
+    count_result = await db.execute(
+        select(func.count()).select_from(statement.order_by(None).subquery())
+    )
+    total = int(count_result.scalar_one())
+    result = await db.execute(
+        statement.options(
+            selectinload(WikiRevision.created_by),
+        )
+        .order_by(WikiRevision.revision_number.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    )
+    return WikiPublicRevisionListResponse(
+        items=[_public_revision_response(item) for item in result.scalars().all()],
+        total=total,
         page=page,
         page_size=page_size,
+        total_pages=(total + page_size - 1) // page_size,
     )

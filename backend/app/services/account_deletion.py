@@ -1,6 +1,6 @@
 """Сервис для удаления аккаунта пользователя с обработкой связанных данных."""
 
-from sqlalchemy import and_, func, select, update
+from sqlalchemy import and_, delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -25,6 +25,8 @@ from app.models.user import User, UserRole
 from app.models.user_printer_device import UserPrinterDevice
 from app.models.user_saved_preset import UserSavedPreset
 from app.models.user_spool import UserSpool
+from app.models.wiki_article import WikiArticle
+from app.models.wiki_revision import WikiRevision, WikiRevisionReview, WikiRevisionStatus
 
 
 async def _library_stats(user_id: int, db: AsyncSession) -> dict:
@@ -325,6 +327,59 @@ async def delete_user_account(
     user.brand_id = None
     if user.role == UserRole.BRAND:
         user.role = UserRole.USER
+
+    # Private Wiki work is owned user data. Remove unpublished articles and
+    # non-published revisions; preserve published knowledge without personal
+    # attribution so public history remains intact.
+    private_article_ids = (
+        await db.scalars(
+            select(WikiArticle.id).where(
+                WikiArticle.created_by_id == user_id,
+                WikiArticle.published_revision_id.is_(None),
+            )
+        )
+    ).all()
+    if private_article_ids:
+        await db.execute(
+            delete(WikiArticle).where(WikiArticle.id.in_(private_article_ids))
+        )
+
+    await db.execute(
+        delete(WikiRevision).where(
+            WikiRevision.created_by_id == user_id,
+            WikiRevision.status != WikiRevisionStatus.PUBLISHED,
+        )
+    )
+    await db.execute(
+        update(WikiArticle)
+        .where(WikiArticle.created_by_id == user_id)
+        .values(created_by_id=None, author=None)
+    )
+    await db.execute(
+        update(WikiArticle)
+        .where(WikiArticle.updated_by_id == user_id)
+        .values(updated_by_id=None)
+    )
+    await db.execute(
+        update(WikiArticle)
+        .where(WikiArticle.reviewed_by_id == user_id)
+        .values(reviewed_by_id=None)
+    )
+    await db.execute(
+        update(WikiRevision)
+        .where(WikiRevision.created_by_id == user_id)
+        .values(created_by_id=None)
+    )
+    await db.execute(
+        update(WikiRevision)
+        .where(WikiRevision.reviewed_by_id == user_id)
+        .values(reviewed_by_id=None)
+    )
+    await db.execute(
+        update(WikiRevisionReview)
+        .where(WikiRevisionReview.reviewer_id == user_id)
+        .values(reviewer_id=None)
+    )
 
     threads = (
         await db.scalars(

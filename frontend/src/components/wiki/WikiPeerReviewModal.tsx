@@ -2,8 +2,6 @@ import { useState } from 'react';
 import type { AxiosError } from 'axios';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 import {
   CheckCircle2,
   ExternalLink,
@@ -19,18 +17,8 @@ import type { WikiReviewVerdict, WikiRevision } from '../../types/api';
 import { translateApiError } from '../../utils/translateApiError';
 import { ModalOverlay } from '../ModalOverlay';
 import { toast } from '../Toast';
-
-
-function RevisionPanel({ label, content, muted = false }: { label: string; content: string; muted?: boolean }) {
-  return (
-    <section className={`min-w-0 rounded-2xl border p-4 md:p-5 ${muted ? 'border-white/10 bg-black/10' : 'border-cyan-400/20 bg-cyan-500/[0.05]'}`}>
-      <h4 className="mb-4 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">{label}</h4>
-      <div className="prose prose-invert max-w-none break-words text-sm text-slate-200 [&_a]:text-blue-400 [&_blockquote]:border-l-4 [&_blockquote]:border-blue-500 [&_blockquote]:pl-4 [&_code]:rounded [&_code]:bg-black/40 [&_code]:px-1 [&_h1]:text-white [&_h2]:text-white [&_h3]:text-white [&_pre]:overflow-x-auto [&_pre]:rounded-xl [&_pre]:bg-black/50 [&_pre]:p-4">
-        <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
-      </div>
-    </section>
-  );
-}
+import { WikiContentRenderer } from './WikiContentRenderer';
+import { WikiRevisionDiff, WikiRevisionMetadataDiff } from './WikiRevisionDiff';
 
 
 interface WikiPeerReviewModalProps {
@@ -84,10 +72,31 @@ export function WikiPeerReviewModal({ revision, onClose }: WikiPeerReviewModalPr
         </header>
 
         <div className="max-h-[calc(94vh-270px)] overflow-y-auto p-5 md:p-7">
-          <div className={`grid gap-4 ${revision.base_content ? 'xl:grid-cols-2' : 'grid-cols-1'}`}>
-            {revision.base_content && <RevisionPanel label={t('wikiPeerReview.currentVersion')} content={revision.base_content} muted />}
-            <RevisionPanel label={revision.base_content ? t('wikiPeerReview.proposedVersion') : t('wikiPeerReview.newArticle')} content={revision.content} />
-          </div>
+          {revision.base_content && (
+            <>
+              <WikiRevisionMetadataDiff
+                title={t('wikiDiff.metadata')}
+                items={[
+                  { label: t('wikiAuthoring.title'), before: revision.base_title || '', after: revision.title },
+                  { label: t('wikiAuthoring.summary'), before: revision.base_summary || '', after: revision.summary },
+                  { label: t('wikiAuthoring.tags'), before: (revision.base_tags || []).join(', '), after: (revision.tags || []).join(', ') },
+                ]}
+              />
+              <WikiRevisionDiff
+                before={revision.base_content}
+                after={revision.content}
+                title={t('wikiDiff.changes')}
+                emptyLabel={t('wikiDiff.noChanges')}
+              />
+            </>
+          )}
+
+          <section className={`${revision.base_content ? 'mt-5' : ''} min-w-0 rounded-2xl border border-cyan-400/20 bg-cyan-500/[0.05] p-4 md:p-5`}>
+            <h4 className="mb-4 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+              {revision.base_content ? t('wikiDiff.proposedPreview') : t('wikiPeerReview.newArticle')}
+            </h4>
+            <WikiContentRenderer content={revision.content} className="text-sm" />
+          </section>
 
           <section className="mt-5 rounded-2xl border border-white/10 bg-white/[0.03] p-4 md:p-5">
             <div className="mb-4 flex items-start gap-3"><MessageSquareText className="mt-0.5 h-5 w-5 text-cyan-300" /><div><h4 className="font-medium text-white">{t('wikiPeerReview.yourCheck')}</h4><p className="mt-1 text-sm leading-6 text-slate-400">{t('wikiPeerReview.advisory')}</p></div></div>

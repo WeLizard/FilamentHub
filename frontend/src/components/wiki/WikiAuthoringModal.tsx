@@ -1,8 +1,6 @@
 import { useMemo, useState } from 'react';
 import type { AxiosError } from 'axios';
 import { useTranslation } from 'react-i18next';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 import {
   AlertTriangle,
   BookOpen,
@@ -25,6 +23,7 @@ import type {
 import { translateApiError } from '../../utils/translateApiError';
 import { ModalOverlay } from '../ModalOverlay';
 import { toast } from '../Toast';
+import { WikiContentRenderer } from './WikiContentRenderer';
 
 
 interface WikiAuthoringModalProps {
@@ -71,6 +70,7 @@ export function WikiAuthoringModal({
   const [intent, setIntent] = useState<SubmitIntent | null>(null);
   const [discardPrompt, setDiscardPrompt] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
+  const [savedRevision, setSavedRevision] = useState<WikiRevision | null>(revision);
 
   const initialFingerprint = useMemo(
     () => JSON.stringify({ title, summary, content, tags, editSummary, categoryId, language }),
@@ -129,8 +129,8 @@ export function WikiAuthoringModal({
         edit_summary: editSummary.trim() || null,
       };
 
-      if (revision) {
-        saved = await wikiAPI.updateRevision(revision.id, revisionPayload);
+      if (savedRevision) {
+        saved = await wikiAPI.updateRevision(savedRevision.id, revisionPayload);
       } else if (article) {
         saved = await wikiAPI.createRevision(article.id, revisionPayload);
       } else {
@@ -141,14 +141,17 @@ export function WikiAuthoringModal({
           ...revisionPayload,
         });
       }
+      setSavedRevision(saved);
+      onSaved(saved);
 
       if (nextIntent === 'review') {
         saved = await wikiAPI.submitRevision(saved.id, editSummary.trim() || null);
+        setSavedRevision(saved);
+        onSaved(saved);
         toast.success(t('wikiAuthoring.submitted'));
       } else {
         toast.success(t('wikiAuthoring.draftSaved'));
       }
-      onSaved(saved);
       onClose();
     } catch (error) {
       const apiError = error as AxiosError<{ detail?: unknown }>;
@@ -275,9 +278,7 @@ export function WikiAuthoringModal({
                 {summary && <p className="mt-3 text-sm leading-6 text-slate-400">{summary}</p>}
               </div>
               {content ? (
-                <div className="prose prose-invert max-w-none break-words text-slate-200 [&_a]:text-blue-400 [&_blockquote]:border-l-4 [&_blockquote]:border-blue-500 [&_blockquote]:bg-blue-500/5 [&_blockquote]:px-4 [&_code]:rounded [&_code]:bg-black/40 [&_code]:px-1.5 [&_code]:py-0.5 [&_h1]:text-white [&_h2]:text-white [&_h3]:text-white [&_li]:marker:text-blue-400 [&_pre]:overflow-x-auto [&_pre]:rounded-xl [&_pre]:bg-black/50 [&_pre]:p-4">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
-                </div>
+                <WikiContentRenderer content={content} className="text-sm" />
               ) : (
                 <div className="rounded-2xl border border-dashed border-white/15 px-5 py-12 text-center text-sm text-slate-500">{t('wikiAuthoring.previewEmpty')}</div>
               )}

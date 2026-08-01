@@ -1,6 +1,6 @@
 /** Страница статьи Wiki - полный текст с Markdown */
 
-import React, { useState, useEffect, useRef, Children } from 'react';
+import { useState, useEffect } from 'react';
 import type { AxiosError } from 'axios';
 import { useTranslation } from 'react-i18next';
 import { useParams, useNavigate } from 'react-router-dom';
@@ -21,51 +21,15 @@ import {
   LibraryBig,
 } from 'lucide-react';
 import { wikiAPI } from '../api/client';
-import { safeStorage } from '../utils/storage';
 import type { WikiArticle, WikiFeedbackStats } from '../types/api';
-import ReactMarkdown from 'react-markdown';
-import type { ExtraProps } from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import mermaid from 'mermaid';
 import { SEOHead } from '../components/SEOHead';
 import { ShareMenu } from '../components/ShareMenu';
 import { WikiFeedbackModal } from '../components/WikiFeedbackModal';
 import { useAuth } from '../contexts/AuthContext';
-import { TableOfContents, generateHeadingId, extractHeadings } from '../components/wiki/TableOfContents';
+import { TableOfContents, extractHeadings } from '../components/wiki/TableOfContents';
 import { MobileTocDrawer } from '../components/wiki/MobileTocDrawer';
 import { WikiAuthoringModal } from '../components/wiki/WikiAuthoringModal';
-
-// Mermaid диаграмма компонент
-function MermaidDiagram({ chart, id }: { chart: string; id: string }) {
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (ref.current && chart) {
-      mermaid.initialize({
-        startOnLoad: false,
-        theme: 'dark',
-        themeVariables: {
-          background: '#1a1a1a',
-          primaryColor: '#6366f1',
-          primaryTextColor: '#fff',
-          primaryBorderColor: '#818cf8',
-          lineColor: '#9ca3af',
-          secondaryColor: '#374151',
-          tertiaryColor: '#111827',
-        },
-      });
-      mermaid.run({ nodes: [ref.current] });
-    }
-  }, [chart]);
-
-  return (
-    <div ref={ref} className="mermaid my-6">
-      {chart}
-    </div>
-  );
-}
+import { WikiContentRenderer } from '../components/wiki/WikiContentRenderer';
 
 export function WikiArticlePage() {
   const { t, i18n } = useTranslation();
@@ -79,49 +43,6 @@ export function WikiArticlePage() {
   const [error, setError] = useState<string | null>(null);
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const [showAuthoringModal, setShowAuthoringModal] = useState(false);
-  const [checkboxStates, setCheckboxStates] = useState<Record<string, boolean>>({});
-
-  // Загружаем состояние чекбоксов из localStorage (safeStorage — в iframe
-  // плагина OrcaSlicer прямой доступ кидает SecurityError и валит страницу)
-  useEffect(() => {
-    if (slug) {
-      const saved = safeStorage.get(`wiki-checkboxes-${slug}`);
-      if (saved) {
-        try {
-          setCheckboxStates(JSON.parse(saved));
-        } catch {
-          // ignore invalid JSON
-        }
-      } else {
-        setCheckboxStates({});
-      }
-    }
-  }, [slug]);
-
-  // Сохраняем состояние чекбоксов в localStorage
-  const handleCheckboxToggle = (key: string) => {
-    setCheckboxStates(prev => {
-      const newState = { ...prev, [key]: !prev[key] };
-      if (slug) {
-        safeStorage.set(`wiki-checkboxes-${slug}`, JSON.stringify(newState));
-      }
-      return newState;
-    });
-  };
-
-  // Функция для извлечения текста из React children
-  const getTextContent = (children: React.ReactNode): string => {
-    return React.Children.toArray(children)
-      .map((child) => {
-        if (typeof child === 'string') return child;
-        if (React.isValidElement(child)) {
-          const props = child.props as Record<string, unknown>;
-          if (props.children) return getTextContent(props.children as React.ReactNode);
-        }
-        return '';
-      })
-      .join('');
-  };
 
   // Загружаем статью
   useEffect(() => {
@@ -365,189 +286,10 @@ export function WikiArticlePage() {
 
             {/* Article Content (Markdown) */}
             <article className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-2xl p-6 md:p-8 mb-8 overflow-hidden">
-              <div
-                className="prose prose-lg max-w-none break-words text-gray-200
-                  [&>*]:text-gray-200
-                  [&_h1]:text-white [&_h1]:font-bold [&_h1]:text-3xl [&_h1]:mt-8 [&_h1]:mb-4 [&_h1]:border-b [&_h1]:border-white/20 [&_h1]:pb-3
-                  [&_h2]:text-white [&_h2]:font-bold [&_h2]:text-2xl [&_h2]:mt-8 [&_h2]:mb-4
-                  [&_h3]:text-white [&_h3]:font-bold [&_h3]:text-xl [&_h3]:mt-6 [&_h3]:mb-3
-                  [&_h4]:text-white [&_h4]:font-semibold [&_h4]:text-lg [&_h4]:mt-4 [&_h4]:mb-2
-                  [&_p]:text-gray-200 [&_p]:leading-7 [&_p]:my-4 [&_p]:break-words
-                  [&_a]:text-blue-400 [&_a]:no-underline hover:[&_a]:text-blue-300 hover:[&_a]:underline
-                  [&_strong]:text-white [&_strong]:font-semibold
-                  [&_em]:text-gray-200
-                  [&_code]:text-cyan-300 [&_code]:bg-black/40 [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:rounded [&_code]:text-sm
-                  [&_pre]:bg-black/60 [&_pre]:border [&_pre]:border-white/20 [&_pre]:rounded-lg [&_pre]:p-4 [&_pre]:overflow-x-auto
-                  [&_blockquote]:border-l-4 [&_blockquote]:border-blue-500 [&_blockquote]:pl-6 [&_blockquote]:pr-4 [&_blockquote]:py-2 [&_blockquote]:bg-blue-500/10 [&_blockquote]:text-gray-200 [&_blockquote]:my-6 [&_blockquote]:rounded-r-lg
-                  [&_ul]:text-gray-200 [&_ul]:my-4 [&_ul]:space-y-2 [&_ul]:list-disc [&_ul]:pl-6
-                  [&_ol]:text-gray-200 [&_ol]:my-4 [&_ol]:space-y-2 [&_ol]:list-decimal [&_ol]:pl-6
-                  [&_li]:text-gray-200 [&_li]:marker:text-blue-400 [&_li]:pl-2
-                  [&_img]:rounded-xl [&_img]:shadow-xl [&_img]:my-6 [&_img]:max-w-full [&_img]:h-auto
-                  [&_hr]:border-white/20 [&_hr]:my-8
-                "
-              >
-                <ReactMarkdown
-                  remarkPlugins={[remarkGfm]}
-                  components={{
-                    code(props: React.ComponentPropsWithoutRef<'code'> & ExtraProps & { inline?: boolean }) {
-                      const { node, inline, className, children, ...rest } = props;
-                      const match = /language-(\w+)/.exec(className || '');
-
-                      // Mermaid диаграммы
-                      if (!inline && match && match[1] === 'mermaid') {
-                        const id = `mermaid-${Math.random().toString(36).substr(2, 9)}`;
-                        return (
-                          <MermaidDiagram chart={String(children).replace(/\n$/, '')} id={id} />
-                        );
-                      }
-
-                      // Обычный code блок с языком
-                      if (!inline && match) {
-                        return (
-                          <SyntaxHighlighter
-                            style={vscDarkPlus as Record<string, React.CSSProperties>}
-                            language={match[1]}
-                            PreTag="div"
-                          >
-                            {String(children).replace(/\n$/, '')}
-                          </SyntaxHighlighter>
-                        );
-                      }
-
-                      // Code блок без языка (``` без указания языка)
-                      if (!inline) {
-                        return (
-                          <SyntaxHighlighter
-                            style={vscDarkPlus as Record<string, React.CSSProperties>}
-                            language="text"
-                            PreTag="div"
-                          >
-                            {String(children).replace(/\n$/, '')}
-                          </SyntaxHighlighter>
-                        );
-                      }
-
-                      // Inline code
-                      return (
-                        <code className={className} {...rest}>
-                          {children}
-                        </code>
-                      );
-                    },
-                    table(props: React.ComponentPropsWithoutRef<'table'> & ExtraProps) {
-                      const { node, children, ...rest } = props;
-                      return (
-                        <div className="overflow-x-auto my-6 -mx-2 px-2">
-                          <table
-                            className="w-full border-collapse rounded-lg overflow-hidden text-sm
-                              [&_thead]:bg-white/10
-                              [&_th]:px-3 [&_th]:py-2.5 [&_th]:text-left [&_th]:text-white [&_th]:font-semibold [&_th]:border-b [&_th]:border-white/20
-                              [&_tbody]:bg-white/5
-                              [&_td]:px-3 [&_td]:py-2.5 [&_td]:text-gray-200 [&_td]:border-b [&_td]:border-white/10
-                              [&_tr:hover]:bg-white/10
-                              [&_tr:last-child_td]:border-b-0"
-                            {...rest}
-                          >
-                            {children}
-                          </table>
-                        </div>
-                      );
-                    },
-                    img(props: React.ComponentPropsWithoutRef<'img'> & ExtraProps) {
-                      const { node, src, alt, ...rest } = props;
-                      return (
-                        <img
-                          src={src}
-                          alt={alt || ''}
-                          className="max-w-full h-auto rounded-xl shadow-xl my-6"
-                          loading="lazy"
-                          {...rest}
-                        />
-                      );
-                    },
-                    h1(props: React.ComponentPropsWithoutRef<'h1'> & ExtraProps) {
-                      const { node, children, ...rest } = props;
-                      const text = String(children);
-                      const id = generateHeadingId(text);
-                      return (
-                        <h1 id={id} className="scroll-mt-24" {...rest}>
-                          {children}
-                        </h1>
-                      );
-                    },
-                    h2(props: React.ComponentPropsWithoutRef<'h2'> & ExtraProps) {
-                      const { node, children, ...rest } = props;
-                      const text = String(children);
-                      const id = generateHeadingId(text);
-                      return (
-                        <h2 id={id} className="scroll-mt-24" {...rest}>
-                          {children}
-                        </h2>
-                      );
-                    },
-                    h3(props: React.ComponentPropsWithoutRef<'h3'> & ExtraProps) {
-                      const { node, children, ...rest } = props;
-                      const text = String(children);
-                      const id = generateHeadingId(text);
-                      return (
-                        <h3 id={id} className="scroll-mt-24" {...rest}>
-                          {children}
-                        </h3>
-                      );
-                    },
-                    li(props: React.ComponentPropsWithoutRef<'li'> & ExtraProps) {
-                      const { node, children, className, ...rest } = props;
-                      const childArray = Children.toArray(children);
-
-                      // Проверяем есть ли checkbox среди children
-                      const checkboxChild = childArray.find((child) =>
-                        React.isValidElement(child) &&
-                        (child as React.ReactElement<{ type?: string }>).props?.type === 'checkbox'
-                      );
-
-                      if (checkboxChild) {
-                        // Это task list item - делаем интерактивным
-                        const textContent = getTextContent(children);
-                        const checkboxKey = textContent
-                          .toLowerCase()
-                          .replace(/[^a-zа-яё0-9\s]/gi, '')
-                          .trim()
-                          .replace(/\s+/g, '-')
-                          .slice(0, 50);
-
-                        const isChecked = checkboxStates[checkboxKey] ?? false;
-
-                        // Получаем остальные children (текст и форматирование)
-                        const otherChildren = childArray.filter((child) =>
-                          !(React.isValidElement(child) &&
-                            (child as React.ReactElement<{ type?: string }>).props?.type === 'checkbox')
-                        );
-
-                        return (
-                          <li className={`${className || ''} flex items-start gap-2`} {...rest}>
-                            <input
-                              type="checkbox"
-                              checked={isChecked}
-                              onChange={() => handleCheckboxToggle(checkboxKey)}
-                              className="mt-1.5 h-4 w-4 cursor-pointer accent-indigo-500 rounded"
-                            />
-                            <span
-                              className={`flex-1 cursor-pointer ${isChecked ? 'line-through text-gray-500' : ''}`}
-                              onClick={() => handleCheckboxToggle(checkboxKey)}
-                            >
-                              {otherChildren}
-                            </span>
-                          </li>
-                        );
-                      }
-
-                      return <li className={className} {...rest}>{children}</li>;
-                    },
-                  }}
-                >
-                  {article.content}
-                </ReactMarkdown>
-              </div>
+              <WikiContentRenderer
+                content={article.content}
+                taskStorageKey={slug ? `wiki-checkboxes-${slug}` : undefined}
+              />
             </article>
 
             {/* Article Footer - Feedback Section */}

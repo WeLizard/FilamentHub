@@ -129,6 +129,16 @@ async def sync_article(
     )
     article = result.scalar_one_or_none()
 
+    if article is not None and article.language != language:
+        return {
+            "file": file_path.name,
+            "status": "skipped",
+            "reason": (
+                f"slug '{slug}' already belongs to language '{article.language}'; "
+                f"refusing to replace it with '{language}'"
+            ),
+        }
+
     # Parse tags
     tags = metadata.get("tags", [])
     if isinstance(tags, str):

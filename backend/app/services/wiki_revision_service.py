@@ -22,6 +22,7 @@ from app.core.errors import (
     ERR_WIKI_REVISION_NOT_FOUND,
     ERR_WIKI_REVISION_NOT_SUBMITTED,
     ERR_WIKI_SELF_REVIEW_FORBIDDEN,
+    ERR_WIKI_STALE_REVISION,
     raise_error,
 )
 from app.models.user import User, UserRole
@@ -491,6 +492,11 @@ async def moderate_revision(
         and revision.created_by_id == editor.id
     ):
         raise_error(status.HTTP_403_FORBIDDEN, ERR_WIKI_SELF_REVIEW_FORBIDDEN)
+    if (
+        decision == "publish"
+        and revision.base_revision_id != article.published_revision_id
+    ):
+        raise_error(status.HTTP_409_CONFLICT, ERR_WIKI_STALE_REVISION)
 
     now = datetime.now(timezone.utc)
     revision.reviewed_by_id = editor.id

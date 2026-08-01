@@ -1285,6 +1285,12 @@
     "faq6A2_bold": "构建状态：",
     "faq6A2_text": "Windows（安装程序 + 便携版）和 Linux (AppImage) 已准备好使用。macOS 将在稍后推出（构建需要相应的系统）。您也可以从源代码自己为您的平台构建版本——说明在存储库中。"
   },
+  "wikiDiff": {
+    "metadata": "标题、摘要和标签",
+    "changes": "精确更改",
+    "noChanges": "文本未更改",
+    "proposedPreview": "建议版本的显示效果"
+  },
   "wikiPeerReview": {
     "availableTitle": "需要社区审核",
     "availableDescription": "选择您熟悉的主题，帮助编辑核实建议修改的准确性。",
@@ -1346,6 +1352,8 @@
     "contributeTitle": "帮助完善知识库",
     "contributeDescription": "编写文章并建议修正。公开版本仅在编辑审核后更新。",
     "writeArticle": "撰写文章",
+    "openWorkspace": "我的文章",
+    "viewAllWork": "查看全部",
     "yourWork": "您的修订",
     "fixRevision": "创建新修订并处理反馈",
     "preparingRevision": "正在准备新修订...",
@@ -1361,6 +1369,38 @@
       "editorial": "编辑内容",
       "community": "社区内容"
     }
+  },
+  "wikiWorkspace": {
+    "seoTitle": "我的 Wiki 文章",
+    "seoDescription": "用于管理 FilamentHub Wiki 草稿和修订的私人工作区。",
+    "backToWiki": "返回 Wiki",
+    "title": "我的 Wiki 文章",
+    "description": "在一个位置撰写、提交并跟踪所有文章和修订。审核期间，读者仍会看到已批准的版本。",
+    "newArticle": "新文章",
+    "filters": "修订状态",
+    "all": "全部",
+    "updated": "更新于 {{date}}",
+    "reviews_other": "{{count}} 条社区审核",
+    "editorNote": "编辑备注：",
+    "continueEditing": "继续编辑",
+    "withdraw": "撤回",
+    "createCorrection": "准备修正",
+    "openArticle": "打开文章",
+    "loadError": "无法加载您的 Wiki 内容",
+    "retry": "重试",
+    "retryError": "无法准备修正",
+    "emptyTitle": "这里还没有修订",
+    "emptyDescription": "创建新文章，或对已发布的知识库文章提出修正。",
+    "pagination": "修订分页",
+    "previous": "上一页",
+    "next": "下一页",
+    "page": "第 {{page}} 页，共 {{total}} 页",
+    "withdrawTitle": "撤回此修订？",
+    "withdrawMessage": "它将离开审核队列，当前已发布的文章不会改变。",
+    "withdrawConfirm": "撤回修订",
+    "cancel": "取消",
+    "withdrawn": "修订已撤回",
+    "withdrawError": "无法撤回修订"
   },
   "wikiPage": {
     "seoTitle": "3D 打印知识库",
@@ -5578,6 +5618,7 @@
     "ERR_ARTICLE_NOT_FOUND": "未找到文章",
     "ERR_WIKI_REVISION_NOT_FOUND": "未找到文章修订版本",
     "ERR_WIKI_ACTIVE_REVISION_EXISTS": "您已为此文章创建了草稿或已提交的修订版本",
+    "ERR_WIKI_STALE_REVISION": "此修订等待审核期间文章已更新。请先将更改合并到当前版本",
     "ERR_WIKI_REVISION_NOT_EDITABLE": "此修订版本已无法编辑",
     "ERR_WIKI_REVISION_NOT_SUBMITTED": "此修订版本未处于待审核状态",
     "ERR_WIKI_SELF_REVIEW_FORBIDDEN": "不能审核或发布您自己的社区修订版本",

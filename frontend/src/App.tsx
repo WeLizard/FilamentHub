@@ -32,6 +32,7 @@ const CrmWorkspacePage = lazy(() => import('./pages/CrmWorkspacePage').then(m =>
 const BrandDetailPage = lazy(() => import('./pages/BrandDetailPage').then(m => ({ default: m.BrandDetailPage })));
 const AdminPanel = lazy(() => import('./pages/AdminPanel').then(m => ({ default: m.AdminPanel })));
 const WikiPage = lazy(() => import('./pages/WikiPage').then(m => ({ default: m.WikiPage })));
+const WikiWorkspacePage = lazy(() => import('./pages/WikiWorkspacePage').then(m => ({ default: m.WikiWorkspacePage })));
 const WikiCategoryPage = lazy(() => import('./pages/WikiCategoryPage').then(m => ({ default: m.WikiCategoryPage })));
 const WikiArticlePage = lazy(() => import('./pages/WikiArticlePage').then(m => ({ default: m.WikiArticlePage })));
 const PrivacyPolicyPage = lazy(() => import('./pages/PrivacyPolicyPage').then(m => ({ default: m.PrivacyPolicyPage })));
@@ -48,6 +49,7 @@ if (typeof window !== 'undefined') {
       import('./pages/BrandDetailPage');
       import('./pages/AdminPanel');
       import('./pages/WikiPage');
+      import('./pages/WikiWorkspacePage');
       import('./pages/WikiCategoryPage');
       import('./pages/WikiArticlePage');
       import('./pages/PrivacyPolicyPage');
@@ -252,6 +254,18 @@ function AppContent() {
                 <WikiPage />
               </Suspense>
             </Layout>
+          }
+        />
+        <Route
+          path="/wiki/workspace"
+          element={
+            <ProtectedRoute>
+              <Layout>
+                <Suspense fallback={<PageLoader />}>
+                  <WikiWorkspacePage />
+                </Suspense>
+              </Layout>
+            </ProtectedRoute>
           }
         />
         <Route

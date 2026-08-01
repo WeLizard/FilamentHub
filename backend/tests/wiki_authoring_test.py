@@ -11,6 +11,7 @@ from app.models.wiki_article import WikiArticle, WikiArticleProvenance
 from app.models.wiki_category import WikiCategory
 from app.models.wiki_revision import WikiRevision, WikiRevisionStatus
 from app.models.wiki_space import WikiSpace
+from app.services.account_deletion import delete_user_account
 from app.services.wiki_sync_service import sync_article
 
 pytestmark = pytest.mark.asyncio
@@ -99,6 +100,102 @@ async def test_legacy_admin_create_also_records_published_revision(
     assert history.json()["items"][0]["authorship"] == "editorial"
 
 
+async def test_public_article_list_never_exposes_private_drafts(
+    client,
+    admin_user,
+    auth_user,
+    db_session,
+):
+    category = await _seed_wiki(db_session)
+    created = await client.post(
+        "/api/v1/wiki/author/articles",
+        headers=_auth_headers(auth_user),
+        json={
+            "category_id": category.id,
+            "title": "Private draft title",
+            "summary": "Private draft summary",
+            "content": "Private draft body",
+        },
+    )
+    assert created.status_code == 201, created.text
+
+    anonymous = await client.get("/api/v1/wiki/articles?published_only=false")
+    assert anonymous.status_code == 403
+    assert anonymous.json()["detail"]["code"] == "ERR_ACCESS_DENIED"
+
+    member = await client.get(
+        "/api/v1/wiki/articles?published_only=false",
+        headers=_auth_headers(auth_user),
+    )
+    assert member.status_code == 403
+
+    editor = await client.get(
+        "/api/v1/wiki/articles?published_only=false",
+        headers=_auth_headers(admin_user),
+    )
+    assert editor.status_code == 200
+
+
+async def test_public_history_excludes_moderation_and_peer_review_data(
+    client,
+    admin_user,
+    auth_user,
+    db_session,
+):
+    category = await _seed_wiki(db_session)
+    article = await client.post(
+        "/api/v1/wiki/author/articles",
+        headers=_auth_headers(admin_user),
+        json={
+            "category_id": category.id,
+            "title": "Public history",
+            "slug": "public-history",
+            "summary": "Published summary",
+            "content": "Published body",
+            "publish": True,
+        },
+    )
+    revision = await client.post(
+        f"/api/v1/wiki/author/articles/{article.json()['article_id']}/revisions",
+        headers=_auth_headers(auth_user),
+        json={"content": "Reviewed correction", "edit_summary": "Correct a fact"},
+    )
+    revision_id = revision.json()["id"]
+    await client.post(
+        f"/api/v1/wiki/author/revisions/{revision_id}/submit",
+        headers=_auth_headers(auth_user),
+        json={},
+    )
+    await client.post(
+        f"/api/v1/wiki/revisions/{revision_id}/reviews",
+        headers=_auth_headers(admin_user),
+        json={
+            "verdict": "support",
+            "comment": "Internal peer note",
+            "evidence_url": "https://example.test/evidence",
+        },
+    )
+    decision = await client.post(
+        f"/api/v1/wiki/moderation/revisions/{revision_id}/decision",
+        headers=_auth_headers(admin_user),
+        json={"decision": "publish", "review_note": "Internal editor note"},
+    )
+    assert decision.status_code == 200, decision.text
+
+    history = await client.get("/api/v1/wiki/articles/public-history/history")
+    assert history.status_code == 200, history.text
+    item = history.json()["items"][0]
+    assert item["content"] == "Reviewed correction"
+    for private_field in (
+        "review_note",
+        "reviewed_by_id",
+        "reviewed_by_username",
+        "peer_reviews",
+        "base_content",
+    ):
+        assert private_field not in item
+
+
 async def test_proposed_revision_does_not_replace_public_content_before_approval(
     client,
     admin_user,
@@ -160,6 +257,66 @@ async def test_proposed_revision_does_not_replace_public_content_before_approval
     history = await client.get("/api/v1/wiki/articles/pla-basics/history")
     assert history.status_code == 200, history.text
     assert history.json()["total"] == 2
+
+
+async def test_stale_revision_cannot_overwrite_newer_published_revision(
+    client,
+    admin_user,
+    auth_user,
+    db_session,
+):
+    category = await _seed_wiki(db_session)
+    admin_headers = _auth_headers(admin_user)
+    author_headers = _auth_headers(auth_user)
+    article = await client.post(
+        "/api/v1/wiki/author/articles",
+        headers=admin_headers,
+        json={
+            "category_id": category.id,
+            "title": "Concurrent article",
+            "summary": "Version one",
+            "content": "Version one body",
+            "publish": True,
+        },
+    )
+    article_id = article.json()["article_id"]
+
+    first = await client.post(
+        f"/api/v1/wiki/author/articles/{article_id}/revisions",
+        headers=author_headers,
+        json={"content": "Community version two", "edit_summary": "First branch"},
+    )
+    second = await client.post(
+        f"/api/v1/wiki/author/articles/{article_id}/revisions",
+        headers=admin_headers,
+        json={"content": "Editorial stale branch", "edit_summary": "Second branch"},
+    )
+    for revision, headers in ((first, author_headers), (second, admin_headers)):
+        submitted = await client.post(
+            f"/api/v1/wiki/author/revisions/{revision.json()['id']}/submit",
+            headers=headers,
+            json={},
+        )
+        assert submitted.status_code == 200, submitted.text
+
+    published = await client.post(
+        f"/api/v1/wiki/moderation/revisions/{first.json()['id']}/decision",
+        headers=admin_headers,
+        json={"decision": "publish"},
+    )
+    assert published.status_code == 200, published.text
+
+    stale = await client.post(
+        f"/api/v1/wiki/moderation/revisions/{second.json()['id']}/decision",
+        headers=admin_headers,
+        json={"decision": "publish"},
+    )
+    assert stale.status_code == 409
+    assert stale.json()["detail"]["code"] == "ERR_WIKI_STALE_REVISION"
+
+    live = await client.get(f"/api/v1/wiki/articles/{article.json()['article_slug']}")
+    assert live.status_code == 200
+    assert live.json()["content"] == "Community version two"
 
 
 async def test_community_author_cannot_publish_own_submission_after_role_change(
@@ -422,3 +579,114 @@ async def test_markdown_sync_respects_space_and_language_metadata(
     ).scalar_one()
     assert article.space_id == 1
     assert article.language == "en"
+
+
+async def test_markdown_sync_does_not_replace_article_of_another_language(
+    auth_user,
+    db_session,
+):
+    await _seed_wiki(db_session)
+    russian = await sync_article(
+        db_session,
+        Path("first-steps-ru.md"),
+        "Русский текст",
+        {
+            "title": "Первые шаги",
+            "slug": "first-steps-shared",
+            "category": "materials",
+            "status": "published",
+            "language": "ru",
+            "author_id": auth_user.id,
+        },
+    )
+    english = await sync_article(
+        db_session,
+        Path("first-steps-en.md"),
+        "English text",
+        {
+            "title": "First steps",
+            "slug": "first-steps-shared",
+            "category": "materials",
+            "status": "published",
+            "language": "en",
+            "author_id": auth_user.id,
+        },
+    )
+
+    assert russian["status"] == "created"
+    assert english["status"] == "skipped"
+    article = (
+        await db_session.execute(
+            select(WikiArticle).where(WikiArticle.slug == "first-steps-shared")
+        )
+    ).scalar_one()
+    assert article.language == "ru"
+    assert article.content == "Русский текст"
+
+
+async def test_account_deletion_removes_private_wiki_work_and_anonymizes_published(
+    client,
+    admin_user,
+    auth_user,
+    db_session,
+):
+    category = await _seed_wiki(db_session)
+    author_headers = _auth_headers(auth_user)
+    admin_headers = _auth_headers(admin_user)
+
+    private_article = await client.post(
+        "/api/v1/wiki/author/articles",
+        headers=author_headers,
+        json={
+            "category_id": category.id,
+            "title": "Delete my private draft",
+            "summary": "Private summary",
+            "content": "Private content",
+        },
+    )
+    public_article = await client.post(
+        "/api/v1/wiki/author/articles",
+        headers=author_headers,
+        json={
+            "category_id": category.id,
+            "title": "Keep public knowledge",
+            "slug": "keep-public-knowledge",
+            "summary": "Public summary",
+            "content": "Public content",
+        },
+    )
+    public_revision_id = public_article.json()["id"]
+    await client.post(
+        f"/api/v1/wiki/author/revisions/{public_revision_id}/submit",
+        headers=author_headers,
+        json={},
+    )
+    approved = await client.post(
+        f"/api/v1/wiki/moderation/revisions/{public_revision_id}/decision",
+        headers=admin_headers,
+        json={"decision": "publish"},
+    )
+    assert approved.status_code == 200, approved.text
+    correction = await client.post(
+        f"/api/v1/wiki/author/articles/{public_article.json()['article_id']}/revisions",
+        headers=author_headers,
+        json={"content": "Unpublished personal correction"},
+    )
+    assert correction.status_code == 201, correction.text
+
+    await delete_user_account(
+        auth_user,
+        delete_reviews=True,
+        release_brand_representation=False,
+        db=db_session,
+    )
+
+    assert await db_session.get(WikiArticle, private_article.json()["article_id"]) is None
+    preserved = await db_session.get(WikiArticle, public_article.json()["article_id"])
+    assert preserved is not None
+    assert preserved.author is None
+    assert preserved.created_by_id is None
+    assert await db_session.get(WikiRevision, correction.json()["id"]) is None
+    published_revision = await db_session.get(WikiRevision, public_revision_id)
+    assert published_revision is not None
+    assert published_revision.created_by_id is None

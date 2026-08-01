@@ -14,6 +14,7 @@ from app.core.dependencies import (
     get_current_admin_user,
 )
 from app.core.errors import (
+    ERR_ACCESS_DENIED,
     ERR_ALREADY_FEEDBACK,
     ERR_ALREADY_HELPFUL,
     ERR_ARTICLE_NOT_FOUND,
@@ -50,6 +51,7 @@ from app.schemas.wiki import (
 )
 from app.services.wiki_revision_service import (
     create_article_with_revision,
+    is_wiki_editor,
     publish_editorial_snapshot,
 )
 
@@ -292,6 +294,7 @@ async def delete_category(
 
 @router.get("/articles", response_model=WikiArticleListResponse)
 async def list_articles(
+    request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
     category_slug: str | None = Query(None, description="Filter by category slug"),
     search: str | None = Query(None, description="Search in title, summary, and tags"),
@@ -308,6 +311,11 @@ async def list_articles(
     - **search**: поиск по заголовку, краткому описанию и тегам
     - **published_only**: показывать только опубликованные статьи
     """
+    if not published_only:
+        current_user = await get_current_active_user_optional(request, db)
+        if current_user is None or not is_wiki_editor(current_user):
+            raise_error(403, ERR_ACCESS_DENIED)
+
     # Базовый запрос
     query = select(WikiArticle).options(selectinload(WikiArticle.space))
 
