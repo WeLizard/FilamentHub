@@ -9,7 +9,11 @@ from fastapi.responses import FileResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.dependencies import get_current_active_user, get_current_admin_user
+from app.core.dependencies import (
+    get_current_active_user,
+    get_current_admin_user,
+    get_current_verified_user,
+)
 from app.core.errors import (
     ERR_BRAND_CREATE_NAME_SLUG_REQUIRED,
     ERR_BRAND_ID_REQUIRED,
@@ -58,7 +62,7 @@ router = APIRouter(prefix="/brand-requests", tags=["brand-requests"])
 @router.post("/", response_model=BrandRequestResponse, status_code=status.HTTP_201_CREATED)
 async def create_brand_request(
     data: BrandRequestCreate,
-    current_user: Annotated[User, Depends(get_current_active_user)],
+    current_user: Annotated[User, Depends(get_current_verified_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> BrandRequestResponse:
     """Создать заявку на вступление в бренд или создание нового бренда."""

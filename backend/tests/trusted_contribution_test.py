@@ -9,10 +9,8 @@ from app.models.brand import Brand
 from app.models.filament import Filament
 from app.models.preset import Preset, PresetModerationStatus
 from app.models.user import User
-from app.services.preset_recommender import (
-    CONTRIBUTION_TRUST_REQUIRED_FROM,
-    get_recommended_preset_values,
-)
+from app.services.account_trust_service import TRUST_REQUIRED_FROM
+from app.services.preset_recommender import get_recommended_preset_values
 
 
 async def _filament(db: AsyncSession) -> Filament:
@@ -33,7 +31,16 @@ async def _filament(db: AsyncSession) -> Filament:
 
 
 async def _author(db: AsyncSession, *, name: str, verified: bool, created_at: datetime) -> User:
+    # Accepted legal documents, so the legal gate does not answer before the one
+    # under test.
+    from app.services.legal_document_service import current_legal_requirements
+
+    legal = current_legal_requirements("intl")
     user = User(
+        terms_version_accepted=legal["terms_version"],
+        personal_data_consent_version=legal["personal_data_consent_version"],
+        privacy_policy_version_presented=legal["privacy_policy_version"],
+        legal_accepted_at=datetime.now(timezone.utc),
         email=f"{name}@example.com",
         username=name,
         password_hash="x",
@@ -65,7 +72,7 @@ async def _preset(db: AsyncSession, filament: Filament, user: User | None, temp:
 @pytest.mark.asyncio
 async def test_unconfirmed_newcomers_do_not_shift_the_average(db_session: AsyncSession):
     filament = await _filament(db_session)
-    after = CONTRIBUTION_TRUST_REQUIRED_FROM + timedelta(days=1)
+    after = TRUST_REQUIRED_FROM + timedelta(days=1)
     confirmed = await _author(db_session, name="confirmed", verified=True, created_at=after)
     for temp in (200, 202, 204, 206):
         await _preset(db_session, filament, confirmed, temp)
@@ -91,7 +98,7 @@ async def test_accounts_that_predate_the_rule_keep_counting(db_session: AsyncSes
         db_session,
         name="oldtimer",
         verified=False,
-        created_at=CONTRIBUTION_TRUST_REQUIRED_FROM - timedelta(days=30),
+        created_at=TRUST_REQUIRED_FROM - timedelta(days=30),
     )
     for temp in (210, 212, 214, 216):
         await _preset(db_session, filament, old_timer, temp)
@@ -119,3 +126,45 @@ async def test_a_brand_preset_counts_whatever_the_author_looks_like(db_session: 
     values = await get_recommended_preset_values(filament.id, db_session)
 
     assert 215 <= values["extruder_temp"] <= 218
+
+
+@pytest.mark.asyncio
+async def test_a_fresh_unconfirmed_account_cannot_act_where_it_reaches_others(
+    client, db_session: AsyncSession, monkeypatch
+):
+    """Reviews, brand claims and the trial need a confirmed address."""
+    from app.api.v1.endpoints import auth as auth_module
+
+    monkeypatch.setattr(auth_module, "send_email_verification_email", lambda **_: True)
+    filament = await _filament(db_session)
+    await db_session.commit()
+
+    newcomer = await _author(
+        db_session,
+        name="fresh",
+        verified=False,
+        created_at=TRUST_REQUIRED_FROM + timedelta(days=1),
+    )
+    await db_session.commit()
+
+    from app.core.security import create_access_token
+
+    headers = {"Authorization": f"Bearer {create_access_token({'sub': newcomer.email})}"}
+    blocked = await client.post(
+        "/api/v1/filament-reviews/",
+        headers=headers,
+        json={"filament_id": filament.id, "success": True, "rating": 5.0},
+    )
+
+    assert blocked.status_code == 403
+    assert blocked.json()["detail"]["code"] == "ERR_EMAIL_NOT_VERIFIED"
+
+    newcomer.email_verified = True
+    await db_session.commit()
+
+    allowed = await client.post(
+        "/api/v1/filament-reviews/",
+        headers=headers,
+        json={"filament_id": filament.id, "success": True, "rating": 5.0},
+    )
+    assert allowed.status_code == 201

@@ -5,7 +5,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.filament import Filament
 from app.models.preset import Preset, PresetModerationStatus
-from app.services.preset_recommender import get_recommended_preset_values, trusted_contribution
+from app.services.account_trust_service import trusted_contribution
+from app.services.preset_recommender import get_recommended_preset_values
 
 
 async def create_or_update_weighted_preset(

@@ -15,6 +15,7 @@ from app.core.errors import (
     ERR_AUTH_REQUIRED,
     ERR_CALCULATOR_ACCESS_REQUIRED,
     ERR_COULD_NOT_VALIDATE,
+    ERR_EMAIL_NOT_VERIFIED,
     ERR_INVALID_API_KEY,
     ERR_LEGAL_ACCEPTANCE_REQUIRED,
     ERR_NOT_ADMIN,
@@ -236,6 +237,22 @@ async def get_current_active_user(
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> User:
     """Compatibility dependency for endpoints requiring an active user."""
+    return current_user
+
+
+async def get_current_verified_user(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+) -> User:
+    """An action that reaches other people needs a confirmed address.
+
+    Reading and syncing stay open to everyone: confirmation guards what affects
+    others — a brand claim nobody could answer, a rating on someone's material,
+    a trial that a throwaway mailbox could take again and again.
+    """
+    from app.services.account_trust_service import account_is_trusted
+
+    if not account_is_trusted(current_user):
+        raise_error(status.HTTP_403_FORBIDDEN, ERR_EMAIL_NOT_VERIFIED)
     return current_user
 
 

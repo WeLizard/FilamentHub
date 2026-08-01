@@ -314,7 +314,7 @@
   "termsPage": {
     "backHome": "Back to Home",
     "title": "Terms of Service",
-    "lastUpdated": "Last updated: July 25, 2026",
+    "lastUpdated": "Last updated: August 1, 2026",
     "sections": {
       "subject": {
         "title": "1. Subject of the Agreement",
@@ -443,7 +443,7 @@
   "consentPage": {
     "backHome": "Back to Home",
     "title": "Consent to Personal Data Processing",
-    "lastUpdated": "Last updated: July 25, 2026",
+    "lastUpdated": "Last updated: August 1, 2026",
     "intro": "Acting freely, of my own will and in my own interest, and confirming my legal capacity, I give Kuzmin I.I., an individual applying the special tax regime “Tax on Professional Income” (NPD taxpayer), contact email: support@filamenthub.ru (the Operator), consent to process my personal data through a separate explicit action under the following conditions:",
     "sections": {
       "general": {
@@ -456,7 +456,7 @@
           "email": "Email address;",
           "nickname": "Nickname (username);",
           "fullName": "Full name (only if voluntarily provided by the User in the profile or when contacting the Operator);",
-          "profileData": "Other profile data voluntarily provided by the User (for example, the “about me” field, avatar, and country selected for regional features);",
+          "profileData": "Other profile data voluntarily provided by the User: avatar and country selected for regional features;",
           "oauthData": "Data received from the authentication service selected by the User: account identifier, email address, name, and other information within the permissions granted;",
           "accountData": "Personal library and selected Service feature data: spools, printers, material systems, presets, profiles, calculations, and history of related actions;",
           "publishedContent": "Reviews, ratings, profiles, and other community materials published by the User where they are linked to the User’s nickname or another identifier;",
@@ -5661,7 +5661,8 @@
     "ERR_MATERIAL_SYSTEM_EXISTS": "This printer already has a feed system.",
     "ERR_USAGE_EVENT_NOT_FOUND": "Consumption record not found",
     "ERR_USAGE_EVENT_NOT_REVERTIBLE": "This record cannot be reverted",
-    "ERR_USAGE_EVENT_ALREADY_REVERTED": "This record has already been reverted"
+    "ERR_USAGE_EVENT_ALREADY_REVERTED": "This record has already been reverted",
+    "ERR_EMAIL_NOT_VERIFIED": "Confirm your email address — the link is in the letter we sent when you signed up. You can request it again from your profile."
   },
   "printerSettings": {
     "title": "Printer settings",
@@ -5911,7 +5912,7 @@
   "privacyPage": {
     "backHome": "Back to Home",
     "title": "Privacy Policy",
-    "lastUpdated": "Last updated: July 25, 2026",
+    "lastUpdated": "Last updated: August 1, 2026",
     "sections": {
       "general": {
         "title": "1. General Provisions",
@@ -5930,7 +5931,7 @@
           "Email address, login, and data necessary for registration, sign-in, account recovery, and account security;",
           "Nickname (username);",
           "Full name (only if voluntarily provided by the User);",
-          "Profile data provided voluntarily (e.g., the “about me” field, avatar, and the country selected by the User for regional features);",
+          "Profile data provided voluntarily: avatar and the country selected by the User for regional features;",
           "Data provided when applying for brand verification (brand name, corporate email, website, social media links, supporting documents);",
           "Personal library data and Service settings: spools, printers, material systems, presets, profiles, calculations, and history of related actions;",
           "Materials published by the User, including reviews, ratings, profiles, and other community content;",
@@ -5962,7 +5963,7 @@
           "Google OAuth (Google Ireland Limited / Google LLC, Ireland / USA) - sign-in through a Google account when this method is available for the current network connection and selected by the User. A request is made to obtain the user’s email and basic profile. Google Privacy Policy: https://policies.google.com/privacy",
           "Yandex OAuth (Yandex LLC, Russia) - authorization via Yandex account. A request is made to obtain the user’s email and basic profile. Yandex Privacy Policy: https://yandex.ru/legal/confidential/",
           "Google reCAPTCHA v3 (Google Ireland Limited / Google LLC, Ireland / USA) - protection against automated requests during standard registration in regions where this service is available. The script is not loaded during ordinary viewing of public pages. Technical data is transmitted for verification. Google Privacy Policy: https://policies.google.com/privacy",
-          "Resend (Plus Five Five, Inc., USA) - delivery of service messages and processing of support correspondence. Sender and recipient addresses, message content, attachments, and technical delivery data may be transferred as necessary. Messages may be dispatched through infrastructure in Ireland, while certain provider service data is processed in the USA. Resend Privacy Policy: https://resend.com/legal/privacy-policy"
+          "Yandex Cloud Postbox (Yandex.Cloud LLC, Russia) - delivery of service messages and outgoing addressed correspondence. Delivery requires sender and recipient addresses, subject, content, attachments, and technical delivery data. Incoming correspondence is received and stored in the Russian data perimeter."
         ],
         "note": "4.2. These services process data in accordance with their own privacy policies. We do not transfer any data to these services beyond the minimum necessary for the operation of the respective function."
       },

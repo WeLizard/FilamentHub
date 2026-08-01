@@ -6,14 +6,13 @@ Preset recommender service («мудрость толпы» через взве�
 - Метку уверенности: качество оценки растёт с размером выборки (малая выборка — предварительно)
 """
 
-from datetime import datetime, timezone
 
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.filament import Filament
 from app.models.preset import PUBLIC_PRESET_STATUSES, Preset
-from app.models.user import User
+from app.services.account_trust_service import trusted_contribution
 
 
 def calculate_preset_weight(preset: Preset) -> float:
@@ -74,33 +73,6 @@ def confidence_from_sample_size(n: int) -> str:
     if n >= 8:
         return "medium"
     return "low"
-
-
-# Confirmation of the address started on this date. Accounts that existed before
-# it were never asked, so they keep counting; otherwise switching the rule on
-# would empty every community average at once.
-CONTRIBUTION_TRUST_REQUIRED_FROM = datetime(2026, 8, 2, tzinfo=timezone.utc)
-
-
-def trusted_contribution():
-    """Presets allowed to move the community average.
-
-    A throwaway mailbox expires in minutes while the confirmation link lives a
-    day, so an account made to skew a material stays unconfirmed — and stops
-    counting here without us maintaining any list of disposable domains.
-    """
-    return or_(
-        Preset.is_official == True,  # noqa: E712 — SQL comparison, not a bool check
-        Preset.user_id.is_(None),
-        Preset.user_id.in_(
-            select(User.id).where(
-                or_(
-                    User.email_verified == True,  # noqa: E712
-                    User.created_at < CONTRIBUTION_TRUST_REQUIRED_FROM,
-                )
-            )
-        ),
-    )
 
 
 async def get_recommended_preset_values(

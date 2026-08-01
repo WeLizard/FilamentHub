@@ -14,7 +14,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.dependencies import get_current_active_user, require_calculator_access
+from app.core.dependencies import get_current_verified_user, require_calculator_access
 from app.core.errors import (
     ERR_CALCULATOR_HISTORY_NOT_FOUND,
     ERR_CALCULATOR_TRIAL_ALREADY_USED,
@@ -72,7 +72,7 @@ logger = logging.getLogger(__name__)
 
 @router.post("/start-trial", response_model=UserResponse)
 async def start_calculator_trial(
-    current_user: Annotated[User, Depends(get_current_active_user)],
+    current_user: Annotated[User, Depends(get_current_verified_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> UserResponse:
     """Activate the current user's one-time Calculator Pro trial."""

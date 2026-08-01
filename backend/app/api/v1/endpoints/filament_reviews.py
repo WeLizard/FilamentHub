@@ -7,7 +7,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.dependencies import get_current_user
+from app.core.dependencies import get_current_user, get_current_verified_user
 from app.core.errors import (
     ERR_FILAMENT_NOT_FOUND,
     ERR_NO_PERMISSION_DELETE_REVIEW,
@@ -366,7 +366,7 @@ async def get_review(
 async def create_review(
     review_data: FilamentReviewCreate,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(get_current_verified_user)],
 ) -> FilamentReviewResponse:
     """Создать отзыв о материале."""
     from app.models.filament import Filament

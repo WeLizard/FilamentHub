@@ -314,7 +314,7 @@
   "termsPage": {
     "backHome": "返回主页",
     "title": "服务条款",
-    "lastUpdated": "最后更新：2026年7月25日",
+    "lastUpdated": "最后更新：2026年8月1日",
     "sections": {
       "subject": {
         "title": "1. 协议的主体",
@@ -443,7 +443,7 @@
   "consentPage": {
     "backHome": "返回首页",
     "title": "个人数据处理同意书",
-    "lastUpdated": "最后更新：2026年7月25日",
+    "lastUpdated": "最后更新：2026年8月1日",
     "intro": "本人自愿、出于自身利益并确认具有法律行为能力，通过单独的明确操作同意库兹明 I.I.（适用“职业所得税”特殊税制的个人纳税人，联系邮箱：support@filamenthub.ru，以下简称“运营者”）按照以下条件处理本人的个人数据：",
     "sections": {
       "general": {
@@ -456,7 +456,7 @@
           "email": "邮箱地址；",
           "nickname": "昵称（用户名）；",
           "fullName": "全名（仅限用户在配置文件中或与运营者联系时自愿提供）；",
-          "profileData": "用户自愿提供的其他配置文件数据（例如“关于我”字段、头像以及为地区功能选择的国家）；",
+          "profileData": "用户自愿提供的其他个人资料数据：头像以及为地区功能选择的国家/地区；",
           "oauthData": "从用户选择的身份验证服务接收的数据：账户标识符、邮箱地址、姓名以及授权范围内的其他信息；",
           "accountData": "个人资料库及所选服务功能数据：线轴、打印机、材料系统、预设、配置、计算结果及相关操作历史；",
           "publishedContent": "用户发布并与其昵称或其他标识符相关联的评论、评分、配置及其他社区材料；",
@@ -5657,7 +5657,8 @@
     "ERR_MATERIAL_SYSTEM_EXISTS": "该打印机已有供料系统。",
     "ERR_USAGE_EVENT_NOT_FOUND": "未找到用量记录",
     "ERR_USAGE_EVENT_NOT_REVERTIBLE": "该记录无法撤销",
-    "ERR_USAGE_EVENT_ALREADY_REVERTED": "该记录已撤销"
+    "ERR_USAGE_EVENT_ALREADY_REVERTED": "该记录已撤销",
+    "ERR_EMAIL_NOT_VERIFIED": "请确认您的邮箱地址——链接在注册时发送的邮件中。您可以在个人资料中重新申请。"
   },
   "printerSettings": {
     "title": "打印机设置",
@@ -5905,7 +5906,7 @@
   "privacyPage": {
     "backHome": "返回首页",
     "title": "隐私政策",
-    "lastUpdated": "最后更新：2026年7月25日",
+    "lastUpdated": "最后更新：2026年8月1日",
     "sections": {
       "general": {
         "title": "1. 一般条款",
@@ -5924,7 +5925,7 @@
           "邮箱地址、登录名以及注册、登录、账户恢复和账户安全所需的数据；",
           "昵称（用户名）；",
           "全名（仅限用户自愿提供）；",
-          "用户自愿提供的个人资料（例如“关于我”字段、头像以及用户为区域功能选择的国家/地区）；",
+          "用户自愿提供的个人资料：头像以及用户为区域功能选择的国家/地区；",
           "申请品牌认证时提供的数据（品牌名称、企业邮箱、网站、社交媒体链接、支持文件）；",
           "个人资料库数据和服务设置：线轴、打印机、材料系统、预设、配置、计算结果及相关操作历史；",
           "用户发布的材料，包括评论、评分、配置及其他社区内容；",
@@ -5956,7 +5957,7 @@
           "Google OAuth (Google Ireland Limited / Google LLC, 爱尔兰 / 美国) — 当该登录方式可用于当前网络连接且由用户选择时，通过 Google 账户登录。会请求用户的邮箱地址和基本资料。Google 隐私政策：https://policies.google.com/privacy",
           "Yandex OAuth (Yandex LLC, 俄罗斯) — 通过Yandex账户授权。发出请求以获取用户的邮箱和基本资料。Yandex隐私政策：https://yandex.ru/legal/confidential/",
           "Google reCAPTCHA v3 (Google Ireland Limited / Google LLC, 爱尔兰 / 美国) — 在该服务可用的地区，为普通注册防止自动化请求。正常浏览公开页面时不会加载该脚本。验证时会传输技术数据。Google 隐私政策：https://policies.google.com/privacy",
-          "Resend (Plus Five Five, Inc., 美国) — 投递服务消息和处理支持通信。必要时可能传输发件人和收件人地址、消息内容、附件以及投递技术数据。消息可能通过爱尔兰的基础设施发送，而提供商的部分服务数据在美国处理。Resend隐私政策：https://resend.com/legal/privacy-policy"
+          "Yandex Cloud Postbox（Yandex.Cloud LLC，俄罗斯）— 投递服务消息和发出的定向通信。投递所需数据包括发件人和收件人地址、主题、内容、附件及投递技术数据。入站通信在俄罗斯数据范围内接收和存储。"
         ],
         "note": "4.2. 这些服务根据各自的隐私政策处理数据。我们不会向这些服务传输任何超过必要范围之外的数据以保证相应功能的运行。"
       },
