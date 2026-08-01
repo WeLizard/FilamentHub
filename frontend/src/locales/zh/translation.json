@@ -943,6 +943,7 @@
       "notifications": "通知",
       "stats": "统计",
       "database": "数据库",
+      "orcaSchema": "Orca 架构",
       "subscriptions": "订阅",
       "maintenance": "维护",
       "wiki": "知识库"
@@ -959,6 +960,7 @@
       "notifications": "通知",
       "stats": "统计",
       "database": "数据库",
+      "orcaSchema": "Orca",
       "subscriptions": "订阅",
       "maintenance": "维护",
       "wiki": "知识库"
@@ -968,6 +970,35 @@
     "toHome": "返回首页",
     "toProfile": "个人资料",
     "logout": "退出登录"
+  },
+  "adminOrcaSchema": {
+    "title": "Orca 架构监测",
+    "description": "显示内置 Orca 基线中不存在的顶层预设字段。不收集字段值，也不会阻止预设同步。",
+    "newCount": "{{count}} 个新字段",
+    "registry": "基线",
+    "refresh": "刷新",
+    "search": "搜索字段名",
+    "allScopes": "全部预设类型",
+    "allStatuses": "全部状态",
+    "scopes": {
+      "filament": "耗材",
+      "process": "工艺",
+      "machine": "打印机"
+    },
+    "statuses": {
+      "new": "新建",
+      "acknowledged": "已确认",
+      "ignored": "已忽略"
+    },
+    "loading": "正在加载架构观测…",
+    "loadError": "无法加载架构观测",
+    "empty": "没有需要审核的字段",
+    "emptyHint": "同步预设后，新 Orca 字段会显示在这里。",
+    "acknowledge": "确认",
+    "ignore": "忽略",
+    "reopen": "标记为新建",
+    "total": "共 {{count}} 条观测",
+    "page": "第 {{page}} / {{pages}} 页"
   },
   "adminWiki": {
     "title": "知识库管理",
@@ -5429,6 +5460,7 @@
     "ERR_PRINTER_NOT_FOUND": "未找到打印机",
     "ERR_REQUEST_NOT_FOUND": "未找到请求",
     "ERR_NOTIFICATION_NOT_FOUND": "未找到通知",
+    "ERR_ORCA_SCHEMA_OBSERVATION_NOT_FOUND": "未找到 Orca 架构观测",
     "ERR_FEEDBACK_NOT_FOUND": "未找到反馈",
     "ERR_FEEDBACK_THREAD_CLOSED": "此反馈已结束，无法继续回复",
     "ERR_REVIEW_NOT_FOUND": "未找到评价",

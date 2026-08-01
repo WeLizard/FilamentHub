@@ -1,9 +1,9 @@
 """Admin endpoints for moderation and verification."""
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Annotated, Optional
+from typing import Annotated, Literal, Optional
 
 from fastapi import APIRouter, Body, Depends, File, HTTPException, Query, UploadFile, status
 from fastapi.responses import FileResponse
@@ -31,6 +31,7 @@ from app.core.errors import (
     ERR_INVALID_BADGES,
     ERR_INVALID_FILE_PATH,
     ERR_NOTIFICATION_PREVIEW_REQUIRED,
+    ERR_ORCA_SCHEMA_OBSERVATION_NOT_FOUND,
     ERR_PRESET_FILAMENT_REQUIRED,
     ERR_PRESET_NOT_FOUND,
     ERR_PRINTER_NOT_FOUND,
@@ -48,6 +49,7 @@ from app.db.session import get_db
 # BadWord импортируется лениво в функциях, где используется
 from app.models.brand import Brand
 from app.models.brand_request import BrandRequest, BrandRequestStatus
+from app.models.orca_schema_observation import OrcaSchemaObservation
 from app.models.organization import OrganizationMemberRole, OrganizationMembership
 from app.models.preset import Preset, PresetModerationStatus
 from app.models.printer import Printer
@@ -67,6 +69,11 @@ from app.schemas.database import (
     DatabaseStatsResponse,
     MigrationHistoryResponse,
     TableStructureResponse,
+)
+from app.schemas.orca_schema_observation import (
+    OrcaSchemaObservationListResponse,
+    OrcaSchemaObservationResponse,
+    OrcaSchemaObservationUpdate,
 )
 from app.schemas.preset import PresetResponse
 from app.schemas.printer import PrinterCreate, PrinterResponse, PrinterUpdate
@@ -103,6 +110,7 @@ from app.services.notification_service import (
     notify_brand_request_rejected,
     notify_brand_verified,
 )
+from app.services.orca_field_registry import ORCA_FIELD_REGISTRY_VERSION
 from app.services.organization_access import (
     grant_brand_editor_membership,
     grant_brand_owner_membership,
@@ -120,6 +128,91 @@ from app.services.subscription_service import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/admin", tags=["admin"])
+
+
+@router.get(
+    "/orca-schema-observations",
+    response_model=OrcaSchemaObservationListResponse,
+)
+async def list_orca_schema_observations(
+    admin: Annotated[User, Depends(get_current_admin_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    page: int = Query(1, ge=1),
+    size: int = Query(25, ge=1, le=100),
+    observation_status: Literal["new", "acknowledged", "ignored"] | None = Query(
+        None, alias="status"
+    ),
+    scope: Literal["filament", "process", "machine"] | None = Query(None),
+    search: str | None = Query(None, max_length=200),
+) -> OrcaSchemaObservationListResponse:
+    """List aggregated unknown OrcaSlicer preset fields for admin review."""
+
+    filters = []
+    if observation_status is not None:
+        filters.append(OrcaSchemaObservation.status == observation_status)
+    if scope is not None:
+        filters.append(OrcaSchemaObservation.scope == scope)
+    if search:
+        filters.append(OrcaSchemaObservation.field_name.ilike(like_pattern(search)))
+
+    total = await db.scalar(select(func.count(OrcaSchemaObservation.id)).where(*filters))
+    new_count = await db.scalar(
+        select(func.count(OrcaSchemaObservation.id)).where(OrcaSchemaObservation.status == "new")
+    )
+    query = (
+        select(OrcaSchemaObservation)
+        .where(*filters)
+        .order_by(
+            (OrcaSchemaObservation.status == "new").desc(),
+            OrcaSchemaObservation.last_seen_at.desc(),
+            OrcaSchemaObservation.id.desc(),
+        )
+        .offset((page - 1) * size)
+        .limit(size)
+    )
+    result = await db.execute(query)
+    items = result.scalars().all()
+    total_value = total or 0
+    return OrcaSchemaObservationListResponse(
+        items=[OrcaSchemaObservationResponse.model_validate(item) for item in items],
+        total=total_value,
+        new_count=new_count or 0,
+        page=page,
+        size=size,
+        pages=(total_value + size - 1) // size if total_value else 0,
+        registry_version=ORCA_FIELD_REGISTRY_VERSION,
+    )
+
+
+@router.patch(
+    "/orca-schema-observations/{observation_id}",
+    response_model=OrcaSchemaObservationResponse,
+)
+async def update_orca_schema_observation(
+    observation_id: int,
+    payload: OrcaSchemaObservationUpdate,
+    admin: Annotated[User, Depends(get_current_admin_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> OrcaSchemaObservationResponse:
+    """Acknowledge, ignore or reopen one observed field shape."""
+
+    observation = await db.get(OrcaSchemaObservation, observation_id)
+    if observation is None:
+        raise_error(
+            status.HTTP_404_NOT_FOUND,
+            ERR_ORCA_SCHEMA_OBSERVATION_NOT_FOUND,
+            {"observation_id": observation_id},
+        )
+    observation.status = payload.status
+    if payload.status == "new":
+        observation.reviewed_at = None
+        observation.reviewed_by_user_id = None
+    else:
+        observation.reviewed_at = datetime.now(timezone.utc)
+        observation.reviewed_by_user_id = admin.id
+    await db.commit()
+    await db.refresh(observation)
+    return OrcaSchemaObservationResponse.model_validate(observation)
 
 
 # ==================== Brand Verification ====================
@@ -2147,4 +2240,3 @@ async def import_catalog_source_orca(
             "printers_system": printers_system or 0,
         },
     }
-

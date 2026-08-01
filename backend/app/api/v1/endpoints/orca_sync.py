@@ -69,6 +69,7 @@ from app.schemas.orca_sync import (
 from app.schemas.print_profile import PrintProfileListResponse, PrintProfileResponse
 from app.schemas.printer_profile import PrinterProfileListResponse, PrinterProfileResponse
 from app.services.notification_service import create_notification
+from app.services.orca_schema_observer import observe_orca_schema_fields
 from app.services.orcaslicer_preset_contract import (
     extract_structured_filament_values,
     is_allowed_orca_preset_name,
@@ -1812,6 +1813,12 @@ async def import_printer_profiles(
                 current_user=current_user,
                 db=db,
             )
+            if result.status != "error":
+                await observe_orca_schema_fields(
+                    db=db,
+                    settings=item.orcaslicer_settings,
+                    scope="machine",
+                )
         except HTTPException as exc:
             logger.warning("Failed to sync printer profile: %s", exc.detail)
             result = OrcaSyncResult(
@@ -1858,6 +1865,12 @@ async def import_print_profiles(
                 current_user=current_user,
                 db=db,
             )
+            if result.status != "error":
+                await observe_orca_schema_fields(
+                    db=db,
+                    settings=item.orcaslicer_settings,
+                    scope="process",
+                )
         except HTTPException as exc:
             logger.warning("Failed to sync print profile: %s", exc.detail)
             result = OrcaSyncResult(
@@ -2911,6 +2924,12 @@ async def import_filament_presets(
                     current_user=current_user,
                     db=db,
                 )
+                if result.status != "error":
+                    await observe_orca_schema_fields(
+                        db=db,
+                        settings=item.orcaslicer_settings,
+                        scope="filament",
+                    )
                 logger.debug(f"Filament preset {idx+1} processed: status={result.status}, fhub_id={result.fhub_id}")
 
                 # Record a version for the synced preset (best-effort: never

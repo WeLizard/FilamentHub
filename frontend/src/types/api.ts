@@ -1517,3 +1517,32 @@ export interface WikiFeedback {
   created_at: string;
   username: string | null;
 }
+
+export type OrcaPresetScope = 'filament' | 'process' | 'machine';
+export type OrcaSchemaObservationStatus = 'new' | 'acknowledged' | 'ignored';
+
+export interface OrcaSchemaObservation {
+  id: number;
+  scope: OrcaPresetScope;
+  field_name: string;
+  value_shape: string;
+  status: OrcaSchemaObservationStatus;
+  occurrences: number;
+  registry_version: string;
+  first_source: string;
+  last_source: string;
+  first_seen_at: string;
+  last_seen_at: string;
+  reviewed_at: string | null;
+  reviewed_by_user_id: number | null;
+}
+
+export interface OrcaSchemaObservationListResponse {
+  items: OrcaSchemaObservation[];
+  total: number;
+  new_count: number;
+  page: number;
+  size: number;
+  pages: number;
+  registry_version: string;
+}

@@ -1102,6 +1102,7 @@
       "notifications": "Уведомления",
       "stats": "Статистика",
       "database": "База данных",
+      "orcaSchema": "Схема Orca",
       "subscriptions": "Подписки",
       "maintenance": "Технические работы",
       "wiki": "Wiki"
@@ -1118,6 +1119,7 @@
       "notifications": "Уведомления",
       "stats": "Стат.",
       "database": "БД",
+      "orcaSchema": "Orca",
       "subscriptions": "Подписки",
       "maintenance": "Тех.работы",
       "wiki": "Вики"
@@ -1127,6 +1129,35 @@
     "toHome": "На главную",
     "toProfile": "Профиль",
     "logout": "Выход"
+  },
+  "adminOrcaSchema": {
+    "title": "Новые поля Orca",
+    "description": "Верхнеуровневые поля пресетов, которых нет во встроенном базовом реестре Orca. Значения не собираются, синхронизация пресетов не блокируется.",
+    "newCount": "Новых: {{count}}",
+    "registry": "Реестр",
+    "refresh": "Обновить",
+    "search": "Поиск по имени поля",
+    "allScopes": "Все типы пресетов",
+    "allStatuses": "Все статусы",
+    "scopes": {
+      "filament": "Филамент",
+      "process": "Процесс",
+      "machine": "Принтер"
+    },
+    "statuses": {
+      "new": "Новое",
+      "acknowledged": "Принято к сведению",
+      "ignored": "Игнорируется"
+    },
+    "loading": "Загрузка наблюдений…",
+    "loadError": "Не удалось загрузить наблюдения",
+    "empty": "Нет полей, требующих проверки",
+    "emptyHint": "Новые поля Orca появятся здесь после синхронизации пресетов.",
+    "acknowledge": "Принять",
+    "ignore": "Игнорировать",
+    "reopen": "Вернуть в новые",
+    "total": "Наблюдений: {{count}}",
+    "page": "{{page}} из {{pages}}"
   },
   "adminWiki": {
     "title": "Управление Wiki",
@@ -5599,6 +5630,7 @@
     "ERR_PRINTER_NOT_FOUND": "Принтер не найден",
     "ERR_REQUEST_NOT_FOUND": "Заявка не найдена",
     "ERR_NOTIFICATION_NOT_FOUND": "Уведомление не найдено",
+    "ERR_ORCA_SCHEMA_OBSERVATION_NOT_FOUND": "Наблюдение схемы Orca не найдено",
     "ERR_FEEDBACK_NOT_FOUND": "Обращение не найдено",
     "ERR_FEEDBACK_THREAD_CLOSED": "Это обращение уже завершено и закрыто для новых ответов",
     "ERR_REVIEW_NOT_FOUND": "Отзыв не найден",

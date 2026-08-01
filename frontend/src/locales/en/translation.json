@@ -943,6 +943,7 @@
       "notifications": "Notifications",
       "stats": "Statistics",
       "database": "Database",
+      "orcaSchema": "Orca Schema",
       "subscriptions": "Subscriptions",
       "maintenance": "Maintenance",
       "wiki": "Wiki"
@@ -959,6 +960,7 @@
       "notifications": "Notifications",
       "stats": "Stats",
       "database": "DB",
+      "orcaSchema": "Orca",
       "subscriptions": "Subs",
       "maintenance": "Maint.",
       "wiki": "Wiki"
@@ -968,6 +970,35 @@
     "toHome": "To Home",
     "toProfile": "Profile",
     "logout": "Logout"
+  },
+  "adminOrcaSchema": {
+    "title": "Orca schema watch",
+    "description": "Top-level preset fields not present in the bundled Orca baseline. Values are never collected and preset sync is not blocked.",
+    "newCount": "{{count}} new",
+    "registry": "Registry",
+    "refresh": "Refresh",
+    "search": "Search field name",
+    "allScopes": "All preset scopes",
+    "allStatuses": "All statuses",
+    "scopes": {
+      "filament": "Filament",
+      "process": "Process",
+      "machine": "Machine"
+    },
+    "statuses": {
+      "new": "New",
+      "acknowledged": "Acknowledged",
+      "ignored": "Ignored"
+    },
+    "loading": "Loading schema observations…",
+    "loadError": "Could not load schema observations",
+    "empty": "No fields require review",
+    "emptyHint": "New Orca fields will appear here after preset synchronization.",
+    "acknowledge": "Acknowledge",
+    "ignore": "Ignore",
+    "reopen": "Mark as new",
+    "total": "{{count}} observations",
+    "page": "{{page}} of {{pages}}"
   },
   "adminWiki": {
     "title": "Wiki Management",
@@ -5433,6 +5464,7 @@
     "ERR_PRINTER_NOT_FOUND": "Printer not found",
     "ERR_REQUEST_NOT_FOUND": "Request not found",
     "ERR_NOTIFICATION_NOT_FOUND": "Notification not found",
+    "ERR_ORCA_SCHEMA_OBSERVATION_NOT_FOUND": "Orca schema observation not found",
     "ERR_FEEDBACK_NOT_FOUND": "Feedback not found",
     "ERR_FEEDBACK_THREAD_CLOSED": "This feedback is completed and closed to new replies",
     "ERR_REVIEW_NOT_FOUND": "Review not found",

@@ -1,9 +1,10 @@
 /** Админ-панель для управления платформой */
 
 import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Shield, FileText, Building2, Users, BarChart3, CheckCircle, Home, Package, User, LogOut, Database, Mail, Settings, BookOpen, Sparkles } from 'lucide-react';
+import { Shield, FileText, Building2, Users, BarChart3, CheckCircle, Home, Package, User, LogOut, Database, Mail, Settings, BookOpen, Sparkles, ScanSearch } from 'lucide-react';
 import { Printer3DIcon } from '../components/icons/Printer3DIcon';
 import { useAuth } from '../contexts/AuthContext';
 import { AdminBrandRequests } from '../components/admin/AdminBrandRequests';
@@ -18,14 +19,21 @@ import { AdminCommunications } from '../components/admin/AdminCommunications';
 import { AdminMaintenance } from '../components/admin/AdminMaintenance';
 import { AdminWiki } from '../components/admin/AdminWiki';
 import { AdminSubscriptions } from '../components/admin/AdminSubscriptions';
+import { AdminOrcaSchemaObservations } from '../components/admin/AdminOrcaSchemaObservations';
+import { adminAPI } from '../api/client';
 
-type AdminTab = 'requests' | 'brands' | 'presets' | 'users' | 'stats' | 'printers' | 'printer-requests' | 'communications' | 'database' | 'maintenance' | 'wiki' | 'subscriptions';
+type AdminTab = 'requests' | 'brands' | 'presets' | 'users' | 'stats' | 'printers' | 'printer-requests' | 'communications' | 'database' | 'maintenance' | 'wiki' | 'subscriptions' | 'orca-schema';
 
 export function AdminPanel() {
   const { t } = useTranslation();
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<AdminTab>('requests');
+  const schemaCountQuery = useQuery({
+    queryKey: ['admin-orca-schema-count'],
+    queryFn: () => adminAPI.listOrcaSchemaObservations({ page: 1, size: 1, status: 'new' }),
+    enabled: user?.role === 'admin',
+  });
 
   const handleLogout = () => {
     logout();
@@ -55,6 +63,7 @@ export function AdminPanel() {
     { id: 'wiki' as AdminTab, label: t('adminPanel.tabs.wiki'), shortLabel: t('adminPanel.shortTabs.wiki'), icon: BookOpen, count: null },
     { id: 'stats' as AdminTab, label: t('adminPanel.tabs.stats'), shortLabel: t('adminPanel.shortTabs.stats'), icon: BarChart3, count: null },
     { id: 'database' as AdminTab, label: t('adminPanel.tabs.database'), shortLabel: t('adminPanel.shortTabs.database'), icon: Database, count: null },
+    { id: 'orca-schema' as AdminTab, label: t('adminPanel.tabs.orcaSchema'), shortLabel: t('adminPanel.shortTabs.orcaSchema'), icon: ScanSearch, count: schemaCountQuery.data?.new_count ?? null },
     { id: 'subscriptions' as AdminTab, label: t('adminPanel.tabs.subscriptions'), shortLabel: t('adminPanel.shortTabs.subscriptions'), icon: Sparkles, count: null },
     { id: 'maintenance' as AdminTab, label: t('adminPanel.tabs.maintenance'), shortLabel: t('adminPanel.shortTabs.maintenance'), icon: Settings, count: null },
   ];
@@ -141,6 +150,7 @@ export function AdminPanel() {
           {activeTab === 'wiki' && <AdminWiki />}
           {activeTab === 'stats' && <AdminStats />}
           {activeTab === 'database' && <AdminDatabaseDiagnostics />}
+          {activeTab === 'orca-schema' && <AdminOrcaSchemaObservations />}
           {activeTab === 'subscriptions' && <AdminSubscriptions />}
           {activeTab === 'maintenance' && <AdminMaintenance />}
         </div>

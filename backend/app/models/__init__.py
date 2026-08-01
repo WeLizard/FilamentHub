@@ -39,6 +39,7 @@ from app.models.notification import Notification, NotificationType
 from app.models.notification_campaign import NotificationCampaign, NotificationCampaignRecipient
 from app.models.octoprint_bridge import OctoPrintBridgeConnection, OctoPrintBridgeEvent
 from app.models.orca_printer_connection_observation import OrcaPrinterConnectionObservation
+from app.models.orca_schema_observation import OrcaSchemaObservation
 from app.models.orca_slice_report import OrcaSliceReport
 from app.models.organization import (
     Organization,
@@ -122,6 +123,7 @@ __all__ = [
     "OctoPrintBridgeConnection",
     "OctoPrintBridgeEvent",
     "OrcaPrinterConnectionObservation",
+    "OrcaSchemaObservation",
     "OrcaSliceReport",
     "Organization",
     "OrganizationBrandAccess",
