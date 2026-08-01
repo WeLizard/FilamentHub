@@ -6,6 +6,15 @@
     "button": "重置密码",
     "note": "链接有效期为 1 小时。如果您没有请求重置密码，请忽略此邮件。"
   },
+  "emailVerification": {
+    "subject": "确认您的邮箱 — FilamentHub",
+    "heading": "确认邮箱地址",
+    "intro": "您注册了 FilamentHub。请点击下方按钮确认此邮箱属于您。",
+    "button": "确认邮箱",
+    "note": "链接有效期为 24 小时。未确认也可以正常使用网站——确认是为了在您忘记密码时能够找回账户。如果这不是您注册的，请忽略此邮件。",
+    "notMe": "不是您注册的？",
+    "notMeAction": "删除用此邮箱创建的账户"
+  },
   "emailChange": {
     "subject": "确认您的新邮箱 — FilamentHub",
     "heading": "确认新邮箱",

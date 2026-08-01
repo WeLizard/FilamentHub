@@ -10,6 +10,7 @@ import { ConsentPage } from './pages/ConsentPage';
 import { ResetPasswordPage } from './pages/ResetPasswordPage';
 import { OAuthCallbackPage } from './pages/OAuthCallbackPage';
 import { OAuthPluginStartPage } from './pages/OAuthPluginStartPage';
+import { VerifyEmailPage } from './pages/VerifyEmailPage';
 import { ConfirmEmailChangePage } from './pages/ConfirmEmailChangePage';
 import { BrandInvitePage } from './pages/BrandInvitePage';
 import { DownloadPage } from './pages/DownloadPage';
@@ -282,6 +283,7 @@ function AppContent() {
         <Route path="/privacy-policy" element={<Suspense fallback={<PageLoader />}><PrivacyPolicyPage /></Suspense>} />
         <Route path="/personal-data-consent" element={<ConsentPage />} />
         <Route path="/reset-password" element={<ResetPasswordPage />} />
+        <Route path="/verify-email" element={<VerifyEmailPage />} />
         <Route path="/confirm-email-change" element={<ConfirmEmailChangePage />} />
         <Route path="/brand-invite/:token" element={<BrandInvitePage />} />
         <Route path="/oauth/callback/:provider" element={<OAuthCallbackPage />} />

@@ -1083,3 +1083,82 @@ async def test_password_reset_finds_the_account_whatever_case_was_typed(
 
     assert forgot.status_code == 200
     assert sent["to"] == "Mixed.Case@example.com"
+
+
+@pytest.mark.asyncio
+async def test_registration_sends_a_confirmation_the_owner_can_also_disown(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch,
+):
+    """Soft confirmation: the account works at once, the address owner still has a way out."""
+    from app.api.v1.endpoints import auth as auth_module
+
+    sent: dict[str, str] = {}
+
+    def capture(*, to: str, verify_url: str, reject_url: str, language: str) -> bool:
+        sent["to"] = to
+        sent["url"] = verify_url
+        sent["reject"] = reject_url
+        return True
+
+    monkeypatch.setattr(auth_module, "send_email_verification_email", capture)
+    registration = await client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "stranger@example.com",
+            "username": "stranger_account",
+            "password": "Password123",
+            "role": "user",
+            **LEGAL_REGISTRATION_FIELDS,
+        },
+    )
+
+    assert registration.status_code == 201
+    assert sent["to"] == "stranger@example.com"
+    # The account is usable straight away; confirmation only records the address.
+    assert registration.json()["email_verified"] is False
+
+    token = sent["url"].rsplit("token=", 1)[1]
+    disown = await client.post(f"/api/v1/auth/reject-registration?token={token}")
+    assert disown.status_code == 200
+    assert await db_session.scalar(
+        select(User).where(User.username == "stranger_account")
+    ) is None
+
+
+@pytest.mark.asyncio
+async def test_a_confirmed_account_cannot_be_removed_by_the_same_link(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch,
+):
+    from app.api.v1.endpoints import auth as auth_module
+
+    sent: dict[str, str] = {}
+
+    def capture(*, to: str, verify_url: str, reject_url: str, language: str) -> bool:
+        sent["url"] = verify_url
+        return True
+
+    monkeypatch.setattr(auth_module, "send_email_verification_email", capture)
+    await client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "real.owner@example.com",
+            "username": "real_owner",
+            "password": "Password123",
+            "role": "user",
+            **LEGAL_REGISTRATION_FIELDS,
+        },
+    )
+    token = sent["url"].rsplit("token=", 1)[1]
+
+    confirmed = await client.post("/api/v1/auth/verify-email", json={"token": token})
+    assert confirmed.status_code == 200
+
+    disown = await client.post(f"/api/v1/auth/reject-registration?token={token}")
+    assert disown.status_code == 400
+    assert await db_session.scalar(
+        select(User).where(User.username == "real_owner")
+    ) is not None

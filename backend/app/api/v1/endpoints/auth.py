@@ -40,6 +40,7 @@ from app.core.security import (
     decode_refresh_token,
     generate_api_key,
     generate_email_change_token,
+    generate_email_verification_token,
     generate_password_reset_token,
     get_password_hash,
     token_fingerprint,
@@ -88,7 +89,11 @@ from app.schemas.user import (
     UserUpdate,
     UserUsernameUpdate,
 )
-from app.services.email_service import send_email_change_email, send_password_reset_email
+from app.services.email_service import (
+    send_email_change_email,
+    send_email_verification_email,
+    send_password_reset_email,
+)
 from app.services.email_validator import validate_email_domain
 from app.services.legal_acceptance_service import (
     current_legal_requirements,
@@ -439,6 +444,7 @@ async def register(
         # Trial is opt-in: the user starts it explicitly via POST /calculator/start-trial,
         # so it never counts down silently before they know it exists.
         logger.info("User registered successfully: user_id=%d", user.id)
+        _send_verification_letter(user, language=data.legal_language)
     except Exception as e:
         await db.rollback()
         logger.error(f"Error creating user: {str(e)}", exc_info=True)
@@ -457,6 +463,65 @@ async def register(
     except Exception as e:
         logger.error(f"Error serializing user response: {str(e)}", exc_info=True)
         raise_error(status.HTTP_500_INTERNAL_SERVER_ERROR, ERR_RESPONSE_ERROR)
+
+
+def _send_verification_letter(user: User, *, language: str | None) -> None:
+    """Ask the address owner to confirm — and give them a way to disown the account.
+
+    Failure to send never fails the caller: the account is usable unconfirmed and
+    the letter can be requested again.
+    """
+    token = generate_email_verification_token(user.id, user.email)
+    verify_url = f"{settings.BASE_URL}/verify-email?token={token}"
+    try:
+        send_email_verification_email(
+            to=user.email,
+            verify_url=verify_url,
+            reject_url=f"{verify_url}&action=reject",
+            language=resolve_language(language, user.legal_acceptance_language),
+        )
+    except Exception:
+        logger.warning("Verification letter not sent: user_id=%d", user.id, exc_info=True)
+
+
+@router.post("/resend-verification", response_model=EmailChangeResponse)
+@limiter.limit("3/hour")
+async def resend_verification(
+    request: Request,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+) -> EmailChangeResponse:
+    """Send the confirmation letter again."""
+    if not current_user.email_verified:
+        _send_verification_letter(current_user, language=None)
+    return EmailChangeResponse()
+
+
+@router.post("/reject-registration", response_model=ResetPasswordResponse)
+@limiter.limit("10/hour")
+async def reject_registration(
+    request: Request,
+    token: Annotated[str, Query(...)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> ResetPasswordResponse:
+    """Remove an account someone opened on an address that is not theirs.
+
+    Only the mailbox owner holds this token, and it works only while the address
+    is still unconfirmed — so it can never remove an account in real use.
+    """
+    payload = decode_email_verification_token(token)
+    if not payload:
+        raise_error(status.HTTP_400_BAD_REQUEST, ERR_INVALID_VERIFICATION_TOKEN)
+
+    user = await db.scalar(select(User).where(User.id == int(payload.get("user_id", 0))))
+    if user is None or normalize_email(user.email) != normalize_email(str(payload.get("email", ""))):
+        raise_error(status.HTTP_400_BAD_REQUEST, ERR_INVALID_VERIFICATION_TOKEN)
+    if user.email_verified:
+        raise_error(status.HTTP_400_BAD_REQUEST, ERR_INVALID_VERIFICATION_TOKEN)
+
+    logger.info("Registration disowned by the address owner: user_id=%d", user.id)
+    await db.delete(user)
+    await db.commit()
+    return ResetPasswordResponse()
 
 
 @router.post("/login", response_model=Token)

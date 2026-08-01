@@ -1478,25 +1478,52 @@
     "standard": "Standard, e.g. IEC 61340",
     "rating": "Class / rating",
     "effects": {
-      "wood": "Wood texture", "carbon": "Carbon texture", "glass": "Glass fibres",
-      "metallic": "Metallic", "luminescent": "Glow", "glitter": "Glitter",
-      "fibers": "Fibrous texture", "stone": "Stone texture",
-      "carbonaceous": "Carbon particles", "microspheres": "Microspheres", "particles": "Fine particles"
+      "wood": "Wood texture",
+      "carbon": "Carbon texture",
+      "glass": "Glass fibres",
+      "metallic": "Metallic",
+      "luminescent": "Glow",
+      "glitter": "Glitter",
+      "fibers": "Fibrous texture",
+      "stone": "Stone texture",
+      "carbonaceous": "Carbon particles",
+      "microspheres": "Microspheres",
+      "particles": "Fine particles"
     },
     "additives": {
-      "carbon_fiber": "Carbon fibre", "glass_fiber": "Glass fibre", "aramid_fiber": "Aramid fibre",
-      "basalt_fiber": "Basalt fibre", "natural_fiber": "Natural fibre", "wood": "Wood flour",
-      "bamboo": "Bamboo fibre", "cork": "Cork", "metal_powder": "Metal powder",
-      "mineral": "Mineral filler", "ceramic": "Ceramic filler", "glass_beads": "Glass beads",
-      "carbon_nanotubes": "Carbon nanotubes", "carbon_black": "Carbon black", "graphene": "Graphene",
-      "hollow_spheres": "Hollow microspheres", "ptfe": "PTFE"
+      "carbon_fiber": "Carbon fibre",
+      "glass_fiber": "Glass fibre",
+      "aramid_fiber": "Aramid fibre",
+      "basalt_fiber": "Basalt fibre",
+      "natural_fiber": "Natural fibre",
+      "wood": "Wood flour",
+      "bamboo": "Bamboo fibre",
+      "cork": "Cork",
+      "metal_powder": "Metal powder",
+      "mineral": "Mineral filler",
+      "ceramic": "Ceramic filler",
+      "glass_beads": "Glass beads",
+      "carbon_nanotubes": "Carbon nanotubes",
+      "carbon_black": "Carbon black",
+      "graphene": "Graphene",
+      "hollow_spheres": "Hollow microspheres",
+      "ptfe": "PTFE"
     },
     "claims": {
-      "esd": "ESD-safe", "electrically_conductive": "Electrically conductive", "emi_shielding": "EMI shielding",
-      "flame_retardant": "Flame retardant", "uv_resistant": "UV resistant", "wear_resistant": "Wear resistant",
-      "low_friction": "Low friction", "lightweight": "Lightweight", "foaming": "Foaming",
-      "antimicrobial": "Antimicrobial", "food_contact": "Food contact", "heat_resistant": "Heat resistant",
-      "chemical_resistant": "Chemical resistant", "magnetically_detectable": "Magnetically detectable"
+      "esd": "ESD-safe",
+      "electrically_conductive": "Electrically conductive",
+      "emi_shielding": "EMI shielding",
+      "flame_retardant": "Flame retardant",
+      "uv_resistant": "UV resistant",
+      "wear_resistant": "Wear resistant",
+      "low_friction": "Low friction",
+      "lightweight": "Lightweight",
+      "foaming": "Foaming",
+      "antimicrobial": "Antimicrobial",
+      "food_contact": "Food contact",
+      "heat_resistant": "Heat resistant",
+      "chemical_resistant": "Chemical resistant",
+      "magnetically_detectable": "Magnetically detectable"
     }
   },
   "nozzleHardness": {
@@ -3045,7 +3072,11 @@
     "profilesCount_many": "{{count}} configurations",
     "unattachedCount_one": "{{count}} configuration",
     "unattachedCount_few": "{{count}} configurations",
-    "unattachedCount_many": "{{count}} configurations"
+    "unattachedCount_many": "{{count}} configurations",
+    "emailNotVerified": "Your address is not confirmed. Confirming it is what lets you regain access if you forget your password.",
+    "emailNotVerifiedResend": "Send the letter again",
+    "emailNotVerifiedSent": "Letter sent",
+    "emailNotVerifiedResendError": "Could not send the letter. Try again later."
   },
   "printerProfile": {
     "titleCreate": "Create printer profile",
@@ -5866,6 +5897,16 @@
     "errorTitle": "Link is invalid",
     "errorFallback": "The link has expired or already been used. Please request an email change again.",
     "goHome": "Go to home"
+  },
+  "verifyEmail": {
+    "loading": "Checking the link…",
+    "successTitle": "Address confirmed",
+    "successMessage": "Thank you. You can now regain access to the account if you forget your password.",
+    "rejectedTitle": "Account removed",
+    "rejectedMessage": "The account opened on this address has been removed. Sorry for the intrusion — there will be no further letters.",
+    "errorTitle": "The link did not work",
+    "errorFallback": "The link is invalid or has expired. Request a new letter from your profile.",
+    "goHome": "Go to the site"
   },
   "privacyPage": {
     "backHome": "Back to Home",

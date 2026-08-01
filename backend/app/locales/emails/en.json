@@ -6,6 +6,15 @@
     "button": "Reset password",
     "note": "The link is valid for 1 hour. If you did not request a password reset, simply ignore this email."
   },
+  "emailVerification": {
+    "subject": "Confirm your address — FilamentHub",
+    "heading": "Confirm your address",
+    "intro": "You signed up for FilamentHub. Press the button below to confirm this address is yours.",
+    "button": "Confirm address",
+    "note": "The link is valid for 24 hours. You can use the site without confirming — it is what lets you regain access if you forget your password. If you did not sign up, simply ignore this email.",
+    "notMe": "Did not sign up?",
+    "notMeAction": "Remove the account opened on this address"
+  },
   "emailChange": {
     "subject": "Confirm your new email — FilamentHub",
     "heading": "Confirm your new email",

@@ -89,6 +89,40 @@ import type { Preset, PrinterProfile, PrintProfile, Filament } from '../types/ap
 
 type CalculatorWorkspaceMode = 'calculator' | 'history' | 'quotes' | 'orders' | 'customers';
 
+/** Мягкое напоминание: аккаунт работает, но адрес ещё не подтверждён. */
+function UnverifiedEmailNotice() {
+  const { t } = useTranslation();
+  const [state, setState] = useState<'idle' | 'sending' | 'sent'>('idle');
+
+  const resend = async () => {
+    setState('sending');
+    try {
+      await authAPI.resendVerification();
+      setState('sent');
+    } catch {
+      setState('idle');
+      toast.error(t('profilePage.emailNotVerifiedResendError'));
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-2 rounded-xl border border-amber-400/30 bg-amber-400/10 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+      <p className="text-sm text-amber-100">{t('profilePage.emailNotVerified')}</p>
+      {state === 'sent' ? (
+        <span className="text-sm text-amber-200/80">{t('profilePage.emailNotVerifiedSent')}</span>
+      ) : (
+        <button
+          onClick={resend}
+          disabled={state === 'sending'}
+          className="shrink-0 rounded-lg border border-amber-300/40 px-3 py-1.5 text-sm text-amber-100 transition-colors hover:bg-amber-400/15 disabled:opacity-50"
+        >
+          {t('profilePage.emailNotVerifiedResend')}
+        </button>
+      )}
+    </div>
+  );
+}
+
 export const ProfilePage: React.FC = () => {
   const { user, refreshUser } = useAuth();
   const queryClient = useQueryClient();
@@ -761,6 +795,7 @@ export const ProfilePage: React.FC = () => {
 
   return (
     <div className="space-y-6 md:space-y-10">
+      {user && !user.email_verified && <UnverifiedEmailNotice />}
       {/* Переключатель профилей */}
       <div className="flex justify-center mb-4 md:mb-6">
         <div className="flex bg-white/10 rounded-lg p-1 border border-white/20">

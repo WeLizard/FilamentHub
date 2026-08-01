@@ -1642,25 +1642,52 @@
     "standard": "Стандарт, например IEC 61340",
     "rating": "Класс / рейтинг",
     "effects": {
-      "wood": "Древесная текстура", "carbon": "Карбоновая текстура", "glass": "Стеклянные волокна",
-      "metallic": "Металлик", "luminescent": "Свечение", "glitter": "Блёстки",
-      "fibers": "Волокнистая текстура", "stone": "Каменная текстура",
-      "carbonaceous": "Углеродные частицы", "microspheres": "Микросферы", "particles": "Мелкодисперсные частицы"
+      "wood": "Древесная текстура",
+      "carbon": "Карбоновая текстура",
+      "glass": "Стеклянные волокна",
+      "metallic": "Металлик",
+      "luminescent": "Свечение",
+      "glitter": "Блёстки",
+      "fibers": "Волокнистая текстура",
+      "stone": "Каменная текстура",
+      "carbonaceous": "Углеродные частицы",
+      "microspheres": "Микросферы",
+      "particles": "Мелкодисперсные частицы"
     },
     "additives": {
-      "carbon_fiber": "Углеродное волокно", "glass_fiber": "Стекловолокно", "aramid_fiber": "Арамидное волокно",
-      "basalt_fiber": "Базальтовое волокно", "natural_fiber": "Натуральное волокно", "wood": "Древесная мука",
-      "bamboo": "Бамбуковое волокно", "cork": "Пробка", "metal_powder": "Металлический порошок",
-      "mineral": "Минеральный наполнитель", "ceramic": "Керамический наполнитель", "glass_beads": "Стеклянные микросферы",
-      "carbon_nanotubes": "Углеродные нанотрубки", "carbon_black": "Технический углерод", "graphene": "Графен",
-      "hollow_spheres": "Полые микросферы", "ptfe": "ПТФЭ"
+      "carbon_fiber": "Углеродное волокно",
+      "glass_fiber": "Стекловолокно",
+      "aramid_fiber": "Арамидное волокно",
+      "basalt_fiber": "Базальтовое волокно",
+      "natural_fiber": "Натуральное волокно",
+      "wood": "Древесная мука",
+      "bamboo": "Бамбуковое волокно",
+      "cork": "Пробка",
+      "metal_powder": "Металлический порошок",
+      "mineral": "Минеральный наполнитель",
+      "ceramic": "Керамический наполнитель",
+      "glass_beads": "Стеклянные микросферы",
+      "carbon_nanotubes": "Углеродные нанотрубки",
+      "carbon_black": "Технический углерод",
+      "graphene": "Графен",
+      "hollow_spheres": "Полые микросферы",
+      "ptfe": "ПТФЭ"
     },
     "claims": {
-      "esd": "ESD-безопасный", "electrically_conductive": "Электропроводящий", "emi_shielding": "Экранирование EMI",
-      "flame_retardant": "Огнестойкий", "uv_resistant": "УФ-стойкий", "wear_resistant": "Износостойкий",
-      "low_friction": "Низкое трение", "lightweight": "Облегчённый", "foaming": "Вспениваемый",
-      "antimicrobial": "Антимикробный", "food_contact": "Для контакта с пищей", "heat_resistant": "Термостойкий",
-      "chemical_resistant": "Химически стойкий", "magnetically_detectable": "Магнитно обнаруживаемый"
+      "esd": "ESD-безопасный",
+      "electrically_conductive": "Электропроводящий",
+      "emi_shielding": "Экранирование EMI",
+      "flame_retardant": "Огнестойкий",
+      "uv_resistant": "УФ-стойкий",
+      "wear_resistant": "Износостойкий",
+      "low_friction": "Низкое трение",
+      "lightweight": "Облегчённый",
+      "foaming": "Вспениваемый",
+      "antimicrobial": "Антимикробный",
+      "food_contact": "Для контакта с пищей",
+      "heat_resistant": "Термостойкий",
+      "chemical_resistant": "Химически стойкий",
+      "magnetically_detectable": "Магнитно обнаруживаемый"
     }
   },
   "nozzleHardness": {
@@ -3210,7 +3237,11 @@
     "profilesCount_many": "{{count}} конфигураций",
     "unattachedCount_one": "{{count}} конфигурация",
     "unattachedCount_few": "{{count}} конфигурации",
-    "unattachedCount_many": "{{count}} конфигураций"
+    "unattachedCount_many": "{{count}} конфигураций",
+    "emailNotVerified": "Адрес почты не подтверждён. Подтверждение нужно, чтобы вы могли восстановить доступ, если забудете пароль.",
+    "emailNotVerifiedResend": "Выслать письмо ещё раз",
+    "emailNotVerifiedSent": "Письмо отправлено",
+    "emailNotVerifiedResendError": "Не удалось отправить письмо. Попробуйте позже."
   },
   "printerProfile": {
     "titleCreate": "Создать профиль принтера",
@@ -6032,6 +6063,16 @@
     "successMessage": "Ваш email успешно обновлён. Используйте его для входа.",
     "errorTitle": "Ссылка недействительна",
     "errorFallback": "Ссылка устарела или уже была использована. Запросите смену email заново.",
+    "goHome": "На главную"
+  },
+  "verifyEmail": {
+    "loading": "Проверяем ссылку…",
+    "successTitle": "Адрес подтверждён",
+    "successMessage": "Спасибо. Теперь вы сможете восстановить доступ к аккаунту, если забудете пароль.",
+    "rejectedTitle": "Аккаунт удалён",
+    "rejectedMessage": "Аккаунт, созданный на этот адрес, удалён. Извините за беспокойство — больше писем не будет.",
+    "errorTitle": "Ссылка не сработала",
+    "errorFallback": "Ссылка недействительна или устарела. Запросите новое письмо в профиле.",
     "goHome": "На главную"
   },
   "orcaSettings": {

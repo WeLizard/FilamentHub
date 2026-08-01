@@ -1475,25 +1475,52 @@
     "standard": "标准，例如 IEC 61340",
     "rating": "等级 / 评级",
     "effects": {
-      "wood": "木纹", "carbon": "碳纤纹理", "glass": "玻璃纤维",
-      "metallic": "金属质感", "luminescent": "夜光", "glitter": "闪粉",
-      "fibers": "纤维纹理", "stone": "石纹",
-      "carbonaceous": "碳颗粒", "microspheres": "微球", "particles": "细颗粒"
+      "wood": "木纹",
+      "carbon": "碳纤纹理",
+      "glass": "玻璃纤维",
+      "metallic": "金属质感",
+      "luminescent": "夜光",
+      "glitter": "闪粉",
+      "fibers": "纤维纹理",
+      "stone": "石纹",
+      "carbonaceous": "碳颗粒",
+      "microspheres": "微球",
+      "particles": "细颗粒"
     },
     "additives": {
-      "carbon_fiber": "碳纤维", "glass_fiber": "玻璃纤维", "aramid_fiber": "芳纶纤维",
-      "basalt_fiber": "玄武岩纤维", "natural_fiber": "天然纤维", "wood": "木粉",
-      "bamboo": "竹纤维", "cork": "软木", "metal_powder": "金属粉末",
-      "mineral": "矿物填料", "ceramic": "陶瓷填料", "glass_beads": "玻璃微珠",
-      "carbon_nanotubes": "碳纳米管", "carbon_black": "炭黑", "graphene": "石墨烯",
-      "hollow_spheres": "空心微球", "ptfe": "PTFE"
+      "carbon_fiber": "碳纤维",
+      "glass_fiber": "玻璃纤维",
+      "aramid_fiber": "芳纶纤维",
+      "basalt_fiber": "玄武岩纤维",
+      "natural_fiber": "天然纤维",
+      "wood": "木粉",
+      "bamboo": "竹纤维",
+      "cork": "软木",
+      "metal_powder": "金属粉末",
+      "mineral": "矿物填料",
+      "ceramic": "陶瓷填料",
+      "glass_beads": "玻璃微珠",
+      "carbon_nanotubes": "碳纳米管",
+      "carbon_black": "炭黑",
+      "graphene": "石墨烯",
+      "hollow_spheres": "空心微球",
+      "ptfe": "PTFE"
     },
     "claims": {
-      "esd": "防静电", "electrically_conductive": "导电", "emi_shielding": "EMI 屏蔽",
-      "flame_retardant": "阻燃", "uv_resistant": "抗紫外线", "wear_resistant": "耐磨",
-      "low_friction": "低摩擦", "lightweight": "轻量化", "foaming": "可发泡",
-      "antimicrobial": "抗菌", "food_contact": "食品接触", "heat_resistant": "耐热",
-      "chemical_resistant": "耐化学品", "magnetically_detectable": "可磁性检测"
+      "esd": "防静电",
+      "electrically_conductive": "导电",
+      "emi_shielding": "EMI 屏蔽",
+      "flame_retardant": "阻燃",
+      "uv_resistant": "抗紫外线",
+      "wear_resistant": "耐磨",
+      "low_friction": "低摩擦",
+      "lightweight": "轻量化",
+      "foaming": "可发泡",
+      "antimicrobial": "抗菌",
+      "food_contact": "食品接触",
+      "heat_resistant": "耐热",
+      "chemical_resistant": "耐化学品",
+      "magnetically_detectable": "可磁性检测"
     }
   },
   "nozzleHardness": {
@@ -3042,7 +3069,11 @@
     "profilesCount_many": "{{count}} 项配置",
     "unattachedCount_one": "{{count}} 项配置",
     "unattachedCount_few": "{{count}} 项配置",
-    "unattachedCount_many": "{{count}} 项配置"
+    "unattachedCount_many": "{{count}} 项配置",
+    "emailNotVerified": "邮箱尚未确认。确认后，忘记密码时才能找回账户。",
+    "emailNotVerifiedResend": "重新发送邮件",
+    "emailNotVerifiedSent": "邮件已发送",
+    "emailNotVerifiedResendError": "邮件发送失败，请稍后再试。"
   },
   "printerProfile": {
     "titleCreate": "创建打印机配置",
@@ -5859,6 +5890,16 @@
     "successMessage": "您的邮箱已成功更改。用它来登录。",
     "errorTitle": "链接无效",
     "errorFallback": "链接已过期或已被使用。请重新请求更改邮箱。",
+    "goHome": "返回首页"
+  },
+  "verifyEmail": {
+    "loading": "正在验证链接…",
+    "successTitle": "邮箱已确认",
+    "successMessage": "谢谢。如果您忘记密码，现在可以找回账户。",
+    "rejectedTitle": "账户已删除",
+    "rejectedMessage": "使用此邮箱创建的账户已被删除。打扰了，我们不会再发送邮件。",
+    "errorTitle": "链接无效",
+    "errorFallback": "链接无效或已过期。请在个人资料中重新申请邮件。",
     "goHome": "返回首页"
   },
   "privacyPage": {

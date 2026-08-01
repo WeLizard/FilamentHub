@@ -388,6 +388,21 @@ def send_password_reset_email(*, to: str, reset_url: str, language: str | None =
     return send_email(to=to, subject=subject, html=html)
 
 
+def send_email_verification_email(
+    *, to: str, verify_url: str, reject_url: str, language: str | None = None
+) -> bool:
+    """Ask a new account to confirm the address, or to disown it if it is not theirs."""
+    subject = translate("emailVerification.subject", language)
+    html = _render(
+        "email_verification.html",
+        language=language,
+        subject=subject,
+        verify_url=verify_url,
+        reject_url=reject_url,
+    )
+    return send_email(to=to, subject=subject, html=html)
+
+
 def send_email_change_email(*, to: str, confirm_url: str, language: str | None = None) -> bool:
     """Send email change confirmation to the new address."""
     subject = translate("emailChange.subject", language)

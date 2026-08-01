@@ -1,0 +1,18 @@
+{% extends "_layout.html" %}
+{% import "_macros.html" as ui %}
+
+{% block content %}
+<h2 style="margin:0 0 16px;color:#f1f5f9;font-size:20px;">{{ t('emailVerification.heading') }}</h2>
+<p style="margin:0 0 24px;color:#94a3b8;line-height:1.6;">
+  {{ t('emailVerification.intro') }}
+</p>
+{{ ui.action_button(verify_url, t('emailVerification.button')) }}
+<p style="margin:0 0 8px;color:#64748b;font-size:13px;">
+  {{ t('emailVerification.note') }}
+</p>
+{{ ui.link_fallback(verify_url) }}
+<p style="margin:18px 0 0;color:#475569;font-size:12px;line-height:1.5;">
+  {{ t('emailVerification.notMe') }}
+  <a href="{{ reject_url }}" style="color:#7c3aed;text-decoration:none;">{{ t('emailVerification.notMeAction') }}</a>
+</p>
+{% endblock %}

@@ -432,6 +432,21 @@ export const authAPI = {
     return response.data;
   },
 
+  verifyEmail: async (token: string) => {
+    const response = await api.post<{ message: string }>('/auth/verify-email', { token });
+    return response.data;
+  },
+
+  rejectRegistration: async (token: string) => {
+    const response = await api.post<{ message: string }>(`/auth/reject-registration?token=${encodeURIComponent(token)}`);
+    return response.data;
+  },
+
+  resendVerification: async () => {
+    const response = await api.post<{ message: string }>('/auth/resend-verification');
+    return response.data;
+  },
+
   confirmEmailChange: async (token: string) => {
     const response = await api.post<{ message: string }>(`/auth/confirm-email-change?token=${encodeURIComponent(token)}`);
     return response.data;
