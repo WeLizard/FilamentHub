@@ -6,7 +6,7 @@ import {
   ChevronLeft,
   ChevronRight,
   CircleAlert,
-  EyeOff,
+  Copy,
   RefreshCw,
   RotateCcw,
   ScanSearch,
@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 
 import { adminAPI } from '../../api/client';
+import { toast } from '../Toast';
 import type {
   OrcaPresetScope,
   OrcaSchemaObservationStatus,
@@ -54,6 +55,27 @@ export function AdminOrcaSchemaObservations() {
   const setFilter = <T,>(setter: (value: T) => void, value: T) => {
     setter(value);
     setPage(1);
+  };
+  const copyObservation = async (item: NonNullable<typeof data>['items'][number]) => {
+    try {
+      if (!navigator.clipboard?.writeText) {
+        throw new Error('Clipboard API is unavailable');
+      }
+      await navigator.clipboard.writeText(JSON.stringify({
+        field_name: item.field_name,
+        preset_scope: item.scope,
+        value_shape: item.value_shape,
+        occurrences: item.occurrences,
+        first_seen_at: item.first_seen_at,
+        last_seen_at: item.last_seen_at,
+        first_source: item.first_source,
+        last_source: item.last_source,
+        registry_version: item.registry_version,
+      }, null, 2));
+      toast.success(t('adminOrcaSchema.copied'));
+    } catch {
+      toast.error(t('adminOrcaSchema.copyError'));
+    }
   };
 
   return (
@@ -118,8 +140,7 @@ export function AdminOrcaSchemaObservations() {
         >
           <option value="all">{t('adminOrcaSchema.allStatuses')}</option>
           <option value="new">{t('adminOrcaSchema.statuses.new')}</option>
-          <option value="acknowledged">{t('adminOrcaSchema.statuses.acknowledged')}</option>
-          <option value="ignored">{t('adminOrcaSchema.statuses.ignored')}</option>
+          <option value="reviewed">{t('adminOrcaSchema.statuses.reviewed')}</option>
         </select>
       </div>
 
@@ -157,26 +178,23 @@ export function AdminOrcaSchemaObservations() {
                 <p className="mt-1 text-gray-600">{t(`adminOrcaSchema.statuses.${item.status}`)}</p>
               </div>
               <div className="flex flex-wrap gap-2 lg:justify-end">
-                {item.status !== 'acknowledged' && (
+                <button
+                  type="button"
+                  onClick={() => copyObservation(item)}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-cyan-400/10 px-2.5 py-1.5 text-xs font-medium text-cyan-200 transition hover:bg-cyan-400/20"
+                >
+                  <Copy className="h-3.5 w-3.5" />
+                  {t('adminOrcaSchema.copyData')}
+                </button>
+                {item.status !== 'reviewed' && (
                   <button
                     type="button"
-                    onClick={() => updateMutation.mutate({ id: item.id, nextStatus: 'acknowledged' })}
+                    onClick={() => updateMutation.mutate({ id: item.id, nextStatus: 'reviewed' })}
                     disabled={updateMutation.isPending}
                     className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-500/15 px-2.5 py-1.5 text-xs font-medium text-emerald-300 transition hover:bg-emerald-500/25 disabled:opacity-50"
                   >
                     <Check className="h-3.5 w-3.5" />
-                    {t('adminOrcaSchema.acknowledge')}
-                  </button>
-                )}
-                {item.status !== 'ignored' && (
-                  <button
-                    type="button"
-                    onClick={() => updateMutation.mutate({ id: item.id, nextStatus: 'ignored' })}
-                    disabled={updateMutation.isPending}
-                    className="inline-flex items-center gap-1.5 rounded-lg bg-white/5 px-2.5 py-1.5 text-xs font-medium text-gray-300 transition hover:bg-white/10 disabled:opacity-50"
-                  >
-                    <EyeOff className="h-3.5 w-3.5" />
-                    {t('adminOrcaSchema.ignore')}
+                    {t('adminOrcaSchema.markReviewed')}
                   </button>
                 )}
                 {item.status !== 'new' && (

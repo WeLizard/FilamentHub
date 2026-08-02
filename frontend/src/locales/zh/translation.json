@@ -974,7 +974,7 @@
   },
   "adminOrcaSchema": {
     "title": "Orca 架构监测",
-    "description": "显示内置 Orca 基线中不存在的顶层预设字段。不收集字段值，也不会阻止预设同步。",
+    "description": "显示内置注册表中尚未包含的新 Orca 预设字段。复制字段信息用于分析，然后将其标记为已查看。不收集字段值，也不会阻止同步。",
     "newCount": "{{count}} 个新字段",
     "registry": "基线",
     "refresh": "刷新",
@@ -988,17 +988,18 @@
     },
     "statuses": {
       "new": "新建",
-      "acknowledged": "已确认",
-      "ignored": "已忽略"
+      "reviewed": "已查看"
     },
     "loading": "正在加载架构观测…",
     "loadError": "无法加载架构观测",
     "empty": "没有需要审核的字段",
     "emptyHint": "同步预设后，新 Orca 字段会显示在这里。",
-    "acknowledge": "确认",
-    "ignore": "忽略",
+    "copyData": "复制信息",
+    "copied": "字段信息已复制",
+    "copyError": "无法复制字段信息",
+    "markReviewed": "标记为已查看",
     "reopen": "标记为新建",
-    "total": "共 {{count}} 条观测",
+    "total": "共 {{count}} 个字段",
     "page": "第 {{page}} / {{pages}} 页"
   },
   "adminWiki": {

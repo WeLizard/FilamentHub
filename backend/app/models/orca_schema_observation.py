@@ -10,7 +10,7 @@ from app.db.base import Base
 
 
 class OrcaSchemaObservation(Base):
-    """One aggregate row per preset scope, field name and observed value shape."""
+    """One current aggregate row per preset scope and field name."""
 
     __tablename__ = "orca_schema_observations"
 
@@ -37,7 +37,7 @@ class OrcaSchemaObservation(Base):
     )
 
     __table_args__ = (
-        UniqueConstraint("scope", "field_name", "value_shape", name="uq_orca_schema_obs_field"),
+        UniqueConstraint("scope", "field_name", name="uq_orca_schema_obs_field"),
         Index("ix_orca_schema_obs_status_seen", "status", "last_seen_at"),
         Index("ix_orca_schema_obs_scope", "scope"),
     )

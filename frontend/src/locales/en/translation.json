@@ -974,7 +974,7 @@
   },
   "adminOrcaSchema": {
     "title": "Orca schema watch",
-    "description": "Top-level preset fields not present in the bundled Orca baseline. Values are never collected and preset sync is not blocked.",
+    "description": "New Orca preset fields not yet present in the bundled registry. Copy the metadata for analysis, then mark the field as reviewed. Values are never collected and sync is not blocked.",
     "newCount": "{{count}} new",
     "registry": "Registry",
     "refresh": "Refresh",
@@ -988,17 +988,18 @@
     },
     "statuses": {
       "new": "New",
-      "acknowledged": "Acknowledged",
-      "ignored": "Ignored"
+      "reviewed": "Reviewed"
     },
     "loading": "Loading schema observations…",
     "loadError": "Could not load schema observations",
     "empty": "No fields require review",
     "emptyHint": "New Orca fields will appear here after preset synchronization.",
-    "acknowledge": "Acknowledge",
-    "ignore": "Ignore",
+    "copyData": "Copy details",
+    "copied": "Field details copied",
+    "copyError": "Could not copy field details",
+    "markReviewed": "Reviewed",
     "reopen": "Mark as new",
-    "total": "{{count}} observations",
+    "total": "{{count}} fields",
     "page": "{{page}} of {{pages}}"
   },
   "adminWiki": {

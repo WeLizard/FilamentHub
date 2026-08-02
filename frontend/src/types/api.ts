@@ -1619,7 +1619,7 @@ export interface WikiPublicRevisionListResponse {
 }
 
 export type OrcaPresetScope = 'filament' | 'process' | 'machine';
-export type OrcaSchemaObservationStatus = 'new' | 'acknowledged' | 'ignored';
+export type OrcaSchemaObservationStatus = 'new' | 'reviewed';
 
 export interface OrcaSchemaObservation {
   id: number;

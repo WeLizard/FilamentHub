@@ -6,7 +6,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict
 
 OrcaPresetScope = Literal["filament", "process", "machine"]
-OrcaSchemaObservationStatus = Literal["new", "acknowledged", "ignored"]
+OrcaSchemaObservationStatus = Literal["new", "reviewed"]
 
 
 class OrcaSchemaObservationResponse(BaseModel):

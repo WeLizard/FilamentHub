@@ -111,6 +111,7 @@ from app.services.notification_service import (
     notify_brand_verified,
 )
 from app.services.orca_field_registry import ORCA_FIELD_REGISTRY_VERSION
+from app.services.orca_schema_observer import prune_known_orca_schema_observations
 from app.services.organization_access import (
     grant_brand_editor_membership,
     grant_brand_owner_membership,
@@ -139,13 +140,16 @@ async def list_orca_schema_observations(
     db: Annotated[AsyncSession, Depends(get_db)],
     page: int = Query(1, ge=1),
     size: int = Query(25, ge=1, le=100),
-    observation_status: Literal["new", "acknowledged", "ignored"] | None = Query(
+    observation_status: Literal["new", "reviewed"] | None = Query(
         None, alias="status"
     ),
     scope: Literal["filament", "process", "machine"] | None = Query(None),
     search: str | None = Query(None, max_length=200),
 ) -> OrcaSchemaObservationListResponse:
     """List aggregated unknown OrcaSlicer preset fields for admin review."""
+
+    if await prune_known_orca_schema_observations(db):
+        await db.commit()
 
     filters = []
     if observation_status is not None:
@@ -194,7 +198,7 @@ async def update_orca_schema_observation(
     admin: Annotated[User, Depends(get_current_admin_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> OrcaSchemaObservationResponse:
-    """Acknowledge, ignore or reopen one observed field shape."""
+    """Mark one observed field as reviewed or return it to new."""
 
     observation = await db.get(OrcaSchemaObservation, observation_id)
     if observation is None:

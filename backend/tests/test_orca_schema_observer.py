@@ -79,6 +79,36 @@ async def test_observer_aggregates_repeated_field_shapes(db_session) -> None:
 
 
 @pytest.mark.asyncio
+async def test_observer_reopens_reviewed_field_when_shape_changes(db_session) -> None:
+    await observe_orca_schema_fields(
+        db=db_session,
+        settings={"future_orca_field": ["value"]},
+        scope="machine",
+        source="test_sync",
+    )
+    await db_session.commit()
+    row = (await db_session.execute(select(OrcaSchemaObservation))).scalar_one()
+    row.status = "reviewed"
+    await db_session.commit()
+
+    await observe_orca_schema_fields(
+        db=db_session,
+        settings={"future_orca_field": 42},
+        scope="machine",
+        source="test_sync",
+    )
+    await db_session.commit()
+    db_session.expire_all()
+
+    rows = (await db_session.execute(select(OrcaSchemaObservation))).scalars().all()
+    assert len(rows) == 1
+    assert rows[0].value_shape == "number"
+    assert rows[0].status == "new"
+    assert rows[0].reviewed_at is None
+    assert rows[0].reviewed_by_user_id is None
+
+
+@pytest.mark.asyncio
 async def test_print_profile_sync_records_unknown_field_without_changing_payload(
     auth_client, db_session
 ) -> None:
@@ -140,7 +170,7 @@ async def test_admin_can_filter_and_review_observations(admin_client, db_session
                 registry_version="test-registry",
                 first_source="test",
                 last_source="test",
-                status="ignored",
+                status="reviewed",
             ),
         ]
     )
@@ -159,11 +189,56 @@ async def test_admin_can_filter_and_review_observations(admin_client, db_session
 
     update = await admin_client.patch(
         f"/api/v1/admin/orca-schema-observations/{observation_id}",
-        json={"status": "acknowledged"},
+        json={"status": "reviewed"},
     )
     assert update.status_code == 200
-    assert update.json()["status"] == "acknowledged"
+    assert update.json()["status"] == "reviewed"
     assert update.json()["reviewed_by_user_id"] is not None
+
+    legacy_update = await admin_client.patch(
+        f"/api/v1/admin/orca-schema-observations/{observation_id}",
+        json={"status": "ignored"},
+    )
+    assert legacy_update.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_admin_list_prunes_fields_now_covered_by_registry(
+    admin_client, db_session
+) -> None:
+    db_session.add_all(
+        [
+            OrcaSchemaObservation(
+                scope="filament",
+                field_name="filament_type",
+                value_shape="array:string",
+                registry_version="old-registry",
+                first_source="test",
+                last_source="test",
+                status="reviewed",
+            ),
+            OrcaSchemaObservation(
+                scope="filament",
+                field_name="future_filament_field",
+                value_shape="string",
+                registry_version="old-registry",
+                first_source="test",
+                last_source="test",
+            ),
+        ]
+    )
+    await db_session.commit()
+
+    response = await admin_client.get("/api/v1/admin/orca-schema-observations")
+
+    assert response.status_code == 200
+    assert [item["field_name"] for item in response.json()["items"]] == [
+        "future_filament_field"
+    ]
+    remaining = (
+        await db_session.execute(select(OrcaSchemaObservation.field_name))
+    ).scalars().all()
+    assert remaining == ["future_filament_field"]
 
 
 @pytest.mark.asyncio
