@@ -1718,6 +1718,8 @@
     "volumetricSpeed": "Объемная скорость",
     "chamber": "Камера",
     "communityPresets": "Пресеты сообщества ({{count}})",
+    "previousPreset": "Предыдущий пресет",
+    "nextPreset": "Следующий пресет",
     "sortBest": "Лучшие",
     "sortNew": "Новые",
     "anyPrinter": "Любой принтер",
@@ -1744,7 +1746,7 @@
     "beFirstReviewer": "Станьте первым, кто оставит отзыв об этом материале!",
     "viewDetails": "Подробнее",
     "generativePreset": "Генеративный пресет",
-    "topPreset": "Топовый пресет"
+    "topPreset": "Лучший от сообщества"
   },
   "brandInvite": {
     "loading": "Проверяем приглашение…",

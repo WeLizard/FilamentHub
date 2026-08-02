@@ -1552,6 +1552,8 @@
     "volumetricSpeed": "Volumetric speed",
     "chamber": "Chamber",
     "communityPresets": "Community presets ({{count}})",
+    "previousPreset": "Previous preset",
+    "nextPreset": "Next preset",
     "sortBest": "Best",
     "sortNew": "Newest",
     "anyPrinter": "Any printer",
@@ -1578,7 +1580,7 @@
     "beFirstReviewer": "Be the first to review this material!",
     "viewDetails": "View details",
     "generativePreset": "Generative preset",
-    "topPreset": "Top preset"
+    "topPreset": "Community's best"
   },
   "brandInvite": {
     "loading": "Checking the invitation…",

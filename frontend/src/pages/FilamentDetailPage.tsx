@@ -28,6 +28,8 @@ import {
   Flame,
   Hammer,
   Eye,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { filamentsAPI, brandsAPI, savedPresetsAPI, filamentReviewsAPI, qrAPI, physicalPrintersAPI } from '../api/client';
@@ -670,42 +672,16 @@ export const FilamentDetailPage: React.FC = () => {
               <div className="text-center py-8 text-gray-400">{t('filamentDetailPage.loadingPresets')}</div>
             )}
 
-            {/* Те же три, что показывает карточка в каталоге: официальный,
-                генеративный и лучший от сообщества. Показываются только те,
-                что у материала действительно есть. */}
-            {carousel.length > 1 && (
-              <div className="flex flex-wrap gap-2">
-                {carousel.map((summary, index) => (
-                  <button
-                    key={summary.id}
-                    type="button"
-                    onClick={() => setActiveCarousel(index)}
-                    className={`min-h-9 rounded-lg border px-3 text-sm transition ${
-                      index === carouselIndex
-                        ? 'border-purple-400/50 bg-purple-500/20 text-purple-100'
-                        : 'border-white/15 bg-white/5 text-gray-300 hover:bg-white/10'
-                    }`}
-                  >
-                    {t(
-                      summary.preset_type === 'official'
-                        ? 'filamentDetailPage.officialPreset'
-                        : summary.preset_type === 'weighted'
-                          ? 'filamentDetailPage.generativePreset'
-                          : 'filamentDetailPage.topPreset',
-                    )}
-                  </button>
-                ))}
-              </div>
-            )}
-
             {primaryPreset && (
               <div
                 onClick={() => primaryPreset && setDetailPreset(primaryPreset as unknown as Preset)}
                 className="bg-gradient-to-r from-purple-500/20 to-pink-500/20 rounded-xl border border-purple-500/30 hover:border-purple-400/50 p-6 cursor-pointer transition-all"
                 title={t('filamentDetailPage.viewDetails')}
               >
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-2">
+                {/* Три группы равной доли: стрелки остаются посередине, как бы
+                    ни назывался пресет, и не переезжают при листании. */}
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="flex items-center gap-2 flex-1 min-w-0">
                     <h3 className="text-xl font-bold text-white flex items-center">
                       <Settings className="w-5 h-5 mr-2" />
                       {t(
@@ -718,7 +694,42 @@ export const FilamentDetailPage: React.FC = () => {
                     </h3>
                     <Eye className="w-4 h-4 text-gray-300 shrink-0" />
                   </div>
-                  <div className="flex items-center gap-3">
+
+                  {/* Листается так же, как на карточке в каталоге:
+                      официальный, генеративный, лучший от сообщества. */}
+                  {carousel.length > 1 && (
+                      <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setActiveCarousel(
+                              (carouselIndex - 1 + carousel.length) % carousel.length,
+                            );
+                          }}
+                          className="p-1.5 sm:p-2 rounded-full border border-white/20 text-white hover:bg-white/10 transition-colors"
+                          aria-label={t('filamentDetailPage.previousPreset')}
+                        >
+                          <ChevronLeft className="w-3 h-3 sm:w-4 sm:h-4" />
+                        </button>
+                        <span className="text-[10px] sm:text-xs text-gray-400 min-w-[40px] text-center">
+                          {carouselIndex + 1}/{carousel.length}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setActiveCarousel((carouselIndex + 1) % carousel.length);
+                          }}
+                          className="p-1.5 sm:p-2 rounded-full border border-white/20 text-white hover:bg-white/10 transition-colors"
+                          aria-label={t('filamentDetailPage.nextPreset')}
+                        >
+                          <ChevronRight className="w-3 h-3 sm:w-4 sm:h-4" />
+                        </button>
+                      </div>
+                  )}
+
+                  <div className="flex flex-1 items-center justify-end gap-3">
                     {primaryPreset.printers && primaryPreset.printers.length > 0 && (
                       <div className="flex items-center gap-1.5 flex-wrap">
                         {primaryPreset.printers.map((printer) => (
@@ -835,7 +846,8 @@ export const FilamentDetailPage: React.FC = () => {
                 {/* Расширенные параметры OrcaSlicer */}
                 {primaryPreset.orcaslicer_settings && Object.keys(primaryPreset.orcaslicer_settings).length > 0 && (
                   <div className="mt-4 pt-4 border-t border-white/10">
-                    <h4 className="text-sm font-medium text-gray-300 mb-3">{t('filamentDetailPage.advancedSettings')}</h4>
+                    {/* Без заголовка: раздел отделён линией, а весь список
+                        параметров и так открывается по клику на пресет. */}
                     <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                       {(() => {
                         const s = primaryPreset.orcaslicer_settings;
@@ -958,10 +970,12 @@ export const FilamentDetailPage: React.FC = () => {
                             {preset.moderation_status === 'approved' && (
                               <CheckCircle className="w-5 h-5 text-green-400" />
                             )}
-                            <div className="flex-1">
-                              <div className="flex items-center gap-2 mb-1">
-                                <p className="text-white font-semibold text-lg">{preset.name}</p>
-                                <Eye className="w-4 h-4 text-gray-500 shrink-0" />
+                            <div className="min-w-0 flex-1">
+                              {/* Название может занять две строки; значок
+                                  остаётся у первой, а не съезжает к середине. */}
+                              <div className="flex items-start gap-2 mb-1">
+                                <p className="min-w-0 text-white font-semibold text-lg">{preset.name}</p>
+                                <Eye className="mt-1.5 w-4 h-4 text-gray-500 shrink-0" />
                               </div>
                               {preset.description && (
                                 <p className="text-gray-400 text-sm">{preset.description}</p>

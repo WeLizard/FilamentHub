@@ -1548,6 +1548,8 @@
     "volumetricSpeed": "体积流量",
     "chamber": "腔室",
     "communityPresets": "社区预设 ({{count}})",
+    "previousPreset": "上一个预设",
+    "nextPreset": "下一个预设",
     "sortBest": "最佳",
     "sortNew": "最新",
     "anyPrinter": "全部打印机",
@@ -1574,7 +1576,7 @@
     "beFirstReviewer": "成为第一个评价此材料的用户！",
     "viewDetails": "查看详情",
     "generativePreset": "生成式预设",
-    "topPreset": "顶级预设"
+    "topPreset": "社区最佳"
   },
   "brandInvite": {
     "loading": "正在检查邀请…",
