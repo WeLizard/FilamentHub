@@ -9,6 +9,8 @@ import json
 import logging
 import re
 import zipfile
+from collections.abc import Iterable, Iterator
+from itertools import islice
 from typing import Any
 from xml.etree import ElementTree
 
@@ -79,13 +81,22 @@ def parse_gcode_payload(
     return _parse_plain_gcode_payload(file_name=file_name, raw_bytes=raw_bytes)
 
 
-def _parse_plain_gcode_payload(file_name: str, raw_bytes: bytes) -> dict[str, Any]:
-    """Parse one plain (or gzip-compressed) G-code stream."""
-    decoded_text = _decode_gcode_bytes(file_name=file_name, raw_bytes=raw_bytes)
+def _parse_plain_gcode_payload(
+    file_name: str,
+    raw_bytes: bytes,
+    decoded_text: str | None = None,
+) -> dict[str, Any]:
+    """Parse one plain (or gzip-compressed) G-code stream.
+
+    A caller that has already decoded the same bytes passes the text in rather
+    than paying for a second decode of a file this size.
+    """
+    if decoded_text is None:
+        decoded_text = _decode_gcode_bytes(file_name=file_name, raw_bytes=raw_bytes)
     if not decoded_text.strip():
         raise ValueError("empty_file")
 
-    lines = decoded_text.splitlines()
+    lines = GcodeLines(decoded_text)
     slicer_name, slicer_version = _detect_slicer(lines)
 
     parsed: dict[str, Any] = {
@@ -282,9 +293,16 @@ def _parse_gcode_3mf_payload(
                 selected_member,
                 MAX_DECOMPRESSED_GCODE_BYTES,
             )
+            # Decoded once and kept: the role pass below reads the same stream
+            # again after the container's own metadata has been merged.
+            decoded_text = _decode_gcode_bytes(
+                file_name=selected_member.filename,
+                raw_bytes=gcode_bytes,
+            )
             parsed = _parse_plain_gcode_payload(
                 file_name=selected_member.filename,
                 raw_bytes=gcode_bytes,
+                decoded_text=decoded_text,
             )
             parsed["file_name"] = file_name
             parsed["file_size_bytes"] = len(raw_bytes)
@@ -297,10 +315,7 @@ def _parse_gcode_3mf_payload(
             # Some Bambu/Orca containers keep per-tool weights only in
             # slice_info.config. Re-run the role pass after that metadata is
             # merged so infill/support grams are also available for .gcode.3mf.
-            _apply_extrusion_role_usage(
-                parsed,
-                _decode_gcode_bytes(selected_member.filename, gcode_bytes).splitlines(),
-            )
+            _apply_extrusion_role_usage(parsed, GcodeLines(decoded_text))
             _finalize_totals(parsed)
 
             thumbnail = _read_gcode_3mf_thumbnail(archive, members, selected_plate_index)
@@ -483,6 +498,68 @@ def _gunzip_capped(raw_bytes: bytes, limit: int) -> bytes:
     return bytes(out)
 
 
+# Everything ``str.splitlines`` treats as the end of a line. Kept explicit so a
+# chunk can be told apart from a line that merely ran out of chunk.
+_LINE_BREAKS = frozenset("\n\r\v\f\x1c\x1d\x1e\x85  ")
+
+# Lines are produced a megabyte of text at a time. Small enough that the pieces
+# never amount to anything, large enough that the slicing is not the cost.
+_LINE_CHUNK_CHARS = 1024 * 1024
+
+
+def _iter_gcode_lines(text: str) -> Iterator[str]:
+    """Yield the lines of a sliced model without ever holding them all.
+
+    ``str.splitlines`` on a fifty-megabyte model builds a million and a half
+    separate strings and keeps every one of them alive for as long as the parse
+    runs. The parse reads the same text three times over, so the list was made
+    once and paid for throughout.
+
+    The splitting is still done by ``str.splitlines`` — on a chunk at a time, so
+    its exact notion of a line boundary is preserved, including the unusual ones
+    a hand-edited file might carry.
+    """
+    carried = ""
+    position = 0
+    length = len(text)
+
+    while position < length:
+        end = min(position + _LINE_CHUNK_CHARS, length)
+        chunk = carried + text[position:end]
+        position = end
+        carried = ""
+        more_to_come = position < length
+
+        # A carriage return at the very edge may still be half of "\r\n", which
+        # only the next chunk can settle. Hold it back rather than guess.
+        if more_to_come and chunk.endswith("\r"):
+            chunk = chunk[:-1]
+            carried = "\r"
+
+        pieces = chunk.splitlines()
+        # Whether the last piece is a whole line is decided once, by looking at
+        # the chunk's final character, instead of examining every piece.
+        if more_to_come and chunk and chunk[-1] not in _LINE_BREAKS:
+            carried = (pieces.pop() if pieces else "") + carried
+
+        yield from pieces
+
+    if carried:
+        yield from carried.splitlines()
+
+
+class GcodeLines:
+    """The lines of one sliced model, readable as many times as needed."""
+
+    __slots__ = ("_text",)
+
+    def __init__(self, text: str) -> None:
+        self._text = text
+
+    def __iter__(self) -> Iterator[str]:
+        return _iter_gcode_lines(self._text)
+
+
 def _decode_gcode_bytes(file_name: str, raw_bytes: bytes) -> str:
     lower_name = file_name.lower()
     payload = raw_bytes
@@ -501,11 +578,11 @@ def _decode_gcode_bytes(file_name: str, raw_bytes: bytes) -> str:
             return payload.decode("latin-1", errors="ignore")
 
 
-def _detect_slicer(lines: list[str]) -> tuple[str | None, str | None]:
+def _detect_slicer(lines: Iterable[str]) -> tuple[str | None, str | None]:
     counts = {name: 0 for name in _SLICER_KEYWORDS}
     detected_version: str | None = None
 
-    for raw_line in lines[:200]:
+    for raw_line in islice(lines, 200):
         stripped = raw_line.strip()
         if not stripped.startswith(";"):
             continue
@@ -1085,7 +1162,7 @@ def _finalize_materials(parsed: dict[str, Any], collector: dict[str, Any]) -> No
     )
 
 
-def _apply_extrusion_role_usage(parsed: dict[str, Any], lines: list[str]) -> None:
+def _apply_extrusion_role_usage(parsed: dict[str, Any], lines: Iterable[str]) -> None:
     """Estimate per-role weight from real extrusion moves, normalized to slicer totals.
 
     Retractions and their matching recoveries are excluded. Normalization against
@@ -1323,7 +1400,7 @@ def _finalize_totals(parsed: dict[str, Any]) -> None:
         parsed["object_count"] = None
 
 
-def _extract_thumbnail_data_url(lines: list[str]) -> str | None:
+def _extract_thumbnail_data_url(lines: Iterable[str]) -> str | None:
     thumbnails: list[tuple[int, str]] = []
     collecting = False
     current_area = 0
