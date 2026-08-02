@@ -165,13 +165,13 @@ if ($releaseSourceChanges) {
 }
 
 $bridgeVersion = Get-BridgeVersion
-$expectedTag = "plugins-v$bridgeVersion"
 if ([string]::IsNullOrWhiteSpace($Tag)) {
-    $Tag = $expectedTag
+    # Удобный default для первого релиза. Версия комплекта плагинов дальше
+    # живёт отдельно: обновление только Orca не должно требовать фиктивного
+    # повышения версии OctoPrint Bridge.
+    $Tag = "plugins-v$bridgeVersion"
 } elseif ($Tag -notmatch '^plugins-v\d+\.\d+\.\d+(?:[-.][0-9A-Za-z.-]+)?$') {
     throw "Тег '$Tag' не соответствует формату plugins-vX.Y.Z."
-} elseif ($Tag -ne $expectedTag) {
-    throw "Тег '$Tag' не соответствует версии Bridge '$bridgeVersion' (ожидается '$expectedTag')."
 }
 
 $currentBranch = Invoke-Checked -FilePath git -Arguments @('branch', '--show-current') -Capture
@@ -185,7 +185,7 @@ $tagExistsLocally = -not [string]::IsNullOrWhiteSpace($localTag)
 if ($tagExistsLocally) {
     $tagCommit = Invoke-Checked -FilePath git -Arguments @('rev-list', '-n', '1', $Tag) -Capture
     if ($tagCommit -ne $headCommit) {
-        throw "Тег '$Tag' указывает на $tagCommit, а текущий HEAD — $headCommit. Подними версию плагинов и создай новый тег: старый релиз не должен молча пропускать новый код."
+        throw "Тег '$Tag' указывает на $tagCommit, а текущий HEAD — $headCommit. Увеличь версию комплекта в теге plugins-vX.Y.Z: старый релиз не должен молча пропускать новый код."
     }
 } else {
     $tagCommit = $headCommit
