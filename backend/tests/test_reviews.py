@@ -11,7 +11,16 @@ from app.models.user import User
 from tests.conftest import registration_payload
 
 
-async def _register_and_login(client: AsyncClient, suffix: str) -> tuple[dict, int]:
+async def _register_and_login(
+    client: AsyncClient, db: AsyncSession, suffix: str
+) -> tuple[dict, int]:
+    """An account that has confirmed its address, as most reviewers will have.
+
+    Writing a review reaches other people, so it is one of the actions that
+    needs a confirmed address. The confirmation is applied here the way the
+    person applies it — by following the link — because these tests are about
+    reviews; the rule itself is covered separately below.
+    """
     email = f"{suffix}@example.com"
     password = "testpassword123"
     reg = await client.post(
@@ -22,10 +31,31 @@ async def _register_and_login(client: AsyncClient, suffix: str) -> tuple[dict, i
     )
     assert reg.status_code == 201
     user_id = reg.json()["id"]
+
+    registered = await db.get(User, user_id)
+    registered.email_verified = True
+    await db.commit()
+
     login = await client.post("/api/v1/auth/login", json={"email": email, "password": password})
     assert login.status_code == 200
     token = login.json()["access_token"]
     return {"Authorization": f"Bearer {token}"}, user_id
+
+
+async def _register_unconfirmed(client: AsyncClient, suffix: str) -> dict:
+    """An account that never followed the link."""
+    email = f"{suffix}@example.com"
+    password = "testpassword123"
+    reg = await client.post(
+        "/api/v1/auth/register",
+        json=registration_payload(
+            email=email, username=f"user_{suffix}", password=password
+        ),
+    )
+    assert reg.status_code == 201
+    login = await client.post("/api/v1/auth/login", json={"email": email, "password": password})
+    assert login.status_code == 200
+    return {"Authorization": f"Bearer {login.json()['access_token']}"}
 
 
 async def _create_filament(db: AsyncSession) -> Filament:
@@ -63,7 +93,7 @@ async def _create_official_preset(db: AsyncSession, filament_id: int, user_id: i
 @pytest.mark.asyncio
 async def test_create_review_without_preset(client: AsyncClient, db_session: AsyncSession):
     """Create a general review (no specific preset)."""
-    headers, _ = await _register_and_login(client, "rev-create")
+    headers, _ = await _register_and_login(client, db_session, "rev-create")
     filament = await _create_filament(db_session)
 
     response = await client.post("/api/v1/filament-reviews/", headers=headers, json={
@@ -84,7 +114,7 @@ async def test_create_review_without_preset(client: AsyncClient, db_session: Asy
 @pytest.mark.asyncio
 async def test_create_review_duplicate_rejected(client: AsyncClient, db_session: AsyncSession):
     """Second review for the same filament+preset is rejected."""
-    headers, _ = await _register_and_login(client, "rev-dup")
+    headers, _ = await _register_and_login(client, db_session, "rev-dup")
     filament = await _create_filament(db_session)
 
     payload = {"filament_id": filament.id, "success": True, "rating": 4}
@@ -99,7 +129,7 @@ async def test_create_review_duplicate_rejected(client: AsyncClient, db_session:
 @pytest.mark.asyncio
 async def test_list_reviews_for_filament(client: AsyncClient, db_session: AsyncSession):
     """Reviews are returned for the correct filament."""
-    headers, _ = await _register_and_login(client, "rev-list")
+    headers, _ = await _register_and_login(client, db_session, "rev-list")
     filament = await _create_filament(db_session)
 
     await client.post("/api/v1/filament-reviews/", headers=headers, json={
@@ -128,8 +158,8 @@ async def test_get_rating_stats_empty(client: AsyncClient, db_session: AsyncSess
 @pytest.mark.asyncio
 async def test_get_rating_stats_with_reviews(client: AsyncClient, db_session: AsyncSession):
     """Stats reflect actual review data."""
-    h1, _ = await _register_and_login(client, "rev-stats-a")
-    h2, _ = await _register_and_login(client, "rev-stats-b")
+    h1, _ = await _register_and_login(client, db_session, "rev-stats-a")
+    h2, _ = await _register_and_login(client, db_session, "rev-stats-b")
     filament = await _create_filament(db_session)
 
     await client.post("/api/v1/filament-reviews/", headers=h1, json={
@@ -149,7 +179,7 @@ async def test_get_rating_stats_with_reviews(client: AsyncClient, db_session: As
 @pytest.mark.asyncio
 async def test_update_own_review(client: AsyncClient, db_session: AsyncSession):
     """Author can update their own review."""
-    headers, _ = await _register_and_login(client, "rev-update")
+    headers, _ = await _register_and_login(client, db_session, "rev-update")
     filament = await _create_filament(db_session)
 
     create_resp = await client.post("/api/v1/filament-reviews/", headers=headers, json={
@@ -168,8 +198,8 @@ async def test_update_own_review(client: AsyncClient, db_session: AsyncSession):
 @pytest.mark.asyncio
 async def test_update_other_user_review_forbidden(client: AsyncClient, db_session: AsyncSession):
     """Non-author cannot update someone else's review."""
-    h_author, _ = await _register_and_login(client, "rev-own")
-    h_other, _ = await _register_and_login(client, "rev-other")
+    h_author, _ = await _register_and_login(client, db_session, "rev-own")
+    h_other, _ = await _register_and_login(client, db_session, "rev-other")
     filament = await _create_filament(db_session)
 
     create_resp = await client.post("/api/v1/filament-reviews/", headers=h_author, json={
@@ -187,7 +217,7 @@ async def test_update_other_user_review_forbidden(client: AsyncClient, db_sessio
 @pytest.mark.asyncio
 async def test_delete_review_deactivates(client: AsyncClient, db_session: AsyncSession):
     """Deleting a review deactivates it (not hard delete)."""
-    headers, _ = await _register_and_login(client, "rev-del")
+    headers, _ = await _register_and_login(client, db_session, "rev-del")
     filament = await _create_filament(db_session)
 
     create_resp = await client.post("/api/v1/filament-reviews/", headers=headers, json={
@@ -217,3 +247,47 @@ async def test_filament_not_found(client: AsyncClient):
     response = await client.get("/api/v1/filament-reviews/filament/99999")
     assert response.status_code == 404
     assert response.json()["detail"]["code"] == "ERR_FILAMENT_NOT_FOUND"
+
+
+@pytest.mark.asyncio
+async def test_an_unconfirmed_address_cannot_rate_someone_elses_material(
+    client: AsyncClient, db_session: AsyncSession
+):
+    """A rating is seen by everyone, so it needs an address that answers.
+
+    A throwaway mailbox outlives neither the confirmation link nor its own
+    usefulness, which is what makes this cheap to require and hard to abuse.
+    """
+    headers = await _register_unconfirmed(client, "rev-unconfirmed")
+    filament = await _create_filament(db_session)
+
+    refused = await client.post(
+        "/api/v1/filament-reviews/",
+        headers=headers,
+        json={"filament_id": filament.id, "success": True, "rating": 5},
+    )
+
+    assert refused.status_code == 403
+    assert refused.json()["detail"]["code"] == "ERR_EMAIL_NOT_VERIFIED"
+
+    listed = await client.get(f"/api/v1/filament-reviews/filament/{filament.id}")
+    assert listed.json()["total"] == 0
+
+
+@pytest.mark.asyncio
+async def test_reading_reviews_stays_open_to_an_unconfirmed_address(
+    client: AsyncClient, db_session: AsyncSession
+):
+    """Confirmation guards what reaches others, not what a person may look at."""
+    headers = await _register_unconfirmed(client, "rev-unconfirmed-reader")
+    filament = await _create_filament(db_session)
+
+    listed = await client.get(
+        f"/api/v1/filament-reviews/filament/{filament.id}", headers=headers
+    )
+    stats = await client.get(
+        f"/api/v1/filament-reviews/filament/{filament.id}/stats", headers=headers
+    )
+
+    assert listed.status_code == 200
+    assert stats.status_code == 200

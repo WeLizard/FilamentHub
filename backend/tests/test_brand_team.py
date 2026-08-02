@@ -188,6 +188,9 @@ async def test_verified_brand_join_is_reviewed_by_owner_as_scoped_editor(
         username="joiner",
         password_hash="$2b$12$test",
         active=True,
+        # Claiming a place in someone's brand requires a confirmed address:
+        # there is no point reviewing a request nobody can answer.
+        email_verified=True,
         **accepted_legal(),
     )
     db_session.add(requester)
@@ -357,6 +360,7 @@ async def test_admin_approval_of_owned_brand_join_grants_scoped_editor(
         username="admin-reviewed-editor",
         password_hash="$2b$12$test",
         active=True,
+        email_verified=True,
         **accepted_legal(),
     )
     db_session.add(requester)

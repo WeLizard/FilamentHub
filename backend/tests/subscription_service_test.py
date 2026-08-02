@@ -27,6 +27,9 @@ async def _create_user(db: AsyncSession, suffix: str) -> User:
         username=f"calculator_{suffix}",
         password_hash="$2b$12$test",
         active=True,
+        # Starting a trial needs a confirmed address: a throwaway mailbox could
+        # otherwise take one again and again.
+        email_verified=True,
     )
     db.add(user)
     await db.commit()

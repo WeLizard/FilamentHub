@@ -106,6 +106,11 @@ async def auth_user(db_session: AsyncSession) -> "User":
         username="authuser",
         password_hash="$2b$12$test",
         active=True,
+        # Confirmed, because that is what an ordinary account looks like once
+        # someone has followed the link. Actions that reach other people — a
+        # brand claim, a rating, a trial — require it, and a fixture standing in
+        # for "a signed-in person" should not silently be the exception.
+        email_verified=True,
         terms_version_accepted=CURRENT_TERMS_VERSION,
         personal_data_consent_version=CURRENT_PERSONAL_DATA_CONSENT_VERSION,
     )
@@ -139,6 +144,7 @@ async def admin_user(db_session: AsyncSession) -> "User":
         username="adminuser",
         password_hash="$2b$12$test",
         active=True,
+        email_verified=True,
         role=UserRole.ADMIN,
         terms_version_accepted=CURRENT_TERMS_VERSION,
         personal_data_consent_version=CURRENT_PERSONAL_DATA_CONSENT_VERSION,
