@@ -51,6 +51,51 @@ import type { AxiosError } from 'axios';
 // once and the next arrives before the person reaches the end of this one.
 const PRESETS_PER_PAGE = 24;
 
+// Orca writes numbers as strings, sometimes as a one-element list, sometimes
+// with a comma for a decimal point.
+const getOrcaNumber = (
+  settings: Record<string, any> | null | undefined,
+  key: string,
+): number | null => {
+  if (!settings) {
+    return null;
+  }
+  const rawValue = settings[key];
+  if (rawValue === undefined || rawValue === null) {
+    return null;
+  }
+  const baseValue = Array.isArray(rawValue) ? rawValue[0] : rawValue;
+  if (baseValue === undefined || baseValue === null || baseValue === '') {
+    return null;
+  }
+  const normalized =
+    typeof baseValue === 'string'
+      ? baseValue.replace(',', '.').replace(/[^0-9.\-]/g, '')
+      : baseValue;
+  const parsed =
+    typeof normalized === 'string' ? parseFloat(normalized) : Number(normalized);
+  return Number.isNaN(parsed) ? null : parsed;
+};
+
+// The advanced block is drawn above a rule. Having settings is not the same as
+// having any of the six values it shows, and when it had none the rule was left
+// standing over an empty space.
+const hasAdvancedOrcaValues = (settings: Parameters<typeof getOrcaNumber>[0]): boolean => {
+  const rangeLow = getOrcaNumber(settings, 'nozzle_temperature_range_low');
+  const rangeHigh = getOrcaNumber(settings, 'nozzle_temperature_range_high');
+  const volumetric = getOrcaNumber(settings, 'filament_max_volumetric_speed');
+  const fanMin = getOrcaNumber(settings, 'fan_min_speed');
+  const fanMax = getOrcaNumber(settings, 'fan_max_speed');
+  const chamber = getOrcaNumber(settings, 'chamber_temperature');
+
+  return (
+    (rangeLow !== null && rangeHigh !== null) ||
+    volumetric !== null ||
+    (fanMin !== null && fanMax !== null) ||
+    (chamber !== null && chamber > 0)
+  );
+};
+
 export const FilamentDetailPage: React.FC = () => {
   const { t } = useTranslation();
   const configuredNozzleHrc = useConfiguredNozzleHrc();
@@ -276,30 +321,6 @@ export const FilamentDetailPage: React.FC = () => {
   // РЕЙТИНГ ПРЕСЕТА: отдельно для каждого пресета (preset.rating)
   // Это оценка качества настроек печати для конкретного пресета
   // Показывается у каждого пресета индивидуально
-
-  const getOrcaNumber = (
-    settings: Record<string, any> | null | undefined,
-    key: string,
-  ): number | null => {
-    if (!settings) {
-      return null;
-    }
-    const rawValue = settings[key];
-    if (rawValue === undefined || rawValue === null) {
-      return null;
-    }
-    const baseValue = Array.isArray(rawValue) ? rawValue[0] : rawValue;
-    if (baseValue === undefined || baseValue === null || baseValue === '') {
-      return null;
-    }
-    const normalized =
-      typeof baseValue === 'string'
-        ? baseValue.replace(',', '.').replace(/[^0-9.\-]/g, '')
-        : baseValue;
-    const parsed =
-      typeof normalized === 'string' ? parseFloat(normalized) : Number(normalized);
-    return Number.isNaN(parsed) ? null : parsed;
-  };
 
   const officialSofteningTemperature = primaryPreset
     ? getOrcaNumber(primaryPreset.orcaslicer_settings, 'temperature_vitrification')
@@ -743,8 +764,15 @@ export const FilamentDetailPage: React.FC = () => {
                         ))}
                       </div>
                     )}
-                    <span className="text-purple-300 font-semibold">{t('filamentDetailPage.manufacturer')}</span>
-                    {/* Рейтинг и успешность официального пресета */}
+                    {/* Только официальный пресет приходит от производителя.
+                        Плашка теперь показывает и генеративный, и лучший от
+                        сообщества — для них эта подпись была бы неправдой. */}
+                    {primaryKind === 'official' && (
+                      <span className="text-purple-300 font-semibold">
+                        {t('filamentDetailPage.manufacturer')}
+                      </span>
+                    )}
+                    {/* Рейтинг и успешность показанного пресета */}
                     <div className="flex items-center space-x-2">
                       {primaryPreset.rating !== null && primaryPreset.rating !== undefined && (
                         <div className="flex items-center space-x-1" title={t('filamentDetailPage.presetRatingTitle')}>
@@ -844,7 +872,7 @@ export const FilamentDetailPage: React.FC = () => {
                 </div>
                 
                 {/* Расширенные параметры OrcaSlicer */}
-                {primaryPreset.orcaslicer_settings && Object.keys(primaryPreset.orcaslicer_settings).length > 0 && (
+                {hasAdvancedOrcaValues(primaryPreset.orcaslicer_settings) && (
                   <div className="mt-4 pt-4 border-t border-white/10">
                     {/* Без заголовка: раздел отделён линией, а весь список
                         параметров и так открывается по клику на пресет. */}
@@ -971,12 +999,16 @@ export const FilamentDetailPage: React.FC = () => {
                               <CheckCircle className="w-5 h-5 text-green-400" />
                             )}
                             <div className="min-w-0 flex-1">
-                              {/* Название может занять две строки; значок
-                                  остаётся у первой, а не съезжает к середине. */}
-                              <div className="flex items-start gap-2 mb-1">
-                                <p className="min-w-0 text-white font-semibold text-lg">{preset.name}</p>
-                                <Eye className="mt-1.5 w-4 h-4 text-gray-500 shrink-0" />
-                              </div>
+                              <p className="mb-1 min-w-0 break-words text-lg font-semibold text-white">
+                                {preset.name}
+                                <span className="whitespace-nowrap">
+                                  {'\u00A0'}
+                                  <Eye
+                                    aria-hidden="true"
+                                    className="inline-block h-4 w-4 align-[-0.125em] text-gray-500"
+                                  />
+                                </span>
+                              </p>
                               {preset.description && (
                                 <p className="text-gray-400 text-sm">{preset.description}</p>
                               )}
@@ -1096,7 +1128,7 @@ export const FilamentDetailPage: React.FC = () => {
                         </div>
                       
                       {/* Расширенные параметры OrcaSlicer */}
-                      {preset.orcaslicer_settings && Object.keys(preset.orcaslicer_settings).length > 0 && (
+                      {hasAdvancedOrcaValues(preset.orcaslicer_settings) && (
                         <div className="mt-3 pt-3 border-t border-white/10">
                           <div className="grid grid-cols-2 gap-3">
                             {(() => {
