@@ -21,6 +21,7 @@ LOCALES = ROOT / "filamenthub_locales"
 # also flips the plugin off its dev contour and hides the Log button.
 DEV_SITE_DEFAULT = '"http://localhost:3000"'
 PROD_SITE_DEFAULT = '"https://filamenthub.ru"'
+EMBEDDED_UI_COPY_TOKEN = "_EMBEDDED_UI_COPY = {}"
 
 
 def extract_metadata(source: str) -> dict[str, object]:
@@ -65,10 +66,37 @@ def extract_runtime_version(source: str) -> str:
 
 def prod_source(source: str) -> str:
     """Return the source with the prod site URL forced. Raises if the input is not
-    the expected dev source, so an unnormalized wheel can never ship silently."""
+    the expected dev source, so an unnormalized wheel can never ship silently.
+
+    The release source is also normalized to LF for reproducible single-file
+    packages across build platforms.
+    """
     if DEV_SITE_DEFAULT not in source:
         raise ValueError("dev SITE_URL default not found — cannot force the prod URL")
     result = source.replace(DEV_SITE_DEFAULT, PROD_SITE_DEFAULT)
+    result = result.replace("\r\n", "\n").replace("\r", "\n")
+    if result.count(EMBEDDED_UI_COPY_TOKEN) != 1:
+        raise ValueError("embedded locale marker is missing or duplicated")
+    catalogs = {}
+    for locale_path in sorted(LOCALES.glob("*.json")):
+        data = json.loads(locale_path.read_text(encoding="utf-8"))
+        if not isinstance(data, dict) or not all(
+            isinstance(key, str) and isinstance(value, str)
+            for key, value in data.items()
+        ):
+            raise ValueError(f"invalid locale catalog: {locale_path.name}")
+        catalogs[locale_path.stem] = data
+    embedded = json.dumps(
+        catalogs,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    result = result.replace(
+        EMBEDDED_UI_COPY_TOKEN,
+        "_EMBEDDED_UI_COPY = " + embedded,
+        1,
+    )
     ast.parse(result, filename="filamenthub_plugin.py[prod]")
     if DEV_SITE_DEFAULT in result:
         raise ValueError(f"prod source still contains a dev token: {DEV_SITE_DEFAULT!r}")
@@ -84,7 +112,6 @@ def _build_wheel(prod_bytes: bytes, version: str, output_root: Path) -> Path:
     build_dir.mkdir(parents=True)
     (build_dir / "filamenthub_plugin.py").write_bytes(prod_bytes)
     shutil.copy2(ROOT / "pyproject.toml", build_dir / "pyproject.toml")
-    shutil.copytree(LOCALES, build_dir / LOCALES.name)
     wheels_out = output_root / "wheels"
     subprocess.run(
         [sys.executable, "-m", "build", "--wheel", "--outdir", str(wheels_out)],

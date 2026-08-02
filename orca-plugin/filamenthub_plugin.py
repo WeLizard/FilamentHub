@@ -7,7 +7,7 @@
 # name = "FilamentHub"
 # description = "Browse and sync community-rated filament profiles from FilamentHub, with spool inventory and print-cost tools."
 # author = "FilamentHub"
-# version = "0.0.10"
+# version = "0.1.0"
 #
 # # Proposed forward-looking key (see README gap). The current
 # # host reads only name/description/author/version/dependencies and ignores unknown
@@ -146,7 +146,7 @@ def post_window(window, payload):
 # --------------------------------------------------------------------------- #
 # Configuration
 # --------------------------------------------------------------------------- #
-PLUGIN_VERSION = "0.0.10"
+PLUGIN_VERSION = "0.1.0"
 PROD_SITE_URL = "https://filamenthub.ru"
 SITE_URL = os.environ.get("FILAMENTHUB_SITE_URL", "http://localhost:3000").rstrip("/")
 DEV_CONTOUR = SITE_URL != PROD_SITE_URL
@@ -186,6 +186,11 @@ _UI_LOCALE_ALIASES = {
     "zh_hant": "zh_TW",
     "zh_hant_tw": "zh_TW",
 }
+# build_package.py replaces this empty mapping in release artifacts. Keeping the
+# editable JSON files authoritative in the source tree makes community
+# translations reviewable, while embedding them here keeps Orca's officially
+# supported single-file plugin format fully functional.
+_EMBEDDED_UI_COPY = {}
 _LOCALE_DIR = os.path.join(
     os.path.dirname(os.path.abspath(__file__)),
     "filamenthub_locales",
@@ -211,7 +216,11 @@ def normalize_ui_language(language):
 def load_ui_catalogs(directory=None):
     """Load bundled UTF-8 catalogs; invalid optional files cannot break startup."""
     root = directory or _LOCALE_DIR
-    catalogs = {}
+    catalogs = {
+        locale: dict(data)
+        for locale, data in _EMBEDDED_UI_COPY.items()
+        if locale in ORCA_UI_LOCALES and isinstance(data, dict)
+    }
     try:
         names = sorted(os.listdir(root))
     except OSError:
@@ -443,10 +452,23 @@ PLUGIN_STORAGE_DIR = PLUGIN_DIR
 # Use a packaged adjacent icon when one exists. A wheel/single-file install falls
 # back to Orca's default instead of writing an asset during normal plugin load.
 ICON_PATH = os.path.join(PLUGIN_DIR, "filamenthub.svg")
+PACKAGED_ICON_PATH = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)),
+    "filamenthub.svg",
+)
+_ICON_SVG = b'''<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20" stroke-width="1.25"><path d="M8.19,2.15c-3.11.84-5.49,3.22-6.15,6.18-.7,3.16.86,5.68,1.21,6.21" style="fill:none;stroke:#fff;stroke-linecap:round;stroke-miterlimit:10"/><line x1="8.19" y1="10" x2="1.87" y2="10" style="fill:none;stroke:#fff;stroke-linecap:round;stroke-miterlimit:10"/><line x1="10.95" y1="2.15" x2="10.95" y2="17.85" style="fill:none;stroke:#fff;stroke-linecap:round;stroke-miterlimit:10"/><path d="M16.91,6c.37.65,1.08,2.08,1.09,4.01.02,2.28-.94,3.92-1.35,4.54" style="fill:none;stroke:#fff;stroke-linecap:round;stroke-miterlimit:10"/><line x1="10.95" y1="10" x2="18" y2="10" style="fill:none;stroke:#fff;stroke-miterlimit:10"/></svg>'''
 
 
 def ensure_icon():
-    return ICON_PATH if os.path.isfile(ICON_PATH) else ""
+    for candidate in (PACKAGED_ICON_PATH, ICON_PATH):
+        if os.path.isfile(candidate):
+            return candidate
+    target = os.path.join(PLUGIN_STORAGE_DIR, "filamenthub.svg")
+    try:
+        write_bytes_atomic(target, _ICON_SVG)
+    except OSError:
+        return ""
+    return target if os.path.isfile(target) else ""
 
 
 def configure_plugin_storage():
@@ -3394,11 +3416,62 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
             self._deliver_sync_result(ui_text("syncComplete", summary=summary, note=note).strip())
 
 
+_PAGES = getattr(orca, "pages", None)
+_PAGE_CAPABILITY_BASE = getattr(_PAGES, "PagesPluginCapabilityBase", None)
+
+
+class _PageWindowProxy:
+    """Adapt the draft Pages push API to the window helper contract."""
+
+    def __init__(self, page):
+        self._page = page
+
+    def is_open(self):
+        return self._page is not None
+
+    def post(self, payload):
+        self._page.post_message(payload)
+
+
+if _PAGE_CAPABILITY_BASE is not None:
+    class FilamentHubPage(_PAGE_CAPABILITY_BASE):
+        def __init__(self):
+            super().__init__()
+            self._catalog = FilamentHubCatalog()
+            self._catalog.win = _PageWindowProxy(self)
+            self._catalog._session_sync_started = False
+
+        def get_name(self):
+            return "FilamentHub"
+
+        def get_icon(self):
+            return ensure_icon()
+
+        def get_ui(self):
+            shell_url = SHELL_SERVER.url_for(render_page())
+            return (
+                "<!DOCTYPE html><html><body><script>location.replace("
+                + json.dumps(shell_url)
+                + ");</script></body></html>"
+            )
+
+        def on_message(self, message):
+            self._catalog.on_message(message)
+
+        def on_unload(self):
+            self._catalog.on_close()
+else:
+    FilamentHubPage = None
+
+
 @orca.plugin
 class FilamentHubPlugin(orca.base):
     def register_capabilities(self):
         refresh_ui_language()
         configure_plugin_storage()
-        orca.register_capability(FilamentHubCatalog)
+        if FilamentHubPage is not None:
+            orca.register_capability(FilamentHubPage)
+        else:
+            orca.register_capability(FilamentHubCatalog)
         if FilamentHubSliceReporter is not None:
             orca.register_capability(FilamentHubSliceReporter)

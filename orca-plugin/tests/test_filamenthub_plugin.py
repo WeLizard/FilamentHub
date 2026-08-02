@@ -6,6 +6,7 @@ import json
 import sys
 import threading
 import tomllib
+import zipfile
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
@@ -624,6 +625,26 @@ def test_build_packages_locale_catalogs_and_checksums(plugin_module, tmp_path):
     assert f"{digest}  filamenthub_plugin.py\n" in checksums
     assert "filamenthub_locales/ru.json" in checksums
 
+    wheel = tmp_path / "wheels" / (
+        f"filamenthub-{plugin_module.PLUGIN_VERSION}-py3-none-any.whl"
+    )
+    with zipfile.ZipFile(wheel) as archive:
+        names = set(archive.namelist())
+        wheel_source = archive.read("filamenthub_plugin.py")
+        top_level = archive.read(
+            f"filamenthub-{plugin_module.PLUGIN_VERSION}.dist-info/top_level.txt"
+        )
+    assert b"\r" not in wheel_source
+    assert b"_EMBEDDED_UI_COPY = {}" not in wheel_source
+    assert top_level == b"filamenthub_plugin\n"
+    assert not any(name.startswith("filamenthub_locales/") for name in names)
+
+    standalone = tmp_path / "standalone_filamenthub_plugin.py"
+    standalone.write_bytes(package.read_bytes())
+    standalone_module = _load_module(standalone, "filamenthub_standalone_smoke")
+    assert set(standalone_module.UI_COPY) == {"en", "ru", "zh_CN", "zh_TW"}
+    assert standalone_module.UI_COPY["ru"]["catalog"] == "Каталог"
+
 
 def test_printer_profiles_never_leave_with_host_credentials(plugin_module, monkeypatch):
     # A printer preset holds the credentials of its network host; they must stay
@@ -717,6 +738,29 @@ def _module_with_slicing():
     sys.modules["orca"] = fake_orca
     try:
         module = _load_module(PLUGIN_PATH, "filamenthub_plugin_with_slicing")
+    finally:
+        if previous is None:
+            sys.modules.pop("orca", None)
+        else:
+            sys.modules["orca"] = previous
+    return module, registered
+
+
+def _module_with_pages():
+    """The plugin as it loads on the PR #14992 Pages artifact."""
+    fake_orca = ModuleType("orca")
+    fake_orca.base = object
+    fake_orca.plugin = lambda cls: cls
+    registered: list = []
+    fake_orca.register_capability = registered.append
+    fake_orca.script = SimpleNamespace(ScriptPluginCapabilityBase=object)
+    fake_orca.pages = SimpleNamespace(PagesPluginCapabilityBase=object)
+    fake_orca.host = SimpleNamespace(ui=SimpleNamespace())
+    fake_orca.ExecutionResult = SimpleNamespace(success=lambda message: message)
+    previous = sys.modules.get("orca")
+    sys.modules["orca"] = fake_orca
+    try:
+        module = _load_module(PLUGIN_PATH, "filamenthub_plugin_with_pages")
     finally:
         if previous is None:
             sys.modules.pop("orca", None)
@@ -822,6 +866,25 @@ def test_the_reporter_is_registered_only_where_the_host_can_slice():
 def test_without_the_pipeline_the_plugin_still_registers_its_window(plugin_module):
     assert plugin_module.FilamentHubSliceReporter is None
     plugin_module.FilamentHubPlugin().register_capabilities()
+
+
+def test_pages_host_registers_a_tab_instead_of_the_window_action():
+    module, registered = _module_with_pages()
+    module.FilamentHubPlugin().register_capabilities()
+    assert module.FilamentHubPage in registered
+    assert module.FilamentHubCatalog not in registered
+
+
+def test_page_icon_materializes_for_a_single_file_install(
+    plugin_module, tmp_path, monkeypatch
+):
+    missing = tmp_path / "not-packaged.svg"
+    monkeypatch.setattr(plugin_module, "PACKAGED_ICON_PATH", str(missing))
+    monkeypatch.setattr(plugin_module, "ICON_PATH", str(missing))
+    monkeypatch.setattr(plugin_module, "PLUGIN_STORAGE_DIR", str(tmp_path))
+    icon = plugin_module.ensure_icon()
+    assert icon == str(tmp_path / "filamenthub.svg")
+    assert (tmp_path / "filamenthub.svg").read_bytes() == plugin_module._ICON_SVG
 
 
 def test_host_storage_migrates_mutable_state_without_deleting_legacy(

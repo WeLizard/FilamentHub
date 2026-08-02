@@ -11,10 +11,6 @@ authors = [{ name = "FilamentHub" }]
 
 [tool.setuptools]
 py-modules = ["filamenthub_plugin"]
-packages = ["filamenthub_locales"]
-
-[tool.setuptools.package-data]
-filamenthub_locales = ["*.json"]
 
 # Single source of truth for the version: the PLUGIN_VERSION constant in the
 # module. The wheel derives from it here (no hand-copied number), and

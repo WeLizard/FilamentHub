@@ -2,9 +2,11 @@
 
 Newest first. The top entry is the text pasted into the Plugin Hub on release.
 
-## 0.0.10
+## 0.1.0
 - A printer card can now explicitly restore its FilamentHub-managed OrcaSlicer machine and print profiles. Existing unmanaged profiles are never overwritten.
 - Automatic machine and print profile reporting remains one-way; restoration happens only when you request it and requires an OrcaSlicer restart.
+- Native plugin messages now include English, Russian, Simplified Chinese and Traditional Chinese, with per-message English fallback for other OrcaSlicer languages.
+- OrcaSlicer builds with Plugin Pages support open FilamentHub as a native tab with its own icon; existing builds keep the separate catalog window.
 
 ## 0.0.9
 - Follows OrcaSlicer's interface language for connection and error messages, with a fallback for older builds.

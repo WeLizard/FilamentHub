@@ -115,7 +115,7 @@ endpoint the fork's panel used.
 # name = "FilamentHub"
 # description = "Browse and sync community-rated filament profiles from FilamentHub, with spool inventory and print-cost tools."
 # author = "FilamentHub"
-# version = "0.0.10"
+# version = "0.1.0"
 # network = ["filamenthub.ru", "*.filamenthub.ru"]   # proposed; ignored by current host
 # ///
 ```
@@ -144,7 +144,7 @@ python -m pytest orca-plugin/tests -q
 Output:
 
 ```text
-orca-plugin/dist/filamenthub-0.0.10/
+orca-plugin/dist/filamenthub-0.1.0/
   filamenthub_plugin.py       # install this file
   package-metadata.json       # build provenance
   SHA256SUMS                  # integrity check
