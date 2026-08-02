@@ -13,6 +13,7 @@ from app.core.errors import (
     ERR_NO_PERMISSION_DELETE_REVIEW,
     ERR_NO_PERMISSION_EDIT_REVIEW,
     ERR_PRESET_NOT_MATCH,
+    ERR_PRINTER_NOT_FOUND,
     ERR_REVIEW_ALREADY_EXISTS,
     ERR_REVIEW_NOT_FOUND,
     ERR_REVIEW_SAVED_ONLY,
@@ -355,6 +356,7 @@ async def get_review(
         success=review.success,
         rating=review.rating,
         comment=review.comment,
+        printer_id=review.printer_id,
         printer_model=review.printer_model,
         active=review.active,
         created_at=review.created_at,
@@ -362,7 +364,32 @@ async def get_review(
     )
 
 
+async def _resolve_review_printer(
+    db: AsyncSession,
+    printer_id: int | None,
+    printer_model: str | None,
+) -> tuple[int | None, str | None]:
+    """Settle which machine a review is about.
+
+    A machine picked from the catalogue also supplies its name, so the same
+    printer is written the same way in every review and a later reader can ask
+    what this material does on the one they own. Typing a name is still allowed
+    — a self-build is not in any catalogue — and then only the text is kept.
+    """
+    if printer_id is None:
+        return None, printer_model
+
+    from app.models.printer import Printer
+
+    printer = await db.scalar(select(Printer).where(Printer.id == printer_id))
+    if printer is None:
+        raise_error(404, ERR_PRINTER_NOT_FOUND)
+    return printer.id, printer.name
+
+
 @router.post("/", response_model=FilamentReviewResponse, status_code=status.HTTP_201_CREATED)
+
+
 async def create_review(
     review_data: FilamentReviewCreate,
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -417,6 +444,10 @@ async def create_review(
         if not is_valid:
             raise HTTPException(status_code=400, detail=error_msg)
 
+    printer_id, printer_model = await _resolve_review_printer(
+        db, review_data.printer_id, review_data.printer_model
+    )
+
     # Проверяем, не оставил ли пользователь уже отзыв для этого пресета
     duplicate_filters = [
         FilamentReview.filament_id == review_data.filament_id,
@@ -442,7 +473,8 @@ async def create_review(
         success=review_data.success,
         rating=review_data.rating,
         comment=review_data.comment,
-        printer_model=review_data.printer_model,
+        printer_id=printer_id,
+        printer_model=printer_model,
         active=True,
     )
 
@@ -468,6 +500,7 @@ async def create_review(
         success=review.success,
         rating=review.rating,
         comment=review.comment,
+        printer_id=review.printer_id,
         printer_model=review.printer_model,
         active=review.active,
         created_at=review.created_at,
@@ -510,6 +543,12 @@ async def update_review(
         if not is_valid:
             raise HTTPException(status_code=400, detail=error_msg)
 
+    # A picked machine names itself, so the two fields cannot fall out of step.
+    if "printer_id" in update_data:
+        update_data["printer_id"], update_data["printer_model"] = await _resolve_review_printer(
+            db, update_data["printer_id"], update_data.get("printer_model", review.printer_model)
+        )
+
     # Сохраняем старый preset_id для обновления рейтингов
     old_preset_id = review.preset_id
 
@@ -544,6 +583,7 @@ async def update_review(
         success=review.success,
         rating=review.rating,
         comment=review.comment,
+        printer_id=review.printer_id,
         printer_model=review.printer_model,
         active=review.active,
         created_at=review.created_at,

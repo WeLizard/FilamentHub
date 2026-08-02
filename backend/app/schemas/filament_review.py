@@ -11,7 +11,14 @@ class FilamentReviewBase(BaseModel):
     success: bool = Field(..., description="Успешна ли печать")
     rating: float = Field(..., ge=1.0, le=5.0, description="Рейтинг от 1.0 до 5.0")
     comment: str | None = Field(None, max_length=2000, description="Текст отзыва")
-    printer_model: str | None = Field(None, max_length=200, description="Модель принтера")
+    printer_id: int | None = Field(
+        None, ge=1, description="Принтер из справочника, если человек выбрал его"
+    )
+    printer_model: str | None = Field(
+        None,
+        max_length=200,
+        description="Название принтера. Для выбранного из справочника подставляется его имя",
+    )
 
     @field_validator("rating")
     @classmethod
@@ -34,6 +41,7 @@ class FilamentReviewUpdate(BaseModel):
     success: bool | None = None
     rating: float | None = Field(None, ge=1.0, le=5.0)
     comment: str | None = Field(None, max_length=2000)
+    printer_id: int | None = Field(None, ge=1)
     printer_model: str | None = Field(None, max_length=200)
     active: bool | None = None
 

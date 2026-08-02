@@ -45,8 +45,15 @@ class FilamentReview(Base):
     rating: Mapped[float] = mapped_column(Float, nullable=False)
     # rating: 1.0 - 5.0
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    printer_id: Mapped[int | None] = mapped_column(
+        ForeignKey("printers.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    # Which machine from the catalogue, when the person picked one. Typing the
+    # name is still allowed for a self-build, but only a chosen machine lets a
+    # later reader ask how this material behaves on the printer they own —
+    # "Voron 2.4", "voron 2.4" and "Ворон 2.4" are one machine and three strings.
     printer_model: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # printer_model: например "Bambu Lab A1 mini"
+    # printer_model: the name as shown, canonical when a machine was picked
 
     # Status
     active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
