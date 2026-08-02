@@ -206,7 +206,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
             </div>
 
             {/* Desktop Navigation */}
-            <nav className="hidden md:flex items-center space-x-2 relative z-[100]">
+            <nav className="hidden xl:flex items-center space-x-2 relative z-[100]">
               {user && (
                 <button
                   onClick={() => setIsScannerOpen(true)}
@@ -303,7 +303,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
             </nav>
 
             {/* Mobile: Notifications + Hamburger */}
-            <div className="flex md:hidden items-center space-x-2">
+            <div className="flex xl:hidden items-center space-x-2">
               {user && (
                 <button
                   onClick={() => setIsScannerOpen(true)}
@@ -328,7 +328,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
 
         {/* Mobile Menu */}
         {isMobileMenuOpen && (
-          <div className="md:hidden bg-black/40 backdrop-blur-md border-t border-white/10">
+          <div className="xl:hidden bg-black/40 backdrop-blur-md border-t border-white/10">
             <div className="px-4 py-3 space-y-2">
               <Link
                 to="/"

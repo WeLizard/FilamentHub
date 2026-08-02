@@ -13,6 +13,7 @@ import { SEOHead } from '../components/SEOHead';
 const ORCA_OFFICIAL_DOWNLOAD_URL = 'https://www.orcaslicer.com/download/';
 const ORCA_RELEASES_LATEST_URL = 'https://github.com/OrcaSlicer/OrcaSlicer/releases/latest';
 const FILAMENTHUB_PLUGIN_HUB_URL = 'https://cloud.orcaslicer.com/app/plugins/plugin-hub/34c1321c-7d46-4c5a-a8e9-f6c78fa9898e';
+const PRINT_FARM_PLUGIN_HUB_URL = 'https://cloud.orcaslicer.com/app/plugins/plugin-hub/3d30ee0c-24ba-435e-ae23-6bbc76d8e949';
 const FILAMENTHUB_PLUGIN_REPO = 'WeLizard/FilamentHub';
 const FILAMENTHUB_RELEASES_URL = `https://github.com/${FILAMENTHUB_PLUGIN_REPO}/releases`;
 
@@ -335,11 +336,11 @@ export function DownloadPage() {
         <div className="grid md:grid-cols-3 gap-4 md:gap-6">
           {/* Step 1 — get official OrcaSlicer */}
           <div className="bg-white/5 rounded-xl p-5 border border-white/10 flex flex-col">
-            <div className="flex items-center gap-3 mb-3">
+            <div className="flex items-center gap-3 mb-3 md:min-h-14">
               <span className="w-8 h-8 rounded-full bg-purple-600/30 border border-purple-500/40 text-purple-200 font-bold flex items-center justify-center">1</span>
               <h3 className="text-lg font-semibold text-white">{t('downloadPage.step1Title')}</h3>
             </div>
-            <p className="text-gray-300 text-sm mb-4">{t('downloadPage.step1Desc')}</p>
+            <p className="text-gray-300 text-sm mb-4 md:min-h-[5rem]">{t('downloadPage.step1Desc')}</p>
             <DownloadScreenshotCardImage
               src="/download-media/step-download-orca.webp"
               alt={t('downloadPage.step1ShotAlt')}
@@ -347,7 +348,7 @@ export function DownloadPage() {
               openPreviewLabel={t('downloadPage.openPreview')}
               onOpenPreview={(src, alt) => setPreviewImage({ src, alt })}
             />
-            <div className="mt-auto space-y-2">
+            <div className="space-y-2">
               <a
                 href={ORCA_OFFICIAL_DOWNLOAD_URL}
                 target="_blank"
@@ -376,11 +377,11 @@ export function DownloadPage() {
 
           {/* Step 2 — subscribe to the plugin in the Plugin Hub */}
           <div className="bg-white/5 rounded-xl p-5 border border-white/10 flex flex-col">
-            <div className="flex items-center gap-3 mb-3">
+            <div className="flex items-center gap-3 mb-3 md:min-h-14">
               <span className="w-8 h-8 rounded-full bg-purple-600/30 border border-purple-500/40 text-purple-200 font-bold flex items-center justify-center">2</span>
               <h3 className="text-lg font-semibold text-white">{t('downloadPage.step2Title')}</h3>
             </div>
-            <p className="text-gray-300 text-sm mb-4">{t('downloadPage.step2Desc')}</p>
+            <p className="text-gray-300 text-sm mb-4 md:min-h-[5rem]">{t('downloadPage.step2Desc')}</p>
             <DownloadScreenshotCardImage
               src="/download-media/step-install-plugin.webp"
               alt={t('downloadPage.step2ShotAlt')}
@@ -388,7 +389,7 @@ export function DownloadPage() {
               openPreviewLabel={t('downloadPage.openPreview')}
               onOpenPreview={(src, alt) => setPreviewImage({ src, alt })}
             />
-            <div className="mt-auto space-y-2">
+            <div className="space-y-2">
               <a
                 href={FILAMENTHUB_PLUGIN_HUB_URL}
                 target="_blank"
@@ -421,11 +422,11 @@ export function DownloadPage() {
 
           {/* Step 3 — open FilamentHub */}
           <div className="bg-white/5 rounded-xl p-5 border border-white/10 flex flex-col">
-            <div className="flex items-center gap-3 mb-3">
+            <div className="flex items-center gap-3 mb-3 md:min-h-14">
               <span className="w-8 h-8 rounded-full bg-purple-600/30 border border-purple-500/40 text-purple-200 font-bold flex items-center justify-center">3</span>
               <h3 className="text-lg font-semibold text-white">{t('downloadPage.step3Title')}</h3>
             </div>
-            <p className="text-gray-300 text-sm mb-4">{t('downloadPage.step3Desc')}</p>
+            <p className="text-gray-300 text-sm mb-4 md:min-h-[5rem]">{t('downloadPage.step3Desc')}</p>
             <DownloadScreenshotCardImage
               src="/download-media/step-open-filamenthub.webp"
               alt={t('downloadPage.step3ShotAlt')}
@@ -518,6 +519,47 @@ export function DownloadPage() {
             <p className="mt-3 break-all text-center text-[11px] text-slate-500">
               {octoPrintBridgeWheel?.name || t('downloadPage.octoReleasePending')}
             </p>
+          </div>
+        </div>
+      </section>
+
+      {/* Independent plugin from the same team — not part of the FilamentHub setup path. */}
+      <section className="mb-12 overflow-hidden rounded-2xl border border-emerald-300/20 bg-emerald-950/20">
+        <div className="flex flex-col gap-6 p-6 md:p-8 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex max-w-2xl gap-4">
+            <span className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-emerald-300/20 bg-emerald-400/10 text-emerald-200">
+              <Monitor className="h-6 w-6" />
+            </span>
+            <div>
+              <p className="mb-1 text-xs font-semibold uppercase tracking-[0.14em] text-emerald-300">
+                {t('downloadPage.printFarmEyebrow')}
+              </p>
+              <h2 className="text-xl font-bold text-white md:text-2xl">Print Farm</h2>
+              <p className="mt-2 text-sm leading-6 text-slate-300 md:text-base">
+                {t('downloadPage.printFarmDesc')}
+              </p>
+              <div className="mt-4 flex flex-wrap gap-2 text-xs text-slate-300">
+                {['Moonraker / Klipper', 'OctoPrint', 'Bambu Lab LAN'].map((provider) => (
+                  <span key={provider} className="rounded-full border border-white/10 bg-white/5 px-3 py-1">
+                    {provider}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex shrink-0 flex-col gap-3 lg:items-end">
+            <p className="text-xs text-slate-400">{t('downloadPage.printFarmIndependent')}</p>
+            <a
+              href={PRINT_FARM_PLUGIN_HUB_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-500 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-300/70"
+            >
+              <Package className="h-4 w-4" />
+              <span>{t('downloadPage.printFarmCta')}</span>
+              <ExternalLink className="h-3.5 w-3.5" />
+            </a>
           </div>
         </div>
       </section>
