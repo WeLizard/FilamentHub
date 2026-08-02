@@ -42,6 +42,7 @@ import { ConfirmDeleteModal } from '../components/ConfirmDeleteModal';
 import { toast } from '../components/Toast';
 import { PresetSyncToggle } from '../components/PresetSyncToggle';
 import { ViewPresetModal } from '../components/ViewPresetModal';
+import { FilamentPreview } from '../components/FilamentPreview';
 import { SEOHead } from '../components/SEOHead';
 import { externalUrl, externalUrlHost } from '../utils/externalUrl';
 import { formatTemperatureRange, getFilamentCompositionFacts } from '../utils/filamentFacts';
@@ -529,7 +530,7 @@ export const FilamentDetailPage: React.FC = () => {
             )}
           </div>
 
-          <div className="flex md:flex-col items-center md:items-end gap-3 md:gap-0 md:text-right md:ml-8">
+          <div className="flex shrink-0 items-center justify-between gap-3 md:ml-8 md:min-w-[14rem] md:flex-col md:items-end md:justify-start md:gap-2 md:text-right">
             {brandWebsiteUrl && (
               <a
                 href={brandWebsiteUrl}
@@ -543,6 +544,29 @@ export const FilamentDetailPage: React.FC = () => {
                   {externalUrlHost(brandData?.website)}
                 </span>
               </a>
+            )}
+            {(filament.color_hex || filament.visual_settings) && (
+              <div
+                className="shrink-0"
+                role="img"
+                aria-label={[filament.name, filament.color_name].filter(Boolean).join(' · ')}
+                data-testid="filament-detail-preview"
+              >
+                <div className="md:hidden">
+                  <FilamentPreview
+                    colorHex={filament.color_hex || '#FFFFFF'}
+                    visualSettings={filament.visual_settings}
+                    size="small"
+                  />
+                </div>
+                <div className="hidden md:block">
+                  <FilamentPreview
+                    colorHex={filament.color_hex || '#FFFFFF'}
+                    visualSettings={filament.visual_settings}
+                    size="medium"
+                  />
+                </div>
+              </div>
             )}
             {filament.price_hidden ? null : filament.price_per_kg && filament.spool_weight && filament.spool_weight !== 1000 ? (
               <>
