@@ -530,21 +530,7 @@ export const FilamentDetailPage: React.FC = () => {
             )}
           </div>
 
-          <div className="flex shrink-0 items-center justify-between gap-3 md:ml-8 md:min-w-[14rem] md:flex-col md:items-end md:justify-start md:gap-2 md:text-right">
-            {brandWebsiteUrl && (
-              <a
-                href={brandWebsiteUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="hidden md:inline-flex items-center justify-end space-x-2 text-purple-400 hover:text-purple-300 transition-colors mb-2"
-                title={brandWebsiteUrl}
-              >
-                <ExternalLink className="w-5 h-5" />
-                <span className="text-sm">
-                  {externalUrlHost(brandData?.website)}
-                </span>
-              </a>
-            )}
+          <div className="flex shrink-0 items-center justify-between gap-3 md:ml-8 md:min-w-[22rem] md:justify-end md:gap-4">
             {(filament.color_hex || filament.visual_settings) && (
               <div
                 className="shrink-0"
@@ -568,22 +554,38 @@ export const FilamentDetailPage: React.FC = () => {
                 </div>
               </div>
             )}
-            {filament.price_hidden ? null : filament.price_per_kg && filament.spool_weight && filament.spool_weight !== 1000 ? (
-              <>
-                <p className="text-sm md:text-base font-medium text-gray-300">
-                  {Math.round((filament.price_per_kg * filament.spool_weight) / 1000)} {currencySymbol(filament.currency)}<span className="text-gray-400">/{Math.round(filament.spool_weight)} {t('catalogPage.units.g')}</span>
+            <div className="min-w-0 text-right">
+              {brandWebsiteUrl && (
+                <a
+                  href={brandWebsiteUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mb-2 hidden items-center justify-end space-x-2 text-purple-400 transition-colors hover:text-purple-300 md:inline-flex"
+                  title={brandWebsiteUrl}
+                >
+                  <ExternalLink className="h-5 w-5" />
+                  <span className="max-w-36 truncate text-sm">
+                    {externalUrlHost(brandData?.website)}
+                  </span>
+                </a>
+              )}
+              {filament.price_hidden ? null : filament.price_per_kg && filament.spool_weight && filament.spool_weight !== 1000 ? (
+                <>
+                  <p className="whitespace-nowrap text-sm font-medium text-gray-300 md:text-base">
+                    {Math.round((filament.price_per_kg * filament.spool_weight) / 1000)} {currencySymbol(filament.currency)}<span className="text-gray-400">/{Math.round(filament.spool_weight)} {t('catalogPage.units.g')}</span>
+                  </p>
+                  <p className="whitespace-nowrap text-xs text-gray-500">
+                    ≈ {Math.round(filament.price_per_kg)} {currencySymbol(filament.currency)}/{t('catalogPage.units.kg')}
+                  </p>
+                </>
+              ) : filament.price_per_kg ? (
+                <p className="whitespace-nowrap text-sm font-medium text-gray-300 md:text-base">
+                  {Math.round(filament.price_per_kg)} {currencySymbol(filament.currency)}<span className="text-gray-400">/{t('catalogPage.units.kg')}</span>
                 </p>
-                <p className="text-gray-500 text-xs">
-                  ≈ {Math.round(filament.price_per_kg)} {currencySymbol(filament.currency)}/{t('catalogPage.units.kg')}
-                </p>
-              </>
-            ) : filament.price_per_kg ? (
-              <p className="text-sm md:text-base font-medium text-gray-300">
-                {Math.round(filament.price_per_kg)} {currencySymbol(filament.currency)}<span className="text-gray-400">/{t('catalogPage.units.kg')}</span>
-              </p>
-            ) : filament.spool_weight ? (
-              <p className="text-gray-400 text-sm">{Math.round(filament.spool_weight)} {t('catalogPage.units.g')}</p>
-            ) : null}
+              ) : filament.spool_weight ? (
+                <p className="whitespace-nowrap text-sm text-gray-400">{Math.round(filament.spool_weight)} {t('catalogPage.units.g')}</p>
+              ) : null}
+            </div>
           </div>
         </div>
 
