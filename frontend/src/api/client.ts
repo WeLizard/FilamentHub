@@ -2302,8 +2302,11 @@ export const adminCommunicationsAPI = {
     return response.data;
   },
 
-  markEmailThreadRead: async (threadId: number): Promise<EmailThreadDetail> => {
-    const response = await api.post<EmailThreadDetail>(`/admin/communications/email-threads/${threadId}/read`);
+  markEmailThreadRead: async (threadId: number, throughMessageId: number): Promise<EmailThreadDetail> => {
+    const response = await api.post<EmailThreadDetail>(
+      `/admin/communications/email-threads/${threadId}/read`,
+      { through_message_id: throughMessageId },
+    );
     return response.data;
   },
 

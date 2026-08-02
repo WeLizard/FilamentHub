@@ -242,7 +242,7 @@ export type EmailThreadStatus = 'open' | 'closed';
 export type EmailMessageDirection = 'inbound' | 'outbound';
 export type EmailSenderProfile = 'support' | 'partnerships' | 'pr';
 export type EmailLanguage = 'ru' | 'en' | 'zh';
-export type EmailDeliveryStatus = 'received' | 'sent' | 'delivered' | 'delayed' | 'bounced' | 'complained';
+export type EmailDeliveryStatus = 'received' | 'sending' | 'sent' | 'delivered' | 'delayed' | 'bounced' | 'complained' | 'failed';
 
 export interface EmailAttachment {
   index: number;

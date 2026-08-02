@@ -146,6 +146,7 @@ class Settings(BaseSettings):
     SMTP_USER: str = ""
     SMTP_PASSWORD: str = ""
     SMTP_TIMEOUT_SECONDS: int = 20
+    EMAIL_SENDING_STALE_SECONDS: int = 300
     EMAIL_FROM: str = "noreply@filamenthub.ru"
     EMAIL_FROM_NAME: str = "FilamentHub"
     EMAIL_CONTACT: str = "support@filamenthub.ru"  # реальный ящик для ответов (не noreply)
@@ -155,6 +156,12 @@ class Settings(BaseSettings):
     # Where the mail server drops delivered letters for the poller to pick up.
     INBOUND_MAIL_DIR: str = "/app/inbound_mail"
     INBOUND_MAIL_POLL_SECONDS: int = 30
+    INBOUND_MAIL_CLAIM_TIMEOUT_SECONDS: int = 300
+    INBOUND_MAIL_ORPHAN_GRACE_SECONDS: int = 3600
+    INBOUND_MAIL_MAINTENANCE_SECONDS: int = 3600
+    INBOUND_MAIL_STORED_RETENTION_DAYS: int = 365
+    INBOUND_MAIL_FAILED_RETENTION_DAYS: int = 14
+    INBOUND_MAIL_MAX_STORAGE_BYTES: int = 1024 * 1024 * 1024
 
     model_config = SettingsConfigDict(
         env_file=".env",

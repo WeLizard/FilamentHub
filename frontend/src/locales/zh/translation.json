@@ -4935,12 +4935,14 @@
       "error": "无法发送邮件"
     },
     "delivery": {
+      "sending": "正在发送",
       "sent": "已发送",
       "delivered": "已送达",
       "delayed": "延迟中",
       "bounced": "未送达",
       "complained": "收件人投诉",
-      "received": "已收到"
+      "received": "已收到",
+      "failed": "发送失败"
     }
   },
   "adminStats": {
@@ -5788,6 +5790,7 @@
     "ERR_EMAIL_ATTACHMENT_NOT_FOUND": "未找到附件",
     "ERR_EMAIL_ATTACHMENT_FETCH_FAILED": "无法从邮件服务商下载附件",
     "ERR_EMAIL_IDEMPOTENCY_CONFLICT": "此发送键已用于另一封消息",
+    "ERR_EMAIL_DELIVERY_IN_PROGRESS": "邮件仍在发送中。请稍候再更改或删除会话。",
     "ERR_NOTIFICATION_CAMPAIGN_CONFIRMATION_INVALID": "活动确认无效或内容已更改",
     "ERR_NOTIFICATION_CAMPAIGN_EMPTY": "所选受众没有收件人",
     "ERR_NOTIFICATION_CAMPAIGN_EXPIRED": "活动确认已过期，请创建新的预览",

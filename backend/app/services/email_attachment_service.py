@@ -1,6 +1,7 @@
 """Bounded validation and preparation of outgoing email attachments."""
 
 import base64
+import hashlib
 import re
 from dataclasses import dataclass
 from io import BytesIO
@@ -59,6 +60,9 @@ class PreparedEmailAttachment:
             "filename": self.filename,
             "content_type": self.content_type,
             "size": len(self.content),
+            # Kept server-side so the same idempotency key cannot silently be
+            # reused for another file with an identical name and size.
+            "sha256": hashlib.sha256(self.content).hexdigest(),
         }
 
 

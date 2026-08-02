@@ -5108,12 +5108,14 @@
       "error": "Не удалось отправить письмо"
     },
     "delivery": {
+      "sending": "Отправляется",
       "sent": "Отправлено",
       "delivered": "Доставлено",
       "delayed": "Задерживается",
       "bounced": "Не доставлено",
       "complained": "Жалоба получателя",
-      "received": "Получено"
+      "received": "Получено",
+      "failed": "Ошибка отправки"
     }
   },
   "adminStats": {
@@ -5961,6 +5963,7 @@
     "ERR_EMAIL_ATTACHMENT_NOT_FOUND": "Вложение не найдено",
     "ERR_EMAIL_ATTACHMENT_FETCH_FAILED": "Не удалось скачать вложение у почтового провайдера",
     "ERR_EMAIL_IDEMPOTENCY_CONFLICT": "Этот ключ отправки уже использован для другого сообщения",
+    "ERR_EMAIL_DELIVERY_IN_PROGRESS": "Письмо ещё отправляется. Подождите немного, прежде чем изменять или удалять переписку.",
     "ERR_NOTIFICATION_CAMPAIGN_CONFIRMATION_INVALID": "Подтверждение кампании недействительно или данные были изменены",
     "ERR_NOTIFICATION_CAMPAIGN_EMPTY": "В выбранной аудитории нет получателей",
     "ERR_NOTIFICATION_CAMPAIGN_EXPIRED": "Срок подтверждения истёк — подготовьте новый предпросмотр",

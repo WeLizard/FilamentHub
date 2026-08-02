@@ -8,11 +8,13 @@ from pydantic import BaseModel, EmailStr, Field, field_validator
 EmailSenderProfile = Literal["support", "partnerships", "pr"]
 EmailDeliveryStatus = Literal[
     "received",
+    "sending",
     "sent",
     "delivered",
     "delayed",
     "bounced",
     "complained",
+    "failed",
 ]
 
 
@@ -73,6 +75,10 @@ class EmailThreadListResponse(BaseModel):
 
 class EmailThreadStatusUpdate(BaseModel):
     status: Literal["open", "closed"]
+
+
+class EmailThreadReadRequest(BaseModel):
+    through_message_id: int | None = Field(default=None, ge=1)
 
 
 class EmailThreadCreate(BaseModel):

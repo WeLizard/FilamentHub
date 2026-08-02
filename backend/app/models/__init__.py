@@ -26,7 +26,7 @@ from app.models.crm import (
     CrmQuoteStatus,
     CrmQuoteVersion,
 )
-from app.models.email_communication import EmailMessage, EmailThread
+from app.models.email_communication import EmailMessage, EmailSendReservation, EmailThread
 from app.models.feedback import Feedback, FeedbackMessage, FeedbackStatus, FeedbackType
 from app.models.filament import Filament
 from app.models.filament_line import FilamentLine
@@ -113,6 +113,7 @@ __all__ = [
     "FeedbackType",
     "FeedbackStatus",
     "EmailMessage",
+    "EmailSendReservation",
     "EmailThread",
     "Filament",
     "FilamentLine",

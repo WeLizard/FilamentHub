@@ -81,8 +81,8 @@ const formatBytes = (value: number | null, locale: string): string => {
 
 const deliveryStatusIcon = (status: EmailDeliveryStatus) => {
   if (status === 'delivered') return CheckCheck;
-  if (status === 'delayed') return Clock3;
-  if (status === 'bounced' || status === 'complained') return TriangleAlert;
+  if (status === 'delayed' || status === 'sending') return Clock3;
+  if (status === 'bounced' || status === 'complained' || status === 'failed') return TriangleAlert;
   return Check;
 };
 
@@ -421,7 +421,8 @@ function AdminEmailInbox() {
   };
 
   const markReadMutation = useMutation({
-    mutationFn: (threadId: number) => adminCommunicationsAPI.markEmailThreadRead(threadId),
+    mutationFn: ({ threadId, throughMessageId }: { threadId: number; throughMessageId: number }) =>
+      adminCommunicationsAPI.markEmailThreadRead(threadId, throughMessageId),
     onSuccess: updateCachedThread,
   });
 
@@ -514,9 +515,19 @@ function AdminEmailInbox() {
   useEffect(() => {
     const thread = detailQuery.data;
     if (thread && thread.unread_count > 0 && !markReadMutation.isPending) {
-      markReadMutation.mutate(thread.id);
+      const throughMessageId = thread.messages.reduce(
+        (latest, message) => message.direction === 'inbound' ? Math.max(latest, message.id) : latest,
+        0,
+      );
+      if (throughMessageId > 0) {
+        markReadMutation.mutate({ threadId: thread.id, throughMessageId });
+      }
     }
-  }, [detailQuery.data?.id, detailQuery.data?.unread_count]);
+  }, [
+    detailQuery.data?.id,
+    detailQuery.data?.last_message_at,
+    detailQuery.data?.unread_count,
+  ]);
 
   useEffect(() => {
     const thread = detailQuery.data;
@@ -739,7 +750,7 @@ function AdminEmailInbox() {
                         <span className="flex items-center gap-2 text-gray-500">
                           {!inbound && message.delivery_status && DeliveryIcon && (
                             <span className={`inline-flex items-center gap-1 ${
-                              message.delivery_status === 'bounced' || message.delivery_status === 'complained'
+                              message.delivery_status === 'bounced' || message.delivery_status === 'complained' || message.delivery_status === 'failed'
                                 ? 'text-rose-300'
                                 : message.delivery_status === 'delayed'
                                   ? 'text-amber-300'

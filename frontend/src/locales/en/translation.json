@@ -4940,12 +4940,14 @@
       "error": "Could not send email"
     },
     "delivery": {
+      "sending": "Sending",
       "sent": "Sent",
       "delivered": "Delivered",
       "delayed": "Delayed",
       "bounced": "Not delivered",
       "complained": "Recipient complaint",
-      "received": "Received"
+      "received": "Received",
+      "failed": "Sending failed"
     }
   },
   "adminStats": {
@@ -5793,6 +5795,7 @@
     "ERR_EMAIL_ATTACHMENT_NOT_FOUND": "Attachment not found",
     "ERR_EMAIL_ATTACHMENT_FETCH_FAILED": "Could not download the attachment from the email provider",
     "ERR_EMAIL_IDEMPOTENCY_CONFLICT": "This send key was already used for a different message",
+    "ERR_EMAIL_DELIVERY_IN_PROGRESS": "This email is still being sent. Wait a moment before changing or deleting the conversation.",
     "ERR_NOTIFICATION_CAMPAIGN_CONFIRMATION_INVALID": "The campaign confirmation is invalid or was changed",
     "ERR_NOTIFICATION_CAMPAIGN_EMPTY": "The selected audience has no recipients",
     "ERR_NOTIFICATION_CAMPAIGN_EXPIRED": "The campaign confirmation has expired; prepare a new preview",

@@ -112,3 +112,19 @@ class EmailMessage(Base):
 
     thread: Mapped["EmailThread"] = relationship("EmailThread", back_populates="messages")
     sent_by: Mapped["User | None"] = relationship("User", foreign_keys=[sent_by_id])
+
+
+class EmailSendReservation(Base):
+    """Non-personal tombstone preventing reuse of an outbound send key.
+
+    The row intentionally survives deletion of the human-readable thread. It
+    contains neither an address nor message content, only the opaque client key
+    and the time it was first reserved.
+    """
+
+    __tablename__ = "email_send_reservations"
+
+    idempotency_key: Mapped[str] = mapped_column(String(128), primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )

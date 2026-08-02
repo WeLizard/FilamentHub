@@ -9,6 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.models.brand import Brand
+from app.models.email_communication import EmailMessage, EmailThread
+from app.models.preset import Preset, PresetModerationStatus
 from app.models.user import User
 from app.models.user_legal_acceptance import UserLegalAcceptance
 from app.services.legal_acceptance_service import (
@@ -1296,6 +1298,7 @@ async def test_registration_sends_a_confirmation_the_owner_can_also_disown(
     client: AsyncClient,
     db_session: AsyncSession,
     monkeypatch,
+    tmp_path,
 ):
     """Soft confirmation: the account works at once, the address owner still has a way out."""
     from app.api.v1.endpoints import auth as auth_module
@@ -1325,12 +1328,58 @@ async def test_registration_sends_a_confirmation_the_owner_can_also_disown(
     # The account is usable straight away; confirmation only records the address.
     assert registration.json()["email_verified"] is False
 
+    registered_user = await db_session.scalar(
+        select(User).where(User.username == "stranger_account")
+    )
+    assert registered_user is not None
+    private_draft = Preset(
+        name="Private imported draft",
+        user_id=registered_user.id,
+        filament_id=None,
+        extruder_temp=210,
+        bed_temp=60,
+        active=False,
+        moderation_status=PresetModerationStatus.PENDING,
+    )
+    db_session.add(private_draft)
+    mail_thread = EmailThread(
+        participant_email=registered_user.email,
+        subject="Address ownership question",
+    )
+    db_session.add(mail_thread)
+    await db_session.flush()
+    db_session.add(
+        EmailMessage(
+            thread_id=mail_thread.id,
+            direction="inbound",
+            sender_email=registered_user.email,
+            recipient_emails=["support@filamenthub.ru"],
+            subject=mail_thread.subject,
+            text_body="Please remove this registration.",
+            provider_message_id="registration-disown-message",
+            provider_event_id="local:registration-disown-raw",
+            attachment_metadata=[],
+            delivery_status="received",
+        )
+    )
+    await db_session.commit()
+    draft_id = private_draft.id
+    thread_id = mail_thread.id
+    monkeypatch.setattr(settings, "INBOUND_MAIL_DIR", str(tmp_path))
+    stored = tmp_path / "stored"
+    stored.mkdir(parents=True, exist_ok=True)
+    raw_message = stored / "registration-disown-raw.eml"
+    raw_message.write_bytes(b"From: stranger@example.com\r\n\r\nRemove this account")
+
     token = sent["url"].rsplit("token=", 1)[1]
     disown = await client.post(f"/api/v1/auth/reject-registration?token={token}")
     assert disown.status_code == 200
     assert await db_session.scalar(
         select(User).where(User.username == "stranger_account")
     ) is None
+    assert await db_session.scalar(select(Preset).where(Preset.id == draft_id)) is None
+    assert await db_session.scalar(select(EmailThread).where(EmailThread.id == thread_id)) is None
+    assert not raw_message.exists()
 
 
 @pytest.mark.asyncio

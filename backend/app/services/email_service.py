@@ -9,6 +9,7 @@ import logging
 import smtplib
 import ssl
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
 from email.utils import make_msgid
 from pathlib import Path
@@ -40,6 +41,19 @@ _ADMIN_EMAIL_TAGS = {
     "u",
     "ul",
 }
+
+
+def outbound_send_is_stale(created_at: datetime) -> bool:
+    """Whether a persisted SMTP attempt can no longer still be running."""
+    normalized = (
+        created_at.replace(tzinfo=timezone.utc)
+        if created_at.tzinfo is None
+        else created_at.astimezone(timezone.utc)
+    )
+    timeout = max(60, settings.EMAIL_SENDING_STALE_SECONDS)
+    return normalized <= datetime.now(timezone.utc) - timedelta(seconds=timeout)
+
+
 _jinja_env = Environment(
     loader=FileSystemLoader(str(_TEMPLATES_DIR)),
     autoescape=select_autoescape(["html"]),
@@ -73,6 +87,7 @@ class EmailSendResult:
 
     def __bool__(self) -> bool:
         return self.sent
+
 
 def _get_from(profile: str = "transactional") -> str:
     addresses = {
@@ -196,8 +211,9 @@ def send_email_tracked(
 ) -> EmailSendResult:
     """Send email and return a trackable result.
 
-    `idempotency_key` is accepted for call-site symmetry but no longer travels to
-    a provider: duplicate suppression is the unique index on the stored key.
+    `idempotency_key` is accepted for call-site symmetry but does not travel to
+    the SMTP relay. Callers that require at-most-once delivery must reserve the
+    unique key in the database before invoking this function.
     """
     if not _is_configured():
         logger.warning("Email sending skipped: SMTP credentials are not configured")

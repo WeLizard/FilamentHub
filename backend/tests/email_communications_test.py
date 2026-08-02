@@ -12,7 +12,7 @@ from app.api.v1.endpoints import email_communications
 from app.core.config import settings
 from app.models.brand import Brand
 from app.models.brand_invite import BrandInvite
-from app.models.email_communication import EmailMessage, EmailThread
+from app.models.email_communication import EmailMessage, EmailSendReservation, EmailThread
 from app.services import email_service, inbound_mail_service
 from app.services.email_service import EmailSendResult
 
@@ -160,6 +160,60 @@ async def test_admin_reply_preserves_thread_headers_and_sender(
         select(EmailMessage).where(EmailMessage.provider_message_id == "sent-reply-1")
     )
     assert outbound is not None and outbound.sent_by_id == admin_user.id
+    await db_session.refresh(thread)
+    assert thread.unread_count == 1
+
+
+@pytest.mark.asyncio
+async def test_mark_read_stops_at_the_message_visible_to_the_admin(
+    admin_client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    thread = EmailThread(
+        participant_email="reader@example.com",
+        subject="Two arrivals",
+        unread_count=2,
+    )
+    db_session.add(thread)
+    await db_session.flush()
+    first = EmailMessage(
+        thread_id=thread.id,
+        direction="inbound",
+        sender_email=thread.participant_email,
+        recipient_emails=["support@filamenthub.test"],
+        subject=thread.subject,
+        text_body="Visible when the thread was opened.",
+        provider_message_id="read-watermark-first",
+        attachment_metadata=[],
+        delivery_status="received",
+    )
+    second = EmailMessage(
+        thread_id=thread.id,
+        direction="inbound",
+        sender_email=thread.participant_email,
+        recipient_emails=["support@filamenthub.test"],
+        subject=thread.subject,
+        text_body="Arrived after the visible snapshot.",
+        provider_message_id="read-watermark-second",
+        attachment_metadata=[],
+        delivery_status="received",
+    )
+    db_session.add_all([first, second])
+    await db_session.commit()
+    await db_session.refresh(first)
+    await db_session.refresh(second)
+
+    response = await admin_client.post(
+        f"/api/v1/admin/communications/email-threads/{thread.id}/read",
+        json={"through_message_id": first.id},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["unread_count"] == 1
+    await db_session.refresh(first)
+    await db_session.refresh(second)
+    assert first.read_at is not None
+    assert second.read_at is None
 
 
 @pytest.mark.asyncio
@@ -266,7 +320,14 @@ async def test_thread_reply_address_routes_inbound_to_existing_thread(
 async def test_admin_can_permanently_delete_email_thread(
     admin_client: AsyncClient,
     db_session: AsyncSession,
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setattr(settings, "INBOUND_MAIL_DIR", str(tmp_path))
+    stored = tmp_path / "stored"
+    stored.mkdir(parents=True, exist_ok=True)
+    raw_message = stored / "delete-thread-raw.eml"
+    raw_message.write_bytes(b"From: delete@example.com\r\n\r\nDelete me")
     thread = EmailThread(
         participant_email="delete@example.com",
         subject="Delete this thread",
@@ -283,6 +344,8 @@ async def test_admin_can_permanently_delete_email_thread(
             recipient_emails=["support@filamenthub.test"],
             subject=thread.subject,
             text_body="This thread should be deleted.",
+            provider_message_id="delete-thread-message",
+            provider_event_id="local:delete-thread-raw",
             attachment_metadata=[],
             delivery_status="received",
         )
@@ -297,6 +360,7 @@ async def test_admin_can_permanently_delete_email_thread(
     assert response.json() == {"deleted": True}
     assert await db_session.scalar(select(func.count(EmailThread.id))) == 0
     assert await db_session.scalar(select(func.count(EmailMessage.id))) == 0
+    assert not raw_message.exists()
 
 
 @pytest.mark.asyncio
@@ -362,6 +426,196 @@ async def test_multipart_compose_sanitizes_html_sends_attachment_and_replays(
     ]
     assert await db_session.scalar(select(func.count(EmailThread.id))) == 1
     assert await db_session.scalar(select(func.count(EmailMessage.id))) == 1
+
+
+@pytest.mark.asyncio
+async def test_failed_admin_send_is_reserved_and_not_retried_with_the_same_key(
+    admin_client: AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = 0
+
+    def fail_send(**kwargs):
+        nonlocal calls
+        calls += 1
+        return EmailSendResult(sent=False, error="relay unavailable")
+
+    monkeypatch.setattr(email_communications, "send_admin_reply_email", fail_send)
+    payload = {
+        "to": "partner@example.com",
+        "subject": "Reserved delivery",
+        "body": "Only one SMTP attempt is allowed for this key.",
+        "sender_profile": "support",
+        "idempotency_key": "email.create.failed-reservation-0001",
+    }
+
+    first = await admin_client.post(
+        "/api/v1/admin/communications/email-threads", json=payload
+    )
+    replay = await admin_client.post(
+        "/api/v1/admin/communications/email-threads", json=payload
+    )
+
+    assert first.status_code == 502
+    assert replay.status_code == 502
+    assert calls == 1
+    message = await db_session.scalar(
+        select(EmailMessage).where(
+            EmailMessage.client_idempotency_key == payload["idempotency_key"]
+        )
+    )
+    assert message is not None
+    assert message.delivery_status == "failed"
+
+
+@pytest.mark.asyncio
+async def test_reusing_email_key_for_different_content_is_rejected(
+    admin_client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = 0
+
+    def fake_send(**kwargs):
+        nonlocal calls
+        calls += 1
+        return EmailSendResult(sent=True, provider_message_id="one-message-only")
+
+    monkeypatch.setattr(email_communications, "send_admin_reply_email", fake_send)
+    payload = {
+        "to": "partner@example.com",
+        "subject": "Stable payload",
+        "body": "First body",
+        "sender_profile": "support",
+        "idempotency_key": "email.create.payload-conflict-0001",
+    }
+    first = await admin_client.post(
+        "/api/v1/admin/communications/email-threads", json=payload
+    )
+    changed = await admin_client.post(
+        "/api/v1/admin/communications/email-threads",
+        json={**payload, "body": "Different body"},
+    )
+
+    assert first.status_code == 201
+    assert changed.status_code == 409
+    assert changed.json()["detail"]["code"] == "ERR_EMAIL_IDEMPOTENCY_CONFLICT"
+    assert calls == 1
+
+
+@pytest.mark.asyncio
+async def test_reusing_email_key_for_different_attachment_bytes_is_rejected(
+    admin_client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = 0
+
+    def fake_send(**kwargs):
+        nonlocal calls
+        calls += 1
+        return EmailSendResult(sent=True, provider_message_id="one-attachment-only")
+
+    monkeypatch.setattr(email_communications, "send_admin_reply_email", fake_send)
+    data = {
+        "to": "partner@example.com",
+        "subject": "Stable attachment payload",
+        "body": "The attachment bytes are part of the payload.",
+        "sender_profile": "support",
+        "idempotency_key": "email.create.attachment-conflict-0001",
+    }
+    first = await admin_client.post(
+        "/api/v1/admin/communications/email-threads",
+        data=data,
+        files=[("attachments", ("note.pdf", b"%PDF-A", "application/pdf"))],
+    )
+    changed = await admin_client.post(
+        "/api/v1/admin/communications/email-threads",
+        data=data,
+        files=[("attachments", ("note.pdf", b"%PDF-B", "application/pdf"))],
+    )
+
+    assert first.status_code == 201
+    assert changed.status_code == 409
+    assert changed.json()["detail"]["code"] == "ERR_EMAIL_IDEMPOTENCY_CONFLICT"
+    assert calls == 1
+
+
+@pytest.mark.asyncio
+async def test_deleted_thread_keeps_outbound_send_key_reserved(
+    admin_client: AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = 0
+
+    def fake_send(**kwargs):
+        nonlocal calls
+        calls += 1
+        return EmailSendResult(sent=True, provider_message_id="deleted-thread-send")
+
+    monkeypatch.setattr(email_communications, "send_admin_reply_email", fake_send)
+    payload = {
+        "to": "partner@example.com",
+        "subject": "Durable reservation",
+        "body": "Deleting the conversation must not permit a second SMTP call.",
+        "sender_profile": "support",
+        "idempotency_key": "email.create.deleted-thread-key-0001",
+    }
+    created = await admin_client.post(
+        "/api/v1/admin/communications/email-threads", json=payload
+    )
+    deleted = await admin_client.delete(
+        f"/api/v1/admin/communications/email-threads/{created.json()['id']}"
+    )
+    replay = await admin_client.post(
+        "/api/v1/admin/communications/email-threads", json=payload
+    )
+
+    assert created.status_code == 201
+    assert deleted.status_code == 200
+    assert replay.status_code == 409
+    assert calls == 1
+    assert await db_session.get(
+        EmailSendReservation, payload["idempotency_key"]
+    ) is not None
+
+
+@pytest.mark.asyncio
+async def test_thread_cannot_be_deleted_while_smtp_attempt_is_active(
+    admin_client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    thread = EmailThread(
+        participant_email="active-send@example.com",
+        subject="Active SMTP call",
+    )
+    db_session.add(thread)
+    await db_session.flush()
+    db_session.add(
+        EmailMessage(
+            thread_id=thread.id,
+            direction="outbound",
+            sender_email="FilamentHub <support@filamenthub.ru>",
+            recipient_emails=[thread.participant_email],
+            subject=thread.subject,
+            text_body="Still sending",
+            client_idempotency_key="email.create.active-delete-0001",
+            attachment_metadata=[],
+            delivery_status="sending",
+        )
+    )
+    db_session.add(
+        EmailSendReservation(idempotency_key="email.create.active-delete-0001")
+    )
+    await db_session.commit()
+
+    response = await admin_client.delete(
+        f"/api/v1/admin/communications/email-threads/{thread.id}"
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "ERR_EMAIL_DELIVERY_IN_PROGRESS"
+    assert await db_session.get(EmailThread, thread.id) is not None
 
 
 @pytest.mark.asyncio

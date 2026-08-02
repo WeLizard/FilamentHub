@@ -1,10 +1,14 @@
 """Сервис для удаления аккаунта пользователя с обработкой связанных данных."""
 
+import asyncio
+import logging
+
 from sqlalchemy import and_, delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.errors import (
+    ERR_EMAIL_DELIVERY_IN_PROGRESS,
     ERR_OWNERSHIP_TRANSFER_REQUIRED,
     ERR_REPRESENTATION_RELEASE_REQUIRED,
     raise_error,
@@ -13,7 +17,7 @@ from app.models.brand import Brand
 from app.models.brand_request import BrandRequest, BrandRequestStatus
 from app.models.calculator_history_entry import CalculatorHistoryEntry
 from app.models.crm import CrmCustomer, CrmQuote
-from app.models.email_communication import EmailThread
+from app.models.email_communication import EmailMessage, EmailThread
 from app.models.feedback import Feedback
 from app.models.filament_review import FilamentReview
 from app.models.orca_slice_report import OrcaSliceReport
@@ -27,6 +31,9 @@ from app.models.user_saved_preset import UserSavedPreset
 from app.models.user_spool import UserSpool
 from app.models.wiki_article import WikiArticle
 from app.models.wiki_revision import WikiRevision, WikiRevisionReview, WikiRevisionStatus
+from app.services.email_service import outbound_send_is_stale
+
+logger = logging.getLogger(__name__)
 
 
 async def _library_stats(user_id: int, db: AsyncSession) -> dict:
@@ -383,11 +390,41 @@ async def delete_user_account(
 
     threads = (
         await db.scalars(
-            select(EmailThread).where(
-                func.lower(EmailThread.participant_email) == user.email.lower()
-            )
+            select(EmailThread)
+            .where(func.lower(EmailThread.participant_email) == user.email.lower())
+            .order_by(EmailThread.id)
+            .with_for_update()
         )
     ).all()
+    thread_ids = [thread.id for thread in threads]
+    sending_messages = (
+        (
+            await db.scalars(
+                select(EmailMessage).where(
+                    EmailMessage.thread_id.in_(thread_ids),
+                    EmailMessage.delivery_status == "sending",
+                )
+            )
+        ).all()
+        if thread_ids
+        else []
+    )
+    if any(not outbound_send_is_stale(message.created_at) for message in sending_messages):
+        raise_error(409, ERR_EMAIL_DELIVERY_IN_PROGRESS)
+    for message in sending_messages:
+        message.delivery_status = "failed"
+    stored_mail_event_ids = (
+        (
+            await db.scalars(
+                select(EmailMessage.provider_event_id).where(
+                    EmailMessage.thread_id.in_(thread_ids),
+                    EmailMessage.provider_event_id.like("local:%"),
+                )
+            )
+        ).all()
+        if thread_ids
+        else []
+    )
     for thread in threads:
         await db.delete(thread)
 
@@ -400,3 +437,17 @@ async def delete_user_account(
     await db.delete(user)
 
     await db.commit()
+    if stored_mail_event_ids:
+        from app.services.inbound_mail_service import delete_stored_messages
+
+        deleted = await asyncio.to_thread(
+            delete_stored_messages,
+            [event_id for event_id in stored_mail_event_ids if event_id],
+        )
+        if deleted != len(stored_mail_event_ids):
+            logger.warning(
+                "Deleted %d of %d raw inbound messages for erased user_id=%d",
+                deleted,
+                len(stored_mail_event_ids),
+                user_id,
+            )

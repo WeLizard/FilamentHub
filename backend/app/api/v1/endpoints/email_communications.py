@@ -12,10 +12,10 @@ from math import ceil
 from typing import Annotated, Literal, TypeVar
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, Query, Request, Response
+from fastapi import APIRouter, Body, Depends, Query, Request, Response
 from fastapi.exceptions import RequestValidationError
 from pydantic import BaseModel, ValidationError
-from sqlalchemy import func, select, update
+from sqlalchemy import case, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased, selectinload
@@ -27,6 +27,7 @@ from app.core.dependencies import get_current_admin_user
 from app.core.errors import (
     ERR_EMAIL_ATTACHMENT_NOT_FOUND,
     ERR_EMAIL_DELIVERY_FAILED,
+    ERR_EMAIL_DELIVERY_IN_PROGRESS,
     ERR_EMAIL_IDEMPOTENCY_CONFLICT,
     ERR_EMAIL_THREAD_NOT_FOUND,
     raise_error,
@@ -35,13 +36,14 @@ from app.core.i18n import DEFAULT_LANGUAGE
 from app.core.limiter import limiter
 from app.db.session import get_db
 from app.models.brand_invite import BrandInvite
-from app.models.email_communication import EmailMessage, EmailThread
+from app.models.email_communication import EmailMessage, EmailSendReservation, EmailThread
 from app.models.user import User
 from app.schemas.email_communication import (
     EmailMessageResponse,
     EmailThreadCreate,
     EmailThreadDetailResponse,
     EmailThreadListResponse,
+    EmailThreadReadRequest,
     EmailThreadReplyCreate,
     EmailThreadStatusUpdate,
     EmailThreadSummaryResponse,
@@ -49,6 +51,7 @@ from app.schemas.email_communication import (
 from app.services.email_attachment_service import prepare_email_attachments
 from app.services.email_service import (
     get_email_sender,
+    outbound_send_is_stale,
     sanitize_admin_email_html,
     send_admin_reply_email,
 )
@@ -211,6 +214,75 @@ def _message_response(message: EmailMessage) -> EmailMessageResponse:
     )
 
 
+def _outbound_payload_matches(
+    message: EmailMessage,
+    *,
+    thread_id: int | None,
+    sender_email: str,
+    recipient_email: str,
+    subject: str,
+    text_body: str,
+    html_body: str | None,
+    attachment_metadata: list[dict],
+) -> bool:
+    """Reject accidental reuse of an idempotency key for another email."""
+    return (
+        (thread_id is None or message.thread_id == thread_id)
+        and message.sender_email == sender_email
+        and message.recipient_emails == [recipient_email]
+        and message.subject == subject
+        and message.text_body == text_body
+        and message.html_body == html_body
+        and message.attachment_metadata == attachment_metadata
+    )
+
+
+async def _existing_outbound_message(
+    db: AsyncSession,
+    idempotency_key: str,
+) -> EmailMessage | None:
+    return await db.scalar(
+        select(EmailMessage).where(
+            EmailMessage.client_idempotency_key == idempotency_key,
+            EmailMessage.direction == "outbound",
+        )
+    )
+
+
+async def _email_key_was_reserved(db: AsyncSession, idempotency_key: str) -> bool:
+    return (
+        await db.scalar(
+            select(EmailSendReservation.idempotency_key).where(
+                EmailSendReservation.idempotency_key == idempotency_key
+            )
+        )
+        is not None
+    )
+
+
+async def _reject_nonterminal_replay(db: AsyncSession, message: EmailMessage) -> None:
+    if message.delivery_status != "sending":
+        return
+    if outbound_send_is_stale(message.created_at):
+        message.delivery_status = "failed"
+        await db.commit()
+        raise_error(502, ERR_EMAIL_DELIVERY_FAILED)
+    raise_error(409, ERR_EMAIL_DELIVERY_IN_PROGRESS)
+
+
+async def _reject_active_thread_sends(db: AsyncSession, thread: EmailThread) -> None:
+    active = False
+    for message in thread.messages:
+        if message.delivery_status != "sending":
+            continue
+        if outbound_send_is_stale(message.created_at):
+            message.delivery_status = "failed"
+        else:
+            active = True
+    if active:
+        raise_error(409, ERR_EMAIL_DELIVERY_IN_PROGRESS)
+
+
 async def _parse_email_payload(
     request: Request,
     model_type: type[_EmailPayload],
@@ -285,8 +357,13 @@ def _thread_detail(thread: EmailThread) -> EmailThreadDetailResponse:
     )
 
 
-async def _load_thread(db: AsyncSession, thread_id: int) -> EmailThread:
-    thread = await db.scalar(
+async def _load_thread(
+    db: AsyncSession,
+    thread_id: int,
+    *,
+    for_update: bool = False,
+) -> EmailThread:
+    statement = (
         select(EmailThread)
         .where(EmailThread.id == thread_id)
         .options(
@@ -295,6 +372,9 @@ async def _load_thread(db: AsyncSession, thread_id: int) -> EmailThread:
             selectinload(EmailThread.invite),
         )
     )
+    if for_update:
+        statement = statement.with_for_update()
+    thread = await db.scalar(statement)
     if thread is None:
         raise_error(404, ERR_EMAIL_THREAD_NOT_FOUND)
     return thread
@@ -332,7 +412,9 @@ async def ingest_inbound_email(db: AsyncSession, data: InboundEmailData) -> None
     thread_token = _thread_token(recipients)
     if thread_token:
         thread = await db.scalar(
-            select(EmailThread).where(EmailThread.reply_token == thread_token)
+            select(EmailThread)
+            .where(EmailThread.reply_token == thread_token)
+            .with_for_update()
         )
         if thread is not None and thread.participant_email.casefold() != participant_email:
             logger.warning(
@@ -353,6 +435,7 @@ async def ingest_inbound_email(db: AsyncSession, data: InboundEmailData) -> None
         thread = await db.scalar(
             select(EmailThread)
             .where(EmailThread.invite_id == invite_id)
+            .with_for_update()
         )
     if thread is None:
         thread = EmailThread(
@@ -382,7 +465,9 @@ async def ingest_inbound_email(db: AsyncSession, data: InboundEmailData) -> None
             # Two replies for the same invitation can arrive concurrently.
             # Keep both messages by reusing the thread created by the winner.
             thread = await db.scalar(
-                select(EmailThread).where(EmailThread.invite_id == invite_id)
+                select(EmailThread)
+                .where(EmailThread.invite_id == invite_id)
+                .with_for_update()
             )
             if thread is None:
                 raise
@@ -406,13 +491,29 @@ async def ingest_inbound_email(db: AsyncSession, data: InboundEmailData) -> None
         created_at=created_at,
     )
     db.add(message)
-    thread.participant_email = participant_email
-    thread.participant_name = participant_name or thread.participant_name
-    thread.subject = subject
-    thread.status = "open"
-    thread.unread_count += 1
-    thread.last_message_at = created_at
-    thread.updated_at = datetime.now(timezone.utc)
+    is_latest = EmailThread.last_message_at <= created_at
+    thread_values: dict[str, object] = {
+        "participant_email": case(
+            (is_latest, participant_email), else_=EmailThread.participant_email
+        ),
+        "subject": case((is_latest, subject), else_=EmailThread.subject),
+        "status": "open",
+        "unread_count": EmailThread.unread_count + 1,
+        "last_message_at": case(
+            (is_latest, created_at), else_=EmailThread.last_message_at
+        ),
+        "updated_at": datetime.now(timezone.utc),
+    }
+    if participant_name:
+        thread_values["participant_name"] = case(
+            (is_latest, participant_name), else_=EmailThread.participant_name
+        )
+    await db.execute(
+        update(EmailThread)
+        .where(EmailThread.id == thread.id)
+        .values(**thread_values)
+        .execution_options(synchronize_session=False)
+    )
 
     try:
         await db.commit()
@@ -479,18 +580,35 @@ async def create_email_thread(
 ) -> EmailThreadDetailResponse:
     """Start an external email conversation from the administrative mailbox."""
     data, uploads = await _parse_email_payload(request, EmailThreadCreate)
-    existing_message = await db.scalar(
-        select(EmailMessage).where(
-            EmailMessage.client_idempotency_key == data.idempotency_key,
-            EmailMessage.direction == "outbound",
-        )
-    )
-    if existing_message is not None:
-        return _thread_detail(await _load_thread(db, existing_message.thread_id))
     attachments = await prepare_email_attachments(uploads)
+    attachment_metadata = [attachment.metadata() for attachment in attachments]
     sanitized_html = sanitize_admin_email_html(data.html_body)
     now = datetime.now(timezone.utc)
     participant_email = str(data.to).casefold()
+    sender_email = get_email_sender(data.sender_profile)
+    existing_message = await _existing_outbound_message(db, data.idempotency_key)
+    if existing_message is not None:
+        existing_thread = await _load_thread(db, existing_message.thread_id)
+        if not _outbound_payload_matches(
+            existing_message,
+            thread_id=None,
+            sender_email=sender_email,
+            recipient_email=participant_email,
+            subject=data.subject,
+            text_body=data.body,
+            html_body=sanitized_html,
+            attachment_metadata=attachment_metadata,
+        ) or existing_thread.participant_name != data.participant_name or (
+            existing_thread.language != data.language
+        ):
+            raise_error(409, ERR_EMAIL_IDEMPOTENCY_CONFLICT)
+        if existing_message.delivery_status == "failed":
+            raise_error(502, ERR_EMAIL_DELIVERY_FAILED)
+        await _reject_nonterminal_replay(db, existing_message)
+        return _thread_detail(existing_thread)
+    if await _email_key_was_reserved(db, data.idempotency_key):
+        raise_error(409, ERR_EMAIL_IDEMPOTENCY_CONFLICT)
+
     thread = EmailThread(
         participant_email=participant_email,
         participant_name=data.participant_name,
@@ -504,6 +622,50 @@ async def create_email_thread(
     )
     db.add(thread)
     await db.flush()
+    message = EmailMessage(
+        thread_id=thread.id,
+        direction="outbound",
+        sender_email=sender_email,
+        recipient_emails=[participant_email],
+        subject=data.subject,
+        text_body=data.body,
+        html_body=sanitized_html,
+        client_idempotency_key=data.idempotency_key,
+        attachment_metadata=attachment_metadata,
+        delivery_status="sending",
+        sent_by_id=admin.id,
+        read_at=now,
+        created_at=now,
+    )
+    db.add(message)
+    db.add(EmailSendReservation(idempotency_key=data.idempotency_key))
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        replayed_message = await _existing_outbound_message(db, data.idempotency_key)
+        if replayed_message is None:
+            if await _email_key_was_reserved(db, data.idempotency_key):
+                raise_error(409, ERR_EMAIL_IDEMPOTENCY_CONFLICT)
+            raise
+        replayed_thread = await _load_thread(db, replayed_message.thread_id)
+        if not _outbound_payload_matches(
+            replayed_message,
+            thread_id=None,
+            sender_email=sender_email,
+            recipient_email=participant_email,
+            subject=data.subject,
+            text_body=data.body,
+            html_body=sanitized_html,
+            attachment_metadata=attachment_metadata,
+        ) or replayed_thread.participant_name != data.participant_name or (
+            replayed_thread.language != data.language
+        ):
+            raise_error(409, ERR_EMAIL_IDEMPOTENCY_CONFLICT)
+        if replayed_message.delivery_status == "failed":
+            raise_error(502, ERR_EMAIL_DELIVERY_FAILED)
+        await _reject_nonterminal_replay(db, replayed_message)
+        return _thread_detail(replayed_thread)
 
     result = await run_in_threadpool(
         send_admin_reply_email,
@@ -520,40 +682,14 @@ async def create_email_thread(
         language=data.language,
     )
     if not result.sent:
-        await db.rollback()
+        message.delivery_status = "failed"
+        await db.commit()
         logger.error("Failed to start admin email thread: %s", result.error)
         raise_error(502, ERR_EMAIL_DELIVERY_FAILED)
 
-    db.add(
-        EmailMessage(
-            thread_id=thread.id,
-            direction="outbound",
-            sender_email=get_email_sender(data.sender_profile),
-            recipient_emails=[participant_email],
-            subject=data.subject,
-            text_body=data.body,
-            html_body=sanitized_html,
-            client_idempotency_key=data.idempotency_key,
-            provider_message_id=result.provider_message_id,
-            attachment_metadata=[attachment.metadata() for attachment in attachments],
-            delivery_status="sent",
-            sent_by_id=admin.id,
-            read_at=now,
-            created_at=now,
-        )
-    )
-    try:
-        await db.commit()
-    except IntegrityError:
-        await db.rollback()
-        replayed_message = await db.scalar(
-            select(EmailMessage).where(
-                EmailMessage.client_idempotency_key == data.idempotency_key
-            )
-        )
-        if replayed_message is None:
-            raise
-        return _thread_detail(await _load_thread(db, replayed_message.thread_id))
+    message.provider_message_id = result.provider_message_id
+    message.delivery_status = "sent"
+    await db.commit()
     return _thread_detail(await _load_thread(db, thread.id))
 
 
@@ -573,20 +709,40 @@ async def mark_email_thread_read(
     thread_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
     admin: Annotated[User, Depends(get_current_admin_user)],
+    data: Annotated[EmailThreadReadRequest | None, Body()] = None,
 ) -> EmailThreadDetailResponse:
     del admin
-    thread = await _load_thread(db, thread_id)
-    now = datetime.now(timezone.utc)
-    await db.execute(
-        update(EmailMessage)
-        .where(
-            EmailMessage.thread_id == thread.id,
-            EmailMessage.direction == "inbound",
-            EmailMessage.read_at.is_(None),
+    thread = await _load_thread(db, thread_id, for_update=True)
+    through_message_id = data.through_message_id if data else None
+    if through_message_id is None:
+        through_message_id = await db.scalar(
+            select(func.max(EmailMessage.id)).where(
+                EmailMessage.thread_id == thread.id,
+                EmailMessage.direction == "inbound",
+            )
         )
-        .values(read_at=now)
+    now = datetime.now(timezone.utc)
+    if through_message_id is not None:
+        await db.execute(
+            update(EmailMessage)
+            .where(
+                EmailMessage.thread_id == thread.id,
+                EmailMessage.direction == "inbound",
+                EmailMessage.id <= through_message_id,
+                EmailMessage.read_at.is_(None),
+            )
+            .values(read_at=now)
+        )
+    thread.unread_count = int(
+        await db.scalar(
+            select(func.count(EmailMessage.id)).where(
+                EmailMessage.thread_id == thread.id,
+                EmailMessage.direction == "inbound",
+                EmailMessage.read_at.is_(None),
+            )
+        )
+        or 0
     )
-    thread.unread_count = 0
     await db.commit()
     return _thread_detail(await _load_thread(db, thread_id))
 
@@ -599,7 +755,7 @@ async def update_email_thread(
     admin: Annotated[User, Depends(get_current_admin_user)],
 ) -> EmailThreadDetailResponse:
     del admin
-    thread = await _load_thread(db, thread_id)
+    thread = await _load_thread(db, thread_id, for_update=True)
     thread.status = data.status
     await db.commit()
     return _thread_detail(await _load_thread(db, thread_id))
@@ -615,9 +771,26 @@ async def delete_email_thread(
 ) -> dict[str, bool]:
     """Permanently delete an administrative email thread and all of its messages."""
     del admin
-    thread = await _load_thread(db, thread_id)
+    thread = await _load_thread(db, thread_id, for_update=True)
+    await _reject_active_thread_sends(db, thread)
+    stored_mail_event_ids = [
+        message.provider_event_id
+        for message in thread.messages
+        if (message.provider_event_id or "").startswith("local:")
+    ]
     await db.delete(thread)
     await db.commit()
+    if stored_mail_event_ids:
+        from app.services.inbound_mail_service import delete_stored_messages
+
+        deleted = await run_in_threadpool(delete_stored_messages, stored_mail_event_ids)
+        if deleted != len(stored_mail_event_ids):
+            logger.warning(
+                "Deleted %d of %d raw inbound messages for thread_id=%d",
+                deleted,
+                len(stored_mail_event_ids),
+                thread_id,
+            )
     return {"deleted": True}
 
 
@@ -687,19 +860,11 @@ async def reply_to_email_thread(
 ) -> EmailMessageResponse:
     """Reply through the configured SMTP relay while preserving the email thread."""
     data, uploads = await _parse_email_payload(request, EmailThreadReplyCreate)
-    existing_message = await db.scalar(
-        select(EmailMessage).where(
-            EmailMessage.client_idempotency_key == data.idempotency_key,
-            EmailMessage.direction == "outbound",
-        )
-    )
-    if existing_message is not None:
-        if existing_message.thread_id != thread_id:
-            raise_error(409, ERR_EMAIL_IDEMPOTENCY_CONFLICT)
-        return _message_response(existing_message)
     attachments = await prepare_email_attachments(uploads)
+    attachment_metadata = [attachment.metadata() for attachment in attachments]
     sanitized_html = sanitize_admin_email_html(data.html_body)
-    thread = await _load_thread(db, thread_id)
+    thread = await _load_thread(db, thread_id, for_update=True)
+    participant_email = thread.participant_email
     sender_profile = data.sender_profile or thread.sender_profile
     if sender_profile not in _MANUAL_SENDER_PROFILES:
         sender_profile = (
@@ -707,6 +872,7 @@ async def reply_to_email_thread(
             if thread.invite and thread.invite.sender_profile in _MANUAL_SENDER_PROFILES
             else "support"
         )
+    sender_email = get_email_sender(sender_profile)
     subject = thread.subject if thread.subject.casefold().startswith("re:") else f"Re: {thread.subject}"
     latest_inbound = next(
         (message for message in reversed(thread.messages) if message.direction == "inbound"),
@@ -720,11 +886,76 @@ async def reply_to_email_thread(
         }
     reply_to = _thread_reply_address(thread)
     thread.sender_profile = sender_profile
-    await db.flush()
+    now = datetime.now(timezone.utc)
+    existing_message = await _existing_outbound_message(db, data.idempotency_key)
+    if existing_message is not None:
+        if not _outbound_payload_matches(
+            existing_message,
+            thread_id=thread_id,
+            sender_email=sender_email,
+            recipient_email=participant_email,
+            subject=subject,
+            text_body=data.body,
+            html_body=sanitized_html,
+            attachment_metadata=attachment_metadata,
+        ):
+            raise_error(409, ERR_EMAIL_IDEMPOTENCY_CONFLICT)
+        if existing_message.delivery_status == "failed":
+            raise_error(502, ERR_EMAIL_DELIVERY_FAILED)
+        await _reject_nonterminal_replay(db, existing_message)
+        return _message_response(existing_message)
+    if await _email_key_was_reserved(db, data.idempotency_key):
+        raise_error(409, ERR_EMAIL_IDEMPOTENCY_CONFLICT)
+
+    message = EmailMessage(
+        thread_id=thread.id,
+        direction="outbound",
+        sender_email=sender_email,
+        recipient_emails=[participant_email],
+        subject=subject,
+        text_body=data.body,
+        html_body=sanitized_html,
+        client_idempotency_key=data.idempotency_key,
+        in_reply_to=latest_inbound.internet_message_id if latest_inbound else None,
+        attachment_metadata=attachment_metadata,
+        delivery_status="sending",
+        sent_by_id=admin.id,
+        read_at=now,
+        created_at=now,
+    )
+    db.add(message)
+    db.add(EmailSendReservation(idempotency_key=data.idempotency_key))
+    thread.status = "open"
+    thread.last_message_at = now
+    thread.updated_at = now
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        replayed_message = await _existing_outbound_message(db, data.idempotency_key)
+        if replayed_message is None:
+            if await _email_key_was_reserved(db, data.idempotency_key):
+                raise_error(409, ERR_EMAIL_IDEMPOTENCY_CONFLICT)
+            raise
+        if not _outbound_payload_matches(
+            replayed_message,
+            thread_id=thread_id,
+            sender_email=sender_email,
+            recipient_email=participant_email,
+            subject=subject,
+            text_body=data.body,
+            html_body=sanitized_html,
+            attachment_metadata=attachment_metadata,
+        ):
+            raise_error(409, ERR_EMAIL_IDEMPOTENCY_CONFLICT)
+        if replayed_message.delivery_status == "failed":
+            raise_error(502, ERR_EMAIL_DELIVERY_FAILED)
+        await _reject_nonterminal_replay(db, replayed_message)
+        return _message_response(replayed_message)
 
     result = await run_in_threadpool(
         send_admin_reply_email,
-        to=thread.participant_email,
+        to=participant_email,
         subject=subject,
         body=data.body,
         html_body=sanitized_html,
@@ -737,43 +968,13 @@ async def reply_to_email_thread(
         language=thread.language,
     )
     if not result.sent:
+        message.delivery_status = "failed"
+        await db.commit()
         logger.error("Failed to send admin email reply for thread %s: %s", thread.id, result.error)
         raise_error(502, ERR_EMAIL_DELIVERY_FAILED)
 
-    now = datetime.now(timezone.utc)
-    message = EmailMessage(
-        thread_id=thread.id,
-        direction="outbound",
-        sender_email=get_email_sender(sender_profile),
-        recipient_emails=[thread.participant_email],
-        subject=subject,
-        text_body=data.body,
-        html_body=sanitized_html,
-        client_idempotency_key=data.idempotency_key,
-        provider_message_id=result.provider_message_id,
-        in_reply_to=latest_inbound.internet_message_id if latest_inbound else None,
-        attachment_metadata=[attachment.metadata() for attachment in attachments],
-        delivery_status="sent",
-        sent_by_id=admin.id,
-        read_at=now,
-        created_at=now,
-    )
-    db.add(message)
-    thread.status = "open"
-    thread.unread_count = 0
-    thread.last_message_at = now
-    thread.updated_at = now
-    try:
-        await db.commit()
-    except IntegrityError:
-        await db.rollback()
-        replayed_message = await db.scalar(
-            select(EmailMessage).where(
-                EmailMessage.client_idempotency_key == data.idempotency_key
-            )
-        )
-        if replayed_message is None:
-            raise
-        return _message_response(replayed_message)
+    message.provider_message_id = result.provider_message_id
+    message.delivery_status = "sent"
+    await db.commit()
     await db.refresh(message)
     return _message_response(message)

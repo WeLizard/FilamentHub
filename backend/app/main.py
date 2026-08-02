@@ -170,6 +170,8 @@ app.mount("/wiki_content/images", StaticFiles(directory=str(wiki_images_dir)), n
 @app.get("/health")
 async def health_check() -> dict[str, object]:
     """Health check endpoint."""
+    from app.services.inbound_mail_service import mail_storage_health
+
     maintenance_info = get_maintenance_info()
     return {
         "status": "ok",
@@ -178,6 +180,7 @@ async def health_check() -> dict[str, object]:
         "maintenance_mode": maintenance_info["enabled"],
         "maintenance_message": maintenance_info["message"] if maintenance_info["enabled"] else None,
         "auth_region": geoip_database_health(),
+        "inbound_mail_storage": mail_storage_health(),
     }
 
 

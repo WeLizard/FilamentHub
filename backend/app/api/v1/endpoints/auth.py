@@ -7,6 +7,7 @@ from typing import Annotated, Literal
 
 from fastapi import (
     APIRouter,
+    BackgroundTasks,
     Body,
     Depends,
     File,
@@ -357,6 +358,7 @@ async def accept_legal_documents(
 @limiter.limit("3/minute")  # Rate limiting: 3 попытки в минуту
 async def register(
     request: Request,
+    background_tasks: BackgroundTasks,
     data: RegisterRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> UserResponse:
@@ -459,7 +461,13 @@ async def register(
         # Trial is opt-in: the user starts it explicitly via POST /calculator/start-trial,
         # so it never counts down silently before they know it exists.
         logger.info("User registered successfully: user_id=%d", user.id)
-        _send_verification_letter(user, language=data.legal_language)
+        background_tasks.add_task(
+            _send_verification_letter,
+            user_id=user.id,
+            email=user.email,
+            language=data.legal_language,
+            accepted_language=user.legal_acceptance_language,
+        )
     except Exception as e:
         await db.rollback()
         logger.error(f"Error creating user: {str(e)}", exc_info=True)
@@ -480,34 +488,47 @@ async def register(
         raise_error(status.HTTP_500_INTERNAL_SERVER_ERROR, ERR_RESPONSE_ERROR)
 
 
-def _send_verification_letter(user: User, *, language: str | None) -> None:
+def _send_verification_letter(
+    *,
+    user_id: int,
+    email: str,
+    language: str | None,
+    accepted_language: str | None,
+) -> None:
     """Ask the address owner to confirm — and give them a way to disown the account.
 
     Failure to send never fails the caller: the account is usable unconfirmed and
     the letter can be requested again.
     """
-    token = generate_email_verification_token(user.id, user.email)
+    token = generate_email_verification_token(user_id, email)
     verify_url = f"{settings.BASE_URL}/verify-email?token={token}"
     try:
         send_email_verification_email(
-            to=user.email,
+            to=email,
             verify_url=verify_url,
             reject_url=f"{verify_url}&action=reject",
-            language=resolve_language(language, user.legal_acceptance_language),
+            language=resolve_language(language, accepted_language),
         )
     except Exception:
-        logger.warning("Verification letter not sent: user_id=%d", user.id, exc_info=True)
+        logger.warning("Verification letter not sent: user_id=%d", user_id, exc_info=True)
 
 
 @router.post("/resend-verification", response_model=EmailChangeResponse)
 @limiter.limit("3/hour")
 async def resend_verification(
     request: Request,
+    background_tasks: BackgroundTasks,
     current_user: Annotated[User, Depends(get_current_active_user)],
 ) -> EmailChangeResponse:
     """Send the confirmation letter again."""
     if not current_user.email_verified:
-        _send_verification_letter(current_user, language=None)
+        background_tasks.add_task(
+            _send_verification_letter,
+            user_id=current_user.id,
+            email=current_user.email,
+            language=None,
+            accepted_language=current_user.legal_acceptance_language,
+        )
     return EmailChangeResponse()
 
 
@@ -534,8 +555,14 @@ async def reject_registration(
         raise_error(status.HTTP_400_BAD_REQUEST, ERR_INVALID_VERIFICATION_TOKEN)
 
     logger.info("Registration disowned by the address owner: user_id=%d", user.id)
-    await db.delete(user)
-    await db.commit()
+    from app.services.account_deletion import delete_user_account
+
+    await delete_user_account(
+        user=user,
+        delete_reviews=True,
+        release_brand_representation=True,
+        db=db,
+    )
     return ResetPasswordResponse()
 
 
