@@ -1,19 +1,15 @@
-"""Let a browser keep the catalogue instead of asking for it again.
+"""Let browsers and the production reverse proxy keep public catalogue reads.
 
 The catalogue is the same for everyone and changes rarely: a material's page is
 identical whoever opens it, and nothing about it depends on who is signed in.
 Yet every visit re-fetched every page in full, and the plugin asks for the same
 lists on every sync.
 
-So catalogue answers now carry a version tag and a short life. Within that life
-the browser does not ask at all; after it, it asks with the tag it holds and is
-told "unchanged" in a couple of hundred bytes instead of being sent the whole
-list again.
-
-The tag is computed from the answer, so the database is still consulted to
-produce it — what this saves is the transfer and the client's work, which on a
-phone or a slow connection is the part a person feels. Skipping the database
-too would need a version counter the catalogue does not have yet.
+So catalogue answers now carry a version tag and a short life. Browsers retain
+them for conditional reuse, while production nginx keeps a bounded cache shared
+by all Uvicorn workers. A hot response therefore reaches neither the
+application nor PostgreSQL; after expiry, one request refreshes it and the
+others wait for that result instead of rebuilding it in parallel.
 """
 
 from __future__ import annotations
@@ -46,9 +42,19 @@ CACHEABLE_ROUTES = frozenset(
     }
 )
 
+# The browser always revalidates: nginx answers that conditional request from
+# its shared cache, without Python or SQL, and the client cannot accidentally
+# add another full max-age after receiving an already-aged nginx object.
+BROWSER_MAX_AGE_SECONDS = 0
+
 # Long enough to absorb a page's worth of navigation, short enough that an edit
 # in the admin panel shows up while the person who made it is still looking.
-MAX_AGE_SECONDS = 60
+NGINX_MAX_AGE_SECONDS = 60
+
+# nginx consumes this header as a shared-cache lifetime and does not forward it
+# to the client. The browser revalidates immediately; the reverse proxy is the
+# only layer allowed to hold a fresh representation for sixty seconds.
+NGINX_CACHE_HEADER = "x-accel-expires"
 
 # JSON catalogue pages are bounded, but the middleware must not turn a future
 # stream or accidentally oversized response into one large per-request buffer.
@@ -128,7 +134,10 @@ class CatalogueCacheMiddleware(BaseHTTPMiddleware):
         # HTTP clients reject. Keeping the response also preserves repeated
         # headers and any response-specific state.
         response.headers["etag"] = etag
-        response.headers["cache-control"] = f"public, max-age={MAX_AGE_SECONDS}"
+        response.headers["cache-control"] = (
+            f"public, max-age={BROWSER_MAX_AGE_SECONDS}, must-revalidate"
+        )
+        response.headers[NGINX_CACHE_HEADER] = str(NGINX_MAX_AGE_SECONDS)
 
         if _if_none_match_matches(request.headers.get("if-none-match"), etag):
             # Nothing changed since they last asked: say so and send no body.

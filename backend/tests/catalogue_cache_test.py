@@ -42,7 +42,8 @@ async def test_a_catalogue_answer_carries_a_version_and_a_lifetime(
 
     assert response.status_code == 200
     assert response.headers["etag"]
-    assert "max-age=60" in response.headers["cache-control"]
+    assert response.headers["cache-control"] == "public, max-age=0, must-revalidate"
+    assert response.headers["x-accel-expires"] == "60"
     assert response.headers.get_list("content-length") == [str(len(response.content))]
 
 
@@ -70,6 +71,7 @@ async def test_asking_again_with_the_same_version_is_answered_without_the_body(
     ):
         assert again.headers.get_list(header) == []
     assert again.headers["etag"] == first.headers["etag"]
+    assert again.headers["x-accel-expires"] == "60"
 
 
 @pytest.mark.asyncio
@@ -126,6 +128,7 @@ async def test_private_answers_are_left_alone(client: AsyncClient):
     assert "cache-control" not in response.headers or "public" not in response.headers[
         "cache-control"
     ]
+    assert "x-accel-expires" not in response.headers
 
 
 @pytest.mark.asyncio
@@ -141,6 +144,7 @@ async def test_mutation_adjacent_slug_suggestion_is_not_cached(client: AsyncClie
     assert "cache-control" not in response.headers or "public" not in response.headers[
         "cache-control"
     ]
+    assert "x-accel-expires" not in response.headers
 
 
 @pytest.mark.asyncio
@@ -150,6 +154,7 @@ async def test_head_is_not_claimed_as_a_cacheable_contract(client: AsyncClient):
     assert response.status_code == 405
     assert "etag" not in response.headers
     assert "cache-control" not in response.headers
+    assert "x-accel-expires" not in response.headers
 
 
 @pytest.mark.asyncio
@@ -171,6 +176,7 @@ async def test_endpoint_cache_policy_takes_priority():
     assert response.status_code == 200
     assert response.headers["cache-control"] == "private, no-store"
     assert "etag" not in response.headers
+    assert "x-accel-expires" not in response.headers
 
 
 @pytest.mark.asyncio
@@ -189,6 +195,7 @@ async def test_endpoint_etag_takes_priority():
     assert response.status_code == 200
     assert response.headers["etag"] == '"endpoint-owned"'
     assert "cache-control" not in response.headers
+    assert "x-accel-expires" not in response.headers
 
 
 @pytest.mark.asyncio
@@ -211,6 +218,7 @@ async def test_cookie_response_is_not_shared_and_keeps_all_cookies():
     assert len(response.headers.get_list("set-cookie")) == 2
     assert "cache-control" not in response.headers
     assert "etag" not in response.headers
+    assert "x-accel-expires" not in response.headers
 
 
 @pytest.mark.asyncio
@@ -235,6 +243,7 @@ async def test_streaming_response_is_not_buffered_or_cached():
     assert "content-length" not in response.headers
     assert "cache-control" not in response.headers
     assert "etag" not in response.headers
+    assert "x-accel-expires" not in response.headers
 
 
 @pytest.mark.asyncio
@@ -256,6 +265,7 @@ async def test_oversized_response_is_not_buffered_or_cached():
     assert response.headers["content-length"] == str(len(body))
     assert "cache-control" not in response.headers
     assert "etag" not in response.headers
+    assert "x-accel-expires" not in response.headers
 
 
 def test_nothing_shared_depends_on_who_is_asking():
