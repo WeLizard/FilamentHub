@@ -317,6 +317,35 @@ async def test_thread_reply_address_routes_inbound_to_existing_thread(
 
 
 @pytest.mark.asyncio
+async def test_duplicate_inbound_delivery_is_ignored_without_a_second_thread(
+    db_session: AsyncSession,
+) -> None:
+    received_at = datetime.now()
+    delivery = email_communications.InboundEmailData(
+        participant_email="repeat@example.com",
+        participant_name="Repeat Sender",
+        subject="The same delivery",
+        body="This must be stored once.",
+        recipients=["support@filamenthub.test"],
+        created_at=received_at,
+        provider_message_id="repeat-provider-message",
+        provider_event_id="local:repeat-delivery",
+        internet_message_id="<repeat-provider-message@example.com>",
+        in_reply_to=None,
+        attachment_metadata=[],
+    )
+
+    await email_communications.ingest_inbound_email(db_session, delivery)
+    await email_communications.ingest_inbound_email(db_session, delivery)
+
+    assert await db_session.scalar(select(func.count(EmailThread.id))) == 1
+    assert await db_session.scalar(select(func.count(EmailMessage.id))) == 1
+    thread = await db_session.scalar(select(EmailThread))
+    assert thread is not None
+    assert thread.unread_count == 1
+
+
+@pytest.mark.asyncio
 async def test_admin_can_permanently_delete_email_thread(
     admin_client: AsyncClient,
     db_session: AsyncSession,

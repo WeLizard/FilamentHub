@@ -508,14 +508,18 @@ async def ingest_inbound_email(db: AsyncSession, data: InboundEmailData) -> None
         thread_values["participant_name"] = case(
             (is_latest, participant_name), else_=EmailThread.participant_name
         )
-    await db.execute(
-        update(EmailThread)
-        .where(EmailThread.id == thread.id)
-        .values(**thread_values)
-        .execution_options(synchronize_session=False)
-    )
-
     try:
+        # Flush the message inside the duplicate guard. ``execute`` below also
+        # triggers autoflush, so leaving it outside this block lets a repeated
+        # provider id raise before the IntegrityError handler can classify it
+        # as the already-processed delivery that it is.
+        await db.flush()
+        await db.execute(
+            update(EmailThread)
+            .where(EmailThread.id == thread.id)
+            .values(**thread_values)
+            .execution_options(synchronize_session=False)
+        )
         await db.commit()
     except IntegrityError:
         await db.rollback()
