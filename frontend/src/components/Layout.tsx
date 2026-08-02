@@ -396,7 +396,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
 
                   <button
                     onClick={() => setIsFeedbackModalOpen(true)}
-                    className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-purple-300 hover:text-purple-200 hover:bg-purple-600/20 transition-all"
+                    className="w-full md:hidden flex items-center space-x-3 px-4 py-3 rounded-lg text-purple-300 hover:text-purple-200 hover:bg-purple-600/20 transition-all"
                   >
                     <MessageCircle className="w-5 h-5" />
                     <span className="font-medium">{t('layout.feedback_button')}</span>
