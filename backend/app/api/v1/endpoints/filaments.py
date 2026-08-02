@@ -1,10 +1,10 @@
 """Filament endpoints."""
 
 import logging
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import String, case, cast, desc, func, or_, select
+from sqlalchemy import String, case, cast, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -36,6 +36,11 @@ from app.schemas.filament import (
     FilamentResponse,
     FilamentUpdate,
     normalize_ral_code,
+)
+from app.services.filament_preset_summary import (
+    bucket_by_kind,
+    summaries_for,
+    summary_query,
 )
 from app.services.organization_access import can_edit_brand_catalog
 
@@ -294,29 +299,8 @@ async def list_filaments(
                 "community": int(row.community_count or 0),
             }
 
-        preset_query = (
-            select(Preset)
-            .where(
-                Preset.filament_id.in_(filament_ids),
-                Preset.active.is_(True),
-                Preset.moderation_status.in_(PUBLIC_PRESET_STATUSES),
-            )
-            .order_by(
-                Preset.filament_id,
-                desc(Preset.is_weighted),
-                desc(Preset.rating),
-                desc(Preset.updated_at),
-            )
-        )
-        presets = await db.execute(preset_query)
-        for preset in presets.scalars():
-            bucket = preset_summary_map.setdefault(preset.filament_id, {})
-            if preset.is_official and "official" not in bucket:
-                bucket["official"] = preset
-            if preset.is_weighted and "weighted" not in bucket:
-                bucket["weighted"] = preset
-            if not preset.is_official and not preset.is_weighted and "community" not in bucket:
-                bucket["community"] = preset
+        presets = await db.execute(summary_query(filament_ids))
+        preset_summary_map = bucket_by_kind(presets.scalars())
 
     # Serialize with brand_name and preset summary
     filament_responses = []
@@ -339,42 +323,8 @@ async def list_filaments(
             filament_dict["official_presets_count"] = 0
             filament_dict["community_presets_count"] = 0
 
-        summaries: list[dict] = []
-        summary_bucket = preset_summary_map.get(filament.id, {})
-
-        def serialize_preset(preset_obj, preset_type: str) -> dict:
-            return {
-                "id": preset_obj.id,
-                "name": preset_obj.name,
-                "is_official": preset_obj.is_official,
-                "is_weighted": preset_obj.is_weighted,
-                "extruder_temp": preset_obj.extruder_temp,
-                "bed_temp": preset_obj.bed_temp,
-                "fan_speed": preset_obj.fan_speed,
-                "flow_rate": preset_obj.flow_rate,
-                "rating": preset_obj.rating,
-                "success_rate": preset_obj.success_rate,
-                "updated_at": preset_obj.updated_at,
-                "preset_type": preset_type,
-            }
-
-        if "official" in summary_bucket:
-            official_preset = summary_bucket["official"]
-            filament_dict["official_preset"] = serialize_preset(official_preset, "official")
-            summaries.append(filament_dict["official_preset"])
-        else:
-            filament_dict["official_preset"] = None
-
-        if "weighted" in summary_bucket:
-            weighted_preset = summary_bucket["weighted"]
-            # Avoid duplicating if weighted preset already marked as official
-            if filament_dict["official_preset"] is None or weighted_preset.id != filament_dict["official_preset"]["id"]:
-                summaries.append(serialize_preset(weighted_preset, "weighted"))
-
-        if "community" in summary_bucket:
-            community_preset = summary_bucket["community"]
-            summaries.append(serialize_preset(community_preset, "community"))
-
+        official, summaries = summaries_for(preset_summary_map.get(filament.id, {}))
+        filament_dict["official_preset"] = official
         filament_dict["preset_summaries"] = summaries
 
         filament_responses.append(filament_dict)
@@ -445,6 +395,14 @@ async def get_filament(
     filament_dict["line_name"] = filament.line.name if filament.line else None
     filament_dict["currency"] = filament.brand.currency if filament.brand else "RUB"
     filament_dict["price_hidden"] = filament.brand.price_hidden if filament.brand else False
+
+    # The same three presets the catalogue card leads with. Until now the page
+    # worked this out for itself from whichever presets happened to be on the
+    # first page, which could miss the one it was looking for.
+    summaries = await db.execute(summary_query([filament_id]))
+    official, carousel = summaries_for(bucket_by_kind(summaries.scalars()).get(filament_id, {}))
+    filament_dict["official_preset"] = official
+    filament_dict["preset_summaries"] = carousel
     return filament_dict
 
 
@@ -455,8 +413,16 @@ async def get_filament_presets(
     page: int = Query(1, ge=1),
     size: int = Query(50, ge=1, le=100),
     is_official: bool | None = Query(None),
+    sort: Literal["best", "new"] = Query("best"),
+    printer_id: int | None = Query(None, ge=1),
 ) -> dict:
-    """Получить пресеты для материала."""
+    """Получить пресеты для материала.
+
+    ``sort`` меняет только порядок: ``best`` — как в каталоге (официальные,
+    затем по оценке), ``new`` — сначала недавние, чтобы свежий пресет под
+    только что вышедший принтер не оставался под старыми с высокой оценкой.
+    ``printer_id`` оставляет только пресеты, связанные с этой моделью принтера.
+    """
     from app.models.preset import Preset
     from app.schemas.preset import PresetResponse
 
@@ -490,16 +456,33 @@ async def get_filament_presets(
     )
     if is_official is not None:
         count_query = count_query.where(Preset.is_official == is_official)
+
+    if printer_id is not None:
+        linked_presets = (
+            select(PresetPrinter.preset_id)
+            .where(PresetPrinter.printer_id == printer_id)
+            .scalar_subquery()
+        )
+        query = query.where(Preset.id.in_(linked_presets))
+        count_query = count_query.where(Preset.id.in_(linked_presets))
     total_result = await db.execute(count_query)
     total = total_result.scalar() or 0
 
-    # Paginate
+    # Paginate. The id decides ties: without it two presets sharing a rating and
+    # a creation moment could swap places between pages, so scrolling would show
+    # one twice and never show the other.
+    if sort == "new":
+        ordering = (Preset.created_at.desc(), Preset.id.desc())
+    else:
+        ordering = (
+            Preset.is_official.desc(),
+            Preset.rating.desc().nulls_last(),
+            Preset.created_at.desc(),
+            Preset.id.desc(),
+        )
+
     offset = (page - 1) * size
-    query = (
-        query.offset(offset)
-        .limit(size)
-        .order_by(Preset.is_official.desc(), Preset.rating.desc().nulls_last(), Preset.created_at.desc())
-    )
+    query = query.order_by(*ordering).offset(offset).limit(size)
 
     # Execute
     result = await db.execute(query)
