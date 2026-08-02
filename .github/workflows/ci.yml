@@ -7,6 +7,39 @@ on:
     branches: [main]
 
 jobs:
+  operations-scripts:
+    name: Operations scripts (syntax)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check Bash deployment worker
+        run: |
+          bash -n scripts/deploy.sh
+          bash -n backend/docker-entrypoint.sh
+
+      - name: Check PowerShell owner scripts
+        shell: pwsh
+        run: |
+          $failed = $false
+          foreach ($path in @(
+            'scripts/deploy-server.ps1',
+            'scripts/publish-plugin-release.ps1'
+          )) {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              (Resolve-Path $path),
+              [ref]$tokens,
+              [ref]$errors
+            ) | Out-Null
+            if ($errors.Count -gt 0) {
+              $errors | ForEach-Object { Write-Error "$path`: $($_.Message)" }
+              $failed = $true
+            }
+          }
+          if ($failed) { exit 1 }
+
   backend:
     name: Backend (lint + tests)
     runs-on: ubuntu-latest
@@ -89,6 +122,11 @@ jobs:
         run: python -m pytest octoprint-plugin/tests
         env:
           PYTHONPATH: octoprint-plugin
+
+      - name: Test OrcaSlicer plugin
+        run: python -m pytest orca-plugin/tests
+        env:
+          PYTHONPATH: orca-plugin
 
       - name: Build OrcaSlicer plugin
         run: python orca-plugin/build_package.py --output "$RUNNER_TEMP/plugins/orca"

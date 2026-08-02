@@ -41,6 +41,11 @@ jobs:
         env:
           PYTHONPATH: octoprint-plugin
 
+      - name: Test OrcaSlicer plugin
+        run: python -m pytest orca-plugin/tests
+        env:
+          PYTHONPATH: orca-plugin
+
       - name: Build OrcaSlicer plugin
         run: python orca-plugin/build_package.py --output "$RUNNER_TEMP/release/orca"
 

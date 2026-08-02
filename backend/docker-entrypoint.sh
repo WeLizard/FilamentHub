@@ -45,21 +45,30 @@ async def check_db():
 asyncio.run(check_db())
 EOF
 
-# Check migration status (informational only — migrations are applied via admin panel)
+# Refuse to start a new API image against an older schema. Production
+# migrations are applied by scripts/deploy.sh with the newly built image before
+# Compose switches the running backend. This guard protects manual `compose up`
+# and other paths that bypass the deployment worker.
 echo "📦 Checking database migration status..."
 CURRENT_OUTPUT=$(alembic current 2>&1)
-CURRENT_VERSION=$(echo "${CURRENT_OUTPUT}" | grep -oP '^\K[0-9a-f]+' || echo "none")
 HEAD_OUTPUT=$(alembic heads 2>&1)
-HEAD_VERSION=$(echo "${HEAD_OUTPUT}" | grep -oP '^\K[0-9a-f]+' | head -n 1 || echo "unknown")
+CURRENT_VERSIONS=$(printf '%s\n' "${CURRENT_OUTPUT}" | awk '/^[[:alnum:]_]+([[:space:]]+\(head\))?$/ { print $1 }')
+HEAD_VERSIONS=$(printf '%s\n' "${HEAD_OUTPUT}" | awk '/^[[:alnum:]_]+[[:space:]]+\(head\)$/ { print $1 }')
+CURRENT_COUNT=$(printf '%s\n' "${CURRENT_VERSIONS}" | grep -c . || true)
+HEAD_COUNT=$(printf '%s\n' "${HEAD_VERSIONS}" | grep -c . || true)
+CURRENT_VERSION=$(printf '%s\n' "${CURRENT_VERSIONS}" | head -n 1)
+HEAD_VERSION=$(printf '%s\n' "${HEAD_VERSIONS}" | head -n 1)
 
-if [ "${CURRENT_VERSION}" = "${HEAD_VERSION}" ]; then
+if [ "${CURRENT_COUNT}" = "1" ] \
+    && [ "${HEAD_COUNT}" = "1" ] \
+    && [ "${CURRENT_VERSION}" = "${HEAD_VERSION}" ]; then
     echo "   ✅ Database is up to date (${CURRENT_VERSION})"
 else
-    echo "   ⚠️  Pending migrations: current=${CURRENT_VERSION}, head=${HEAD_VERSION}"
-    echo "   Apply via admin panel: Settings → Database → Migrations"
+    echo "   ❌ Pending or ambiguous migrations: current=${CURRENT_VERSIONS:-unknown}, head=${HEAD_VERSIONS:-unknown}"
+    echo "   Run the production deployment worker; the API will not start on an incompatible schema."
+    exit 1
 fi
 
 # Start the application
 echo "🎯 Starting FastAPI application..."
 exec "$@"
-

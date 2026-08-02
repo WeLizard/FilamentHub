@@ -27,7 +27,7 @@ function Assert-Command {
     param([Parameter(Mandatory)][string]$Name)
 
     if (-not (Get-Command $Name -ErrorAction SilentlyContinue)) {
-        throw "Required command '$Name' was not found in PATH."
+        throw "Не найдена обязательная команда '$Name' в PATH."
     }
 }
 
@@ -41,7 +41,7 @@ function Get-BridgeVersion {
         '(?m)^version\s*=\s*"(?<version>[^"]+)"\s*$'
     )
     if (-not $pyprojectMatch.Success) {
-        throw "Could not read the package version from '$pyprojectPath'."
+        throw "Не удалось прочитать версию пакета из '$pyprojectPath'."
     }
 
     $pluginContent = Get-Content -LiteralPath $pluginPath -Raw
@@ -50,16 +50,16 @@ function Get-BridgeVersion {
         '(?m)^PLUGIN_VERSION\s*=\s*"(?<version>[^"]+)"\s*$'
     )
     if (-not $pluginMatch.Success) {
-        throw "Could not read PLUGIN_VERSION from '$pluginPath'."
+        throw "Не удалось прочитать PLUGIN_VERSION из '$pluginPath'."
     }
 
     $packageVersion = $pyprojectMatch.Groups['version'].Value
     $runtimeVersion = $pluginMatch.Groups['version'].Value
     if ($packageVersion -ne $runtimeVersion) {
-        throw "Bridge version mismatch: pyproject.toml=$packageVersion, PLUGIN_VERSION=$runtimeVersion."
+        throw "Версии Bridge расходятся: pyproject.toml=$packageVersion, PLUGIN_VERSION=$runtimeVersion."
     }
     if ($packageVersion -notmatch '^\d+\.\d+\.\d+(?:[-.][0-9A-Za-z.-]+)?$') {
-        throw "Bridge version '$packageVersion' cannot be used as a release version."
+        throw "Версию Bridge '$packageVersion' нельзя использовать для релиза."
     }
 
     return $packageVersion
@@ -75,14 +75,14 @@ function Invoke-Checked {
     if ($Capture) {
         $output = & $FilePath @Arguments 2>&1
         if ($LASTEXITCODE -ne 0) {
-            throw "Command failed ($LASTEXITCODE): $FilePath $($Arguments -join ' ')`n$($output -join "`n")"
+            throw "Команда завершилась с ошибкой ($LASTEXITCODE): $FilePath $($Arguments -join ' ')`n$($output -join "`n")"
         }
         return ($output -join "`n").Trim()
     }
 
     & $FilePath @Arguments
     if ($LASTEXITCODE -ne 0) {
-        throw "Command failed ($LASTEXITCODE): $FilePath $($Arguments -join ' ')"
+        throw "Команда завершилась с ошибкой ($LASTEXITCODE): $FilePath $($Arguments -join ' ')"
     }
 }
 
@@ -107,7 +107,7 @@ function Get-RemoteTagCommit {
 
     $peeled = & git ls-remote $RemoteName "refs/tags/$ReleaseTag^{}" 2>$null
     if ($LASTEXITCODE -ne 0) {
-        throw "Could not inspect tag '$ReleaseTag' on remote '$RemoteName'."
+        throw "Не удалось проверить тег '$ReleaseTag' в remote '$RemoteName'."
     }
     if ($peeled) {
         return (($peeled -split "`t")[0]).Trim()
@@ -115,7 +115,7 @@ function Get-RemoteTagCommit {
 
     $direct = & git ls-remote $RemoteName "refs/tags/$ReleaseTag" 2>$null
     if ($LASTEXITCODE -ne 0) {
-        throw "Could not inspect tag '$ReleaseTag' on remote '$RemoteName'."
+        throw "Не удалось проверить тег '$ReleaseTag' в remote '$RemoteName'."
     }
     if ($direct) {
         return (($direct -split "`t")[0]).Trim()
@@ -132,6 +132,7 @@ function Assert-ReleaseAssets {
     $assetNames = @($Release.assets | ForEach-Object { $_.name })
     $escapedVersion = [regex]::Escape($BridgeVersion)
     $requiredPatterns = @(
+        '^filamenthub-\d+\.\d+\.\d+(?:[^/]*)\.whl$',
         "^octoprint_filamenthubbridge-$escapedVersion-.*\.whl$",
         "^octoprint_filamenthubbridge-$escapedVersion\.tar\.gz$",
         '^SHA256SUMS$'
@@ -139,7 +140,7 @@ function Assert-ReleaseAssets {
 
     foreach ($pattern in $requiredPatterns) {
         if (-not ($assetNames | Where-Object { $_ -match $pattern })) {
-            throw "Draft release is missing an expected asset matching '$pattern'. Assets: $($assetNames -join ', ')"
+            throw "В draft-релизе нет обязательного файла по шаблону '$pattern'. Файлы: $($assetNames -join ', ')"
         }
     }
 }
@@ -150,17 +151,17 @@ Assert-Command -Name gh
 $repositoryRoot = Invoke-Checked -FilePath git -Arguments @('rev-parse', '--show-toplevel') -Capture
 Set-Location -LiteralPath $repositoryRoot
 
-$versionFiles = @(
-    'octoprint-plugin/pyproject.toml',
-    'octoprint-plugin/octoprint_filamenthub_bridge/__init__.py'
+$releaseSources = @(
+    'orca-plugin',
+    'octoprint-plugin',
+    '.github/workflows/release-plugins.yml'
 )
-& git diff --quiet -- $versionFiles
+$releaseSourceChanges = & git status --porcelain --untracked-files=normal -- $releaseSources
 if ($LASTEXITCODE -ne 0) {
-    throw 'Commit the Bridge version changes before preparing a release.'
+    throw 'Не удалось проверить исходники плагинов для релиза.'
 }
-& git diff --cached --quiet -- $versionFiles
-if ($LASTEXITCODE -ne 0) {
-    throw 'Commit the staged Bridge version changes before preparing a release.'
+if ($releaseSourceChanges) {
+    throw "Перед подготовкой релиза закоммить все изменения плагинов и release-workflow:`n$($releaseSourceChanges -join "`n")"
 }
 
 $bridgeVersion = Get-BridgeVersion
@@ -168,14 +169,14 @@ $expectedTag = "plugins-v$bridgeVersion"
 if ([string]::IsNullOrWhiteSpace($Tag)) {
     $Tag = $expectedTag
 } elseif ($Tag -notmatch '^plugins-v\d+\.\d+\.\d+(?:[-.][0-9A-Za-z.-]+)?$') {
-    throw "Tag '$Tag' does not match the plugins-vX.Y.Z release format."
+    throw "Тег '$Tag' не соответствует формату plugins-vX.Y.Z."
 } elseif ($Tag -ne $expectedTag) {
-    throw "Tag '$Tag' does not match the committed Bridge version '$bridgeVersion' (expected '$expectedTag')."
+    throw "Тег '$Tag' не соответствует версии Bridge '$bridgeVersion' (ожидается '$expectedTag')."
 }
 
 $currentBranch = Invoke-Checked -FilePath git -Arguments @('branch', '--show-current') -Capture
 if ($currentBranch -ne $Branch) {
-    throw "Current branch is '$currentBranch'. Switch to '$Branch' before preparing a release."
+    throw "Сейчас выбрана ветка '$currentBranch'. Перед релизом переключись на '$Branch'."
 }
 
 $headCommit = Invoke-Checked -FilePath git -Arguments @('rev-parse', 'HEAD') -Capture
@@ -183,9 +184,8 @@ $localTag = Invoke-Checked -FilePath git -Arguments @('tag', '--list', $Tag) -Ca
 $tagExistsLocally = -not [string]::IsNullOrWhiteSpace($localTag)
 if ($tagExistsLocally) {
     $tagCommit = Invoke-Checked -FilePath git -Arguments @('rev-list', '-n', '1', $Tag) -Capture
-    & git merge-base --is-ancestor $tagCommit $headCommit
-    if ($LASTEXITCODE -ne 0) {
-        throw "Tag '$Tag' ($tagCommit) is not part of the current '$Branch' history."
+    if ($tagCommit -ne $headCommit) {
+        throw "Тег '$Tag' указывает на $tagCommit, а текущий HEAD — $headCommit. Подними версию плагинов и создай новый тег: старый релиз не должен молча пропускать новый код."
     }
 } else {
     $tagCommit = $headCommit
@@ -196,24 +196,24 @@ Invoke-Checked -FilePath gh -Arguments @('auth', 'status')
 
 $pendingChanges = Invoke-Checked -FilePath git -Arguments @('status', '--porcelain') -Capture
 if ($pendingChanges) {
-    Write-Warning 'The working tree has uncommitted changes. They will not be included in the release.'
+    Write-Warning 'В рабочем дереве есть незакоммиченные изменения. Они не попадут в релиз.'
 }
 
-Write-Host "Repository : $repository"
-Write-Host "Branch     : $Branch ($headCommit)"
-Write-Host "Version    : $bridgeVersion"
-Write-Host "Release tag: $Tag ($tagCommit)$(if (-not $tagExistsLocally) { ' [will be created]' })"
-Write-Host "Mode       : $(if ($Publish) { 'prepare and publish' } else { 'prepare draft only' })"
+Write-Host "Репозиторий: $repository"
+Write-Host "Ветка      : $Branch ($headCommit)"
+Write-Host "Версия     : $bridgeVersion"
+Write-Host "Тег релиза : $Tag ($tagCommit)$(if (-not $tagExistsLocally) { ' [будет создан]' })"
+Write-Host "Режим      : $(if ($Publish) { 'подготовить и опубликовать' } else { 'подготовить только draft' })"
 
 if ($DryRun) {
-    Write-Host 'Dry run complete. No pushes, workflow runs, or release changes were made.'
+    Write-Host 'Dry-run завершён. Push, workflow и изменения релиза не выполнялись.'
     return
 }
 
 if (-not $tagExistsLocally) {
     Invoke-Checked -FilePath git -Arguments @('tag', '-a', $Tag, '-m', "FilamentHub plugins $bridgeVersion")
     $tagCommit = Invoke-Checked -FilePath git -Arguments @('rev-list', '-n', '1', $Tag) -Capture
-    Write-Host "Created local release tag '$Tag' at $tagCommit."
+    Write-Host "Создан локальный тег релиза '$Tag' на $tagCommit."
 }
 
 Invoke-Checked -FilePath git -Arguments @('push', $Remote, $Branch)
@@ -221,9 +221,9 @@ Invoke-Checked -FilePath git -Arguments @('push', $Remote, $Branch)
 $remoteTagCommit = Get-RemoteTagCommit -RemoteName $Remote -ReleaseTag $Tag
 if ($remoteTagCommit) {
     if ($remoteTagCommit -ne $tagCommit) {
-        throw "Remote tag '$Tag' points to $remoteTagCommit, expected $tagCommit. Refusing to overwrite it."
+        throw "Remote-тег '$Tag' указывает на $remoteTagCommit, ожидался $tagCommit. Перезапись запрещена."
     }
-    Write-Host "Remote tag '$Tag' already points to the expected commit."
+    Write-Host "Remote-тег '$Tag' уже указывает на ожидаемый коммит."
 } else {
     Invoke-Checked -FilePath git -Arguments @('push', $Remote, "refs/tags/$Tag")
 }
@@ -254,30 +254,30 @@ if (-not $release) {
     } while (-not $run -and (Get-Date) -lt $deadline)
 
     if (-not $run) {
-        throw "The release workflow run for '$Tag' did not appear within $RunDiscoveryTimeoutSeconds seconds."
+        throw "Workflow релиза для '$Tag' не появился за $RunDiscoveryTimeoutSeconds секунд."
     }
 
-    Write-Host "Watching workflow run: $($run.url)"
+    Write-Host "Ожидаю завершения workflow: $($run.url)"
     Invoke-Checked -FilePath gh -Arguments @('run', 'watch', [string]$run.databaseId, '--repo', $repository, '--exit-status')
     $release = Get-Release -Repository $repository -ReleaseTag $Tag
 }
 
 if (-not $release) {
-    throw "Workflow completed but release '$Tag' was not found."
+    throw "Workflow завершился, но релиз '$Tag' не найден."
 }
 
 Assert-ReleaseAssets -Release $release -BridgeVersion $bridgeVersion
 
 if (-not $release.isDraft) {
-    Write-Host "Release is already published: $($release.url)"
+    Write-Host "Релиз уже опубликован: $($release.url)"
     return
 }
 
 if ($Publish) {
     Invoke-Checked -FilePath gh -Arguments @('release', 'edit', $Tag, '--repo', $repository, '--draft=false')
     $release = Get-Release -Repository $repository -ReleaseTag $Tag
-    Write-Host "Release published: $($release.url)"
+    Write-Host "Релиз опубликован: $($release.url)"
 } else {
-    Write-Host "Draft release is ready: $($release.url)"
-    Write-Host "Review it, then publish with: .\scripts\publish-plugin-release.ps1 -Tag $Tag -Publish"
+    Write-Host "Draft-релиз готов: $($release.url)"
+    Write-Host "Проверь его, затем опубликуй командой: .\scripts\publish-plugin-release.ps1 -Tag $Tag -Publish"
 }

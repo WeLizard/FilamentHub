@@ -185,3 +185,8 @@ orca-plugin/.fh_*
 # Database dumps and the public backup key live next to the project, never in it
 backups/
 backup-key.pub.asc
+
+# Production runtime state mounted from the host. These files must survive
+# container replacement but are never source code and must not block deploys.
+inbound-mail/
+backend/distributions/plugins/

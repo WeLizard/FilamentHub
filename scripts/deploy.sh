@@ -1,250 +1,469 @@
-#!/bin/bash
-# =============================================================================
-# FilamentHub Deploy Script v2.0
-# =============================================================================
-# Простой и надёжный деплой с backup'ами и проверкой здоровья
-# Использование: cd ~/FilamentHub && bash scripts/deploy.sh
-# =============================================================================
+#!/usr/bin/env bash
+# FILAMENTHUB_DEPLOY_PROTOCOL=2
+# Production deployment worker for FilamentHub.
+#
+# Run directly on the production host, or through deploy-server.ps1. The
+# worker is interactive by default. --yes is intended only for the local owner
+# console, which performs its own exact-SHA confirmation and CI check first.
 
-set -e  # Остановка при ошибке
+set -Eeuo pipefail
 
-# Цвета для вывода
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+readonly RED='\033[0;31m'
+readonly GREEN='\033[0;32m'
+readonly YELLOW='\033[1;33m'
+readonly BLUE='\033[0;34m'
+readonly NC='\033[0m'
 
-echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "${BLUE}🚀 FilamentHub Deploy${NC}"
-echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-
-# Переходим в директорию проекта
-cd "$(dirname "$0")/.." || exit 1
-PROJECT_DIR=$(pwd)
+if [[ -n "${PROJECT_DIR:-}" ]]; then
+    PROJECT_DIR="$(cd "$PROJECT_DIR" && pwd)"
+else
+    PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+fi
 SITE_HOST="${SITE_HOST:-filamenthub.ru}"
-echo -e "${GREEN}📁 Директория:${NC} $PROJECT_DIR"
-
-# -----------------------------------------------------------------------------
-# 1. BACKUP базы данных (если контейнер запущен)
-# -----------------------------------------------------------------------------
-echo ""
-echo -e "${YELLOW}📦 Шаг 1: Backup базы данных...${NC}"
-
 BACKUP_DIR="${BACKUP_DIR:-$PROJECT_DIR/backups}"
 BACKUP_KEY="${BACKUP_PUBLIC_KEY:-$PROJECT_DIR/backup-key.pub.asc}"
-mkdir -p "$BACKUP_DIR" 2>/dev/null || true
-# Docker создаёт недостающую папку тома от root, поэтому она может оказаться
-# чужой. Молча продолжать нельзя — backup всё равно не запишется.
-if [ ! -w "$BACKUP_DIR" ]; then
-    echo -e "   ${RED}❌ Нет прав на запись в $BACKUP_DIR${NC}"
-    echo -e "   Выполните один раз и повторите деплой:"
-    echo -e "   ${YELLOW}sudo chown -R $(id -un):$(id -gn) \"$BACKUP_DIR\"${NC}"
-    exit 1
-fi
-chmod 700 "$BACKUP_DIR" 2>/dev/null || true
+REVISION="origin/main"
+ASSUME_YES=false
+DRY_RUN=false
+ACTION="deploy"
+LATEST_BACKUP=""
+PREVIOUS_REVISION=""
+TARGET_REVISION=""
 
-if docker ps --format '{{.Names}}' | grep -q "filamenthub_postgres_prod"; then
-    BACKUP_FILE="$BACKUP_DIR/backup_$(date +%Y%m%d_%H%M%S).sql"
-    echo "   Создаю backup в $BACKUP_FILE..."
+info() { printf "%b\n" "${BLUE}$*${NC}"; }
+success() { printf "%b\n" "${GREEN}$*${NC}"; }
+warn() { printf "%b\n" "${YELLOW}$*${NC}"; }
+fail() { printf "%b\n" "${RED}$*${NC}" >&2; exit 1; }
 
-    if docker exec filamenthub_postgres_prod pg_dump -U filamenthub filamenthub > "$BACKUP_FILE" 2>/dev/null; then
-        gzip "$BACKUP_FILE"
-        BACKUP_FILE="$BACKUP_FILE.gz"
+usage() {
+    cat <<'EOF'
+Usage:
+  bash scripts/deploy.sh [--revision <commit>] [--yes] [--dry-run]
+  bash scripts/deploy.sh --status
+  bash scripts/deploy.sh --backup-only
+  bash scripts/deploy.sh --prune-build-cache [--yes]
 
-        if [ -f "$BACKUP_KEY" ]; then
-            if gpg --batch --yes --quiet --trust-model always \
-                   --recipient-file "$BACKUP_KEY" \
-                   --output "$BACKUP_FILE.gpg" --encrypt "$BACKUP_FILE" \
-               && [ -s "$BACKUP_FILE.gpg" ]; then
-                rm -f "$BACKUP_FILE"
-                BACKUP_FILE="$BACKUP_FILE.gpg"
-                echo -e "   ${GREEN}✅ Backup создан и зашифрован: $BACKUP_FILE${NC}"
-            else
-                rm -f "$BACKUP_FILE.gpg"
-                echo -e "   ${RED}❌ Не удалось зашифровать backup. Оставлен незашифрованным: $BACKUP_FILE${NC}"
-            fi
-        else
-            echo -e "   ${RED}❌ Ключ шифрования не найден: $BACKUP_KEY${NC}"
-            echo -e "   ${RED}   Backup лежит в открытом виде: $BACKUP_FILE${NC}"
-        fi
-
-        ls -t "$BACKUP_DIR"/backup_*.sql.gz* 2>/dev/null | tail -n +6 | xargs -r rm -f
-        echo "   Старые backup'ы очищены (оставлено последних 5)"
-    else
-        echo -e "   ${YELLOW}⚠️  Не удалось создать backup (продолжаем без него)${NC}"
-    fi
-else
-    echo -e "   ${YELLOW}⚠️  PostgreSQL не запущен, пропускаю backup${NC}"
-fi
-
-# -----------------------------------------------------------------------------
-# 2. Обновление кода из Git
-# -----------------------------------------------------------------------------
-echo ""
-echo -e "${YELLOW}📥 Шаг 2: Обновление кода из Git...${NC}"
-
-# Определяем ветку (main или master)
-BRANCH="main"
-if ! git show-ref --verify --quiet refs/remotes/origin/main; then
-    BRANCH="master"
-fi
-
-# Получаем изменения (без submodule — OrcaSlicer не нужен на сервере)
-git fetch --no-recurse-submodules origin "$BRANCH" || {
-    echo -e "${RED}❌ Ошибка: не удалось получить изменения из Git${NC}"
-    exit 1
+Options:
+  --revision <ref>  Commit to deploy. It must be a fast-forward commit already
+                    present on origin/main. Default: origin/main.
+  --yes             Skip the server-side confirmation. Use only after an
+                    owner-side preflight and exact-SHA confirmation.
+  --dry-run         Fetch and validate the target without changing anything.
+  --status          Show container, migration and public health status.
+  --backup-only     Create and verify an encrypted database backup, then exit.
+  --prune-build-cache
+                    Remove Docker build cache older than BUILD_CACHE_RETENTION
+                    (default: 336h). Application images are not pruned.
+  --help            Show this help.
+EOF
 }
 
-# Показываем что изменится
-CHANGES=$(git log HEAD..origin/$BRANCH --oneline 2>/dev/null || echo "")
-if [ -n "$CHANGES" ]; then
-    echo "   Новые коммиты:"
-    echo "$CHANGES" | head -5 | sed 's/^/   - /'
-    COMMIT_COUNT=$(echo "$CHANGES" | wc -l)
-    if [ "$COMMIT_COUNT" -gt 5 ]; then
-        echo "   ... и ещё $((COMMIT_COUNT - 5)) коммит(ов)"
+require_command() {
+    command -v "$1" >/dev/null 2>&1 || fail "Required command is missing: $1"
+}
+
+container_state() {
+    docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$1" 2>/dev/null || printf 'not_found'
+}
+
+check_alembic_head() {
+    local current_output head_output current_versions head_versions
+    local current_count head_count current_version head_version
+
+    current_output="$(docker exec filamenthub_backend_prod alembic current 2>&1)" || {
+        warn "  database: alembic current failed ($current_output)"
+        return 1
+    }
+    head_output="$(docker exec filamenthub_backend_prod alembic heads 2>&1)" || {
+        warn "  database: alembic heads failed ($head_output)"
+        return 1
+    }
+    current_versions="$(printf '%s\n' "$current_output" | awk '/^[[:alnum:]_]+([[:space:]]+\(head\))?$/ { print $1 }')"
+    head_versions="$(printf '%s\n' "$head_output" | awk '/^[[:alnum:]_]+[[:space:]]+\(head\)$/ { print $1 }')"
+    current_count="$(printf '%s\n' "$current_versions" | grep -c . || true)"
+    head_count="$(printf '%s\n' "$head_versions" | grep -c . || true)"
+    current_version="$(printf '%s\n' "$current_versions" | head -n 1)"
+    head_version="$(printf '%s\n' "$head_versions" | head -n 1)"
+
+    if [[ "$current_count" == "1" \
+        && "$head_count" == "1" \
+        && "$current_version" == "$head_version" ]]; then
+        success "  database: Alembic head ($current_version)"
+        return 0
     fi
-else
-    echo "   Новых коммитов нет"
-fi
 
-# Сбрасываем локальные изменения и обновляемся
-echo "   Применяю изменения..."
-git reset --hard origin/$BRANCH
+    warn "  database: expected exactly one matching current/head; current=${current_versions:-unknown}, heads=${head_versions:-unknown}"
+    return 1
+}
 
-echo -e "   ${GREEN}✅ Код обновлён${NC}"
+check_semantic_health() {
+    local payload
 
-# -----------------------------------------------------------------------------
-# 3. Перезапуск контейнеров
-# -----------------------------------------------------------------------------
-echo ""
-echo -e "${YELLOW}🔄 Шаг 3: Перезапуск контейнеров...${NC}"
+    payload="$(docker exec filamenthub_backend_prod python -c '
+import json
+import sys
+import urllib.request
 
-# Используем docker compose (V2) вместо docker-compose (V1)
-echo "   Пересобираю и запускаю контейнеры..."
-COMPOSE_BAKE=false docker compose up -d --build
+with urllib.request.urlopen("http://127.0.0.1:8000/health", timeout=10) as response:
+    data = json.load(response)
 
-echo -e "   ${GREEN}✅ Контейнеры запущены${NC}"
+issues = []
+if data.get("status") != "ok":
+    issues.append("status is not ok")
+auth_region = data.get("auth_region") or {}
+if auth_region.get("ready") is not True:
+    issues.append("auth_region is not ready")
+mail_storage = data.get("inbound_mail_storage") or {}
+if mail_storage.get("ready") is not True:
+    issues.append("inbound_mail_storage is not ready")
+if mail_storage.get("over_quota") is True:
+    issues.append("inbound_mail_storage is over quota")
 
-# -----------------------------------------------------------------------------
-# 3.6. Применение миграций БД (backup уже сделан в шаге 1 — это точка отката)
-# -----------------------------------------------------------------------------
-echo ""
-echo -e "${YELLOW}🗄️  Шаг 3.6: Применение миграций БД...${NC}"
+print(json.dumps(data, ensure_ascii=True, separators=(",", ":")))
+if issues:
+    print("; ".join(issues), file=sys.stderr)
+    raise SystemExit(1)
+' 2>&1)" || {
+        warn "  semantic health: failed ($payload)"
+        return 1
+    }
 
-if docker ps --format '{{.Names}}' | grep -q "filamenthub_backend_prod"; then
-    if docker exec filamenthub_backend_prod alembic upgrade head; then
-        echo -e "   ${GREEN}✅ Миграции применены (или БД уже на head)${NC}"
-    else
-        echo -e "   ${RED}❌ Миграции НЕ применились — код задеплоен, но схема БД отстаёт.${NC}"
-        LATEST_BACKUP=$(ls -t "$BACKUP_DIR"/backup_*.sql.gz 2>/dev/null | head -1)
-        if [ -n "$LATEST_BACKUP" ]; then
-            echo -e "   ${RED}   Откат БД из backup шага 1:${NC}"
-            echo -e "   ${RED}   gunzip -c \"$LATEST_BACKUP\" | docker exec -i filamenthub_postgres_prod psql -U filamenthub filamenthub${NC}"
+    success "  semantic health: auth region and inbound mail ready"
+}
+
+wait_for_semantic_health() {
+    local attempts="${1:-24}"
+    local attempt
+
+    for (( attempt=1; attempt<=attempts; attempt++ )); do
+        if check_semantic_health; then
+            return 0
         fi
+        sleep 5
+    done
+    return 1
+}
+
+show_status() {
+    local failed=false
+    local state
+
+    info "FilamentHub production status"
+    docker compose ps || failed=true
+
+    for container in \
+        filamenthub_postgres_prod \
+        filamenthub_redis_prod \
+        filamenthub_backend_prod \
+        filamenthub_frontend_prod; do
+        state="$(container_state "$container")"
+        if [[ "$state" == "healthy" || "$state" == "running" ]]; then
+            success "  $container: $state"
+        else
+            warn "  $container: $state"
+            failed=true
+        fi
+    done
+
+    if docker ps --format '{{.Names}}' | grep -qx filamenthub_backend_prod; then
+        check_alembic_head || failed=true
+        check_semantic_health || failed=true
+    fi
+
+    if curl -kfsS --max-time 10 -H "Host: $SITE_HOST" https://127.0.0.1/health >/dev/null; then
+        success "  public backend health: OK"
+    else
+        warn "  public backend health: failed"
+        failed=true
+    fi
+
+    if curl -kfsS --max-time 10 -H "Host: $SITE_HOST" https://127.0.0.1/ >/dev/null; then
+        success "  public SPA: OK"
+    else
+        warn "  public SPA: failed"
+        failed=true
+    fi
+
+    if curl -fsS --max-time 15 "https://$SITE_HOST/health" >/dev/null; then
+        success "  external DNS/TLS health: OK"
+    else
+        warn "  external DNS/TLS health: failed"
+        failed=true
+    fi
+
+    [[ "$failed" == false ]]
+}
+
+prune_build_cache() {
+    local retention="${BUILD_CACHE_RETENTION:-336h}"
+    local answer
+
+    require_command docker
+    [[ "$retention" =~ ^[1-9][0-9]*[hms]$ ]] \
+        || fail "BUILD_CACHE_RETENTION must look like 336h, 30m or 60s."
+
+    if [[ "$ASSUME_YES" != true ]]; then
+        printf 'Type PRUNE to remove Docker build cache older than %s: ' "$retention"
+        read -r answer
+        [[ "$answer" == "PRUNE" ]] || fail "Build-cache cleanup cancelled."
+    fi
+
+    info "Docker disk usage before cleanup:"
+    docker system df
+    docker builder prune -f --filter "until=$retention"
+    info "Docker disk usage after cleanup:"
+    docker system df
+    df -h "$PROJECT_DIR"
+}
+
+create_backup() {
+    local timestamp final_file partial_file
+
+    require_command docker
+    require_command gzip
+    require_command gpg
+
+    [[ "$(docker inspect --format='{{.State.Running}}' filamenthub_postgres_prod 2>/dev/null || true)" == "true" ]] \
+        || fail "Production PostgreSQL is not running; deployment without a backup is forbidden."
+    [[ -s "$BACKUP_KEY" ]] || fail "Backup public key is missing or empty: $BACKUP_KEY"
+
+    mkdir -p "$BACKUP_DIR"
+    [[ -d "$BACKUP_DIR" && -w "$BACKUP_DIR" ]] \
+        || fail "Backup directory is not writable: $BACKUP_DIR"
+    chmod 700 "$BACKUP_DIR" 2>/dev/null || true
+    umask 077
+
+    timestamp="$(date -u +%Y%m%d_%H%M%S)"
+    final_file="$BACKUP_DIR/backup_${timestamp}.sql.gz.gpg"
+    partial_file="$final_file.partial"
+    rm -f -- "$partial_file"
+
+    info "Creating encrypted database backup..."
+    if docker exec filamenthub_postgres_prod sh -c \
+        'exec pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' \
+        | gzip -c \
+        | gpg --batch --yes --quiet --trust-model always \
+            --recipient-file "$BACKUP_KEY" \
+            --output "$partial_file" --encrypt; then
+        [[ -s "$partial_file" ]] || {
+            rm -f -- "$partial_file"
+            fail "Backup pipeline completed without producing a non-empty encrypted file."
+        }
+        mv -- "$partial_file" "$final_file"
+    else
+        rm -f -- "$partial_file"
+        fail "Encrypted database backup failed. Deployment has not started."
+    fi
+
+    # --list-only validates the packet structure without trying to decrypt it;
+    # the production host intentionally does not have the private backup key.
+    gpg --batch --quiet --list-only --list-packets "$final_file" >/dev/null 2>&1 \
+        || fail "The new backup is not a valid OpenPGP file: $final_file"
+    LATEST_BACKUP="$final_file"
+    success "Backup verified: $LATEST_BACKUP"
+}
+
+resolve_target() {
+    local branch dirty
+
+    require_command git
+    require_command docker
+    require_command curl
+
+    cd "$PROJECT_DIR"
+    [[ -f docker-compose.yml ]] || fail "docker-compose.yml was not found in $PROJECT_DIR"
+
+    # These paths are production runtime storage. Excluding them explicitly is
+    # required for the first rollout of this worker, before the new .gitignore
+    # itself has reached the production checkout.
+    dirty="$(git status --porcelain --untracked-files=normal -- . \
+        ':(exclude)inbound-mail' \
+        ':(exclude)inbound-mail/**' \
+        ':(exclude)backend/distributions/plugins' \
+        ':(exclude)backend/distributions/plugins/**')"
+    [[ -z "$dirty" ]] || {
+        printf '%s\n' "$dirty" >&2
+        fail "Production worktree is not clean. Resolve it manually; deployment never discards files."
+    }
+
+    branch="$(git branch --show-current)"
+    [[ "$branch" == "main" ]] || fail "Production worktree must be on main, found: ${branch:-detached HEAD}"
+
+    info "Fetching origin/main without submodules..."
+    git fetch --no-recurse-submodules origin main
+
+    PREVIOUS_REVISION="$(git rev-parse HEAD)"
+    TARGET_REVISION="$(git rev-parse --verify "${REVISION}^{commit}" 2>/dev/null)" \
+        || fail "Could not resolve deployment revision: $REVISION"
+
+    git merge-base --is-ancestor "$PREVIOUS_REVISION" "$TARGET_REVISION" \
+        || fail "Target is not a fast-forward from the currently deployed revision."
+    git merge-base --is-ancestor "$TARGET_REVISION" origin/main \
+        || fail "Target revision is not part of origin/main."
+
+    printf 'Current: %s\nTarget : %s\n' "$PREVIOUS_REVISION" "$TARGET_REVISION"
+    if [[ "$PREVIOUS_REVISION" == "$TARGET_REVISION" ]]; then
+        warn "The requested revision is already checked out; containers will still be rebuilt after confirmation."
+    else
+        git log --oneline --no-decorate "$PREVIOUS_REVISION..$TARGET_REVISION" | sed 's/^/  /'
+    fi
+}
+
+confirm_deploy() {
+    local answer short
+    [[ "$ASSUME_YES" == true ]] && return 0
+    short="${TARGET_REVISION:0:8}"
+    printf 'Type DEPLOY %s to continue: ' "$short"
+    read -r answer
+    [[ "$answer" == "DEPLOY $short" ]] || fail "Deployment cancelled."
+}
+
+wait_for_container() {
+    local container="$1"
+    local attempts="${2:-24}"
+    local state=""
+    local attempt
+
+    for (( attempt=1; attempt<=attempts; attempt++ )); do
+        state="$(container_state "$container")"
+        if [[ "$state" == "healthy" || "$state" == "running" ]]; then
+            success "  $container: $state"
+            return 0
+        fi
+        sleep 5
+    done
+
+    warn "  $container did not become ready (last state: $state)"
+    return 1
+}
+
+deploy() {
+    local migration_heads head_count
+    local failed=false
+
+    resolve_target
+    if [[ "$DRY_RUN" == true ]]; then
+        success "Dry run complete. No backup, Git update, build, migration or restart was performed."
+        return 0
+    fi
+    confirm_deploy
+
+    create_backup
+
+    info "Fast-forwarding the production worktree..."
+    git merge --ff-only "$TARGET_REVISION"
+
+    info "Building new application images while the current containers keep serving traffic..."
+    COMPOSE_BAKE=false docker compose build backend frontend
+
+    info "Checking the migration graph in the newly built backend image..."
+    migration_heads="$(docker compose run --rm --no-deps --entrypoint alembic backend heads)"
+    printf '%s\n' "$migration_heads" | sed 's/^/  /'
+    head_count="$(printf '%s\n' "$migration_heads" | grep -c '(head)' || true)"
+    [[ "$head_count" == "1" ]] \
+        || fail "Expected exactly one Alembic head, found $head_count. The current app is still running."
+
+    info "Applying migrations with the newly built image before switching the API..."
+    docker compose run --rm --no-deps --entrypoint alembic backend upgrade head
+
+    info "Switching services to the new images..."
+    COMPOSE_BAKE=false docker compose up -d --no-build --remove-orphans
+
+    info "Waiting for production services..."
+    for container in \
+        filamenthub_postgres_prod \
+        filamenthub_redis_prod \
+        filamenthub_backend_prod \
+        filamenthub_frontend_prod; do
+        wait_for_container "$container" || failed=true
+    done
+
+    wait_for_semantic_health || failed=true
+
+    check_alembic_head || failed=true
+
+    if ! curl -kfsS --max-time 10 -H "Host: $SITE_HOST" https://127.0.0.1/health >/dev/null; then
+        warn "Public backend health check failed."
+        failed=true
+    else
+        success "Public backend health check passed."
+    fi
+    if ! curl -kfsS --max-time 10 -H "Host: $SITE_HOST" https://127.0.0.1/ >/dev/null; then
+        warn "Public SPA check failed."
+        failed=true
+    else
+        success "Public SPA check passed."
+    fi
+    if ! curl -kfsS --max-time 10 -H "Host: $SITE_HOST" https://127.0.0.1/logo.svg >/dev/null; then
+        warn "Public static asset check failed."
+        failed=true
+    else
+        success "Public static asset check passed."
+    fi
+    if ! curl -fsS --max-time 15 "https://$SITE_HOST/health" >/dev/null; then
+        warn "External HTTPS health check failed (DNS/TLS/public route)."
+        failed=true
+    else
+        success "External HTTPS health check passed."
+    fi
+
+    if [[ "$failed" == true ]]; then
+        printf '\n' >&2
+        warn "Deployment verification failed. Automatic schema rollback is intentionally disabled."
+        warn "Previous revision: $PREVIOUS_REVISION"
+        warn "Pre-deploy backup: $LATEST_BACKUP"
+        warn "Inspect immediately: docker compose ps && docker compose logs --tail=200 backend frontend"
         exit 1
     fi
-else
-    echo -e "   ${YELLOW}⚠️  Контейнер backend не запущен, пропускаю миграции${NC}"
-fi
 
-# -----------------------------------------------------------------------------
-# 3.5. Очистка старых Docker образов (оставляем текущий + предыдущий)
-# -----------------------------------------------------------------------------
-echo ""
-echo -e "${YELLOW}🧹 Шаг 3.5: Очистка старых Docker образов...${NC}"
+    printf '\n'
+    success "Deployment completed and verified: $TARGET_REVISION"
+    success "Pre-deploy backup: $LATEST_BACKUP"
+    docker compose ps
+}
 
-# Remove dangling images (untagged, not used by any container)
-DANGLING=$(docker images -f "dangling=true" -q 2>/dev/null | wc -l)
-if [ "$DANGLING" -gt 0 ]; then
-    docker image prune -f > /dev/null 2>&1
-    echo "   Удалено $DANGLING неиспользуемых образов"
-fi
-
-# Preserve recently used build layers (npm ci, pip installs, etc.) so unchanged
-# dependencies are reused on the next deploy. Only stale cache is removed.
-BUILD_CACHE_RETENTION="${BUILD_CACHE_RETENTION:-336h}"
-docker builder prune -f --filter "until=${BUILD_CACHE_RETENTION}" > /dev/null 2>&1
-echo "   Build cache моложе ${BUILD_CACHE_RETENTION} сохранён"
-
-# Show disk usage
-AVAIL=$(df -h / | awk 'NR==2{print $4}')
-echo -e "   ${GREEN}✅ Очистка завершена. Свободно: ${AVAIL}${NC}"
-
-# -----------------------------------------------------------------------------
-# 4. Проверка здоровья
-# -----------------------------------------------------------------------------
-echo ""
-echo -e "${YELLOW}🏥 Шаг 4: Проверка здоровья...${NC}"
-
-# Ждём пока backend поднимется
-echo "   Жду запуска backend (до 60 сек)..."
-ATTEMPTS=0
-MAX_ATTEMPTS=12
-
-while [ $ATTEMPTS -lt $MAX_ATTEMPTS ]; do
-    ATTEMPTS=$((ATTEMPTS + 1))
-
-    # Проверяем что контейнер запущен и healthy через встроенный healthcheck
-    HEALTH_STATUS=$(docker inspect --format='{{.State.Health.Status}}' filamenthub_backend_prod 2>/dev/null || echo "not_found")
-
-    if [ "$HEALTH_STATUS" = "healthy" ]; then
-        echo -e "   ${GREEN}✅ Backend работает!${NC}"
-        break
-    fi
-
-    if [ $ATTEMPTS -eq $MAX_ATTEMPTS ]; then
-        echo -e "   ${YELLOW}⚠️  Backend не отвечает (статус: $HEALTH_STATUS, проверь логи)${NC}"
-    else
-        echo "   Попытка $ATTEMPTS/$MAX_ATTEMPTS... (статус: $HEALTH_STATUS)"
-        sleep 5
-    fi
+while (( $# > 0 )); do
+    case "$1" in
+        --revision)
+            [[ $# -ge 2 ]] || fail "--revision requires a value"
+            REVISION="$2"
+            shift 2
+            ;;
+        --yes)
+            ASSUME_YES=true
+            shift
+            ;;
+        --dry-run)
+            DRY_RUN=true
+            shift
+            ;;
+        --status)
+            ACTION="status"
+            shift
+            ;;
+        --backup-only)
+            ACTION="backup"
+            shift
+            ;;
+        --prune-build-cache)
+            ACTION="prune"
+            shift
+            ;;
+        --help|-h)
+            usage
+            exit 0
+            ;;
+        *)
+            fail "Unknown argument: $1"
+            ;;
+    esac
 done
 
-# Проверяем frontend через nginx: backend proxy, SPA index и статику
-FRONTEND_OK=true
-
-if curl -kfsS --max-time 10 -H "Host: $SITE_HOST" https://127.0.0.1/health > /dev/null 2>&1; then
-    echo "   ✅ Nginx -> backend /health отвечает"
-else
-    echo -e "   ${YELLOW}⚠️  Nginx -> backend /health не отвечает${NC}"
-    FRONTEND_OK=false
-fi
-
-if curl -kfsS --max-time 10 -H "Host: $SITE_HOST" https://127.0.0.1/ > /dev/null 2>&1; then
-    echo "   ✅ SPA index отвечает по HTTPS"
-else
-    echo -e "   ${YELLOW}⚠️  SPA index не отвечает по HTTPS${NC}"
-    FRONTEND_OK=false
-fi
-
-if curl -kfsS --max-time 10 -H "Host: $SITE_HOST" https://127.0.0.1/logo.svg > /dev/null 2>&1; then
-    echo "   ✅ Статика frontend доступна"
-else
-    echo -e "   ${YELLOW}⚠️  Статика frontend не отвечает${NC}"
-    FRONTEND_OK=false
-fi
-
-if [ "$FRONTEND_OK" = true ]; then
-    echo -e "   ${GREEN}✅ Frontend работает!${NC}"
-else
-    echo -e "   ${YELLOW}⚠️  Frontend отвечает не полностью (проверь логи)${NC}"
-fi
-
-# -----------------------------------------------------------------------------
-# 5. Итоги
-# -----------------------------------------------------------------------------
-echo ""
-echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "${GREEN}✅ Деплой завершён!${NC}"
-echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo ""
-echo "Статус контейнеров:"
-docker compose ps
-echo ""
-echo -e "${BLUE}💡 Полезные команды:${NC}"
-echo "   docker compose logs -f          # Все логи"
-echo "   docker compose logs -f backend  # Логи backend"
-echo "   docker compose restart backend  # Перезапуск backend"
-echo ""
+cd "$PROJECT_DIR"
+case "$ACTION" in
+    deploy) deploy ;;
+    status) show_status ;;
+    backup) create_backup ;;
+    prune) prune_build_cache ;;
+    *) fail "Unknown action: $ACTION" ;;
+esac
