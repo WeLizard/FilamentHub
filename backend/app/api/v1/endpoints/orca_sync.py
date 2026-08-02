@@ -10,8 +10,7 @@ from datetime import datetime, timezone
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import cast, or_, select
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -2173,7 +2172,7 @@ async def _upsert_filament_preset(
         elif fhub_draft_id:
             result = await db.execute(
                 select(Preset).where(
-                    cast(Preset.orcaslicer_settings, JSONB)['fhub_draft_id'].astext == fhub_draft_id,
+                    Preset.orcaslicer_settings['fhub_draft_id'].as_string() == fhub_draft_id,
                     Preset.user_id == current_user.id,
                 )
             )
@@ -2407,7 +2406,7 @@ async def _upsert_filament_preset(
         if payload.external_id:
             result = await db.execute(
                 select(Preset).where(
-                    cast(Preset.orcaslicer_settings, JSONB)['derived_from_external_id'].astext == payload.external_id,
+                    Preset.orcaslicer_settings['derived_from_external_id'].as_string() == payload.external_id,
                     Preset.user_id == current_user.id,
                     Preset.active == True,
                 )
@@ -2427,7 +2426,7 @@ async def _upsert_filament_preset(
 
             result = await db.execute(
                 select(Preset).where(
-                    cast(Preset.orcaslicer_settings, JSONB)['derived_from_draft_id'].astext == check_draft_id,
+                    Preset.orcaslicer_settings['derived_from_draft_id'].as_string() == check_draft_id,
                     Preset.user_id == current_user.id,
                     Preset.active == True,
                 )
