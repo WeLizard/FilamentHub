@@ -1,6 +1,6 @@
 /** Детальная страница филамента */
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { InfoHint } from '../components/InfoHint';
 import { useConfiguredNozzleHrc } from '../hooks/useConfiguredNozzleHrc';
@@ -93,6 +93,77 @@ const hasAdvancedOrcaValues = (settings: Parameters<typeof getOrcaNumber>[0]): b
     volumetric !== null ||
     (fanMin !== null && fanMax !== null) ||
     (chamber !== null && chamber > 0)
+  );
+};
+
+const PresetTitle: React.FC<{ name: string }> = ({ name }) => {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const textRef = useRef<HTMLParagraphElement | null>(null);
+  const [eyeLeft, setEyeLeft] = useState<number | null>(null);
+
+  useLayoutEffect(() => {
+    const container = containerRef.current;
+    const text = textRef.current;
+    const textNode = text?.firstChild;
+    if (!container || !text || !textNode) {
+      return;
+    }
+
+    let active = true;
+    const updateEyePosition = () => {
+      if (!active) {
+        return;
+      }
+      const range = document.createRange();
+      range.selectNodeContents(textNode);
+      const firstLine = range.getClientRects()[0];
+      if (!firstLine) {
+        setEyeLeft(null);
+        return;
+      }
+
+      const containerRect = container.getBoundingClientRect();
+      const nextLeft = Math.max(
+        0,
+        Math.min(
+          firstLine.right - containerRect.left + 8,
+          container.clientWidth - 16,
+        ),
+      );
+      setEyeLeft((current) => (current === nextLeft ? current : nextLeft));
+    };
+
+    updateEyePosition();
+    document.fonts?.ready.then(updateEyePosition);
+
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', updateEyePosition);
+      return () => {
+        active = false;
+        window.removeEventListener('resize', updateEyePosition);
+      };
+    }
+
+    const resizeObserver = new ResizeObserver(updateEyePosition);
+    resizeObserver.observe(container);
+
+    return () => {
+      active = false;
+      resizeObserver.disconnect();
+    };
+  }, [name]);
+
+  return (
+    <div ref={containerRef} className="relative mb-1 min-w-0 pr-6">
+      <p ref={textRef} className="min-w-0 break-words text-lg font-semibold text-white">
+        {name}
+      </p>
+      <Eye
+        aria-hidden="true"
+        className="absolute top-1.5 h-4 w-4 text-gray-500"
+        style={{ left: eyeLeft ?? 0, visibility: eyeLeft === null ? 'hidden' : 'visible' }}
+      />
+    </div>
   );
 };
 
@@ -999,59 +1070,48 @@ export const FilamentDetailPage: React.FC = () => {
                               <CheckCircle className="w-5 h-5 text-green-400" />
                             )}
                             <div className="min-w-0 flex-1">
-                              <p className="mb-1 min-w-0 break-words text-lg font-semibold text-white">
-                                {preset.name}
-                                <span className="whitespace-nowrap">
-                                  {'\u00A0'}
-                                  <Eye
-                                    aria-hidden="true"
-                                    className="inline-block h-4 w-4 align-[-0.125em] text-gray-500"
-                                  />
-                                </span>
-                              </p>
+                              <PresetTitle name={preset.name} />
                               {preset.description && (
                                 <p className="text-gray-400 text-sm">{preset.description}</p>
                               )}
+                              {preset.printers && preset.printers.length > 0 && (
+                                <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                                  {preset.printers.map((printer) => (
+                                    <span
+                                      key={printer.id}
+                                      className="px-2 py-0.5 bg-white/10 rounded-md text-xs text-gray-300 border border-white/20"
+                                      title={`${printer.manufacturer} ${printer.model}`}
+                                    >
+                                      {printer.name}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
                             </div>
                           </div>
-                          {preset.printers && preset.printers.length > 0 && (
-                            <div className="flex items-center gap-1.5 flex-wrap ml-4">
-                              {preset.printers.map((printer) => (
-                                <span
-                                  key={printer.id}
-                                  className="px-2 py-0.5 bg-white/10 rounded-md text-xs text-gray-300 border border-white/20"
-                                  title={`${printer.manufacturer} ${printer.model}`}
-                                >
-                                  {printer.name}
-                                </span>
-                              ))}
-                            </div>
-                          )}
-                          <div className="text-right ml-4">
-                            {/* Переключатель синхронизации - показываем для всех пресетов пользователя (если авторизован) */}
-                            {user && (
-                              <div className="mb-2 flex justify-end" onClick={(e) => e.stopPropagation()}>
-                                <PresetSyncToggle preset={preset} size="sm" />
-                              </div>
-                            )}
-                            {/* Рейтинг пресета (отдельный от рейтинга материала) */}
+                          <div className="ml-4 grid shrink-0 grid-cols-[auto_1.25rem] items-start gap-x-2 text-right">
+                            {/* Рейтинг остаётся в верхней строке, а крайняя
+                                колонка всегда зарезервирована под синхронизацию. */}
                             {preset.rating !== null && preset.rating !== undefined ? (
                               <div className="flex items-center space-x-2 mb-2" title={t('filamentDetailPage.presetRatingTitle')}>
-                              <Star className="w-5 h-5 text-yellow-400 fill-current" />
+                                <Star className="w-5 h-5 text-yellow-400 fill-current" />
                                 <span className="text-white font-bold">{preset.rating.toFixed(1)}</span>
-                            </div>
+                              </div>
                             ) : (
                               <div className="mb-2 text-gray-500 text-sm">{t('filamentDetailPage.noRating')}</div>
                             )}
+                            <div className="flex justify-end" onClick={(e) => e.stopPropagation()}>
+                              {user && <PresetSyncToggle preset={preset} size="sm" />}
+                            </div>
                             {/* Успешность пресета */}
                             {preset.success_rate !== null && preset.success_rate !== undefined && (
-                              <div className="flex items-center space-x-1 mb-1" title={t('filamentDetailPage.presetSuccessTitle')}>
+                              <div className="col-start-1 flex items-center space-x-1 mb-1" title={t('filamentDetailPage.presetSuccessTitle')}>
                                 <CheckCircle className="w-4 h-4 text-green-400" />
                                 <span className="text-green-400 text-sm font-semibold">{preset.success_rate.toFixed(1)}%</span>
                               </div>
                             )}
                             {/* Использования пресета */}
-                            <p className="text-gray-400 text-xs">{preset.usage_count} {t('filamentDetailPage.usages')}</p>
+                            <p className="col-start-1 text-gray-400 text-xs">{preset.usage_count} {t('filamentDetailPage.usages')}</p>
                           </div>
                         </div>
                         
