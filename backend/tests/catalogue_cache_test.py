@@ -84,3 +84,35 @@ async def test_private_answers_are_left_alone(client: AsyncClient):
     assert "cache-control" not in response.headers or "public" not in response.headers[
         "cache-control"
     ]
+
+
+def test_nothing_shared_depends_on_who_is_asking():
+    """The guard that stops a shared cache being handed one person's answer.
+
+    A first attempt matched whole branches of the API by their address, which
+    swept in a brand's team roster and its usage report — both answer per user.
+    Anything declared cacheable must take no user, and this fails if one ever
+    does again.
+    """
+    import inspect
+
+    from app.main import app
+    from app.middleware.catalogue_cache import CACHEABLE_ROUTES
+
+    user_markers = ("current_user", "get_current", "require_", "api_key")
+    offenders = []
+    matched = set()
+
+    for route in app.routes:
+        path = getattr(route, "path", None)
+        if path not in CACHEABLE_ROUTES or "GET" not in (getattr(route, "methods", None) or ()):
+            continue
+        matched.add(path)
+        source = inspect.getsource(route.endpoint)
+        if any(marker in source for marker in user_markers):
+            offenders.append(path)
+
+    assert not offenders, f"общий кеш обещан ручкам, зависящим от пользователя: {offenders}"
+    assert matched == set(CACHEABLE_ROUTES), (
+        f"в списке кешируемых есть несуществующие маршруты: {set(CACHEABLE_ROUTES) - matched}"
+    )
