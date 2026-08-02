@@ -16,6 +16,7 @@ import {
   Droplet,
   Palette,
   Fan,
+  Layers,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { filamentsAPI, brandsAPI, savedPresetsAPI, qrAPI, printersAPI, physicalPrintersAPI } from '../api/client';
@@ -28,6 +29,11 @@ import { NozzleRequirementBadge } from '../components/NozzleRequirementBadge';
 import { useConfiguredNozzleHrc } from '../hooks/useConfiguredNozzleHrc';
 import { useDebounce } from '../hooks/useDebounce';
 import { SEOHead } from '../components/SEOHead';
+import {
+  formatTemperatureRange,
+  getFilamentCompositionFacts,
+  hasNonStandardDiameter,
+} from '../utils/filamentFacts';
 import type { Filament } from '../types/api';
 import type { AxiosError } from 'axios';
 
@@ -480,6 +486,25 @@ const MaterialCard: React.FC<MaterialCardProps> = ({
         verified: filament.brand_verified,
       }
     : null;
+  const manufacturerNozzleRange = formatTemperatureRange(
+    filament.recommended_nozzle_temp_min,
+    filament.recommended_nozzle_temp_max,
+  );
+  const manufacturerBedRange = formatTemperatureRange(
+    filament.recommended_bed_temp_min,
+    filament.recommended_bed_temp_max,
+  );
+  const compositionLabels = getFilamentCompositionFacts(filament).map((fact) => {
+    const label = t(`filamentFeatures.${fact.kind === 'additive' ? 'additives' : 'effects'}.${fact.code}`, {
+      defaultValue: fact.code.replaceAll('_', ' '),
+    });
+    return fact.kind === 'additive' && fact.contentPercent != null
+      ? `${label} ${fact.contentPercent}%`
+      : label;
+  });
+  const propertyLabels = (filament.property_claims ?? []).map((claim) =>
+    t(`filamentFeatures.claims.${claim.code}`, { defaultValue: claim.code.replaceAll('_', ' ') }),
+  );
 
   useEffect(() => {
     setCurrentPresetIndex(0);
@@ -638,23 +663,21 @@ const MaterialCard: React.FC<MaterialCardProps> = ({
               )}
           </div>
         </div>
-        {filament.price_hidden ? null : (filament.price_per_kg || filament.spool_weight) ? (
+        {!filament.price_hidden && filament.price_per_kg ? (
           <div className="ml-2 flex-shrink-0 text-right sm:ml-4">
-            {filament.price_per_kg && filament.spool_weight && filament.spool_weight !== 1000 ? (
+            {filament.spool_weight && filament.spool_weight !== 1000 ? (
               <>
                 <p className="text-xs sm:text-sm font-medium text-gray-300">
-                  {Math.round((filament.price_per_kg * filament.spool_weight) / 1000)} {currencySymbol(filament.currency)}<span className="text-gray-400">/{Math.round(filament.spool_weight)} {t('catalogPage.units.g')}</span>
+                  {Math.round((filament.price_per_kg * filament.spool_weight) / 1000)} {currencySymbol(filament.currency)}
                 </p>
                 <p className="text-[10px] sm:text-xs text-gray-500">
                   ≈ {Math.round(filament.price_per_kg)} {currencySymbol(filament.currency)}/{t('catalogPage.units.kg')}
                 </p>
               </>
-            ) : filament.price_per_kg ? (
+            ) : (
               <p className="text-xs sm:text-sm font-medium text-gray-300">
                 {Math.round(filament.price_per_kg)} {currencySymbol(filament.currency)}<span className="text-gray-400">/{t('catalogPage.units.kg')}</span>
               </p>
-            ) : (
-              <p className="text-xs sm:text-sm text-gray-400">{Math.round(filament.spool_weight!)} {t('catalogPage.units.g')}</p>
             )}
           </div>
         ) : null}
@@ -662,18 +685,38 @@ const MaterialCard: React.FC<MaterialCardProps> = ({
 
       {/* Детали материала в компактном виде */}
       <div className="mb-3 sm:mb-4 flex flex-wrap items-center gap-2 sm:gap-4 text-xs text-gray-300">
-        {filament.diameter && (
+        {filament.spool_weight && (
+          <div
+            className="flex items-center gap-1 bg-white/5 border border-white/10 rounded-full px-2 sm:px-3 py-0.5 sm:py-1"
+            title={t('catalogPage.netWeight')}
+          >
+            <Package className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-cyan-300" />
+            <span className="text-white font-semibold text-[10px] sm:text-xs">
+              {Math.round(filament.spool_weight)} {t('catalogPage.units.g')}
+            </span>
+          </div>
+        )}
+        {hasNonStandardDiameter(filament.diameter) && (
           <div className="flex items-center gap-1 bg-white/5 border border-white/10 rounded-full px-2 sm:px-3 py-0.5 sm:py-1">
             <Ruler className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-purple-300" />
             <span className="hidden sm:inline uppercase tracking-wide text-[11px]">{t('catalogPage.diameter')}</span>
             <span className="text-white font-semibold text-[10px] sm:text-xs">{filament.diameter} {t('catalogPage.units.mm')}</span>
           </div>
         )}
-        {filament.density && (
-          <div className="flex items-center gap-1 bg-white/5 border border-white/10 rounded-full px-2 sm:px-3 py-0.5 sm:py-1">
-            <Droplet className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-blue-300" />
-            <span className="hidden sm:inline uppercase tracking-wide text-[11px]">{t('catalogPage.density')}</span>
-            <span className="text-white font-semibold text-[10px] sm:text-xs">{filament.density} {t('catalogPage.units.gcm3')}</span>
+        {(manufacturerNozzleRange || manufacturerBedRange) && (
+          <div className="flex items-center gap-1.5 bg-white/5 border border-white/10 rounded-full px-2 sm:px-3 py-0.5 sm:py-1">
+            <Thermometer className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-orange-300" />
+            {manufacturerNozzleRange && (
+              <span className="text-[10px] sm:text-xs text-gray-300">
+                {t('catalogPage.nozzle')} <strong className="font-semibold text-white">{manufacturerNozzleRange}°C</strong>
+              </span>
+            )}
+            {manufacturerNozzleRange && manufacturerBedRange && <span className="text-white/25">·</span>}
+            {manufacturerBedRange && (
+              <span className="text-[10px] sm:text-xs text-gray-300">
+                {t('catalogPage.bed')} <strong className="font-semibold text-white">{manufacturerBedRange}°C</strong>
+              </span>
+            )}
           </div>
         )}
         {filament.color_name && (
@@ -685,6 +728,26 @@ const MaterialCard: React.FC<MaterialCardProps> = ({
         {filament.ral_code && (
           <div className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 font-mono text-[10px] font-semibold text-gray-200 sm:px-3 sm:py-1 sm:text-xs">
             RAL {filament.ral_code}
+          </div>
+        )}
+        {compositionLabels.length > 0 && (
+          <div
+            className="flex min-w-0 items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] text-gray-200 sm:px-3 sm:py-1 sm:text-xs"
+            title={`${t('filamentFeatures.composition')}: ${compositionLabels.join(', ')}`}
+          >
+            <Layers className="h-3 w-3 shrink-0 text-lime-300 sm:h-3.5 sm:w-3.5" />
+            <span className="max-w-[180px] truncate sm:max-w-[280px]">{compositionLabels.slice(0, 2).join(' · ')}</span>
+            {compositionLabels.length > 2 && <span className="text-gray-400">+{compositionLabels.length - 2}</span>}
+          </div>
+        )}
+        {propertyLabels.length > 0 && (
+          <div
+            className="flex min-w-0 items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] text-gray-200 sm:px-3 sm:py-1 sm:text-xs"
+            title={`${t('filamentFeatures.functionalProperties')}: ${propertyLabels.join(', ')}`}
+          >
+            <Shield className="h-3 w-3 shrink-0 text-sky-300 sm:h-3.5 sm:w-3.5" />
+            <span className="max-w-[180px] truncate sm:max-w-[280px]">{propertyLabels.slice(0, 2).join(' · ')}</span>
+            {propertyLabels.length > 2 && <span className="text-gray-400">+{propertyLabels.length - 2}</span>}
           </div>
         )}
       </div>

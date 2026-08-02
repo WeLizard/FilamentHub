@@ -30,6 +30,8 @@ import {
   Eye,
   ChevronLeft,
   ChevronRight,
+  Layers,
+  Scale,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { filamentsAPI, brandsAPI, savedPresetsAPI, filamentReviewsAPI, qrAPI, physicalPrintersAPI } from '../api/client';
@@ -43,6 +45,7 @@ import { PresetSyncToggle } from '../components/PresetSyncToggle';
 import { ViewPresetModal } from '../components/ViewPresetModal';
 import { SEOHead } from '../components/SEOHead';
 import { externalUrl, externalUrlHost } from '../utils/externalUrl';
+import { formatTemperatureRange, getFilamentCompositionFacts } from '../utils/filamentFacts';
 import { FilamentReview } from '../types/api';
 import type { Preset } from '../types/api';
 import type { AxiosError } from 'axios';
@@ -359,6 +362,16 @@ export const FilamentDetailPage: React.FC = () => {
     );
   }
 
+  const manufacturerNozzleRange = formatTemperatureRange(
+    filament.recommended_nozzle_temp_min,
+    filament.recommended_nozzle_temp_max,
+  );
+  const manufacturerBedRange = formatTemperatureRange(
+    filament.recommended_bed_temp_min,
+    filament.recommended_bed_temp_max,
+  );
+  const compositionFacts = getFilamentCompositionFacts(filament);
+
   // Те же три пресета, которыми материал представлен в каталоге: официальный,
   // генеративный и лучший от сообщества. Их выбирает сервер, а не страница, —
   // раньше она угадывала по первой загруженной странице и могла промахнуться.
@@ -535,7 +548,7 @@ export const FilamentDetailPage: React.FC = () => {
             {filament.price_hidden ? null : filament.price_per_kg && filament.spool_weight && filament.spool_weight !== 1000 ? (
               <>
                 <p className="text-sm md:text-base font-medium text-gray-300">
-                  {Math.round((filament.price_per_kg * filament.spool_weight) / 1000)} {currencySymbol(filament.currency)}<span className="text-gray-400">/{Math.round(filament.spool_weight)} {t('catalogPage.units.g')}</span>
+                  {Math.round((filament.price_per_kg * filament.spool_weight) / 1000)} {currencySymbol(filament.currency)}
                 </p>
                 <p className="text-gray-500 text-xs">
                   ≈ {Math.round(filament.price_per_kg)} {currencySymbol(filament.currency)}/{t('catalogPage.units.kg')}
@@ -545,14 +558,23 @@ export const FilamentDetailPage: React.FC = () => {
               <p className="text-sm md:text-base font-medium text-gray-300">
                 {Math.round(filament.price_per_kg)} {currencySymbol(filament.currency)}<span className="text-gray-400">/{t('catalogPage.units.kg')}</span>
               </p>
-            ) : filament.spool_weight ? (
-              <p className="text-gray-400 text-sm">{Math.round(filament.spool_weight)} {t('catalogPage.units.g')}</p>
             ) : null}
           </div>
         </div>
 
         {/* Детали материала */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-6 mb-4 md:mb-6">
+        <div className="mb-4 grid grid-cols-2 gap-3 md:mb-6 md:grid-cols-4 md:gap-6">
+          {filament.spool_weight && (
+            <div className="flex items-center gap-2 text-gray-300 md:gap-3">
+              <Scale className="h-4 w-4 text-cyan-400 md:h-5 md:w-5" />
+              <div>
+                <div className="text-[10px] md:text-sm">{t('filamentDetailPage.netWeight')}</div>
+                <div className="text-base font-bold text-white md:text-xl">
+                  {Math.round(filament.spool_weight)} {t('catalogPage.units.g')}
+                </div>
+              </div>
+            </div>
+          )}
           {filament.diameter && (
             <div className="flex items-center gap-2 md:gap-3 text-gray-300">
               <Ruler className="w-4 h-4 md:w-5 md:h-5 text-purple-400" />
@@ -567,7 +589,7 @@ export const FilamentDetailPage: React.FC = () => {
               <Package className="w-4 h-4 md:w-5 md:h-5 text-blue-400" />
               <div>
                 <div className="text-[10px] md:text-sm">{t('filamentDetailPage.density')}</div>
-                <div className="text-base md:text-xl font-bold text-white">{filament.density}</div>
+                <div className="text-base md:text-xl font-bold text-white">{filament.density} {t('catalogPage.units.gcm3')}</div>
               </div>
             </div>
           )}
@@ -584,6 +606,24 @@ export const FilamentDetailPage: React.FC = () => {
               </div>
             </div>
           )}
+          {manufacturerNozzleRange && (
+            <div className="flex items-center gap-2 text-gray-300 md:gap-3">
+              <Thermometer className="h-4 w-4 text-orange-400 md:h-5 md:w-5" />
+              <div>
+                <div className="text-[10px] md:text-sm">{t('filamentDetailPage.vendorNozzleRange')}</div>
+                <div className="text-base font-bold text-white md:text-xl">{manufacturerNozzleRange}°C</div>
+              </div>
+            </div>
+          )}
+          {manufacturerBedRange && (
+            <div className="flex items-center gap-2 text-gray-300 md:gap-3">
+              <Thermometer className="h-4 w-4 text-blue-400 md:h-5 md:w-5" />
+              <div>
+                <div className="text-[10px] md:text-sm">{t('filamentDetailPage.vendorBedRange')}</div>
+                <div className="text-base font-bold text-white md:text-xl">{manufacturerBedRange}°C</div>
+              </div>
+            </div>
+          )}
           <div className="flex items-center gap-2 md:gap-3 text-gray-300 min-w-0">
             <QrCode className="w-4 h-4 md:w-5 md:h-5 shrink-0 text-green-400" />
             <div className="min-w-0">
@@ -592,6 +632,60 @@ export const FilamentDetailPage: React.FC = () => {
             </div>
           </div>
         </div>
+
+        {(compositionFacts.length > 0 || (filament.property_claims?.length ?? 0) > 0) && (
+          <div className="mb-4 grid gap-3 md:mb-6 md:grid-cols-2">
+            {compositionFacts.length > 0 && (
+              <section className="rounded-xl border border-white/10 bg-white/5 p-3 md:p-4">
+                <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-white">
+                  <Layers className="h-4 w-4 text-lime-300" />
+                  {t('filamentFeatures.composition')}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {compositionFacts.map((fact) => {
+                    const label = t(
+                      `filamentFeatures.${fact.kind === 'additive' ? 'additives' : 'effects'}.${fact.code}`,
+                      { defaultValue: fact.code.replaceAll('_', ' ') },
+                    );
+                    return (
+                      <span
+                        key={`${fact.kind}-${fact.code}`}
+                        className="rounded-full border border-white/10 bg-black/15 px-2.5 py-1 text-xs text-gray-200"
+                      >
+                        {label}
+                        {fact.kind === 'additive' && fact.contentPercent != null && (
+                          <span className="ml-1 text-gray-400">{fact.contentPercent}%</span>
+                        )}
+                      </span>
+                    );
+                  })}
+                </div>
+              </section>
+            )}
+            {(filament.property_claims?.length ?? 0) > 0 && (
+              <section className="rounded-xl border border-white/10 bg-white/5 p-3 md:p-4">
+                <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-white">
+                  <Shield className="h-4 w-4 text-sky-300" />
+                  {t('filamentFeatures.functionalProperties')}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {filament.property_claims?.map((claim) => {
+                    const details = [claim.value, claim.standard, claim.rating].filter(Boolean).join(' · ');
+                    return (
+                      <span
+                        key={claim.code}
+                        className="rounded-full border border-white/10 bg-black/15 px-2.5 py-1 text-xs text-gray-200"
+                      >
+                        {t(`filamentFeatures.claims.${claim.code}`, { defaultValue: claim.code.replaceAll('_', ' ') })}
+                        {details && <span className="ml-1 text-gray-400">{details}</span>}
+                      </span>
+                    );
+                  })}
+                </div>
+              </section>
+            )}
+          </div>
+        )}
 
         {isQrEntry && (
           <div className="mb-4 flex flex-col gap-3 rounded-xl border border-emerald-400/25 bg-emerald-500/10 p-4 sm:flex-row sm:items-center sm:justify-between">
