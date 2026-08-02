@@ -584,7 +584,16 @@ export const filamentsAPI = {
     return response.data;
   },
 
-  getPresets: async (id: number, params?: { page?: number; size?: number; is_official?: boolean }) => {
+  getPresets: async (
+    id: number,
+    params?: {
+      page?: number;
+      size?: number;
+      is_official?: boolean;
+      sort?: 'best' | 'new';
+      printer_id?: number;
+    },
+  ) => {
     const response = await api.get<ListResponse<Preset>>(`/filaments/${id}/presets`, { params });
     return response.data;
   },

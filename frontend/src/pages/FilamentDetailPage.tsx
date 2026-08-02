@@ -1,12 +1,12 @@
 /** Детальная страница филамента */
 
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { InfoHint } from '../components/InfoHint';
 import { useConfiguredNozzleHrc } from '../hooks/useConfiguredNozzleHrc';
 import { isNozzleTooSoft } from '../utils/nozzleHardness';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Star,
   CheckCircle,
@@ -30,7 +30,7 @@ import {
   Eye,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { filamentsAPI, brandsAPI, savedPresetsAPI, filamentReviewsAPI, qrAPI } from '../api/client';
+import { filamentsAPI, brandsAPI, savedPresetsAPI, filamentReviewsAPI, qrAPI, physicalPrintersAPI } from '../api/client';
 import { translateApiError } from '../utils/translateApiError';
 import { currencySymbol } from '../utils/currency';
 import { ReviewCard } from '../components/ReviewCard';
@@ -44,6 +44,10 @@ import { externalUrl, externalUrlHost } from '../utils/externalUrl';
 import { FilamentReview } from '../types/api';
 import type { Preset } from '../types/api';
 import type { AxiosError } from 'axios';
+
+// A grid of tiles rather than a column of rows, so a page's worth arrives at
+// once and the next arrives before the person reaches the end of this one.
+const PRESETS_PER_PAGE = 24;
 
 export const FilamentDetailPage: React.FC = () => {
   const { t } = useTranslation();
@@ -60,6 +64,10 @@ export const FilamentDetailPage: React.FC = () => {
   const [editingReview, setEditingReview] = useState<FilamentReview | null>(null);
   const [reviewsPage, setReviewsPage] = useState(1);
   const [deletingReviewId, setDeletingReviewId] = useState<number | null>(null);
+  const [activeCarousel, setActiveCarousel] = useState(0);
+  const [presetSort, setPresetSort] = useState<'best' | 'new'>('best');
+  const [presetPrinterId, setPresetPrinterId] = useState<number | null>(null);
+  const loadMorePresetsRef = useRef<HTMLDivElement | null>(null);
   const isQrEntry = new URLSearchParams(location.search).get('qr') === 'true';
   
   // Определяем откуда пришли (из каталога или профиля)
@@ -84,11 +92,63 @@ export const FilamentDetailPage: React.FC = () => {
   });
 
   // Загружаем все пресеты
-  const { data: presetsData, isLoading: isLoadingPresets } = useQuery({
-    queryKey: ['filament-presets', id],
-    queryFn: () => filamentsAPI.getPresets(Number(id)),
+  // Loaded a page at a time as the person scrolls: a popular material can carry
+  // hundreds of presets, and until now everything past the first fifty was
+  // unreachable while the tab still counted them.
+  const {
+    data: presetPages,
+    isLoading: isLoadingPresets,
+    isFetchingNextPage: isFetchingMorePresets,
+    hasNextPage: hasMorePresets,
+    fetchNextPage: fetchMorePresets,
+  } = useInfiniteQuery({
+    queryKey: ['filament-presets', id, presetSort, presetPrinterId],
+    queryFn: ({ pageParam }) =>
+      filamentsAPI.getPresets(Number(id), {
+        page: pageParam,
+        size: PRESETS_PER_PAGE,
+        sort: presetSort,
+        printer_id: presetPrinterId ?? undefined,
+      }),
     enabled: !!id,
+    initialPageParam: 1,
+    getNextPageParam: (lastPage) =>
+      lastPage.page < lastPage.pages ? lastPage.page + 1 : undefined,
   });
+
+  const loadedPresets = presetPages?.pages.flatMap((page) => page.items) ?? [];
+  const totalPresets = presetPages?.pages[0]?.total ?? 0;
+
+  // Only machines the person registered and matched to a catalogue model can
+  // narrow the list: the filter asks the server about that model.
+  const { data: physicalPrinters } = useQuery({
+    queryKey: ['physical-printers-for-filter', user?.id],
+    queryFn: () => physicalPrintersAPI.list(),
+    enabled: !!user?.id,
+  });
+  const myPrinters = (physicalPrinters ?? [])
+    .filter((printer): printer is typeof printer & { printer_id: number } => printer.printer_id !== null)
+    .map((printer) => ({ id: printer.printer_id, name: printer.name }));
+
+  // The next page is asked for while the last tiles are still coming into view,
+  // so scrolling never stops at a wall.
+  useEffect(() => {
+    const target = loadMorePresetsRef.current;
+    if (!target || !hasMorePresets || typeof IntersectionObserver === 'undefined') {
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting && !isFetchingMorePresets) {
+          void fetchMorePresets();
+        }
+      },
+      { rootMargin: '400px 0px' },
+    );
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [fetchMorePresets, hasMorePresets, isFetchingMorePresets]);
 
   // Загружаем список сохранённых пресетов
   const { data: savedPresets } = useQuery({
@@ -181,23 +241,25 @@ export const FilamentDetailPage: React.FC = () => {
     );
   }
 
-  // Главный пресет для верхней плашки: официальный -> генеративный
-  // (weighted) -> топовый по рейтингу. Так плашка не пустует, если у
-  // филамента есть только community-пресеты, и показывает генеративный
-  // пресет, когда он появится.
+  // Те же три пресета, которыми материал представлен в каталоге: официальный,
+  // генеративный и лучший от сообщества. Их выбирает сервер, а не страница, —
+  // раньше она угадывала по первой загруженной странице и могла промахнуться.
+  const carousel = filament.preset_summaries ?? [];
+  const carouselIndex = carousel.length > 0 ? Math.min(activeCarousel, carousel.length - 1) : 0;
+  const activeSummary = carousel[carouselIndex];
+
   const primaryPreset =
-    presetsData?.items.find((p) => p.is_official) ??
-    presetsData?.items.find((p) => p.is_weighted) ??
-    (presetsData && presetsData.items.length > 0
-      ? [...presetsData.items].sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0))[0]
+    loadedPresets.find((p) => p.id === activeSummary?.id) ??
+    loadedPresets.find((p) => p.is_official) ??
+    loadedPresets.find((p) => p.is_weighted) ??
+    (loadedPresets.length > 0
+      ? [...loadedPresets].sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0))[0]
       : undefined);
-  const primaryKind: 'official' | 'weighted' | 'top' = primaryPreset?.is_official
-    ? 'official'
-    : primaryPreset?.is_weighted
-      ? 'weighted'
-      : 'top';
+  const primaryKind: 'official' | 'weighted' | 'top' =
+    (activeSummary?.preset_type as 'official' | 'weighted' | undefined) ??
+    (primaryPreset?.is_official ? 'official' : primaryPreset?.is_weighted ? 'weighted' : 'top');
   // В список ниже попадает всё, кроме главного пресета.
-  const communityPresets = presetsData?.items.filter((p) => p.id !== primaryPreset?.id);
+  const communityPresets = loadedPresets.filter((p) => p.id !== primaryPreset?.id);
   
   // Проверяем, сохранён ли официальный пресет
   const isOfficialPresetSaved = primaryPreset ? savedPresetIds.has(primaryPreset.id) : false;
@@ -344,7 +406,7 @@ export const FilamentDetailPage: React.FC = () => {
               {/* Количество пресетов */}
               <span className="flex items-center text-gray-300" title={t('filamentDetailPage.presetsCountTitle')}>
                 <TrendingUp className="w-3.5 h-3.5 md:w-5 md:h-5 mr-1 md:mr-2 text-blue-400" />
-                <span className="font-bold text-white">{presetsData?.total || 0} <span className="hidden md:inline">{t('filamentDetailPage.presetsWord', { count: presetsData?.total || 0 })}</span></span>
+                <span className="font-bold text-white">{totalPresets} <span className="hidden md:inline">{t('filamentDetailPage.presetsWord', { count: totalPresets })}</span></span>
               </span>
               {/* Количество отзывов */}
               {ratingStats && ratingStats.total_reviews > 0 && (
@@ -586,7 +648,7 @@ export const FilamentDetailPage: React.FC = () => {
             }`}
           >
             <Settings className="w-5 h-5 inline mr-2" />
-            {t('filamentDetailPage.presetsCount', { count: presetsData?.total || 0 })}
+            {t('filamentDetailPage.presetsCount', { count: totalPresets })}
           </button>
           <button
             onClick={() => setActiveTab('reviews')}
@@ -606,6 +668,34 @@ export const FilamentDetailPage: React.FC = () => {
             {/* Официальный пресет */}
             {isLoadingPresets && (
               <div className="text-center py-8 text-gray-400">{t('filamentDetailPage.loadingPresets')}</div>
+            )}
+
+            {/* Те же три, что показывает карточка в каталоге: официальный,
+                генеративный и лучший от сообщества. Показываются только те,
+                что у материала действительно есть. */}
+            {carousel.length > 1 && (
+              <div className="flex flex-wrap gap-2">
+                {carousel.map((summary, index) => (
+                  <button
+                    key={summary.id}
+                    type="button"
+                    onClick={() => setActiveCarousel(index)}
+                    className={`min-h-9 rounded-lg border px-3 text-sm transition ${
+                      index === carouselIndex
+                        ? 'border-purple-400/50 bg-purple-500/20 text-purple-100'
+                        : 'border-white/15 bg-white/5 text-gray-300 hover:bg-white/10'
+                    }`}
+                  >
+                    {t(
+                      summary.preset_type === 'official'
+                        ? 'filamentDetailPage.officialPreset'
+                        : summary.preset_type === 'weighted'
+                          ? 'filamentDetailPage.generativePreset'
+                          : 'filamentDetailPage.topPreset',
+                    )}
+                  </button>
+                ))}
+              </div>
             )}
 
             {primaryPreset && (
@@ -805,11 +895,47 @@ export const FilamentDetailPage: React.FC = () => {
             {/* Пресеты сообщества */}
             {communityPresets && communityPresets.length > 0 && (
               <div>
-                <h3 className="text-xl font-bold text-white mb-4 flex items-center">
-                  <Users className="w-5 h-5 mr-2" />
-                  {t('filamentDetailPage.communityPresets', { count: communityPresets.length })}
-                </h3>
-                <div className="space-y-3">
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                  <h3 className="text-xl font-bold text-white flex items-center">
+                    <Users className="w-5 h-5 mr-2" />
+                    {t('filamentDetailPage.communityPresets', {
+                      count: Math.max(totalPresets - (primaryPreset ? 1 : 0), 0),
+                    })}
+                  </h3>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {(['best', 'new'] as const).map((mode) => (
+                      <button
+                        key={mode}
+                        type="button"
+                        onClick={() => setPresetSort(mode)}
+                        className={`min-h-9 rounded-lg border px-3 text-sm transition ${
+                          presetSort === mode
+                            ? 'border-purple-400/50 bg-purple-500/20 text-purple-100'
+                            : 'border-white/15 bg-white/5 text-gray-300 hover:bg-white/10'
+                        }`}
+                      >
+                        {t(`filamentDetailPage.sort${mode === 'best' ? 'Best' : 'New'}`)}
+                      </button>
+                    ))}
+                    {myPrinters.length > 0 && (
+                      <select
+                        value={presetPrinterId ?? ''}
+                        onChange={(event) =>
+                          setPresetPrinterId(event.target.value ? Number(event.target.value) : null)
+                        }
+                        className="min-h-9 rounded-lg border border-white/15 bg-white/5 px-3 text-sm text-gray-200"
+                      >
+                        <option value="">{t('filamentDetailPage.anyPrinter')}</option>
+                        {myPrinters.map((printer) => (
+                          <option key={printer.id} value={printer.id}>
+                            {printer.name}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+                </div>
+                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                   {communityPresets.map((preset) => {
                     const isPresetSaved = savedPresetIds.has(preset.id);
                     const isPresetOwn = user ? preset.user_id === user.id : false;
@@ -827,8 +953,8 @@ export const FilamentDetailPage: React.FC = () => {
                         className="p-4 bg-white/5 rounded-xl border border-white/10 hover:bg-white/10 hover:border-white/20 transition-all cursor-pointer"
                         title={t('filamentDetailPage.viewDetails')}
                       >
-                        <div className="flex items-center justify-between mb-3">
-                          <div className="flex items-center space-x-3 flex-1">
+                        <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
+                          <div className="flex items-center space-x-3 min-w-0 flex-1">
                             {preset.moderation_status === 'approved' && (
                               <CheckCircle className="w-5 h-5 text-green-400" />
                             )}
@@ -884,7 +1010,7 @@ export const FilamentDetailPage: React.FC = () => {
                         </div>
                         
                         {/* Параметры пресета */}
-                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 pt-3 border-t border-white/10 mb-3">
+                        <div className="grid grid-cols-2 gap-3 pt-3 border-t border-white/10 mb-3">
                         <div className="flex items-center space-x-2">
                           <Thermometer className="w-4 h-4 text-red-400" />
                           <div>
@@ -958,7 +1084,7 @@ export const FilamentDetailPage: React.FC = () => {
                       {/* Расширенные параметры OrcaSlicer */}
                       {preset.orcaslicer_settings && Object.keys(preset.orcaslicer_settings).length > 0 && (
                         <div className="mt-3 pt-3 border-t border-white/10">
-                          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+                          <div className="grid grid-cols-2 gap-3">
                             {(() => {
                               const s = preset.orcaslicer_settings;
                               const tLow = getOrcaNumber(s, 'nozzle_temperature_range_low');
@@ -1055,6 +1181,23 @@ export const FilamentDetailPage: React.FC = () => {
                   );
                   })}
                 </div>
+
+                {/* Следующая страница подгружается, пока человек ещё листает. */}
+                <div ref={loadMorePresetsRef} aria-hidden className="h-px" />
+                {isFetchingMorePresets && (
+                  <p className="mt-4 text-center text-sm text-gray-400">
+                    {t('filamentDetailPage.loadingMorePresets')}
+                  </p>
+                )}
+                {hasMorePresets && typeof IntersectionObserver === 'undefined' && (
+                  <button
+                    type="button"
+                    onClick={() => void fetchMorePresets()}
+                    className="mt-4 w-full rounded-xl border border-purple-400/25 bg-purple-500/10 py-2 text-sm text-purple-100"
+                  >
+                    {t('filamentDetailPage.showMorePresets')}
+                  </button>
+                )}
               </div>
             )}
           </div>
