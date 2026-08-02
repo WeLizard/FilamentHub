@@ -58,6 +58,19 @@ services:
       dockerfile: Dockerfile.prod
     container_name: filamenthub_backend_prod
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4 --log-level warning --no-access-log
+    # A ceiling so that running out of memory has a predictable ending. Without
+    # one the kernel picks a victim by its own reckoning when the machine fills
+    # up, and it may well pick the database; with one, the worst case is a
+    # single uvicorn worker killed and restarted while everything else keeps
+    # serving.
+    #
+    # Measured worst case is 2.4 GB: four workers idle at 971 MB, plus one
+    # G-code parse each (a 50 MB file costs 220 MB), plus eight password checks
+    # at 64 MiB. The ceiling sits above that so a legitimate peak is never the
+    # thing that trips it, and a further gigabyte of swap softens a spike before
+    # anything is killed at all.
+    mem_limit: 2500m
+    memswap_limit: 3500m
     volumes:
       # Персистентные данные
       - uploads_data:/app/uploads
