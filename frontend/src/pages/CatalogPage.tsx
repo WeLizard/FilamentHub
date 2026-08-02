@@ -663,21 +663,23 @@ const MaterialCard: React.FC<MaterialCardProps> = ({
               )}
           </div>
         </div>
-        {!filament.price_hidden && filament.price_per_kg ? (
+        {filament.price_hidden ? null : (filament.price_per_kg || filament.spool_weight) ? (
           <div className="ml-2 flex-shrink-0 text-right sm:ml-4">
-            {filament.spool_weight && filament.spool_weight !== 1000 ? (
+            {filament.price_per_kg && filament.spool_weight && filament.spool_weight !== 1000 ? (
               <>
                 <p className="text-xs sm:text-sm font-medium text-gray-300">
-                  {Math.round((filament.price_per_kg * filament.spool_weight) / 1000)} {currencySymbol(filament.currency)}
+                  {Math.round((filament.price_per_kg * filament.spool_weight) / 1000)} {currencySymbol(filament.currency)}<span className="text-gray-400">/{Math.round(filament.spool_weight)} {t('catalogPage.units.g')}</span>
                 </p>
                 <p className="text-[10px] sm:text-xs text-gray-500">
                   ≈ {Math.round(filament.price_per_kg)} {currencySymbol(filament.currency)}/{t('catalogPage.units.kg')}
                 </p>
               </>
-            ) : (
+            ) : filament.price_per_kg ? (
               <p className="text-xs sm:text-sm font-medium text-gray-300">
                 {Math.round(filament.price_per_kg)} {currencySymbol(filament.currency)}<span className="text-gray-400">/{t('catalogPage.units.kg')}</span>
               </p>
+            ) : (
+              <p className="text-xs sm:text-sm text-gray-400">{Math.round(filament.spool_weight!)} {t('catalogPage.units.g')}</p>
             )}
           </div>
         ) : null}
@@ -685,17 +687,6 @@ const MaterialCard: React.FC<MaterialCardProps> = ({
 
       {/* Детали материала в компактном виде */}
       <div className="mb-3 sm:mb-4 flex flex-wrap items-center gap-2 sm:gap-4 text-xs text-gray-300">
-        {filament.spool_weight && (
-          <div
-            className="flex items-center gap-1 bg-white/5 border border-white/10 rounded-full px-2 sm:px-3 py-0.5 sm:py-1"
-            title={t('catalogPage.netWeight')}
-          >
-            <Package className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-cyan-300" />
-            <span className="text-white font-semibold text-[10px] sm:text-xs">
-              {Math.round(filament.spool_weight)} {t('catalogPage.units.g')}
-            </span>
-          </div>
-        )}
         {hasNonStandardDiameter(filament.diameter) && (
           <div className="flex items-center gap-1 bg-white/5 border border-white/10 rounded-full px-2 sm:px-3 py-0.5 sm:py-1">
             <Ruler className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-purple-300" />

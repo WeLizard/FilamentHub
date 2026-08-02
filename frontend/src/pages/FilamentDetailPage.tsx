@@ -31,7 +31,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Layers,
-  Scale,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { filamentsAPI, brandsAPI, savedPresetsAPI, filamentReviewsAPI, qrAPI, physicalPrintersAPI } from '../api/client';
@@ -548,7 +547,7 @@ export const FilamentDetailPage: React.FC = () => {
             {filament.price_hidden ? null : filament.price_per_kg && filament.spool_weight && filament.spool_weight !== 1000 ? (
               <>
                 <p className="text-sm md:text-base font-medium text-gray-300">
-                  {Math.round((filament.price_per_kg * filament.spool_weight) / 1000)} {currencySymbol(filament.currency)}
+                  {Math.round((filament.price_per_kg * filament.spool_weight) / 1000)} {currencySymbol(filament.currency)}<span className="text-gray-400">/{Math.round(filament.spool_weight)} {t('catalogPage.units.g')}</span>
                 </p>
                 <p className="text-gray-500 text-xs">
                   ≈ {Math.round(filament.price_per_kg)} {currencySymbol(filament.currency)}/{t('catalogPage.units.kg')}
@@ -558,23 +557,14 @@ export const FilamentDetailPage: React.FC = () => {
               <p className="text-sm md:text-base font-medium text-gray-300">
                 {Math.round(filament.price_per_kg)} {currencySymbol(filament.currency)}<span className="text-gray-400">/{t('catalogPage.units.kg')}</span>
               </p>
+            ) : filament.spool_weight ? (
+              <p className="text-gray-400 text-sm">{Math.round(filament.spool_weight)} {t('catalogPage.units.g')}</p>
             ) : null}
           </div>
         </div>
 
         {/* Детали материала */}
         <div className="mb-4 grid grid-cols-2 gap-3 md:mb-6 md:grid-cols-4 md:gap-6">
-          {filament.spool_weight && (
-            <div className="flex items-center gap-2 text-gray-300 md:gap-3">
-              <Scale className="h-4 w-4 text-cyan-400 md:h-5 md:w-5" />
-              <div>
-                <div className="text-[10px] md:text-sm">{t('filamentDetailPage.netWeight')}</div>
-                <div className="text-base font-bold text-white md:text-xl">
-                  {Math.round(filament.spool_weight)} {t('catalogPage.units.g')}
-                </div>
-              </div>
-            </div>
-          )}
           {filament.diameter && (
             <div className="flex items-center gap-2 md:gap-3 text-gray-300">
               <Ruler className="w-4 h-4 md:w-5 md:h-5 text-purple-400" />

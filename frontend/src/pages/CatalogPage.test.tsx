@@ -208,7 +208,6 @@ describe('CatalogPage', () => {
     );
 
     expect(await screen.findByText('PETG CF')).toBeInTheDocument();
-    expect(screen.getByText('750 catalogPage.units.g')).toBeInTheDocument();
     expect(screen.getByText('235\u2013255°C')).toBeInTheDocument();
     expect(screen.getByText('70\u201385°C')).toBeInTheDocument();
     expect(screen.getByText('filamentFeatures.additives.carbon_fiber 15%')).toBeInTheDocument();
