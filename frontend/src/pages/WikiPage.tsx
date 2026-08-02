@@ -4,7 +4,29 @@ import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { BookOpen, Search, TrendingUp, Clock, Eye, ChevronRight, Loader2, X, FilePenLine, Files, Compass, LibraryBig, ShieldCheck, SearchCheck } from 'lucide-react';
+import {
+  ArrowRight,
+  BookOpen,
+  Boxes,
+  Calculator,
+  ChevronRight,
+  Clock,
+  Compass,
+  Eye,
+  FilePenLine,
+  Files,
+  LibraryBig,
+  Loader2,
+  PackageOpen,
+  Printer,
+  Search,
+  SearchCheck,
+  ShieldCheck,
+  SlidersHorizontal,
+  Store,
+  TrendingUp,
+  X,
+} from 'lucide-react';
 import { wikiAPI } from '../api/client';
 import { SEOHead } from '../components/SEOHead';
 import { WikiAuthoringModal, WikiPeerReviewModal } from '../components/wiki';
@@ -34,6 +56,18 @@ export function WikiPage() {
   const [reviewRevision, setReviewRevision] = useState<WikiRevision | null>(null);
   const languageCode = i18n.resolvedLanguage?.split('-')[0];
   const currentLanguage: WikiLanguage = languageCode === 'ru' || languageCode === 'zh' ? languageCode : 'en';
+  const guideJourneySteps = [
+    { key: 'shelf', icon: Store },
+    { key: 'catalog', icon: PackageOpen },
+    { key: 'spools', icon: Boxes },
+    { key: 'slicer', icon: SlidersHorizontal },
+    { key: 'printer', icon: Printer },
+    { key: 'production', icon: Calculator },
+  ];
+  const mainGuide = guideArticles[0];
+  const additionalGuides = guideArticles.slice(1, 4);
+  const visiblePopularArticles = popularArticles.slice(0, 4);
+  const visibleRecentArticles = recentArticles.slice(0, 5);
 
   const { data: ownRevisions } = useQuery({
     queryKey: ['wiki-own-revisions', user?.id],
@@ -165,82 +199,28 @@ export function WikiPage() {
         type="website"
         allowAI={true}
       />
-      <div className="max-w-6xl mx-auto px-4 md:px-6 py-6 md:py-12">
-        {/* Header */}
-      <div className="text-center mb-8 md:mb-12">
-        <div className="flex items-center justify-center gap-3 mb-4">
-          <div className="w-12 h-12 md:w-16 md:h-16 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-xl md:rounded-2xl flex items-center justify-center shadow-lg shadow-blue-500/25">
-            <BookOpen className="w-6 h-6 md:w-8 md:h-8 text-white" />
+      <div className="mx-auto max-w-7xl px-4 py-6 md:px-6 md:py-9">
+      <header className="mb-7 grid items-center gap-5 border-b border-white/10 pb-7 lg:grid-cols-[minmax(0,0.8fr)_minmax(420px,1.2fr)]">
+        <div className="flex min-w-0 items-center gap-4">
+          <div className="flex h-13 w-13 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500 to-cyan-500 shadow-lg shadow-blue-500/25 md:h-15 md:w-15">
+            <BookOpen className="h-7 w-7 text-white md:h-8 md:w-8" />
           </div>
-          <h1 className="text-3xl md:text-4xl font-bold text-white">{t('wikiPage.title')}</h1>
+          <div className="min-w-0">
+            <h1 className="text-3xl font-bold tracking-tight text-white md:text-4xl">{t('wikiPage.title')}</h1>
+            <p className="mt-1.5 max-w-xl text-sm leading-6 text-slate-400 md:text-base">{t('wikiPage.subtitle')}</p>
+          </div>
         </div>
-        <p className="text-base md:text-xl text-gray-300 max-w-2xl mx-auto">
-          {t('wikiPage.subtitle')}
-        </p>
-      </div>
 
-      {user && (
-        <section className="mb-8 overflow-hidden rounded-2xl border border-blue-400/15 bg-gradient-to-r from-blue-500/10 via-purple-500/10 to-white/[0.03] p-4 md:mb-10 md:p-5">
-          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-            <div className="flex items-start gap-3">
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-500/15 text-blue-300 ring-1 ring-blue-400/20"><FilePenLine className="h-5 w-5" /></span>
-              <div>
-                <h2 className="font-semibold text-white">{t('wikiAuthoring.contributeTitle')}</h2>
-                <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-400">{t('wikiAuthoring.contributeDescription')}</p>
-              </div>
-            </div>
-            <div className="flex shrink-0 flex-wrap gap-2">
-              <button type="button" onClick={() => navigate('/wiki/workspace')} className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/[0.05] px-4 py-2.5 text-sm font-medium text-slate-200 transition hover:bg-white/10 hover:text-white">
-                <Files className="h-4 w-4" />{t('wikiAuthoring.openWorkspace')}
-              </button>
-              <button type="button" onClick={() => setAuthoringRevision('new')} className="inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-blue-500 to-purple-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-purple-950/30 transition hover:brightness-110">
-                <FilePenLine className="h-4 w-4" />{t('wikiAuthoring.writeArticle')}
-              </button>
-            </div>
-          </div>
-          {ownRevisions && ownRevisions.items.length > 0 && (
-            <div className="mt-4 border-t border-white/10 pt-4">
-              <div className="mb-2 flex items-center justify-between gap-3 text-xs font-medium uppercase tracking-wider text-slate-500">
-                <span className="flex items-center gap-2"><Files className="h-3.5 w-3.5" />{t('wikiAuthoring.yourWork')}</span>
-                <button type="button" onClick={() => navigate('/wiki/workspace')} className="inline-flex items-center gap-1 text-blue-300 transition hover:text-blue-200">{t('wikiAuthoring.viewAllWork')}<ChevronRight className="h-3.5 w-3.5" /></button>
-              </div>
-              <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-                {ownRevisions.items.slice(0, 3).map((revision) => (
-                  <button key={revision.id} type="button" disabled={revision.status !== 'draft' && revision.status !== 'rejected'} onClick={() => revision.status === 'rejected' ? retryRevision.mutate(revision.id) : setAuthoringRevision(revision)} className="min-w-0 rounded-xl border border-white/10 bg-black/10 px-3 py-2.5 text-left transition hover:border-blue-400/30 hover:bg-white/5 disabled:cursor-default disabled:hover:border-white/10">
-                    <div className="truncate text-sm font-medium text-slate-200">{revision.title}</div>
-                    <div className="mt-1 flex items-center justify-between gap-2 text-xs text-slate-500"><span>v{revision.revision_number}</span><span className={revision.status === 'pending_review' ? 'text-amber-300' : revision.status === 'published' ? 'text-emerald-300' : 'text-blue-300'}>{t(`wikiAuthoring.status.${revision.status}`)}</span></div>
-                    {revision.status === 'rejected' && <div className="mt-2 border-t border-white/10 pt-2 text-xs text-amber-200/80">{retryRevision.isPending && retryRevision.variables === revision.id ? t('wikiAuthoring.preparingRevision') : revision.review_note || t('wikiAuthoring.fixRevision')}</div>}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-          {reviewableRevisions && reviewableRevisions.items.length > 0 && (
-            <div className="mt-4 border-t border-white/10 pt-4">
-              <div className="mb-2 flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-cyan-300/70"><SearchCheck className="h-3.5 w-3.5" />{t('wikiPeerReview.availableTitle')}</div>
-              <p className="mb-3 text-xs leading-5 text-slate-500">{t('wikiPeerReview.availableDescription')}</p>
-              <div className="grid gap-2 md:grid-cols-2">
-                {reviewableRevisions.items.map((revision) => (
-                  <button key={revision.id} type="button" onClick={() => setReviewRevision(revision)} className="group rounded-xl border border-cyan-300/10 bg-cyan-500/[0.035] px-3 py-3 text-left transition hover:border-cyan-300/25 hover:bg-cyan-500/[0.07]">
-                    <div className="flex items-start justify-between gap-3"><div className="min-w-0"><div className="truncate text-sm font-medium text-slate-200 group-hover:text-cyan-100">{revision.title}</div><div className="mt-1 line-clamp-1 text-xs text-slate-500">{revision.edit_summary || revision.summary}</div></div><SearchCheck className="h-4 w-4 shrink-0 text-cyan-300" /></div>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-        </section>
-      )}
-
-      {/* Search Bar */}
-      <form onSubmit={handleSearch} className="mb-8 md:mb-12">
-        <div className="relative max-w-2xl mx-auto">
+        <form onSubmit={handleSearch} className="w-full">
+          <div className="relative">
           <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
           <input
             type="text"
             placeholder={t('wikiPage.searchPlaceholder')}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-12 pr-12 py-4 bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+            className="w-full rounded-2xl border border-white/15 bg-white/[0.075] py-4 pl-12 pr-12 text-white shadow-lg shadow-purple-950/10 outline-none transition placeholder:text-slate-500 focus:border-blue-400/60 focus:bg-white/[0.1] focus:ring-2 focus:ring-blue-500/20"
+            aria-label={t('wikiPage.searchPlaceholder')}
           />
           {searchQuery && (
             <button
@@ -252,7 +232,8 @@ export function WikiPage() {
             </button>
           )}
         </div>
-      </form>
+        </form>
+      </header>
 
       {/* Search Results */}
       {isSearching && (
@@ -321,38 +302,95 @@ export function WikiPage() {
 
       {/* Main content (hidden during search) */}
       {searchResults === null && (<>
-      {guideArticles.length > 0 && (
-        <section className="mb-12 overflow-hidden rounded-3xl border border-cyan-300/15 bg-gradient-to-br from-blue-500/15 via-cyan-500/[0.08] to-purple-500/10 p-5 shadow-2xl shadow-blue-950/20 md:p-7">
-          <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-            <div>
-              <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-cyan-300/15 bg-cyan-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.15em] text-cyan-200"><ShieldCheck className="h-3.5 w-3.5" />{t('wikiPage.officialGuides')}</div>
-              <h2 className="flex items-center gap-3 text-2xl font-bold text-white"><Compass className="h-6 w-6 text-cyan-300" />{t('wikiPage.guidesTitle')}</h2>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">{t('wikiPage.guidesDescription')}</p>
+      <div className={`mb-12 grid items-stretch gap-5 ${user ? 'lg:grid-cols-[minmax(0,1.8fr)_minmax(310px,0.8fr)]' : ''}`}>
+        <section className="relative overflow-hidden rounded-3xl border border-cyan-300/15 bg-gradient-to-br from-blue-500/15 via-cyan-500/[0.08] to-purple-500/10 p-5 shadow-2xl shadow-blue-950/20 md:p-7">
+          <span className="pointer-events-none absolute -right-16 -top-20 h-64 w-64 rounded-full bg-cyan-300/[0.07] blur-3xl" />
+          <div className="relative">
+            <div className="inline-flex items-center gap-2 rounded-full border border-cyan-300/15 bg-cyan-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.15em] text-cyan-200">
+              <ShieldCheck className="h-3.5 w-3.5" />{t('wikiPage.officialGuides')}
             </div>
+            <h2 className="mt-3 flex items-center gap-3 text-2xl font-bold text-white md:text-3xl"><Compass className="h-7 w-7 text-cyan-300" />{t('wikiPage.guidesTitle')}</h2>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-300">{t('wikiPage.guidesDescription')}</p>
           </div>
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {guideArticles.map((article, index) => (
-              <button key={article.id} type="button" onClick={() => navigate(`/wiki/articles/${article.slug}`)} className="group relative overflow-hidden rounded-2xl border border-white/10 bg-[#0b1730]/70 p-5 text-left transition hover:-translate-y-0.5 hover:border-cyan-300/30 hover:bg-[#10203d]">
-                <span className="absolute right-4 top-3 text-5xl font-black text-white/[0.035]">{String(index + 1).padStart(2, '0')}</span>
-                <div className="mb-5 flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-cyan-400 text-white shadow-lg shadow-cyan-950/30"><Compass className="h-5 w-5" /></div>
-                <h3 className="relative text-base font-semibold text-white transition group-hover:text-cyan-200">{article.title}</h3>
-                <p className="relative mt-2 line-clamp-3 text-sm leading-6 text-slate-400">{plainWikiSummary(article.summary)}</p>
-                <span className="relative mt-5 inline-flex items-center gap-1 text-xs font-medium text-cyan-300">{t('wikiPage.openGuide')}<ChevronRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" /></span>
-              </button>
+
+          <div className="relative mt-6 grid grid-cols-3 gap-1.5 rounded-2xl border border-white/10 bg-[#09172b]/50 p-2 md:grid-cols-6 md:gap-2 md:p-3">
+            {guideJourneySteps.map(({ key, icon: StepIcon }, index) => (
+              <div key={key} className="relative flex min-w-0 flex-col items-center gap-2 rounded-xl px-1 py-2 text-center md:px-2 md:py-3">
+                <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-cyan-400/10 text-cyan-200 ring-1 ring-cyan-300/15 md:h-9 md:w-9"><StepIcon className="h-4 w-4" /></span>
+                <span className="line-clamp-2 text-[10px] font-medium leading-4 text-slate-400 md:text-xs">{t(`wikiPage.journey.${key}`)}</span>
+                {index < guideJourneySteps.length - 1 && <ArrowRight className="absolute -right-2 top-5 z-10 hidden h-3.5 w-3.5 text-cyan-300/35 md:block" />}
+              </div>
             ))}
           </div>
-        </section>
-      )}
 
-      <div className="mb-6 flex items-center gap-3">
-        <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-purple-500/15 text-purple-200 ring-1 ring-purple-400/20"><LibraryBig className="h-5 w-5" /></span>
-        <div><h2 className="text-2xl font-bold text-white">{t('wikiPage.knowledgeTitle')}</h2><p className="mt-1 text-sm text-slate-400">{t('wikiPage.knowledgeDescription')}</p></div>
+          {mainGuide ? (
+            <button type="button" onClick={() => navigate(`/wiki/articles/${mainGuide.slug}`)} className="group relative mt-5 w-full overflow-hidden rounded-2xl border border-white/10 bg-[#0b1730]/75 p-5 text-left transition hover:-translate-y-0.5 hover:border-cyan-300/30 hover:bg-[#10203d] md:p-6">
+              <span className="absolute inset-y-0 left-0 w-1.5 bg-gradient-to-b from-cyan-300 via-blue-400 to-purple-500" />
+              <div className="pr-10">
+                <span className="text-xs font-semibold uppercase tracking-[0.14em] text-cyan-300">{t('wikiPage.startHere')}</span>
+                <h3 className="mt-2 text-lg font-semibold text-white transition group-hover:text-cyan-100 md:text-xl">{mainGuide.title}</h3>
+                <p className="mt-2 line-clamp-2 text-sm leading-6 text-slate-400">{plainWikiSummary(mainGuide.summary)}</p>
+              </div>
+              <span className="mt-4 inline-flex items-center gap-1.5 text-sm font-medium text-cyan-300">{t('wikiPage.openGuide')}<ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" /></span>
+            </button>
+          ) : (
+            <div className="relative mt-5 rounded-2xl border border-dashed border-cyan-300/20 bg-[#0b1730]/45 px-5 py-6 text-sm leading-6 text-slate-400">{t('wikiPage.guidesEmpty')}</div>
+          )}
+
+          {additionalGuides.length > 0 && (
+            <div className="relative mt-4 grid gap-2 md:grid-cols-2">
+              {additionalGuides.map((article) => (
+                <button key={article.id} type="button" onClick={() => navigate(`/wiki/articles/${article.slug}`)} className="group flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/[0.035] px-4 py-3 text-left transition hover:border-cyan-300/20 hover:bg-white/[0.065]">
+                  <span className="line-clamp-2 text-sm font-medium text-slate-300 group-hover:text-white">{article.title}</span>
+                  <ChevronRight className="h-4 w-4 shrink-0 text-cyan-300/60 transition-transform group-hover:translate-x-0.5" />
+                </button>
+              ))}
+            </div>
+          )}
+        </section>
+
+        {user && (
+          <aside className="flex min-h-full flex-col overflow-hidden rounded-3xl border border-purple-300/15 bg-gradient-to-b from-purple-500/10 to-[#111827]/80 p-5 shadow-xl shadow-purple-950/15">
+            <div className="flex items-start justify-between gap-3">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-purple-500/15 text-purple-200 ring-1 ring-purple-400/20"><Files className="h-5 w-5" /></span>
+              {ownRevisions && <span className="rounded-full border border-white/10 bg-white/[0.05] px-2.5 py-1 text-xs font-medium tabular-nums text-slate-400">{ownRevisions.total}</span>}
+            </div>
+            <h2 className="mt-4 text-xl font-bold text-white">{t('wikiPage.workTitle')}</h2>
+            <p className="mt-1 text-sm leading-6 text-slate-400">{t('wikiPage.workDescription')}</p>
+
+            <div className="mt-5 space-y-2">
+              {ownRevisions && ownRevisions.items.length > 0 ? ownRevisions.items.slice(0, 3).map((revision) => (
+                <button key={revision.id} type="button" disabled={revision.status !== 'draft' && revision.status !== 'rejected'} onClick={() => revision.status === 'rejected' ? retryRevision.mutate(revision.id) : setAuthoringRevision(revision)} className="group w-full rounded-xl border border-white/10 bg-black/10 px-3.5 py-3 text-left transition hover:border-purple-300/25 hover:bg-white/[0.055] disabled:cursor-default disabled:hover:border-white/10">
+                  <div className="truncate text-sm font-medium text-slate-200 group-hover:text-white">{revision.title}</div>
+                  <div className="mt-1.5 flex items-center justify-between gap-2 text-xs text-slate-500"><span>v{revision.revision_number}</span><span className={revision.status === 'pending_review' ? 'text-amber-300' : revision.status === 'published' ? 'text-emerald-300' : revision.status === 'rejected' ? 'text-rose-300' : 'text-blue-300'}>{t(`wikiAuthoring.status.${revision.status}`)}</span></div>
+                </button>
+              )) : (
+                <div className="rounded-xl border border-dashed border-white/10 px-4 py-5 text-sm leading-6 text-slate-500">{t('wikiPage.workEmpty')}</div>
+              )}
+            </div>
+
+            {reviewableRevisions && reviewableRevisions.items.length > 0 && (
+              <button type="button" onClick={() => setReviewRevision(reviewableRevisions.items[0])} className="mt-3 flex items-center justify-between gap-3 rounded-xl border border-cyan-300/10 bg-cyan-500/[0.04] px-3.5 py-3 text-left transition hover:border-cyan-300/25 hover:bg-cyan-500/[0.08]">
+                <span className="min-w-0"><span className="block text-xs font-semibold uppercase tracking-wider text-cyan-300/70">{t('wikiPage.communityReview')}</span><span className="mt-1 block truncate text-sm text-slate-300">{reviewableRevisions.items[0].title}</span></span>
+                <SearchCheck className="h-4 w-4 shrink-0 text-cyan-300" />
+              </button>
+            )}
+
+            <div className="mt-auto grid gap-2 pt-5">
+              <button type="button" onClick={() => navigate('/wiki/workspace')} className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/[0.05] px-4 py-2.5 text-sm font-medium text-slate-200 transition hover:bg-white/10 hover:text-white"><Files className="h-4 w-4" />{t('wikiAuthoring.openWorkspace')}</button>
+              <button type="button" onClick={() => setAuthoringRevision('new')} className="inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-blue-500 to-purple-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-purple-950/30 transition hover:brightness-110"><FilePenLine className="h-4 w-4" />{t('wikiAuthoring.writeArticle')}</button>
+            </div>
+          </aside>
+        )}
       </div>
-      <div className="mb-12">
-        <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-2">
-          <BookOpen className="w-6 h-6 text-blue-400" />
-          {t('wikiPage.categories')}
-        </h2>
+
+      <section className="mb-12">
+        <div className="mb-6 flex items-end justify-between gap-5">
+          <div className="flex items-start gap-3">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-purple-500/15 text-purple-200 ring-1 ring-purple-400/20"><LibraryBig className="h-5 w-5" /></span>
+            <div><div className="text-xs font-semibold uppercase tracking-[0.15em] text-purple-300/75">{t('wikiPage.categories')}</div><h2 className="mt-1 text-2xl font-bold text-white">{t('wikiPage.knowledgeTitle')}</h2><p className="mt-1 max-w-3xl text-sm leading-6 text-slate-400">{t('wikiPage.knowledgeDescription')}</p></div>
+          </div>
+        </div>
         <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
           {categories.map((category) => {
             const IconComponent = getIconComponent(category.icon);
@@ -378,69 +416,46 @@ export function WikiPage() {
             );
           })}
         </div>
-      </div>
+      </section>
 
-      {/* Popular Articles */}
-      {popularArticles.length > 0 && (
-        <div className="mb-12">
-          <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-2">
-            <TrendingUp className="w-6 h-6 text-yellow-400" />
-            {t('wikiPage.popularArticles')}
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {popularArticles.map((article) => (
-              <button
-                key={article.id}
-                onClick={() => navigate(`/wiki/articles/${article.slug}`)}
-                className="group bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl p-5 hover:bg-white/15 transition-all text-left"
-              >
-                <h3 className="text-base font-semibold text-white mb-2 group-hover:text-blue-300 transition-colors line-clamp-2">
-                  {article.title}
-                </h3>
-                <p className="text-sm text-gray-300 mb-3 line-clamp-2">{plainWikiSummary(article.summary)}</p>
-                <div className="flex items-center justify-between text-xs text-gray-400">
-                  <div className="flex items-center gap-1">
-                    <Eye className="w-3.5 h-3.5" />
-                    <span>{article.views}</span>
-                  </div>
-                  {article.author && (
-                    <span className="text-gray-500">{article.author}</span>
-                  )}
-                </div>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
+      {(visiblePopularArticles.length > 0 || visibleRecentArticles.length > 0) && (
+        <section className="mb-12 grid gap-6 lg:grid-cols-[minmax(0,1.45fr)_minmax(290px,0.65fr)]">
+          {visiblePopularArticles.length > 0 && (
+            <div>
+              <div className="mb-5 flex items-start gap-3">
+                <TrendingUp className="mt-0.5 h-6 w-6 shrink-0 text-yellow-400" />
+                <div><h2 className="text-xl font-bold text-white md:text-2xl">{t('wikiPage.popularArticles')}</h2><p className="mt-1 text-sm text-slate-500">{t('wikiPage.popularDescription')}</p></div>
+              </div>
+              <div className="grid gap-4 md:grid-cols-2">
+                {visiblePopularArticles.map((article) => (
+                  <button key={article.id} onClick={() => navigate(`/wiki/articles/${article.slug}`)} className="group relative overflow-hidden rounded-2xl border border-white/15 bg-white/[0.075] p-5 pl-7 text-left transition hover:-translate-y-0.5 hover:border-purple-300/25 hover:bg-white/[0.1]">
+                    <span className="absolute inset-y-0 left-0 w-2 border-r border-white/10 bg-gradient-to-b from-purple-500/35 to-blue-500/15" />
+                    <h3 className="line-clamp-2 text-base font-semibold text-white transition group-hover:text-purple-100">{article.title}</h3>
+                    <p className="mt-2 line-clamp-2 text-sm leading-6 text-slate-400">{plainWikiSummary(article.summary)}</p>
+                    <div className="mt-4 flex items-center justify-between gap-3 text-xs text-slate-500"><span className="flex items-center gap-1"><Eye className="h-3.5 w-3.5" />{article.views}</span>{article.author && <span className="truncate">{article.author}</span>}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
-      {/* Recent Articles */}
-      {recentArticles.length > 0 && (
-        <div>
-          <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-2">
-            <Clock className="w-6 h-6 text-green-400" />
-            {t('wikiPage.recentArticles')}
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {recentArticles.map((article) => (
-              <button
-                key={article.id}
-                onClick={() => navigate(`/wiki/articles/${article.slug}`)}
-                className="group bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl p-5 hover:bg-white/15 transition-all text-left"
-              >
-                <h3 className="text-base font-semibold text-white mb-2 group-hover:text-blue-300 transition-colors line-clamp-2">
-                  {article.title}
-                </h3>
-                <p className="text-sm text-gray-300 mb-3 line-clamp-2">{plainWikiSummary(article.summary)}</p>
-                <div className="flex items-center justify-between text-xs text-gray-400">
-                  <span>{new Date(article.created_at).toLocaleDateString(i18n.resolvedLanguage)}</span>
-                  {article.author && (
-                    <span className="text-gray-500">{article.author}</span>
-                  )}
-                </div>
-              </button>
-            ))}
-          </div>
-        </div>
+          {visibleRecentArticles.length > 0 && (
+            <div className="rounded-3xl border border-white/10 bg-black/10 p-5">
+              <div className="mb-4 flex items-start gap-3">
+                <Clock className="mt-0.5 h-5 w-5 shrink-0 text-emerald-300" />
+                <div><h2 className="text-lg font-bold text-white">{t('wikiPage.recentArticles')}</h2><p className="mt-1 text-xs leading-5 text-slate-500">{t('wikiPage.recentDescription')}</p></div>
+              </div>
+              <div className="divide-y divide-white/10">
+                {visibleRecentArticles.map((article) => (
+                  <button key={article.id} onClick={() => navigate(`/wiki/articles/${article.slug}`)} className="group flex w-full items-start justify-between gap-3 py-3 text-left first:pt-1 last:pb-1">
+                    <span className="min-w-0"><span className="line-clamp-2 text-sm font-medium leading-5 text-slate-300 transition group-hover:text-emerald-100">{article.title}</span><span className="mt-1 block text-xs text-slate-600">{new Date(article.created_at).toLocaleDateString(i18n.resolvedLanguage)}</span></span>
+                    <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-slate-600 transition group-hover:translate-x-0.5 group-hover:text-emerald-300" />
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </section>
       )}
 
       {/* Empty State */}
