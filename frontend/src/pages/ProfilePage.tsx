@@ -56,7 +56,7 @@ import { getSpoolCurrentLocation, getSpoolLastLocation } from '../utils/spoolLoc
 import { currencySymbol, normalizeCurrency } from '../utils/currency';
 import { formatImportedPresetTemperature } from '../utils/presetImport';
 import { notifyProfileChanged } from '../utils/pluginBridge';
-import { downloadBlob } from '../utils/download';
+import { downloadBlob, safeDownloadStem } from '../utils/download';
 import { formatDecimalInput, parseDecimalInput } from '../utils/decimalInput';
 const CreatePresetModal = lazy(() =>
   import('../components/CreatePresetModal').then(m => ({ default: m.CreatePresetModal }))
@@ -700,18 +700,6 @@ export const ProfilePage: React.FC = () => {
       minute: '2-digit',
     });
 
-  const safeFileName = (value: string) =>
-    (value || '')
-      .trim()
-      .normalize('NFKD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .replace(/[\s/\\:]+/g, '-')
-      .replace(/[^a-zA-Z0-9а-яА-ЯёЁ_.-]+/g, '-')
-      .replace(/-+/g, '-')
-      .replace(/^-|-$/g, '')
-      .toLowerCase();
-
-
   const handleDownloadPrinterProfile = async (profile: PrinterProfile) => {
     try {
       const response = await api.get(`/printer-profiles/${profile.id}/export/orcaslicer.json`, {
@@ -719,8 +707,8 @@ export const ProfilePage: React.FC = () => {
       });
       
       const blob = new Blob([response.data], { type: 'application/json' });
-      const base = safeFileName(profile.slug || profile.name || `printer-profile-${profile.id}`);
-      downloadBlob(blob, `${base || 'printer-profile'}.orca_printer.json`);
+      const base = safeDownloadStem(profile.slug || profile.name, `printer-profile-${profile.id}`);
+      downloadBlob(blob, `${base}.orca_printer.json`);
     } catch (error: any) {
       toast.error(`${t('profilePage.downloadPrinterProfileError')}: ${translateApiError(t, error?.response?.data?.detail, t('profilePage.unknownError'))}`);
     }
@@ -733,8 +721,8 @@ export const ProfilePage: React.FC = () => {
       });
       
       const blob = new Blob([response.data], { type: 'application/json' });
-      const base = safeFileName(profile.slug || profile.name || `print-profile-${profile.id}`);
-      downloadBlob(blob, `${base || 'print-profile'}.orca_process.json`);
+      const base = safeDownloadStem(profile.slug || profile.name, `print-profile-${profile.id}`);
+      downloadBlob(blob, `${base}.orca_process.json`);
     } catch (error: any) {
       toast.error(`${t('profilePage.downloadPrintProfileError')}: ${translateApiError(t, error?.response?.data?.detail, t('profilePage.unknownError'))}`);
     }

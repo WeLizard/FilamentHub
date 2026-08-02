@@ -2,8 +2,10 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
   importPresetToPlugin,
+  installPrinterBundleInPlugin,
   PLUGIN_MESSAGE_SOURCE,
   reportPluginSessionToPlugin,
+  requestPluginCapabilities,
   subscribeToPluginNavigation,
 } from './pluginBridge';
 
@@ -50,6 +52,8 @@ describe('pluginBridge inbound messages', () => {
     try {
       reportPluginSessionToPlugin('scoped-plugin-token');
       importPresetToPlugin(42);
+      installPrinterBundleInPlugin(7);
+      requestPluginCapabilities();
 
       expect(postMessage).toHaveBeenNthCalledWith(
         1,
@@ -68,6 +72,24 @@ describe('pluginBridge inbound messages', () => {
           type: 'import-preset',
           presetId: 42,
           token: 'scoped-plugin-token',
+        },
+        '*',
+      );
+      expect(postMessage).toHaveBeenNthCalledWith(
+        3,
+        {
+          source: PLUGIN_MESSAGE_SOURCE,
+          type: 'install-printer-bundle',
+          physicalPrinterId: 7,
+          token: 'scoped-plugin-token',
+        },
+        '*',
+      );
+      expect(postMessage).toHaveBeenNthCalledWith(
+        4,
+        {
+          source: PLUGIN_MESSAGE_SOURCE,
+          type: 'plugin-capabilities-request',
         },
         '*',
       );

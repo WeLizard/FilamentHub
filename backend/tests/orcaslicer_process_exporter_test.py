@@ -20,6 +20,7 @@ def _profile(settings: dict) -> PrintProfile:
 async def test_missing_instantiation_exports_as_visible_user_profile():
     result = await print_profile_to_orca_json(_profile({}))
     assert result["instantiation"] == "true"
+    assert result["from"] == "user"
 
 
 @pytest.mark.asyncio

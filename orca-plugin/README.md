@@ -115,7 +115,7 @@ endpoint the fork's panel used.
 # name = "FilamentHub"
 # description = "Browse and sync community-rated filament profiles from FilamentHub, with spool inventory and print-cost tools."
 # author = "FilamentHub"
-# version = "0.0.9"
+# version = "0.0.10"
 # network = ["filamenthub.ru", "*.filamenthub.ru"]   # proposed; ignored by current host
 # ///
 ```
@@ -144,7 +144,7 @@ python -m pytest orca-plugin/tests -q
 Output:
 
 ```text
-orca-plugin/dist/filamenthub-0.0.9/
+orca-plugin/dist/filamenthub-0.0.10/
   filamenthub_plugin.py       # install this file
   package-metadata.json       # build provenance
   SHA256SUMS                  # integrity check
@@ -171,6 +171,9 @@ Then, with the exact OrcaSlicer build or pull-request artifact being tested:
    normal login), browse/search, and click **Import into OrcaSlicer** on a preset.
 5. The preset is saved to the managed FilamentHub profile and synchronized. On the
    current host API, restart OrcaSlicer before selecting a newly created preset.
+6. In **Profile → Printers**, explicitly add one printer's configuration set to
+   OrcaSlicer. Confirm that only FilamentHub-managed machine/process copies are
+   created, then restart OrcaSlicer before selecting them.
 
 To side-load into any other build: create
 `<data_dir>/orca_plugins/filamenthub/filamenthub_plugin.py` (one entry file per
@@ -195,7 +198,7 @@ with a retry action. Local OrcaSlicer presets remain available.
 
 | # | Gap | Impact | Workaround |
 |---|---|---|---|
-| 1 | **No preset-install / hot-reload host API.** `orca.host` is read-only; `PluginType.Importer` has no capability base. | Import needs an **app restart**. Not a publish blocker; rough UX. | Atomic file-write to `data_dir/user/<active>/_local/filamenthub/filament/` + native "restart" dialog. Ask upstream for `orca.host.presets.install(...)` / `reload_user_presets()`. |
+| 1 | **No preset-install / hot-reload host API.** `orca.host` is read-only; `PluginType.Importer` has no capability base. | Filament, machine, and process imports need an **app restart**. Not a publish blocker; rough UX. | Atomic writes below `data_dir/user/<active>/_local/filamenthub/`; only FilamentHub-managed copies are updated. Ask upstream for `orca.host.presets.install(...)` / `reload_user_presets()`. |
 | 2 | **A short-lived plugin capability crosses the iframe boundary** with `targetOrigin: '*'` because the `file://` parent has an opaque origin. | The shell rejects every message not originating from the exact catalog iframe and `https://filamenthub.ru`; account access/refresh credentials never cross. | Keep the origin/source regression test and rotate the capability every 30 minutes. |
 | 3 | **Outbound HTTPS is ungated today** and the declared network allow-list is not enforced yet. | A future host policy may require an explicit permission contract. | Keep `network = [...]` declared and follow the host's audit-first permission design. |
 | 4 | **Package updates may recreate the plugin install directory on older hosts.** | Sidecar auth/sync caches are not guaranteed to survive an update without host storage. | Feature-detect `orca.host.plugin.storage()` from #14923, copy legacy mutable state without deleting it, and retain the install-directory fallback on older builds. |

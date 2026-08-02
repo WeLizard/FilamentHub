@@ -6,7 +6,7 @@ is a filament catalog with community-rated print profiles and spool tracking. Th
 - Keep saved presets in sync: pull updates from your FilamentHub profile, send presets edited in OrcaSlicer back, and remove managed local copies after you unsubscribe. Local edits take priority over remote updates and are never silently overwritten.
 - Choose which saved presets sync with OrcaSlicer using an explicit per-preset toggle.
 - Recover filament presets left on this computer, including ones from earlier OrcaSlicer versions or another account, and pick which of them to upload as drafts.
-- Your printer and print profiles are reported to FilamentHub so recommendations and spool tracking know which machine they are about. This direction is one-way: nothing is written into your slicer profiles, and printer host passwords and API keys never leave your computer.
+- Your printer and print profiles are reported to FilamentHub so recommendations and spool tracking know which machine they are about. Automatic sync stays one-way, while an explicit action on a printer card can restore FilamentHub-managed copies without overwriting unmanaged profiles. Printer host passwords and API keys never leave your computer.
 - The machine you have selected in OrcaSlicer is offered in the catalog, so you are not asked to pick it twice.
 - Sign-in survives OrcaSlicer restarts; a toolbar shows your preset counts.
 

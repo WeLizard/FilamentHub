@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import io
+import json
+import zipfile
 from datetime import datetime, timezone
 
 import pytest
@@ -13,6 +16,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.material_slot_assignment import MaterialSlotAssignment
 from app.models.material_system import MaterialSlot, MaterialSystem, PhysicalPrinterConnector
 from app.models.preset_gate_state import PresetGateState
+from app.models.print_profile import PrintProfile
+from app.models.print_profile_printer import PrintProfilePrinter
 from app.models.printer import Printer
 from app.models.printer_profile import PrinterProfile
 from app.models.user import User
@@ -75,6 +80,126 @@ async def test_physical_printer_groups_multiple_owned_or_official_configs(
     )
     assert body["material_systems"] == []
     assert body["connectors"] == []
+
+
+@pytest.mark.asyncio
+async def test_physical_printer_exports_explicit_orca_bundle(
+    auth_client: AsyncClient,
+    auth_user: User,
+    db_session: AsyncSession,
+) -> None:
+    catalog_printer = Printer(
+        name="Bundle printer",
+        manufacturer="FilamentHub",
+        model="Bundle One",
+        slug="bundle-printer",
+        active=True,
+    )
+    db_session.add(catalog_printer)
+    await db_session.commit()
+    await db_session.refresh(catalog_printer)
+
+    nozzle_04 = PrinterProfile(
+        name="Bundle printer 0.4",
+        slug="bundle-printer-04",
+        owner_user_id=auth_user.id,
+        printer_id=catalog_printer.id,
+        source="orcaslicer",
+        active=True,
+        orcaslicer_settings={"nozzle_diameter": "0.4"},
+    )
+    nozzle_06 = PrinterProfile(
+        name="Bundle printer 0.6",
+        slug="bundle-printer-06",
+        owner_user_id=auth_user.id,
+        printer_id=catalog_printer.id,
+        active=True,
+        orcaslicer_settings={"nozzle_diameter": ["0.6"]},
+    )
+    db_session.add_all([nozzle_04, nozzle_06])
+    await db_session.commit()
+    await db_session.refresh(nozzle_04)
+    await db_session.refresh(nozzle_06)
+
+    created = await auth_client.post(
+        "/api/v1/physical-printers",
+        json={
+            "name": "Workshop bundle printer",
+            "printer_id": catalog_printer.id,
+            "printer_profile_ids": [nozzle_04.id, nozzle_06.id],
+        },
+    )
+    assert created.status_code == 201
+    physical_printer_id = created.json()["id"]
+
+    process = PrintProfile(
+        name="0.20 mm Bundle",
+        slug="020-mm-bundle",
+        owner_user_id=auth_user.id,
+        active=True,
+        orcaslicer_settings={"layer_height": "0.2"},
+    )
+    process.printer_links = [
+        PrintProfilePrinter(
+            printer_id=catalog_printer.id,
+            printer_slug=catalog_printer.slug,
+            relation_type="explicit",
+        )
+    ]
+    db_session.add(process)
+    await db_session.commit()
+
+    response = await auth_client.get(
+        f"/api/v1/physical-printers/{physical_printer_id}/orcaslicer-bundle"
+    )
+    assert response.status_code == 200
+    bundle = response.json()
+    assert bundle["format"] == "filamenthub.orcaslicer.printer-bundle"
+    assert bundle["physical_printer"] == {
+        "id": physical_printer_id,
+        "name": "Workshop bundle printer",
+    }
+    assert [entry["id"] for entry in bundle["machine_profiles"]] == [
+        nozzle_04.id,
+        nozzle_06.id,
+    ]
+    first_machine = bundle["machine_profiles"][0]["profile"]
+    assert first_machine["from"] == "user"
+    assert first_machine["nozzle_diameter"] == ["0.4"]
+    assert [entry["id"] for entry in bundle["process_profiles"]] == [process.id]
+    machine_names = {
+        entry["profile"]["name"] for entry in bundle["machine_profiles"]
+    }
+    assert set(bundle["process_profiles"][0]["profile"]["compatible_printers"]) == machine_names
+
+    archive_response = await auth_client.get(
+        f"/api/v1/physical-printers/{physical_printer_id}/orcaslicer-bundle",
+        params={"archive": "true"},
+    )
+    assert archive_response.status_code == 200
+    assert archive_response.headers["content-type"] == "application/zip"
+    with zipfile.ZipFile(io.BytesIO(archive_response.content)) as archive:
+        names = archive.namelist()
+        assert "manifest.json" in names
+        assert len([name for name in names if name.startswith("machine/")]) == 2
+        assert len([name for name in names if name.startswith("process/")]) == 1
+        manifest = json.loads(archive.read("manifest.json"))
+        assert manifest["physical_printer"]["id"] == physical_printer_id
+
+    auth_user.allow_print_profiles_export = False
+    await db_session.commit()
+    without_processes = await auth_client.get(
+        f"/api/v1/physical-printers/{physical_printer_id}/orcaslicer-bundle"
+    )
+    assert without_processes.status_code == 200
+    assert without_processes.json()["process_profiles"] == []
+
+    auth_user.allow_printer_profiles_export = False
+    await db_session.commit()
+    disabled = await auth_client.get(
+        f"/api/v1/physical-printers/{physical_printer_id}/orcaslicer-bundle"
+    )
+    assert disabled.status_code == 403
 
 
 @pytest.mark.asyncio

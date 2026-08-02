@@ -7,7 +7,7 @@
 # name = "FilamentHub"
 # description = "Browse and sync community-rated filament profiles from FilamentHub, with spool inventory and print-cost tools."
 # author = "FilamentHub"
-# version = "0.0.9"
+# version = "0.0.10"
 #
 # # Proposed forward-looking key (see README gap). The current
 # # host reads only name/description/author/version/dependencies and ignores unknown
@@ -22,7 +22,9 @@ chrome-less in embed mode and, when the user clicks "Import into OrcaSlicer" on 
 preset, posts a message up to this shell via window.parent.postMessage. The shell
 relays it through the injected window.orca bridge to Python on_message below, which
 downloads the authenticated OrcaSlicer export and writes it into the user preset
-folder, then shows a native "restart required" dialog.
+folder, then shows a native "restart required" dialog. A separate explicit action
+on a physical-printer card can restore managed machine and process profile copies;
+they are never pulled automatically and never overwrite unmanaged Orca profiles.
 
 The shell also renders an Orca-themed toolbar (host --orca-* CSS variables, same
 role as the native Catalog/Profile/Wiki buttons of the C++ fork panel) and drives
@@ -144,7 +146,7 @@ def post_window(window, payload):
 # --------------------------------------------------------------------------- #
 # Configuration
 # --------------------------------------------------------------------------- #
-PLUGIN_VERSION = "0.0.9"
+PLUGIN_VERSION = "0.0.10"
 PROD_SITE_URL = "https://filamenthub.ru"
 SITE_URL = os.environ.get("FILAMENTHUB_SITE_URL", "http://localhost:3000").rstrip("/")
 DEV_CONTOUR = SITE_URL != PROD_SITE_URL
@@ -154,6 +156,8 @@ HTTP_TIMEOUT = 20
 MAX_RESPONSE_BYTES = 5 * 1024 * 1024
 MAX_TOKEN_LENGTH = 8192
 MAX_FILENAME_LENGTH = 120
+MAX_MACHINE_BUNDLE_PROFILES = 32
+MAX_PROCESS_BUNDLE_PROFILES = 200
 _SSL_CTX = ssl.create_default_context()
 
 
@@ -391,6 +395,14 @@ def user_bundle_dir():
 
 def user_filament_dir():
     return os.path.join(user_bundle_dir(), "filament")
+
+
+def user_machine_dir():
+    return os.path.join(user_bundle_dir(), "machine")
+
+
+def user_process_dir():
+    return os.path.join(user_bundle_dir(), "process")
 
 
 def ensure_bundle_metadata():
@@ -1011,6 +1023,168 @@ def remove_stale_preset_files(folder, preset_id, keep_path):
                 pass
 
 
+def _managed_profile_id_from_info(path, kind):
+    prefix = "filamenthub:%s:" % kind
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            for line in fh:
+                key, separator, value = line.partition("=")
+                if separator and key.strip() == "sync_info":
+                    value = value.strip()
+                    if value.startswith(prefix):
+                        tail = value[len(prefix):]
+                        return int(tail) if tail.isdigit() else None
+    except OSError:
+        pass
+    return None
+
+
+def managed_profile_id(json_path, profile, kind):
+    pid = preset_id_from_bundle(profile.get("bundle_id")) if isinstance(profile, dict) else None
+    if pid is not None:
+        return pid
+    return _managed_profile_id_from_info(json_path[:-len(".json")] + ".info", kind)
+
+
+def managed_profile_file_path(folder, name, profile_id, kind):
+    stem = safe_filename(name) or ("FilamentHub %s %d" % (kind, int(profile_id)))
+    candidate = os.path.join(folder, stem + ".json")
+    if not os.path.exists(candidate):
+        return candidate
+    try:
+        with open(candidate, "r", encoding="utf-8") as fh:
+            existing = json.load(fh)
+        if managed_profile_id(candidate, existing, kind) == int(profile_id):
+            return candidate
+    except (OSError, ValueError):
+        pass
+    return os.path.join(
+        folder,
+        "%s (FH-%s-%d).json" % (stem, kind.capitalize(), int(profile_id)),
+    )
+
+
+def write_managed_profile_info(base, kind, profile_id):
+    write_bytes_atomic(
+        base + ".info",
+        ("sync_info = filamenthub:%s:%d\n" % (kind, int(profile_id))).encode("utf-8"),
+    )
+
+
+def remove_stale_managed_profile_files(folder, profile_id, kind, keep_path):
+    try:
+        names = os.listdir(folder)
+    except OSError:
+        return
+    keep = os.path.normcase(os.path.abspath(keep_path))
+    for filename in names:
+        if not filename.endswith(".json"):
+            continue
+        path = os.path.join(folder, filename)
+        if os.path.normcase(os.path.abspath(path)) == keep:
+            continue
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                profile = json.load(fh)
+        except (OSError, ValueError):
+            continue
+        if managed_profile_id(path, profile, kind) != int(profile_id):
+            continue
+        for stale in (path, path[:-len(".json")] + ".info"):
+            try:
+                os.remove(stale)
+            except OSError:
+                pass
+
+
+def _validated_bundle_entries(bundle, key, kind, maximum):
+    entries = bundle.get(key)
+    if not isinstance(entries, list) or len(entries) > maximum:
+        raise ValueError("Invalid %s profile list" % kind)
+    validated = []
+    expected_type = "machine" if kind == "machine" else "process"
+    for entry in entries:
+        if not isinstance(entry, dict):
+            raise ValueError("Invalid %s profile entry" % kind)
+        profile_id = entry.get("id")
+        profile = entry.get("profile")
+        if (
+            isinstance(profile_id, bool)
+            or not isinstance(profile_id, int)
+            or profile_id <= 0
+            or not isinstance(profile, dict)
+        ):
+            raise ValueError("Invalid %s profile identity" % kind)
+        profile = dict(profile)
+        name = profile.get("name") or entry.get("name")
+        if not isinstance(name, str) or not name.strip():
+            raise ValueError("Invalid %s profile name" % kind)
+        profile_type = profile.get("type")
+        if profile_type not in (None, expected_type):
+            raise ValueError("Invalid %s profile type" % kind)
+        profile["type"] = expected_type
+        profile["bundle_id"] = "filamenthub:%d" % profile_id
+        validated.append({"id": profile_id, "name": name.strip(), "profile": profile})
+    return validated
+
+
+def prepare_printer_bundle_install(bundle):
+    if not isinstance(bundle, dict):
+        raise ValueError("Printer bundle must be a JSON object")
+    if bundle.get("format") != "filamenthub.orcaslicer.printer-bundle" or bundle.get("version") != 1:
+        raise ValueError("Unsupported printer bundle format")
+
+    machines = _validated_bundle_entries(
+        bundle, "machine_profiles", "machine", MAX_MACHINE_BUNDLE_PROFILES
+    )
+    processes = _validated_bundle_entries(
+        bundle, "process_profiles", "process", MAX_PROCESS_BUNDLE_PROFILES
+    )
+    if not machines:
+        raise ValueError("Printer bundle has no machine profiles")
+
+    prepared = []
+    machine_names = {}
+    for entry in machines:
+        path = managed_profile_file_path(
+            user_machine_dir(), entry["name"], entry["id"], "machine"
+        )
+        local_name = os.path.basename(path)[:-len(".json")]
+        machine_names[entry["profile"].get("name") or entry["name"]] = local_name
+        entry["profile"]["name"] = local_name
+        entry["profile"]["printer_settings_id"] = local_name
+        prepared.append(("machine", entry["id"], path, entry["profile"]))
+
+    for entry in processes:
+        path = managed_profile_file_path(
+            user_process_dir(), entry["name"], entry["id"], "process"
+        )
+        local_name = os.path.basename(path)[:-len(".json")]
+        entry["profile"]["name"] = local_name
+        entry["profile"]["print_settings_id"] = local_name
+        compatible = entry["profile"].get("compatible_printers")
+        if isinstance(compatible, list):
+            entry["profile"]["compatible_printers"] = [
+                machine_names.get(str(name), str(name)) for name in compatible
+            ]
+        prepared.append(("process", entry["id"], path, entry["profile"]))
+    return prepared
+
+
+def install_printer_bundle(bundle):
+    prepared = prepare_printer_bundle_install(bundle)
+    ensure_bundle_metadata()
+    counts = {"machine": 0, "process": 0}
+    for kind, profile_id, path, profile in prepared:
+        write_json_atomic(path, profile)
+        write_managed_profile_info(path[:-len(".json")], kind, profile_id)
+        remove_stale_managed_profile_files(
+            os.path.dirname(path), profile_id, kind, path
+        )
+        counts[kind] += 1
+    return counts
+
+
 # Universal base filament preset present in every OrcaSlicer install.
 FALLBACK_PARENT = "fdm_filament_common"
 
@@ -1484,13 +1658,14 @@ def scan_local_fh_presets(folder):
 
 
 # --------------------------------------------------------------------------- #
-# Printer (machine) and print (process) profiles travel one way: read out of
-# OrcaSlicer and handed to FilamentHub, so the site knows which machine a spool,
-# a gate or a recommendation belongs to. Nothing is ever written back into the
-# slicer — OrcaCloud already syncs a user's own machine and process presets
-# across their installs, and FilamentHub's own library is filament presets. Each
-# profile is sent once and again only after it changes; the content hash lives in
-# the shared sync state.
+# Automatic printer (machine) and print (process) profile sync remains one-way:
+# profiles are read from OrcaSlicer and handed to FilamentHub, so the site knows
+# which machine a spool, a gate or a recommendation belongs to. A user may also
+# explicitly restore the profiles linked to one physical-printer card. That
+# separate action creates only FilamentHub-managed copies and never overwrites an
+# unmanaged Orca profile. Automatic sync does not pull machine/process profiles.
+# Outbound profiles are sent once and again only after they change; the content
+# hash lives in the shared sync state.
 # --------------------------------------------------------------------------- #
 PROFILE_KINDS = {
     "machine": {
@@ -1804,6 +1979,14 @@ function navigateActive() {
       SITE_ORIGIN);
   } catch (e) { /* iframe not ready */ }
 }
+function sendPluginCapabilities() {
+  try {
+    frame.contentWindow.postMessage(
+      { source: 'filamenthub-plugin', type: 'plugin-capabilities',
+        pluginVersion: '__PLUGIN_VERSION__', capabilities: ['printer-bundle-install'] },
+      SITE_ORIGIN);
+  } catch (e) { /* iframe not ready */ }
+}
 setAuthControls(false);  // hidden until the catalog reports a signed-in state
 
 // Catalog -> shell. auth-state updates the toolbar label; open-oauth runs the
@@ -1814,6 +1997,10 @@ window.addEventListener('message', function (event) {
   if (event.source !== frame.contentWindow || event.origin !== SITE_ORIGIN) return;
   if (!data || data.source !== 'filamenthub-plugin') return;
   markCatalogReady();
+  if (data.type === 'plugin-capabilities-request') {
+    sendPluginCapabilities();
+    return;
+  }
   if (data.type === 'auth-state') {
     // label present = signed in: show the username + a sign-out button, and the
     // auth-only controls (Profile, Sync). On a fresh sign-in, return the catalog
@@ -1846,7 +2033,8 @@ window.addEventListener('message', function (event) {
     startOAuthPolling();
     return;
   }
-  if (data.type === 'profile-changed' || data.type === 'recover-import') { startSyncPolling(); }
+  if (data.type === 'profile-changed' || data.type === 'recover-import' ||
+      data.type === 'install-printer-bundle') { startSyncPolling(); }
   try { orca.postMessage(data); } catch (e) { /* bridge not ready */ }
 });
 
@@ -2182,6 +2370,7 @@ document.getElementById('logout').addEventListener('click', function () {
 </body>
 </html>
 """.replace("__SITE_ORIGIN__", SITE_URL).replace(
+    "__PLUGIN_VERSION__", PLUGIN_VERSION).replace(
     "__UI_COPY__", json.dumps(UI_COPY, ensure_ascii=False).replace("</", "<\\/")).replace(
     "__OAUTH_STATUS_PATH__", SHELL_SERVER.status_path()).replace(
     "__SYNC_STATUS_PATH__", SHELL_SERVER.sync_status_path()).replace(
@@ -2730,6 +2919,21 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
             known = self._known_filament_preset_names()  # host read on the UI thread
             refresh_user_preset_folder()
             BACKGROUND_WORKER.submit(self._do_import, preset_id, token, known)
+        elif msg_type == "install-printer-bundle":
+            physical_printer_id = msg.get("physicalPrinterId")
+            if not isinstance(physical_printer_id, int) or physical_printer_id <= 0:
+                return
+            token = msg.get("token") or ""
+            if not isinstance(token, str) or len(token) > MAX_TOKEN_LENGTH:
+                return
+            if not token:
+                token = (load_saved_auth() or {}).get("accessToken") or ""
+            refresh_user_preset_folder()
+            BACKGROUND_WORKER.submit(
+                self._do_install_printer_bundle,
+                physical_printer_id,
+                token,
+            )
         elif msg_type == "check-slices":
             # The list on the site outlives the files behind it; answer which of
             # those slices can still be turned into a calculation.
@@ -2810,6 +3014,36 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
                 imported[did] = 1
             save_imported_draft_ids(imported)
         self._deliver_sync_result(ui_text("recoveryDone", count=len(sent_ids)))
+
+    def _do_install_printer_bundle(self, physical_printer_id, token):
+        if not token:
+            self._deliver_sync_result(ui_text("importSignIn"))
+            return
+        status, body = http_get(
+            "/physical-printers/%d/orcaslicer-bundle" % int(physical_printer_id),
+            token=token,
+        )
+        if status == 401:
+            clear_auth()
+            self._deliver_sync_result(ui_text("sessionExpired"))
+            return
+        if status != 200:
+            self._deliver_sync_result(ui_text("printerBundleFailed", status=status))
+            return
+        try:
+            bundle = json.loads(body.decode("utf-8"))
+            counts = install_printer_bundle(bundle)
+        except (OSError, UnicodeDecodeError, ValueError) as exc:
+            fh_log("printer bundle install failed: %s" % exc)
+            self._deliver_sync_result(ui_text("printerBundleInvalid"))
+            return
+        self._deliver_sync_result(
+            ui_text(
+                "printerBundleInstalled",
+                machines=counts["machine"],
+                processes=counts["process"],
+            )
+        )
 
     def _start_external_oauth(self, provider):
         # Google/Yandex block their consent pages in embedded WebViews, so run the

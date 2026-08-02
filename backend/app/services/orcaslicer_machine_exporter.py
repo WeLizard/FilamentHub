@@ -331,7 +331,9 @@ async def printer_profile_to_orca_json(
     # version, иначе одиночный JSON не загружается (PresetBundle.cpp).
     settings["printer_settings_id"] = orca_name
     settings.setdefault("version", ORCA_PROFILE_VERSION)
-    settings["from"] = "system" if profile.is_official else profile.source or "user"
+    # `source` is FilamentHub provenance (for example `orcaslicer`), while
+    # Orca's `from` header accepts only `system` or `user`.
+    settings["from"] = "system" if profile.is_official else "user"
     # OrcaSlicer ожидает строку "true"/"false"
     settings["instantiation"] = str(settings.get("instantiation", "true")).lower()
 
@@ -348,6 +350,8 @@ async def printer_profile_to_orca_json(
         # Если нет в профиле, пробуем взять из принтера
         elif profile.printer and profile.printer.nozzle_diameter:
             settings["nozzle_diameter"] = [str(profile.printer.nozzle_diameter)]
+    elif not isinstance(settings["nozzle_diameter"], list):
+        settings["nozzle_diameter"] = [str(settings["nozzle_diameter"])]
 
     # Printable area / height - используем значения из orcaslicer_settings (приоритет), если нет - из отдельных колонок
     if "printable_area" not in settings:
@@ -470,14 +474,17 @@ def printer_profile_info(profile: PrinterProfile) -> str:
 async def print_profile_to_orca_json(
     profile: PrintProfile,
     db: AsyncSession | None = None,
+    *,
+    compatible_printer_names: list[str] | None = None,
+    printer_for_tag: Printer | None = None,
 ) -> dict[str, Any]:
     """Преобразовать `PrintProfile` (process) в JSON OrcaSlicer."""
     settings = _merge_settings(profile.orcaslicer_settings)
 
     # Генерируем tag для OrcaSlicer
     # Пытаемся взять из связанных принтеров (приоритет), иначе из vendor
-    tag = None
-    if db and profile.printer_links:
+    tag = _generate_orca_tag(printer_for_tag, profile.vendor) if printer_for_tag else None
+    if not tag and db and profile.printer_links:
         # Берем первый связанный принтер для генерации tag
         printer_ids = [link.printer_id for link in profile.printer_links if link.printer_id]
         if printer_ids:
@@ -500,7 +507,7 @@ async def print_profile_to_orca_json(
     # одиночного JSON (PresetBundle.cpp).
     settings["print_settings_id"] = orca_name
     settings.setdefault("version", ORCA_PROFILE_VERSION)
-    settings["from"] = "system" if profile.is_official else profile.source or "user"
+    settings["from"] = "system" if profile.is_official else "user"
     # Missing means a normal visible user preset. Preserve an explicit false for
     # genuine templates, but never turn an imported user profile into a hidden
     # template merely because the source file omitted this optional header.
@@ -512,7 +519,9 @@ async def print_profile_to_orca_json(
         settings.setdefault("setting_id", f"FHUB_P_{profile.id}")
 
     # Совместимые принтеры - преобразуем из slug в name PrinterProfile
-    if db and profile.printer_links:
+    if compatible_printer_names is not None:
+        settings["compatible_printers"] = list(dict.fromkeys(compatible_printer_names))
+    elif db and profile.printer_links:
         # Батч-загрузка принтеров и их профилей вместо запроса на каждый link (N+1)
         printer_ids = [link.printer_id for link in profile.printer_links if link.printer_id]
         printers_by_id: dict[int, Printer] = {}

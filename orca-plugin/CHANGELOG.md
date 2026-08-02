@@ -2,6 +2,10 @@
 
 Newest first. The top entry is the text pasted into the Plugin Hub on release.
 
+## 0.0.10
+- A printer card can now explicitly restore its FilamentHub-managed OrcaSlicer machine and print profiles. Existing unmanaged profiles are never overwritten.
+- Automatic machine and print profile reporting remains one-way; restoration happens only when you request it and requires an OrcaSlicer restart.
+
 ## 0.0.9
 - Follows OrcaSlicer's interface language for connection and error messages, with a fallback for older builds.
 - Uses OrcaSlicer's private plugin storage and preset APIs when available instead of reopening host files.

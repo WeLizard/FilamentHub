@@ -21,6 +21,7 @@ const EMBED_FLAG = 'fh_plugin_embed';
 // остаётся страховкой на жёсткую перезагрузку в обычном браузере.
 let embedSessionFlag = false;
 let activePluginToken: string | null = null;
+let activePluginCapabilities = new Set<string>();
 
 /**
  * Запущен ли каталог во встроенном (плагинном) режиме. Определяем по маршруту
@@ -324,6 +325,59 @@ export function importPresetToPlugin(presetId: number): void {
     source: PLUGIN_MESSAGE_SOURCE,
     type: 'import-preset',
     presetId,
+    token: activePluginToken ?? '',
+  });
+}
+
+/** Ask the current plugin shell which optional actions it actually supports. */
+export function requestPluginCapabilities(): void {
+  postToPlugin({
+    source: PLUGIN_MESSAGE_SOURCE,
+    type: 'plugin-capabilities-request',
+  });
+}
+
+/**
+ * Capability negotiation keeps newer site actions hidden in older installed
+ * plugin versions instead of rendering a button that the old shell ignores.
+ */
+export function subscribeToPluginCapabilities(
+  onCapabilities: (capabilities: ReadonlySet<string>) => void,
+): () => void {
+  const handler = (event: MessageEvent) => {
+    if (!isTrustedPluginParentEvent(event)) {
+      return;
+    }
+    const data = event.data as Partial<PluginMessage> | undefined;
+    if (!data || data.source !== PLUGIN_MESSAGE_SOURCE || data.type !== 'plugin-capabilities') {
+      return;
+    }
+    const capabilities = (data as { capabilities?: unknown }).capabilities;
+    if (!Array.isArray(capabilities)) {
+      return;
+    }
+    activePluginCapabilities = new Set(
+      capabilities.filter((item): item is string => typeof item === 'string'),
+    );
+    onCapabilities(new Set(activePluginCapabilities));
+  };
+  window.addEventListener('message', handler);
+  if (activePluginCapabilities.size > 0) {
+    onCapabilities(new Set(activePluginCapabilities));
+  }
+  return () => window.removeEventListener('message', handler);
+}
+
+/**
+ * Явно установить в OrcaSlicer управляемые копии конфигураций выбранного
+ * физического принтера. Автоматическая синхронизация machine/process-профилей
+ * остаётся только исходящей; этот pull запускается исключительно пользователем.
+ */
+export function installPrinterBundleInPlugin(physicalPrinterId: number): void {
+  postToPlugin({
+    source: PLUGIN_MESSAGE_SOURCE,
+    type: 'install-printer-bundle',
+    physicalPrinterId,
     token: activePluginToken ?? '',
   });
 }

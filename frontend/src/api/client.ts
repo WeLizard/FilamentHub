@@ -3154,6 +3154,14 @@ export const physicalPrintersAPI = {
     return response.data;
   },
 
+  downloadOrcaBundle: async (physicalPrinterId: number): Promise<Blob> => {
+    const response = await api.get<Blob>(
+      `/physical-printers/${physicalPrinterId}/orcaslicer-bundle`,
+      { params: { archive: true }, responseType: 'blob' },
+    );
+    return response.data;
+  },
+
   economics: async (printerId: number): Promise<PrinterEconomics> => {
     const response = await api.get<PrinterEconomics>(`/physical-printers/${printerId}/economics`);
     return response.data;

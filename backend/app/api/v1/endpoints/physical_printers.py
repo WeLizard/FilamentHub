@@ -2,10 +2,14 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_active_user
+from app.core.errors import (
+    ERR_EXPORT_PRINTER_DISABLED,
+    raise_error,
+)
 from app.db.session import get_db
 from app.models.user import User
 from app.models.user_printer_device import UserPrinterDevice
@@ -39,6 +43,10 @@ from app.services.material_contract_service import (
     update_material_system,
     update_physical_printer,
     upsert_physical_printer_connector,
+)
+from app.services.orca_printer_bundle_service import (
+    build_orca_printer_archive,
+    build_orca_printer_bundle,
 )
 from app.services.printer_economics_service import (
     DEFAULT_USAGE,
@@ -79,6 +87,38 @@ async def get_item(
 ) -> PhysicalPrinterResponse:
     printer = await require_physical_printer(db, current_user.id, physical_printer_id)
     return PhysicalPrinterResponse.from_model(printer)
+
+
+@router.get("/{physical_printer_id}/orcaslicer-bundle", response_model=None)
+async def get_orcaslicer_bundle(
+    physical_printer_id: int,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    archive: bool = False,
+) -> dict | Response:
+    """Build a user-requested managed Orca bundle for one physical printer."""
+    if not current_user.allow_printer_profiles_export:
+        raise_error(status.HTTP_403_FORBIDDEN, ERR_EXPORT_PRINTER_DISABLED)
+    printer = await require_physical_printer(
+        db, current_user.id, physical_printer_id
+    )
+    bundle = await build_orca_printer_bundle(
+        db=db,
+        physical_printer=printer,
+        user_id=current_user.id,
+        include_process_profiles=current_user.allow_print_profiles_export,
+    )
+    if archive:
+        return Response(
+            content=build_orca_printer_archive(bundle),
+            media_type="application/zip",
+            headers={
+                "Content-Disposition": (
+                    f'attachment; filename="filamenthub-printer-{physical_printer_id}.zip"'
+                )
+            },
+        )
+    return bundle
 
 
 @router.delete("/{physical_printer_id}", status_code=status.HTTP_204_NO_CONTENT)

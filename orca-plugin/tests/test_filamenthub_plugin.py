@@ -424,6 +424,92 @@ def test_stale_preset_files_are_removed_after_rename(plugin_module, monkeypatch,
     assert remaining == ["New Name.json"]
 
 
+def test_explicit_printer_bundle_install_creates_only_managed_profiles(
+    plugin_module, monkeypatch, tmp_path
+):
+    monkeypatch.setattr(plugin_module, "user_bundle_dir", lambda: str(tmp_path))
+    machine_dir = tmp_path / "machine"
+    machine_dir.mkdir()
+    unmanaged = machine_dir / "Workshop 0.4.json"
+    unmanaged_payload = {
+        "name": "Workshop 0.4",
+        "type": "machine",
+        "printer_settings_id": "Workshop 0.4",
+    }
+    unmanaged.write_text(json.dumps(unmanaged_payload), encoding="utf-8")
+
+    counts = plugin_module.install_printer_bundle({
+        "format": "filamenthub.orcaslicer.printer-bundle",
+        "version": 1,
+        "machine_profiles": [{
+            "id": 41,
+            "name": "Workshop 0.4",
+            "profile": {
+                "name": "Workshop 0.4",
+                "type": "machine",
+                "printer_settings_id": "Workshop 0.4",
+            },
+        }],
+        "process_profiles": [{
+            "id": 77,
+            "name": "Fast 0.20",
+            "profile": {
+                "name": "Fast 0.20",
+                "type": "process",
+                "print_settings_id": "Fast 0.20",
+                "compatible_printers": ["Workshop 0.4"],
+            },
+        }],
+    })
+
+    managed_machine = machine_dir / "Workshop 0.4 (FH-Machine-41).json"
+    managed_process = tmp_path / "process" / "Fast 0.20.json"
+    machine_payload = json.loads(managed_machine.read_text(encoding="utf-8"))
+    process_payload = json.loads(managed_process.read_text(encoding="utf-8"))
+
+    assert counts == {"machine": 1, "process": 1}
+    assert json.loads(unmanaged.read_text(encoding="utf-8")) == unmanaged_payload
+    assert machine_payload["printer_settings_id"] == "Workshop 0.4 (FH-Machine-41)"
+    assert process_payload["compatible_printers"] == [
+        "Workshop 0.4 (FH-Machine-41)"
+    ]
+    assert (machine_dir / "Workshop 0.4 (FH-Machine-41).info").read_text(
+        encoding="utf-8"
+    ) == "sync_info = filamenthub:machine:41\n"
+
+
+def test_printer_bundle_message_is_explicit_and_uses_saved_session(
+    plugin_module, monkeypatch
+):
+    submitted = []
+    refreshed = []
+    monkeypatch.setattr(
+        plugin_module,
+        "BACKGROUND_WORKER",
+        SimpleNamespace(submit=lambda *args: submitted.append(args)),
+    )
+    monkeypatch.setattr(
+        plugin_module, "load_saved_auth", lambda: {"accessToken": "saved-token"}
+    )
+    monkeypatch.setattr(
+        plugin_module,
+        "refresh_user_preset_folder",
+        lambda: refreshed.append(True),
+    )
+
+    plugin_module.FilamentHubCatalog().on_message({
+        "source": "filamenthub-plugin",
+        "type": "install-printer-bundle",
+        "physicalPrinterId": 12,
+        "token": "",
+    })
+
+    assert refreshed == [True]
+    assert len(submitted) == 1
+    assert submitted[0][0].__name__ == "_do_install_printer_bundle"
+    assert submitted[0][1:] == (12, "saved-token")
+
+
 def test_profile_change_reports_automatic_sync_result(plugin_module):
     capability = plugin_module.FilamentHubCatalog()
     calls = []
@@ -600,14 +686,14 @@ def test_failed_upload_is_retried_on_the_next_sync(plugin_module, monkeypatch):
     assert plugin_module.push_user_profiles("machine", "tok", items, state) == (1, 0)
 
 
-def test_plugin_never_writes_machine_or_process_into_the_slicer(plugin_module):
-    # Printer and print profiles are collected from OrcaSlicer, never written
-    # back: OrcaCloud already syncs those between a user's own installs.
-    source = PLUGIN_PATH.read_text(encoding="utf-8")
-    assert "user_machine_dir" not in source
-    assert "user_process_dir" not in source
+def test_automatic_machine_and_process_sync_remains_outbound_only(plugin_module):
+    # The normal sync registry contains only outbound import endpoints. Restoring
+    # a managed machine/process set is a separate explicit message and is never
+    # entered into the automatic reconciliation loop.
     for spec in plugin_module.PROFILE_KINDS.values():
         assert "folder" not in spec
+        assert "export_path" not in spec
+        assert "pull_path" not in spec
 
 
 def _module_with_slicing():

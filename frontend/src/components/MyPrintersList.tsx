@@ -1,7 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { Printer, Settings, Wifi, Plus } from 'lucide-react';
+import { Download, Loader2, Plus, Printer, RefreshCw, Settings, Wifi } from 'lucide-react';
 import {
   physicalPrintersAPI,
   type PhysicalPrinter,
@@ -11,6 +11,15 @@ import type { PrinterProfile } from '../types/api';
 import { PhysicalPrinterSettingsModal } from './PhysicalPrinterSettingsModal';
 import { PrinterConfigurationRow } from './PrinterConfigurationRow';
 import { AddPhysicalPrinterModal } from './AddPhysicalPrinterModal';
+import { toast } from './Toast';
+import {
+  installPrinterBundleInPlugin,
+  isPluginEmbed,
+  requestPluginCapabilities,
+  subscribeToPluginCapabilities,
+} from '../utils/pluginBridge';
+import { downloadBlob, safeDownloadStem } from '../utils/download';
+import { translateApiError } from '../utils/translateApiError';
 
 interface MyPrintersListProps {
   /** The user's Orca machine profiles, shown under the printer they belong to. */
@@ -35,8 +44,25 @@ export function MyPrintersList({
   onViewConfiguration,
 }: MyPrintersListProps) {
   const { t } = useTranslation();
+  const pluginEmbed = isPluginEmbed();
   const [settingsPrinter, setSettingsPrinter] = useState<PhysicalPrinter | null>(null);
   const [showAdd, setShowAdd] = useState(false);
+  const [pluginCanInstallBundle, setPluginCanInstallBundle] = useState(!pluginEmbed);
+  const [bundleActionPrinterIds, setBundleActionPrinterIds] = useState<Set<number>>(
+    () => new Set(),
+  );
+
+  useEffect(() => {
+    if (!pluginEmbed) {
+      setPluginCanInstallBundle(true);
+      return;
+    }
+    const unsubscribe = subscribeToPluginCapabilities((capabilities) => {
+      setPluginCanInstallBundle(capabilities.has('printer-bundle-install'));
+    });
+    requestPluginCapabilities();
+    return unsubscribe;
+  }, [pluginEmbed]);
 
   const { data: printers, isLoading, isError } = useQuery({
     queryKey: ['physical-printers'],
@@ -60,6 +86,47 @@ export function MyPrintersList({
   }, [bindings]);
 
   const list = printers ?? [];
+
+  const handlePrinterBundle = async (printer: PhysicalPrinter) => {
+    if (
+      printer.printer_profile_ids.length === 0 ||
+      bundleActionPrinterIds.has(printer.id)
+    ) {
+      return;
+    }
+    setBundleActionPrinterIds((current) => {
+      const next = new Set(current);
+      next.add(printer.id);
+      return next;
+    });
+    try {
+      if (pluginEmbed) {
+        installPrinterBundleInPlugin(printer.id);
+        toast.info(t('myPrinters.bundleRequestSent'));
+      } else {
+        const bundle = await physicalPrintersAPI.downloadOrcaBundle(printer.id);
+        downloadBlob(
+          bundle,
+          `${safeDownloadStem(printer.name, `printer-${printer.id}`)}-orcaslicer.zip`,
+        );
+        toast.success(t('myPrinters.bundleDownloaded'));
+      }
+    } catch (error: any) {
+      toast.error(
+        translateApiError(
+          t,
+          error?.response?.data?.detail,
+          t('myPrinters.bundleError'),
+        ),
+      );
+    } finally {
+      setBundleActionPrinterIds((current) => {
+        const next = new Set(current);
+        next.delete(printer.id);
+        return next;
+      });
+    }
+  };
 
   return (
     <>
@@ -98,6 +165,35 @@ export function MyPrintersList({
                 <div className="flex items-center gap-2 min-w-0">
                   <Printer className="w-5 h-5 text-purple-400 flex-shrink-0" />
                   <h4 className="flex-1 text-sm font-semibold text-white truncate">{printer.name}</h4>
+                  {pluginCanInstallBundle && <button
+                    type="button"
+                    onClick={() => void handlePrinterBundle(printer)}
+                    disabled={
+                      printer.printer_profile_ids.length === 0 ||
+                      bundleActionPrinterIds.has(printer.id)
+                    }
+                    className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md text-gray-400 transition-colors hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-35"
+                    title={
+                      printer.printer_profile_ids.length === 0
+                        ? t('myPrinters.bundleUnavailable')
+                        : pluginEmbed
+                          ? t('myPrinters.installBundleInOrca')
+                          : t('myPrinters.downloadBundle')
+                    }
+                    aria-label={
+                      pluginEmbed
+                        ? t('myPrinters.installBundleInOrca')
+                        : t('myPrinters.downloadBundle')
+                    }
+                  >
+                    {bundleActionPrinterIds.has(printer.id) ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : pluginEmbed ? (
+                      <RefreshCw className="h-4 w-4" />
+                    ) : (
+                      <Download className="h-4 w-4" />
+                    )}
+                  </button>}
                   <button
                     type="button"
                     onClick={() => setSettingsPrinter(printer)}

@@ -10,3 +10,17 @@ export const downloadBlob = (data: Blob | BlobPart, filename: string): void => {
   link.remove();
   URL.revokeObjectURL(url);
 };
+
+/** Convert a user-facing title into a stable, portable download filename stem. */
+export const safeDownloadStem = (value: string, fallback = 'download'): string => {
+  const stem = (value || '')
+    .trim()
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[\s/\\:]+/g, '-')
+    .replace(/[^a-zA-Z0-9а-яА-ЯёЁ_.-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+    .toLowerCase();
+  return stem || fallback;
+};
