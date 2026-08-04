@@ -169,27 +169,26 @@ function Invoke-RemoteWorker {
 function Get-DeploymentCandidate {
     Assert-Command git
 
-    $branch = Invoke-Checked git @('branch', '--show-current') -Capture
-    if ($branch -ne 'main') {
-        throw "Деплой нужно готовить из ветки main; сейчас выбрана '$branch'."
-    }
+    $published = Get-VerifiedPublishedMain
 
+    # Разворачивается ровно origin/main, поэтому состояние рабочего дерева и
+    # локальной ветки на результат не влияет — о расхождении достаточно сказать.
     $dirty = Invoke-Checked git @('status', '--porcelain', '--untracked-files=normal') -Capture
     if ($dirty) {
         $changedCount = @($dirty -split "`r?`n").Count
-        Write-Host "Локальных изменений в дереве: $changedCount. В деплой они не попадают — разворачивается точный SHA origin/main." -ForegroundColor DarkGray
+        Write-Host "Локальных изменений в дереве: $changedCount — в деплой они не попадают." -ForegroundColor DarkGray
     }
 
-    $published = Get-VerifiedPublishedMain
     $head = Invoke-Checked git @('rev-parse', 'HEAD') -Capture
-    $remoteHead = $published.Sha
-    if ($head -ne $remoteHead) {
-        throw "Локальный HEAD ($head) не совпадает с origin/main ($remoteHead). Сначала отправь или получи изменения main."
+    if ($head -ne $published.Sha) {
+        $ahead = Invoke-Checked git @('rev-list', '--count', "$($published.Sha)..HEAD") -Capture
+        $behind = Invoke-Checked git @('rev-list', '--count', "HEAD..$($published.Sha)") -Capture
+        Write-Host "Локально не опубликовано коммитов: $ahead, не получено: $behind — разворачивается origin/main." -ForegroundColor DarkGray
     }
 
     [pscustomobject]@{
-        Sha = $head
-        ShortSha = $head.Substring(0, 8)
+        Sha = $published.Sha
+        ShortSha = $published.Sha.Substring(0, 8)
         Repository = $published.Repository
         CiUrl = $published.CiUrl
     }
