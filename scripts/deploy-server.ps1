@@ -15,8 +15,11 @@ param(
     [ValidateSet('Menu', 'Preflight', 'Deploy', 'Status', 'Backup', 'PruneBuildCache', 'ListReleases', 'DownloadRelease', 'CheckDownloadPage', 'PrepareRelease', 'PublishRelease')]
     [string]$Action = 'Menu',
 
+    # Деплой всегда идёт на один и тот же VDS через алиас SSH config, поэтому
+    # адрес не спрашивается: переменная окружения и -Server остаются для
+    # переезда на другую машину.
     [Parameter()]
-    [string]$Server = $env:FILAMENTHUB_DEPLOY_TARGET,
+    [string]$Server = $(if ([string]::IsNullOrWhiteSpace($env:FILAMENTHUB_DEPLOY_TARGET)) { 'server' } else { $env:FILAMENTHUB_DEPLOY_TARGET }),
 
     [Parameter()]
     [string]$RemoteProjectDirectory = 'FilamentHub',
@@ -37,6 +40,12 @@ function Assert-Command {
     if (-not (Get-Command $Name -ErrorAction SilentlyContinue)) {
         throw "Не найдена обязательная команда '$Name' в PATH."
     }
+}
+
+function Confirm-Action {
+    param([Parameter(Mandatory)][string]$Question)
+
+    return (Read-Host "$Question [y/N]").Trim() -match '^(y|yes|д|да)$'
 }
 
 function Invoke-Checked {
@@ -104,16 +113,18 @@ function Get-VerifiedPublishedMain {
 }
 
 function Get-ServerTarget {
-    if ([string]::IsNullOrWhiteSpace($script:Server)) {
-        $script:Server = Read-Host 'SSH-адрес VDS (например user@server или имя из SSH config)'
+    $target = "$script:Server".Trim()
+    if ([string]::IsNullOrWhiteSpace($target)) {
+        throw 'SSH-адрес VDS не задан: передай -Server или задай FILAMENTHUB_DEPLOY_TARGET.'
     }
-    if ($script:Server -notmatch '^[A-Za-z0-9._@:\-\[\]]+$') {
-        throw 'SSH-адрес содержит недопустимые символы. Используй имя из SSH config или user@host.'
+    if ($target -notmatch '^[A-Za-z0-9._@:\-\[\]]+$') {
+        throw "SSH-адрес '$target' содержит недопустимые символы. Используй имя из SSH config или user@host."
     }
     if ($RemoteProjectDirectory -notmatch '^[A-Za-z0-9_./\-]+$') {
         throw 'Путь к проекту на VDS должен быть относительным от SSH home или абсолютным и не может содержать ~.'
     }
-    return $script:Server
+    $script:Server = $target
+    return $target
 }
 
 function Invoke-RemoteWorker {
@@ -165,9 +176,8 @@ function Get-DeploymentCandidate {
 
     $dirty = Invoke-Checked git @('status', '--porcelain', '--untracked-files=normal') -Capture
     if ($dirty) {
-        Write-Host 'В рабочем дереве есть локальные изменения; они не попадут в деплой:' -ForegroundColor Yellow
-        Write-Host $dirty
-        Write-Host 'Деплой использует только точный уже опубликованный SHA origin/main.' -ForegroundColor Yellow
+        $changedCount = @($dirty -split "`r?`n").Count
+        Write-Host "Локальных изменений в дереве: $changedCount. В деплой они не попадают — разворачивается точный SHA origin/main." -ForegroundColor DarkGray
     }
 
     $published = Get-VerifiedPublishedMain
@@ -196,14 +206,20 @@ function Show-Preflight {
 }
 
 function Start-ProductionDeploy {
-    $candidate = Show-Preflight
+    # Кандидат передаётся, когда владелец уже видел проверку готовности: незачем
+    # заново гонять fetch и опрос CI ради того же самого коммита.
+    param([psobject]$Candidate)
+
+    if (-not $Candidate) {
+        $Candidate = Show-Preflight
+    }
     Write-Host ''
-    $confirmation = Read-Host "Введи ДЕПЛОЙ $($candidate.ShortSha), чтобы развернуть именно этот коммит"
-    if ($confirmation -ne "ДЕПЛОЙ $($candidate.ShortSha)") {
-        throw 'Деплой отменён.'
+    if (-not (Confirm-Action "Задеплоить $($Candidate.ShortSha) в production?")) {
+        Write-Host 'Деплой отменён.' -ForegroundColor Yellow
+        return
     }
 
-    Invoke-RemoteWorker -Arguments @('--revision', $candidate.Sha, '--yes') -WorkerRevision $candidate.Sha
+    Invoke-RemoteWorker -Arguments @('--revision', $Candidate.Sha, '--yes') -WorkerRevision $Candidate.Sha
 }
 
 function Show-ProductionStatus {
@@ -211,17 +227,17 @@ function Show-ProductionStatus {
 }
 
 function Start-ProductionBackup {
-    $confirmation = Read-Host 'Введи БЭКАП, чтобы создать и проверить зашифрованную копию production-базы'
-    if ($confirmation -ne 'БЭКАП') {
-        throw 'Создание backup отменено.'
+    if (-not (Confirm-Action 'Создать и проверить зашифрованную копию production-базы?')) {
+        Write-Host 'Создание backup отменено.' -ForegroundColor Yellow
+        return
     }
     Invoke-RemoteWorker -Arguments @('--backup-only') -UseDeployedRevision
 }
 
 function Start-BuildCacheCleanup {
-    $confirmation = Read-Host 'Введи ОЧИСТИТЬ КЭШ, чтобы удалить только build-cache Docker старше 14 дней'
-    if ($confirmation -ne 'ОЧИСТИТЬ КЭШ') {
-        throw 'Очистка build-cache отменена.'
+    if (-not (Confirm-Action 'Удалить build-cache Docker старше 14 дней?')) {
+        Write-Host 'Очистка build-cache отменена.' -ForegroundColor Yellow
+        return
     }
     Invoke-RemoteWorker -Arguments @('--prune-build-cache', '--yes') -UseDeployedRevision
 }
@@ -357,10 +373,15 @@ function Invoke-PluginReleasePreparation {
     param([switch]$Publish)
 
     $tag = Read-ReleaseTag
-    $verb = if ($Publish) { 'ОПУБЛИКОВАТЬ' } else { 'ПОДГОТОВИТЬ' }
-    $confirmation = Read-Host "Введи $verb $tag, чтобы продолжить"
-    if ($confirmation -ne "$verb $tag") {
-        throw 'Действие с релизом отменено.'
+    # Публикация уходит наружу и назад не отыгрывается, поэтому здесь печатная
+    # фраза остаётся; подготовка черновика такой цены не имеет.
+    if ($Publish) {
+        if ((Read-Host "Введи ОПУБЛИКОВАТЬ $tag, чтобы продолжить") -ne "ОПУБЛИКОВАТЬ $tag") {
+            throw 'Публикация релиза отменена.'
+        }
+    } elseif (-not (Confirm-Action "Подготовить черновик релиза $tag?")) {
+        Write-Host 'Подготовка релиза отменена.' -ForegroundColor Yellow
+        return
     }
 
     $scriptPath = Join-Path $PSScriptRoot 'publish-plugin-release.ps1'
@@ -380,6 +401,7 @@ function Show-Menu {
     while ($true) {
         Write-Host ''
         Write-Host 'Консоль владельца FilamentHub' -ForegroundColor Cyan
+        Write-Host "  Сервер: $script:Server"
         Write-Host '  1. Проверить готовность к деплою (точный SHA + GitHub CI)'
         Write-Host '  2. Задеплоить production'
         Write-Host '  3. Проверить состояние production'
@@ -395,7 +417,7 @@ function Show-Menu {
 
         try {
             switch ($choice) {
-                '1' { Show-Preflight | Out-Null }
+                '1' { Start-ProductionDeploy -Candidate (Show-Preflight) }
                 '2' { Start-ProductionDeploy }
                 '3' { Show-ProductionStatus }
                 '4' { Start-ProductionBackup }
