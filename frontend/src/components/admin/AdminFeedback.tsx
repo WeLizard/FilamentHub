@@ -47,19 +47,16 @@ export function AdminFeedback() {
   const updateMutation = useMutation({
     mutationFn: ({
       id,
-      status,
       response,
       idempotencyKey,
     }: {
       id: number;
-      status?: FeedbackStatus;
-      response?: string;
+      response: string;
       idempotencyKey?: string;
     }) =>
       adminFeedbackAPI.update(id, {
-        status: status || undefined,
-        admin_response: response || undefined,
-        reply_idempotency_key: response ? idempotencyKey : undefined,
+        admin_response: response,
+        reply_idempotency_key: idempotencyKey,
       }),
     onSuccess: (updatedFeedback) => {
       queryClient.invalidateQueries({ queryKey: ['admin-feedback'] });
@@ -74,6 +71,24 @@ export function AdminFeedback() {
       toast.success(t('adminFeedback.replySent'));
     },
     onError: (error: AxiosError<{ detail: unknown }>) => {
+      toast.error(translateApiError(t, error?.response?.data?.detail, t('adminFeedback.updateError')));
+    },
+  });
+
+  // Статус живёт отдельно от ответа: «взял в работу» не должно требовать письма
+  // человеку, а отправка письма не должна втихую менять статус.
+  const statusMutation = useMutation({
+    mutationFn: ({ id, status }: { id: number; status: FeedbackStatus }) =>
+      adminFeedbackAPI.update(id, { status }),
+    onSuccess: (updatedFeedback) => {
+      queryClient.invalidateQueries({ queryKey: ['admin-feedback'] });
+      queryClient.setQueryData(['admin-feedback-detail', updatedFeedback.id], updatedFeedback);
+      setSelectedFeedback(updatedFeedback);
+      setResponseStatus(updatedFeedback.status);
+      toast.success(t('adminFeedback.statusSaved'));
+    },
+    onError: (error: AxiosError<{ detail: unknown }>, variables) => {
+      setResponseStatus(selectedFeedback?.status ?? variables.status);
       toast.error(translateApiError(t, error?.response?.data?.detail, t('adminFeedback.updateError')));
     },
   });
@@ -96,7 +111,6 @@ export function AdminFeedback() {
     }
     updateMutation.mutate({
       id,
-      status: responseStatus,
       response: adminResponse,
       idempotencyKey: replyIdempotencyKey,
     });
@@ -275,7 +289,9 @@ export function AdminFeedback() {
                     setSelectedFeedback(feedback);
                     setAdminResponse('');
                     setReplyIdempotencyKey(createIdempotencyKey());
-                    setResponseStatus('in_progress');
+                    // Переключатель должен показывать настоящий статус обращения,
+                    // иначе следующее сохранение молча сбросит его на чужой.
+                    setResponseStatus(feedback.status);
                   }}
                 >
                   <div className="flex items-start justify-between gap-4">
@@ -432,8 +448,13 @@ export function AdminFeedback() {
                     </label>
                     <select
                       value={responseStatus}
-                      onChange={(e) => setResponseStatus(e.target.value as FeedbackStatus)}
-                      className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                      disabled={statusMutation.isPending}
+                      onChange={(e) => {
+                        const next = e.target.value as FeedbackStatus;
+                        setResponseStatus(next);
+                        statusMutation.mutate({ id: selectedFeedbackView.id, status: next });
+                      }}
+                      className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:opacity-60"
                     >
                       <option value="open">{t('adminFeedback.filter_open')}</option>
                       <option value="in_progress">{t('adminFeedback.filter_in_progress')}</option>
