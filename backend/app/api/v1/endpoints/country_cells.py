@@ -3,8 +3,9 @@
 Одна глобальная запись по-прежнему описывает один физический товар: страна копию
 не создаёт. Здесь живёт только то, что действительно различается по рынкам.
 
-Заполняет администратор. Территориальные права представителей — отдельная
-задача, и до неё правка ячеек не выдаётся никому другому.
+Править ячейку может тот, у кого есть право на эту страну: представитель своей
+области или администратор. Чужую страну не трогает никто, общий слой отсюда не
+меняется вовсе.
 """
 
 from datetime import datetime, timezone
@@ -14,8 +15,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.dependencies import get_current_active_user_optional, get_current_admin_user
+from app.core.dependencies import get_current_active_user, get_current_active_user_optional
 from app.core.errors import (
+    ERR_ACCESS_DENIED,
     ERR_BRAND_NOT_FOUND,
     ERR_COUNTRY_CELL_EXISTS,
     ERR_COUNTRY_CELL_NOT_FOUND,
@@ -35,6 +37,10 @@ from app.schemas.country_cell import (
     FilamentCountryCellCreate,
     FilamentCountryCellResponse,
     FilamentCountryCellUpdate,
+)
+from app.services.territorial_access import (
+    can_manage_brand_country,
+    can_manage_filament_country,
 )
 
 router = APIRouter(tags=["country-cells"])
@@ -82,12 +88,13 @@ async def list_brand_country_cells(
 async def create_brand_country_cell(
     brand_id: int,
     data: BrandCountryCellCreate,
-    admin: Annotated[User, Depends(get_current_admin_user)],
+    actor: Annotated[User, Depends(get_current_active_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> BrandCountryCellResponse:
     """Завести ячейку бренда в стране."""
-    del admin
     await _require_brand(db, brand_id)
+    if not await can_manage_brand_country(db, actor, brand_id, data.country):
+        raise_error(403, ERR_ACCESS_DENIED)
 
     existing = await db.scalar(
         select(BrandCountryCell).where(
@@ -113,11 +120,13 @@ async def update_brand_country_cell(
     brand_id: int,
     country: str,
     data: BrandCountryCellUpdate,
-    admin: Annotated[User, Depends(get_current_admin_user)],
+    actor: Annotated[User, Depends(get_current_active_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> BrandCountryCellResponse:
     """Изменить ячейку бренда."""
-    del admin
+    if not await can_manage_brand_country(db, actor, brand_id, country):
+        raise_error(403, ERR_ACCESS_DENIED)
+
     cell = await db.scalar(
         select(BrandCountryCell).where(
             BrandCountryCell.brand_id == brand_id,
@@ -139,11 +148,13 @@ async def update_brand_country_cell(
 async def delete_brand_country_cell(
     brand_id: int,
     country: str,
-    admin: Annotated[User, Depends(get_current_admin_user)],
+    actor: Annotated[User, Depends(get_current_active_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> None:
     """Убрать ячейку. Бренд и его общие данные не затрагиваются."""
-    del admin
+    if not await can_manage_brand_country(db, actor, brand_id, country):
+        raise_error(403, ERR_ACCESS_DENIED)
+
     cell = await db.scalar(
         select(BrandCountryCell).where(
             BrandCountryCell.brand_id == brand_id,
@@ -188,11 +199,13 @@ async def list_filament_country_cells(
 async def create_filament_country_cell(
     filament_id: int,
     data: FilamentCountryCellCreate,
-    admin: Annotated[User, Depends(get_current_admin_user)],
+    actor: Annotated[User, Depends(get_current_active_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> FilamentCountryCellResponse:
     """Завести ячейку филамента в стране."""
-    await _require_filament(db, filament_id)
+    filament = await _require_filament(db, filament_id)
+    if not await can_manage_filament_country(db, actor, filament.brand_id, data.country):
+        raise_error(403, ERR_ACCESS_DENIED)
 
     existing = await db.scalar(
         select(FilamentCountryCell).where(
@@ -206,7 +219,7 @@ async def create_filament_country_cell(
     cell = FilamentCountryCell(filament_id=filament_id, **data.model_dump())
     if cell.price is not None:
         cell.price_updated_at = datetime.now(timezone.utc)
-        cell.price_updated_by_id = admin.id
+        cell.price_updated_by_id = actor.id
 
     db.add(cell)
     await db.commit()
@@ -222,10 +235,14 @@ async def update_filament_country_cell(
     filament_id: int,
     country: str,
     data: FilamentCountryCellUpdate,
-    admin: Annotated[User, Depends(get_current_admin_user)],
+    actor: Annotated[User, Depends(get_current_active_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> FilamentCountryCellResponse:
     """Изменить ячейку филамента."""
+    filament = await _require_filament(db, filament_id)
+    if not await can_manage_filament_country(db, actor, filament.brand_id, country):
+        raise_error(403, ERR_ACCESS_DENIED)
+
     cell = await db.scalar(
         select(FilamentCountryCell).where(
             FilamentCountryCell.filament_id == filament_id,
@@ -249,7 +266,7 @@ async def update_filament_country_cell(
 
     if "price" in changes:
         cell.price_updated_at = datetime.now(timezone.utc)
-        cell.price_updated_by_id = admin.id
+        cell.price_updated_by_id = actor.id
 
     await db.commit()
     await db.refresh(cell)
@@ -260,11 +277,14 @@ async def update_filament_country_cell(
 async def delete_filament_country_cell(
     filament_id: int,
     country: str,
-    admin: Annotated[User, Depends(get_current_admin_user)],
+    actor: Annotated[User, Depends(get_current_active_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> None:
     """Убрать ячейку. Сам товар и его общие данные не затрагиваются."""
-    del admin
+    filament = await _require_filament(db, filament_id)
+    if not await can_manage_filament_country(db, actor, filament.brand_id, country):
+        raise_error(403, ERR_ACCESS_DENIED)
+
     cell = await db.scalar(
         select(FilamentCountryCell).where(
             FilamentCountryCell.filament_id == filament_id,
