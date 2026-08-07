@@ -340,3 +340,21 @@ async def test_an_application_names_its_country_and_approval_grants_it(
     assert grant.country == "RU"
     assert grant.status == GrantStatus.active
     assert grant.source == GrantSource.application
+
+
+@pytest.mark.asyncio
+async def test_the_representative_is_told_where_their_area_ends(
+    client: AsyncClient, db_session: AsyncSession
+):
+    """Границу объясняют словами, а не заблокированным полем."""
+    brand, _ = await _brand_with_one_filament(db_session)
+    russia = await _representative(db_session, brand, "ru-panel", "RU")
+
+    answer = await client.get(f"/api/v1/brands/{brand.id}/my-territories", headers=russia)
+    assert answer.status_code == 200
+    told = answer.json()
+
+    assert [t["country"] for t in told["territories"]] == ["RU"]
+    # Общий слой закрыт, и интерфейсу есть что сказать вместо «поле недоступно».
+    assert told["can_edit_common"] is False
+    assert told["is_admin"] is False

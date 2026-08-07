@@ -1646,3 +1646,15 @@ export interface OrcaSchemaObservationListResponse {
   pages: number;
   registry_version: string;
 }
+
+/** Региональная витрина бренда: одна страна — одна ячейка. */
+export interface BrandCountryCell {
+  id: number;
+  brand_id: number;
+  country: string;
+  website: string | null;
+  shop_links: { platform: string; url: string }[] | null;
+  published: boolean;
+  created_at: string;
+  updated_at: string;
+}

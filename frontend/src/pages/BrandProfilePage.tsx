@@ -58,6 +58,7 @@ import { PresetSyncToggle } from '../components/PresetSyncToggle';
 import { Dropdown } from '../components/Dropdown';
 import { FilamentPreview } from '../components/FilamentPreview';
 import { BrandTeamPanel } from '../components/BrandTeamPanel';
+import { BrandRegionPanel } from '../components/BrandRegionPanel';
 import { BrandLogoFrame } from '../components/BrandLogoFrame';
 import { toast } from '../components/Toast';
 import { useDebounce } from '../hooks/useDebounce';
@@ -1235,6 +1236,9 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
       )}
 
       {brandTab === 'team' && <BrandTeamPanel brandId={brandData.id} />}
+
+      {/* Границу между общим и своим объясняем словами, а не блокировкой полей. */}
+      <BrandRegionPanel brand={brandData} />
 
       {/* Create/Edit Filament Modal */}
       <CreateFilamentModal

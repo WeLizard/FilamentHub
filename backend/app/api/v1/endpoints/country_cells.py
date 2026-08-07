@@ -29,7 +29,8 @@ from app.models.brand import Brand
 from app.models.brand_country_cell import BrandCountryCell
 from app.models.filament import Filament
 from app.models.filament_country_cell import FilamentCountryCell
-from app.models.user import User
+from app.models.organization import Organization
+from app.models.user import User, UserRole
 from app.schemas.country_cell import (
     BrandCountryCellCreate,
     BrandCountryCellResponse,
@@ -39,6 +40,8 @@ from app.schemas.country_cell import (
     FilamentCountryCellUpdate,
 )
 from app.services.territorial_access import (
+    active_grants_for,
+    can_edit_brand_common,
     can_manage_brand_country,
     can_manage_filament_country,
 )
@@ -296,3 +299,41 @@ async def delete_filament_country_cell(
 
     await db.delete(cell)
     await db.commit()
+
+
+@router.get("/brands/{brand_id}/my-territories")
+async def my_territories(
+    brand_id: int,
+    actor: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict:
+    """Что человек ведёт в этом бренде и кто ведёт общий слой.
+
+    Интерфейс обязан объяснить границу словами, а не заблокированными полями:
+    представитель должен видеть «общее для всех стран» отдельно от «вашей
+    области», и знать, к кому идти с общим.
+    """
+    brand = await _require_brand(db, brand_id)
+    grants = await active_grants_for(db, actor, brand_id)
+
+    common_owner: str | None = None
+    if brand.organization_id is not None:
+        common_owner = await db.scalar(
+            select(Organization.name).where(Organization.id == brand.organization_id)
+        )
+
+    return {
+        "brand_id": brand_id,
+        "is_admin": actor.role == UserRole.ADMIN,
+        "common_managed_by": common_owner,
+        "can_edit_common": await can_edit_brand_common(db, actor, brand_id),
+        "territories": [
+            {
+                "country": grant.country,
+                "manage_brand_country": grant.manage_brand_country,
+                "manage_filament_country": grant.manage_filament_country,
+                "create_filaments": grant.create_filaments,
+            }
+            for grant in grants
+        ],
+    }

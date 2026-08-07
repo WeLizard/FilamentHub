@@ -6503,5 +6503,23 @@
     "taxLine": "增值税",
     "taxIncluded": "含税总价",
     "netAmount": "不含税金额"
+  },
+  "brandRegion": {
+    "yourArea": "您的范围",
+    "areaGlobal": "所有国家",
+    "commonTitle": "所有国家通用",
+    "commonName": "品牌名称",
+    "commonWebsite": "网站",
+    "commonManagedBy": "由 {{owner}} 维护。品牌在全球是同一条记录，通用信息只在一个地方修改。",
+    "commonManagedByNobody": "目前无人维护该品牌的通用信息，请联系管理员。",
+    "yoursTitle": "在您的国家：{{country}}",
+    "yoursTitleGlobal": "您的范围",
+    "regionalWebsite": "区域网站",
+    "emptyMeansCommon": "留空则显示品牌的通用网站。",
+    "globalHasNoCell": "全球范围没有自己的展示页：它覆盖所有国家。",
+    "save": "保存",
+    "saving": "保存中…",
+    "saved": "已保存",
+    "saveFailed": "无法保存区域信息"
   }
 }

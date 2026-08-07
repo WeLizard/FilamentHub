@@ -6510,5 +6510,23 @@
     "taxLine": "VAT",
     "taxIncluded": "Tax included in the total",
     "netAmount": "Net amount"
+  },
+  "brandRegion": {
+    "yourArea": "Your area",
+    "areaGlobal": "every country",
+    "commonTitle": "Common to every country",
+    "commonName": "Brand name",
+    "commonWebsite": "Website",
+    "commonManagedBy": "This is managed by {{owner}}. A brand is one record for the whole world, so the common part is changed in one place.",
+    "commonManagedByNobody": "Nobody manages the brand's common data yet — ask an administrator.",
+    "yoursTitle": "In your country: {{country}}",
+    "yoursTitleGlobal": "Your area",
+    "regionalWebsite": "Regional website",
+    "emptyMeansCommon": "Leave empty and the brand's common website is shown.",
+    "globalHasNoCell": "The global scope has no storefront of its own: it covers every country.",
+    "save": "Save",
+    "saving": "Saving…",
+    "saved": "Saved",
+    "saveFailed": "Could not save the regional data"
   }
 }
