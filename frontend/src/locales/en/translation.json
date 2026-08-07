@@ -935,6 +935,7 @@
     "tabs": {
       "requests": "Verification Requests",
       "brands": "Brands",
+      "materials": "Materials",
       "presets": "Preset Moderation",
       "printers": "Printers",
       "printer-requests": "Printer Requests",
@@ -952,6 +953,7 @@
     "shortTabs": {
       "requests": "Verification",
       "brands": "Brands",
+      "materials": "Materials",
       "presets": "Presets",
       "printers": "Printers",
       "printer-requests": "Requests",
@@ -4784,6 +4786,29 @@
     "uploadLogo": "Upload",
     "uploadError": "Error uploading logo",
     "logoUrlPlaceholder": "URL or upload a file"
+  },
+  "adminMaterials": {
+    "title": "Catalogue materials",
+    "searchPlaceholder": "Search by name, brand or colour",
+    "showOffShelf": "Show materials taken off the shelf",
+    "offShelf": "Off the shelf",
+    "nothingFound": "Nothing found",
+    "presets": "Presets",
+    "edit": "Edit",
+    "takeOffShelf": "Take off the shelf",
+    "putOnShelf": "Put back on the shelf",
+    "takenOffShelf": "Material taken off the shelf",
+    "putOnShelfDone": "Material is back on the shelf",
+    "shelfFailed": "Could not change the material's visibility",
+    "delete": "Delete",
+    "deleteTitle": "Delete this material?",
+    "deleteMessage": "Deleting it also deletes the presets attached to it ({{presets}}) and every review. None of that can be brought back. If the entry is merely untidy, correct it or take it off the shelf instead.",
+    "deleted": "Material deleted",
+    "deleteFailed": "Could not delete the material",
+    "prev": "Previous",
+    "next": "Next",
+    "page": "Page",
+    "of": "of"
   },
   "adminPresets": {
     "enrichButton": "Enrich drafts",

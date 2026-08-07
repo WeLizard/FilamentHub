@@ -4,11 +4,12 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Shield, FileText, Building2, Users, BarChart3, CheckCircle, Home, Package, User, LogOut, Database, Mail, Settings, BookOpen, Sparkles, ScanSearch } from 'lucide-react';
+import { Shield, FileText, Building2, Users, BarChart3, CheckCircle, Home, Package, User, LogOut, Database, Mail, Settings, BookOpen, Sparkles, ScanSearch, Layers } from 'lucide-react';
 import { Printer3DIcon } from '../components/icons/Printer3DIcon';
 import { useAuth } from '../contexts/AuthContext';
 import { AdminBrandRequests } from '../components/admin/AdminBrandRequests';
 import { AdminBrands } from '../components/admin/AdminBrands';
+import { AdminMaterials } from '../components/admin/AdminMaterials';
 import { AdminPresets } from '../components/admin/AdminPresets';
 import { AdminUsers } from '../components/admin/AdminUsers';
 import { AdminStats } from '../components/admin/AdminStats';
@@ -22,7 +23,7 @@ import { AdminSubscriptions } from '../components/admin/AdminSubscriptions';
 import { AdminOrcaSchemaObservations } from '../components/admin/AdminOrcaSchemaObservations';
 import { adminAPI } from '../api/client';
 
-type AdminTab = 'requests' | 'brands' | 'presets' | 'users' | 'stats' | 'printers' | 'printer-requests' | 'communications' | 'database' | 'maintenance' | 'wiki' | 'subscriptions' | 'orca-schema';
+type AdminTab = 'requests' | 'brands' | 'materials' | 'presets' | 'users' | 'stats' | 'printers' | 'printer-requests' | 'communications' | 'database' | 'maintenance' | 'wiki' | 'subscriptions' | 'orca-schema';
 
 export function AdminPanel() {
   const { t } = useTranslation();
@@ -55,6 +56,7 @@ export function AdminPanel() {
   const tabs = [
     { id: 'requests' as AdminTab, label: t('adminPanel.tabs.requests'), shortLabel: t('adminPanel.shortTabs.requests'), icon: FileText, count: null },
     { id: 'brands' as AdminTab, label: t('adminPanel.tabs.brands'), shortLabel: t('adminPanel.shortTabs.brands'), icon: Building2, count: null },
+    { id: 'materials' as AdminTab, label: t('adminPanel.tabs.materials'), shortLabel: t('adminPanel.shortTabs.materials'), icon: Layers, count: null },
     { id: 'presets' as AdminTab, label: t('adminPanel.tabs.presets'), shortLabel: t('adminPanel.shortTabs.presets'), icon: CheckCircle, count: null },
     { id: 'printers' as AdminTab, label: t('adminPanel.tabs.printers'), shortLabel: t('adminPanel.shortTabs.printers'), icon: Printer3DIcon, count: null },
     { id: 'printer-requests' as AdminTab, label: t('adminPanel.tabs.printer-requests'), shortLabel: t('adminPanel.shortTabs.printer-requests'), icon: Package, count: null },
@@ -142,6 +144,7 @@ export function AdminPanel() {
         <div className="bg-white/10 backdrop-blur-sm rounded-lg md:rounded-xl border border-white/20 p-3 md:p-6">
           {activeTab === 'requests' && <AdminBrandRequests />}
           {activeTab === 'brands' && <AdminBrands />}
+          {activeTab === 'materials' && <AdminMaterials />}
           {activeTab === 'presets' && <AdminPresets />}
           {activeTab === 'printers' && <AdminPrinters />}
           {activeTab === 'printer-requests' && <AdminPrinterRequests />}

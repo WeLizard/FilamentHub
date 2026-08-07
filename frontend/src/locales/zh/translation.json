@@ -935,6 +935,7 @@
     "tabs": {
       "requests": "认证请求",
       "brands": "品牌",
+      "materials": "耗材",
       "presets": "预设审核",
       "printers": "打印机",
       "printer-requests": "打印机请求",
@@ -952,6 +953,7 @@
     "shortTabs": {
       "requests": "认证",
       "brands": "品牌",
+      "materials": "耗材",
       "presets": "预设",
       "printers": "打印机",
       "printer-requests": "请求",
@@ -4779,6 +4781,29 @@
     "uploadLogo": "上传",
     "uploadError": "上传徽标出错",
     "logoUrlPlaceholder": "URL 或上传文件"
+  },
+  "adminMaterials": {
+    "title": "目录耗材",
+    "searchPlaceholder": "按名称、品牌或颜色搜索",
+    "showOffShelf": "显示已下架的耗材",
+    "offShelf": "已下架",
+    "nothingFound": "未找到任何内容",
+    "presets": "预设",
+    "edit": "编辑",
+    "takeOffShelf": "下架",
+    "putOnShelf": "重新上架",
+    "takenOffShelf": "耗材已下架",
+    "putOnShelfDone": "耗材已重新上架",
+    "shelfFailed": "无法更改该耗材的可见性",
+    "delete": "删除",
+    "deleteTitle": "删除该耗材？",
+    "deleteMessage": "删除耗材会同时删除与之关联的预设（{{presets}}）和全部评价，且无法恢复。如果只是条目不规范，请修改它或将其下架。",
+    "deleted": "耗材已删除",
+    "deleteFailed": "无法删除该耗材",
+    "prev": "上一页",
+    "next": "下一页",
+    "page": "第",
+    "of": "页，共"
   },
   "adminPresets": {
     "enrichButton": "补全草稿",
