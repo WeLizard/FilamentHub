@@ -358,3 +358,30 @@ async def test_the_representative_is_told_where_their_area_ends(
     # Общий слой закрыт, и интерфейсу есть что сказать вместо «поле недоступно».
     assert told["can_edit_common"] is False
     assert told["is_admin"] is False
+
+
+@pytest.mark.asyncio
+async def test_a_representative_reads_back_their_own_draft(
+    client: AsyncClient, db_session: AsyncSession
+):
+    """Черновик нужно видеть, иначе его нельзя ни доделать, ни опубликовать позже."""
+    brand, filament = await _brand_with_one_filament(db_session)
+    russia = await _representative(db_session, brand, "ru-draft", "RU")
+    germany = await _representative(db_session, brand, "de-draft", "DE")
+
+    created = await client.post(
+        f"/api/v1/filaments/{filament.id}/country-cells",
+        headers=russia,
+        json={"country": "RU", "price": 1490, "currency": "RUB", "published": False},
+    )
+    assert created.status_code == 201
+
+    mine = await client.get(f"/api/v1/filaments/{filament.id}/country-cells", headers=russia)
+    assert [cell["country"] for cell in mine.json()] == ["RU"]
+
+    # Чужой черновик остаётся скрытым: невидимость касается посторонних, а не автора.
+    theirs = await client.get(f"/api/v1/filaments/{filament.id}/country-cells", headers=germany)
+    assert theirs.json() == []
+
+    stranger = await client.get(f"/api/v1/filaments/{filament.id}/country-cells")
+    assert stranger.json() == []

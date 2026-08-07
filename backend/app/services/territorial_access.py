@@ -99,6 +99,42 @@ async def can_edit_filament_common(
     return False
 
 
+async def _draft_scope(
+    db: AsyncSession, user: User | None, brand_id: int, capability: str
+) -> tuple[bool, set[str]]:
+    if user is None:
+        return False, set()
+    if user.role == UserRole.ADMIN:
+        return True, set()
+
+    grants = [
+        grant
+        for grant in await active_grants_for(db, user, brand_id)
+        if getattr(grant, capability)
+    ]
+    if any(grant.country is None for grant in grants):
+        return True, set()
+    return False, {grant.country for grant in grants if grant.country}
+
+
+async def brand_drafts_visible_to(
+    db: AsyncSession, user: User | None, brand_id: int
+) -> tuple[bool, set[str]]:
+    """Чьи неопубликованные витрины бренда человек вправе видеть.
+
+    Свою ячейку нужно читать и до публикации, иначе её нельзя ни доделать, ни
+    опубликовать позже. Первое значение означает «все страны».
+    """
+    return await _draft_scope(db, user, brand_id, "manage_brand_country")
+
+
+async def filament_drafts_visible_to(
+    db: AsyncSession, user: User | None, brand_id: int
+) -> tuple[bool, set[str]]:
+    """То же для рыночных сведений о товаре."""
+    return await _draft_scope(db, user, brand_id, "manage_filament_country")
+
+
 async def countries_user_manages(db: AsyncSession, user: User, brand_id: int) -> list[str | None]:
     """Области, которые человек ведёт. `None` в списке означает глобальную."""
     return [grant.country for grant in await active_grants_for(db, user, brand_id)]

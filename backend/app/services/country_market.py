@@ -16,7 +16,7 @@
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.filament_country_cell import FilamentCountryCell
+from app.models.filament_country_cell import CountryAvailability, FilamentCountryCell
 
 # Поля ячейки, которые подменяют общие. Ключ — что отдаём наружу.
 _SUBSTITUTED = (
@@ -25,6 +25,9 @@ _SUBSTITUTED = (
     ("price_display_unit", "price_display_unit"),
     ("name", "market_display_name"),
 )
+
+# Сведения о покупке: их скрывает заявление «здесь не продаётся».
+_BUYING_FIELDS = frozenset({"price", "currency", "price_display_unit"})
 
 
 async def cells_for(
@@ -49,7 +52,13 @@ def apply_cell(payload: dict, cell: FilamentCountryCell | None) -> dict:
     if cell is None:
         return payload
 
+    # Заявленное «здесь не продаётся» отменяет местную цену и местные ссылки:
+    # цена товара, который тут не купить, читателю только противоречит.
+    not_sold = cell.availability == CountryAvailability.unavailable
+
     for public_field, cell_field in _SUBSTITUTED:
+        if not_sold and cell_field in _BUYING_FIELDS:
+            continue
         value = getattr(cell, cell_field, None)
         if isinstance(value, str) and not value.strip():
             value = None
@@ -60,9 +69,9 @@ def apply_cell(payload: dict, cell: FilamentCountryCell | None) -> dict:
     # «снят с производства» и «здесь не продаётся» не заменяют друг друга.
     payload["market_availability"] = cell.availability.value
 
-    if cell.product_url:
+    if cell.product_url and not not_sold:
         payload["product_url"] = cell.product_url
-    if cell.purchase_links:
+    if cell.purchase_links and not not_sold:
         payload["purchase_links"] = cell.purchase_links
     if cell.market_note:
         payload["market_note"] = cell.market_note

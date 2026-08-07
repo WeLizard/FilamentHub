@@ -272,3 +272,35 @@ async def test_not_sold_here_is_not_discontinued(
         # Товар выпускается, просто на этом рынке его не продают.
         assert shown.json()["availability"] == "available"
         assert shown.json()["market_availability"] == market_state
+
+
+@pytest.mark.asyncio
+async def test_not_sold_here_hides_the_local_price(
+    admin_client: AsyncClient, db_session: AsyncSession
+):
+    """Цена товара, который здесь не купить, читателю только противоречит."""
+    _, filament = await _brand_with_filament(db_session)
+    await db_session.commit()
+
+    created = await admin_client.post(
+        f"/api/v1/filaments/{filament.id}/country-cells",
+        json={
+            "country": "RS",
+            "availability": "unavailable",
+            "price": 3000,
+            "currency": "RSD",
+            "product_url": "https://example.rs/pla",
+            "published": True,
+        },
+    )
+    assert created.status_code == 201
+
+    shown = (await admin_client.get(f"/api/v1/filaments/{filament.id}?country=RS")).json()
+    assert shown["market_availability"] == "unavailable"
+    assert shown["price_per_kg"] != 3000
+    assert shown["currency"] != "RSD"
+    assert shown["product_url"] != "https://example.rs/pla"
+
+    # Сама ячейка цену помнит: скрыт показ, а не введённые представителем данные.
+    cell = (await admin_client.get(f"/api/v1/filaments/{filament.id}/country-cells")).json()[0]
+    assert cell["price"] == 3000

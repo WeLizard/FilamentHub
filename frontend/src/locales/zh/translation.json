@@ -6526,5 +6526,30 @@
     "priceFor": "价格与供应情况为 {{country}} 的建议信息",
     "notSoldIn": "该耗材在 {{country}} 不销售",
     "whereToBuy": "购买渠道"
+  },
+  "filamentMarket": {
+    "commonTitle": "所有国家通用",
+    "commonName": "名称",
+    "commonMaterial": "材料",
+    "commonDiameter": "直径",
+    "commonDensity": "密度",
+    "commonExplained": "这在所有国家都是同一款产品。这些信息由品牌统一维护，不从单个国家修改。",
+    "yoursTitle": "在您的国家：{{country}}",
+    "availability": "此地是否销售",
+    "availability_available": "有售",
+    "availability_unavailable": "不销售",
+    "availability_unknown": "未说明",
+    "availabilityExplained": "「未说明」不作任何承诺，也不会展示给购买者。「不销售」会作为您的声明展示。",
+    "currency": "货币",
+    "priceExplained": "价格作为该国的建议价格展示，而非商店报价。",
+    "productUrl": "产品页面",
+    "displayName": "本地市场名称",
+    "displayNameExplained": "仅当同一产品在此地以另一个正式商品名销售时才填写。名称的翻译不属于此处。",
+    "note": "给购买者的说明",
+    "published": "向购买者展示",
+    "remove": "移除这些信息",
+    "saved": "国家信息已保存",
+    "removed": "国家信息已移除",
+    "saveFailed": "无法保存国家信息"
   }
 }

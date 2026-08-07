@@ -6533,5 +6533,30 @@
     "priceFor": "Price and availability as recommended for {{country}}",
     "notSoldIn": "This material is not sold in {{country}}",
     "whereToBuy": "Where to buy"
+  },
+  "filamentMarket": {
+    "commonTitle": "Common to every country",
+    "commonName": "Name",
+    "commonMaterial": "Material",
+    "commonDiameter": "Diameter",
+    "commonDensity": "Density",
+    "commonExplained": "This is the same product everywhere. The brand maintains these details as a whole; they are not changed from a single country.",
+    "yoursTitle": "In your country: {{country}}",
+    "availability": "Sold here",
+    "availability_available": "Sold",
+    "availability_unavailable": "Not sold",
+    "availability_unknown": "Not stated",
+    "availabilityExplained": "\"Not stated\" promises nothing and is not shown to buyers. \"Not sold\" they will see as your statement.",
+    "currency": "Currency",
+    "priceExplained": "The price is shown as a recommendation for your country, not as a shop offer.",
+    "productUrl": "Product page",
+    "displayName": "Name on your market",
+    "displayNameExplained": "Fill this in only if the same product is officially sold here under a different commercial name. A translation of the name does not belong here.",
+    "note": "Note for the buyer",
+    "published": "Show to buyers",
+    "remove": "Remove these details",
+    "saved": "Country details saved",
+    "removed": "Country details removed",
+    "saveFailed": "Could not save the country details"
   }
 }

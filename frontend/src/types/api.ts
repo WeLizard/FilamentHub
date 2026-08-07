@@ -1653,6 +1653,26 @@ export interface OrcaSchemaObservationListResponse {
 }
 
 /** Региональная витрина бренда: одна страна — одна ячейка. */
+export type CountryAvailability = 'available' | 'unavailable' | 'unknown';
+
+export interface FilamentCountryCell {
+  id: number;
+  filament_id: number;
+  country: string;
+  availability: CountryAvailability;
+  price: number | null;
+  currency: string | null;
+  price_display_unit: 'per_kg' | 'per_spool' | null;
+  product_url: string | null;
+  purchase_links: { platform: string; url: string }[] | null;
+  market_note: string | null;
+  market_display_name: string | null;
+  published: boolean;
+  price_updated_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface BrandCountryCell {
   id: number;
   brand_id: number;

@@ -59,3 +59,31 @@ export function defaultCurrencyForLanguage(language: string | null | undefined):
   const lang = (language || 'en').toLowerCase().split('-')[0];
   return CURRENCY_BY_LANGUAGE.get(lang) || FALLBACK_LANGUAGE_CURRENCY;
 }
+
+// Валюта рынка. Язык — не юрисдикция: русскоязычный человек в Германии платит
+// в евро, поэтому страна решает, а язык остаётся запасным вариантом.
+const CURRENCY_BY_COUNTRY = new Map<string, string>([
+  ['RU', 'RUB'],
+  ['US', 'USD'],
+  ['GB', 'GBP'],
+  ['UA', 'UAH'],
+  ['KZ', 'KZT'],
+  ['BY', 'BYN'],
+  ['CN', 'CNY'],
+  ['JP', 'JPY'],
+  ['PL', 'PLN'],
+  ...(
+    [
+      'AT', 'BE', 'CY', 'DE', 'EE', 'ES', 'FI', 'FR', 'GR', 'HR',
+      'IE', 'IT', 'LT', 'LU', 'LV', 'MT', 'NL', 'PT', 'SI', 'SK',
+    ] as const
+  ).map((code) => [code, 'EUR'] as [string, string]),
+]);
+
+export function defaultCurrencyForCountry(
+  country: string | null | undefined,
+  language?: string | null,
+): string {
+  const known = country ? CURRENCY_BY_COUNTRY.get(country.toUpperCase()) : undefined;
+  return known || defaultCurrencyForLanguage(language);
+}

@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_active_user, get_current_active_user_optional
@@ -41,12 +41,22 @@ from app.schemas.country_cell import (
 )
 from app.services.territorial_access import (
     active_grants_for,
+    brand_drafts_visible_to,
     can_edit_brand_common,
     can_manage_brand_country,
     can_manage_filament_country,
+    filament_drafts_visible_to,
 )
 
 router = APIRouter(tags=["country-cells"])
+
+
+def _published_or_own(model: type, own: set[str]):
+    """Показать опубликованное всем, а неопубликованное — только своей области."""
+    visible = model.published.is_(True)
+    if own:
+        visible = or_(visible, model.country.in_(sorted(own)))
+    return visible
 
 
 async def _require_brand(db: AsyncSession, brand_id: int) -> Brand:
@@ -70,14 +80,16 @@ async def list_brand_country_cells(
     viewer: Annotated[User | None, Depends(get_current_active_user_optional)] = None,
     country: str | None = Query(None, pattern=r"^[A-Za-z]{2}$"),
 ) -> list[BrandCountryCellResponse]:
-    """Ячейки бренда. Неопубликованные видит только администратор."""
+    """Ячейки бренда. Чужие черновики скрыты, свой виден."""
     await _require_brand(db, brand_id)
 
     query = select(BrandCountryCell).where(BrandCountryCell.brand_id == brand_id)
     if country:
         query = query.where(BrandCountryCell.country == country.upper())
-    if viewer is None or viewer.role.value != "admin":
-        query = query.where(BrandCountryCell.published.is_(True))
+
+    everywhere, own = await brand_drafts_visible_to(db, viewer, brand_id)
+    if not everywhere:
+        query = query.where(_published_or_own(BrandCountryCell, own))
 
     cells = (await db.scalars(query.order_by(BrandCountryCell.country))).all()
     return [BrandCountryCellResponse.model_validate(cell) for cell in cells]
@@ -181,14 +193,16 @@ async def list_filament_country_cells(
     viewer: Annotated[User | None, Depends(get_current_active_user_optional)] = None,
     country: str | None = Query(None, pattern=r"^[A-Za-z]{2}$"),
 ) -> list[FilamentCountryCellResponse]:
-    """Ячейки филамента. Неопубликованные видит только администратор."""
-    await _require_filament(db, filament_id)
+    """Ячейки филамента. Чужие черновики скрыты, свой виден."""
+    filament = await _require_filament(db, filament_id)
 
     query = select(FilamentCountryCell).where(FilamentCountryCell.filament_id == filament_id)
     if country:
         query = query.where(FilamentCountryCell.country == country.upper())
-    if viewer is None or viewer.role.value != "admin":
-        query = query.where(FilamentCountryCell.published.is_(True))
+
+    everywhere, own = await filament_drafts_visible_to(db, viewer, filament.brand_id)
+    if not everywhere:
+        query = query.where(_published_or_own(FilamentCountryCell, own))
 
     cells = (await db.scalars(query.order_by(FilamentCountryCell.country))).all()
     return [FilamentCountryCellResponse.model_validate(cell) for cell in cells]
