@@ -12,6 +12,7 @@ brand is present, and on what terms a filament is sold there.
 from typing import Sequence, Union
 
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 
 from alembic import op
 
@@ -40,10 +41,14 @@ def upgrade() -> None:
     op.create_index("ix_brand_cells_country", "brand_country_cells", ["country"])
     op.create_index("ix_brand_cells_published", "brand_country_cells", ["published"])
 
-    availability = sa.Enum(
-        "available", "unavailable", "unknown", name="country_availability"
+    # Тип создаётся один раз явно; в самой колонке create_type=False, иначе
+    # create_table выпустит CREATE TYPE второй раз и упадёт на дубликате.
+    availability = postgresql.ENUM(
+        "available", "unavailable", "unknown", name="country_availability", create_type=False
     )
-    availability.create(op.get_bind(), checkfirst=True)
+    sa.Enum(
+        "available", "unavailable", "unknown", name="country_availability"
+    ).create(op.get_bind(), checkfirst=True)
 
     op.create_table(
         "filament_country_cells",
