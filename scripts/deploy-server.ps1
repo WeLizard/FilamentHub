@@ -205,13 +205,7 @@ function Show-Preflight {
 }
 
 function Start-ProductionDeploy {
-    # Кандидат передаётся, когда владелец уже видел проверку готовности: незачем
-    # заново гонять fetch и опрос CI ради того же самого коммита.
-    param([psobject]$Candidate)
-
-    if (-not $Candidate) {
-        $Candidate = Show-Preflight
-    }
+    $Candidate = Show-Preflight
     Write-Host ''
     if (-not (Confirm-Action "Задеплоить $($Candidate.ShortSha) в production?")) {
         Write-Host 'Деплой отменён.' -ForegroundColor Yellow
@@ -416,7 +410,7 @@ function Show-Menu {
 
         try {
             switch ($choice) {
-                '1' { Start-ProductionDeploy -Candidate (Show-Preflight) }
+                '1' { Show-Preflight | Out-Null }
                 '2' { Start-ProductionDeploy }
                 '3' { Show-ProductionStatus }
                 '4' { Start-ProductionBackup }
