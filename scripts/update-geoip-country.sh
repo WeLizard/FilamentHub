@@ -23,10 +23,22 @@ ARCHIVE="$TMP_DIR/country.mmdb.gz"
 DATABASE="$TMP_DIR/country.mmdb"
 DOWNLOADED_MONTH=""
 
+# Ask whether the release changed since the installed file: if it did not, the
+# server answers "not modified" and sends no body. Without this a monthly run
+# would re-download the same eight megabytes every time.
+CONDITIONAL=()
+if [ -s "$TARGET_FILE" ]; then
+    CONDITIONAL=(--time-cond "$TARGET_FILE")
+fi
+
 for month in "$CURRENT_MONTH" "$PREVIOUS_MONTH"; do
     url="https://download.db-ip.com/free/dbip-country-lite-${month}.mmdb.gz"
     if curl --fail --silent --show-error --location --retry 3 \
-        --connect-timeout 15 --output "$ARCHIVE" "$url"; then
+        --connect-timeout 15 "${CONDITIONAL[@]}" --output "$ARCHIVE" "$url"; then
+        if [ ! -s "$ARCHIVE" ]; then
+            echo "DB-IP Country Lite ${month} is not newer than the installed database; nothing to do."
+            exit 0
+        fi
         DOWNLOADED_MONTH="$month"
         break
     fi
@@ -42,6 +54,13 @@ gzip --decompress --stdout "$ARCHIVE" > "$DATABASE"
 if [ ! -s "$DATABASE" ]; then
     echo "Downloaded MMDB is empty." >&2
     exit 1
+fi
+
+# Second guard, for a server that ignores the conditional request: an identical
+# file is worth neither validating nor swapping in.
+if [ -s "$TARGET_FILE" ] && cmp -s "$DATABASE" "$TARGET_FILE"; then
+    echo "Release ${DOWNLOADED_MONTH} is identical to the installed database; keeping it."
+    exit 0
 fi
 
 VALIDATION_CODE="import sys, geoip2.database; p=sys.argv[1]; r=geoip2.database.Reader(p); t=r.metadata().database_type; assert t.startswith('DBIP-Country-Lite'), t; assert r.country('77.88.8.8').country.iso_code == 'RU'; assert r.country('8.8.8.8').country.iso_code != 'RU'; print(t); r.close()"
