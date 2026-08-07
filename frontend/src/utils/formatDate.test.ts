@@ -29,6 +29,23 @@ describe('formatDate', () => {
     expect(inMoscow).not.toBe(inVladivostok);
   });
 
+  it('takes the region from the reader, because English alone is ambiguous', async () => {
+    // 3/4/2026 в Америке и 04/03/2026 в Британии — это одна и та же дата.
+    const languages = navigator.languages;
+    const withPreference = async (preferred: string[]) => {
+      Object.defineProperty(navigator, 'languages', { value: preferred, configurable: true });
+      await i18n.changeLanguage('en');
+      return formatDate('2026-03-04T12:00:00Z');
+    };
+
+    const british = await withPreference(['en-GB', 'en']);
+    const american = await withPreference(['en-US', 'en']);
+    Object.defineProperty(navigator, 'languages', { value: languages, configurable: true });
+
+    expect(british).toBe('04/03/2026');
+    expect(american).toBe('3/4/2026');
+  });
+
   it('says nothing when there is nothing to say', () => {
     expect(formatDate(null)).toBe('');
     expect(formatDate(undefined)).toBe('');

@@ -11,7 +11,24 @@ import i18n from 'i18next';
  * не навязывать формат: китаец в китайском интерфейсе не должен читать дату
  * по-русски.
  */
-const currentLocale = (): string => i18n.resolvedLanguage || i18n.language || 'en';
+const interfaceLanguage = (): string =>
+  (i18n.resolvedLanguage || i18n.language || 'en').split('-')[0];
+
+/**
+ * У языка мало регионов, но разница между ними бывает опасной: `3/4/2026` в
+ * Америке и `04/03/2026` в Британии — это одна дата, прочитанная как 4 марта
+ * либо как 3 апреля. Интерфейс у нас на трёх языках без регионов, поэтому
+ * регион берём у самого читателя: браузер перечисляет его предпочтения, и если
+ * среди них есть наш язык — используем именно ту запись. Спрашивать нечего.
+ */
+const currentLocale = (): string => {
+  const language = interfaceLanguage();
+  const preferred =
+    typeof navigator !== 'undefined' && Array.isArray(navigator.languages)
+      ? navigator.languages.find((tag) => tag.split('-')[0] === language)
+      : undefined;
+  return preferred || language;
+};
 
 const asDate = (value: string | number | Date | null | undefined): Date | null => {
   if (value === null || value === undefined || value === '') {
