@@ -1290,8 +1290,10 @@ export const buildQuoteDocumentHtml = ({
   const sellerName = parties.sellerName.trim() || '—';
 
 
+  // Документ следует рынку сделки, а не языку интерфейса: даты в нём уже
+  // форматируются по нему же, и объявленный язык не должен с этим спорить.
   return `<!doctype html>
-<html lang="ru">
+<html lang="${escapeHtml(rules.dateLocale)}">
   <head>
     <meta charset="utf-8" />
     <title>${escapeHtml(t('profilePage.calculator.quoteDocumentTitle'))}${quoteNumber ? ` ${escapeHtml(quoteNumber)}` : ''}</title>
