@@ -5670,6 +5670,7 @@
     "ERR_VALIDATION_REQUIRED": "Required fields missing (name, type)",
     "ERR_VALIDATION_TEXT": "Invalid text in the name",
     "ERR_FILAMENT_ALREADY_EXISTS": "This filament already exists. Select the existing one.",
+    "ERR_FILAMENT_HAS_CONTRIBUTIONS": "This filament cannot be deleted: people have already added presets or reviews to it, and deleting it would take their work with it. Correct the entry, or take it off the shelf — it leaves the catalogue while the presets and reviews stay.",
     "ERR_PRINTER_NOT_FOUND": "Printer not found",
     "ERR_REQUEST_NOT_FOUND": "Request not found",
     "ERR_NOTIFICATION_NOT_FOUND": "Notification not found",

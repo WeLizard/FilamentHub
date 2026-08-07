@@ -59,6 +59,7 @@ import { Dropdown } from '../components/Dropdown';
 import { FilamentPreview } from '../components/FilamentPreview';
 import { BrandTeamPanel } from '../components/BrandTeamPanel';
 import { BrandLogoFrame } from '../components/BrandLogoFrame';
+import { toast } from '../components/Toast';
 import { useDebounce } from '../hooks/useDebounce';
 import { externalUrl } from '../utils/externalUrl';
 import type { Filament, FilamentAvailability, Brand, BrandRequest, Preset } from '../types/api';
@@ -283,7 +284,8 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
       setDeletingFilamentId(null);
     },
     onError: (err: AxiosError<{ detail: unknown }>) => {
-      alert(translateApiError(t, err.response?.data?.detail, t('brandProfile.errorDeleteMaterial')));
+      // Отказ объясняет, что делать вместо удаления, поэтому его нужно дочитать.
+      toast.error(translateApiError(t, err.response?.data?.detail, t('brandProfile.errorDeleteMaterial')), 12000);
       setDeletingFilamentId(null);
     },
   });

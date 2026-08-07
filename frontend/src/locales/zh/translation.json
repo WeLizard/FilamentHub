@@ -5665,6 +5665,7 @@
     "ERR_VALIDATION_REQUIRED": "缺少必需字段（名称、类型）",
     "ERR_VALIDATION_TEXT": "名称中包含无效文本",
     "ERR_FILAMENT_ALREADY_EXISTS": "此耗材已存在。请选择现有的。",
+    "ERR_FILAMENT_HAS_CONTRIBUTIONS": "无法删除此耗材：用户已为它添加了预设或评价，删除会一并清除这些内容。请修改该条目，或将其下架——下架后它不再出现在目录中，而预设和评价会保留。",
     "ERR_PRINTER_NOT_FOUND": "未找到打印机",
     "ERR_REQUEST_NOT_FOUND": "未找到请求",
     "ERR_NOTIFICATION_NOT_FOUND": "未找到通知",

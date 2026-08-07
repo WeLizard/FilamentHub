@@ -14,6 +14,7 @@ from app.core.errors import (
     ERR_CUSTOM_FILLER_VERIFIED_ONLY,
     ERR_CUSTOM_MATERIAL_FEATURE_VERIFIED_ONLY,
     ERR_FILAMENT_ALREADY_EXISTS,
+    ERR_FILAMENT_HAS_CONTRIBUTIONS,
     ERR_FILAMENT_LINE_INVALID,
     ERR_FILAMENT_NOT_FOUND,
     ERR_NO_PERMISSION_DELETE_FILAMENT,
@@ -25,6 +26,8 @@ from app.db.session import get_db
 from app.models.brand import Brand
 from app.models.filament import Filament, FilamentAvailability
 from app.models.filament_line import FilamentLine
+from app.models.filament_review import FilamentReview
+from app.models.preset import Preset
 from app.models.printer import Printer
 from app.models.user import User, UserRole
 from app.schemas.filament import (
@@ -768,6 +771,21 @@ async def delete_filament(
     # Проверка прав доступа: только админ или сотрудник бренда может удалять материалы
     if not await can_edit_brand_catalog(db, current_user, filament.brand_id):
         raise_error(403, ERR_NO_PERMISSION_DELETE_FILAMENT)
+
+    # Удаление материала уносит с собой пресеты и отзывы: они привязаны к нему
+    # каскадом. Сотрудник бренда не может потерять работу сообщества из-за
+    # неопрятной карточки — ему остаётся снять её с витрины.
+    if current_user.role != UserRole.ADMIN:
+        preset_count = await db.scalar(
+            select(func.count()).select_from(Preset).where(Preset.filament_id == filament_id)
+        )
+        review_count = await db.scalar(
+            select(func.count())
+            .select_from(FilamentReview)
+            .where(FilamentReview.filament_id == filament_id)
+        )
+        if preset_count or review_count:
+            raise_error(409, ERR_FILAMENT_HAS_CONTRIBUTIONS)
 
     await db.delete(filament)
     await db.commit()

@@ -6,6 +6,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.brand import Brand
 from app.models.filament import Filament
+from app.models.filament_review import FilamentReview
+from app.models.preset import Preset
+from app.models.user import User
+from app.services.organization_access import grant_brand_owner_membership
 
 
 @pytest.mark.asyncio
@@ -645,3 +649,163 @@ async def test_update_filament(admin_client: AsyncClient, db_session: AsyncSessi
     assert data["name"] == update_data["name"]
     assert data["description"] == update_data["description"]
 
+
+
+async def _brand_with_employee(
+    db_session: AsyncSession, employee: User, admin_user: User
+) -> Brand:
+    """A verified brand whose catalog the employee may edit."""
+    brand = Brand(name="Creality", slug="creality", active=True, verified=True)
+    db_session.add(brand)
+    await db_session.flush()
+    await grant_brand_owner_membership(
+        db_session, brand=brand, user=employee, granted_by_id=admin_user.id
+    )
+    await db_session.commit()
+    return brand
+
+
+@pytest.mark.asyncio
+async def test_brand_employee_may_delete_a_filament_nobody_contributed_to(
+    auth_client: AsyncClient,
+    auth_user: User,
+    admin_user: User,
+    db_session: AsyncSession,
+):
+    """An untouched entry carries nothing, so removing it costs nobody anything."""
+    brand = await _brand_with_employee(db_session, auth_user, admin_user)
+    filament = Filament(
+        brand_id=brand.id, name="Generic PLA", slug="generic-pla", material_type="PLA"
+    )
+    db_session.add(filament)
+    await db_session.commit()
+    await db_session.refresh(filament)
+
+    response = await auth_client.delete(f"/api/v1/filaments/{filament.id}")
+    assert response.status_code == 204
+    assert await db_session.get(Filament, filament.id) is None
+
+
+@pytest.mark.asyncio
+async def test_brand_employee_may_not_delete_a_filament_with_presets(
+    auth_client: AsyncClient,
+    auth_user: User,
+    admin_user: User,
+    db_session: AsyncSession,
+):
+    """Deleting the entry would take the community's presets with it."""
+    brand = await _brand_with_employee(db_session, auth_user, admin_user)
+    filament = Filament(
+        brand_id=brand.id, name="Generic PLA", slug="generic-pla", material_type="PLA"
+    )
+    db_session.add(filament)
+    await db_session.flush()
+    db_session.add(
+        Preset(
+            filament_id=filament.id,
+            name="Generic PLA on Ender 3",
+            extruder_temp=205,
+            bed_temp=60,
+        )
+    )
+    await db_session.commit()
+    await db_session.refresh(filament)
+
+    response = await auth_client.delete(f"/api/v1/filaments/{filament.id}")
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "ERR_FILAMENT_HAS_CONTRIBUTIONS"
+    assert await db_session.get(Filament, filament.id) is not None
+
+
+@pytest.mark.asyncio
+async def test_brand_employee_may_not_delete_a_filament_with_reviews(
+    auth_client: AsyncClient,
+    auth_user: User,
+    admin_user: User,
+    db_session: AsyncSession,
+):
+    """A review is somebody's work too, even when no preset was ever made."""
+    brand = await _brand_with_employee(db_session, auth_user, admin_user)
+    filament = Filament(
+        brand_id=brand.id, name="Generic PLA", slug="generic-pla", material_type="PLA"
+    )
+    db_session.add(filament)
+    await db_session.flush()
+    db_session.add(
+        FilamentReview(
+            filament_id=filament.id,
+            user_id=admin_user.id,
+            success=True,
+            rating=4,
+            comment="Prints fine out of the box.",
+        )
+    )
+    await db_session.commit()
+
+    response = await auth_client.delete(f"/api/v1/filaments/{filament.id}")
+    assert response.status_code == 409
+    assert await db_session.get(Filament, filament.id) is not None
+
+
+@pytest.mark.asyncio
+async def test_brand_employee_may_take_a_contributed_filament_off_the_shelf(
+    auth_client: AsyncClient,
+    auth_user: User,
+    admin_user: User,
+    db_session: AsyncSession,
+):
+    """The way out of a bad entry: it leaves the catalog, the work stays."""
+    brand = await _brand_with_employee(db_session, auth_user, admin_user)
+    filament = Filament(
+        brand_id=brand.id, name="Generic PLA", slug="generic-pla", material_type="PLA"
+    )
+    db_session.add(filament)
+    await db_session.flush()
+    db_session.add(
+        Preset(
+            filament_id=filament.id,
+            name="Generic PLA on Ender 3",
+            extruder_temp=205,
+            bed_temp=60,
+        )
+    )
+    await db_session.commit()
+
+    response = await auth_client.patch(
+        f"/api/v1/filaments/{filament.id}", json={"active": False}
+    )
+    assert response.status_code == 200
+    assert response.json()["active"] is False
+
+    listed = await auth_client.get("/api/v1/filaments/")
+    assert all(item["id"] != filament.id for item in listed.json()["items"])
+
+
+@pytest.mark.asyncio
+async def test_administrator_may_still_delete_a_contributed_filament(
+    admin_client: AsyncClient,
+    admin_user: User,
+    db_session: AsyncSession,
+):
+    """Someone has to be able to clear out genuine junk; that someone is us."""
+    brand = Brand(name="Creality", slug="creality", active=True, verified=True)
+    db_session.add(brand)
+    await db_session.flush()
+    filament = Filament(
+        brand_id=brand.id, name="Generic PLA", slug="generic-pla", material_type="PLA"
+    )
+    db_session.add(filament)
+    await db_session.flush()
+    db_session.add(
+        Preset(
+            filament_id=filament.id,
+            name="Generic PLA on Ender 3",
+            extruder_temp=205,
+            bed_temp=60,
+        )
+    )
+    await db_session.commit()
+
+    response = await admin_client.delete(f"/api/v1/filaments/{filament.id}")
+    assert response.status_code == 204
+    assert await db_session.get(Filament, filament.id) is None
