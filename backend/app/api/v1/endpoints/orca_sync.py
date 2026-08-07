@@ -33,6 +33,7 @@ from app.core.errors import (
     ERR_NOTIFICATION_NOT_FOUND,
     ERR_PRESET_IDS_REQUIRED,
     ERR_PRESET_NOT_FOUND,
+    ERR_SYNC_ITEM_FAILED,
     ERR_TOO_MANY_PROFILES,
     raise_error,
 )
@@ -1829,13 +1830,15 @@ async def import_printer_profiles(
                 status="error",
                 message=exc.detail,
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception:  # noqa: BLE001
             logger.exception("Unexpected error while syncing printer profile")
             result = OrcaSyncResult(
                 external_id=getattr(item, "external_id", None),
                 fhub_id=getattr(item, "fhub_id", None),
                 status="error",
-                message=f"Unexpected error: {exc}",
+                # Подробности уже в логе строкой выше: текст исключения
+                # называет таблицы, ограничения и куски SQL — наружу ему нельзя.
+                message=ERR_SYNC_ITEM_FAILED,
             )
         results.append(result)
 
@@ -1883,13 +1886,15 @@ async def import_print_profiles(
                 status="error",
                 message=exc.detail,
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception:  # noqa: BLE001
             logger.exception("Unexpected error while syncing print profile")
             result = OrcaSyncResult(
                 external_id=getattr(item, "external_id", None),
                 fhub_id=getattr(item, "fhub_id", None),
                 status="error",
-                message=f"Unexpected error: {exc}",
+                # Подробности уже в логе строкой выше: текст исключения
+                # называет таблицы, ограничения и куски SQL — наружу ему нельзя.
+                message=ERR_SYNC_ITEM_FAILED,
             )
         results.append(result)
 
@@ -2969,13 +2974,15 @@ async def import_filament_presets(
                     status="error",
                     message=exc.detail,
                 )
-            except Exception as exc:  # noqa: BLE001
+            except Exception:  # noqa: BLE001
                 logger.exception(f"Unexpected error while syncing filament preset {idx+1} (name='{getattr(item, 'name', 'unknown')}')")
                 result = OrcaSyncResult(
                     external_id=getattr(item, "external_id", None),
                     fhub_id=getattr(item, "fhub_id", None),
                     status="error",
-                    message=f"Unexpected error: {exc}",
+                    # Подробности уже в логе строкой выше: текст исключения
+                # называет таблицы, ограничения и куски SQL — наружу ему нельзя.
+                message=ERR_SYNC_ITEM_FAILED,
                 )
             results.append(result)
 

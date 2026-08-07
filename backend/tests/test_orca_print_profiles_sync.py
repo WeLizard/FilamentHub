@@ -721,3 +721,33 @@ async def test_configuration_takes_its_model_from_the_parent_preset(
     assert response.status_code == 200
     imported = await db_session.get(PrinterProfile, response.json()["results"][0]["fhub_id"])
     assert imported.printer_id == printer.id
+
+
+@pytest.mark.asyncio
+async def test_a_failed_item_reports_a_code_and_never_the_exception_text(
+    client: AsyncClient,
+    monkeypatch,
+):
+    """What breaks inside is written to the log, not handed to the caller."""
+    from app.api.v1.endpoints import orca_sync as sync_module
+
+    def explode(*args, **kwargs):
+        raise RuntimeError(
+            'relation "print_profiles" does not exist at character 42'
+        )
+
+    monkeypatch.setattr(sync_module, "_upsert_print_profile", explode, raising=False)
+
+    headers, _ = await _register_and_login(client, "orca-error-text")
+    response = await client.post(
+        "/api/v1/orcaslicer/print-profiles/import",
+        headers=headers,
+        json={"profiles": [{"external_id": "orca-process-boom", "name": "Boom"}]},
+    )
+
+    assert response.status_code == 200
+    result = response.json()["results"][0]
+    assert result["status"] == "error"
+    assert result["message"] == "ERR_SYNC_ITEM_FAILED"
+    assert "does not exist" not in response.text
+    assert "print_profiles" not in response.text
