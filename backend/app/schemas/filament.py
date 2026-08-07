@@ -245,6 +245,13 @@ class FilamentResponse(FilamentBase):
     official_preset: FilamentPresetSummary | None = None
     preset_summaries: list[FilamentPresetSummary] = Field(default_factory=list)
 
+    # Заполнено, когда сведения подставлены из ячейки страны: витрина обязана
+    # подписать такую цену как рекомендованную для этого рынка, а не как нашу.
+    market_country: str | None = None
+    market_note: str | None = None
+    product_url: str | None = None
+    purchase_links: list[dict[str, str]] | None = None
+
     model_config = ConfigDict(from_attributes=True)
 
 

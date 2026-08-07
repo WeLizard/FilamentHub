@@ -184,3 +184,69 @@ async def test_cells_leave_with_what_they_describe(
         .where(FilamentCountryCell.filament_id == filament.id)
     )
     assert left == 0
+
+
+@pytest.mark.asyncio
+async def test_the_reader_country_substitutes_local_facts(
+    admin_client: AsyncClient, db_session: AsyncSession
+):
+    """Есть значение в ячейке — берём его, нет — берём общее."""
+    _, filament = await _brand_with_filament(db_session)
+    filament.price_per_kg = 1500
+    filament.currency = "RUB"
+    await db_session.commit()
+
+    await admin_client.post(
+        f"/api/v1/filaments/{filament.id}/country-cells",
+        json={
+            "country": "RS",
+            "price": 2500,
+            "currency": "RSD",
+            "price_display_unit": "per_spool",
+            "availability": "available",
+            "product_url": "https://shop.rs/hyper-pla",
+            "published": True,
+        },
+    )
+
+    serbian = await admin_client.get(f"/api/v1/filaments/{filament.id}?country=RS")
+    assert serbian.status_code == 200
+    local = serbian.json()
+    assert local["price_per_kg"] == 2500
+    assert local["currency"] == "RSD"
+    assert local["price_display_unit"] == "per_spool"
+    assert local["availability"] == "available"
+    assert local["product_url"] == "https://shop.rs/hyper-pla"
+    # Витрина обязана суметь подписать цену как местную.
+    assert local["market_country"] == "RS"
+
+    # Страна без ячейки видит общее и молчит о местном наличии.
+    german = await admin_client.get(f"/api/v1/filaments/{filament.id}?country=DE")
+    assert german.json()["price_per_kg"] == 1500
+    assert german.json()["currency"] == "RUB"
+    assert german.json()["market_country"] is None
+
+    # Без страны — тоже общее.
+    plain = await admin_client.get(f"/api/v1/filaments/{filament.id}")
+    assert plain.json()["price_per_kg"] == 1500
+
+
+@pytest.mark.asyncio
+async def test_an_unpublished_cell_never_reaches_the_catalogue(
+    admin_client: AsyncClient, db_session: AsyncSession
+):
+    """Черновик ячейки не подставляется даже администратору в витрине."""
+    _, filament = await _brand_with_filament(db_session)
+    filament.price_per_kg = 1500
+    filament.currency = "RUB"
+    await db_session.commit()
+
+    await admin_client.post(
+        f"/api/v1/filaments/{filament.id}/country-cells",
+        json={"country": "RS", "price": 2500, "currency": "RSD"},
+    )
+
+    listed = await admin_client.get("/api/v1/filaments/?country=RS&size=100")
+    item = next(i for i in listed.json()["items"] if i["id"] == filament.id)
+    assert item["price_per_kg"] == 1500
+    assert item["market_country"] is None

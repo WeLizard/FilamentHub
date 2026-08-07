@@ -40,6 +40,7 @@ from app.schemas.filament import (
     FilamentUpdate,
     normalize_ral_code,
 )
+from app.services.country_market import apply_cell, cells_for
 from app.services.filament_preset_summary import (
     bucket_by_kind,
     summaries_for,
@@ -169,6 +170,11 @@ async def list_filaments(
         None,
         description="Поиск по материалу, бренду, типу, цвету, составу, эффекту или свойству",
     ),
+    country: str | None = Query(
+        None,
+        pattern=r"^[A-Za-z]{2}$",
+        description="Страна читателя: подставляет местные сведения там, где они заполнены.",
+    ),
 ) -> FilamentListResponse:
     """Получить список материалов.
 
@@ -274,6 +280,8 @@ async def list_filaments(
         )
         printer_matched_ids = sorted({row[0] for row in matched_rows if row[0] is not None})
 
+    country_cells = await cells_for(db, filament_ids, country)
+
     preset_stats: dict[int, dict[str, int]] = {}
     preset_summary_map: dict[int, dict[str, object]] = {}
 
@@ -330,7 +338,7 @@ async def list_filaments(
         filament_dict["official_preset"] = official
         filament_dict["preset_summaries"] = summaries
 
-        filament_responses.append(filament_dict)
+        filament_responses.append(apply_cell(filament_dict, country_cells.get(filament.id)))
 
     return FilamentListResponse(
         items=filament_responses,
@@ -383,6 +391,11 @@ async def get_material_types(
 async def get_filament(
     filament_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
+    country: str | None = Query(
+        None,
+        pattern=r"^[A-Za-z]{2}$",
+        description="Страна читателя: подставляет местные сведения там, где они заполнены.",
+    ),
 ) -> FilamentResponse:
     """Получить материал по ID."""
     result = await db.execute(
@@ -406,7 +419,8 @@ async def get_filament(
     official, carousel = summaries_for(bucket_by_kind(summaries.scalars()).get(filament_id, {}))
     filament_dict["official_preset"] = official
     filament_dict["preset_summaries"] = carousel
-    return filament_dict
+    cells = await cells_for(db, [filament.id], country)
+    return apply_cell(filament_dict, cells.get(filament.id))
 
 
 @router.get("/{filament_id}/presets")
