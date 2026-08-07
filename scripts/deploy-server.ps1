@@ -12,7 +12,7 @@ Backup, миграции и переключение контейнеров вы
 [CmdletBinding()]
 param(
     [Parameter()]
-    [ValidateSet('Menu', 'Preflight', 'Deploy', 'Status', 'Backup', 'PruneBuildCache', 'ListReleases', 'DownloadRelease', 'CheckDownloadPage', 'PrepareRelease', 'PublishRelease')]
+    [ValidateSet('Menu', 'Publish', 'Preflight', 'Deploy', 'Status', 'Backup', 'PruneBuildCache', 'ListReleases', 'DownloadRelease', 'CheckDownloadPage', 'PrepareRelease', 'PublishRelease')]
     [string]$Action = 'Menu',
 
     # Деплой всегда идёт на один и тот же VDS через алиас SSH config, поэтому
@@ -192,6 +192,55 @@ function Get-DeploymentCandidate {
         Repository = $published.Repository
         CiUrl = $published.CiUrl
     }
+}
+
+function Publish-RepositoryCommits {
+    param(
+        [Parameter(Mandatory)][string]$Directory,
+        [Parameter(Mandatory)][string]$Title
+    )
+
+    $git = @('-C', $Directory)
+    Invoke-Checked git ($git + @('fetch', '--no-recurse-submodules', 'origin', 'main')) | Out-Null
+
+    $branch = Invoke-Checked git ($git + @('branch', '--show-current')) -Capture
+    if ($branch -ne 'main') {
+        Write-Host "$Title`: публикуется только main, сейчас выбрана '$branch'." -ForegroundColor Yellow
+        return
+    }
+
+    $pending = Invoke-Checked git ($git + @('log', '--oneline', 'origin/main..HEAD')) -Capture
+    if (-not $pending) {
+        Write-Host "$Title`: публиковать нечего." -ForegroundColor DarkGray
+        return
+    }
+
+    Write-Host ''
+    Write-Host "$Title — уедет в origin/main:" -ForegroundColor Cyan
+    Write-Host $pending
+    if (-not (Confirm-Action "Опубликовать? ($Title)")) {
+        Write-Host 'Публикация отменена.' -ForegroundColor Yellow
+        return
+    }
+
+    Invoke-Checked git ($git + @('push', 'origin', 'main'))
+    Write-Host "$Title`: опубликовано." -ForegroundColor Green
+}
+
+function Publish-Commits {
+    Assert-Command git
+
+    Publish-RepositoryCommits -Directory $repositoryRoot -Title 'Код'
+
+    # Документация живёт отдельным приватным репозиторием внутри рабочего дерева.
+    # Спрашиваем о ней только когда там правда есть что публиковать.
+    $documentation = Join-Path $repositoryRoot '.docs'
+    if (Test-Path -LiteralPath (Join-Path $documentation '.git')) {
+        Publish-RepositoryCommits -Directory $documentation -Title 'Документация'
+    }
+
+    Write-Host ''
+    Write-Host 'GitHub CI начнёт прогон сам. Деплой не пропустит коммит, пока прогон не зелёный.' -ForegroundColor DarkGray
 }
 
 function Show-Preflight {
@@ -395,36 +444,38 @@ function Show-Menu {
         Write-Host ''
         Write-Host 'Консоль владельца FilamentHub' -ForegroundColor Cyan
         Write-Host "  Сервер: $script:Server"
-        Write-Host '  1. Проверить готовность к деплою (точный SHA + GitHub CI)'
-        Write-Host '  2. Задеплоить production'
-        Write-Host '  3. Проверить состояние production'
-        Write-Host '  4. Создать зашифрованный backup production-базы'
-        Write-Host '  5. Очистить устаревший Docker build-cache на VDS'
-        Write-Host '  6. Показать GitHub Releases плагинов'
-        Write-Host '  7. Скачать и проверить файлы релиза плагинов'
-        Write-Host '  8. Проверить релиз плагинов на странице Download'
-        Write-Host '  9. Подготовить черновик релиза плагинов'
-        Write-Host ' 10. Опубликовать релиз плагинов'
+        Write-Host '  1. Опубликовать коммиты на GitHub'
+        Write-Host '  2. Проверить готовность к деплою (точный SHA + GitHub CI)'
+        Write-Host '  3. Задеплоить production'
+        Write-Host '  4. Проверить состояние production'
+        Write-Host '  5. Создать зашифрованный backup production-базы'
+        Write-Host '  6. Очистить устаревший Docker build-cache на VDS'
+        Write-Host '  7. Показать GitHub Releases плагинов'
+        Write-Host '  8. Скачать и проверить файлы релиза плагинов'
+        Write-Host '  9. Проверить релиз плагинов на странице Download'
+        Write-Host ' 10. Подготовить черновик релиза плагинов'
+        Write-Host ' 11. Опубликовать релиз плагинов'
         Write-Host '  0. Выход'
         $choice = Read-Host 'Выбери действие'
 
         try {
             switch ($choice) {
-                '1' { Show-Preflight | Out-Null }
-                '2' { Start-ProductionDeploy }
-                '3' { Show-ProductionStatus }
-                '4' { Start-ProductionBackup }
-                '5' { Start-BuildCacheCleanup }
-                '6' { Show-PluginReleases }
-                '7' { $script:ReleaseTag = $null; Get-PluginReleaseAssets }
-                '8' {
+                '1' { Publish-Commits }
+                '2' { Show-Preflight | Out-Null }
+                '3' { Start-ProductionDeploy }
+                '4' { Show-ProductionStatus }
+                '5' { Start-ProductionBackup }
+                '6' { Start-BuildCacheCleanup }
+                '7' { Show-PluginReleases }
+                '8' { $script:ReleaseTag = $null; Get-PluginReleaseAssets }
+                '9' {
                     $script:ReleaseTag = $null
                     if (-not (Test-DownloadPageRelease)) {
                         throw 'Публичная страница Download пока не прошла проверку.'
                     }
                 }
-                '9' { $script:ReleaseTag = $null; Invoke-PluginReleasePreparation }
-                '10' { $script:ReleaseTag = $null; Invoke-PluginReleasePreparation -Publish }
+                '10' { $script:ReleaseTag = $null; Invoke-PluginReleasePreparation }
+                '11' { $script:ReleaseTag = $null; Invoke-PluginReleasePreparation -Publish }
                 '0' { return }
                 default { Write-Host 'Неизвестный пункт меню.' -ForegroundColor Yellow }
             }
@@ -440,6 +491,7 @@ Set-Location -LiteralPath $repositoryRoot
 
 switch ($Action) {
     'Menu' { Show-Menu }
+    'Publish' { Publish-Commits }
     'Preflight' { Show-Preflight | Out-Null }
     'Deploy' { Start-ProductionDeploy }
     'Status' { Show-ProductionStatus }
