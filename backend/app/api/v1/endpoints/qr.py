@@ -1,6 +1,6 @@
 """QR code endpoints."""
 
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import RedirectResponse, StreamingResponse
@@ -25,6 +25,7 @@ from app.schemas.filament import FilamentResponse
 from app.services.qr_service import (
     ensure_filament_qr_code,
     generate_qr_code_image,
+    generate_qr_code_svg,
     get_qr_code_path,
 )
 
@@ -252,6 +253,7 @@ async def download_filament_qr_code(
     current_user: Annotated[User, Depends(get_current_active_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
     size: int = Query(600, ge=300, le=1200),
+    image_format: Annotated[Literal["png", "svg"], Query(alias="format")] = "png",
 ) -> StreamingResponse:
     """
     Скачать QR-код в высоком разрешении для печати.
@@ -282,6 +284,18 @@ async def download_filament_qr_code(
 
     if not filament.qr_code:
         raise_error(404, ERR_QR_NOT_FOUND)
+
+    # Вектор — для типографии: на упаковке код печатают каким угодно размером,
+    # и растр под это пришлось бы отдавать в каждом.
+    if image_format == "svg":
+        return StreamingResponse(
+            iter([generate_qr_code_svg(filament.qr_code).getvalue()]),
+            media_type='image/svg+xml',
+            headers={
+                'Content-Disposition': f'attachment; filename="qr-{filament.qr_code}.svg"',
+                'Cache-Control': 'public, max-age=3600',
+            }
+        )
 
     # Проверяем, есть ли сохраненное изображение нужного размера
     saved_path = get_qr_code_path(filament.qr_code, size)

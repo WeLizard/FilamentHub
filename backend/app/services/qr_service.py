@@ -5,6 +5,7 @@ from io import BytesIO
 from pathlib import Path
 
 import qrcode
+import qrcode.image.svg
 from PIL import Image
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -63,10 +64,36 @@ def generate_short_code(filament_id: int) -> str:
         return f"FH-{'-'.join(groups)}"
 
 
+def _qr_target_url(short_code: str) -> str:
+    base_url = settings.BASE_URL
+    # Убеждаемся, что используется HTTPS для внешнего домена
+    if base_url.startswith("http://") and "filamenthub.ru" in base_url:
+        base_url = base_url.replace("http://", "https://")
+    return f"{base_url}/qr/{short_code}"
+
+
+def _qr_for(url: str, error_correction: str, box_size: int) -> qrcode.QRCode:
+    error_level_map = {
+        "L": qrcode.constants.ERROR_CORRECT_L,  # ~7% повреждений
+        "M": qrcode.constants.ERROR_CORRECT_M,  # ~15% повреждений
+        "Q": qrcode.constants.ERROR_CORRECT_Q,  # ~25% повреждений
+        "H": qrcode.constants.ERROR_CORRECT_H,  # ~30% повреждений
+    }
+    qr = qrcode.QRCode(
+        version=1,
+        error_correction=error_level_map.get(error_correction.upper(), qrcode.constants.ERROR_CORRECT_M),
+        box_size=box_size,
+        border=4,
+    )
+    qr.add_data(url)
+    qr.make(fit=True)
+    return qr
+
+
 def generate_qr_code_image(
     short_code: str,
     size: int = 300,
-    error_correction: str = "L",
+    error_correction: str = "M",
 ) -> BytesIO:
     """
     Генерирует изображение QR-кода.
@@ -74,43 +101,33 @@ def generate_qr_code_image(
     Args:
         short_code: Короткий код (например: "FHUB-ABC123")
         size: Размер изображения в пикселях (300, 600, 1200)
-        error_correction: Уровень коррекции ошибок (L, M, Q, H)
+        error_correction: Уровень коррекции ошибок (L, M, Q, H).
+            M — замеренный оптимум для печати без логотипа: столько же модулей,
+            что и L, вдвое больший запас на повреждения и читается с меньшего
+            размера. H оправдан только когда часть кода закрыта знаком: он
+            добавляет модули, и на мелкой наклейке код читается хуже.
 
     Returns:
         BytesIO объект с PNG изображением
     """
-    # Формируем URL для QR-кода
-    base_url = settings.BASE_URL
-    # Убеждаемся, что используется HTTPS для внешнего домена
-    if base_url.startswith("http://") and "filamenthub.ru" in base_url:
-        base_url = base_url.replace("http://", "https://")
-    url = f"{base_url}/qr/{short_code}"
+    url = _qr_target_url(short_code)
 
-    # Выбираем уровень коррекции ошибок
-    error_level_map = {
-        "L": qrcode.constants.ERROR_CORRECT_L,  # ~7% повреждений
-        "M": qrcode.constants.ERROR_CORRECT_M,  # ~15% повреждений
-        "Q": qrcode.constants.ERROR_CORRECT_Q,  # ~25% повреждений
-        "H": qrcode.constants.ERROR_CORRECT_H,  # ~30% повреждений
-    }
-    error_level = error_level_map.get(error_correction.upper(), qrcode.constants.ERROR_CORRECT_L)
+    # Модуль кода должен быть целым числом пикселей: при дробном масштабе одни
+    # модули выходят на пиксель шире других, и на мелкой печати это стоит
+    # читаемости. Поэтому размер подбирается вниз, а остаток добирается белым
+    # полем — тихая зона от этого только растёт, что безопасно.
+    measured = _qr_for(url, error_correction, box_size=1)
+    modules = measured.modules_count + 2 * measured.border
+    box_size = max(1, size // modules)
 
-    # Создаем QR-код
-    qr = qrcode.QRCode(
-        version=1,
-        error_correction=error_level,
-        box_size=10,
-        border=4,
-    )
-    qr.add_data(url)
-    qr.make(fit=True)
+    qr = _qr_for(url, error_correction, box_size=box_size)
+    img = qr.make_image(fill_color="black", back_color="white").convert("1")
 
-    # Генерируем изображение
-    img = qr.make_image(fill_color="black", back_color="white")
-
-    # Масштабируем до нужного размера
-    if size != 300:
-        img = img.resize((size, size), Image.Resampling.LANCZOS)
+    if img.size[0] != size:
+        canvas = Image.new("1", (size, size), 1)
+        offset = (size - img.size[0]) // 2
+        canvas.paste(img, (offset, offset))
+        img = canvas
 
     # Сохраняем в BytesIO
     buffer = BytesIO()
@@ -119,10 +136,22 @@ def generate_qr_code_image(
     return buffer
 
 
+def generate_qr_code_svg(
+    short_code: str,
+    error_correction: str = "M",
+) -> BytesIO:
+    """Тот же код в векторе — для типографии, которая печатает на упаковке."""
+    qr = _qr_for(_qr_target_url(short_code), error_correction, box_size=10)
+    buffer = BytesIO()
+    qr.make_image(image_factory=qrcode.image.svg.SvgPathImage).save(buffer)
+    buffer.seek(0)
+    return buffer
+
+
 def generate_qr_code_base64(
     short_code: str,
     size: int = 300,
-    error_correction: str = "L",
+    error_correction: str = "M",
 ) -> str:
     """
     Генерирует QR-код и возвращает в формате base64.
@@ -139,7 +168,7 @@ def generate_qr_code_base64(
 def save_qr_code_image(
     short_code: str,
     sizes: list[int] | None = None,
-    error_correction: str = "L",
+    error_correction: str = "M",
 ) -> dict[str, str]:
     """
     Сохраняет изображения QR-кода на диск в разных размерах.
@@ -147,7 +176,11 @@ def save_qr_code_image(
     Args:
         short_code: Короткий код (например: "FH-001")
         sizes: Список размеров для сохранения (по умолчанию: 300, 600, 1200)
-        error_correction: Уровень коррекции ошибок (L, M, Q, H)
+        error_correction: Уровень коррекции ошибок (L, M, Q, H).
+            M — замеренный оптимум для печати без логотипа: столько же модулей,
+            что и L, вдвое больший запас на повреждения и читается с меньшего
+            размера. H оправдан только когда часть кода закрыта знаком: он
+            добавляет модули, и на мелкой наклейке код читается хуже.
 
     Returns:
         Словарь с путями к сохраненным файлам: {"300": "/qr_codes/FH-001-300.png", ...}
@@ -166,8 +199,9 @@ def save_qr_code_image(
         # Генерируем изображение
         buffer = generate_qr_code_image(short_code, size, error_correction)
 
-        # Сохраняем на диск
-        filename = f"{short_code}-{size}.png"
+        # Уровень коррекции в имени: файлы, записанные прежним генератором,
+        # перестают находиться сами собой и не отдаются вместо новых.
+        filename = f"{short_code}-{size}-{error_correction.upper()}.png"
         filepath = qr_dir / filename
         filepath.write_bytes(buffer.getvalue())
 
@@ -177,7 +211,7 @@ def save_qr_code_image(
     return saved_paths
 
 
-def get_qr_code_path(short_code: str, size: int = 300) -> Path | None:
+def get_qr_code_path(short_code: str, size: int = 300, error_correction: str = "M") -> Path | None:
     """
     Получить путь к сохраненному изображению QR-кода.
 
@@ -186,8 +220,7 @@ def get_qr_code_path(short_code: str, size: int = 300) -> Path | None:
     """
     base_path = Path(__file__).parent.parent.parent
     qr_dir = base_path / settings.QR_CODES_DIR
-    filename = f"{short_code}-{size}.png"
-    filepath = qr_dir / filename
+    filepath = qr_dir / f"{short_code}-{size}-{error_correction.upper()}.png"
 
     if filepath.exists():
         return filepath

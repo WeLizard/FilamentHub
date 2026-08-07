@@ -283,3 +283,47 @@ async def test_download_qr_requires_auth(client: AsyncClient, db_session: AsyncS
 
     response = await client.get(f"/api/v1/qr/filaments/{filament.id}/qr-code/download")
     assert response.status_code == 401
+
+
+def test_a_printed_code_reads_back_at_every_offered_size():
+    """A code a brand prints must decode; the sizes are what they are offered."""
+    import numpy as np
+    from PIL import Image
+
+    cv2 = pytest.importorskip("cv2")
+    from app.services.qr_service import _qr_target_url, generate_qr_code_image
+
+    detector = cv2.QRCodeDetector()
+    expected = _qr_target_url("FH-TST-001")
+
+    for size in (300, 600, 1200):
+        image = Image.open(generate_qr_code_image("FH-TST-001", size=size)).convert("L")
+        # Размер обязан быть ровно запрошенным: бренд ставит код в макет.
+        assert image.size == (size, size)
+        assert detector.detectAndDecode(np.array(image))[0] == expected
+
+
+def test_a_code_stays_readable_when_printed_small():
+    """A spool sticker is not a poster; the code has to survive being tiny."""
+    import numpy as np
+    from PIL import Image
+
+    cv2 = pytest.importorskip("cv2")
+    from app.services.qr_service import _qr_target_url, generate_qr_code_image
+
+    detector = cv2.QRCodeDetector()
+    expected = _qr_target_url("FH-TST-001")
+    large = Image.open(generate_qr_code_image("FH-TST-001", size=1200)).convert("L")
+
+    small = large.resize((120, 120), Image.NEAREST)
+    assert detector.detectAndDecode(np.array(small))[0] == expected
+
+
+def test_print_shops_can_take_the_code_as_vector():
+    """Packaging is printed at whatever size the brand wants."""
+    from app.services.qr_service import generate_qr_code_svg
+
+    svg = generate_qr_code_svg("FH-TST-001").getvalue().decode("utf-8")
+    assert svg.startswith("<?xml")
+    assert "<svg" in svg
+    assert "<path" in svg
