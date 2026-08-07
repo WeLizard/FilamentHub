@@ -56,6 +56,18 @@ function AuthProbe() {
       <button onClick={() => auth.logout()} type="button">
         logout
       </button>
+      <button
+        onClick={() =>
+          auth.register({
+            email: 'user@example.com',
+            username: 'user',
+            password: 'secret',
+          } as Parameters<typeof auth.register>[0])
+        }
+        type="button"
+      >
+        register
+      </button>
     </div>
   );
 }
@@ -127,6 +139,75 @@ describe('AuthContext', () => {
     expect(authUtilsMocks.setToken).toHaveBeenCalledWith('access-123');
     expect(authUtilsMocks.setRefreshToken).toHaveBeenCalledWith('refresh-456');
     expect(authUtilsMocks.setUserId).toHaveBeenCalledWith(7);
+  });
+
+  it('registration opens the session itself, without signing in again', async () => {
+    authApiMocks.register.mockResolvedValue({
+      access_token: 'access-123',
+      refresh_token: 'refresh-456',
+    });
+    authApiMocks.me.mockResolvedValue({
+      id: 7,
+      email: 'user@example.com',
+      username: 'user',
+    });
+
+    render(
+      <AuthProvider>
+        <AuthProbe />
+      </AuthProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('is-loading')).toHaveTextContent('false');
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'register' }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('is-authenticated')).toHaveTextContent('true');
+    });
+
+    expect(authApiMocks.login).not.toHaveBeenCalled();
+    expect(authUtilsMocks.setToken).toHaveBeenCalledWith('access-123');
+    expect(authUtilsMocks.setRefreshToken).toHaveBeenCalledWith('refresh-456');
+    expect(authUtilsMocks.setUserId).toHaveBeenCalledWith(7);
+  });
+
+  it('gives the plugin its capability after registration too', async () => {
+    pluginBridgeMocks.isPluginEmbed.mockReturnValue(true);
+    authApiMocks.register.mockResolvedValue({
+      access_token: 'access-123',
+      refresh_token: 'refresh-456',
+    });
+    authApiMocks.me.mockResolvedValue({
+      id: 7,
+      email: 'user@example.com',
+      username: 'user',
+    });
+    authApiMocks.createPluginSession.mockResolvedValue({
+      plugin_token: 'scoped-plugin-token',
+      expires_in: 1800,
+      token_type: 'bearer',
+    });
+
+    render(
+      <AuthProvider>
+        <AuthProbe />
+      </AuthProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('is-loading')).toHaveTextContent('false');
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'register' }));
+
+    await waitFor(() => {
+      expect(pluginBridgeMocks.reportPluginSessionToPlugin).toHaveBeenCalledWith(
+        'scoped-plugin-token',
+      );
+    });
   });
 
   it('logout clears user state', async () => {
