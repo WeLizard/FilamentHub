@@ -776,13 +776,21 @@ async def delete_filament(
     # каскадом. Сотрудник бренда не может потерять работу сообщества из-за
     # неопрятной карточки — ему остаётся снять её с витрины.
     if current_user.role != UserRole.ADMIN:
+        # Пресеты удаляются по-настоящему, поэтому существующая строка — чья-то
+        # работа, даже если она скрыта: черновик из слайсера ждёт проверки с тем
+        # же снятым флагом, что и отклонённый пресет.
         preset_count = await db.scalar(
             select(func.count()).select_from(Preset).where(Preset.filament_id == filament_id)
         )
+        # Отзыв удаляется мягко: строка остаётся, гаснет флаг. Держать карточку
+        # ради отзыва, который автор сам убрал, значит защищать несуществующее.
         review_count = await db.scalar(
             select(func.count())
             .select_from(FilamentReview)
-            .where(FilamentReview.filament_id == filament_id)
+            .where(
+                FilamentReview.filament_id == filament_id,
+                FilamentReview.active.is_(True),
+            )
         )
         if preset_count or review_count:
             raise_error(409, ERR_FILAMENT_HAS_CONTRIBUTIONS)

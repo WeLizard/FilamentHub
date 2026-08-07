@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.brand import Brand
 from app.models.filament import Filament
 from app.models.filament_review import FilamentReview
-from app.models.preset import Preset
+from app.models.preset import Preset, PresetModerationStatus
 from app.models.user import User
 from app.services.organization_access import grant_brand_owner_membership
 
@@ -809,3 +809,67 @@ async def test_administrator_may_still_delete_a_contributed_filament(
     response = await admin_client.delete(f"/api/v1/filaments/{filament.id}")
     assert response.status_code == 204
     assert await db_session.get(Filament, filament.id) is None
+
+
+@pytest.mark.asyncio
+async def test_a_review_its_author_deleted_no_longer_holds_the_filament(
+    auth_client: AsyncClient,
+    auth_user: User,
+    admin_user: User,
+    db_session: AsyncSession,
+):
+    """A review is removed by clearing a flag, and what is gone protects nothing."""
+    brand = await _brand_with_employee(db_session, auth_user, admin_user)
+    filament = Filament(
+        brand_id=brand.id, name="Generic PLA", slug="generic-pla", material_type="PLA"
+    )
+    db_session.add(filament)
+    await db_session.flush()
+    db_session.add(
+        FilamentReview(
+            filament_id=filament.id,
+            user_id=admin_user.id,
+            success=True,
+            rating=4,
+            comment="Withdrawn later.",
+            active=False,
+        )
+    )
+    await db_session.commit()
+
+    response = await auth_client.delete(f"/api/v1/filaments/{filament.id}")
+    assert response.status_code == 204
+    assert await db_session.get(Filament, filament.id) is None
+
+
+@pytest.mark.asyncio
+async def test_a_draft_awaiting_moderation_still_holds_the_filament(
+    auth_client: AsyncClient,
+    auth_user: User,
+    admin_user: User,
+    db_session: AsyncSession,
+):
+    """A preset hidden from the catalogue is not a preset nobody wrote."""
+    brand = await _brand_with_employee(db_session, auth_user, admin_user)
+    filament = Filament(
+        brand_id=brand.id, name="Generic PLA", slug="generic-pla", material_type="PLA"
+    )
+    db_session.add(filament)
+    await db_session.flush()
+    db_session.add(
+        Preset(
+            filament_id=filament.id,
+            user_id=admin_user.id,
+            name="Imported from the slicer",
+            extruder_temp=205,
+            bed_temp=60,
+            active=False,
+            moderation_status=PresetModerationStatus.PENDING,
+        )
+    )
+    await db_session.commit()
+
+    response = await auth_client.delete(f"/api/v1/filaments/{filament.id}")
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "ERR_FILAMENT_HAS_CONTRIBUTIONS"
+    assert await db_session.get(Filament, filament.id) is not None
