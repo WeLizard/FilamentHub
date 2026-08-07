@@ -208,6 +208,94 @@ export function InboundHtmlMessage({
   );
 }
 
+// Письмо в простом тексте цитирует предыдущее символом «>» в начале строки —
+// так делает любой почтовый клиент. Показывать эти стрелки как есть значит
+// отдать половину экрана пересказу того, что уже прочитано.
+type TextBlock = { quoted: boolean; depth: number; lines: string[] };
+
+export const splitQuotedText = (text: string): TextBlock[] => {
+  const blocks: TextBlock[] = [];
+
+  for (const rawLine of text.split(/\r?\n/)) {
+    let depth = 0;
+    let line = rawLine;
+    while (line.startsWith('>')) {
+      depth += 1;
+      line = line.slice(1).replace(/^ /, '');
+    }
+
+    const previous = blocks[blocks.length - 1];
+    if (previous && previous.depth === depth) {
+      previous.lines.push(line);
+    } else {
+      blocks.push({ quoted: depth > 0, depth, lines: [line] });
+    }
+  }
+
+  return blocks
+    .map((block) => {
+      const lines = [...block.lines];
+      while (lines.length > 0 && lines[0].trim() === '') lines.shift();
+      while (lines.length > 0 && lines[lines.length - 1].trim() === '') lines.pop();
+      return { ...block, lines };
+    })
+    .filter((block) => block.lines.length > 0);
+};
+
+const COLLAPSE_QUOTE_FROM_LINES = 4;
+
+function PlainTextMessage({ text }: { text: string }) {
+  const { t } = useTranslation();
+  const blocks = useMemo(() => splitQuotedText(text), [text]);
+  const [expanded, setExpanded] = useState<Set<number>>(new Set());
+
+  const toggle = (index: number) => {
+    setExpanded((current) => {
+      const next = new Set(current);
+      if (next.has(index)) next.delete(index);
+      else next.add(index);
+      return next;
+    });
+  };
+
+  return (
+    <div className="space-y-2 text-sm leading-6">
+      {blocks.map((block, index) => {
+        if (!block.quoted) {
+          return (
+            <p key={index} className="whitespace-pre-wrap break-words">
+              {block.lines.join('\n')}
+            </p>
+          );
+        }
+
+        const collapsible = block.lines.length >= COLLAPSE_QUOTE_FROM_LINES;
+        const open = !collapsible || expanded.has(index);
+        return (
+          <div key={index} style={{ marginLeft: `${(block.depth - 1) * 0.75}rem` }}>
+            {collapsible && (
+              <button
+                type="button"
+                onClick={() => toggle(index)}
+                className="mb-1 text-xs text-gray-500 transition hover:text-gray-300"
+              >
+                {open
+                  ? t('adminCommunications.hideQuote')
+                  : t('adminCommunications.showQuote', { count: block.lines.length })}
+              </button>
+            )}
+            {open && (
+              <blockquote className="border-l-2 border-white/20 pl-3 text-gray-400">
+                <p className="whitespace-pre-wrap break-words">{block.lines.join('\n')}</p>
+              </blockquote>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function EmailComposeModal({
   onClose,
   onSent,
@@ -739,13 +827,25 @@ function AdminEmailInbox() {
                       key={message.id}
                       className={`max-w-[90%] rounded-2xl border px-4 py-3 md:max-w-[82%] ${
                         inbound
-                          ? 'mr-auto border-white/10 bg-white/[0.06] text-gray-200'
-                          : 'ml-auto border-cyan-400/20 bg-cyan-400/10 text-cyan-50'
+                          ? 'mr-auto border-l-4 border-l-amber-400/60 border-y-amber-400/15 border-r-amber-400/15 bg-amber-400/[0.07] text-gray-100'
+                          : 'ml-auto border-r-4 border-r-cyan-400/60 border-y-cyan-400/15 border-l-cyan-400/15 bg-cyan-400/10 text-cyan-50'
                       }`}
                     >
                       <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-[11px]">
-                        <span className={inbound ? 'text-gray-400' : 'text-cyan-300'}>
-                          {message.sender_email}
+                        <span className="flex flex-wrap items-center gap-2">
+                          {/* Одного цвета мало: направление письма должно читаться словами. */}
+                          <span
+                            className={`rounded px-1.5 py-0.5 font-semibold uppercase tracking-wide ${
+                              inbound ? 'bg-amber-400/15 text-amber-300' : 'bg-cyan-400/15 text-cyan-300'
+                            }`}
+                          >
+                            {inbound
+                              ? t('adminCommunications.directionInbound')
+                              : t('adminCommunications.directionOutbound')}
+                          </span>
+                          <span className={inbound ? 'text-gray-400' : 'text-cyan-300'}>
+                            {message.sender_email}
+                          </span>
                         </span>
                         <span className="flex items-center gap-2 text-gray-500">
                           {!inbound && message.delivery_status && DeliveryIcon && (
@@ -775,10 +875,10 @@ function AdminEmailInbox() {
                           className="break-words text-sm leading-6 [&_blockquote]:my-2 [&_blockquote]:border-l-2 [&_blockquote]:border-cyan-300/40 [&_blockquote]:pl-3 [&_h2]:my-2 [&_h2]:text-lg [&_h2]:font-semibold [&_h3]:my-2 [&_h3]:font-semibold [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-1.5 [&_pre]:overflow-x-auto [&_pre]:rounded-lg [&_pre]:bg-black/20 [&_pre]:p-2 [&_ul]:my-2 [&_ul]:list-disc [&_ul]:pl-5"
                           dangerouslySetInnerHTML={{ __html: message.html_body }}
                         />
+                      ) : message.text_body ? (
+                        <PlainTextMessage text={message.text_body} />
                       ) : (
-                        <p className="whitespace-pre-wrap break-words text-sm leading-6">
-                          {message.text_body || t('adminCommunications.noTextBody')}
-                        </p>
+                        <p className="text-sm leading-6">{t('adminCommunications.noTextBody')}</p>
                       )}
                       {message.attachment_metadata.length > 0 && (
                         <div className="mt-3 space-y-1.5 border-t border-white/10 pt-3">
