@@ -4262,7 +4262,10 @@
       "spb": "圣彼得堡",
       "novosibirsk": "新西伯利亚"
     },
-    "rubPerKg": "₽/kg"
+    "rubPerKg": "₽/kg",
+    "originCountryLabel": "品牌来源国",
+    "originCountryNotSet": "未填写",
+    "originCountryHint": "品牌的来源国，并非其销售国家的列表。"
   },
   "viewPreset": {
     "yes": "是",
@@ -4782,7 +4785,9 @@
     "invalidUrl": "网站 URL 格式无效",
     "uploadLogo": "上传",
     "uploadError": "上传徽标出错",
-    "logoUrlPlaceholder": "URL 或上传文件"
+    "logoUrlPlaceholder": "URL 或上传文件",
+    "originCountry": "品牌来源国",
+    "originCountryNotSet": "未填写"
   },
   "adminMaterials": {
     "title": "目录耗材",

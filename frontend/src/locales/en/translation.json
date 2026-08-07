@@ -4267,7 +4267,10 @@
       "spb": "Saint Petersburg",
       "novosibirsk": "Novosibirsk"
     },
-    "rubPerKg": "₽/kg"
+    "rubPerKg": "₽/kg",
+    "originCountryLabel": "Country of origin",
+    "originCountryNotSet": "Not set",
+    "originCountryHint": "Where the brand is from. This is not a list of countries where it is sold."
   },
   "viewPreset": {
     "yes": "Yes",
@@ -4787,7 +4790,9 @@
     "invalidUrl": "Invalid website URL format",
     "uploadLogo": "Upload",
     "uploadError": "Error uploading logo",
-    "logoUrlPlaceholder": "URL or upload a file"
+    "logoUrlPlaceholder": "URL or upload a file",
+    "originCountry": "Country of origin",
+    "originCountryNotSet": "Not set"
   },
   "adminMaterials": {
     "title": "Catalogue materials",

@@ -223,3 +223,60 @@ def test_validate_file_signature_rejects_content_ext_mismatch():
     with pytest.raises(HTTPException) as exc:
         validate_file_signature(".pdf", b"<html><script>alert(1)</script>")
     assert exc.value.detail["code"] == "ERR_FILE_CONTENT_MISMATCH"
+
+
+@pytest.mark.asyncio
+async def test_brand_carries_where_it_is_from_and_can_be_filtered_by_it(
+    admin_client: AsyncClient,
+    db_session: AsyncSession,
+):
+    """Origin is one value: Creality is from China and sells everywhere."""
+    db_session.add_all(
+        [
+            Brand(name="Creality Origin", slug="creality-origin", active=True, country="CN"),
+            Brand(name="REC Origin", slug="rec-origin", active=True, country="RU"),
+            Brand(name="Unknown Origin", slug="unknown-origin", active=True),
+        ]
+    )
+    await db_session.commit()
+
+    chinese = await admin_client.get("/api/v1/brands/?country=CN")
+    assert chinese.status_code == 200
+    assert [item["name"] for item in chinese.json()["items"]] == ["Creality Origin"]
+
+    # Строчный код принимается: ru и RU не должны давать разные выборки.
+    russian = await admin_client.get("/api/v1/brands/?country=ru")
+    assert [item["name"] for item in russian.json()["items"]] == ["REC Origin"]
+
+    everyone = await admin_client.get("/api/v1/brands/?search=Origin")
+    names = {item["name"] for item in everyone.json()["items"]}
+    assert {"Creality Origin", "REC Origin", "Unknown Origin"} <= names
+
+
+@pytest.mark.asyncio
+async def test_origin_is_two_letters_or_nothing(
+    admin_client: AsyncClient,
+    db_session: AsyncSession,
+):
+    """A free-text country would give us 'ru', 'RU', 'Russia' and 'россия'."""
+    brand = Brand(name="Origin Shape", slug="origin-shape", active=True)
+    db_session.add(brand)
+    await db_session.commit()
+    await db_session.refresh(brand)
+
+    rejected = await admin_client.patch(
+        f"/api/v1/admin/brands/{brand.id}", json={"country": "Russia"}
+    )
+    assert rejected.status_code == 422
+
+    accepted = await admin_client.patch(
+        f"/api/v1/admin/brands/{brand.id}", json={"country": "RU"}
+    )
+    assert accepted.status_code == 200
+    assert accepted.json()["country"] == "RU"
+
+    cleared = await admin_client.patch(
+        f"/api/v1/admin/brands/{brand.id}", json={"country": None}
+    )
+    assert cleared.status_code == 200
+    assert cleared.json()["country"] is None

@@ -37,6 +37,11 @@ class Brand(Base):
     name: Mapped[str] = mapped_column(String(100), unique=True, index=True)
     slug: Mapped[str] = mapped_column(String(100), unique=True, index=True)
 
+    # Откуда бренд родом. Не путать с присутствием: Creality родом из Китая и
+    # при этом продаётся в СНГ, Европе и США. Где он продаётся — отдельная
+    # модель, которой здесь нет.
+    country: Mapped[str | None] = mapped_column(String(2), nullable=True, index=True)
+
     # Description
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
 

@@ -4,6 +4,7 @@ export interface Brand {
   id: number;
   name: string;
   slug: string;
+  country: string | null; // откуда бренд родом; не означает, где он продаётся
   description: string | null;
   website: string | null;
   logo_url: string | null;

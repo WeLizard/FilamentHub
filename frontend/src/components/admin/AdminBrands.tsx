@@ -10,6 +10,7 @@ import { BrandLogoFrame } from '../BrandLogoFrame';
 import { adminAPI, brandInvitesAPI } from '../../api/client';
 import { translateApiError } from '../../utils/translateApiError';
 import { externalUrl } from '../../utils/externalUrl';
+import { sortedCountries } from '../../utils/countries';
 import { currentRequestLanguage } from '../../utils/requestLanguage';
 import type { Brand, BrandInviteBatchPreview, BrandInviteBatchSendResult, EmailLanguage } from '../../types/api';
 import type { AxiosError } from 'axios';
@@ -18,7 +19,7 @@ import { formatDateTime } from '../../utils/formatDate';
 type FilterType = 'all' | 'verified' | 'unverified';
 
 export function AdminBrands() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [page, setPage] = useState(1);
@@ -30,6 +31,7 @@ export function AdminBrands() {
   const [showSlugRename, setShowSlugRename] = useState(false);
   const [editDescription, setEditDescription] = useState('');
   const [editWebsite, setEditWebsite] = useState('');
+  const [editCountry, setEditCountry] = useState('');
   const [editLogoUrl, setEditLogoUrl] = useState('');
   const [editLogoBg, setEditLogoBg] = useState('');
   const [editError, setEditError] = useState<string | null>(null);
@@ -201,6 +203,7 @@ export function AdminBrands() {
       setEditSlug(editingBrand.slug || '');
       setEditDescription(editingBrand.description || '');
       setEditWebsite(editingBrand.website || '');
+    setEditCountry(editingBrand.country || '');
       setEditLogoUrl(editingBrand.logo_url || '');
       setEditLogoBg(editingBrand.logo_bg || '');
       setShowSlugRename(false);
@@ -236,6 +239,7 @@ export function AdminBrands() {
         name: editName.trim(),
         description: editDescription.trim() || null,
         website: editWebsite.trim() || null,
+        country: editCountry || null,
         logo_url: editLogoUrl.trim() || null,
         logo_bg: editLogoBg.trim() || null,
       },
@@ -573,6 +577,26 @@ export function AdminBrands() {
                   className="w-full px-4 py-2 bg-white/5 border border-white/20 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
                   placeholder="https://example.com"
                 />
+              </div>
+
+              <div>
+                {/* Откуда бренд родом. Не «где продаётся». */}
+                <label htmlFor="edit-country" className="block text-sm font-medium text-gray-300 mb-2">
+                  {t('adminBrands.originCountry')}
+                </label>
+                <select
+                  id="edit-country"
+                  value={editCountry}
+                  onChange={(e) => setEditCountry(e.target.value)}
+                  className="w-full px-4 py-2 bg-white/5 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                >
+                  <option value="" className="bg-gray-900">{t('adminBrands.originCountryNotSet')}</option>
+                  {sortedCountries(i18n.language).map((country) => (
+                    <option key={country.code} value={country.code} className="bg-gray-900">
+                      {country.name}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <div>

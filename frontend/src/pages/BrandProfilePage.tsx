@@ -44,6 +44,7 @@ import { authAPI, brandsAPI, filamentsAPI, brandRequestsAPI, presetsAPI, proofFi
 import { translateApiError } from '../utils/translateApiError';
 import { PERSONAL_EMAIL_DOMAINS } from '../data/personalEmailDomains';
 import { currencySymbol, CURRENCY_CODES } from '../utils/currency';
+import { countryName, sortedCountries } from '../utils/countries';
 import { filamentImportAPI, filamentLinesAPI } from '../api/client';
 import { ModalOverlay } from '../components/ModalOverlay';
 import { HSLColorPicker } from '../components/HSLColorPicker';
@@ -73,7 +74,7 @@ interface BrandProfilePageProps {
 }
 
 export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, initialEditing, onAddBrandFlowChange }) => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { user, refreshUser } = useAuth();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -92,6 +93,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
   const [profileName, setProfileName] = useState('');
   const [profileDescription, setProfileDescription] = useState('');
   const [profileWebsite, setProfileWebsite] = useState('');
+  const [profileCountry, setProfileCountry] = useState('');
   const [profileLogoUrl, setProfileLogoUrl] = useState('');
   const [profileLogoBg, setProfileLogoBg] = useState('');
   const [logoBgPickerOpen, setLogoBgPickerOpen] = useState(false);
@@ -318,7 +320,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
 
   // Мутация для обновления профиля бренда
   const updateBrandMutation = useMutation({
-    mutationFn: (data: { name?: string; description?: string | null; website?: string | null; logo_url?: string | null; logo_bg?: string | null; social_media_urls?: string[] | null; shop_links?: { platform: string; url: string }[] | null; price_hidden?: boolean; currency?: string }) =>
+    mutationFn: (data: { name?: string; country?: string | null; description?: string | null; website?: string | null; logo_url?: string | null; logo_bg?: string | null; social_media_urls?: string[] | null; shop_links?: { platform: string; url: string }[] | null; price_hidden?: boolean; currency?: string }) =>
       brandsAPI.update(user!.brand_id!, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['brand', user?.brand_id] });
@@ -341,6 +343,8 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
       setProfileShopLinks(brandData.shop_links || []);
       setProfilePriceHidden(brandData.price_hidden || false);
       setProfileCurrency(brandData.currency || 'RUB');
+      setProfileCountry(brandData.country || '');
+      setProfileCountry(brandData.country || '');
       setProfileError(null);
       setIsEditingProfile(true);
     }
@@ -362,6 +366,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
         : {}),
       description: profileDescription.trim() || null,
       website: profileWebsite.trim() || null,
+      country: profileCountry || null,
       logo_url: profileLogoUrl.trim() || null,
       logo_bg: profileLogoBg.trim() || null,
       social_media_urls: profileSocialUrls.filter((u) => u.trim()),
@@ -605,6 +610,11 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
               >
                 {brandData.website}
               </a>
+            )}
+            {brandData.country && (
+              <p className="mt-1 text-sm text-gray-400">
+                {t('brandProfile.originCountryLabel')}: {countryName(brandData.country, i18n.language)}
+              </p>
             )}
             <div className="mt-3">
               <button
@@ -1458,6 +1468,23 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
                   className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
                   placeholder="https://example.com"
                 />
+              </div>
+              <div>
+                {/* Откуда бренд родом. Не «где продаётся» — это разные вещи. */}
+                <label className="block text-gray-300 mb-2 text-sm font-medium">{t('brandProfile.originCountryLabel')}</label>
+                <select
+                  value={profileCountry}
+                  onChange={(e) => setProfileCountry(e.target.value)}
+                  className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                >
+                  <option value="" className="bg-gray-900">{t('brandProfile.originCountryNotSet')}</option>
+                  {sortedCountries(i18n.language).map((country) => (
+                    <option key={country.code} value={country.code} className="bg-gray-900">
+                      {country.name}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-1.5 text-xs leading-5 text-gray-400">{t('brandProfile.originCountryHint')}</p>
               </div>
               <div>
                 <label className="block text-gray-300 mb-2 text-sm font-medium">{t('brandProfile.currencyLabel')}</label>
