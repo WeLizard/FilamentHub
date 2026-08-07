@@ -215,7 +215,7 @@ async def test_the_reader_country_substitutes_local_facts(
     assert local["price_per_kg"] == 2500
     assert local["currency"] == "RSD"
     assert local["price_display_unit"] == "per_spool"
-    assert local["availability"] == "available"
+    assert local["market_availability"] == "available"
     assert local["product_url"] == "https://shop.rs/hyper-pla"
     # Витрина обязана суметь подписать цену как местную.
     assert local["market_country"] == "RS"
@@ -250,3 +250,25 @@ async def test_an_unpublished_cell_never_reaches_the_catalogue(
     item = next(i for i in listed.json()["items"] if i["id"] == filament.id)
     assert item["price_per_kg"] == 1500
     assert item["market_country"] is None
+
+
+@pytest.mark.asyncio
+async def test_not_sold_here_is_not_discontinued(
+    admin_client: AsyncClient, db_session: AsyncSession
+):
+    """Состояние товара у производителя и продажа в стране — разные словари."""
+    _, filament = await _brand_with_filament(db_session)
+    await db_session.commit()
+
+    for country, market_state in (("RS", "unavailable"), ("FR", "unknown")):
+        created = await admin_client.post(
+            f"/api/v1/filaments/{filament.id}/country-cells",
+            json={"country": country, "availability": market_state, "published": True},
+        )
+        assert created.status_code == 201
+
+        shown = await admin_client.get(f"/api/v1/filaments/{filament.id}?country={country}")
+        assert shown.status_code == 200
+        # Товар выпускается, просто на этом рынке его не продают.
+        assert shown.json()["availability"] == "available"
+        assert shown.json()["market_availability"] == market_state

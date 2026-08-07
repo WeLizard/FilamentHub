@@ -23,7 +23,6 @@ _SUBSTITUTED = (
     ("price_per_kg", "price"),
     ("currency", "currency"),
     ("price_display_unit", "price_display_unit"),
-    ("availability", "availability"),
     ("name", "market_display_name"),
 )
 
@@ -56,6 +55,10 @@ def apply_cell(payload: dict, cell: FilamentCountryCell | None) -> dict:
             value = None
         if value is not None:
             payload[public_field] = value.value if hasattr(value, "value") else value
+
+    # Наличие в стране и состояние товара у производителя — разные вещи:
+    # «снят с производства» и «здесь не продаётся» не заменяют друг друга.
+    payload["market_availability"] = cell.availability.value
 
     if cell.product_url:
         payload["product_url"] = cell.product_url

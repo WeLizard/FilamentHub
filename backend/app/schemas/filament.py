@@ -248,6 +248,9 @@ class FilamentResponse(FilamentBase):
     # Заполнено, когда сведения подставлены из ячейки страны: витрина обязана
     # подписать такую цену как рекомендованную для этого рынка, а не как нашу.
     market_country: str | None = None
+    # Продаётся ли в этой стране. Не путать с `availability`: то состояние
+    # товара у производителя, а не факт продажи на рынке.
+    market_availability: str | None = None
     market_note: str | None = None
     product_url: str | None = None
     purchase_links: list[dict[str, str]] | None = None
