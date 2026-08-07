@@ -242,7 +242,7 @@ api.interceptors.response.use(
 // Auth API
 export const authAPI = {
   register: async (data: RegistrationPayload) => {
-    const response = await api.post<User>('/auth/register', data);
+    const response = await api.post<Token>('/auth/register', data);
     return response.data;
   },
 

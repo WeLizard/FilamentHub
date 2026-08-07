@@ -24,10 +24,10 @@ async def _register_and_login(client: AsyncClient, suffix: str, role: str = "use
         ),
     )
     assert reg.status_code == 201
-    user_id = reg.json()["id"]
-    login = await client.post("/api/v1/auth/login", json={"email": email, "password": password})
-    assert login.status_code == 200
-    return {"Authorization": f"Bearer {login.json()['access_token']}"}, user_id
+    headers = {"Authorization": f"Bearer {reg.json()['access_token']}"}
+    me = await client.get("/api/v1/auth/me", headers=headers)
+    assert me.status_code == 200
+    return headers, me.json()["id"]
 
 
 async def _make_admin(db: AsyncSession, user_id: int) -> None:

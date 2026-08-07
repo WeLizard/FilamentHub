@@ -573,10 +573,18 @@ async def test_register_user(client: AsyncClient):
     response = await client.post("/api/v1/auth/register", json=user_data)
     assert response.status_code == 201
     data = response.json()
-    assert data["email"] == user_data["email"]
-    assert data["username"] == user_data["username"]
-    assert "password" not in data  # Password should not be in response
-    assert data["id"] is not None
+    # Регистрация открывает сессию сама: второй вход за тем же паролем не нужен.
+    assert data["access_token"]
+    assert data["token_type"] == "bearer"
+    assert "password" not in data
+
+    me = await client.get(
+        "/api/v1/auth/me",
+        headers={"Authorization": f"Bearer {data['access_token']}"},
+    )
+    assert me.status_code == 200
+    assert me.json()["email"] == user_data["email"]
+    assert me.json()["username"] == user_data["username"]
 
 
 @pytest.mark.asyncio
@@ -1325,13 +1333,13 @@ async def test_registration_sends_a_confirmation_the_owner_can_also_disown(
 
     assert registration.status_code == 201
     assert sent["to"] == "stranger@example.com"
-    # The account is usable straight away; confirmation only records the address.
-    assert registration.json()["email_verified"] is False
 
     registered_user = await db_session.scalar(
         select(User).where(User.username == "stranger_account")
     )
     assert registered_user is not None
+    # The account is usable straight away; confirmation only records the address.
+    assert registered_user.email_verified is False
     private_draft = Preset(
         name="Private imported draft",
         user_id=registered_user.id,

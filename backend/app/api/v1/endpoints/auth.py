@@ -354,15 +354,21 @@ async def accept_legal_documents(
     return UserResponse.model_validate(current_user)
 
 
-@router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/register", response_model=Token, status_code=status.HTTP_201_CREATED)
 @limiter.limit("3/minute")  # Rate limiting: 3 попытки в минуту
 async def register(
     request: Request,
+    response: Response,
     background_tasks: BackgroundTasks,
     data: RegisterRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> UserResponse:
-    """Регистрация нового пользователя."""
+) -> Token:
+    """Регистрация нового пользователя.
+
+    Отдаёт сессию сразу: пароль уже проверен тем, что его только что задали, и
+    отдельный вход следом заставлял бы сервер второй раз считать самую дорогую
+    операцию во всём сервисе.
+    """
 
     import logging
     logger = logging.getLogger(__name__)
@@ -444,6 +450,7 @@ async def register(
         full_name=data.full_name if data.full_name else None,
         active=True,
         email_verified=False,
+        last_login=datetime.now(timezone.utc),
     )
 
     try:
@@ -480,9 +487,19 @@ async def register(
                 raise_error(status.HTTP_400_BAD_REQUEST, ERR_USERNAME_EXISTS)
         raise_error(status.HTTP_500_INTERNAL_SERVER_ERROR, ERR_USER_CREATE_ERROR)
 
-    # Возвращаем ответ
     try:
-        return UserResponse.model_validate(user)
+        token_data = {"sub": user.email, "user_id": user.id, "role": user.role.value}
+        access_token = create_access_token(data=token_data)
+        refresh_token = create_refresh_token(data=token_data)
+
+        if _cookie_auth_enabled():
+            _set_auth_cookies(response, access_token, refresh_token)
+
+        return Token(
+            access_token=access_token,
+            refresh_token=refresh_token,
+            legal_onboarding_required=requires_current_legal_acceptance(user),
+        )
     except Exception as e:
         logger.error(f"Error serializing user response: {str(e)}", exc_info=True)
         raise_error(status.HTTP_500_INTERNAL_SERVER_ERROR, ERR_RESPONSE_ERROR)

@@ -4,7 +4,7 @@ import React, { createContext, useContext, useState, useEffect, ReactNode } from
 import { authAPI } from '../api/client';
 import { getRefreshToken, getToken, isCookieAuthMode, isOrcaEmbedded, removeToken, setRefreshToken, setToken, setUserId, shouldPersistTokensLocally } from '../utils/auth';
 import { isPluginEmbed, reportLogoutToPlugin, reportPluginSessionToPlugin, subscribeToPluginAuthRestore, subscribeToPluginLogout } from '../utils/pluginBridge';
-import type { LegalAcceptancePayload, RegistrationPayload, User } from '../types/api';
+import type { LegalAcceptancePayload, RegistrationPayload, Token, User } from '../types/api';
 
 interface AuthContextType {
   user: User | null;
@@ -222,32 +222,37 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     };
   }, [user?.id, user?.legal_onboarding_required]);
 
+  // Вход и регистрация заканчиваются одинаково: сервер выдал сессию, дальше её
+  // нужно сохранить и представиться. Общее место, чтобы не разошлись.
+  const establishSession = async (tokenData: Token) => {
+    const persistLocally = shouldPersistTokensLocally();
+    if (persistLocally) {
+      setToken(tokenData.access_token);
+    }
+
+    // Сохраняем refresh token если есть
+    if (tokenData.refresh_token && persistLocally) {
+      setRefreshToken(tokenData.refresh_token);
+    }
+
+    // Загружаем данные пользователя
+    const userData = await authAPI.me();
+    setUser(userData);
+
+    // Сохраняем user_id в localStorage
+    if (userData.id && persistLocally) {
+      setUserId(userData.id);
+    }
+
+    // Отправляем сообщение в OrcaSlicer если запущено там (включая refresh_token)
+    if (isOrcaEmbedded() && window.filamenthub?.sendLoginSuccess) {
+      window.filamenthub.sendLoginSuccess(tokenData.access_token, userData.id, tokenData.refresh_token ?? '');
+    }
+  };
+
   const login = async (email: string, password: string) => {
     try {
-      const tokenData = await authAPI.login({ email, password });
-      const persistLocally = shouldPersistTokensLocally();
-      if (persistLocally) {
-        setToken(tokenData.access_token);
-      }
-      
-      // Сохраняем refresh token если есть
-      if (tokenData.refresh_token && persistLocally) {
-        setRefreshToken(tokenData.refresh_token);
-      }
-      
-      // Загружаем данные пользователя
-      const userData = await authAPI.me();
-      setUser(userData);
-      
-      // Сохраняем user_id в localStorage
-      if (userData.id && persistLocally) {
-        setUserId(userData.id);
-      }
-      
-      // Отправляем сообщение в OrcaSlicer если запущено там (включая refresh_token)
-      if (isOrcaEmbedded() && window.filamenthub?.sendLoginSuccess) {
-        window.filamenthub.sendLoginSuccess(tokenData.access_token, userData.id, tokenData.refresh_token ?? '');
-      }
+      await establishSession(await authAPI.login({ email, password }));
     } catch (error: any) {
       // Удаляем токен если логин не удался
       removeToken();
@@ -278,24 +283,24 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const register = async (data: RegistrationPayload) => {
     try {
-      // Регистрируем пользователя
-      await authAPI.register(data);
-      
-      // После успешной регистрации автоматически логиним
+      // Регистрация сразу отдаёт сессию: отдельный вход следом заставлял сервер
+      // второй раз проверять тот же пароль.
+      const tokenData = await authAPI.register(data);
+
       try {
-        await login(data.email, data.password);
-      } catch (loginError: any) {
-        console.warn('Auto-login after registration failed:', loginError);
-        const error = new Error('Registration succeeded but automatic login failed') as Error & {
+        await establishSession(tokenData);
+      } catch (sessionError: any) {
+        console.warn('Session after registration failed:', sessionError);
+        removeToken();
+        const error = new Error('Registration succeeded but the session could not be opened') as Error & {
           registrationSucceeded: true;
           cause?: unknown;
         };
         error.registrationSucceeded = true;
-        error.cause = loginError;
+        error.cause = sessionError;
         throw error;
       }
-      
-      // Возвращаем успешный результат регистрации
+
       return;
     } catch (error: any) {
       // Пробрасываем ошибку дальше для обработки в компоненте

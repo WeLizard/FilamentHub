@@ -30,16 +30,16 @@ async def _register_and_login(
         ),
     )
     assert reg.status_code == 201
-    user_id = reg.json()["id"]
+    headers = {"Authorization": f"Bearer {reg.json()['access_token']}"}
+    me = await client.get("/api/v1/auth/me", headers=headers)
+    assert me.status_code == 200
+    user_id = me.json()["id"]
 
     registered = await db.get(User, user_id)
     registered.email_verified = True
     await db.commit()
 
-    login = await client.post("/api/v1/auth/login", json={"email": email, "password": password})
-    assert login.status_code == 200
-    token = login.json()["access_token"]
-    return {"Authorization": f"Bearer {token}"}, user_id
+    return headers, user_id
 
 
 async def _register_unconfirmed(client: AsyncClient, suffix: str) -> dict:
