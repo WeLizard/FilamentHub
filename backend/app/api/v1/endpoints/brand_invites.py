@@ -36,6 +36,7 @@ from app.core.limiter import limiter
 from app.db.session import get_db
 from app.models.brand import Brand
 from app.models.brand_invite import BrandInvite
+from app.models.brand_territorial_grant import GrantSource
 from app.models.organization import (
     Organization,
     OrganizationBrandAccess,
@@ -56,6 +57,7 @@ from app.schemas.brand_invite import (
     BrandInvitePublicResponse,
 )
 from app.services.brand_slug_service import suggest_brand_slug
+from app.services.grant_issuing import issue_territorial_grant
 from app.services.email_service import send_brand_invite_email, send_brand_team_invite_email
 from app.services.email_validator import is_personal_email, validate_email_domain
 from app.services.qr_service import backfill_brand_qr_codes
@@ -618,6 +620,21 @@ async def accept_brand_invite(
     invite.organization_id = organization.id
     invite.accepted_at = _now()
     invite.accepted_by_id = current_user.id
+
+    # Второй вход к территориальному праву. Область берётся из приглашения:
+    # владелец ведёт бренд целиком, приглашённому называют его страну. Без
+    # названной области право не выдаётся вовсе — молчаливое «весь мир» здесь
+    # было бы худшим из вариантов.
+    await db.flush()
+    if invited_role == OrganizationMemberRole.OWNER or invite.country:
+        await issue_territorial_grant(
+            db,
+            brand=brand,
+            user=current_user,
+            country=None if invited_role == OrganizationMemberRole.OWNER else invite.country,
+            source=GrantSource.invitation,
+            approved_by_id=invite.invited_by_id,
+        )
 
     if invite.batch_id and invite.purpose != "team":
         await db.execute(

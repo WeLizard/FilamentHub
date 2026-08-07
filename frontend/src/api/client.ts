@@ -470,6 +470,7 @@ export const brandTeamAPI = {
     email: string;
     role: BrandTeamRole;
     all_brands: boolean;
+    country?: string | null;
     send_email: boolean;
   }): Promise<BrandTeamInvite> => {
     const response = await api.post<BrandTeamInvite>(`/brands/${brandId}/team/invites`, payload);

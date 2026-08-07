@@ -32,6 +32,7 @@ async def _representative(
     *,
     status: GrantStatus = GrantStatus.active,
     source: GrantSource = GrantSource.invitation,
+    owns_workspace: bool = False,
 ) -> dict[str, str]:
     """Организация, её сотрудник и право на бренд. Возвращает заголовки входа."""
     organization = Organization(name=f"Org {slug}", slug=f"org-{slug}")
@@ -60,6 +61,11 @@ async def _representative(
             all_brands=True,
         )
     )
+    # Мастерская бренда одна: приглашать в команду может только её владелец.
+    if owns_workspace:
+        brand.organization_id = organization.id
+        brand.verified = True
+
     db.add(
         BrandTerritorialGrant(
             brand_id=brand.id,
@@ -385,3 +391,84 @@ async def test_a_representative_reads_back_their_own_draft(
 
     stranger = await client.get(f"/api/v1/filaments/{filament.id}/country-cells")
     assert stranger.json() == []
+
+
+@pytest.mark.asyncio
+async def test_an_invitation_carries_the_country_it_offers(
+    client: AsyncClient, admin_client: AsyncClient, db_session: AsyncSession
+):
+    """Приглашение — второй вход к территории, и область называют в нём."""
+    brand, filament = await _brand_with_one_filament(db_session)
+    owner = await _representative(db_session, brand, "inv-owner", None, owns_workspace=True)
+    await db_session.commit()
+
+    invite = await client.post(
+        f"/api/v1/brands/{brand.id}/team/invites",
+        headers=owner,
+        json={"email": "kz-rep@example.com", "role": "editor", "country": "KZ",
+              "send_email": False},
+    )
+    assert invite.status_code == 201, invite.text
+    assert invite.json()["country"] == "KZ"
+
+
+@pytest.mark.asyncio
+async def test_an_invitation_without_a_country_grants_no_territory(
+    client: AsyncClient, db_session: AsyncSession
+):
+    """Молчание об области не означает «весь мир»: права не возникает вовсе."""
+    brand, _ = await _brand_with_one_filament(db_session)
+    owner = await _representative(db_session, brand, "inv-quiet", None, owns_workspace=True)
+    await db_session.commit()
+
+    invite = await client.post(
+        f"/api/v1/brands/{brand.id}/team/invites",
+        headers=owner,
+        json={"email": "quiet@example.com", "role": "editor", "send_email": False},
+    )
+    assert invite.status_code == 201, invite.text
+    assert invite.json()["country"] is None
+
+
+@pytest.mark.asyncio
+async def test_accepting_an_invitation_hands_over_that_country(
+    client: AsyncClient, db_session: AsyncSession
+):
+    """Принятое приглашение открывает названную страну и только её."""
+    brand, filament = await _brand_with_one_filament(db_session)
+    owner = await _representative(db_session, brand, "inv-grant", None, owns_workspace=True)
+
+    guest = User(
+        email="kz-guest@example.com",
+        username="kz_guest",
+        password_hash=get_password_hash("testpassword123"),
+        role=UserRole.USER,
+        active=True,
+        email_verified=True,
+        terms_version_accepted=CURRENT_TERMS_VERSION,
+        personal_data_consent_version=CURRENT_PERSONAL_DATA_CONSENT_VERSION,
+    )
+    db_session.add(guest)
+    await db_session.commit()
+    guest_headers = {"Authorization": f"Bearer {create_access_token({'sub': guest.email})}"}
+
+    invite = await client.post(
+        f"/api/v1/brands/{brand.id}/team/invites",
+        headers=owner,
+        json={"email": guest.email, "role": "editor", "country": "KZ", "send_email": False},
+    )
+    assert invite.status_code == 201, invite.text
+    token = invite.json()["invite_url"].rsplit("/", 1)[-1]
+
+    accepted = await client.post(f"/api/v1/brand-invites/{token}/accept", headers=guest_headers, json={})
+    assert accepted.status_code == 200, accepted.text
+
+    mine = await client.post(
+        f"/api/v1/filaments/{filament.id}/country-cells",
+        headers=guest_headers,
+        json={"country": "KZ", "price": 9900, "currency": "KZT", "published": True},
+    )
+    assert mine.status_code == 201, mine.text
+
+    territories = (await client.get(f"/api/v1/brands/{brand.id}/my-territories", headers=guest_headers)).json()
+    assert "KZ" in [item["country"] for item in territories["territories"]]

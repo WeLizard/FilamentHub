@@ -35,6 +35,7 @@ from app.core.errors import (
 )
 from app.db.session import get_db
 from app.models.brand import Brand
+from app.models.brand_territorial_grant import GrantSource
 from app.models.brand_request import BrandRequest, BrandRequestStatus, BrandRequestType
 from app.models.organization import OrganizationMemberRole, OrganizationMembership
 from app.models.user import User, UserRole
@@ -53,6 +54,7 @@ from app.services.file_service import (
     save_proof_file,
     serialize_proof_files,
 )
+from app.services.grant_issuing import issue_territorial_grant
 from app.services.organization_access import get_brand_membership, grant_brand_owner_membership
 from app.services.qr_service import backfill_brand_qr_codes
 
@@ -409,6 +411,18 @@ async def update_brand_request(
                 granted_by_id=admin.id,
             )
             await backfill_brand_qr_codes(brand, db)
+            # Одобрение через эту дверь даёт ту же область, что и через
+            # админскую: иначе одинаковое решение оставляло бы человека без
+            # права вести хоть одну страну.
+            await db.flush()
+            await issue_territorial_grant(
+                db,
+                brand=brand,
+                user=user,
+                country=request.country,
+                source=GrantSource.application,
+                approved_by_id=admin.id,
+            )
         elif request.request_type == BrandRequestType.CREATE:
             # Создаем бренд и привязываем пользователя
             selected_slug, available = await choose_brand_slug(
@@ -449,6 +463,17 @@ async def update_brand_request(
                 brand=new_brand,
                 user=user,
                 granted_by_id=admin.id,
+            )
+            # Бренд заводит его собственный владелец: он ведёт его целиком, а
+            # не одну страну, поэтому названная в заявке страна область не сужает.
+            await db.flush()
+            await issue_territorial_grant(
+                db,
+                brand=new_brand,
+                user=user,
+                country=None,
+                source=GrantSource.application,
+                approved_by_id=admin.id,
             )
 
     await db.commit()

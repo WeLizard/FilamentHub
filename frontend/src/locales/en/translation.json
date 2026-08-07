@@ -1660,7 +1660,9 @@
       "accepted": "Accepted",
       "expired": "Expired",
       "revoked": "Revoked"
-    }
+    },
+    "noCountry": "No country",
+    "countryHint": "A country lets the member maintain that market's details. Without one they get team access only."
   },
   "palette": {
     "lineLabel": "Product line",

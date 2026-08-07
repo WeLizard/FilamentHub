@@ -15,6 +15,7 @@ import {
   X,
 } from 'lucide-react';
 import { brandTeamAPI } from '../api/client';
+import { COUNTRY_CODES, countryName } from '../utils/countries';
 import { useAuth } from '../contexts/AuthContext';
 import { translateApiError } from '../utils/translateApiError';
 import { ConfirmModal } from './ConfirmModal';
@@ -45,12 +46,13 @@ function apiErrorDetail(error: unknown): unknown {
 }
 
 export function BrandTeamPanel({ brandId }: BrandTeamPanelProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { refreshUser } = useAuth();
   const queryClient = useQueryClient();
   const [email, setEmail] = useState('');
   const [role, setRole] = useState<BrandTeamRole>('editor');
   const [allBrands, setAllBrands] = useState(false);
+  const [country, setCountry] = useState('');
   const [pendingMemberAction, setPendingMemberAction] = useState<PendingMemberAction | null>(null);
 
   const query = useQuery({
@@ -71,6 +73,8 @@ export function BrandTeamPanel({ brandId }: BrandTeamPanelProps) {
       email,
       role,
       all_brands: role === 'owner' || allBrands,
+      // Владелец ведёт бренд целиком, поэтому страну у него не спрашивают.
+      country: role === 'owner' ? null : country || null,
       send_email: sendEmail,
     }),
     onSuccess: async (invite, sendEmail) => {
@@ -78,6 +82,7 @@ export function BrandTeamPanel({ brandId }: BrandTeamPanelProps) {
         await navigator.clipboard.writeText(invite.invite_url);
       }
       setEmail('');
+      setCountry('');
       await refresh();
       toast.success(t(sendEmail ? 'brandTeam.inviteSent' : 'brandTeam.linkCopied'));
     },
@@ -139,7 +144,7 @@ export function BrandTeamPanel({ brandId }: BrandTeamPanelProps) {
             <MailPlus className="h-5 w-5 text-violet-300" />
             <h4 className="font-semibold text-white">{t('brandTeam.inviteTitle')}</h4>
           </div>
-          <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_160px_auto]">
+          <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_160px_170px_auto]">
             <input
               type="email"
               value={email}
@@ -154,6 +159,19 @@ export function BrandTeamPanel({ brandId }: BrandTeamPanelProps) {
             >
               <option value="editor">{t('brandTeam.roles.editor')}</option>
               <option value="owner">{t('brandTeam.roles.owner')}</option>
+            </select>
+            <select
+              value={role === 'owner' ? '' : country}
+              disabled={role === 'owner'}
+              onChange={(event) => setCountry(event.target.value)}
+              className="rounded-xl border border-white/15 bg-slate-950 px-3 py-3 text-white outline-none focus:border-cyan-300/60 disabled:opacity-40"
+            >
+              <option value="">{t('brandTeam.noCountry')}</option>
+              {COUNTRY_CODES.map((code) => (
+                <option key={code} value={code}>
+                  {countryName(code, i18n.language)}
+                </option>
+              ))}
             </select>
             <div className="flex gap-2">
               <button
@@ -186,6 +204,7 @@ export function BrandTeamPanel({ brandId }: BrandTeamPanelProps) {
             {t('brandTeam.allBrands')}
           </label>
           <p className="mt-2 text-xs leading-5 text-gray-500">{t('brandTeam.exactEmailHint')}</p>
+          <p className="mt-1 text-xs leading-5 text-gray-500">{t('brandTeam.countryHint')}</p>
         </section>
       )}
 

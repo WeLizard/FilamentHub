@@ -1656,7 +1656,9 @@
       "accepted": "已接受",
       "expired": "已过期",
       "revoked": "已撤销"
-    }
+    },
+    "noCountry": "不指定国家",
+    "countryHint": "指定国家后，该成员可维护该市场的信息。不指定则仅获得团队访问权限。"
   },
   "palette": {
     "lineLabel": "产品线",

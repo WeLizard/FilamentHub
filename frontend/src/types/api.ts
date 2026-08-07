@@ -673,6 +673,7 @@ export interface BrandTeamInvite {
   email: string;
   role: BrandTeamRole;
   all_brands: boolean;
+  country: string | null;
   brand_id: number;
   status: 'pending' | 'sent' | 'failed' | 'accepted' | 'expired' | 'revoked';
   invite_url: string;
