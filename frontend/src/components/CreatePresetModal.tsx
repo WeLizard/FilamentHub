@@ -2326,6 +2326,9 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                       placeholder={t('presetModal.filamentNamePlaceholder')}
                       className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 placeholder:text-center focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
                     />
+                    <p className="mt-1.5 text-xs leading-5 text-gray-400">
+                      {t('presetModal.filamentNameHint')}
+                    </p>
                     {uniqueSimilarFilaments.length > 0 && (
                       <div className="mt-2 p-3 bg-yellow-500/20 border border-yellow-500/30 rounded-lg text-yellow-300 text-sm">
                         <p className="font-medium mb-1">{t('presetModal.similarFilaments')}:</p>
