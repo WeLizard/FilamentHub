@@ -607,13 +607,16 @@ export const filamentsAPI = {
     material_type?: string;
     printer_id?: number;
     search?: string;
+    country?: string;
   }) => {
     const response = await api.get<FilamentListResponse>('/filaments/', { params });
     return response.data;
   },
 
-  get: async (id: number) => {
-    const response = await api.get<Filament>(`/filaments/${id}`);
+  get: async (id: number, country?: string) => {
+    const response = await api.get<Filament>(`/filaments/${id}`, {
+      params: country ? { country } : undefined,
+    });
     return response.data;
   },
 

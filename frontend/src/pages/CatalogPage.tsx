@@ -37,11 +37,14 @@ import {
 import type { Filament } from '../types/api';
 import type { AxiosError } from 'axios';
 import { formatDate } from '../utils/formatDate';
+import { useReaderCountry } from '../hooks/useReaderCountry';
+import { MarketNotice } from '../components/MarketNotice';
 
 const CATALOG_PAGE_SIZE = 24;
 
 export const CatalogPage: React.FC = () => {
   const { t } = useTranslation();
+  const readerCountry = useReaderCountry();
   const navigate = useNavigate();
   const location = useLocation();
   const { user } = useAuth();
@@ -179,6 +182,8 @@ export const CatalogPage: React.FC = () => {
         material_type: materialTypeFilter,
         brand_id: brandFilter,
         printer_id: printerFilter,
+        // Страна — часть ключа: иначе москвич увидит немецкие цены из кеша.
+        country: readerCountry,
       },
     ],
     queryFn: ({ pageParam }) =>
@@ -188,6 +193,7 @@ export const CatalogPage: React.FC = () => {
         material_type: materialTypeFilter || undefined,
         brand_id: brandFilter || undefined,
         printer_id: printerFilter || undefined,
+        country: readerCountry,
         page: pageParam,
         size: CATALOG_PAGE_SIZE,
       }),
@@ -664,6 +670,7 @@ const MaterialCard: React.FC<MaterialCardProps> = ({
               )}
           </div>
         </div>
+        <MarketNotice filament={filament} compact />
         {filament.price_hidden ? null : (filament.price_per_kg || filament.spool_weight) ? (
           <div className="ml-2 flex-shrink-0 text-right sm:ml-4">
             {filament.price_per_kg && filament.spool_weight && filament.spool_weight !== 1000 ? (

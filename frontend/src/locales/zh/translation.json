@@ -1111,7 +1111,7 @@
       "mm": "mm",
       "gcm3": "g/cm³",
       "kg": "kg",
-      "spool": "线轴",
+      "spool": "卷",
       "g": "克"
     },
     "priceOnRequest": "联系获取报价",
@@ -6521,5 +6521,10 @@
     "saving": "保存中…",
     "saved": "已保存",
     "saveFailed": "无法保存区域信息"
+  },
+  "market": {
+    "priceFor": "价格与供应情况为 {{country}} 的建议信息",
+    "notSoldIn": "该耗材在 {{country}} 不销售",
+    "whereToBuy": "购买渠道"
   }
 }

@@ -6528,5 +6528,10 @@
     "saving": "Saving…",
     "saved": "Saved",
     "saveFailed": "Could not save the regional data"
+  },
+  "market": {
+    "priceFor": "Price and availability as recommended for {{country}}",
+    "notSoldIn": "This material is not sold in {{country}}",
+    "whereToBuy": "Where to buy"
   }
 }

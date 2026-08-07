@@ -49,6 +49,8 @@ import { formatTemperatureRange, getFilamentCompositionFacts } from '../utils/fi
 import { FilamentReview } from '../types/api';
 import type { Preset } from '../types/api';
 import type { AxiosError } from 'axios';
+import { useReaderCountry } from '../hooks/useReaderCountry';
+import { MarketNotice } from '../components/MarketNotice';
 
 // A grid of tiles rather than a column of rows, so a page's worth arrives at
 // once and the next arrives before the person reaches the end of this one.
@@ -172,6 +174,7 @@ const PresetTitle: React.FC<{ name: string }> = ({ name }) => {
 
 export const FilamentDetailPage: React.FC = () => {
   const { t } = useTranslation();
+  const readerCountry = useReaderCountry();
   const configuredNozzleHrc = useConfiguredNozzleHrc();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -200,8 +203,8 @@ export const FilamentDetailPage: React.FC = () => {
     isLoading: isLoadingFilament,
     error: filamentError,
   } = useQuery({
-    queryKey: ['filament', id],
-    queryFn: () => filamentsAPI.get(Number(id)),
+    queryKey: ['filament', id, readerCountry],
+    queryFn: () => filamentsAPI.get(Number(id), readerCountry),
     enabled: !!id,
   });
 
@@ -569,7 +572,15 @@ export const FilamentDetailPage: React.FC = () => {
                   </span>
                 </a>
               )}
-              {filament.price_hidden ? null : filament.price_per_kg && filament.spool_weight && filament.spool_weight !== 1000 ? (
+              <MarketNotice filament={filament} compact />
+              {/* Рынок, торгующий катушками, не должен видеть цену за килограмм:
+                  единица приходит из ячейки страны вместе с самой ценой. */}
+              {filament.price_hidden ? null : filament.price_display_unit === 'per_spool' && filament.price_per_kg ? (
+                <p className="whitespace-nowrap text-sm font-medium text-gray-300 md:text-base">
+                  {filament.price_per_kg} {currencySymbol(filament.currency)}
+                  <span className="text-gray-400">/{t('catalogPage.units.spool')}</span>
+                </p>
+              ) : filament.price_per_kg && filament.spool_weight && filament.spool_weight !== 1000 ? (
                 <>
                   <p className="whitespace-nowrap text-sm font-medium text-gray-300 md:text-base">
                     {Math.round((filament.price_per_kg * filament.spool_weight) / 1000)} {currencySymbol(filament.currency)}<span className="text-gray-400">/{Math.round(filament.spool_weight)} {t('catalogPage.units.g')}</span>

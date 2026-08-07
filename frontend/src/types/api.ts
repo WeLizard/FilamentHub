@@ -106,7 +106,12 @@ export interface Filament {
   description: string | null;
   views_count: number | null;
   scans_count: number | null;
-  qr_code: string | null; // Короткий код для QR-кода (например: "FHUB-ABC123")
+  qr_code: string | null;
+  /** Заполнено, когда сведения подставлены из ячейки страны. */
+  market_country?: string | null;
+  market_availability?: 'available' | 'unavailable' | 'unknown' | null;
+  market_note?: string | null;
+  product_url?: string | null; // Короткий код для QR-кода (например: "FHUB-ABC123")
   active: boolean;
   availability: FilamentAvailability;
   currency?: string; // валюта бренда (денормализовано в ответе)
