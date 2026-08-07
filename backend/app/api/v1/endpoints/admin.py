@@ -484,6 +484,29 @@ async def upload_brand_logo(
 # ==================== Preset Moderation ====================
 
 
+@router.get("/presets/pending/count")
+async def count_pending_presets(
+    admin: Annotated[User, Depends(get_current_admin_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict[str, int]:
+    """Сколько пресетов ждёт модерации — для метки на вкладке.
+
+    Отдельно от списка: метка рисуется при каждом открытии админки, и тянуть
+    ради неё страницу пресетов было бы расточительно.
+    """
+    del admin
+    pending = await db.scalar(
+        select(func.count())
+        .select_from(Preset)
+        .where(
+            Preset.moderation_status == PresetModerationStatus.PENDING,
+            Preset.is_official == False,
+            Preset.active == True,
+        )
+    )
+    return {"pending_count": int(pending or 0)}
+
+
 @router.get("/presets/pending", response_model=list[PresetResponse])
 async def list_pending_presets(
     admin: Annotated[User, Depends(get_current_admin_user)],

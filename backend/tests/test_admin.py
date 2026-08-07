@@ -286,3 +286,48 @@ async def test_admin_user_not_found(client: AsyncClient, db_session: AsyncSessio
 
     response = await client.post("/api/v1/admin/users/99999/activate", headers=headers)
     assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_pending_preset_count_matches_the_queue(
+    admin_client: AsyncClient,
+    db_session: AsyncSession,
+):
+    """The badge exists so the queue is not forgotten; it must say the truth."""
+    brand = Brand(name="Badge Brand", slug="badge-brand", active=True)
+    db_session.add(brand)
+    await db_session.flush()
+    filament = Filament(
+        brand_id=brand.id, name="Badge PLA", slug="badge-pla", material_type="PLA"
+    )
+    db_session.add(filament)
+    await db_session.flush()
+
+    def preset(name: str, status: PresetModerationStatus, active: bool) -> Preset:
+        return Preset(
+            filament_id=filament.id,
+            name=name,
+            is_official=False,
+            extruder_temp=205,
+            bed_temp=60,
+            moderation_status=status,
+            active=active,
+        )
+
+    db_session.add_all(
+        [
+            preset("waiting one", PresetModerationStatus.PENDING, True),
+            preset("waiting two", PresetModerationStatus.PENDING, True),
+            preset("already approved", PresetModerationStatus.APPROVED, True),
+            preset("turned down", PresetModerationStatus.REJECTED, False),
+        ]
+    )
+    await db_session.commit()
+
+    counted = await admin_client.get("/api/v1/admin/presets/pending/count")
+    assert counted.status_code == 200
+    assert counted.json()["pending_count"] == 2
+
+    listed = await admin_client.get("/api/v1/admin/presets/pending")
+    assert listed.status_code == 200
+    assert len(listed.json()) == 2

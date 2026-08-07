@@ -35,6 +35,12 @@ export function AdminPanel() {
     queryFn: () => adminAPI.listOrcaSchemaObservations({ page: 1, size: 1, status: 'new' }),
     enabled: user?.role === 'admin',
   });
+  // Модерация — очередь, а не справочник: она копится, пока на неё не смотрят.
+  const pendingPresetsQuery = useQuery({
+    queryKey: ['admin-pending-presets-count'],
+    queryFn: () => adminAPI.countPendingPresets(),
+    enabled: user?.role === 'admin',
+  });
 
   const handleLogout = () => {
     logout();
@@ -57,7 +63,7 @@ export function AdminPanel() {
     { id: 'requests' as AdminTab, label: t('adminPanel.tabs.requests'), shortLabel: t('adminPanel.shortTabs.requests'), icon: FileText, count: null },
     { id: 'brands' as AdminTab, label: t('adminPanel.tabs.brands'), shortLabel: t('adminPanel.shortTabs.brands'), icon: Building2, count: null },
     { id: 'materials' as AdminTab, label: t('adminPanel.tabs.materials'), shortLabel: t('adminPanel.shortTabs.materials'), icon: Layers, count: null },
-    { id: 'presets' as AdminTab, label: t('adminPanel.tabs.presets'), shortLabel: t('adminPanel.shortTabs.presets'), icon: CheckCircle, count: null },
+    { id: 'presets' as AdminTab, label: t('adminPanel.tabs.presets'), shortLabel: t('adminPanel.shortTabs.presets'), icon: CheckCircle, count: pendingPresetsQuery.data?.pending_count || null },
     { id: 'printers' as AdminTab, label: t('adminPanel.tabs.printers'), shortLabel: t('adminPanel.shortTabs.printers'), icon: Printer3DIcon, count: null },
     { id: 'printer-requests' as AdminTab, label: t('adminPanel.tabs.printer-requests'), shortLabel: t('adminPanel.shortTabs.printer-requests'), icon: Package, count: null },
     { id: 'users' as AdminTab, label: t('adminPanel.tabs.users'), shortLabel: t('adminPanel.shortTabs.users'), icon: Users, count: null },

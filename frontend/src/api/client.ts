@@ -1644,6 +1644,11 @@ export const adminAPI = {
     const response = await api.get<Preset[]>('/admin/presets/pending', { params });
     return response.data;
   },
+
+  countPendingPresets: async (): Promise<{ pending_count: number }> => {
+    const response = await api.get<{ pending_count: number }>('/admin/presets/pending/count');
+    return response.data;
+  },
   
   approvePreset: async (presetId: number): Promise<Preset> => {
     const response = await api.post<Preset>(`/admin/presets/${presetId}/approve`);
