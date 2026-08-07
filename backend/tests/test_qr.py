@@ -287,10 +287,10 @@ async def test_download_qr_requires_auth(client: AsyncClient, db_session: AsyncS
 
 def test_a_printed_code_reads_back_at_every_offered_size():
     """A code a brand prints must decode; the sizes are what they are offered."""
+    import cv2
     import numpy as np
     from PIL import Image
 
-    cv2 = pytest.importorskip("cv2")
     from app.services.qr_service import _qr_target_url, generate_qr_code_image
 
     detector = cv2.QRCodeDetector()
@@ -305,10 +305,10 @@ def test_a_printed_code_reads_back_at_every_offered_size():
 
 def test_a_code_stays_readable_when_printed_small():
     """A spool sticker is not a poster; the code has to survive being tiny."""
+    import cv2
     import numpy as np
     from PIL import Image
 
-    cv2 = pytest.importorskip("cv2")
     from app.services.qr_service import _qr_target_url, generate_qr_code_image
 
     detector = cv2.QRCodeDetector()

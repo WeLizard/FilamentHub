@@ -41,6 +41,9 @@ dev = [
     "pytest-asyncio~=0.24.0",
     "pytest-cov~=6.0.0",
     "aiosqlite~=0.20.0",  # For async SQLite tests (in-memory)
+    # Читает наши же QR обратно: без декодера проверка печатного кода сводится
+    # к «выглядит похоже». В production-образ не входит.
+    "opencv-python-headless~=4.10.0",
     "ruff~=0.8.0",
     "mypy~=1.13.0",
     "black~=26.3.0",
