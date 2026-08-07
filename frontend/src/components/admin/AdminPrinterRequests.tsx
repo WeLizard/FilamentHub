@@ -12,6 +12,7 @@ import { ProofFileCard } from '../ProofFileCard';
 import { ConfirmModal } from '../ConfirmModal';
 import { toast } from '../Toast';
 import { translateApiError } from '../../utils/translateApiError';
+import { formatDateTime } from '../../utils/formatDate';
 
 type PrinterRequestStatus = 'pending' | 'approved' | 'rejected';
 
@@ -165,9 +166,9 @@ export function AdminPrinterRequests() {
                   <div className="text-sm text-gray-400 space-y-1">
                     <p>{request.user_email ? `${t('adminPrinterRequests.user')}: ${request.user_email}` : `${t('adminPrinterRequests.userId')}: ${request.user_id}`}</p>
                     <p>Slug: {request.slug}</p>
-                    <p>{t('adminPrinterRequests.created')}: {new Date(request.created_at).toLocaleString('ru-RU')}</p>
+                    <p>{t('adminPrinterRequests.created')}: {formatDateTime(request.created_at)}</p>
                     {request.processed_at && (
-                      <p>{t('adminPrinterRequests.processed')}: {new Date(request.processed_at).toLocaleString('ru-RU')}</p>
+                      <p>{t('adminPrinterRequests.processed')}: {formatDateTime(request.processed_at)}</p>
                     )}
                   </div>
                 </div>
@@ -315,9 +316,9 @@ export function AdminPrinterRequests() {
 
               <div className="text-sm text-gray-400 space-y-1">
                 <p>{selectedRequest.user_email ? `${t('adminPrinterRequests.user')}: ${selectedRequest.user_email}` : `${t('adminPrinterRequests.userId')}: ${selectedRequest.user_id}`}</p>
-                <p>{t('adminPrinterRequests.created')}: {new Date(selectedRequest.created_at).toLocaleString('ru-RU')}</p>
+                <p>{t('adminPrinterRequests.created')}: {formatDateTime(selectedRequest.created_at)}</p>
                 {selectedRequest.processed_at && (
-                  <p>{t('adminPrinterRequests.processed')}: {new Date(selectedRequest.processed_at).toLocaleString('ru-RU')}</p>
+                  <p>{t('adminPrinterRequests.processed')}: {formatDateTime(selectedRequest.processed_at)}</p>
                 )}
               </div>
 

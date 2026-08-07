@@ -36,6 +36,7 @@ import {
 } from '../utils/filamentFacts';
 import type { Filament } from '../types/api';
 import type { AxiosError } from 'axios';
+import { formatDate } from '../utils/formatDate';
 
 const CATALOG_PAGE_SIZE = 24;
 
@@ -544,7 +545,7 @@ const MaterialCard: React.FC<MaterialCardProps> = ({
   const formatUpdatedAt = (value: string | null | undefined) => {
     if (!value) return '—';
     try {
-      return new Date(value).toLocaleDateString('ru-RU');
+      return formatDate(value);
     } catch {
       return '—';
     }

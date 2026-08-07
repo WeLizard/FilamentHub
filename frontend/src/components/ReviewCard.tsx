@@ -8,6 +8,7 @@ import { FilamentReview } from '../types/api';
 import { StarRating } from './StarRating';
 import { BadgeList } from './Badge';
 import type { BadgeType } from './Badge';
+import { formatDate as formatLocalDate } from '../utils/formatDate';
 
 interface ReviewCardProps {
   review: FilamentReview;
@@ -23,14 +24,8 @@ export const ReviewCard: React.FC<ReviewCardProps> = ({
   onDelete,
 }) => {
   const { t } = useTranslation();
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('ru-RU', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-    });
-  };
+  const formatDate = (dateString: string) =>
+    formatLocalDate(dateString, { year: 'numeric', month: 'long', day: 'numeric' });
 
   return (
     <div className="bg-white/10 backdrop-blur-sm rounded-xl p-6 border border-white/20 hover:border-white/30 transition-colors">

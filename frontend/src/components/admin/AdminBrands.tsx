@@ -13,6 +13,7 @@ import { externalUrl } from '../../utils/externalUrl';
 import { currentRequestLanguage } from '../../utils/requestLanguage';
 import type { Brand, BrandInviteBatchPreview, BrandInviteBatchSendResult, EmailLanguage } from '../../types/api';
 import type { AxiosError } from 'axios';
+import { formatDateTime } from '../../utils/formatDate';
 
 type FilterType = 'all' | 'verified' | 'unverified';
 
@@ -383,7 +384,7 @@ export function AdminBrands() {
                     </a>
                   )}
                   <p className="text-xs text-gray-500 mt-2">
-                    {t('adminBrands.created')}: {new Date(brand.created_at).toLocaleString('ru-RU')}
+                    {t('adminBrands.created')}: {formatDateTime(brand.created_at)}
                   </p>
                 </div>
                 <div className="flex items-center space-x-2">

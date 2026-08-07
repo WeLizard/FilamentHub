@@ -64,6 +64,7 @@ import { useDebounce } from '../hooks/useDebounce';
 import { externalUrl } from '../utils/externalUrl';
 import type { Filament, FilamentAvailability, Brand, BrandRequest, Preset } from '../types/api';
 import type { AxiosError } from 'axios';
+import { formatDate } from '../utils/formatDate';
 
 interface BrandProfilePageProps {
   onBack?: () => void; // Callback для возврата в обычный профиль
@@ -1053,7 +1054,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
                     )}
                   </div>
                   <div className="flex items-center justify-between text-xs text-gray-400">
-                    <span>{new Date(preset.created_at).toLocaleDateString('ru-RU')}</span>
+                    <span>{formatDate(preset.created_at)}</span>
                     <div className="flex items-center space-x-2">
                       {/* Переключатель синхронизации - показываем для всех пресетов бренда */}
                       <PresetSyncToggle preset={preset} size="sm" className="p-1" />
@@ -2846,7 +2847,7 @@ const BrandSelectionForm: React.FC<BrandSelectionFormProps> = ({ onClose }) => {
                     )}
                   </div>
                   <p className="text-gray-400 text-sm">
-                    {t('brandProfile.submitted')}: {new Date(request.created_at).toLocaleDateString('ru-RU')}
+                    {t('brandProfile.submitted')}: {formatDate(request.created_at)}
                   </p>
                   {request.status === 'pending' && (
                     <p className="text-gray-300 text-xs mt-2 italic">

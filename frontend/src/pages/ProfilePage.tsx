@@ -86,6 +86,7 @@ import { BrandProfilePage } from './BrandProfilePage';
 import { CalculatorPage } from './CalculatorPage';
 import { CrmWorkspacePage } from './CrmWorkspacePage';
 import type { Preset, PrinterProfile, PrintProfile, Filament } from '../types/api';
+import { formatDate, formatDateTime as formatLocalDateTime } from '../utils/formatDate';
 
 type CalculatorWorkspaceMode = 'calculator' | 'history' | 'quotes' | 'orders' | 'customers';
 
@@ -692,7 +693,7 @@ export const ProfilePage: React.FC = () => {
   });
 
   const formatDateTime = (value: string) =>
-    new Date(value).toLocaleString('ru-RU', {
+    formatLocalDateTime(value, {
       day: '2-digit',
       month: '2-digit',
       year: 'numeric',
@@ -1811,7 +1812,7 @@ const RecentPresets: React.FC<RecentPresetsProps> = ({ presets }) => {
             <div className="text-right">
               <p className="text-green-400 font-semibold">{preset.usage_count} {t('profilePage.usages')}</p>
               <p className="text-gray-400 text-sm">
-                {new Date(preset.created_at).toLocaleDateString('ru-RU')}
+                {formatDate(preset.created_at)}
               </p>
             </div>
           </div>

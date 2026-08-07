@@ -9,6 +9,7 @@ import { adminAPI } from '../../api/client';
 import { ProofFileCard } from '../ProofFileCard';
 import type { BrandRequest, BrandRequestStatus } from '../../types/api';
 import { ConfirmDeleteModal } from '../ConfirmDeleteModal';
+import { formatDateTime } from '../../utils/formatDate';
 export function AdminBrandRequests() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -163,9 +164,9 @@ export function AdminBrandRequests() {
                     </div>
                     <div className="text-sm text-gray-400 space-y-1">
                       <p>{request.user_email ? t('adminBrandRequests.user_email', { email: request.user_email }) : t('adminBrandRequests.user_id', { id: request.user_id })}</p>
-                      <p>{t('adminBrandRequests.created_at', { date: new Date(request.created_at).toLocaleString('ru-RU') })}</p>
+                      <p>{t('adminBrandRequests.created_at', { date: formatDateTime(request.created_at) })}</p>
                       {request.processed_at && (
-                        <p>{t('adminBrandRequests.processed_at', { date: new Date(request.processed_at).toLocaleString('ru-RU') })}</p>
+                        <p>{t('adminBrandRequests.processed_at', { date: formatDateTime(request.processed_at) })}</p>
                       )}
                     </div>
                   </div>
@@ -251,9 +252,9 @@ export function AdminBrandRequests() {
               </div>
               
               <div className="text-sm text-gray-400">
-                <p>{t('adminBrandRequests.created_at_display', { date: new Date(selectedRequest.created_at).toLocaleString('ru-RU') })}</p>
+                <p>{t('adminBrandRequests.created_at_display', { date: formatDateTime(selectedRequest.created_at) })}</p>
                 {selectedRequest.processed_at && (
-                  <p>{t('adminBrandRequests.processed_at_display', { date: new Date(selectedRequest.processed_at).toLocaleString('ru-RU') })}</p>
+                  <p>{t('adminBrandRequests.processed_at_display', { date: formatDateTime(selectedRequest.processed_at) })}</p>
                 )}
               </div>
 

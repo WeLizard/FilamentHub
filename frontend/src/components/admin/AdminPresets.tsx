@@ -11,6 +11,7 @@ const CreatePresetModal = lazy(() =>
   import('../CreatePresetModal').then(m => ({ default: m.CreatePresetModal }))
 );
 import { translateApiError } from '../../utils/translateApiError';
+import { formatDateTime } from '../../utils/formatDate';
 
 type ModerationFlag = {
   code?: string;
@@ -156,7 +157,7 @@ export function AdminPresets() {
                       <div>{t('adminPresets.usages')}: {preset.usage_count}</div>
                     </div>
                     <p className="text-xs text-gray-500 mt-2">
-                      {t('adminPresets.created')}: {new Date(preset.created_at).toLocaleString('ru-RU')}
+                      {t('adminPresets.created')}: {formatDateTime(preset.created_at)}
                     </p>
                     {moderationReason?.code && (
                       <div className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3">
