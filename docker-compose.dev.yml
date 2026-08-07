@@ -7,6 +7,7 @@ services:
   postgres-dev:
     image: postgres:15-alpine
     container_name: filamenthub_postgres_dev
+    restart: unless-stopped
     command: postgres -c max_connections=200 -c log_checkpoints=off -c log_min_messages=warning
     cpuset: "0,1"
     mem_limit: 1g
@@ -29,6 +30,7 @@ services:
   redis-dev:
     image: redis:7-alpine
     container_name: filamenthub_redis_dev
+    restart: unless-stopped
     command: redis-server --requirepass devredis123
     cpuset: "0,1"
     mem_limit: 256m
@@ -47,6 +49,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: filamenthub_backend_dev
+    restart: unless-stopped
     cpuset: "0,1"
     mem_limit: 2g
     volumes:
@@ -93,6 +96,7 @@ services:
   frontend-dev:
     image: node:20-alpine
     container_name: filamenthub_frontend_dev
+    restart: unless-stopped
     # Kept off the mirrored pair: production serves the built site from nginx and
     # has no bundler running, so letting one compete for those cores here would
     # tax every measurement with work the server never does.
