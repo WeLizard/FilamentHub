@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, Float, ForeignKey, Text, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
@@ -60,10 +60,10 @@ class FilamentReview(Base):
 
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
-        default=func.now(), server_default=func.now()
+        DateTime(timezone=True), default=func.now(), server_default=func.now()
     )
     updated_at: Mapped[datetime] = mapped_column(
-        default=func.now(), onupdate=func.now(), server_default=func.now()
+        DateTime(timezone=True), default=func.now(), onupdate=func.now(), server_default=func.now()
     )
 
     # Relationships

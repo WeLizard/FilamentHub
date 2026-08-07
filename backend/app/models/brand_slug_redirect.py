@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import ForeignKey, String
+from sqlalchemy import DateTime, ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
@@ -24,7 +24,7 @@ class BrandSlugRedirect(Base):
     )
     old_slug: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
     created_at: Mapped[datetime] = mapped_column(
-        default=func.now(), server_default=func.now(), nullable=False
+        DateTime(timezone=True), default=func.now(), server_default=func.now(), nullable=False
     )
 
     brand: Mapped["Brand"] = relationship()

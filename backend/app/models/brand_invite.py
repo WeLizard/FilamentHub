@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
@@ -65,15 +65,15 @@ class BrandInvite(Base):
     reply_token: Mapped[str | None] = mapped_column(
         String(64), unique=True, index=True, nullable=True
     )
-    sent_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     invited_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     accepted_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
-    accepted_at: Mapped[datetime | None] = mapped_column(nullable=True)
-    revoked_at: Mapped[datetime | None] = mapped_column(nullable=True)
-    expires_at: Mapped[datetime] = mapped_column(nullable=False)
+    accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
-    created_at: Mapped[datetime] = mapped_column(default=func.now(), server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=func.now(), server_default=func.now())
 
     invited_by: Mapped["User | None"] = relationship("User", foreign_keys=[invited_by_id])
     accepted_by: Mapped["User | None"] = relationship("User", foreign_keys=[accepted_by_id])

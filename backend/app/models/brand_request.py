@@ -4,7 +4,7 @@ from datetime import datetime
 from enum import Enum
 from typing import TYPE_CHECKING
 
-from sqlalchemy import ForeignKey, Integer, String, Text
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
@@ -92,17 +92,17 @@ class BrandRequest(Base):
 
     # Admin who processed the request (optional)
     processed_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
-    processed_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Rejection reason (if rejected)
     rejection_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
-        default=func.now(), server_default=func.now()
+        DateTime(timezone=True), default=func.now(), server_default=func.now()
     )
     updated_at: Mapped[datetime] = mapped_column(
-        default=func.now(), onupdate=func.now(), server_default=func.now()
+        DateTime(timezone=True), default=func.now(), onupdate=func.now(), server_default=func.now()
     )
 
     # Relationships
