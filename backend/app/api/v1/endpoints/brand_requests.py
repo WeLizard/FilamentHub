@@ -230,6 +230,7 @@ async def create_brand_request(
         user_id=current_user.id,
         request_type=data.request_type,
         brand_id=data.brand_id,
+        country=data.country.upper() if data.country else None,
         new_brand_name=data.new_brand_name,
         new_brand_slug=resolved_new_brand_slug,
         new_brand_description=data.new_brand_description,

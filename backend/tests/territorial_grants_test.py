@@ -276,3 +276,67 @@ async def test_an_outsider_manages_nothing(client: AsyncClient, db_session: Asyn
         json={"country": "RU"},
     )
     assert denied.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_an_application_names_its_country_and_approval_grants_it(
+    client: AsyncClient, admin_client: AsyncClient, db_session: AsyncSession
+):
+    """Заявитель называет страну сам; одобрение превращает её в право."""
+    from sqlalchemy import select
+
+    from app.models.brand_request import BrandRequest
+    from app.models.organization import Organization, OrganizationMembership
+
+    brand = Brand(name="Applied Brand", slug="applied-brand", active=True)
+    db_session.add(brand)
+    await db_session.flush()
+
+    organization = Organization(name="Applicant Org", slug="applicant-org")
+    db_session.add(organization)
+    await db_session.flush()
+
+    applicant = User(
+        email="claimant@example.com",
+        username="claimant",
+        password_hash=get_password_hash("testpassword123"),
+        role=UserRole.USER,
+        active=True,
+        email_verified=True,
+        terms_version_accepted=CURRENT_TERMS_VERSION,
+        personal_data_consent_version=CURRENT_PERSONAL_DATA_CONSENT_VERSION,
+    )
+    db_session.add(applicant)
+    await db_session.flush()
+    db_session.add(
+        OrganizationMembership(
+            organization_id=organization.id,
+            user_id=applicant.id,
+            role=OrganizationMemberRole.OWNER,
+            active=True,
+            all_brands=True,
+        )
+    )
+    request = BrandRequest(
+        user_id=applicant.id,
+        request_type="join",
+        brand_id=brand.id,
+        country="RU",
+        status="pending",
+    )
+    db_session.add(request)
+    await db_session.commit()
+    await db_session.refresh(request)
+
+    approved = await admin_client.patch(
+        f"/api/v1/admin/brand-requests/{request.id}", json={"status": "approved"}
+    )
+    assert approved.status_code == 200
+
+    grant = await db_session.scalar(
+        select(BrandTerritorialGrant).where(BrandTerritorialGrant.brand_id == brand.id)
+    )
+    assert grant is not None
+    assert grant.country == "RU"
+    assert grant.status == GrantStatus.active
+    assert grant.source == GrantSource.application

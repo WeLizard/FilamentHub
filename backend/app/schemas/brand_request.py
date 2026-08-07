@@ -21,6 +21,14 @@ class BrandRequestCreate(BaseModel):
 
     request_type: BrandRequestType = Field(..., description="Тип заявки: join или create")
     brand_id: int | None = Field(None, gt=0, description="ID бренда (для JOIN заявок)")
+    country: str | None = Field(
+        None,
+        pattern=r"^[A-Za-z]{2}$",
+        description=(
+            "Страна, которую заявитель берётся вести. Пусто — просит глобальную "
+            "область, а она выдаётся отдельным решением."
+        ),
+    )
 
     # Для CREATE заявок
     new_brand_name: str | None = Field(None, max_length=100)
@@ -49,6 +57,7 @@ class BrandRequestCreate(BaseModel):
 class BrandRequestResponse(BaseModel):
     """Schema for BrandRequest response."""
 
+    country: str | None = None
     id: int
     user_id: int | None = None
     user_email: str | None = None  # Email пользователя для админки

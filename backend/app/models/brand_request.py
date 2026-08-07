@@ -64,6 +64,10 @@ class BrandRequest(Base):
     new_brand_website: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     # Request message (optional)
+    # Страна, на которую претендует заявитель. Пусто — просит глобальную
+    # область, и она выдаётся только отдельным решением.
+    country: Mapped[str | None] = mapped_column(String(2), nullable=True, index=True)
+
     message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Подтверждающие документы для заявки (структурированные поля для подтверждающих документов)

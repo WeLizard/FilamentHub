@@ -49,6 +49,7 @@ from app.db.session import get_db
 # BadWord импортируется лениво в функциях, где используется
 from app.models.brand import Brand
 from app.models.brand_request import BrandRequest, BrandRequestStatus
+from app.models.brand_territorial_grant import GrantSource
 from app.models.orca_schema_observation import OrcaSchemaObservation
 from app.models.organization import OrganizationMemberRole, OrganizationMembership
 from app.models.preset import Preset, PresetModerationStatus
@@ -101,6 +102,7 @@ from app.services.file_service import (
     get_upload_root_dir,
     normalize_brand_logo_upload,
 )
+from app.services.grant_issuing import issue_territorial_grant
 from app.services.maintenance_service import (
     get_maintenance_info,
     set_maintenance_mode,
@@ -1117,6 +1119,18 @@ async def update_brand_request(
                     granted_by_id=admin.id,
                 )
                 await backfill_brand_qr_codes(brand, db)
+
+            # Одобрение заявки — один из двух входов к территориальному праву;
+            # страну человек назвал сам, когда подавал.
+            await db.flush()
+            await issue_territorial_grant(
+                db,
+                brand=brand,
+                user=user,
+                country=request.country,
+                source=GrantSource.application,
+                approved_by_id=admin.id,
+            )
 
         elif request.request_type == BrandRequestType.CREATE:
             # Для CREATE: создаем новый бренд и привязываем пользователя
