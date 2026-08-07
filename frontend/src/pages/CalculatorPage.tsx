@@ -54,7 +54,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useHeaderVisible } from '../hooks/useHeaderVisible';
 import { USER_PREFERENCES_QUERY_KEY } from '../hooks/useUserCurrency';
 import { translateApiError } from '../utils/translateApiError';
-import { currencySymbol, normalizeCurrency, CURRENCY_CODES, defaultCurrencyForLanguage } from '../utils/currency';
+import { currencySymbol, normalizeCurrency, CURRENCY_CODES, defaultCurrencyForCountry } from '../utils/currency';
 import {
   findPrioritizedMaterialMatch,
   pickPrimaryParsedMaterial,
@@ -1778,7 +1778,7 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
     const nextProfile: QuoteProfileState = {
       ...DEFAULT_QUOTE_PROFILE,
       ...stored,
-      currency: normalizeCurrency(stored.currency || defaultCurrencyForLanguage(i18n.language)),
+      currency: normalizeCurrency(stored.currency || defaultCurrencyForCountry(user?.country, i18n.language)),
       sellerName:
         typeof stored.sellerName === 'string' && stored.sellerName.trim()
           ? stored.sellerName
