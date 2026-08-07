@@ -12,6 +12,7 @@ from app.db.base import Base
 
 if TYPE_CHECKING:
     from app.models.brand import Brand
+    from app.models.filament_country_cell import FilamentCountryCell
     from app.models.filament_line import FilamentLine
     from app.models.filament_review import FilamentReview
     from app.models.preset import Preset
@@ -146,6 +147,9 @@ class Filament(Base):
     # Relationships
     brand: Mapped["Brand"] = relationship("Brand", back_populates="filaments")
     line: Mapped["FilamentLine | None"] = relationship("FilamentLine", back_populates="filaments")
+    country_cells: Mapped[list["FilamentCountryCell"]] = relationship(
+        "FilamentCountryCell", back_populates="filament", cascade="all, delete-orphan"
+    )
     presets: Mapped[list["Preset"]] = relationship(
         "Preset", back_populates="filament", cascade="all, delete-orphan"
     )

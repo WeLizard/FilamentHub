@@ -10,6 +10,7 @@ from sqlalchemy.sql import func
 from app.db.base import Base
 
 if TYPE_CHECKING:
+    from app.models.brand_country_cell import BrandCountryCell
     from app.models.filament import Filament
     from app.models.material_mapping import MaterialMapping
     from app.models.organization import Organization
@@ -78,6 +79,9 @@ class Brand(Base):
     )
 
     # Relationships
+    country_cells: Mapped[list["BrandCountryCell"]] = relationship(
+        "BrandCountryCell", back_populates="brand", cascade="all, delete-orphan"
+    )
     filaments: Mapped[list["Filament"]] = relationship(
         "Filament", back_populates="brand", cascade="all, delete-orphan"
     )
