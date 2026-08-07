@@ -10,8 +10,6 @@ class BrandBase(BaseModel):
 
     name: str = Field(..., min_length=1, max_length=100)
     slug: str = Field(..., min_length=1, max_length=100)
-    # Откуда бренд родом (ISO 3166-1 alpha-2). Не означает, где он продаётся.
-    country: str | None = Field(None, pattern=r"^[A-Z]{2}$")
     description: str | None = None
     website: str | None = None
     logo_url: str | None = None
@@ -34,7 +32,6 @@ class BrandUpdate(BaseModel):
 
     name: str | None = Field(None, min_length=1, max_length=100)
     slug: str | None = Field(None, min_length=1, max_length=100)
-    country: str | None = Field(None, pattern=r"^[A-Z]{2}$")
     description: str | None = None
     website: str | None = None
     logo_url: str | None = None

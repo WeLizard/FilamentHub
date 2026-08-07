@@ -513,7 +513,7 @@ export const brandTeamAPI = {
 
 // Brands API
 export const brandsAPI = {
-  list: async (params?: { page?: number; size?: number; active_only?: boolean; search?: string; country?: string }) => {
+  list: async (params?: { page?: number; size?: number; active_only?: boolean; search?: string }) => {
     const response = await api.get<ListResponse<Brand>>('/brands/', { params });
     return response.data;
   },
@@ -540,7 +540,7 @@ export const brandsAPI = {
     return response.data;
   },
 
-  update: async (id: number, data: { name?: string; country?: string | null; description?: string | null; website?: string | null; logo_url?: string | null; logo_bg?: string | null; social_media_urls?: string[] | null; shop_links?: { platform: string; url: string }[] | null; price_hidden?: boolean; currency?: string }) => {
+  update: async (id: number, data: { name?: string; description?: string | null; website?: string | null; logo_url?: string | null; logo_bg?: string | null; social_media_urls?: string[] | null; shop_links?: { platform: string; url: string }[] | null; price_hidden?: boolean; currency?: string }) => {
     const response = await api.patch<Brand>(`/brands/${id}`, data);
     return response.data;
   },
@@ -1522,7 +1522,6 @@ export const adminAPI = {
 
   updateBrand: async (id: number, data: {
     name?: string;
-    country?: string | null;
     description?: string | null;
     website?: string | null;
     logo_url?: string | null;

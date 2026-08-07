@@ -66,11 +66,6 @@ async def list_brands(
     size: int = Query(50, ge=1, le=100),
     active_only: bool = Query(True),
     search: str | None = Query(None, description="Поиск по названию бренда"),
-    country: str | None = Query(
-        None,
-        pattern=r"^[A-Za-z]{2}$",
-        description="Страна происхождения бренда (ISO 3166-1 alpha-2). Не означает, где бренд продаётся.",
-    ),
 ) -> BrandListResponse:
     """Получить список производителей."""
 
@@ -84,9 +79,6 @@ async def list_brands(
         search_term = like_pattern(search)
         query = query.where(Brand.name.ilike(search_term))
 
-    if country:
-        query = query.where(Brand.country == country.upper())
-
     # Count total
     count_query = select(func.count()).select_from(Brand)
     if active_only:
@@ -94,8 +86,6 @@ async def list_brands(
     if search:
         search_term = like_pattern(search)
         count_query = count_query.where(Brand.name.ilike(search_term))
-    if country:
-        count_query = count_query.where(Brand.country == country.upper())
     total_result = await db.execute(count_query)
     total = total_result.scalar() or 0
 

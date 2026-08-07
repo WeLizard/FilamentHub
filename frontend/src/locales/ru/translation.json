@@ -4435,10 +4435,7 @@
       "spb": "Санкт-Петербург",
       "novosibirsk": "Новосибирск"
     },
-    "rubPerKg": "₽/кг",
-    "originCountryLabel": "Страна происхождения",
-    "originCountryNotSet": "Не указана",
-    "originCountryHint": "Откуда бренд родом. Это не список стран, где он продаётся."
+    "rubPerKg": "₽/кг"
   },
   "viewPreset": {
     "yes": "Да",
@@ -4958,9 +4955,7 @@
     "invalidUrl": "Некорректный формат URL веб-сайта",
     "uploadLogo": "Загрузить",
     "uploadError": "Ошибка загрузки логотипа",
-    "logoUrlPlaceholder": "URL или загрузите файл",
-    "originCountry": "Страна происхождения",
-    "originCountryNotSet": "Не указана"
+    "logoUrlPlaceholder": "URL или загрузите файл"
   },
   "adminMaterials": {
     "title": "Материалы каталога",
