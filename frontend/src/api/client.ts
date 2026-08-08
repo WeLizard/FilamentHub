@@ -575,9 +575,14 @@ export const brandsAPI = {
     return response.data;
   },
 
-  get: async (identifier: number | string, includeEmployeesCount?: boolean) => {
+  get: async (identifier: number | string, includeEmployeesCount?: boolean, country?: string) => {
     const response = await api.get<Brand>(`/brands/${encodeURIComponent(String(identifier))}`, {
-      params: includeEmployeesCount ? { include_employees_count: true } : undefined 
+      params: {
+        ...(includeEmployeesCount ? { include_employees_count: true } : {}),
+        // Страна обязана быть в адресе: общий кеш каталога ключуется вместе со
+        // строкой запроса, иначе прогретый ответ отдаст чужие данные.
+        ...(country ? { country } : {}),
+      },
     });
     return response.data;
   },

@@ -13,6 +13,7 @@ import {
   Search,
 } from 'lucide-react';
 import { brandsAPI, filamentsAPI, filamentReviewsAPI } from '../api/client';
+import { useReaderCountry } from '../hooks/useReaderCountry';
 import { currencySymbol } from '../utils/currency';
 import { FilamentPreview } from '../components/FilamentPreview';
 import { Dropdown } from '../components/Dropdown';
@@ -28,6 +29,7 @@ export const BrandDetailPage: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [materialTypeFilter, setMaterialTypeFilter] = useState<string | null>(null);
   const [isBrandLogoVisible, setIsBrandLogoVisible] = useState(false);
+  const readerCountry = useReaderCountry();
 
   // Загружаем бренд
   const {
@@ -35,8 +37,8 @@ export const BrandDetailPage: React.FC = () => {
     isLoading: isLoadingBrand,
     error: brandError,
   } = useQuery({
-    queryKey: ['brand', identifier],
-    queryFn: () => brandsAPI.get(identifier!),
+    queryKey: ['brand', identifier, readerCountry],
+    queryFn: () => brandsAPI.get(identifier!, undefined, readerCountry),
     enabled: !!identifier,
   });
 
@@ -46,7 +48,7 @@ export const BrandDetailPage: React.FC = () => {
     isLoading: isLoadingFilaments,
     error: filamentsError,
   } = useQuery({
-    queryKey: ['brand-filaments', brand?.id, searchQuery, materialTypeFilter],
+    queryKey: ['brand-filaments', brand?.id, searchQuery, materialTypeFilter, readerCountry],
     queryFn: () =>
       filamentsAPI.list({
         page: 1,
@@ -54,6 +56,7 @@ export const BrandDetailPage: React.FC = () => {
         brand_id: brand!.id,
         search: searchQuery || undefined,
         material_type: materialTypeFilter || undefined,
+        country: readerCountry,
       }),
     enabled: !!brand?.id,
   });
