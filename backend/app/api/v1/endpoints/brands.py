@@ -38,10 +38,10 @@ from app.models.user import User, UserRole
 from app.models.user_saved_preset import UserSavedPreset
 from app.models.user_spool import UserSpool
 from app.schemas.brand import (
-    BrandCreate,
     BrandAnalyticsCountryItem,
     BrandAnalyticsFilamentItem,
     BrandAnalyticsResponse,
+    BrandCreate,
     BrandListResponse,
     BrandResponse,
     BrandSlugSuggestionResponse,
@@ -54,12 +54,12 @@ from app.services.brand_slug_service import (
     resolve_brand_identifier,
     suggest_brand_slug,
 )
+from app.services.country_market import apply_brand_cell, brand_cell_for
 from app.services.file_service import (
     BRAND_LOGO_ALLOWED_EXTENSIONS,
     get_upload_root_dir,
     normalize_brand_logo_upload,
 )
-from app.services.country_market import apply_brand_cell, brand_cell_for
 from app.services.organization_access import can_view_private_brand_data
 from app.services.territorial_access import active_grants_for, can_edit_brand_common
 

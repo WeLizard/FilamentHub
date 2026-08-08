@@ -28,6 +28,7 @@ from app.db.session import get_db
 from app.models.brand import Brand
 from app.models.brand_invite import BrandInvite
 from app.models.brand_request import BrandRequest, BrandRequestStatus, BrandRequestType
+from app.models.brand_territorial_grant import BrandTerritorialGrant, GrantStatus
 from app.models.organization import (
     Organization,
     OrganizationBrandAccess,
@@ -35,7 +36,6 @@ from app.models.organization import (
     OrganizationMembership,
 )
 from app.models.user import User, UserRole
-from app.models.brand_territorial_grant import BrandTerritorialGrant, GrantStatus
 from app.schemas.brand_team import (
     BrandPresenceResponse,
     BrandTeamWorkspaceResponse,
@@ -52,7 +52,6 @@ from app.services.notification_service import (
     notify_brand_request_rejected,
 )
 from app.services.organization_access import (
-    get_brand_membership,
     get_working_membership,
     grant_brand_editor_membership,
 )

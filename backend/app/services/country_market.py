@@ -17,8 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.brand_country_cell import BrandCountryCell
-from app.models.filament_country_cell import FilamentCountryCell
-from app.models.filament_country_cell import CountryAvailability
+from app.models.filament_country_cell import CountryAvailability, FilamentCountryCell
 
 # Поля ячейки, которые подменяют общие. Ключ — что отдаём наружу.
 _SUBSTITUTED = (

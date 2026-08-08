@@ -22,6 +22,7 @@ from app.core.errors import (
     ERR_BRAND_REQUEST_PENDING_JOIN,
     ERR_BRAND_SLUG_EXISTS,
     ERR_BRAND_SLUG_INVALID,
+    ERR_COUNTRY_REQUIRED,
     ERR_DELETE_OWN_FILES_ONLY,
     ERR_DOCUMENTS_REQUIRED,
     ERR_FILE_NOT_FOUND_IN_REQUEST,
@@ -35,8 +36,8 @@ from app.core.errors import (
 )
 from app.db.session import get_db
 from app.models.brand import Brand
-from app.models.brand_territorial_grant import GrantSource
 from app.models.brand_request import BrandRequest, BrandRequestStatus, BrandRequestType
+from app.models.brand_territorial_grant import GrantSource
 from app.models.organization import OrganizationMemberRole, OrganizationMembership
 from app.models.user import User, UserRole
 from app.schemas.brand_request import (

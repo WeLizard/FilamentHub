@@ -22,6 +22,7 @@ from app.db.session import get_db
 from app.models.filament import Filament
 from app.models.user import User
 from app.schemas.filament import FilamentResponse
+from app.services.filament_analytics import event_country, record_filament_event
 from app.services.qr_service import (
     ensure_filament_qr_code,
     generate_branded_qr_code_image,
@@ -30,7 +31,6 @@ from app.services.qr_service import (
     generate_qr_code_svg,
     get_qr_code_path,
 )
-from app.services.filament_analytics import event_country, record_filament_event
 
 router = APIRouter(prefix="/qr", tags=["qr"])
 

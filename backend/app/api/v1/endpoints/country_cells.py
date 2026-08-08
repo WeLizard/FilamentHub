@@ -39,6 +39,7 @@ from app.schemas.country_cell import (
     FilamentCountryCellResponse,
     FilamentCountryCellUpdate,
 )
+from app.services.country_market import filament_cell_has_public_data
 from app.services.territorial_access import (
     active_grants_for,
     brand_drafts_visible_to,
@@ -48,7 +49,6 @@ from app.services.territorial_access import (
     can_manage_filament_country,
     filament_drafts_visible_to,
 )
-from app.services.country_market import filament_cell_has_public_data
 
 router = APIRouter(tags=["country-cells"])
 

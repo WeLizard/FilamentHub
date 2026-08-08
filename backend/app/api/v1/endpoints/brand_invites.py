@@ -57,9 +57,9 @@ from app.schemas.brand_invite import (
     BrandInvitePublicResponse,
 )
 from app.services.brand_slug_service import suggest_brand_slug
-from app.services.grant_issuing import issue_territorial_grant
 from app.services.email_service import send_brand_invite_email, send_brand_team_invite_email
 from app.services.email_validator import is_personal_email, validate_email_domain
+from app.services.grant_issuing import issue_territorial_grant
 from app.services.qr_service import backfill_brand_qr_codes
 from app.services.slug_service import generate_unique_slug
 

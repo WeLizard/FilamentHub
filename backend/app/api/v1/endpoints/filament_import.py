@@ -26,14 +26,14 @@ from app.schemas.filament import (
     FilamentImportRowResult,
     normalize_ral_code,
 )
+from app.services.country_market import filament_cell_has_public_data
+from app.services.preset_moderation import validate_text_field
+from app.services.slug_service import generate_unique_slug
 from app.services.territorial_access import (
     can_create_for_brand,
     can_edit_filament_common,
     can_manage_filament_country,
 )
-from app.services.preset_moderation import validate_text_field
-from app.services.slug_service import generate_unique_slug
-from app.services.country_market import filament_cell_has_public_data
 
 router = APIRouter(prefix="/filament-import", tags=["filament-import"])
 
