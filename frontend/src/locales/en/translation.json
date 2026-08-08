@@ -1660,9 +1660,7 @@
       "accepted": "Accepted",
       "expired": "Expired",
       "revoked": "Revoked"
-    },
-    "noCountry": "No country",
-    "countryHint": "A country lets the member maintain that market's details. Without one they get team access only."
+    }
   },
   "palette": {
     "lineLabel": "Product line",
@@ -6560,5 +6558,23 @@
     "saved": "Country details saved",
     "removed": "Country details removed",
     "saveFailed": "Could not save the country details"
+  },
+  "brandReps": {
+    "title": "Representatives by country",
+    "explained": "A representative is a separate company with its own workspace and team. They maintain prices and availability in their country only; the common brand and product details stay with you.",
+    "emailPlaceholder": "Representative's email",
+    "countryPlaceholder": "Country",
+    "companyPlaceholder": "Company name",
+    "invite": "Invite",
+    "copyLink": "Copy link",
+    "invited": "Invitation sent",
+    "linkCopied": "Link copied",
+    "empty": "No representatives yet",
+    "everywhere": "All countries",
+    "revoke": "Remove",
+    "revokeTitle": "Remove the representative",
+    "revokeMessage": "{{target}} loses access to their country immediately. What they filled in stays.",
+    "revoked": "Representative removed",
+    "actionError": "The action could not be completed"
   }
 }

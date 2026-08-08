@@ -6,6 +6,7 @@ Russia и Creality Germany входят в него, каждый со свое�
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import create_access_token, get_password_hash
@@ -78,6 +79,24 @@ async def _representative(
     await db.commit()
 
     return {"Authorization": f"Bearer {create_access_token({'sub': user.email})}"}
+
+
+async def _outsider(db: AsyncSession, slug: str) -> tuple[User, dict[str, str]]:
+    """Человек со стороны: ни организации, ни прав на бренд."""
+    user = User(
+        email=f"{slug}@example.com",
+        username=f"user_{slug}",
+        password_hash=get_password_hash("testpassword123"),
+        role=UserRole.USER,
+        active=True,
+        email_verified=True,
+        terms_version_accepted=CURRENT_TERMS_VERSION,
+        personal_data_consent_version=CURRENT_PERSONAL_DATA_CONSENT_VERSION,
+    )
+    db.add(user)
+    await db.commit()
+    await db.refresh(user)
+    return user, {"Authorization": f"Bearer {create_access_token({'sub': user.email})}"}
 
 
 async def _brand_with_one_filament(db: AsyncSession) -> tuple[Brand, Filament]:
@@ -394,81 +413,123 @@ async def test_a_representative_reads_back_their_own_draft(
 
 
 @pytest.mark.asyncio
-async def test_an_invitation_carries_the_country_it_offers(
-    client: AsyncClient, admin_client: AsyncClient, db_session: AsyncSession
-):
-    """Приглашение — второй вход к территории, и область называют в нём."""
-    brand, filament = await _brand_with_one_filament(db_session)
-    owner = await _representative(db_session, brand, "inv-owner", None, owns_workspace=True)
-    await db_session.commit()
-
-    invite = await client.post(
-        f"/api/v1/brands/{brand.id}/team/invites",
-        headers=owner,
-        json={"email": "kz-rep@example.com", "role": "editor", "country": "KZ",
-              "send_email": False},
-    )
-    assert invite.status_code == 201, invite.text
-    assert invite.json()["country"] == "KZ"
-
-
-@pytest.mark.asyncio
-async def test_an_invitation_without_a_country_grants_no_territory(
+async def test_a_representative_is_a_separate_company_not_an_employee(
     client: AsyncClient, db_session: AsyncSession
 ):
-    """Молчание об области не означает «весь мир»: права не возникает вовсе."""
-    brand, _ = await _brand_with_one_filament(db_session)
-    owner = await _representative(db_session, brand, "inv-quiet", None, owns_workspace=True)
-    await db_session.commit()
-
-    invite = await client.post(
-        f"/api/v1/brands/{brand.id}/team/invites",
-        headers=owner,
-        json={"email": "quiet@example.com", "role": "editor", "send_email": False},
-    )
-    assert invite.status_code == 201, invite.text
-    assert invite.json()["country"] is None
-
-
-@pytest.mark.asyncio
-async def test_accepting_an_invitation_hands_over_that_country(
-    client: AsyncClient, db_session: AsyncSession
-):
-    """Принятое приглашение открывает названную страну и только её."""
+    """Головной офис зовёт компанию на страну, и она не входит в его организацию."""
     brand, filament = await _brand_with_one_filament(db_session)
-    owner = await _representative(db_session, brand, "inv-grant", None, owns_workspace=True)
+    headquarters = await _representative(db_session, brand, "hq", None, owns_workspace=True)
+    _, guest = await _outsider(db_session, "kz-company")
+    await db_session.refresh(brand)
+    headquarters_organization_id = brand.organization_id
 
-    guest = User(
-        email="kz-guest@example.com",
-        username="kz_guest",
-        password_hash=get_password_hash("testpassword123"),
-        role=UserRole.USER,
-        active=True,
-        email_verified=True,
-        terms_version_accepted=CURRENT_TERMS_VERSION,
-        personal_data_consent_version=CURRENT_PERSONAL_DATA_CONSENT_VERSION,
+    invited = await client.post(
+        f"/api/v1/brands/{brand.id}/representatives/invites",
+        headers=headquarters,
+        json={
+            "email": "kz-company@example.com",
+            "country": "KZ",
+            "organization_name": "TestBrand Kazakhstan",
+            "send_email": False,
+        },
     )
-    db_session.add(guest)
-    await db_session.commit()
-    guest_headers = {"Authorization": f"Bearer {create_access_token({'sub': guest.email})}"}
+    assert invited.status_code == 201, invited.text
+    token = invited.json()["invite_url"].rsplit("/", 1)[-1]
 
-    invite = await client.post(
-        f"/api/v1/brands/{brand.id}/team/invites",
-        headers=owner,
-        json={"email": guest.email, "role": "editor", "country": "KZ", "send_email": False},
-    )
-    assert invite.status_code == 201, invite.text
-    token = invite.json()["invite_url"].rsplit("/", 1)[-1]
-
-    accepted = await client.post(f"/api/v1/brand-invites/{token}/accept", headers=guest_headers, json={})
+    accepted = await client.post(f"/api/v1/brand-invites/{token}/accept", headers=guest, json={})
     assert accepted.status_code == 200, accepted.text
+    representative_organization_id = accepted.json()["organization_id"]
 
-    mine = await client.post(
+    # Главный инвариант: своя организация, не организация головного офиса.
+    assert representative_organization_id != headquarters_organization_id
+
+    # Казахстан открыт.
+    allowed = await client.post(
         f"/api/v1/filaments/{filament.id}/country-cells",
-        headers=guest_headers,
+        headers=guest,
         json={"country": "KZ", "price": 9900, "currency": "KZT", "published": True},
     )
-    assert mine.status_code == 201, mine.text
+    assert allowed.status_code == 201, allowed.text
 
-    territories = (await client.get(f"/api/v1/brands/{brand.id}/my-territories", headers=guest_headers)).json()
-    assert "KZ" in [item["country"] for item in territories["territories"]]
+    # Соседняя страна — нет.
+    assert (
+        await client.post(
+            f"/api/v1/filaments/{filament.id}/country-cells",
+            headers=guest,
+            json={"country": "UZ", "price": 100, "currency": "UZS"},
+        )
+    ).status_code == 403
+
+    # Общий слой бренда и общий слой товара — тоже нет.
+    assert (
+        await client.patch(f"/api/v1/brands/{brand.id}", headers=guest, json={"website": "https://kz.example"})
+    ).status_code in (403, 404)
+    assert (
+        await client.patch(f"/api/v1/filaments/{filament.id}", headers=guest, json={"density": 9.9})
+    ).status_code in (403, 404)
+
+    # Отзыв действует сразу, без отложенных задач.
+    territories = await client.get(
+        f"/api/v1/brands/{brand.id}/representatives", headers=headquarters
+    )
+    assert territories.status_code == 200, territories.text
+    grant_id = next(
+        item["grant_id"] for item in territories.json() if item["country"] == "KZ"
+    )
+    revoked = await client.delete(
+        f"/api/v1/brands/{brand.id}/representatives/{grant_id}", headers=headquarters
+    )
+    assert revoked.status_code == 204
+
+    assert (
+        await client.patch(
+            f"/api/v1/filaments/{filament.id}/country-cells/KZ",
+            headers=guest,
+            json={"price": 1},
+        )
+    ).status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_a_territory_invitation_never_reuses_the_brand_organization(
+    client: AsyncClient, db_session: AsyncSession
+):
+    """Старый откат на организацию бренда для этого сценария запрещён.
+
+    Именно он раздал бы приглашённому глобальные права головного офиса вместо
+    названной страны, поэтому проверяется отдельно от прав.
+    """
+    brand, _ = await _brand_with_one_filament(db_session)
+    headquarters = await _representative(db_session, brand, "hq-reuse", None, owns_workspace=True)
+    guest_user, guest = await _outsider(db_session, "uz-company")
+    await db_session.refresh(brand)
+    headquarters_organization_id = brand.organization_id
+    assert headquarters_organization_id is not None
+
+    invited = await client.post(
+        f"/api/v1/brands/{brand.id}/representatives/invites",
+        headers=headquarters,
+        json={
+            "email": "uz-company@example.com",
+            "country": "UZ",
+            "organization_name": "TestBrand Uzbekistan",
+            "send_email": False,
+        },
+    )
+    token = invited.json()["invite_url"].rsplit("/", 1)[-1]
+    accepted = await client.post(f"/api/v1/brand-invites/{token}/accept", headers=guest, json={})
+    assert accepted.status_code == 200, accepted.text
+
+    await db_session.refresh(brand)
+    # Бренд остался за головным офисом: приглашение его мастерскую не перевесило.
+    assert brand.organization_id == headquarters_organization_id
+    assert accepted.json()["organization_id"] != headquarters_organization_id
+
+    # И сотрудником головного офиса приглашённый не стал.
+    in_headquarters = await db_session.scalar(
+        select(OrganizationMembership).where(
+            OrganizationMembership.organization_id == headquarters_organization_id,
+            OrganizationMembership.user_id == guest_user.id,
+        )
+    )
+    assert in_headquarters is None

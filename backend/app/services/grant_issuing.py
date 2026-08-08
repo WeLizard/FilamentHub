@@ -51,13 +51,18 @@ async def issue_territorial_grant(
     country: str | None,
     source: GrantSource,
     approved_by_id: int | None,
+    organization_id: int | None = None,
 ) -> BrandTerritorialGrant | None:
     """Дать организации человека право вести бренд в стране.
 
     Повторное одобрение той же пары не плодит второе право, а оживляет прежнее:
     отозванное когда-то представительство возвращается тем же решением.
+
+    Организацию можно назвать прямо: человек может состоять и в организации
+    головного офиса, и тогда угадывание привязало бы право к ней.
     """
-    organization_id = await _organization_of(db, user, brand)
+    if organization_id is None:
+        organization_id = await _organization_of(db, user, brand)
     if organization_id is None:
         return None
 

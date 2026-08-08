@@ -14,7 +14,6 @@ class TeamInviteCreate(BaseModel):
     email: EmailStr
     role: TeamRole = "editor"
     all_brands: bool = False
-    country: str | None = Field(None, pattern=r"^[A-Za-z]{2}$")
     send_email: bool = True
     expires_days: int = Field(14, ge=1, le=90)
 
@@ -22,8 +21,6 @@ class TeamInviteCreate(BaseModel):
     def owners_cover_the_organization(self) -> "TeamInviteCreate":
         if self.role == "owner":
             self.all_brands = True
-        if self.country:
-            self.country = self.country.upper()
         return self
 
 
@@ -32,7 +29,6 @@ class TeamInviteResponse(BaseModel):
     email: str
     role: TeamRole
     all_brands: bool
-    country: str | None = None
     brand_id: int
     status: Literal["pending", "sent", "failed", "accepted", "expired", "revoked"]
     invite_url: str
@@ -40,6 +36,46 @@ class TeamInviteResponse(BaseModel):
     accepted_at: datetime | None = None
     revoked_at: datetime | None = None
     send_error: str | None = None
+
+
+class TerritoryInviteCreate(BaseModel):
+    """Приглашение отдельной организации вести бренд в одной стране."""
+
+    email: EmailStr
+    country: str = Field(..., pattern=r"^[A-Za-z]{2}$")
+    organization_name: str = Field(..., min_length=2, max_length=200)
+    send_email: bool = True
+    expires_days: int = Field(14, ge=1, le=90)
+
+    @model_validator(mode="after")
+    def country_is_upper_case(self) -> "TerritoryInviteCreate":
+        self.country = self.country.upper()
+        return self
+
+
+class TerritoryInviteResponse(BaseModel):
+    id: int
+    email: str
+    country: str
+    organization_name: str | None = None
+    brand_id: int
+    status: Literal["pending", "sent", "failed", "accepted", "expired", "revoked"]
+    invite_url: str
+    expires_at: datetime
+    accepted_at: datetime | None = None
+    revoked_at: datetime | None = None
+    send_error: str | None = None
+
+
+class TerritoryResponse(BaseModel):
+    """Действующее представительство: чья организация и какая страна."""
+
+    grant_id: int
+    organization_id: int
+    organization_name: str
+    country: str | None
+    source: Literal["invitation", "application"]
+    approved_at: datetime | None = None
 
 
 class TeamMemberResponse(BaseModel):

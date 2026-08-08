@@ -6,6 +6,7 @@ from app.api.v1.endpoints import (
     admin,
     auth,
     brand_invites,
+    brand_representatives,
     brand_requests,
     brand_team,
     brands,
@@ -57,6 +58,7 @@ api_router.include_router(physical_printers.router)
 api_router.include_router(printer_connections.router)
 api_router.include_router(brand_requests.router)
 api_router.include_router(brand_team.router)
+api_router.include_router(brand_representatives.router)
 api_router.include_router(filaments.router)
 api_router.include_router(filament_lines.router)
 api_router.include_router(filament_import.router)

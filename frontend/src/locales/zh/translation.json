@@ -1656,9 +1656,7 @@
       "accepted": "已接受",
       "expired": "已过期",
       "revoked": "已撤销"
-    },
-    "noCountry": "不指定国家",
-    "countryHint": "指定国家后，该成员可维护该市场的信息。不指定则仅获得团队访问权限。"
+    }
   },
   "palette": {
     "lineLabel": "产品线",
@@ -6553,5 +6551,23 @@
     "saved": "国家信息已保存",
     "removed": "国家信息已移除",
     "saveFailed": "无法保存国家信息"
+  },
+  "brandReps": {
+    "title": "各国代表",
+    "explained": "代表是拥有自己工作区和团队的独立公司。他们只维护本国的价格与供应情况；品牌与产品的通用信息仍归您管理。",
+    "emailPlaceholder": "代表的邮箱",
+    "countryPlaceholder": "国家",
+    "companyPlaceholder": "公司名称",
+    "invite": "邀请",
+    "copyLink": "复制链接",
+    "invited": "邀请已发送",
+    "linkCopied": "链接已复制",
+    "empty": "暂无代表",
+    "everywhere": "所有国家",
+    "revoke": "解除",
+    "revokeTitle": "解除代表资格",
+    "revokeMessage": "{{target}} 将立即失去对其国家的访问权限。已填写的信息将保留。",
+    "revoked": "代表资格已解除",
+    "actionError": "操作未能完成"
   }
 }

@@ -58,6 +58,7 @@ import { PresetSyncToggle } from '../components/PresetSyncToggle';
 import { Dropdown } from '../components/Dropdown';
 import { FilamentPreview } from '../components/FilamentPreview';
 import { BrandTeamPanel } from '../components/BrandTeamPanel';
+import { BrandRepresentativesPanel } from '../components/BrandRepresentativesPanel';
 import { BrandRegionPanel } from '../components/BrandRegionPanel';
 import { BrandLogoFrame } from '../components/BrandLogoFrame';
 import { toast } from '../components/Toast';
@@ -1235,7 +1236,12 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
         </div>
       )}
 
-      {brandTab === 'team' && <BrandTeamPanel brandId={brandData.id} />}
+      {brandTab === 'team' && (
+        <div className="space-y-5">
+          <BrandTeamPanel brandId={brandData.id} />
+          <BrandRepresentativesPanel brandId={brandData.id} />
+        </div>
+      )}
 
       {/* Границу между общим и своим объясняем словами, а не блокировкой полей. */}
       <BrandRegionPanel brand={brandData} />

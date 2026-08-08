@@ -74,7 +74,7 @@ export const FilamentMarketPanel: React.FC<FilamentMarketPanelProps> = ({ filame
   const save = useMutation({
     mutationFn: async () => {
       if (!activeCountry) return;
-      // Цена и валюта уходят парой: цена без валюты окажется не в тех деньгах.
+      // Цена без валюты окажется не в тех деньгах.
       const hasPrice = price > 0;
       const payload = {
         availability,
@@ -137,7 +137,7 @@ export const FilamentMarketPanel: React.FC<FilamentMarketPanelProps> = ({ filame
         </span>
       </div>
 
-      {/* Первый слой: одинаковый во всех странах. Не «поле выключено», а «это общее». */}
+      {/* Общий слой */}
       <section className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
         <div className="mb-3 flex items-center gap-2">
           <Globe className="h-4 w-4 text-gray-400" />
@@ -169,7 +169,7 @@ export const FilamentMarketPanel: React.FC<FilamentMarketPanelProps> = ({ filame
         <p className="mt-3 text-xs leading-5 text-gray-400">{t('filamentMarket.commonExplained')}</p>
       </section>
 
-      {/* Второй слой: свой рынок. */}
+      {/* Свой рынок */}
       <section className="rounded-2xl border border-emerald-400/20 bg-emerald-400/[0.06] p-4">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <h3 className="font-semibold text-white">

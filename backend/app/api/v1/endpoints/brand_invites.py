@@ -66,6 +66,9 @@ from app.services.slug_service import generate_unique_slug
 router = APIRouter(prefix="/brand-invites", tags=["brand-invites"])
 admin_router = APIRouter(prefix="/admin/brand-invites", tags=["admin"])
 
+# Территориальное представительство: отдельная организация, а не команда.
+TERRITORY_PURPOSE = "territory"
+
 _BATCH_MAX_RECIPIENTS = 100
 _BATCH_CONFIRMATION_MINUTES = 15
 _BATCH_CONFIRMATION_TYPE = "brand_invite_batch_confirmation"
@@ -433,6 +436,72 @@ async def get_brand_invite(
     )
 
 
+async def _accept_as_representative(
+    db: AsyncSession,
+    *,
+    invite: BrandInvite,
+    brand: Brand,
+    user: User,
+) -> BrandInviteAcceptResponse:
+    """Принять представительство: своя организация и право на одну страну.
+
+    Организация всегда новая: откат на `brand.organization_id` сделал бы
+    представителя сотрудником головного офиса. Прежние членства не трогаются.
+    """
+    if not invite.country:
+        raise_error(400, ERR_BRAND_INVITE_TARGET_MISSING)
+
+    organization = Organization(
+        name=(invite.organization_name or f"{brand.name} {invite.country}").strip(),
+        slug=await generate_unique_slug(
+            db=db,
+            model=Organization,
+            source=invite.organization_name or f"{brand.name}-{invite.country}",
+            fallback="organization",
+        ),
+        created_by_id=user.id,
+        active=True,
+    )
+    db.add(organization)
+    await db.flush()
+
+    membership = OrganizationMembership(
+        organization_id=organization.id,
+        user_id=user.id,
+        role=OrganizationMemberRole.OWNER,
+        all_brands=False,
+        active=True,
+        invited_by_id=invite.invited_by_id,
+    )
+    db.add(membership)
+    await db.flush()
+    db.add(OrganizationBrandAccess(membership_id=membership.id, brand_id=brand.id))
+
+    await issue_territorial_grant(
+        db,
+        brand=brand,
+        user=user,
+        country=invite.country,
+        source=GrantSource.invitation,
+        approved_by_id=invite.invited_by_id,
+        organization_id=organization.id,
+    )
+
+    if user.role == UserRole.USER:
+        user.role = UserRole.BRAND
+    invite.organization_id = organization.id
+    invite.accepted_at = _now()
+    invite.accepted_by_id = user.id
+
+    await db.commit()
+    return BrandInviteAcceptResponse(
+        brand_id=brand.id,
+        brand_name=brand.name,
+        organization_id=organization.id,
+        member_role=OrganizationMemberRole.OWNER.value,
+    )
+
+
 @router.post("/{token}/accept", response_model=BrandInviteAcceptResponse)
 async def accept_brand_invite(
     token: str,
@@ -500,6 +569,9 @@ async def accept_brand_invite(
         brand = Brand(name=brand_name, slug=slug, verified=False, active=True)
         db.add(brand)
         await db.flush()
+
+    if invite.purpose == TERRITORY_PURPOSE:
+        return await _accept_as_representative(db, invite=invite, brand=brand, user=current_user)
 
     organization = (
         await db.get(Organization, invite.organization_id)
@@ -621,10 +693,6 @@ async def accept_brand_invite(
     invite.accepted_at = _now()
     invite.accepted_by_id = current_user.id
 
-    # Второй вход к территориальному праву. Область берётся из приглашения:
-    # владелец ведёт бренд целиком, приглашённому называют его страну. Без
-    # названной области право не выдаётся вовсе — молчаливое «весь мир» здесь
-    # было бы худшим из вариантов.
     await db.flush()
     if invited_role == OrganizationMemberRole.OWNER or invite.country:
         await issue_territorial_grant(

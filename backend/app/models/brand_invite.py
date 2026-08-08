@@ -47,9 +47,11 @@ class BrandInvite(Base):
         String(24), default="representative", server_default="representative", index=True
     )
     all_brands: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
-    # Область, которую приглашение предлагает вести. Пусто — territory не даётся
-    # вовсе: приглашение остаётся членством в команде.
+    # Что предлагает территориальное приглашение: страну и организацию, которую
+    # представитель заведёт себе при принятии. Право территории живёт не здесь,
+    # а в BrandTerritorialGrant; приглашение лишь предлагает его.
     country: Mapped[str | None] = mapped_column(String(2), nullable=True)
+    organization_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
     pre_verified: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     sender_profile: Mapped[str] = mapped_column(
         String(32), default="partnerships", server_default="partnerships"

@@ -852,7 +852,6 @@ export const FilamentDetailPage: React.FC = () => {
         )}
       </div>
 
-      {/* Виден только представителю бренда: обычный читатель его не встречает. */}
       <FilamentMarketPanel filament={filament} />
 
       {/* Табы: Пресеты / Отзывы */}

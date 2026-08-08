@@ -673,7 +673,29 @@ export interface BrandTeamInvite {
   email: string;
   role: BrandTeamRole;
   all_brands: boolean;
+  brand_id: number;
+  status: 'pending' | 'sent' | 'failed' | 'accepted' | 'expired' | 'revoked';
+  invite_url: string;
+  expires_at: string;
+  accepted_at: string | null;
+  revoked_at: string | null;
+  send_error: string | null;
+}
+
+export interface BrandRepresentative {
+  grant_id: number;
+  organization_id: number;
+  organization_name: string;
   country: string | null;
+  source: 'invitation' | 'application';
+  approved_at: string | null;
+}
+
+export interface BrandRepresentativeInvite {
+  id: number;
+  email: string;
+  country: string;
+  organization_name: string | null;
   brand_id: number;
   status: 'pending' | 'sent' | 'failed' | 'accepted' | 'expired' | 'revoked';
   invite_url: string;

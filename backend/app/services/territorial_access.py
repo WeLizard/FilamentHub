@@ -135,6 +135,19 @@ async def filament_drafts_visible_to(
     return await _draft_scope(db, user, brand_id, "manage_filament_country")
 
 
+async def can_invite_representative(db: AsyncSession, user: User, brand_id: int) -> bool:
+    """Позвать в бренд представителя другой страны.
+
+    Только с глобального уровня: представитель по Казахстану не приглашает
+    представителя по Узбекистану, иначе территория расползается вбок.
+    """
+    if user.role == UserRole.ADMIN:
+        return True
+    return any(
+        grant.country is None for grant in await active_grants_for(db, user, brand_id)
+    )
+
+
 async def countries_user_manages(db: AsyncSession, user: User, brand_id: int) -> list[str | None]:
     """Области, которые человек ведёт. `None` в списке означает глобальную."""
     return [grant.country for grant in await active_grants_for(db, user, brand_id)]
