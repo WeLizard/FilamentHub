@@ -1170,16 +1170,6 @@ async def update_brand_request(
                 user=user,
                 granted_by_id=admin.id,
             )
-            # Заводящий бренд ведёт его целиком, а не одну страну.
-            await db.flush()
-            await issue_territorial_grant(
-                db,
-                brand=new_brand,
-                user=user,
-                country=None,
-                source=GrantSource.application,
-                approved_by_id=admin.id,
-            )
 
     await db.commit()
     await db.refresh(request)
