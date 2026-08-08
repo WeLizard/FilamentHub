@@ -866,39 +866,6 @@ def clear_auth():
         pass
 
 
-def reload_host_presets():
-    """Live filament reload via our fork's orca.host.presets.reload_filaments():
-    re-reads only the filament presets (additions and removals) and refreshes the
-    filament combos, leaving the printer/process selection untouched. The method
-    name is new, so on a stock or older build it's absent and we return False,
-    falling back to a restart. Returns True if the host reloaded live.
-    """
-    presets = getattr(orca.host, "presets", None)
-    reload = getattr(presets, "reload_filaments", None) if presets is not None else None
-    if reload is None:
-        return False
-    try:
-        reload()
-        return True
-    except Exception:
-        return False
-
-
-def remove_host_filament(bare_name):
-    """Remove one filament preset from the running slicer by its bundle-canonical
-    name (the same targeted delete OrcaSlicer's Delete button uses). Returns True
-    if the host removed it live; False on a stock/older build (caller then deletes
-    the files and the user restarts). delete_preset also removes the files."""
-    presets = getattr(orca.host, "presets", None)
-    remove = getattr(presets, "remove_filament", None) if presets is not None else None
-    if remove is None:
-        return False
-    try:
-        return bool(remove("_local/%s/%s" % (BUNDLE_ID, bare_name)))
-    except Exception:
-        return False
-
-
 def safe_filename(name):
     cleaned = "".join(
         "_" if ch in '<>[]:"/\\|?*' or ord(ch) < 32 else ch
@@ -1034,10 +1001,6 @@ def remove_stale_preset_files(folder, preset_id, keep_path):
             continue
         if not isinstance(profile, dict) or managed_preset_id(path, profile) != int(preset_id):
             continue
-        try:
-            remove_host_filament(fn[:-len(".json")])  # best-effort live removal
-        except Exception:
-            pass
         for stale in (path, path[:-len(".json")] + ".info"):
             try:
                 os.remove(stale)
@@ -3129,10 +3092,8 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
             profile = validate_filament_profile(json.loads(body.decode("utf-8")))
             ensure_parent_exists(profile, known_presets)
             ensure_filament_colour(profile)
-            # Namespace the preset so the slicer groups it under "FilamentHub" in
-            # the filament dropdown instead of burying it in User presets. The fork
-            # groups by the "<provider>:<id>" prefix of bundle_id (same convention
-            # the /orca/sync export uses); a plain user preset has no bundle_id.
+            # Namespace the managed preset with the same provider identity used by
+            # the sync API; a plain user preset has no FilamentHub bundle_id.
             profile["bundle_id"] = "filamenthub:%d" % preset_id
             name = profile.get("name") or ("FilamentHub preset %d" % preset_id)
             ensure_bundle_metadata()
@@ -3144,14 +3105,9 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
             write_json_atomic(profile_path, profile)
             remove_stale_preset_files(target_dir, preset_id, profile_path)
 
-            if reload_host_presets():
-                orca.host.ui.message(
-                    ui_text("importedLive", name=name),
-                    title="FilamentHub", icon="info")
-            else:
-                orca.host.ui.message(
-                    ui_text("importedRestart", name=name),
-                    title="FilamentHub", icon="info")
+            orca.host.ui.message(
+                ui_text("importedRestart", name=name),
+                title="FilamentHub", icon="info")
         except Exception as exc:
             orca.host.ui.message(
                 ui_text("importFailed", error=exc), title="FilamentHub", icon="error")
@@ -3305,14 +3261,12 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
                 else:
                     failed += 1
             elif remote_newer:
-                # Update = idiomatic delete + add: drop the old preset (host + files)
-                # first so the append reload picks up the new content.
-                bare = os.path.basename(local_entry["path"])[:-len(".json")]
-                if not remove_host_filament(bare):
-                    try:
-                        os.remove(local_entry["path"])
-                    except OSError:
-                        pass
+                # Replace only the managed file. Stock OrcaSlicer discovers the
+                # new content on restart until an upstream reload API is available.
+                try:
+                    os.remove(local_entry["path"])
+                except OSError:
+                    pass
                 res = self._pull_one(pid, token, known_presets, folder, rp)
                 if res:
                     state[str(pid)] = res
@@ -3327,7 +3281,6 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
                 name = local_entry["profile"].get("name") or ("FilamentHub preset %d" % pid)
                 canonical = preset_file_path(folder, name, pid)
                 if os.path.normcase(os.path.abspath(canonical)) != os.path.normcase(os.path.abspath(local_entry["path"])):
-                    bare = os.path.basename(local_entry["path"])[:-len(".json")]
                     try:
                         os.replace(local_entry["path"], canonical)
                         info_old = local_entry["path"][:-len(".json")] + ".info"
@@ -3336,10 +3289,6 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
                     except OSError:
                         pass
                     else:
-                        try:
-                            remove_host_filament(bare)
-                        except Exception:
-                            pass
                         renamed += 1
                 skipped += 1
 
@@ -3351,13 +3300,11 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
         for pid, entry in list(local.items()):
             if pid in remote_ids or str(pid) not in state:
                 continue
-            bare = os.path.basename(entry["path"])[:-len(".json")]
-            if not remove_host_filament(bare):  # live delete (also removes the files)
-                for path in (entry["path"], entry["path"][:-len(".json")] + ".info"):
-                    try:
-                        os.remove(path)
-                    except OSError:
-                        pass
+            for path in (entry["path"], entry["path"][:-len(".json")] + ".info"):
+                try:
+                    os.remove(path)
+                except OSError:
+                    pass
             state.pop(str(pid), None)
             removed += 1
 
@@ -3410,8 +3357,7 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
                (pulled, updated, pushed, removed, renamed, skipped, failed))
         note = ""
         if pulled or updated or removed or renamed:
-            note = (ui_text("dropdownCurrent") if reload_host_presets()
-                    else ui_text("dropdownRestart"))
+            note = ui_text("dropdownRestart")
         if announce:
             self._deliver_sync_result(ui_text("syncComplete", summary=summary, note=note).strip())
 

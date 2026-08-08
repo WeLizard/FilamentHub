@@ -18,12 +18,6 @@ describe('auth.ts additional coverage', () => {
     Object.defineProperty(window, 'wx', { value: undefined, writable: true, configurable: true });
   });
 
-  it('detects Orca embedding via window.wx.postMessage', async () => {
-    (window as any).wx = { postMessage: vi.fn() };
-    const auth = await loadAuth();
-    expect(auth.isOrcaEmbedded()).toBe(true);
-  });
-
   it('persists tokens in cookie mode when embedded in Orca', async () => {
     mockEnv({ VITE_AUTH_WEB_MODE: 'cookie' });
     (window as any).filamenthub = { sendLoginSuccess: vi.fn() };

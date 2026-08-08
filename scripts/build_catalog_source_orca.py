@@ -1,8 +1,8 @@
 """Pack OrcaSlicer printer/preset profiles into a catalog source bundle.
 
-Source: submodule/OrcaSlicer/resources/profiles/, or any profiles directory
-        given as the first argument — the submodule trails upstream, so a
-        fresh clone of it is usually the better source.
+Source: an OrcaSlicer `resources/profiles/` directory supplied as the first
+        argument. Use an official upstream checkout or an extracted build;
+        the legacy FilamentHub Edition submodule is not the catalog authority.
 Target: backend/data/catalog_sources/orca/bundle.zip
 
 Run from the project root before deploying when we want fresh printer/preset
@@ -22,35 +22,34 @@ import zipfile
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-SOURCE_DIR = PROJECT_ROOT / "submodule" / "OrcaSlicer" / "resources" / "profiles"
 TARGET_DIR = PROJECT_ROOT / "backend" / "data" / "catalog_sources" / "orca"
 TARGET_ZIP = TARGET_DIR / "bundle.zip"
 
 
 def main() -> int:
-    global SOURCE_DIR
-    if len(sys.argv) > 1:
-        SOURCE_DIR = Path(sys.argv[1]).resolve()
-    if not SOURCE_DIR.exists():
-        print(f"ERROR: source not found: {SOURCE_DIR}")
-        print("Make sure the OrcaSlicer submodule is initialised:")
-        print("  git submodule update --init submodule/OrcaSlicer")
+    if len(sys.argv) != 2:
+        print("Usage: python scripts/build_catalog_source_orca.py <OrcaSlicer resources/profiles>")
+        return 1
+
+    source_dir = Path(sys.argv[1]).resolve()
+    if not source_dir.exists():
+        print(f"ERROR: source not found: {source_dir}")
         return 1
 
     TARGET_DIR.mkdir(parents=True, exist_ok=True)
 
-    json_files = sorted(SOURCE_DIR.rglob("*.json"))
+    json_files = sorted(source_dir.rglob("*.json"))
     if not json_files:
-        print(f"ERROR: no .json files under {SOURCE_DIR}")
+        print(f"ERROR: no .json files under {source_dir}")
         return 1
 
-    print(f"Source: {SOURCE_DIR}")
+    print(f"Source: {source_dir}")
     print(f"Target: {TARGET_ZIP}")
     print(f"Files:  {len(json_files)}")
 
     with zipfile.ZipFile(TARGET_ZIP, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as zf:
         for f in json_files:
-            zf.write(f, f.relative_to(SOURCE_DIR))
+            zf.write(f, f.relative_to(source_dir))
 
     size_mb = TARGET_ZIP.stat().st_size / 1024 / 1024
     print(f"Done.   {size_mb:.2f} MB")

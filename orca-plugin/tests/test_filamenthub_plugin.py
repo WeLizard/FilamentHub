@@ -412,8 +412,7 @@ def test_push_preserves_legacy_remote_name_and_canonical_parent(
     assert result["updated_at"] == "2026-08-01"
 
 
-def test_stale_preset_files_are_removed_after_rename(plugin_module, monkeypatch, tmp_path):
-    monkeypatch.setattr(plugin_module, "remove_host_filament", lambda name: False)
+def test_stale_preset_files_are_removed_after_rename(plugin_module, tmp_path):
     (tmp_path / "Old Name__fh_10.json").write_text(
         json.dumps({"bundle_id": "filamenthub:10"}), encoding="utf-8"
     )

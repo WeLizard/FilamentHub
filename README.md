@@ -6,7 +6,7 @@
 [![Production](https://img.shields.io/badge/status-production-green.svg)](https://filamenthub.ru)
 
 - 🌐 **Live:** [filamenthub.ru](https://filamenthub.ru) — browse the catalog without an account
-- 🐙 **OrcaSlicer fork:** [WeLizard/OrcaSlicer](https://github.com/WeLizard/OrcaSlicer) — two-way preset sync + embedded WebView panel
+- 🐙 **OrcaSlicer plugin:** install FilamentHub from the official Orca Cloud Plugin Hub for preset sync and the embedded catalog
 
 ---
 
@@ -41,10 +41,10 @@ End-to-end: scan a QR code on a spool → official preset lands in your profile 
 - QR-code generation on packaging (format: `FH-XXX` or `FH-XXX-XXX`, base36) with auto-link to preset
 
 ### OrcaSlicer integration
-- Embedded FilamentHub WebView panel inside the slicer
-- Two-way preset sync (printer / filament / process)
+- Official Python plugin distributed through Orca Cloud Plugin Hub
+- Embedded FilamentHub catalog inside the slicer
+- Two-way managed preset sync (printer / filament / process)
 - HH snapshot upload pipeline
-- Lives in the [WeLizard/OrcaSlicer fork](https://github.com/WeLizard/OrcaSlicer); proposal to become an upstream third-party cloud provider is in progress
 
 ### Cost calculator (B2B)
 - G-code parser for OrcaSlicer / BambuStudio / PrusaSlicer / SuperSlicer / Cura / CrealitySlicer
@@ -58,7 +58,7 @@ End-to-end: scan a QR code on a spool → official preset lands in your profile 
 |-------|-------|
 | Backend | Python 3.11 · FastAPI · SQLAlchemy 2.0 async · PostgreSQL 15 · Redis 7 · Alembic |
 | Frontend | React 19 · TypeScript · Vite · TailwindCSS 4 · TanStack Query · react-i18next |
-| Slicer | OrcaSlicer fork (C++17, wxWidgets) — see [WeLizard/OrcaSlicer](https://github.com/WeLizard/OrcaSlicer) |
+| Slicer | Official OrcaSlicer Python plugin |
 | Infra | Docker Compose · Nginx · SSL via acme-dns (DNS-01) |
 
 Repository layout:
@@ -66,7 +66,7 @@ Repository layout:
 ```
 backend/    FastAPI app — 29 endpoints, 33 models, 61 Alembic migrations
 frontend/   React app — 17 pages, 68 components
-submodule/  OrcaSlicer integration (git submodule)
+orca-plugin/ FilamentHub plugin for OrcaSlicer
 docs/       Internal docs and roadmap
 scripts/    Deploy and local utilities
 ```
@@ -99,7 +99,7 @@ Issues and PRs welcome. The project is in active development; some areas are int
 
 If you're a **filament brand representative** interested in publishing official presets — open an issue or contact the maintainer.
 
-If you're working on **OrcaSlicer-side integration** (third-party cloud provider, Happy Hare, Moonraker workflows) — see the [OrcaSlicer fork](https://github.com/WeLizard/OrcaSlicer) and the integration discussion linked from there.
+If you're working on **OrcaSlicer plugin integration** (presets, Happy Hare, Moonraker workflows), start with `orca-plugin/` and the upstream OrcaSlicer plugin APIs.
 
 ---
 
