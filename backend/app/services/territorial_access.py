@@ -37,10 +37,11 @@ async def active_grants_for(
             OrganizationMembership.active.is_(True),
         )
     )
-    if user.active_organization_id is not None:
-        query = query.where(
-            BrandTerritorialGrant.organization_id == user.active_organization_id
-        )
+    if user.active_organization_id is None:
+        return []
+    query = query.where(
+        BrandTerritorialGrant.organization_id == user.active_organization_id
+    )
     return list(await db.scalars(query))
 
 
@@ -91,24 +92,23 @@ async def can_edit_brand_common(db: AsyncSession, user: User, brand_id: int) -> 
 
 
 async def can_edit_filament_common(
-    db: AsyncSession, user: User, brand_id: int, contributed_by_organization_id: int | None = None
+    db: AsyncSession,
+    user: User,
+    brand_id: int,
+    contributed_by_organization_id: int | None = None,
 ) -> bool:
     """Менять общие свойства товара — те, что одинаковы во всех странах.
 
-    Организация правит свой вклад; чужой требует отдельного права. Вклад
-    принадлежит компании, а не сотруднику: человек уходит, запись остаётся её.
+    Provenance explains who contributed a catalog record but does not own it.
+    Common technical data is managed through an explicit global capability;
+    territorial organizations enrich their country cell instead.
     """
+    del contributed_by_organization_id
     if user.role == UserRole.ADMIN:
         return True
 
     grants = await active_grants_for(db, user, brand_id)
-    if any(grant.edit_all_filaments_common for grant in grants):
-        return True
-    if contributed_by_organization_id is not None and any(
-        grant.organization_id == contributed_by_organization_id for grant in grants
-    ):
-        return any(grant.edit_own_created_filaments for grant in grants)
-    return False
+    return any(grant.edit_all_filaments_common for grant in grants)
 
 
 async def can_create_for_brand(db: AsyncSession, user: User, brand_id: int) -> bool:

@@ -319,6 +319,83 @@ def test_a_code_stays_readable_when_printed_small():
     assert detector.detectAndDecode(np.array(small))[0] == expected
 
 
+def test_the_branded_code_still_decodes_at_every_offered_size():
+    """The mark is paid for by redundancy — prove it, do not assume it.
+
+    The share of the code the mark covers says nothing on its own: correction
+    works over codewords, not over picture area. So the only honest check is a
+    decoder against the sizes a brand is actually offered.
+    """
+    import cv2
+    import numpy as np
+    from PIL import Image
+
+    from app.services.qr_service import _qr_target_url, generate_branded_qr_code_image
+
+    detector = cv2.QRCodeDetector()
+    expected = _qr_target_url("FH-TST-001")
+    master = Image.open(generate_branded_qr_code_image("FH-TST-001", size=1200))
+
+    for size in (1200, 600, 300, 120):
+        scaled = np.array(master.resize((size, size), Image.LANCZOS).convert("L"))
+        assert detector.detectAndDecode(scaled)[0] == expected, f"unreadable at {size}px"
+
+
+def test_the_mark_leaves_the_finder_patterns_alone():
+    """Cover a corner and no scanner can orient the code at all."""
+    import numpy as np
+    from PIL import Image
+
+    from app.services.qr_service import generate_branded_qr_code_image, generate_qr_code_image
+
+    # Compared as shapes, not as shades: the mark draws its modules in near-black
+    # rather than pure black, and that difference is not what this test is about.
+    branded = np.array(
+        Image.open(generate_branded_qr_code_image("FH-TST-001", size=1200)).convert("L")
+    ) > 128
+    plain = np.array(
+        Image.open(generate_qr_code_image("FH-TST-001", size=1200, error_correction="H")).convert("L")
+    ) > 128
+    # The three finder patterns sit in the corners; the mark lives in the middle
+    # and must not have touched them.
+    corner = branded.shape[0] // 4
+    for row, column in ((slice(0, corner), slice(0, corner)),
+                        (slice(0, corner), slice(-corner, None)),
+                        (slice(-corner, None), slice(0, corner))):
+        assert np.array_equal(branded[row, column], plain[row, column])
+
+
+def test_the_branded_vector_matches_the_branded_picture():
+    """Packaging takes the vector, so it must be the same code, not a lookalike.
+
+    The window is counted once for both formats; if the two ever disagree, a
+    brand prints something we never showed them on screen.
+    """
+    import re
+
+    from app.services.qr_service import (
+        BRANDED_MARK_SHARE,
+        _branded_layout,
+        generate_branded_qr_code_svg,
+    )
+
+    matrix, window, low = _branded_layout("FH-TST-001", BRANDED_MARK_SHARE)
+    svg = generate_branded_qr_code_svg("FH-TST-001").getvalue().decode("utf-8")
+
+    total = len(matrix)
+    assert f'viewBox="0 0 {total} {total}"' in svg
+    # Никакой растровой вставки внутри вектора: типография масштабирует его как есть.
+    assert "<image" not in svg and "base64" not in svg
+
+    expected_modules = sum(
+        1
+        for row_index, row in enumerate(matrix)
+        for column_index, is_dark in enumerate(row)
+        if is_dark and not (low <= row_index < low + window and low <= column_index < low + window)
+    )
+    assert len(re.findall(r"M\d+,\d+h1v1h-1z", svg)) == expected_modules
+
+
 def test_print_shops_can_take_the_code_as_vector():
     """Packaging is printed at whatever size the brand wants."""
     from app.services.qr_service import generate_qr_code_svg

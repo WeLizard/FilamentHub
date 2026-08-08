@@ -55,7 +55,11 @@ from app.services.file_service import (
     serialize_proof_files,
 )
 from app.services.grant_issuing import issue_territorial_grant, settle_territorial_application
-from app.services.organization_access import get_brand_membership, grant_brand_owner_membership
+from app.services.organization_access import (
+    get_brand_membership,
+    grant_brand_editor_membership,
+    grant_brand_owner_membership,
+)
 from app.services.qr_service import backfill_brand_qr_codes
 
 router = APIRouter(prefix="/brand-requests", tags=["brand-requests"])
@@ -424,27 +428,49 @@ async def update_brand_request(
                     approved_by_id=admin.id,
                 )
             else:
-                if not brand.verified:
-                    brand.name_correction_available = True
-                brand.verified = True
-                await grant_brand_owner_membership(
-                    db,
-                    brand=brand,
-                    user=user,
-                    granted_by_id=admin.id,
-                )
-                await backfill_brand_qr_codes(brand, db)
-                await db.flush()
-                await issue_territorial_grant(
-                    db,
-                    brand=brand,
-                    user=user,
-                    country=None,
-                    source=GrantSource.application,
-                    approved_by_id=admin.id,
-                )
+                active_owner_exists = False
+                if brand.verified and brand.organization_id is not None:
+                    active_owner_exists = bool(
+                        await db.scalar(
+                            select(OrganizationMembership.id)
+                            .where(
+                                OrganizationMembership.organization_id == brand.organization_id,
+                                OrganizationMembership.active.is_(True),
+                                OrganizationMembership.role == OrganizationMemberRole.OWNER,
+                            )
+                            .limit(1)
+                        )
+                    )
+                if active_owner_exists:
+                    await grant_brand_editor_membership(
+                        db,
+                        brand=brand,
+                        user=user,
+                        granted_by_id=admin.id,
+                    )
+                else:
+                    if not brand.verified:
+                        brand.name_correction_available = True
+                    brand.verified = True
+                    await grant_brand_owner_membership(
+                        db,
+                        brand=brand,
+                        user=user,
+                        granted_by_id=admin.id,
+                    )
+                    await backfill_brand_qr_codes(brand, db)
+                    await db.flush()
+                    await issue_territorial_grant(
+                        db,
+                        brand=brand,
+                        user=user,
+                        country=None,
+                        source=GrantSource.application,
+                        approved_by_id=admin.id,
+                    )
         elif request.request_type == BrandRequestType.CREATE:
-            # Создаем бренд и привязываем пользователя
+            # CREATE adds a missing catalog identity. It never creates a company
+            # workspace or grants authority over the brand; claims are separate.
             selected_slug, available = await choose_brand_slug(
                 db,
                 name=request.new_brand_name or "",
@@ -474,16 +500,6 @@ async def update_brand_request(
             )
             db.add(new_brand)
             await db.flush()  # Чтобы получить ID бренда
-
-            user = await db.get(User, request.user_id)
-            if not user:
-                raise_error(status.HTTP_404_NOT_FOUND, ERR_USER_NOT_FOUND)
-            await grant_brand_owner_membership(
-                db,
-                brand=new_brand,
-                user=user,
-                granted_by_id=admin.id,
-            )
 
     await db.commit()
     await db.refresh(request)

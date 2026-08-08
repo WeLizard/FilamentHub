@@ -8,6 +8,7 @@ import { Globe2, Link2, MailPlus, Trash2 } from 'lucide-react';
 import { brandRepresentativesAPI } from '../api/client';
 import { COUNTRY_CODES, countryName } from '../utils/countries';
 import { translateApiError } from '../utils/translateApiError';
+import { useAuth } from '../contexts/AuthContext';
 import { ConfirmDeleteModal } from './ConfirmDeleteModal';
 import { toast } from './Toast';
 import type { AxiosError } from 'axios';
@@ -22,14 +23,14 @@ function apiErrorDetail(error: unknown): unknown {
 
 export function BrandRepresentativesPanel({ brandId }: BrandRepresentativesPanelProps) {
   const { t, i18n } = useTranslation();
+  const { user } = useAuth();
   const queryClient = useQueryClient();
   const [email, setEmail] = useState('');
   const [country, setCountry] = useState('');
-  const [organizationName, setOrganizationName] = useState('');
   const [pendingRevoke, setPendingRevoke] = useState<{ id: number; label: string } | null>(null);
 
   const query = useQuery({
-    queryKey: ['brand-representatives', brandId],
+    queryKey: ['brand-representatives', brandId, user?.active_organization_id],
     queryFn: () => brandRepresentativesAPI.list(brandId),
     retry: false,
   });
@@ -38,7 +39,6 @@ export function BrandRepresentativesPanel({ brandId }: BrandRepresentativesPanel
     mutationFn: (sendEmail: boolean) => brandRepresentativesAPI.invite(brandId, {
       email,
       country,
-      organization_name: organizationName,
       send_email: sendEmail,
     }),
     onSuccess: async (invite, sendEmail) => {
@@ -46,7 +46,6 @@ export function BrandRepresentativesPanel({ brandId }: BrandRepresentativesPanel
         await navigator.clipboard.writeText(invite.invite_url);
       }
       setEmail('');
-      setOrganizationName('');
       await queryClient.invalidateQueries({ queryKey: ['brand-representatives', brandId] });
       toast.success(t(sendEmail ? 'brandReps.invited' : 'brandReps.linkCopied'));
     },
@@ -73,7 +72,7 @@ export function BrandRepresentativesPanel({ brandId }: BrandRepresentativesPanel
   }
 
   const representatives = query.data ?? [];
-  const canSubmit = Boolean(email.trim() && country && organizationName.trim());
+  const canSubmit = Boolean(email.trim() && country);
 
   return (
     <section className="rounded-2xl border border-white/10 bg-white/[0.04] p-5">
@@ -83,7 +82,7 @@ export function BrandRepresentativesPanel({ brandId }: BrandRepresentativesPanel
       </div>
       <p className="mb-4 text-xs leading-5 text-gray-400">{t('brandReps.explained')}</p>
 
-      <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_170px_minmax(0,1fr)_auto]">
+      <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_180px_auto]">
         <input
           type="email"
           value={email}
@@ -105,14 +104,6 @@ export function BrandRepresentativesPanel({ brandId }: BrandRepresentativesPanel
             </option>
           ))}
         </select>
-        <input
-          type="text"
-          value={organizationName}
-          onChange={(event) => setOrganizationName(event.target.value)}
-          placeholder={t('brandReps.companyPlaceholder')}
-          maxLength={200}
-          className="min-w-0 rounded-xl border border-white/15 bg-slate-950/45 px-4 py-3 text-white outline-none transition placeholder:text-gray-500 focus:border-emerald-300/60"
-        />
         <div className="flex gap-2">
           <button
             type="button"

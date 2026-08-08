@@ -47,7 +47,7 @@ function apiErrorDetail(error: unknown): unknown {
 
 export function BrandTeamPanel({ brandId }: BrandTeamPanelProps) {
   const { t, i18n } = useTranslation();
-  const { refreshUser } = useAuth();
+  const { user, refreshUser } = useAuth();
   const queryClient = useQueryClient();
   const [email, setEmail] = useState('');
   const [role, setRole] = useState<BrandTeamRole>('editor');
@@ -55,7 +55,7 @@ export function BrandTeamPanel({ brandId }: BrandTeamPanelProps) {
   const [pendingMemberAction, setPendingMemberAction] = useState<PendingMemberAction | null>(null);
 
   const query = useQuery({
-    queryKey: ['brand-team', brandId],
+    queryKey: ['brand-team', brandId, user?.active_organization_id],
     queryFn: () => brandTeamAPI.get(brandId),
   });
 

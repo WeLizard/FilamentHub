@@ -2,7 +2,8 @@
 
 import axios from 'axios';
 import type { InternalAxiosRequestConfig } from 'axios';
-import type { AccessibleBrand, AdminUserListResponse, AuthMethods, Brand, BrandUsage, BrandCountryCell, BrandRepresentative, BrandRepresentativeInvite, BrandRequest, BrandRequestStatus, BrandTeamInvite, BrandTeamRole, BrandTeamWorkspace, Filament, FilamentAdditive, FilamentPropertyClaim, FilamentLine, FilamentImportResult, FilamentListResponse, FilamentPalettePayload, BrandInvitePublic, BrandInviteAdmin, BrandInviteAcceptResult, BrandInviteBatchPreview, BrandInviteBatchSendResult, FilamentAvailability, FilamentCountryCell, FilamentVisualSettings, FilamentReview, FilamentRatingStats, Notification, NotificationListResponse, Preset, RecommendedPreset, RecommendedForPrinterResponse, Printer, PrinterProfile, PrintProfile, PrinterRequest, User, Token, RefreshTokenRequest, RefreshTokenResponse, ListResponse, AccountDeletionStats, UserSavedPreset, CalculatorEstimateRequest, CalculatorEstimateResponse, CalculatorProfileResponse, CalculatorProfileUpdate, Feedback, FeedbackDetail, FeedbackListResponse, FeedbackType, CompatiblePrinter, CompatibleFilament, DownloadVersion, DownloadVersionsResponse, PluginDownloadsResponse, WikiCategory, WikiCategoryListResponse, WikiArticle, WikiArticleListResponse, WikiFeedbackStats, WikiFeedbackCreate, WikiFeedback, WikiLanguage, WikiReviewVerdict, WikiRevision, WikiRevisionListResponse, WikiPublicRevisionListResponse, WikiRevisionStatus, WikiSpace, WikiSpaceKey, EmailThreadDetail, EmailThreadListResponse, EmailThreadStatus, EmailMessage, EmailSenderProfile, EmailLanguage, NotificationCampaignAudience, NotificationCampaignHistoryResponse, NotificationCampaignPreview, NotificationCampaignSendResult, LegalAcceptancePayload, LegalDocument, LegalDocumentType, LegalPack, LegalRequirements, RegistrationPayload, SpoolUsageEvent, OrcaSliceReport, OrcaPresetScope, OrcaSchemaObservation, OrcaSchemaObservationListResponse, OrcaSchemaObservationStatus } from '../types/api';
+import type { BrandAnalytics } from '../types/api';
+import type { AccessibleBrand, AdminUserListResponse, AuthMethods, Brand, BrandUsage, BrandCountryCell, BrandRepresentative, BrandRepresentativeInvite, BrandRequest, BrandRequestStatus, BrandTeamInvite, BrandTeamRole, BrandTeamWorkspace, Filament, FilamentAdditive, FilamentPropertyClaim, FilamentLine, FilamentImportResult, FilamentListResponse, FilamentPalettePayload, BrandInvitePublic, BrandInviteAdmin, BrandInviteAcceptResult, BrandInviteBatchPreview, BrandInviteBatchSendResult, FilamentAvailability, CountryAvailability, FilamentCountryCell, FilamentVisualSettings, FilamentReview, FilamentRatingStats, Notification, NotificationListResponse, Preset, RecommendedPreset, RecommendedForPrinterResponse, Printer, PrinterProfile, PrintProfile, PrinterRequest, User, Token, RefreshTokenRequest, RefreshTokenResponse, ListResponse, AccountDeletionStats, UserSavedPreset, CalculatorEstimateRequest, CalculatorEstimateResponse, CalculatorProfileResponse, CalculatorProfileUpdate, Feedback, FeedbackDetail, FeedbackListResponse, FeedbackType, CompatiblePrinter, CompatibleFilament, DownloadVersion, DownloadVersionsResponse, PluginDownloadsResponse, WikiCategory, WikiCategoryListResponse, WikiArticle, WikiArticleListResponse, WikiFeedbackStats, WikiFeedbackCreate, WikiFeedback, WikiLanguage, WikiReviewVerdict, WikiRevision, WikiRevisionListResponse, WikiPublicRevisionListResponse, WikiRevisionStatus, WikiSpace, WikiSpaceKey, EmailThreadDetail, EmailThreadListResponse, EmailThreadStatus, EmailMessage, EmailSenderProfile, EmailLanguage, NotificationCampaignAudience, NotificationCampaignHistoryResponse, NotificationCampaignPreview, NotificationCampaignSendResult, LegalAcceptancePayload, LegalDocument, LegalDocumentType, LegalPack, LegalRequirements, RegistrationPayload, SpoolUsageEvent, OrcaSliceReport, OrcaPresetScope, OrcaSchemaObservation, OrcaSchemaObservationListResponse, OrcaSchemaObservationStatus } from '../types/api';
 import { getCsrfToken, getRefreshToken, getToken, isCookieAuthMode, isJwtAuthMode, isOrcaEmbedded, removeToken, setToken, shouldPersistTokensLocally } from '../utils/auth';
 import { isPluginEmbed, reportPluginSessionToPlugin } from '../utils/pluginBridge';
 import { downloadBlob } from '../utils/download';
@@ -525,7 +526,6 @@ export const brandRepresentativesAPI = {
   invite: async (brandId: number, payload: {
     email: string;
     country: string;
-    organization_name: string;
     send_email: boolean;
   }): Promise<BrandRepresentativeInvite> => {
     const response = await api.post<BrandRepresentativeInvite>(
@@ -548,6 +548,7 @@ export const brandsAPI = {
       is_admin: boolean;
       common_managed_by: string | null;
       can_edit_common: boolean;
+      can_edit_filament_common: boolean;
       territories: {
         country: string | null;
         manage_brand_country: boolean;
@@ -625,6 +626,11 @@ export const brandsAPI = {
     const response = await api.get<BrandUsage>(`/brands/${id}/usage`);
     return response.data;
   },
+
+  getAnalytics: async (id: number): Promise<BrandAnalytics> => {
+    const response = await api.get<BrandAnalytics>(`/brands/${id}/analytics`);
+    return response.data;
+  },
 };
 
 // Filaments API
@@ -659,6 +665,14 @@ export const filamentsAPI = {
 
   deleteCountryCell: async (filamentId: number, country: string) => {
     await api.delete(`/filaments/${filamentId}/country-cells/${country}`);
+  },
+
+  requestCommonEdit: async (filamentId: number, message: string) => {
+    const response = await api.post<{ recipients: number }>(
+      `/filaments/${filamentId}/common-edit-request`,
+      { message },
+    );
+    return response.data;
   },
 
   getMaterialTypes: async (): Promise<string[]> => {
@@ -715,10 +729,26 @@ export const filamentsAPI = {
     price_per_kg?: number;
     spool_weight?: number;
     empty_spool_weight_g?: number;
+    recommended_nozzle_temp_min?: number;
+    recommended_nozzle_temp_max?: number;
+    recommended_bed_temp_min?: number;
+    recommended_bed_temp_max?: number;
+    required_nozzle_hrc?: number;
     description?: string;
     availability?: FilamentAvailability;
     price_display_unit?: 'per_kg' | 'per_spool';
     line_id?: number | null;
+    country_cell?: {
+      country: string;
+      availability: CountryAvailability;
+      price: number | null;
+      currency: string | null;
+      price_display_unit: 'per_kg' | 'per_spool' | null;
+      product_url?: string | null;
+      purchase_links?: { platform: string; url: string }[] | null;
+      market_note?: string | null;
+      market_color_name?: string | null;
+    };
   }) => {
     const response = await api.post<Filament>('/filaments/', data);
     return response.data;
@@ -738,6 +768,11 @@ export const filamentsAPI = {
     price_per_kg?: number;
     spool_weight?: number;
     empty_spool_weight_g?: number;
+    recommended_nozzle_temp_min?: number;
+    recommended_nozzle_temp_max?: number;
+    recommended_bed_temp_min?: number;
+    recommended_bed_temp_max?: number;
+    required_nozzle_hrc?: number;
     description?: string;
     active?: boolean;
     availability?: FilamentAvailability;
@@ -811,6 +846,7 @@ export const brandInvitesAPI = {
     target_type: 'new' | 'existing';
     brand_id?: number | null;
     brand_name?: string | null;
+    country?: string | null;
     member_role?: 'owner' | 'editor';
     sender_profile?: 'partnerships' | 'pr' | 'transactional';
     language?: EmailLanguage;
@@ -824,6 +860,7 @@ export const brandInvitesAPI = {
     target_type: 'new' | 'existing';
     brand_id?: number | null;
     brand_name?: string | null;
+    country?: string | null;
     member_role?: 'owner' | 'editor';
     sender_profile?: 'partnerships' | 'pr' | 'transactional';
     expires_days?: number;
@@ -837,6 +874,7 @@ export const brandInvitesAPI = {
     target_type: 'new' | 'existing';
     brand_id?: number | null;
     brand_name?: string | null;
+    country?: string | null;
     member_role?: 'owner' | 'editor';
     sender_profile?: 'partnerships' | 'pr' | 'transactional';
     language?: EmailLanguage;
@@ -845,8 +883,8 @@ export const brandInvitesAPI = {
     const response = await api.post<BrandInviteBatchSendResult>('/admin/brand-invites/batch', payload);
     return response.data;
   },
-  adminList: async (): Promise<BrandInviteAdmin[]> => {
-    const response = await api.get<BrandInviteAdmin[]>('/admin/brand-invites');
+  adminList: async (params: { limit?: number; offset?: number } = {}): Promise<BrandInviteAdmin[]> => {
+    const response = await api.get<BrandInviteAdmin[]>('/admin/brand-invites', { params });
     return response.data;
   },
   adminDelete: async (id: number): Promise<void> => {
@@ -856,12 +894,18 @@ export const brandInvitesAPI = {
 
 // Filament CSV import API
 export const filamentImportAPI = {
-  templateUrl: '/api/v1/filament-import/template',
-  importCsv: async (brandId: number, file: File): Promise<FilamentImportResult> => {
+  templateUrl: (country?: string | null) => (
+    `/api/v1/filament-import/template${country ? `?country=${encodeURIComponent(country)}` : ''}`
+  ),
+  importCsv: async (
+    brandId: number,
+    file: File,
+    country?: string | null,
+  ): Promise<FilamentImportResult> => {
     const form = new FormData();
     form.append('file', file);
     const response = await api.post<FilamentImportResult>('/filament-import', form, {
-      params: { brand_id: brandId },
+      params: { brand_id: brandId, ...(country ? { country } : {}) },
       headers: { 'Content-Type': 'multipart/form-data' },
     });
     return response.data;
@@ -936,18 +980,28 @@ export const filamentReviewsAPI = {
 // QR Code API
 export const qrAPI = {
   // Получить QR-код изображение (URL)
-  getQRCodeURL: (filamentId: number, size: number = 300): string => {
-    return `${API_BASE_URL}/qr/filaments/${filamentId}/qr-code?size=${size}`;
+  getQRCodeURL: (filamentId: number, size: number = 300, branded = false): string => {
+    const suffix = branded ? '&branded=true' : '';
+    return `${API_BASE_URL}/qr/filaments/${filamentId}/qr-code?size=${size}${suffix}`;
   },
 
-  // Скачать QR-код для печати
-  downloadQRCode: async (filamentId: number, size: number = 600): Promise<void> => {
+  // Скачать QR-код для печати. Вектор уходит в типографию, растр — на этикетку.
+  downloadQRCode: async (
+    filamentId: number,
+    size: number = 600,
+    options: { branded?: boolean; format?: 'png' | 'svg' } = {},
+  ): Promise<void> => {
+    const { branded = false, format = 'png' } = options;
     const response = await api.get(`/qr/filaments/${filamentId}/qr-code/download`, {
-      params: { size },
+      params: { size, format, ...(branded ? { branded: true } : {}) },
       responseType: 'blob',
     });
-    
-    downloadBlob(response.data, `qr-code-${filamentId}-${size}x${size}.png`);
+
+    const mark = branded ? '-branded' : '';
+    const name = format === 'svg'
+      ? `qr-code-${filamentId}${mark}.svg`
+      : `qr-code-${filamentId}-${size}x${size}${mark}.png`;
+    downloadBlob(response.data, name);
   },
 
   // Регистрация сканирования QR-кода

@@ -35,6 +35,7 @@ export function BrandInvitePage() {
         target_type: null,
         brand_id: null,
         purpose: null,
+        country: null,
         member_role: null,
         reason: null,
       }))
@@ -59,7 +60,8 @@ export function BrandInvitePage() {
     }
   };
 
-  const perks = invite?.purpose === 'team' ? [] : [
+  const isPlatformOnboarding = invite?.purpose === 'platform' || invite?.purpose === 'representative';
+  const perks = invite?.purpose === 'team' || isPlatformOnboarding ? [] : [
     { icon: Layers, text: t('brandInvite.perkCatalog') },
     { icon: Upload, text: t('brandInvite.perkImport') },
     { icon: QrCode, text: t('brandInvite.perkQr') },
@@ -94,7 +96,11 @@ export function BrandInvitePage() {
               {t(invite.purpose === 'team' ? 'brandInvite.teamTitle' : 'brandInvite.title')}
             </h2>
             <p className="text-gray-300 mb-5 text-center">
-              {t(invite.purpose === 'team' ? 'brandInvite.teamSubtitle' : 'brandInvite.subtitle', {
+              {t(invite.purpose === 'team'
+                ? 'brandInvite.teamSubtitle'
+                : isPlatformOnboarding
+                  ? 'brandInvite.onboardingSubtitle'
+                  : 'brandInvite.subtitle', {
                 role: t(`brandTeam.roles.${invite.member_role ?? 'editor'}`),
               })}
             </p>
@@ -116,7 +122,18 @@ export function BrandInvitePage() {
                   {t(invite.purpose === 'team' ? 'brandInvite.teamEmailHint' : 'brandInvite.emailHint', { email: invite.email })}
                 </p>
               )}
+              {invite.purpose === 'territory' && invite.country && (
+                <p className="mt-2 text-sm font-medium text-emerald-200">
+                  {t('brandInvite.territoryScope', { country: invite.country })}
+                </p>
+              )}
             </div>
+
+            {isPlatformOnboarding && (
+              <p className="mb-6 rounded-xl border border-amber-300/20 bg-amber-300/10 px-4 py-3 text-sm leading-6 text-amber-100">
+                {t('brandInvite.onboardingNotice')}
+              </p>
+            )}
 
             <ul className="space-y-2 mb-6">
               {perks.map(({ icon: Icon, text }, i) => (
@@ -139,7 +156,7 @@ export function BrandInvitePage() {
                   className="w-full px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white rounded-xl transition-all disabled:opacity-50 flex items-center justify-center gap-2"
                 >
                   {accepting && <Loader className="w-4 h-4 animate-spin" />}
-                  {t('brandInvite.accept')}
+                  {t(isPlatformOnboarding ? 'brandInvite.continueApplication' : 'brandInvite.accept')}
                 </button>
               </>
             ) : (

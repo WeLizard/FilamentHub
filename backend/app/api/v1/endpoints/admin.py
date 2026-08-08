@@ -1148,7 +1148,8 @@ async def update_brand_request(
                 )
 
         elif request.request_type == BrandRequestType.CREATE:
-            # Для CREATE: создаем новый бренд и привязываем пользователя
+            # CREATE registers a catalog Brand only. Representation and an
+            # organization workspace are granted through a separate claim.
             if not request.new_brand_name:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
@@ -1178,13 +1179,6 @@ async def update_brand_request(
             )
             db.add(new_brand)
             await db.flush()  # Получаем ID бренда
-
-            await grant_brand_owner_membership(
-                db,
-                brand=new_brand,
-                user=user,
-                granted_by_id=admin.id,
-            )
 
     await db.commit()
     await db.refresh(request)

@@ -9,6 +9,7 @@ import { brandsAPI } from '../api/client';
 import { COUNTRY_CODES, countryName } from '../utils/countries';
 import { CURRENCY_CODES, currencySymbol, defaultCurrencyForCountry } from '../utils/currency';
 import { translateApiError } from '../utils/translateApiError';
+import { useAuth } from '../contexts/AuthContext';
 import { BrandLogoFrame } from './BrandLogoFrame';
 import { FeedbackModal } from './FeedbackModal';
 import { HSLColorPicker } from './HSLColorPicker';
@@ -58,14 +59,15 @@ function LinkRow({
 
 export const BrandSettings: React.FC<BrandSettingsProps> = ({ brand }) => {
   const { t, i18n } = useTranslation();
+  const { user } = useAuth();
   const queryClient = useQueryClient();
 
   const territories = useQuery({
-    queryKey: ['brand-territories', brand.id],
+    queryKey: ['brand-territories', brand.id, user?.active_organization_id],
     queryFn: () => brandsAPI.myTerritories(brand.id),
   });
   const cells = useQuery({
-    queryKey: ['brand-country-cells', brand.id],
+    queryKey: ['brand-country-cells', brand.id, user?.active_organization_id],
     queryFn: () => brandsAPI.countryCells(brand.id),
   });
 
@@ -81,24 +83,24 @@ export const BrandSettings: React.FC<BrandSettingsProps> = ({ brand }) => {
     if (!hasGlobalGrant) return own;
     return Array.from(new Set([...own, ...(cells.data ?? []).map((cell) => cell.country)]));
   }, [grants, cells.data, hasGlobalGrant]);
+  const scopeOptions = hasGlobalGrant
+    ? [COMMON_SCOPE, ...countries]
+    : [...countries, COMMON_SCOPE];
 
   const [scope, setScope] = useState<string>(COMMON_SCOPE);
   const cell: BrandCountryCell | undefined = (cells.data ?? []).find(
     (item) => item.country === scope,
   );
-  const holdsGrant = grants.length > 0;
-  // Пустое общее поле заполняет любой держатель права; занятое ведёт тот, у кого
-  // есть право на общий слой. В своей стране редактируется всё.
-  const canEditField = (value: unknown) => {
+  // Common data follows the global capability. Territorial workspaces use the
+  // same rows after choosing their country, but do not mutate the shared layer.
+  const canEditField = (_value: unknown) => {
     if (scope !== COMMON_SCOPE) return true;
-    if (canEditCommon) return true;
-    const empty = value === null || value === undefined || value === '' ||
-      (Array.isArray(value) && value.length === 0);
-    return holdsGrant && empty;
+    return canEditCommon;
   };
-  const canUploadLogo = canEditCommon || (holdsGrant && !brand.logo_url);
+  const canUploadLogo = canEditCommon || (!brand.logo_url && grants.length > 0);
 
   const [description, setDescription] = useState('');
+  const [brandName, setBrandName] = useState(brand.name);
   const [website, setWebsite] = useState('');
   const [socials, setSocials] = useState<string[] | null>(null);
   const [shops, setShops] = useState<ShopLink[] | null>(null);
@@ -108,6 +110,18 @@ export const BrandSettings: React.FC<BrandSettingsProps> = ({ brand }) => {
   const [uploading, setUploading] = useState(false);
   const [justSaved, setJustSaved] = useState(false);
   const [nameRequestOpen, setNameRequestOpen] = useState(false);
+
+  useEffect(() => {
+    if (hasGlobalGrant) {
+      setScope((current) => (
+        current === COMMON_SCOPE || countries.includes(current) ? current : COMMON_SCOPE
+      ));
+      return;
+    }
+    setScope((current) => (
+      countries.includes(current) ? current : countries[0] ?? COMMON_SCOPE
+    ));
+  }, [countries, hasGlobalGrant, user?.active_organization_id]);
 
   useEffect(() => {
     if (scope === COMMON_SCOPE) {
@@ -126,8 +140,9 @@ export const BrandSettings: React.FC<BrandSettingsProps> = ({ brand }) => {
   }, [scope, cell?.id, brand.id, brand.updated_at]);
 
   useEffect(() => {
+    setBrandName(brand.name);
     setLogoBg(brand.logo_bg || '');
-  }, [brand.logo_bg]);
+  }, [brand.name, brand.logo_bg]);
 
   const fail = (error: unknown, fallback: string) =>
     toast.error(
@@ -142,6 +157,9 @@ export const BrandSettings: React.FC<BrandSettingsProps> = ({ brand }) => {
     mutationFn: async () => {
       if (scope === COMMON_SCOPE) {
         return brandsAPI.update(brand.id, {
+          ...(brand.name_correction_available && brandName.trim() !== brand.name
+            ? { name: brandName.trim() }
+            : {}),
           description: description.trim() || null,
           website: website.trim() || null,
           logo_bg: logoBg.trim() || null,
@@ -211,24 +229,50 @@ export const BrandSettings: React.FC<BrandSettingsProps> = ({ brand }) => {
         initialType="other"
         initialSubject={t('brandSettings.nameRequestSubject', { brand: brand.name })}
       />
-      <section className="rounded-2xl border border-white/10 bg-white/[0.04] p-5">
-        <h4 className="text-lg font-semibold text-white">{brand.name}</h4>
-        <p className={CONTEXT}>
-          {t('brandSettings.nameThroughAdmin')}{' '}
-          <button
-            type="button"
-            onClick={() => setNameRequestOpen(true)}
-            className="text-cyan-300 underline-offset-2 transition hover:text-cyan-200 hover:underline"
-          >
-            {t('brandSettings.requestNameChange')}
-          </button>
-        </p>
+      <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
+        <section className="rounded-2xl border border-white/10 bg-white/[0.04] p-5 sm:p-6">
+        <div className="flex flex-col gap-5 sm:flex-row sm:items-start">
+          {brand.logo_url && (
+            <BrandLogoFrame
+              src={brand.logo_url}
+              alt={brand.name}
+              backgroundColor={logoBg}
+              size="settings"
+            />
+          )}
 
-        <div className="mt-4 flex flex-wrap items-start gap-4">
-          {canUploadLogo && (
-            <>
-              <div className="flex flex-col gap-2">
-                <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-white/20 bg-white/10 px-4 py-3 text-gray-300 transition-all hover:bg-white/20 hover:text-white">
+          <div className="min-w-0 flex-1">
+            {brand.name_correction_available && canEditCommon ? (
+              <div className="rounded-xl border border-cyan-400/20 bg-cyan-400/5 p-4">
+                <label className={LABEL}>{t('brandProfile.officialNameLabel')}</label>
+                <input
+                  type="text"
+                  value={brandName}
+                  maxLength={100}
+                  onChange={(event) => setBrandName(event.target.value)}
+                  className={FIELD}
+                />
+                <p className={CONTEXT}>{t('brandProfile.officialNameHint')}</p>
+              </div>
+            ) : (
+              <>
+                <h4 className="truncate text-xl font-semibold text-white">{brand.name}</h4>
+                <p className={CONTEXT}>
+                  {t('brandSettings.nameThroughAdmin')}{' '}
+                  <button
+                    type="button"
+                    onClick={() => setNameRequestOpen(true)}
+                    className="text-cyan-300 underline-offset-2 transition hover:text-cyan-200 hover:underline"
+                  >
+                    {t('brandSettings.requestNameChange')}
+                  </button>
+                </p>
+              </>
+            )}
+
+            {canUploadLogo && (
+              <div className="mt-4 flex flex-wrap items-center gap-2">
+                <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-white/20 bg-white/10 px-4 py-2.5 text-gray-300 transition-all hover:bg-white/20 hover:text-white">
                   {uploading ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
                   ) : (
@@ -242,91 +286,91 @@ export const BrandSettings: React.FC<BrandSettingsProps> = ({ brand }) => {
                     type="button"
                     onClick={() => removeLogo.mutate()}
                     disabled={removeLogo.isPending}
-                    className="rounded-xl border border-white/20 bg-white/10 px-3 py-2 text-sm text-gray-300 transition-all hover:bg-red-500/20 hover:text-white disabled:opacity-50"
+                    className="rounded-xl border border-white/15 px-4 py-2.5 text-sm text-gray-400 transition-all hover:border-red-400/30 hover:bg-red-500/10 hover:text-red-200 disabled:opacity-50"
                   >
                     {t('brandProfile.removeLogo')}
                   </button>
                 )}
-                {logoBg && canEditCommon && brand.logo_url && (
-                  <button
-                    type="button"
-                    onClick={() => setLogoBg('')}
-                    className="rounded-xl border border-white/20 bg-white/10 px-3 py-2 text-sm text-gray-300 transition-all hover:bg-white/20 hover:text-white"
-                  >
-                    {t('brandProfile.logoBgReset')}
-                  </button>
-                )}
               </div>
-              {canEditCommon && brand.logo_url && (
-              <div className="flex flex-col items-center gap-2">
-                <HSLColorPicker
-                  color={logoBg || '#ffffff'}
-                  onChange={setLogoBg}
-                  isOpen={bgPickerOpen}
-                  onToggle={setBgPickerOpen}
-                  showTrigger
-                  triggerClassName="h-11 w-11 cursor-pointer rounded-lg border border-white/20 shadow-inner"
-                  flyoutOffset="-mb-7"
-                />
-                <span className="font-mono text-xs text-gray-400">
-                  {logoBg || t('brandProfile.logoBgDefault')}
-                </span>
-              </div>
-              )}
-            </>
-          )}
-          {brand.logo_url && (
-            <BrandLogoFrame
-              src={brand.logo_url}
-              alt={brand.name}
-              backgroundColor={logoBg}
-              size="preview"
-            />
-          )}
+            )}
+          </div>
         </div>
-      </section>
 
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="text-sm text-gray-400">{t('brandSettings.scope')}</span>
-        {[COMMON_SCOPE, ...countries].map((code) => (
-          <button
-            key={code}
-            type="button"
-            onClick={() => setScope(code)}
-            className={`rounded-lg px-4 py-2 text-sm transition-all ${
-              scope === code
-                ? 'bg-purple-600 text-white shadow-lg shadow-purple-500/25'
-                : 'text-gray-300 hover:bg-white/10 hover:text-white'
+        {canEditCommon && brand.logo_url && (
+          <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-white/10 pt-4">
+            <div>
+              <p className="text-sm font-medium text-gray-300">{t('brandProfile.logoBgLabel')}</p>
+              <p className="mt-0.5 text-xs text-gray-500">{t('brandProfile.logoBgHint')}</p>
+            </div>
+            <div className="flex items-center gap-3">
+              <HSLColorPicker
+                color={logoBg || '#ffffff'}
+                onChange={setLogoBg}
+                isOpen={bgPickerOpen}
+                onToggle={setBgPickerOpen}
+                showTrigger
+                triggerClassName="h-10 w-10 cursor-pointer rounded-lg border border-white/20 shadow-inner"
+                flyoutOffset="-mb-7"
+              />
+              <span className="min-w-16 font-mono text-xs text-gray-400">
+                {logoBg || t('brandProfile.logoBgDefault')}
+              </span>
+              {logoBg && (
+                <button
+                  type="button"
+                  onClick={() => setLogoBg('')}
+                  className="rounded-lg px-3 py-2 text-sm text-gray-400 transition hover:bg-white/10 hover:text-white"
+                >
+                  {t('brandProfile.logoBgReset')}
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+        </section>
+
+        <div className="min-w-0 space-y-3">
+          <div className="flex w-fit max-w-full flex-wrap items-center gap-1 rounded-xl border border-white/10 bg-white/[0.04] p-1.5">
+            <span className="px-2 text-sm text-gray-400">{t('brandSettings.scope')}</span>
+            {scopeOptions.map((code) => (
+              <button
+                key={code}
+                type="button"
+                onClick={() => setScope(code)}
+                className={`rounded-lg px-4 py-2 text-sm transition-all ${
+                  scope === code
+                    ? 'bg-purple-600 text-white shadow-lg shadow-purple-500/25'
+                    : 'text-gray-300 hover:bg-white/10 hover:text-white'
+                }`}
+              >
+                {code === COMMON_SCOPE ? t('brandSettings.common') : countryName(code, i18n.language)}
+              </button>
+            ))}
+            {hasGlobalGrant && (
+              <select
+                value=""
+                onChange={(event) => event.target.value && setScope(event.target.value)}
+                className="rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-sm text-white"
+              >
+                <option value="" className="bg-gray-900">
+                  {t('brandSettings.addCountry')}
+                </option>
+                {COUNTRY_CODES.filter((code) => !countries.includes(code)).map((code) => (
+                  <option key={code} value={code} className="bg-gray-900">
+                    {countryName(code, i18n.language)}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+
+          <section
+            className={`rounded-2xl border p-5 ${
+              scope === COMMON_SCOPE
+                ? 'border-white/10 bg-white/[0.04]'
+                : 'border-emerald-400/20 bg-emerald-400/[0.06]'
             }`}
           >
-            {code === COMMON_SCOPE ? t('brandSettings.common') : countryName(code, i18n.language)}
-          </button>
-        ))}
-        {hasGlobalGrant && (
-          <select
-            value=""
-            onChange={(event) => event.target.value && setScope(event.target.value)}
-            className="rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-sm text-white"
-          >
-            <option value="" className="bg-gray-900">
-              {t('brandSettings.addCountry')}
-            </option>
-            {COUNTRY_CODES.filter((code) => !countries.includes(code)).map((code) => (
-              <option key={code} value={code} className="bg-gray-900">
-                {countryName(code, i18n.language)}
-              </option>
-            ))}
-          </select>
-        )}
-      </div>
-
-      <section
-        className={`rounded-2xl border p-5 ${
-          scope === COMMON_SCOPE
-            ? 'border-white/10 bg-white/[0.04]'
-            : 'border-emerald-400/20 bg-emerald-400/[0.06]'
-        }`}
-      >
         <h4 className="font-semibold text-white">
           {scope === COMMON_SCOPE
             ? t('brandSettings.commonTitle')
@@ -509,10 +553,11 @@ export const BrandSettings: React.FC<BrandSettingsProps> = ({ brand }) => {
               )}
             </div>
 
+            {(scope !== COMMON_SCOPE || canEditCommon) && (
             <div className="flex flex-wrap items-center gap-3">
               <button
                 onClick={() => save.mutate()}
-                disabled={save.isPending}
+                disabled={save.isPending || (scope === COMMON_SCOPE && brand.name_correction_available && !brandName.trim())}
                 className={`rounded-xl px-5 py-2.5 text-sm font-medium text-white transition disabled:opacity-50 ${
                   scope === COMMON_SCOPE
                     ? 'bg-purple-600 hover:bg-purple-700'
@@ -533,8 +578,11 @@ export const BrandSettings: React.FC<BrandSettingsProps> = ({ brand }) => {
                 </span>
               )}
             </div>
+            )}
         </div>
-      </section>
+          </section>
+        </div>
+      </div>
     </div>
   );
 };

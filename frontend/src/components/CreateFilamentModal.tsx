@@ -11,11 +11,11 @@ import { ColorMaterialSection } from './ColorMaterialSection';
 import { FilamentPaletteForm } from './FilamentPaletteForm';
 import { FloatingHSLColorPicker } from './FloatingHSLColorPicker';
 import { PriceUnitField } from './PriceUnitField';
-import type { FilamentAdditive, FilamentPropertyClaim, FilamentVisualSettings } from '../types/api';
+import type { CountryAvailability, FilamentAdditive, FilamentPropertyClaim, FilamentVisualSettings } from '../types/api';
 import { Dropdown } from './Dropdown';
 import { sortMaterialTypes } from '../data/materialDefaults';
 import { countryName } from '../utils/countries';
-import { currencySymbol, defaultCurrencyForCountry } from '../utils/currency';
+import { CURRENCIES, currencySymbol, defaultCurrencyForCountry } from '../utils/currency';
 import type { Filament, Brand, FilamentAvailability } from '../types/api';
 import { useAuth } from '../contexts/AuthContext';
 import { MaterialTypeSelect, FALLBACK_TYPES } from './MaterialTypeSelect';
@@ -23,7 +23,6 @@ import { AvailabilitySelect } from './AvailabilitySelect';
 import { DensityField } from './DensityField';
 import { RecommendedTempsField, RecommendedTemps, EMPTY_RECOMMENDED_TEMPS } from './RecommendedTempsField';
 import { NozzleHardnessField } from './NozzleHardnessField';
-import { FeedbackModal } from './FeedbackModal';
 import { ModalOverlay } from './ModalOverlay';
 import { ConfirmModal } from './ConfirmModal';
 import { InfoHint } from './InfoHint';
@@ -36,6 +35,25 @@ interface CreateFilamentModalProps {
   onClose: () => void;
   filament?: Filament | null; // Если передан, то редактирование, иначе создание
   brandId?: number; // ID бренда (если создание нового материала)
+  initialCountry?: string | null;
+}
+
+interface CountryCellDraft {
+  country: string;
+  availability: CountryAvailability;
+  price: number | null;
+  currency: string | null;
+  price_display_unit: 'per_kg' | 'per_spool' | null;
+  product_url: string | null;
+  market_note: string | null;
+  market_color_name: string | null;
+}
+
+type FilamentPatch = Parameters<typeof filamentsAPI.update>[1];
+
+interface CountryCellSaveDraft {
+  cell: CountryCellDraft;
+  commonGaps?: FilamentPatch;
 }
 
 export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
@@ -43,8 +61,11 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
   onClose,
   filament,
   brandId,
+  initialCountry = null,
 }) => {
   const { t, i18n } = useTranslation();
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
   const [brandIdValue, setBrandIdValue] = useState<number | null>(brandId || null);
   const [formMode, setFormMode] = useState<'single' | 'palette'>('single');
   const [formDirty, setFormDirty] = useState(false);
@@ -75,53 +96,83 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
   const [diameter, setDiameter] = useState(1.75);
   const [density, setDensity] = useState(1.24);
   const [priceMode, setPriceMode] = useState<'per_kg' | 'per_spool'>('per_kg');
+  const [selectedCountry, setSelectedCountry] = useState<string | null>(initialCountry);
+  const [marketAvailability, setMarketAvailability] = useState<CountryAvailability>('unknown');
+  const [marketCurrency, setMarketCurrency] = useState(defaultCurrencyForCountry(null, i18n.language));
+  const [marketProductUrl, setMarketProductUrl] = useState('');
+  const [marketColorName, setMarketColorName] = useState('');
+  const [marketNote, setMarketNote] = useState('');
+  const commonGapTouched = useRef(new Set<string>());
+  const touchCommonGap = (field: string) => commonGapTouched.current.add(field);
 
   // Общую цену задаёт только тот, у кого область — весь мир.
   const territoriesQuery = useQuery({
-    queryKey: ['brand-territories', brandIdValue],
+    queryKey: ['brand-territories', brandIdValue, user?.active_organization_id],
     queryFn: () => brandsAPI.myTerritories(brandIdValue!),
     enabled: !!brandIdValue,
   });
-  // Область организации: если она страновая, форма правит её ячейку.
-  const scopeCountry = (territoriesQuery.data?.territories ?? [])
-    .map((item) => item.country)
-    .find((code): code is string => code !== null);
+  const managedCountries = useMemo(
+    () => (territoriesQuery.data?.territories ?? [])
+      .filter((item) => item.manage_filament_country && item.country !== null)
+      .map((item) => item.country as string),
+    [territoriesQuery.data],
+  );
+  const hasGlobalScope = (territoriesQuery.data?.territories ?? []).some(
+    (item) => item.country === null,
+  );
+
+  useEffect(() => {
+    if (hasGlobalScope) {
+      setSelectedCountry(null);
+      return;
+    }
+    setSelectedCountry((current) => (
+      initialCountry && managedCountries.includes(initialCountry)
+        ? initialCountry
+        : current && managedCountries.includes(current) ? current : managedCountries[0] ?? null
+    ));
+  }, [hasGlobalScope, initialCountry, managedCountries]);
+
+  // A regional workspace edits exactly one of its granted country cells.
+  const scopeCountry = selectedCountry;
 
   const countryCell = useQuery({
-    queryKey: ['filament-country-cells', filament?.id],
+    queryKey: ['filament-country-cells', filament?.id, user?.active_organization_id],
     queryFn: () => filamentsAPI.countryCells(filament!.id),
     enabled: !!filament?.id && !!scopeCountry,
   });
 
-  useEffect(() => {
-    if (!scopeCountry || !countryCell.data) return;
-    const cell = countryCell.data.find((item) => item.country === scopeCountry);
-    if (!cell) return;
-    // Пусто в ячейке означает «как у всех», поэтому общее остаётся видимым.
-    if (cell.market_color_name) setColorName(cell.market_color_name);
-    if (cell.price) {
-      if (cell.price_display_unit === 'per_spool') {
-        setPriceMode('per_spool');
-        setPricePerSpool(cell.price);
-      } else {
-        setPriceMode('per_kg');
-        setPricePerKg(cell.price);
-      }
-    }
-  }, [scopeCountry, countryCell.data]);
+  const brandCountryCells = useQuery({
+    queryKey: ['brand-country-cells', brandIdValue, user?.active_organization_id],
+    queryFn: () => brandsAPI.countryCells(brandIdValue!),
+    enabled: !!brandIdValue && !!scopeCountry,
+  });
 
   const saveCountryCell = useMutation({
-    mutationFn: async (payload: Record<string, unknown> & { country: string }) => {
+    mutationFn: async ({ cell: payload, commonGaps }: CountryCellSaveDraft) => {
+      if (commonGaps && Object.keys(commonGaps).length > 0) {
+        await filamentsAPI.update(filament!.id, commonGaps);
+      }
       const exists = (countryCell.data ?? []).some((cell) => cell.country === payload.country);
+      const hasMarketData = payload.price !== null
+        || payload.availability !== 'unknown'
+        || !!payload.product_url
+        || !!payload.market_note
+        || !!payload.market_color_name;
+      if (!exists && !hasMarketData) return null;
       const { country, ...rest } = payload;
       return exists
-        ? filamentsAPI.updateCountryCell(filament!.id, country, { ...rest, published: true })
-        : filamentsAPI.createCountryCell(filament!.id, { country, ...rest, published: true });
+        ? filamentsAPI.updateCountryCell(filament!.id, country, rest)
+        : filamentsAPI.createCountryCell(filament!.id, { country, ...rest });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['brand-filaments'] });
+      queryClient.invalidateQueries({ queryKey: ['filaments'] });
       queryClient.invalidateQueries({ queryKey: ['filament-country-cells', filament?.id] });
       onClose();
+    },
+    onError: (err: AxiosError<{ detail: unknown }>) => {
+      setError(translateApiError(t, err.response?.data?.detail, t('filamentMarket.saveFailed')));
     },
   });
 
@@ -137,9 +188,34 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [createdFilament, setCreatedFilament] = useState<Filament | null>(null); // Для отображения QR-кода после создания
 
-  const queryClient = useQueryClient();
-  const { user } = useAuth();
-  const [typoOpen, setTypoOpen] = useState(false);
+  const [commonEditRequestOpen, setCommonEditRequestOpen] = useState(false);
+  const [commonEditRequestMessage, setCommonEditRequestMessage] = useState('');
+  const [commonEditRequestError, setCommonEditRequestError] = useState<string | null>(null);
+  const commonEditRequestMutation = useMutation({
+    mutationFn: () => filamentsAPI.requestCommonEdit(
+      filament!.id,
+      commonEditRequestMessage.trim(),
+    ),
+    onSuccess: ({ recipients }) => {
+      if (recipients === 0) {
+        setCommonEditRequestError(t('createFilament.commonEditRequestNoRecipients'));
+        return;
+      }
+      setCommonEditRequestOpen(false);
+      setCommonEditRequestMessage('');
+      setCommonEditRequestError(null);
+      setSuccessMessage(t('createFilament.commonEditRequestSent'));
+    },
+    onError: (err: AxiosError<{ detail: unknown }>) => {
+      setCommonEditRequestError(
+        translateApiError(
+          t,
+          err.response?.data?.detail,
+          t('createFilament.commonEditRequestFailed'),
+        ),
+      );
+    },
+  });
 
   
   // Ref для отслеживания внутренних изменений цвета (из расширенных настроек)
@@ -212,7 +288,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
 
   // Линейки бренда (для группировки вариантов-цвета).
   const { data: linesData } = useQuery({
-    queryKey: ['filament-lines', brandIdValue],
+    queryKey: ['filament-lines', brandIdValue, user?.active_organization_id],
     queryFn: () => filamentLinesAPI.list(brandIdValue!),
     enabled: isOpen && !!brandIdValue,
   });
@@ -257,6 +333,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
   // Инициализация формы при редактировании
   useEffect(() => {
     if (!isOpen) return; // Не выполняем инициализацию, если модалка закрыта
+    commonGapTouched.current.clear();
     
     if (filament) {
       setBrandIdValue(filament.brand_id);
@@ -352,11 +429,43 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
       setAvailability('available');
       setLineId('');
       setNewLineName('');
+      setMarketProductUrl('');
+      setMarketAvailability('unknown');
+      setMarketColorName('');
+      setMarketNote('');
     }
     setError(null);
     setSuccessMessage(null);
     setCreatedFilament(null); // Сбрасываем QR-код при закрытии
   }, [filament?.id, brandId, isOpen, user?.brand_id]); // Убрал materialTypes и filament целиком, используем только filament.id
+
+  // Overlay only the market-dependent inputs. Missing country data is shown as
+  // unknown/empty; it must never inherit another market's price or currency.
+  useEffect(() => {
+    if (!scopeCountry) return;
+    if (filament?.id && !countryCell.data) return;
+
+    const cell = (countryCell.data ?? []).find((item) => item.country === scopeCountry);
+    const brandCell = (brandCountryCells.data ?? []).find((item) => item.country === scopeCountry);
+    const nextCurrency = cell?.currency
+      ?? brandCell?.currency
+      ?? defaultCurrencyForCountry(scopeCountry, i18n.language);
+
+    setMarketCurrency(nextCurrency);
+    setMarketAvailability(cell?.availability ?? 'unknown');
+    setMarketProductUrl(cell?.product_url ?? '');
+    setMarketColorName(cell?.market_color_name ?? '');
+    setMarketNote(cell?.market_note ?? '');
+    setPriceMode(cell?.price_display_unit === 'per_spool' ? 'per_spool' : 'per_kg');
+    setPricePerKg(cell?.price_display_unit !== 'per_spool' ? cell?.price ?? 0 : 0);
+    setPricePerSpool(cell?.price_display_unit === 'per_spool' ? cell?.price ?? 0 : 0);
+  }, [
+    scopeCountry,
+    filament?.id,
+    countryCell.data,
+    brandCountryCells.data,
+    i18n.language,
+  ]);
 
   // Автоопределение плотности по типу материала (только при создании нового)
   useEffect(() => {
@@ -418,6 +527,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
       availability?: FilamentAvailability;
       price_display_unit?: 'per_kg' | 'per_spool';
       line_id?: number | null;
+      country_cell?: CountryCellDraft;
     }) => filamentsAPI.create(data),
     onSuccess: (data: Filament) => {
       queryClient.invalidateQueries({ queryKey: ['filaments'] });
@@ -509,6 +619,62 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
           : 0
         : pricePerKg;
 
+    const marketPrice = priceMode === 'per_spool' ? pricePerSpool : pricePerKg;
+    const marketCellPayload: CountryCellDraft | null = scopeCountry
+      ? {
+          country: scopeCountry,
+          availability: marketAvailability,
+          price: marketPrice > 0 ? marketPrice : null,
+          currency: marketPrice > 0 ? marketCurrency : null,
+          price_display_unit: marketPrice > 0 ? priceMode : null,
+          product_url: marketProductUrl.trim() || null,
+          market_note: marketNote.trim() || null,
+          market_color_name: marketColorName.trim() || null,
+        }
+      : null;
+
+    if (filament && marketCellPayload) {
+      const touched = commonGapTouched.current;
+      const commonGaps: FilamentPatch = {};
+      if (!canEditFilamentCommon) {
+        if (touched.has('color_hex') && !filament.color_hex && colorHex) {
+          commonGaps.color_hex = colorHex;
+        }
+        if (touched.has('ral_code') && !filament.ral_code && ralCode) {
+          commonGaps.ral_code = ralCode;
+        }
+        if (touched.has('visual_settings') && !filament.visual_settings && currentVisualSettings) {
+          commonGaps.visual_settings = currentVisualSettings;
+        }
+        if (touched.has('additives') && (filament.additives?.length ?? 0) === 0 && additives.length > 0) {
+          commonGaps.additives = additives;
+        }
+        if (touched.has('property_claims') && (filament.property_claims?.length ?? 0) === 0 && propertyClaims.length > 0) {
+          commonGaps.property_claims = propertyClaims;
+        }
+        if (touched.has('density') && filament.density == null && density > 0) {
+          commonGaps.density = density;
+        }
+        if (touched.has('spool_weight') && filament.spool_weight == null && spoolWeight > 0) {
+          commonGaps.spool_weight = spoolWeight;
+        }
+        if (touched.has('empty_spool_weight_g') && filament.empty_spool_weight_g == null && emptySpoolWeight != null) {
+          commonGaps.empty_spool_weight_g = emptySpoolWeight;
+        }
+        if (touched.has('recommended_temps')) {
+          if (filament.recommended_nozzle_temp_min == null && recTemps.nozzleMin != null) commonGaps.recommended_nozzle_temp_min = recTemps.nozzleMin;
+          if (filament.recommended_nozzle_temp_max == null && recTemps.nozzleMax != null) commonGaps.recommended_nozzle_temp_max = recTemps.nozzleMax;
+          if (filament.recommended_bed_temp_min == null && recTemps.bedMin != null) commonGaps.recommended_bed_temp_min = recTemps.bedMin;
+          if (filament.recommended_bed_temp_max == null && recTemps.bedMax != null) commonGaps.recommended_bed_temp_max = recTemps.bedMax;
+        }
+        if (touched.has('required_nozzle_hrc') && filament.required_nozzle_hrc == null && nozzleHrc != null) {
+          commonGaps.required_nozzle_hrc = nozzleHrc;
+        }
+      }
+      saveCountryCell.mutate({ cell: marketCellPayload, commonGaps });
+      return;
+    }
+
     if (filament) {
       // Обновление существующего материала
       const finalMaterialType = materialType === 'Other' ? customMaterialType.trim() : materialType;
@@ -578,7 +744,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
         brand_id: brandIdValue,
         name,
         material_type: finalMaterialType,
-        color_name: colorName || undefined,
+        color_name: (scopeCountry ? marketColorName : colorName) || undefined,
         color_hex: colorHex || undefined,
         ral_code: ralCode || undefined,
         visual_settings: visualSettings,
@@ -586,7 +752,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
         property_claims: propertyClaims,
         diameter,
         density,
-        price_per_kg: priceKg || undefined,
+        price_per_kg: scopeCountry ? undefined : priceKg || undefined,
         spool_weight: spoolWeight || undefined,
         empty_spool_weight_g: emptySpoolWeight ?? undefined,
         recommended_nozzle_temp_min: recTemps.nozzleMin ?? undefined,
@@ -598,6 +764,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
         availability,
         price_display_unit: priceMode,
         line_id: lineId === '' ? null : lineId,
+        country_cell: marketCellPayload ?? undefined,
       });
     }
   };
@@ -605,14 +772,36 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
   const isLoading =
     createMutation.isPending || updateMutation.isPending || saveCountryCell.isPending;
 
-  const myCell = (countryCell.data ?? []).find((cell) => cell.country === scopeCountry);
-  // Общий слой правит тот, чей это вклад. Чужой показывается, но не редактируется.
-  const ownsRecord =
-    !filament ||
-    !scopeCountry ||
-    filament.contributed_by_organization_id === user?.active_organization_id;
+  const canEditFilamentCommon = Boolean(
+    territoriesQuery.data?.is_admin || territoriesQuery.data?.can_edit_filament_common,
+  );
+  // A regional representative may define the shared shell when creating a
+  // missing product. Once it exists, common edits require the global grant.
+  const commonLocked = Boolean(filament && scopeCountry && !canEditFilamentCommon);
+  const colorAppearanceLocked = Boolean(commonLocked && filament
+    && filament.color_hex && filament.ral_code && filament.visual_settings
+    && (filament.additives?.length ?? 0) > 0
+    && (filament.property_claims?.length ?? 0) > 0);
+  const densityLocked = Boolean(commonLocked && filament?.density != null);
+  const spoolWeightLocked = Boolean(commonLocked && filament?.spool_weight != null);
+  const emptySpoolWeightLocked = Boolean(commonLocked && filament?.empty_spool_weight_g != null);
+  const temperatureLocks = {
+    nozzleMin: Boolean(commonLocked && filament?.recommended_nozzle_temp_min != null),
+    nozzleMax: Boolean(commonLocked && filament?.recommended_nozzle_temp_max != null),
+    bedMin: Boolean(commonLocked && filament?.recommended_bed_temp_min != null),
+    bedMax: Boolean(commonLocked && filament?.recommended_bed_temp_max != null),
+  };
+  const nozzleLocked = Boolean(commonLocked && filament?.required_nozzle_hrc != null);
+  const hasCommonGaps = commonLocked && (
+    !colorAppearanceLocked
+    || !densityLocked
+    || !spoolWeightLocked
+    || !emptySpoolWeightLocked
+    || Object.values(temperatureLocks).some((locked) => !locked)
+    || !nozzleLocked
+  );
   const filamentCurrency = scopeCountry
-    ? myCell?.currency || defaultCurrencyForCountry(scopeCountry)
+    ? marketCurrency
     : filament?.currency ??
       brandsData?.items.find((b: Brand) => b.id === brandIdValue)?.currency;
   const priceCurrencySymbol = currencySymbol(filamentCurrency);
@@ -621,12 +810,6 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
 
   return (
     <>
-    <FeedbackModal
-      isOpen={typoOpen}
-      onClose={() => setTypoOpen(false)}
-      initialType="other"
-      initialSubject={t('createFilament.typoSubject', { name: filament?.name ?? '' })}
-    />
     <ModalOverlay onClose={requestClose} closeOnOverlayClick={false}>
       <div
         className="bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 rounded-2xl w-full max-w-5xl max-h-[90vh] overflow-hidden flex flex-col border border-white/20 shadow-2xl"
@@ -640,11 +823,23 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
             <h2 className="text-2xl font-bold text-white">
               {filament ? t('createFilament.editTitle') : t('createFilament.createTitle')}
             </h2>
-            {scopeCountry && (
+            {scopeCountry && managedCountries.length > 1 ? (
+              <select
+                value={scopeCountry}
+                onChange={(event) => setSelectedCountry(event.target.value)}
+                className="rounded-lg border border-emerald-400/20 bg-emerald-500/15 px-2.5 py-1 text-xs text-emerald-200 outline-none"
+              >
+                {managedCountries.map((country) => (
+                  <option key={country} value={country} className="bg-gray-900">
+                    {countryName(country, i18n.language)}
+                  </option>
+                ))}
+              </select>
+            ) : scopeCountry ? (
               <span className="rounded-full bg-emerald-500/15 px-2.5 py-0.5 text-xs text-emerald-300">
                 {countryName(scopeCountry, i18n.language)}
               </span>
-            )}
+            ) : null}
           </div>
           <button
             onClick={requestClose}
@@ -759,25 +954,31 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
                   onClose={onClose}
                   priceCurrencySymbol={priceCurrencySymbol}
                   allowCustomFeatures={canUseCustomFeatures}
+                  initialCountry={scopeCountry}
                 />
               ) : (
             // Form
             <form onSubmit={handleSubmit} className="space-y-6">
-          {scopeCountry && !ownsRecord && (
+          {commonLocked && (
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3">
               <p className="text-xs leading-5 text-gray-400">
-                {t('createFilament.commonOwnedByOther')}
+                {t(hasCommonGaps
+                  ? 'createFilament.commonGapsAllowed'
+                  : 'createFilament.commonOwnedByOther')}
               </p>
               <button
                 type="button"
-                onClick={() => setTypoOpen(true)}
+                onClick={() => {
+                  setCommonEditRequestError(null);
+                  setCommonEditRequestOpen(true);
+                }}
                 className="whitespace-nowrap rounded-lg border border-white/15 bg-white/5 px-3 py-1.5 text-sm text-cyan-300 transition hover:bg-white/10"
               >
-                {t('createFilament.reportTypo')}
+                {t('createFilament.requestCommonEdit')}
               </button>
             </div>
           )}
-          <fieldset disabled={Boolean(scopeCountry && !ownsRecord)} className="space-y-6 disabled:opacity-60">
+          <fieldset disabled={commonLocked} className="space-y-6 disabled:opacity-60">
           {/* Name and Material Type in one row */}
           <div className="flex items-end gap-4">
             <div className="flex-1">
@@ -865,23 +1066,26 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
               </div>
             </div>
           )}
+          </fieldset>
 
           {/* Color Section - в одну линию как в CreatePresetModal */}
           <ColorMaterialSection
             mode="edit"
-            colorName={colorName}
-            onColorNameChange={setColorName}
+            colorName={scopeCountry ? marketColorName : colorName}
+            onColorNameChange={scopeCountry ? setMarketColorName : setColorName}
+            colorAppearanceDisabled={colorAppearanceLocked}
             colorHex={colorHex}
-            onColorHexChange={setColorHex}
+            onColorHexChange={(value) => { touchCommonGap('color_hex'); setColorHex(value); }}
             ralCode={ralCode}
-            onRalCodeChange={setRalCode}
+            onRalCodeChange={(value) => { touchCommonGap('ral_code'); setRalCode(value); }}
             visualSettings={currentVisualSettings}
             previewSize="medium"
             rightButton={
               <button
                 type="button"
+                disabled={colorAppearanceLocked}
                 onClick={() => setShowAdvancedVisual(!showAdvancedVisual)}
-                className="h-12 px-4 py-2 bg-white/10 border border-white/20 rounded-xl text-gray-300 hover:text-white hover:bg-white/20 transition-all flex items-center gap-2"
+                className="h-12 px-4 py-2 bg-white/10 border border-white/20 rounded-xl text-gray-300 hover:text-white hover:bg-white/20 transition-all flex items-center gap-2 disabled:cursor-not-allowed disabled:opacity-60"
                 title={t('createFilament.advancedColorSettings')}
               >
                 <span className="text-sm font-medium">{t('createFilament.advancedColorSettings')}</span>
@@ -892,7 +1096,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
 
           {/* Расширенные характеристики цвета (collapsible) */}
           {showAdvancedVisual && (
-            <div className="mt-4 overflow-visible rounded-2xl border border-white/10 bg-white/[0.035] p-3">
+            <fieldset disabled={colorAppearanceLocked} className="mt-4 overflow-visible rounded-2xl border border-white/10 bg-white/[0.035] p-3 disabled:opacity-60">
               <div className="grid items-start gap-3 lg:grid-cols-[minmax(18rem,1.15fr)_minmax(0,2fr)]">
                 <aside className="space-y-3 md:sticky md:top-0">
                 {/* Тип цвета */}
@@ -904,6 +1108,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
                         key={type}
                         type="button"
                         onClick={() => {
+                          touchCommonGap('visual_settings');
                           setVisualColorType(type);
                           const requiredColors = type === 'single' ? 1 : type === 'two' ? 2 : type === 'three' ? 3 : type === 'transition' || type === 'thermochromic' ? 2 : 5;
                           setVisualColors((prevColors) => {
@@ -993,6 +1198,8 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
                               color={currentColor}
                               isOpen={isPickerOpen}
                               onChange={(hex) => {
+                                touchCommonGap('visual_settings');
+                                touchCommonGap('color_hex');
                                 const newColors = [...visualColors];
                                 newColors[idx] = hex;
                                 setVisualColors(newColors);
@@ -1014,6 +1221,8 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
                             type="text"
                             value={currentColor}
                             onChange={(e) => {
+                              touchCommonGap('visual_settings');
+                              touchCommonGap('color_hex');
                               const hex = e.target.value;
                               const newColors = [...visualColors];
                               newColors[idx] = hex;
@@ -1040,7 +1249,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
                       <button
                         key={finish}
                         type="button"
-                        onClick={() => setVisualFinish(finish)}
+                      onClick={() => { touchCommonGap('visual_settings'); setVisualFinish(finish); }}
                         className={`min-w-24 rounded-lg border px-3 py-1.5 text-sm transition-all ${
                           visualFinish === finish
                             ? 'bg-purple-600 border-purple-400 text-white'
@@ -1060,7 +1269,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
                     <input
                       type="checkbox"
                       checked={visualTransparency}
-                      onChange={(e) => setVisualTransparency(e.target.checked)}
+                      onChange={(e) => { touchCommonGap('visual_settings'); setVisualTransparency(e.target.checked); }}
                       className="peer sr-only"
                     />
                     <span className="relative h-6 w-11 shrink-0 rounded-full border border-white/15 bg-white/10 transition-colors after:absolute after:left-0.5 after:top-0.5 after:h-[18px] after:w-[18px] after:rounded-full after:bg-gray-300 after:shadow-sm after:transition-transform peer-checked:border-cyan-300/40 peer-checked:bg-cyan-400/25 peer-checked:after:translate-x-5 peer-checked:after:bg-cyan-100 peer-focus-visible:ring-2 peer-focus-visible:ring-cyan-300/60" />
@@ -1068,17 +1277,17 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
 
                   <FilamentFeaturesEditor
                     effects={visualEffects}
-                    onEffectsChange={setVisualEffects}
+                    onEffectsChange={(value) => { touchCommonGap('visual_settings'); setVisualEffects(value); }}
                     additives={additives}
-                    onAdditivesChange={setAdditives}
+                    onAdditivesChange={(value) => { touchCommonGap('additives'); setAdditives(value); }}
                     propertyClaims={propertyClaims}
-                    onPropertyClaimsChange={setPropertyClaims}
+                    onPropertyClaimsChange={(value) => { touchCommonGap('property_claims'); setPropertyClaims(value); }}
                     allowCustom={canUseCustomFeatures}
                     compact
                   />
                 </section>
               </div>
-            </div>
+            </fieldset>
           )}
 
           {/* Diameter and Density */}
@@ -1092,56 +1301,122 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
                 { value: 3.0, label: '3.0 mm' },
               ]}
               onChange={(val) => setDiameter(Number(val))}
+              disabled={commonLocked}
               placeholder={t('createFilament.selectDiameter')}
             />
-            <DensityField value={density} onChange={setDensity} />
+            <DensityField
+              value={density}
+              onChange={(value) => { touchCommonGap('density'); setDensity(value); }}
+              locked={densityLocked}
+            />
           </div>
 
           {/* Цена относится к рынку: у страновой организации она уходит в её
               ячейку, у глобальной — в общий слой. Поле одно и то же. */}
-          <PriceUnitField
-            priceMode={priceMode}
-            onPriceModeChange={setPriceMode}
-            pricePerKg={pricePerKg}
-            onPricePerKgChange={setPricePerKg}
-            pricePerSpool={pricePerSpool}
-            onPricePerSpoolChange={setPricePerSpool}
-            spoolWeight={spoolWeight}
-            onSpoolWeightChange={setSpoolWeight}
-            emptySpoolWeight={emptySpoolWeight}
-            onEmptySpoolWeightChange={setEmptySpoolWeight}
-            currencySymbol={priceCurrencySymbol}
-          />
+          <div className={scopeCountry ? 'grid items-start gap-4 md:grid-cols-[minmax(0,1fr)_10rem]' : ''}>
+            <PriceUnitField
+              priceMode={priceMode}
+              onPriceModeChange={setPriceMode}
+              pricePerKg={pricePerKg}
+              onPricePerKgChange={setPricePerKg}
+              pricePerSpool={pricePerSpool}
+              onPricePerSpoolChange={setPricePerSpool}
+              spoolWeight={spoolWeight}
+              onSpoolWeightChange={(value) => { touchCommonGap('spool_weight'); setSpoolWeight(value); }}
+              emptySpoolWeight={emptySpoolWeight}
+              onEmptySpoolWeightChange={(value) => { touchCommonGap('empty_spool_weight_g'); setEmptySpoolWeight(value); }}
+              currencySymbol={priceCurrencySymbol}
+              spoolWeightDisabled={spoolWeightLocked}
+              emptySpoolWeightDisabled={emptySpoolWeightLocked}
+            />
+            {scopeCountry && (
+              <div className="flex flex-col">
+                <div className="mb-2 flex h-[34px] items-end">
+                  <label className="block text-sm font-medium text-gray-300">
+                    {t('filamentMarket.currency')}
+                  </label>
+                </div>
+                <select
+                  value={marketCurrency}
+                  onChange={(event) => setMarketCurrency(event.target.value)}
+                  className="w-full rounded-xl border border-white/20 bg-white/10 px-3 py-3 text-white outline-none focus:ring-2 focus:ring-purple-500"
+                >
+                  {CURRENCIES.map((currency) => (
+                    <option key={currency.code} value={currency.code} className="bg-gray-900">
+                      {currency.code} {currency.symbol}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
 
-          <RecommendedTempsField value={recTemps} onChange={setRecTemps} />
+          <div className="space-y-6">
+            <RecommendedTempsField
+              value={recTemps}
+              disabled={temperatureLocks}
+              onChange={(value) => { touchCommonGap('recommended_temps'); setRecTemps(value); }}
+            />
+            <fieldset disabled={nozzleLocked} className="disabled:opacity-60">
+            <NozzleHardnessField
+              value={nozzleHrc}
+              onChange={(value) => { touchCommonGap('required_nozzle_hrc'); setNozzleHrc(value); }}
+              filler={effectiveFiller}
+              effects={resolvedVisualEffects}
+              additives={additives}
+              materialType={materialType === 'custom' ? customMaterialType : materialType}
+            />
+            </fieldset>
+          </div>
 
-          <NozzleHardnessField
-            value={nozzleHrc}
-            onChange={setNozzleHrc}
-            filler={effectiveFiller}
-            effects={resolvedVisualEffects}
-            additives={additives}
-            materialType={materialType === 'custom' ? customMaterialType : materialType}
-          />
-
-          <AvailabilitySelect
-            value={availability}
-            onChange={setAvailability}
-            includeDiscontinued={!!filament}
-          />
+          <div className={scopeCountry ? 'grid items-start gap-4 md:grid-cols-2' : 'md:max-w-md'}>
+            {scopeCountry ? (
+              <Dropdown
+                label={t('createFilament.availabilityLabel')}
+                value={marketAvailability}
+                options={(['available', 'coming_soon', 'discontinued', 'unknown'] as CountryAvailability[]).map((status) => ({
+                  value: status,
+                  label: t(`filamentMarket.availability_${status}`),
+                }))}
+                onChange={(value) => setMarketAvailability(value as CountryAvailability)}
+              />
+            ) : (
+              <AvailabilitySelect
+                value={availability}
+                onChange={setAvailability}
+                includeDiscontinued={!!filament}
+              />
+            )}
+            {scopeCountry && (
+              <div>
+                <label className="mb-2 block text-sm font-medium text-gray-300">
+                  {t('filamentMarket.productUrl')}
+                </label>
+                <input
+                  type="url"
+                  value={marketProductUrl}
+                  onChange={(event) => setMarketProductUrl(event.target.value)}
+                  placeholder="https://example.com/product"
+                  className="w-full rounded-xl border border-white/20 bg-white/10 px-4 py-3 text-white placeholder-gray-500 outline-none focus:ring-2 focus:ring-purple-500"
+                />
+              </div>
+            )}
+          </div>
 
           {/* Description */}
           <div>
-            <label className="block text-gray-300 mb-2 text-sm font-medium">{t('createFilament.descriptionLabel')}</label>
+            <label className="block text-gray-300 mb-2 text-sm font-medium">
+              {scopeCountry ? t('filamentMarket.note') : t('createFilament.descriptionLabel')}
+            </label>
             <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
+              value={scopeCountry ? marketNote : description}
+              onChange={(e) => scopeCountry ? setMarketNote(e.target.value) : setDescription(e.target.value)}
+              disabled={commonLocked && !scopeCountry}
               rows={3}
-              className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all resize-none"
-              placeholder={t('createFilament.descriptionPlaceholder')}
+              className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all resize-none disabled:cursor-not-allowed disabled:opacity-60"
+              placeholder={scopeCountry ? t('filamentMarket.notePlaceholder') : t('createFilament.descriptionPlaceholder')}
             />
           </div>
-          </fieldset>
 
           {/* Actions */}
           <div className="flex justify-end space-x-3 pt-4 border-t border-white/10">
@@ -1187,6 +1462,74 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
         cancelText={t('unsavedGuard.cancel')}
       />
     </ModalOverlay>
+    {commonEditRequestOpen && (
+      <ModalOverlay
+        onClose={() => {
+          if (!commonEditRequestMutation.isPending) setCommonEditRequestOpen(false);
+        }}
+      >
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            commonEditRequestMutation.mutate();
+          }}
+          className="w-full max-w-lg rounded-2xl border border-white/20 bg-gray-900 p-6 shadow-2xl"
+        >
+          <div className="mb-5 flex items-start justify-between gap-4">
+            <div>
+              <h3 className="text-xl font-bold text-white">
+                {t('createFilament.commonEditRequestTitle')}
+              </h3>
+              <p className="mt-2 text-sm leading-6 text-gray-400">
+                {t('createFilament.commonEditRequestDescription')}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setCommonEditRequestOpen(false)}
+              disabled={commonEditRequestMutation.isPending}
+              className="rounded-lg p-2 text-gray-400 transition hover:bg-white/10 hover:text-white"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+          <textarea
+            autoFocus
+            required
+            minLength={5}
+            maxLength={1000}
+            rows={5}
+            value={commonEditRequestMessage}
+            onChange={(event) => setCommonEditRequestMessage(event.target.value)}
+            placeholder={t('createFilament.commonEditRequestPlaceholder')}
+            className="w-full resize-y rounded-xl border border-white/20 bg-white/10 px-4 py-3 text-white placeholder-gray-500 outline-none focus:ring-2 focus:ring-cyan-500"
+          />
+          {commonEditRequestError && (
+            <p className="mt-3 text-sm text-red-300">{commonEditRequestError}</p>
+          )}
+          <div className="mt-5 flex justify-end gap-3">
+            <button
+              type="button"
+              onClick={() => setCommonEditRequestOpen(false)}
+              disabled={commonEditRequestMutation.isPending}
+              className="rounded-xl bg-white/10 px-4 py-2.5 text-white transition hover:bg-white/20"
+            >
+              {t('createFilament.commonEditRequestCancel')}
+            </button>
+            <button
+              type="submit"
+              disabled={commonEditRequestMutation.isPending || commonEditRequestMessage.trim().length < 5}
+              className="flex items-center gap-2 rounded-xl bg-cyan-600 px-4 py-2.5 text-white transition hover:bg-cyan-700"
+            >
+              {commonEditRequestMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+              {t(commonEditRequestMutation.isPending
+                ? 'createFilament.commonEditRequestSending'
+                : 'createFilament.commonEditRequestSend')}
+            </button>
+          </div>
+        </form>
+      </ModalOverlay>
+    )}
     </>
   );
 };

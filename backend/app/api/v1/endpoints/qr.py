@@ -24,10 +24,13 @@ from app.models.user import User
 from app.schemas.filament import FilamentResponse
 from app.services.qr_service import (
     ensure_filament_qr_code,
+    generate_branded_qr_code_image,
+    generate_branded_qr_code_svg,
     generate_qr_code_image,
     generate_qr_code_svg,
     get_qr_code_path,
 )
+from app.services.filament_analytics import event_country, record_filament_event
 
 router = APIRouter(prefix="/qr", tags=["qr"])
 
@@ -35,7 +38,9 @@ router = APIRouter(prefix="/qr", tags=["qr"])
 @router.get("/{short_code}")
 async def redirect_qr_scan(
     short_code: str,
+    request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: User | None = Depends(get_current_active_user_optional),
 ) -> RedirectResponse:
     """
     Редирект на страницу материала по короткому коду QR-кода.
@@ -53,6 +58,12 @@ async def redirect_qr_scan(
 
     # Инкрементируем счетчик
     filament.scans_count += 1
+    record_filament_event(
+        db,
+        filament_id=filament.id,
+        event_type="qr_scan",
+        country=event_country(request, current_user),
+    )
     await db.commit()
 
     # Редирект на страницу материала
@@ -84,6 +95,12 @@ async def handle_qr_scan(
     # проиграть гонку по unique (user_id, preset_id) и откатиться — счётчик
     # скана при этом должен сохраниться.
     filament.scans_count += 1
+    record_filament_event(
+        db,
+        filament_id=filament.id,
+        event_type="qr_scan",
+        country=event_country(request, current_user),
+    )
     await db.commit()
 
     preset_added = False
@@ -192,11 +209,16 @@ async def get_filament_qr_code(
     filament_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
     size: int = Query(300, ge=100, le=1200),
+    branded: bool = Query(False),
 ) -> StreamingResponse:
     """
     Получить QR-код для материала.
 
     Если QR-код еще не существует - генерируется новый (для верифицированных брендов).
+
+    `branded` отдаёт тот же код со знаком FilamentHub в середине. Код и ссылка
+    не меняются: это другая отрисовка, а не другой код, поэтому напечатанное
+    раньше продолжает работать.
     """
     # Получаем материал
     result = await db.execute(select(Filament).where(Filament.id == filament_id))
@@ -218,6 +240,21 @@ async def get_filament_qr_code(
         # Генерируем QR-код (short code + изображения этикеток)
         await ensure_filament_qr_code(filament, db)
         await db.commit()
+
+    if branded:
+        # Заранее сохранённых картинок у брендированного варианта нет: его
+        # выбирают редко и осознанно, при подготовке макета.
+        branded_buffer = generate_branded_qr_code_image(filament.qr_code, size=size)
+        return StreamingResponse(
+            iter([branded_buffer.getvalue()]),
+            media_type="image/png",
+            headers={
+                "Content-Disposition": (
+                    f'inline; filename="qr-{filament.qr_code}-{size}x{size}-branded.png"'
+                ),
+                "Cache-Control": "public, max-age=3600",
+            },
+        )
 
     # Проверяем, есть ли сохраненное изображение нужного размера
     saved_path = get_qr_code_path(filament.qr_code, size)
@@ -254,11 +291,16 @@ async def download_filament_qr_code(
     db: Annotated[AsyncSession, Depends(get_db)],
     size: int = Query(600, ge=300, le=1200),
     image_format: Annotated[Literal["png", "svg"], Query(alias="format")] = "png",
+    branded: bool = Query(False),
 ) -> StreamingResponse:
     """
     Скачать QR-код в высоком разрешении для печати.
 
     Размеры: 300x300, 600x600, 1200x1200px.
+
+    `branded` отдаёт тот же код со знаком FilamentHub — в обоих форматах, потому
+    что на упаковку уходит вектор, и вариант без него был бы бесполезен ровно
+    там, ради чего затевался.
     """
     # Проверяем права доступа (только владелец бренда)
     from app.models.brand import Brand
@@ -287,18 +329,26 @@ async def download_filament_qr_code(
 
     # Вектор — для типографии: на упаковке код печатают каким угодно размером,
     # и растр под это пришлось бы отдавать в каждом.
+    suffix = "-branded" if branded else ""
     if image_format == "svg":
+        vector = (
+            generate_branded_qr_code_svg(filament.qr_code)
+            if branded
+            else generate_qr_code_svg(filament.qr_code)
+        )
         return StreamingResponse(
-            iter([generate_qr_code_svg(filament.qr_code).getvalue()]),
+            iter([vector.getvalue()]),
             media_type='image/svg+xml',
             headers={
-                'Content-Disposition': f'attachment; filename="qr-{filament.qr_code}.svg"',
+                'Content-Disposition': (
+                    f'attachment; filename="qr-{filament.qr_code}{suffix}.svg"'
+                ),
                 'Cache-Control': 'public, max-age=3600',
             }
         )
 
-    # Проверяем, есть ли сохраненное изображение нужного размера
-    saved_path = get_qr_code_path(filament.qr_code, size)
+    # Заранее сохранённые картинки есть только у обычного варианта.
+    saved_path = None if branded else get_qr_code_path(filament.qr_code, size)
 
     if saved_path:
         # Используем сохраненное изображение
@@ -313,14 +363,20 @@ async def download_filament_qr_code(
         )
 
     # Если сохраненного нет - генерируем на лету (fallback)
-    qr_buffer = generate_qr_code_image(filament.qr_code, size=size)
+    qr_buffer = (
+        generate_branded_qr_code_image(filament.qr_code, size=size)
+        if branded
+        else generate_qr_code_image(filament.qr_code, size=size)
+    )
 
     # Возвращаем напрямую через StreamingResponse с заголовком для скачивания
     return StreamingResponse(
         iter([qr_buffer.getvalue()]),
         media_type='image/png',
         headers={
-            'Content-Disposition': f'attachment; filename="qr-{filament.qr_code}-{size}x{size}.png"',
+            'Content-Disposition': (
+                f'attachment; filename="qr-{filament.qr_code}-{size}x{size}{suffix}.png"'
+            ),
             'Cache-Control': 'public, max-age=3600',
         }
     )

@@ -40,7 +40,7 @@
     "heading": "邀请 {brand_display} 正式入驻 FilamentHub",
     "intro": "您好！我叫 Ilya，是 FilamentHub 的开发者 —— 这是一个面向 3D 打印材料的平台。",
     "pitch": "我们把耗材信息集中在一处：参数、打印建议、配置文件和用户评价。诚邀 <span style=\"color:#f3f4f6; font-weight:600;\">{brand_display}</span> 在此正式展示自己的材料。",
-    "benefitsIntro": "接受邀请后，您可以：",
+    "benefitsIntro": "此邀请已由管理员批准。接受后，您将立即获得工作区、完善公司资料，并可以：",
     "benefits": [
       "管理材料的官方页面，随时更新参数与说明；",
       "发布推荐的打印配置文件；",
@@ -53,7 +53,7 @@
     "thumbQr": "料盘上的二维码",
     "closing": "项目正在成长阶段，因此我亲自邀请制造商加入，让材料信息直接来自品牌方并以官方身份呈现。",
     "free": "制造商参与完全免费，且不承担任何义务。",
-    "buttonAccept": "接受邀请",
+    "buttonAccept": "继续注册",
     "buttonVisit": "浏览项目",
     "fallbackLink": "按钮无法打开？请复制链接：",
     "thanks": "感谢您抽出时间！",

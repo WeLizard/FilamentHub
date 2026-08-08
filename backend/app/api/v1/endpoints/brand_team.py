@@ -5,7 +5,7 @@ from datetime import timedelta
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, status
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.endpoints.brand_invites import _deliver_invite, _invite_url, _is_active, _now
@@ -183,11 +183,21 @@ async def _replace_scope(
         all_brands = True
         brand_ids = []
     if not all_brands:
+        holds_grant = (
+            select(BrandTerritorialGrant.id)
+            .where(
+                BrandTerritorialGrant.brand_id == Brand.id,
+                BrandTerritorialGrant.organization_id == organization_id,
+                BrandTerritorialGrant.status == GrantStatus.active,
+                BrandTerritorialGrant.revoked_at.is_(None),
+            )
+            .exists()
+        )
         valid_ids = set(
             (
                 await db.scalars(
                     select(Brand.id).where(
-                        Brand.organization_id == organization_id,
+                        or_(Brand.organization_id == organization_id, holds_grant),
                         Brand.id.in_(brand_ids),
                         Brand.active.is_(True),
                     )
@@ -291,7 +301,9 @@ async def get_brand_team(
         ).all()
         invites = [_invite_response(invite) for invite in invite_models]
 
-        if brand.verified:
+        # Legacy JOIN requests target the brand's original workspace. Regional
+        # organizations build their own team through explicit invitations.
+        if brand.verified and organization.id == brand.organization_id:
             request_rows = (
                 await db.execute(
                     select(BrandRequest, User)
@@ -526,13 +538,9 @@ async def remove_team_member(
         raise_error(status.HTTP_409_CONFLICT, ERR_LAST_ORGANIZATION_OWNER)
     member = await db.get(User, membership.user_id)
     membership.active = False
-    if member is not None and member.brand_id in {
-        row[0]
-        for row in (
-            await db.execute(select(Brand.id).where(Brand.organization_id == organization.id))
-        ).all()
-    }:
+    if member is not None and member.active_organization_id == organization.id:
         member.brand_id = None
+        member.active_organization_id = None
     if member is not None:
         remaining = await db.scalar(
             select(OrganizationMembership.id).where(
@@ -600,10 +608,12 @@ async def decide_join_request(
     current_user: Annotated[User, Depends(get_current_active_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> None:
-    brand, _, _ = await _owner_workspace(
+    brand, organization, _ = await _owner_workspace(
         db, brand_id=brand_id, user=current_user
     )
     if not brand.verified:
+        raise_error(status.HTTP_403_FORBIDDEN, ERR_ACCESS_DENIED)
+    if organization.id != brand.organization_id:
         raise_error(status.HTTP_403_FORBIDDEN, ERR_ACCESS_DENIED)
     request = await db.scalar(
         select(BrandRequest)

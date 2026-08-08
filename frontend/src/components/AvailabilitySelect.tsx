@@ -11,9 +11,10 @@ interface AvailabilitySelectProps {
   /** Показывать «Снят с производства» (обычно только при редактировании). */
   includeDiscontinued?: boolean;
   label?: string;
+  disabled?: boolean;
 }
 
-export function AvailabilitySelect({ value, onChange, includeDiscontinued = false, label }: AvailabilitySelectProps) {
+export function AvailabilitySelect({ value, onChange, includeDiscontinued = false, label, disabled = false }: AvailabilitySelectProps) {
   const { t } = useTranslation();
   return (
     <Dropdown
@@ -25,6 +26,7 @@ export function AvailabilitySelect({ value, onChange, includeDiscontinued = fals
         { value: 'coming_soon', label: t('createFilament.availability.coming_soon') },
       ]}
       onChange={(val) => onChange(val as FilamentAvailability)}
+      disabled={disabled}
     />
   );
 }

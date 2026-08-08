@@ -38,6 +38,10 @@ interface ColorMaterialSectionProps {
   
   /** Опциональная кнопка справа от HEX инпута */
   rightButton?: React.ReactNode;
+
+  /** Country editors may change the local name while the shared appearance stays locked. */
+  colorNameDisabled?: boolean;
+  colorAppearanceDisabled?: boolean;
 }
 
 export const ColorMaterialSection: React.FC<ColorMaterialSectionProps> = ({
@@ -52,6 +56,8 @@ export const ColorMaterialSection: React.FC<ColorMaterialSectionProps> = ({
   previewSize = 'medium',
   className = '',
   rightButton,
+  colorNameDisabled = false,
+  colorAppearanceDisabled = false,
 }) => {
   const { t } = useTranslation();
   const isEditMode = mode === 'edit';
@@ -107,8 +113,9 @@ export const ColorMaterialSection: React.FC<ColorMaterialSectionProps> = ({
               type="text"
               value={colorName}
               onChange={(e) => onColorNameChange?.(e.target.value)}
+              disabled={colorNameDisabled}
               placeholder={t('createFilament.colorNamePlaceholder')}
-              className="w-full h-12 px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 placeholder:text-center focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+              className="w-full h-12 px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 placeholder:text-center focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all disabled:cursor-not-allowed disabled:opacity-60"
             />
           ) : (
             <div className="h-12 px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white flex items-center">
@@ -130,8 +137,9 @@ export const ColorMaterialSection: React.FC<ColorMaterialSectionProps> = ({
                 <button
                   ref={buttonRef}
                   type="button"
+                  disabled={colorAppearanceDisabled}
                   onClick={() => setIsColorPickerOpen(!isColorPickerOpen)}
-                  className="cursor-pointer hover:opacity-80 transition-opacity flex items-center justify-center h-full"
+                  className="cursor-pointer hover:opacity-80 transition-opacity flex items-center justify-center h-full disabled:cursor-not-allowed disabled:opacity-60"
                   title={t('createFilament.clickToPickColor')}
                 >
                   <div style={{ transform: 'scale(0.8)', transformOrigin: 'center' }}>
@@ -183,12 +191,13 @@ export const ColorMaterialSection: React.FC<ColorMaterialSectionProps> = ({
             <input
               type="text"
               value={colorHex}
+              disabled={colorAppearanceDisabled}
               onChange={(e) => {
                 // Разрешаем свободный ввод - можно писать любой текст
                 onColorHexChange?.(e.target.value);
               }}
               placeholder="#FF0000"
-              className="w-full h-12 px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 placeholder:text-center focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all font-mono text-sm"
+              className="w-full h-12 px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 placeholder:text-center focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all font-mono text-sm disabled:cursor-not-allowed disabled:opacity-60"
             />
           ) : (
             <div className="h-12 px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white flex items-center font-mono text-sm">
@@ -204,11 +213,12 @@ export const ColorMaterialSection: React.FC<ColorMaterialSectionProps> = ({
             <input
               type="text"
               value={ralCode}
+              disabled={colorAppearanceDisabled}
               onChange={(event) => onRalCodeChange?.(event.target.value)}
               onBlur={(event) => onRalCodeChange?.(normalizeRalCode(event.target.value))}
               placeholder="RAL 3020"
               maxLength={8}
-              className="h-12 w-full rounded-xl border border-white/20 bg-white/10 px-3 py-3 text-center font-mono text-sm text-white placeholder-gray-500 transition-all focus:border-transparent focus:outline-none focus:ring-2 focus:ring-purple-500"
+              className="h-12 w-full rounded-xl border border-white/20 bg-white/10 px-3 py-3 text-center font-mono text-sm text-white placeholder-gray-500 transition-all focus:border-transparent focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:cursor-not-allowed disabled:opacity-60"
               title={t('colorMaterial.ralHint')}
             />
           ) : (

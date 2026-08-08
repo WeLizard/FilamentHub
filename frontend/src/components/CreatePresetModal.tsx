@@ -73,7 +73,8 @@ interface CreatePresetModalProps {
   onClose: () => void;
   preset?: Preset | null; // Если передан, то редактирование, иначе создание
   filamentId?: number; // ID материала (если создание нового пресета)
-  brandId?: number; // ID бренда (если создание из профиля бренда - автоматически is_official=true)
+  brandId?: number; // ID бренда для фильтрации материалов в контексте кабинета
+  allowOfficial?: boolean; // Официальный статус — отдельное право, не право на создание пресета
 }
 
 interface DuplicateFilamentSuggestion {
@@ -131,6 +132,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
   preset,
   filamentId,
   brandId,
+  allowOfficial,
 }) => {
   const { user } = useAuth();
   const { t } = useTranslation();
@@ -342,9 +344,19 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
     queryFn: () => brandsAPI.get(user!.brand_id!),
     enabled: isOpen && !!user?.brand_id,
   });
+  const { data: ownTerritories } = useQuery({
+    queryKey: ['brand-territories', user?.brand_id, user?.active_organization_id],
+    queryFn: () => brandsAPI.myTerritories(user!.brand_id!),
+    enabled: isOpen && !!user?.brand_id && !!user?.active_organization_id,
+  });
 
-  // Официальный пресет может создавать только представитель верифицированного бренда
-  const canCreateOfficial = user?.role === 'brand' && ownBrandData?.verified === true;
+  // Любой пользователь может создать пресет. Эта проверка управляет только
+  // отдельной отметкой «официальный» от имени верифицированного бренда.
+  const canCreateOfficial = allowOfficial
+    ?? (
+      user?.role === 'admin'
+      || (ownBrandData?.verified === true && ownTerritories?.can_edit_common === true)
+    );
   const shouldLoadFilamentsForSelection = Boolean(
     isOpen && (!preset || isDraft) && !filamentId && !showFilamentForm
   );
@@ -810,11 +822,6 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
       setFanSpeed(100);
       setRetractionLength(5.0);
       setRetractionSpeed(45.0);
-      
-      // Если создаем из профиля бренда - автоматически делаем официальным
-      if (brandId) {
-        setIsOfficial(true);
-      }
       
       // Сброс расширенных параметров (все вкладки)
       setTempRangeLow('');
@@ -2781,9 +2788,8 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
             />
           </div>
 
-          {/* Is Official (только при создании И только для верифицированных производителей) */}
-          {/* Не показываем если передан brandId - в этом случае пресет всегда официальный */}
-          {!preset && canCreateOfficial && !brandId && (
+          {/* Сам пресет доступен всем; официальный статус выбирается отдельно. */}
+          {!preset && canCreateOfficial && (
             <div className="flex items-center space-x-2">
               <input
                 type="checkbox"
@@ -2798,8 +2804,8 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
             </div>
           )}
           
-          {/* Информация о том, что создается официальный пресет из профиля бренда */}
-          {!preset && brandId && (
+          {/* Информация показывается только когда выбран официальный статус. */}
+          {!preset && brandId && isOfficial && (
             <div className="flex items-center space-x-2 p-3 bg-green-500/20 border border-green-500/30 rounded-xl">
               <CheckCircle className="w-5 h-5 text-green-400" />
               <span className="text-green-300 text-sm">

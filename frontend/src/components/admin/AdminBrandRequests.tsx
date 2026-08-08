@@ -94,6 +94,18 @@ export function AdminBrandRequests() {
     return type === 'create' ? Building2 : UserPlus;
   };
 
+  const approvalEffect = (request: BrandRequest) => {
+    if (request.request_type === 'create') {
+      return t('adminBrandRequests.approval_effect_create');
+    }
+    if (request.request_type === 'representative') {
+      return t('adminBrandRequests.approval_effect_representative', {
+        country: request.country ? countryName(request.country, i18n.language) : '—',
+      });
+    }
+    return t('adminBrandRequests.approval_effect_join');
+  };
+
   if (isLoading) {
     return <div className="text-center py-12 text-gray-400">{t('adminBrandRequests.loading_requests')}</div>;
   }
@@ -442,6 +454,14 @@ export function AdminBrandRequests() {
             {/* Действия для pending заявок */}
             {selectedRequest.status === 'pending' && (
               <div className="p-6 border-t border-white/10">
+                <div className="mb-4 rounded-xl border border-amber-300/25 bg-amber-300/10 p-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-amber-200">
+                    {t('adminBrandRequests.approval_effect_title')}
+                  </p>
+                  <p className="mt-1 text-sm leading-relaxed text-amber-50">
+                    {approvalEffect(selectedRequest)}
+                  </p>
+                </div>
                 <div className="flex items-start gap-4">
                   <textarea
                     value={rejectionReason}

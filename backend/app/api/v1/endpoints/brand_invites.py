@@ -1,4 +1,4 @@
-"""Brand invitation endpoints — admin issues pre-verified invites, brands accept them."""
+"""Brand invitation endpoints for platform onboarding, teams, and territories."""
 
 import asyncio
 import hashlib
@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
 import jwt
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 from jwt.exceptions import InvalidTokenError
 from pydantic import EmailStr, TypeAdapter, ValidationError
 from sqlalchemy import delete, func, select, update
@@ -68,6 +68,10 @@ admin_router = APIRouter(prefix="/admin/brand-invites", tags=["admin"])
 
 # Территориальное представительство: отдельная организация, а не команда.
 TERRITORY_PURPOSE = "territory"
+# An administrator-authored invitation is already the platform's decision.
+# A global invitation grants global scope; a country invitation uses the
+# territorial path. Self-submitted BrandRequests remain moderated separately.
+PLATFORM_PURPOSE = "platform"
 
 _BATCH_MAX_RECIPIENTS = 100
 _BATCH_CONFIRMATION_MINUTES = 15
@@ -124,6 +128,7 @@ def _batch_payload_digest(
     brand_name: str | None,
     organization_id: int | None,
     organization_name: str | None,
+    country: str | None,
     member_role: str,
     sender_profile: str,
     expires_days: int,
@@ -135,6 +140,7 @@ def _batch_payload_digest(
         "brand_name": (brand_name or "").strip(),
         "organization_id": organization_id,
         "organization_name": (organization_name or "").strip(),
+        "country": country,
         "member_role": member_role,
         "sender_profile": sender_profile,
         "expires_days": expires_days,
@@ -259,6 +265,7 @@ async def _active_invite_emails(
     target_type: str,
     brand_id: int | None,
     brand_name: str | None,
+    country: str | None,
 ) -> set[str]:
     if not emails:
         return set()
@@ -270,9 +277,12 @@ async def _active_invite_emails(
     result = await db.scalars(
         select(BrandInvite.email).where(
             BrandInvite.email.in_(emails),
-            BrandInvite.purpose == "representative",
+            BrandInvite.purpose.in_((PLATFORM_PURPOSE, "representative", TERRITORY_PURPOSE)),
             BrandInvite.target_type == target_type,
             target_filter,
+            BrandInvite.country.is_(None)
+            if country is None
+            else BrandInvite.country == country,
             BrandInvite.accepted_at.is_(None),
             BrandInvite.revoked_at.is_(None),
             BrandInvite.expires_at > _now(),
@@ -325,6 +335,7 @@ async def _build_invite(
     brand_id: int | None,
     brand_name: str | None,
     organization_id: int | None,
+    country: str | None,
     member_role: str,
     sender_profile: str,
     language: str,
@@ -351,6 +362,8 @@ async def _build_invite(
         brand_id=brand.id if brand else None,
         organization_id=organization.id if organization else None,
         member_role=member_role,
+        purpose=TERRITORY_PURPOSE if country else PLATFORM_PURPOSE,
+        country=country,
         pre_verified=True,
         sender_profile=sender_profile,
         language=language,
@@ -422,6 +435,7 @@ async def get_brand_invite(
             target_type=invite.target_type,
             brand_id=invite.brand_id,
             purpose=invite.purpose,
+            country=invite.country,
             member_role=invite.member_role,
             reason=ERR_BRAND_INVITE_INVALID,
         )
@@ -432,6 +446,7 @@ async def get_brand_invite(
         target_type=invite.target_type,
         brand_id=invite.brand_id,
         purpose=invite.purpose,
+        country=invite.country,
         member_role=invite.member_role,
     )
 
@@ -477,6 +492,11 @@ async def _accept_as_representative(
     await db.flush()
     db.add(OrganizationBrandAccess(membership_id=membership.id, brand_id=brand.id))
 
+    if invite.pre_verified and not brand.verified:
+        brand.name_correction_available = True
+    brand.verified = brand.verified or bool(invite.pre_verified)
+    await backfill_brand_qr_codes(brand, db)
+
     await issue_territorial_grant(
         db,
         brand=brand,
@@ -511,7 +531,7 @@ async def accept_brand_invite(
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_active_user)],
 ) -> BrandInviteAcceptResponse:
-    """Accept an admin invitation and grant organization rights atomically."""
+    """Accept an administrator-approved invitation with its server-owned scope."""
     invite = await db.scalar(
         select(BrandInvite).where(BrandInvite.token == token).with_for_update()
     )
@@ -523,7 +543,6 @@ async def accept_brand_invite(
         if (
             invite.accepted_by_id == current_user.id
             and invite.brand_id is not None
-            and invite.organization_id is not None
         ):
             accepted_brand = await db.get(Brand, invite.brand_id)
             if accepted_brand is not None:
@@ -531,7 +550,7 @@ async def accept_brand_invite(
                     brand_id=accepted_brand.id,
                     brand_name=accepted_brand.name,
                     organization_id=invite.organization_id,
-                    member_role=invite.member_role,
+                    member_role=invite.member_role if invite.organization_id is not None else None,
                 )
         raise_error(400, ERR_BRAND_INVITE_INVALID)
     if not _is_active(invite):
@@ -607,9 +626,13 @@ async def accept_brand_invite(
         )
         if locked_organization_id is None:
             raise_error(400, ERR_BRAND_INVITE_TARGET_MISSING)
-    if brand.organization_id not in (None, organization.id):
-        raise_error(409, ERR_BRAND_INVITE_TARGET_CONFLICT, {"brand_id": brand.id})
-    brand.organization_id = organization.id
+    # A team invitation joins the organization that sent it. Regional teams are
+    # independent from the legacy Brand.organization_id workspace, so accepting
+    # their invitation must never try to re-parent the global Brand record.
+    if invite.purpose != "team":
+        if brand.organization_id not in (None, organization.id):
+            raise_error(409, ERR_BRAND_INVITE_TARGET_CONFLICT, {"brand_id": brand.id})
+        brand.organization_id = organization.id
     if invite.purpose != "team":
         if invite.pre_verified and not brand.verified:
             brand.name_correction_available = True
@@ -697,7 +720,9 @@ async def accept_brand_invite(
     invite.accepted_by_id = current_user.id
 
     await db.flush()
-    if invited_role == OrganizationMemberRole.OWNER or invite.country:
+    if invite.purpose != "team" and (
+        invited_role == OrganizationMemberRole.OWNER or invite.country
+    ):
         await issue_territorial_grant(
             db,
             brand=brand,
@@ -745,6 +770,7 @@ async def create_brand_invite(
         brand_id=data.brand_id,
         brand_name=data.brand_name,
         organization_id=data.organization_id,
+        country=data.country,
         member_role=data.member_role,
         sender_profile=data.sender_profile,
         language=data.language,
@@ -788,6 +814,7 @@ async def preview_brand_invite_batch(
         target_type=data.target_type,
         brand_id=data.brand_id,
         brand_name=resolved_name,
+        country=data.country,
     )
     send_emails = [email for email in domain_valid if email not in already_invited]
     limit_exceeded = len(send_emails) > _BATCH_MAX_RECIPIENTS
@@ -802,6 +829,7 @@ async def preview_brand_invite_batch(
             brand_name=resolved_name if data.target_type == "new" else None,
             organization_id=data.organization_id,
             organization_name=data.organization_name,
+            country=data.country,
             member_role=data.member_role,
             sender_profile=data.sender_profile,
             expires_days=data.expires_days,
@@ -841,6 +869,7 @@ async def create_brand_invite_batch(
         brand_name=data.brand_name,
         organization_id=data.organization_id,
         organization_name=data.organization_name,
+        country=data.country,
         member_role=data.member_role,
         sender_profile=data.sender_profile,
         expires_days=data.expires_days,
@@ -881,6 +910,7 @@ async def create_brand_invite_batch(
         target_type=data.target_type,
         brand_id=data.brand_id,
         brand_name=resolved_name,
+        country=data.country,
     )
     send_emails = [email for email in emails if email not in already_invited]
     invites: list[BrandInvite] = []
@@ -892,6 +922,7 @@ async def create_brand_invite_batch(
             brand_id=data.brand_id,
             brand_name=data.brand_name,
             organization_id=data.organization_id,
+            country=data.country,
             member_role=data.member_role,
             sender_profile=data.sender_profile,
             language=data.language,
@@ -941,9 +972,16 @@ async def create_brand_invite_batch(
 async def list_brand_invites(
     db: Annotated[AsyncSession, Depends(get_db)],
     admin: Annotated[User, Depends(get_current_admin_user)],
+    limit: int = Query(100, ge=1, le=200),
+    offset: int = Query(0, ge=0),
 ) -> list[BrandInviteAdminResponse]:
-    """Список приглашений (новые сверху)."""
-    result = await db.execute(select(BrandInvite).order_by(BrandInvite.created_at.desc()))
+    """Bounded invitation history, newest first."""
+    result = await db.execute(
+        select(BrandInvite)
+        .order_by(BrandInvite.created_at.desc(), BrandInvite.id.desc())
+        .offset(offset)
+        .limit(limit)
+    )
     invites = result.scalars().all()
     out: list[BrandInviteAdminResponse] = []
     for invite in invites:
@@ -959,9 +997,10 @@ async def delete_brand_invite(
     db: Annotated[AsyncSession, Depends(get_db)],
     admin: Annotated[User, Depends(get_current_admin_user)],
 ) -> None:
-    """Отозвать (удалить) приглашение."""
+    """Revoke an unaccepted invitation while preserving its audit record."""
     invite = await db.scalar(select(BrandInvite).where(BrandInvite.id == invite_id))
     if invite is None:
         raise_error(404, ERR_BRAND_INVITE_NOT_FOUND)
-    await db.delete(invite)
-    await db.commit()
+    if invite.accepted_at is None and invite.revoked_at is None:
+        invite.revoked_at = _now()
+        await db.commit()

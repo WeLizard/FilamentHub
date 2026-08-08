@@ -17,8 +17,11 @@ from app.models.brand_territorial_grant import (
     GrantStatus,
 )
 from app.models.filament import Filament
+from app.models.filament_analytics_event import FilamentAnalyticsEvent
+from app.models.filament_country_cell import FilamentCountryCell
 from app.models.organization import Organization, OrganizationMemberRole, OrganizationMembership
 from app.models.user import User, UserRole
+from app.services.email_service import EmailSendResult
 from app.services.legal_acceptance_service import (
     CURRENT_PERSONAL_DATA_CONSENT_VERSION,
     CURRENT_TERMS_VERSION,
@@ -52,6 +55,9 @@ async def _representative(
     )
     db.add(user)
     await db.flush()
+
+    user.brand_id = brand.id
+    user.active_organization_id = organization.id
 
     db.add(
         OrganizationMembership(
@@ -117,6 +123,33 @@ async def _brand_with_one_filament(db: AsyncSession) -> tuple[Brand, Filament]:
     await db.refresh(brand)
     await db.refresh(filament)
     return brand, filament
+
+
+@pytest.mark.asyncio
+async def test_community_preset_is_open_to_every_user_but_official_status_is_not(
+    client: AsyncClient, db_session: AsyncSession
+):
+    """Company membership is never a prerequisite for a community preset."""
+    _, filament = await _brand_with_one_filament(db_session)
+    _, ordinary_user = await _outsider(db_session, "community-preset")
+    payload = {
+        "filament_id": filament.id,
+        "name": "Community PLA profile",
+        "extruder_temp": 210,
+        "bed_temp": 60,
+        "is_official": False,
+    }
+
+    created = await client.post("/api/v1/presets/", headers=ordinary_user, json=payload)
+    assert created.status_code == 201, created.text
+    assert created.json()["is_official"] is False
+
+    forbidden = await client.post(
+        "/api/v1/presets/",
+        headers=ordinary_user,
+        json={**payload, "name": "Fake official profile", "is_official": True},
+    )
+    assert forbidden.status_code == 403
 
 
 @pytest.mark.asyncio
@@ -196,6 +229,8 @@ async def test_a_country_representative_does_not_touch_the_common_layer(
     """Свойства пластика одни на весь мир и из страны не переписываются."""
     brand, filament = await _brand_with_one_filament(db_session)
     russia = await _representative(db_session, brand, "ru-common", "RU")
+    brand.website = "https://original.example"
+    await db_session.commit()
 
     common = await client.patch(
         f"/api/v1/filaments/{filament.id}", headers=russia, json={"density": 9.9}
@@ -205,10 +240,210 @@ async def test_a_country_representative_does_not_touch_the_common_layer(
     brand_common = await client.patch(
         f"/api/v1/brands/{brand.id}", headers=russia, json={"website": "https://hijacked.example"}
     )
-    assert brand_common.status_code in (403, 404)
+    assert brand_common.status_code == 403
 
     await db_session.refresh(filament)
     assert filament.density == 1.24
+
+
+@pytest.mark.asyncio
+async def test_regional_creation_writes_one_catalog_item_and_its_country_cell(
+    client: AsyncClient, db_session: AsyncSession
+):
+    """The regional create flow is atomic and provenance never becomes ownership."""
+    brand, original = await _brand_with_one_filament(db_session)
+    russia = await _representative(db_session, brand, "ru-create", "RU")
+
+    denied = await client.post(
+        "/api/v1/filaments/",
+        headers=russia,
+        json={
+            "brand_id": brand.id,
+            "name": "Regional PLA DE",
+            "material_type": "PLA",
+            "country_cell": {
+                "country": "DE",
+                "price": 20,
+                "currency": "EUR",
+                "published": True,
+            },
+        },
+    )
+    assert denied.status_code == 403
+    assert await db_session.scalar(
+        select(Filament.id).where(Filament.name == "Regional PLA DE")
+    ) is None
+
+    created = await client.post(
+        "/api/v1/filaments/",
+        headers=russia,
+        json={
+            "brand_id": brand.id,
+            "name": "Regional PLA RU",
+            "material_type": "PLA",
+            "color_name": "Красный",
+            "country_cell": {
+                "country": "RU",
+                "availability": "available",
+                "price": 1490,
+                "currency": "RUB",
+                "market_color_name": "Красный",
+                "published": True,
+            },
+        },
+    )
+    assert created.status_code == 201, created.text
+    created_id = created.json()["id"]
+    cell = await db_session.scalar(
+        select(FilamentCountryCell).where(
+            FilamentCountryCell.filament_id == created_id,
+            FilamentCountryCell.country == "RU",
+        )
+    )
+    assert cell is not None
+    assert cell.price == 1490
+
+    # A representative may fill a missing shared technical fact once.
+    common_edit = await client.patch(
+        f"/api/v1/filaments/{created_id}",
+        headers=russia,
+        json={"density": 9.9},
+    )
+    assert common_edit.status_code == 200
+    overwrite = await client.patch(
+        f"/api/v1/filaments/{created_id}",
+        headers=russia,
+        json={"density": 8.8},
+    )
+    assert overwrite.status_code == 403
+    assert original.id != created_id
+
+
+@pytest.mark.asyncio
+async def test_active_workspace_keeps_rights_and_provenance_in_one_organization(
+    client: AsyncClient, db_session: AsyncSession
+):
+    """A user in two companies cannot combine one's scope with the other's identity."""
+    brand, existing_filament = await _brand_with_one_filament(db_session)
+    user, headers = await _outsider(db_session, "two-workspaces")
+    kz_org = Organization(name="KZ Workspace", slug="kz-workspace")
+    de_org = Organization(name="DE Workspace", slug="de-workspace")
+    db_session.add_all([kz_org, de_org])
+    await db_session.flush()
+
+    db_session.add_all([
+        OrganizationMembership(
+            organization_id=kz_org.id,
+            user_id=user.id,
+            role=OrganizationMemberRole.OWNER,
+            active=True,
+            all_brands=True,
+        ),
+        OrganizationMembership(
+            organization_id=de_org.id,
+            user_id=user.id,
+            role=OrganizationMemberRole.OWNER,
+            active=True,
+            all_brands=True,
+        ),
+        BrandTerritorialGrant(
+            brand_id=brand.id,
+            organization_id=kz_org.id,
+            country="KZ",
+            status=GrantStatus.active,
+            source=GrantSource.invitation,
+        ),
+        BrandTerritorialGrant(
+            brand_id=brand.id,
+            organization_id=de_org.id,
+            country="DE",
+            status=GrantStatus.active,
+            source=GrantSource.invitation,
+        ),
+    ])
+    user.brand_id = brand.id
+    user.active_organization_id = kz_org.id
+    await db_session.commit()
+
+    wrong_scope = await client.post(
+        f"/api/v1/filaments/{existing_filament.id}/country-cells",
+        headers=headers,
+        json={"country": "DE", "availability": "available"},
+    )
+    assert wrong_scope.status_code == 403
+
+    kz_created = await client.post(
+        "/api/v1/filaments/",
+        headers=headers,
+        json={
+            "brand_id": brand.id,
+            "name": "Workspace KZ PLA",
+            "material_type": "PLA",
+            "country_cell": {"country": "KZ", "availability": "available"},
+        },
+    )
+    assert kz_created.status_code == 201, kz_created.text
+    assert kz_created.json()["contributed_by_organization_id"] == kz_org.id
+
+    switched = await client.put(
+        "/api/v1/auth/me/active-brand",
+        headers=headers,
+        json={"brand_id": brand.id, "organization_id": de_org.id},
+    )
+    assert switched.status_code == 200, switched.text
+
+    de_created = await client.post(
+        "/api/v1/filaments/",
+        headers=headers,
+        json={
+            "brand_id": brand.id,
+            "name": "Workspace DE PLA",
+            "material_type": "PLA",
+            "country_cell": {"country": "DE", "availability": "available"},
+        },
+    )
+    assert de_created.status_code == 201, de_created.text
+    assert de_created.json()["contributed_by_organization_id"] == de_org.id
+
+
+@pytest.mark.asyncio
+async def test_analytics_follow_grant_countries_not_the_organization_that_recorded_them(
+    client: AsyncClient, db_session: AsyncSession
+):
+    """Global sees all; every organization for RU sees the same RU slice only."""
+    brand, filament = await _brand_with_one_filament(db_session)
+    russia = await _representative(db_session, brand, "ru-analytics", "RU")
+    russia_two = await _representative(db_session, brand, "ru2-analytics", "RU")
+    germany = await _representative(db_session, brand, "de-analytics", "DE")
+    global_rep = await _representative(db_session, brand, "global-analytics", None)
+
+    filament.scans_count = 4
+    db_session.add_all([
+        FilamentAnalyticsEvent(filament_id=filament.id, event_type="qr_scan", country="RU"),
+        FilamentAnalyticsEvent(filament_id=filament.id, event_type="qr_scan", country="RU"),
+        FilamentAnalyticsEvent(filament_id=filament.id, event_type="qr_scan", country="DE"),
+    ])
+    await db_session.commit()
+
+    ru_data = (await client.get(
+        f"/api/v1/brands/{brand.id}/analytics", headers=russia
+    )).json()
+    ru_two_data = (await client.get(
+        f"/api/v1/brands/{brand.id}/analytics", headers=russia_two
+    )).json()
+    de_data = (await client.get(
+        f"/api/v1/brands/{brand.id}/analytics", headers=germany
+    )).json()
+    global_data = (await client.get(
+        f"/api/v1/brands/{brand.id}/analytics", headers=global_rep
+    )).json()
+
+    assert ru_data["scope"] == "territorial"
+    assert ru_data["total_scans"] == ru_two_data["total_scans"] == 2
+    assert de_data["total_scans"] == 1
+    assert global_data["scope"] == "global"
+    assert global_data["total_scans"] == 4
+    assert global_data["historical_unattributed_scans"] == 1
 
 
 @pytest.mark.asyncio
@@ -344,7 +579,7 @@ async def test_an_application_names_its_country_and_approval_grants_it(
     )
     request = BrandRequest(
         user_id=applicant.id,
-        request_type="join",
+        request_type="representative",
         brand_id=brand.id,
         country="RU",
         status="pending",
@@ -397,7 +632,7 @@ async def test_a_representative_reads_back_their_own_draft(
     created = await client.post(
         f"/api/v1/filaments/{filament.id}/country-cells",
         headers=russia,
-        json={"country": "RU", "price": 1490, "currency": "RUB", "published": False},
+        json={"country": "RU"},
     )
     assert created.status_code == 201
 
@@ -419,7 +654,7 @@ async def test_a_representative_is_a_separate_company_not_an_employee(
     """Головной офис зовёт компанию на страну, и она не входит в его организацию."""
     brand, filament = await _brand_with_one_filament(db_session)
     headquarters = await _representative(db_session, brand, "hq", None, owns_workspace=True)
-    _, guest = await _outsider(db_session, "kz-company")
+    guest_user, guest = await _outsider(db_session, "kz-company")
     await db_session.refresh(brand)
     headquarters_organization_id = brand.organization_id
 
@@ -460,13 +695,20 @@ async def test_a_representative_is_a_separate_company_not_an_employee(
         )
     ).status_code == 403
 
-    # Общий слой бренда и общий слой товара — тоже нет.
+    # Регионал обогащает пустые общие данные, но не перезаписывает уже
+    # заполненный общий слой. Рыночные поля при этом остаются в ячейке страны.
     assert (
         await client.patch(f"/api/v1/brands/{brand.id}", headers=guest, json={"website": "https://kz.example"})
-    ).status_code in (403, 404)
+    ).status_code == 200
     assert (
-        await client.patch(f"/api/v1/filaments/{filament.id}", headers=guest, json={"density": 9.9})
-    ).status_code in (403, 404)
+        await client.patch(f"/api/v1/brands/{brand.id}", headers=guest, json={"website": "https://overwrite.example"})
+    ).status_code == 403
+    assert (
+        await client.patch(f"/api/v1/filaments/{filament.id}", headers=guest, json={"empty_spool_weight_g": 240})
+    ).status_code == 200
+    assert (
+        await client.patch(f"/api/v1/filaments/{filament.id}", headers=guest, json={"empty_spool_weight_g": 241})
+    ).status_code == 403
 
     # Отзыв действует сразу, без отложенных задач.
     territories = await client.get(
@@ -480,6 +722,10 @@ async def test_a_representative_is_a_separate_company_not_an_employee(
         f"/api/v1/brands/{brand.id}/representatives/{grant_id}", headers=headquarters
     )
     assert revoked.status_code == 204
+
+    await db_session.refresh(guest_user)
+    assert guest_user.brand_id is None
+    assert guest_user.active_organization_id is None
 
     assert (
         await client.patch(
@@ -533,3 +779,34 @@ async def test_a_territory_invitation_never_reuses_the_brand_organization(
         )
     )
     assert in_headquarters is None
+
+
+@pytest.mark.asyncio
+async def test_admin_can_send_a_preapproved_country_invitation(
+    admin_client: AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """The administrator's country invitation is usable without a second review."""
+    brand, _ = await _brand_with_one_filament(db_session)
+    monkeypatch.setattr(
+        "app.api.v1.endpoints.brand_invites.send_brand_invite_email",
+        lambda **_: EmailSendResult(sent=True, provider_message_id="test-invite"),
+    )
+
+    response = await admin_client.post(
+        "/api/v1/admin/brand-invites",
+        json={
+            "email": "country-invite@example.com",
+            "target_type": "existing",
+            "brand_id": brand.id,
+            "country": "kz",
+            "language": "ru",
+        },
+    )
+
+    assert response.status_code == 201, response.text
+    assert response.json()["country"] == "KZ"
+    assert response.json()["purpose"] == "territory"
+    assert response.json()["pre_verified"] is True
+    assert response.json()["send_status"] == "sent"

@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
 BrandInviteTargetType = Literal["new", "existing"]
 BrandInviteMemberRole = Literal["owner", "editor"]
@@ -20,10 +20,16 @@ class BrandInviteCreate(BaseModel):
     brand_name: str | None = Field(None, min_length=1, max_length=100)
     organization_id: int | None = Field(None, gt=0)
     organization_name: str | None = Field(None, min_length=1, max_length=150)
+    country: str | None = Field(None, min_length=2, max_length=2)
     member_role: BrandInviteMemberRole = "owner"
     sender_profile: BrandInviteSenderProfile = "partnerships"
     language: BrandInviteLanguage = "en"
     expires_days: int = Field(14, ge=1, le=90)
+
+    @field_validator("country")
+    @classmethod
+    def normalize_country(cls, value: str | None) -> str | None:
+        return value.strip().upper() if value else None
 
     @model_validator(mode="after")
     def validate_target(self) -> "BrandInviteCreate":
@@ -44,10 +50,16 @@ class BrandInviteBatchCreate(BaseModel):
     brand_name: str | None = Field(None, min_length=1, max_length=100)
     organization_id: int | None = Field(None, gt=0)
     organization_name: str | None = Field(None, min_length=1, max_length=150)
+    country: str | None = Field(None, min_length=2, max_length=2)
     member_role: BrandInviteMemberRole = "owner"
     sender_profile: BrandInviteSenderProfile = "partnerships"
     language: BrandInviteLanguage = "en"
     expires_days: int = Field(14, ge=1, le=90)
+
+    @field_validator("country")
+    @classmethod
+    def normalize_country(cls, value: str | None) -> str | None:
+        return value.strip().upper() if value else None
 
     @model_validator(mode="after")
     def validate_target(self) -> "BrandInviteBatchCreate":
@@ -67,9 +79,15 @@ class BrandInviteBatchPreviewCreate(BaseModel):
     brand_name: str | None = Field(None, min_length=1, max_length=100)
     organization_id: int | None = Field(None, gt=0)
     organization_name: str | None = Field(None, min_length=1, max_length=150)
+    country: str | None = Field(None, min_length=2, max_length=2)
     member_role: BrandInviteMemberRole = "owner"
     sender_profile: BrandInviteSenderProfile = "partnerships"
     expires_days: int = Field(14, ge=1, le=90)
+
+    @field_validator("country")
+    @classmethod
+    def normalize_country(cls, value: str | None) -> str | None:
+        return value.strip().upper() if value else None
 
     @model_validator(mode="after")
     def validate_target(self) -> "BrandInviteBatchPreviewCreate":
@@ -114,6 +132,7 @@ class BrandInviteAdminResponse(BaseModel):
     target_type: str
     brand_id: int | None = None
     organization_id: int | None = None
+    country: str | None = None
     member_role: str
     purpose: str
     all_brands: bool
@@ -148,6 +167,7 @@ class BrandInvitePublicResponse(BaseModel):
     target_type: str | None = None
     brand_id: int | None = None
     purpose: str | None = None
+    country: str | None = None
     member_role: str | None = None
     reason: str | None = None  # ERR-код, если невалиден
 
@@ -163,5 +183,5 @@ class BrandInviteAcceptResponse(BaseModel):
 
     brand_id: int
     brand_name: str
-    organization_id: int
-    member_role: str
+    organization_id: int | None = None
+    member_role: str | None = None

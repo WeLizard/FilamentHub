@@ -40,7 +40,7 @@
     "heading": "An invitation to officially represent {brand_display} on FilamentHub",
     "intro": "Hello! My name is Ilya, and I am building FilamentHub — a platform for 3D-printing materials.",
     "pitch": "We bring filament information together in one place: specifications, printing recommendations, profiles and user reviews. I invite <span style=\"color:#f3f4f6; font-weight:600;\">{brand_display}</span> to represent its materials here officially.",
-    "benefitsIntro": "Once you accept the invitation, you can:",
+    "benefitsIntro": "This invitation is already approved by the administration. After accepting it, you immediately get a workspace, complete the company profile, and can:",
     "benefits": [
       "run official material pages and keep their specifications and descriptions up to date;",
       "publish recommended printing profiles;",
@@ -53,7 +53,7 @@
     "thumbQr": "QR code on a spool",
     "closing": "The project is growing right now, so I invite manufacturers personally — so that material information comes straight from the brands and is presented officially.",
     "free": "Taking part is free for manufacturers and carries no obligations.",
-    "buttonAccept": "Accept the invitation",
+    "buttonAccept": "Continue registration",
     "buttonVisit": "Visit the project",
     "fallbackLink": "Button not working? Copy the link:",
     "thanks": "Thank you for your time!",

@@ -1972,6 +1972,7 @@ async def _find_existing_filament(
     filament_name: str,
     material_type: str,
     db: AsyncSession,
+    brand_id: int | None = None,
 ) -> Filament | None:
     """
     Найти существующий филамент в базе по имени и типу материала.
@@ -1988,13 +1989,14 @@ async def _find_existing_filament(
     material_type = material_type or "PLA"
 
     # 1. Точное совпадение имени + material_type (активные филаменты)
-    result = await db.execute(
-        select(Filament).where(
+    exact_query = select(Filament).where(
             Filament.name == filament_name,
             Filament.material_type == material_type,
             Filament.active == True,  # Только активные (в каталоге)
-        ).order_by(Filament.id.asc())  # Берём самый первый (старейший)
-    )
+        )
+    if brand_id is not None:
+        exact_query = exact_query.where(Filament.brand_id == brand_id)
+    result = await db.execute(exact_query.order_by(Filament.id.asc()))
     filament = result.scalar_one_or_none()
 
     if filament:
@@ -2009,11 +2011,10 @@ async def _find_existing_filament(
     material_type_normalized = _normalize_for_match(material_type)
 
     # Получаем все активные филаменты и проверяем нормализованные значения
-    result = await db.execute(
-        select(Filament).where(
-            Filament.active == True,
-        )
-    )
+    normalized_query = select(Filament).where(Filament.active == True)
+    if brand_id is not None:
+        normalized_query = normalized_query.where(Filament.brand_id == brand_id)
+    result = await db.execute(normalized_query)
     all_filaments = result.scalars().all()
 
     for f in all_filaments:
@@ -2060,6 +2061,21 @@ async def _upsert_filament_preset(
 
     preset_name = payload.name or ""
     is_our_preset = "[fh]" in preset_name or "@fh" in preset_name
+    catalog_brand_id: int | None = None
+
+    # [fh] означает активный пользовательский пресет FilamentHub, а не
+    # «официальный пресет производителя». Он доступен любому пользователю.
+    # Активный workspace нужен только чтобы однозначно выбрать бренд при
+    # поиске/создании материала по имени.
+    if is_our_preset:
+        from app.services.organization_access import can_select_active_brand
+
+        candidate_brand_id = current_user.brand_id
+        if (
+            candidate_brand_id
+            and await can_select_active_brand(db, current_user, candidate_brand_id)
+        ):
+            catalog_brand_id = candidate_brand_id
 
     if is_our_preset:
         logger.info(f"Importing our FilamentHub preset '{preset_name}' (will be active)")
@@ -2315,6 +2331,7 @@ async def _upsert_filament_preset(
                     filament_name=clean_filament_name,
                     material_type=material_type,
                     db=db,
+                    brand_id=catalog_brand_id,
                 )
 
                 if existing_filament:
@@ -2336,14 +2353,8 @@ async def _upsert_filament_preset(
 
     # Dedup guard: если филамент не найден, но is_our_preset — попробуем найти по brand + name
     if is_our_preset and not filament:
-        from app.services.organization_access import can_select_active_brand
-
-        active_brand_id = current_user.brand_id
-        has_active_brand_access = bool(
-            active_brand_id
-            and await can_select_active_brand(db, current_user, active_brand_id)
-        )
-        if not active_brand_id or not has_active_brand_access:
+        active_brand_id = catalog_brand_id
+        if not active_brand_id:
             logger.warning(
                 f"[fh] preset '{payload.name}' has no matching catalog filament "
                 f"and user has no authorized active brand. Storing as draft."

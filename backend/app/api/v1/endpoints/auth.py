@@ -50,7 +50,6 @@ from app.core.security import (
 from app.core.utils import normalize_email
 from app.db.session import get_db
 from app.models.brand import Brand
-from app.models.organization import OrganizationMembership
 from app.models.calculator_profile import UserCalculatorProfile
 from app.models.preset import Preset
 from app.models.revoked_token import RevokedToken
@@ -111,7 +110,7 @@ from app.services.legal_document_service import (
     normalize_legal_pack,
     resolve_legal_pack,
 )
-from app.services.organization_access import can_select_active_brand, list_accessible_brands
+from app.services.organization_access import can_select_active_workspace, list_accessible_brands
 from app.services.provisional_account_service import sweep_abandoned_provisional_accounts
 from app.services.request_region_service import (
     AccessRegion,
@@ -1121,7 +1120,10 @@ async def get_accessible_brands(
             organization_id=organization.id,
             organization_name=organization.name,
             membership_role=membership.role if membership else None,
-            is_active=current_user.brand_id == brand.id,
+            is_active=(
+                current_user.brand_id == brand.id
+                and current_user.active_organization_id == organization.id
+            ),
         )
         for brand, organization, membership in rows
     ]
@@ -1134,24 +1136,21 @@ async def update_active_brand(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> UserResponse:
     """Select a brand workspace without changing authorization grants."""
+    # A workspace is one atomic pair. Partial state makes every downstream
+    # authorization check ambiguous, so it is only valid to set or clear both.
+    if (data.brand_id is None) != (data.organization_id is None):
+        raise_error(status.HTTP_403_FORBIDDEN, ERR_ACCESS_DENIED)
+
     if data.brand_id is not None:
         brand = await db.get(Brand, data.brand_id)
         if brand is None or not brand.active:
             raise_error(status.HTTP_404_NOT_FOUND, ERR_BRAND_NOT_FOUND)
-        if not await can_select_active_brand(db, current_user, data.brand_id):
-            raise_error(status.HTTP_403_FORBIDDEN, ERR_ACCESS_DENIED)
-
-    # Один бренд бывает доступен через несколько организаций, поэтому от какой
-    # человек действует — его выбор, а не наша догадка.
-    if data.organization_id is not None:
-        member = await db.scalar(
-            select(OrganizationMembership.id).where(
-                OrganizationMembership.user_id == current_user.id,
-                OrganizationMembership.organization_id == data.organization_id,
-                OrganizationMembership.active.is_(True),
-            )
-        )
-        if member is None:
+        if not await can_select_active_workspace(
+            db,
+            current_user,
+            brand_id=data.brand_id,
+            organization_id=data.organization_id,
+        ):
             raise_error(status.HTTP_403_FORBIDDEN, ERR_ACCESS_DENIED)
 
     current_user.active_organization_id = data.organization_id

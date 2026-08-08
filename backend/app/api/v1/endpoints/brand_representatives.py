@@ -8,7 +8,7 @@ from datetime import timedelta
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, status
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.endpoints.brand_invites import (
@@ -146,7 +146,7 @@ async def invite_representative(
         brand_id=brand.id,
         # Своя организация создаётся при принятии.
         organization_id=None,
-        organization_name=data.organization_name.strip(),
+        organization_name=f"{brand.name} {data.country}",
         country=data.country,
         member_role="owner",
         purpose=TERRITORY_PURPOSE,
@@ -178,7 +178,7 @@ async def revoke_representative(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> None:
     """Снять представительство."""
-    await _brand_for_representative_work(db, brand_id, current_user)
+    brand = await _brand_for_representative_work(db, brand_id, current_user)
 
     grant = await db.get(BrandTerritorialGrant, grant_id)
     if grant is None or grant.brand_id != brand_id:
@@ -186,4 +186,33 @@ async def revoke_representative(
 
     grant.status = GrantStatus.revoked
     grant.revoked_at = _now()
+
+    # A revoked grant must not leave a workspace looking selected in sessions of
+    # that organization's members. Keep the pair only when the organization
+    # still owns the brand directly or has another active territorial grant.
+    remaining_grant = await db.scalar(
+        select(BrandTerritorialGrant.id)
+        .where(
+            BrandTerritorialGrant.id != grant.id,
+            BrandTerritorialGrant.brand_id == brand_id,
+            BrandTerritorialGrant.organization_id == grant.organization_id,
+            BrandTerritorialGrant.status == GrantStatus.active,
+            BrandTerritorialGrant.revoked_at.is_(None),
+        )
+        .limit(1)
+    )
+    if remaining_grant is None:
+        # A global grant is the authority. The legacy Brand.organization_id
+        # pointer must not keep looking like ownership after that authority is
+        # revoked.
+        if grant.country is None and brand.organization_id == grant.organization_id:
+            brand.organization_id = None
+        await db.execute(
+            update(User)
+            .where(
+                User.brand_id == brand_id,
+                User.active_organization_id == grant.organization_id,
+            )
+            .values(brand_id=None, active_organization_id=None)
+        )
     await db.commit()

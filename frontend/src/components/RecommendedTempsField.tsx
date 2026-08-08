@@ -16,7 +16,7 @@ export const EMPTY_RECOMMENDED_TEMPS: RecommendedTemps = {
 };
 
 const inputClass =
-  'w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all';
+  'min-w-0 w-full px-3 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all disabled:cursor-not-allowed disabled:opacity-60';
 
 const parseNum = (raw: string): number | null => (raw === '' ? null : Number(raw));
 
@@ -27,50 +27,42 @@ const parseNum = (raw: string): number | null => (raw === '' ? null : Number(raw
 export const RecommendedTempsField: React.FC<{
   value: RecommendedTemps;
   onChange: (value: RecommendedTemps) => void;
-}> = ({ value, onChange }) => {
+  disabled?: Partial<Record<keyof RecommendedTemps, boolean>>;
+}> = ({ value, onChange, disabled = {} }) => {
   const { t } = useTranslation();
+  const temperatureInput = (
+    key: keyof RecommendedTemps,
+    label: string,
+    example: number,
+  ) => (
+    <label className="grid min-w-0 grid-cols-[4.25rem_minmax(4.5rem,1fr)] items-center gap-1.5">
+      <span className="text-xs leading-tight text-gray-400">{label}</span>
+      <input
+        type="number"
+        min={0}
+        placeholder={t('createFilament.temperatureExample', { value: example })}
+        value={value[key] ?? ''}
+        disabled={disabled[key]}
+        onChange={(event) => onChange({ ...value, [key]: parseNum(event.target.value) })}
+        className={inputClass}
+      />
+    </label>
+  );
+
   return (
     <div>
       <label className="block text-gray-300 mb-1 text-sm font-medium">
         {t('createFilament.recommendedTempsLabel')}
       </label>
       <p className="text-gray-400 text-xs mb-2">{t('createFilament.recommendedTempsHint')}</p>
-      <div className="flex gap-6">
-        <div className="flex flex-1 flex-col gap-2">
-          <input
-            type="number"
-            min={0}
-            value={value.nozzleMin ?? ''}
-            onChange={(e) => onChange({ ...value, nozzleMin: parseNum(e.target.value) })}
-            placeholder={t('createFilament.nozzleTempMin')}
-            className={inputClass}
-          />
-          <input
-            type="number"
-            min={0}
-            value={value.nozzleMax ?? ''}
-            onChange={(e) => onChange({ ...value, nozzleMax: parseNum(e.target.value) })}
-            placeholder={t('createFilament.nozzleTempMax')}
-            className={inputClass}
-          />
+      <div className="grid gap-x-4 gap-y-2 md:grid-cols-2">
+        <div className="space-y-2">
+          {temperatureInput('nozzleMin', t('createFilament.nozzleTempMin'), 200)}
+          {temperatureInput('nozzleMax', t('createFilament.nozzleTempMax'), 230)}
         </div>
-        <div className="flex flex-1 flex-col gap-2">
-          <input
-            type="number"
-            min={0}
-            value={value.bedMin ?? ''}
-            onChange={(e) => onChange({ ...value, bedMin: parseNum(e.target.value) })}
-            placeholder={t('createFilament.bedTempMin')}
-            className={inputClass}
-          />
-          <input
-            type="number"
-            min={0}
-            value={value.bedMax ?? ''}
-            onChange={(e) => onChange({ ...value, bedMax: parseNum(e.target.value) })}
-            placeholder={t('createFilament.bedTempMax')}
-            className={inputClass}
-          />
+        <div className="space-y-2">
+          {temperatureInput('bedMin', t('createFilament.bedTempMin'), 50)}
+          {temperatureInput('bedMax', t('createFilament.bedTempMax'), 70)}
         </div>
       </div>
     </div>

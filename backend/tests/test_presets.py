@@ -6,9 +6,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.brand import Brand
+from app.models.brand_territorial_grant import GrantSource
 from app.models.filament import Filament
 from app.models.preset import Preset, PresetModerationStatus
 from app.models.user import User
+from app.services.grant_issuing import issue_territorial_grant
 from app.services.organization_access import grant_brand_owner_membership
 from tests.conftest import registration_payload
 
@@ -119,7 +121,18 @@ async def test_create_official_preset(client: AsyncClient, db_session: AsyncSess
     # Link current user to this brand to allow official preset creation.
     user_result = await db_session.execute(select(User).where(User.email == email))
     user = user_result.scalar_one()
-    await grant_brand_owner_membership(db_session, brand=brand, user=user)
+    organization, _ = await grant_brand_owner_membership(
+        db_session, brand=brand, user=user
+    )
+    await issue_territorial_grant(
+        db_session,
+        brand=brand,
+        user=user,
+        country=None,
+        source=GrantSource.application,
+        approved_by_id=None,
+        organization_id=organization.id,
+    )
     await db_session.commit()
 
     # Create official preset
@@ -162,7 +175,18 @@ async def test_create_official_preset_requires_verified_brand(client: AsyncClien
 
     user_result = await db_session.execute(select(User).where(User.email == email))
     user = user_result.scalar_one()
-    await grant_brand_owner_membership(db_session, brand=brand, user=user)
+    organization, _ = await grant_brand_owner_membership(
+        db_session, brand=brand, user=user
+    )
+    await issue_territorial_grant(
+        db_session,
+        brand=brand,
+        user=user,
+        country=None,
+        source=GrantSource.application,
+        approved_by_id=None,
+        organization_id=organization.id,
+    )
     await db_session.commit()
 
     preset_data = {

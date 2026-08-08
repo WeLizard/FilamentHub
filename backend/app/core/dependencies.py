@@ -313,9 +313,11 @@ async def get_current_brand_user(
     """Get a user with an authorized active brand workspace."""
     if not current_user.brand_id:
         raise_error(status.HTTP_403_FORBIDDEN, ERR_NOT_BRAND_USER)
-    from app.services.organization_access import get_brand_membership
+    from app.services.organization_access import get_active_workspace_membership
 
-    membership = await get_brand_membership(db, current_user, current_user.brand_id)
+    membership = await get_active_workspace_membership(
+        db, current_user, current_user.brand_id
+    )
     if membership is None:
         raise_error(status.HTTP_403_FORBIDDEN, ERR_NOT_BRAND_USER)
     return current_user

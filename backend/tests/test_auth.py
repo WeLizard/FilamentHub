@@ -766,12 +766,19 @@ async def test_active_brand_requires_membership_and_lists_granted_brands(
 ):
     """Active brand is a scoped workspace choice, not an authorization grant."""
     allowed = Brand(name="Allowed Brand", slug="allowed-brand", active=True, verified=True)
+    second = Brand(name="Second Brand", slug="second-brand", active=True, verified=True)
     denied = Brand(name="Denied Brand", slug="denied-brand", active=True, verified=True)
-    db_session.add_all([allowed, denied])
+    db_session.add_all([allowed, second, denied])
     await db_session.flush()
-    await grant_brand_owner_membership(
+    allowed_organization, _ = await grant_brand_owner_membership(
         db_session,
         brand=allowed,
+        user=auth_user,
+        granted_by_id=admin_user.id,
+    )
+    second_organization, _ = await grant_brand_owner_membership(
+        db_session,
+        brand=second,
         user=auth_user,
         granted_by_id=admin_user.id,
     )
@@ -779,25 +786,41 @@ async def test_active_brand_requires_membership_and_lists_granted_brands(
 
     denied_response = await auth_client.put(
         "/api/v1/auth/me/active-brand",
-        json={"brand_id": denied.id},
+        json={"brand_id": denied.id, "organization_id": allowed_organization.id},
     )
     assert denied_response.status_code == 403
 
+    mismatched_response = await auth_client.put(
+        "/api/v1/auth/me/active-brand",
+        json={"brand_id": allowed.id, "organization_id": second_organization.id},
+    )
+    assert mismatched_response.status_code == 403
+
     brands_response = await auth_client.get("/api/v1/auth/me/brands")
     assert brands_response.status_code == 200
-    assert [item["brand_id"] for item in brands_response.json()] == [allowed.id]
-    assert brands_response.json()[0]["membership_role"] == "owner"
+    workspaces = {
+        (item["brand_id"], item["organization_id"]): item
+        for item in brands_response.json()
+    }
+    assert set(workspaces) == {
+        (allowed.id, allowed_organization.id),
+        (second.id, second_organization.id),
+    }
+    assert workspaces[(allowed.id, allowed_organization.id)]["membership_role"] == "owner"
+    assert workspaces[(allowed.id, allowed_organization.id)]["is_active"] is False
+    assert workspaces[(second.id, second_organization.id)]["is_active"] is True
 
     selected = await auth_client.put(
         "/api/v1/auth/me/active-brand",
-        json={"brand_id": allowed.id},
+        json={"brand_id": allowed.id, "organization_id": allowed_organization.id},
     )
     assert selected.status_code == 200
     assert selected.json()["brand_id"] == allowed.id
+    assert selected.json()["active_organization_id"] == allowed_organization.id
 
     cleared = await auth_client.put(
         "/api/v1/auth/me/active-brand",
-        json={"brand_id": None},
+        json={"brand_id": None, "organization_id": None},
     )
     assert cleared.status_code == 200
     assert cleared.json()["brand_id"] is None
@@ -830,7 +853,7 @@ async def test_admin_role_does_not_grant_company_workspace_access(
         brand=admin_brand,
         user=admin_user,
     )
-    await grant_brand_owner_membership(
+    other_organization, _ = await grant_brand_owner_membership(
         db_session,
         brand=other_brand,
         user=auth_user,
@@ -845,7 +868,7 @@ async def test_admin_role_does_not_grant_company_workspace_access(
 
     denied_response = await admin_client.put(
         "/api/v1/auth/me/active-brand",
-        json={"brand_id": other_brand.id},
+        json={"brand_id": other_brand.id, "organization_id": other_organization.id},
     )
     assert denied_response.status_code == 403
     await db_session.refresh(admin_user)

@@ -1,5 +1,6 @@
 """Filament line endpoints (группировка вариантов-цвета бренда)."""
 
+from datetime import datetime, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
@@ -16,6 +17,7 @@ from app.core.errors import (
 from app.db.session import get_db
 from app.models.brand import Brand
 from app.models.filament import Filament, FilamentAvailability
+from app.models.filament_country_cell import FilamentCountryCell
 from app.models.filament_line import FilamentLine
 from app.models.user import User
 from app.schemas.filament import (
@@ -26,9 +28,14 @@ from app.schemas.filament import (
     FilamentLineUpdate,
     FilamentPaletteCreate,
 )
-from app.services.territorial_access import can_create_for_brand
+from app.services.territorial_access import (
+    can_create_for_brand,
+    can_edit_filament_common,
+    can_manage_filament_country,
+)
 from app.services.preset_moderation import validate_text_field
 from app.services.slug_service import generate_unique_slug
+from app.services.country_market import filament_cell_has_public_data
 
 router = APIRouter(prefix="/filament-lines", tags=["filament-lines"])
 
@@ -91,7 +98,7 @@ async def update_filament_line(
     line = await db.scalar(select(FilamentLine).where(FilamentLine.id == line_id))
     if line is None:
         raise_error(404, ERR_FILAMENT_LINE_NOT_FOUND)
-    if not await can_create_for_brand(db, current_user, line.brand_id):
+    if not await can_edit_filament_common(db, current_user, line.brand_id):
         raise_error(403, ERR_NO_PERMISSION_EDIT_FILAMENT)
 
     line.name = data.name.strip()
@@ -121,6 +128,15 @@ async def create_line_variants(
     if brand is None:
         raise_error(404, ERR_BRAND_NOT_FOUND)
     if not await can_create_for_brand(db, current_user, line.brand_id):
+        raise_error(403, ERR_NO_PERMISSION_EDIT_FILAMENT)
+    if data.country_cell is not None:
+        if not await can_manage_filament_country(
+            db, current_user, line.brand_id, data.country_cell.country
+        ):
+            raise_error(403, ERR_NO_PERMISSION_EDIT_FILAMENT)
+    elif not await can_edit_filament_common(db, current_user, line.brand_id):
+        # A territorial bulk operation must say which market receives the
+        # local values. Otherwise it would silently write the global layer.
         raise_error(403, ERR_NO_PERMISSION_EDIT_FILAMENT)
 
     # Custom material features are available only to a verified brand.
@@ -196,7 +212,7 @@ async def create_line_variants(
             property_claims=[item.model_dump() for item in data.property_claims],
             diameter=data.diameter,
             density=data.density,
-            price_per_kg=data.price_per_kg,
+            price_per_kg=None if data.country_cell is not None else data.price_per_kg,
             spool_weight=data.spool_weight,
             empty_spool_weight_g=data.empty_spool_weight_g,
             recommended_nozzle_temp_min=data.recommended_nozzle_temp_min,
@@ -212,6 +228,17 @@ async def create_line_variants(
         )
         db.add(filament)
         await db.flush()
+
+        if data.country_cell is not None:
+            market_payload = data.country_cell.model_dump()
+            # Each palette entry is the local colour name for its own product.
+            market_payload["market_color_name"] = color_name
+            cell = FilamentCountryCell(filament_id=filament.id, **market_payload)
+            cell.published = filament_cell_has_public_data(cell)
+            if cell.price is not None:
+                cell.price_updated_at = datetime.now(timezone.utc)
+                cell.price_updated_by_id = current_user.id
+            db.add(cell)
 
         if brand.verified:
             from app.services.qr_service import ensure_filament_qr_code
@@ -236,7 +263,7 @@ async def delete_filament_line(
     line = await db.scalar(select(FilamentLine).where(FilamentLine.id == line_id))
     if line is None:
         raise_error(404, ERR_FILAMENT_LINE_NOT_FOUND)
-    if not await can_create_for_brand(db, current_user, line.brand_id):
+    if not await can_edit_filament_common(db, current_user, line.brand_id):
         raise_error(403, ERR_NO_PERMISSION_EDIT_FILAMENT)
 
     await db.delete(line)

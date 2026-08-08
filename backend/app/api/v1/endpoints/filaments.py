@@ -3,12 +3,12 @@
 import logging
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import String, case, cast, func, or_, select
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from sqlalchemy import String, and_, case, cast, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.dependencies import get_current_user
+from app.core.dependencies import get_current_user, get_current_verified_user
 from app.core.errors import (
     ERR_BRAND_NOT_FOUND,
     ERR_CUSTOM_FILLER_VERIFIED_ONLY,
@@ -21,12 +21,21 @@ from app.core.errors import (
     ERR_NO_PERMISSION_EDIT_FILAMENT,
     raise_error,
 )
+from app.core.limiter import limiter
 from app.core.utils import escape_like, like_pattern
 from app.db.session import get_db
 from app.models.brand import Brand
+from app.models.brand_territorial_grant import BrandTerritorialGrant, GrantStatus
 from app.models.filament import Filament, FilamentAvailability
+from app.models.filament_country_cell import FilamentCountryCell
 from app.models.filament_line import FilamentLine
 from app.models.filament_review import FilamentReview
+from app.models.notification import Notification, NotificationType
+from app.models.organization import (
+    OrganizationBrandAccess,
+    OrganizationMemberRole,
+    OrganizationMembership,
+)
 from app.models.preset import Preset
 from app.models.printer import Printer
 from app.models.user import User, UserRole
@@ -34,19 +43,26 @@ from app.schemas.filament import (
     KNOWN_ADDITIVES,
     KNOWN_FILLERS,
     KNOWN_PROPERTY_CLAIMS,
+    FilamentCommonEditRequest,
+    FilamentCommonEditRequestResponse,
     FilamentCreate,
     FilamentListResponse,
     FilamentResponse,
     FilamentUpdate,
     normalize_ral_code,
 )
-from app.services.country_market import apply_cell, cells_for
+from app.services.country_market import apply_cell, cells_for, filament_cell_has_public_data
 from app.services.filament_preset_summary import (
     bucket_by_kind,
     summaries_for,
     summary_query,
 )
-from app.services.territorial_access import can_create_for_brand, can_edit_filament_common
+from app.services.territorial_access import (
+    active_grants_for,
+    can_create_for_brand,
+    can_edit_filament_common,
+    can_manage_filament_country,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -157,6 +173,42 @@ def _same_filament_color(
     return True
 
 
+def _catalog_search_filter(search: str, country: str | None):
+    """Build the public catalog search condition for the reader's market."""
+    search_term = like_pattern(search)
+    ral_search_term = like_pattern(str(normalize_ral_code(search)))
+    conditions = [
+        Filament.name.ilike(search_term),
+        Brand.name.ilike(search_term),
+        Filament.material_type.ilike(search_term),
+        Filament.color_name.ilike(search_term),
+        Filament.ral_code.ilike(ral_search_term),
+        Filament.visual_settings["filler"].as_string().ilike(search_term),
+        Filament.visual_settings["effects"].as_string().ilike(search_term),
+        cast(Filament.additives, String).ilike(search_term),
+        cast(Filament.property_claims, String).ilike(search_term),
+    ]
+
+    if country:
+        market_match = (
+            select(1)
+            .select_from(FilamentCountryCell)
+            .where(
+                FilamentCountryCell.filament_id == Filament.id,
+                FilamentCountryCell.country == country.upper(),
+                FilamentCountryCell.published.is_(True),
+                or_(
+                    FilamentCountryCell.market_color_name.ilike(search_term),
+                    FilamentCountryCell.market_note.ilike(search_term),
+                ),
+            )
+            .exists()
+        )
+        conditions.append(market_match)
+
+    return or_(*conditions)
+
+
 @router.get("/", response_model=FilamentListResponse)
 async def list_filaments(
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -191,20 +243,8 @@ async def list_filaments(
         query = query.where(Filament.material_type == material_type)
     normalized_search = search.strip() if search else None
     if normalized_search:
-        search_term = like_pattern(normalized_search)
-        ral_search_term = like_pattern(str(normalize_ral_code(normalized_search)))
         query = query.outerjoin(Brand).where(
-            or_(
-                Filament.name.ilike(search_term),
-                Brand.name.ilike(search_term),
-                Filament.material_type.ilike(search_term),
-                Filament.color_name.ilike(search_term),
-                Filament.ral_code.ilike(ral_search_term),
-                Filament.visual_settings["filler"].as_string().ilike(search_term),
-                Filament.visual_settings["effects"].as_string().ilike(search_term),
-                cast(Filament.additives, String).ilike(search_term),
-                cast(Filament.property_claims, String).ilike(search_term),
-            )
+            _catalog_search_filter(normalized_search, country)
         )
 
     # Count total
@@ -216,20 +256,8 @@ async def list_filaments(
     if material_type:
         count_query = count_query.where(Filament.material_type == material_type)
     if normalized_search:
-        search_term = like_pattern(normalized_search)
-        ral_search_term = like_pattern(str(normalize_ral_code(normalized_search)))
         count_query = count_query.outerjoin(Brand).where(
-            or_(
-                Filament.name.ilike(search_term),
-                Brand.name.ilike(search_term),
-                Filament.material_type.ilike(search_term),
-                Filament.color_name.ilike(search_term),
-                Filament.ral_code.ilike(ral_search_term),
-                Filament.visual_settings["filler"].as_string().ilike(search_term),
-                Filament.visual_settings["effects"].as_string().ilike(search_term),
-                cast(Filament.additives, String).ilike(search_term),
-                cast(Filament.property_claims, String).ilike(search_term),
-            )
+            _catalog_search_filter(normalized_search, country)
         )
     total_result = await db.execute(count_query)
     total = total_result.scalar() or 0
@@ -338,7 +366,9 @@ async def list_filaments(
         filament_dict["official_preset"] = official
         filament_dict["preset_summaries"] = summaries
 
-        filament_responses.append(apply_cell(filament_dict, country_cells.get(filament.id)))
+        filament_responses.append(
+            apply_cell(filament_dict, country_cells.get(filament.id), country)
+        )
 
     return FilamentListResponse(
         items=filament_responses,
@@ -420,7 +450,7 @@ async def get_filament(
     filament_dict["official_preset"] = official
     filament_dict["preset_summaries"] = carousel
     cells = await cells_for(db, [filament.id], country)
-    return apply_cell(filament_dict, cells.get(filament.id))
+    return apply_cell(filament_dict, cells.get(filament.id), country)
 
 
 @router.get("/{filament_id}/presets")
@@ -550,6 +580,11 @@ async def create_filament(
     if not brand:
         raise_error(404, ERR_BRAND_NOT_FOUND)
 
+    if data.country_cell is not None and not await can_manage_filament_country(
+        db, current_user, data.brand_id, data.country_cell.country
+    ):
+        raise_error(403, ERR_NO_PERMISSION_EDIT_FILAMENT)
+
     # FilamentHub is an open catalog: authenticated community members may add a
     # missing filament whether or not the brand already has a verified owner.
     # Verification controls official brand management, not catalog contribution.
@@ -639,7 +674,7 @@ async def create_filament(
     )
 
     # Create filament
-    filament_payload = data.model_dump()
+    filament_payload = data.model_dump(exclude={"country_cell"})
     filament_payload["name"] = normalized_name
     filament_payload["material_type"] = normalized_material_type
     filament_payload["color_name"] = normalized_color_name
@@ -658,6 +693,20 @@ async def create_filament(
     )
     db.add(filament)
     await db.flush()  # Получаем ID без коммита
+
+    # For a territorial contributor the shared product and the first market
+    # cell are one user action.  Persist them in the same transaction so a
+    # failed cell cannot leave a half-created catalog record behind.
+    if data.country_cell is not None:
+        market_payload = data.country_cell.model_dump()
+        country_cell = FilamentCountryCell(filament_id=filament.id, **market_payload)
+        country_cell.published = filament_cell_has_public_data(country_cell)
+        if country_cell.price is not None:
+            from datetime import datetime, timezone
+
+            country_cell.price_updated_at = datetime.now(timezone.utc)
+            country_cell.price_updated_by_id = current_user.id
+        db.add(country_cell)
 
     # Если бренд верифицирован - автоматически генерируем QR-код
     if brand.verified:
@@ -709,6 +758,109 @@ async def create_filament(
     return FilamentResponse.model_validate(filament)
 
 
+@router.post(
+    "/{filament_id}/common-edit-request",
+    response_model=FilamentCommonEditRequestResponse,
+)
+@limiter.limit("20/hour")
+async def request_filament_common_edit(
+    request: Request,
+    filament_id: int,
+    data: FilamentCommonEditRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_verified_user)],
+) -> FilamentCommonEditRequestResponse:
+    """Send a locked common-data correction request to the global holder and platform."""
+    del request
+    filament = await db.get(Filament, filament_id)
+    if filament is None:
+        raise_error(404, ERR_FILAMENT_NOT_FOUND)
+
+    grants = await active_grants_for(db, current_user, filament.brand_id)
+    if not any(
+        grant.country is not None and grant.manage_filament_country
+        for grant in grants
+    ):
+        raise_error(403, ERR_NO_PERMISSION_EDIT_FILAMENT)
+
+    from app.services.preset_moderation import validate_text_field
+
+    message = data.message.strip()
+    is_valid, error_msg = await validate_text_field(
+        message,
+        db,
+        "filament_common_edit_request",
+    )
+    if not is_valid:
+        raise HTTPException(status_code=400, detail=error_msg)
+
+    global_member_ids = await db.scalars(
+        select(User.id)
+        .join(
+            OrganizationMembership,
+            OrganizationMembership.user_id == User.id,
+        )
+        .join(
+            BrandTerritorialGrant,
+            BrandTerritorialGrant.organization_id
+            == OrganizationMembership.organization_id,
+        )
+        .outerjoin(
+            OrganizationBrandAccess,
+            and_(
+                OrganizationBrandAccess.membership_id
+                == OrganizationMembership.id,
+                OrganizationBrandAccess.brand_id == filament.brand_id,
+            ),
+        )
+        .where(
+            BrandTerritorialGrant.brand_id == filament.brand_id,
+            BrandTerritorialGrant.country.is_(None),
+            BrandTerritorialGrant.status == GrantStatus.active,
+            BrandTerritorialGrant.revoked_at.is_(None),
+            BrandTerritorialGrant.edit_all_filaments_common.is_(True),
+            OrganizationMembership.active.is_(True),
+            User.active.is_(True),
+            or_(
+                OrganizationMembership.role == OrganizationMemberRole.OWNER,
+                OrganizationMembership.all_brands.is_(True),
+                OrganizationBrandAccess.id.is_not(None),
+            ),
+        )
+        .distinct()
+    )
+    admin_ids = await db.scalars(
+        select(User.id).where(
+            User.role == UserRole.ADMIN,
+            User.active.is_(True),
+        )
+    )
+    recipient_ids = (set(global_member_ids) | set(admin_ids)) - {current_user.id}
+
+    requester_name = current_user.full_name or current_user.username
+    for recipient_id in recipient_ids:
+        db.add(
+            Notification(
+                user_id=recipient_id,
+                type=NotificationType.ADMIN_MESSAGE,
+                title="filament_common_edit_requested",
+                message="filament_common_edit_requested_message",
+                link=f"/filaments/{filament.id}",
+                extra_data={
+                    "filament_id": filament.id,
+                    "filament_name": filament.name,
+                    "brand_id": filament.brand_id,
+                    "requester_name": requester_name,
+                    "request_message": message,
+                },
+                read=False,
+            )
+        )
+
+    await db.commit()
+    return FilamentCommonEditRequestResponse(recipients=len(recipient_ids))
+
+
 @router.patch("/{filament_id}", response_model=FilamentResponse)
 async def update_filament(
     filament_id: int,
@@ -723,15 +875,51 @@ async def update_filament(
     if not filament:
         raise_error(404, ERR_FILAMENT_NOT_FOUND)
 
-    # Проверка прав доступа: только админ или сотрудник бренда может редактировать материалы
-    if not await can_edit_filament_common(
+    can_edit_common = await can_edit_filament_common(
         db, current_user, filament.brand_id, filament.contributed_by_organization_id
-    ):
+    )
+    may_fill_gaps = not can_edit_common and bool(
+        await active_grants_for(db, current_user, filament.brand_id)
+    )
+    if not can_edit_common and not may_fill_gaps:
         raise_error(403, ERR_NO_PERMISSION_EDIT_FILAMENT)
 
     # Проверка текстовых полей на плохие слова
     from app.services.preset_moderation import validate_text_field
     update_data = data.model_dump(exclude_unset=True)
+
+    if may_fill_gaps:
+        # A territorial representative may enrich genuinely missing shared
+        # technical facts. Assigning a still-ungrouped item to its first line is
+        # also enrichment; changing an existing line remains protected.
+        fillable_fields = {
+            "color_name",
+            "color_hex",
+            "ral_code",
+            "visual_settings",
+            "additives",
+            "property_claims",
+            "density",
+            "spool_weight",
+            "empty_spool_weight_g",
+            "recommended_nozzle_temp_min",
+            "recommended_nozzle_temp_max",
+            "recommended_bed_temp_min",
+            "recommended_bed_temp_max",
+            "required_nozzle_hrc",
+            "description",
+            "line_id",
+        }
+        for field, value in list(update_data.items()):
+            current = getattr(filament, field, None)
+            if (
+                field not in fillable_fields
+                or current not in (None, "", [], {})
+                or value in (None, "", [], {})
+            ):
+                update_data.pop(field)
+        if not update_data:
+            raise_error(403, ERR_NO_PERMISSION_EDIT_FILAMENT)
 
     if "name" in update_data:
         is_valid, error_msg = await validate_text_field(update_data["name"], db, "filament_name")

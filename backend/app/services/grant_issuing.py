@@ -105,6 +105,9 @@ async def issue_territorial_grant(
         existing.revoked_at = None
         existing.approved_by_id = approved_by_id
         existing.approved_at = now
+        if normalized is None:
+            existing.edit_brand_common = True
+            existing.edit_all_filaments_common = True
         return existing
 
     grant = BrandTerritorialGrant(
@@ -115,6 +118,8 @@ async def issue_territorial_grant(
         source=source,
         approved_by_id=approved_by_id,
         approved_at=now,
+        edit_brand_common=normalized is None,
+        edit_all_filaments_common=normalized is None,
     )
     db.add(grant)
     return grant

@@ -8,6 +8,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from app.schemas.country_cell import FilamentCountryCellCreate
+
 # Legacy visual filler values. New clients use ``effects`` but ``filler`` remains
 # in the contract so old Orca/plugin and web clients continue to round-trip data.
 KNOWN_FILLERS = frozenset({
@@ -171,6 +173,10 @@ class FilamentCreate(FilamentBase):
     """Schema for creating Filament."""
 
     brand_id: int = Field(..., gt=0)
+    # A territorial organization creates the shared catalog record and its
+    # market data together.  The nested cell is optional so community and
+    # global contributors keep the same open-catalog endpoint.
+    country_cell: FilamentCountryCellCreate | None = None
 
 
 class FilamentUpdate(BaseModel):
@@ -232,7 +238,7 @@ class FilamentResponse(FilamentBase):
     brand_slug: str | None = Field(None)
     brand_verified: bool = Field(False)
     line_name: str | None = Field(None)  # имя линейки (денормализовано)
-    currency: str = Field("RUB")  # валюта бренда (денормализовано)
+    currency: str | None = Field(None)  # валюта рынка или бренда (денормализовано)
     price_hidden: bool = Field(False)  # бренд скрыл цену (денормализовано)
     views_count: int | None = 0
     scans_count: int | None = 0
@@ -249,8 +255,8 @@ class FilamentResponse(FilamentBase):
     # Заполнено, когда сведения подставлены из ячейки страны: витрина обязана
     # подписать такую цену как рекомендованную для этого рынка, а не как нашу.
     market_country: str | None = None
-    # Продаётся ли в этой стране. Не путать с `availability`: то состояние
-    # товара у производителя, а не факт продажи на рынке.
+    # Актуальность карточки в этой стране. Не путать с `availability`: то
+    # глобальное состояние товара у производителя.
     market_availability: str | None = None
     market_note: str | None = None
     product_url: str | None = None
@@ -269,6 +275,16 @@ class FilamentListResponse(BaseModel):
     pages: int
     # Which of these materials have a preset for the printer asked about.
     printer_matched_ids: list[int] = []
+
+
+class FilamentCommonEditRequest(BaseModel):
+    """A territorial representative asks the common-data owner for a correction."""
+
+    message: str = Field(..., min_length=5, max_length=1000)
+
+
+class FilamentCommonEditRequestResponse(BaseModel):
+    recipients: int = Field(..., ge=0)
 
 
 class FilamentLineCreate(BaseModel):
@@ -299,7 +315,7 @@ class FilamentImportRowResult(BaseModel):
     """Результат обработки одной строки CSV-импорта."""
 
     row: int  # номер строки в файле (1-based, без заголовка)
-    status: Literal["created", "skipped", "error"]
+    status: Literal["created", "updated", "skipped", "error"]
     name: str | None = None
     filament_id: int | None = None
     message: str | None = None  # код ошибки / причина пропуска
@@ -309,6 +325,7 @@ class FilamentImportResult(BaseModel):
     """Сводка импорта материалов из CSV."""
 
     created: int = 0
+    updated: int = 0
     skipped: int = 0
     errors: int = 0
     rows: list[FilamentImportRowResult] = Field(default_factory=list)
@@ -345,6 +362,7 @@ class FilamentPaletteCreate(BaseModel):
     description: str | None = None
     availability: Literal["available", "out_of_stock", "discontinued", "coming_soon"] = Field("available")
     price_display_unit: Literal["per_kg", "per_spool"] = Field("per_kg")
+    country_cell: FilamentCountryCellCreate | None = None
     variants: list[FilamentPaletteVariant] = Field(..., min_length=1, max_length=100)
 
 

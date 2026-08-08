@@ -43,7 +43,6 @@ class TerritoryInviteCreate(BaseModel):
 
     email: EmailStr
     country: str = Field(..., pattern=r"^[A-Za-z]{2}$")
-    organization_name: str = Field(..., min_length=2, max_length=200)
     send_email: bool = True
     expires_days: int = Field(14, ge=1, le=90)
 

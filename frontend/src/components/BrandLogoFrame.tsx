@@ -1,6 +1,6 @@
 import type { ReactNode, SyntheticEvent } from 'react';
 
-type BrandLogoFrameSize = 'cabinet' | 'hero' | 'preview' | 'thumbnail';
+type BrandLogoFrameSize = 'cabinet' | 'hero' | 'preview' | 'settings' | 'thumbnail';
 
 interface BrandLogoFrameProps {
   src?: string | null;
@@ -19,6 +19,7 @@ const frameSizeClasses: Record<BrandLogoFrameSize, string> = {
     'min-h-14 min-w-14 max-w-16 p-1.5 md:min-h-16 md:min-w-16 md:max-w-[17rem] md:p-2.5',
   hero: 'min-h-24 min-w-24 max-w-full p-3',
   preview: 'min-h-16 min-w-16 max-w-56 p-2.5',
+  settings: 'min-h-28 min-w-28 max-w-64 p-3',
   thumbnail: 'min-h-10 min-w-10 max-w-28 p-1.5',
 };
 
@@ -26,6 +27,7 @@ const imageSizeClasses: Record<BrandLogoFrameSize, string> = {
   cabinet: 'max-h-10 max-w-14 md:max-h-11 md:max-w-[15rem]',
   hero: 'max-h-16 max-w-56 sm:max-w-[20rem]',
   preview: 'max-h-11 max-w-48',
+  settings: 'max-h-20 max-w-56',
   thumbnail: 'max-h-7 max-w-24',
 };
 

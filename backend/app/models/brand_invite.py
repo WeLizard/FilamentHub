@@ -16,11 +16,10 @@ if TYPE_CHECKING:
 
 
 class BrandInvite(Base):
-    """Приглашение бренда с пред-верификацией.
+    """Single-use entry into platform, team, or territorial onboarding.
 
-    Админ выпускает single-use токен на корпоративную почту бренда. Переход по
-    ссылке и принятие авторизованным пользователем = верификация: бренд
-    создаётся с verified=True, минуя загрузку документов.
+    Administrator invitations carry their server-owned global or territorial
+    scope explicitly. A self-submitted BrandRequest remains the moderated path.
     """
 
     __tablename__ = "brand_invites"

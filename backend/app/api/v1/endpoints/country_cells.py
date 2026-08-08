@@ -43,10 +43,12 @@ from app.services.territorial_access import (
     active_grants_for,
     brand_drafts_visible_to,
     can_edit_brand_common,
+    can_edit_filament_common,
     can_manage_brand_country,
     can_manage_filament_country,
     filament_drafts_visible_to,
 )
+from app.services.country_market import filament_cell_has_public_data
 
 router = APIRouter(tags=["country-cells"])
 
@@ -234,6 +236,7 @@ async def create_filament_country_cell(
         raise_error(409, ERR_COUNTRY_CELL_EXISTS)
 
     cell = FilamentCountryCell(filament_id=filament_id, **data.model_dump())
+    cell.published = filament_cell_has_public_data(cell)
     if cell.price is not None:
         cell.price_updated_at = datetime.now(timezone.utc)
         cell.price_updated_by_id = actor.id
@@ -272,6 +275,8 @@ async def update_filament_country_cell(
     changes = data.model_dump(exclude_unset=True)
     for field, value in changes.items():
         setattr(cell, field, value)
+
+    cell.published = filament_cell_has_public_data(cell)
 
     # Цена и валюта проверяются после применения: частичное обновление могло
     # снять одну и оставить другую.
@@ -341,6 +346,7 @@ async def my_territories(
         "is_admin": actor.role == UserRole.ADMIN,
         "common_managed_by": common_owner,
         "can_edit_common": await can_edit_brand_common(db, actor, brand_id),
+        "can_edit_filament_common": await can_edit_filament_common(db, actor, brand_id),
         "territories": [
             {
                 "country": grant.country,

@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import create_access_token
 from app.models.brand import Brand
+from app.models.brand_territorial_grant import GrantSource
 from app.models.filament import Filament
 from app.models.notification import Notification, NotificationType
 from app.models.organization import (
@@ -18,6 +19,7 @@ from app.models.organization import (
 )
 from app.models.user import User, UserRole
 from app.services.account_deletion import delete_user_account
+from app.services.grant_issuing import issue_territorial_grant
 from tests.conftest import accepted_legal
 
 
@@ -48,7 +50,17 @@ async def _workspace(
     )
     db.add(membership)
     owner.brand_id = brand.id
+    owner.active_organization_id = organization.id
     owner.role = UserRole.BRAND
+    await issue_territorial_grant(
+        db,
+        brand=brand,
+        user=owner,
+        country=None,
+        source=GrantSource.application,
+        approved_by_id=None,
+        organization_id=organization.id,
+    )
     await db.commit()
     return organization, brand, membership
 
@@ -262,6 +274,7 @@ async def test_editor_sees_only_self_and_cannot_invite(
     db_session.add(membership)
     await db_session.flush()
     db_session.add(OrganizationBrandAccess(membership_id=membership.id, brand_id=brand.id))
+    editor.active_organization_id = organization.id
     await db_session.commit()
 
     _auth(auth_client, editor)

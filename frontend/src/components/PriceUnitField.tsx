@@ -19,6 +19,9 @@ interface PriceUnitFieldProps {
   currencySymbol: string;
   /** Цену задаёт рынок: у страновой организации она живёт в её ячейке. */
   showPrice?: boolean;
+  priceDisabled?: boolean;
+  spoolWeightDisabled?: boolean;
+  emptySpoolWeightDisabled?: boolean;
 }
 
 export function PriceUnitField({
@@ -34,6 +37,9 @@ export function PriceUnitField({
   onEmptySpoolWeightChange,
   currencySymbol,
   showPrice = true,
+  priceDisabled = false,
+  spoolWeightDisabled = false,
+  emptySpoolWeightDisabled = false,
 }: PriceUnitFieldProps) {
   const { t } = useTranslation();
 
@@ -47,6 +53,7 @@ export function PriceUnitField({
         onValueChange={priceMode === 'per_kg' ? onPricePerKgChange : onPricePerSpoolChange}
         currencySymbol={currencySymbol}
         spoolWeight={spoolWeight}
+        disabled={priceDisabled}
       />
       )}
       <div className="grid grid-cols-2 gap-4">
@@ -56,11 +63,12 @@ export function PriceUnitField({
           </div>
           <input
             type="number"
+            disabled={spoolWeightDisabled}
             value={spoolWeight || ''}
             onChange={(e) => onSpoolWeightChange(e.target.value === '' ? 0 : Number(e.target.value))}
             min={0}
             step="1"
-            className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+            className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all disabled:cursor-not-allowed disabled:opacity-60"
             placeholder="1000"
           />
         </div>
@@ -70,11 +78,12 @@ export function PriceUnitField({
           </div>
           <input
             type="number"
+            disabled={emptySpoolWeightDisabled}
             value={emptySpoolWeight ?? ''}
             onChange={(e) => onEmptySpoolWeightChange(e.target.value === '' ? null : Number(e.target.value))}
             min={0}
             step="1"
-            className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+            className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all disabled:cursor-not-allowed disabled:opacity-60"
             placeholder={t('createFilament.emptySpoolWeightPlaceholder')}
           />
         </div>

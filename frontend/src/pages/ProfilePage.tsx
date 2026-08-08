@@ -775,6 +775,8 @@ export const ProfilePage: React.FC = () => {
           <BrandProfilePage
             onBack={() => setShowBrandCabinet(false)}
             initialEditing={Boolean((location.state as { editBrand?: boolean } | null)?.editBrand)}
+            initialClaimBrandId={(location.state as { onboardingBrandId?: number } | null)?.onboardingBrandId}
+            initialClaimBrandName={(location.state as { onboardingBrandName?: string } | null)?.onboardingBrandName}
             onAddBrandFlowChange={setIsAddBrandFlowActive}
           />
         </div>

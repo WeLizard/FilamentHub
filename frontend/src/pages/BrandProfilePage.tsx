@@ -65,7 +65,7 @@ import { BrandSettings } from '../components/BrandSettings';
 import { BrandLogoFrame } from '../components/BrandLogoFrame';
 import { toast } from '../components/Toast';
 import { useDebounce } from '../hooks/useDebounce';
-import type { Filament, FilamentAvailability, Brand, BrandRequest, Preset } from '../types/api';
+import type { CountryAvailability, Filament, FilamentAvailability, Brand, BrandRequest, Preset } from '../types/api';
 import type { AxiosError } from 'axios';
 import { formatDate } from '../utils/formatDate';
 
@@ -73,10 +73,18 @@ interface BrandProfilePageProps {
   onBack?: () => void; // Callback для возврата в обычный профиль
   initialEditing?: boolean; // Открыть редактирование карточки сразу (после принятия инвайта)
   onAddBrandFlowChange?: (isActive: boolean) => void;
+  initialClaimBrandId?: number;
+  initialClaimBrandName?: string;
 }
 
-export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, initialEditing, onAddBrandFlowChange }) => {
-  const { t } = useTranslation();
+export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({
+  onBack,
+  initialEditing,
+  onAddBrandFlowChange,
+  initialClaimBrandId,
+  initialClaimBrandName,
+}) => {
+  const { t, i18n } = useTranslation();
   const { user, refreshUser } = useAuth();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -89,11 +97,13 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
   const [deletingFilamentId, setDeletingFilamentId] = useState<number | null>(null);
   const [deletingLine, setDeletingLine] = useState<{ id: number; name: string } | null>(null);
   const [showQRFilament, setShowQRFilament] = useState<Filament | null>(null);
+  // Выбор делается один раз при подготовке макета и не хранится в профиле.
+  const [qrBranded, setQrBranded] = useState(false);
   const [presetFilterFilament, setPresetFilterFilament] = useState<Filament | null>(null);
   const [addColorsFilament, setAddColorsFilament] = useState<Filament | null>(null);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   // Что правит форма: общий слой бренда либо витрину одной страны.
-  const [editScope, setEditScope] = useState<'common' | string>('common');
+  const [editScope] = useState<'common' | string>('common');
   const [profileName, setProfileName] = useState('');
   const [profileDescription, setProfileDescription] = useState('');
   const [profileWebsite, setProfileWebsite] = useState('');
@@ -111,11 +121,12 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
   const [importResult, setImportResult] = useState<FilamentImportResult | null>(null);
   const [isBrandLogoVisible, setIsBrandLogoVisible] = useState(false);
   const [isBrandSwitcherOpen, setIsBrandSwitcherOpen] = useState(false);
-  const [isAddingBrand, setIsAddingBrand] = useState(false);
+  const [workspaceCountry, setWorkspaceCountry] = useState<string | null>(null);
+  const [isAddingBrand, setIsAddingBrand] = useState(Boolean(initialClaimBrandId));
   const brandSwitcherRef = useRef<HTMLDivElement>(null);
 
   const accessibleBrandsQuery = useQuery({
-    queryKey: ['auth', 'accessible-brands', user?.id, user?.brand_id],
+    queryKey: ['auth', 'accessible-brands', user?.id, user?.brand_id, user?.active_organization_id],
     queryFn: authAPI.getAccessibleBrands,
     enabled: Boolean(user?.id),
   });
@@ -154,7 +165,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
 
   // Загружаем данные бренда
   const territoriesQuery = useQuery({
-    queryKey: ['brand-territories', user?.brand_id],
+    queryKey: ['brand-territories', user?.brand_id, user?.active_organization_id],
     queryFn: () => brandsAPI.myTerritories(user!.brand_id!),
     enabled: !!user?.brand_id,
   });
@@ -163,20 +174,34 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
     (item) => item.brand_id === user?.brand_id && item.organization_id === user?.active_organization_id,
   )?.organization_name;
 
-  const canEditCommon =
-    territoriesQuery.data?.can_edit_common ?? territoriesQuery.data?.is_admin ?? true;
+  const canEditCommon = Boolean(
+    territoriesQuery.data?.can_edit_filament_common ?? territoriesQuery.data?.is_admin,
+  );
   // Редактор открывается и тому, у кого есть только своя страна: внутри он
   // переключается на её данные.
   // Область, в которой человек сейчас работает: по ней и видно заполненность.
-  const scopeCountry = (territoriesQuery.data?.territories ?? [])
-    .map((item) => item.country)
-    .find((code): code is string => code !== null);
+  const managedCountries = (territoriesQuery.data?.territories ?? [])
+    .filter((item) => item.manage_filament_country && item.country !== null)
+    .map((item) => item.country as string);
+  const hasGlobalScope = (territoriesQuery.data?.territories ?? []).some(
+    (item) => item.country === null,
+  );
+  useEffect(() => {
+    if (hasGlobalScope) {
+      setWorkspaceCountry(null);
+      return;
+    }
+    setWorkspaceCountry((current) => (
+      current && managedCountries.includes(current) ? current : managedCountries[0] ?? null
+    ));
+  }, [hasGlobalScope, territoriesQuery.data, user?.active_organization_id]);
+  const scopeCountry = workspaceCountry;
 
   const canOpenEditor =
     canEditCommon || (territoriesQuery.data?.territories ?? []).length > 0;
 
   const { data: brandData, isLoading: isLoadingBrand } = useQuery({
-    queryKey: ['brand', user?.brand_id],
+    queryKey: ['brand', user?.brand_id, user?.active_organization_id],
     queryFn: () => brandsAPI.get(user!.brand_id!),
     enabled: !!user?.brand_id,
   });
@@ -187,7 +212,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
     isLoading: isLoadingFilaments,
     error: filamentsError 
   } = useQuery({
-    queryKey: ['brand-filaments', user?.brand_id, scopeCountry],
+    queryKey: ['brand-filaments', user?.brand_id, user?.active_organization_id, scopeCountry],
     queryFn: () => filamentsAPI.list({
       active_only: false,
       brand_id: user?.brand_id ?? undefined,
@@ -195,7 +220,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
       size: 100,
       // Заполненность карточки зависит от области: подставленная ячейка страны
       // означает, что по ней данные уже есть.
-      country: scopeCountry,
+      country: scopeCountry ?? undefined,
     }),
     enabled: !!user?.brand_id,
   });
@@ -204,7 +229,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
 
   // Линейки бренда (в т.ч. пустые) — чтобы их можно было удалить даже без материалов.
   const { data: brandLines = [] } = useQuery({
-    queryKey: ['filament-lines', user?.brand_id],
+    queryKey: ['filament-lines', user?.brand_id, user?.active_organization_id],
     queryFn: () => filamentLinesAPI.list(user!.brand_id!),
     enabled: !!user?.brand_id,
   });
@@ -233,12 +258,12 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
     return groups;
   })();
 
-  // Загружаем официальные пресеты производителя (для его материалов)
+  // Библиотека бренда объединяет официальные и пользовательские пресеты.
   const { 
     data: presetsData, 
     isLoading: isLoadingPresets 
   } = useQuery({
-    queryKey: ['brand-presets', user?.brand_id],
+    queryKey: ['brand-presets', user?.brand_id, user?.active_organization_id],
     queryFn: async () => {
       // Получаем все пресеты для материалов этого бренда
       const allPresets: Preset[] = [];
@@ -246,7 +271,6 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
         const presets = await presetsAPI.list({ 
           active_only: false, 
           filament_id: filament.id, 
-          is_official: true,
           page: 1, 
           size: 100 
         });
@@ -274,9 +298,15 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
     filaments.find((f) => f.id === id)?.name ?? null;
 
   const { data: usageData } = useQuery({
-    queryKey: ['brand-usage', user?.brand_id],
+    queryKey: ['brand-usage', user?.brand_id, user?.active_organization_id],
     queryFn: () => brandsAPI.getUsage(user!.brand_id!),
     enabled: !!user?.brand_id && brandTab === 'usage',
+  });
+
+  const { data: analyticsData, isLoading: isLoadingAnalytics } = useQuery({
+    queryKey: ['brand-analytics', user?.brand_id, user?.active_organization_id],
+    queryFn: () => brandsAPI.getAnalytics(user!.brand_id!),
+    enabled: !!user?.brand_id && brandTab === 'analytics',
   });
 
   useEffect(() => {
@@ -339,7 +369,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
   });
 
   const countryCellsQuery = useQuery({
-    queryKey: ['brand-country-cells', user?.brand_id],
+    queryKey: ['brand-country-cells', user?.brand_id, user?.active_organization_id],
     queryFn: () => brandsAPI.countryCells(user!.brand_id!),
     enabled: !!user?.brand_id,
   });
@@ -368,29 +398,13 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
     },
   });
 
-  const handleEditProfile = () => {
-    if (brandData) {
-      setEditScope('common');
-      setProfileName(brandData.name);
-      setProfileDescription(brandData.description || '');
-      setProfileWebsite(brandData.website || '');
-      setProfileLogoUrl(brandData.logo_url || '');
-      setProfileLogoBg(brandData.logo_bg || '');
-      setProfileSocialUrls(brandData.social_media_urls || []);
-      setProfileShopLinks(brandData.shop_links || []);
-      setProfilePriceHidden(brandData.price_hidden || false);
-      setProfileCurrency(brandData.currency || 'RUB');
-      setProfileError(null);
-      setIsEditingProfile(true);
-    }
-  };
-
-  // После принятия инвайта — открыть редактирование карточки, как только загрузятся данные бренда
+  // После принятия инвайта открываем единые настройки. Старое отдельное окно
+  // не знает об активной Organization и может показать регионалу общий слой.
   const autoEditOpened = useRef(false);
   useEffect(() => {
     if (initialEditing && brandData && !autoEditOpened.current) {
       autoEditOpened.current = true;
-      handleEditProfile();
+      setBrandTab('settings');
     }
   }, [initialEditing, brandData]);
 
@@ -436,7 +450,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
     if (!file || !brandData?.id) return;
     setIsImporting(true);
     try {
-      const res = await filamentImportAPI.importCsv(brandData.id, file);
+      const res = await filamentImportAPI.importCsv(brandData.id, file, scopeCountry);
       setImportResult(res);
       queryClient.invalidateQueries({ queryKey: ['brand-filaments'] });
       queryClient.invalidateQueries({ queryKey: ['filament-lines', brandData.id] });
@@ -497,6 +511,10 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
     setIsCreatePresetModalOpen(true);
   };
 
+  const canEditPreset = (preset: Preset) => (
+    preset.user_id === user?.id || user?.role === 'admin'
+  );
+
   const handleClosePresetModal = () => {
     setIsCreatePresetModalOpen(false);
     setEditingPreset(null);
@@ -522,12 +540,18 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
   }
 
   if (isAddingBrand) {
-    return <BrandSelectionForm onClose={handleCloseAddBrandFlow} />;
+    return (
+      <BrandSelectionForm
+        onClose={handleCloseAddBrandFlow}
+        initialBrandId={initialClaimBrandId}
+        initialBrandName={initialClaimBrandName}
+      />
+    );
   }
 
   // Если у пользователя нет brand_id, показываем форму выбора/создания бренда
   if (!user.brand_id) {
-    return <BrandSelectionForm />;
+    return <BrandSelectionForm initialBrandId={initialClaimBrandId} initialBrandName={initialClaimBrandName} />;
   }
 
   if (isLoadingBrand) {
@@ -547,7 +571,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
   }
 
   // Вычисляем статистику
-  const totalScans = filaments.reduce((sum, f) => sum + (f.scans_count || 0), 0);
+  const totalScans = analyticsData?.total_scans ?? 0;
 
   return (
     <div className="space-y-6">
@@ -595,6 +619,9 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
                       {activeOrganizationName && (
                         <span className="block truncate text-xs text-cyan-300/80">
                           {activeOrganizationName}
+                          {scopeCountry && managedCountries.length === 1
+                            ? ` · ${countryName(scopeCountry, i18n.language)}`
+                            : ''}
                         </span>
                       )}
                     </span>
@@ -611,7 +638,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
                     >
                       {accessibleBrandsQuery.data?.map((brand) => (
                         <button
-                          key={brand.brand_id}
+                          key={`${brand.brand_id}:${brand.organization_id}`}
                           type="button"
                           role="menuitemradio"
                           aria-checked={
@@ -630,7 +657,10 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
                             <span className="block truncate font-medium">{brand.brand_name}</span>
                             <span className="block truncate text-xs text-gray-400">{brand.organization_name}</span>
                           </span>
-                          {brand.brand_id === user.brand_id && <Check className="h-4 w-4 shrink-0 text-cyan-300" />}
+                          {brand.brand_id === user.brand_id &&
+                            brand.organization_id === user.active_organization_id && (
+                              <Check className="h-4 w-4 shrink-0 text-cyan-300" />
+                            )}
                         </button>
                       ))}
                       <div className="mt-1 border-t border-white/10 pt-1">
@@ -650,13 +680,28 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
               </div>
             </div>
             <div className="mt-3">
-              <button
-                onClick={() => navigate(`/brands/${brandData.slug}`)}
-                className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-white transition-all hover:bg-white/10"
-              >
-                <Eye className="w-4 h-4" />
-                <span>{t('brandProfile.openPublicPage')}</span>
-              </button>
+              <div className="flex flex-wrap items-center justify-center gap-2 md:justify-end">
+                {scopeCountry && managedCountries.length > 1 && (
+                  <select
+                    value={scopeCountry}
+                    onChange={(event) => setWorkspaceCountry(event.target.value)}
+                    className="rounded-lg border border-emerald-400/20 bg-emerald-500/10 px-3 py-1.5 text-sm text-emerald-200 outline-none"
+                  >
+                    {managedCountries.map((country) => (
+                      <option key={country} value={country} className="bg-gray-900">
+                        {countryName(country, i18n.language)}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                <button
+                  onClick={() => navigate(`/brands/${brandData.slug}`)}
+                  className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-white transition-all hover:bg-white/10"
+                >
+                  <Eye className="w-4 h-4" />
+                  <span>{t('brandProfile.openPublicPage')}</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -722,7 +767,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
                 </button>
               </div>
             <a
-              href={filamentImportAPI.templateUrl}
+              href={filamentImportAPI.templateUrl(scopeCountry)}
               download
               className="order-3 flex items-center justify-center space-x-2 rounded-xl border border-white/20 bg-white/10 px-3 py-2 text-gray-300 transition-all hover:bg-white/20 hover:text-white sm:order-none sm:px-4"
             >
@@ -760,15 +805,23 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
                 <li><code className="text-purple-300">name</code> — {t('brandProfile.csvColName')}</li>
                 <li><code className="text-purple-300">material_type</code> — {t('brandProfile.csvColMaterial')}</li>
                 <li><code className="text-purple-300">color_name</code> — {t('brandProfile.csvColColorName')}</li>
+                <li><code className="text-purple-300">market_color_name</code> — {t('brandProfile.csvColMarketColorName')}</li>
                 <li><code className="text-purple-300">color_hex</code> — {t('brandProfile.csvColColorHex')}</li>
                 <li><code className="text-purple-300">ral_code</code> — {t('brandProfile.csvColRal')}</li>
                 <li><code className="text-purple-300">price_per_kg</code> — {t('brandProfile.csvColPrice')}</li>
+                <li><code className="text-purple-300">currency</code> — {t('brandProfile.csvColCurrency')}</li>
                 <li><code className="text-purple-300">spool_weight</code> — {t('brandProfile.csvColSpool')}</li>
                 <li><code className="text-purple-300">line</code> — {t('brandProfile.csvColLine')}</li>
                 <li>
                   <code className="text-purple-300">availability</code> — {t('brandProfile.csvColAvailability')}{' '}
-                  <code className="text-gray-200">available</code>, <code className="text-gray-200">discontinued</code>, <code className="text-gray-200">coming_soon</code>
+                  {scopeCountry ? (
+                    <><code className="text-gray-200">available</code>, <code className="text-gray-200">coming_soon</code>, <code className="text-gray-200">discontinued</code>, <code className="text-gray-200">unknown</code></>
+                  ) : (
+                    <><code className="text-gray-200">available</code>, <code className="text-gray-200">discontinued</code>, <code className="text-gray-200">coming_soon</code></>
+                  )}
                 </li>
+                <li><code className="text-purple-300">product_url</code> — {t('brandProfile.csvColProductUrl')}</li>
+                <li><code className="text-purple-300">market_note</code> — {t('brandProfile.csvColMarketNote')}</li>
               </ul>
               <p className="text-gray-500 text-xs mt-2">{t('brandProfile.csvHelpNote')}</p>
             </div>
@@ -802,14 +855,16 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
                       {group.lineName && (
                         <div className="flex items-center gap-2 mb-3">
                           <h3 className="text-base font-semibold text-white">{group.lineName}</h3>
-                          <button
-                            type="button"
-                            onClick={() => setDeletingLine({ id: Number(group.key), name: group.lineName! })}
-                            title={t('brandProfile.deleteLine')}
-                            className="p-1 text-gray-500 hover:text-red-400 transition-colors"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                          {canEditCommon && (
+                            <button
+                              type="button"
+                              onClick={() => setDeletingLine({ id: Number(group.key), name: group.lineName! })}
+                              title={t('brandProfile.deleteLine')}
+                              className="p-1 text-gray-500 hover:text-red-400 transition-colors"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                         </div>
                       )}
                       {materialsViewMode === 'grid' ? (
@@ -823,7 +878,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
                               onShowQR={(filament) => setShowQRFilament(filament)}
                               canEditCommon={canEditCommon}
                               canOpenEditor={canOpenEditor}
-                              scopeCountry={scopeCountry}
+                              scopeCountry={scopeCountry ?? undefined}
                               onShowPresets={handleShowMaterialPresets}
                               onAddColors={handleAddColors}
                               viewMode="grid"
@@ -841,7 +896,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
                               onShowQR={(filament) => setShowQRFilament(filament)}
                               canEditCommon={canEditCommon}
                               canOpenEditor={canOpenEditor}
-                              scopeCountry={scopeCountry}
+                              scopeCountry={scopeCountry ?? undefined}
                               onShowPresets={handleShowMaterialPresets}
                               onAddColors={handleAddColors}
                               viewMode="list"
@@ -1028,8 +1083,8 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
               {displayedPresets.map((preset) => (
                 <div
                   key={preset.id}
-                  className="bg-white/10 backdrop-blur-sm rounded-xl p-4 border border-white/20 hover:bg-white/15 transition-all cursor-pointer"
-                  onClick={() => handleEditPreset(preset)}
+                  className={`bg-white/10 backdrop-blur-sm rounded-xl p-4 border border-white/20 transition-all ${canEditPreset(preset) ? 'cursor-pointer hover:bg-white/15' : ''}`}
+                  onClick={() => { if (canEditPreset(preset)) handleEditPreset(preset); }}
                 >
                   <div className="flex items-start justify-between mb-3">
                     <div className="flex-1">
@@ -1077,15 +1132,17 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
                     <div className="flex items-center space-x-2">
                       {/* Переключатель синхронизации - показываем для всех пресетов бренда */}
                       <PresetSyncToggle preset={preset} size="sm" className="p-1" />
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleEditPreset(preset);
-                        }}
-                        className="p-1 hover:bg-white/10 rounded transition-all"
-                      >
-                        <Edit className="w-4 h-4" />
-                      </button>
+                      {canEditPreset(preset) && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleEditPreset(preset);
+                            }}
+                            className="p-1 hover:bg-white/10 rounded transition-all"
+                          >
+                            <Edit className="w-4 h-4" />
+                          </button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1110,7 +1167,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
         <div className="space-y-6">
           <div className="flex items-center justify-between gap-4">
             <h3 className="text-2xl font-bold text-white">{t('brandProfile.qrCodes')}</h3>
-            {brandData?.verified && filaments.some(f => !f.qr_code) && (
+            {canEditCommon && brandData?.verified && filaments.some(f => !f.qr_code) && (
               <button
                 onClick={() => backfillQrMutation.mutate()}
                 disabled={backfillQrMutation.isPending}
@@ -1145,7 +1202,18 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
       {/* Analytics Tab */}
       {brandTab === 'analytics' && (
         <div className="space-y-6">
-          <h3 className="text-2xl font-bold text-white">{t('brandProfile.materialAnalytics')}</h3>
+          <div>
+            <h3 className="text-2xl font-bold text-white">{t('brandProfile.materialAnalytics')}</h3>
+            <p className="mt-1 text-sm text-gray-400">
+              {analyticsData?.scope === 'global'
+                ? t('brandProfile.analyticsGlobalScope')
+                : t('brandProfile.analyticsTerritorialScope', {
+                    countries: (analyticsData?.countries ?? [])
+                      .map((country) => countryName(country, i18n.language))
+                      .join(', '),
+                  })}
+            </p>
+          </div>
 
           {/* Stats Cards */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
@@ -1175,14 +1243,46 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
             />
           </div>
 
+          {(analyticsData?.country_breakdown.length ?? 0) > 0 && (
+            <div className="rounded-2xl border border-white/20 bg-white/10 p-6 shadow-xl backdrop-blur-sm">
+              <h3 className="mb-4 text-xl font-bold text-white">
+                {t('brandProfile.analyticsByCountry')}
+              </h3>
+              <div className="space-y-3">
+                {analyticsData!.country_breakdown.map((item) => (
+                  <div key={item.country ?? 'unknown'} className="flex items-center justify-between rounded-xl bg-white/5 px-4 py-3">
+                    <span className="text-gray-200">
+                      {item.country
+                        ? countryName(item.country, i18n.language)
+                        : t('brandProfile.analyticsUnknownCountry')}
+                    </span>
+                    <span className="font-semibold text-white">{item.scans}</span>
+                  </div>
+                ))}
+              </div>
+              {(analyticsData?.historical_unattributed_scans ?? 0) > 0 && (
+                <p className="mt-3 text-xs leading-5 text-gray-500">
+                  {t('brandProfile.analyticsHistoricalNote', {
+                    count: analyticsData!.historical_unattributed_scans,
+                  })}
+                </p>
+              )}
+            </div>
+          )}
+
           {/* Materials Statistics */}
           <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 shadow-xl">
             <h3 className="text-xl font-bold text-white mb-4">{t('brandProfile.materialStats')}</h3>
-            {filaments.length > 0 ? (
+            {isLoadingAnalytics ? (
+              <div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin text-purple-300" /></div>
+            ) : filaments.length > 0 ? (
               <div className="space-y-3">
-                {filaments.map((filament) => (
-                  <MaterialStatCard key={filament.id} filament={filament} />
-                ))}
+                {filaments.map((filament) => {
+                  const scans = analyticsData?.filaments.find(
+                    (item) => item.filament_id === filament.id,
+                  )?.scans ?? 0;
+                  return <MaterialStatCard key={filament.id} filament={filament} scans={scans} />;
+                })}
               </div>
             ) : (
               <p className="text-gray-400 text-center py-8">{t('brandProfile.noData')}</p>
@@ -1268,6 +1368,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
         onClose={handleCloseFilamentModal}
         filament={editingFilament}
         brandId={user.brand_id || undefined}
+        initialCountry={scopeCountry}
       />
 
       {/* Результат CSV-импорта */}
@@ -1277,12 +1378,13 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
             <h3 className="text-lg font-bold text-white mb-4">{t('brandProfile.importResultTitle')}</h3>
             <div className="flex gap-4 mb-4 text-sm">
               <span className="text-green-400">{t('brandProfile.importCreated')}: {importResult.created}</span>
+              <span className="text-cyan-400">{t('brandProfile.importUpdated')}: {importResult.updated}</span>
               <span className="text-gray-400">{t('brandProfile.importSkipped')}: {importResult.skipped}</span>
               <span className="text-red-400">{t('brandProfile.importErrors')}: {importResult.errors}</span>
             </div>
-            {importResult.rows.filter((r) => r.status !== 'created').length > 0 && (
+            {importResult.rows.filter((r) => !['created', 'updated'].includes(r.status)).length > 0 && (
               <div className="space-y-1 mb-4 text-xs">
-                {importResult.rows.filter((r) => r.status !== 'created').map((r) => (
+                {importResult.rows.filter((r) => !['created', 'updated'].includes(r.status)).map((r) => (
                   <div key={r.row} className={r.status === 'error' ? 'text-red-300' : 'text-gray-400'}>
                     {t('brandProfile.importRow')} {r.row}: {r.name || '—'} — {r.message ? translateApiError(t, { code: r.message }, r.message) : r.status}
                   </div>
@@ -1307,6 +1409,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
           preset={editingPreset}
           filamentId={!editingPreset ? presetFilterFilament?.id : undefined}
           brandId={user.brand_id || undefined}
+          allowOfficial={canEditCommon && (user.role === 'admin' || brandData?.verified === true)}
         />
       </Suspense>
 
@@ -1334,11 +1437,27 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
                 {/* QR Code */}
                 <div className="p-4 bg-white rounded-xl">
                   <img
-                    src={qrAPI.getQRCodeURL(showQRFilament.id, 256)}
+                    src={qrAPI.getQRCodeURL(showQRFilament.id, 256, qrBranded)}
                     alt={`QR Code ${showQRFilament.qr_code}`}
                     className="w-64 h-64"
                   />
                 </div>
+
+                {/* Знак необязателен: у части производителей упаковка проходит
+                    согласование, где он станет препятствием. */}
+                <label className="flex cursor-pointer items-center gap-3 text-sm text-gray-200">
+                  <input
+                    type="checkbox"
+                    checked={qrBranded}
+                    onChange={(event) => setQrBranded(event.target.checked)}
+                    className="peer sr-only"
+                  />
+                  <span className="relative h-6 w-11 shrink-0 rounded-full border border-white/15 bg-white/10 transition-colors after:absolute after:left-0.5 after:top-0.5 after:h-[18px] after:w-[18px] after:rounded-full after:bg-gray-300 after:shadow-sm after:transition-transform peer-checked:border-cyan-300/40 peer-checked:bg-cyan-400/25 peer-checked:after:translate-x-5 peer-checked:after:bg-cyan-100 peer-focus-visible:ring-2 peer-focus-visible:ring-cyan-300/60" />
+                  <span>{t('brandProfile.qrBranded')}</span>
+                </label>
+                <p className="-mt-2 max-w-md text-center text-xs leading-5 text-gray-400">
+                  {t('brandProfile.qrBrandedHint')}
+                </p>
                 
                 {/* QR Code Info */}
                 <div className="text-center">
@@ -1349,26 +1468,23 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
                 
                 {/* Download Buttons */}
                 <div className="flex flex-wrap gap-3 justify-center">
+                  {[300, 600, 1200].map((qrSize) => (
+                    <button
+                      key={qrSize}
+                      onClick={() => qrAPI.downloadQRCode(showQRFilament.id, qrSize, { branded: qrBranded })}
+                      className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg transition-all flex items-center space-x-2"
+                    >
+                      <Download className="w-4 h-4" />
+                      <span>{qrSize}x{qrSize}</span>
+                    </button>
+                  ))}
+                  {/* На упаковку идёт вектор: размер там выбирает типография. */}
                   <button
-                    onClick={() => qrAPI.downloadQRCode(showQRFilament.id, 300)}
+                    onClick={() => qrAPI.downloadQRCode(showQRFilament.id, 1200, { branded: qrBranded, format: 'svg' })}
                     className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg transition-all flex items-center space-x-2"
                   >
                     <Download className="w-4 h-4" />
-                    <span>300x300</span>
-                  </button>
-                  <button
-                    onClick={() => qrAPI.downloadQRCode(showQRFilament.id, 600)}
-                    className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg transition-all flex items-center space-x-2"
-                  >
-                    <Download className="w-4 h-4" />
-                    <span>600x600</span>
-                  </button>
-                  <button
-                    onClick={() => qrAPI.downloadQRCode(showQRFilament.id, 1200)}
-                    className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg transition-all flex items-center space-x-2"
-                  >
-                    <Download className="w-4 h-4" />
-                    <span>1200x1200</span>
+                    <span>{t('brandProfile.qrVector')}</span>
                   </button>
                 </div>
                 
@@ -1420,6 +1536,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
             <div className="p-6 overflow-y-auto">
               <FilamentPaletteForm
                 brandId={user.brand_id}
+                initialCountry={scopeCountry}
                 sourceFilament={addColorsFilament}
                 onClose={() => setAddColorsFilament(null)}
                 priceCurrencySymbol={currencySymbol(addColorsFilament.currency || brandData.currency)}
@@ -1662,18 +1779,20 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
 /** Форма выбора/создания бренда */
 interface BrandSelectionFormProps {
   onClose?: () => void;
+  initialBrandId?: number;
+  initialBrandName?: string;
 }
 
-const BrandSelectionForm: React.FC<BrandSelectionFormProps> = ({ onClose }) => {
+const BrandSelectionForm: React.FC<BrandSelectionFormProps> = ({ onClose, initialBrandId, initialBrandName }) => {
   const { t, i18n } = useTranslation();
   const { user, refreshUser } = useAuth();
   const queryClient = useQueryClient();
-  const [selectedBrandId, setSelectedBrandId] = useState<number | null>(null);
+  const [selectedBrandId, setSelectedBrandId] = useState<number | null>(initialBrandId ?? null);
   // Что заявляет человек: марка его, либо он ведёт её в одной стране.
   const [claim, setClaim] = useState<'brand' | 'representative'>('brand');
   const [claimCountry, setClaimCountry] = useState('');
 
-  const [brandSearch, setBrandSearch] = useState(''); // Поиск бренда
+  const [brandSearch, setBrandSearch] = useState(initialBrandName ?? ''); // Поиск бренда
   const [isCreatingNew, setIsCreatingNew] = useState(false);
   const [submittedRequest, setSubmittedRequest] = useState<BrandRequest | null>(null); // Отправленная заявка
   const [newBrandName, setNewBrandName] = useState('');
@@ -2746,7 +2865,7 @@ const BrandSelectionForm: React.FC<BrandSelectionFormProps> = ({ onClose }) => {
                 <strong className="text-blue-300">{t('brandProfile.important')}:</strong> {t('brandProfile.alternativeVerification')}
               </p>
               <a
-                href="mailto:admin@filamenthub.ru?subject=Brand verification request&body=Hello! I would like to register a brand on FilamentHub."
+                href="mailto:support@filamenthub.ru?subject=Brand verification request&body=Hello! I would like to register a brand on FilamentHub."
                 className="inline-flex items-center space-x-2 text-xs text-blue-300 hover:text-blue-200 transition-colors"
               >
                 <Share2 className="w-3 h-3" />
@@ -3422,24 +3541,69 @@ const FilamentCard: React.FC<FilamentCardProps> = ({ filament, onEdit, onDelete,
   const officialPreset = presets.find((p) => p.is_official);
   const totalPresets = presets.length;
 
+  const { data: countryCells = [] } = useQuery({
+    queryKey: ['filament-country-cells', filament.id, scopeCountry],
+    queryFn: () => filamentsAPI.countryCells(filament.id),
+    enabled: Boolean(scopeCountry),
+  });
+  const regionalCell = scopeCountry
+    ? countryCells.find((cell) => cell.country === scopeCountry)
+    : undefined;
+
   // Быстрая смена статуса наличия прямо из списка кабинета.
   const cardQueryClient = useQueryClient();
-  const availabilityMutation = useMutation({
-    mutationFn: (availability: FilamentAvailability) => filamentsAPI.update(filament.id, { availability }),
-    onSuccess: () => cardQueryClient.invalidateQueries({ queryKey: ['brand-filaments'] }),
+  const availabilityMutation = useMutation<
+    unknown,
+    Error,
+    FilamentAvailability | CountryAvailability
+  >({
+    mutationFn: (nextAvailability: FilamentAvailability | CountryAvailability) => {
+      if (!scopeCountry) {
+        return filamentsAPI.update(filament.id, {
+          availability: nextAvailability as FilamentAvailability,
+        });
+      }
+      if (regionalCell) {
+        return filamentsAPI.updateCountryCell(filament.id, scopeCountry, {
+          availability: nextAvailability as CountryAvailability,
+        });
+      }
+      return filamentsAPI.createCountryCell(filament.id, {
+        country: scopeCountry,
+        availability: nextAvailability as CountryAvailability,
+      });
+    },
+    onSuccess: () => {
+      cardQueryClient.invalidateQueries({ queryKey: ['brand-filaments'] });
+      cardQueryClient.invalidateQueries({ queryKey: ['filament-country-cells', filament.id] });
+    },
+    onError: () => toast.error(t('filamentMarket.saveFailed')),
   });
   const statusSelect = (
     <select
-      value={filament.availability || 'available'}
+      value={scopeCountry ? regionalCell?.availability ?? filament.market_availability ?? 'unknown' : filament.availability || 'available'}
       onClick={(e) => e.stopPropagation()}
-      onChange={(e) => availabilityMutation.mutate(e.target.value as FilamentAvailability)}
+      onChange={(e) => availabilityMutation.mutate(
+        e.target.value as FilamentAvailability | CountryAvailability,
+      )}
       disabled={availabilityMutation.isPending}
-      className="bg-white/10 border border-white/20 rounded-full px-2 py-0.5 text-xs text-gray-200 focus:outline-none focus:ring-1 focus:ring-purple-500 cursor-pointer disabled:opacity-50"
+      className="w-[9.25rem] shrink-0 truncate rounded-full border border-white/20 bg-white/10 px-2 py-0.5 text-[11px] text-gray-200 focus:outline-none focus:ring-1 focus:ring-purple-500 cursor-pointer disabled:opacity-50"
       title={t('createFilament.availabilityLabel')}
     >
-      <option value="available" className="bg-gray-900">{t('createFilament.availability.available')}</option>
-      <option value="discontinued" className="bg-gray-900">{t('createFilament.availability.discontinued')}</option>
-      <option value="coming_soon" className="bg-gray-900">{t('createFilament.availability.coming_soon')}</option>
+      {scopeCountry ? (
+        <>
+          <option value="available" className="bg-gray-900">{t('filamentMarket.availability_available')}</option>
+          <option value="coming_soon" className="bg-gray-900">{t('filamentMarket.availability_coming_soon')}</option>
+          <option value="discontinued" className="bg-gray-900">{t('filamentMarket.availability_discontinued')}</option>
+          <option value="unknown" className="bg-gray-900">{t('filamentMarket.availability_unknown')}</option>
+        </>
+      ) : (
+        <>
+          <option value="available" className="bg-gray-900">{t('createFilament.availability.available')}</option>
+          <option value="discontinued" className="bg-gray-900">{t('createFilament.availability.discontinued')}</option>
+          <option value="coming_soon" className="bg-gray-900">{t('createFilament.availability.coming_soon')}</option>
+        </>
+      )}
     </select>
   );
 
@@ -3501,11 +3665,16 @@ const FilamentCard: React.FC<FilamentCardProps> = ({ filament, onEdit, onDelete,
               <span className="px-2 py-0.5 bg-purple-500/20 text-purple-300 text-xs rounded-full">
                 {filament.material_type}
               </span>
-              {filament.diameter && (
-                <span className="px-2 py-0.5 bg-blue-500/20 text-blue-300 text-xs rounded-full">
-                  ⌀ {filament.diameter}
+              {filament.recommended_nozzle_temp_min != null && filament.recommended_nozzle_temp_max != null ? (
+                <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-xs text-amber-200">
+                  <Thermometer className="h-3 w-3" />
+                  {filament.recommended_nozzle_temp_min}–{filament.recommended_nozzle_temp_max}°C
                 </span>
-              )}
+              ) : filament.spool_weight ? (
+                <span className="rounded-full bg-blue-500/20 px-2 py-0.5 text-xs text-blue-300">
+                  {Math.round(filament.spool_weight)} g
+                </span>
+              ) : null}
               {filament.active === false && (
                 <span className="px-2 py-0.5 bg-gray-500/20 text-gray-400 text-xs rounded-full">
                   {t('brandProfile.inactive')}
@@ -3525,13 +3694,15 @@ const FilamentCard: React.FC<FilamentCardProps> = ({ filament, onEdit, onDelete,
                 <QrCode className="w-3.5 h-3.5" />
               </button>
             )}
-            <button
-              onClick={() => onAddColors(filament)}
-              className="p-1.5 bg-white/10 hover:bg-pink-500/20 rounded-md text-white transition-all"
-              title={t('brandProfile.addColors')}
-            >
-              <Palette className="w-3.5 h-3.5" />
-            </button>
+            {canOpenEditor && (
+              <button
+                onClick={() => onAddColors(filament)}
+                className="p-1.5 bg-white/10 hover:bg-pink-500/20 rounded-md text-white transition-all"
+                title={t('brandProfile.addColors')}
+              >
+                <Palette className="w-3.5 h-3.5" />
+              </button>
+            )}
             {canOpenEditor && (
                 <button
                   onClick={() => onEdit(filament)}
@@ -3581,13 +3752,15 @@ const FilamentCard: React.FC<FilamentCardProps> = ({ filament, onEdit, onDelete,
               <QrCode className="w-4 h-4" />
             </button>
           )}
-          <button
-            onClick={() => onAddColors(filament)}
-            className="p-2 bg-white/10 hover:bg-pink-500/20 rounded-lg text-white transition-all"
-            title={t('brandProfile.addColors')}
-          >
-            <Palette className="w-4 h-4" />
-          </button>
+          {canOpenEditor && (
+            <button
+              onClick={() => onAddColors(filament)}
+              className="p-2 bg-white/10 hover:bg-pink-500/20 rounded-lg text-white transition-all"
+              title={t('brandProfile.addColors')}
+            >
+              <Palette className="w-4 h-4" />
+            </button>
+          )}
           {canOpenEditor && (
               <button
                 onClick={() => onEdit(filament)}
@@ -3620,16 +3793,22 @@ const FilamentCard: React.FC<FilamentCardProps> = ({ filament, onEdit, onDelete,
 
       {/* Material Type and Status */}
       <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center space-x-2">
+        <div className="flex w-full min-w-0 flex-nowrap items-center gap-1.5">
           {statusSelect}
-          <span className="px-3 py-1 bg-purple-500/20 text-purple-300 text-xs font-medium rounded-full">
+          <span className="shrink-0 rounded-full bg-purple-500/20 px-2 py-1 text-xs font-medium text-purple-300">
             {filament.material_type}
           </span>
-          {filament.diameter && (
-            <span className="px-2 py-1 bg-blue-500/20 text-blue-300 text-xs rounded-full">
-              ⌀ {filament.diameter}mm
+          {filament.recommended_nozzle_temp_min != null && filament.recommended_nozzle_temp_max != null && (
+            <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full bg-amber-500/15 px-2 py-1 text-xs text-amber-200">
+              <Thermometer className="h-3 w-3" />
+              {filament.recommended_nozzle_temp_min}–{filament.recommended_nozzle_temp_max}°C
             </span>
           )}
+          {filament.spool_weight ? (
+            <span className="ml-auto shrink-0 whitespace-nowrap rounded-full bg-blue-500/20 px-2 py-1 text-xs text-blue-300">
+              {Math.round(filament.spool_weight)} g
+            </span>
+          ) : null}
         </div>
         {filament.active === false && (
           <span className="px-2 py-1 bg-gray-500/20 text-gray-400 text-xs rounded-full">
@@ -3796,9 +3975,10 @@ const QRCodeCard: React.FC<QRCodeCardProps> = ({ filament, onOpen }) => {
 
 interface MaterialStatCardProps {
   filament: Filament;
+  scans: number;
 }
 
-const MaterialStatCard: React.FC<MaterialStatCardProps> = ({ filament }) => {
+const MaterialStatCard: React.FC<MaterialStatCardProps> = ({ filament, scans }) => {
   const { t } = useTranslation();
   return (
     <div className="flex items-center justify-between p-4 bg-white/5 rounded-xl">
@@ -3812,7 +3992,7 @@ const MaterialStatCard: React.FC<MaterialStatCardProps> = ({ filament }) => {
         </div>
       </div>
       <div className="text-right">
-        <p className="text-white font-semibold">{filament.scans_count || 0} {t('brandProfile.scansWord', { count: filament.scans_count || 0 })}</p>
+        <p className="text-white font-semibold">{scans} {t('brandProfile.scansWord', { count: scans })}</p>
       </div>
     </div>
   );

@@ -33,15 +33,15 @@ describe('MarketNotice', () => {
     );
     // Проверяем выбор сообщения, а не его формулировку: тексты живут в локалях.
     // FilamentHub не магазин, поэтому цена подписывается как рекомендация.
-    expect(screen.getByText(/market\.priceFor/)).toBeTruthy();
+    expect(screen.getByText(/market\.dataFor/)).toBeTruthy();
   });
 
-  it('states plainly when somebody says it is not sold there', () => {
+  it('states plainly when the regional card is discontinued', () => {
     render(
       <MarketNotice
-        filament={material({ market_country: 'RS', market_availability: 'unavailable' })}
+        filament={material({ market_country: 'RS', market_availability: 'discontinued' })}
       />,
     );
-    expect(screen.getByText(/market\.notSoldIn/)).toBeTruthy();
+    expect(screen.getByText(/market\.discontinuedIn/)).toBeTruthy();
   });
 });

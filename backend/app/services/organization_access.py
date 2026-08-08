@@ -205,6 +205,9 @@ async def get_working_membership(
     него. От этого зависит, чьей командой человек управляет: региональный
     представитель ведёт свою, а не команду владельца марки.
     """
+    if user.active_organization_id is None:
+        return None
+
     workspace_organization_id = (
         select(Brand.organization_id).where(Brand.id == brand_id).scalar_subquery()
     )
@@ -238,11 +241,75 @@ async def get_working_membership(
     )
     # Выбранная организация решает, чьей командой человек управляет и чьим
     # вкладом становится заведённая им запись.
-    if user.active_organization_id is not None:
-        query = query.where(
-            OrganizationMembership.organization_id == user.active_organization_id
-        )
+    query = query.where(
+        OrganizationMembership.organization_id == user.active_organization_id
+    )
     return await db.scalar(query.order_by(in_workspace.desc(), OrganizationMembership.id).limit(1))
+
+
+async def get_workspace_membership(
+    db: AsyncSession,
+    user: User,
+    *,
+    brand_id: int,
+    organization_id: int,
+) -> OrganizationMembership | None:
+    """Return the membership authorizing one exact Brand + Organization workspace.
+
+    A membership and a brand grant must belong to the same organization. Checking
+    them independently would allow a user who belongs to two companies to combine
+    the brand access of one with the identity of the other.
+    """
+    holds_grant = (
+        select(BrandTerritorialGrant.id)
+        .where(
+            BrandTerritorialGrant.brand_id == brand_id,
+            BrandTerritorialGrant.organization_id == organization_id,
+            BrandTerritorialGrant.status == GrantStatus.active,
+            BrandTerritorialGrant.revoked_at.is_(None),
+        )
+        .exists()
+    )
+
+    return await db.scalar(
+        select(OrganizationMembership)
+        .join(Organization, Organization.id == OrganizationMembership.organization_id)
+        .join(Brand, Brand.id == brand_id)
+        .outerjoin(
+            OrganizationBrandAccess,
+            OrganizationBrandAccess.membership_id == OrganizationMembership.id,
+        )
+        .where(
+            OrganizationMembership.user_id == user.id,
+            OrganizationMembership.organization_id == organization_id,
+            OrganizationMembership.active.is_(True),
+            Organization.active.is_(True),
+            Brand.active.is_(True),
+            or_(
+                OrganizationMembership.all_brands.is_(True),
+                OrganizationBrandAccess.brand_id == brand_id,
+            ),
+            or_(Brand.organization_id == organization_id, holds_grant),
+        )
+        .limit(1)
+    )
+
+
+async def get_active_workspace_membership(
+    db: AsyncSession,
+    user: User,
+    brand_id: int | None = None,
+) -> OrganizationMembership | None:
+    """Return the membership for the user's selected workspace, if it is valid."""
+    selected_brand_id = brand_id if brand_id is not None else user.brand_id
+    if selected_brand_id is None or user.active_organization_id is None:
+        return None
+    return await get_workspace_membership(
+        db,
+        user,
+        brand_id=selected_brand_id,
+        organization_id=user.active_organization_id,
+    )
 
 
 async def list_accessible_brands(
@@ -311,8 +378,27 @@ async def can_select_active_brand(
     user: User,
     brand_id: int,
 ) -> bool:
-    """Whether ``brand_id`` is a valid workspace choice for ``user``."""
-    return await get_brand_membership(db, user, brand_id) is not None
+    """Whether the user's active organization may work with ``brand_id``."""
+    return await get_active_workspace_membership(db, user, brand_id) is not None
+
+
+async def can_select_active_workspace(
+    db: AsyncSession,
+    user: User,
+    *,
+    brand_id: int,
+    organization_id: int,
+) -> bool:
+    """Whether an exact Brand + Organization pair is selectable by ``user``."""
+    return (
+        await get_workspace_membership(
+            db,
+            user,
+            brand_id=brand_id,
+            organization_id=organization_id,
+        )
+        is not None
+    )
 
 
 async def revoke_brand_membership(
@@ -329,6 +415,8 @@ async def revoke_brand_membership(
     membership.active = False
     if user.brand_id == brand_id:
         user.brand_id = None
+        if user.active_organization_id == membership.organization_id:
+            user.active_organization_id = None
 
     remaining = await db.scalar(
         select(OrganizationMembership.id)
@@ -354,7 +442,7 @@ async def can_view_private_brand_data(
     """Whether a user may view private manufacturer analytics/settings."""
     if user.role == UserRole.ADMIN:
         return True
-    return await get_brand_membership(db, user, brand_id) is not None
+    return await get_active_workspace_membership(db, user, brand_id) is not None
 
 
 async def can_edit_brand_catalog(
@@ -365,5 +453,5 @@ async def can_edit_brand_catalog(
     """Whether a user may edit official brand and filament catalog data."""
     if user.role == UserRole.ADMIN:
         return True
-    membership = await get_brand_membership(db, user, brand_id)
+    membership = await get_active_workspace_membership(db, user, brand_id)
     return membership is not None and membership.role in BRAND_EDITOR_ROLES

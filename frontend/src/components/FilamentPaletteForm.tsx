@@ -16,7 +16,10 @@ import { FilamentFeaturesEditor } from './FilamentFeaturesEditor';
 import { deriveVisualEffectsFromAdditives, mergeVisualEffects } from '../data/filamentFeatures';
 import { translateApiError } from '../utils/translateApiError';
 import { normalizeRalCode } from '../utils/ralCode';
+import { CURRENCIES, currencySymbol, defaultCurrencyForCountry } from '../utils/currency';
+import { useAuth } from '../contexts/AuthContext';
 import type {
+  CountryAvailability,
   Filament,
   FilamentAdditive,
   FilamentAvailability,
@@ -40,6 +43,7 @@ interface FilamentPaletteFormProps {
   /** Режим «добавить цвета к готовому материалу»: параметры и линейка берутся из него. */
   sourceFilament?: Filament;
   allowCustomFeatures?: boolean;
+  initialCountry?: string | null;
 }
 
 const emptyEntry = (): PaletteEntry => ({ color_name: '', color_hex: '#808080', ral_code: '', name: '' });
@@ -51,20 +55,25 @@ export function FilamentPaletteForm({
   priceCurrencySymbol,
   sourceFilament,
   allowCustomFeatures = false,
+  initialCountry = null,
 }: FilamentPaletteFormProps) {
   const { t } = useTranslation();
+  const { user } = useAuth();
   const queryClient = useQueryClient();
 
   // Общую цену задаёт только область «весь мир»: у страновой она живёт в её ячейке.
   const territories = useQuery({
-    queryKey: ['brand-territories', brandId],
+    queryKey: ['brand-territories', brandId, user?.active_organization_id],
     queryFn: () => brandsAPI.myTerritories(brandId),
     enabled: !!brandId,
   });
-  const setsGlobalPrice =
-    territories.data === undefined ||
-    Boolean(territories.data.is_admin) ||
-    (territories.data.territories ?? []).some((item) => item.country === null);
+  const grantedCountries = (territories.data?.territories ?? [])
+    .filter((item) => item.manage_filament_country)
+    .map((item) => item.country)
+    .filter((country): country is string => country !== null);
+  const scopeCountry = initialCountry && grantedCountries.includes(initialCountry)
+    ? initialCountry
+    : grantedCountries[0];
 
   const { data: lines = [] } = useQuery({
     queryKey: ['brand-lines', brandId],
@@ -94,6 +103,12 @@ export function FilamentPaletteForm({
   });
   const [nozzleHrc, setNozzleHrc] = useState<number | null>(sourceFilament?.required_nozzle_hrc ?? null);
   const [availability, setAvailability] = useState<FilamentAvailability>(sourceFilament?.availability ?? 'available');
+  const [marketAvailability, setMarketAvailability] = useState<CountryAvailability>('unknown');
+  const [marketCurrency, setMarketCurrency] = useState(defaultCurrencyForCountry(scopeCountry));
+
+  useEffect(() => {
+    if (scopeCountry) setMarketCurrency(defaultCurrencyForCountry(scopeCountry));
+  }, [scopeCountry]);
   const sourceVisualSettings = sourceFilament?.visual_settings;
   const sourceAdditives = sourceFilament?.additives ?? [];
   const sourceDerivedEffects = new Set(deriveVisualEffectsFromAdditives(sourceAdditives));
@@ -210,7 +225,7 @@ export function FilamentPaletteForm({
         property_claims: propertyClaims,
         diameter,
         density: density || null,
-        price_per_kg: pricePerKg || null,
+        price_per_kg: scopeCountry ? null : pricePerKg || null,
         spool_weight: spoolWeight || null,
         empty_spool_weight_g: emptySpoolWeight,
         recommended_nozzle_temp_min: recTemps.nozzleMin,
@@ -226,6 +241,17 @@ export function FilamentPaletteForm({
           ral_code: normalizeRalCode(e.ral_code) || null,
           name: e.name.trim() || null,
         })),
+        country_cell: scopeCountry ? {
+          country: scopeCountry,
+          availability: marketAvailability,
+          price: (priceMode === 'per_spool' ? pricePerSpool : pricePerKg) || null,
+          currency: (priceMode === 'per_spool' ? pricePerSpool : pricePerKg) > 0
+            ? marketCurrency
+            : null,
+          price_display_unit: (priceMode === 'per_spool' ? pricePerSpool : pricePerKg) > 0
+            ? priceMode
+            : null,
+        } : null,
       };
       const res = await filamentLinesAPI.createVariants(targetLineId, payload);
       setResult(res);
@@ -339,11 +365,22 @@ export function FilamentPaletteForm({
             onChange={(val) => setDiameter(Number(val))}
           />
           <DensityField value={density} onChange={setDensity} />
-          <AvailabilitySelect value={availability} onChange={setAvailability} />
+          {scopeCountry ? (
+            <Dropdown
+              label={t('createFilament.availabilityLabel')}
+              value={marketAvailability}
+              options={(['available', 'coming_soon', 'discontinued', 'unknown'] as CountryAvailability[]).map((status) => ({
+                value: status,
+                label: t(`filamentMarket.availability_${status}`),
+              }))}
+              onChange={(value) => setMarketAvailability(value as CountryAvailability)}
+            />
+          ) : (
+            <AvailabilitySelect value={availability} onChange={setAvailability} />
+          )}
         </div>
         <div className="mt-3">
           <PriceUnitField
-            showPrice={setsGlobalPrice}
             priceMode={priceMode}
             onPriceModeChange={setPriceMode}
             pricePerKg={pricePerKg}
@@ -354,8 +391,26 @@ export function FilamentPaletteForm({
             onSpoolWeightChange={setSpoolWeight}
             emptySpoolWeight={emptySpoolWeight}
             onEmptySpoolWeightChange={setEmptySpoolWeight}
-            currencySymbol={priceCurrencySymbol}
+            currencySymbol={scopeCountry ? currencySymbol(marketCurrency) : priceCurrencySymbol}
           />
+          {scopeCountry && (
+            <div className="mt-3 max-w-40">
+              <label className="mb-2 block text-sm font-medium text-gray-300">
+                {t('filamentMarket.currency')}
+              </label>
+              <select
+                value={marketCurrency}
+                onChange={(event) => setMarketCurrency(event.target.value)}
+                className={inputClass}
+              >
+                {CURRENCIES.map((currency) => (
+                  <option key={currency.code} value={currency.code} className="bg-gray-900">
+                    {currency.code} {currency.symbol}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
         <div className="mt-3">
           <RecommendedTempsField value={recTemps} onChange={setRecTemps} />

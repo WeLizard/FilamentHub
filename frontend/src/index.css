@@ -153,6 +153,27 @@ option:hover {
   background-color: rgba(255, 255, 255, 0.1);
 }
 
+/* Disabled controls must look locked at a glance, especially in the shared
+   brand editor where a regional workspace can read but not rewrite values. */
+button:disabled {
+  cursor: not-allowed !important;
+  opacity: 0.38 !important;
+  filter: saturate(0.25);
+  box-shadow: none !important;
+}
+
+input:disabled,
+select:disabled,
+textarea:disabled {
+  cursor: not-allowed !important;
+  opacity: 1 !important;
+  color: rgba(156, 163, 175, 0.7) !important;
+  background-color: rgba(3, 7, 18, 0.48) !important;
+  border-color: rgba(255, 255, 255, 0.1) !important;
+  border-style: dashed !important;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.18) !important;
+}
+
 /* Стилизация range слайдеров для HSL Color Picker */
 input[type="range"].slider-thumb {
   -webkit-appearance: none;

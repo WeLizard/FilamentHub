@@ -161,7 +161,7 @@ export const ConsentModal: React.FC<ConsentModalProps> = ({ isOpen, onClose }) =
               <h3 className="text-xl font-bold text-white mb-4">5. Порядок отзыва согласия</h3>
               <p className="mb-2">
                 5.1. Согласие может быть отозвано субъектом персональных данных или его представителем путем направления
-                заявления Оператору по адресу электронной почты: admin@filamenthub.ru.
+                заявления Оператору по адресу электронной почты: support@filamenthub.ru.
               </p>
               <p className="mb-2">
                 5.2. В заявлении об отзыве согласия должна содержаться следующая информация:
@@ -239,7 +239,7 @@ export const ConsentModal: React.FC<ConsentModalProps> = ({ isOpen, onClose }) =
               <h3 className="text-xl font-bold text-white mb-4">9. Контактная информация</h3>
               <p className="mb-2">
                 9.1. По всем вопросам, связанным с обработкой персональных данных, субъект персональных данных может
-                обратиться к Оператору по адресу электронной почты: admin@filamenthub.ru.
+                обратиться к Оператору по адресу электронной почты: support@filamenthub.ru.
               </p>
               <p className="mb-2">
                 9.2. Пользовательское соглашение доступно на странице{' '}

@@ -11,6 +11,7 @@ interface PriceWithUnitProps {
   currencySymbol: string;
   /** Пересчёт в другую единицу показывается, только когда вес катушки известен. */
   spoolWeight?: number;
+  disabled?: boolean;
 }
 
 export function PriceWithUnit({
@@ -20,6 +21,7 @@ export function PriceWithUnit({
   onValueChange,
   currencySymbol,
   spoolWeight = 0,
+  disabled = false,
 }: PriceWithUnitProps) {
   const { t } = useTranslation();
 
@@ -34,16 +36,18 @@ export function PriceWithUnit({
         <div className="flex items-center bg-white/10 rounded-lg p-1 border border-white/20">
           <button
             type="button"
+            disabled={disabled}
             onClick={() => onPriceModeChange('per_kg')}
-            className={`px-2 py-1 text-xs rounded transition-all ${priceMode === 'per_kg' ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'}`}
+            className={`px-2 py-1 text-xs rounded transition-all disabled:cursor-not-allowed disabled:opacity-60 ${priceMode === 'per_kg' ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'}`}
             title={t('createFilament.pricePerKg')}
           >
             {t('createFilament.pricePerKg')}
           </button>
           <button
             type="button"
+            disabled={disabled}
             onClick={() => onPriceModeChange('per_spool')}
-            className={`px-2 py-1 text-xs rounded transition-all ${priceMode === 'per_spool' ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'}`}
+            className={`px-2 py-1 text-xs rounded transition-all disabled:cursor-not-allowed disabled:opacity-60 ${priceMode === 'per_spool' ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'}`}
             title={t('createFilament.pricePerSpool')}
           >
             {t('createFilament.pricePerSpool')}
@@ -52,11 +56,12 @@ export function PriceWithUnit({
       </div>
       <input
         type="number"
+        disabled={disabled}
         value={value || ''}
         onChange={(e) => onValueChange(e.target.value === '' ? 0 : Number(e.target.value))}
         min={0}
         step="0.01"
-        className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+        className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all disabled:cursor-not-allowed disabled:opacity-60"
         placeholder="800"
       />
       {priceMode === 'per_kg' && value > 0 && spoolWeight > 0 && (

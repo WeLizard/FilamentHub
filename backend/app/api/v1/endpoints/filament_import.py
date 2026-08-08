@@ -2,6 +2,7 @@
 
 import csv
 import io
+from datetime import datetime, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Query, Response, UploadFile
@@ -17,6 +18,7 @@ from app.core.errors import (
 from app.db.session import get_db
 from app.models.brand import Brand
 from app.models.filament import Filament, FilamentAvailability
+from app.models.filament_country_cell import CountryAvailability, FilamentCountryCell
 from app.models.filament_line import FilamentLine
 from app.models.user import User
 from app.schemas.filament import (
@@ -24,18 +26,25 @@ from app.schemas.filament import (
     FilamentImportRowResult,
     normalize_ral_code,
 )
-from app.services.territorial_access import can_create_for_brand
+from app.services.territorial_access import (
+    can_create_for_brand,
+    can_edit_filament_common,
+    can_manage_filament_country,
+)
 from app.services.preset_moderation import validate_text_field
 from app.services.slug_service import generate_unique_slug
+from app.services.country_market import filament_cell_has_public_data
 
 router = APIRouter(prefix="/filament-import", tags=["filament-import"])
 
 CSV_COLUMNS = [
-    "name", "material_type", "color_name", "color_hex", "ral_code",
-    "price_per_kg", "spool_weight", "line", "availability",
+    "name", "material_type", "color_name", "market_color_name", "color_hex", "ral_code",
+    "price_per_kg", "currency", "spool_weight", "line", "availability",
+    "product_url", "market_note",
 ]
 
 _AVAILABILITY_VALUES = {a.value for a in FilamentAvailability}
+_COUNTRY_AVAILABILITY_VALUES = {a.value for a in CountryAvailability}
 
 
 def _parse_float(value: str | None) -> float | None:
@@ -57,7 +66,10 @@ async def download_template() -> Response:
     buffer = io.StringIO()
     writer = csv.writer(buffer)
     writer.writerow(CSV_COLUMNS)
-    writer.writerow(["PLA Basic Red", "PLA", "Red", "#FF0000", "3020", "1500", "1000", "PLA Basic", "available"])
+    writer.writerow([
+        "PLA Basic Red", "PLA", "Red", "Red", "#FF0000", "3020",
+        "1500", "RUB", "1000", "PLA Basic", "available", "", "",
+    ])
     # BOM — чтобы Excel распознал UTF-8; "sep=," — чтобы Excel (в т.ч. RU-локаль,
     # где разделитель по умолчанию ";") разбил файл на колонки по запятой.
     content = "﻿" + "sep=,\r\n" + buffer.getvalue()
@@ -73,6 +85,7 @@ async def import_filaments(
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_active_user)],
     brand_id: int = Query(..., gt=0),
+    country: str | None = Query(None, pattern=r"^[A-Za-z]{2}$"),
     file: UploadFile = File(...),
 ) -> FilamentImportResult:
     """Импортировать материалы бренда из CSV."""
@@ -80,6 +93,11 @@ async def import_filaments(
     if brand is None:
         raise_error(404, ERR_BRAND_NOT_FOUND)
     if not await can_create_for_brand(db, current_user, brand_id):
+        raise_error(403, ERR_NO_PERMISSION_EDIT_FILAMENT)
+    country = country.upper() if country else None
+    if country and not await can_manage_filament_country(db, current_user, brand_id, country):
+        raise_error(403, ERR_NO_PERMISSION_EDIT_FILAMENT)
+    if country is None and not await can_edit_filament_common(db, current_user, brand_id):
         raise_error(403, ERR_NO_PERMISSION_EDIT_FILAMENT)
 
     raw = await file.read()
@@ -126,17 +144,31 @@ async def import_filaments(
             continue
 
         color_name = (row.get("color_name") or "").strip() or None
+        market_color_name = (row.get("market_color_name") or "").strip() or color_name
         color_hex = (row.get("color_hex") or "").strip().upper() or None
         ral_code_value = normalize_ral_code(row.get("ral_code"))
         ral_code = ral_code_value if isinstance(ral_code_value, str) and ral_code_value.isdigit() and len(ral_code_value) == 4 else None
         price_per_kg = _parse_float(row.get("price_per_kg"))
+        currency = (row.get("currency") or "").strip().upper() or None
         spool_weight = _parse_float(row.get("spool_weight"))
+
+        if country and price_per_kg is not None and currency is None:
+            result.errors += 1
+            result.rows.append(FilamentImportRowResult(
+                row=index, status="error", name=name, message="ERR_PRICE_CURRENCY_PAIR",
+            ))
+            continue
 
         availability_raw = (row.get("availability") or "").strip().lower()
         availability = (
             FilamentAvailability(availability_raw)
             if availability_raw in _AVAILABILITY_VALUES
             else FilamentAvailability.available
+        )
+        country_availability = (
+            CountryAvailability(availability_raw)
+            if availability_raw in _COUNTRY_AVAILABILITY_VALUES
+            else CountryAvailability.unknown
         )
 
         # Дубликат: тот же бренд + название + тип + цвет (по имени цвета, без регистра).
@@ -151,6 +183,32 @@ async def import_filaments(
             )
         )
         if duplicate is not None:
+            if country:
+                cell = await db.scalar(
+                    select(FilamentCountryCell).where(
+                        FilamentCountryCell.filament_id == duplicate,
+                        FilamentCountryCell.country == country,
+                    )
+                )
+                if cell is None:
+                    cell = FilamentCountryCell(filament_id=duplicate, country=country)
+                    db.add(cell)
+                cell.availability = country_availability
+                cell.price = price_per_kg
+                cell.currency = currency if price_per_kg is not None else None
+                cell.price_display_unit = "per_kg" if price_per_kg is not None else None
+                cell.product_url = (row.get("product_url") or "").strip() or None
+                cell.market_note = (row.get("market_note") or "").strip() or None
+                cell.market_color_name = market_color_name
+                cell.published = filament_cell_has_public_data(cell)
+                if price_per_kg is not None:
+                    cell.price_updated_at = datetime.now(timezone.utc)
+                    cell.price_updated_by_id = current_user.id
+                result.updated += 1
+                result.rows.append(FilamentImportRowResult(
+                    row=index, status="updated", name=name, filament_id=duplicate,
+                ))
+                continue
             result.skipped += 1
             result.rows.append(FilamentImportRowResult(
                 row=index, status="skipped", name=name, filament_id=duplicate,
@@ -180,7 +238,7 @@ async def import_filaments(
             color_name=color_name,
             color_hex=color_hex if color_hex and color_hex.startswith("#") else None,
             ral_code=ral_code,
-            price_per_kg=price_per_kg,
+            price_per_kg=None if country else price_per_kg,
             spool_weight=spool_weight,
             availability=availability,
             slug=slug,
@@ -188,6 +246,24 @@ async def import_filaments(
         )
         db.add(filament)
         await db.flush()
+
+        if country:
+            cell = FilamentCountryCell(
+                filament_id=filament.id,
+                country=country,
+                availability=country_availability,
+                price=price_per_kg,
+                currency=currency if price_per_kg is not None else None,
+                price_display_unit="per_kg" if price_per_kg is not None else None,
+                product_url=(row.get("product_url") or "").strip() or None,
+                market_note=(row.get("market_note") or "").strip() or None,
+                market_color_name=market_color_name,
+            )
+            cell.published = filament_cell_has_public_data(cell)
+            if price_per_kg is not None:
+                cell.price_updated_at = datetime.now(timezone.utc)
+                cell.price_updated_by_id = current_user.id
+            db.add(cell)
 
         if brand.verified:
             from app.services.qr_service import ensure_filament_qr_code

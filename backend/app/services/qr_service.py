@@ -6,13 +6,23 @@ from pathlib import Path
 
 import qrcode
 import qrcode.image.svg
-from PIL import Image
+from PIL import Image, ImageDraw
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.models.brand import Brand
 from app.models.filament import Filament
+from app.services.qr_mark import (
+    MARK_COLOR,
+    MARK_COLOR_HEX,
+    MARK_VIEWBOX,
+    draw_mark,
+    mark_paths,
+)
+
+# Доля ширины кода под знак. Выбрана замером декодером, а не по площади.
+BRANDED_MARK_SHARE = 0.22
 
 
 def generate_short_code(filament_id: int) -> str:
@@ -134,6 +144,122 @@ def generate_qr_code_image(
     img.save(buffer, format="PNG")
     buffer.seek(0)
     return buffer
+
+
+def _branded_layout(short_code: str, mark_share: float) -> tuple[list[list[bool]], int, int]:
+    """Раскладка брендированного кода: матрица и окно под знак в модулях.
+
+    Считается один раз для обоих форматов: растр для экрана и вектор для
+    типографии обязаны совпадать модуль в модуль, иначе бренд получит две
+    разные картинки одного кода.
+
+    Уровень `H` здесь обязателен — часть кода закрыта, и эту потерю оплачивает
+    избыточность. Доля 22% выбрана замером декодером на всех предлагаемых
+    размерах, а не расчётом по площади: коррекция работает по кодовым словам,
+    а не по проценту картинки.
+    """
+    qr = _qr_for(_qr_target_url(short_code), "H", box_size=1)
+    matrix = qr.get_matrix()
+
+    # Окно той же чётности, что и сетка: иначе знак встанет на полмодуля мимо
+    # центра и края окна будут рваными.
+    window = max(1, round(qr.modules_count * mark_share))
+    if window % 2 != qr.modules_count % 2:
+        window += 1
+    low = (len(matrix) - window) // 2
+    return matrix, window, low
+
+
+def generate_branded_qr_code_image(
+    short_code: str,
+    size: int = 1200,
+    mark_share: float = BRANDED_MARK_SHARE,
+) -> BytesIO:
+    """Тот же код со знаком FilamentHub в середине.
+
+    Знак не кладётся поверх готового кода: окно под него выравнивается по
+    модульной сетке, и модули там просто не рисуются. Поэтому нет ни белой
+    заплаты, ни срезанных наполовину модулей, а знак читается как часть кода.
+
+    Брендированный вариант предлагается бренду вторым, а не подменяет обычный:
+    это наш знак на чужой упаковке.
+    """
+    matrix, window, low = _branded_layout(short_code, mark_share)
+    total = len(matrix)
+    high = low + window
+
+    box_size = max(1, size // total)
+    side = box_size * total
+    image = Image.new("RGB", (side, side), "white")
+    draw = ImageDraw.Draw(image)
+
+    for row_index, row in enumerate(matrix):
+        for column_index, is_dark in enumerate(row):
+            if not is_dark:
+                continue
+            if low <= row_index < high and low <= column_index < high:
+                continue
+            x = column_index * box_size
+            y = row_index * box_size
+            draw.rectangle([x, y, x + box_size - 1, y + box_size - 1], fill=MARK_COLOR)
+
+    mark_px = window * box_size
+    mark = draw_mark(mark_px)
+    image.paste(mark, ((side - mark_px) // 2, (side - mark_px) // 2), mark)
+
+    if side != size:
+        canvas = Image.new("RGB", (size, size), "white")
+        offset = (size - side) // 2
+        canvas.paste(image, (offset, offset))
+        image = canvas
+
+    buffer = BytesIO()
+    image.save(buffer, format="PNG")
+    buffer.seek(0)
+    return buffer
+
+
+def generate_branded_qr_code_svg(
+    short_code: str,
+    mark_share: float = BRANDED_MARK_SHARE,
+) -> BytesIO:
+    """Брендированный код в векторе — то, что уходит в типографию.
+
+    Модули и знак идут контурами в одной системе координат, где единица — это
+    модуль. Растровой вставки внутри нет: печать на упаковке масштабируется без
+    потери края.
+    """
+    matrix, window, low = _branded_layout(short_code, mark_share)
+    total = len(matrix)
+    high = low + window
+
+    modules = [
+        f"M{column_index},{row_index}h1v1h-1z"
+        for row_index, row in enumerate(matrix)
+        for column_index, is_dark in enumerate(row)
+        if is_dark and not (low <= row_index < high and low <= column_index < high)
+    ]
+
+    # Знак живёт в поле 20×20, окно — window модулей: масштабируем и сдвигаем.
+    scale = window / MARK_VIEWBOX
+    mark = (
+        f'<g transform="translate({low},{low}) scale({scale:.6f})">'
+        + "".join(f'<path d="{path}"/>' for path in mark_paths())
+        + "</g>"
+    )
+
+    svg = (
+        f'<?xml version="1.0" encoding="UTF-8"?>\n'
+        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {total} {total}" '
+        f'shape-rendering="crispEdges">'
+        f'<rect width="{total}" height="{total}" fill="#ffffff"/>'
+        f'<g fill="{MARK_COLOR_HEX}">'
+        f'<path d="{"".join(modules)}"/>'
+        f"</g>"
+        f'<g fill="{MARK_COLOR_HEX}" shape-rendering="geometricPrecision">{mark}</g>'
+        f"</svg>\n"
+    )
+    return BytesIO(svg.encode("utf-8"))
 
 
 def generate_qr_code_svg(

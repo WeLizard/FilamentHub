@@ -89,6 +89,28 @@ class BrandUsageResponse(BaseModel):
     presets_count: int
 
 
+class BrandAnalyticsCountryItem(BaseModel):
+    country: str | None
+    scans: int
+
+
+class BrandAnalyticsFilamentItem(BaseModel):
+    filament_id: int
+    name: str
+    scans: int
+
+
+class BrandAnalyticsResponse(BaseModel):
+    """Analytics constrained by the active Brand + Organization workspace."""
+
+    scope: str
+    countries: list[str]
+    total_scans: int
+    historical_unattributed_scans: int
+    country_breakdown: list[BrandAnalyticsCountryItem]
+    filaments: list[BrandAnalyticsFilamentItem]
+
+
 class BrandSlugSuggestionResponse(BaseModel):
     """Server-owned suggestion for a new public brand URL."""
 

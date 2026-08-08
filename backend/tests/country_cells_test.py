@@ -220,10 +220,10 @@ async def test_the_reader_country_substitutes_local_facts(
     # Витрина обязана суметь подписать цену как местную.
     assert local["market_country"] == "RS"
 
-    # Страна без ячейки видит общее и молчит о местном наличии.
+    # Страна без ячейки не получает цену другого рынка.
     german = await admin_client.get(f"/api/v1/filaments/{filament.id}?country=DE")
-    assert german.json()["price_per_kg"] == 1500
-    assert german.json()["currency"] == "RUB"
+    assert german.json()["price_per_kg"] is None
+    assert german.json()["currency"] is None
     assert german.json()["market_country"] is None
 
     # Без страны — тоже общее.
@@ -232,10 +232,10 @@ async def test_the_reader_country_substitutes_local_facts(
 
 
 @pytest.mark.asyncio
-async def test_an_unpublished_cell_never_reaches_the_catalogue(
+async def test_useful_country_data_is_published_without_a_manual_switch(
     admin_client: AsyncClient, db_session: AsyncSession
 ):
-    """Черновик ячейки не подставляется даже администратору в витрине."""
+    """Цена сама делает страновую ячейку полезной и видимой в витрине."""
     _, filament = await _brand_with_filament(db_session)
     filament.price_per_kg = 1500
     filament.currency = "RUB"
@@ -248,19 +248,20 @@ async def test_an_unpublished_cell_never_reaches_the_catalogue(
 
     listed = await admin_client.get("/api/v1/filaments/?country=RS&size=100")
     item = next(i for i in listed.json()["items"] if i["id"] == filament.id)
-    assert item["price_per_kg"] == 1500
-    assert item["market_country"] is None
+    assert item["price_per_kg"] == 2500
+    assert item["currency"] == "RSD"
+    assert item["market_country"] == "RS"
 
 
 @pytest.mark.asyncio
-async def test_not_sold_here_is_not_discontinued(
+async def test_regional_catalog_status_does_not_change_global_product_status(
     admin_client: AsyncClient, db_session: AsyncSession
 ):
-    """Состояние товара у производителя и продажа в стране — разные словари."""
+    """Страновая актуальность карточки не переписывает состояние товара в мире."""
     _, filament = await _brand_with_filament(db_session)
     await db_session.commit()
 
-    for country, market_state in (("RS", "unavailable"), ("FR", "unknown")):
+    for country, market_state in (("RS", "discontinued"), ("FR", "coming_soon")):
         created = await admin_client.post(
             f"/api/v1/filaments/{filament.id}/country-cells",
             json={"country": country, "availability": market_state, "published": True},
@@ -269,16 +270,16 @@ async def test_not_sold_here_is_not_discontinued(
 
         shown = await admin_client.get(f"/api/v1/filaments/{filament.id}?country={country}")
         assert shown.status_code == 200
-        # Товар выпускается, просто на этом рынке его не продают.
+        # Общий статус товара остаётся независимым от страновой актуальности.
         assert shown.json()["availability"] == "available"
         assert shown.json()["market_availability"] == market_state
 
 
 @pytest.mark.asyncio
-async def test_not_sold_here_hides_the_local_price(
+async def test_regional_catalog_status_does_not_erase_known_market_data(
     admin_client: AsyncClient, db_session: AsyncSession
 ):
-    """Цена товара, который здесь не купить, читателю только противоречит."""
+    """Актуальность карточки не является ручным переключателем продажи."""
     _, filament = await _brand_with_filament(db_session)
     await db_session.commit()
 
@@ -286,7 +287,7 @@ async def test_not_sold_here_hides_the_local_price(
         f"/api/v1/filaments/{filament.id}/country-cells",
         json={
             "country": "RS",
-            "availability": "unavailable",
+            "availability": "discontinued",
             "price": 3000,
             "currency": "RSD",
             "product_url": "https://example.rs/pla",
@@ -296,10 +297,10 @@ async def test_not_sold_here_hides_the_local_price(
     assert created.status_code == 201
 
     shown = (await admin_client.get(f"/api/v1/filaments/{filament.id}?country=RS")).json()
-    assert shown["market_availability"] == "unavailable"
-    assert shown["price_per_kg"] != 3000
-    assert shown["currency"] != "RSD"
-    assert shown["product_url"] != "https://example.rs/pla"
+    assert shown["market_availability"] == "discontinued"
+    assert shown["price_per_kg"] == 3000
+    assert shown["currency"] == "RSD"
+    assert shown["product_url"] == "https://example.rs/pla"
 
     # Сама ячейка цену помнит: скрыт показ, а не введённые представителем данные.
     cell = (await admin_client.get(f"/api/v1/filaments/{filament.id}/country-cells")).json()[0]

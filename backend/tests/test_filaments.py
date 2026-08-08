@@ -5,10 +5,13 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.brand import Brand
+from app.models.brand_territorial_grant import GrantSource
 from app.models.filament import Filament
+from app.models.filament_country_cell import FilamentCountryCell
 from app.models.filament_review import FilamentReview
 from app.models.preset import Preset, PresetModerationStatus
 from app.models.user import User
+from app.services.grant_issuing import issue_territorial_grant
 from app.services.organization_access import grant_brand_owner_membership
 
 
@@ -37,7 +40,7 @@ async def test_create_filament(auth_client: AsyncClient, db_session: AsyncSessio
     db_session.add(brand)
     await db_session.commit()
     await db_session.refresh(brand)
-    
+
     # Create filament
     filament_data = {
         "brand_id": brand.id,
@@ -382,7 +385,7 @@ async def test_get_filament(client: AsyncClient, db_session: AsyncSession):
     db_session.add(brand)
     await db_session.commit()
     await db_session.refresh(brand)
-    
+
     filament = Filament(
         brand_id=brand.id,
         name="Test Filament 2",
@@ -399,7 +402,7 @@ async def test_get_filament(client: AsyncClient, db_session: AsyncSession):
     db_session.add(filament)
     await db_session.commit()
     await db_session.refresh(filament)
-    
+
     # Get filament via API
     response = await client.get(f"/api/v1/filaments/{filament.id}")
     assert response.status_code == 200
@@ -428,7 +431,7 @@ async def test_list_filaments_filter_by_brand(
     await db_session.commit()
     await db_session.refresh(brand1)
     await db_session.refresh(brand2)
-    
+
     # Create filaments
     filament1 = Filament(
         brand_id=brand1.id,
@@ -446,7 +449,7 @@ async def test_list_filaments_filter_by_brand(
     )
     db_session.add_all([filament1, filament2])
     await db_session.commit()
-    
+
     # Filter by brand1
     response = await client.get(f"/api/v1/filaments/?brand_id={brand1.id}")
     assert response.status_code == 200
@@ -465,7 +468,7 @@ async def test_list_filaments_filter_by_material_type(
     db_session.add(brand)
     await db_session.commit()
     await db_session.refresh(brand)
-    
+
     # Create filaments with different types
     filament1 = Filament(
         brand_id=brand.id,
@@ -483,7 +486,7 @@ async def test_list_filaments_filter_by_material_type(
     )
     db_session.add_all([filament1, filament2])
     await db_session.commit()
-    
+
     # Filter by PLA
     response = await client.get("/api/v1/filaments/?material_type=PLA")
     assert response.status_code == 200
@@ -550,6 +553,64 @@ async def test_list_filaments_searches_catalog_fields(
 
 
 @pytest.mark.asyncio
+async def test_catalog_search_uses_only_the_selected_country_cell(
+    client: AsyncClient, db_session: AsyncSession
+):
+    """Regional names are searchable without leaking matches from another market."""
+    brand = Brand(name="Market Search Brand", slug="market-search-brand", active=True)
+    db_session.add(brand)
+    await db_session.flush()
+
+    filament = Filament(
+        brand_id=brand.id,
+        name="Global Product Name",
+        slug="global-product-name",
+        material_type="PLA",
+        color_name="Shared Green",
+        active=True,
+    )
+    db_session.add(filament)
+    await db_session.flush()
+    db_session.add_all(
+        [
+            FilamentCountryCell(
+                filament_id=filament.id,
+                country="KZ",
+                market_color_name="Алмалы жасыл",
+                market_note="Тек Қазақстан нарығында",
+                published=True,
+            ),
+            FilamentCountryCell(
+                filament_id=filament.id,
+                country="DE",
+                market_color_name="Apfelgrün",
+                published=True,
+            ),
+        ]
+    )
+    await db_session.commit()
+
+    kz_name = await client.get(
+        "/api/v1/filaments/", params={"country": "KZ", "search": "Алмалы"}
+    )
+    assert kz_name.status_code == 200
+    assert kz_name.json()["total"] == 1
+    assert kz_name.json()["items"][0]["color_name"] == "Алмалы жасыл"
+
+    kz_note = await client.get(
+        "/api/v1/filaments/", params={"country": "KZ", "search": "Қазақстан"}
+    )
+    assert kz_note.status_code == 200
+    assert kz_note.json()["total"] == 1
+
+    de_does_not_see_kz_match = await client.get(
+        "/api/v1/filaments/", params={"country": "DE", "search": "Алмалы"}
+    )
+    assert de_does_not_see_kz_match.status_code == 200
+    assert de_does_not_see_kz_match.json()["total"] == 0
+
+
+@pytest.mark.asyncio
 async def test_list_filaments_can_reach_items_after_first_hundred(
     client: AsyncClient, db_session: AsyncSession
 ):
@@ -588,35 +649,6 @@ async def test_list_filaments_can_reach_items_after_first_hundred(
 
 
 @pytest.mark.asyncio
-async def test_get_filament_presets(client: AsyncClient, db_session: AsyncSession):
-    """Test getting presets for a filament."""
-    # Create brand and filament
-    brand = Brand(name="Test Brand", slug="test-brand", active=True)
-    db_session.add(brand)
-    await db_session.commit()
-    await db_session.refresh(brand)
-    
-    filament = Filament(
-        brand_id=brand.id,
-        name="Test Filament",
-        slug="test-filament",
-        material_type="PLA",
-        active=True,
-    )
-    db_session.add(filament)
-    await db_session.commit()
-    await db_session.refresh(filament)
-    
-    # Get presets
-    response = await client.get(f"/api/v1/filaments/{filament.id}/presets")
-    assert response.status_code == 200
-    data = response.json()
-    assert "items" in data
-    assert "total" in data
-    assert isinstance(data["items"], list)
-
-
-@pytest.mark.asyncio
 async def test_update_filament(admin_client: AsyncClient, db_session: AsyncSession):
     """Test updating a filament."""
     # Create brand and filament
@@ -624,7 +656,7 @@ async def test_update_filament(admin_client: AsyncClient, db_session: AsyncSessi
     db_session.add(brand)
     await db_session.commit()
     await db_session.refresh(brand)
-    
+
     filament = Filament(
         brand_id=brand.id,
         name="Original Name",
@@ -635,7 +667,7 @@ async def test_update_filament(admin_client: AsyncClient, db_session: AsyncSessi
     db_session.add(filament)
     await db_session.commit()
     await db_session.refresh(filament)
-    
+
     # Update filament (using PATCH for partial update)
     update_data = {
         "name": "Updated Name",
@@ -658,8 +690,17 @@ async def _brand_with_employee(
     brand = Brand(name="Creality", slug="creality", active=True, verified=True)
     db_session.add(brand)
     await db_session.flush()
-    await grant_brand_owner_membership(
+    organization, _ = await grant_brand_owner_membership(
         db_session, brand=brand, user=employee, granted_by_id=admin_user.id
+    )
+    await issue_territorial_grant(
+        db_session,
+        brand=brand,
+        user=employee,
+        country=None,
+        source=GrantSource.application,
+        approved_by_id=admin_user.id,
+        organization_id=organization.id,
     )
     await db_session.commit()
     return brand

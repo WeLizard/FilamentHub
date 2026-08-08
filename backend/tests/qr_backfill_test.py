@@ -166,12 +166,12 @@ async def test_approved_existing_brand_claim_backfills_qr_codes(
     "endpoint_prefix",
     ["/api/v1/admin/brand-requests", "/api/v1/brand-requests"],
 )
-async def test_approved_new_brand_claim_creates_owner_membership(
+async def test_approved_new_catalog_brand_does_not_grant_representation(
     endpoint_prefix: str,
     admin_client: AsyncClient,
     db_session: AsyncSession,
 ):
-    """Both moderation routes create the same owner workspace for a new brand."""
+    """Adding a missing catalog brand does not create company authority."""
     suffix = endpoint_prefix.replace("/", "-").strip("-")
     claimant = User(
         email=f"new-claimant-{suffix}@example.com",
@@ -202,17 +202,15 @@ async def test_approved_new_brand_claim_creates_owner_membership(
     )
     assert brand is not None
     assert brand.verified is True
-    assert brand.organization_id is not None
+    assert brand.organization_id is None
 
     await db_session.refresh(claimant)
     membership = await db_session.scalar(
         select(OrganizationMembership).where(
             OrganizationMembership.user_id == claimant.id,
-            OrganizationMembership.organization_id == brand.organization_id,
         )
     )
-    assert claimant.brand_id == brand.id
-    assert claimant.role == UserRole.BRAND
-    assert membership is not None
-    assert membership.role == OrganizationMemberRole.OWNER
-    assert membership.all_brands is True
+    assert claimant.brand_id is None
+    assert claimant.active_organization_id is None
+    assert claimant.role == UserRole.USER
+    assert membership is None

@@ -28,15 +28,17 @@ if TYPE_CHECKING:
 
 
 class CountryAvailability(str, enum.Enum):
-    """Продаётся ли товар в стране.
+    """Regional catalog status for the same global product.
 
-    `unknown` существует наравне с остальными: ячейку могли завести ради цены, не
-    утверждая ничего о наличии. Отсутствие ячейки означает то же самое, и ни то
-    ни другое не выводится как «не продаётся».
+    ``unknown`` means that the country has not filled the status yet. The
+    legacy ``unavailable`` value remains readable and is presented as
+    ``discontinued``; new writes use the product-status vocabulary.
     """
 
     available = "available"
     unavailable = "unavailable"
+    coming_soon = "coming_soon"
+    discontinued = "discontinued"
     unknown = "unknown"
 
 

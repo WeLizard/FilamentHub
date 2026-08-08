@@ -1,4 +1,4 @@
-/** Что сказать читателю про его рынок — и о чём промолчать. */
+/** Country-specific catalog status and product data. */
 
 import { useTranslation } from 'react-i18next';
 import { MapPin, ExternalLink } from 'lucide-react';
@@ -13,12 +13,6 @@ interface MarketNoticeProps {
 }
 
 /**
- * Три состояния, но показывать можно только два.
- *
- * Ячейки нет — мы не знаем, продаётся ли товар в этой стране, и молчим: написать
- * «в вашей стране не продаётся», не имея данных, значит утверждать факт, которого
- * у нас нет. Прямое «не продаётся» показываем, потому что это чьё-то заявление.
- *
  * Цена из ячейки подписывается как рекомендованная для рынка: FilamentHub не
  * магазин, и выдавать её за предложение продавца нельзя.
  */
@@ -30,15 +24,22 @@ export const MarketNotice: React.FC<MarketNoticeProps> = ({ filament, compact = 
   }
 
   const country = countryName(filament.market_country, i18n.language);
-  const unavailable = filament.market_availability === 'unavailable';
+  const status = filament.market_availability === 'unavailable'
+    ? 'discontinued'
+    : filament.market_availability;
+  const statusText = status === 'discontinued'
+    ? t('market.discontinuedIn', { country })
+    : status === 'coming_soon'
+      ? t('market.comingSoonIn', { country })
+      : t('market.dataFor', { country });
   const link = externalUrl(filament.product_url);
 
   if (compact) {
     return (
       <span
-        title={unavailable ? t('market.notSoldIn', { country }) : t('market.priceFor', { country })}
+        title={statusText}
         className={`inline-flex items-center gap-1 whitespace-nowrap text-xs ${
-          unavailable ? 'text-amber-300' : 'text-gray-400'
+          status === 'discontinued' ? 'text-amber-300' : 'text-gray-400'
         }`}
       >
         <MapPin className="h-3 w-3 shrink-0" />
@@ -52,7 +53,7 @@ export const MarketNotice: React.FC<MarketNoticeProps> = ({ filament, compact = 
       <div className="flex items-center gap-2 text-gray-300">
         <MapPin className="h-4 w-4 text-emerald-300" />
         <span>
-          {unavailable ? t('market.notSoldIn', { country }) : t('market.priceFor', { country })}
+          {statusText}
         </span>
       </div>
       {filament.market_note && (
@@ -66,7 +67,7 @@ export const MarketNotice: React.FC<MarketNoticeProps> = ({ filament, compact = 
           className="mt-2 inline-flex items-center gap-1 text-xs text-purple-300 hover:text-purple-200"
         >
           <ExternalLink className="h-3 w-3" />
-          {t('market.whereToBuy')}
+          {t('filamentMarket.productUrl')}
         </a>
       )}
     </div>

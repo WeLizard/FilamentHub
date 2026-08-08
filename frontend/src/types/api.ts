@@ -35,6 +35,15 @@ export interface BrandUsage {
   presets_count: number;
 }
 
+export interface BrandAnalytics {
+  scope: 'global' | 'territorial';
+  countries: string[];
+  total_scans: number;
+  historical_unattributed_scans: number;
+  country_breakdown: { country: string | null; scans: number }[];
+  filaments: { filament_id: number; name: string; scans: number }[];
+}
+
 export interface FilamentVisualSettings {
   color_type?: 'single' | 'two' | 'three' | 'gradient' | 'transition' | 'thermochromic';
   colors?: string[]; // До 5 цветов для градиента/перехода
@@ -110,12 +119,12 @@ export interface Filament {
   qr_code: string | null;
   /** Заполнено, когда сведения подставлены из ячейки страны. */
   market_country?: string | null;
-  market_availability?: 'available' | 'unavailable' | 'unknown' | null;
+  market_availability?: CountryAvailability | null;
   market_note?: string | null;
   product_url?: string | null; // Короткий код для QR-кода (например: "FHUB-ABC123")
   active: boolean;
   availability: FilamentAvailability;
-  currency?: string; // валюта бренда (денормализовано в ответе)
+  currency?: string | null; // валюта рынка или бренда (денормализовано в ответе)
   price_hidden?: boolean; // бренд скрыл цену (денормализовано)
   created_at: string;
   updated_at: string;
@@ -136,7 +145,7 @@ export interface FilamentLine {
 
 export interface FilamentImportRowResult {
   row: number;
-  status: 'created' | 'skipped' | 'error';
+  status: 'created' | 'updated' | 'skipped' | 'error';
   name: string | null;
   filament_id: number | null;
   message: string | null;
@@ -144,6 +153,7 @@ export interface FilamentImportRowResult {
 
 export interface FilamentImportResult {
   created: number;
+  updated: number;
   skipped: number;
   errors: number;
   rows: FilamentImportRowResult[];
@@ -174,6 +184,13 @@ export interface FilamentPalettePayload {
   description?: string | null;
   availability?: FilamentAvailability;
   price_display_unit?: 'per_kg' | 'per_spool';
+  country_cell?: {
+    country: string;
+    availability: CountryAvailability;
+    price: number | null;
+    currency: string | null;
+    price_display_unit: 'per_kg' | 'per_spool' | null;
+  } | null;
   variants: FilamentPaletteVariant[];
 }
 
@@ -184,7 +201,8 @@ export interface BrandInvitePublic {
   target_type: 'new' | 'existing' | null;
   brand_id: number | null;
   active_organization_id?: number | null;
-  purpose: 'representative' | 'team' | null;
+  purpose: 'platform' | 'representative' | 'territory' | 'team' | null;
+  country: string | null;
   member_role: 'owner' | 'editor' | null;
   reason: string | null;
 }
@@ -197,8 +215,9 @@ export interface BrandInviteAdmin {
   target_type: 'new' | 'existing';
   brand_id: number | null;
   organization_id: number | null;
+  country: string | null;
   member_role: 'owner' | 'editor';
-  purpose: 'representative' | 'team';
+  purpose: 'platform' | 'representative' | 'territory' | 'team';
   all_brands: boolean;
   sender_profile: 'partnerships' | 'pr' | 'transactional';
   language: EmailLanguage;
@@ -241,8 +260,8 @@ export interface BrandInviteBatchSendResult {
 export interface BrandInviteAcceptResult {
   brand_id: number;
   brand_name: string;
-  organization_id: number;
-  member_role: 'owner' | 'editor';
+  organization_id: number | null;
+  member_role: 'owner' | 'editor' | null;
 }
 
 export type EmailThreadStatus = 'open' | 'closed';
@@ -1690,7 +1709,7 @@ export interface OrcaSchemaObservationListResponse {
 }
 
 /** Региональная витрина бренда: одна страна — одна ячейка. */
-export type CountryAvailability = 'available' | 'unavailable' | 'unknown';
+export type CountryAvailability = 'available' | 'unavailable' | 'coming_soon' | 'discontinued' | 'unknown';
 
 export interface FilamentCountryCell {
   id: number;

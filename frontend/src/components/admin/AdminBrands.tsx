@@ -4,21 +4,31 @@ import { useDeferredValue, useState, useEffect, useRef, FormEvent } from 'react'
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { Building2, CheckCircle, XCircle, Shield, Search, ExternalLink, Edit, X, Save, Loader2, Upload, Send, Copy, Plus } from 'lucide-react';
+import { Building2, CheckCircle, XCircle, Shield, Search, ExternalLink, Edit, X, Save, Loader2, Upload, Send, Copy, Plus, History, KeyRound, Globe2, MapPin } from 'lucide-react';
 import { ModalOverlay } from '../ModalOverlay';
 import { BrandLogoFrame } from '../BrandLogoFrame';
-import { adminAPI, brandInvitesAPI } from '../../api/client';
+import { adminAPI, brandInvitesAPI, brandRepresentativesAPI } from '../../api/client';
 import { translateApiError } from '../../utils/translateApiError';
 import { externalUrl } from '../../utils/externalUrl';
 import { currentRequestLanguage } from '../../utils/requestLanguage';
-import type { Brand, BrandInviteBatchPreview, BrandInviteBatchSendResult, EmailLanguage } from '../../types/api';
+import type { Brand, BrandInviteAdmin, BrandInviteBatchPreview, BrandInviteBatchSendResult, BrandRepresentative, EmailLanguage } from '../../types/api';
 import type { AxiosError } from 'axios';
 import { formatDateTime } from '../../utils/formatDate';
+import { countryName, sortedCountries } from '../../utils/countries';
 
 type FilterType = 'all' | 'verified' | 'unverified';
 
+type AdminInviteStatus = 'accepted' | 'revoked' | 'expired' | 'pending' | 'sent' | 'failed';
+
+const adminInviteStatus = (invite: BrandInviteAdmin): AdminInviteStatus => {
+  if (invite.accepted_at) return 'accepted';
+  if (invite.revoked_at) return 'revoked';
+  if (new Date(invite.expires_at).getTime() <= Date.now()) return 'expired';
+  return invite.send_status;
+};
+
 export function AdminBrands() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [page, setPage] = useState(1);
@@ -41,6 +51,8 @@ export function AdminBrands() {
   const [inviteRecipients, setInviteRecipients] = useState('');
   const [inviteBrandName, setInviteBrandName] = useState('');
   const [inviteBrandId, setInviteBrandId] = useState<number | null>(null);
+  const [inviteScope, setInviteScope] = useState<'global' | 'country'>('global');
+  const [inviteCountry, setInviteCountry] = useState('');
   const [inviteBrandFocused, setInviteBrandFocused] = useState(false);
   const [inviteSenderProfile, setInviteSenderProfile] = useState<'partnerships' | 'pr' | 'transactional'>('partnerships');
   const [inviteLanguage, setInviteLanguage] = useState<EmailLanguage>(currentRequestLanguage);
@@ -48,7 +60,22 @@ export function AdminBrands() {
   const [inviteResult, setInviteResult] = useState<BrandInviteBatchSendResult | null>(null);
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [inviteSubmitting, setInviteSubmitting] = useState(false);
+  const [showInviteHistory, setShowInviteHistory] = useState(false);
+  const [rightsBrand, setRightsBrand] = useState<Brand | null>(null);
   const deferredInviteBrandSearch = useDeferredValue(inviteBrandName.trim());
+  const inviteCountries = sortedCountries(i18n.language);
+
+  const inviteHistoryQuery = useQuery({
+    queryKey: ['admin-brand-invites'],
+    queryFn: () => brandInvitesAPI.adminList({ limit: 100 }),
+    enabled: showInviteHistory,
+  });
+
+  const representativesQuery = useQuery({
+    queryKey: ['brand-representatives', rightsBrand?.id],
+    queryFn: () => brandRepresentativesAPI.list(rightsBrand!.id),
+    enabled: !!rightsBrand,
+  });
 
   const { data: inviteBrandsData, isFetching: inviteBrandsLoading } = useQuery({
     queryKey: ['admin-brand-invite-search', deferredInviteBrandSearch],
@@ -79,7 +106,7 @@ export function AdminBrands() {
         target_type: existingBrand ? 'existing' : 'new',
         brand_id: existingBrand?.id ?? null,
         brand_name: existingBrand ? null : inviteBrandName.trim(),
-        member_role: 'owner',
+        country: inviteScope === 'country' ? inviteCountry : null,
         sender_profile: inviteSenderProfile,
       });
       setInvitePreview(preview);
@@ -103,7 +130,7 @@ export function AdminBrands() {
         target_type: existingBrand ? 'existing' : 'new',
         brand_id: existingBrand?.id ?? null,
         brand_name: existingBrand ? null : inviteBrandName.trim(),
-        member_role: 'owner',
+        country: inviteScope === 'country' ? inviteCountry : null,
         sender_profile: inviteSenderProfile,
         language: inviteLanguage,
       });
@@ -122,6 +149,8 @@ export function AdminBrands() {
     setInviteRecipients('');
     setInviteBrandName('');
     setInviteBrandId(null);
+    setInviteScope('global');
+    setInviteCountry('');
     setInviteBrandFocused(false);
     setInviteSenderProfile('partnerships');
     setInviteLanguage(currentRequestLanguage());
@@ -157,6 +186,22 @@ export function AdminBrands() {
   const unverifyMutation = useMutation({
     mutationFn: (brandId: number) => adminAPI.unverifyBrand(brandId),
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-brands'] });
+    },
+  });
+
+  const revokeInviteMutation = useMutation({
+    mutationFn: (inviteId: number) => brandInvitesAPI.adminDelete(inviteId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-brand-invites'] });
+    },
+  });
+
+  const revokeGrantMutation = useMutation({
+    mutationFn: ({ brandId, grantId }: { brandId: number; grantId: number }) =>
+      brandRepresentativesAPI.revoke(brandId, grantId),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['brand-representatives', variables.brandId] });
       queryClient.invalidateQueries({ queryKey: ['admin-brands'] });
     },
   });
@@ -290,13 +335,22 @@ export function AdminBrands() {
           <h2 className="text-2xl font-bold text-white mb-2">{t('adminBrands.title')}</h2>
           <p className="text-gray-400">{t('adminBrands.total')}: {total}</p>
         </div>
-        <button
-          type="button"
-          onClick={() => { setShowInviteModal(true); setInviteResult(null); setInviteError(null); }}
-          className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white rounded-xl transition-all text-sm whitespace-nowrap"
-        >
-          <Send className="w-4 h-4" /> {t('adminBrands.inviteButton')}
-        </button>
+        <div className="flex flex-wrap justify-end gap-2">
+          <button
+            type="button"
+            onClick={() => setShowInviteHistory(true)}
+            className="flex items-center gap-2 rounded-xl border border-white/15 bg-white/5 px-4 py-2 text-sm text-gray-200 transition-all hover:bg-white/10"
+          >
+            <History className="h-4 w-4" /> {t('adminBrands.inviteHistoryButton')}
+          </button>
+          <button
+            type="button"
+            onClick={() => { setShowInviteModal(true); setInviteResult(null); setInviteError(null); }}
+            className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white rounded-xl transition-all text-sm whitespace-nowrap"
+          >
+            <Send className="w-4 h-4" /> {t('adminBrands.inviteButton')}
+          </button>
+        </div>
       </div>
 
       {/* Фильтры и поиск */}
@@ -387,7 +441,15 @@ export function AdminBrands() {
                     {t('adminBrands.created')}: {formatDateTime(brand.created_at)}
                   </p>
                 </div>
-                <div className="flex items-center space-x-2">
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                  <button
+                    onClick={() => setRightsBrand(brand)}
+                    className="flex items-center space-x-2 rounded-lg border border-purple-400/30 bg-purple-500/10 px-4 py-2 text-purple-200 transition-all hover:bg-purple-500/20"
+                    title={t('adminBrands.rightsTitle')}
+                  >
+                    <KeyRound className="h-4 w-4" />
+                    <span>{t('adminBrands.rights')}</span>
+                  </button>
                   <button
                     onClick={() => setEditingBrand(brand)}
                     className="flex items-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-all"
@@ -699,6 +761,161 @@ export function AdminBrands() {
         </ModalOverlay>
       )}
 
+      {showInviteHistory && (
+        <ModalOverlay onClose={() => setShowInviteHistory(false)}>
+          <div className="flex max-h-[calc(100vh-2rem)] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-white/20 bg-gray-900 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-white/10 p-6">
+              <div className="flex items-center gap-2">
+                <History className="h-5 w-5 text-purple-300" />
+                <h3 className="text-xl font-bold text-white">{t('adminBrands.inviteHistoryTitle')}</h3>
+              </div>
+              <button onClick={() => setShowInviteHistory(false)} className="text-gray-400 transition-colors hover:text-white">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="overflow-y-auto p-6">
+              {inviteHistoryQuery.isLoading ? (
+                <div className="flex items-center justify-center gap-2 py-10 text-gray-400">
+                  <Loader2 className="h-5 w-5 animate-spin" /> {t('adminBrands.inviteHistoryLoading')}
+                </div>
+              ) : inviteHistoryQuery.isError ? (
+                <p className="py-10 text-center text-red-300">{t('adminBrands.inviteHistoryError')}</p>
+              ) : (inviteHistoryQuery.data?.length ?? 0) === 0 ? (
+                <p className="py-10 text-center text-gray-400">{t('adminBrands.inviteHistoryEmpty')}</p>
+              ) : (
+                <div className="space-y-2">
+                  {inviteHistoryQuery.data?.map((invite) => {
+                    const status = adminInviteStatus(invite);
+                    const revocable = !['accepted', 'revoked', 'expired'].includes(status);
+                    const statusClass = status === 'accepted'
+                      ? 'bg-green-500/15 text-green-300'
+                      : status === 'failed'
+                        ? 'bg-red-500/15 text-red-300'
+                        : status === 'revoked' || status === 'expired'
+                          ? 'bg-white/10 text-gray-400'
+                          : 'bg-amber-500/15 text-amber-200';
+                    return (
+                      <div key={invite.id} className="flex flex-col gap-3 rounded-xl border border-white/10 bg-white/[0.04] p-4 sm:flex-row sm:items-center">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="truncate font-medium text-white">{invite.email}</p>
+                            <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${statusClass}`}>
+                              {t(`adminBrands.inviteHistoryStatus_${status}`)}
+                            </span>
+                          </div>
+                          <p className="mt-1 text-sm text-gray-300">
+                            {invite.brand_name || t('adminBrands.inviteHistoryUnknownBrand')}
+                          </p>
+                          <p className="mt-1 text-xs text-gray-500">
+                            {t('adminBrands.inviteHistoryCreated')}: {formatDateTime(invite.created_at)} · {t(`adminBrands.invitePurpose_${invite.purpose}`)}
+                            {invite.purpose !== 'team' && (
+                              <> · {invite.country
+                                ? countryName(invite.country, i18n.language)
+                                : t('adminBrands.rightsGlobal')}</>
+                            )}
+                          </p>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-2">
+                          {invite.invite_url && (
+                            <button
+                              type="button"
+                              onClick={() => navigator.clipboard.writeText(invite.invite_url || '')}
+                              className="rounded-lg bg-white/10 p-2 text-gray-300 transition hover:bg-white/20 hover:text-white"
+                              title={t('adminBrands.inviteCopy')}
+                            >
+                              <Copy className="h-4 w-4" />
+                            </button>
+                          )}
+                          {revocable && (
+                            <button
+                              type="button"
+                              disabled={revokeInviteMutation.isPending}
+                              onClick={() => {
+                                if (confirm(t('adminBrands.inviteHistoryConfirmRevoke', { email: invite.email }))) {
+                                  revokeInviteMutation.mutate(invite.id);
+                                }
+                              }}
+                              className="rounded-lg border border-red-400/25 bg-red-500/10 px-3 py-2 text-xs font-medium text-red-200 transition hover:bg-red-500/20 disabled:opacity-50"
+                            >
+                              {t('adminBrands.inviteHistoryRevoke')}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        </ModalOverlay>
+      )}
+
+      {rightsBrand && (
+        <ModalOverlay onClose={() => setRightsBrand(null)}>
+          <div className="flex max-h-[calc(100vh-2rem)] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-white/20 bg-gray-900 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-white/10 p-6">
+              <div>
+                <div className="flex items-center gap-2">
+                  <KeyRound className="h-5 w-5 text-purple-300" />
+                  <h3 className="text-xl font-bold text-white">{t('adminBrands.rightsTitle')}</h3>
+                </div>
+                <p className="mt-1 text-sm text-gray-400">{rightsBrand.name}</p>
+              </div>
+              <button onClick={() => setRightsBrand(null)} className="text-gray-400 transition-colors hover:text-white">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="overflow-y-auto p-6">
+              {representativesQuery.isLoading ? (
+                <div className="flex items-center justify-center gap-2 py-10 text-gray-400">
+                  <Loader2 className="h-5 w-5 animate-spin" /> {t('adminBrands.rightsLoading')}
+                </div>
+              ) : representativesQuery.isError ? (
+                <p className="py-10 text-center text-red-300">{t('adminBrands.rightsError')}</p>
+              ) : (representativesQuery.data?.length ?? 0) === 0 ? (
+                <p className="py-10 text-center text-gray-400">{t('adminBrands.rightsEmpty')}</p>
+              ) : (
+                <div className="space-y-3">
+                  {representativesQuery.data?.map((representative: BrandRepresentative) => {
+                    const scope = representative.country
+                      ? countryName(representative.country, i18n.language)
+                      : t('adminBrands.rightsGlobal');
+                    return (
+                      <div key={representative.grant_id} className="flex flex-col gap-3 rounded-xl border border-white/10 bg-white/[0.04] p-4 sm:flex-row sm:items-center">
+                        <div className="min-w-0 flex-1">
+                          <p className="font-medium text-white">{representative.organization_name}</p>
+                          <div className="mt-1 flex items-center gap-1.5 text-sm text-gray-300">
+                            {representative.country ? <MapPin className="h-3.5 w-3.5 text-cyan-300" /> : <Globe2 className="h-3.5 w-3.5 text-purple-300" />}
+                            <span>{scope}</span>
+                          </div>
+                          <p className="mt-1 text-xs text-gray-500">
+                            {t(`adminBrands.rightsSource_${representative.source}`)}
+                            {representative.approved_at ? ` · ${formatDateTime(representative.approved_at)}` : ''}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          disabled={revokeGrantMutation.isPending}
+                          onClick={() => {
+                            if (confirm(t('adminBrands.rightsConfirmRevoke', { organization: representative.organization_name, scope }))) {
+                              revokeGrantMutation.mutate({ brandId: rightsBrand.id, grantId: representative.grant_id });
+                            }
+                          }}
+                          className="shrink-0 rounded-lg border border-red-400/25 bg-red-500/10 px-3 py-2 text-sm font-medium text-red-200 transition hover:bg-red-500/20 disabled:opacity-50"
+                        >
+                          {t('adminBrands.rightsRevoke')}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        </ModalOverlay>
+      )}
+
       {showInviteModal && (
         <ModalOverlay onClose={closeInvite}>
           <div className="flex max-h-[calc(100vh-2rem)] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-white/20 bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 shadow-2xl">
@@ -758,6 +975,10 @@ export function AdminBrands() {
               </div>
             ) : (
               <form onSubmit={submitInvitePreview} className="space-y-4 overflow-y-auto p-6">
+                <div className="flex items-start gap-3 rounded-xl border border-amber-400/25 bg-amber-400/10 p-3 text-sm leading-relaxed text-amber-100">
+                  <Shield className="mt-0.5 h-4 w-4 shrink-0" />
+                  <span>{t('adminBrands.inviteAuthorityNotice')}</span>
+                </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-300 mb-2">{t('adminBrands.inviteEmail')}</label>
                   <textarea
@@ -837,6 +1058,55 @@ export function AdminBrands() {
                       </span>
                     </div>
                   )}
+                </div>
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-gray-300">
+                    {t('adminBrands.inviteScope')}
+                  </label>
+                  <div className="grid grid-cols-2 gap-2 rounded-xl border border-white/10 bg-black/20 p-1.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setInviteScope('global');
+                        setInviteCountry('');
+                        setInvitePreview(null);
+                      }}
+                      className={`flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm transition ${inviteScope === 'global' ? 'bg-purple-600 text-white shadow-lg shadow-purple-950/30' : 'text-gray-400 hover:bg-white/5 hover:text-gray-200'}`}
+                    >
+                      <Globe2 className="h-4 w-4" />
+                      {t('adminBrands.inviteScopeGlobal')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setInviteScope('country');
+                        setInvitePreview(null);
+                      }}
+                      className={`flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm transition ${inviteScope === 'country' ? 'bg-cyan-600 text-white shadow-lg shadow-cyan-950/30' : 'text-gray-400 hover:bg-white/5 hover:text-gray-200'}`}
+                    >
+                      <MapPin className="h-4 w-4" />
+                      {t('adminBrands.inviteScopeCountry')}
+                    </button>
+                  </div>
+                  {inviteScope === 'country' && (
+                    <select
+                      required
+                      value={inviteCountry}
+                      onChange={(event) => {
+                        setInviteCountry(event.target.value);
+                        setInvitePreview(null);
+                      }}
+                      className="mt-2 w-full rounded-lg border border-white/20 bg-gray-900 px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                    >
+                      <option value="">{t('adminBrands.inviteCountryPlaceholder')}</option>
+                      {inviteCountries.map(({ code, name }) => (
+                        <option key={code} value={code}>{name} ({code})</option>
+                      ))}
+                    </select>
+                  )}
+                  <p className="mt-1.5 text-xs leading-relaxed text-gray-400">
+                    {t(inviteScope === 'global' ? 'adminBrands.inviteScopeGlobalHint' : 'adminBrands.inviteScopeCountryHint')}
+                  </p>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-300 mb-2">{t('adminBrands.inviteSender')}</label>
@@ -919,7 +1189,7 @@ export function AdminBrands() {
                   </button>
                   <button
                     type="submit"
-                    disabled={inviteSubmitting || !inviteRecipients.trim() || !inviteBrandName.trim()}
+                    disabled={inviteSubmitting || !inviteRecipients.trim() || !inviteBrandName.trim() || (inviteScope === 'country' && !inviteCountry)}
                     className="flex items-center gap-2 rounded-xl bg-white/10 px-5 py-2.5 text-white transition-all hover:bg-white/20 disabled:opacity-50"
                   >
                     {inviteSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
@@ -929,7 +1199,7 @@ export function AdminBrands() {
                     <button
                       type="button"
                       onClick={confirmInviteBatch}
-                      disabled={inviteSubmitting || invitePreview.send_emails.length === 0 || invitePreview.limit_exceeded}
+                      disabled={inviteSubmitting || invitePreview.send_emails.length === 0 || invitePreview.limit_exceeded || (inviteScope === 'country' && !inviteCountry)}
                       className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-purple-600 to-pink-600 px-5 py-2.5 text-white transition-all hover:from-purple-700 hover:to-pink-700 disabled:opacity-50"
                     >
                       {inviteSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}

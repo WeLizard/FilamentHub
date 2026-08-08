@@ -48,6 +48,70 @@ def quote_payload() -> dict:
 
 
 @pytest.mark.asyncio
+async def test_another_workspace_cannot_reach_this_one(
+    auth_client,
+    db_session: AsyncSession,
+) -> None:
+    """A quote and its customer belong to one workspace only.
+
+    The CRM holds prices and encrypted customer details, and every endpoint
+    filters by owner in its own loader. One shared helper losing that filter
+    would open the whole workspace, so the boundary is checked from outside.
+    """
+    from app.core.security import create_access_token
+    from app.models.user import User
+    from app.services.legal_acceptance_service import (
+        CURRENT_PERSONAL_DATA_CONSENT_VERSION,
+        CURRENT_TERMS_VERSION,
+    )
+
+    await subscription_service.set_paywall_enforced(db_session, False)
+
+    quote = (await auth_client.post("/api/v1/crm/quotes", json=quote_payload())).json()
+    customer_id = quote["customer"]["id"]
+
+    stranger = User(
+        email="crm-stranger@example.com",
+        username="crm_stranger",
+        password_hash="not-used-in-this-test",
+        active=True,
+        email_verified=True,
+        # Without the accepted documents the legal gate answers 403 first, and
+        # the ownership check below would never be reached.
+        terms_version_accepted=CURRENT_TERMS_VERSION,
+        personal_data_consent_version=CURRENT_PERSONAL_DATA_CONSENT_VERSION,
+    )
+    db_session.add(stranger)
+    await db_session.commit()
+
+    # auth_client is the shared client object: swapping the header is what makes
+    # the next call come from somebody else. Restored below on purpose.
+    owner_auth = auth_client.headers["Authorization"]
+    auth_client.headers["Authorization"] = (
+        f"Bearer {create_access_token({'sub': stranger.email})}"
+    )
+
+    assert (await auth_client.get(f"/api/v1/crm/quotes/{quote['id']}")).status_code == 404
+    assert (
+        await auth_client.patch(
+            f"/api/v1/crm/quotes/{quote['id']}", json={"payment_terms": "предоплата 100%"}
+        )
+    ).status_code == 404
+    assert (
+        await auth_client.patch(
+            f"/api/v1/crm/customers/{customer_id}", json={"name": "Чужое имя"}
+        )
+    ).status_code == 404
+    assert (await auth_client.get("/api/v1/crm/quotes")).json()["items"] == []
+    assert (await auth_client.get("/api/v1/crm/customers")).json()["items"] == []
+
+    # The owner still sees it: otherwise the 404s above would prove nothing but
+    # a broken token.
+    auth_client.headers["Authorization"] = owner_auth
+    assert (await auth_client.get(f"/api/v1/crm/quotes/{quote['id']}")).status_code == 200
+
+
+@pytest.mark.asyncio
 async def test_quote_acceptance_creates_order_and_preserves_version(
     auth_client,
     db_session: AsyncSession,
