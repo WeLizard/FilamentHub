@@ -1,12 +1,9 @@
 """Stage B tests: physical printers derived from connection observations."""
 
-from datetime import datetime, timedelta, timezone
-
 import pytest
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.orca_printer_connection_observation import OrcaPrinterConnectionObservation
 from app.models.physical_printer_profile import UserPrinterProfileLink
 from app.models.printer_connection_binding import PrinterConnectionBinding
 from app.models.printer_profile import PrinterProfile
@@ -116,16 +113,13 @@ async def test_unmatched_still_creates_printer_without_link(db_session: AsyncSes
 
 @pytest.mark.asyncio
 async def test_moved_address_keeps_one_printer(db_session: AsyncSession, auth_user: User):
+    db_session.autoflush = False
     await _make_profile(db_session, auth_user, "04", "Voron 0.4")
     await _observe(db_session, auth_user, [
         _obs(printer_settings_id="Voron 0.4", printer_model="Voron 2.4",
              print_host="192.168.1.21", host_type="moonraker"),
     ])
     await reconcile_user_printers(db_session, auth_user.id)
-
-    stale = (await db_session.execute(select(OrcaPrinterConnectionObservation))).scalar_one()
-    stale.last_seen_at = datetime.now(timezone.utc) - timedelta(days=3)
-    await db_session.commit()
 
     await _observe(db_session, auth_user, [
         _obs(printer_settings_id="Voron 0.4", printer_model="Voron 2.4",
@@ -140,18 +134,14 @@ async def test_moved_address_keeps_one_printer(db_session: AsyncSession, auth_us
 
 
 @pytest.mark.asyncio
-async def test_two_live_machines_sharing_a_preset_stay_apart(
+async def test_two_machines_with_distinct_orca_presets_stay_apart(
     db_session: AsyncSession, auth_user: User
 ):
     await _make_profile(db_session, auth_user, "04", "Voron 0.4")
+    await _make_profile(db_session, auth_user, "04-copy", "Voron 0.4 Copy")
     await _observe(db_session, auth_user, [
         _obs(printer_settings_id="Voron 0.4", print_host="192.168.1.21", host_type="moonraker"),
-    ])
-    await reconcile_user_printers(db_session, auth_user.id)
-
-    await _observe(db_session, auth_user, [
-        _obs(printer_settings_id="Voron 0.4", print_host="192.168.1.21", host_type="moonraker"),
-        _obs(printer_settings_id="Voron 0.4", print_host="192.168.1.22", host_type="moonraker"),
+        _obs(printer_settings_id="Voron 0.4 Copy", print_host="192.168.1.22", host_type="moonraker"),
     ])
     await reconcile_user_printers(db_session, auth_user.id)
 

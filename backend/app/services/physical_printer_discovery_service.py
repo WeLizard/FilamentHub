@@ -8,7 +8,7 @@ whose preset matched a PrinterProfile also link that profile to the printer
 never treated as the printer's permanent identity.
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from urllib.parse import urlsplit
 
 from sqlalchemy import select
@@ -18,8 +18,6 @@ from app.models.orca_printer_connection_observation import OrcaPrinterConnection
 from app.models.physical_printer_profile import UserPrinterProfileLink
 from app.models.printer_connection_binding import PrinterConnectionBinding
 from app.models.user_printer_device import UserPrinterDevice
-
-_LIVE_WINDOW = timedelta(minutes=2)
 
 _DEFAULT_PORTS = {
     "moonraker": 7125, "klipper": 7125, "mainsail": 7125, "fluidd": 7125,
@@ -65,13 +63,13 @@ async def _ensure_profile_link(
         )
     ).scalar_one_or_none()
     if existing is None:
-        db.add(
-            UserPrinterProfileLink(
-                user_id=user_id,
-                physical_printer_id=physical_printer_id,
-                printer_profile_id=profile_id,
-            )
+        link = UserPrinterProfileLink(
+            user_id=user_id,
+            physical_printer_id=physical_printer_id,
+            printer_profile_id=profile_id,
         )
+        db.add(link)
+        await db.flush()
 
 
 async def _rebind_to_known_printer(
@@ -131,40 +129,20 @@ async def list_user_bindings(db: AsyncSession, user_id: int) -> list[PrinterConn
     )
 
 
-async def _printer_for_profile(
+async def _unique_printer_for_profile(
     db: AsyncSession, user_id: int, profile_id: int
 ) -> int | None:
-    return (
-        await db.execute(
-            select(UserPrinterProfileLink.physical_printer_id)
-            .where(
-                UserPrinterProfileLink.user_id == user_id,
-                UserPrinterProfileLink.printer_profile_id == profile_id,
-            )
-            .limit(1)
+    result = await db.execute(
+        select(UserPrinterProfileLink.physical_printer_id)
+        .where(
+            UserPrinterProfileLink.user_id == user_id,
+            UserPrinterProfileLink.printer_profile_id == profile_id,
         )
-    ).scalar_one_or_none()
-
-
-def _as_utc(value: datetime) -> datetime:
-    return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
-
-
-def _live_endpoint_count(
-    observations: list[OrcaPrinterConnectionObservation], profile_id: int
-) -> int:
-    same_profile = [
-        obs for obs in observations
-        if obs.matched_printer_profile_id == profile_id and obs.print_host
-    ]
-    if not same_profile:
-        return 0
-    newest = max(_as_utc(obs.last_seen_at) for obs in same_profile)
-    return len({
-        normalize_endpoint(obs.print_host, obs.host_type)["normalized"]
-        for obs in same_profile
-        if (newest - _as_utc(obs.last_seen_at)) <= _LIVE_WINDOW
-    })
+        .distinct()
+        .limit(2)
+    )
+    printer_ids = list(result.scalars().all())
+    return printer_ids[0] if len(printer_ids) == 1 else None
 
 
 async def reconcile_user_printers(db: AsyncSession, user_id: int) -> int:
@@ -178,6 +156,9 @@ async def reconcile_user_printers(db: AsyncSession, user_id: int) -> int:
             await db.execute(
                 select(OrcaPrinterConnectionObservation).where(
                     OrcaPrinterConnectionObservation.owner_user_id == user_id
+                ).order_by(
+                    OrcaPrinterConnectionObservation.last_seen_at.asc(),
+                    OrcaPrinterConnectionObservation.id.asc(),
                 )
             )
         ).scalars().all()
@@ -199,12 +180,10 @@ async def reconcile_user_printers(db: AsyncSession, user_id: int) -> int:
         ).scalar_one_or_none()
 
         if binding is None and obs.matched_printer_profile_id is not None:
-            known_printer_id = await _printer_for_profile(
+            known_printer_id = await _unique_printer_for_profile(
                 db, user_id, obs.matched_printer_profile_id
             )
-            if known_printer_id is not None and _live_endpoint_count(
-                observations, obs.matched_printer_profile_id
-            ) == 1:
+            if known_printer_id is not None:
                 binding = await _rebind_to_known_printer(
                     db, user_id, known_printer_id, endpoint, obs
                 )
