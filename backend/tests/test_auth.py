@@ -22,6 +22,7 @@ from app.services.legal_acceptance_service import (
 )
 from app.services.oauth_service import get_google_auth_url
 from app.services.organization_access import grant_brand_owner_membership
+from tests.conftest import registration_payload
 
 LEGAL_REGISTRATION_FIELDS = {
     "terms_accepted": True,
@@ -1190,6 +1191,81 @@ async def test_oauth_callback_validates_state(client: AsyncClient, monkeypatch):
     assert ok.status_code == 200
     assert ok.json()["access_token"]
     assert ok.json()["legal_onboarding_required"] is True
+
+
+@pytest.mark.asyncio
+async def test_an_unverified_provider_address_never_opens_an_existing_account(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch,
+):
+    """An account is claimed by proving the address, not by naming it.
+
+    Google may report an address it never verified. Linking on that alone hands
+    the existing password account to whoever registered the address on the
+    provider side.
+    """
+    from app.api.v1.endpoints import auth as auth_module
+    from app.services.oauth_service import OAuthUserInfo
+
+    monkeypatch.setattr(settings, "AUTH_REGION_MODE", "static_intl")
+    monkeypatch.setattr(settings, "INTL_GOOGLE_SERVICES_ENABLED", True)
+    monkeypatch.setattr(auth_module, "is_provider_configured", lambda provider: True)
+    monkeypatch.setattr(
+        auth_module,
+        "get_google_auth_url",
+        lambda state: f"https://accounts.google.com/o/oauth2/auth?state={state}",
+    )
+
+    victim_email = "victim@example.com"
+    registered = await client.post(
+        "/api/v1/auth/register",
+        json=registration_payload(
+            email=victim_email,
+            username="victim",
+            password="VictimPass123!",
+        ),
+    )
+    assert registered.status_code == 201
+
+    def exchange_returning(verified: bool):
+        async def fake_exchange(code: str) -> OAuthUserInfo:
+            return OAuthUserInfo(
+                provider="google",
+                provider_id="g-attacker",
+                email=victim_email,
+                name="Someone Else",
+                email_verified=verified,
+            )
+
+        return fake_exchange
+
+    async def callback_with(verified: bool):
+        # A fresh state per attempt: the cookie is consumed by the callback.
+        issued = await client.get("/api/v1/auth/oauth/google/url")
+        monkeypatch.setattr(auth_module, "exchange_google_code", exchange_returning(verified))
+        return await client.post(
+            "/api/v1/auth/oauth/google/callback",
+            json={"code": "any-code", "state": issued.json()["state"]},
+        )
+
+    refused = await callback_with(False)
+    assert refused.status_code == 400
+    assert refused.json()["detail"]["code"] == "ERR_OAUTH_EMAIL_UNVERIFIED"
+
+    victim = await db_session.scalar(select(User).where(User.email == victim_email))
+    await db_session.refresh(victim)
+    assert victim.oauth_provider is None
+    assert victim.oauth_provider_id is None
+
+    # The same address, once the provider vouches for it, is the owner coming in.
+    accepted = await callback_with(True)
+    assert accepted.status_code == 200
+    assert accepted.json()["access_token"]
+
+    await db_session.refresh(victim)
+    assert victim.oauth_provider == "google"
+    assert victim.email_verified is True
 
 
 @pytest.mark.asyncio

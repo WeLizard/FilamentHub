@@ -18,8 +18,18 @@ def test_dumps_live_outside_the_uploads_tree():
 
 
 @pytest.mark.asyncio
-async def test_dump_list_is_admin_only(client: AsyncClient, auth_client: AsyncClient):
-    assert (await client.get("/api/v1/admin/database/dumps")).status_code in (401, 403)
+async def test_a_stranger_is_not_shown_the_dumps(client: AsyncClient):
+    """Asking for both clients in one test would authorise this one.
+
+    `auth_client` is the same object as `client` with a token written into its
+    headers, so a single test taking both never makes an anonymous request —
+    the signed-in 403 merely looks like the anonymous one.
+    """
+    assert (await client.get("/api/v1/admin/database/dumps")).status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_an_ordinary_account_is_not_shown_the_dumps(auth_client: AsyncClient):
     assert (await auth_client.get("/api/v1/admin/database/dumps")).status_code == 403
 
 

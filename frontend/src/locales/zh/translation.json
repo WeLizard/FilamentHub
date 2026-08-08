@@ -5850,6 +5850,7 @@
     "ERR_OAUTH_PROVIDER_NOT_AVAILABLE": "此登录区域不提供 {{provider}}",
     "ERR_OAUTH_INVALID_PROVIDER": "未知的提供商：{{provider}}",
     "ERR_OAUTH_EMAIL_TAKEN": "此邮箱已通过 {{provider}} 关联",
+    "ERR_OAUTH_EMAIL_UNVERIFIED": "{{provider}} 未验证该邮箱地址，因此无法登录已有账号。请使用密码登录，或在 {{provider}} 完成邮箱验证",
     "ERR_COULD_NOT_VALIDATE": "无法验证凭证",
     "ERR_USER_INACTIVE": "用户未激活",
     "ERR_NOT_BRAND_USER": "您不是品牌代表",

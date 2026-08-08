@@ -5856,6 +5856,7 @@
     "ERR_OAUTH_PROVIDER_NOT_AVAILABLE": "Provider {{provider}} is not available on this sign-in surface",
     "ERR_OAUTH_INVALID_PROVIDER": "Unknown provider: {{provider}}",
     "ERR_OAUTH_EMAIL_TAKEN": "This email is already linked via {{provider}}",
+    "ERR_OAUTH_EMAIL_UNVERIFIED": "{{provider}} has not verified this address, so it cannot open the existing account. Sign in with your password, or verify the address with {{provider}}",
     "ERR_COULD_NOT_VALIDATE": "Could not validate credentials",
     "ERR_USER_INACTIVE": "User is inactive",
     "ERR_NOT_BRAND_USER": "You are not a brand representative",

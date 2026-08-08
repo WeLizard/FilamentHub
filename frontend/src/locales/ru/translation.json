@@ -6025,6 +6025,7 @@
     "ERR_OAUTH_PROVIDER_NOT_AVAILABLE": "Провайдер {{provider}} недоступен в этом контуре входа",
     "ERR_OAUTH_INVALID_PROVIDER": "Неизвестный провайдер: {{provider}}",
     "ERR_OAUTH_EMAIL_TAKEN": "Этот email уже привязан к аккаунту через {{provider}}",
+    "ERR_OAUTH_EMAIL_UNVERIFIED": "{{provider}} не подтвердил этот адрес, поэтому войти в существующий аккаунт нельзя. Войдите по паролю или подтвердите адрес у {{provider}}",
     "ERR_COULD_NOT_VALIDATE": "Не удалось проверить учётные данные",
     "ERR_USER_INACTIVE": "Пользователь неактивен",
     "ERR_NOT_BRAND_USER": "Вы не являетесь представителем бренда",

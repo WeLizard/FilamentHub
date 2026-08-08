@@ -138,6 +138,7 @@ from app.core.errors import (
     ERR_LEGAL_DOCUMENT_VERSION_MISMATCH,
     ERR_OAUTH_EMAIL_MISSING,
     ERR_OAUTH_EMAIL_TAKEN,
+    ERR_OAUTH_EMAIL_UNVERIFIED,
     ERR_OAUTH_FAILED,
     ERR_OAUTH_INVALID_PROVIDER,
     ERR_OAUTH_INVALID_STATE,
@@ -1712,9 +1713,23 @@ async def oauth_callback(
                     ERR_OAUTH_EMAIL_TAKEN,
                     params={"provider": user.oauth_provider},
                 )
+            # An address the provider itself has not verified proves nothing
+            # about who owns it. Linking on it alone would hand the existing
+            # account to whoever registered that address on their side.
+            if not oauth_info.email_verified:
+                _oauth_logger.warning(
+                    "OAuth link refused, address unverified: provider=%s, user_id=%d",
+                    provider,
+                    user.id,
+                )
+                raise_error(
+                    status.HTTP_400_BAD_REQUEST,
+                    ERR_OAUTH_EMAIL_UNVERIFIED,
+                    params={"provider": provider},
+                )
             user.oauth_provider = provider
             user.oauth_provider_id = oauth_info.provider_id
-            if oauth_info.email_verified and not user.email_verified:
+            if not user.email_verified:
                 user.email_verified = True
             _oauth_logger.info("OAuth linked: provider=%s, user_id=%d", provider, user.id)
         else:
