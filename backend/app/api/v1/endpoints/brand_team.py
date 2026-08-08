@@ -35,7 +35,9 @@ from app.models.organization import (
     OrganizationMembership,
 )
 from app.models.user import User, UserRole
+from app.models.brand_territorial_grant import BrandTerritorialGrant, GrantStatus
 from app.schemas.brand_team import (
+    BrandPresenceResponse,
     BrandTeamWorkspaceResponse,
     OwnershipTransferRequest,
     TeamInviteCreate,
@@ -49,7 +51,11 @@ from app.services.notification_service import (
     notify_brand_request_approved,
     notify_brand_request_rejected,
 )
-from app.services.organization_access import get_brand_membership, grant_brand_editor_membership
+from app.services.organization_access import (
+    get_brand_membership,
+    get_working_membership,
+    grant_brand_editor_membership,
+)
 
 router = APIRouter(prefix="/brands/{brand_id}/team", tags=["brand-team"])
 
@@ -64,13 +70,17 @@ async def _brand_workspace(
     brand = await db.get(Brand, brand_id)
     if brand is None or not brand.active:
         raise_error(status.HTTP_404_NOT_FOUND, ERR_BRAND_NOT_FOUND)
-    if brand.organization_id is None:
+
+    # Команда принадлежит организации того, кто пришёл, а не бренду: региональный
+    # представитель ведёт свою, а не команду владельца марки.
+    membership = await get_working_membership(db, user, brand_id)
+    is_site_admin = user.role == UserRole.ADMIN
+    organization_id = membership.organization_id if membership else brand.organization_id
+    if organization_id is None:
         raise_error(status.HTTP_404_NOT_FOUND, ERR_ORGANIZATION_NOT_FOUND)
-    organization = await db.get(Organization, brand.organization_id)
+    organization = await db.get(Organization, organization_id)
     if organization is None or not organization.active:
         raise_error(status.HTTP_404_NOT_FOUND, ERR_ORGANIZATION_NOT_FOUND)
-    membership = await get_brand_membership(db, user, brand_id)
-    is_site_admin = user.role == UserRole.ADMIN
     if membership is None and not is_site_admin:
         raise_error(status.HTTP_403_FORBIDDEN, ERR_ACCESS_DENIED)
     if (
@@ -153,8 +163,8 @@ async def _owner_workspace(
     )
     await _lock_organization(db, organization.id)
     if user.role == UserRole.ADMIN:
-        return brand, organization, await get_brand_membership(db, user, brand_id)
-    membership = await get_brand_membership(db, user, brand_id)
+        return brand, organization, await get_working_membership(db, user, brand_id)
+    membership = await get_working_membership(db, user, brand_id)
     if membership is None or membership.role != OrganizationMemberRole.OWNER:
         raise_error(status.HTTP_403_FORBIDDEN, ERR_ACCESS_DENIED)
     return brand, organization, membership
@@ -307,6 +317,41 @@ async def get_brand_team(
                 for request, member in request_rows
             ]
 
+    # Кто ещё ведёт эту марку. Только организации, страны и число людей: имена и
+    # почта сотрудников чужого юрлица сюда не попадают.
+    presence_rows = await db.execute(
+        select(
+            Organization.id,
+            Organization.name,
+            BrandTerritorialGrant.country,
+            func.count(OrganizationMembership.id),
+        )
+        .join(Organization, Organization.id == BrandTerritorialGrant.organization_id)
+        .outerjoin(
+            OrganizationMembership,
+            (OrganizationMembership.organization_id == Organization.id)
+            & (OrganizationMembership.active.is_(True)),
+        )
+        .where(
+            BrandTerritorialGrant.brand_id == brand_id,
+            BrandTerritorialGrant.status == GrantStatus.active,
+            BrandTerritorialGrant.revoked_at.is_(None),
+            Organization.active.is_(True),
+        )
+        .group_by(Organization.id, Organization.name, BrandTerritorialGrant.country)
+        .order_by(BrandTerritorialGrant.country.is_(None).desc(), BrandTerritorialGrant.country)
+    )
+    presence = [
+        BrandPresenceResponse(
+            organization_id=organization_id,
+            organization_name=organization_name,
+            country=country,
+            member_count=member_count,
+            is_current=organization_id == organization.id,
+        )
+        for organization_id, organization_name, country, member_count in presence_rows.all()
+    ]
+
     return BrandTeamWorkspaceResponse(
         organization_id=organization.id,
         organization_name=organization.name,
@@ -320,6 +365,7 @@ async def get_brand_team(
         members=members,
         pending_invites=invites,
         pending_join_requests=join_requests,
+        presence=presence,
     )
 
 

@@ -15,6 +15,7 @@ import {
   X,
 } from 'lucide-react';
 import { brandTeamAPI } from '../api/client';
+import { countryName } from '../utils/countries';
 import { useAuth } from '../contexts/AuthContext';
 import { translateApiError } from '../utils/translateApiError';
 import { ConfirmModal } from './ConfirmModal';
@@ -45,7 +46,7 @@ function apiErrorDetail(error: unknown): unknown {
 }
 
 export function BrandTeamPanel({ brandId }: BrandTeamPanelProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { refreshUser } = useAuth();
   const queryClient = useQueryClient();
   const [email, setEmail] = useState('');
@@ -189,6 +190,7 @@ export function BrandTeamPanel({ brandId }: BrandTeamPanelProps) {
         </section>
       )}
 
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
       <section className="rounded-2xl border border-white/10 bg-white/[0.04] p-5">
         <h4 className="mb-4 font-semibold text-white">{t('brandTeam.membersTitle')}</h4>
         <div className="divide-y divide-white/10">
@@ -269,6 +271,35 @@ export function BrandTeamPanel({ brandId }: BrandTeamPanelProps) {
           ))}
         </div>
       </section>
+
+      <section className="rounded-2xl border border-white/10 bg-white/[0.04] p-5">
+        <h4 className="font-semibold text-white">{t('brandTeam.presenceTitle')}</h4>
+        <p className="mt-1 text-xs leading-5 text-gray-400">{t('brandTeam.presenceHint')}</p>
+        <div className="mt-4 divide-y divide-white/10">
+          {workspace.presence.length === 0 && (
+            <p className="py-3 text-sm text-gray-400">{t('brandTeam.presenceEmpty')}</p>
+          )}
+          {workspace.presence.map((item) => (
+            <div key={item.organization_id} className="py-3">
+              <div className="flex flex-wrap items-baseline gap-x-2 text-sm">
+                <span className="font-medium text-white">
+                  {item.country ? countryName(item.country, i18n.language) : t('brandTeam.everywhere')}
+                </span>
+                <span className="text-gray-400">{item.organization_name}</span>
+                {item.is_current && (
+                  <span className="rounded-full bg-cyan-400/15 px-2 py-0.5 text-[11px] text-cyan-200">
+                    {t('brandTeam.presenceYou')}
+                  </span>
+                )}
+              </div>
+              <p className="mt-0.5 text-xs text-gray-500">
+                {t('brandTeam.presenceMembers', { count: item.member_count })}
+              </p>
+            </div>
+          ))}
+        </div>
+      </section>
+      </div>
 
       {workspace.can_manage_team && workspace.pending_join_requests.length > 0 && (
         <section className="rounded-2xl border border-emerald-300/15 bg-emerald-300/[0.04] p-5">

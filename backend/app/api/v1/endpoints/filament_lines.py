@@ -26,7 +26,7 @@ from app.schemas.filament import (
     FilamentLineUpdate,
     FilamentPaletteCreate,
 )
-from app.services.organization_access import can_edit_brand_catalog
+from app.services.territorial_access import can_create_for_brand
 from app.services.preset_moderation import validate_text_field
 from app.services.slug_service import generate_unique_slug
 
@@ -70,7 +70,7 @@ async def create_filament_line(
     brand = await db.scalar(select(Brand).where(Brand.id == brand_id))
     if brand is None:
         raise_error(404, ERR_BRAND_NOT_FOUND)
-    if not await can_edit_brand_catalog(db, current_user, brand_id):
+    if not await can_create_for_brand(db, current_user, brand_id):
         raise_error(403, ERR_NO_PERMISSION_EDIT_FILAMENT)
 
     line = FilamentLine(brand_id=brand_id, name=data.name.strip())
@@ -91,7 +91,7 @@ async def update_filament_line(
     line = await db.scalar(select(FilamentLine).where(FilamentLine.id == line_id))
     if line is None:
         raise_error(404, ERR_FILAMENT_LINE_NOT_FOUND)
-    if not await can_edit_brand_catalog(db, current_user, line.brand_id):
+    if not await can_create_for_brand(db, current_user, line.brand_id):
         raise_error(403, ERR_NO_PERMISSION_EDIT_FILAMENT)
 
     line.name = data.name.strip()
@@ -120,7 +120,7 @@ async def create_line_variants(
     brand = await db.scalar(select(Brand).where(Brand.id == line.brand_id))
     if brand is None:
         raise_error(404, ERR_BRAND_NOT_FOUND)
-    if not await can_edit_brand_catalog(db, current_user, line.brand_id):
+    if not await can_create_for_brand(db, current_user, line.brand_id):
         raise_error(403, ERR_NO_PERMISSION_EDIT_FILAMENT)
 
     # Custom material features are available only to a verified brand.
@@ -184,6 +184,7 @@ async def create_line_variants(
         slug = await generate_unique_slug(db=db, model=Filament, source=name, fallback="filament")
         filament = Filament(
             brand_id=line.brand_id,
+            contributed_by_organization_id=current_user.active_organization_id,
             line_id=line_id,
             name=name,
             material_type=material_type,
@@ -235,7 +236,7 @@ async def delete_filament_line(
     line = await db.scalar(select(FilamentLine).where(FilamentLine.id == line_id))
     if line is None:
         raise_error(404, ERR_FILAMENT_LINE_NOT_FOUND)
-    if not await can_edit_brand_catalog(db, current_user, line.brand_id):
+    if not await can_create_for_brand(db, current_user, line.brand_id):
         raise_error(403, ERR_NO_PERMISSION_EDIT_FILAMENT)
 
     await db.delete(line)

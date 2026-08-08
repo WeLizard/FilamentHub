@@ -210,8 +210,8 @@ export const FilamentDetailPage: React.FC = () => {
 
   // Загружаем бренд
   const { data: brandData } = useQuery({
-    queryKey: ['brand', filament?.brand_id],
-    queryFn: () => brandsAPI.get(filament!.brand_id),
+    queryKey: ['brand', filament?.brand_id, readerCountry],
+    queryFn: () => brandsAPI.get(filament!.brand_id, undefined, readerCountry),
     enabled: !!filament?.brand_id,
   });
 
@@ -557,13 +557,13 @@ export const FilamentDetailPage: React.FC = () => {
                 </div>
               </div>
             )}
-            <div className="min-w-0 text-right">
+            <div className="flex min-w-0 flex-col items-end gap-1 text-right">
               {brandWebsiteUrl && (
                 <a
                   href={brandWebsiteUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="mb-2 hidden items-center justify-end space-x-2 text-purple-400 transition-colors hover:text-purple-300 md:inline-flex"
+                  className="hidden items-center justify-end space-x-2 text-purple-400 transition-colors hover:text-purple-300 md:inline-flex"
                   title={brandWebsiteUrl}
                 >
                   <ExternalLink className="h-5 w-5" />

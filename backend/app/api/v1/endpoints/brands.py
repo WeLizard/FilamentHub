@@ -55,7 +55,8 @@ from app.services.file_service import (
     normalize_brand_logo_upload,
 )
 from app.services.country_market import apply_brand_cell, brand_cell_for
-from app.services.organization_access import can_edit_brand_catalog, can_view_private_brand_data
+from app.services.organization_access import can_view_private_brand_data
+from app.services.territorial_access import active_grants_for, can_edit_brand_common
 
 router = APIRouter(prefix="/brands", tags=["brands"])
 
@@ -241,7 +242,7 @@ async def backfill_brand_qr(
     brand = (await db.execute(select(Brand).where(Brand.id == brand_id))).scalar_one_or_none()
     if not brand:
         raise_error(404, ERR_BRAND_NOT_FOUND)
-    if not await can_edit_brand_catalog(db, current_user, brand_id):
+    if not await can_edit_brand_common(db, current_user, brand_id):
         raise_error(403, ERR_NO_PERMISSION)
 
     from app.services.qr_service import backfill_brand_qr_codes
@@ -310,12 +311,27 @@ async def update_brand(
         raise_error(404, ERR_BRAND_NOT_FOUND)
 
     is_admin = current_user.role == UserRole.ADMIN
-    is_employee = await can_edit_brand_catalog(db, current_user, brand_id)
+    is_employee = await can_edit_brand_common(db, current_user, brand_id)
+    # Держатель любого действующего права на бренд заполняет пустоты общего слоя:
+    # марка не должна ждать глобального представителя, которого может не быть.
+    may_fill_gaps = not is_employee and bool(
+        await active_grants_for(db, current_user, brand_id)
+    )
 
-    if not is_admin and not is_employee:
+    if not is_admin and not is_employee and not may_fill_gaps:
         raise_error(403, ERR_NO_PERMISSION)
 
     update_data = data.model_dump(exclude_unset=True)
+
+    if may_fill_gaps:
+        for field, value in list(update_data.items()):
+            current = getattr(brand, field, None)
+            if current not in (None, "", [], {}):
+                update_data.pop(field)
+            elif value in (None, "", [], {}):
+                update_data.pop(field)
+        if not update_data:
+            raise_error(403, ERR_NO_PERMISSION)
 
     requested_slug = update_data.get("slug")
     if requested_slug is not None and requested_slug != brand.slug:
@@ -390,8 +406,13 @@ async def upload_brand_logo(
         raise_error(404, ERR_BRAND_NOT_FOUND)
 
     is_admin = current_user.role == UserRole.ADMIN
-    is_employee = await can_edit_brand_catalog(db, current_user, brand_id)
-    if not is_admin and not is_employee:
+    is_employee = await can_edit_brand_common(db, current_user, brand_id)
+    # Логотипа либо нет, либо он есть: пустое место заполняет любой держатель
+    # права, заменяет существующий — только тот, кто ведёт общий слой.
+    may_fill_gap = (
+        not brand.logo_url and bool(await active_grants_for(db, current_user, brand_id))
+    )
+    if not is_admin and not is_employee and not may_fill_gap:
         raise_error(403, ERR_NO_PERMISSION)
 
     allowed_ext = BRAND_LOGO_ALLOWED_EXTENSIONS

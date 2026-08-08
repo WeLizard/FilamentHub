@@ -24,7 +24,7 @@ from app.schemas.filament import (
     FilamentImportRowResult,
     normalize_ral_code,
 )
-from app.services.organization_access import can_edit_brand_catalog
+from app.services.territorial_access import can_create_for_brand
 from app.services.preset_moderation import validate_text_field
 from app.services.slug_service import generate_unique_slug
 
@@ -79,7 +79,7 @@ async def import_filaments(
     brand = await db.scalar(select(Brand).where(Brand.id == brand_id))
     if brand is None:
         raise_error(404, ERR_BRAND_NOT_FOUND)
-    if not await can_edit_brand_catalog(db, current_user, brand_id):
+    if not await can_create_for_brand(db, current_user, brand_id):
         raise_error(403, ERR_NO_PERMISSION_EDIT_FILAMENT)
 
     raw = await file.read()
@@ -173,6 +173,7 @@ async def import_filaments(
         slug = await generate_unique_slug(db=db, model=Filament, source=name, fallback="filament")
         filament = Filament(
             brand_id=brand_id,
+            contributed_by_organization_id=current_user.active_organization_id,
             line_id=line_id,
             name=name,
             material_type=material_type,

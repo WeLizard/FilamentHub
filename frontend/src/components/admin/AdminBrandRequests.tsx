@@ -5,13 +5,15 @@ import { ModalOverlay } from '../ModalOverlay';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { FileText, CheckCircle, XCircle, Clock, Building2, UserPlus, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+
+import { countryName } from '../../utils/countries';
 import { adminAPI } from '../../api/client';
 import { ProofFileCard } from '../ProofFileCard';
 import type { BrandRequest, BrandRequestStatus } from '../../types/api';
 import { ConfirmDeleteModal } from '../ConfirmDeleteModal';
 import { formatDateTime } from '../../utils/formatDate';
 export function AdminBrandRequests() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const queryClient = useQueryClient();
   const [selectedStatus, setSelectedStatus] = useState<BrandRequestStatus | 'all'>('all');
   const [selectedRequest, setSelectedRequest] = useState<BrandRequest | null>(null);
@@ -156,9 +158,16 @@ export function AdminBrandRequests() {
                     <div className="flex items-center space-x-3 mb-2">
                       <TypeIcon className="w-5 h-5 text-purple-400" />
                       <h3 className="text-lg font-semibold text-white">
-                        {request.request_type === 'create' 
+                        {request.request_type === 'create'
                           ? t('adminBrandRequests.create_brand_request', { brandName: request.new_brand_name })
-                          : t('adminBrandRequests.join_brand_request', { brandName: request.brand_name || `#${request.brand_id}`})}
+                          : request.request_type === 'representative'
+                            ? t('adminBrandRequests.representative_request', {
+                                brandName: request.brand_name || `#${request.brand_id}`,
+                                country: request.country
+                                  ? countryName(request.country, i18n.language)
+                                  : '—',
+                              })
+                            : t('adminBrandRequests.join_brand_request', { brandName: request.brand_name || `#${request.brand_id}`})}
                       </h3>
                       {getStatusBadge(request.status)}
                     </div>
@@ -279,7 +288,23 @@ export function AdminBrandRequests() {
                 </>
               )}
 
-              {selectedRequest.request_type === 'join' && selectedRequest.brand_id && (
+              {selectedRequest.request_type === 'representative' && (
+                <div>
+                  <p className="text-gray-400 text-sm mb-1">
+                    {t('adminBrandRequests.claimed_country_label')}
+                  </p>
+                  <p className="font-semibold text-white">
+                    {selectedRequest.country
+                      ? countryName(selectedRequest.country, i18n.language)
+                      : '—'}
+                  </p>
+                  <p className="mt-1 text-xs leading-5 text-gray-400">
+                    {t('adminBrandRequests.claimed_country_hint')}
+                  </p>
+                </div>
+              )}
+
+              {selectedRequest.request_type !== 'create' && selectedRequest.brand_id && (
                 <div>
                   <p className="text-gray-400 text-sm mb-1">{t('adminBrandRequests.join_brand_label')}</p>
                   <p className="text-white font-semibold">

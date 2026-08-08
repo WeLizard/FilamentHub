@@ -123,9 +123,13 @@ class User(Base):
     # - "early_adopter" - ранний последователь
     # - "supporter" - поддержал проект
 
-    # Brand relationship (if user is a brand)
+    # Рабочее место — пара: от какой организации человек действует и с каким
+    # брендом. Один бренд бывает доступен через несколько организаций сразу.
     brand_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("brands.id"), nullable=True, index=True
+    )
+    active_organization_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("organizations.id", ondelete="SET NULL"), nullable=True
     )
 
     # Printer relationship (user's preferred printer, optional)

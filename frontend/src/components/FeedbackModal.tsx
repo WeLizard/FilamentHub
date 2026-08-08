@@ -12,6 +12,10 @@ import { ModalOverlay } from './ModalOverlay';
 interface FeedbackModalProps {
   isOpen: boolean;
   onClose: () => void;
+  /** Предзаполнение, когда обращение открывают из конкретного места. */
+  initialType?: FeedbackType;
+  initialSubject?: string;
+  initialMessage?: string;
 }
 
 interface FeedbackTypeInfo {
@@ -24,7 +28,7 @@ interface FeedbackTypeInfo {
   instructions: string;
 }
 
-export const FeedbackModal: React.FC<FeedbackModalProps> = ({ isOpen, onClose }) => {
+export const FeedbackModal: React.FC<FeedbackModalProps> = ({ isOpen, onClose, initialType, initialSubject, initialMessage }) => {
   const { t } = useTranslation();
   const { user } = useAuth();
   const FEEDBACK_TYPES: FeedbackTypeInfo[] = [
@@ -66,9 +70,9 @@ export const FeedbackModal: React.FC<FeedbackModalProps> = ({ isOpen, onClose })
     },
   ];
   
-  const [type, setType] = useState<FeedbackType>('bug');
-  const [subject, setSubject] = useState('');
-  const [message, setMessage] = useState('');
+  const [type, setType] = useState<FeedbackType>(initialType ?? 'bug');
+  const [subject, setSubject] = useState(initialSubject ?? '');
+  const [message, setMessage] = useState(initialMessage ?? '');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);

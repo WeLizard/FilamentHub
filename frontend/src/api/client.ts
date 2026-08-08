@@ -346,8 +346,13 @@ export const authAPI = {
     return response.data;
   },
 
-  setActiveBrand: async (brandId: number | null): Promise<User> => {
-    const response = await api.put<User>('/auth/me/active-brand', { brand_id: brandId });
+  setActiveBrand: async (
+    workspace: { brandId: number | null; organizationId?: number | null },
+  ): Promise<User> => {
+    const response = await api.put<User>('/auth/me/active-brand', {
+      brand_id: workspace.brandId,
+      organization_id: workspace.organizationId ?? null,
+    });
     return response.data;
   },
 
@@ -1341,7 +1346,9 @@ export const printersAPI = {
 // Brand Requests API
 export const brandRequestsAPI = {
   create: async (data: {
-    request_type: 'join' | 'create';
+    request_type: 'join' | 'create' | 'representative';
+    country?: string;
+    organization_name?: string;
     brand_id?: number;
     new_brand_name?: string;
     new_brand_slug?: string;

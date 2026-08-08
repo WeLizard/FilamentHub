@@ -99,6 +99,16 @@ class TeamJoinRequestResponse(BaseModel):
     created_at: datetime
 
 
+class BrandPresenceResponse(BaseModel):
+    """Кто ещё работает с этой маркой. Без имён и почты чужих сотрудников."""
+
+    organization_id: int
+    organization_name: str
+    country: str | None
+    member_count: int
+    is_current: bool
+
+
 class BrandTeamWorkspaceResponse(BaseModel):
     organization_id: int
     organization_name: str
@@ -108,6 +118,7 @@ class BrandTeamWorkspaceResponse(BaseModel):
     members: list[TeamMemberResponse]
     pending_invites: list[TeamInviteResponse]
     pending_join_requests: list[TeamJoinRequestResponse]
+    presence: list[BrandPresenceResponse] = Field(default_factory=list)
 
 
 class TeamMembershipUpdate(BaseModel):

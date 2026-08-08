@@ -42,6 +42,11 @@ class Filament(Base):
 
     # Brand relationship
     brand_id: Mapped[int] = mapped_column(ForeignKey("brands.id"), index=True)
+    # Чей это вклад: организации либо, если пусто, сообщества. Не сотрудника —
+    # человек уходит, вклад остаётся за компанией.
+    contributed_by_organization_id: Mapped[int | None] = mapped_column(
+        ForeignKey("organizations.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     line_id: Mapped[int | None] = mapped_column(
         ForeignKey("filament_lines.id", ondelete="SET NULL"), nullable=True, index=True
     )

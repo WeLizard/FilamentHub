@@ -102,7 +102,7 @@ from app.services.file_service import (
     get_upload_root_dir,
     normalize_brand_logo_upload,
 )
-from app.services.grant_issuing import issue_territorial_grant
+from app.services.grant_issuing import issue_territorial_grant, settle_territorial_application
 from app.services.maintenance_service import (
     get_maintenance_info,
     set_maintenance_mode,
@@ -1078,7 +1078,10 @@ async def update_brand_request(
 
         # Просто привязываем к бренду, роль не меняем (админ может быть привязан к бренду, но оставаться админом)
 
-        if request.request_type == BrandRequestType.JOIN:
+        if request.request_type in (
+            BrandRequestType.JOIN,
+            BrandRequestType.REPRESENTATIVE,
+        ):
             # Для JOIN: привязываем пользователя к существующему бренду
             if not request.brand_id:
                 raise_error(status.HTTP_400_BAD_REQUEST, ERR_BRAND_ID_REQUIRED_JOIN
@@ -1099,7 +1102,22 @@ async def update_brand_request(
                         .limit(1)
                     )
                 )
-            if active_owner_exists:
+            if request.request_type == BrandRequestType.REPRESENTATIVE:
+                # Документы проверены — марка настоящая, и подтверждает её
+                # модерация, а не объём выданного права.
+                if not brand.verified:
+                    brand.name_correction_available = True
+                brand.verified = True
+                await backfill_brand_qr_codes(brand, db)
+                await settle_territorial_application(
+                    db,
+                    brand=brand,
+                    user=user,
+                    country=request.country,
+                    organization_name=None,
+                    approved_by_id=admin.id,
+                )
+            elif active_owner_exists:
                 # A JOIN request to an already represented brand is a team
                 # membership, even when a FilamentHub admin moderates it.
                 await grant_brand_editor_membership(
@@ -1119,18 +1137,15 @@ async def update_brand_request(
                     granted_by_id=admin.id,
                 )
                 await backfill_brand_qr_codes(brand, db)
-
-            # Одобрение заявки — один из двух входов к территориальному праву;
-            # страну человек назвал сам, когда подавал.
-            await db.flush()
-            await issue_territorial_grant(
-                db,
-                brand=brand,
-                user=user,
-                country=request.country,
-                source=GrantSource.application,
-                approved_by_id=admin.id,
-            )
+                await db.flush()
+                await issue_territorial_grant(
+                    db,
+                    brand=brand,
+                    user=user,
+                    country=None,
+                    source=GrantSource.application,
+                    approved_by_id=admin.id,
+                )
 
         elif request.request_type == BrandRequestType.CREATE:
             # Для CREATE: создаем новый бренд и привязываем пользователя
@@ -1180,7 +1195,7 @@ async def update_brand_request(
             if data.status == BrandRequestStatus.APPROVED:
                 # Определяем brand_id для уведомления
                 brand_id_for_notification = None
-                if request.request_type == BrandRequestType.JOIN and request.brand_id:
+                if request.brand_id:
                     brand_id_for_notification = request.brand_id
                 elif request.request_type == BrandRequestType.CREATE:
                     # После flush() new_brand.id уже доступен

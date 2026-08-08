@@ -10,6 +10,7 @@ from sqlalchemy import delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.brand import Brand
+from app.models.brand_territorial_grant import BrandTerritorialGrant, GrantStatus
 from app.models.organization import (
     Organization,
     OrganizationBrandAccess,
@@ -91,6 +92,7 @@ async def grant_brand_owner_membership(
             membership.invited_by_id = granted_by_id
 
     user.brand_id = brand.id
+    user.active_organization_id = organization.id
     if user.role == UserRole.USER:
         user.role = UserRole.BRAND
 
@@ -158,6 +160,7 @@ async def grant_brand_editor_membership(
             db.add(OrganizationBrandAccess(membership_id=membership.id, brand_id=brand.id))
 
     user.brand_id = brand.id
+    user.active_organization_id = organization.id
     if user.role == UserRole.USER:
         user.role = UserRole.BRAND
     await db.flush()
@@ -191,6 +194,57 @@ async def get_brand_membership(
     return await db.scalar(query)
 
 
+async def get_working_membership(
+    db: AsyncSession,
+    user: User,
+    brand_id: int,
+) -> OrganizationMembership | None:
+    """Членство, через которое человек работает с этим брендом.
+
+    Мастерская бренда либо организация с действующим территориальным правом на
+    него. От этого зависит, чьей командой человек управляет: региональный
+    представитель ведёт свою, а не команду владельца марки.
+    """
+    workspace_organization_id = (
+        select(Brand.organization_id).where(Brand.id == brand_id).scalar_subquery()
+    )
+    in_workspace = OrganizationMembership.organization_id == workspace_organization_id
+    holds_grant = (
+        select(BrandTerritorialGrant.id)
+        .where(
+            BrandTerritorialGrant.brand_id == brand_id,
+            BrandTerritorialGrant.organization_id == OrganizationMembership.organization_id,
+            BrandTerritorialGrant.status == GrantStatus.active,
+            BrandTerritorialGrant.revoked_at.is_(None),
+        )
+        .exists()
+    )
+
+    query = (
+        select(OrganizationMembership)
+        .outerjoin(
+            OrganizationBrandAccess,
+            OrganizationBrandAccess.membership_id == OrganizationMembership.id,
+        )
+        .where(
+            OrganizationMembership.user_id == user.id,
+            OrganizationMembership.active.is_(True),
+            or_(
+                OrganizationMembership.all_brands.is_(True),
+                OrganizationBrandAccess.brand_id == brand_id,
+            ),
+            or_(in_workspace, holds_grant),
+        )
+    )
+    # Выбранная организация решает, чьей командой человек управляет и чьим
+    # вкладом становится заведённая им запись.
+    if user.active_organization_id is not None:
+        query = query.where(
+            OrganizationMembership.organization_id == user.active_organization_id
+        )
+    return await db.scalar(query.order_by(in_workspace.desc(), OrganizationMembership.id).limit(1))
+
+
 async def list_accessible_brands(
     db: AsyncSession,
     user: User,
@@ -200,9 +254,22 @@ async def list_accessible_brands(
     Every user, including a global administrator, only sees brands granted by
     an active organization membership and its optional per-brand scope.
     """
+    # Работа с брендом бывает двух видов: организация является его мастерской
+    # либо держит на него действующее территориальное право. Второй случай —
+    # это независимый региональный представитель, и в мастерскую он не входит.
+    holds_grant = (
+        select(BrandTerritorialGrant.id)
+        .where(
+            BrandTerritorialGrant.brand_id == Brand.id,
+            BrandTerritorialGrant.organization_id == Organization.id,
+            BrandTerritorialGrant.status == GrantStatus.active,
+            BrandTerritorialGrant.revoked_at.is_(None),
+        )
+        .exists()
+    )
+
     result = await db.execute(
         select(Brand, Organization, OrganizationMembership)
-        .join(Organization, Brand.organization_id == Organization.id)
         .join(
             OrganizationMembership,
             OrganizationMembership.organization_id == Organization.id,
@@ -220,11 +287,23 @@ async def list_accessible_brands(
                 OrganizationMembership.all_brands.is_(True),
                 OrganizationBrandAccess.brand_id == Brand.id,
             ),
+            or_(Brand.organization_id == Organization.id, holds_grant),
         )
-        .distinct()
         .order_by(Organization.name.asc(), Brand.name.asc())
     )
-    return list(result.all())
+
+    # DISTINCT здесь не годится: у бренда есть json-колонки, а PostgreSQL не
+    # умеет сравнивать json. Дубликаты даёт outerjoin по доступам, и снимаются
+    # они по паре бренда и членства.
+    seen: set[tuple[int, int]] = set()
+    rows: list[tuple[Brand, Organization, OrganizationMembership]] = []
+    for brand, organization, membership in result.all():
+        key = (brand.id, membership.id)
+        if key in seen:
+            continue
+        seen.add(key)
+        rows.append((brand, organization, membership))
+    return rows
 
 
 async def can_select_active_brand(

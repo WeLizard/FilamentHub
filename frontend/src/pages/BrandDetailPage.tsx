@@ -358,7 +358,9 @@ export const BrandDetailPage: React.FC = () => {
                   <div className="flex items-center justify-between text-gray-300">
                     <span>{t('brandDetailPage.price')}</span>
                     <span className="text-green-400 font-semibold">
-                      {Math.round(filament.price_per_kg)} {currencySymbol(brand.currency)}/{t('catalogPage.units.kg')}
+                      {filament.price_display_unit === 'per_spool'
+                        ? `${filament.price_per_kg} ${currencySymbol(filament.currency || brand.currency)}/${t('catalogPage.units.spool')}`
+                        : `${Math.round(filament.price_per_kg)} ${currencySymbol(filament.currency || brand.currency)}/${t('catalogPage.units.kg')}`}
                     </span>
                   </div>
                 )}

@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Plus, X, Loader2, CheckCircle } from 'lucide-react';
-import { filamentLinesAPI, filamentsAPI } from '../api/client';
+import { brandsAPI, filamentLinesAPI, filamentsAPI } from '../api/client';
 import { densityForMaterial, STANDARD_DIAMETERS } from '../utils/materialDensity';
 import { HSLColorPicker } from './HSLColorPicker';
 import { Dropdown } from './Dropdown';
@@ -54,6 +54,17 @@ export function FilamentPaletteForm({
 }: FilamentPaletteFormProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
+
+  // Общую цену задаёт только область «весь мир»: у страновой она живёт в её ячейке.
+  const territories = useQuery({
+    queryKey: ['brand-territories', brandId],
+    queryFn: () => brandsAPI.myTerritories(brandId),
+    enabled: !!brandId,
+  });
+  const setsGlobalPrice =
+    territories.data === undefined ||
+    Boolean(territories.data.is_admin) ||
+    (territories.data.territories ?? []).some((item) => item.country === null);
 
   const { data: lines = [] } = useQuery({
     queryKey: ['brand-lines', brandId],
@@ -332,6 +343,7 @@ export function FilamentPaletteForm({
         </div>
         <div className="mt-3">
           <PriceUnitField
+            showPrice={setsGlobalPrice}
             priceMode={priceMode}
             onPriceModeChange={setPriceMode}
             pricePerKg={pricePerKg}

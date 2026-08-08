@@ -18,6 +18,9 @@ class BrandCountryCellBase(BaseModel):
 
     country: str = Field(..., pattern=r"^[A-Za-z]{2}$")
     website: str | None = Field(None, max_length=255)
+    description: str | None = None
+    social_media_urls: list[str] | None = None
+    currency: str | None = Field(None, max_length=8)
     shop_links: list[dict[str, str]] | None = None
     published: bool = False
 
@@ -32,6 +35,9 @@ class BrandCountryCellUpdate(BaseModel):
     """Схема обновления. Страну у существующей ячейки не меняют."""
 
     website: str | None = Field(None, max_length=255)
+    description: str | None = None
+    social_media_urls: list[str] | None = None
+    currency: str | None = Field(None, max_length=8)
     shop_links: list[dict[str, str]] | None = None
     published: bool | None = None
 
@@ -58,9 +64,7 @@ class FilamentCountryCellBase(BaseModel):
     product_url: str | None = Field(None, max_length=500)
     purchase_links: list[dict[str, str]] | None = None
     market_note: str | None = None
-    # Название товара на этом рынке: другое коммерческое имя или просто принятое
-    # там написание.
-    market_display_name: str | None = Field(None, max_length=200)
+    market_color_name: str | None = Field(None, max_length=200)
     published: bool = False
 
     _normalize_country = field_validator("country")(_upper_country)
@@ -87,7 +91,7 @@ class FilamentCountryCellUpdate(BaseModel):
     product_url: str | None = Field(None, max_length=500)
     purchase_links: list[dict[str, str]] | None = None
     market_note: str | None = None
-    market_display_name: str | None = Field(None, max_length=200)
+    market_color_name: str | None = Field(None, max_length=200)
     published: bool | None = None
 
 

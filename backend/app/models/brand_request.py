@@ -18,8 +18,11 @@ if TYPE_CHECKING:
 class BrandRequestType(str, Enum):
     """Тип заявки на бренд."""
 
-    JOIN = "join"  # Заявка на вступление в существующий бренд
-    CREATE = "create"  # Заявка на создание нового бренда
+    JOIN = "join"  # Заявка на бренд как на свой либо просьба в команду
+    CREATE = "create"  # Заявка на создание записи бренда
+    # «Мы официально представляем этот бренд в такой-то стране». Не зависит от
+    # того, занят ли бренд кем-то ещё.
+    REPRESENTATIVE = "representative"
 
 
 class BrandRequestStatus(str, Enum):

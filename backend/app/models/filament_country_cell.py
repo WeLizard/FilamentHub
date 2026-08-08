@@ -74,8 +74,9 @@ class FilamentCountryCell(Base):
     # никогда не используется вместо языка.
     market_note: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    # Как товар называется на этом рынке.
-    market_display_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    # Как называется цвет на этом рынке. Имя товара остаётся глобальным:
+    # производители его не переводят.
+    market_color_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
 
     published: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
 

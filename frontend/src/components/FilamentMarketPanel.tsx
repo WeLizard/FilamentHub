@@ -66,7 +66,7 @@ export const FilamentMarketPanel: React.FC<FilamentMarketPanelProps> = ({ filame
     setCurrency(currentCell?.currency ?? defaultCurrencyForCountry(activeCountry, i18n.language));
     setPriceMode(currentCell?.price_display_unit === 'per_spool' ? 'per_spool' : 'per_kg');
     setProductUrl(currentCell?.product_url ?? '');
-    setDisplayName(currentCell?.market_display_name ?? '');
+    setDisplayName(currentCell?.market_color_name ?? '');
     setNote(currentCell?.market_note ?? '');
     setPublished(currentCell?.published ?? false);
   }, [currentCell?.id, activeCountry, i18n.language]);
@@ -82,7 +82,7 @@ export const FilamentMarketPanel: React.FC<FilamentMarketPanelProps> = ({ filame
         currency: hasPrice ? currency : null,
         price_display_unit: hasPrice ? priceMode : null,
         product_url: productUrl.trim() || null,
-        market_display_name: displayName.trim() || null,
+        market_color_name: displayName.trim() || null,
         market_note: note.trim() || null,
         published,
       };
@@ -144,14 +144,19 @@ export const FilamentMarketPanel: React.FC<FilamentMarketPanelProps> = ({ filame
           <h3 className="font-semibold text-white">{t('filamentMarket.commonTitle')}</h3>
           <Lock className="h-3.5 w-3.5 text-gray-500" />
         </div>
-        <dl className="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
-          <div>
-            <dt className="text-gray-400">{t('filamentMarket.commonName')}</dt>
-            <dd className="text-white">{filament.name}</dd>
-          </div>
-          <div>
-            <dt className="text-gray-400">{t('filamentMarket.commonMaterial')}</dt>
-            <dd className="text-white">{filament.material_type}</dd>
+        <dl className="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
+          <div className="sm:col-span-2">
+            <dt className="text-gray-400">{t('filamentDetailPage.color')}</dt>
+            <dd className="flex items-center gap-2 text-white">
+              <span
+                className="h-4 w-4 shrink-0 rounded border border-white/20"
+                style={{ backgroundColor: filament.color_hex || '#ffffff' }}
+              />
+              {filament.color_name || '—'}
+              {filament.ral_code && (
+                <span className="font-mono text-xs text-gray-400">RAL {filament.ral_code}</span>
+              )}
+            </dd>
           </div>
           <div>
             <dt className="text-gray-400">{t('filamentMarket.commonDiameter')}</dt>
@@ -165,6 +170,22 @@ export const FilamentMarketPanel: React.FC<FilamentMarketPanelProps> = ({ filame
               {filament.density ? `${filament.density} ${t('catalogPage.units.gcm3')}` : '—'}
             </dd>
           </div>
+          {filament.recommended_nozzle_temp_min && filament.recommended_nozzle_temp_max && (
+            <div>
+              <dt className="text-gray-400">{t('filamentDetailPage.vendorNozzleRange')}</dt>
+              <dd className="text-white">
+                {filament.recommended_nozzle_temp_min}–{filament.recommended_nozzle_temp_max}°C
+              </dd>
+            </div>
+          )}
+          {filament.recommended_bed_temp_min && filament.recommended_bed_temp_max && (
+            <div>
+              <dt className="text-gray-400">{t('filamentDetailPage.vendorBedRange')}</dt>
+              <dd className="text-white">
+                {filament.recommended_bed_temp_min}–{filament.recommended_bed_temp_max}°C
+              </dd>
+            </div>
+          )}
         </dl>
         <p className="mt-3 text-xs leading-5 text-gray-400">{t('filamentMarket.commonExplained')}</p>
       </section>
@@ -272,7 +293,7 @@ export const FilamentMarketPanel: React.FC<FilamentMarketPanelProps> = ({ filame
                 type="text"
                 value={displayName}
                 onChange={(e) => setDisplayName(e.target.value)}
-                placeholder={filament.name}
+                placeholder={filament.color_name || ''}
                 maxLength={200}
                 className="w-full rounded-xl border border-white/20 bg-white/10 px-4 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
               />

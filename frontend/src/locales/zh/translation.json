@@ -666,7 +666,10 @@
     "confirm_delete_title": "删除请求？",
     "confirm_delete_message": "所有相关文件也将被删除。此操作无法撤销。",
     "request_placeholder": "请求 #{{id}}",
-    "alert_rejection_reason_required": "请提供拒绝原因"
+    "alert_rejection_reason_required": "请提供拒绝原因",
+    "representative_request": "{{brandName}} 代理 — {{country}}",
+    "claimed_country_label": "申请的国家",
+    "claimed_country_hint": "批准后，申请人将获得自己的组织以及仅限该国的权限。品牌的通用信息仍归其所有者。"
   },
   "adminDatabase": {
     "diag": {
@@ -1656,7 +1659,13 @@
       "accepted": "已接受",
       "expired": "已过期",
       "revoked": "已撤销"
-    }
+    },
+    "presenceTitle": "各国的品牌",
+    "presenceHint": "还有谁正式代理该商标。此处不显示其他公司的员工。",
+    "presenceEmpty": "暂无正式组织",
+    "presenceYou": "您",
+    "presenceMembers": "{{count}} 名成员",
+    "everywhere": "所有国家"
   },
   "palette": {
     "lineLabel": "产品线",
@@ -1872,7 +1881,12 @@
     "pricePerKgLabel": "每千克价格（{{currency}}）",
     "pricePerSpoolLabel": "每线轴价格（{{currency}}）",
     "rubPerSpool": "{{currency}} 每线轴",
-    "rubPerKg": "{{currency}} 每千克"
+    "rubPerKg": "{{currency}} 每千克",
+    "scopeCommon": "通用",
+    "scopeCountry": "各国",
+    "commonOwnedByOther": "该产品的通用信息由创建记录的组织维护。您可以填写贵国的数据。",
+    "reportTypo": "指出错误",
+    "typoSubject": "材料「{{name}}」信息有误"
   },
   "unsavedGuard": {
     "title": "放弃更改？",
@@ -4019,7 +4033,7 @@
       "analytics": "分析",
       "usage": "使用情况",
       "team": "团队",
-      "regions": "国家"
+      "settings": "设置"
     },
     "myMaterials": "我的材料",
     "gridView": "网格",
@@ -4119,7 +4133,7 @@
     "currencyHint": "选择要显示材料价格的货币。",
     "logoFileLabel": "标志文件",
     "removeLogo": "删除",
-    "logoFileHint": "PNG、JPG、BMP 或 WebP。标志由我们保存，因此不会因其他网站变动而丢失。",
+    "logoFileHint": "PNG、JPG、BMP 或 WebP。",
     "socialMediaLabel": "社交媒体",
     "shopLinksLabel": "购买位置（店铺）",
     "shopPlatformPlaceholder": "Ozon、Amazon…",
@@ -4263,7 +4277,23 @@
       "spb": "圣彼得堡",
       "novosibirsk": "新西伯利亚"
     },
-    "rubPerKg": "₽/kg"
+    "rubPerKg": "₽/kg",
+    "claimQuestion": "您要申请什么？",
+    "claim_brand": "这是我们的品牌",
+    "claim_brand_hint": "该商标属于我们。您将维护其在所有国家的通用信息。",
+    "claim_representative": "我们在本国代理该品牌",
+    "claim_representative_hint": "您在本市场正式代理他人的商标。品牌的通用信息仍归其所有者维护。",
+    "claimCountry": "国家",
+    "claimCountryPlaceholder": "请选择国家",
+    "errorClaimCountry": "请指明您代理的国家",
+    "settingsCommon": "所有国家通用",
+    "settingsCommonYours": "名称、标识、描述与全球网址。在所有国家保持一致。",
+    "settingsCommonOthers": "这些信息在所有国家一致，由商标所有者维护。",
+    "settingsWebsite": "全球网址",
+    "settingsCurrency": "品牌货币",
+    "settingsCommonGaps": "名称与标识在所有国家一致。空白字段可以填写，品牌无需等待全球代表。",
+    "countryFilled": "已填写",
+    "countryEmpty": "无数据"
   },
   "viewPreset": {
     "yes": "是",
@@ -6522,11 +6552,13 @@
     "saving": "保存中…",
     "saved": "已保存",
     "saveFailed": "无法保存区域信息",
-    "title": "各国网址",
-    "explained": "这里只放各国不同的内容。品牌名称、标识和通用网址在各地相同，请在品牌设置中修改。",
-    "usesCommonSite": "显示品牌通用网址",
-    "edit": "修改",
-    "cancel": "取消"
+    "title": "{{country}} 的品牌信息",
+    "explained": "仅填写在您市场上不同的内容。名称与标识在各地一致。留空则显示通用内容。",
+    "titleGeneric": "贵国的品牌信息",
+    "website": "贵国网址",
+    "description": "面向贵市场的描述",
+    "socials": "社交链接，每行一个",
+    "shops": "购买渠道，每行一个链接"
   },
   "market": {
     "priceFor": "价格与供应情况为 {{country}} 的建议信息",
@@ -6549,8 +6581,8 @@
     "currency": "货币",
     "priceExplained": "价格作为该国的建议价格展示，而非商店报价。",
     "productUrl": "产品页面",
-    "displayName": "本地市场名称",
-    "displayNameExplained": "该产品在您市场上的名称。留空则显示通用名称。",
+    "displayName": "本地市场的颜色名称",
+    "displayNameExplained": "该颜色在您市场上的叫法：「Красный」「Rot」「Red」。留空则显示通用颜色名称。",
     "note": "给购买者的说明",
     "published": "向购买者展示",
     "remove": "移除这些信息",
@@ -6578,5 +6610,28 @@
     "revokeMessage": "{{target}} 将立即失去对其国家的访问权限。已填写的信息将保留。",
     "revoked": "代表资格已解除",
     "actionError": "操作未能完成"
+  },
+  "brandSettings": {
+    "scope": "范围：",
+    "common": "通用",
+    "addCountry": "+ 国家",
+    "commonTitle": "所有国家通用",
+    "countryTitle": "{{country}}",
+    "commonReadOnly": "这些信息在所有国家一致。在您未设置自有内容之处，将显示这些信息。",
+    "nameThroughAdmin": "名称通过服务管理方修改。",
+    "inherited": "所有国家：{{value}}",
+    "notSet": "未设置",
+    "setOwnList": "设置自有列表",
+    "listReplaces": "自有列表将完全替换此范围内的通用列表。",
+    "savePublishes": "保存后将向 {{country}} 的购买者展示。",
+    "save": "保存",
+    "saving": "保存中…",
+    "saved": "已保存",
+    "saveFailed": "无法保存",
+    "logoUpdated": "标识已更新",
+    "requestNameChange": "申请修改",
+    "nameRequestSubject": "修改品牌名称 {{brand}}",
+    "marketCurrency": "该市场的计价货币",
+    "marketCurrencyHint": "为该国设置材料价格时默认使用。每个价格仍保留各自的货币。"
   }
 }

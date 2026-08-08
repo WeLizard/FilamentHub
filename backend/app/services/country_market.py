@@ -24,7 +24,7 @@ _SUBSTITUTED = (
     ("price_per_kg", "price"),
     ("currency", "currency"),
     ("price_display_unit", "price_display_unit"),
-    ("name", "market_display_name"),
+    ("color_name", "market_color_name"),
 )
 
 # Сведения о покупке: их скрывает заявление «здесь не продаётся».
@@ -107,5 +107,9 @@ def apply_brand_cell(payload: dict, cell: BrandCountryCell | None) -> dict:
         payload["website"] = cell.website
     if cell.shop_links:
         payload["shop_links"] = cell.shop_links
+    if cell.description and cell.description.strip():
+        payload["description"] = cell.description
+    if cell.social_media_urls:
+        payload["social_media_urls"] = cell.social_media_urls
     payload["market_country"] = cell.country
     return payload

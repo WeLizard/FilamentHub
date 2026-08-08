@@ -666,7 +666,10 @@
     "confirm_delete_title": "Delete request?",
     "confirm_delete_message": "All associated files will also be deleted. This action cannot be undone.",
     "request_placeholder": "Request #{{id}}",
-    "alert_rejection_reason_required": "Please provide a rejection reason"
+    "alert_rejection_reason_required": "Please provide a rejection reason",
+    "representative_request": "Representation of {{brandName}} — {{country}}",
+    "claimed_country_label": "Country claimed",
+    "claimed_country_hint": "Approval gives the applicant their own organization and authority over this country only. The brand's common layer stays with its owner."
   },
   "adminDatabase": {
     "diag": {
@@ -1660,7 +1663,13 @@
       "accepted": "Accepted",
       "expired": "Expired",
       "revoked": "Revoked"
-    }
+    },
+    "presenceTitle": "The brand by country",
+    "presenceHint": "Who else officially carries this mark. Staff of other companies are not listed here.",
+    "presenceEmpty": "No official organizations yet",
+    "presenceYou": "you",
+    "presenceMembers": "{{count}} member(s)",
+    "everywhere": "All countries"
   },
   "palette": {
     "lineLabel": "Product line",
@@ -1876,7 +1885,12 @@
     "pricePerKgLabel": "Price per kg ({{currency}})",
     "pricePerSpoolLabel": "Price per spool ({{currency}})",
     "rubPerSpool": "{{currency}} per spool",
-    "rubPerKg": "{{currency}} per kg"
+    "rubPerKg": "{{currency}} per kg",
+    "scopeCommon": "Common",
+    "scopeCountry": "By country",
+    "commonOwnedByOther": "The product's common details are maintained by the organization that created the record. You may fill in your country's data.",
+    "reportTypo": "Report a mistake",
+    "typoSubject": "A mistake in the material “{{name}}”"
   },
   "unsavedGuard": {
     "title": "Discard changes?",
@@ -4023,7 +4037,7 @@
       "analytics": "Analytics",
       "usage": "Usage",
       "team": "Team",
-      "regions": "Countries"
+      "settings": "Settings"
     },
     "myMaterials": "My materials",
     "gridView": "Grid",
@@ -4123,7 +4137,7 @@
     "currencyHint": "Which currency to show your material prices in.",
     "logoFileLabel": "Logo file",
     "removeLogo": "Remove",
-    "logoFileHint": "PNG, JPG, BMP or WebP. We store the logo ourselves, so it will not disappear if another site moves it.",
+    "logoFileHint": "PNG, JPG, BMP or WebP.",
     "socialMediaLabel": "Social media",
     "shopLinksLabel": "Where to buy (shops)",
     "shopPlatformPlaceholder": "Ozon, Amazon…",
@@ -4268,7 +4282,23 @@
       "spb": "Saint Petersburg",
       "novosibirsk": "Novosibirsk"
     },
-    "rubPerKg": "₽/kg"
+    "rubPerKg": "₽/kg",
+    "claimQuestion": "What are you claiming?",
+    "claim_brand": "This is our brand",
+    "claim_brand_hint": "The mark belongs to us. You will maintain its common data across all countries.",
+    "claim_representative": "We represent this brand in our country",
+    "claim_representative_hint": "You officially carry someone else's mark on your market. The brand's common data stays with its owner.",
+    "claimCountry": "Country",
+    "claimCountryPlaceholder": "Choose a country",
+    "errorClaimCountry": "Name the country you represent",
+    "settingsCommon": "Common to every country",
+    "settingsCommonYours": "Name, logo, description and the global site. The same in every country.",
+    "settingsCommonOthers": "These details are the same in every country and are maintained by the owner of the mark.",
+    "settingsWebsite": "Global site",
+    "settingsCurrency": "Brand currency",
+    "settingsCommonGaps": "The name and logo are the same in every country. Empty fields may be filled in, so the brand does not wait for a global representative.",
+    "countryFilled": "filled in",
+    "countryEmpty": "no data"
   },
   "viewPreset": {
     "yes": "Yes",
@@ -6529,11 +6559,13 @@
     "saving": "Saving…",
     "saved": "Saved",
     "saveFailed": "Could not save the regional data",
-    "title": "Your site by country",
-    "explained": "Only what differs by country lives here. The brand's name, logo and common site are the same everywhere and change in its settings.",
-    "usesCommonSite": "The brand's common site is shown",
-    "edit": "Edit",
-    "cancel": "Cancel"
+    "title": "The brand in {{country}}",
+    "explained": "Only what differs on your market. The name and logo are the same everywhere. An empty field falls back to the common one.",
+    "titleGeneric": "The brand in your country",
+    "website": "Site in your country",
+    "description": "Description for your market",
+    "socials": "Social links, one per line",
+    "shops": "Where to buy, one link per line"
   },
   "market": {
     "priceFor": "Price and availability as recommended for {{country}}",
@@ -6556,8 +6588,8 @@
     "currency": "Currency",
     "priceExplained": "The price is shown as a recommendation for your country, not as a shop offer.",
     "productUrl": "Product page",
-    "displayName": "Name on your market",
-    "displayNameExplained": "What the product is called on your market. Empty means the common name is shown.",
+    "displayName": "Colour name on your market",
+    "displayNameExplained": "What the colour is called where you sell: “Красный”, “Rot”, “Red”. Empty shows the common colour name.",
     "note": "Note for the buyer",
     "published": "Show to buyers",
     "remove": "Remove these details",
@@ -6585,5 +6617,28 @@
     "revokeMessage": "{{target}} loses access to their country immediately. What they filled in stays.",
     "revoked": "Representative removed",
     "actionError": "The action could not be completed"
+  },
+  "brandSettings": {
+    "scope": "Scope:",
+    "common": "Common",
+    "addCountry": "+ country",
+    "commonTitle": "Common to every country",
+    "countryTitle": "{{country}}",
+    "commonReadOnly": "These details are the same in every country. They are shown in your scope wherever you have not set your own.",
+    "nameThroughAdmin": "The name is changed through the service administration.",
+    "inherited": "in every country: {{value}}",
+    "notSet": "not set",
+    "setOwnList": "Set your own list",
+    "listReplaces": "Your list replaces the common one in this scope entirely.",
+    "savePublishes": "Saving shows this to buyers in {{country}}.",
+    "save": "Save",
+    "saving": "Saving…",
+    "saved": "Saved",
+    "saveFailed": "Could not save",
+    "logoUpdated": "Logo updated",
+    "requestNameChange": "Request a change",
+    "nameRequestSubject": "Change of brand name {{brand}}",
+    "marketCurrency": "Pricing currency on this market",
+    "marketCurrencyHint": "Offered by default when you set material prices for this country. Each price keeps its own currency."
   }
 }

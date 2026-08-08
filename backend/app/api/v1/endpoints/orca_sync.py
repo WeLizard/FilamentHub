@@ -2381,6 +2381,7 @@ async def _upsert_filament_preset(
                 )
 
                 filament = Filament(
+                    contributed_by_organization_id=current_user.active_organization_id,
                     name=clean_name,
                     slug=filament_slug,
                     material_type=material_type,

@@ -135,6 +135,7 @@ class UserResponse(UserBase):
     avatar_url: str | None = None  # Загруженный аватар пользователя
     country: str | None = None
     brand_id: int | None = None
+    active_organization_id: int | None = None
     brand_name: str | None = None  # Название бренда (для админки)
     printer_id: int | None = None  # ID выбранного принтера из каталога
     recommend_physical_printer_id: int | None = None
@@ -206,8 +207,9 @@ class UserListResponse(BaseModel):
 
 
 class ActiveBrandUpdate(BaseModel):
-    """Select or clear the user's active brand workspace."""
+    """Select or clear the user's active workspace."""
 
+    organization_id: int | None = None
     brand_id: int | None = Field(
         None,
         gt=0,

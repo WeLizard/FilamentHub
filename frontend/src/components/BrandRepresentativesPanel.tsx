@@ -94,11 +94,13 @@ export function BrandRepresentativesPanel({ brandId }: BrandRepresentativesPanel
         <select
           value={country}
           onChange={(event) => setCountry(event.target.value)}
-          className="rounded-xl border border-white/15 bg-slate-950 px-3 py-3 text-white outline-none focus:border-emerald-300/60"
+          className="rounded-xl border border-white/15 bg-white/10 px-3 py-3 text-white outline-none focus:border-emerald-300/60"
         >
-          <option value="">{t('brandReps.countryPlaceholder')}</option>
+          <option value="" className="bg-gray-900">
+            {t('brandReps.countryPlaceholder')}
+          </option>
           {COUNTRY_CODES.map((code) => (
-            <option key={code} value={code}>
+            <option key={code} value={code} className="bg-gray-900">
               {countryName(code, i18n.language)}
             </option>
           ))}

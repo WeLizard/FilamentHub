@@ -487,6 +487,8 @@ async def _accept_as_representative(
         organization_id=organization.id,
     )
 
+    user.brand_id = brand.id
+    user.active_organization_id = organization.id
     if user.role == UserRole.USER:
         user.role = UserRole.BRAND
     invite.organization_id = organization.id
@@ -686,6 +688,7 @@ async def accept_brand_invite(
     # Transitional pointer used by the current single-brand profile UI. It is
     # the user's active brand, not the source of truth for authorization.
     current_user.brand_id = brand.id
+    current_user.active_organization_id = organization.id
     if current_user.role == UserRole.USER:
         current_user.role = UserRole.BRAND
     invite.brand_id = brand.id

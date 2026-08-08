@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
@@ -37,6 +37,12 @@ class BrandCountryCell(Base):
 
     website: Mapped[str | None] = mapped_column(String(255), nullable=True)
     shop_links: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    # Как бренд говорит о себе на этом рынке и где его там читают.
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    social_media_urls: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    # Валюта цен на этом рынке. Не копия валюты страны: бренд бывает назначает
+    # цены в чужой валюте. У самой цены валюта своя и она главнее.
+    currency: Mapped[str | None] = mapped_column(String(8), nullable=True)
 
     # Наполовину заполненная ячейка не уезжает в витрину при первом сохранении.
     published: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)

@@ -46,7 +46,7 @@ from app.services.filament_preset_summary import (
     summaries_for,
     summary_query,
 )
-from app.services.organization_access import can_edit_brand_catalog
+from app.services.territorial_access import can_create_for_brand, can_edit_filament_common
 
 logger = logging.getLogger(__name__)
 
@@ -645,7 +645,17 @@ async def create_filament(
     filament_payload["color_name"] = normalized_color_name
     filament_payload["color_hex"] = normalized_color_hex
     filament_payload["availability"] = FilamentAvailability(filament_payload["availability"])
-    filament = Filament(**filament_payload, slug=slug)
+    # Вклад организации, если человек работает от неё и вправе заводить записи;
+    # иначе это вклад сообщества.
+    contributor_id = None
+    if current_user.active_organization_id and await can_create_for_brand(
+        db, current_user, data.brand_id
+    ):
+        contributor_id = current_user.active_organization_id
+
+    filament = Filament(
+        **filament_payload, slug=slug, contributed_by_organization_id=contributor_id
+    )
     db.add(filament)
     await db.flush()  # Получаем ID без коммита
 
@@ -714,7 +724,9 @@ async def update_filament(
         raise_error(404, ERR_FILAMENT_NOT_FOUND)
 
     # Проверка прав доступа: только админ или сотрудник бренда может редактировать материалы
-    if not await can_edit_brand_catalog(db, current_user, filament.brand_id):
+    if not await can_edit_filament_common(
+        db, current_user, filament.brand_id, filament.contributed_by_organization_id
+    ):
         raise_error(403, ERR_NO_PERMISSION_EDIT_FILAMENT)
 
     # Проверка текстовых полей на плохие слова
@@ -783,7 +795,9 @@ async def delete_filament(
         raise_error(404, ERR_FILAMENT_NOT_FOUND)
 
     # Проверка прав доступа: только админ или сотрудник бренда может удалять материалы
-    if not await can_edit_brand_catalog(db, current_user, filament.brand_id):
+    if not await can_edit_filament_common(
+        db, current_user, filament.brand_id, filament.contributed_by_organization_id
+    ):
         raise_error(403, ERR_NO_PERMISSION_DELETE_FILAMENT)
 
     # Удаление материала уносит с собой пресеты и отзывы: они привязаны к нему

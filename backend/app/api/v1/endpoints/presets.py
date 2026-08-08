@@ -385,9 +385,11 @@ async def create_preset(
 
     # Проверка прав на создание официального пресета
     if data.is_official:
-        from app.services.organization_access import can_edit_brand_catalog
+        from app.services.territorial_access import can_edit_filament_common
 
-        if not await can_edit_brand_catalog(db, current_user, filament.brand_id):
+        if not await can_edit_filament_common(
+            db, current_user, filament.brand_id, filament.contributed_by_organization_id
+        ):
             raise_error(403, ERR_ONLY_OWN_BRAND_OFFICIAL)
         # Официальный пресет — только для верифицированного бренда (админ — исключение)
         if current_user.role.value != "admin":
@@ -604,9 +606,11 @@ async def update_preset(
     # Поднять официальный статус можно только представителю верифицированного бренда
     # (тот же гейт, что и при создании); админ — исключение.
     if update_data.get("is_official") and current_user.role.value != "admin":
-        from app.services.organization_access import can_edit_brand_catalog
+        from app.services.territorial_access import can_edit_filament_common
 
-        if not filament or not await can_edit_brand_catalog(db, current_user, filament.brand_id):
+        if not filament or not await can_edit_filament_common(
+            db, current_user, filament.brand_id, filament.contributed_by_organization_id
+        ):
             raise_error(403, ERR_ONLY_OWN_BRAND_OFFICIAL)
         from app.models.brand import Brand
         brand_result = await db.execute(select(Brand).where(Brand.id == filament.brand_id))

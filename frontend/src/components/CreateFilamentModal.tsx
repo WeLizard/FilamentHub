@@ -14,7 +14,8 @@ import { PriceUnitField } from './PriceUnitField';
 import type { FilamentAdditive, FilamentPropertyClaim, FilamentVisualSettings } from '../types/api';
 import { Dropdown } from './Dropdown';
 import { sortMaterialTypes } from '../data/materialDefaults';
-import { currencySymbol } from '../utils/currency';
+import { countryName } from '../utils/countries';
+import { currencySymbol, defaultCurrencyForCountry } from '../utils/currency';
 import type { Filament, Brand, FilamentAvailability } from '../types/api';
 import { useAuth } from '../contexts/AuthContext';
 import { MaterialTypeSelect, FALLBACK_TYPES } from './MaterialTypeSelect';
@@ -22,6 +23,7 @@ import { AvailabilitySelect } from './AvailabilitySelect';
 import { DensityField } from './DensityField';
 import { RecommendedTempsField, RecommendedTemps, EMPTY_RECOMMENDED_TEMPS } from './RecommendedTempsField';
 import { NozzleHardnessField } from './NozzleHardnessField';
+import { FeedbackModal } from './FeedbackModal';
 import { ModalOverlay } from './ModalOverlay';
 import { ConfirmModal } from './ConfirmModal';
 import { InfoHint } from './InfoHint';
@@ -42,7 +44,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
   filament,
   brandId,
 }) => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [brandIdValue, setBrandIdValue] = useState<number | null>(brandId || null);
   const [formMode, setFormMode] = useState<'single' | 'palette'>('single');
   const [formDirty, setFormDirty] = useState(false);
@@ -73,6 +75,56 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
   const [diameter, setDiameter] = useState(1.75);
   const [density, setDensity] = useState(1.24);
   const [priceMode, setPriceMode] = useState<'per_kg' | 'per_spool'>('per_kg');
+
+  // Общую цену задаёт только тот, у кого область — весь мир.
+  const territoriesQuery = useQuery({
+    queryKey: ['brand-territories', brandIdValue],
+    queryFn: () => brandsAPI.myTerritories(brandIdValue!),
+    enabled: !!brandIdValue,
+  });
+  // Область организации: если она страновая, форма правит её ячейку.
+  const scopeCountry = (territoriesQuery.data?.territories ?? [])
+    .map((item) => item.country)
+    .find((code): code is string => code !== null);
+
+  const countryCell = useQuery({
+    queryKey: ['filament-country-cells', filament?.id],
+    queryFn: () => filamentsAPI.countryCells(filament!.id),
+    enabled: !!filament?.id && !!scopeCountry,
+  });
+
+  useEffect(() => {
+    if (!scopeCountry || !countryCell.data) return;
+    const cell = countryCell.data.find((item) => item.country === scopeCountry);
+    if (!cell) return;
+    // Пусто в ячейке означает «как у всех», поэтому общее остаётся видимым.
+    if (cell.market_color_name) setColorName(cell.market_color_name);
+    if (cell.price) {
+      if (cell.price_display_unit === 'per_spool') {
+        setPriceMode('per_spool');
+        setPricePerSpool(cell.price);
+      } else {
+        setPriceMode('per_kg');
+        setPricePerKg(cell.price);
+      }
+    }
+  }, [scopeCountry, countryCell.data]);
+
+  const saveCountryCell = useMutation({
+    mutationFn: async (payload: Record<string, unknown> & { country: string }) => {
+      const exists = (countryCell.data ?? []).some((cell) => cell.country === payload.country);
+      const { country, ...rest } = payload;
+      return exists
+        ? filamentsAPI.updateCountryCell(filament!.id, country, { ...rest, published: true })
+        : filamentsAPI.createCountryCell(filament!.id, { country, ...rest, published: true });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['brand-filaments'] });
+      queryClient.invalidateQueries({ queryKey: ['filament-country-cells', filament?.id] });
+      onClose();
+    },
+  });
+
   const [pricePerKg, setPricePerKg] = useState(0);
   const [pricePerSpool, setPricePerSpool] = useState(0);
   const [spoolWeight, setSpoolWeight] = useState(1000);
@@ -87,6 +139,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
 
   const queryClient = useQueryClient();
   const { user } = useAuth();
+  const [typoOpen, setTypoOpen] = useState(false);
 
   
   // Ref для отслеживания внутренних изменений цвета (из расширенных настроек)
@@ -549,15 +602,31 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
     }
   };
 
-  const isLoading = createMutation.isPending || updateMutation.isPending;
+  const isLoading =
+    createMutation.isPending || updateMutation.isPending || saveCountryCell.isPending;
 
-  const priceCurrencySymbol = currencySymbol(
-    filament?.currency ?? brandsData?.items.find((b: Brand) => b.id === brandIdValue)?.currency,
-  );
+  const myCell = (countryCell.data ?? []).find((cell) => cell.country === scopeCountry);
+  // Общий слой правит тот, чей это вклад. Чужой показывается, но не редактируется.
+  const ownsRecord =
+    !filament ||
+    !scopeCountry ||
+    filament.contributed_by_organization_id === user?.active_organization_id;
+  const filamentCurrency = scopeCountry
+    ? myCell?.currency || defaultCurrencyForCountry(scopeCountry)
+    : filament?.currency ??
+      brandsData?.items.find((b: Brand) => b.id === brandIdValue)?.currency;
+  const priceCurrencySymbol = currencySymbol(filamentCurrency);
 
   if (!isOpen) return null;
 
   return (
+    <>
+    <FeedbackModal
+      isOpen={typoOpen}
+      onClose={() => setTypoOpen(false)}
+      initialType="other"
+      initialSubject={t('createFilament.typoSubject', { name: filament?.name ?? '' })}
+    />
     <ModalOverlay onClose={requestClose} closeOnOverlayClick={false}>
       <div
         className="bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 rounded-2xl w-full max-w-5xl max-h-[90vh] overflow-hidden flex flex-col border border-white/20 shadow-2xl"
@@ -567,9 +636,16 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
       >
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-white/10">
-          <h2 className="text-2xl font-bold text-white">
-            {filament ? t('createFilament.editTitle') : t('createFilament.createTitle')}
-          </h2>
+          <div className="flex min-w-0 flex-wrap items-center gap-3">
+            <h2 className="text-2xl font-bold text-white">
+              {filament ? t('createFilament.editTitle') : t('createFilament.createTitle')}
+            </h2>
+            {scopeCountry && (
+              <span className="rounded-full bg-emerald-500/15 px-2.5 py-0.5 text-xs text-emerald-300">
+                {countryName(scopeCountry, i18n.language)}
+              </span>
+            )}
+          </div>
           <button
             onClick={requestClose}
             className="p-2 hover:bg-white/10 rounded-lg transition-all text-gray-300 hover:text-white"
@@ -687,6 +763,21 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
               ) : (
             // Form
             <form onSubmit={handleSubmit} className="space-y-6">
+          {scopeCountry && !ownsRecord && (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3">
+              <p className="text-xs leading-5 text-gray-400">
+                {t('createFilament.commonOwnedByOther')}
+              </p>
+              <button
+                type="button"
+                onClick={() => setTypoOpen(true)}
+                className="whitespace-nowrap rounded-lg border border-white/15 bg-white/5 px-3 py-1.5 text-sm text-cyan-300 transition hover:bg-white/10"
+              >
+                {t('createFilament.reportTypo')}
+              </button>
+            </div>
+          )}
+          <fieldset disabled={Boolean(scopeCountry && !ownsRecord)} className="space-y-6 disabled:opacity-60">
           {/* Name and Material Type in one row */}
           <div className="flex items-end gap-4">
             <div className="flex-1">
@@ -1006,7 +1097,8 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
             <DensityField value={density} onChange={setDensity} />
           </div>
 
-          {/* Price and Weight */}
+          {/* Цена относится к рынку: у страновой организации она уходит в её
+              ячейку, у глобальной — в общий слой. Поле одно и то же. */}
           <PriceUnitField
             priceMode={priceMode}
             onPriceModeChange={setPriceMode}
@@ -1049,6 +1141,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
               placeholder={t('createFilament.descriptionPlaceholder')}
             />
           </div>
+          </fieldset>
 
           {/* Actions */}
           <div className="flex justify-end space-x-3 pt-4 border-t border-white/10">
@@ -1094,6 +1187,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
         cancelText={t('unsavedGuard.cancel')}
       />
     </ModalOverlay>
+    </>
   );
 };
 

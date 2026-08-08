@@ -54,7 +54,7 @@ from app.services.file_service import (
     save_proof_file,
     serialize_proof_files,
 )
-from app.services.grant_issuing import issue_territorial_grant
+from app.services.grant_issuing import issue_territorial_grant, settle_territorial_application
 from app.services.organization_access import get_brand_membership, grant_brand_owner_membership
 from app.services.qr_service import backfill_brand_qr_codes
 
@@ -78,7 +78,7 @@ async def create_brand_request(
     resolved_new_brand_slug = data.new_brand_slug
 
     # Валидация в зависимости от типа заявки
-    if data.request_type == BrandRequestType.JOIN:
+    if data.request_type in (BrandRequestType.JOIN, BrandRequestType.REPRESENTATIVE):
         if not data.brand_id:
             raise_error(status.HTTP_400_BAD_REQUEST, ERR_BRAND_ID_REQUIRED)
 
@@ -107,8 +107,14 @@ async def create_brand_request(
         if await get_brand_membership(db, current_user, brand.id) is not None:
             raise_error(status.HTTP_400_BAD_REQUEST, ERR_USER_ALREADY_IN_BRAND)
 
-        # Если бренд не верифицирован ИЛИ у бренда нет сотрудников - требуем полную заявку как для CREATE
-        if not brand.verified or not has_owner:
+        is_territorial = data.request_type == BrandRequestType.REPRESENTATIVE
+        if is_territorial:
+            if not data.country:
+                raise_error(status.HTTP_400_BAD_REQUEST, ERR_COUNTRY_REQUIRED)
+
+        # Территориальная заявка проверяется так же, как притязание на марку:
+        # занятость бренда чужой организацией её не облегчает и не отменяет.
+        if is_territorial or not brand.verified or not has_owner:
             # Нормализуем URL сайта перед проверкой
             normalized_website = None
             if data.company_website:
@@ -394,35 +400,49 @@ async def update_brand_request(
 
     # Если заявка одобрена и это JOIN - привязываем пользователя к бренду
     if data.status == BrandRequestStatus.APPROVED:
-        if request.request_type == BrandRequestType.JOIN:
+        if request.request_type in (
+            BrandRequestType.JOIN,
+            BrandRequestType.REPRESENTATIVE,
+        ):
             user = await db.get(User, request.user_id)
             if not user:
                 raise_error(status.HTTP_404_NOT_FOUND, ERR_USER_NOT_FOUND)
             brand = await db.get(Brand, request.brand_id)
             if not brand:
                 raise_error(status.HTTP_404_NOT_FOUND, ERR_BRAND_NOT_FOUND)
-            if not brand.verified:
-                brand.name_correction_available = True
-            brand.verified = True
-            await grant_brand_owner_membership(
-                db,
-                brand=brand,
-                user=user,
-                granted_by_id=admin.id,
-            )
-            await backfill_brand_qr_codes(brand, db)
-            # Одобрение через эту дверь даёт ту же область, что и через
-            # админскую: иначе одинаковое решение оставляло бы человека без
-            # права вести хоть одну страну.
-            await db.flush()
-            await issue_territorial_grant(
-                db,
-                brand=brand,
-                user=user,
-                country=request.country,
-                source=GrantSource.application,
-                approved_by_id=admin.id,
-            )
+            if request.request_type == BrandRequestType.REPRESENTATIVE:
+                if not brand.verified:
+                    brand.name_correction_available = True
+                brand.verified = True
+                await backfill_brand_qr_codes(brand, db)
+                await settle_territorial_application(
+                    db,
+                    brand=brand,
+                    user=user,
+                    country=request.country,
+                    organization_name=None,
+                    approved_by_id=admin.id,
+                )
+            else:
+                if not brand.verified:
+                    brand.name_correction_available = True
+                brand.verified = True
+                await grant_brand_owner_membership(
+                    db,
+                    brand=brand,
+                    user=user,
+                    granted_by_id=admin.id,
+                )
+                await backfill_brand_qr_codes(brand, db)
+                await db.flush()
+                await issue_territorial_grant(
+                    db,
+                    brand=brand,
+                    user=user,
+                    country=None,
+                    source=GrantSource.application,
+                    approved_by_id=admin.id,
+                )
         elif request.request_type == BrandRequestType.CREATE:
             # Создаем бренд и привязываем пользователя
             selected_slug, available = await choose_brand_slug(

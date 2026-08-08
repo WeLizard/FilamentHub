@@ -50,6 +50,7 @@ from app.core.security import (
 from app.core.utils import normalize_email
 from app.db.session import get_db
 from app.models.brand import Brand
+from app.models.organization import OrganizationMembership
 from app.models.calculator_profile import UserCalculatorProfile
 from app.models.preset import Preset
 from app.models.revoked_token import RevokedToken
@@ -1139,6 +1140,20 @@ async def update_active_brand(
         if not await can_select_active_brand(db, current_user, data.brand_id):
             raise_error(status.HTTP_403_FORBIDDEN, ERR_ACCESS_DENIED)
 
+    # Один бренд бывает доступен через несколько организаций, поэтому от какой
+    # человек действует — его выбор, а не наша догадка.
+    if data.organization_id is not None:
+        member = await db.scalar(
+            select(OrganizationMembership.id).where(
+                OrganizationMembership.user_id == current_user.id,
+                OrganizationMembership.organization_id == data.organization_id,
+                OrganizationMembership.active.is_(True),
+            )
+        )
+        if member is None:
+            raise_error(status.HTTP_403_FORBIDDEN, ERR_ACCESS_DENIED)
+
+    current_user.active_organization_id = data.organization_id
     current_user.brand_id = data.brand_id
     await db.commit()
     await db.refresh(current_user)

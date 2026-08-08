@@ -77,6 +77,7 @@ export type FilamentAvailability = 'available' | 'out_of_stock' | 'discontinued'
 export interface Filament {
   id: number;
   brand_id: number;
+  contributed_by_organization_id?: number | null;
   brand_name: string | null;
   brand_slug?: string | null;
   brand_verified?: boolean;
@@ -182,6 +183,7 @@ export interface BrandInvitePublic {
   email: string | null;
   target_type: 'new' | 'existing' | null;
   brand_id: number | null;
+  active_organization_id?: number | null;
   purpose: 'representative' | 'team' | null;
   member_role: 'owner' | 'editor' | null;
   reason: string | null;
@@ -580,6 +582,7 @@ export interface User {
   active: boolean;
   email_verified: boolean;
   brand_id: number | null;
+  active_organization_id: number | null;
   brand_name: string | null; // Название бренда (для админки)
   printer_id: number | null; // ID выбранного принтера из каталога
   recommend_physical_printer_id: number | null; // Выбор для рекомендаций каталога (следует за аккаунтом между устройствами)
@@ -705,6 +708,14 @@ export interface BrandRepresentativeInvite {
   send_error: string | null;
 }
 
+export interface BrandPresence {
+  organization_id: number;
+  organization_name: string;
+  country: string | null;
+  member_count: number;
+  is_current: boolean;
+}
+
 export interface BrandTeamJoinRequest {
   id: number;
   user_id: number;
@@ -723,6 +734,7 @@ export interface BrandTeamWorkspace {
   members: BrandTeamMember[];
   pending_invites: BrandTeamInvite[];
   pending_join_requests: BrandTeamJoinRequest[];
+  presence: BrandPresence[];
 }
 
 export interface Token {
@@ -839,7 +851,7 @@ export interface ListResponse<T> {
   pages: number;
 }
 
-export type BrandRequestType = 'join' | 'create';
+export type BrandRequestType = 'join' | 'create' | 'representative';
 export type BrandRequestStatus = 'pending' | 'approved' | 'rejected';
 
 export interface BrandRequest {
@@ -847,6 +859,8 @@ export interface BrandRequest {
   user_id: number;
   user_email?: string | null; // Email пользователя для админки
   request_type: BrandRequestType;
+  country?: string | null;
+  organization_name?: string | null;
   brand_id: number | null;
   brand_name?: string | null; // Название бренда для JOIN заявок
   new_brand_name: string | null;
@@ -1689,7 +1703,7 @@ export interface FilamentCountryCell {
   product_url: string | null;
   purchase_links: { platform: string; url: string }[] | null;
   market_note: string | null;
-  market_display_name: string | null;
+  market_color_name: string | null;
   published: boolean;
   price_updated_at: string | null;
   created_at: string;
@@ -1701,6 +1715,9 @@ export interface BrandCountryCell {
   brand_id: number;
   country: string;
   website: string | null;
+  description: string | null;
+  social_media_urls: string[] | null;
+  currency: string | null;
   shop_links: { platform: string; url: string }[] | null;
   published: boolean;
   created_at: string;

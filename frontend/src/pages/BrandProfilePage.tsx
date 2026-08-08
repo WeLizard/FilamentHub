@@ -38,7 +38,7 @@ import {
   Info,
   ChevronDown,
   Users,
-  Globe2,
+  SlidersHorizontal,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { authAPI, brandsAPI, filamentsAPI, brandRequestsAPI, presetsAPI, proofFilesAPI, qrAPI } from '../api/client';
@@ -47,7 +47,7 @@ import { PERSONAL_EMAIL_DOMAINS } from '../data/personalEmailDomains';
 import { currencySymbol, CURRENCY_CODES } from '../utils/currency';
 import { filamentImportAPI, filamentLinesAPI } from '../api/client';
 import { ModalOverlay } from '../components/ModalOverlay';
-import { FilamentMarketPanel } from '../components/FilamentMarketPanel';
+import { COUNTRY_CODES, countryName } from '../utils/countries';
 import { HSLColorPicker } from '../components/HSLColorPicker';
 import { SocialIcon } from '../components/socialIcons';
 import type { FilamentImportResult } from '../types/api';
@@ -61,11 +61,10 @@ import { Dropdown } from '../components/Dropdown';
 import { FilamentPreview } from '../components/FilamentPreview';
 import { BrandTeamPanel } from '../components/BrandTeamPanel';
 import { BrandRepresentativesPanel } from '../components/BrandRepresentativesPanel';
-import { BrandRegionPanel } from '../components/BrandRegionPanel';
+import { BrandSettings } from '../components/BrandSettings';
 import { BrandLogoFrame } from '../components/BrandLogoFrame';
 import { toast } from '../components/Toast';
 import { useDebounce } from '../hooks/useDebounce';
-import { externalUrl } from '../utils/externalUrl';
 import type { Filament, FilamentAvailability, Brand, BrandRequest, Preset } from '../types/api';
 import type { AxiosError } from 'axios';
 import { formatDate } from '../utils/formatDate';
@@ -81,7 +80,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
   const { user, refreshUser } = useAuth();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const [brandTab, setBrandTab] = useState<'materials' | 'presets' | 'qr' | 'analytics' | 'usage' | 'team' | 'regions'>('materials');
+  const [brandTab, setBrandTab] = useState<'materials' | 'presets' | 'qr' | 'analytics' | 'usage' | 'team' | 'settings'>('materials');
   const [materialsViewMode, setMaterialsViewMode] = useState<'grid' | 'list'>('grid');
   const [isCreateFilamentModalOpen, setIsCreateFilamentModalOpen] = useState(false);
   const [isCreatePresetModalOpen, setIsCreatePresetModalOpen] = useState(false);
@@ -90,10 +89,11 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
   const [deletingFilamentId, setDeletingFilamentId] = useState<number | null>(null);
   const [deletingLine, setDeletingLine] = useState<{ id: number; name: string } | null>(null);
   const [showQRFilament, setShowQRFilament] = useState<Filament | null>(null);
-  const [marketFilament, setMarketFilament] = useState<Filament | null>(null);
   const [presetFilterFilament, setPresetFilterFilament] = useState<Filament | null>(null);
   const [addColorsFilament, setAddColorsFilament] = useState<Filament | null>(null);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
+  // Что правит форма: общий слой бренда либо витрину одной страны.
+  const [editScope, setEditScope] = useState<'common' | string>('common');
   const [profileName, setProfileName] = useState('');
   const [profileDescription, setProfileDescription] = useState('');
   const [profileWebsite, setProfileWebsite] = useState('');
@@ -112,10 +112,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
   const [isBrandLogoVisible, setIsBrandLogoVisible] = useState(false);
   const [isBrandSwitcherOpen, setIsBrandSwitcherOpen] = useState(false);
   const [isAddingBrand, setIsAddingBrand] = useState(false);
-  const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
-  const [isDescriptionOverflowing, setIsDescriptionOverflowing] = useState(false);
   const brandSwitcherRef = useRef<HTMLDivElement>(null);
-  const brandDescriptionRef = useRef<HTMLParagraphElement>(null);
 
   const accessibleBrandsQuery = useQuery({
     queryKey: ['auth', 'accessible-brands', user?.id, user?.brand_id],
@@ -156,35 +153,33 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
   }, [isBrandSwitcherOpen]);
 
   // Загружаем данные бренда
+  const territoriesQuery = useQuery({
+    queryKey: ['brand-territories', user?.brand_id],
+    queryFn: () => brandsAPI.myTerritories(user!.brand_id!),
+    enabled: !!user?.brand_id,
+  });
+  // Общий слой правит владелец марки; представитель ведёт свою страну.
+  const activeOrganizationName = (accessibleBrandsQuery.data ?? []).find(
+    (item) => item.brand_id === user?.brand_id && item.organization_id === user?.active_organization_id,
+  )?.organization_name;
+
+  const canEditCommon =
+    territoriesQuery.data?.can_edit_common ?? territoriesQuery.data?.is_admin ?? true;
+  // Редактор открывается и тому, у кого есть только своя страна: внутри он
+  // переключается на её данные.
+  // Область, в которой человек сейчас работает: по ней и видно заполненность.
+  const scopeCountry = (territoriesQuery.data?.territories ?? [])
+    .map((item) => item.country)
+    .find((code): code is string => code !== null);
+
+  const canOpenEditor =
+    canEditCommon || (territoriesQuery.data?.territories ?? []).length > 0;
+
   const { data: brandData, isLoading: isLoadingBrand } = useQuery({
     queryKey: ['brand', user?.brand_id],
     queryFn: () => brandsAPI.get(user!.brand_id!),
     enabled: !!user?.brand_id,
   });
-
-  useEffect(() => {
-    setIsDescriptionExpanded(false);
-  }, [brandData?.id, brandData?.description]);
-
-  useEffect(() => {
-    const description = brandDescriptionRef.current;
-    if (!description || isDescriptionExpanded) return;
-
-    const updateOverflowState = () => {
-      setIsDescriptionOverflowing(description.scrollHeight > description.clientHeight + 1);
-    };
-
-    updateOverflowState();
-
-    if (typeof ResizeObserver === 'undefined') {
-      window.addEventListener('resize', updateOverflowState);
-      return () => window.removeEventListener('resize', updateOverflowState);
-    }
-
-    const resizeObserver = new ResizeObserver(updateOverflowState);
-    resizeObserver.observe(description);
-    return () => resizeObserver.disconnect();
-  }, [brandData?.description, isDescriptionExpanded]);
 
   // Загружаем материалы производителя
   const { 
@@ -192,8 +187,16 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
     isLoading: isLoadingFilaments,
     error: filamentsError 
   } = useQuery({
-    queryKey: ['brand-filaments', user?.brand_id],
-    queryFn: () => filamentsAPI.list({ active_only: false, brand_id: user?.brand_id ?? undefined, page: 1, size: 100 }),
+    queryKey: ['brand-filaments', user?.brand_id, scopeCountry],
+    queryFn: () => filamentsAPI.list({
+      active_only: false,
+      brand_id: user?.brand_id ?? undefined,
+      page: 1,
+      size: 100,
+      // Заполненность карточки зависит от области: подставленная ячейка страны
+      // означает, что по ней данные уже есть.
+      country: scopeCountry,
+    }),
     enabled: !!user?.brand_id,
   });
 
@@ -335,8 +338,39 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
     },
   });
 
+  const countryCellsQuery = useQuery({
+    queryKey: ['brand-country-cells', user?.brand_id],
+    queryFn: () => brandsAPI.countryCells(user!.brand_id!),
+    enabled: !!user?.brand_id,
+  });
+
+  const saveCountryProfileMutation = useMutation({
+    mutationFn: async (country: string) => {
+      const payload = {
+        website: profileWebsite.trim() || null,
+        description: profileDescription.trim() || null,
+        social_media_urls: profileSocialUrls.filter((url) => url.trim()),
+        shop_links: profileShopLinks.filter((link) => link.url.trim()),
+        published: true,
+      };
+      const existing = (countryCellsQuery.data ?? []).some((item) => item.country === country);
+      return existing
+        ? brandsAPI.updateCountryCell(user!.brand_id!, country, payload)
+        : brandsAPI.createCountryCell(user!.brand_id!, { country, ...payload });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['brand-country-cells', user?.brand_id] });
+      setIsEditingProfile(false);
+      toast.success(t('brandRegion.saved'));
+    },
+    onError: (error: AxiosError<{ detail: unknown }>) => {
+      setProfileError(translateApiError(t, error.response?.data?.detail, t('brandRegion.saveFailed')));
+    },
+  });
+
   const handleEditProfile = () => {
     if (brandData) {
+      setEditScope('common');
       setProfileName(brandData.name);
       setProfileDescription(brandData.description || '');
       setProfileWebsite(brandData.website || '');
@@ -361,6 +395,10 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
   }, [initialEditing, brandData]);
 
   const handleSaveProfile = () => {
+    if (editScope !== 'common') {
+      saveCountryProfileMutation.mutate(editScope);
+      return;
+    }
     updateBrandMutation.mutate({
       ...(brandData?.name_correction_available && profileName.trim() !== brandData.name
         ? { name: profileName.trim() }
@@ -550,7 +588,16 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
                     aria-haspopup="menu"
                     title={t('profilePage.activeBrand')}
                   >
-                    <h2 className="truncate text-2xl font-bold text-white sm:text-3xl">{brandData.name}</h2>
+                    <span className="min-w-0">
+                      <h2 className="truncate text-2xl font-bold text-white sm:text-3xl">
+                        {brandData.name}
+                      </h2>
+                      {activeOrganizationName && (
+                        <span className="block truncate text-xs text-cyan-300/80">
+                          {activeOrganizationName}
+                        </span>
+                      )}
+                    </span>
                     <ChevronDown
                       className={`h-5 w-5 shrink-0 text-cyan-300 transition-transform ${isBrandSwitcherOpen ? 'rotate-180' : ''}`}
                       aria-hidden="true"
@@ -567,8 +614,16 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
                           key={brand.brand_id}
                           type="button"
                           role="menuitemradio"
-                          aria-checked={brand.brand_id === user.brand_id}
-                          onClick={() => setActiveBrandMutation.mutate(brand.brand_id)}
+                          aria-checked={
+                            brand.brand_id === user.brand_id &&
+                            brand.organization_id === user.active_organization_id
+                          }
+                          onClick={() =>
+                            setActiveBrandMutation.mutate({
+                              brandId: brand.brand_id,
+                              organizationId: brand.organization_id,
+                            })
+                          }
                           className="flex w-full items-center justify-between gap-4 rounded-lg px-3 py-2.5 text-left text-sm text-white transition hover:bg-white/10"
                         >
                           <span className="min-w-0">
@@ -592,25 +647,8 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
                     </div>
                   )}
                 </div>
-                <button
-                  onClick={handleEditProfile}
-                  className="shrink-0 rounded-lg p-1.5 text-gray-400 transition-all hover:bg-white/10 hover:text-white"
-                  title={t('brandProfile.editProfile')}
-                >
-                  <Edit className="w-4 h-4" />
-                </button>
               </div>
             </div>
-            {externalUrl(brandData.website) && (
-              <a
-                href={externalUrl(brandData.website)!}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="mt-1 inline-block max-w-full truncate text-sm text-purple-400 hover:text-purple-300"
-              >
-                {brandData.website}
-              </a>
-            )}
             <div className="mt-3">
               <button
                 onClick={() => navigate(`/brands/${brandData.slug}`)}
@@ -623,37 +661,6 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
           </div>
         </div>
 
-        {brandData.description && (
-          <div className="mt-2 text-center md:ml-auto md:max-w-md md:text-right">
-            <p
-              ref={brandDescriptionRef}
-              id="brand-profile-description"
-              className={`whitespace-pre-line text-sm leading-6 text-gray-400 ${isDescriptionExpanded ? '' : 'line-clamp-1'}`}
-            >
-              {brandData.description}
-            </p>
-            {isDescriptionOverflowing && (
-              <button
-                type="button"
-                onClick={() => setIsDescriptionExpanded((expanded) => !expanded)}
-                aria-expanded={isDescriptionExpanded}
-                aria-controls="brand-profile-description"
-                className="mt-1.5 inline-flex items-center gap-1 rounded-md text-xs font-medium text-cyan-300 transition-colors hover:text-cyan-200 focus:outline-none focus:ring-2 focus:ring-cyan-400/60"
-              >
-                <span>
-                  {isDescriptionExpanded
-                    ? t('brandProfile.collapseDescription')
-                    : t('brandProfile.showFullDescription')}
-                </span>
-                <ChevronDown
-                  className={`h-3.5 w-3.5 transition-transform ${isDescriptionExpanded ? 'rotate-180' : ''}`}
-                  aria-hidden="true"
-                />
-              </button>
-            )}
-          </div>
-        )}
-
         {/* Tabs */}
         <div className="-mx-4 mt-4 overflow-x-auto px-4 pb-2 md:mx-0 md:px-0">
           <div className="flex w-max min-w-full justify-start gap-2 md:justify-center">
@@ -664,7 +671,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
             { id: 'analytics', label: t('brandProfile.tabs.analytics'), icon: BarChart3 },
             { id: 'usage', label: t('brandProfile.tabs.usage'), icon: TrendingUp },
             { id: 'team', label: t('brandProfile.tabs.team'), icon: Users },
-            { id: 'regions', label: t('brandProfile.tabs.regions'), icon: Globe2 },
+            { id: 'settings', label: t('brandProfile.tabs.settings'), icon: SlidersHorizontal },
           ] as const).map((tab) => (
             <button
               key={tab.id}
@@ -814,7 +821,9 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
                               onEdit={handleEditFilament}
                               onDelete={handleDeleteFilament}
                               onShowQR={(filament) => setShowQRFilament(filament)}
-                              onShowMarket={(filament) => setMarketFilament(filament)}
+                              canEditCommon={canEditCommon}
+                              canOpenEditor={canOpenEditor}
+                              scopeCountry={scopeCountry}
                               onShowPresets={handleShowMaterialPresets}
                               onAddColors={handleAddColors}
                               viewMode="grid"
@@ -830,7 +839,9 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
                               onEdit={handleEditFilament}
                               onDelete={handleDeleteFilament}
                               onShowQR={(filament) => setShowQRFilament(filament)}
-                              onShowMarket={(filament) => setMarketFilament(filament)}
+                              canEditCommon={canEditCommon}
+                              canOpenEditor={canOpenEditor}
+                              scopeCountry={scopeCountry}
                               onShowPresets={handleShowMaterialPresets}
                               onAddColors={handleAddColors}
                               viewMode="list"
@@ -1249,7 +1260,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
         </div>
       )}
 
-      {brandTab === 'regions' && <BrandRegionPanel brand={brandData} />}
+      {brandTab === 'settings' && <BrandSettings brand={brandData} />}
 
       {/* Create/Edit Filament Modal */}
       <CreateFilamentModal
@@ -1300,30 +1311,6 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
       </Suspense>
 
       {/* QR Code Modal */}
-      {marketFilament && (
-        <ModalOverlay onClose={() => setMarketFilament(null)}>
-          <div className="max-h-[85vh] w-full max-w-3xl overflow-y-auto rounded-2xl border border-white/20 bg-gray-900 p-6">
-            <div className="mb-4 flex items-start justify-between gap-4">
-              <div>
-                <h3 className="text-lg font-semibold text-white">
-                  {t('filamentMarket.editorTitle', { name: marketFilament.name })}
-                </h3>
-                <p className="mt-1 text-xs leading-5 text-gray-400">
-                  {t('filamentMarket.editorPurpose')}
-                </p>
-              </div>
-              <button
-                onClick={() => setMarketFilament(null)}
-                className="rounded-lg p-1.5 text-gray-400 transition hover:text-white"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-            <FilamentMarketPanel filament={marketFilament} />
-          </div>
-        </ModalOverlay>
-      )}
-
       {showQRFilament && showQRFilament.qr_code && (
         <ModalOverlay onClose={() => setShowQRFilament(null)}>
           <div className="bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 rounded-2xl w-full max-w-lg overflow-hidden flex flex-col border border-white/20 shadow-2xl">
@@ -1498,6 +1485,8 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
                   placeholder="https://example.com"
                 />
               </div>
+              {editScope === 'common' && (
+              <>
               <div>
                 <label className="block text-gray-300 mb-2 text-sm font-medium">{t('brandProfile.currencyLabel')}</label>
                 <select
@@ -1523,6 +1512,8 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
                 </label>
                 <p className="text-gray-500 text-xs mt-1">{t('brandProfile.priceHiddenHint')}</p>
               </div>
+              </>
+              )}
               </div>
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wide text-purple-300/80 mb-2">{t('brandProfile.sectionLogo')}</p>
@@ -1674,10 +1665,14 @@ interface BrandSelectionFormProps {
 }
 
 const BrandSelectionForm: React.FC<BrandSelectionFormProps> = ({ onClose }) => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { user, refreshUser } = useAuth();
   const queryClient = useQueryClient();
   const [selectedBrandId, setSelectedBrandId] = useState<number | null>(null);
+  // Что заявляет человек: марка его, либо он ведёт её в одной стране.
+  const [claim, setClaim] = useState<'brand' | 'representative'>('brand');
+  const [claimCountry, setClaimCountry] = useState('');
+
   const [brandSearch, setBrandSearch] = useState(''); // Поиск бренда
   const [isCreatingNew, setIsCreatingNew] = useState(false);
   const [submittedRequest, setSubmittedRequest] = useState<BrandRequest | null>(null); // Отправленная заявка
@@ -1761,7 +1756,9 @@ const BrandSelectionForm: React.FC<BrandSelectionFormProps> = ({ onClose }) => {
   // Мутация для создания заявки на создание бренда
   const createRequestMutation = useMutation({
     mutationFn: async (data: {
-      request_type: 'create' | 'join';
+      request_type: 'create' | 'join' | 'representative';
+      country?: string;
+      organization_name?: string;
       brand_id?: number;
       new_brand_name?: string;
       new_brand_slug?: string;
@@ -2037,8 +2034,16 @@ const BrandSelectionForm: React.FC<BrandSelectionFormProps> = ({ onClose }) => {
       return;
     }
     
-    // Если бренд не верифицирован ИЛИ у бренда нет сотрудников - требуем полную заявку как для CREATE
-    if (!selectedBrand?.verified || !hasEmployees) {
+    if (claim === 'representative') {
+      if (!claimCountry) {
+        setError(t('brandProfile.errorClaimCountry'));
+        return;
+      }
+    }
+
+    // Территориальная заявка проверяется как притязание на марку: занятость
+    // бренда чужой компанией её не облегчает.
+    if (claim === 'representative' || !selectedBrand?.verified || !hasEmployees) {
       // Проверяем корпоративность email
       const userEmail = user?.email || '';
       const isCorporate = isCorporateEmail(companyEmail || userEmail, companyWebsite);
@@ -2064,15 +2069,24 @@ const BrandSelectionForm: React.FC<BrandSelectionFormProps> = ({ onClose }) => {
     
     setError(null);
     await createRequestMutation.mutateAsync({
-      request_type: 'join',
+      request_type: claim === 'representative' ? 'representative' : 'join',
       brand_id: selectedBrandId,
+      country: claim === 'representative' ? claimCountry : undefined,
       message: message.trim() || undefined,
       company_email: companyEmail.trim() || undefined,
       company_website: companyWebsite.trim() || undefined,
       social_media_urls: socialMediaUrls.length > 0 ? socialMediaUrls : undefined,
       // Если у бренда нет сотрудников - требуем полную заявку с документами
-      proof_text: hasEmployees ? (message.trim() || 'Brand join request') : proofText.trim(),
-      files: hasEmployees ? undefined : (localFiles.length > 0 ? localFiles : undefined),
+      proof_text:
+        claim === 'representative' || !hasEmployees
+          ? proofText.trim()
+          : message.trim() || 'Brand join request',
+      files:
+        claim === 'representative' || !hasEmployees
+          ? localFiles.length > 0
+            ? localFiles
+            : undefined
+          : undefined,
     });
   };
 
@@ -2966,7 +2980,57 @@ const BrandSelectionForm: React.FC<BrandSelectionFormProps> = ({ onClose }) => {
           />
           {selectedBrandId && (
             <div className="space-y-4">
-              {selectedBrand?.verified && hasEmployees ? (
+              <div className="rounded-xl border border-white/10 bg-white/[0.04] p-4">
+                <p className="mb-3 text-sm text-gray-300">{t('brandProfile.claimQuestion')}</p>
+                <div className="space-y-2">
+                  {(['brand', 'representative'] as const).map((option) => (
+                    <label
+                      key={option}
+                      className="flex cursor-pointer items-start gap-3 rounded-lg border border-white/10 bg-white/[0.03] p-3 transition hover:bg-white/[0.06]"
+                    >
+                      <input
+                        type="radio"
+                        name="brand-claim"
+                        checked={claim === option}
+                        onChange={() => setClaim(option)}
+                        className="mt-1 h-4 w-4"
+                      />
+                      <span className="text-sm">
+                        <span className="block font-medium text-white">
+                          {t(`brandProfile.claim_${option}`)}
+                        </span>
+                        <span className="block text-xs leading-5 text-gray-400">
+                          {t(`brandProfile.claim_${option}_hint`)}
+                        </span>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+
+                {claim === 'representative' && (
+                  <div className="mt-4">
+                    <label className="mb-1.5 block text-xs text-gray-300">
+                      {t('brandProfile.claimCountry')}
+                    </label>
+                    <select
+                      value={claimCountry}
+                      onChange={(event) => setClaimCountry(event.target.value)}
+                      className="w-full rounded-xl border border-white/20 bg-white/10 px-4 py-2.5 text-white sm:max-w-xs"
+                    >
+                      <option value="" className="bg-gray-900">
+                        {t('brandProfile.claimCountryPlaceholder')}
+                      </option>
+                      {COUNTRY_CODES.map((code) => (
+                        <option key={code} value={code} className="bg-gray-900">
+                          {countryName(code, i18n.language)}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
+
+              {claim === 'brand' && selectedBrand?.verified && hasEmployees ? (
               <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4">
                 <div className="flex items-start space-x-3">
                   <Shield className="w-5 h-5 text-blue-400 flex-shrink-0 mt-0.5" />
@@ -3338,14 +3402,16 @@ interface FilamentCardProps {
   onEdit: (filament: Filament) => void;
   onDelete: (filament: Filament) => void;
   onShowQR: (filament: Filament) => void;
-  onShowMarket: (filament: Filament) => void;
+  canEditCommon: boolean;
+  canOpenEditor: boolean;
+  scopeCountry?: string;
   onShowPresets: (filament: Filament) => void;
   onAddColors: (filament: Filament) => void;
   viewMode?: 'grid' | 'list';
 }
 
-const FilamentCard: React.FC<FilamentCardProps> = ({ filament, onEdit, onDelete, onShowQR, onShowMarket, onShowPresets, onAddColors, viewMode = 'grid' }) => {
-  const { t } = useTranslation();
+const FilamentCard: React.FC<FilamentCardProps> = ({ filament, onEdit, onDelete, onShowQR, onShowPresets, onAddColors, canEditCommon, canOpenEditor, scopeCountry, viewMode = 'grid' }) => {
+  const { t, i18n } = useTranslation();
   // Загружаем пресеты для материала
   const { data: presetsData } = useQuery({
     queryKey: ['filament-presets', filament.id],
@@ -3466,27 +3532,24 @@ const FilamentCard: React.FC<FilamentCardProps> = ({ filament, onEdit, onDelete,
             >
               <Palette className="w-3.5 h-3.5" />
             </button>
-            <button
-              onClick={() => onShowMarket(filament)}
-              className="p-1.5 bg-white/10 hover:bg-emerald-500/20 rounded-md text-white transition-all"
-              title={t('filamentMarket.openEditor')}
-            >
-              <Globe2 className="w-3.5 h-3.5" />
-            </button>
-            <button
-              onClick={() => onEdit(filament)}
-              className="p-1.5 bg-white/10 hover:bg-purple-500/20 rounded-md text-white transition-all"
-              title={t('brandProfile.edit')}
-            >
-              <Edit className="w-3.5 h-3.5" />
-            </button>
-            <button
-              onClick={() => onDelete(filament)}
-              className="p-1.5 bg-white/10 hover:bg-red-500/20 rounded-md text-white transition-all"
-              title={t('brandProfile.delete')}
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-            </button>
+            {canOpenEditor && (
+                <button
+                  onClick={() => onEdit(filament)}
+                  className="p-1.5 bg-white/10 hover:bg-purple-500/20 rounded-md text-white transition-all"
+                  title={t('brandProfile.edit')}
+                >
+                  <Edit className="w-3.5 h-3.5" />
+                </button>
+            )}
+            {canEditCommon && (
+                <button
+                  onClick={() => onDelete(filament)}
+                  className="p-1.5 bg-white/10 hover:bg-red-500/20 rounded-md text-white transition-all"
+                  title={t('brandProfile.delete')}
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+            )}
           </div>
         </div>
       </div>
@@ -3525,20 +3588,24 @@ const FilamentCard: React.FC<FilamentCardProps> = ({ filament, onEdit, onDelete,
           >
             <Palette className="w-4 h-4" />
           </button>
-          <button
-            onClick={() => onEdit(filament)}
-            className="p-2 bg-white/10 hover:bg-purple-500/20 rounded-lg text-white transition-all"
-            title={t('brandProfile.edit')}
-          >
-            <Edit className="w-4 h-4" />
-          </button>
-          <button
-            onClick={() => onDelete(filament)}
-            className="p-2 bg-white/10 hover:bg-red-500/20 rounded-lg text-white transition-all"
-            title={t('brandProfile.delete')}
-          >
-            <Trash2 className="w-4 h-4" />
-          </button>
+          {canOpenEditor && (
+              <button
+                onClick={() => onEdit(filament)}
+                className="p-2 bg-white/10 hover:bg-purple-500/20 rounded-lg text-white transition-all"
+                title={t('brandProfile.edit')}
+              >
+                <Edit className="w-4 h-4" />
+              </button>
+          )}
+          {canEditCommon && (
+              <button
+                onClick={() => onDelete(filament)}
+                className="p-2 bg-white/10 hover:bg-red-500/20 rounded-lg text-white transition-all"
+                title={t('brandProfile.delete')}
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+          )}
         </div>
       </div>
 
@@ -3627,6 +3694,20 @@ const FilamentCard: React.FC<FilamentCardProps> = ({ filament, onEdit, onDelete,
             <div>
               <span className="text-gray-400">{t('brandProfile.price')}: </span>
               <span className="text-white font-semibold">{Math.round(filament.price_per_kg)} {currencySymbol(filament.currency)}/{t('catalogPage.units.kg')}</span>
+              {scopeCountry && (
+                <span
+                  className={`ml-2 rounded-full px-2 py-0.5 text-[11px] ${
+                    filament.market_country
+                      ? 'bg-emerald-500/15 text-emerald-300'
+                      : 'bg-white/10 text-gray-400'
+                  }`}
+                >
+                  {countryName(scopeCountry, i18n.language)}:{' '}
+                  {filament.market_country
+                    ? t('brandProfile.countryFilled')
+                    : t('brandProfile.countryEmpty')}
+                </span>
+              )}
             </div>
           ) : (
             <span className="text-gray-500 text-xs">{t('brandProfile.priceNotSet')}</span>

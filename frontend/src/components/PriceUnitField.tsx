@@ -17,6 +17,8 @@ interface PriceUnitFieldProps {
   emptySpoolWeight: number | null;
   onEmptySpoolWeightChange: (value: number | null) => void;
   currencySymbol: string;
+  /** Цену задаёт рынок: у страновой организации она живёт в её ячейке. */
+  showPrice?: boolean;
 }
 
 export function PriceUnitField({
@@ -31,11 +33,13 @@ export function PriceUnitField({
   emptySpoolWeight,
   onEmptySpoolWeightChange,
   currencySymbol,
+  showPrice = true,
 }: PriceUnitFieldProps) {
   const { t } = useTranslation();
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      {showPrice && (
       <PriceWithUnit
         priceMode={priceMode}
         onPriceModeChange={onPriceModeChange}
@@ -44,6 +48,7 @@ export function PriceUnitField({
         currencySymbol={currencySymbol}
         spoolWeight={spoolWeight}
       />
+      )}
       <div className="grid grid-cols-2 gap-4">
         <div className="flex flex-col">
           <div className="h-[34px] mb-2 flex items-end">

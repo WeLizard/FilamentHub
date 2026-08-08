@@ -17,8 +17,13 @@ from app.models.user import User, UserRole
 async def active_grants_for(
     db: AsyncSession, user: User, brand_id: int
 ) -> list[BrandTerritorialGrant]:
-    """Действующие права человека на бренд — через его организации."""
-    grants = await db.scalars(
+    """Действующие права человека на бренд.
+
+    Один бренд бывает доступен через несколько организаций сразу. Если человек
+    выбрал, от какой действует, берутся права только этой: иначе он получил бы
+    объединение полномочий разных компаний, не действуя ни от одной.
+    """
+    query = (
         select(BrandTerritorialGrant)
         .join(
             OrganizationMembership,
@@ -32,7 +37,11 @@ async def active_grants_for(
             OrganizationMembership.active.is_(True),
         )
     )
-    return list(grants)
+    if user.active_organization_id is not None:
+        query = query.where(
+            BrandTerritorialGrant.organization_id == user.active_organization_id
+        )
+    return list(await db.scalars(query))
 
 
 def _covers(grant: BrandTerritorialGrant, country: str | None) -> bool:
@@ -82,11 +91,12 @@ async def can_edit_brand_common(db: AsyncSession, user: User, brand_id: int) -> 
 
 
 async def can_edit_filament_common(
-    db: AsyncSession, user: User, brand_id: int, created_by_id: int | None = None
+    db: AsyncSession, user: User, brand_id: int, contributed_by_organization_id: int | None = None
 ) -> bool:
     """Менять общие свойства товара — те, что одинаковы во всех странах.
 
-    Создатель правит созданное им; всё остальное требует отдельного права.
+    Организация правит свой вклад; чужой требует отдельного права. Вклад
+    принадлежит компании, а не сотруднику: человек уходит, запись остаётся её.
     """
     if user.role == UserRole.ADMIN:
         return True
@@ -94,9 +104,25 @@ async def can_edit_filament_common(
     grants = await active_grants_for(db, user, brand_id)
     if any(grant.edit_all_filaments_common for grant in grants):
         return True
-    if created_by_id is not None and created_by_id == user.id:
+    if contributed_by_organization_id is not None and any(
+        grant.organization_id == contributed_by_organization_id for grant in grants
+    ):
         return any(grant.edit_own_created_filaments for grant in grants)
     return False
+
+
+async def can_create_for_brand(db: AsyncSession, user: User, brand_id: int) -> bool:
+    """Заводить записи каталога от имени организации.
+
+    Обычное пользовательское добавление недостающей позиции этим правом не
+    ограничено: каталог открыт. Здесь речь о работе от имени компании —
+    импорте, линейках с палитрами и синхронизации.
+    """
+    if user.role == UserRole.ADMIN:
+        return True
+    return any(
+        grant.create_filaments for grant in await active_grants_for(db, user, brand_id)
+    )
 
 
 async def _draft_scope(
