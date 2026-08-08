@@ -51,7 +51,6 @@ import type { Preset } from '../types/api';
 import type { AxiosError } from 'axios';
 import { useReaderCountry } from '../hooks/useReaderCountry';
 import { MarketNotice } from '../components/MarketNotice';
-import { FilamentMarketPanel } from '../components/FilamentMarketPanel';
 
 // A grid of tiles rather than a column of rows, so a page's worth arrives at
 // once and the next arrives before the person reaches the end of this one.
@@ -852,7 +851,6 @@ export const FilamentDetailPage: React.FC = () => {
         )}
       </div>
 
-      <FilamentMarketPanel filament={filament} />
 
       {/* Табы: Пресеты / Отзывы */}
       <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 shadow-xl">

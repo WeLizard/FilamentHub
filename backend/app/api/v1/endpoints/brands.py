@@ -54,6 +54,7 @@ from app.services.file_service import (
     get_upload_root_dir,
     normalize_brand_logo_upload,
 )
+from app.services.country_market import apply_brand_cell, brand_cell_for
 from app.services.organization_access import can_edit_brand_catalog, can_view_private_brand_data
 
 router = APIRouter(prefix="/brands", tags=["brands"])
@@ -122,6 +123,7 @@ async def get_brand(
     identifier: str,
     db: Annotated[AsyncSession, Depends(get_db)],
     include_employees_count: bool = Query(False, description="Включить количество сотрудников"),
+    country: str | None = Query(None, pattern=r"^[A-Za-z]{2}$"),
 ) -> BrandResponse:
     """Resolve a brand by numeric ID, current slug or historical slug."""
     brand, _redirected_from = await resolve_brand_identifier(db, identifier)
@@ -129,7 +131,9 @@ async def get_brand(
     if not brand:
         raise_error(404, ERR_BRAND_NOT_FOUND)
 
-    response = BrandResponse.model_validate(brand)
+    payload = BrandResponse.model_validate(brand).model_dump()
+    cell = await brand_cell_for(db, brand.id, country)
+    response = BrandResponse.model_validate(apply_brand_cell(payload, cell))
 
     # Если запрошено количество сотрудников - добавляем его
     if include_employees_count:

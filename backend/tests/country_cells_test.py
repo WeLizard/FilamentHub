@@ -304,3 +304,36 @@ async def test_not_sold_here_hides_the_local_price(
     # Сама ячейка цену помнит: скрыт показ, а не введённые представителем данные.
     cell = (await admin_client.get(f"/api/v1/filaments/{filament.id}/country-cells")).json()[0]
     assert cell["price"] == 3000
+
+
+@pytest.mark.asyncio
+async def test_a_brand_shows_its_local_site_to_that_country(
+    admin_client: AsyncClient, db_session: AsyncSession
+):
+    """Иначе региональный сайт можно заполнить, но никто его не увидит."""
+    brand, _ = await _brand_with_filament(db_session)
+    brand.website = "https://creality.com"
+    await db_session.commit()
+    await db_session.refresh(brand)
+
+    created = await admin_client.post(
+        f"/api/v1/brands/{brand.id}/country-cells",
+        json={
+            "country": "KZ",
+            "website": "https://creality.kz",
+            "shop_links": [{"platform": "kaspi", "url": "https://kaspi.kz/creality"}],
+            "published": True,
+        },
+    )
+    assert created.status_code == 201, created.text
+
+    local = (await admin_client.get(f"/api/v1/brands/{brand.id}?country=KZ")).json()
+    assert local["website"] == "https://creality.kz"
+    assert local["shop_links"][0]["url"] == "https://kaspi.kz/creality"
+    assert local["market_country"] == "KZ"
+
+    # Соседняя страна и запрос без страны видят общий сайт.
+    for elsewhere in ("", "?country=UZ"):
+        shown = (await admin_client.get(f"/api/v1/brands/{brand.id}{elsewhere}")).json()
+        assert shown["website"] == "https://creality.com"
+        assert shown["market_country"] is None

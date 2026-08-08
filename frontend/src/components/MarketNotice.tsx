@@ -36,12 +36,13 @@ export const MarketNotice: React.FC<MarketNoticeProps> = ({ filament, compact = 
   if (compact) {
     return (
       <span
-        className={`inline-flex items-center gap-1 text-xs ${
+        title={unavailable ? t('market.notSoldIn', { country }) : t('market.priceFor', { country })}
+        className={`inline-flex items-center gap-1 whitespace-nowrap text-xs ${
           unavailable ? 'text-amber-300' : 'text-gray-400'
         }`}
       >
-        <MapPin className="h-3 w-3" />
-        {unavailable ? t('market.notSoldIn', { country }) : t('market.priceFor', { country })}
+        <MapPin className="h-3 w-3 shrink-0" />
+        {country}
       </span>
     );
   }

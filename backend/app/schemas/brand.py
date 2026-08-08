@@ -54,6 +54,9 @@ class BrandResponse(BrandBase):
     created_at: datetime
     updated_at: datetime
     employees_count: int | None = Field(None, description="Количество сотрудников (только при запросе)")
+    market_country: str | None = Field(
+        None, description="Страна, чья витрина подставлена в ответ"
+    )
 
     model_config = ConfigDict(from_attributes=True)
 

@@ -38,6 +38,7 @@ import {
   Info,
   ChevronDown,
   Users,
+  Globe2,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { authAPI, brandsAPI, filamentsAPI, brandRequestsAPI, presetsAPI, proofFilesAPI, qrAPI } from '../api/client';
@@ -46,6 +47,7 @@ import { PERSONAL_EMAIL_DOMAINS } from '../data/personalEmailDomains';
 import { currencySymbol, CURRENCY_CODES } from '../utils/currency';
 import { filamentImportAPI, filamentLinesAPI } from '../api/client';
 import { ModalOverlay } from '../components/ModalOverlay';
+import { FilamentMarketPanel } from '../components/FilamentMarketPanel';
 import { HSLColorPicker } from '../components/HSLColorPicker';
 import { SocialIcon } from '../components/socialIcons';
 import type { FilamentImportResult } from '../types/api';
@@ -79,7 +81,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
   const { user, refreshUser } = useAuth();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const [brandTab, setBrandTab] = useState<'materials' | 'presets' | 'qr' | 'analytics' | 'usage' | 'team'>('materials');
+  const [brandTab, setBrandTab] = useState<'materials' | 'presets' | 'qr' | 'analytics' | 'usage' | 'team' | 'regions'>('materials');
   const [materialsViewMode, setMaterialsViewMode] = useState<'grid' | 'list'>('grid');
   const [isCreateFilamentModalOpen, setIsCreateFilamentModalOpen] = useState(false);
   const [isCreatePresetModalOpen, setIsCreatePresetModalOpen] = useState(false);
@@ -88,6 +90,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
   const [deletingFilamentId, setDeletingFilamentId] = useState<number | null>(null);
   const [deletingLine, setDeletingLine] = useState<{ id: number; name: string } | null>(null);
   const [showQRFilament, setShowQRFilament] = useState<Filament | null>(null);
+  const [marketFilament, setMarketFilament] = useState<Filament | null>(null);
   const [presetFilterFilament, setPresetFilterFilament] = useState<Filament | null>(null);
   const [addColorsFilament, setAddColorsFilament] = useState<Filament | null>(null);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
@@ -661,6 +664,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
             { id: 'analytics', label: t('brandProfile.tabs.analytics'), icon: BarChart3 },
             { id: 'usage', label: t('brandProfile.tabs.usage'), icon: TrendingUp },
             { id: 'team', label: t('brandProfile.tabs.team'), icon: Users },
+            { id: 'regions', label: t('brandProfile.tabs.regions'), icon: Globe2 },
           ] as const).map((tab) => (
             <button
               key={tab.id}
@@ -810,6 +814,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
                               onEdit={handleEditFilament}
                               onDelete={handleDeleteFilament}
                               onShowQR={(filament) => setShowQRFilament(filament)}
+                              onShowMarket={(filament) => setMarketFilament(filament)}
                               onShowPresets={handleShowMaterialPresets}
                               onAddColors={handleAddColors}
                               viewMode="grid"
@@ -825,6 +830,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
                               onEdit={handleEditFilament}
                               onDelete={handleDeleteFilament}
                               onShowQR={(filament) => setShowQRFilament(filament)}
+                              onShowMarket={(filament) => setMarketFilament(filament)}
                               onShowPresets={handleShowMaterialPresets}
                               onAddColors={handleAddColors}
                               viewMode="list"
@@ -1243,8 +1249,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
         </div>
       )}
 
-      {/* Границу между общим и своим объясняем словами, а не блокировкой полей. */}
-      <BrandRegionPanel brand={brandData} />
+      {brandTab === 'regions' && <BrandRegionPanel brand={brandData} />}
 
       {/* Create/Edit Filament Modal */}
       <CreateFilamentModal
@@ -1295,6 +1300,30 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({ onBack, init
       </Suspense>
 
       {/* QR Code Modal */}
+      {marketFilament && (
+        <ModalOverlay onClose={() => setMarketFilament(null)}>
+          <div className="max-h-[85vh] w-full max-w-3xl overflow-y-auto rounded-2xl border border-white/20 bg-gray-900 p-6">
+            <div className="mb-4 flex items-start justify-between gap-4">
+              <div>
+                <h3 className="text-lg font-semibold text-white">
+                  {t('filamentMarket.editorTitle', { name: marketFilament.name })}
+                </h3>
+                <p className="mt-1 text-xs leading-5 text-gray-400">
+                  {t('filamentMarket.editorPurpose')}
+                </p>
+              </div>
+              <button
+                onClick={() => setMarketFilament(null)}
+                className="rounded-lg p-1.5 text-gray-400 transition hover:text-white"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <FilamentMarketPanel filament={marketFilament} />
+          </div>
+        </ModalOverlay>
+      )}
+
       {showQRFilament && showQRFilament.qr_code && (
         <ModalOverlay onClose={() => setShowQRFilament(null)}>
           <div className="bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 rounded-2xl w-full max-w-lg overflow-hidden flex flex-col border border-white/20 shadow-2xl">
@@ -3309,12 +3338,13 @@ interface FilamentCardProps {
   onEdit: (filament: Filament) => void;
   onDelete: (filament: Filament) => void;
   onShowQR: (filament: Filament) => void;
+  onShowMarket: (filament: Filament) => void;
   onShowPresets: (filament: Filament) => void;
   onAddColors: (filament: Filament) => void;
   viewMode?: 'grid' | 'list';
 }
 
-const FilamentCard: React.FC<FilamentCardProps> = ({ filament, onEdit, onDelete, onShowQR, onShowPresets, onAddColors, viewMode = 'grid' }) => {
+const FilamentCard: React.FC<FilamentCardProps> = ({ filament, onEdit, onDelete, onShowQR, onShowMarket, onShowPresets, onAddColors, viewMode = 'grid' }) => {
   const { t } = useTranslation();
   // Загружаем пресеты для материала
   const { data: presetsData } = useQuery({
@@ -3435,6 +3465,13 @@ const FilamentCard: React.FC<FilamentCardProps> = ({ filament, onEdit, onDelete,
               title={t('brandProfile.addColors')}
             >
               <Palette className="w-3.5 h-3.5" />
+            </button>
+            <button
+              onClick={() => onShowMarket(filament)}
+              className="p-1.5 bg-white/10 hover:bg-emerald-500/20 rounded-md text-white transition-all"
+              title={t('filamentMarket.openEditor')}
+            >
+              <Globe2 className="w-3.5 h-3.5" />
             </button>
             <button
               onClick={() => onEdit(filament)}

@@ -16,6 +16,7 @@
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.brand_country_cell import BrandCountryCell
 from app.models.filament_country_cell import CountryAvailability, FilamentCountryCell
 
 # Поля ячейки, которые подменяют общие. Ключ — что отдаём наружу.
@@ -78,5 +79,33 @@ def apply_cell(payload: dict, cell: FilamentCountryCell | None) -> dict:
 
     # Чтобы витрина могла честно подписать: это рекомендованная цена для страны,
     # а не наша общая.
+    payload["market_country"] = cell.country
+    return payload
+
+
+async def brand_cell_for(
+    db: AsyncSession, brand_id: int, country: str | None
+) -> BrandCountryCell | None:
+    """Опубликованная витрина бренда в стране читателя."""
+    if not country:
+        return None
+    return await db.scalar(
+        select(BrandCountryCell).where(
+            BrandCountryCell.brand_id == brand_id,
+            BrandCountryCell.country == country.upper(),
+            BrandCountryCell.published.is_(True),
+        )
+    )
+
+
+def apply_brand_cell(payload: dict, cell: BrandCountryCell | None) -> dict:
+    """Подставить местные сайт и магазины бренда. Пусто — остаётся общее."""
+    if cell is None:
+        return payload
+
+    if cell.website and cell.website.strip():
+        payload["website"] = cell.website
+    if cell.shop_links:
+        payload["shop_links"] = cell.shop_links
     payload["market_country"] = cell.country
     return payload

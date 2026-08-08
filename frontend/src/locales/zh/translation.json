@@ -4018,7 +4018,8 @@
       "qr": "二维码",
       "analytics": "分析",
       "usage": "使用情况",
-      "team": "团队"
+      "team": "团队",
+      "regions": "国家"
     },
     "myMaterials": "我的材料",
     "gridView": "网格",
@@ -6520,7 +6521,12 @@
     "save": "保存",
     "saving": "保存中…",
     "saved": "已保存",
-    "saveFailed": "无法保存区域信息"
+    "saveFailed": "无法保存区域信息",
+    "title": "各国网址",
+    "explained": "这里只放各国不同的内容。品牌名称、标识和通用网址在各地相同，请在品牌设置中修改。",
+    "usesCommonSite": "显示品牌通用网址",
+    "edit": "修改",
+    "cancel": "取消"
   },
   "market": {
     "priceFor": "价格与供应情况为 {{country}} 的建议信息",
@@ -6544,13 +6550,16 @@
     "priceExplained": "价格作为该国的建议价格展示，而非商店报价。",
     "productUrl": "产品页面",
     "displayName": "本地市场名称",
-    "displayNameExplained": "仅当同一产品在此地以另一个正式商品名销售时才填写。名称的翻译不属于此处。",
+    "displayNameExplained": "该产品在您市场上的名称。留空则显示通用名称。",
     "note": "给购买者的说明",
     "published": "向购买者展示",
     "remove": "移除这些信息",
     "saved": "国家信息已保存",
     "removed": "国家信息已移除",
-    "saveFailed": "无法保存国家信息"
+    "saveFailed": "无法保存国家信息",
+    "openEditor": "各国数据",
+    "editorTitle": "各国数据：{{name}}",
+    "editorPurpose": "您所在国家的价格、供应情况与链接。资料中标注该国家的购买者将会看到。"
   },
   "brandReps": {
     "title": "各国代表",

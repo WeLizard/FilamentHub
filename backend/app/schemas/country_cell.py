@@ -58,8 +58,8 @@ class FilamentCountryCellBase(BaseModel):
     product_url: str | None = Field(None, max_length=500)
     purchase_links: list[dict[str, str]] | None = None
     market_note: str | None = None
-    # Заполняется, только если тот же товар официально продаётся на этом рынке
-    # под другим коммерческим названием. Перевод — это локализация, не ячейка.
+    # Название товара на этом рынке: другое коммерческое имя или просто принятое
+    # там написание.
     market_display_name: str | None = Field(None, max_length=200)
     published: bool = False
 

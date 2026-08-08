@@ -4022,7 +4022,8 @@
       "qr": "QR Codes",
       "analytics": "Analytics",
       "usage": "Usage",
-      "team": "Team"
+      "team": "Team",
+      "regions": "Countries"
     },
     "myMaterials": "My materials",
     "gridView": "Grid",
@@ -6527,7 +6528,12 @@
     "save": "Save",
     "saving": "Saving…",
     "saved": "Saved",
-    "saveFailed": "Could not save the regional data"
+    "saveFailed": "Could not save the regional data",
+    "title": "Your site by country",
+    "explained": "Only what differs by country lives here. The brand's name, logo and common site are the same everywhere and change in its settings.",
+    "usesCommonSite": "The brand's common site is shown",
+    "edit": "Edit",
+    "cancel": "Cancel"
   },
   "market": {
     "priceFor": "Price and availability as recommended for {{country}}",
@@ -6551,13 +6557,16 @@
     "priceExplained": "The price is shown as a recommendation for your country, not as a shop offer.",
     "productUrl": "Product page",
     "displayName": "Name on your market",
-    "displayNameExplained": "Fill this in only if the same product is officially sold here under a different commercial name. A translation of the name does not belong here.",
+    "displayNameExplained": "What the product is called on your market. Empty means the common name is shown.",
     "note": "Note for the buyer",
     "published": "Show to buyers",
     "remove": "Remove these details",
     "saved": "Country details saved",
     "removed": "Country details removed",
-    "saveFailed": "Could not save the country details"
+    "saveFailed": "Could not save the country details",
+    "openEditor": "Country data",
+    "editorTitle": "Country data: {{name}}",
+    "editorPurpose": "Price, availability and links for your country. A buyer whose profile says this country will see them."
   },
   "brandReps": {
     "title": "Representatives by country",
