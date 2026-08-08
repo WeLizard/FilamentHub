@@ -113,6 +113,42 @@ async def test_expired_trial_cannot_be_restarted(
 
 
 @pytest.mark.asyncio
+async def test_time_closes_access_even_before_the_status_is_updated(
+    db_session: AsyncSession,
+) -> None:
+    """Access ends when the date passes, not when a job gets around to it.
+
+    Nothing rewrites TRIALING to EXPIRED at the exact second it runs out, so a
+    row left with the old status must not keep the paid part of the product
+    open.
+    """
+    await subscription_service.refresh_settings_cache(db_session)
+    yesterday = datetime.now(timezone.utc) - timedelta(days=1)
+
+    lapsed_trial = await _create_user(db_session, "lapsed-trial")
+    db_session.add(
+        Subscription(
+            user_id=lapsed_trial.id,
+            status=SubscriptionStatus.TRIALING,
+            trial_ends_at=yesterday,
+        )
+    )
+    lapsed_paid = await _create_user(db_session, "lapsed-paid")
+    db_session.add(
+        Subscription(
+            user_id=lapsed_paid.id,
+            status=SubscriptionStatus.ACTIVE,
+            current_period_end=yesterday,
+        )
+    )
+    await db_session.commit()
+
+    assert subscription_service.paywall_enforced() is True
+    assert subscription_service.pro_active(await _load_user(db_session, lapsed_trial.id)) is False
+    assert subscription_service.pro_active(await _load_user(db_session, lapsed_paid.id)) is False
+
+
+@pytest.mark.asyncio
 async def test_explicit_open_access_setting_still_unlocks_calculator(
     db_session: AsyncSession,
 ) -> None:

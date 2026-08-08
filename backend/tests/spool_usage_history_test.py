@@ -70,6 +70,36 @@ async def test_history_belongs_to_its_owner(
 
 
 @pytest.mark.asyncio
+async def test_a_spool_never_owes_more_than_it_held(
+    auth_client: AsyncClient,
+    auth_user: User,
+    db_session: AsyncSession,
+) -> None:
+    """A write-off larger than what is left stops at empty, not below it.
+
+    A negative remainder would travel: into the history, into what the printer
+    is told is available, and into the cost of the next job.
+    """
+    spool = await _spool(db_session, auth_user.id)
+
+    used = await auth_client.post(
+        f"/api/v1/spools/{spool.id}/use", json={"delta_weight_g": 1500}
+    )
+    assert used.status_code == 200
+
+    await db_session.refresh(spool)
+    assert spool.used_weight_g == 1000
+    assert spool.remaining_weight_g == 0
+    assert spool.state == UserSpoolState.empty
+
+    # The history records the grams actually taken, not the grams claimed:
+    # reverting a write-off of 1500 would hand back weight that never existed.
+    events = (await auth_client.get(f"/api/v1/spools/{spool.id}/usage")).json()
+    assert events[0]["delta_weight_g"] == 1000
+    assert events[0]["remaining_weight_g"] == 0
+
+
+@pytest.mark.asyncio
 async def test_reverting_gives_the_grams_back_once(
     auth_client: AsyncClient,
     auth_user: User,

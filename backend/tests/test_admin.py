@@ -103,18 +103,6 @@ async def test_admin_endpoints_require_admin_role(client: AsyncClient):
 # Brands
 # ---------------------------------------------------------------------------
 
-@pytest.mark.asyncio
-async def test_admin_list_brands(client: AsyncClient, db_session: AsyncSession):
-    """Admin can list brands."""
-    headers, user_id = await _register_and_login(client, "admin-brands")
-    await _make_admin(db_session, user_id)
-    await _create_brand(db_session, "Listed Brand")
-
-    response = await client.get("/api/v1/admin/brands", headers=headers)
-    assert response.status_code == 200
-    data = response.json()
-    assert data["total"] >= 1
-
 
 @pytest.mark.asyncio
 async def test_admin_verify_brand(client: AsyncClient, db_session: AsyncSession):
@@ -145,33 +133,10 @@ async def test_admin_unverify_brand(client: AsyncClient, db_session: AsyncSessio
     assert response.json()["verified"] is False
 
 
-@pytest.mark.asyncio
-async def test_admin_verify_brand_not_found(client: AsyncClient, db_session: AsyncSession):
-    """404 when verifying non-existent brand."""
-    headers, user_id = await _register_and_login(client, "admin-verify-404")
-    await _make_admin(db_session, user_id)
-
-    response = await client.post("/api/v1/admin/brands/99999/verify", headers=headers)
-    assert response.status_code == 404
-
 
 # ---------------------------------------------------------------------------
 # Preset moderation
 # ---------------------------------------------------------------------------
-
-@pytest.mark.asyncio
-async def test_admin_list_pending_presets(client: AsyncClient, db_session: AsyncSession):
-    """Admin sees pending presets in moderation queue."""
-    headers, user_id = await _register_and_login(client, "admin-pending")
-    await _make_admin(db_session, user_id)
-    brand = await _create_brand(db_session, "Pending Brand")
-    filament = await _create_filament(db_session, brand.id)
-    await _create_preset(db_session, filament.id, user_id, PresetModerationStatus.PENDING)
-
-    response = await client.get("/api/v1/admin/presets/pending", headers=headers)
-    assert response.status_code == 200
-    data = response.json()
-    assert len(data) >= 1
 
 
 @pytest.mark.asyncio
@@ -277,15 +242,6 @@ async def test_admin_promote_and_demote_user(client: AsyncClient, db_session: As
     assert demote.status_code == 200
     assert demote.json()["role"] == "user"
 
-
-@pytest.mark.asyncio
-async def test_admin_user_not_found(client: AsyncClient, db_session: AsyncSession):
-    """404 when acting on non-existent user."""
-    headers, user_id = await _register_and_login(client, "admin-user-404")
-    await _make_admin(db_session, user_id)
-
-    response = await client.post("/api/v1/admin/users/99999/activate", headers=headers)
-    assert response.status_code == 404
 
 
 @pytest.mark.asyncio

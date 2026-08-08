@@ -340,6 +340,37 @@ async def test_octoprint_usage_retry_does_not_consume_twice(
 
 
 @pytest.mark.asyncio
+async def test_a_printer_cannot_report_away_more_than_the_spool_holds(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    """The printer reports what it extruded; the spool cannot go below empty.
+
+    A miscalibrated or confused printer reporting a kilometre of filament must
+    not leave a negative remainder behind — that number would then be handed
+    back to the printer as available material and priced into the next job.
+    """
+    _user, spool, device = await _seed_spool_context(db_session)
+    endpoint = f"/api/v1/spool_compat/{device.api_key}/v1/spool/{spool.id}/use"
+
+    overreported = await client.put(endpoint, json={"use_weight": 5_000})
+    assert overreported.status_code == 200
+    assert overreported.json()["remaining_weight"] == pytest.approx(0)
+
+    await db_session.refresh(spool)
+    assert spool.used_weight_g == pytest.approx(spool.initial_weight_g)
+    assert spool.state == UserSpoolState.empty
+
+    # What the printer claimed is kept as its claim; what we applied is the
+    # 900 g that were actually left. Mixing the two corrupts the history.
+    event = await db_session.scalar(
+        select(PresetUsageEvent).where(PresetUsageEvent.spool_id == spool.id)
+    )
+    assert event.delta_weight_g == pytest.approx(900)
+    assert event.meta["reported_weight_g"] == pytest.approx(5_000)
+
+
+@pytest.mark.asyncio
 async def test_octoprint_idempotency_key_is_durable_and_rejects_conflicts(
     client: AsyncClient,
     db_session: AsyncSession,
