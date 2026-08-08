@@ -15,7 +15,10 @@ describe('MarketNotice', () => {
     expect(container).toBeEmptyDOMElement();
   });
 
-  it('says nothing when the market itself says it does not know', () => {
+  it('says nothing about a market it cannot name, whatever the status says', () => {
+    // Именно страна решает, есть ли что говорить: без неё статус остаётся
+    // сведением ни о чём. Раньше этот случай назывался проверкой «unknown», но
+    // до статуса выполнение не доходило вовсе — страны в наборе не было.
     const { container } = render(
       <MarketNotice filament={material({ market_availability: 'unknown' })} />,
     );

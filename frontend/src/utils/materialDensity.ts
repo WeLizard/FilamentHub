@@ -50,3 +50,25 @@ export function densityForMaterial(materialType: string): number | undefined {
 
 /** Стандартные диаметры прутка. */
 export const STANDARD_DIAMETERS = [1.75, 2.85, 3.0] as const;
+
+/** Диаметр, который есть почти у всего каталога и потому ничего не различает. */
+export const DEFAULT_DIAMETER = 1.75;
+
+/**
+ * Сколько метров прутка в катушке такого веса.
+ *
+ * Плотность сама по себе ничего не решает — она нужна, чтобы ответить «хватит
+ * ли на модель». Возвращает null, когда любого из трёх слагаемых нет.
+ */
+export function spoolLengthMeters(
+  spoolWeightG: number | null | undefined,
+  density: number | null | undefined,
+  diameterMm: number | null | undefined,
+): number | null {
+  if (!spoolWeightG || !density || !diameterMm) return null;
+  const volumeCm3 = spoolWeightG / density;
+  const radiusCm = diameterMm / 10 / 2;
+  const areaCm2 = Math.PI * radiusCm * radiusCm;
+  if (areaCm2 <= 0) return null;
+  return volumeCm3 / areaCm2 / 100;
+}

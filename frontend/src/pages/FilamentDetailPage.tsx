@@ -14,13 +14,13 @@ import {
   Users,
   Thermometer,
   Gauge,
-  Ruler,
   QrCode,
   Shield,
   ArrowLeft,
   TrendingUp,
   MessageCircle,
   Package,
+  Ruler,
   Plus,
   Wind,
   ExternalLink,
@@ -36,6 +36,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { filamentsAPI, brandsAPI, savedPresetsAPI, filamentReviewsAPI, qrAPI, physicalPrintersAPI } from '../api/client';
 import { translateApiError } from '../utils/translateApiError';
 import { currencySymbol } from '../utils/currency';
+import { DEFAULT_DIAMETER, spoolLengthMeters } from '../utils/materialDensity';
 import { ReviewCard } from '../components/ReviewCard';
 import { CreateReviewModal } from '../components/CreateReviewModal';
 import { ConfirmDeleteModal } from '../components/ConfirmDeleteModal';
@@ -382,6 +383,18 @@ export const FilamentDetailPage: React.FC = () => {
   const carouselIndex = carousel.length > 0 ? Math.min(activeCarousel, carousel.length - 1) : 0;
   const activeSummary = carousel[carouselIndex];
 
+  // Опыт сообщества стоит показывать, только когда он набрался: по трём
+  // пресетам «печатают при» — не факт, а совпадение. Граница взята та же, с
+  // которой бэкенд перестаёт звать оценку предварительной
+  // (preset_recommender.confidence_from_sample_size).
+  const COMMUNITY_EXPERIENCE_MIN_PRESETS = 8;
+  const weightedSummary = carousel.find((item) => item.is_weighted);
+  const communityTemp =
+    totalPresets >= COMMUNITY_EXPERIENCE_MIN_PRESETS ? weightedSummary?.extruder_temp ?? null : null;
+
+  // Плотность отвечает на вопрос «хватит ли на модель» только переведённая в метры.
+  const spoolMeters = spoolLengthMeters(filament.spool_weight, filament.density, filament.diameter);
+
   const primaryPreset =
     loadedPresets.find((p) => p.id === activeSummary?.id) ??
     loadedPresets.find((p) => p.is_official) ??
@@ -484,6 +497,17 @@ export const FilamentDetailPage: React.FC = () => {
               <span className="px-2 py-0.5 md:px-3 md:py-1 bg-purple-500/20 text-purple-300 text-xs md:text-base rounded-full border border-purple-500/30">
                 {filament.material_type}
               </span>
+              {/* Стандартный пруток есть у всех и потому ничего не говорит;
+                  сказать стоит ровно тогда, когда он другой. */}
+              {filament.diameter && filament.diameter !== DEFAULT_DIAMETER && (
+                <span
+                  className="inline-flex items-center gap-1.5 rounded-full border border-sky-500/30 bg-sky-500/20 px-2 py-0.5 text-xs text-sky-200 md:px-3 md:py-1 md:text-base"
+                  title={t('filamentDetailPage.diameter')}
+                >
+                  <Ruler className="h-3.5 w-3.5 md:h-4 md:w-4" />
+                  {t('filamentDetailPage.diameterBadge', { diameter: filament.diameter })}
+                </span>
+              )}
               {filament.availability && filament.availability !== 'available' && (
                 <span className="px-2 py-0.5 md:px-3 md:py-1 bg-amber-500/20 text-amber-300 text-xs md:text-base rounded-full border border-amber-500/30">
                   {t(`createFilament.availability.${filament.availability}`)}
@@ -602,21 +626,28 @@ export const FilamentDetailPage: React.FC = () => {
 
         {/* Детали материала */}
         <div className="mb-4 grid grid-cols-2 gap-3 md:mb-6 md:grid-cols-4 md:gap-6">
-          {filament.diameter && (
+          {communityTemp !== null && (
             <div className="flex items-center gap-2 md:gap-3 text-gray-300">
-              <Ruler className="w-4 h-4 md:w-5 md:h-5 text-purple-400" />
-              <div>
-                <div className="text-[10px] md:text-sm">{t('filamentDetailPage.diameter')}</div>
-                <div className="text-base md:text-xl font-bold text-white">{filament.diameter}mm</div>
+              <TrendingUp className="w-4 h-4 md:w-5 md:h-5 text-emerald-400" />
+              <div className="min-w-0">
+                <div className="text-[10px] md:text-sm">{t('filamentDetailPage.communityTemp')}</div>
+                <div className="text-base md:text-xl font-bold text-white">{communityTemp}°C</div>
+                <div className="text-[10px] text-gray-400 md:text-xs">
+                  {t('filamentDetailPage.communityTempHint', { count: totalPresets })}
+                </div>
               </div>
             </div>
           )}
-          {filament.density && (
+          {spoolMeters !== null && (
             <div className="flex items-center gap-2 md:gap-3 text-gray-300">
               <Package className="w-4 h-4 md:w-5 md:h-5 text-blue-400" />
               <div>
-                <div className="text-[10px] md:text-sm">{t('filamentDetailPage.density')}</div>
-                <div className="text-base md:text-xl font-bold text-white">{filament.density} {t('catalogPage.units.gcm3')}</div>
+                <div className="text-base md:text-xl font-bold text-white">
+                  {t('filamentDetailPage.spoolLengthValue', { meters: Math.round(spoolMeters) })}
+                </div>
+                <div className="text-[10px] text-gray-400 md:text-xs">
+                  {filament.density} {t('catalogPage.units.gcm3')}
+                </div>
               </div>
             </div>
           )}
