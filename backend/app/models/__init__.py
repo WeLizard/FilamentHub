@@ -83,6 +83,7 @@ from app.models.user_spool import UserSpool, UserSpoolState
 from app.models.wiki_article import WikiArticle, WikiArticleProvenance, WikiArticleStatus
 from app.models.wiki_category import WikiCategory
 from app.models.wiki_feedback import WikiArticleFeedback, WikiFeedbackType
+from app.models.wiki_media import WikiMediaAsset
 from app.models.wiki_revision import (
     WikiReviewVerdict,
     WikiRevision,
@@ -198,6 +199,7 @@ __all__ = [
     "WikiArticleStatus",
     "WikiCategory",
     "WikiFeedbackType",
+    "WikiMediaAsset",
     "WikiRevision",
     "WikiRevisionAuthorship",
     "WikiRevisionReview",

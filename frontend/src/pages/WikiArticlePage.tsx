@@ -17,7 +17,6 @@ import {
   MessageSquare,
   Check,
   FilePenLine,
-  Compass,
   LibraryBig,
 } from 'lucide-react';
 import { wikiAPI } from '../api/client';
@@ -30,6 +29,7 @@ import { TableOfContents, extractHeadings } from '../components/wiki/TableOfCont
 import { MobileTocDrawer } from '../components/wiki/MobileTocDrawer';
 import { WikiAuthoringModal } from '../components/wiki/WikiAuthoringModal';
 import { WikiContentRenderer } from '../components/wiki/WikiContentRenderer';
+import { WikiGuideJourney } from '../components/wiki/WikiGuideJourney';
 import { withoutLeadingArticleHeading } from '../components/wiki/wikiMarkdown';
 
 export function WikiArticlePage() {
@@ -177,6 +177,56 @@ export function WikiArticlePage() {
       }
     : undefined;
 
+  if (article.space_key === 'guides') {
+    return (
+      <>
+        <SEOHead
+          title={article.title}
+          description={article.summary}
+          keywords={article.tags?.join(', ')}
+          url={`/wiki/articles/${article.slug}`}
+          type="article"
+          author={article.author || undefined}
+          publishedTime={article.created_at}
+          modifiedTime={article.updated_at}
+          section={article.category_name || undefined}
+          tags={article.tags || undefined}
+          jsonLd={jsonLd}
+          allowAI={true}
+        />
+        <WikiGuideJourney article={article} content={articleContent} onBack={() => navigate('/wiki')} />
+
+        <div className="mx-auto mb-10 flex max-w-4xl flex-col items-center justify-between gap-4 rounded-2xl border border-white/10 bg-white/5 p-5 sm:flex-row md:px-6">
+          <div className="text-sm font-medium text-slate-400">{t('wikiArticlePage.wasHelpful')}</div>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={handleHelpfulClick}
+              disabled={isHelpfulLoading}
+              className={`flex items-center gap-2 rounded-xl border px-5 py-2.5 font-medium transition ${feedbackStats?.user_marked_helpful ? 'border-emerald-400/40 bg-emerald-500/20 text-emerald-200' : 'border-emerald-400/25 bg-emerald-500/10 text-emerald-200 hover:bg-emerald-500/20'} ${isHelpfulLoading ? 'cursor-not-allowed opacity-50' : ''}`}
+            >
+              {feedbackStats?.user_marked_helpful ? <Check className="h-4 w-4" /> : <ThumbsUp className="h-4 w-4" />}
+              <span>{feedbackStats?.user_marked_helpful ? t('wikiArticlePage.marked') : t('wikiArticlePage.helpful')}</span>
+            </button>
+            {user && (
+              <button type="button" onClick={() => setShowFeedbackModal(true)} className="flex items-center gap-2 rounded-xl border border-white/15 bg-white/5 px-5 py-2.5 font-medium text-slate-300 transition hover:bg-white/10 hover:text-white">
+                <MessageSquare className="h-4 w-4" />
+                <span>{t('wikiArticlePage.leaveFeedback')}</span>
+              </button>
+            )}
+          </div>
+        </div>
+
+        <WikiFeedbackModal
+          isOpen={showFeedbackModal}
+          onClose={() => setShowFeedbackModal(false)}
+          articleSlug={article.slug}
+          articleTitle={article.title}
+        />
+      </>
+    );
+  }
+
   return (
     <>
       {article && (
@@ -230,9 +280,9 @@ export function WikiArticlePage() {
             {/* Article Header */}
             <div className="mb-8">
               <div className="mb-4 flex flex-wrap items-center gap-2">
-                <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-sm ${article.space_key === 'guides' ? 'bg-cyan-500/15 text-cyan-200' : 'bg-purple-500/15 text-purple-200'}`}>
-                  {article.space_key === 'guides' ? <Compass className="h-3.5 w-3.5" /> : <LibraryBig className="h-3.5 w-3.5" />}
-                  {article.space_key === 'guides' ? t('wikiPage.guideBadge') : t('wikiPage.knowledgeBadge')}
+                <span className="inline-flex items-center gap-2 rounded-full bg-purple-500/15 px-3 py-1 text-sm text-purple-200">
+                  <LibraryBig className="h-3.5 w-3.5" />
+                  {t('wikiPage.knowledgeBadge')}
                 </span>
                 {article.category_name && (
                   <span className="inline-flex items-center gap-2 px-3 py-1 bg-blue-500/20 text-blue-300 rounded-full text-sm">

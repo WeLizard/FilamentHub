@@ -4,6 +4,7 @@ import ReactMarkdown from 'react-markdown';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import remarkGfm from 'remark-gfm';
 
+import { wikiAPI } from '../../api/client';
 import { safeStorage } from '../../utils/storage';
 import { generateHeadingId } from './TableOfContents';
 
@@ -11,6 +12,7 @@ interface WikiContentRendererProps {
   content: string;
   className?: string;
   taskStorageKey?: string;
+  privateMedia?: boolean;
 }
 
 const SyntaxHighlighter = React.lazy(() => import('react-syntax-highlighter').then(
@@ -79,6 +81,43 @@ function MermaidDiagram({ chart }: { chart: string }) {
   return <div ref={ref} className="mermaid my-6 overflow-x-auto rounded-xl border border-white/10 bg-black/10 p-4" />;
 }
 
+function AuthenticatedWikiImage({
+  src,
+  alt,
+  ...rest
+}: React.ComponentPropsWithoutRef<'img'>) {
+  const [objectUrl, setObjectUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!src) return;
+    let active = true;
+    let createdUrl: string | null = null;
+    void wikiAPI.getMediaBlob(src)
+      .then((blob) => {
+        if (!active) return;
+        createdUrl = URL.createObjectURL(blob);
+        setObjectUrl(createdUrl);
+      })
+      .catch(() => {
+        if (active) setObjectUrl(null);
+      });
+    return () => {
+      active = false;
+      if (createdUrl) URL.revokeObjectURL(createdUrl);
+    };
+  }, [src]);
+
+  return (
+    <img
+      src={objectUrl || undefined}
+      alt={alt || ''}
+      loading="lazy"
+      aria-busy={!objectUrl}
+      {...rest}
+    />
+  );
+}
+
 function textFromChildren(children: React.ReactNode): string {
   return Children.toArray(children)
     .map((child) => {
@@ -118,7 +157,12 @@ const ARTICLE_PROSE = `prose prose-lg max-w-none break-words text-slate-200
   [&_img]:my-6 [&_img]:h-auto [&_img]:max-w-full [&_img]:rounded-xl [&_img]:shadow-xl
   [&_hr]:my-8 [&_hr]:border-white/15`;
 
-export function WikiContentRenderer({ content, className = '', taskStorageKey }: WikiContentRendererProps) {
+export function WikiContentRenderer({
+  content,
+  className = '',
+  taskStorageKey,
+  privateMedia = false,
+}: WikiContentRendererProps) {
   const [checkboxStates, setCheckboxStates] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
@@ -174,7 +218,10 @@ export function WikiContentRenderer({ content, className = '', taskStorageKey }:
       );
     },
     img(props: React.ComponentPropsWithoutRef<'img'> & ExtraProps) {
-      const { src, alt, ...rest } = props;
+      const { src, alt, node: _node, ...rest } = props;
+      if (privateMedia && src?.startsWith('/api/v1/wiki/media/')) {
+        return <AuthenticatedWikiImage src={src} alt={alt || ''} {...rest} />;
+      }
       return <img src={src} alt={alt || ''} loading="lazy" {...rest} />;
     },
     a(props: React.ComponentPropsWithoutRef<'a'> & ExtraProps) {
@@ -230,7 +277,7 @@ export function WikiContentRenderer({ content, className = '', taskStorageKey }:
         </li>
       );
     },
-  }), [checkboxStates, taskStorageKey]);
+  }), [checkboxStates, privateMedia, taskStorageKey]);
 
   return (
     <div className={`${ARTICLE_PROSE} ${className}`}>

@@ -44,6 +44,17 @@ class WikiSpaceResponse(BaseModel):
     allows_community_authors: bool
 
 
+class WikiMediaUploadResponse(BaseModel):
+    """Sanitized image ready to embed in Wiki Markdown."""
+
+    id: str
+    url: str
+    mime_type: Literal["image/webp"] = "image/webp"
+    width: int
+    height: int
+    size_bytes: int
+
+
 class WikiArticleDraftCreate(BaseModel):
     """Create an article and its first revision."""
 

@@ -304,7 +304,7 @@ export function WikiAuthoringModal({
                 {summary && <p className="mt-3 text-sm leading-6 text-slate-400">{summary}</p>}
               </div>
               {previewContent ? (
-                <WikiContentRenderer content={previewContent} className="text-sm" />
+                <WikiContentRenderer content={previewContent} className="text-sm" privateMedia />
               ) : (
                 <div className="rounded-2xl border border-dashed border-white/15 px-5 py-12 text-center text-sm text-slate-500">{t('wikiAuthoring.previewEmpty')}</div>
               )}

@@ -1,8 +1,16 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { WikiContentRenderer } from './WikiContentRenderer';
+
+const { getMediaBlobMock } = vi.hoisted(() => ({ getMediaBlobMock: vi.fn() }));
+
+vi.mock('../../api/client', () => ({
+  wikiAPI: {
+    getMediaBlob: getMediaBlobMock,
+  },
+}));
 
 vi.mock('mermaid', () => ({
   default: {
@@ -20,7 +28,10 @@ vi.mock('react-syntax-highlighter/dist/esm/styles/prism', () => ({
 }));
 
 describe('WikiContentRenderer', () => {
-  beforeEach(() => window.localStorage.clear());
+  beforeEach(() => {
+    window.localStorage.clear();
+    getMediaBlobMock.mockReset();
+  });
 
   it('preserves authored task state and persists a reader override', () => {
     const { unmount } = render(
@@ -46,5 +57,26 @@ describe('WikiContentRenderer', () => {
       />,
     );
     expect(screen.getByRole('checkbox', { name: 'Printed' })).toBeChecked();
+  });
+
+  it('loads staged managed media through the authenticated API in private previews', async () => {
+    const objectUrl = 'blob:wiki-preview';
+    getMediaBlobMock.mockResolvedValue(new Blob(['webp'], { type: 'image/webp' }));
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue(objectUrl);
+    const revokeObjectUrl = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
+
+    const mediaUrl = `/api/v1/wiki/media/${'a'.repeat(32)}.webp`;
+    const { unmount } = render(
+      <WikiContentRenderer
+        content={`![Print result](${mediaUrl})`}
+        privateMedia
+      />,
+    );
+
+    await waitFor(() => expect(screen.getByRole('img', { name: 'Print result' })).toHaveAttribute('src', objectUrl));
+    expect(getMediaBlobMock).toHaveBeenCalledWith(mediaUrl);
+
+    unmount();
+    expect(revokeObjectUrl).toHaveBeenCalledWith(objectUrl);
   });
 });

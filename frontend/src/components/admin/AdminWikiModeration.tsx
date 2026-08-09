@@ -102,7 +102,7 @@ function ModerationModal({ revision, onClose }: { revision: WikiRevision; onClos
             <h4 className="mb-4 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
               {currentContent ? t('wikiDiff.proposedPreview') : t('adminWiki.moderation.newArticle')}
             </h4>
-            <WikiContentRenderer content={revision.content} className="text-sm" />
+            <WikiContentRenderer content={revision.content} className="text-sm" privateMedia />
           </section>
 
           {revision.peer_reviews.length > 0 && (

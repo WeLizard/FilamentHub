@@ -32,6 +32,7 @@ from app.models.user_spool import UserSpool
 from app.models.wiki_article import WikiArticle
 from app.models.wiki_revision import WikiRevision, WikiRevisionReview, WikiRevisionStatus
 from app.services.email_service import outbound_send_is_stale
+from app.services.wiki_media_service import delete_unpublished_user_wiki_media
 
 logger = logging.getLogger(__name__)
 
@@ -338,6 +339,7 @@ async def delete_user_account(
     # Private Wiki work is owned user data. Remove unpublished articles and
     # non-published revisions; preserve published knowledge without personal
     # attribution so public history remains intact.
+    await delete_unpublished_user_wiki_media(db, user_id)
     private_article_ids = (
         await db.scalars(
             select(WikiArticle.id).where(

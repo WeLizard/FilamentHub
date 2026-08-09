@@ -19,6 +19,7 @@ from app.db.session import AsyncSessionLocal
 from app.models.wiki_article import WikiArticle, WikiArticleStatus
 from app.models.wiki_category import WikiCategory
 from app.services.wiki_markdown import derive_wiki_summary
+from app.services.wiki_sync_service import sync_wiki_from_markdown
 
 
 def parse_frontmatter(content: str) -> tuple[dict[str, Any], str]:
@@ -171,48 +172,14 @@ async def sync_article(
 
 
 async def sync_all_articles() -> None:
-    """Sync all Markdown files from wiki_content/ to database."""
-    # Get path relative to backend directory
-    script_dir = Path(__file__).parent
-    backend_dir = script_dir.parent.parent  # backend/app/scripts -> backend
-    wiki_content_path = backend_dir / "wiki_content"
-
-    # Debug: print paths
-    print(f"Script dir: {script_dir}")
-    print(f"Backend dir: {backend_dir}")
-    print(f"Wiki content path: {wiki_content_path}")
-    print(f"Wiki content exists: {wiki_content_path.exists()}")
-
-    if not wiki_content_path.exists():
-        print(f"❌ Wiki content directory not found: {wiki_content_path}")
-        return
-
-    print(f"📚 Syncing Wiki content from {wiki_content_path}\n")
-
-    # Find all .md files
-    md_files = list(wiki_content_path.rglob("*.md"))
-
-    if not md_files:
-        print("⚠️  No Markdown files found in wiki_content/")
-        return
-
-    print(f"Found {len(md_files)} Markdown files\n")
-
+    """Run the canonical versioned Wiki synchronization service."""
     async with AsyncSessionLocal() as db:
-        for file_path in sorted(md_files):
-            print(f"📄 Processing: {file_path.relative_to(wiki_content_path)}")
+        result = await sync_wiki_from_markdown(db)
 
-            try:
-                content = file_path.read_text(encoding="utf-8")
-                metadata, markdown_content = parse_frontmatter(content)
-
-                await sync_article(db, file_path, markdown_content, metadata)
-
-            except Exception as e:
-                print(f"  ❌ Error processing {file_path.name}: {e}")
-                continue
-
-    print(f"\n✅ Sync complete! Processed {len(md_files)} files")
+    print(result["message"])
+    for detail in result["details"]:
+        reason = f": {detail['reason']}" if detail.get("reason") else ""
+        print(f"[{detail['status']}] {detail['file']}{reason}")
 
 
 async def main() -> None:

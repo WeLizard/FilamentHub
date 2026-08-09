@@ -57,17 +57,27 @@ export function WikiPage() {
   const languageCode = i18n.resolvedLanguage?.split('-')[0];
   const currentLanguage: WikiLanguage = languageCode === 'ru' || languageCode === 'zh' ? languageCode : 'en';
   const guideJourneySteps = [
-    { key: 'shelf', icon: Store },
-    { key: 'catalog', icon: PackageOpen },
-    { key: 'spools', icon: Boxes },
-    { key: 'slicer', icon: SlidersHorizontal },
-    { key: 'printer', icon: Printer },
-    { key: 'production', icon: Calculator },
+    { key: 'shelf', icon: Store, step: 0 },
+    { key: 'catalog', icon: PackageOpen, step: 1 },
+    { key: 'spools', icon: Boxes, step: 2 },
+    { key: 'slicer', icon: SlidersHorizontal, step: 3 },
+    { key: 'printer', icon: Printer, step: 5 },
+    { key: 'production', icon: Calculator, step: 7 },
   ];
-  const mainGuide = guideArticles[0];
-  const additionalGuides = guideArticles.slice(1, 4);
+  const primaryGuideSlug: Record<WikiLanguage, string> = {
+    ru: 'from-spool-to-print',
+    en: 'from-spool-to-print-en',
+    zh: 'from-spool-to-print-zh',
+  };
+  const mainGuide = guideArticles.find((article) => article.slug === primaryGuideSlug[currentLanguage]) ?? guideArticles[0];
+  const additionalGuides = guideArticles.filter((article) => article.id !== mainGuide?.id).slice(0, 3);
   const visiblePopularArticles = popularArticles.slice(0, 4);
   const visibleRecentArticles = recentArticles.slice(0, 5);
+
+  const openGuideAtStep = (step: number) => {
+    if (!mainGuide) return;
+    navigate(`/wiki/articles/${mainGuide.slug}?step=${step}&start=1`);
+  };
 
   const { data: ownRevisions } = useQuery({
     queryKey: ['wiki-own-revisions', user?.id],
@@ -313,21 +323,36 @@ export function WikiPage() {
             <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-300">{t('wikiPage.guidesDescription')}</p>
           </div>
 
-          <div className="relative mt-6 grid grid-cols-3 gap-1.5 rounded-2xl border border-white/10 bg-[#09172b]/50 p-2 md:grid-cols-6 md:gap-2 md:p-3">
-            {guideJourneySteps.map(({ key, icon: StepIcon }, index) => (
-              <div key={key} className="relative flex min-w-0 flex-col items-center gap-2 rounded-xl px-1 py-2 text-center md:px-2 md:py-3">
-                <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-cyan-400/10 text-cyan-200 ring-1 ring-cyan-300/15 md:h-9 md:w-9"><StepIcon className="h-4 w-4" /></span>
-                <span className="line-clamp-2 text-[10px] font-medium leading-4 text-slate-400 md:text-xs">{t(`wikiPage.journey.${key}`)}</span>
-                {index < guideJourneySteps.length - 1 && <ArrowRight className="absolute -right-2 top-5 z-10 hidden h-3.5 w-3.5 text-cyan-300/35 md:block" />}
+          <div className="relative mt-6 rounded-2xl border border-white/10 bg-[#09172b]/50 p-3 md:p-4">
+            <div className="mb-3 flex flex-wrap items-end justify-between gap-2 px-1">
+              <div>
+                <h3 className="text-sm font-semibold text-white">{t('wikiPage.chooseTask')}</h3>
+                <p className="mt-1 text-xs leading-5 text-slate-500">{t('wikiPage.chooseTaskHint')}</p>
               </div>
-            ))}
+              <span className="text-[11px] font-medium text-cyan-300/70">{t('wikiPage.openExactStep')}</span>
+            </div>
+            <div className="grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-6">
+              {guideJourneySteps.map(({ key, icon: StepIcon, step }) => (
+                <button
+                  key={key}
+                  type="button"
+                  disabled={!mainGuide}
+                  onClick={() => openGuideAtStep(step)}
+                  className="group flex min-w-0 flex-col items-start gap-2 rounded-xl border border-white/[0.07] bg-white/[0.035] px-3 py-3 text-left transition hover:-translate-y-0.5 hover:border-cyan-300/25 hover:bg-cyan-300/[0.07] disabled:cursor-not-allowed disabled:opacity-45"
+                >
+                  <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-cyan-400/10 text-cyan-200 ring-1 ring-cyan-300/15 transition group-hover:bg-cyan-400/15"><StepIcon className="h-4 w-4" /></span>
+                  <span className="line-clamp-2 text-xs font-semibold leading-4 text-slate-300 transition group-hover:text-white">{t(`wikiPage.journey.${key}`)}</span>
+                  <span className="line-clamp-2 text-[10px] leading-4 text-slate-500">{t(`wikiPage.journeyDescriptions.${key}`)}</span>
+                </button>
+              ))}
+            </div>
           </div>
 
           {mainGuide ? (
             <button type="button" onClick={() => navigate(`/wiki/articles/${mainGuide.slug}`)} className="group relative mt-5 w-full overflow-hidden rounded-2xl border border-white/10 bg-[#0b1730]/75 p-5 text-left transition hover:-translate-y-0.5 hover:border-cyan-300/30 hover:bg-[#10203d] md:p-6">
               <span className="absolute inset-y-0 left-0 w-1.5 bg-gradient-to-b from-cyan-300 via-blue-400 to-purple-500" />
               <div className="pr-10">
-                <span className="text-xs font-semibold uppercase tracking-[0.14em] text-cyan-300">{t('wikiPage.startHere')}</span>
+                <span className="text-xs font-semibold uppercase tracking-[0.14em] text-cyan-300">{t('wikiPage.fullJourney')}</span>
                 <h3 className="mt-2 text-lg font-semibold text-white transition group-hover:text-cyan-100 md:text-xl">{mainGuide.title}</h3>
                 <p className="mt-2 line-clamp-2 text-sm leading-6 text-slate-400">{plainWikiSummary(mainGuide.summary)}</p>
               </div>

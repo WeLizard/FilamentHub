@@ -1,4 +1,4 @@
-"""File upload service for brand requests."""
+"""Validation and normalization helpers for uploaded files."""
 
 import json
 import logging
@@ -33,8 +33,12 @@ IMAGE_FORMATS_BY_EXTENSION = {
 }
 MAX_AVATAR_SOURCE_PIXELS = 25_000_000
 MAX_BRAND_LOGO_SOURCE_PIXELS = 25_000_000
+MAX_WIKI_IMAGE_SOURCE_PIXELS = 25_000_000
+MAX_WIKI_IMAGE_EDGE = 2400
+MAX_WIKI_IMAGE_OUTPUT_BYTES = 2 * 1024 * 1024
 AVATAR_ALLOWED_EXTENSIONS = frozenset(IMAGE_FORMATS_BY_EXTENSION)
 BRAND_LOGO_ALLOWED_EXTENSIONS = frozenset(IMAGE_FORMATS_BY_EXTENSION)
+WIKI_IMAGE_ALLOWED_EXTENSIONS = frozenset({".png", ".jpg", ".jpeg", ".webp"})
 
 
 def _load_validated_raster_image(
@@ -43,6 +47,7 @@ def _load_validated_raster_image(
     *,
     pixel_budget: int,
     context: str,
+    reject_animation: bool = False,
 ) -> Image.Image:
     """Load and validate a raster image before normalization.
 
@@ -56,7 +61,10 @@ def _load_validated_raster_image(
         raise_error(status.HTTP_400_BAD_REQUEST, ERR_FILE_CONTENT_MISMATCH, {"ext": file_ext})
 
     try:
-        with Image.open(BytesIO(content)) as image:
+        # Restrict decoder selection to the format implied by the allow-listed
+        # extension. The format check below still fails closed if the payload
+        # and extension disagree.
+        with Image.open(BytesIO(content), formats=[expected_format]) as image:
             if image.format != expected_format:
                 raise_error(status.HTTP_400_BAD_REQUEST, ERR_FILE_CONTENT_MISMATCH, {"ext": file_ext})
             if image.width <= 0 or image.height <= 0:
@@ -66,6 +74,14 @@ def _load_validated_raster_image(
                     status.HTTP_400_BAD_REQUEST,
                     ERR_FILE_SIZE_EXCEEDED,
                     {"size_mb": "pixel budget", "max_mb": f"{pixel_budget} pixels"},
+                )
+
+            if reject_animation and int(getattr(image, "n_frames", 1)) != 1:
+                from app.core.errors import ERR_WIKI_MEDIA_ANIMATED_NOT_ALLOWED
+
+                raise_error(
+                    status.HTTP_400_BAD_REQUEST,
+                    ERR_WIKI_MEDIA_ANIMATED_NOT_ALLOWED,
                 )
 
             image.load()
@@ -179,6 +195,59 @@ def normalize_avatar_upload(content: bytes, file_ext: str, size: int = 256) -> t
     output = BytesIO()
     resized.save(output, "WEBP", quality=82, method=6)
     return output.getvalue(), ".webp"
+
+
+def normalize_wiki_image_upload(
+    content: bytes,
+    file_ext: str,
+) -> tuple[bytes, int, int]:
+    """Decode an untrusted raster image and rebuild it as a static WebP.
+
+    Only newly encoded pixels leave this function. Original filenames, EXIF,
+    XMP, ICC profiles and any bytes appended to the source are discarded.
+    """
+
+    image = _load_validated_raster_image(
+        content,
+        file_ext,
+        pixel_budget=MAX_WIKI_IMAGE_SOURCE_PIXELS,
+        context="Rejected invalid Wiki image upload",
+        reject_animation=True,
+    )
+    has_alpha = "A" in image.getbands() or (
+        image.mode == "P" and "transparency" in image.info
+    )
+    normalized = image.convert("RGBA" if has_alpha else "RGB")
+    if max(normalized.size) > MAX_WIKI_IMAGE_EDGE:
+        normalized.thumbnail(
+            (MAX_WIKI_IMAGE_EDGE, MAX_WIKI_IMAGE_EDGE),
+            Image.Resampling.LANCZOS,
+        )
+
+    encoded = b""
+    for quality in (84, 78, 72, 66):
+        output = BytesIO()
+        normalized.save(
+            output,
+            "WEBP",
+            quality=quality,
+            method=6,
+            exif=b"",
+            xmp=b"",
+            icc_profile=None,
+        )
+        encoded = output.getvalue()
+        if len(encoded) <= MAX_WIKI_IMAGE_OUTPUT_BYTES:
+            return encoded, normalized.width, normalized.height
+
+    raise_error(
+        status.HTTP_400_BAD_REQUEST,
+        ERR_FILE_SIZE_EXCEEDED,
+        {
+            "size_mb": f"{len(encoded) / (1024 * 1024):.2f}",
+            "max_mb": f"{MAX_WIKI_IMAGE_OUTPUT_BYTES / (1024 * 1024):.0f}",
+        },
+    )
 
 
 def get_allowed_extensions() -> list[str]:

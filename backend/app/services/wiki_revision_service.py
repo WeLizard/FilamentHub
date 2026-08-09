@@ -40,6 +40,10 @@ from app.models.wiki_revision import (
 )
 from app.models.wiki_space import WikiSpace
 from app.services.slug_service import generate_unique_slug
+from app.services.wiki_media_service import (
+    publish_referenced_wiki_media,
+    validate_wiki_media_references,
+)
 
 ACTIVE_AUTHOR_STATUSES = (
     WikiRevisionStatus.DRAFT,
@@ -218,6 +222,7 @@ async def create_article_with_revision(
         raise_error(status.HTTP_403_FORBIDDEN, ERR_WIKI_GUIDES_EDITOR_ONLY)
     if publish and not editor:
         raise_error(status.HTTP_403_FORBIDDEN, ERR_ACCESS_DENIED)
+    await validate_wiki_media_references(db, content=content, user=user)
 
     if slug is None:
         slug = await generate_unique_slug(
@@ -275,6 +280,7 @@ async def create_article_with_revision(
 
     if publish:
         now = datetime.now(timezone.utc)
+        await publish_referenced_wiki_media(db, content)
         _publish_revision_snapshot(
             article,
             revision,
@@ -316,6 +322,9 @@ async def create_revision(
     source_content = base.content if base is not None else article.content
     source_tags = base.tags if base is not None else article.tags
 
+    revision_content = changes.get("content", source_content)
+    await validate_wiki_media_references(db, content=revision_content, user=user)
+
     revision = WikiRevision(
         article_id=article.id,
         revision_number=await _next_revision_number(db, article.id),
@@ -329,7 +338,7 @@ async def create_revision(
         ),
         title=changes.get("title", source_title),
         summary=changes.get("summary", source_summary),
-        content=changes.get("content", source_content),
+        content=revision_content,
         tags=changes["tags"] if "tags" in changes else source_tags,
         edit_summary=changes.get("edit_summary"),
     )
@@ -350,6 +359,13 @@ async def update_owned_draft(
         raise_error(status.HTTP_403_FORBIDDEN, ERR_ACCESS_DENIED)
     if revision.status != WikiRevisionStatus.DRAFT:
         raise_error(status.HTTP_409_CONFLICT, ERR_WIKI_REVISION_NOT_EDITABLE)
+
+    candidate_content = changes.get("content", revision.content)
+    await validate_wiki_media_references(
+        db,
+        content=candidate_content,
+        user=user,
+    )
 
     for field in ("title", "summary", "content", "tags", "edit_summary"):
         if field in changes:
@@ -506,6 +522,7 @@ async def moderate_revision(
     article.reviewed_at = now
 
     if decision == "publish":
+        await publish_referenced_wiki_media(db, revision.content)
         _publish_revision_snapshot(
             article,
             revision,
@@ -559,6 +576,7 @@ async def publish_editorial_snapshot(
     article.content = content
     article.tags = tags
     if publish:
+        await publish_referenced_wiki_media(db, content)
         _publish_revision_snapshot(
             article,
             revision,
