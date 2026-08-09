@@ -72,12 +72,15 @@ class CrmCustomer(Base):
     user_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    name: Mapped[str] = mapped_column(String(255), nullable=False)
-    contact_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    email: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    phone: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    inn: Mapped[str | None] = mapped_column(String(32), nullable=True)
-    address: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    # Customer fields are encrypted before persistence. Fernet ciphertext is
+    # substantially longer than the validated plaintext, so database storage
+    # must not reuse the public input limits.
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    contact_name: Mapped[str | None] = mapped_column(Text, nullable=True)
+    email: Mapped[str | None] = mapped_column(Text, nullable=True)
+    phone: Mapped[str | None] = mapped_column(Text, nullable=True)
+    inn: Mapped[str | None] = mapped_column(Text, nullable=True)
+    address: Mapped[str | None] = mapped_column(Text, nullable=True)
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
     archived: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(

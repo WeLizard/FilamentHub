@@ -263,6 +263,24 @@ async def test_customer_details_are_unreadable_in_the_database(
     assert "7701234567" not in stored.inn
 
 
+def test_encrypted_customer_fields_have_unbounded_storage() -> None:
+    """Plaintext validation limits must not constrain encrypted storage."""
+    from sqlalchemy import Text
+
+    from app.models.crm import CrmCustomer
+
+    for column_name in (
+        "name",
+        "contact_name",
+        "email",
+        "phone",
+        "inn",
+        "address",
+        "note",
+    ):
+        assert isinstance(CrmCustomer.__table__.c[column_name].type, Text), column_name
+
+
 @pytest.mark.asyncio
 async def test_customer_search_still_finds_what_the_database_cannot_read(
     auth_client, db_session: AsyncSession
