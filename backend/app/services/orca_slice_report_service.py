@@ -41,26 +41,46 @@ async def _resolve_printer(
     if not printer_settings_id:
         return None, None
 
-    profile_id = await db.scalar(
-        select(PrinterProfile.id)
-        .where(
-            PrinterProfile.owner_user_id == user_id,
-            PrinterProfile.setting_id == printer_settings_id,
+    linked_rows = (
+        await db.execute(
+            select(
+                PrinterProfile.id,
+                UserPrinterProfileLink.physical_printer_id,
+            )
+            .join(
+                UserPrinterProfileLink,
+                UserPrinterProfileLink.printer_profile_id == PrinterProfile.id,
+            )
+            .where(
+                UserPrinterProfileLink.user_id == user_id,
+                PrinterProfile.setting_id == printer_settings_id,
+            )
         )
-        .order_by(PrinterProfile.id.desc())
-    )
-    if profile_id is None:
-        return None, None
+    ).all()
+    if linked_rows:
+        profile_ids = {row.id for row in linked_rows}
+        physical_printer_ids = {row.physical_printer_id for row in linked_rows}
+        profile_id = next(iter(profile_ids)) if len(profile_ids) == 1 else None
+        physical_printer_id = (
+            next(iter(physical_printer_ids))
+            if len(physical_printer_ids) == 1
+            else None
+        )
+        return physical_printer_id, profile_id
 
-    physical_printer_id = await db.scalar(
-        select(UserPrinterProfileLink.physical_printer_id)
-        .where(
-            UserPrinterProfileLink.user_id == user_id,
-            UserPrinterProfileLink.printer_profile_id == profile_id,
+    owned_profile_ids = (
+        await db.execute(
+            select(PrinterProfile.id)
+            .where(
+                PrinterProfile.owner_user_id == user_id,
+                PrinterProfile.setting_id == printer_settings_id,
+            )
+            .order_by(PrinterProfile.id.desc())
         )
-        .order_by(UserPrinterProfileLink.id)
-    )
-    return physical_printer_id, profile_id
+    ).scalars().all()
+    profile_ids = set(owned_profile_ids)
+    profile_id = next(iter(profile_ids)) if len(profile_ids) == 1 else None
+    return None, profile_id
 
 
 async def record_slice_reports(

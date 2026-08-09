@@ -52,12 +52,12 @@ async def test_the_same_slice_arriving_twice_is_stored_once(
 
 
 @pytest.mark.asyncio
-async def test_a_slice_finds_the_printer_through_its_configuration(
+async def test_a_slice_only_selects_an_unambiguous_printer_configuration(
     auth_client: AsyncClient,
     auth_user: User,
     db_session: AsyncSession,
 ) -> None:
-    """The preset named in the G-code is what ties a slice to a real machine."""
+    """An official preset can identify one machine, but never guesses between two."""
     printer = UserPrinterDevice(
         user_id=auth_user.id,
         name="Voron at home",
@@ -65,13 +65,13 @@ async def test_a_slice_finds_the_printer_through_its_configuration(
         supports_hh=False,
     )
     profile = PrinterProfile(
-        owner_user_id=auth_user.id,
-        is_official=False,
+        owner_user_id=None,
+        is_official=True,
         name="Voron 2.4 350 0.4 nozzle",
         slug="voron-2-4-350-0-4-slice-test",
         setting_id="Voron 2.4 350 0.4 nozzle",
         active=True,
-        source="orcaslicer",
+        source="catalog",
     )
     db_session.add_all([printer, profile])
     await db_session.flush()
@@ -91,6 +91,33 @@ async def test_a_slice_finds_the_printer_through_its_configuration(
     assert reported["physical_printer_name"] == "Voron at home"
     assert reported["printer_profile_id"] == profile.id
     assert reported["source_key"] == "9f1c2ad4e7b30512"
+
+    second_printer = UserPrinterDevice(
+        user_id=auth_user.id,
+        name="Voron at work",
+        device_fingerprint=None,
+        supports_hh=False,
+    )
+    db_session.add(second_printer)
+    await db_session.flush()
+    db_session.add(
+        UserPrinterProfileLink(
+            user_id=auth_user.id,
+            physical_printer_id=second_printer.id,
+            printer_profile_id=profile.id,
+        )
+    )
+    await db_session.commit()
+
+    await auth_client.post(
+        "/api/v1/orcaslicer/slices",
+        json={"slices": [_slice(source_key="second-printer-slice")]},
+    )
+
+    ambiguous = (await auth_client.get("/api/v1/orcaslicer/slices")).json()[0]
+    assert ambiguous["physical_printer_id"] is None
+    assert ambiguous["physical_printer_name"] is None
+    assert ambiguous["printer_profile_id"] == profile.id
 
 
 @pytest.mark.asyncio
