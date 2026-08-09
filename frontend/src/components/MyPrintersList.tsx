@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { Download, Loader2, Plus, Printer, RefreshCw, Settings, Wifi } from 'lucide-react';
+import { Download, Loader2, Plus, RefreshCw, Settings, Wifi } from 'lucide-react';
 import {
   physicalPrintersAPI,
   type PhysicalPrinter,
@@ -20,6 +20,7 @@ import {
 } from '../utils/pluginBridge';
 import { downloadBlob, safeDownloadStem } from '../utils/download';
 import { translateApiError } from '../utils/translateApiError';
+import { LayeredPrinterIcon } from './icons/LayeredPrinterIcon';
 
 interface MyPrintersListProps {
   /** The user's Orca machine profiles, shown under the printer they belong to. */
@@ -152,7 +153,7 @@ export function MyPrintersList({
         <p className="text-sm text-amber-300/80">{t('myPrinters.loadError')}</p>
       ) : list.length === 0 ? (
         <div className="rounded-xl border border-dashed border-white/15 p-6 text-center">
-          <Printer className="w-7 h-7 text-gray-500 mx-auto mb-2" />
+          <LayeredPrinterIcon className="w-7 h-7 text-gray-500 mx-auto mb-2" />
           <p className="text-sm text-gray-400">{t('myPrinters.empty')}</p>
           <p className="mt-1 text-xs text-gray-500">{t('myPrinters.emptyHint')}</p>
         </div>
@@ -163,7 +164,7 @@ export function MyPrintersList({
             return (
               <div key={printer.id} className="bg-white/5 rounded-xl border border-white/10 p-4 flex flex-col gap-3">
                 <div className="flex items-center gap-2 min-w-0">
-                  <Printer className="w-5 h-5 text-purple-400 flex-shrink-0" />
+                  <LayeredPrinterIcon className="w-5 h-5 text-purple-400 flex-shrink-0" />
                   <h4 className="flex-1 text-sm font-semibold text-white truncate">{printer.name}</h4>
                   {pluginCanInstallBundle && <button
                     type="button"

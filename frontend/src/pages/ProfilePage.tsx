@@ -42,6 +42,7 @@ import {
   Upload,
   UsersRound, History } from 'lucide-react';
 import { Printer3DIcon } from '../components/icons/Printer3DIcon';
+import { FilamentSpoolIcon } from '../components/icons/FilamentSpoolIcon';
 import { useAuth } from '../contexts/AuthContext';
 import { useHeaderVisible } from '../hooks/useHeaderVisible';
 import { useUserCurrency } from '../hooks/useUserCurrency';
@@ -139,8 +140,15 @@ export const ProfilePage: React.FC = () => {
     try {
       await authAPI.uploadAvatar(file);
       await refreshUser();
-    } catch {
-      // ошибка загрузки — оставляем прежний аватар
+      toast.success(t('profilePage.avatarUploadSuccess'));
+    } catch (error: any) {
+      toast.error(
+        translateApiError(
+          t,
+          error?.response?.data?.detail,
+          t('profilePage.avatarUploadError'),
+        ),
+      );
     } finally {
       setIsUploadingAvatar(false);
     }
@@ -821,7 +829,7 @@ export const ProfilePage: React.FC = () => {
       {/* Header — компактная строка: аватар + имя·роль + ачивки (без крупного «Мой профиль») */}
       <div className="mb-4 md:mb-6 min-[1140px]:!-mt-16">
         <div className="flex items-center gap-3 mb-3 md:mb-4">
-          <label className="group/avatar relative w-11 h-11 md:w-14 md:h-14 shrink-0 rounded-xl overflow-hidden cursor-pointer shadow-lg shadow-purple-500/25" title={t('profilePage.avatarUpload')}>
+          <label htmlFor="profile-avatar-upload" className="group/avatar relative w-11 h-11 md:w-14 md:h-14 shrink-0 rounded-xl overflow-hidden cursor-pointer shadow-lg shadow-purple-500/25" title={t('profilePage.avatarUpload')}>
             {user.avatar_url ? (
               <img src={user.avatar_url} alt={user.full_name || user.username} className="w-full h-full object-cover" />
             ) : (
@@ -832,8 +840,15 @@ export const ProfilePage: React.FC = () => {
             <span className="absolute inset-0 flex items-center justify-center bg-black/45 opacity-0 group-hover/avatar:opacity-100 transition-opacity">
               {isUploadingAvatar ? <Loader2 className="w-4 h-4 text-white animate-spin" /> : <Camera className="w-4 h-4 text-white" />}
             </span>
-            <input type="file" accept=".png,.jpg,.jpeg,.bmp,.webp" onChange={handleAvatarUpload} className="hidden" disabled={isUploadingAvatar} />
           </label>
+          <input
+            id="profile-avatar-upload"
+            type="file"
+            accept=".png,.jpg,.jpeg,.bmp,.webp"
+            onChange={handleAvatarUpload}
+            className="sr-only"
+            disabled={isUploadingAvatar}
+          />
           <div className="min-w-0">
             <p className="text-base md:text-xl font-bold text-white truncate">{user.full_name || user.username}</p>
             {identityLine && (
@@ -861,7 +876,7 @@ export const ProfilePage: React.FC = () => {
               { id: 'dashboard' as const, label: t('profilePage.tabs.dashboard'), shortLabel: t('profilePage.tabs.dashboardShort'), icon: Play },
               { id: 'presets' as const, label: t('profilePage.tabs.presets'), shortLabel: t('profilePage.tabs.presetsShort'), icon: Settings },
               { id: 'printer-profiles' as const, label: t('profilePage.tabs.printers'), shortLabel: t('profilePage.tabs.printersShort'), icon: Printer3DIcon },
-              { id: 'spools' as const, label: t('profilePage.tabs.spools'), shortLabel: t('profilePage.tabs.spoolsShort'), icon: Package },
+              { id: 'spools' as const, label: t('profilePage.tabs.spools'), shortLabel: t('profilePage.tabs.spoolsShort'), icon: FilamentSpoolIcon },
               {
                 id: 'calculator-pro' as const,
                 label: t('profilePage.tabs.calculatorPro'),
@@ -2136,12 +2151,7 @@ const SpoolForm: React.FC<SpoolFormProps> = ({
   );
   const priceCurrency = currencySymbol(priceCurrencyCode);
 
-  const { data: filamentsData } = useQuery({
-    queryKey: ['spool-form-filaments'],
-    queryFn: () => filamentsAPI.list({ page: 1, size: 100, active_only: true }),
-  });
-
-  const { data: presetFilamentIds = [] } = useQuery({
+  const { data: presetFilaments = [] } = useQuery({
     queryKey: ['spool-form-user-preset-filaments', user?.id],
     queryFn: async () => {
       const response = await presetsAPI.list({
@@ -2156,7 +2166,7 @@ const SpoolForm: React.FC<SpoolFormProps> = ({
           uniqueIds.add(preset.filament_id);
         }
       });
-      return Array.from(uniqueIds);
+      return Promise.all(Array.from(uniqueIds, (filamentId) => filamentsAPI.get(filamentId)));
     },
     enabled: !!user?.id,
   });
@@ -2197,8 +2207,7 @@ const SpoolForm: React.FC<SpoolFormProps> = ({
   }, [initialFilament, initialSource, mode]);
 
   const filamentOptions = useMemo(() => {
-    const allowedIds = new Set(presetFilamentIds);
-    const list = [...(filamentsData?.items ?? [])].filter((item) => allowedIds.has(item.id));
+    const list = [...presetFilaments];
     if (scannedFilament && !list.some((item) => item.id === scannedFilament.id)) {
       list.unshift(scannedFilament);
     }
@@ -2234,7 +2243,7 @@ const SpoolForm: React.FC<SpoolFormProps> = ({
       });
     }
     return list;
-  }, [filamentsData?.items, presetFilamentIds, scannedFilament, spool?.filament]);
+  }, [presetFilaments, scannedFilament, spool?.filament]);
 
   useEffect(() => {
     if (!spool) {

@@ -38,6 +38,9 @@ const WikiArticlePage = lazy(() => import('./pages/WikiArticlePage').then(m => (
 const PrivacyPolicyPage = lazy(() => import('./pages/PrivacyPolicyPage').then(m => ({ default: m.PrivacyPolicyPage })));
 const SharedQuotePage = lazy(() => import('./pages/SharedQuotePage').then(m => ({ default: m.SharedQuotePage })));
 const FeedbackThreadPage = lazy(() => import('./pages/FeedbackThreadPage').then(m => ({ default: m.FeedbackThreadPage })));
+const DevUiKitPage = import.meta.env.DEV
+  ? lazy(() => import('./pages/dev/UiKitPage').then(m => ({ default: m.UiKitPage })))
+  : null;
 
 // Prefetch all lazy chunks after initial page load so navigation feels instant
 if (typeof window !== 'undefined') {
@@ -310,6 +313,18 @@ function AppContent() {
         <Route path="/brand-invite/:token" element={<BrandInvitePage />} />
         <Route path="/oauth/callback/:provider" element={<OAuthCallbackPage />} />
         <Route path="/oauth/plugin-start/:provider" element={<OAuthPluginStartPage />} />
+        {DevUiKitPage && (
+          <Route
+            path="/dev/ui-kit"
+            element={
+              <Layout>
+                <Suspense fallback={<PageLoader />}>
+                  <DevUiKitPage />
+                </Suspense>
+              </Layout>
+            }
+          />
+        )}
         <Route
           path="/quote/:uuid"
           element={

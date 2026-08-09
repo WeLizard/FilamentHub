@@ -281,7 +281,7 @@ export const Dropdown: React.FC<DropdownProps> = ({
         {isOpen && position && createPortal(
           <div
             ref={dropdownRef}
-            className={`fixed z-[9999] ${maxHeight} overflow-y-auto bg-gray-800/90 backdrop-blur-md rounded-xl border border-white/20 shadow-xl`}
+            className="fixed z-[9999] overflow-hidden rounded-xl border border-white/20 bg-gray-800/90 shadow-xl backdrop-blur-md"
             style={{
               top: `${position.top}px`,
               left: `${position.left}px`,
@@ -289,40 +289,42 @@ export const Dropdown: React.FC<DropdownProps> = ({
             }}
             onClick={(e) => e.stopPropagation()}
           >
-            {filteredOptions.length > 0 ? (
-              filteredOptions.map((option, index) => (
-                <div key={option.value}>
-                {option.group && option.group !== filteredOptions[index - 1]?.group && (
-                  <div className="px-3 pt-2 pb-1 text-[11px] uppercase tracking-wide text-gray-400">
-                    {option.group}
-                  </div>
-                )}
-                <button
-                  type="button"
-                  onClick={() => handleOptionClick(option.value)}
-                  className={`w-full ${optionSizeClasses} text-left hover:bg-white/10 transition-all text-white border-b border-white/5 last:border-b-0 flex items-center justify-between`}
-                >
-                  {renderOption ? (
-                    renderOption(option)
-                  ) : (
-                    <>
-                      <span className="flex items-center gap-2">
-                        {option.icon && <span>{option.icon}</span>}
-                        <span>{option.label}</span>
-                      </span>
-                      {(multiple ? selectedSet.has(option.value) : value === option.value) && (
-                        <Check className="w-5 h-5 text-purple-400 flex-shrink-0" />
+            <div className={`scrollbar-contained ${maxHeight} overflow-y-auto`}>
+              {filteredOptions.length > 0 ? (
+                filteredOptions.map((option, index) => (
+                  <div key={option.value}>
+                    {option.group && option.group !== filteredOptions[index - 1]?.group && (
+                      <div className="px-3 pt-2 pb-1 text-[11px] uppercase tracking-wide text-gray-400">
+                        {option.group}
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => handleOptionClick(option.value)}
+                      className={`w-full ${optionSizeClasses} text-left hover:bg-white/10 transition-all text-white border-b border-white/5 last:border-b-0 flex items-center justify-between`}
+                    >
+                      {renderOption ? (
+                        renderOption(option)
+                      ) : (
+                        <>
+                          <span className="flex items-center gap-2">
+                            {option.icon && <span>{option.icon}</span>}
+                            <span>{option.label}</span>
+                          </span>
+                          {(multiple ? selectedSet.has(option.value) : value === option.value) && (
+                            <Check className="w-5 h-5 text-purple-400 flex-shrink-0" />
+                          )}
+                        </>
                       )}
-                    </>
-                  )}
-                </button>
+                    </button>
+                  </div>
+                ))
+              ) : (
+                <div className="px-4 py-3 text-gray-400 text-sm text-center">
+                  {emptyMessage}
                 </div>
-              ))
-            ) : (
-              <div className="px-4 py-3 text-gray-400 text-sm text-center">
-                {emptyMessage}
-              </div>
-            )}
+              )}
+            </div>
           </div>,
           document.body
         )}

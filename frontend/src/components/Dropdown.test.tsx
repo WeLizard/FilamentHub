@@ -21,7 +21,13 @@ describe('Dropdown', () => {
 
     fireEvent.focus(screen.getByPlaceholderText('Все бренды'));
 
-    expect(await screen.findByRole('button', { name: 'eSUN' })).toBeInTheDocument();
+    const option = await screen.findByRole('button', { name: 'eSUN' });
+
+    expect(option).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Polymaker' })).toBeInTheDocument();
+
+    const scrollViewport = option.closest('.scrollbar-contained');
+    expect(scrollViewport).toHaveClass('overflow-y-auto');
+    expect(scrollViewport?.parentElement).toHaveClass('overflow-hidden', 'rounded-xl');
   });
 });
