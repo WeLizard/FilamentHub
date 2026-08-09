@@ -64,6 +64,146 @@ class CalculatorPrintJobRequest(BaseModel):
     quote_mode: Literal["set", "groups"] = "set"
 
 
+CalculatorPreflightStatus = Literal[
+    "ready",
+    "ready_with_change",
+    "ready_at_risk",
+    "insufficient",
+    "needs_clarification",
+    "conflict",
+]
+CalculatorRemainingStatus = Literal["known", "stale", "unknown"]
+CalculatorRemainingEvidence = Literal[
+    "measurement",
+    "provider_report",
+    "manual_update",
+    "import",
+    "intake",
+    "estimate",
+]
+
+
+class CalculatorPreflightLineRequest(BaseModel):
+    """One material demand checked against explicitly selected physical spools."""
+
+    line_id: str = Field(..., min_length=1, max_length=160)
+    job_key: str | None = Field(None, max_length=160)
+    tool_index: int | None = Field(None, ge=0)
+    label: str | None = Field(None, max_length=255)
+    weight_g: float = Field(..., gt=0)
+    length_mm: float | None = Field(None, ge=0)
+    volume_cm3: float | None = Field(None, ge=0)
+    filament_id: int | None = Field(None, ge=1)
+    spool_ids: list[int] = Field(default_factory=list, max_length=16)
+    evidence_source: Literal["gcode", "manual"] = "manual"
+    mapping_source: Literal["explicit", "automatic", "unresolved"] = "unresolved"
+    mapping_confidence: Literal["high", "medium", "low"] | None = None
+
+    @model_validator(mode="after")
+    def validate_spool_ids(self) -> "CalculatorPreflightLineRequest":
+        if any(spool_id < 1 for spool_id in self.spool_ids):
+            raise ValueError("spool_ids must contain positive integers")
+        if len(self.spool_ids) != len(set(self.spool_ids)):
+            raise ValueError("spool_ids must be unique within a material line")
+        return self
+
+
+class CalculatorPreflightRequest(BaseModel):
+    """Read-only material readiness check for the current calculation."""
+
+    lines: list[CalculatorPreflightLineRequest] = Field(min_length=1, max_length=128)
+    print_jobs: list[CalculatorPrintJobRequest] = Field(default_factory=list, max_length=20)
+    quantity: int = Field(default=1, ge=1, le=100_000)
+    safety_buffer_percent: float = Field(default=10, ge=0, le=100)
+
+    @model_validator(mode="after")
+    def validate_jobs(self) -> "CalculatorPreflightRequest":
+        line_ids = [line.line_id for line in self.lines]
+        if len(line_ids) != len(set(line_ids)):
+            raise ValueError("lines must contain unique line_id values")
+        if not self.print_jobs:
+            return self
+        job_keys = [job.job_key for job in self.print_jobs]
+        if len(job_keys) != len(set(job_keys)):
+            raise ValueError("print_jobs must contain unique job_key values")
+        known_jobs = set(job_keys)
+        if any(line.job_key not in known_jobs for line in self.lines):
+            raise ValueError("every preflight line must reference a known print job")
+        return self
+
+
+class CalculatorPreflightSpoolAllocation(BaseModel):
+    """How one selected spool contributes to one demand line."""
+
+    spool_id: int
+    filament_id: int | None
+    state: str
+    remaining_before_g: float = Field(ge=0)
+    planned_coverage_g: float = Field(ge=0)
+    expected_consumption_g: float = Field(ge=0)
+    expected_after_g: float = Field(ge=0)
+    sequence_index: int | None = Field(None, ge=1)
+    remaining_source: Literal["inventory_ledger"] = "inventory_ledger"
+    remaining_status: CalculatorRemainingStatus
+    remaining_evidence: CalculatorRemainingEvidence
+    remaining_confidence: Literal["high", "medium", "low"]
+    remaining_updated_at: datetime
+    last_used_at: datetime | None = None
+    purchase_currency: str | None = None
+    unit_purchase_cost_per_g: float | None = Field(None, ge=0)
+    expected_purchase_cost: float | None = Field(None, ge=0)
+    issues: list[
+        Literal[
+            "material_mismatch",
+            "unavailable_state",
+            "empty",
+            "stale_remaining",
+            "unknown_remaining",
+        ]
+    ] = Field(default_factory=list)
+
+
+class CalculatorPreflightLineResponse(BaseModel):
+    """Explainable readiness result for one material/tool line."""
+
+    line_id: str
+    job_key: str | None
+    tool_index: int | None
+    label: str | None
+    filament_id: int | None
+    status: CalculatorPreflightStatus
+    evidence_source: Literal["gcode", "manual"]
+    mapping_source: Literal["explicit", "automatic", "unresolved"]
+    mapping_confidence: Literal["high", "medium", "low"] | None
+    required_base_g: float = Field(ge=0)
+    required_length_mm: float | None = Field(None, ge=0)
+    required_volume_cm3: float | None = Field(None, ge=0)
+    safety_buffer_g: float = Field(ge=0)
+    required_planned_g: float = Field(ge=0)
+    selected_remaining_g: float = Field(ge=0)
+    expected_after_g: float = Field(ge=0)
+    shortfall_base_g: float = Field(ge=0)
+    shortfall_buffer_g: float = Field(ge=0)
+    change_count: int = Field(ge=0)
+    requires_spool_change: bool
+    purchase_cost_by_currency: dict[str, float] = Field(default_factory=dict)
+    purchase_cost_complete: bool
+    allocations: list[CalculatorPreflightSpoolAllocation] = Field(default_factory=list)
+
+
+class CalculatorPreflightResponse(BaseModel):
+    """Read-only readiness result; it never reserves or consumes inventory."""
+
+    status: CalculatorPreflightStatus
+    safety_buffer_percent: float = Field(ge=0, le=100)
+    required_base_g: float = Field(ge=0)
+    safety_buffer_g: float = Field(ge=0)
+    required_planned_g: float = Field(ge=0)
+    purchase_cost_by_currency: dict[str, float] = Field(default_factory=dict)
+    purchase_cost_complete: bool
+    lines: list[CalculatorPreflightLineResponse]
+
+
 class CalculatorEstimateRequest(BaseModel):
     """Schema for calculator estimate request."""
 
@@ -299,13 +439,31 @@ class CalculatorEstimateResponse(BaseModel):
     applied_tax_rate_percent: float | None = Field(None, description="Примененная налоговая ставка")
 
 
+class CalculatorMaterialIdentityResolution(BaseModel):
+    """Server-side resolution of a stable material identifier from the slicer."""
+
+    status: Literal["resolved", "ambiguous", "unresolved"]
+    source: Literal[
+        "filamenthub_filament_id",
+        "user_preset_filament_id",
+        "catalog_preset_filament_id",
+    ] | None = None
+    stable_id: str = Field(..., description="Исходный filament_id из профиля слайсера")
+    filament_id: int | None = Field(None, ge=1)
+    preset_id: int | None = Field(None, ge=1)
+    candidate_filament_ids: list[int] = Field(default_factory=list)
+
+
 class CalculatorParsedMaterial(BaseModel):
     """Parsed material row extracted from G-code metadata."""
 
     tool_index: int | None = Field(None, ge=0, description="Индекс инструмента T0..TN")
     type: str | None = Field(None, description="Тип материала из G-code metadata")
     name: str | None = Field(None, description="Имя / settings id материала")
-    settings_id: str | None = Field(None, description="Стабильный идентификатор профиля из контейнера, если доступен")
+    settings_id: str | None = Field(
+        None,
+        description="Отображаемое имя выбранного профиля из контейнера; может меняться при переименовании",
+    )
     vendor: str | None = Field(None, description="Вендор материала")
     color: str | None = Field(None, description="Цвет материала")
     weight_g: float | None = Field(None, ge=0, description="Вес материала в граммах")
@@ -314,6 +472,10 @@ class CalculatorParsedMaterial(BaseModel):
     density_g_cm3: float | None = Field(None, gt=0, description="Плотность из профиля слайсера")
     diameter_mm: float | None = Field(None, gt=0, description="Диаметр прутка из профиля слайсера")
     slicer_filament_id: str | None = Field(None, description="Идентификатор филамента из профиля слайсера")
+    identity_resolution: CalculatorMaterialIdentityResolution | None = Field(
+        None,
+        description="Результат серверного сопоставления стабильного filament_id с каталогом FilamentHub",
+    )
     slicer_usage_cost: float | None = Field(
         None,
         ge=0,

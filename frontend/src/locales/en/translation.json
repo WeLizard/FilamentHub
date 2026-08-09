@@ -2453,6 +2453,75 @@
         "slicer": "Slicer profile price",
         "manual": "Manual price"
       },
+      "preflightTitle": "Material readiness",
+      "preflightHint": "Physical spools are checked separately from pricing. This calculation does not reserve or consume material.",
+      "preflightBufferPercent": "Safety buffer",
+      "preflightRefresh": "Refresh",
+      "preflightError": "Material readiness could not be checked",
+      "preflightStatus": {
+        "ready": "Ready",
+        "ready_with_change": "Ready with a spool change",
+        "ready_at_risk": "Ready with risk",
+        "insufficient": "Insufficient",
+        "needs_clarification": "Needs clarification",
+        "conflict": "Conflict"
+      },
+      "preflightRequired": "Estimated use",
+      "preflightBuffer": "Buffer",
+      "preflightPlanned": "Required on hand",
+      "preflightSelectedRemaining": "Trusted stock",
+      "preflightExpectedAfter": "Expected remaining after the print: {{value}}.",
+      "preflightShortfall": "The base estimate is short by {{value}}.",
+      "preflightBufferShortfall": "The base estimate is covered, but the full safety buffer is short by {{value}}.",
+      "preflightRemainingNeedsUpdate": "The selected spool balance is stale or unreliable, so it is not counted as safely available. Update the spool before printing.",
+      "preflightReviewSpools": "Review spools",
+      "preflightCoverage": "covers up to {{value}}",
+      "preflightRemoveSpool": "Remove spool from readiness check",
+      "preflightAddSpool": "Add spool",
+      "preflightNoPhysicalSpool": "Pricing can use the catalog or a manual value, but readiness requires an explicitly selected physical spool.",
+      "preflightNoCompatibleSpool": "There is no physical spool of this material in My filaments. Add one before checking readiness.",
+      "preflightAddOwnedSpool": "Add spool",
+      "preflightEvidence": {
+        "gcode": "Consumption from G-code",
+        "manual": "Consumption entered manually"
+      },
+      "preflightMapping": {
+        "explicit": "Spool selected manually",
+        "automatic": "Material matched automatically",
+        "unresolved": "Physical spool not resolved"
+      },
+      "preflightConfidence": {
+        "high": "high confidence",
+        "medium": "medium confidence",
+        "low": "tentative match"
+      },
+      "preflightLength": "{{value}} of filament",
+      "preflightVolume": "{{value}} cm³",
+      "preflightChangePlan": "The print plan uses {{count}} spools in sequence.",
+      "preflightAllocation": "use {{consume}} → {{after}} left",
+      "preflightUntrustedAllocation": "ledger says {{remaining}}; excluded from the plan",
+      "preflightRemainingStatus": {
+        "known": "current data",
+        "stale": "stale data",
+        "unknown": "unreliable balance"
+      },
+      "preflightRemainingEvidence": {
+        "measurement": "physical measurement",
+        "provider_report": "printer report",
+        "manual_update": "manual update",
+        "import": "imported balance",
+        "intake": "initial spool data",
+        "estimate": "estimated write-off"
+      },
+      "preflightRemainingConfidence": {
+        "high": "high reliability",
+        "medium": "medium reliability",
+        "low": "low reliability"
+      },
+      "preflightInventoryUpdated": "Ledger remaining updated {{value}}",
+      "preflightPurchaseCost": "At the purchase prices of the selected spools: {{value}}.",
+      "preflightPurchaseCostIncomplete": "The purchase price is unknown for part of the consumption.",
+      "preflightAllocationCost": "consumption cost {{value}}",
       "selectSpool": "Spool from My Filaments",
       "selectSpoolHint": "If the spool already exists in your inventory, its own price and full spool weight are used first.",
       "chooseFromMyFilaments": "Choose from My Filaments",
@@ -2474,6 +2543,10 @@
       "materialMatchConfidenceHigh": "high confidence",
       "materialMatchConfidenceMedium": "medium confidence",
       "materialMatchConfidenceLow": "tentative match",
+      "materialIdentityExact": "exact Orca ID match",
+      "materialIdentityAmbiguous": "Orca ID maps to several materials — choose manually",
+      "materialIdentityUnresolved": "Orca ID is not linked to the catalog yet",
+      "materialMatchedByAttributes": "matched by name and properties",
       "materialPrioritySpool": "Priority: user spool",
       "materialPriceUnknown": "Price not set",
       "remainingShort": "left",

@@ -1,7 +1,14 @@
 """Tests for calculator endpoints."""
 
+from datetime import datetime, timedelta, timezone
+
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import update
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.user import User
+from app.models.user_spool import UserSpool, UserSpoolState
 
 
 @pytest.mark.asyncio
@@ -398,3 +405,254 @@ async def test_rejected_estimate_is_not_counted_as_usage(
     )
     assert accepted.status_code == 200
     assert [method for _, method in recorded] == ["by_weight"]
+
+
+@pytest.mark.asyncio
+async def test_preflight_does_not_count_one_spool_twice_or_consume_it(
+    admin_client: AsyncClient,
+    admin_user: User,
+    db_session: AsyncSession,
+):
+    """One physical remainder must cover the whole job, not each line independently."""
+    spool = UserSpool(
+        user_id=admin_user.id,
+        initial_weight_g=150,
+        used_weight_g=0,
+        state=UserSpoolState.active,
+        price=300,
+        source="manual",
+        extra={"currency": "USD"},
+    )
+    db_session.add(spool)
+    await db_session.commit()
+    await db_session.refresh(spool)
+
+    response = await admin_client.post(
+        "/api/v1/calculator/preflight",
+        json={
+            "safety_buffer_percent": 0,
+            "lines": [
+                {
+                    "line_id": "tool-0",
+                    "weight_g": 100,
+                    "length_mm": 1000,
+                    "evidence_source": "gcode",
+                    "mapping_source": "automatic",
+                    "mapping_confidence": "high",
+                    "spool_ids": [spool.id],
+                },
+                {"line_id": "tool-1", "weight_g": 100, "spool_ids": [spool.id]},
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "insufficient"
+    assert [line["status"] for line in body["lines"]] == ["ready", "insufficient"]
+    assert body["lines"][1]["selected_remaining_g"] == 50
+    assert body["lines"][0]["evidence_source"] == "gcode"
+    assert body["lines"][0]["mapping_source"] == "automatic"
+    assert body["lines"][0]["mapping_confidence"] == "high"
+    assert body["lines"][0]["required_length_mm"] == 1000
+    first_allocation = body["lines"][0]["allocations"][0]
+    assert first_allocation["sequence_index"] == 1
+    assert first_allocation["remaining_source"] == "inventory_ledger"
+    assert first_allocation["remaining_updated_at"]
+    assert first_allocation["expected_purchase_cost"] == 200
+    assert body["purchase_cost_by_currency"] == {"USD": 300}
+    assert body["purchase_cost_complete"] is False
+
+    await db_session.refresh(spool)
+    assert spool.used_weight_g == 0
+
+
+@pytest.mark.asyncio
+async def test_preflight_does_not_turn_safety_buffer_into_phantom_consumption(
+    admin_client: AsyncClient,
+    admin_user: User,
+    db_session: AsyncSession,
+):
+    """A margin may make a later line risky, but it must not consume its base stock."""
+    spool = UserSpool(
+        user_id=admin_user.id,
+        initial_weight_g=200,
+        used_weight_g=0,
+        state=UserSpoolState.active,
+        source="manual",
+    )
+    db_session.add(spool)
+    await db_session.commit()
+    await db_session.refresh(spool)
+
+    response = await admin_client.post(
+        "/api/v1/calculator/preflight",
+        json={
+            "safety_buffer_percent": 20,
+            "lines": [
+                {"line_id": "first", "weight_g": 100, "spool_ids": [spool.id]},
+                {"line_id": "second", "weight_g": 90, "spool_ids": [spool.id]},
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "ready_at_risk"
+    assert [line["status"] for line in body["lines"]] == ["ready", "ready_at_risk"]
+    assert body["lines"][1]["selected_remaining_g"] == 100
+    assert body["lines"][1]["shortfall_base_g"] == 0
+    assert body["lines"][1]["shortfall_buffer_g"] == 8
+    assert body["lines"][1]["expected_after_g"] == 10
+
+    await db_session.refresh(spool)
+    assert spool.used_weight_g == 0
+
+
+@pytest.mark.asyncio
+async def test_preflight_does_not_treat_stale_remaining_as_safe_stock(
+    admin_client: AsyncClient,
+    admin_user: User,
+    db_session: AsyncSession,
+):
+    """An old ledger value must ask for confirmation instead of promising a print."""
+    spool = UserSpool(
+        user_id=admin_user.id,
+        initial_weight_g=200,
+        used_weight_g=50,
+        state=UserSpoolState.active,
+        source="manual",
+    )
+    db_session.add(spool)
+    await db_session.commit()
+    await db_session.refresh(spool)
+    observed_at = datetime.now(timezone.utc) - timedelta(days=31)
+    await db_session.execute(
+        update(UserSpool)
+        .where(UserSpool.id == spool.id)
+        .values(updated_at=observed_at)
+    )
+    await db_session.commit()
+
+    response = await admin_client.post(
+        "/api/v1/calculator/preflight",
+        json={
+            "safety_buffer_percent": 0,
+            "lines": [
+                {"line_id": "tool-0", "weight_g": 100, "spool_ids": [spool.id]}
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    line = body["lines"][0]
+    allocation = line["allocations"][0]
+    assert body["status"] == "needs_clarification"
+    assert line["status"] == "needs_clarification"
+    assert line["selected_remaining_g"] == 0
+    assert line["expected_after_g"] == 0
+    assert allocation["remaining_before_g"] == 150
+    assert allocation["expected_consumption_g"] == 0
+    assert allocation["remaining_status"] == "stale"
+    assert allocation["remaining_evidence"] == "intake"
+    assert "stale_remaining" in allocation["issues"]
+
+    await db_session.refresh(spool)
+    assert spool.used_weight_g == 50
+
+
+@pytest.mark.asyncio
+async def test_preflight_builds_a_sequential_spool_change_plan(
+    admin_client: AsyncClient,
+    admin_user: User,
+    db_session: AsyncSession,
+):
+    spools = [
+        UserSpool(
+            user_id=admin_user.id,
+            initial_weight_g=80,
+            used_weight_g=0,
+            state=UserSpoolState.active,
+            price=240,
+            source="manual",
+            extra={"currency": "KZT"},
+        ),
+        UserSpool(
+            user_id=admin_user.id,
+            initial_weight_g=70,
+            used_weight_g=0,
+            state=UserSpoolState.active,
+            price=350,
+            source="manual",
+            extra={"currency": "KZT"},
+        ),
+    ]
+    db_session.add_all(spools)
+    await db_session.commit()
+    for spool in spools:
+        await db_session.refresh(spool)
+
+    response = await admin_client.post(
+        "/api/v1/calculator/preflight",
+        json={
+            "safety_buffer_percent": 10,
+            "lines": [
+                {
+                    "line_id": "tool-0",
+                    "weight_g": 120,
+                    "spool_ids": [spool.id for spool in spools],
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    line = body["lines"][0]
+    assert body["status"] == "ready_with_change"
+    assert line["requires_spool_change"] is True
+    assert line["change_count"] == 1
+    assert [item["sequence_index"] for item in line["allocations"]] == [1, 2]
+    assert [item["expected_consumption_g"] for item in line["allocations"]] == [80, 40]
+    assert [item["expected_after_g"] for item in line["allocations"]] == [0, 30]
+    assert body["purchase_cost_by_currency"] == {"KZT": 440}
+    assert body["purchase_cost_complete"] is True
+
+    for spool in spools:
+        await db_session.refresh(spool)
+        assert spool.used_weight_g == 0
+
+
+@pytest.mark.asyncio
+async def test_preflight_rejects_a_foreign_spool(
+    admin_client: AsyncClient,
+    auth_user: User,
+    db_session: AsyncSession,
+):
+    foreign_spool = UserSpool(
+        user_id=auth_user.id,
+        initial_weight_g=1000,
+        used_weight_g=0,
+        state=UserSpoolState.active,
+        source="manual",
+    )
+    db_session.add(foreign_spool)
+    await db_session.commit()
+    await db_session.refresh(foreign_spool)
+
+    response = await admin_client.post(
+        "/api/v1/calculator/preflight",
+        json={
+            "lines": [
+                {
+                    "line_id": "tool-0",
+                    "weight_g": 100,
+                    "spool_ids": [foreign_spool.id],
+                }
+            ]
+        },
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"]["code"] == "ERR_SPOOL_NOT_ACCESSIBLE"

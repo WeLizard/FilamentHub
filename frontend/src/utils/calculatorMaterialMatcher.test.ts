@@ -104,6 +104,53 @@ describe('calculator material matcher', () => {
     expect(match?.match.item.id).toBe('catalog');
   });
 
+  it('uses a resolved stable material id before contradictory names', () => {
+    const match = findPrioritizedMaterialMatch(
+      {
+        name: 'Wrong but stronger name',
+        type: 'ABS',
+        identity_resolution: {
+          status: 'resolved',
+          source: 'filamenthub_filament_id',
+          stable_id: 'FHUB000042',
+          filament_id: 42,
+          candidate_filament_ids: [42],
+        },
+      },
+      [],
+      [
+        { id: 7, filamentId: 7, name: 'Wrong but stronger name', vendor: null, materialType: 'ABS', color: null },
+        { id: 42, filamentId: 42, name: 'Actual PLA', vendor: null, materialType: 'PLA', color: null },
+      ],
+      (item) => item,
+      (item) => item,
+    );
+
+    expect(match?.match.item.id).toBe(42);
+    expect(match?.match.method).toBe('stable_id');
+  });
+
+  it('does not replace an ambiguous stable id with a name-based guess', () => {
+    const match = findPrioritizedMaterialMatch(
+      {
+        name: 'PLA Basic',
+        type: 'PLA',
+        identity_resolution: {
+          status: 'ambiguous',
+          source: 'user_preset_filament_id',
+          stable_id: 'VENDOR-MATERIAL-42',
+          candidate_filament_ids: [1, 2],
+        },
+      },
+      [],
+      [{ id: 1, filamentId: 1, name: 'PLA Basic', vendor: null, materialType: 'PLA', color: null }],
+      (item) => item,
+      (item) => item,
+    );
+
+    expect(match).toBeNull();
+  });
+
   it('selects the material row that has real usage', () => {
     const material = pickPrimaryParsedMaterial({
       file_name: 'part.gcode',

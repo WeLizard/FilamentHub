@@ -1048,6 +1048,106 @@ export interface CalculatorPrintJobRequest {
   quote_mode: 'set' | 'groups';
 }
 
+export type CalculatorPreflightStatus =
+  | 'ready'
+  | 'ready_with_change'
+  | 'ready_at_risk'
+  | 'insufficient'
+  | 'needs_clarification'
+  | 'conflict';
+
+export interface CalculatorPreflightLineRequest {
+  line_id: string;
+  job_key?: string | null;
+  tool_index?: number | null;
+  label?: string | null;
+  weight_g: number;
+  length_mm?: number | null;
+  volume_cm3?: number | null;
+  filament_id?: number | null;
+  spool_ids: number[];
+  evidence_source: 'gcode' | 'manual';
+  mapping_source: 'explicit' | 'automatic' | 'unresolved';
+  mapping_confidence?: 'high' | 'medium' | 'low' | null;
+}
+
+export interface CalculatorPreflightRequest {
+  lines: CalculatorPreflightLineRequest[];
+  print_jobs: CalculatorPrintJobRequest[];
+  quantity: number;
+  safety_buffer_percent: number;
+}
+
+export interface CalculatorPreflightSpoolAllocation {
+  spool_id: number;
+  filament_id: number | null;
+  state: string;
+  remaining_before_g: number;
+  planned_coverage_g: number;
+  expected_consumption_g: number;
+  expected_after_g: number;
+  sequence_index: number | null;
+  remaining_source: 'inventory_ledger';
+  remaining_status: 'known' | 'stale' | 'unknown';
+  remaining_evidence:
+    | 'measurement'
+    | 'provider_report'
+    | 'manual_update'
+    | 'import'
+    | 'intake'
+    | 'estimate';
+  remaining_confidence: 'high' | 'medium' | 'low';
+  remaining_updated_at: string;
+  last_used_at: string | null;
+  purchase_currency: string | null;
+  unit_purchase_cost_per_g: number | null;
+  expected_purchase_cost: number | null;
+  issues: Array<
+    | 'material_mismatch'
+    | 'unavailable_state'
+    | 'empty'
+    | 'stale_remaining'
+    | 'unknown_remaining'
+  >;
+}
+
+export interface CalculatorPreflightLineResponse {
+  line_id: string;
+  job_key: string | null;
+  tool_index: number | null;
+  label: string | null;
+  filament_id: number | null;
+  status: CalculatorPreflightStatus;
+  evidence_source: 'gcode' | 'manual';
+  mapping_source: 'explicit' | 'automatic' | 'unresolved';
+  mapping_confidence: 'high' | 'medium' | 'low' | null;
+  required_base_g: number;
+  required_length_mm: number | null;
+  required_volume_cm3: number | null;
+  safety_buffer_g: number;
+  required_planned_g: number;
+  selected_remaining_g: number;
+  expected_after_g: number;
+  shortfall_base_g: number;
+  shortfall_buffer_g: number;
+  change_count: number;
+  requires_spool_change: boolean;
+  purchase_cost_by_currency: Record<string, number>;
+  purchase_cost_complete: boolean;
+  allocations: CalculatorPreflightSpoolAllocation[];
+}
+
+export interface CalculatorPreflightResponse {
+  status: CalculatorPreflightStatus;
+  safety_buffer_percent: number;
+  required_base_g: number;
+  safety_buffer_g: number;
+  required_planned_g: number;
+  purchase_cost_by_currency: Record<string, number>;
+  purchase_cost_complete: boolean;
+  lines: CalculatorPreflightLineResponse[];
+}
+
 export interface CalculatorEstimateRequest {
   pricing_method?: PricingMethod;
   
@@ -1162,6 +1262,19 @@ export interface CalculatorEstimateResponse {
   applied_tax_rate_percent?: number | null;
 }
 
+export interface CalculatorMaterialIdentityResolution {
+  status: 'resolved' | 'ambiguous' | 'unresolved';
+  source?:
+    | 'filamenthub_filament_id'
+    | 'user_preset_filament_id'
+    | 'catalog_preset_filament_id'
+    | null;
+  stable_id: string;
+  filament_id?: number | null;
+  preset_id?: number | null;
+  candidate_filament_ids: number[];
+}
+
 export interface CalculatorParsedMaterial {
   tool_index?: number | null;
   type?: string | null;
@@ -1175,6 +1288,7 @@ export interface CalculatorParsedMaterial {
   density_g_cm3?: number | null;
   diameter_mm?: number | null;
   slicer_filament_id?: string | null;
+  identity_resolution?: CalculatorMaterialIdentityResolution | null;
   slicer_usage_cost?: number | null;
   slicer_profile_price_per_kg?: number | null;
   flow_ratio?: number | null;

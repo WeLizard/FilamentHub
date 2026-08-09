@@ -1485,6 +1485,11 @@ export const calculatorAPI = {
     return response.data;
   },
 
+  preflight: async (data: import('../types/api').CalculatorPreflightRequest) => {
+    const response = await api.post<import('../types/api').CalculatorPreflightResponse>('/calculator/preflight', data);
+    return response.data;
+  },
+
   parseGcode: async (file: File, plateIndex?: number) => {
     const formData = new FormData();
     formData.append('file', file);

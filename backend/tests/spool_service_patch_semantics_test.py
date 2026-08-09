@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.brand import Brand
 from app.models.filament import Filament
 from app.models.preset_gate_state import PresetGateState, PresetGateStateSource
+from app.models.preset_usage_event import PresetUsageEvent, PresetUsageEventType
 from app.models.user import User
 from app.models.user_printer_device import UserPrinterDevice
 from app.models.user_spool import UserSpool, UserSpoolState
@@ -93,6 +94,18 @@ async def test_update_spool_should_keep_nullable_fields_when_not_provided(
     assert result.filament_id == filament.id
     assert result.lot_nr == "LOT-ABC"
     assert result.comment == "seed-comment"
+
+    event = await db_session.scalar(
+        select(PresetUsageEvent).where(PresetUsageEvent.spool_id == spool.id)
+    )
+    assert event is not None
+    assert event.event_type == PresetUsageEventType.manual_adjust
+    assert event.remaining_weight_g == pytest.approx(1190.0)
+    assert event.meta == {
+        "reason": "spool_edit",
+        "previous_initial_weight_g": 1000.0,
+        "previous_remaining_weight_g": 990.0,
+    }
 
 
 @pytest.mark.asyncio

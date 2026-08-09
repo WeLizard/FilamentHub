@@ -3,6 +3,7 @@ import type { CalculatorGcodeParseResponse, CalculatorParsedMaterial } from '../
 export type MaterialMatchConfidence = 'high' | 'medium' | 'low';
 
 export interface MaterialCandidateFields {
+  filamentId?: number | null;
   name: string | null | undefined;
   vendor: string | null | undefined;
   materialType: string | null | undefined;
@@ -13,6 +14,7 @@ export interface MaterialMatch<T> {
   item: T;
   score: number;
   confidence: MaterialMatchConfidence;
+  method: 'stable_id' | 'attributes';
 }
 
 export type PrioritizedMaterialMatch<TUser, TCatalog> =
@@ -168,6 +170,7 @@ export const findBestMaterialMatch = <T,>(
   return {
     ...best,
     confidence: confidenceForScore(best.score),
+    method: 'attributes',
   };
 };
 
@@ -178,6 +181,46 @@ export const findPrioritizedMaterialMatch = <TUser, TCatalog>(
   getUserCandidate: (item: TUser) => MaterialCandidateFields,
   getCatalogCandidate: (item: TCatalog) => MaterialCandidateFields,
 ): PrioritizedMaterialMatch<TUser, TCatalog> | null => {
+  const identityResolution = parsed.identity_resolution;
+  if (identityResolution?.status === 'ambiguous') {
+    return null;
+  }
+
+  if (identityResolution?.status === 'resolved' && identityResolution.filament_id != null) {
+    const filamentId = identityResolution.filament_id;
+    const userItem = userItems.find((item) => getUserCandidate(item).filamentId === filamentId);
+    if (userItem) {
+      return {
+        source: 'user',
+        match: {
+          item: userItem,
+          score: Number.POSITIVE_INFINITY,
+          confidence: 'high',
+          method: 'stable_id',
+        },
+      };
+    }
+
+    const catalogItem = catalogItems.find(
+      (item) => getCatalogCandidate(item).filamentId === filamentId,
+    );
+    if (catalogItem) {
+      return {
+        source: 'catalog',
+        match: {
+          item: catalogItem,
+          score: Number.POSITIVE_INFINITY,
+          confidence: 'high',
+          method: 'stable_id',
+        },
+      };
+    }
+
+    // The backend resolved a concrete catalog row. Do not replace that fact
+    // with a possibly different name-based guess while the row is loading.
+    return null;
+  }
+
   const userMatch = findBestMaterialMatch(userItems, parsed, getUserCandidate);
   if (userMatch) {
     return { source: 'user', match: userMatch };

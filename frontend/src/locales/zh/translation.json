@@ -2448,6 +2448,75 @@
         "slicer": "切片器配置价格",
         "manual": "手动价格"
       },
+      "preflightTitle": "材料就绪检查",
+      "preflightHint": "实体线轴与价格分开检查。此计算不会预留或扣减材料。",
+      "preflightBufferPercent": "安全余量",
+      "preflightRefresh": "更新",
+      "preflightError": "无法检查材料就绪状态",
+      "preflightStatus": {
+        "ready": "已就绪",
+        "ready_with_change": "换卷后可用",
+        "ready_at_risk": "有风险但可用",
+        "insufficient": "材料不足",
+        "needs_clarification": "需要确认",
+        "conflict": "存在冲突"
+      },
+      "preflightRequired": "预计用量",
+      "preflightBuffer": "余量",
+      "preflightPlanned": "需备材料",
+      "preflightSelectedRemaining": "可信可用量",
+      "preflightExpectedAfter": "打印后的预计余量：{{value}}。",
+      "preflightShortfall": "基础用量还缺少 {{value}}。",
+      "preflightBufferShortfall": "基础用量充足，但完整安全余量还缺少 {{value}}。",
+      "preflightRemainingNeedsUpdate": "所选线轴的余量数据已过期或不可靠，因此不会计入安全可用量。请在打印前更新线轴。",
+      "preflightReviewSpools": "检查线轴",
+      "preflightCoverage": "最多可提供 {{value}}",
+      "preflightRemoveSpool": "从就绪检查中移除此线轴",
+      "preflightAddSpool": "添加线轴",
+      "preflightNoPhysicalSpool": "价格可以来自目录或手动输入，但就绪检查需要明确选择一个实体线轴。",
+      "preflightNoCompatibleSpool": "“我的耗材”中没有此材料的实体线轴。请先添加线轴，再进行就绪检查。",
+      "preflightAddOwnedSpool": "添加线轴",
+      "preflightEvidence": {
+        "gcode": "耗材量来自 G-code",
+        "manual": "耗材量为手动输入"
+      },
+      "preflightMapping": {
+        "explicit": "手动选择线轴",
+        "automatic": "自动匹配材料",
+        "unresolved": "尚未确定实体线轴"
+      },
+      "preflightConfidence": {
+        "high": "高置信度",
+        "medium": "中等置信度",
+        "low": "初步匹配"
+      },
+      "preflightLength": "耗材丝长度 {{value}}",
+      "preflightVolume": "{{value}} cm³",
+      "preflightChangePlan": "打印计划将按顺序使用 {{count}} 个线轴。",
+      "preflightAllocation": "使用 {{consume}} → 剩余 {{after}}",
+      "preflightUntrustedAllocation": "账面为 {{remaining}}，未计入计划",
+      "preflightRemainingStatus": {
+        "known": "数据有效",
+        "stale": "数据已过期",
+        "unknown": "余量不可靠"
+      },
+      "preflightRemainingEvidence": {
+        "measurement": "实际测量",
+        "provider_report": "打印机报告",
+        "manual_update": "手动更新",
+        "import": "导入余量",
+        "intake": "线轴初始数据",
+        "estimate": "估算扣减"
+      },
+      "preflightRemainingConfidence": {
+        "high": "高可靠性",
+        "medium": "中等可靠性",
+        "low": "低可靠性"
+      },
+      "preflightInventoryUpdated": "账面余量更新于 {{value}}",
+      "preflightPurchaseCost": "按所选线轴的购买价格：{{value}}。",
+      "preflightPurchaseCostIncomplete": "部分耗材没有购买价格。",
+      "preflightAllocationCost": "耗材成本 {{value}}",
       "selectSpool": "我的耗材中的线轴",
       "selectSpoolHint": "如果线轴已存在于您的库存中，将优先使用其自身价格和完整线轴重量。",
       "chooseFromMyFilaments": "从我的耗材中选择",
@@ -2469,6 +2538,10 @@
       "materialMatchConfidenceHigh": "高置信度",
       "materialMatchConfidenceMedium": "中等置信度",
       "materialMatchConfidenceLow": "初步匹配",
+      "materialIdentityExact": "Orca ID 精确匹配",
+      "materialIdentityAmbiguous": "Orca ID 对应多个材料——请手动选择",
+      "materialIdentityUnresolved": "Orca ID 尚未关联到目录",
+      "materialMatchedByAttributes": "按名称和属性匹配",
       "materialPrioritySpool": "优先级：用户线轴",
       "materialPriceUnknown": "未设置价格",
       "remainingShort": "剩余",

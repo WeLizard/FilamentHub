@@ -46,6 +46,8 @@ from app.schemas.calculator import (
     CalculatorHistoryEntryResponse,
     CalculatorHistoryParsedJob,
     CalculatorMaterialLineCost,
+    CalculatorPreflightRequest,
+    CalculatorPreflightResponse,
     CalculatorProfileResponse,
     CalculatorProfileUpdate,
     PricingMethod,
@@ -59,6 +61,10 @@ from app.services.calculator_gcode_parser import (
     is_supported_gcode_filename,
     parse_gcode_payload,
 )
+from app.services.calculator_material_identity_service import (
+    resolve_calculator_material_identities,
+)
+from app.services.calculator_preflight_service import calculate_material_preflight
 from app.services.subscription_service import (
     TrialAlreadyUsedError,
     paywall_enforced,
@@ -292,6 +298,20 @@ async def estimate_cost(
     estimate = await _build_estimate(data)
     await record_calculator_estimate(current_user.id, data.pricing_method.value)
     return estimate
+
+
+@router.post("/preflight", response_model=CalculatorPreflightResponse)
+async def calculate_preflight(
+    data: CalculatorPreflightRequest,
+    current_user: Annotated[User, Depends(require_calculator_access)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> CalculatorPreflightResponse:
+    """Check material readiness without reserving or consuming user inventory."""
+    return await calculate_material_preflight(
+        db,
+        user_id=current_user.id,
+        payload=data,
+    )
 
 
 async def _build_estimate(data: CalculatorEstimateRequest) -> CalculatorEstimateResponse:
@@ -608,7 +628,11 @@ async def _build_estimate(data: CalculatorEstimateRequest) -> CalculatorEstimate
 
 
 async def parse_uploaded_gcode(
-    file: UploadFile, plate_index: int | None
+    file: UploadFile,
+    plate_index: int | None,
+    *,
+    db: AsyncSession | None = None,
+    user_id: int | None = None,
 ) -> CalculatorGcodeParseResponse:
     """Read an uploaded G-code the same way wherever it came from.
 
@@ -643,17 +667,30 @@ async def parse_uploaded_gcode(
         logger.warning("Calculator G-code parse failed for %s: %s", file.filename, exc)
         raise_error(status.HTTP_400_BAD_REQUEST, ERR_GCODE_PARSE_FAILED)
 
-    return CalculatorGcodeParseResponse(**parsed)
+    response = CalculatorGcodeParseResponse(**parsed)
+    if db is not None and user_id is not None:
+        response = await resolve_calculator_material_identities(
+            db,
+            response,
+            user_id=user_id,
+        )
+    return response
 
 
 @router.post("/parse-gcode", response_model=CalculatorGcodeParseResponse)
 async def parse_gcode(
-    _: Annotated[User, Depends(require_calculator_access)],
+    current_user: Annotated[User, Depends(require_calculator_access)],
+    db: Annotated[AsyncSession, Depends(get_db)],
     file: UploadFile = File(...),
     plate_index: int | None = Query(None, ge=1),
 ) -> CalculatorGcodeParseResponse:
     """Parse uploaded G-code metadata for Calculator Pro auto-fill."""
-    return await parse_uploaded_gcode(file, plate_index)
+    return await parse_uploaded_gcode(
+        file,
+        plate_index,
+        db=db,
+        user_id=current_user.id,
+    )
 
 
 @router.get("/history", response_model=CalculatorHistoryEntryListResponse)

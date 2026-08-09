@@ -389,6 +389,10 @@ async def update_spool(
     if spool is None or spool.user_id != user.id:
         raise_error(404, ERR_ACCESS_DENIED)
 
+    previous_initial_weight = spool.initial_weight_g
+    previous_used_weight = spool.used_weight_g
+    previous_remaining_weight = spool.remaining_weight_g
+
     if "filament_id" in payload.model_fields_set:
         if payload.filament_id is not None:
             filament = await _load_filament_info(db, payload.filament_id)
@@ -433,6 +437,22 @@ async def update_spool(
         spool.used_weight_g = spool.initial_weight_g
     elif spool.remaining_weight_g <= 0:
         spool.state = UserSpoolState.empty
+
+    if (
+        spool.initial_weight_g != previous_initial_weight
+        or spool.used_weight_g != previous_used_weight
+    ):
+        await record_spool_usage(
+            db,
+            spool=spool,
+            event_type=PresetUsageEventType.manual_adjust,
+            delta_weight_g=spool.used_weight_g - previous_used_weight,
+            meta={
+                "reason": "spool_edit",
+                "previous_initial_weight_g": previous_initial_weight,
+                "previous_remaining_weight_g": previous_remaining_weight,
+            },
+        )
 
     if spool.state in {
         UserSpoolState.shelf,

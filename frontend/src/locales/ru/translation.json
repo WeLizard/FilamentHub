@@ -3188,6 +3188,75 @@
         "slicer": "Цена из слайсера",
         "manual": "Цена задана вручную"
       },
+      "preflightTitle": "Готовность материалов",
+      "preflightHint": "Проверяем физические катушки отдельно от цены. Расчёт ничего не резервирует и не списывает.",
+      "preflightBufferPercent": "Страховой запас",
+      "preflightRefresh": "Обновить",
+      "preflightError": "Не удалось проверить готовность материалов",
+      "preflightStatus": {
+        "ready": "Готово",
+        "ready_with_change": "Готово со сменой",
+        "ready_at_risk": "Готово с риском",
+        "insufficient": "Недостаточно",
+        "needs_clarification": "Нужно уточнение",
+        "conflict": "Конфликт"
+      },
+      "preflightRequired": "Расход",
+      "preflightBuffer": "Запас",
+      "preflightPlanned": "Нужно иметь",
+      "preflightSelectedRemaining": "Актуально доступно",
+      "preflightExpectedAfter": "Ожидаемый остаток после печати: {{value}}.",
+      "preflightShortfall": "Для базового расхода не хватает {{value}}.",
+      "preflightBufferShortfall": "Основного объёма хватает, но до полного страхового запаса не хватает {{value}}.",
+      "preflightRemainingNeedsUpdate": "Остаток выбранной катушки устарел или ненадёжен, поэтому мы не считаем его безопасно доступным. Обновите катушку перед печатью.",
+      "preflightReviewSpools": "Проверить катушки",
+      "preflightCoverage": "обеспечит до {{value}}",
+      "preflightRemoveSpool": "Убрать катушку из проверки",
+      "preflightAddSpool": "Добавить катушку",
+      "preflightNoPhysicalSpool": "Цена может быть рассчитана по каталогу или вручную, но для проверки готовности нужно явно выбрать физическую катушку.",
+      "preflightNoCompatibleSpool": "В «Моих филаментах» нет катушки этого материала. Добавьте физическую катушку, чтобы проверить готовность.",
+      "preflightAddOwnedSpool": "Добавить катушку",
+      "preflightEvidence": {
+        "gcode": "Расход из G-code",
+        "manual": "Расход задан вручную"
+      },
+      "preflightMapping": {
+        "explicit": "Катушка выбрана вручную",
+        "automatic": "Материал сопоставлен автоматически",
+        "unresolved": "Физическая катушка не определена"
+      },
+      "preflightConfidence": {
+        "high": "высокая уверенность",
+        "medium": "средняя уверенность",
+        "low": "предварительное совпадение"
+      },
+      "preflightLength": "{{value}} прутка",
+      "preflightVolume": "{{value}} см³",
+      "preflightChangePlan": "План печати использует {{count}} катушки последовательно.",
+      "preflightAllocation": "расход {{consume}} → останется {{after}}",
+      "preflightUntrustedAllocation": "по учёту {{remaining}}, в план не включено",
+      "preflightRemainingStatus": {
+        "known": "данные актуальны",
+        "stale": "данные устарели",
+        "unknown": "остаток ненадёжен"
+      },
+      "preflightRemainingEvidence": {
+        "measurement": "фактический замер",
+        "provider_report": "отчёт принтера",
+        "manual_update": "ручное обновление",
+        "import": "импортированный остаток",
+        "intake": "начальные данные катушки",
+        "estimate": "расчётное списание"
+      },
+      "preflightRemainingConfidence": {
+        "high": "высокая надёжность",
+        "medium": "средняя надёжность",
+        "low": "низкая надёжность"
+      },
+      "preflightInventoryUpdated": "Учётный остаток обновлён {{value}}",
+      "preflightPurchaseCost": "По ценам покупки выбранных катушек: {{value}}.",
+      "preflightPurchaseCostIncomplete": "Для части расхода цена покупки неизвестна.",
+      "preflightAllocationCost": "стоимость расхода {{value}}",
       "selectSpool": "Катушка из Моих филаментов",
       "selectSpoolHint": "Если катушка уже заведена в вашем инвентаре, цена и вес подтянутся именно из неё.",
       "chooseFromMyFilaments": "Выбрать из Моих филаментов",
@@ -3209,6 +3278,10 @@
       "materialMatchConfidenceHigh": "высокая уверенность",
       "materialMatchConfidenceMedium": "средняя уверенность",
       "materialMatchConfidenceLow": "предварительное совпадение",
+      "materialIdentityExact": "точно по ID Orca",
+      "materialIdentityAmbiguous": "ID Orca связан с несколькими материалами — выберите вручную",
+      "materialIdentityUnresolved": "ID Orca пока не связан с каталогом",
+      "materialMatchedByAttributes": "подобрано по названию и свойствам",
       "materialPrioritySpool": "Приоритет: пользовательская катушка",
       "materialPriceUnknown": "Цена не задана",
       "remainingShort": "осталось",

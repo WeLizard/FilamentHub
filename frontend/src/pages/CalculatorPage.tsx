@@ -47,6 +47,11 @@ import { PrinterCostRow } from '../components/calculator/PrinterCostRow';
 import { PrinterEconomicsColumn } from '../components/calculator/PrinterEconomicsColumn';
 import { PowerPartsBreakdown } from '../components/calculator/PowerPartsBreakdown';
 import { QuickPicks } from '../components/calculator/QuickPicks';
+import { LayeredPrinterIcon } from '../components/icons/LayeredPrinterIcon';
+import {
+  MaterialPreflightPanel,
+  type MaterialPreflightUiLine,
+} from '../components/calculator/MaterialPreflightPanel';
 import { toast } from '../components/Toast';
 import { isPluginEmbed, requestSliceParse, subscribeToPluginSliceParse } from '../utils/pluginBridge';
 import { ConfirmDeleteModal } from '../components/ConfirmDeleteModal';
@@ -80,6 +85,8 @@ import type {
   CalculatorHistoryFilamentSnapshot,
   CalculatorMaterialLineRequest,
   CalculatorParsedMaterial,
+  CalculatorPreflightRequest,
+  CalculatorPreflightResponse,
   CalculatorPrintJobRequest,
   CrmCustomer,
   Filament,
@@ -188,6 +195,7 @@ interface MaterialSelectionSnapshot {
 
 interface AutoMaterialMatchNotice {
   confidence: MaterialMatchConfidence;
+  method: 'stable_id' | 'attributes';
   source: 'catalog' | 'spool';
   requiresSpoolChoice?: boolean;
 }
@@ -227,6 +235,10 @@ interface CalculatorMaterialLineState extends CalculatorMaterialLineRequest {
   fileName: string;
   plateIndex: number | null;
   confidence: MaterialMatchConfidence | null;
+  evidenceSource: 'gcode' | 'manual';
+  lengthMm: number | null;
+  volumeCm3: number | null;
+  mappingSource: 'explicit' | 'automatic' | 'unresolved';
   requiresSpoolChoice: boolean;
   priceResolved: boolean;
 }
@@ -554,6 +566,77 @@ export const buildEstimateRequest = (
   return requestData;
 };
 
+export const buildPreflightRequest = (
+  estimateRequest: CalculatorEstimateRequest,
+  materialLines: CalculatorMaterialLineState[],
+  selectedSpool: UserSpool | null,
+  selectedCatalogFilament: Filament | null,
+  spoolIdsByLine: Record<string, number[]>,
+  safetyBufferPercent: number,
+  parsedGcode: CalculatorGcodeParseResponse | null = null,
+  manualAutoMatch: AutoMaterialMatchNotice | null = null,
+): CalculatorPreflightRequest | null => {
+  const primaryParsedMaterial = pickPrimaryParsedMaterial(parsedGcode);
+  const lines = materialLines.length > 0
+    ? materialLines.map((line) => {
+        const selectedIds = spoolIdsByLine[line.line_id]
+          ?? (line.spool_id ? [line.spool_id] : []);
+        const explicitPreflightSelection = Object.prototype.hasOwnProperty.call(
+          spoolIdsByLine,
+          line.line_id,
+        );
+        return {
+          line_id: line.line_id,
+          job_key: line.job_key,
+          tool_index: line.tool_index,
+          label: line.label,
+          weight_g: line.weight_g,
+          length_mm: line.lengthMm,
+          volume_cm3: line.volumeCm3,
+          filament_id: line.filament_id,
+          spool_ids: selectedIds,
+          evidence_source: line.evidenceSource,
+          mapping_source: explicitPreflightSelection
+            ? selectedIds.length > 0 ? 'explicit' as const : 'unresolved' as const
+            : line.mappingSource,
+          mapping_confidence: explicitPreflightSelection ? null : line.confidence,
+        };
+      })
+    : estimateRequest.weight_g && estimateRequest.weight_g > 0
+      ? [{
+          line_id: 'manual',
+          job_key: null,
+          tool_index: null,
+          label: null,
+          weight_g: estimateRequest.weight_g
+            + (estimateRequest.supports_weight_g ?? 0)
+              * (estimateRequest.supports_loss_coefficient ?? 1.2),
+          length_mm: primaryParsedMaterial?.length_mm ?? null,
+          volume_cm3: primaryParsedMaterial?.volume_cm3 ?? null,
+          filament_id: selectedSpool?.filament_id ?? selectedCatalogFilament?.id ?? null,
+          spool_ids: spoolIdsByLine.manual
+            ?? (selectedSpool ? [selectedSpool.id] : []),
+          evidence_source: parsedGcode ? 'gcode' as const : 'manual' as const,
+          mapping_source: Object.prototype.hasOwnProperty.call(spoolIdsByLine, 'manual')
+            ? (spoolIdsByLine.manual?.length ?? 0) > 0 ? 'explicit' as const : 'unresolved' as const
+            : manualAutoMatch
+              ? 'automatic' as const
+              : selectedSpool || selectedCatalogFilament
+                ? 'explicit' as const
+                : 'unresolved' as const,
+          mapping_confidence: manualAutoMatch?.confidence ?? null,
+        }]
+      : [];
+
+  if (lines.length === 0) return null;
+  return {
+    lines,
+    print_jobs: estimateRequest.print_jobs ?? [],
+    quantity: estimateRequest.quantity ?? 1,
+    safety_buffer_percent: safetyBufferPercent,
+  };
+};
+
 const resolveParsedMaterialWeight = (
   material: CalculatorParsedMaterial,
   fallbackWeightG?: number | null,
@@ -572,6 +655,18 @@ const resolveParsedMaterialWeight = (
     return Number((volumeCm3 * material.density_g_cm3!).toFixed(3));
   }
   return fallbackWeightG && fallbackWeightG > 0 ? fallbackWeightG : 0;
+};
+
+const findParsedMaterialForTool = (
+  parsed: CalculatorGcodeParseResponse | null | undefined,
+  toolIndex: number | null | undefined,
+): CalculatorParsedMaterial | null => {
+  if (!parsed) return null;
+  if (toolIndex != null) {
+    const exact = parsed.materials.find((material) => material.tool_index === toolIndex);
+    if (exact) return exact;
+  }
+  return pickPrimaryParsedMaterial(parsed);
 };
 
 const parsedJobKey = (parsed: CalculatorGcodeParseResponse, uploadIndex: number): string =>
@@ -1499,6 +1594,8 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
   const [quoteProfile, setQuoteProfile] = useState<QuoteProfileState>(DEFAULT_QUOTE_PROFILE);
   const [quoteParties, setQuoteParties] = useState<QuotePartyFormState>(DEFAULT_QUOTE_PARTY_FORM);
   const [selectedSpoolId, setSelectedSpoolId] = useState<number | ''>('');
+  const [preflightSafetyBufferPercent, setPreflightSafetyBufferPercent] = useState(10);
+  const [preflightSpoolIdsByLine, setPreflightSpoolIdsByLine] = useState<Record<string, number[]>>({});
   const [autoMaterialMatch, setAutoMaterialMatch] = useState<AutoMaterialMatchNotice | null>(null);
   const [materialPriceSource, setMaterialPriceSource] = useState<MaterialPriceSource>('manual');
   const [isCloudBusy, setIsCloudBusy] = useState(false);
@@ -1540,6 +1637,54 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
     enabled: hasCalculatorAccess,
   });
 
+  const resolvedFilamentIds = useMemo(() => {
+    const parsedSources = parsedJobs.length > 0
+      ? parsedJobs.map((job) => job.parsed)
+      : parsedGcode
+        ? [parsedGcode]
+        : [];
+    return Array.from(new Set(
+      parsedSources.flatMap((parsed) =>
+        parsed.materials.flatMap((material) => {
+          const filamentId = material.identity_resolution?.status === 'resolved'
+            ? material.identity_resolution.filament_id
+            : null;
+          return filamentId != null ? [filamentId] : [];
+        }),
+      ),
+    )).sort((left, right) => left - right);
+  }, [parsedGcode, parsedJobs]);
+
+  const baseCatalogFilaments = filamentsQuery.data?.items ?? [];
+  const supplementalFilamentIds = useMemo(() => {
+    const loadedIds = new Set(baseCatalogFilaments.map((filament) => filament.id));
+    return resolvedFilamentIds.filter((filamentId) => !loadedIds.has(filamentId));
+  }, [baseCatalogFilaments, resolvedFilamentIds]);
+
+  const supplementalFilamentsQuery = useQuery({
+    queryKey: ['calculator-pro', 'resolved-filaments', supplementalFilamentIds],
+    queryFn: () => Promise.all(
+      supplementalFilamentIds.map((filamentId) => filamentsAPI.get(filamentId)),
+    ),
+    staleTime: 60_000,
+    enabled:
+      hasCalculatorAccess
+      && !filamentsQuery.isPending
+      && supplementalFilamentIds.length > 0,
+  });
+
+  const catalogFilaments = useMemo(() => {
+    const byId = new Map(baseCatalogFilaments.map((filament) => [filament.id, filament]));
+    for (const filament of supplementalFilamentsQuery.data ?? []) {
+      byId.set(filament.id, filament);
+    }
+    return Array.from(byId.values());
+  }, [baseCatalogFilaments, supplementalFilamentsQuery.data]);
+  const catalogFilamentsPending =
+    filamentsQuery.isPending
+    || (supplementalFilamentIds.length > 0 && supplementalFilamentsQuery.isPending);
+  const catalogFilamentsError = filamentsQuery.isError || supplementalFilamentsQuery.isError;
+
   const quoteCustomersQuery = useQuery({
     queryKey: ['crm', 'customers', 'calculator'],
     queryFn: () => crmAPI.listCustomers({ size: 100 }),
@@ -1556,6 +1701,10 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
 
   const calculateMutation = useMutation({
     mutationFn: (data: CalculatorEstimateRequest) => calculatorAPI.estimate(data),
+  });
+
+  const preflightMutation = useMutation({
+    mutationFn: (data: CalculatorPreflightRequest) => calculatorAPI.preflight(data),
   });
 
   const parseGcodeMutation = useMutation({
@@ -1639,8 +1788,8 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
     [availableSpools, selectedSpoolId],
   );
   const selectedCatalogFilament = useMemo(
-    () => filamentsQuery.data?.items.find((filament) => filament.id === form.selectedFilamentId) ?? null,
-    [filamentsQuery.data?.items, form.selectedFilamentId],
+    () => catalogFilaments.find((filament) => filament.id === form.selectedFilamentId) ?? null,
+    [catalogFilaments, form.selectedFilamentId],
   );
   const selectedMaterial = useMemo<MaterialSelectionSnapshot | null>(() => {
     if (selectedSpool?.filament) {
@@ -1817,6 +1966,19 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
     );
   }, [calculateMutation.error, t]);
 
+  const preflightError = useMemo(() => {
+    if (!preflightMutation.error) return null;
+    const errorWithResponse = preflightMutation.error as {
+      response?: { data?: { detail?: unknown } };
+      message?: string;
+    };
+    return translateApiError(
+      t,
+      errorWithResponse.response?.data?.detail ?? errorWithResponse.message,
+      tc('preflightError'),
+    );
+  }, [preflightMutation.error, t]);
+
   const parseGcodeError = useMemo(() => {
     if (!parseGcodeMutation.error) {
       return null;
@@ -1857,6 +2019,9 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
     if (field === 'spoolPrice') {
       priceManuallyEditedRef.current = true;
       setMaterialPriceSource('manual');
+    }
+    if (['weightG', 'supportsWeightG', 'supportsLossCoefficient', 'quantity'].includes(field)) {
+      preflightMutation.reset();
     }
     setForm((prev) => ({ ...prev, [field]: value }));
   };
@@ -1911,6 +2076,12 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
     skipNextFilamentDefaultsRef.current = false;
     priceManuallyEditedRef.current = false;
     setSelectedSpoolId(spoolId);
+    setPreflightSpoolIdsByLine((current) => {
+      const next = { ...current };
+      delete next.manual;
+      return next;
+    });
+    preflightMutation.reset();
 
     if (!spoolId) {
       return;
@@ -1928,6 +2099,12 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
     skipNextFilamentDefaultsRef.current = false;
     priceManuallyEditedRef.current = false;
     setSelectedSpoolId('');
+    setPreflightSpoolIdsByLine((current) => {
+      const next = { ...current };
+      delete next.manual;
+      return next;
+    });
+    preflightMutation.reset();
     setForm((prev) => ({
       ...prev,
       selectedFilamentId: filamentId,
@@ -1936,6 +2113,12 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
 
   const handleMaterialLineSelection = (lineId: string, selectionValue: string) => {
     setMaterialLinesError(null);
+    setPreflightSpoolIdsByLine((current) => {
+      const next = { ...current };
+      delete next[lineId];
+      return next;
+    });
+    preflightMutation.reset();
     setMaterialLines((currentLines) =>
       currentLines.map((line) => {
         if (line.line_id !== lineId) return line;
@@ -1955,13 +2138,15 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
             spool_price: currencyMatches ? (defaults.spoolPrice ?? 0) : 0,
             spool_weight_kg: defaults.spoolWeightKg ?? 1,
             price_source: spool.price != null ? 'spool' : 'filamenthub',
+            mappingSource: 'explicit',
+            confidence: null,
             requiresSpoolChoice: false,
             priceResolved: currencyMatches && defaults.spoolPrice != null,
           };
         }
         if (selectionValue.startsWith('filament:')) {
           const filamentId = Number(selectionValue.slice('filament:'.length));
-          const filament = filamentsQuery.data?.items.find((item) => item.id === filamentId);
+          const filament = catalogFilaments.find((item) => item.id === filamentId);
           if (!filament) return line;
           const defaults = deriveCatalogFilamentDefaults(filament);
           const brandCurrency = filament.currency ? normalizeCurrency(filament.currency) : null;
@@ -1974,6 +2159,8 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
             spool_price: currencyMatches ? (defaults.spoolPrice ?? 0) : 0,
             spool_weight_kg: defaults.spoolWeightKg ?? 1,
             price_source: 'filamenthub',
+            mappingSource: 'explicit',
+            confidence: null,
             requiresSpoolChoice: false,
             priceResolved: currencyMatches && defaults.spoolPrice != null,
           };
@@ -1984,6 +2171,8 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
           spool_id: null,
           filament_id: null,
           price_source: 'manual',
+          mappingSource: 'unresolved',
+          confidence: null,
           requiresSpoolChoice: false,
           priceResolved: selectionValue === 'manual' && line.priceResolved,
         };
@@ -2083,26 +2272,81 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
     }));
   };
 
+  const currentPreflightRequest = (
+    spoolIdsByLine: Record<string, number[]> = preflightSpoolIdsByLine,
+    safetyBufferPercent = preflightSafetyBufferPercent,
+  ): CalculatorPreflightRequest | null => {
+    const estimateRequest = buildEstimateRequest(
+      form,
+      materialLines,
+      parsedJobs,
+      jobConfigs,
+      printerEconomics,
+      quoteProfile.currency,
+    );
+    return buildPreflightRequest(
+      estimateRequest,
+      materialLines,
+      selectedSpool,
+      selectedCatalogFilament,
+      spoolIdsByLine,
+      safetyBufferPercent,
+      parsedGcode,
+      autoMaterialMatch,
+    );
+  };
+
+  const runPreflight = (
+    spoolIdsByLine: Record<string, number[]> = preflightSpoolIdsByLine,
+    safetyBufferPercent = preflightSafetyBufferPercent,
+  ) => {
+    const payload = currentPreflightRequest(spoolIdsByLine, safetyBufferPercent);
+    if (payload) preflightMutation.mutate(payload);
+  };
+
+  const handlePreflightSpoolIdsChange = (lineId: string, spoolIds: number[]) => {
+    const next = { ...preflightSpoolIdsByLine, [lineId]: spoolIds };
+    setPreflightSpoolIdsByLine(next);
+    runPreflight(next);
+  };
+
+  const handlePreflightBufferChange = (value: number) => {
+    setPreflightSafetyBufferPercent(value);
+    preflightMutation.reset();
+  };
+
   const handleCalculate = () => {
     if (materialLines.some((line) => !line.priceResolved || line.spool_weight_kg <= 0)) {
       setMaterialLinesError(tc('materialLinesIncomplete'));
       return;
     }
     setMaterialLinesError(null);
-    calculateMutation.mutate(
-      buildEstimateRequest(
-        form,
-        materialLines,
-        parsedJobs,
-        jobConfigs,
-        printerEconomics,
-        quoteProfile.currency,
-      ),
+    const estimateRequest = buildEstimateRequest(
+      form,
+      materialLines,
+      parsedJobs,
+      jobConfigs,
+      printerEconomics,
+      quoteProfile.currency,
     );
+    calculateMutation.mutate(estimateRequest);
+    const preflightRequest = buildPreflightRequest(
+      estimateRequest,
+      materialLines,
+      selectedSpool,
+      selectedCatalogFilament,
+      preflightSpoolIdsByLine,
+      preflightSafetyBufferPercent,
+      parsedGcode,
+      autoMaterialMatch,
+    );
+    if (preflightRequest) preflightMutation.mutate(preflightRequest);
   };
 
   const applyParsedJobs = (jobs: ParsedJobState[], warning: string | null) => {
     calculateMutation.reset();
+    preflightMutation.reset();
+    setPreflightSpoolIdsByLine({});
     priceManuallyEditedRef.current = false;
     lastAutoMatchedGcodeKeyRef.current = null;
     lastBuiltMaterialJobsKeyRef.current = null;
@@ -2176,6 +2420,7 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
     jobKey: string,
     patch: Partial<Omit<CalculatorJobConfig, 'jobKey'>>,
   ) => {
+    preflightMutation.reset();
     setJobConfigs((current) => current.map((config) => (
       config.jobKey === jobKey
         ? {
@@ -2244,6 +2489,8 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
         : [];
     const restoredJobsByKey = new Map(restoredJobs.map((job) => [job.key, job.parsed]));
     skipNextFilamentDefaultsRef.current = true;
+    preflightMutation.reset();
+    setPreflightSpoolIdsByLine({});
     setSelectedSpoolId('');
     lastAutoMatchedGcodeKeyRef.current = entry.parsed_gcode
       ? `${entry.parsed_gcode.file_name}:${entry.parsed_gcode.file_size_bytes}:${entry.parsed_gcode.plate_index ?? 0}`
@@ -2273,24 +2520,31 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
           };
     }));
     setMaterialLines(
-      (entry.request_data.material_lines ?? []).map((line) => ({
-        ...line,
-        selectionValue: line.spool_id
-          ? `spool:${line.spool_id}`
-          : line.filament_id
-            ? `filament:${line.filament_id}`
-            : 'manual',
-        fileName: (line.job_key ? restoredJobsByKey.get(line.job_key)?.file_name : null)
-          ?? entry.parsed_gcode?.file_name
-          ?? line.job_key
-          ?? tc('manualMaterialLine'),
-        plateIndex: (line.job_key ? restoredJobsByKey.get(line.job_key)?.plate_index : null)
-          ?? entry.parsed_gcode?.plate_index
-          ?? null,
-        confidence: null,
-        requiresSpoolChoice: false,
-        priceResolved: true,
-      })),
+      (entry.request_data.material_lines ?? []).map((line) => {
+        const parsedJob = line.job_key
+          ? restoredJobsByKey.get(line.job_key) ?? entry.parsed_gcode
+          : entry.parsed_gcode;
+        const parsedMaterial = findParsedMaterialForTool(parsedJob, line.tool_index);
+        return {
+          ...line,
+          selectionValue: line.spool_id
+            ? `spool:${line.spool_id}`
+            : line.filament_id
+              ? `filament:${line.filament_id}`
+              : 'manual',
+          fileName: parsedJob?.file_name
+            ?? line.job_key
+            ?? tc('manualMaterialLine'),
+          plateIndex: parsedJob?.plate_index ?? null,
+          confidence: null,
+          evidenceSource: parsedJob ? 'gcode' : 'manual',
+          lengthMm: parsedMaterial?.length_mm ?? null,
+          volumeCm3: parsedMaterial?.volume_cm3 ?? null,
+          mappingSource: line.spool_id || line.filament_id ? 'explicit' : 'unresolved',
+          requiresSpoolChoice: false,
+          priceResolved: true,
+        };
+      }),
     );
     setActiveTab('calculator');
     setHistoryFeedback({ kind: 'success', message: tc('historyRestored') });
@@ -2687,7 +2941,7 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
   };
 
   useEffect(() => {
-    if (parsedJobs.length === 0 || filamentsQuery.isPending || spoolsQuery.isPending) {
+    if (parsedJobs.length === 0 || catalogFilamentsPending || spoolsQuery.isPending) {
       return;
     }
     const jobsKey = parsedJobs.map((job) => job.key).join('|');
@@ -2732,9 +2986,10 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
         const match = findPrioritizedMaterialMatch(
           material,
           Array.from(spoolCandidatesByFilamentId.values()),
-          filamentsQuery.data?.items ?? [],
+          catalogFilaments,
           (candidate) => candidate,
           (filament) => ({
+            filamentId: filament.id,
             name: filament.name,
             vendor: filament.brand_name,
             materialType: filament.material_type,
@@ -2758,12 +3013,18 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
           fileName: job.parsed.file_name,
           plateIndex: job.parsed.plate_index ?? null,
           confidence: match?.match.confidence ?? null,
+          evidenceSource: 'gcode',
+          lengthMm: material.length_mm ?? null,
+          volumeCm3: material.volume_cm3 ?? null,
+          mappingSource: 'unresolved',
           requiresSpoolChoice: false,
           priceResolved: false,
         };
 
         if (match?.source === 'user') {
           const candidate = match.match.item;
+          baseLine.filament_id = candidate.filamentId;
+          baseLine.mappingSource = 'automatic';
           if (candidate.spoolIds.length === 1) {
             const spool = availableSpools.find((item) => item.id === candidate.spoolIds[0]);
             if (spool) {
@@ -2781,7 +3042,6 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
             }
           } else {
             baseLine.selectionValue = '';
-            baseLine.filament_id = candidate.filamentId;
             baseLine.requiresSpoolChoice = true;
           }
         } else if (match?.source === 'catalog') {
@@ -2794,6 +3054,7 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
           baseLine.spool_price = currencyMatches ? (defaults.spoolPrice ?? 0) : 0;
           baseLine.spool_weight_kg = defaults.spoolWeightKg ?? 1;
           baseLine.price_source = 'filamenthub';
+          baseLine.mappingSource = 'automatic';
           baseLine.priceResolved = currencyMatches && defaults.spoolPrice != null;
         } else if ((material.slicer_profile_price_per_kg ?? 0) > 0) {
           baseLine.spool_price = material.slicer_profile_price_per_kg!;
@@ -2809,8 +3070,8 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
     setMaterialLines(nextLines);
   }, [
     availableSpools,
-    filamentsQuery.data?.items,
-    filamentsQuery.isPending,
+    catalogFilaments,
+    catalogFilamentsPending,
     parsedJobs,
     spoolsQuery.isPending,
   ]);
@@ -2826,7 +3087,7 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
       !parsedGcode ||
       !currentParsedKey ||
       lastAutoMatchedGcodeKeyRef.current === currentParsedKey ||
-      filamentsQuery.isPending ||
+      catalogFilamentsPending ||
       spoolsQuery.isPending
     ) {
       return;
@@ -2858,9 +3119,10 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
     const prioritizedMatch = findPrioritizedMaterialMatch(
       primaryMaterial,
       Array.from(spoolCandidatesByFilamentId.values()),
-      filamentsQuery.data?.items ?? [],
+      catalogFilaments,
       (candidate) => candidate,
       (filament) => ({
+        filamentId: filament.id,
         name: filament.name,
         vendor: filament.brand_name,
         materialType: filament.material_type,
@@ -2884,6 +3146,7 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
       }));
       setAutoMaterialMatch({
         confidence: spoolMatch.confidence,
+        method: spoolMatch.method,
         source: 'spool',
         requiresSpoolChoice: !exactSpoolId,
       });
@@ -2895,7 +3158,11 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
       priceManuallyEditedRef.current = false;
       setSelectedSpoolId('');
       setForm((prev) => ({ ...prev, selectedFilamentId: catalogMatch.item.id }));
-      setAutoMaterialMatch({ confidence: catalogMatch.confidence, source: 'catalog' });
+      setAutoMaterialMatch({
+        confidence: catalogMatch.confidence,
+        method: catalogMatch.method,
+        source: 'catalog',
+      });
       return;
     }
 
@@ -2912,8 +3179,8 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
     }
   }, [
     availableSpools,
-    filamentsQuery.data?.items,
-    filamentsQuery.isPending,
+    catalogFilaments,
+    catalogFilamentsPending,
     parsedGcode,
     spoolsQuery.isPending,
   ]);
@@ -2969,6 +3236,30 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
   const trialDaysLeft = trialEndsAt
     ? Math.max(0, Math.ceil((new Date(trialEndsAt).getTime() - Date.now()) / 86_400_000))
     : null;
+
+  const preflightUiLines: MaterialPreflightUiLine[] = materialLines.length > 0
+    ? materialLines.map((line) => ({
+        lineId: line.line_id,
+        label: line.label || (line.tool_index != null ? `T${line.tool_index}` : tc('unknownMaterial')),
+        toolIndex: line.tool_index ?? null,
+        filamentId: line.filament_id ?? null,
+        selectedSpoolIds: preflightSpoolIdsByLine[line.line_id]
+          ?? (line.spool_id ? [line.spool_id] : []),
+      }))
+    : form.weightG > 0
+      ? [{
+          lineId: 'manual',
+          label: selectedSpool?.filament
+            ? buildFilamentLabel(selectedSpool.filament)
+            : selectedCatalogFilament
+              ? buildFilamentLabel(selectedCatalogFilament)
+              : tc('manualMaterialLine'),
+          toolIndex: null,
+          filamentId: selectedSpool?.filament_id ?? selectedCatalogFilament?.id ?? null,
+          selectedSpoolIds: preflightSpoolIdsByLine.manual
+            ?? (selectedSpool ? [selectedSpool.id] : []),
+        }]
+      : [];
 
   return (
     <div className="space-y-6">
@@ -3063,12 +3354,17 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
           parsedJobs={parsedJobs}
           jobConfigs={jobConfigs}
           materialLines={materialLines}
+          preflightLines={preflightUiLines}
+          preflightResult={preflightMutation.data ?? null}
+          preflightSafetyBufferPercent={preflightSafetyBufferPercent}
+          preflightError={preflightError}
+          isPreflightLoading={preflightMutation.isPending}
           batchParseWarning={batchParseWarning}
           materialLinesError={materialLinesError}
           dragActive={dragActive}
-          filaments={filamentsQuery.data?.items ?? []}
-          isFilamentsLoading={filamentsQuery.isPending}
-          filamentsLoadError={filamentsQuery.isError ? tc('materialsLoadError') : null}
+          filaments={catalogFilaments}
+          isFilamentsLoading={catalogFilamentsPending}
+          filamentsLoadError={catalogFilamentsError ? tc('materialsLoadError') : null}
           spools={availableSpools}
           isSpoolsLoading={spoolsQuery.isPending}
           spoolsLoadError={spoolsQuery.isError ? tc('spoolsLoadError') : null}
@@ -3101,6 +3397,9 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
           onMaterialLineSelection={handleMaterialLineSelection}
           onMaterialLinePriceChange={handleMaterialLinePriceChange}
           onMaterialLineSpoolWeightChange={handleMaterialLineSpoolWeightChange}
+          onPreflightSafetyBufferChange={handlePreflightBufferChange}
+          onPreflightSpoolIdsChange={handlePreflightSpoolIdsChange}
+          onPreflightRefresh={() => runPreflight()}
           onDragStateChange={setDragActive}
           quoteProfile={quoteProfile}
           embedded={embedded}
@@ -3193,6 +3492,11 @@ interface CalculatorViewProps {
   parsedJobs: ParsedJobState[];
   jobConfigs: CalculatorJobConfig[];
   materialLines: CalculatorMaterialLineState[];
+  preflightLines: MaterialPreflightUiLine[];
+  preflightResult: CalculatorPreflightResponse | null;
+  preflightSafetyBufferPercent: number;
+  preflightError: string | null;
+  isPreflightLoading: boolean;
   batchParseWarning: string | null;
   materialLinesError: string | null;
   dragActive: boolean;
@@ -3238,6 +3542,9 @@ interface CalculatorViewProps {
   onMaterialLineSelection: (lineId: string, selectionValue: string) => void;
   onMaterialLinePriceChange: (lineId: string, value: number) => void;
   onMaterialLineSpoolWeightChange: (lineId: string, value: number) => void;
+  onPreflightSafetyBufferChange: (value: number) => void;
+  onPreflightSpoolIdsChange: (lineId: string, spoolIds: number[]) => void;
+  onPreflightRefresh: () => void;
   onDragStateChange: (active: boolean) => void;
   onOpenQuote: () => void;
   onAddToQuote: () => void;
@@ -3265,6 +3572,11 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
   parsedJobs,
   jobConfigs,
   materialLines,
+  preflightLines,
+  preflightResult,
+  preflightSafetyBufferPercent,
+  preflightError,
+  isPreflightLoading,
   batchParseWarning,
   materialLinesError,
   dragActive,
@@ -3306,6 +3618,9 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
   onMaterialLineSelection,
   onMaterialLinePriceChange,
   onMaterialLineSpoolWeightChange,
+  onPreflightSafetyBufferChange,
+  onPreflightSpoolIdsChange,
+  onPreflightRefresh,
   onDragStateChange,
   onOpenQuote,
   onAddToQuote,
@@ -3376,7 +3691,9 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
       && job.parsed.plate_index === parsedGcode?.plate_index,
   )?.key;
   const materialMatchConfidenceLabel = autoMaterialMatch
-    ? {
+    ? autoMaterialMatch.method === 'stable_id'
+      ? tc('materialIdentityExact')
+      : {
         high: tc('materialMatchConfidenceHigh'),
         medium: tc('materialMatchConfidenceMedium'),
         low: tc('materialMatchConfidenceLow'),
@@ -3573,6 +3890,19 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
       : null;
     const technicalLabel = line.label && line.label !== materialName ? line.label : null;
     const materialPickerOpen = materialPickerLineIds.has(line.line_id);
+    const identityResolution = parsedMaterial?.identity_resolution;
+    const identityBadge =
+      identityResolution?.status === 'resolved'
+      && identityResolution.filament_id != null
+      && identityResolution.filament_id === line.filament_id
+        ? { label: tc('materialIdentityExact'), tone: 'text-emerald-300/80' }
+        : identityResolution?.status === 'ambiguous'
+          ? { label: tc('materialIdentityAmbiguous'), tone: 'text-amber-300/90' }
+          : line.mappingSource === 'automatic'
+            ? { label: tc('materialMatchedByAttributes'), tone: 'text-cyan-300/80' }
+            : identityResolution?.status === 'unresolved'
+              ? { label: tc('materialIdentityUnresolved'), tone: 'text-amber-300/80' }
+              : null;
 
     return (
     <div
@@ -3617,6 +3947,14 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
             {selectedMaterialDetails ? (
               <span className="min-w-0 truncate text-slate-400" title={selectedMaterialDetails}>
                 {selectedMaterialDetails}
+              </span>
+            ) : null}
+            {identityBadge ? (
+              <span
+                className={`shrink-0 font-medium ${identityBadge.tone}`}
+                title={identityResolution?.stable_id}
+              >
+                {identityBadge.label}
               </span>
             ) : null}
           </div>
@@ -4247,7 +4585,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
         </SurfaceCard>}
 
         <SurfaceCard className="p-5 md:p-6">
-          <SectionHeading icon={<Printer className="h-5 w-5 text-cyan-300" />} title={tc('workspaceTitle')} />
+          <SectionHeading icon={<LayeredPrinterIcon className="h-5 w-5 text-cyan-300" />} title={tc('workspaceTitle')} />
 
           <div className="mt-5 space-y-5">
             <input
@@ -4844,6 +5182,21 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                     ) : null}
                   </div>
                 </div>
+                ) : null}
+                {preflightLines.length > 0 ? (
+                  <MaterialPreflightPanel
+                    lines={preflightLines}
+                    spools={spools}
+                    result={preflightResult}
+                    safetyBufferPercent={preflightSafetyBufferPercent}
+                    isLoading={isPreflightLoading}
+                    error={preflightError}
+                    canRun={!isSpoolsLoading}
+                    formatSpoolLabel={buildSpoolLabel}
+                    onSafetyBufferChange={onPreflightSafetyBufferChange}
+                    onSpoolIdsChange={onPreflightSpoolIdsChange}
+                    onRefresh={onPreflightRefresh}
+                  />
                 ) : null}
               </WorkspacePanel>
 
