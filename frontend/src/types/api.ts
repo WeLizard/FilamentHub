@@ -959,6 +959,11 @@ export interface FeedbackDetail extends Feedback {
   messages: FeedbackMessage[];
 }
 
+export interface UnreadCommunicationsCount {
+  unread_emails: number;
+  new_feedback: number;
+}
+
 export interface FeedbackListResponse {
   items: Feedback[];
   total: number;

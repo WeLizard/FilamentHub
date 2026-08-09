@@ -60,6 +60,7 @@ export function AdminFeedback() {
       }),
     onSuccess: (updatedFeedback) => {
       queryClient.invalidateQueries({ queryKey: ['admin-feedback'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-communications-unread-count'] });
       queryClient.setQueryData(
         ['admin-feedback-detail', updatedFeedback.id],
         updatedFeedback,
@@ -82,6 +83,7 @@ export function AdminFeedback() {
       adminFeedbackAPI.update(id, { status }),
     onSuccess: (updatedFeedback) => {
       queryClient.invalidateQueries({ queryKey: ['admin-feedback'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-communications-unread-count'] });
       queryClient.setQueryData(['admin-feedback-detail', updatedFeedback.id], updatedFeedback);
       setSelectedFeedback(updatedFeedback);
       setResponseStatus(updatedFeedback.status);
@@ -97,6 +99,7 @@ export function AdminFeedback() {
     mutationFn: (id: number) => adminFeedbackAPI.delete(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-feedback'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-communications-unread-count'] });
       setSelectedFeedback(null);
     },
     onError: (error: AxiosError<{ detail: unknown }>) => {

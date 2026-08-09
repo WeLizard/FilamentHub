@@ -22,7 +22,7 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { AxiosError } from 'axios';
-import { adminCommunicationsAPI } from '../../api/client';
+import { adminAPI, adminCommunicationsAPI } from '../../api/client';
 import type {
   EmailAttachment,
   EmailDeliveryStatus,
@@ -506,6 +506,7 @@ function AdminEmailInbox() {
   const updateCachedThread = (thread: EmailThreadDetail) => {
     queryClient.setQueryData(['admin-email-thread', thread.id], thread);
     queryClient.invalidateQueries({ queryKey: ['admin-email-threads'] });
+    queryClient.invalidateQueries({ queryKey: ['admin-communications-unread-count'] });
   };
 
   const markReadMutation = useMutation({
@@ -564,6 +565,7 @@ function AdminEmailInbox() {
       setDeleteThreadId(null);
       setSelectedThreadId(null);
       queryClient.invalidateQueries({ queryKey: ['admin-email-threads'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-communications-unread-count'] });
       toast.success(t('adminCommunications.delete.success'));
     },
     onError: (error: AxiosError<{ detail: unknown }>) => {
@@ -1004,11 +1006,25 @@ function AdminEmailInbox() {
 export function AdminCommunications() {
   const { t } = useTranslation();
   const [section, setSection] = useState<CommunicationSection>('inbox');
+  const unreadQuery = useQuery({
+    queryKey: ['admin-communications-unread-count'],
+    queryFn: () => adminAPI.countUnreadCommunications(),
+  });
 
   const sections = [
-    { id: 'inbox' as const, icon: Inbox, label: t('adminCommunications.sections.inbox') },
-    { id: 'feedback' as const, icon: MessageCircle, label: t('adminCommunications.sections.feedback') },
-    { id: 'broadcasts' as const, icon: Send, label: t('adminCommunications.sections.broadcasts') },
+    {
+      id: 'inbox' as const,
+      icon: Inbox,
+      label: t('adminCommunications.sections.inbox'),
+      count: unreadQuery.data?.unread_emails || 0,
+    },
+    {
+      id: 'feedback' as const,
+      icon: MessageCircle,
+      label: t('adminCommunications.sections.feedback'),
+      count: unreadQuery.data?.new_feedback || 0,
+    },
+    { id: 'broadcasts' as const, icon: Send, label: t('adminCommunications.sections.broadcasts'), count: 0 },
   ];
 
   return (
@@ -1023,7 +1039,7 @@ export function AdminCommunications() {
           <p className="mt-1 max-w-2xl text-sm leading-6 text-gray-400">{t('adminCommunications.description')}</p>
         </div>
         <nav className="flex w-full gap-1 rounded-xl border border-white/10 bg-black/15 p-1 md:w-auto" aria-label={t('adminCommunications.title')}>
-          {sections.map(({ id, icon: Icon, label }) => (
+          {sections.map(({ id, icon: Icon, label, count }) => (
             <button
               key={id}
               type="button"
@@ -1034,6 +1050,15 @@ export function AdminCommunications() {
             >
               <Icon className="h-4 w-4 shrink-0" />
               <span className="truncate">{label}</span>
+              {count > 0 && (
+                <span
+                  className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${
+                    section === id ? 'bg-slate-950/20 text-slate-950' : 'bg-cyan-400 text-slate-950'
+                  }`}
+                >
+                  {count}
+                </span>
+              )}
             </button>
           ))}
         </nav>

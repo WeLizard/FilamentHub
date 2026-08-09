@@ -50,6 +50,8 @@ from app.db.session import get_db
 from app.models.brand import Brand
 from app.models.brand_request import BrandRequest, BrandRequestStatus
 from app.models.brand_territorial_grant import GrantSource
+from app.models.email_communication import EmailThread
+from app.models.feedback import Feedback, FeedbackStatus
 from app.models.orca_schema_observation import OrcaSchemaObservation
 from app.models.organization import OrganizationMemberRole, OrganizationMembership
 from app.models.preset import Preset, PresetModerationStatus
@@ -481,6 +483,30 @@ async def upload_brand_logo(
     await db.refresh(brand)
 
     return BrandResponse.model_validate(brand)
+
+
+@router.get("/communications/unread/count")
+async def count_unread_communications(
+    admin: Annotated[User, Depends(get_current_admin_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict[str, int]:
+    """Сколько непрочитанного в переписке и обращениях — для метки на вкладке.
+
+    Двумя числами, а не одним: внутри вкладки это разные разделы, и по метке
+    должно быть понятно, куда идти.
+    """
+    del admin
+    emails = await db.scalar(
+        select(func.coalesce(func.sum(EmailThread.unread_count), 0)).where(
+            EmailThread.unread_count > 0
+        )
+    )
+    feedback = await db.scalar(
+        select(func.count())
+        .select_from(Feedback)
+        .where(Feedback.status == FeedbackStatus.OPEN)
+    )
+    return {"unread_emails": int(emails or 0), "new_feedback": int(feedback or 0)}
 
 
 # ==================== Preset Moderation ====================

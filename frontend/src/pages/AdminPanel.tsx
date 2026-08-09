@@ -42,6 +42,17 @@ export function AdminPanel() {
     enabled: user?.role === 'admin',
   });
 
+  // Переписка и обращения ждут ответа человека: без метки о них узнают, только
+  // если зайти во вкладку.
+  const unreadCommunicationsQuery = useQuery({
+    queryKey: ['admin-communications-unread-count'],
+    queryFn: () => adminAPI.countUnreadCommunications(),
+    enabled: user?.role === 'admin',
+  });
+  const unreadCommunications =
+    (unreadCommunicationsQuery.data?.unread_emails || 0) +
+    (unreadCommunicationsQuery.data?.new_feedback || 0);
+
   const handleLogout = () => {
     logout();
     navigate('/');
@@ -67,7 +78,7 @@ export function AdminPanel() {
     { id: 'printers' as AdminTab, label: t('adminPanel.tabs.printers'), shortLabel: t('adminPanel.shortTabs.printers'), icon: Printer3DIcon, count: null },
     { id: 'printer-requests' as AdminTab, label: t('adminPanel.tabs.printer-requests'), shortLabel: t('adminPanel.shortTabs.printer-requests'), icon: Package, count: null },
     { id: 'users' as AdminTab, label: t('adminPanel.tabs.users'), shortLabel: t('adminPanel.shortTabs.users'), icon: Users, count: null },
-    { id: 'communications' as AdminTab, label: t('adminPanel.tabs.communications'), shortLabel: t('adminPanel.shortTabs.communications'), icon: Mail, count: null },
+    { id: 'communications' as AdminTab, label: t('adminPanel.tabs.communications'), shortLabel: t('adminPanel.shortTabs.communications'), icon: Mail, count: unreadCommunications || null },
     { id: 'wiki' as AdminTab, label: t('adminPanel.tabs.wiki'), shortLabel: t('adminPanel.shortTabs.wiki'), icon: BookOpen, count: null },
     { id: 'stats' as AdminTab, label: t('adminPanel.tabs.stats'), shortLabel: t('adminPanel.shortTabs.stats'), icon: BarChart3, count: null },
     { id: 'database' as AdminTab, label: t('adminPanel.tabs.database'), shortLabel: t('adminPanel.shortTabs.database'), icon: Database, count: null },
