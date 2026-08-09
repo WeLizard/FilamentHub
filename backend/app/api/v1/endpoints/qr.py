@@ -7,6 +7,7 @@ from fastapi.responses import RedirectResponse, StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.dependencies import get_current_active_user, get_current_active_user_optional
 from app.core.errors import (
@@ -22,6 +23,7 @@ from app.db.session import get_db
 from app.models.filament import Filament
 from app.models.user import User
 from app.schemas.filament import FilamentResponse
+from app.services.catalog_url_service import filament_public_path
 from app.services.filament_analytics import event_country, record_filament_event
 from app.services.qr_service import (
     ensure_filament_qr_code,
@@ -49,7 +51,7 @@ async def redirect_qr_scan(
     """
     # Получаем материал по короткому коду
     result = await db.execute(
-        select(Filament).where(Filament.qr_code == short_code)
+        select(Filament).options(selectinload(Filament.brand)).where(Filament.qr_code == short_code)
     )
     filament = result.scalar_one_or_none()
 
@@ -67,7 +69,7 @@ async def redirect_qr_scan(
     await db.commit()
 
     # Редирект на страницу материала
-    return RedirectResponse(f"/filaments/{filament.id}?qr=true")
+    return RedirectResponse(f"{filament_public_path(filament, filament.brand)}?qr=true", status_code=301)
 
 
 @router.post("/{short_code}/scan")
@@ -84,7 +86,7 @@ async def handle_qr_scan(
     """
     # Получаем материал по короткому коду
     result = await db.execute(
-        select(Filament).where(Filament.qr_code == short_code)
+        select(Filament).options(selectinload(Filament.brand)).where(Filament.qr_code == short_code)
     )
     filament = result.scalar_one_or_none()
 
@@ -151,12 +153,20 @@ async def handle_qr_scan(
                     preset_added = False
 
     await db.refresh(filament)
+    await db.refresh(filament, attribute_names=["brand"])
     # reload after commit: usage_count write expires attrs, model_validate would lazy-load
     if official_preset is not None:
         await db.refresh(official_preset)
 
+    filament_response = FilamentResponse.model_validate(filament).model_copy(
+        update={
+            "brand_name": filament.brand.name,
+            "brand_slug": filament.brand.slug,
+            "brand_verified": filament.brand.verified,
+        }
+    )
     return {
-        'filament': FilamentResponse.model_validate(filament),
+        'filament': filament_response,
         'preset_added': preset_added,
         'preset': PresetResponse.model_validate(official_preset) if official_preset else None
     }

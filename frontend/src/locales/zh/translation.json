@@ -2453,6 +2453,21 @@
       "preflightBufferPercent": "安全余量",
       "preflightRefresh": "更新",
       "preflightError": "无法检查材料就绪状态",
+      "printerCompatibilityTitle": "与 {{name}} 的兼容性",
+      "printerCompatibilityHint": "这是来自 G-code、机器配置和目录的提示性证据；它不会启动或阻止打印。",
+      "printerCompatibilityStatus": {
+        "compatible": "兼容",
+        "incompatible": "存在不兼容",
+        "unknown": "证据不足"
+      },
+      "printerCompatibilityKind": {
+        "nozzle_diameter": "喷嘴直径",
+        "nozzle_hrc": "喷嘴硬度",
+        "hotend_temperature": "热端温度上限"
+      },
+      "printerCompatibilityValues": "需要 {{required}} · 可用 {{available}}",
+      "printerCompatibilityUnknownValue": "未确认",
+      "printerCompatibilityNoEvidence": "此计算没有来自 G-code 的已确认机器信息。",
       "preflightStatus": {
         "ready": "已就绪",
         "ready_with_change": "换卷后可用",

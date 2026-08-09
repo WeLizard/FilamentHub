@@ -134,6 +134,7 @@ async def list_slice_reports(
             physical_printer_name=(
                 row.physical_printer.name if row.physical_printer is not None else None
             ),
+            printer_profile_id=row.printer_profile_id,
             target_host=row.target_host,
             source_key=row.source_key,
             sliced_at=row.sliced_at,

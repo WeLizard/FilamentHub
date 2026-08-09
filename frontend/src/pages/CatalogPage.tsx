@@ -39,6 +39,7 @@ import type { AxiosError } from 'axios';
 import { formatDate } from '../utils/formatDate';
 import { useReaderCountry } from '../hooks/useReaderCountry';
 import { MarketNotice } from '../components/MarketNotice';
+import { filamentPublicPath } from '../utils/catalogUrls';
 
 const CATALOG_PAGE_SIZE = 24;
 
@@ -398,7 +399,7 @@ export const CatalogPage: React.FC = () => {
             onSelect={handleSavePreset}
             onShowQR={() => setShowQR(showQR === filament.id ? null : filament.id)}
             showQR={showQR === filament.id}
-            onClick={() => navigate(`/filaments/${filament.id}`)}
+            onClick={() => navigate(filamentPublicPath(filament))}
             savedPresetIds={savedPresetIds}
             configuredNozzleHrc={configuredNozzleHrc}
             fitsPrinter={printerMatchedIds.has(filament.id)}

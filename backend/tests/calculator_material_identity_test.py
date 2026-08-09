@@ -58,6 +58,35 @@ async def test_filamenthub_gcode_id_resolves_catalog_material_before_name(
 
     resolved = await resolve_calculator_material_identities(
         db_session,
+        _parsed(f"FHUB_F_{filament.id:06d}"),
+        user_id=auth_user.id,
+    )
+
+    resolution = resolved.materials[0].identity_resolution
+    assert resolution is not None
+    assert resolution.status == "resolved"
+    assert resolution.source == "filamenthub_filament_id"
+    assert resolution.filament_id == filament.id
+
+
+@pytest.mark.asyncio
+async def test_legacy_filamenthub_gcode_id_remains_readable(
+    db_session: AsyncSession,
+    auth_user: User,
+) -> None:
+    """Old G-code remains usable after separating preset and material IDs."""
+    brand = Brand(name="Legacy ID Brand", slug="legacy-id-brand")
+    db_session.add(brand)
+    await db_session.flush()
+    filament = await _filament(
+        db_session,
+        brand,
+        name="Legacy catalog PLA",
+        slug="legacy-catalog-pla",
+    )
+
+    resolved = await resolve_calculator_material_identities(
+        db_session,
         _parsed(f"FHUB{filament.id:06d}"),
         user_id=auth_user.id,
     )

@@ -15,6 +15,7 @@ import { LanguageSwitcher } from './LanguageSwitcher';
 import { isPluginEmbed, reportAuthStateToPlugin } from '../utils/pluginBridge';
 import { EmbedDebugOverlay } from './EmbedDebugOverlay';
 import { useTranslation } from 'react-i18next';
+import { filamentPublicPath } from '../utils/catalogUrls';
 
 interface LayoutProps {
   children: ReactNode;
@@ -41,7 +42,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
       const res = await qrAPI.scan(code);
       if (res?.filament) {
         setIsScannerOpen(false);
-        navigate(`/filaments/${res.filament.id}?qr=true`);
+        navigate(`${filamentPublicPath(res.filament)}?qr=true`);
         return true;
       }
       return false;

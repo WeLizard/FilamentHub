@@ -26,7 +26,9 @@ export function stripLocalePrefix(pathname: string): string {
 export function withLocalePrefix(path: string, locale: SiteLocale): string {
   const parsed = new URL(path, 'https://filamenthub.invalid');
   const basePath = stripLocalePrefix(parsed.pathname);
-  const localizedPath = basePath === '/' ? `/${locale}/` : `/${locale}${basePath}`;
+  const localizedPath = locale === 'en'
+    ? basePath
+    : basePath === '/' ? `/${locale}/` : `/${locale}${basePath}`;
   return `${localizedPath}${parsed.search}${parsed.hash}`;
 }
 

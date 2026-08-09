@@ -235,7 +235,11 @@ async def preset_to_orcaslicer_json(
 
     # Уникальные идентификаторы
     profile["setting_id"] = f"FHUB{preset.id:06d}"
-    profile["filament_id"] = f"FHUB{filament.id:06d}"
+    # Orca keeps this scalar material identity unchanged when it builds the
+    # per-tool ``filament_ids`` array written into G-code. Keep it distinct
+    # from the preset's setting_id so two different FilamentHub entities never
+    # look like the same identifier in a round-trip or diagnostic log.
+    profile["filament_id"] = f"FHUB_F_{filament.id:06d}"
 
     # Наследование от базового профиля по типу материала (ОБЯЗАТЕЛЬНОЕ поле)
     # Мапим FilamentHub material_type на реальные имена системных пресетов OrcaSlicer

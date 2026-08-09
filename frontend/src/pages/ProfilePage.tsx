@@ -58,6 +58,7 @@ import { formatImportedPresetTemperature } from '../utils/presetImport';
 import { notifyProfileChanged } from '../utils/pluginBridge';
 import { downloadBlob, safeDownloadStem } from '../utils/download';
 import { formatDecimalInput, parseDecimalInput } from '../utils/decimalInput';
+import { filamentPublicPath } from '../utils/catalogUrls';
 const CreatePresetModal = lazy(() =>
   import('../components/CreatePresetModal').then(m => ({ default: m.CreatePresetModal }))
 );
@@ -3531,7 +3532,7 @@ const PresetCard: React.FC<PresetCardProps> = ({ preset, onEdit, onView, onDelet
               )}
             </div>
           {filament && (
-            <div className="mt-1 cursor-pointer hover:opacity-80 transition-opacity" onClick={() => navigate(`/filaments/${filament.id}`, { state: { from: 'profile' } })}>
+            <div className="mt-1 cursor-pointer hover:opacity-80 transition-opacity" onClick={() => navigate(filamentPublicPath(filament), { state: { from: 'profile' } })}>
               <div className="min-w-0 space-y-1">
                 {brand && (
                   <div className="flex items-center gap-2 min-w-0">

@@ -12,6 +12,7 @@ from app.api.v1.endpoints import (
     brands,
     calculator,
     catalog_bundles,
+    catalog_urls,
     country_cells,
     crm,
     devices,
@@ -49,6 +50,7 @@ api_router = APIRouter()
 
 # Include all endpoint routers
 api_router.include_router(auth.router)
+api_router.include_router(catalog_urls.router)
 api_router.include_router(brands.router)
 api_router.include_router(brand_invites.router)
 api_router.include_router(brand_invites.admin_router)

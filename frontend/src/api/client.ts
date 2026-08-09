@@ -700,6 +700,14 @@ export const filamentsAPI = {
     return response.data;
   },
 
+  getBySlug: async (brandSlug: string, filamentSlug: string, country?: string) => {
+    const response = await api.get<Filament>(
+      `/filaments/by-slug/${encodeURIComponent(brandSlug)}/${encodeURIComponent(filamentSlug)}`,
+      { params: country ? { country } : undefined },
+    );
+    return response.data;
+  },
+
   getPresets: async (
     id: number,
     params?: {

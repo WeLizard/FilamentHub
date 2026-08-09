@@ -84,6 +84,7 @@ async def test_identity_name_stays_a_scalar_string():
     assert isinstance(profile["name"], str)
     assert profile["name"] == "Test [fh]"          # authoritative preset.name, unwrapped
     assert profile["setting_id"] == "FHUB000001"   # authoritative id, not the stale blob
+    assert profile["filament_id"] == "FHUB_F_000001"  # copied unchanged into G-code filament_ids
 
 
 @pytest.mark.asyncio

@@ -16,7 +16,10 @@ from app.schemas.calculator import (
     CalculatorParsedMaterial,
 )
 
-_FILAMENTHUB_FILAMENT_ID_RE = re.compile(r"^FHUB(\d+)$", re.IGNORECASE)
+_FILAMENTHUB_FILAMENT_ID_RE = re.compile(
+    r"^FHUB(?:_F_)?(\d+)$",
+    re.IGNORECASE,
+)
 
 
 def _stable_id(value: str | None) -> str | None:
@@ -67,10 +70,12 @@ async def resolve_calculator_material_identities(
 ) -> CalculatorGcodeParseResponse:
     """Resolve G-code ``filament_ids`` before any name-based UI fallback.
 
-    ``FHUB<n>`` is our reserved catalog namespace and maps directly to the
-    Filament written into an exported FilamentHub profile. Provider-specific
-    identifiers are accepted only from the current user's own mapped presets or
-    from trusted catalog presets. Conflicting exact mappings remain ambiguous.
+    ``FHUB_F_<n>`` is our reserved catalog namespace and maps directly to the
+    Filament written into an exported FilamentHub profile. The legacy
+    ``FHUB<n>`` form remains readable for profiles and G-code created before the
+    namespaces were separated. Provider-specific identifiers are accepted only
+    from the current user's own mapped presets or from trusted catalog presets.
+    Conflicting exact mappings remain ambiguous.
     """
     stable_ids = {
         stable_id

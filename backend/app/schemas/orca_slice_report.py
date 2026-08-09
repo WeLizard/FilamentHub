@@ -37,6 +37,7 @@ class OrcaSliceReportResponse(BaseModel):
     printer_model: str | None
     physical_printer_id: int | None
     physical_printer_name: str | None
+    printer_profile_id: int | None
     target_host: str | None
     source_key: str | None
     sliced_at: datetime | None

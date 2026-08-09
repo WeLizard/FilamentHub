@@ -85,6 +85,7 @@ export type FilamentAvailability = 'available' | 'out_of_stock' | 'discontinued'
 
 export interface Filament {
   id: number;
+  slug?: string | null;
   brand_id: number;
   contributed_by_organization_id?: number | null;
   brand_name: string | null;
@@ -842,6 +843,7 @@ export interface OrcaSliceReport {
   printer_model: string | null;
   physical_printer_id: number | null;
   physical_printer_name: string | null;
+  printer_profile_id: number | null;
   target_host: string | null;
   source_key: string | null;
   sliced_at: string | null;
@@ -1074,8 +1076,19 @@ export interface CalculatorPreflightLineRequest {
 export interface CalculatorPreflightRequest {
   lines: CalculatorPreflightLineRequest[];
   print_jobs: CalculatorPrintJobRequest[];
+  physical_printer_id?: number | null;
+  machine_evidence: CalculatorPreflightMachineEvidence[];
   quantity: number;
   safety_buffer_percent: number;
+}
+
+export interface CalculatorPreflightMachineEvidence {
+  job_key?: string | null;
+  printer_profile_id?: number | null;
+  printer_settings_id?: string | null;
+  nozzle_diameter_mm?: number | null;
+  max_nozzle_temperature_c?: number | null;
+  source: 'gcode' | 'orca_plugin';
 }
 
 export interface CalculatorPreflightSpoolAllocation {
@@ -1166,7 +1179,31 @@ export interface CalculatorPreflightResponse {
   required_planned_g: number;
   purchase_cost_by_currency: Record<string, number>;
   purchase_cost_complete: boolean;
+  printer_compatibility: CalculatorPrinterCompatibility | null;
   lines: CalculatorPreflightLineResponse[];
+}
+
+export type CalculatorPrinterCompatibilityStatus = 'compatible' | 'incompatible' | 'unknown';
+
+export interface CalculatorPrinterCompatibilityCheck {
+  kind: 'nozzle_diameter' | 'nozzle_hrc' | 'hotend_temperature';
+  status: CalculatorPrinterCompatibilityStatus;
+  job_key: string | null;
+  line_id: string | null;
+  printer_profile_id: number | null;
+  printer_profile_name: string | null;
+  required_value: number | null;
+  available_values: number[];
+  unit: 'mm' | 'HRC' | '°C';
+  requirement_source: 'gcode' | 'filament_catalog';
+  capability_source: 'printer_profile' | 'catalog_printer' | null;
+}
+
+export interface CalculatorPrinterCompatibility {
+  physical_printer_id: number;
+  physical_printer_name: string;
+  status: CalculatorPrinterCompatibilityStatus;
+  checks: CalculatorPrinterCompatibilityCheck[];
 }
 
 export interface CalculatorEstimateRequest {
@@ -1334,6 +1371,8 @@ export interface CalculatorGcodeParseResponse {
   file_size_bytes: number;
   slicer_name?: string | null;
   slicer_version?: string | null;
+  printer_settings_id?: string | null;
+  printer_model?: string | null;
   print_time_seconds?: number | null;
   first_layer_print_time_seconds?: number | null;
   total_filament_weight_g?: number | null;

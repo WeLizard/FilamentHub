@@ -52,6 +52,12 @@ import type { Preset } from '../types/api';
 import type { AxiosError } from 'axios';
 import { useReaderCountry } from '../hooks/useReaderCountry';
 import { MarketNotice } from '../components/MarketNotice';
+import {
+  brandPublicPath,
+  filamentPublicPath,
+  filamentVariantLabel,
+} from '../utils/catalogUrls';
+import { absoluteLocalizedUrl, normalizeSiteLocale } from '../utils/siteLocale';
 
 // A grid of tiles rather than a column of rows, so a page's worth arrives at
 // once and the next arrives before the person reaches the end of this one.
@@ -174,10 +180,14 @@ const PresetTitle: React.FC<{ name: string }> = ({ name }) => {
 };
 
 export const FilamentDetailPage: React.FC = () => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const readerCountry = useReaderCountry();
   const configuredNozzleHrc = useConfiguredNozzleHrc();
-  const { id } = useParams<{ id: string }>();
+  const { id, brandSlug, filamentSlug } = useParams<{
+    id?: string;
+    brandSlug?: string;
+    filamentSlug?: string;
+  }>();
   const navigate = useNavigate();
   const location = useLocation();
   const { user } = useAuth();
@@ -199,14 +209,17 @@ export const FilamentDetailPage: React.FC = () => {
   const cameFrom = location.state?.from || 'catalog';
 
   // Загружаем филамент
+  const resourceKey = id ?? `${brandSlug ?? ''}/${filamentSlug ?? ''}`;
   const {
     data: filament,
     isLoading: isLoadingFilament,
     error: filamentError,
   } = useQuery({
-    queryKey: ['filament', id, readerCountry],
-    queryFn: () => filamentsAPI.get(Number(id), readerCountry),
-    enabled: !!id,
+    queryKey: ['filament', resourceKey, readerCountry],
+    queryFn: () => id
+      ? filamentsAPI.get(Number(id), readerCountry)
+      : filamentsAPI.getBySlug(brandSlug!, filamentSlug!, readerCountry),
+    enabled: Boolean(id || (brandSlug && filamentSlug)),
   });
 
   // Загружаем бренд
@@ -215,6 +228,19 @@ export const FilamentDetailPage: React.FC = () => {
     queryFn: () => brandsAPI.get(filament!.brand_id, undefined, readerCountry),
     enabled: !!filament?.brand_id,
   });
+
+  useEffect(() => {
+    if (!filament) {
+      return;
+    }
+    const canonicalPath = filamentPublicPath(filament);
+    if (location.pathname !== canonicalPath) {
+      navigate(`${canonicalPath}${location.search}${location.hash}`, {
+        replace: true,
+        state: location.state,
+      });
+    }
+  }, [filament, location.hash, location.pathname, location.search, location.state, navigate]);
 
   // Загружаем все пресеты
   // Loaded a page at a time as the person scrolls: a popular material can carry
@@ -227,15 +253,15 @@ export const FilamentDetailPage: React.FC = () => {
     hasNextPage: hasMorePresets,
     fetchNextPage: fetchMorePresets,
   } = useInfiniteQuery({
-    queryKey: ['filament-presets', id, presetSort, presetPrinterId],
+    queryKey: ['filament-presets', filament?.id, presetSort, presetPrinterId],
     queryFn: ({ pageParam }) =>
-      filamentsAPI.getPresets(Number(id), {
+      filamentsAPI.getPresets(filament!.id, {
         page: pageParam,
         size: PRESETS_PER_PAGE,
         sort: presetSort,
         printer_id: presetPrinterId ?? undefined,
       }),
-    enabled: !!id,
+    enabled: !!filament?.id,
     initialPageParam: 1,
     getNextPageParam: (lastPage) =>
       lastPage.page < lastPage.pages ? lastPage.page + 1 : undefined,
@@ -308,24 +334,24 @@ export const FilamentDetailPage: React.FC = () => {
 
   // Загружаем отзывы
   const { data: reviewsData, isLoading: isLoadingReviews, refetch: refetchReviews } = useQuery({
-    queryKey: ['filament-reviews', id, reviewsPage],
-    queryFn: () => filamentReviewsAPI.list(Number(id), { page: reviewsPage, size: 20, active_only: true }),
-    enabled: !!id,
+    queryKey: ['filament-reviews', filament?.id, reviewsPage],
+    queryFn: () => filamentReviewsAPI.list(filament!.id, { page: reviewsPage, size: 20, active_only: true }),
+    enabled: !!filament?.id,
   });
 
   // Загружаем статистику рейтингов
   const { data: ratingStats } = useQuery({
-    queryKey: ['filament-rating-stats', id],
-    queryFn: () => filamentReviewsAPI.getStats(Number(id)),
-    enabled: !!id,
+    queryKey: ['filament-rating-stats', filament?.id],
+    queryFn: () => filamentReviewsAPI.getStats(filament!.id),
+    enabled: !!filament?.id,
   });
 
   // Мутация для удаления отзыва
   const deleteReviewMutation = useMutation({
     mutationFn: (reviewId: number) => filamentReviewsAPI.delete(reviewId),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['filament-reviews', id] });
-      queryClient.invalidateQueries({ queryKey: ['filament-rating-stats', id] });
+      queryClient.invalidateQueries({ queryKey: ['filament-reviews', filament?.id] });
+      queryClient.invalidateQueries({ queryKey: ['filament-rating-stats', filament?.id] });
     },
   });
 
@@ -375,6 +401,10 @@ export const FilamentDetailPage: React.FC = () => {
     filament.recommended_bed_temp_max,
   );
   const compositionFacts = getFilamentCompositionFacts(filament);
+  const canonicalFilamentPath = filamentPublicPath(filament);
+  const filamentVariantName = filamentVariantLabel(filament);
+  const activeLocale = normalizeSiteLocale(i18n.resolvedLanguage || i18n.language) || 'en';
+  const canonicalFilamentUrl = absoluteLocalizedUrl(canonicalFilamentPath, activeLocale);
 
   // Те же три пресета, которыми материал представлен в каталоге: официальный,
   // генеративный и лучший от сообщества. Их выбирает сервер, а не страница, —
@@ -436,19 +466,47 @@ export const FilamentDetailPage: React.FC = () => {
   const jsonLd = filament && brandData
     ? {
         '@context': 'https://schema.org',
-        '@type': 'Product',
-        name: filament.name,
-        description: `${filament.material_type} filament by ${brandData.name}`,
-        brand: {
-          '@type': 'Brand',
-          name: brandData.name,
-        },
-        category: `3D Printing Filament - ${filament.material_type}`,
-        offers: {
-          '@type': 'Offer',
-          price: filament.price_per_kg?.toString() || undefined,
-          priceCurrency: 'RUB',
-        },
+        '@graph': [
+          {
+            '@type': 'Product',
+            name: filamentVariantName,
+            url: canonicalFilamentUrl,
+            description: `${filament.material_type} filament ${filamentVariantName} by ${brandData.name}`,
+            brand: {
+              '@type': 'Brand',
+              name: brandData.name,
+            },
+            category: `3D Printing Filament - ${filament.material_type}`,
+            offers: filament.price_per_kg == null ? undefined : {
+              '@type': 'Offer',
+              price: filament.price_per_kg.toString(),
+              priceCurrency: filament.currency || brandData.currency || 'RUB',
+            },
+          },
+          {
+            '@type': 'BreadcrumbList',
+            itemListElement: [
+              {
+                '@type': 'ListItem',
+                position: 1,
+                name: 'FilamentHub',
+                item: 'https://filamenthub.ru/',
+              },
+              {
+                '@type': 'ListItem',
+                position: 2,
+                name: brandData.name,
+                item: absoluteLocalizedUrl(brandPublicPath(brandData), activeLocale),
+              },
+              {
+                '@type': 'ListItem',
+                position: 3,
+                name: filamentVariantName,
+                item: canonicalFilamentUrl,
+              },
+            ],
+          },
+        ],
       }
     : undefined;
 
@@ -456,17 +514,17 @@ export const FilamentDetailPage: React.FC = () => {
     <>
       {filament && (
         <SEOHead
-          title={`${filament.name} - ${brandData?.name || 'FilamentHub'}`}
-          description={t('filamentDetailPage.seoDescription', { materialType: filament.material_type, name: filament.name, brand: brandData?.name || '' })}
-          keywords={t('filamentDetailPage.seoKeywords', { name: filament.name, materialType: filament.material_type, brand: brandData?.name || '' })}
-          url={`/filaments/${filament.id}`}
+          title={`${filamentVariantName} - ${brandData?.name || 'FilamentHub'}`}
+          description={t('filamentDetailPage.seoDescription', { materialType: filament.material_type, name: filamentVariantName, brand: brandData?.name || '' })}
+          keywords={t('filamentDetailPage.seoKeywords', { name: filamentVariantName, materialType: filament.material_type, brand: brandData?.name || '' })}
+          url={canonicalFilamentPath}
           type="product"
           jsonLd={jsonLd}
           allowAI={true}
         />
       )}
       <div className="space-y-4 md:space-y-6">
-        {/* Кнопка назад */}
+        {/* Back action remains contextual; breadcrumbs describe public hierarchy. */}
         <button
         onClick={() => navigate(cameFrom === 'profile' ? '/profile' : '/')}
         className="flex items-center gap-2 text-gray-300 hover:text-white active:text-white transition-colors text-sm md:text-base"
@@ -474,6 +532,27 @@ export const FilamentDetailPage: React.FC = () => {
         <ArrowLeft className="w-4 h-4 md:w-5 md:h-5" />
         <span>{cameFrom === 'profile' ? t('filamentDetailPage.backToProfile') : t('filamentDetailPage.backToCatalog')}</span>
       </button>
+      <nav
+        aria-label={t('filamentDetailPage.backToCatalog')}
+        className="flex min-w-0 items-center gap-1.5 text-xs text-gray-400 md:text-sm"
+      >
+        <button onClick={() => navigate('/')} className="shrink-0 hover:text-white">
+          {t('filamentDetailPage.backToCatalog')}
+        </button>
+        <ChevronRight className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+        {brandData && (
+          <>
+            <button
+              onClick={() => navigate(brandPublicPath(brandData))}
+              className="max-w-[35vw] truncate hover:text-white"
+            >
+              {brandData.name}
+            </button>
+            <ChevronRight className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+          </>
+        )}
+        <span className="truncate text-gray-300" aria-current="page">{filamentVariantName}</span>
+      </nav>
 
       {/* Заголовок */}
       <div className="bg-white/10 backdrop-blur-sm rounded-xl md:rounded-2xl p-4 md:p-8 border border-white/20 shadow-xl">
@@ -831,7 +910,7 @@ export const FilamentDetailPage: React.FC = () => {
                     className="w-64 h-64 mx-auto mb-4 rounded-lg bg-white p-3"
                     onLoad={() => {
                       if (!filament.qr_code) {
-                        void queryClient.invalidateQueries({ queryKey: ['filament', id] });
+                        void queryClient.invalidateQueries({ queryKey: ['filament', resourceKey] });
                       }
                     }}
                   />
@@ -1559,7 +1638,7 @@ export const FilamentDetailPage: React.FC = () => {
         {/* Модальное окно создания/редактирования отзыва */}
         {showCreateReviewModal && (
           <CreateReviewModal
-            filamentId={Number(id)}
+            filamentId={filament.id}
             review={editingReview}
             onClose={() => {
               setShowCreateReviewModal(false);

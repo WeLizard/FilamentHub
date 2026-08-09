@@ -89,6 +89,7 @@ async def test_a_slice_finds_the_printer_through_its_configuration(
     reported = (await auth_client.get("/api/v1/orcaslicer/slices")).json()[0]
     assert reported["physical_printer_id"] == printer.id
     assert reported["physical_printer_name"] == "Voron at home"
+    assert reported["printer_profile_id"] == profile.id
     assert reported["source_key"] == "9f1c2ad4e7b30512"
 
 

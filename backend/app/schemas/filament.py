@@ -232,6 +232,7 @@ class FilamentResponse(FilamentBase):
     """Schema for Filament response."""
 
     id: int
+    slug: str
     brand_id: int
     contributed_by_organization_id: int | None = None
     brand_name: str | None = Field(None)

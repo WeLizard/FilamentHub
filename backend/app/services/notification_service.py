@@ -2,9 +2,29 @@
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
+from app.models.brand import Brand
+from app.models.filament import Filament
 from app.models.notification import Notification, NotificationType
 from app.models.user_saved_preset import UserSavedPreset
+from app.services.catalog_url_service import brand_public_path, filament_public_path
+
+
+async def _filament_link(db: AsyncSession, filament_id: int) -> str:
+    filament = await db.scalar(
+        select(Filament)
+        .options(selectinload(Filament.brand))
+        .where(Filament.id == filament_id)
+    )
+    if filament is None or filament.brand is None:
+        return f"/filaments/{filament_id}"
+    return filament_public_path(filament, filament.brand)
+
+
+async def _brand_link(db: AsyncSession, brand_id: int) -> str:
+    brand = await db.get(Brand, brand_id)
+    return brand_public_path(brand) if brand is not None else f"/brands/{brand_id}"
 
 
 async def create_notification(
@@ -70,6 +90,7 @@ async def notify_preset_updated(
         .distinct()
     )
     user_ids = result.scalars().all()
+    link = await _filament_link(db, filament_id)
 
     # Создаем уведомления для каждого пользователя
     for user_id in user_ids:
@@ -79,7 +100,7 @@ async def notify_preset_updated(
             title="preset_updated",
             message="preset_updated_message",
             db=db,
-            link=f"/filaments/{filament_id}",
+            link=link,
             extra_data={"preset_id": preset_id, "filament_id": filament_id, "preset_name": preset_name},
         )
 
@@ -106,6 +127,7 @@ async def notify_preset_deleted(
         .distinct()
     )
     user_ids = result.scalars().all()
+    link = await _filament_link(db, filament_id)
 
     # Создаем уведомления для каждого пользователя
     for user_id in user_ids:
@@ -115,7 +137,7 @@ async def notify_preset_deleted(
             title="preset_deleted",
             message="preset_deleted_message",
             db=db,
-            link=f"/filaments/{filament_id}",
+            link=link,
             extra_data={"preset_id": preset_id, "filament_id": filament_id, "preset_name": preset_name},
         )
 
@@ -141,7 +163,7 @@ async def notify_brand_verified(
         title="brand_verified",
         message="brand_verified_message",
         db=db,
-        link=f"/brands/{brand_id}",
+        link=await _brand_link(db, brand_id),
         extra_data={"brand_id": brand_id, "brand_name": brand_name},
     )
 
@@ -167,7 +189,7 @@ async def notify_brand_request_approved(
         title="brand_request_approved",
         message="brand_request_approved_message",
         db=db,
-        link=f"/brands/{brand_id}",
+        link=await _brand_link(db, brand_id),
         extra_data={"brand_id": brand_id, "brand_name": brand_name},
     )
 

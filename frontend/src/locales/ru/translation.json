@@ -3193,6 +3193,21 @@
       "preflightBufferPercent": "Страховой запас",
       "preflightRefresh": "Обновить",
       "preflightError": "Не удалось проверить готовность материалов",
+      "printerCompatibilityTitle": "Совместимость с {{name}}",
+      "printerCompatibilityHint": "Это предупреждение по данным G-code, конфигурации и каталога. Оно не запускает и не блокирует печать.",
+      "printerCompatibilityStatus": {
+        "compatible": "Совместимо",
+        "incompatible": "Есть несовместимость",
+        "unknown": "Недостаточно данных"
+      },
+      "printerCompatibilityKind": {
+        "nozzle_diameter": "Диаметр сопла",
+        "nozzle_hrc": "Твёрдость сопла",
+        "hotend_temperature": "Предел хотэнда"
+      },
+      "printerCompatibilityValues": "требуется {{required}} · доступно {{available}}",
+      "printerCompatibilityUnknownValue": "не подтверждено",
+      "printerCompatibilityNoEvidence": "В расчёте нет подтверждённых данных машины из G-code.",
       "preflightStatus": {
         "ready": "Готово",
         "ready_with_change": "Готово со сменой",

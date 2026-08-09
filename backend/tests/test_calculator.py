@@ -10,7 +10,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.brand import Brand
 from app.models.filament import Filament
 from app.models.filament_line import FilamentLine
+from app.models.physical_printer_profile import UserPrinterProfileLink
+from app.models.printer import Printer
+from app.models.printer_profile import PrinterProfile
 from app.models.user import User
+from app.models.user_printer_device import UserPrinterDevice
 from app.models.user_spool import UserSpool, UserSpoolState
 
 
@@ -790,3 +794,130 @@ async def test_preflight_rejects_a_foreign_spool(
 
     assert response.status_code == 404
     assert response.json()["detail"]["code"] == "ERR_SPOOL_NOT_ACCESSIBLE"
+
+
+@pytest.mark.asyncio
+async def test_preflight_reports_proven_machine_incompatibilities_without_blocking_material_result(
+    admin_client: AsyncClient,
+    admin_user: User,
+    db_session: AsyncSession,
+):
+    brand = Brand(name="Compatibility brand", slug="compatibility-brand")
+    catalog_printer = Printer(
+        name="Compatibility printer",
+        manufacturer="FilamentHub",
+        model="One",
+        slug="compatibility-printer",
+        max_extruder_temp=260,
+        active=True,
+    )
+    db_session.add_all([brand, catalog_printer])
+    await db_session.flush()
+    filament = Filament(
+        brand_id=brand.id,
+        name="Abrasive PLA",
+        slug="abrasive-pla-compatibility",
+        material_type="PLA",
+        diameter=1.75,
+        required_nozzle_hrc=50,
+    )
+    profile = PrinterProfile(
+        owner_user_id=admin_user.id,
+        printer_id=catalog_printer.id,
+        name="Compatibility printer 0.4 brass",
+        slug="compatibility-printer-04-brass",
+        setting_id="compatibility-printer-04-brass",
+        nozzle_diameters=[0.4],
+        orcaslicer_settings={"nozzle_hrc": [2]},
+        active=True,
+    )
+    physical_printer = UserPrinterDevice(
+        user_id=admin_user.id,
+        printer_id=catalog_printer.id,
+        name="Workshop printer",
+    )
+    db_session.add_all([filament, profile, physical_printer])
+    await db_session.flush()
+    db_session.add(
+        UserPrinterProfileLink(
+            user_id=admin_user.id,
+            physical_printer_id=physical_printer.id,
+            printer_profile_id=profile.id,
+        )
+    )
+    await db_session.commit()
+
+    response = await admin_client.post(
+        "/api/v1/calculator/preflight",
+        json={
+            "physical_printer_id": physical_printer.id,
+            "print_jobs": [{
+                "job_key": "plate-1",
+                "print_time_seconds": 3600,
+            }],
+            "machine_evidence": [{
+                "job_key": "plate-1",
+                "printer_profile_id": profile.id,
+                "printer_settings_id": profile.setting_id,
+                "nozzle_diameter_mm": 0.4,
+                "max_nozzle_temperature_c": 280,
+                "source": "orca_plugin",
+            }],
+            "lines": [{
+                "line_id": "plate-1-tool-0",
+                "job_key": "plate-1",
+                "filament_id": filament.id,
+                "weight_g": 100,
+                "spool_ids": [],
+            }],
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "needs_clarification"
+    compatibility = body["printer_compatibility"]
+    assert compatibility["status"] == "incompatible"
+    assert compatibility["physical_printer_name"] == "Workshop printer"
+    checks = {item["kind"]: item for item in compatibility["checks"]}
+    assert checks["nozzle_diameter"]["status"] == "compatible"
+    assert checks["nozzle_hrc"]["status"] == "incompatible"
+    assert checks["nozzle_hrc"]["available_values"] == [2.0]
+    assert checks["hotend_temperature"]["status"] == "incompatible"
+    assert checks["hotend_temperature"]["available_values"] == [260.0]
+
+
+@pytest.mark.asyncio
+async def test_preflight_keeps_missing_machine_capabilities_unknown(
+    admin_client: AsyncClient,
+    admin_user: User,
+    db_session: AsyncSession,
+):
+    physical_printer = UserPrinterDevice(
+        user_id=admin_user.id,
+        name="Printer without proven configuration",
+    )
+    db_session.add(physical_printer)
+    await db_session.commit()
+
+    response = await admin_client.post(
+        "/api/v1/calculator/preflight",
+        json={
+            "physical_printer_id": physical_printer.id,
+            "machine_evidence": [{
+                "nozzle_diameter_mm": 0.6,
+                "max_nozzle_temperature_c": 250,
+                "source": "gcode",
+            }],
+            "lines": [{
+                "line_id": "manual",
+                "weight_g": 10,
+                "spool_ids": [],
+            }],
+        },
+    )
+
+    assert response.status_code == 200
+    compatibility = response.json()["printer_compatibility"]
+    assert compatibility["status"] == "unknown"
+    assert [item["status"] for item in compatibility["checks"]] == ["unknown", "unknown"]

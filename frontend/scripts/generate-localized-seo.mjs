@@ -71,7 +71,9 @@ function replaceWebsiteJsonLd(html, locale, description) {
   if (!pattern.test(html)) {
     throw new Error('Website JSON-LD marker was not found in built index');
   }
-  const localizedRoot = locale === 'x-default' ? `${baseUrl}/` : `${baseUrl}/${locale}/`;
+  const localizedRoot = locale === 'x-default' || locale === 'en'
+    ? `${baseUrl}/`
+    : `${baseUrl}/${locale}/`;
   const payload = {
     '@context': 'https://schema.org',
     '@type': 'WebSite',
@@ -104,10 +106,13 @@ function localizeIndex(baseHtml, locale, translation, outputLocale = locale) {
   html = replaceLinkHref(html, 'data-seo-base="true"[^>]*rel="canonical"', `${baseUrl}__FH_CANONICAL_PATH__`);
   html = replaceLinkHref(html, 'data-seo-hreflang="x-default"', `${baseUrl}__FH_BASE_PATH__`);
   for (const alternateLocale of Object.keys(localeConfig)) {
+    const localizedBase = alternateLocale === 'en'
+      ? baseUrl
+      : `${baseUrl}/${alternateLocale}`;
     html = replaceLinkHref(
       html,
       `data-seo-hreflang="${alternateLocale}"`,
-      `${baseUrl}/${alternateLocale}__FH_BASE_PATH__`,
+      `${localizedBase}__FH_BASE_PATH__`,
     );
   }
   html = replaceWebsiteJsonLd(html, outputLocale, translation.catalogPage.seoDescription);

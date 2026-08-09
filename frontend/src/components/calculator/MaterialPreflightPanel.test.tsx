@@ -59,6 +59,7 @@ const result: CalculatorPreflightResponse = {
   required_planned_g: 110,
   purchase_cost_by_currency: {},
   purchase_cost_complete: false,
+  printer_compatibility: null,
   lines: [
     {
       line_id: 'tool-0',
@@ -147,5 +148,47 @@ describe('MaterialPreflightPanel alternatives', () => {
     const replacement = screen.getByText('Spool 3');
     expect(replacement.closest('button')).toBeNull();
     expect(screen.getByText('profilePage.calculator.preflightReplacementWarning')).toBeTruthy();
+  });
+
+  it('shows an incompatible printer check as advisory evidence', () => {
+    render(
+      <MaterialPreflightPanel
+        lines={[]}
+        spools={[]}
+        result={{
+          ...result,
+          printer_compatibility: {
+            physical_printer_id: 7,
+            physical_printer_name: 'Workshop Voron',
+            status: 'incompatible',
+            checks: [{
+              kind: 'nozzle_hrc',
+              status: 'incompatible',
+              job_key: null,
+              line_id: 'tool-0',
+              printer_profile_id: 12,
+              printer_profile_name: 'Voron 0.4 brass',
+              required_value: 50,
+              available_values: [2],
+              unit: 'HRC',
+              requirement_source: 'filament_catalog',
+              capability_source: 'printer_profile',
+            }],
+          },
+        }}
+        safetyBufferPercent={10}
+        isLoading={false}
+        error={null}
+        canRun
+        formatSpoolLabel={(item) => `Spool ${item.id}`}
+        onSafetyBufferChange={vi.fn()}
+        onSpoolIdsChange={vi.fn()}
+        onRefresh={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText(/Workshop Voron/)).toBeTruthy();
+    expect(screen.getByText('profilePage.calculator.printerCompatibilityKind.nozzle_hrc')).toBeTruthy();
+    expect(screen.getByText(/50 HRC/)).toBeTruthy();
   });
 });

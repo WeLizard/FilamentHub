@@ -4,7 +4,18 @@ import enum
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import JSON, Boolean, DateTime, Enum, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    DateTime,
+    Enum,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
@@ -36,6 +47,9 @@ class Filament(Base):
     """
 
     __tablename__ = "filaments"
+    __table_args__ = (
+        UniqueConstraint("brand_id", "slug", name="uq_filaments_brand_slug"),
+    )
 
     # Primary key
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
@@ -54,8 +68,8 @@ class Filament(Base):
 
     # Basic info
     name: Mapped[str] = mapped_column(String(200), index=True)
-    slug: Mapped[str] = mapped_column(String(200), unique=True, index=True)
-    # slug: URL-friendly identifier for filament pages (e.g., "thermoplast-pla-red")
+    slug: Mapped[str] = mapped_column(String(200), index=True)
+    # slug: stable URL identifier scoped to the brand (e.g., "abs-black")
     material_type: Mapped[str] = mapped_column(String(50), index=True)
     # material_type: PLA, ABS, PETG, TPU, Nylon, ASA, PC, etc.
 

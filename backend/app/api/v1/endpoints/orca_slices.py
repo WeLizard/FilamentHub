@@ -46,6 +46,7 @@ async def report_slices(
 @router.post("/parse", response_model=CalculatorGcodeParseResponse)
 async def parse_slice(
     current_user: Annotated[User, Depends(require_preset_write)],
+    db: Annotated[AsyncSession, Depends(get_db)],
     file: UploadFile = File(...),
     plate_index: int | None = Query(None, ge=1),
 ) -> CalculatorGcodeParseResponse:
@@ -57,7 +58,12 @@ async def parse_slice(
     """
     if not pro_active(current_user):
         raise_error(status.HTTP_403_FORBIDDEN, ERR_CALCULATOR_ACCESS_REQUIRED)
-    return await parse_uploaded_gcode(file, plate_index)
+    return await parse_uploaded_gcode(
+        file,
+        plate_index,
+        db=db,
+        user_id=current_user.id,
+    )
 
 
 @router.get("", response_model=list[OrcaSliceReportResponse])

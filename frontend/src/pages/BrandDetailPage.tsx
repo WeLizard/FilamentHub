@@ -21,6 +21,7 @@ import { SEOHead } from '../components/SEOHead';
 import { SocialIcon } from '../components/socialIcons';
 import { BrandLogoFrame } from '../components/BrandLogoFrame';
 import { externalUrl, externalUrlHost } from '../utils/externalUrl';
+import { filamentPublicPath } from '../utils/catalogUrls';
 
 export const BrandDetailPage: React.FC = () => {
   const { t } = useTranslation();
@@ -315,7 +316,7 @@ export const BrandDetailPage: React.FC = () => {
                 {group.filaments.map((filament) => (
             <div
               key={filament.id}
-              onClick={() => navigate(`/filaments/${filament.id}`)}
+              onClick={() => navigate(filamentPublicPath(filament))}
               className="bg-white/10 backdrop-blur-sm rounded-xl p-6 border border-white/20 hover:bg-white/15 transition-all cursor-pointer group"
             >
               {/* Превью филамента */}

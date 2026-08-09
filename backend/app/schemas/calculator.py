@@ -108,11 +108,27 @@ class CalculatorPreflightLineRequest(BaseModel):
         return self
 
 
+class CalculatorPreflightMachineEvidence(BaseModel):
+    """Machine facts carried by one sliced job, without inventing device state."""
+
+    job_key: str | None = Field(None, max_length=160)
+    printer_profile_id: int | None = Field(None, ge=1)
+    printer_settings_id: str | None = Field(None, max_length=200)
+    nozzle_diameter_mm: float | None = Field(None, ge=0.1, le=2.0)
+    max_nozzle_temperature_c: float | None = Field(None, ge=0, le=500)
+    source: Literal["gcode", "orca_plugin"] = "gcode"
+
+
 class CalculatorPreflightRequest(BaseModel):
     """Read-only material readiness check for the current calculation."""
 
     lines: list[CalculatorPreflightLineRequest] = Field(min_length=1, max_length=128)
     print_jobs: list[CalculatorPrintJobRequest] = Field(default_factory=list, max_length=20)
+    physical_printer_id: int | None = Field(None, ge=1)
+    machine_evidence: list[CalculatorPreflightMachineEvidence] = Field(
+        default_factory=list,
+        max_length=20,
+    )
     quantity: int = Field(default=1, ge=1, le=100_000)
     safety_buffer_percent: float = Field(default=10, ge=0, le=100)
 
@@ -121,7 +137,12 @@ class CalculatorPreflightRequest(BaseModel):
         line_ids = [line.line_id for line in self.lines]
         if len(line_ids) != len(set(line_ids)):
             raise ValueError("lines must contain unique line_id values")
+        evidence_jobs = [item.job_key for item in self.machine_evidence]
+        if len(evidence_jobs) != len(set(evidence_jobs)):
+            raise ValueError("machine_evidence must contain unique job_key values")
         if not self.print_jobs:
+            if any(job_key is not None for job_key in evidence_jobs):
+                raise ValueError("machine evidence cannot reference a job without print_jobs")
             return self
         job_keys = [job.job_key for job in self.print_jobs]
         if len(job_keys) != len(set(job_keys)):
@@ -129,6 +150,8 @@ class CalculatorPreflightRequest(BaseModel):
         known_jobs = set(job_keys)
         if any(line.job_key not in known_jobs for line in self.lines):
             raise ValueError("every preflight line must reference a known print job")
+        if any(job_key not in known_jobs for job_key in evidence_jobs):
+            raise ValueError("every machine evidence item must reference a known print job")
         return self
 
 
@@ -208,6 +231,34 @@ class CalculatorPreflightLineResponse(BaseModel):
     spool_suggestions: list[CalculatorPreflightSpoolSuggestion] = Field(default_factory=list)
 
 
+CalculatorPrinterCompatibilityStatus = Literal["compatible", "incompatible", "unknown"]
+
+
+class CalculatorPrinterCompatibilityCheck(BaseModel):
+    """One explainable, advisory machine/material compatibility comparison."""
+
+    kind: Literal["nozzle_diameter", "nozzle_hrc", "hotend_temperature"]
+    status: CalculatorPrinterCompatibilityStatus
+    job_key: str | None = None
+    line_id: str | None = None
+    printer_profile_id: int | None = None
+    printer_profile_name: str | None = None
+    required_value: float | None = None
+    available_values: list[float] = Field(default_factory=list)
+    unit: Literal["mm", "HRC", "°C"]
+    requirement_source: Literal["gcode", "filament_catalog"]
+    capability_source: Literal["printer_profile", "catalog_printer"] | None = None
+
+
+class CalculatorPrinterCompatibilityResponse(BaseModel):
+    """Advisory compatibility for the explicitly selected physical printer."""
+
+    physical_printer_id: int
+    physical_printer_name: str
+    status: CalculatorPrinterCompatibilityStatus
+    checks: list[CalculatorPrinterCompatibilityCheck] = Field(default_factory=list)
+
+
 class CalculatorPreflightResponse(BaseModel):
     """Read-only readiness result; it never reserves or consumes inventory."""
 
@@ -218,6 +269,7 @@ class CalculatorPreflightResponse(BaseModel):
     required_planned_g: float = Field(ge=0)
     purchase_cost_by_currency: dict[str, float] = Field(default_factory=dict)
     purchase_cost_complete: bool
+    printer_compatibility: CalculatorPrinterCompatibilityResponse | None = None
     lines: list[CalculatorPreflightLineResponse]
 
 
@@ -549,6 +601,8 @@ class CalculatorGcodeParseResponse(BaseModel):
     file_size_bytes: int = Field(..., ge=0, description="Размер исходного файла в байтах")
     slicer_name: str | None = Field(None, description="Определённый слайсер")
     slicer_version: str | None = Field(None, description="Версия слайсера")
+    printer_settings_id: str | None = Field(None, description="Machine preset из G-code")
+    printer_model: str | None = Field(None, description="Модель принтера из G-code")
     print_time_seconds: int | None = Field(None, ge=0, description="Оценка времени печати в секундах")
     first_layer_print_time_seconds: int | None = Field(
         None,

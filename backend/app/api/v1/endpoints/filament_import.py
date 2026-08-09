@@ -26,9 +26,9 @@ from app.schemas.filament import (
     FilamentImportRowResult,
     normalize_ral_code,
 )
+from app.services.catalog_url_service import choose_filament_slug
 from app.services.country_market import filament_cell_has_public_data
 from app.services.preset_moderation import validate_text_field
-from app.services.slug_service import generate_unique_slug
 from app.services.territorial_access import (
     can_create_for_brand,
     can_edit_filament_common,
@@ -228,7 +228,22 @@ async def import_filaments(
                 line_cache[line_name.lower()] = cached
             line_id = cached.id
 
-        slug = await generate_unique_slug(db=db, model=Filament, source=name, fallback="filament")
+        slug = await choose_filament_slug(
+            db=db,
+            brand_id=brand_id,
+            name=name,
+            color_name=color_name,
+            ral_code=ral_code,
+        )
+        if slug is None:
+            result.errors += 1
+            result.rows.append(FilamentImportRowResult(
+                row=index,
+                status="error",
+                name=name,
+                message="ERR_FILAMENT_ALREADY_EXISTS",
+            ))
+            continue
         filament = Filament(
             brand_id=brand_id,
             contributed_by_organization_id=current_user.active_organization_id,

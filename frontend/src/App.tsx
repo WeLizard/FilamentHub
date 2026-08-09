@@ -171,6 +171,14 @@ function AppContent() {
           }
         />
         <Route
+          path="/brands/:brandSlug/filaments/:filamentSlug"
+          element={
+            <Layout>
+              <FilamentDetailPage />
+            </Layout>
+          }
+        />
+        <Route
           path="/brands/:identifier"
           element={
             <Layout>

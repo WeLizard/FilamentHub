@@ -214,6 +214,7 @@ interface AutoMaterialMatchCandidate {
 interface ParsedJobState {
   key: string;
   parsed: CalculatorGcodeParseResponse;
+  printerProfileId?: number | null;
 }
 
 export interface CalculatorJobConfig {
@@ -575,6 +576,8 @@ export const buildPreflightRequest = (
   safetyBufferPercent: number,
   parsedGcode: CalculatorGcodeParseResponse | null = null,
   manualAutoMatch: AutoMaterialMatchNotice | null = null,
+  parsedJobs: ParsedJobState[] = [],
+  physicalPrinterId: number | '' = '',
 ): CalculatorPreflightRequest | null => {
   const primaryParsedMaterial = pickPrimaryParsedMaterial(parsedGcode);
   const lines = materialLines.length > 0
@@ -629,9 +632,29 @@ export const buildPreflightRequest = (
       : [];
 
   if (lines.length === 0) return null;
+  const machineJobs = parsedJobs.length > 0
+    ? parsedJobs
+    : parsedGcode
+      ? [{ key: null, parsed: parsedGcode, printerProfileId: null }]
+      : [];
   return {
     lines,
     print_jobs: estimateRequest.print_jobs ?? [],
+    physical_printer_id: physicalPrinterId === '' ? null : physicalPrinterId,
+    machine_evidence: machineJobs.map((job) => {
+      const temperatures = [
+        job.parsed.nozzle_temperature_first_layer_c,
+        job.parsed.nozzle_temperature_other_layers_c,
+      ].filter((value): value is number => value != null && value > 0);
+      return {
+        job_key: job.key,
+        printer_profile_id: job.printerProfileId ?? null,
+        printer_settings_id: job.parsed.printer_settings_id ?? null,
+        nozzle_diameter_mm: job.parsed.nozzle_diameter_mm ?? null,
+        max_nozzle_temperature_c: temperatures.length > 0 ? Math.max(...temperatures) : null,
+        source: job.printerProfileId != null ? 'orca_plugin' as const : 'gcode' as const,
+      };
+    }),
     quantity: estimateRequest.quantity ?? 1,
     safety_buffer_percent: safetyBufferPercent,
   };
@@ -2057,6 +2080,7 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
   const printerEconomics = selectedPrinterId === '' ? null : printerEconomicsQuery.data ?? null;
 
   const handlePrinterSelect = (printerId: number | '') => {
+    preflightMutation.reset();
     setSelectedPrinterId(printerId);
     setPrinterPickedFrom(null);
   };
@@ -2293,6 +2317,8 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
       safetyBufferPercent,
       parsedGcode,
       autoMaterialMatch,
+      parsedJobs,
+      selectedPrinterId,
     );
   };
 
@@ -2339,6 +2365,8 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
       preflightSafetyBufferPercent,
       parsedGcode,
       autoMaterialMatch,
+      parsedJobs,
+      selectedPrinterId,
     );
     if (preflightRequest) preflightMutation.mutate(preflightRequest);
   };
@@ -2402,7 +2430,11 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
         toast.error(translateCalculator(t, 'sliceParseFailed'));
         return;
       }
-      applyParsedJobsRef.current([{ key: parsedJobKey(parsed, 0), parsed }], null);
+      applyParsedJobsRef.current([{
+        key: parsedJobKey(parsed, 0),
+        parsed,
+        printerProfileId: slice?.printer_profile_id ?? null,
+      }], null);
       if (slice?.physical_printer_id) {
         setSelectedPrinterId(slice.physical_printer_id);
         setPrinterPickedFrom(t('printerCost.pickedFromSlice', { name: slice.file_name }));

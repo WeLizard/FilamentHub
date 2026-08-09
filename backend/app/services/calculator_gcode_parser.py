@@ -104,6 +104,8 @@ def _parse_plain_gcode_payload(
         "file_size_bytes": len(raw_bytes),
         "slicer_name": slicer_name,
         "slicer_version": slicer_version,
+        "printer_settings_id": None,
+        "printer_model": None,
         "print_time_seconds": None,
         "first_layer_print_time_seconds": None,
         "total_filament_weight_g": None,
@@ -756,6 +758,14 @@ def _collect_key_value_metadata(parsed: dict[str, Any], collector: dict[str, Any
 
     if normalized_key == "prime_volume" and parsed["prime_volume_mm3"] is None:
         parsed["prime_volume_mm3"] = _parse_first_float(value)
+        return
+
+    if normalized_key == "printer_settings_id" and parsed["printer_settings_id"] is None:
+        parsed["printer_settings_id"] = value.strip().strip('"\'') or None
+        return
+
+    if normalized_key == "printer_model" and parsed["printer_model"] is None:
+        parsed["printer_model"] = value.strip().strip('"\'') or None
         return
 
     if normalized_key in {"total_layers_count", "total_layers", "total_layer", "layer_count", "layercount"} and parsed["total_layers"] is None:

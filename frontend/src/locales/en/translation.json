@@ -2458,6 +2458,21 @@
       "preflightBufferPercent": "Safety buffer",
       "preflightRefresh": "Refresh",
       "preflightError": "Material readiness could not be checked",
+      "printerCompatibilityTitle": "Compatibility with {{name}}",
+      "printerCompatibilityHint": "This is advisory evidence from G-code, the machine configuration, and the catalog. It neither starts nor blocks a print.",
+      "printerCompatibilityStatus": {
+        "compatible": "Compatible",
+        "incompatible": "Incompatible evidence",
+        "unknown": "Not enough evidence"
+      },
+      "printerCompatibilityKind": {
+        "nozzle_diameter": "Nozzle diameter",
+        "nozzle_hrc": "Nozzle hardness",
+        "hotend_temperature": "Hotend limit"
+      },
+      "printerCompatibilityValues": "required {{required}} · available {{available}}",
+      "printerCompatibilityUnknownValue": "not confirmed",
+      "printerCompatibilityNoEvidence": "This calculation has no confirmed machine facts from G-code.",
       "preflightStatus": {
         "ready": "Ready",
         "ready_with_change": "Ready with a spool change",

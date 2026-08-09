@@ -51,6 +51,11 @@ from app.schemas.filament import (
     FilamentUpdate,
     normalize_ral_code,
 )
+from app.services.catalog_url_service import (
+    choose_filament_slug,
+    filament_public_path,
+    resolve_filament_identifier,
+)
 from app.services.country_market import apply_cell, cells_for, filament_cell_has_public_data
 from app.services.filament_preset_summary import (
     bucket_by_kind,
@@ -417,6 +422,58 @@ async def get_material_types(
     return all_material_types
 
 
+async def _serialize_filament_detail(
+    db: AsyncSession,
+    filament: Filament,
+    country: str | None,
+) -> FilamentResponse:
+    filament_dict = FilamentResponse.model_validate(filament).model_dump()
+    filament_dict["brand_name"] = filament.brand.name if filament.brand else None
+    filament_dict["brand_slug"] = filament.brand.slug if filament.brand else None
+    filament_dict["brand_verified"] = filament.brand.verified if filament.brand else False
+    filament_dict["line_name"] = filament.line.name if filament.line else None
+    filament_dict["currency"] = filament.brand.currency if filament.brand else "RUB"
+    filament_dict["price_hidden"] = filament.brand.price_hidden if filament.brand else False
+
+    # The same three presets the catalogue card leads with. Until now the page
+    # worked this out for itself from whichever presets happened to be on the
+    # first page, which could miss the one it was looking for.
+    summaries = await db.execute(summary_query([filament.id]))
+    official, carousel = summaries_for(bucket_by_kind(summaries.scalars()).get(filament.id, {}))
+    filament_dict["official_preset"] = official
+    filament_dict["preset_summaries"] = carousel
+    cells = await cells_for(db, [filament.id], country)
+    return apply_cell(filament_dict, cells.get(filament.id), country)
+
+
+@router.get("/by-slug/{brand_slug}/{filament_slug}", response_model=FilamentResponse)
+async def get_filament_by_slug(
+    brand_slug: str,
+    filament_slug: str,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    country: str | None = Query(
+        None,
+        pattern=r"^[A-Za-z]{2}$",
+        description="Страна читателя: подставляет местные сведения там, где они заполнены.",
+    ),
+) -> FilamentResponse:
+    """Resolve a public exact-variant URL by current or historical slugs."""
+    resolved = await resolve_filament_identifier(
+        db,
+        brand_identifier=brand_slug,
+        filament_identifier=filament_slug,
+    )
+    if resolved is None:
+        raise_error(404, ERR_FILAMENT_NOT_FOUND)
+    result = await db.execute(
+        select(Filament)
+        .options(selectinload(Filament.brand), selectinload(Filament.line))
+        .where(Filament.id == resolved.filament.id)
+    )
+    filament = result.scalar_one()
+    return await _serialize_filament_detail(db, filament, country)
+
+
 @router.get("/{filament_id}", response_model=FilamentResponse)
 async def get_filament(
     filament_id: int,
@@ -427,30 +484,16 @@ async def get_filament(
         description="Страна читателя: подставляет местные сведения там, где они заполнены.",
     ),
 ) -> FilamentResponse:
-    """Получить материал по ID."""
+    """Получить материал по ID (stable internal API and legacy URL resolver)."""
     result = await db.execute(
-        select(Filament).options(selectinload(Filament.brand), selectinload(Filament.line)).where(Filament.id == filament_id)
+        select(Filament)
+        .options(selectinload(Filament.brand), selectinload(Filament.line))
+        .where(Filament.id == filament_id)
     )
     filament = result.scalar_one_or_none()
-
     if not filament:
         raise_error(404, ERR_FILAMENT_NOT_FOUND)
-
-    filament_dict = FilamentResponse.model_validate(filament).model_dump()
-    filament_dict["brand_name"] = filament.brand.name if filament.brand else None
-    filament_dict["line_name"] = filament.line.name if filament.line else None
-    filament_dict["currency"] = filament.brand.currency if filament.brand else "RUB"
-    filament_dict["price_hidden"] = filament.brand.price_hidden if filament.brand else False
-
-    # The same three presets the catalogue card leads with. Until now the page
-    # worked this out for itself from whichever presets happened to be on the
-    # first page, which could miss the one it was looking for.
-    summaries = await db.execute(summary_query([filament_id]))
-    official, carousel = summaries_for(bucket_by_kind(summaries.scalars()).get(filament_id, {}))
-    filament_dict["official_preset"] = official
-    filament_dict["preset_summaries"] = carousel
-    cells = await cells_for(db, [filament.id], country)
-    return apply_cell(filament_dict, cells.get(filament.id), country)
+    return await _serialize_filament_detail(db, filament, country)
 
 
 @router.get("/{filament_id}/presets")
@@ -664,14 +707,17 @@ async def create_filament(
             },
         )
 
-    # Generate unique slug from name
-    from app.services.slug_service import generate_unique_slug
-    slug = await generate_unique_slug(
+    slug = await choose_filament_slug(
         db=db,
-        model=Filament,
-        source=normalized_name,
-        fallback="filament",
+        brand_id=data.brand_id,
+        name=normalized_name,
+        color_name=normalized_color_name,
+        ral_code=data.ral_code,
     )
+    if slug is None:
+        # A public slug must describe a distinguishable variant. Do not hide an
+        # ambiguous identity behind an arbitrary numeric suffix.
+        raise_error(409, ERR_FILAMENT_ALREADY_EXISTS)
 
     # Create filament
     filament_payload = data.model_dump(exclude={"country_cell"})
@@ -775,6 +821,9 @@ async def request_filament_common_edit(
     filament = await db.get(Filament, filament_id)
     if filament is None:
         raise_error(404, ERR_FILAMENT_NOT_FOUND)
+    brand = await db.get(Brand, filament.brand_id)
+    if brand is None:
+        raise_error(404, ERR_BRAND_NOT_FOUND)
 
     grants = await active_grants_for(db, current_user, filament.brand_id)
     if not any(
@@ -845,7 +894,7 @@ async def request_filament_common_edit(
                 type=NotificationType.ADMIN_MESSAGE,
                 title="filament_common_edit_requested",
                 message="filament_common_edit_requested_message",
-                link=f"/filaments/{filament.id}",
+                link=filament_public_path(filament, brand),
                 extra_data={
                     "filament_id": filament.id,
                     "filament_name": filament.name,

@@ -5,6 +5,6 @@ window.YandexRotorSettings = {
   FailOnTimeout: false,
   NoJsRedirectsToMain: true,
   IsLoaded: function () {
-    return Boolean(document.querySelector('#root main'));
+    return document.documentElement.dataset.seoReady === 'true';
   }
 };

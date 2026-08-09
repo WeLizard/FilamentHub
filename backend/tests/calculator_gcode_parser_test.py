@@ -61,6 +61,8 @@ def test_plain_gcode_preserves_sparse_tool_metadata_and_analysis_fields() -> Non
 ; filament_vendor = Generic;Acme
 ; filament_colour = #000000;#977168
 ; filament_ids = GFB99;GFG99
+; printer_settings_id = Voron 2.4 350 0.4 nozzle
+; printer_model = Voron 2.4 350
 ; filament cost = 0,1.16
 ; filament_cost = 20,30
 ; filament_density = 1.04,1.27
@@ -90,6 +92,8 @@ def test_plain_gcode_preserves_sparse_tool_metadata_and_analysis_fields() -> Non
     assert parsed["outer_wall_line_width_mm"] == 0.42
     assert parsed["support_speed_mm_s"] == 150.0
     assert parsed["prime_volume_mm3"] == 60.0
+    assert parsed["printer_settings_id"] == "Voron 2.4 350 0.4 nozzle"
+    assert parsed["printer_model"] == "Voron 2.4 350"
     assert parsed["materials"] == [
         {
             "tool_index": 1,

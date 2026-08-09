@@ -4,6 +4,7 @@ import {
   Loader2,
   PackageCheck,
   Plus,
+  Printer,
   RefreshCw,
   X,
 } from 'lucide-react';
@@ -15,6 +16,8 @@ import type {
   CalculatorPreflightLineResponse,
   CalculatorPreflightResponse,
   CalculatorPreflightStatus,
+  CalculatorPrinterCompatibility,
+  CalculatorPrinterCompatibilityStatus,
 } from '../../types/api';
 import { currencySymbol } from '../../utils/currency';
 import { formatDateTime } from '../../utils/formatDate';
@@ -77,6 +80,80 @@ const StatusBadge = ({ status }: { status: CalculatorPreflightStatus }) => {
       )}
       {t(`profilePage.calculator.preflightStatus.${status}`)}
     </span>
+  );
+};
+
+const compatibilityTone: Record<CalculatorPrinterCompatibilityStatus, string> = {
+  compatible: 'border-emerald-400/20 bg-emerald-400/[0.07] text-emerald-100',
+  incompatible: 'border-red-400/25 bg-red-400/[0.08] text-red-100',
+  unknown: 'border-amber-400/20 bg-amber-400/[0.07] text-amber-100',
+};
+
+const compatibilityValue = (value: number, unit: string): string => {
+  const formatted = Number.isInteger(value) ? String(value) : value.toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
+  return unit === '°C' ? `${formatted} °C` : `${formatted} ${unit}`;
+};
+
+const PrinterCompatibilityCard = ({ compatibility }: { compatibility: CalculatorPrinterCompatibility }) => {
+  const { t } = useTranslation();
+  return (
+    <div className={`mt-3 rounded-2xl border p-3 ${compatibilityTone[compatibility.status]}`}>
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-2">
+          <Printer className="h-4 w-4 shrink-0" />
+          <p className="truncate text-xs font-semibold">
+            {t('profilePage.calculator.printerCompatibilityTitle', {
+              name: compatibility.physical_printer_name,
+            })}
+          </p>
+        </div>
+        <span className="rounded-full border border-current/20 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.08em]">
+          {t(`profilePage.calculator.printerCompatibilityStatus.${compatibility.status}`)}
+        </span>
+      </div>
+      <p className="mt-1 text-[10px] leading-4 opacity-70">
+        {t('profilePage.calculator.printerCompatibilityHint')}
+      </p>
+      {compatibility.checks.length > 0 ? (
+        <div className="mt-2 grid gap-1.5 sm:grid-cols-2 xl:grid-cols-3">
+          {compatibility.checks.map((check, index) => {
+            const required = check.required_value == null
+              ? '—'
+              : compatibilityValue(check.required_value, check.unit);
+            const available = check.available_values.length > 0
+              ? check.available_values.map((value) => compatibilityValue(value, check.unit)).join(', ')
+              : t('profilePage.calculator.printerCompatibilityUnknownValue');
+            return (
+              <div
+                key={`${check.kind}-${check.job_key ?? 'manual'}-${check.line_id ?? index}`}
+                className="min-w-0 rounded-xl border border-current/10 bg-black/10 px-2.5 py-2"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <p className="truncate text-[10px] font-semibold">
+                    {t(`profilePage.calculator.printerCompatibilityKind.${check.kind}`)}
+                  </p>
+                  {check.status === 'compatible'
+                    ? <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+                    : <AlertTriangle className="h-3.5 w-3.5 shrink-0" />}
+                </div>
+                <p className="mt-0.5 text-[10px] leading-4 opacity-70">
+                  {t('profilePage.calculator.printerCompatibilityValues', { required, available })}
+                </p>
+                {check.printer_profile_name ? (
+                  <p className="mt-0.5 truncate text-[9px] opacity-55" title={check.printer_profile_name}>
+                    {check.printer_profile_name}
+                  </p>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <p className="mt-2 text-[10px] leading-4 opacity-70">
+          {t('profilePage.calculator.printerCompatibilityNoEvidence')}
+        </p>
+      )}
+    </div>
   );
 };
 
@@ -187,6 +264,10 @@ export const MaterialPreflightPanel = ({
 
       {error ? (
         <p className="mt-3 rounded-xl border border-red-400/20 bg-red-400/10 px-3 py-2 text-xs text-red-100">{error}</p>
+      ) : null}
+
+      {result?.printer_compatibility ? (
+        <PrinterCompatibilityCard compatibility={result.printer_compatibility} />
       ) : null}
 
       <div className="mt-4 space-y-3">

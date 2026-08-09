@@ -68,6 +68,7 @@ from app.schemas.orca_sync import (
 )
 from app.schemas.print_profile import PrintProfileListResponse, PrintProfileResponse
 from app.schemas.printer_profile import PrinterProfileListResponse, PrinterProfileResponse
+from app.services.catalog_url_service import choose_filament_slug
 from app.services.notification_service import create_notification
 from app.services.orca_import_guard import hold_account_import_lock
 from app.services.orca_schema_observer import observe_orca_schema_fields
@@ -2384,29 +2385,35 @@ async def _upsert_filament_preset(
                     f"for brand_id={active_brand_id} — reusing instead of creating duplicate"
                 )
             else:
-                filament_slug = await generate_unique_slug(
+                filament_slug = await choose_filament_slug(
                     db=db,
-                    model=Filament,
-                    source=clean_name,
-                    fallback=f"filament-{current_user.id}-{int(datetime.now(timezone.utc).timestamp())}",
-                )
-
-                filament = Filament(
-                    contributed_by_organization_id=current_user.active_organization_id,
-                    name=clean_name,
-                    slug=filament_slug,
-                    material_type=material_type,
                     brand_id=active_brand_id,
-                    diameter=1.75,
-                    active=True,
+                    name=clean_name,
+                    color_name=None,
                 )
-                db.add(filament)
-                await db.flush()
+                if filament_slug is None:
+                    logger.warning(
+                        "Preset '%s' has an ambiguous public filament slug; storing it as a draft",
+                        payload.name,
+                    )
+                    is_our_preset = False
+                else:
+                    filament = Filament(
+                        contributed_by_organization_id=current_user.active_organization_id,
+                        name=clean_name,
+                        slug=filament_slug,
+                        material_type=material_type,
+                        brand_id=active_brand_id,
+                        diameter=1.75,
+                        active=True,
+                    )
+                    db.add(filament)
+                    await db.flush()
 
-                logger.info(
-                    f"Created Filament (id={filament.id}, name='{clean_name}') "
-                    f"for preset '{payload.name}'"
-                )
+                    logger.info(
+                        f"Created Filament (id={filament.id}, name='{clean_name}') "
+                        f"for preset '{payload.name}'"
+                    )
 
     # Обновляем external_id если его нет
     if preset and not preset.external_id and payload.external_id:

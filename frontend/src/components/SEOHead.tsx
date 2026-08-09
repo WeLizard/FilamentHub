@@ -84,6 +84,7 @@ export const SEOHead: React.FC<SEOHeadProps> = ({
   );
 
   useEffect(() => {
+    delete document.documentElement.dataset.seoReady;
     // Обновляем title
     document.title = fullTitle;
 
@@ -246,8 +247,13 @@ export const SEOHead: React.FC<SEOHeadProps> = ({
       document.head.appendChild(script);
     }
 
+    // Yandex Rotor must wait for route data and route-specific metadata, not
+    // merely for the shared <main> shell to appear.
+    document.documentElement.dataset.seoReady = 'true';
+
     // Cleanup при размонтировании
     return () => {
+      delete document.documentElement.dataset.seoReady;
       const metaTags = document.querySelectorAll('meta[data-seo]');
       metaTags.forEach((meta) => meta.remove());
       const managedBaseMeta = document.querySelectorAll<HTMLMetaElement>('meta[data-seo-managed="true"]');

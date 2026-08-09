@@ -31,7 +31,7 @@ describe('siteLocale', () => {
   it('creates stable localized paths and preserves query and hash state', () => {
     expect(withLocalePrefix('/catalog?material=PLA#results', 'zh'))
       .toBe('/zh/catalog?material=PLA#results');
-    expect(withLocalePrefix('/ru/download', 'en')).toBe('/en/download');
+    expect(withLocalePrefix('/ru/download', 'en')).toBe('/download');
     expect(withLocalePrefix('/', 'ru')).toBe('/ru/');
     expect(withoutLocalePrefix('/zh/wiki/materials?tab=all')).toBe('/wiki/materials?tab=all');
   });
@@ -39,5 +39,6 @@ describe('siteLocale', () => {
   it('keeps canonical URLs on the production origin', () => {
     expect(absoluteSiteUrl('/download')).toBe('https://filamenthub.ru/download');
     expect(absoluteLocalizedUrl('/download', 'ru')).toBe('https://filamenthub.ru/ru/download');
+    expect(absoluteLocalizedUrl('/download', 'en')).toBe('https://filamenthub.ru/download');
   });
 });

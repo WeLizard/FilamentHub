@@ -62,14 +62,15 @@ async def _create_unverified_filament(db: AsyncSession) -> Filament:
 async def test_redirect_qr_scan_redirects(client: AsyncClient, db_session: AsyncSession):
     """GET /{short_code} redirects to filament page."""
     filament = await _create_verified_filament(db_session)
-    initial_scans = filament.scans_count
 
     response = await client.get(
         f"/api/v1/qr/{filament.qr_code}",
         follow_redirects=False,
     )
-    assert response.status_code == 307
-    assert f"/filaments/{filament.id}" in response.headers["location"]
+    assert response.status_code == 301
+    assert response.headers["location"] == (
+        "/brands/qr-brand/filaments/qr-filament?qr=true"
+    )
 
 
 @pytest.mark.asyncio

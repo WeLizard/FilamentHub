@@ -16,7 +16,7 @@ const baseHead = `
   <meta data-seo-base="true" data-seo-og-alternate="true" property="og:locale:alternate" content="zh_CN" />
   <link data-seo-base="true" rel="canonical" href="https://filamenthub.ru/" />
   <link data-seo-hreflang="x-default" rel="alternate" hreflang="x-default" href="https://filamenthub.ru/" />
-  <link data-seo-hreflang="en" rel="alternate" hreflang="en" href="https://filamenthub.ru/en/" />
+  <link data-seo-hreflang="en" rel="alternate" hreflang="en" href="https://filamenthub.ru/" />
   <link data-seo-hreflang="ru" rel="alternate" hreflang="ru" href="https://filamenthub.ru/ru/" />
   <link data-seo-hreflang="zh" rel="alternate" hreflang="zh" href="https://filamenthub.ru/zh/" />
 `;
@@ -40,6 +40,7 @@ describe('SEOHead locale metadata', () => {
     await waitFor(() => {
       expect(document.title).toBe('Плагины | FilamentHub');
     });
+    expect(document.documentElement.dataset.seoReady).toBe('true');
 
     expect(document.querySelector<HTMLLinkElement>('link[rel="canonical"]')?.href)
       .toBe('https://filamenthub.ru/ru/download');
@@ -50,7 +51,7 @@ describe('SEOHead locale metadata', () => {
     );
     expect(alternates).toEqual({
       'x-default': 'https://filamenthub.ru/download',
-      en: 'https://filamenthub.ru/en/download',
+      en: 'https://filamenthub.ru/download',
       ru: 'https://filamenthub.ru/ru/download',
       zh: 'https://filamenthub.ru/zh/download',
     });

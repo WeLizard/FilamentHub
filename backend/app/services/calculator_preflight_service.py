@@ -25,6 +25,9 @@ from app.schemas.calculator import (
     CalculatorRemainingEvidence,
     CalculatorRemainingStatus,
 )
+from app.services.calculator_printer_compatibility_service import (
+    calculate_printer_compatibility,
+)
 
 _REMAINING_STALE_AFTER = timedelta(days=30)
 _IMPORTED_SPOOL_SOURCES = {
@@ -632,6 +635,12 @@ async def calculate_material_preflight(
             total_purchase_cost_by_currency[currency] = (
                 total_purchase_cost_by_currency.get(currency, 0.0) + cost
             )
+    printer_compatibility = await calculate_printer_compatibility(
+        db,
+        user_id=user_id,
+        payload=payload,
+        target_filaments=target_filaments,
+    )
     return CalculatorPreflightResponse(
         status=overall_status,
         safety_buffer_percent=payload.safety_buffer_percent,
@@ -643,5 +652,6 @@ async def calculate_material_preflight(
             for currency, cost in total_purchase_cost_by_currency.items()
         },
         purchase_cost_complete=all(line.purchase_cost_complete for line in results),
+        printer_compatibility=printer_compatibility,
         lines=results,
     )
