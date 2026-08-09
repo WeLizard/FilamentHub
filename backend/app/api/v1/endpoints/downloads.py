@@ -57,7 +57,7 @@ def _safe_base_url(request: Request) -> str:
 class PluginDownload(BaseModel):
     """One plugin package the site can hand out."""
 
-    plugin: Literal["orcaslicer", "octoprint"]
+    plugin: Literal["orcaslicer", "octoprint", "print_farm"]
     filename: str
     version: str
     file_size: str

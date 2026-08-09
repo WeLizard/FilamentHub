@@ -1657,25 +1657,8 @@ export interface CrmWorkspaceSummary {
   accepted_amount: Record<string, number>;
 }
 
-export interface DownloadVersion {
-  platform: 'windows' | 'macos' | 'linux';
-  architecture: 'x64' | 'arm64';
-  version: string;
-  download_url: string | null;
-  file_size: string | null;
-  checksum: string | null;
-  available: boolean;
-  download_type?: 'installer' | 'portable' | 'github';
-  github_url?: string | null;
-}
-
-export interface DownloadVersionsResponse {
-  versions: DownloadVersion[];
-  latest_version: string;
-}
-
 export interface PluginDownload {
-  plugin: 'orcaslicer' | 'octoprint';
+  plugin: 'orcaslicer' | 'octoprint' | 'print_farm';
   filename: string;
   version: string;
   file_size: string;

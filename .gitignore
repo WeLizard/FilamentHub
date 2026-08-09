@@ -111,9 +111,9 @@ backend/data/geoip/*.mmdb
 backend/data/uploaded_bundles/
 backend/uploads/database_dumps/
 
-# Distributions (OrcaSlicer builds - too large for Git)
+# Retired FilamentHub Edition artifacts may remain locally for recovery, but
+# they are not source files and must never re-enter the repository.
 backend/distributions/orcaslicer/*
-!backend/distributions/orcaslicer/.gitkeep
 !backend/distributions/.gitkeep
 
 # SSL certificates (не коммитить!)

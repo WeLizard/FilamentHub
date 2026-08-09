@@ -1,4 +1,0 @@
-[submodule "submodule/OrcaSlicer"]
-	path = submodule/OrcaSlicer
-	url = https://github.com/WeLizard/OrcaSlicer.git
-	branch = filamenthub-integration

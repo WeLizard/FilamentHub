@@ -9,8 +9,10 @@ from app.services import plugin_release_service as service
 
 ORCA_WHEEL = "filamenthub-0.0.8-py3-none-any.whl"
 BRIDGE_WHEEL = "octoprint_filamenthubbridge-0.1.0-py3-none-any.whl"
+PRINT_FARM_WHEEL = "printers-0.0.4-py3-none-any.whl"
 ORCA_BYTES = b"orca-wheel-bytes"
 BRIDGE_BYTES = b"bridge-wheel-bytes"
+PRINT_FARM_BYTES = b"print-farm-wheel-bytes"
 
 
 def _checksums() -> str:
@@ -50,19 +52,38 @@ def _release(*, draft: bool = False, tag: str = "plugins-v0.1.0") -> dict:
     }
 
 
+def _print_farm_release(*, draft: bool = False) -> dict:
+    return {
+        "tag_name": "printers-v0.0.4",
+        "draft": draft,
+        "html_url": "https://github.com/WeLizard/orca-plugins/releases/tag/printers-v0.0.4",
+        "assets": [
+            {
+                "name": PRINT_FARM_WHEEL,
+                "size": len(PRINT_FARM_BYTES),
+                "browser_download_url": f"https://example.invalid/{PRINT_FARM_WHEEL}",
+            }
+        ],
+    }
+
+
 class _Transport(httpx.AsyncBaseTransport):
     """Answers the two GitHub calls the service makes, and counts them."""
 
-    def __init__(self, releases, *, files=None):
+    def __init__(self, releases, *, print_farm_releases=None, files=None):
         self.releases = releases
+        self.print_farm_releases = print_farm_releases or []
         self.files = files if files is not None else {
             ORCA_WHEEL: ORCA_BYTES,
             BRIDGE_WHEEL: BRIDGE_BYTES,
+            PRINT_FARM_WHEEL: PRINT_FARM_BYTES,
         }
         self.file_requests: list[str] = []
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
         url = str(request.url)
+        if url.startswith(service.PRINT_FARM_RELEASES_URL):
+            return httpx.Response(200, json=self.print_farm_releases, request=request)
         if url.startswith(service.GITHUB_RELEASES_URL):
             return httpx.Response(200, json=self.releases, request=request)
         if url.endswith("SHA256SUMS"):
@@ -102,17 +123,26 @@ def _install(monkeypatch, transport):
 
 
 @pytest.mark.asyncio
-async def test_published_release_yields_both_plugin_packages(monkeypatch):
-    _install(monkeypatch, _Transport([_release()]))
+async def test_published_releases_yield_all_plugin_packages(monkeypatch):
+    _install(monkeypatch, _Transport([_release()], print_farm_releases=[_print_farm_release()]))
 
     packages = await service.get_packages()
 
     by_plugin = {package.plugin: package for package in packages}
-    assert set(by_plugin) == {service.ORCASLICER_PLUGIN, service.OCTOPRINT_BRIDGE}
+    assert set(by_plugin) == {
+        service.ORCASLICER_PLUGIN,
+        service.OCTOPRINT_BRIDGE,
+        service.PRINT_FARM_PLUGIN,
+    }
     assert by_plugin[service.ORCASLICER_PLUGIN].version == "0.0.8"
     assert by_plugin[service.OCTOPRINT_BRIDGE].version == "0.1.0"
+    assert by_plugin[service.PRINT_FARM_PLUGIN].version == "0.0.4"
     # The checksum file and the source archive are not offered as downloads.
-    assert {package.filename for package in packages} == {ORCA_WHEEL, BRIDGE_WHEEL}
+    assert {package.filename for package in packages} == {
+        ORCA_WHEEL,
+        BRIDGE_WHEEL,
+        PRINT_FARM_WHEEL,
+    }
     assert by_plugin[service.OCTOPRINT_BRIDGE].sha256 == hashlib.sha256(BRIDGE_BYTES).hexdigest()
 
 
@@ -171,13 +201,17 @@ async def test_a_github_outage_keeps_the_previous_answer(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_the_listing_points_at_our_own_server(client, monkeypatch):
-    _install(monkeypatch, _Transport([_release()]))
+    _install(monkeypatch, _Transport([_release()], print_farm_releases=[_print_farm_release()]))
 
     response = await client.get("/api/v1/downloads/plugins")
 
     assert response.status_code == 200
     body = response.json()
-    assert {item["plugin"] for item in body["packages"]} == {"orcaslicer", "octoprint"}
+    assert {item["plugin"] for item in body["packages"]} == {
+        "orcaslicer",
+        "octoprint",
+        "print_farm",
+    }
     for item in body["packages"]:
         assert "api.github.com" not in item["download_url"]
         assert item["download_url"].endswith(f"/api/v1/downloads/plugins/{item['filename']}")
