@@ -307,7 +307,7 @@ function Read-ReleaseTag {
     if ([string]::IsNullOrWhiteSpace($script:ReleaseTag)) {
         $script:ReleaseTag = Read-Host 'Тег GitHub Release (например plugins-v0.1.0)'
     }
-    if ($script:ReleaseTag -notmatch '^plugins-v\d+\.\d+\.\d+(?:[-.][0-9A-Za-z.-]+)?$') {
+    if ($script:ReleaseTag -notmatch '^plugins-v\d+\.\d+\.\d+$') {
         throw "Неподдерживаемый тег релиза плагинов: $script:ReleaseTag"
     }
     return $script:ReleaseTag
@@ -415,15 +415,8 @@ function Invoke-PluginReleasePreparation {
     param([switch]$Publish)
 
     $tag = Read-ReleaseTag
-    # Публикация уходит наружу и назад не отыгрывается, поэтому здесь печатная
-    # фраза остаётся; подготовка черновика такой цены не имеет.
-    if ($Publish) {
-        if ((Read-Host "Введи ОПУБЛИКОВАТЬ $tag, чтобы продолжить") -ne "ОПУБЛИКОВАТЬ $tag") {
-            throw 'Публикация релиза отменена.'
-        }
-    } elseif (-not (Confirm-Action "Подготовить черновик релиза $tag?")) {
-        Write-Host 'Подготовка релиза отменена.' -ForegroundColor Yellow
-        return
+    if ((Read-Host "Введи ОПУБЛИКОВАТЬ $tag, чтобы продолжить") -ne "ОПУБЛИКОВАТЬ $tag") {
+        throw 'Публикация релиза отменена.'
     }
 
     $scriptPath = Join-Path $PSScriptRoot 'publish-plugin-release.ps1'
@@ -431,11 +424,9 @@ function Invoke-PluginReleasePreparation {
     if (-not $?) {
         throw 'Скрипт публикации плагинов завершился с ошибкой.'
     }
-    if ($Publish) {
-        $script:ReleaseTag = $tag
-        if (-not (Test-DownloadPageRelease)) {
-            throw "Релиз $tag опубликован, но ещё не прошёл проверку публичной страницы Download. Повтори пункт 8 после обновления кеша."
-        }
+    $script:ReleaseTag = $tag
+    if (-not (Test-DownloadPageRelease)) {
+        throw "Релиз $tag опубликован, но ещё не прошёл проверку публичной страницы Download. Повтори пункт 9 после обновления кеша."
     }
 }
 
@@ -453,8 +444,8 @@ function Show-Menu {
         Write-Host '  7. Показать GitHub Releases плагинов'
         Write-Host '  8. Скачать и проверить файлы релиза плагинов'
         Write-Host '  9. Проверить релиз плагинов на странице Download'
-        Write-Host ' 10. Подготовить черновик релиза плагинов'
-        Write-Host ' 11. Опубликовать релиз плагинов'
+        Write-Host ' 10. Создать тег и автоматически выпустить релиз плагинов'
+        Write-Host ' 11. Опубликовать существующий draft релиза (аварийный путь)'
         Write-Host '  0. Выход'
         $choice = Read-Host 'Выбери действие'
 

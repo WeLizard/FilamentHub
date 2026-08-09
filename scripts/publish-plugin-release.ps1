@@ -123,6 +123,30 @@ function Get-RemoteTagCommit {
     return $null
 }
 
+function Get-NextBundleTag {
+    param([Parameter(Mandatory)][string]$RemoteName)
+
+    $remoteTags = & git ls-remote --tags --refs $RemoteName 'refs/tags/plugins-v*' 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        throw "Не удалось получить список release-тегов из remote '$RemoteName'."
+    }
+
+    $versions = @(
+        foreach ($line in $remoteTags) {
+            $reference = ($line -split "`t")[-1]
+            if ($reference -match '^refs/tags/plugins-v(?<version>\d+\.\d+\.\d+)$') {
+                [version]$Matches['version']
+            }
+        }
+    )
+    if ($versions.Count -eq 0) {
+        return 'plugins-v0.1.0'
+    }
+
+    $latest = $versions | Sort-Object -Descending | Select-Object -First 1
+    return "plugins-v$($latest.Major).$($latest.Minor).$($latest.Build + 1)"
+}
+
 function Assert-ReleaseAssets {
     param(
         [Parameter(Mandatory)]$Release,
@@ -166,11 +190,8 @@ if ($releaseSourceChanges) {
 
 $bridgeVersion = Get-BridgeVersion
 if ([string]::IsNullOrWhiteSpace($Tag)) {
-    # Удобный default для первого релиза. Версия комплекта плагинов дальше
-    # живёт отдельно: обновление только Orca не должно требовать фиктивного
-    # повышения версии OctoPrint Bridge.
-    $Tag = "plugins-v$bridgeVersion"
-} elseif ($Tag -notmatch '^plugins-v\d+\.\d+\.\d+(?:[-.][0-9A-Za-z.-]+)?$') {
+    $Tag = Get-NextBundleTag -RemoteName $Remote
+} elseif ($Tag -notmatch '^plugins-v\d+\.\d+\.\d+$') {
     throw "Тег '$Tag' не соответствует формату plugins-vX.Y.Z."
 }
 
@@ -203,7 +224,10 @@ Write-Host "Репозиторий: $repository"
 Write-Host "Ветка      : $Branch ($headCommit)"
 Write-Host "Версия     : $bridgeVersion"
 Write-Host "Тег релиза : $Tag ($tagCommit)$(if (-not $tagExistsLocally) { ' [будет создан]' })"
-Write-Host "Режим      : $(if ($Publish) { 'подготовить и опубликовать' } else { 'подготовить только draft' })"
+Write-Host 'Режим      : автоматическая публикация после успешной проверки workflow'
+if ($Publish) {
+    Write-Warning 'Ключ -Publish больше не требуется для tag-triggered релиза и сохранён только для восстановления старого draft.'
+}
 
 if ($DryRun) {
     Write-Host 'Dry-run завершён. Push, workflow и изменения релиза не выполнялись.'
@@ -269,7 +293,7 @@ if (-not $release) {
 Assert-ReleaseAssets -Release $release -BridgeVersion $bridgeVersion
 
 if (-not $release.isDraft) {
-    Write-Host "Релиз уже опубликован: $($release.url)"
+    Write-Host "Релиз опубликован: $($release.url)"
     return
 }
 
@@ -278,6 +302,5 @@ if ($Publish) {
     $release = Get-Release -Repository $repository -ReleaseTag $Tag
     Write-Host "Релиз опубликован: $($release.url)"
 } else {
-    Write-Host "Draft-релиз готов: $($release.url)"
-    Write-Host "Проверь его, затем опубликуй командой: .\scripts\publish-plugin-release.ps1 -Tag $Tag -Publish"
+    throw "Workflow оставил релиз '$Tag' в draft: $($release.url). Проверь завершение шага Publish tag-triggered release перед ручной публикацией."
 }

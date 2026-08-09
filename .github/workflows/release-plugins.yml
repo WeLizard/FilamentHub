@@ -14,15 +14,29 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: release-plugins-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
 jobs:
   build-and-release:
-    name: Build plugin packages and prepare draft release
+    name: Build and release plugin packages
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ github.token }}
       RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+
+      - name: Verify release tag
+        shell: bash
+        run: |
+          if [[ ! "$RELEASE_TAG" =~ ^plugins-v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Release tag must use plugins-vX.Y.Z; got: $RELEASE_TAG" >&2
+            exit 1
+          fi
 
       - name: Setup Python
         uses: actions/setup-python@v6
@@ -72,7 +86,6 @@ jobs:
           else
             gh release create "$RELEASE_TAG" \
               --repo "$GITHUB_REPOSITORY" \
-              --target "$GITHUB_SHA" \
               --title "FilamentHub plugins $RELEASE_TAG" \
               --notes "FilamentHub plugin packages for OrcaSlicer and OctoPrint. See SHA256SUMS for file checksums." \
               --draft
@@ -84,3 +97,11 @@ jobs:
           gh release upload "$RELEASE_TAG" "$RUNNER_TEMP"/release/assets/* \
             --repo "$GITHUB_REPOSITORY" \
             --clobber
+
+      - name: Publish tag-triggered release
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          gh release edit "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --draft=false
