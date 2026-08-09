@@ -1111,6 +1111,26 @@ export interface CalculatorPreflightSpoolAllocation {
   >;
 }
 
+export interface CalculatorPreflightSpoolSuggestion {
+  spool_id: number;
+  filament_id: number;
+  relation: 'same_filament' | 'same_line' | 'same_material_type';
+  requires_reslice: boolean;
+  remaining_g: number;
+  coverage_target_g: number;
+  covers_target: boolean;
+  remaining_status: 'known' | 'stale' | 'unknown';
+  remaining_evidence:
+    | 'measurement'
+    | 'provider_report'
+    | 'manual_update'
+    | 'import'
+    | 'intake'
+    | 'estimate';
+  remaining_confidence: 'high' | 'medium' | 'low';
+  remaining_updated_at: string;
+}
+
 export interface CalculatorPreflightLineResponse {
   line_id: string;
   job_key: string | null;
@@ -1135,6 +1155,7 @@ export interface CalculatorPreflightLineResponse {
   purchase_cost_by_currency: Record<string, number>;
   purchase_cost_complete: boolean;
   allocations: CalculatorPreflightSpoolAllocation[];
+  spool_suggestions: CalculatorPreflightSpoolSuggestion[];
 }
 
 export interface CalculatorPreflightResponse {

@@ -7,6 +7,9 @@ from httpx import AsyncClient
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.brand import Brand
+from app.models.filament import Filament
+from app.models.filament_line import FilamentLine
 from app.models.user import User
 from app.models.user_spool import UserSpool, UserSpoolState
 
@@ -622,6 +625,137 @@ async def test_preflight_builds_a_sequential_spool_change_plan(
     for spool in spools:
         await db_session.refresh(spool)
         assert spool.used_weight_g == 0
+
+
+@pytest.mark.asyncio
+async def test_preflight_separates_exact_spools_from_reslice_candidates(
+    admin_client: AsyncClient,
+    admin_user: User,
+    db_session: AsyncSession,
+):
+    brand = Brand(
+        name=f"Preflight alternatives {admin_user.id}",
+        slug=f"preflight-alternatives-{admin_user.id}",
+    )
+    db_session.add(brand)
+    await db_session.flush()
+    line = FilamentLine(brand_id=brand.id, name="ABS Basic")
+    db_session.add(line)
+    await db_session.flush()
+
+    target = Filament(
+        brand_id=brand.id,
+        line_id=line.id,
+        name="ABS Black",
+        slug="abs-black",
+        material_type="ABS",
+        diameter=1.75,
+    )
+    same_line = Filament(
+        brand_id=brand.id,
+        line_id=line.id,
+        name="ABS White",
+        slug="abs-white",
+        material_type="ABS",
+        diameter=1.75,
+    )
+    same_type = Filament(
+        brand_id=brand.id,
+        name="ABS Other",
+        slug="abs-other",
+        material_type="abs",
+        diameter=1.75,
+    )
+    wrong_diameter = Filament(
+        brand_id=brand.id,
+        name="ABS 2.85",
+        slug="abs-285",
+        material_type="ABS",
+        diameter=2.85,
+    )
+    harder_material = Filament(
+        brand_id=brand.id,
+        name="ABS CF",
+        slug="abs-cf",
+        material_type="ABS",
+        diameter=1.75,
+        required_nozzle_hrc=50,
+    )
+    other_type = Filament(
+        brand_id=brand.id,
+        name="PLA Black",
+        slug="pla-black",
+        material_type="PLA",
+        diameter=1.75,
+    )
+    filaments = [
+        target,
+        same_line,
+        same_type,
+        wrong_diameter,
+        harder_material,
+        other_type,
+    ]
+    db_session.add_all(filaments)
+    await db_session.flush()
+
+    selected = UserSpool(
+        user_id=admin_user.id,
+        filament_id=target.id,
+        initial_weight_g=40,
+        state=UserSpoolState.shelf,
+    )
+    exact = UserSpool(
+        user_id=admin_user.id,
+        filament_id=target.id,
+        initial_weight_g=90,
+        state=UserSpoolState.shelf,
+    )
+    replacement_spools = [
+        UserSpool(
+            user_id=admin_user.id,
+            filament_id=filament.id,
+            initial_weight_g=200,
+            state=UserSpoolState.shelf,
+        )
+        for filament in [same_line, same_type, wrong_diameter, harder_material, other_type]
+    ]
+    db_session.add_all([selected, exact, *replacement_spools])
+    await db_session.commit()
+
+    response = await admin_client.post(
+        "/api/v1/calculator/preflight",
+        json={
+            "safety_buffer_percent": 20,
+            "lines": [
+                {
+                    "line_id": "tool-0",
+                    "filament_id": target.id,
+                    "weight_g": 100,
+                    "spool_ids": [selected.id],
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    suggestions = response.json()["lines"][0]["spool_suggestions"]
+    assert [item["relation"] for item in suggestions] == [
+        "same_filament",
+        "same_line",
+        "same_material_type",
+    ]
+    assert suggestions[0]["spool_id"] == exact.id
+    assert suggestions[0]["requires_reslice"] is False
+    assert suggestions[0]["coverage_target_g"] == 80
+    assert suggestions[0]["covers_target"] is True
+    assert all(item["requires_reslice"] for item in suggestions[1:])
+    assert all(item["coverage_target_g"] == 120 for item in suggestions[1:])
+
+    await db_session.refresh(selected)
+    await db_session.refresh(exact)
+    assert selected.used_weight_g == 0
+    assert exact.used_weight_g == 0
 
 
 @pytest.mark.asyncio

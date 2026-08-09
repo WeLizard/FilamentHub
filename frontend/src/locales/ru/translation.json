@@ -3257,6 +3257,18 @@
       "preflightPurchaseCost": "По ценам покупки выбранных катушек: {{value}}.",
       "preflightPurchaseCostIncomplete": "Для части расхода цена покупки неизвестна.",
       "preflightAllocationCost": "стоимость расхода {{value}}",
+      "preflightExactSuggestions": "Подходящие катушки",
+      "preflightExactSuggestionsHint": "Тот же материал — перенарезка не нужна",
+      "preflightSuggestionCoverage": "{{available}} доступно, нужно {{target}}",
+      "preflightSuggestionCovers": "хватит",
+      "preflightSuggestionPartial": "покроет часть",
+      "preflightReplacementSuggestions": "Возможные замены после перенарезки",
+      "preflightReplacementWarning": "Это не замена для текущего G-code. Сначала выберите материал в OrcaSlicer и выполните нарезку заново.",
+      "preflightSuggestionRelation": {
+        "same_filament": "тот же филамент",
+        "same_line": "та же линейка",
+        "same_material_type": "тот же тип"
+      },
       "selectSpool": "Катушка из Моих филаментов",
       "selectSpoolHint": "Если катушка уже заведена в вашем инвентаре, цена и вес подтянутся именно из неё.",
       "chooseFromMyFilaments": "Выбрать из Моих филаментов",

@@ -192,6 +192,21 @@ export const MaterialPreflightPanel = ({
       <div className="mt-4 space-y-3">
         {lines.map((line) => {
           const readiness = resultByLine.get(line.lineId) ?? null;
+          const suggestions = (readiness?.spool_suggestions ?? []).filter(
+            (suggestion) => !line.selectedSpoolIds.includes(suggestion.spool_id),
+          );
+          const exactSuggestions = suggestions.filter((suggestion) => !suggestion.requires_reslice);
+          const replacementSuggestions = suggestions.filter((suggestion) => suggestion.requires_reslice);
+          const suggestedExactIds = new Set(exactSuggestions.map((suggestion) => suggestion.spool_id));
+          const exactCoverageTarget = exactSuggestions[0]?.coverage_target_g ?? 0;
+          const exactTrustedCoverage = exactSuggestions.reduce(
+            (total, suggestion) => total + (
+              suggestion.remaining_status === 'known' ? suggestion.remaining_g : 0
+            ),
+            0,
+          );
+          const showReplacementSuggestions = replacementSuggestions.length > 0
+            && (exactSuggestions.length === 0 || exactTrustedCoverage < exactCoverageTarget);
           const uncertainAllocations = readiness?.allocations.filter(
             (allocation) => allocation.remaining_status !== 'known',
           ) ?? [];
@@ -200,11 +215,13 @@ export const MaterialPreflightPanel = ({
             .filter((spool): spool is UserSpool => spool != null);
           const candidates = spools.filter(
             (spool) => !line.selectedSpoolIds.includes(spool.id)
+              && !suggestedExactIds.has(spool.id)
               && (line.filamentId == null || spool.filament_id === line.filamentId),
           );
           const needsCompatibleSpool =
             line.filamentId != null
             && selectedSpools.length === 0
+            && exactSuggestions.length === 0
             && candidates.length === 0;
 
           return (
@@ -280,6 +297,103 @@ export const MaterialPreflightPanel = ({
                     count: readiness.allocations.filter((allocation) => allocation.sequence_index != null).length,
                   })}
                 </p>
+              ) : null}
+
+              {exactSuggestions.length > 0 ? (
+                <div className="mt-3 rounded-xl border border-cyan-400/20 bg-cyan-400/[0.055] p-2.5">
+                  <div className="flex flex-wrap items-baseline justify-between gap-1.5">
+                    <p className="text-[11px] font-semibold text-cyan-100">
+                      {t('profilePage.calculator.preflightExactSuggestions')}
+                    </p>
+                    <p className="text-[10px] text-cyan-100/55">
+                      {t('profilePage.calculator.preflightExactSuggestionsHint')}
+                    </p>
+                  </div>
+                  <div className="mt-2 grid gap-1.5 lg:grid-cols-2">
+                    {exactSuggestions.map((suggestion) => {
+                      const spool = spools.find((item) => item.id === suggestion.spool_id);
+                      if (!spool) return null;
+                      const trusted = suggestion.remaining_status === 'known';
+                      return (
+                        <button
+                          key={`${line.lineId}-suggestion-${suggestion.spool_id}`}
+                          type="button"
+                          onClick={() => onSpoolIdsChange(
+                            line.lineId,
+                            [...line.selectedSpoolIds, suggestion.spool_id],
+                          )}
+                          className="flex min-w-0 items-center gap-2 rounded-xl border border-cyan-400/15 bg-black/15 px-2.5 py-2 text-left transition hover:border-cyan-300/30 hover:bg-cyan-400/[0.08]"
+                        >
+                          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-cyan-400/10 text-cyan-200">
+                            <Plus className="h-3.5 w-3.5" />
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-[11px] font-medium text-slate-100" title={formatSpoolLabel(spool)}>
+                              {formatSpoolLabel(spool)}
+                            </span>
+                            <span className={`mt-0.5 block text-[10px] ${trusted ? 'text-slate-500' : 'text-amber-200/75'}`}>
+                              {t('profilePage.calculator.preflightSuggestionCoverage', {
+                                available: weight(suggestion.remaining_g),
+                                target: weight(suggestion.coverage_target_g),
+                              })}
+                              {' · '}
+                              {t(
+                                suggestion.covers_target
+                                  ? 'profilePage.calculator.preflightSuggestionCovers'
+                                  : 'profilePage.calculator.preflightSuggestionPartial',
+                              )}
+                            </span>
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : null}
+
+              {showReplacementSuggestions ? (
+                <div className="mt-3 rounded-xl border border-amber-400/20 bg-amber-400/[0.055] p-2.5">
+                  <div className="flex items-start gap-2">
+                    <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-300" />
+                    <div className="min-w-0">
+                      <p className="text-[11px] font-semibold text-amber-100">
+                        {t('profilePage.calculator.preflightReplacementSuggestions')}
+                      </p>
+                      <p className="mt-0.5 text-[10px] leading-4 text-amber-100/65">
+                        {t('profilePage.calculator.preflightReplacementWarning')}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="mt-2 grid gap-1.5 lg:grid-cols-2">
+                    {replacementSuggestions.map((suggestion) => {
+                      const spool = spools.find((item) => item.id === suggestion.spool_id);
+                      if (!spool) return null;
+                      return (
+                        <div
+                          key={`${line.lineId}-replacement-${suggestion.spool_id}`}
+                          className="min-w-0 rounded-xl border border-amber-400/10 bg-black/15 px-2.5 py-2"
+                        >
+                          <div className="flex min-w-0 flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5">
+                            <p className="min-w-0 truncate text-[11px] font-medium text-slate-100" title={formatSpoolLabel(spool)}>
+                              {formatSpoolLabel(spool)}
+                            </p>
+                            <span className="shrink-0 text-[9px] font-semibold uppercase tracking-[0.08em] text-amber-300/75">
+                              {t(`profilePage.calculator.preflightSuggestionRelation.${suggestion.relation}`)}
+                            </span>
+                          </div>
+                          <p className="mt-0.5 text-[10px] text-slate-500">
+                            {t('profilePage.calculator.preflightSuggestionCoverage', {
+                              available: weight(suggestion.remaining_g),
+                              target: weight(suggestion.coverage_target_g),
+                            })}
+                            {' · '}
+                            {t(`profilePage.calculator.preflightRemainingStatus.${suggestion.remaining_status}`)}
+                          </p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
               ) : null}
 
               {readiness && readiness.allocations.length > 0 ? (

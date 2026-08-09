@@ -163,6 +163,22 @@ class CalculatorPreflightSpoolAllocation(BaseModel):
     ] = Field(default_factory=list)
 
 
+class CalculatorPreflightSpoolSuggestion(BaseModel):
+    """One owned spool that may close the current material gap."""
+
+    spool_id: int
+    filament_id: int
+    relation: Literal["same_filament", "same_line", "same_material_type"]
+    requires_reslice: bool
+    remaining_g: float = Field(ge=0)
+    coverage_target_g: float = Field(ge=0)
+    covers_target: bool
+    remaining_status: CalculatorRemainingStatus
+    remaining_evidence: CalculatorRemainingEvidence
+    remaining_confidence: Literal["high", "medium", "low"]
+    remaining_updated_at: datetime
+
+
 class CalculatorPreflightLineResponse(BaseModel):
     """Explainable readiness result for one material/tool line."""
 
@@ -189,6 +205,7 @@ class CalculatorPreflightLineResponse(BaseModel):
     purchase_cost_by_currency: dict[str, float] = Field(default_factory=dict)
     purchase_cost_complete: bool
     allocations: list[CalculatorPreflightSpoolAllocation] = Field(default_factory=list)
+    spool_suggestions: list[CalculatorPreflightSpoolSuggestion] = Field(default_factory=list)
 
 
 class CalculatorPreflightResponse(BaseModel):

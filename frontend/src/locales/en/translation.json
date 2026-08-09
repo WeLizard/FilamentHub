@@ -2522,6 +2522,18 @@
       "preflightPurchaseCost": "At the purchase prices of the selected spools: {{value}}.",
       "preflightPurchaseCostIncomplete": "The purchase price is unknown for part of the consumption.",
       "preflightAllocationCost": "consumption cost {{value}}",
+      "preflightExactSuggestions": "Matching spools",
+      "preflightExactSuggestionsHint": "Same material — no reslicing needed",
+      "preflightSuggestionCoverage": "{{available}} available, {{target}} needed",
+      "preflightSuggestionCovers": "covers the gap",
+      "preflightSuggestionPartial": "covers part of it",
+      "preflightReplacementSuggestions": "Possible replacements after reslicing",
+      "preflightReplacementWarning": "This is not a replacement for the current G-code. Select the material in OrcaSlicer and slice the job again first.",
+      "preflightSuggestionRelation": {
+        "same_filament": "same filament",
+        "same_line": "same product line",
+        "same_material_type": "same material type"
+      },
       "selectSpool": "Spool from My Filaments",
       "selectSpoolHint": "If the spool already exists in your inventory, its own price and full spool weight are used first.",
       "chooseFromMyFilaments": "Choose from My Filaments",

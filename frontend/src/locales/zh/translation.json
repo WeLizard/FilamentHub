@@ -2517,6 +2517,18 @@
       "preflightPurchaseCost": "按所选线轴的购买价格：{{value}}。",
       "preflightPurchaseCostIncomplete": "部分耗材没有购买价格。",
       "preflightAllocationCost": "耗材成本 {{value}}",
+      "preflightExactSuggestions": "匹配的线轴",
+      "preflightExactSuggestionsHint": "同一材料，无需重新切片",
+      "preflightSuggestionCoverage": "可用 {{available}}，需要 {{target}}",
+      "preflightSuggestionCovers": "足以补足缺口",
+      "preflightSuggestionPartial": "可覆盖一部分",
+      "preflightReplacementSuggestions": "重新切片后可考虑的替代材料",
+      "preflightReplacementWarning": "这不是当前 G-code 的直接替代品。请先在 OrcaSlicer 中选择该材料并重新切片。",
+      "preflightSuggestionRelation": {
+        "same_filament": "同一耗材",
+        "same_line": "同一产品系列",
+        "same_material_type": "同一材料类型"
+      },
       "selectSpool": "我的耗材中的线轴",
       "selectSpoolHint": "如果线轴已存在于您的库存中，将优先使用其自身价格和完整线轴重量。",
       "chooseFromMyFilaments": "从我的耗材中选择",
