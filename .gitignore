@@ -165,6 +165,10 @@ certbot/acmedns-creds.json
 
 # Graphify knowledge-graph output (local only)
 graphify-out/
+
+# Agent and CLI configs: local machine setup, and they carry API keys
+/.mcp.json
+/config.toml
 agy.mcp.json
 cline.mcp.json
 cursor.mcp.json
