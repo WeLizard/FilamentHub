@@ -5980,6 +5980,7 @@
     "ERR_CRM_QUOTE_HAS_NO_DOCUMENT": "The current quote version has no document to share",
     "ERR_SHARED_QUOTE_EXPIRED": "Shared quote link has expired",
     "ERR_PDF_GENERATION_FAILED": "Failed to generate PDF document",
+    "ERR_PROTECTED_DATA_UNREADABLE": "Saved protected data could not be read. Contact support before changing it",
     "ERR_PASSWORD_HASH_ERROR": "Password hashing error",
     "ERR_USER_CREATE_ERROR": "User creation error",
     "ERR_RESPONSE_ERROR": "Response generation error",

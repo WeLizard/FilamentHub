@@ -4,8 +4,9 @@ import asyncio
 from contextlib import suppress
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -13,6 +14,8 @@ from slowapi.middleware import SlowAPIMiddleware
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.core.config import settings
+from app.core.errors import ERR_PROTECTED_DATA_UNREADABLE
+from app.core.field_encryption import FieldDecryptionError
 from app.core.limiter import limiter
 from app.middleware.catalogue_cache import CatalogueCacheMiddleware
 from app.middleware.maintenance import MaintenanceMiddleware
@@ -34,6 +37,17 @@ app = FastAPI(
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(SlowAPIMiddleware)
+
+
+@app.exception_handler(FieldDecryptionError)
+async def _field_decryption_error_handler(
+    _request: Request,
+    _exc: FieldDecryptionError,
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=500,
+        content={"detail": {"code": ERR_PROTECTED_DATA_UNREADABLE}},
+    )
 
 
 @app.on_event("startup")

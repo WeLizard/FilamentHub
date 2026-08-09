@@ -24,6 +24,10 @@ logger = logging.getLogger(__name__)
 PREFIX = "fh1:"
 
 
+class FieldDecryptionError(RuntimeError):
+    """Raised when protected stored data cannot be recovered."""
+
+
 def _cipher() -> Fernet:
     digest = hashlib.sha256(f"field-encryption:{settings.SECRET_KEY}".encode("utf-8")).digest()
     return Fernet(base64.urlsafe_b64encode(digest))
@@ -44,6 +48,6 @@ def decrypt_field(value: str | None) -> str:
         return value
     try:
         return _cipher().decrypt(value[len(PREFIX):].encode("ascii")).decode("utf-8")
-    except (InvalidToken, ValueError):
+    except (InvalidToken, UnicodeDecodeError, ValueError) as exc:
         logger.warning("Could not decrypt a stored field", exc_info=True)
-        return ""
+        raise FieldDecryptionError("Protected stored data is unreadable") from exc

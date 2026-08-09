@@ -7,7 +7,7 @@ from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.field_encryption import decrypt_field, encrypt_field
+from app.core.field_encryption import FieldDecryptionError, decrypt_field, encrypt_field
 from app.models.calculator_profile import UserCalculatorProfile
 from app.models.user import User
 from app.services import subscription_service
@@ -82,6 +82,26 @@ def test_a_value_survives_the_round_trip() -> None:
         assert decrypt_field(encrypt_field(value)) == value
 
 
-def test_an_unreadable_value_does_not_break_the_profile() -> None:
-    """A changed application secret loses a phone number, not the whole page."""
-    assert decrypt_field("fh1:not-a-real-token") == ""
+def test_an_unreadable_value_is_not_disguised_as_empty() -> None:
+    with pytest.raises(FieldDecryptionError):
+        decrypt_field("fh1:not-a-real-token")
+
+
+@pytest.mark.asyncio
+async def test_an_unreadable_profile_returns_an_explicit_failure(
+    auth_client: AsyncClient,
+    db_session: AsyncSession,
+    auth_user: User,
+) -> None:
+    await subscription_service.set_paywall_enforced(db_session, False)
+    profile = UserCalculatorProfile(
+        user_id=auth_user.id,
+        seller_name="fh1:not-a-real-token",
+    )
+    db_session.add(profile)
+    await db_session.commit()
+
+    response = await auth_client.get("/api/v1/calculator/profile")
+
+    assert response.status_code == 500
+    assert response.json()["detail"]["code"] == "ERR_PROTECTED_DATA_UNREADABLE"

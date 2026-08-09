@@ -5974,6 +5974,7 @@
     "ERR_CRM_QUOTE_HAS_NO_DOCUMENT": "当前报价版本没有可分享的文档",
     "ERR_SHARED_QUOTE_EXPIRED": "共享报价链接已过期",
     "ERR_PDF_GENERATION_FAILED": "无法生成 PDF 文档",
+    "ERR_PROTECTED_DATA_UNREADABLE": "无法读取已保存的受保护数据。请先联系支持人员，再进行更改",
     "ERR_PASSWORD_HASH_ERROR": "密码哈希错误",
     "ERR_USER_CREATE_ERROR": "用户创建错误",
     "ERR_RESPONSE_ERROR": "响应生成错误",

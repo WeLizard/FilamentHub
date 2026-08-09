@@ -6149,6 +6149,7 @@
     "ERR_CRM_QUOTE_HAS_NO_DOCUMENT": "У текущей версии КП нет документа для публикации",
     "ERR_SHARED_QUOTE_EXPIRED": "Срок действия ссылки на КП истёк",
     "ERR_PDF_GENERATION_FAILED": "Не удалось сгенерировать PDF документ",
+    "ERR_PROTECTED_DATA_UNREADABLE": "Не удалось прочитать сохранённые защищённые данные. Свяжитесь с поддержкой до их изменения",
     "ERR_PASSWORD_HASH_ERROR": "Ошибка хеширования пароля",
     "ERR_USER_CREATE_ERROR": "Ошибка создания пользователя",
     "ERR_RESPONSE_ERROR": "Ошибка формирования ответа",
