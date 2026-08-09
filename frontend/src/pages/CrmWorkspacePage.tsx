@@ -7,6 +7,7 @@ import { useTranslation } from 'react-i18next';
 import { ModalOverlay } from '../components/ModalOverlay';
 import {
   Archive,
+  AlertTriangle,
   ArrowRight,
   BriefcaseBusiness,
   Check,
@@ -18,6 +19,7 @@ import {
   Loader2,
   PackageCheck,
   Plus,
+  RefreshCw,
   Search,
   Send,
   Sparkles,
@@ -279,11 +281,17 @@ export const CrmWorkspacePage: React.FC<CrmWorkspacePageProps> = ({
   }
 
   const summary = summaryQuery.data;
-  const isCurrentLoading = activeTab === 'quotes'
-    ? quotesQuery.isPending
+  const currentQuery = activeTab === 'quotes'
+    ? quotesQuery
     : activeTab === 'orders'
-      ? ordersQuery.isPending
-      : customersQuery.isPending;
+      ? ordersQuery
+      : customersQuery;
+  const currentQueryError = currentQuery.error
+    ? translateApiError(t, currentQuery.error, t('crmWorkspace.feedback.error'))
+    : null;
+  const quoteDetailError = quoteDetailQuery.error
+    ? translateApiError(t, quoteDetailQuery.error, t('crmWorkspace.feedback.error'))
+    : null;
 
   return (
     <div className="space-y-6">
@@ -346,7 +354,13 @@ export const CrmWorkspacePage: React.FC<CrmWorkspacePageProps> = ({
         )}
 
         <div className="mt-5">
-          {isCurrentLoading ? (
+          {currentQueryError ? (
+            <QueryErrorState
+              message={currentQueryError}
+              retryLabel={t('crmWorkspace.actions.retry')}
+              onRetry={() => void currentQuery.refetch()}
+            />
+          ) : currentQuery.isPending ? (
             <div className="flex min-h-56 items-center justify-center"><Loader2 className="h-7 w-7 animate-spin text-cyan-300" /></div>
           ) : activeTab === 'quotes' ? (
             <QuotesList
@@ -383,17 +397,34 @@ export const CrmWorkspacePage: React.FC<CrmWorkspacePageProps> = ({
           payload,
         })}
       />
-      <QuoteDetailDrawer
-        quote={quoteDetailQuery.data ?? null}
-        customers={customersQuery.data?.items ?? []}
-        isLoading={quoteDetailQuery.isPending && selectedQuoteId !== null}
-        onClose={() => setSelectedQuoteId(null)}
-        onStatus={(status) => selectedQuoteId && quoteStatusMutation.mutate({ quoteId: selectedQuoteId, status })}
-        onCustomer={(customerId) => selectedQuoteId && quoteCustomerMutation.mutate({ quoteId: selectedQuoteId, customerId })}
-        onShare={() => selectedQuoteId && shareMutation.mutate(selectedQuoteId)}
-        onPdf={(quote) => void downloadPdf(quote)}
-        busy={quoteStatusMutation.isPending || quoteCustomerMutation.isPending || shareMutation.isPending}
-      />
+      {selectedQuoteId !== null && quoteDetailError ? (
+        <ModalOverlay onClose={() => setSelectedQuoteId(null)} contentClassName="flex h-[100dvh] min-h-0 items-stretch justify-end">
+          <aside className="h-full min-h-0 w-full max-w-2xl overflow-y-auto border-l border-white/10 bg-slate-950 p-6 shadow-2xl shadow-black/60">
+            <div className="flex justify-end">
+              <button type="button" onClick={() => setSelectedQuoteId(null)} className="rounded-xl border border-white/10 bg-white/5 p-2.5 text-slate-300 hover:bg-white/10">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <QueryErrorState
+              message={quoteDetailError}
+              retryLabel={t('crmWorkspace.actions.retry')}
+              onRetry={() => void quoteDetailQuery.refetch()}
+            />
+          </aside>
+        </ModalOverlay>
+      ) : (
+        <QuoteDetailDrawer
+          quote={quoteDetailQuery.data ?? null}
+          customers={customersQuery.data?.items ?? []}
+          isLoading={quoteDetailQuery.isPending && selectedQuoteId !== null}
+          onClose={() => setSelectedQuoteId(null)}
+          onStatus={(status) => selectedQuoteId && quoteStatusMutation.mutate({ quoteId: selectedQuoteId, status })}
+          onCustomer={(customerId) => selectedQuoteId && quoteCustomerMutation.mutate({ quoteId: selectedQuoteId, customerId })}
+          onShare={() => selectedQuoteId && shareMutation.mutate(selectedQuoteId)}
+          onPdf={(quote) => void downloadPdf(quote)}
+          busy={quoteStatusMutation.isPending || quoteCustomerMutation.isPending || shareMutation.isPending}
+        />
+      )}
     </div>
   );
 };
@@ -489,6 +520,23 @@ const CustomersList: React.FC<{ customers: CrmCustomer[]; onEdit: (customer: Crm
 
 const EmptyState: React.FC<{ icon: ReactNode; title: string; text: string; action?: ReactNode }> = ({ icon, title, text, action }) => (
   <div className="flex min-h-64 flex-col items-center justify-center rounded-2xl border border-dashed border-white/10 bg-black/10 px-6 text-center"><div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-400 [&>svg]:h-6 [&>svg]:w-6">{icon}</div><h2 className="mt-4 text-lg font-semibold text-white">{title}</h2><p className="mt-2 max-w-md text-sm leading-6 text-slate-400">{text}</p>{action && <div className="mt-4">{action}</div>}</div>
+);
+
+const QueryErrorState: React.FC<{
+  message: string;
+  retryLabel: string;
+  onRetry: () => void;
+}> = ({ message, retryLabel, onRetry }) => (
+  <div className="flex min-h-56 flex-col items-center justify-center rounded-2xl border border-rose-400/20 bg-rose-400/[0.06] px-6 text-center">
+    <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-rose-400/20 bg-rose-400/10 text-rose-200">
+      <AlertTriangle className="h-6 w-6" />
+    </div>
+    <p className="mt-4 max-w-lg text-sm leading-6 text-rose-100">{message}</p>
+    <button type="button" onClick={onRetry} className="mt-4 inline-flex items-center gap-2 rounded-xl border border-rose-300/20 bg-rose-300/10 px-4 py-2.5 text-sm font-semibold text-rose-100 transition hover:bg-rose-300/20">
+      <RefreshCw className="h-4 w-4" />
+      {retryLabel}
+    </button>
+  </div>
 );
 
 const CustomerDialog: React.FC<{ customer: CrmCustomer | 'new' | null; isSaving: boolean; onClose: () => void; onSave: (payload: CrmCustomerCreate) => void }> = ({ customer, isSaving, onClose, onSave }) => {

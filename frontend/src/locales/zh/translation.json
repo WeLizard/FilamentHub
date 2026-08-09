@@ -81,6 +81,7 @@
     "actions": {
       "save": "保存",
       "cancel": "取消",
+      "retry": "重试",
       "pdf": "下载 PDF",
       "share": "复制链接"
     },

@@ -5,6 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.field_encryption import decrypt_field
+from app.models.crm import CrmQuote, CrmQuoteStatus, CrmQuoteVersion
 from app.models.shared_quote import SharedQuote
 from app.services import subscription_service
 
@@ -228,6 +229,33 @@ async def test_invalid_quote_transition_is_rejected(
 
     assert response.status_code == 409
     assert response.json()["detail"]["code"] == "ERR_CRM_INVALID_STATUS_TRANSITION"
+
+
+@pytest.mark.asyncio
+async def test_an_unreadable_quote_cannot_change_before_recovery(
+    auth_client,
+    db_session: AsyncSession,
+) -> None:
+    await subscription_service.set_paywall_enforced(db_session, False)
+    quote = (await auth_client.post("/api/v1/crm/quotes", json=quote_payload())).json()
+    version = await db_session.scalar(
+        select(CrmQuoteVersion).where(CrmQuoteVersion.quote_id == quote["id"])
+    )
+    assert version is not None
+    version.html_content = "fh1:not-a-real-token"
+    await db_session.commit()
+
+    response = await auth_client.post(
+        f"/api/v1/crm/quotes/{quote['id']}/status",
+        json={"status": "sent"},
+    )
+
+    assert response.status_code == 500
+    assert response.json()["detail"]["code"] == "ERR_PROTECTED_DATA_UNREADABLE"
+    db_session.expire_all()
+    stored = await db_session.get(CrmQuote, quote["id"])
+    assert stored is not None
+    assert stored.status == CrmQuoteStatus.DRAFT
 
 
 @pytest.mark.asyncio

@@ -81,6 +81,7 @@
     "actions": {
       "save": "Save",
       "cancel": "Cancel",
+      "retry": "Try again",
       "pdf": "Download PDF",
       "share": "Copy link"
     },

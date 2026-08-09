@@ -266,6 +266,13 @@ def _serialize_quote_detail(quote: CrmQuote) -> CrmQuoteDetailResponse:
     )
 
 
+def _validate_quote_protected_fields(quote: CrmQuote) -> None:
+    for version in quote.versions:
+        _open_snapshot(version.seller_snapshot)
+        _open_snapshot(version.customer_snapshot)
+        decrypt_field(version.html_content)
+
+
 def _quote_load_options():
     return (
         selectinload(CrmQuote.customer),
@@ -281,6 +288,7 @@ async def _load_customer(db: AsyncSession, user_id: int, customer_id: int) -> Cr
     )
     if customer is None:
         raise_error(status.HTTP_404_NOT_FOUND, ERR_CRM_CUSTOMER_NOT_FOUND)
+    _plain_customer(customer)
     return customer
 
 
@@ -295,6 +303,7 @@ async def _load_quote(db: AsyncSession, user_id: int, quote_id: int) -> CrmQuote
     ).scalar_one_or_none()
     if quote is None:
         raise_error(status.HTTP_404_NOT_FOUND, ERR_CRM_QUOTE_NOT_FOUND)
+    _validate_quote_protected_fields(quote)
     return quote
 
 
@@ -309,6 +318,8 @@ async def _load_order(db: AsyncSession, user_id: int, order_id: int) -> CrmOrder
     ).scalar_one_or_none()
     if order is None:
         raise_error(status.HTTP_404_NOT_FOUND, ERR_CRM_ORDER_NOT_FOUND)
+    if order.customer is not None:
+        _plain_customer(order.customer)
     return order
 
 

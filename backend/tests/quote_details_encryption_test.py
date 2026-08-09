@@ -106,3 +106,11 @@ async def test_an_unreadable_profile_returns_an_explicit_failure(
 
     assert response.status_code == 500
     assert response.json()["detail"]["code"] == "ERR_PROTECTED_DATA_UNREADABLE"
+
+    update = await auth_client.put(
+        "/api/v1/calculator/profile",
+        json={"seller_name": "Replacement name"},
+    )
+    assert update.status_code == 500
+    await db_session.refresh(profile)
+    assert profile.seller_name == "fh1:not-a-real-token"

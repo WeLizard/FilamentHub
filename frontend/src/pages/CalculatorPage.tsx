@@ -2922,8 +2922,11 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
         currency: normalizeCurrency(profile.currency),
       });
       setHistoryFeedback({ kind: 'success', message: tc('cloudSaveSuccess') });
-    } catch {
-      setHistoryFeedback({ kind: 'error', message: tc('cloudSaveError') });
+    } catch (error) {
+      setHistoryFeedback({
+        kind: 'error',
+        message: translateApiError(t, error, tc('cloudSaveError')),
+      });
     } finally {
       setIsCloudBusy(false);
     }
@@ -2965,8 +2968,11 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
         quoteNumberPrefix: profile.quote_number_prefix,
       });
       setHistoryFeedback({ kind: 'success', message: tc('cloudLoadSuccess') });
-    } catch {
-      setHistoryFeedback({ kind: 'error', message: tc('cloudLoadError') });
+    } catch (error) {
+      setHistoryFeedback({
+        kind: 'error',
+        message: translateApiError(t, error, tc('cloudLoadError')),
+      });
     } finally {
       setIsCloudBusy(false);
     }

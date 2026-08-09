@@ -819,6 +819,8 @@ async def update_calculator_profile(
     if not profile:
         profile = UserCalculatorProfile(user_id=current_user.id)
         db.add(profile)
+    else:
+        _profile_response(profile)
 
     for field_name, value in data.model_dump(exclude_unset=True).items():
         if field_name in ENCRYPTED_PROFILE_FIELDS:
