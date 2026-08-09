@@ -48,6 +48,6 @@ def decrypt_field(value: str | None) -> str:
         return value
     try:
         return _cipher().decrypt(value[len(PREFIX):].encode("ascii")).decode("utf-8")
-    except (InvalidToken, UnicodeDecodeError, ValueError) as exc:
+    except (InvalidToken, UnicodeError, ValueError) as exc:
         logger.warning("Could not decrypt a stored field", exc_info=True)
         raise FieldDecryptionError("Protected stored data is unreadable") from exc

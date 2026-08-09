@@ -82,9 +82,10 @@ def test_a_value_survives_the_round_trip() -> None:
         assert decrypt_field(encrypt_field(value)) == value
 
 
-def test_an_unreadable_value_is_not_disguised_as_empty() -> None:
+@pytest.mark.parametrize("stored", ["fh1:not-a-real-token", "fh1:повреждено"])
+def test_an_unreadable_value_is_not_disguised_as_empty(stored: str) -> None:
     with pytest.raises(FieldDecryptionError):
-        decrypt_field("fh1:not-a-real-token")
+        decrypt_field(stored)
 
 
 @pytest.mark.asyncio
