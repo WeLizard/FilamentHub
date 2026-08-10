@@ -175,7 +175,7 @@ G1 X2 E3
 G1 X3 E1
 ;TYPE:Support
 G1 X4 E2
-;TYPE:Top surface
+;TYPE:Brim
 G1 X5 E2
 """
 
@@ -183,8 +183,10 @@ G1 X5 E2
 
     assert parsed["infill_filament_weight_g"] == 4.0
     assert parsed["support_filament_weight_g"] == 2.0
+    assert parsed["brim_filament_weight_g"] == 2.0
     assert parsed["materials"][0]["infill_weight_g"] == 4.0
     assert parsed["materials"][0]["support_weight_g"] == 2.0
+    assert parsed["materials"][0]["brim_weight_g"] == 2.0
 
 
 def test_role_weights_support_absolute_extrusion_resets_and_multiple_tools() -> None:

@@ -21,6 +21,10 @@ class RoundingMode(str, Enum):
     NEAREST = "nearest"
 
 
+CalculatorMaterialRole = Literal["support", "brim"]
+CalculatorMaterialRoleSource = Literal["gcode_extrusion_roles"]
+
+
 class CalculatorMaterialLineRequest(BaseModel):
     """One material/tool contribution to a calculator estimate."""
 
@@ -37,20 +41,46 @@ class CalculatorMaterialLineRequest(BaseModel):
     filament_id: int | None = Field(None, ge=1)
     density_g_cm3: float | None = Field(None, gt=0, le=10)
     abrasiveness: float | None = Field(None, ge=0.5, le=5)
+    role_weights_g: dict[CalculatorMaterialRole, float] = Field(default_factory=dict)
+    role_weight_source: CalculatorMaterialRoleSource | None = None
     support_weight_g: float | None = Field(None, ge=0)
-    support_weight_source: Literal["gcode_extrusion_roles"] | None = None
+    support_weight_source: CalculatorMaterialRoleSource | None = None
 
     @model_validator(mode="after")
-    def validate_support_weight(self) -> "CalculatorMaterialLineRequest":
+    def validate_role_weights(self) -> "CalculatorMaterialLineRequest":
+        if any(weight < 0 for weight in self.role_weights_g.values()):
+            raise ValueError("role_weights_g values cannot be negative")
+        if self.role_weights_g and self.role_weight_source is None:
+            raise ValueError("role_weights_g requires role_weight_source")
+        if not self.role_weights_g and self.role_weight_source is not None:
+            raise ValueError("role_weight_source requires role_weights_g")
         if self.support_weight_g is None:
             if self.support_weight_source is not None:
                 raise ValueError("support_weight_source requires support_weight_g")
-            return self
-        if self.support_weight_source is None:
-            raise ValueError("support_weight_g requires support_weight_source")
-        if self.support_weight_g > self.weight_g + 0.001:
-            raise ValueError("support_weight_g cannot exceed weight_g")
+        else:
+            if self.support_weight_source is None:
+                raise ValueError("support_weight_g requires support_weight_source")
+            mapped_support_weight = self.role_weights_g.get("support")
+            if (
+                mapped_support_weight is not None
+                and abs(mapped_support_weight - self.support_weight_g) > 0.001
+            ):
+                raise ValueError("support_weight_g conflicts with role_weights_g")
+        effective_role_weights = dict(self.role_weights_g)
+        if self.support_weight_g is not None:
+            effective_role_weights.setdefault("support", self.support_weight_g)
+        if sum(effective_role_weights.values()) > self.weight_g + 0.001:
+            raise ValueError("role weights cannot exceed weight_g")
         return self
+
+
+class CalculatorMaterialRoleCost(BaseModel):
+    """Resolved cost of one proven G-code extrusion role."""
+
+    role: CalculatorMaterialRole
+    weight_g: float = Field(..., ge=0)
+    cost: float = Field(..., ge=0)
+    source: CalculatorMaterialRoleSource
 
 
 class CalculatorMaterialLineCost(BaseModel):
@@ -70,7 +100,10 @@ class CalculatorMaterialLineCost(BaseModel):
     support_cost: float | None = Field(None, ge=0)
     non_support_weight_g: float | None = Field(None, ge=0)
     non_support_cost: float | None = Field(None, ge=0)
-    support_weight_source: Literal["gcode_extrusion_roles"] | None = None
+    support_weight_source: CalculatorMaterialRoleSource | None = None
+    role_costs: list[CalculatorMaterialRoleCost] = Field(default_factory=list)
+    other_weight_g: float | None = Field(None, ge=0)
+    other_cost: float | None = Field(None, ge=0)
 
 
 class CalculatorPrintJobRequest(BaseModel):
@@ -594,6 +627,11 @@ class CalculatorParsedMaterial(BaseModel):
         ge=0,
         description="Расход материала на G-code роли support, нормализованный к весу tool",
     )
+    brim_weight_g: float | None = Field(
+        None,
+        ge=0,
+        description="Расход материала на G-code роль brim, нормализованный к весу tool",
+    )
 
 
 class CalculatorParsedObjectGroup(BaseModel):
@@ -640,6 +678,11 @@ class CalculatorGcodeParseResponse(BaseModel):
         None,
         ge=0,
         description="Суммарный фактический расход на роли support",
+    )
+    brim_filament_weight_g: float | None = Field(
+        None,
+        ge=0,
+        description="Суммарный фактический расход на роль brim",
     )
     layer_height_mm: float | None = Field(None, ge=0, description="Высота слоя")
     initial_layer_height_mm: float | None = Field(None, ge=0, description="Высота первого слоя")

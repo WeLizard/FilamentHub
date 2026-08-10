@@ -1027,8 +1027,20 @@ export interface CalculatorMaterialLineRequest {
   filament_id?: number | null;
   density_g_cm3?: number | null;
   abrasiveness?: number | null;
+  role_weights_g?: Partial<Record<CalculatorMaterialRole, number>>;
+  role_weight_source?: CalculatorMaterialRoleSource | null;
   support_weight_g?: number | null;
-  support_weight_source?: 'gcode_extrusion_roles' | null;
+  support_weight_source?: CalculatorMaterialRoleSource | null;
+}
+
+export type CalculatorMaterialRole = 'support' | 'brim';
+export type CalculatorMaterialRoleSource = 'gcode_extrusion_roles';
+
+export interface CalculatorMaterialRoleCost {
+  role: CalculatorMaterialRole;
+  weight_g: number;
+  cost: number;
+  source: CalculatorMaterialRoleSource;
 }
 
 export interface CalculatorMaterialLineCost {
@@ -1046,7 +1058,10 @@ export interface CalculatorMaterialLineCost {
   support_cost?: number | null;
   non_support_weight_g?: number | null;
   non_support_cost?: number | null;
-  support_weight_source?: 'gcode_extrusion_roles' | null;
+  support_weight_source?: CalculatorMaterialRoleSource | null;
+  role_costs?: CalculatorMaterialRoleCost[];
+  other_weight_g?: number | null;
+  other_cost?: number | null;
 }
 
 export interface CalculatorPrintJobRequest {
@@ -1364,6 +1379,7 @@ export interface CalculatorParsedMaterial {
   used_for_support?: boolean | null;
   infill_weight_g?: number | null;
   support_weight_g?: number | null;
+  brim_weight_g?: number | null;
 }
 
 export interface CalculatorParsedObjectGroup {
@@ -1387,6 +1403,7 @@ export interface CalculatorGcodeParseResponse {
   total_filament_volume_cm3?: number | null;
   infill_filament_weight_g?: number | null;
   support_filament_weight_g?: number | null;
+  brim_filament_weight_g?: number | null;
   layer_height_mm?: number | null;
   initial_layer_height_mm?: number | null;
   sparse_infill_density_percent?: number | null;

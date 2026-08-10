@@ -46,6 +46,7 @@ from app.schemas.calculator import (
     CalculatorHistoryEntryResponse,
     CalculatorHistoryParsedJob,
     CalculatorMaterialLineCost,
+    CalculatorMaterialRoleCost,
     CalculatorPreflightRequest,
     CalculatorPreflightResponse,
     CalculatorProfileResponse,
@@ -197,21 +198,50 @@ def _calculate_material_lines(
         line_cost = line_weight_g * price_per_gram
         rounded_line_weight_g = round(line_weight_g, 3)
         rounded_line_cost = round(line_cost, 2)
-        support_weight_g = None
-        support_cost = None
-        non_support_weight_g = None
-        non_support_cost = None
+        role_weights_g = dict(line.role_weights_g)
         if line.support_weight_g is not None:
-            support_weight_g = min(
-                rounded_line_weight_g,
-                round(line.support_weight_g * line_multiplier, 3),
+            role_weights_g.setdefault("support", line.support_weight_g)
+        role_weight_source = line.role_weight_source or line.support_weight_source
+        role_costs: list[CalculatorMaterialRoleCost] = []
+        remaining_weight_g = rounded_line_weight_g
+        remaining_cost = rounded_line_cost
+        for role in ("support", "brim"):
+            raw_role_weight_g = role_weights_g.get(role)
+            if raw_role_weight_g is None:
+                continue
+            if role_weight_source is None:
+                raise ValueError("material role weights require a source")
+            role_weight_g = min(
+                remaining_weight_g,
+                round(raw_role_weight_g * line_multiplier, 3),
             )
-            non_support_weight_g = round(rounded_line_weight_g - support_weight_g, 3)
-            support_cost = min(
-                rounded_line_cost,
-                round(support_weight_g * price_per_gram, 2),
+            role_cost = min(remaining_cost, round(role_weight_g * price_per_gram, 2))
+            role_costs.append(
+                CalculatorMaterialRoleCost(
+                    role=role,
+                    weight_g=role_weight_g,
+                    cost=role_cost,
+                    source=role_weight_source,
+                )
             )
-            non_support_cost = round(rounded_line_cost - support_cost, 2)
+            remaining_weight_g = round(remaining_weight_g - role_weight_g, 3)
+            remaining_cost = round(remaining_cost - role_cost, 2)
+        support_role_cost = next(
+            (role_cost for role_cost in role_costs if role_cost.role == "support"),
+            None,
+        )
+        support_weight_g = support_role_cost.weight_g if support_role_cost else None
+        support_cost = support_role_cost.cost if support_role_cost else None
+        non_support_weight_g = (
+            round(rounded_line_weight_g - support_weight_g, 3)
+            if support_weight_g is not None
+            else None
+        )
+        non_support_cost = (
+            round(rounded_line_cost - support_cost, 2)
+            if support_cost is not None
+            else None
+        )
         total_cost += line_cost
         total_weight_g += line_weight_g
         resolved.append(
@@ -230,7 +260,10 @@ def _calculate_material_lines(
                 support_cost=support_cost,
                 non_support_weight_g=non_support_weight_g,
                 non_support_cost=non_support_cost,
-                support_weight_source=line.support_weight_source,
+                support_weight_source=(role_weight_source if support_role_cost else None),
+                role_costs=role_costs,
+                other_weight_g=(remaining_weight_g if role_costs else None),
+                other_cost=(remaining_cost if role_costs else None),
             )
         )
 

@@ -446,6 +446,16 @@ const buildSpoolLabel = (spool: UserSpool): string => {
   return `${buildFilamentLabel(spool.filament)} · ${Math.round(spool.remaining_weight_g)} g`;
 };
 
+const resolveMaterialRoleWeights = (
+  line: CalculatorMaterialLineRequest,
+): NonNullable<CalculatorMaterialLineRequest['role_weights_g']> => {
+  const roleWeights = { ...(line.role_weights_g ?? {}) };
+  if (line.support_weight_g != null && roleWeights.support == null) {
+    roleWeights.support = line.support_weight_g;
+  }
+  return roleWeights;
+};
+
 export const buildEstimateRequest = (
   form: CalculatorFormState,
   materialLines: CalculatorMaterialLineState[] = [],
@@ -462,27 +472,33 @@ export const buildEstimateRequest = (
   };
 
   if (materialLines.length > 0) {
-    requestData.material_lines = materialLines.map((line) => ({
-      line_id: line.line_id,
-      job_key: line.job_key,
-      tool_index: line.tool_index,
-      label: line.label,
-      weight_g: line.weight_g,
-      spool_price: line.spool_price,
-      spool_weight_kg: line.spool_weight_kg,
-      delivery_cost: line.delivery_cost,
-      price_source: line.price_source,
-      spool_id: line.spool_id,
-      filament_id: line.filament_id,
-      density_g_cm3: line.density_g_cm3 != null && line.density_g_cm3 > 0
-        ? line.density_g_cm3
-        : null,
-      abrasiveness: line.abrasiveness != null && line.abrasiveness >= 0.5
-        ? line.abrasiveness
-        : undefined,
-      support_weight_g: line.support_weight_g,
-      support_weight_source: line.support_weight_source,
-    }));
+    requestData.material_lines = materialLines.map((line) => {
+      const roleWeights = resolveMaterialRoleWeights(line);
+      const hasRoleWeights = Object.keys(roleWeights).length > 0;
+      return {
+        line_id: line.line_id,
+        job_key: line.job_key,
+        tool_index: line.tool_index,
+        label: line.label,
+        weight_g: line.weight_g,
+        spool_price: line.spool_price,
+        spool_weight_kg: line.spool_weight_kg,
+        delivery_cost: line.delivery_cost,
+        price_source: line.price_source,
+        spool_id: line.spool_id,
+        filament_id: line.filament_id,
+        density_g_cm3: line.density_g_cm3 != null && line.density_g_cm3 > 0
+          ? line.density_g_cm3
+          : null,
+        abrasiveness: line.abrasiveness != null && line.abrasiveness >= 0.5
+          ? line.abrasiveness
+          : undefined,
+        role_weights_g: hasRoleWeights ? roleWeights : undefined,
+        role_weight_source: hasRoleWeights
+          ? line.role_weight_source ?? line.support_weight_source
+          : undefined,
+      };
+    });
   } else {
     if (form.weightG > 0) {
       requestData.weight_g = form.weightG;
@@ -3059,8 +3075,15 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
           mappingSource: 'unresolved',
           requiresSpoolChoice: false,
           priceResolved: false,
-          support_weight_g: material.support_weight_g ?? null,
-          support_weight_source: material.support_weight_g != null
+          role_weights_g: {
+            ...(material.support_weight_g != null
+              ? { support: material.support_weight_g }
+              : {}),
+            ...(material.brim_weight_g != null
+              ? { brim: material.brim_weight_g }
+              : {}),
+          },
+          role_weight_source: material.support_weight_g != null || material.brim_weight_g != null
             ? 'gcode_extrusion_roles'
             : null,
         };
@@ -3901,6 +3924,11 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
     job.key,
     quoteTitleFromFileName(job.parsed.file_name, `${tc('jobFallbackTitle')} ${index + 1}`),
   ]));
+  const jobsWithRaft = new Set(
+    displayJobs
+      .filter((job) => job.parsed.raft_layers != null && job.parsed.raft_layers > 0)
+      .map((job) => job.key),
+  );
   const formatBatchWeight = (weightG: number) =>
     weightG >= 1000 ? `${(weightG / 1000).toFixed(2)} ${tc('kg')}` : `${weightG.toFixed(2)} ${tc('grams')}`;
   const renderMaterialLine = (line: CalculatorMaterialLineState) => {
@@ -3935,9 +3963,18 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
     const technicalLabel = line.label && line.label !== materialName ? line.label : null;
     const materialPickerOpen = materialPickerLineIds.has(line.line_id);
     const identityResolution = parsedMaterial?.identity_resolution;
-    const supportWeightG = line.support_weight_source === 'gcode_extrusion_roles'
-      ? line.support_weight_g
+    const roleWeights = resolveMaterialRoleWeights(line);
+    const roleWeightSource = line.role_weight_source ?? line.support_weight_source;
+    const supportWeightG = roleWeightSource === 'gcode_extrusion_roles'
+      ? roleWeights.support
       : null;
+    const brimWeightG = roleWeightSource === 'gcode_extrusion_roles'
+      ? roleWeights.brim
+      : null;
+    const supportWeightLabel = owningJob?.parsed.raft_layers != null
+      && owningJob.parsed.raft_layers > 0
+      ? tc('materialSupportAndRaftWeight')
+      : tc('materialSupportWeight');
     const identityBadge =
       identityResolution?.status === 'resolved'
       && identityResolution.filament_id != null
@@ -4004,9 +4041,14 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                 {identityBadge.label}
               </span>
             ) : null}
-              {supportWeightG != null && supportWeightG > 0 ? (
+            {supportWeightG != null && supportWeightG > 0 ? (
               <span className="shrink-0 font-medium text-violet-200/85">
-                {tc('materialSupportWeight')}: {supportWeightG.toFixed(2)} {tc('grams')}
+                {supportWeightLabel}: {supportWeightG.toFixed(2)} {tc('grams')}
+              </span>
+            ) : null}
+            {brimWeightG != null && brimWeightG > 0 ? (
+              <span className="shrink-0 font-medium text-sky-200/85">
+                {tc('materialBrimWeight')}: {brimWeightG.toFixed(2)} {tc('grams')}
               </span>
             ) : null}
           </div>
@@ -5377,8 +5419,19 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                       ) : null}
                       {parsedGcode.support_filament_weight_g != null ? (
                         <CompactMetric
-                          label={tc('parsedSupportWeight')}
+                          label={
+                            parsedGcode.raft_layers != null && parsedGcode.raft_layers > 0
+                              ? tc('parsedSupportAndRaftWeight')
+                              : tc('parsedSupportWeight')
+                          }
                           value={`${parsedGcode.support_filament_weight_g.toFixed(2)} ${tc('grams')}`}
+                        />
+                      ) : null}
+                      {parsedGcode.brim_filament_weight_g != null
+                        && parsedGcode.brim_filament_weight_g > 0 ? (
+                        <CompactMetric
+                          label={tc('parsedBrimWeight')}
+                          value={`${parsedGcode.brim_filament_weight_g.toFixed(2)} ${tc('grams')}`}
                         />
                       ) : null}
                       {parsedGcode.support_used && parsedGcode.support_filament_weight_g == null ? (
@@ -5805,35 +5858,57 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                         {tc('materialCostBreakdown')}
                       </p>
                       <div className="space-y-1.5">
-                        {result.material_line_costs.map((line) => (
-                          <div key={line.line_id} className="text-xs">
-                            <div className="flex items-start justify-between gap-3">
-                              <span className="min-w-0 text-slate-400">
-                                {line.job_key && jobTitleByKey.has(line.job_key) ? (
-                                  <span className="mr-1.5 text-slate-500">{jobTitleByKey.get(line.job_key)} ·</span>
-                                ) : null}
-                                <span className="text-slate-200">{line.label || (line.tool_index != null ? `T${line.tool_index}` : tc('unknownMaterial'))}</span>
-                                <span className="ml-1.5 whitespace-nowrap">{line.weight_g.toFixed(2)} {tc('grams')}</span>
-                              </span>
-                              <span className="shrink-0 font-medium text-white">{formatCurrency(line.cost)}</span>
-                            </div>
-                              {line.support_weight_source === 'gcode_extrusion_roles'
-                                && line.support_weight_g != null
-                                && line.support_weight_g > 0
-                                && line.support_cost != null
-                              && line.non_support_weight_g != null
-                              && line.non_support_cost != null ? (
+                        {result.material_line_costs.map((line) => {
+                          const roleCosts = line.role_costs?.length
+                            ? line.role_costs
+                            : line.support_weight_source === 'gcode_extrusion_roles'
+                              && line.support_weight_g != null
+                              && line.support_cost != null
+                              ? [{
+                                  role: 'support' as const,
+                                  weight_g: line.support_weight_g,
+                                  cost: line.support_cost,
+                                  source: line.support_weight_source,
+                                }]
+                              : [];
+                          const visibleRoleCosts = roleCosts.filter((roleCost) => roleCost.weight_g > 0);
+                          const otherWeightG = line.other_weight_g
+                            ?? (roleCosts.length > 0 ? line.non_support_weight_g : null);
+                          const otherCost = line.other_cost
+                            ?? (roleCosts.length > 0 ? line.non_support_cost : null);
+                          return (
+                            <div key={line.line_id} className="text-xs">
+                              <div className="flex items-start justify-between gap-3">
+                                <span className="min-w-0 text-slate-400">
+                                  {line.job_key && jobTitleByKey.has(line.job_key) ? (
+                                    <span className="mr-1.5 text-slate-500">{jobTitleByKey.get(line.job_key)} ·</span>
+                                  ) : null}
+                                  <span className="text-slate-200">{line.label || (line.tool_index != null ? `T${line.tool_index}` : tc('unknownMaterial'))}</span>
+                                  <span className="ml-1.5 whitespace-nowrap">{line.weight_g.toFixed(2)} {tc('grams')}</span>
+                                </span>
+                                <span className="shrink-0 font-medium text-white">{formatCurrency(line.cost)}</span>
+                              </div>
+                              {visibleRoleCosts.length > 0
+                                && otherWeightG != null
+                                && otherCost != null ? (
                                 <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 pl-2 text-[11px] text-slate-500">
+                                  {visibleRoleCosts.map((roleCost) => (
+                                    <span key={roleCost.role}>
+                                      {roleCost.role === 'support'
+                                        ? jobsWithRaft.has(line.job_key ?? '')
+                                          ? tc('materialSupportAndRaftCost')
+                                          : tc('materialSupportCost')
+                                        : tc('materialBrimCost')}: {roleCost.weight_g.toFixed(2)} {tc('grams')} · {formatCurrency(roleCost.cost)}
+                                    </span>
+                                  ))}
                                   <span>
-                                    {tc('materialSupportCost')}: {line.support_weight_g.toFixed(2)} {tc('grams')} · {formatCurrency(line.support_cost)}
-                                  </span>
-                                  <span>
-                                    {tc('materialNonSupportCost')}: {line.non_support_weight_g.toFixed(2)} {tc('grams')} · {formatCurrency(line.non_support_cost)}
+                                    {tc('materialNonSupportCost')}: {otherWeightG.toFixed(2)} {tc('grams')} · {formatCurrency(otherCost)}
                                   </span>
                                 </div>
                               ) : null}
-                          </div>
-                        ))}
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
                   ) : null}

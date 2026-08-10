@@ -50,6 +50,8 @@ describe('buildEstimateRequest', () => {
       spool_id: null,
       filament_id: null,
       density_g_cm3: 0,
+      role_weights_g: { brim: 1.25 },
+      role_weight_source: 'gcode_extrusion_roles',
       support_weight_g: 4.25,
       support_weight_source: 'gcode_extrusion_roles',
       selectionValue: 'manual',
@@ -62,8 +64,13 @@ describe('buildEstimateRequest', () => {
 
     expect(request.material_lines).toHaveLength(1);
     expect(request.material_lines?.[0]?.density_g_cm3).toBeNull();
-    expect(request.material_lines?.[0]?.support_weight_g).toBe(4.25);
-    expect(request.material_lines?.[0]?.support_weight_source).toBe('gcode_extrusion_roles');
+    expect(request.material_lines?.[0]?.role_weights_g).toEqual({
+      brim: 1.25,
+      support: 4.25,
+    });
+    expect(request.material_lines?.[0]?.role_weight_source).toBe('gcode_extrusion_roles');
+    expect(request.material_lines?.[0]).not.toHaveProperty('support_weight_g');
+    expect(request.material_lines?.[0]).not.toHaveProperty('support_weight_source');
     expect(request).not.toHaveProperty('weight_g');
     expect(request).not.toHaveProperty('spool_price');
     expect(request).not.toHaveProperty('spool_weight_kg');
