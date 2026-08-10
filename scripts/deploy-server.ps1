@@ -209,22 +209,85 @@ function Publish-RepositoryCommits {
         return
     }
 
-    $pending = Invoke-Checked git ($git + @('log', '--oneline', 'origin/main..HEAD')) -Capture
-    if (-not $pending) {
+    $candidateLines = Invoke-Checked git ($git + @(
+        'log', '--first-parent', '--reverse', '--format=%H%x09%h%x09%s',
+        'origin/main..HEAD'
+    )) -Capture
+    if (-not $candidateLines) {
         Write-Host "$Title`: публиковать нечего." -ForegroundColor DarkGray
         return
     }
 
+    $candidates = @($candidateLines -split "`r?`n" | ForEach-Object {
+        $parts = $_ -split "`t", 3
+        if ($parts.Count -ne 3 -or $parts[0] -notmatch '^[0-9a-f]{40}$') {
+            throw "Git вернул некорректное описание коммита: $_"
+        }
+        [pscustomobject]@{
+            Sha = $parts[0]
+            ShortSha = $parts[1]
+            Subject = $parts[2]
+        }
+    })
+
     Write-Host ''
-    Write-Host "$Title — уедет в origin/main:" -ForegroundColor Cyan
-    Write-Host $pending
-    if (-not (Confirm-Action "Опубликовать? ($Title)")) {
+    Write-Host "$Title — неопубликованные точки main:" -ForegroundColor Cyan
+    for ($index = 0; $index -lt $candidates.Count; $index++) {
+        $candidate = $candidates[$index]
+        Write-Host (' {0,3}. {1} {2}' -f ($index + 1), $candidate.ShortSha, $candidate.Subject)
+    }
+    Write-Host '   0. Отмена'
+
+    $answer = (Read-Host 'Выбери коммит, до которого опубликовать main').Trim()
+    $selection = 0
+    if (-not [int]::TryParse($answer, [ref]$selection) -or
+        $selection -lt 0 -or $selection -gt $candidates.Count) {
+        throw "Нужно выбрать номер от 0 до $($candidates.Count)."
+    }
+    if ($selection -eq 0) {
         Write-Host 'Публикация отменена.' -ForegroundColor Yellow
         return
     }
 
-    Invoke-Checked git ($git + @('push', 'origin', 'main'))
-    Write-Host "$Title`: опубликовано." -ForegroundColor Green
+    $selected = $candidates[$selection - 1]
+    Invoke-Checked git ($git + @('merge-base', '--is-ancestor', 'origin/main', $selected.Sha)) | Out-Null
+    Invoke-Checked git ($git + @('merge-base', '--is-ancestor', $selected.Sha, 'HEAD')) | Out-Null
+
+    $publishLines = Invoke-Checked git ($git + @(
+        'log', '--reverse', '--format=%h %s', "origin/main..$($selected.Sha)"
+    )) -Capture
+    $commitsToPublish = @($publishLines -split "`r?`n" | Where-Object { $_ })
+    $remainingCount = [int](Invoke-Checked git ($git + @('rev-list', '--count', "$($selected.Sha)..HEAD")) -Capture)
+
+    Write-Host ''
+    Write-Host "$Title — в origin/main попадут:" -ForegroundColor Cyan
+    $commitsToPublish | ForEach-Object { Write-Host "  $_" }
+    if ($commitsToPublish.Count -gt 1) {
+        Write-Host 'Git публикует выбранный коммит вместе со всеми его неопубликованными предками.' -ForegroundColor Yellow
+    }
+    if ($remainingCount -gt 0) {
+        Write-Host "Более новых локальных коммитов останется: $remainingCount." -ForegroundColor DarkGray
+    }
+
+    $confirmation = Read-Host "Введи ОПУБЛИКОВАТЬ $($selected.ShortSha) или PUBLISH $($selected.ShortSha), чтобы продолжить"
+    if ($confirmation -notin @(
+        "ОПУБЛИКОВАТЬ $($selected.ShortSha)",
+        "PUBLISH $($selected.ShortSha)"
+    )) {
+        Write-Host 'Публикация отменена.' -ForegroundColor Yellow
+        return
+    }
+
+    # Push exact SHA instead of the moving local main ref. A concurrent remote
+    # update is rejected by Git's normal non-fast-forward protection.
+    Invoke-Checked git ($git + @('push', 'origin', "$($selected.Sha):refs/heads/main"))
+    $remoteState = Invoke-Checked git ($git + @('ls-remote', '--heads', 'origin', 'refs/heads/main')) -Capture
+    $remoteSha = ($remoteState -split '\s+')[0]
+    if ($remoteSha -ne $selected.Sha) {
+        throw "После push origin/main указывает на $remoteSha вместо $($selected.Sha)."
+    }
+
+    Write-Host "$Title`: опубликовано до $($selected.ShortSha)." -ForegroundColor Green
 }
 
 function Publish-Commits {
@@ -435,7 +498,7 @@ function Show-Menu {
         Write-Host ''
         Write-Host 'Консоль владельца FilamentHub' -ForegroundColor Cyan
         Write-Host "  Сервер: $script:Server"
-        Write-Host '  1. Опубликовать коммиты на GitHub'
+        Write-Host '  1. Выборочно опубликовать коммиты на GitHub'
         Write-Host '  2. Проверить готовность к деплою (точный SHA + GitHub CI)'
         Write-Host '  3. Задеплоить production'
         Write-Host '  4. Проверить состояние production'
