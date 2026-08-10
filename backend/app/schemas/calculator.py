@@ -37,6 +37,20 @@ class CalculatorMaterialLineRequest(BaseModel):
     filament_id: int | None = Field(None, ge=1)
     density_g_cm3: float | None = Field(None, gt=0, le=10)
     abrasiveness: float | None = Field(None, ge=0.5, le=5)
+    support_weight_g: float | None = Field(None, ge=0)
+    support_weight_source: Literal["gcode_extrusion_roles"] | None = None
+
+    @model_validator(mode="after")
+    def validate_support_weight(self) -> "CalculatorMaterialLineRequest":
+        if self.support_weight_g is None:
+            if self.support_weight_source is not None:
+                raise ValueError("support_weight_source requires support_weight_g")
+            return self
+        if self.support_weight_source is None:
+            raise ValueError("support_weight_g requires support_weight_source")
+        if self.support_weight_g > self.weight_g + 0.001:
+            raise ValueError("support_weight_g cannot exceed weight_g")
+        return self
 
 
 class CalculatorMaterialLineCost(BaseModel):
@@ -52,6 +66,11 @@ class CalculatorMaterialLineCost(BaseModel):
     price_source: Literal["spool", "filamenthub", "slicer", "manual"]
     spool_id: int | None = None
     filament_id: int | None = None
+    support_weight_g: float | None = Field(None, ge=0)
+    support_cost: float | None = Field(None, ge=0)
+    non_support_weight_g: float | None = Field(None, ge=0)
+    non_support_cost: float | None = Field(None, ge=0)
+    support_weight_source: Literal["gcode_extrusion_roles"] | None = None
 
 
 class CalculatorPrintJobRequest(BaseModel):

@@ -480,6 +480,8 @@ export const buildEstimateRequest = (
       abrasiveness: line.abrasiveness != null && line.abrasiveness >= 0.5
         ? line.abrasiveness
         : undefined,
+      support_weight_g: line.support_weight_g,
+      support_weight_source: line.support_weight_source,
     }));
   } else {
     if (form.weightG > 0) {
@@ -3007,7 +3009,7 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
       const usedMaterials = job.parsed.materials.filter(
         (material) => resolveParsedMaterialWeight(material) > 0,
       );
-      const parsedMaterials = usedMaterials.length > 0
+      const parsedMaterials: CalculatorParsedMaterial[] = usedMaterials.length > 0
         ? usedMaterials
         : job.parsed.total_filament_weight_g
           ? [{ weight_g: job.parsed.total_filament_weight_g }]
@@ -3057,6 +3059,10 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
           mappingSource: 'unresolved',
           requiresSpoolChoice: false,
           priceResolved: false,
+          support_weight_g: material.support_weight_g ?? null,
+          support_weight_source: material.support_weight_g != null
+            ? 'gcode_extrusion_roles'
+            : null,
         };
 
         if (match?.source === 'user') {
@@ -3929,6 +3935,9 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
     const technicalLabel = line.label && line.label !== materialName ? line.label : null;
     const materialPickerOpen = materialPickerLineIds.has(line.line_id);
     const identityResolution = parsedMaterial?.identity_resolution;
+    const supportWeightG = line.support_weight_source === 'gcode_extrusion_roles'
+      ? line.support_weight_g
+      : null;
     const identityBadge =
       identityResolution?.status === 'resolved'
       && identityResolution.filament_id != null
@@ -3993,6 +4002,11 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                 title={identityResolution?.stable_id}
               >
                 {identityBadge.label}
+              </span>
+            ) : null}
+              {supportWeightG != null && supportWeightG > 0 ? (
+              <span className="shrink-0 font-medium text-violet-200/85">
+                {tc('materialSupportWeight')}: {supportWeightG.toFixed(2)} {tc('grams')}
               </span>
             ) : null}
           </div>
@@ -5367,6 +5381,11 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                           value={`${parsedGcode.support_filament_weight_g.toFixed(2)} ${tc('grams')}`}
                         />
                       ) : null}
+                      {parsedGcode.support_used && parsedGcode.support_filament_weight_g == null ? (
+                        <p className="rounded-xl border border-amber-400/15 bg-amber-400/[0.07] px-3 py-2 text-xs leading-5 text-amber-100/85">
+                          {tc('supportBreakdownUnavailable')}
+                        </p>
+                      ) : null}
                       <CompactMetric
                         label={tc('parsedLength')}
                         value={
@@ -5787,15 +5806,32 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                       </p>
                       <div className="space-y-1.5">
                         {result.material_line_costs.map((line) => (
-                          <div key={line.line_id} className="flex items-start justify-between gap-3 text-xs">
-                            <span className="min-w-0 text-slate-400">
-                              {line.job_key && jobTitleByKey.has(line.job_key) ? (
-                                <span className="mr-1.5 text-slate-500">{jobTitleByKey.get(line.job_key)} ·</span>
+                          <div key={line.line_id} className="text-xs">
+                            <div className="flex items-start justify-between gap-3">
+                              <span className="min-w-0 text-slate-400">
+                                {line.job_key && jobTitleByKey.has(line.job_key) ? (
+                                  <span className="mr-1.5 text-slate-500">{jobTitleByKey.get(line.job_key)} ·</span>
+                                ) : null}
+                                <span className="text-slate-200">{line.label || (line.tool_index != null ? `T${line.tool_index}` : tc('unknownMaterial'))}</span>
+                                <span className="ml-1.5 whitespace-nowrap">{line.weight_g.toFixed(2)} {tc('grams')}</span>
+                              </span>
+                              <span className="shrink-0 font-medium text-white">{formatCurrency(line.cost)}</span>
+                            </div>
+                              {line.support_weight_source === 'gcode_extrusion_roles'
+                                && line.support_weight_g != null
+                                && line.support_weight_g > 0
+                                && line.support_cost != null
+                              && line.non_support_weight_g != null
+                              && line.non_support_cost != null ? (
+                                <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 pl-2 text-[11px] text-slate-500">
+                                  <span>
+                                    {tc('materialSupportCost')}: {line.support_weight_g.toFixed(2)} {tc('grams')} · {formatCurrency(line.support_cost)}
+                                  </span>
+                                  <span>
+                                    {tc('materialNonSupportCost')}: {line.non_support_weight_g.toFixed(2)} {tc('grams')} · {formatCurrency(line.non_support_cost)}
+                                  </span>
+                                </div>
                               ) : null}
-                              <span className="text-slate-200">{line.label || (line.tool_index != null ? `T${line.tool_index}` : tc('unknownMaterial'))}</span>
-                              <span className="ml-1.5 whitespace-nowrap">{line.weight_g.toFixed(2)} {tc('grams')}</span>
-                            </span>
-                            <span className="shrink-0 font-medium text-white">{formatCurrency(line.cost)}</span>
                           </div>
                         ))}
                       </div>

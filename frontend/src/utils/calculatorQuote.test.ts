@@ -50,6 +50,8 @@ describe('buildEstimateRequest', () => {
       spool_id: null,
       filament_id: null,
       density_g_cm3: 0,
+      support_weight_g: 4.25,
+      support_weight_source: 'gcode_extrusion_roles',
       selectionValue: 'manual',
       fileName: 'part.gcode',
       plateIndex: null,
@@ -60,6 +62,8 @@ describe('buildEstimateRequest', () => {
 
     expect(request.material_lines).toHaveLength(1);
     expect(request.material_lines?.[0]?.density_g_cm3).toBeNull();
+    expect(request.material_lines?.[0]?.support_weight_g).toBe(4.25);
+    expect(request.material_lines?.[0]?.support_weight_source).toBe('gcode_extrusion_roles');
     expect(request).not.toHaveProperty('weight_g');
     expect(request).not.toHaveProperty('spool_price');
     expect(request).not.toHaveProperty('spool_weight_kg');

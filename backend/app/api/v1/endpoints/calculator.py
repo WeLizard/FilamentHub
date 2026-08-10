@@ -188,12 +188,30 @@ def _calculate_material_lines(
 
     for line in data.material_lines:
         price_per_gram = ((line.spool_price + line.delivery_cost) / line.spool_weight_kg) / 1000.0
-        line_weight_g = line.weight_g * _material_line_multiplier(
+        line_multiplier = _material_line_multiplier(
             line.job_key,
             quantity,
             repeats_by_job,
         )
+        line_weight_g = line.weight_g * line_multiplier
         line_cost = line_weight_g * price_per_gram
+        rounded_line_weight_g = round(line_weight_g, 3)
+        rounded_line_cost = round(line_cost, 2)
+        support_weight_g = None
+        support_cost = None
+        non_support_weight_g = None
+        non_support_cost = None
+        if line.support_weight_g is not None:
+            support_weight_g = min(
+                rounded_line_weight_g,
+                round(line.support_weight_g * line_multiplier, 3),
+            )
+            non_support_weight_g = round(rounded_line_weight_g - support_weight_g, 3)
+            support_cost = min(
+                rounded_line_cost,
+                round(support_weight_g * price_per_gram, 2),
+            )
+            non_support_cost = round(rounded_line_cost - support_cost, 2)
         total_cost += line_cost
         total_weight_g += line_weight_g
         resolved.append(
@@ -202,12 +220,17 @@ def _calculate_material_lines(
                 job_key=line.job_key,
                 tool_index=line.tool_index,
                 label=line.label,
-                weight_g=round(line_weight_g, 3),
+                weight_g=rounded_line_weight_g,
                 price_per_gram=round(price_per_gram, 6),
-                cost=round(line_cost, 2),
+                cost=rounded_line_cost,
                 price_source=line.price_source,
                 spool_id=line.spool_id,
                 filament_id=line.filament_id,
+                support_weight_g=support_weight_g,
+                support_cost=support_cost,
+                non_support_weight_g=non_support_weight_g,
+                non_support_cost=non_support_cost,
+                support_weight_source=line.support_weight_source,
             )
         )
 

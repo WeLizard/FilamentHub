@@ -1027,6 +1027,8 @@ export interface CalculatorMaterialLineRequest {
   filament_id?: number | null;
   density_g_cm3?: number | null;
   abrasiveness?: number | null;
+  support_weight_g?: number | null;
+  support_weight_source?: 'gcode_extrusion_roles' | null;
 }
 
 export interface CalculatorMaterialLineCost {
@@ -1040,6 +1042,11 @@ export interface CalculatorMaterialLineCost {
   price_source: CalculatorMaterialPriceSource;
   spool_id?: number | null;
   filament_id?: number | null;
+  support_weight_g?: number | null;
+  support_cost?: number | null;
+  non_support_weight_g?: number | null;
+  non_support_cost?: number | null;
+  support_weight_source?: 'gcode_extrusion_roles' | null;
 }
 
 export interface CalculatorPrintJobRequest {
