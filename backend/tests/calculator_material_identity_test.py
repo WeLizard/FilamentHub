@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.brand import Brand
 from app.models.filament import Filament
-from app.models.preset import Preset
+from app.models.preset import Preset, PresetModerationStatus
 from app.models.user import User
 from app.schemas.calculator import CalculatorFhubIdentity, CalculatorGcodeParseResponse
 from app.services.calculator_material_identity_service import (
@@ -166,6 +166,55 @@ async def test_private_foreign_preset_identity_is_not_trusted(
     assert resolution is not None
     assert resolution.status == "unresolved"
     assert resolution.stable_id == "OGFG99"
+
+
+@pytest.mark.asyncio
+async def test_historical_approved_preset_identity_remains_resolvable(
+    db_session: AsyncSession,
+    auth_user: User,
+) -> None:
+    brand = Brand(name="Historical ID Brand", slug="historical-id-brand")
+    db_session.add(brand)
+    await db_session.flush()
+    filament = await _filament(
+        db_session,
+        brand,
+        name="Historical managed ABS",
+        slug="historical-managed-abs",
+    )
+    preset = Preset(
+        filament_id=filament.id,
+        user_id=None,
+        name="Former catalog preset",
+        extruder_temp=250,
+        bed_temp=100,
+        is_official=False,
+        active=False,
+        moderation_status=PresetModerationStatus.APPROVED,
+    )
+    db_session.add(preset)
+    await db_session.flush()
+    parsed = _parsed("OGFB99").model_copy(
+        update={
+            "fhub_identities": [
+                CalculatorFhubIdentity(
+                    kind="material_preset", entity_id=preset.id, tool_index=0
+                )
+            ]
+        }
+    )
+
+    resolved = await resolve_calculator_material_identities(
+        db_session,
+        parsed,
+        user_id=auth_user.id,
+    )
+
+    resolution = resolved.materials[0].identity_resolution
+    assert resolution is not None
+    assert resolution.source == "filamenthub_preset_id"
+    assert resolution.preset_id == preset.id
+    assert resolution.filament_id == filament.id
 
 
 @pytest.mark.asyncio

@@ -1,12 +1,13 @@
 """Visibility checks for stable slicer identities supplied by user-owned files."""
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.physical_printer_profile import UserPrinterProfileLink
 from app.models.preset import PUBLIC_PRESET_STATUSES, Preset
 from app.models.print_profile import PrintProfile
 from app.models.printer_profile import PrinterProfile
+from app.models.user_saved_preset import UserSavedPreset
 
 
 async def visible_material_presets(
@@ -14,15 +15,21 @@ async def visible_material_presets(
 ) -> dict[int, Preset]:
     if not preset_ids:
         return {}
+    saved_by_user = (
+        select(UserSavedPreset.id)
+        .where(
+            UserSavedPreset.user_id == user_id,
+            UserSavedPreset.preset_id == Preset.id,
+        )
+        .exists()
+    )
     result = await db.execute(
         select(Preset).where(
             Preset.id.in_(preset_ids),
             or_(
                 Preset.user_id == user_id,
-                and_(
-                    Preset.active.is_(True),
-                    Preset.moderation_status.in_(PUBLIC_PRESET_STATUSES),
-                ),
+                Preset.moderation_status.in_(PUBLIC_PRESET_STATUSES),
+                saved_by_user,
             ),
         )
     )
@@ -39,10 +46,7 @@ async def visible_print_profile_ids(
             PrintProfile.id.in_(profile_ids),
             or_(
                 PrintProfile.owner_user_id == user_id,
-                and_(
-                    PrintProfile.active.is_(True),
-                    PrintProfile.is_official.is_(True),
-                ),
+                PrintProfile.is_official.is_(True),
             ),
         )
     )
@@ -72,10 +76,7 @@ async def visible_printer_profile_ids(
             or_(
                 PrinterProfile.owner_user_id == user_id,
                 PrinterProfile.id.in_(linked_ids),
-                and_(
-                    PrinterProfile.active.is_(True),
-                    PrinterProfile.is_official.is_(True),
-                ),
+                PrinterProfile.is_official.is_(True),
             ),
         )
     )
