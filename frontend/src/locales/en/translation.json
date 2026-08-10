@@ -1778,6 +1778,7 @@
     "code": "Code",
     "nameLabel": "Material name",
     "namePlaceholder": "e.g. PLA+ Mate R24",
+    "nameHint": "Use the product name printed on the label. Manufacturer, material type, and colour already have their own fields, so do not concatenate them into the name again.",
     "lineLabel": "Product line (optional)",
     "lineHint": "Groups the colours of one product on the brand page (e.g. \"PLA Basic\" in different colours). \"No line\" = a standalone material. Each colour keeps its own settings.",
     "lineNone": "No line",

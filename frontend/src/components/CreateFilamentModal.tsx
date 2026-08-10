@@ -980,6 +980,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
           )}
           <fieldset disabled={commonLocked} className="space-y-6 disabled:opacity-60">
           {/* Name and Material Type in one row */}
+          <div>
           <div className="flex items-end gap-4">
             <div className="flex-1">
               <label className="block text-gray-300 mb-2 text-sm font-medium">{t('createFilament.nameLabel')} *</label>
@@ -1028,6 +1029,8 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
                 />
               </div>
             )}
+          </div>
+          <p className="mt-2 text-xs text-gray-400">{t('createFilament.nameHint')}</p>
           </div>
 
           {/* Линейка (группировка вариантов-цвета) */}
