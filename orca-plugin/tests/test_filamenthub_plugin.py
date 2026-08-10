@@ -212,6 +212,33 @@ def test_shell_language_falls_back_on_older_or_uninitialized_hosts(plugin_module
     assert "?lng=" not in rendered
 
 
+def test_shell_keeps_default_button_copy_without_embedded_locales(plugin_module, monkeypatch):
+    monkeypatch.setattr(plugin_module, "UI_COPY", {})
+
+    rendered = plugin_module.render_page()
+
+    assert '>Catalog</button>' in rendered
+    assert '>Profile</button>' in rendered
+    assert '>Wiki</button>' in rendered
+    assert "element && typeof text === 'string' && text.length > 0" in rendered
+
+
+def test_log_button_is_hidden_by_default_and_requires_explicit_dev_opt_in(
+    plugin_module, monkeypatch
+):
+    assert '<button id="diag" hidden' in plugin_module.render_page()
+
+    monkeypatch.setenv("FILAMENTHUB_SHOW_LOG", "1")
+    enabled_module = _load_module(
+        PLUGIN_PATH,
+        "filamenthub_plugin_diagnostics_enabled_test",
+    )
+
+    rendered = enabled_module.render_page()
+    assert '<button id="diag"' in rendered
+    assert '<button id="diag" hidden' not in rendered
+
+
 def test_native_plugin_messages_follow_orca_ui_language(plugin_module, monkeypatch):
     messages = []
     monkeypatch.setattr(
@@ -642,6 +669,19 @@ def test_build_packages_locale_catalogs_and_checksums(plugin_module, tmp_path):
     standalone.write_bytes(package.read_bytes())
     standalone_module = _load_module(standalone, "filamenthub_standalone_smoke")
     assert set(standalone_module.UI_COPY) == {"en", "ru", "zh_CN", "zh_TW"}
+    assert standalone_module.UI_COPY["ru"]["catalog"] == "Каталог"
+
+
+def test_dev_build_is_single_file_with_localhost_and_embedded_locales(plugin_module, tmp_path):
+    builder = _load_module(BUILD_PATH, "filamenthub_dev_build_package_test")
+
+    dev_plugin = builder.build_dev(tmp_path)
+    source = dev_plugin.read_text(encoding="utf-8")
+
+    assert 'os.environ.get("FILAMENTHUB_SITE_URL", "http://localhost:3000")' in source
+    assert "_EMBEDDED_UI_COPY = {}" not in source
+    standalone_module = _load_module(dev_plugin, "filamenthub_dev_standalone_smoke")
+    assert standalone_module.DEV_CONTOUR is True
     assert standalone_module.UI_COPY["ru"]["catalog"] == "Каталог"
 
 

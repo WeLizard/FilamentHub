@@ -151,6 +151,9 @@ PLUGIN_VERSION = "0.1.0"
 PROD_SITE_URL = "https://filamenthub.ru"
 SITE_URL = os.environ.get("FILAMENTHUB_SITE_URL", "http://localhost:3000").rstrip("/")
 DEV_CONTOUR = SITE_URL != PROD_SITE_URL
+SHOW_DIAGNOSTICS = DEV_CONTOUR and os.environ.get(
+    "FILAMENTHUB_SHOW_LOG", ""
+).strip().lower() in {"1", "true", "yes", "on"}
 EMBED_URL = SITE_URL + "/embed/catalog"
 API_BASE = SITE_URL + "/api/v1"
 HTTP_TIMEOUT = 20
@@ -1765,7 +1768,16 @@ PAGE = r"""<!DOCTYPE html>
     border-bottom:1px solid var(--orca-border,#3c3c4c);
   }
   #left { margin-right:auto; display:flex; align-items:center; gap:8px; }
-  #brand { color:var(--orca-fg,#e0e0e0); font-size:13px; font-weight:600; }
+  #brand {
+    appearance:none; padding:4px 10px; border-radius:4px;
+    border:1px solid var(--orca-border,#3c3c4c); background:transparent;
+    color:var(--orca-fg,#e0e0e0); font:inherit; font-size:12px; font-weight:600;
+  }
+  #brand:not(:disabled):hover {
+    border-color:var(--orca-accent,#8b7cf8);
+    background:color-mix(in srgb, var(--orca-accent,#8b7cf8) 12%, transparent);
+  }
+  #brand:disabled { border-color:transparent; opacity:1; }
   #logout {
     display:none; padding:2px 8px; font-size:11px;
     color:var(--orca-muted,#a0a0a0); border-color:var(--orca-border,#3c3c4c);
@@ -1777,8 +1789,9 @@ PAGE = r"""<!DOCTYPE html>
   }
   #bar button:hover { border-color:var(--orca-border,#3c3c4c); }
   #bar button.active {
-    color:var(--orca-accent,#8b7cf8);
+    color:var(--orca-fg,#e0e0e0);
     border-color:var(--orca-accent,#8b7cf8);
+    background:color-mix(in srgb, var(--orca-accent,#8b7cf8) 14%, transparent);
   }
   #content { position:relative; flex:1 1 auto; min-height:0; display:flex; }
   iframe { flex:1 1 auto; border:0; width:100%; display:block; visibility:hidden; }
@@ -1818,7 +1831,7 @@ PAGE = r"""<!DOCTYPE html>
 <body>
   <div id="bar">
     <span id="left">
-      <span id="brand">Sign in</span>
+      <button id="brand" type="button">Sign in</button>
       <button id="logout" title="Sign out">Sign out</button>
     </span>
     <button id="catalog" data-path="/" class="active">Catalog</button>
@@ -1883,7 +1896,15 @@ document.documentElement.lang = uiLocale;
 function applyShellCopy() {
   var setText = function (id, text) {
     var element = document.getElementById(id);
-    if (element) element.textContent = text;
+    if (element && typeof text === 'string' && text.length > 0) {
+      element.textContent = text;
+    }
+  };
+  var setTitle = function (id, text) {
+    var element = document.getElementById(id);
+    if (element && typeof text === 'string' && text.length > 0) {
+      element.title = text;
+    }
   };
   setText('brand', uiCopy.signIn);
   setText('logout', uiCopy.signOut);
@@ -1893,11 +1914,13 @@ function applyShellCopy() {
   setText('sync', uiCopy.sync);
   setText('recover', uiCopy.recover);
   setText('diag', uiCopy.log);
-  document.getElementById('logout').title = uiCopy.signOut;
-  document.getElementById('sync').title = uiCopy.syncTitle;
-  document.getElementById('recover').title = uiCopy.recoverTitle;
-  document.getElementById('diag').title = uiCopy.logTitle;
-  frame.title = uiCopy.catalogTitle;
+  setTitle('logout', uiCopy.signOut);
+  setTitle('sync', uiCopy.syncTitle);
+  setTitle('recover', uiCopy.recoverTitle);
+  setTitle('diag', uiCopy.logTitle);
+  if (typeof uiCopy.catalogTitle === 'string' && uiCopy.catalogTitle.length > 0) {
+    frame.title = uiCopy.catalogTitle;
+  }
 }
 applyShellCopy();
 
@@ -1949,10 +1972,16 @@ function setAuthControls(loggedIn) {
   var recoverBtn = document.getElementById('recover');
   if (recoverBtn) recoverBtn.style.display = loggedIn ? 'inline-block' : 'none';
   var brand = document.getElementById('brand');
+  brand.disabled = loggedIn;
   brand.style.cursor = loggedIn ? 'default' : 'pointer';
-  brand.title = loggedIn ? '' : uiCopy.signInTitle;
-  // Signed out: make the label read as an actionable button (accent colour).
-  brand.style.color = loggedIn ? 'var(--orca-fg,#e0e0e0)' : 'var(--orca-accent,#8b7cf8)';
+  brand.title = loggedIn ? '' : (
+    typeof uiCopy.signInTitle === 'string' && uiCopy.signInTitle.length > 0
+      ? uiCopy.signInTitle
+      : brand.textContent
+  );
+  // Keep the signed-out action readable even when the host accent is too dark
+  // for the toolbar background.
+  brand.style.color = 'var(--orca-fg,#e0e0e0)';
 }
 // Re-open the currently active tab inside the catalog (used right after sign-in).
 function navigateActive() {
@@ -1992,7 +2021,7 @@ window.addEventListener('message', function (event) {
     // auth-only controls (Profile, Sync). On a fresh sign-in, return the catalog
     // to the active tab so the user isn't dropped on the app's default page.
     var loggedIn = !!data.label;
-    document.getElementById('brand').textContent = data.label || uiCopy.signIn;
+    document.getElementById('brand').textContent = data.label || uiCopy.signIn || 'Sign in';
     document.getElementById('logout').style.display = loggedIn ? 'inline-block' : 'none';
     setAuthControls(loggedIn);
     if (loggedIn && !wasLoggedIn) navigateActive();
@@ -2364,7 +2393,7 @@ document.getElementById('logout').addEventListener('click', function () {
     "__SLICE_PARSE_PATH__", SHELL_SERVER.slice_parse_path()).replace(
     "__SLICE_ALIVE_PATH__", SHELL_SERVER.slice_alive_path()).replace(
     "__LOG_PATH__", SHELL_SERVER.log_path()).replace(
-    "__DIAG_HIDDEN__", "" if DEV_CONTOUR else "hidden")
+    "__DIAG_HIDDEN__", "" if SHOW_DIAGNOSTICS else "hidden")
 
 
 def render_page():

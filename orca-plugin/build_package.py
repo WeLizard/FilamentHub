@@ -64,17 +64,9 @@ def extract_runtime_version(source: str) -> str:
     raise ValueError("PLUGIN_VERSION constant is missing")
 
 
-def prod_source(source: str) -> str:
-    """Return the source with the prod site URL forced. Raises if the input is not
-    the expected dev source, so an unnormalized wheel can never ship silently.
-
-    The release source is also normalized to LF for reproducible single-file
-    packages across build platforms.
-    """
-    if DEV_SITE_DEFAULT not in source:
-        raise ValueError("dev SITE_URL default not found — cannot force the prod URL")
-    result = source.replace(DEV_SITE_DEFAULT, PROD_SITE_DEFAULT)
-    result = result.replace("\r\n", "\n").replace("\r", "\n")
+def _source_with_embedded_locales(source: str) -> str:
+    """Embed the authoritative JSON catalogs into one installable Python file."""
+    result = source.replace("\r\n", "\n").replace("\r", "\n")
     if result.count(EMBEDDED_UI_COPY_TOKEN) != 1:
         raise ValueError("embedded locale marker is missing or duplicated")
     catalogs = {}
@@ -97,10 +89,53 @@ def prod_source(source: str) -> str:
         "_EMBEDDED_UI_COPY = " + embedded,
         1,
     )
+    return result
+
+
+def dev_source(source: str) -> str:
+    """Return a localhost-default single file with all UI catalogs embedded."""
+    if DEV_SITE_DEFAULT not in source:
+        raise ValueError("dev SITE_URL default not found")
+    result = _source_with_embedded_locales(source)
+    ast.parse(result, filename="filamenthub_plugin.py[dev]")
+    return result
+
+
+def prod_source(source: str) -> str:
+    """Return the source with the prod site URL forced. Raises if the input is not
+    the expected dev source, so an unnormalized wheel can never ship silently.
+
+    The release source is also normalized to LF for reproducible single-file
+    packages across build platforms.
+    """
+    if DEV_SITE_DEFAULT not in source:
+        raise ValueError("dev SITE_URL default not found — cannot force the prod URL")
+    result = source.replace(DEV_SITE_DEFAULT, PROD_SITE_DEFAULT)
+    result = _source_with_embedded_locales(result)
     ast.parse(result, filename="filamenthub_plugin.py[prod]")
     if DEV_SITE_DEFAULT in result:
         raise ValueError(f"prod source still contains a dev token: {DEV_SITE_DEFAULT!r}")
     return result
+
+
+def build_dev(output_root: Path) -> Path:
+    """Stage the localhost-default, translation-complete single-file plugin."""
+    source = SOURCE.read_text(encoding="utf-8")
+    ast.parse(source, filename=str(SOURCE))
+    metadata = extract_metadata(source)
+    plugin = metadata["tool"]["orcaslicer"]["plugin"]
+    version = plugin["version"]
+    runtime_version = extract_runtime_version(source)
+    if runtime_version != version:
+        raise ValueError(
+            f"Metadata version {version!r} does not match PLUGIN_VERSION {runtime_version!r}"
+        )
+
+    dev_dir = output_root / f"filamenthub-{version}-dev"
+    dev_dir.mkdir(parents=True, exist_ok=True)
+    dev_path = dev_dir / "filamenthub_plugin.py"
+    dev_path.write_text(dev_source(source), encoding="utf-8", newline="\n")
+    return dev_path
 
 
 def _build_wheel(prod_bytes: bytes, version: str, output_root: Path) -> Path:
@@ -196,7 +231,16 @@ def main() -> int:
         action="store_true",
         help="Only stage the prod-normalized package; skip building the wheel",
     )
+    parser.add_argument(
+        "--dev-source",
+        action="store_true",
+        help="Stage one localhost-default .py with all locale catalogs embedded",
+    )
     args = parser.parse_args()
+    if args.dev_source:
+        dev_path = build_dev(args.output.resolve())
+        print(dev_path)
+        return 0
     package_dir = build(args.output.resolve(), wheel=not args.no_wheel)
     print(package_dir)
     return 0

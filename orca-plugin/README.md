@@ -150,6 +150,17 @@ orca-plugin/dist/filamenthub-0.1.0/
   SHA256SUMS                  # integrity check
 ```
 
+For local development against `http://localhost:3000`, stage a translation-
+complete single-file plugin without building a wheel:
+
+```powershell
+python orca-plugin/build_package.py --dev-source
+```
+
+Install `orca-plugin/dist/filamenthub-0.1.0-dev/filamenthub_plugin.py` in the
+isolated OrcaSlicer data directory. It keeps the localhost default and embeds
+the same locale catalogs as the release package.
+
 ---
 
 ## Test steps (owner)
