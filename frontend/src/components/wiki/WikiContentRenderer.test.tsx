@@ -59,6 +59,18 @@ describe('WikiContentRenderer', () => {
     expect(screen.getByRole('checkbox', { name: 'Printed' })).toBeChecked();
   });
 
+  it('keeps inline code inside a paragraph instead of rendering a block highlighter', () => {
+    const { container } = render(
+      <WikiContentRenderer content={'Choose `PLA` for the first print.'} />,
+    );
+
+    const code = screen.getByText('PLA');
+    expect(code.tagName).toBe('CODE');
+    expect(code.closest('p')).not.toBeNull();
+    expect(container.querySelector('p pre')).toBeNull();
+    expect(container.querySelector('p div')).toBeNull();
+  });
+
   it('loads staged managed media through the authenticated API in private previews', async () => {
     const objectUrl = 'blob:wiki-preview';
     getMediaBlobMock.mockResolvedValue(new Blob(['webp'], { type: 'image/webp' }));

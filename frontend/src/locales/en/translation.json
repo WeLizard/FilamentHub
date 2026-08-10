@@ -1470,6 +1470,7 @@
     "finish": "Back to Wiki",
     "openImage": "click to enlarge",
     "imageViewer": "Enlarged guide screenshot",
+    "imageViewerHint": "mouse: wheel to pan, Ctrl/⌘ + wheel to zoom; touch: pinch to zoom, drag with one finger to pan",
     "zoomIn": "Zoom in",
     "zoomOut": "Zoom out",
     "resetZoom": "Reset zoom",

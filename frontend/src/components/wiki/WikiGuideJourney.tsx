@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 import {
@@ -42,12 +42,15 @@ export function WikiGuideJourney({ article, content, onBack }: WikiGuideJourneyP
   const [started, setStarted] = useState(searchParams.get('start') === '1' || searchParams.has('step'));
   const [overviewExpanded, setOverviewExpanded] = useState(false);
   const [viewerImage, setViewerImage] = useState<WikiGuideImage | null>(null);
+  const [activeCallout, setActiveCallout] = useState<number | null>(null);
+  const workspaceRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setActiveIndex(initialIndex);
     setStarted(searchParams.get('start') === '1' || searchParams.has('step'));
     setOverviewExpanded(false);
     setViewerImage(null);
+    setActiveCallout(null);
   }, [article.id]);
 
   if (guide.steps.length === 0) {
@@ -64,10 +67,14 @@ export function WikiGuideJourney({ article, content, onBack }: WikiGuideJourneyP
 
   const selectStep = (index: number) => {
     setActiveIndex(index);
+    setActiveCallout(null);
     const nextParams = new URLSearchParams(searchParams);
     nextParams.set('step', String(index));
     nextParams.set('start', '1');
     setSearchParams(nextParams, { replace: true });
+    window.requestAnimationFrame(() => {
+      workspaceRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
   };
 
   const startGuide = () => {
@@ -152,7 +159,7 @@ export function WikiGuideJourney({ article, content, onBack }: WikiGuideJourneyP
             )}
           </header>
 
-          <div id="wiki-guide-workspace" className="mt-5 grid scroll-mt-24 gap-5 lg:grid-cols-[270px_minmax(0,1fr)]">
+          <div ref={workspaceRef} id="wiki-guide-workspace" className="mt-5 grid scroll-mt-24 gap-5 lg:grid-cols-[270px_minmax(0,1fr)]">
             <nav aria-label={t('wikiGuide.steps')} className="overflow-hidden rounded-2xl border border-white/10 bg-[#0d1728]/80 p-2 lg:sticky lg:top-24 lg:self-start">
           <div className="mb-2 flex items-center gap-2 px-3 py-2 text-xs font-semibold uppercase tracking-[0.15em] text-slate-500">
             <Route className="h-4 w-4 text-cyan-300" />
@@ -182,11 +189,11 @@ export function WikiGuideJourney({ article, content, onBack }: WikiGuideJourneyP
             <section className="overflow-hidden rounded-3xl border border-white/10 bg-[#0d1728]/75 shadow-xl shadow-black/20">
               {activeStep.image && (
                 <figure className="border-b border-white/10 bg-[#07111f] p-3 md:p-5">
-                  <WikiGuideImageCanvas image={activeStep.image} onOpen={() => setViewerImage(activeStep.image)} />
+                  <WikiGuideImageCanvas image={activeStep.image} onOpen={() => setViewerImage(activeStep.image)} activeCallout={activeCallout} onActiveCalloutChange={setActiveCallout} />
                   <figcaption className="mt-2 px-1 text-xs leading-5 text-slate-500">
                     {activeStep.image.alt} · {t('wikiGuide.openImage')}
                   </figcaption>
-                  <WikiGuideCalloutLegend image={activeStep.image} />
+                  <WikiGuideCalloutLegend image={activeStep.image} activeCallout={activeCallout} onActiveCalloutChange={setActiveCallout} />
                 </figure>
               )}
 

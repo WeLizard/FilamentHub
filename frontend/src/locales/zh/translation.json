@@ -1469,6 +1469,7 @@
     "finish": "返回知识库",
     "openImage": "点击放大",
     "imageViewer": "放大的指南截图",
+    "imageViewerHint": "鼠标：滚轮平移，Ctrl/⌘ + 滚轮缩放；触控：双指缩放，单指拖动平移",
     "zoomIn": "放大",
     "zoomOut": "缩小",
     "resetZoom": "重置缩放",

@@ -186,10 +186,16 @@ export function WikiContentRenderer({
     code(props: React.ComponentPropsWithoutRef<'code'> & ExtraProps & { inline?: boolean }) {
       const { inline, className: codeClassName, children, ...rest } = props;
       const match = /language-(\w+)/.exec(codeClassName || '');
-      const value = String(children).replace(/\n$/, '');
+      const rawValue = String(children);
+      // react-markdown no longer supplies `inline` in every supported version.
+      // A fenced block keeps its trailing newline, while inline code does not.
+      // Detecting that distinction prevents a lazy block highlighter from being
+      // mounted inside the paragraph generated for ordinary `inline code`.
+      const isInline = inline ?? (!codeClassName && !rawValue.includes('\n'));
+      const value = rawValue.replace(/\n$/, '');
 
-      if (!inline && match?.[1] === 'mermaid') return <MermaidDiagram chart={value} />;
-      if (!inline) {
+      if (!isInline && match?.[1] === 'mermaid') return <MermaidDiagram chart={value} />;
+      if (!isInline) {
         return (
           <React.Suspense fallback={<pre><code>{value}</code></pre>}>
             <SyntaxHighlighter

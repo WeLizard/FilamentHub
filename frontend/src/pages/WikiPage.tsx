@@ -57,26 +57,40 @@ export function WikiPage() {
   const languageCode = i18n.resolvedLanguage?.split('-')[0];
   const currentLanguage: WikiLanguage = languageCode === 'ru' || languageCode === 'zh' ? languageCode : 'en';
   const guideJourneySteps = [
-    { key: 'shelf', icon: Store, step: 0 },
-    { key: 'catalog', icon: PackageOpen, step: 1 },
-    { key: 'spools', icon: Boxes, step: 2 },
-    { key: 'slicer', icon: SlidersHorizontal, step: 3 },
-    { key: 'printer', icon: Printer, step: 5 },
-    { key: 'production', icon: Calculator, step: 7 },
+    { key: 'shelf', icon: Store, fallbackStep: 0, ruSlug: 'spool-on-shelf' },
+    { key: 'catalog', icon: PackageOpen, fallbackStep: 1, ruSlug: 'catalog-material' },
+    { key: 'spools', icon: Boxes, fallbackStep: 2, ruSlug: 'my-filaments-guide' },
+    { key: 'slicer', icon: SlidersHorizontal, fallbackStep: 3, ruSlug: 'orca-preset-guide' },
+    { key: 'printer', icon: Printer, fallbackStep: 5, ruSlug: 'printer-feed-guide' },
+    { key: 'production', icon: Calculator, fallbackStep: 7, ruSlug: 'production-calculation-guide' },
   ];
   const primaryGuideSlug: Record<WikiLanguage, string> = {
-    ru: 'from-spool-to-print',
+    ru: 'filamenthub-workflow-overview',
     en: 'from-spool-to-print-en',
     zh: 'from-spool-to-print-zh',
   };
   const mainGuide = guideArticles.find((article) => article.slug === primaryGuideSlug[currentLanguage]) ?? guideArticles[0];
-  const additionalGuides = guideArticles.filter((article) => article.id !== mainGuide?.id).slice(0, 3);
+  const ruJourneySlugs = new Set(guideJourneySteps.map(({ ruSlug }) => ruSlug));
+  const additionalGuides = guideArticles
+    .filter((article) => article.id !== mainGuide?.id && !ruJourneySlugs.has(article.slug))
+    .slice(0, 3);
   const visiblePopularArticles = popularArticles.slice(0, 4);
   const visibleRecentArticles = recentArticles.slice(0, 5);
 
-  const openGuideAtStep = (step: number) => {
+  const findJourneyGuide = (ruSlug: string) => (
+    currentLanguage === 'ru'
+      ? guideArticles.find((article) => article.slug === ruSlug)
+      : mainGuide
+  );
+
+  const openGuideAtStep = (ruSlug: string, fallbackStep: number) => {
+    const guide = findJourneyGuide(ruSlug);
+    if (currentLanguage === 'ru' && guide) {
+      navigate(`/wiki/articles/${guide.slug}?start=1`);
+      return;
+    }
     if (!mainGuide) return;
-    navigate(`/wiki/articles/${mainGuide.slug}?step=${step}&start=1`);
+    navigate(`/wiki/articles/${mainGuide.slug}?step=${fallbackStep}&start=1`);
   };
 
   const { data: ownRevisions } = useQuery({
@@ -113,7 +127,7 @@ export function WikiPage() {
 
       let [categoriesData, guidesData, articlesData] = await Promise.all([
         wikiAPI.listCategories({ page: 1, page_size: 50, space: 'knowledge', language: currentLanguage }),
-        wikiAPI.listArticles({ page: 1, page_size: 6, published_only: true, space: 'guides', language: currentLanguage }),
+        wikiAPI.listArticles({ page: 1, page_size: 20, published_only: true, space: 'guides', language: currentLanguage }),
         wikiAPI.listArticles({ page: 1, page_size: 12, published_only: true, space: 'knowledge', language: currentLanguage }),
       ]);
       if (currentLanguage !== 'ru' && articlesData.total === 0) {
@@ -123,7 +137,7 @@ export function WikiPage() {
         ]);
       }
       if (currentLanguage !== 'ru' && guidesData.total === 0) {
-        guidesData = await wikiAPI.listArticles({ page: 1, page_size: 6, published_only: true, space: 'guides', language: 'ru' });
+        guidesData = await wikiAPI.listArticles({ page: 1, page_size: 20, published_only: true, space: 'guides', language: 'ru' });
       }
       setCategories(categoriesData.items);
       setGuideArticles(guidesData.items);
@@ -332,19 +346,22 @@ export function WikiPage() {
               <span className="text-[11px] font-medium text-cyan-300/70">{t('wikiPage.openExactStep')}</span>
             </div>
             <div className="grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-6">
-              {guideJourneySteps.map(({ key, icon: StepIcon, step }) => (
+              {guideJourneySteps.map(({ key, icon: StepIcon, fallbackStep, ruSlug }) => {
+                const guide = findJourneyGuide(ruSlug);
+                return (
                 <button
                   key={key}
                   type="button"
-                  disabled={!mainGuide}
-                  onClick={() => openGuideAtStep(step)}
+                  disabled={!guide}
+                  onClick={() => openGuideAtStep(ruSlug, fallbackStep)}
                   className="group flex min-w-0 flex-col items-start gap-2 rounded-xl border border-white/[0.07] bg-white/[0.035] px-3 py-3 text-left transition hover:-translate-y-0.5 hover:border-cyan-300/25 hover:bg-cyan-300/[0.07] disabled:cursor-not-allowed disabled:opacity-45"
                 >
                   <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-cyan-400/10 text-cyan-200 ring-1 ring-cyan-300/15 transition group-hover:bg-cyan-400/15"><StepIcon className="h-4 w-4" /></span>
                   <span className="line-clamp-2 text-xs font-semibold leading-4 text-slate-300 transition group-hover:text-white">{t(`wikiPage.journey.${key}`)}</span>
                   <span className="line-clamp-2 text-[10px] leading-4 text-slate-500">{t(`wikiPage.journeyDescriptions.${key}`)}</span>
                 </button>
-              ))}
+                );
+              })}
             </div>
           </div>
 
