@@ -28,6 +28,7 @@ import {
   Cog,
   ChevronDown,
   ChevronUp,
+  ChevronRight,
   CheckCircle,
   HelpCircle,
   X,
@@ -91,6 +92,16 @@ import type { Preset, PrinterProfile, PrintProfile, Filament } from '../types/ap
 import { formatDate, formatDateTime as formatLocalDateTime } from '../utils/formatDate';
 
 type CalculatorWorkspaceMode = 'calculator' | 'history' | 'quotes' | 'orders' | 'customers';
+
+const PROFILE_BADGE_LIMIT = 3;
+const PROFILE_BADGE_PRIORITY: BadgeType[] = [
+  'verified',
+  'founder',
+  'contributor',
+  'beta_tester',
+  'early_adopter',
+  'supporter',
+];
 
 /** Мягкое напоминание: аккаунт работает, но адрес ещё не подтверждён. */
 function UnverifiedEmailNotice() {
@@ -188,6 +199,7 @@ export const ProfilePage: React.FC = () => {
     () => profileSearchParams.get('add_spool') === '1' && spoolIntakeFilamentId !== null,
   );
   const [showHelpModal, setShowHelpModal] = useState(false);
+  const [showAchievementsModal, setShowAchievementsModal] = useState(false);
   const [isCreatePresetModalOpen, setIsCreatePresetModalOpen] = useState(false);
   const [isViewPresetModalOpen, setIsViewPresetModalOpen] = useState(false);
   const [isCreatePrinterRequestModalOpen, setIsCreatePrinterRequestModalOpen] = useState(false);
@@ -251,20 +263,40 @@ export const ProfilePage: React.FC = () => {
     const validBadgeTypes = new Set<BadgeType>(Object.keys(BADGE_CONFIG) as BadgeType[]);
     return (user?.badges ?? []).filter((badge): badge is BadgeType => validBadgeTypes.has(badge as BadgeType));
   }, [user?.badges]);
-  const renderExpandableProfileBadge = (badge: BadgeType) => (
-    <span
-      key={badge}
-      className="group inline-flex h-10 cursor-default items-center overflow-hidden rounded-full border border-white/10 bg-black/25 px-2 text-gray-100 shadow-md shadow-black/10 transition-all duration-300 hover:border-amber-300/35 hover:bg-black/40 focus-within:border-amber-300/35 focus-within:bg-black/40"
-      title={t(BADGE_CONFIG[badge].titleKey)}
-      tabIndex={0}
+  const prioritizedProfileBadges = useMemo(() => {
+    const priority = new Map(PROFILE_BADGE_PRIORITY.map((badge, index) => [badge, index]));
+    return [...profileBadges].sort(
+      (left, right) => (priority.get(left) ?? Number.MAX_SAFE_INTEGER) - (priority.get(right) ?? Number.MAX_SAFE_INTEGER),
+    );
+  }, [profileBadges]);
+  const visibleProfileBadges = prioritizedProfileBadges.slice(0, PROFILE_BADGE_LIMIT);
+
+  const renderAchievementsTray = () => (
+    <button
+      type="button"
+      onClick={() => setShowAchievementsModal(true)}
+      className="group relative inline-flex max-w-full items-center gap-1 overflow-visible rounded-full border border-white/[0.07] bg-black/[0.14] px-1.5 py-1 text-left shadow-sm shadow-black/10 transition-all duration-200 hover:border-purple-300/20 hover:bg-purple-950/25 hover:shadow-[0_0_22px] hover:shadow-purple-500/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-400/50"
+      aria-label={t('profilePage.openAchievements')}
+      title={t('profilePage.openAchievements')}
     >
-      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-white/8 transition-colors duration-300 group-hover:bg-white/12 group-focus-within:bg-white/12">
-        <Badge type={badge} size="sm" />
+      <span className="pointer-events-none absolute inset-0 rounded-full bg-gradient-to-r from-purple-400/[0.055] via-pink-400/[0.035] to-cyan-300/[0.025] opacity-20 transition-opacity duration-200 group-hover:opacity-100" />
+      {visibleProfileBadges.map((badge) => (
+        <span
+          key={badge}
+          className="group/badge relative flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-white/[0.06] bg-white/[0.035] opacity-70 transition-opacity group-hover:opacity-95"
+          title={t(BADGE_CONFIG[badge].titleKey)}
+        >
+          <Badge type={badge} size="sm" />
+          <span className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 -translate-x-1/2 translate-y-1 scale-95 whitespace-nowrap rounded-lg border border-white/10 bg-slate-950/95 px-2 py-1 text-[11px] font-medium text-gray-200 opacity-0 shadow-lg shadow-black/30 transition-all duration-150 group-hover/badge:translate-y-0 group-hover/badge:scale-100 group-hover/badge:opacity-100">
+            {t(BADGE_CONFIG[badge].labelKey)}
+          </span>
+        </span>
+      ))}
+      <span className="relative ml-0.5 flex min-w-0 items-center gap-0.5 border-l border-white/[0.06] pl-1.5 text-[11px] font-medium text-gray-500 transition-colors group-hover:text-gray-300">
+        <span>{prioritizedProfileBadges.length}</span>
+        <ChevronRight className="h-3 w-3 shrink-0 transition-transform group-hover:translate-x-0.5" />
       </span>
-      <span className="ml-0 max-w-0 overflow-hidden whitespace-nowrap text-xs font-medium opacity-0 transition-all duration-300 group-hover:ml-2 group-hover:max-w-40 group-hover:opacity-100 group-focus-within:ml-2 group-focus-within:max-w-40 group-focus-within:opacity-100">
-        {t(BADGE_CONFIG[badge].labelKey)}
-      </span>
-    </span>
+    </button>
   );
 
   // Загружаем все пресеты пользователя (активные + черновики)
@@ -796,78 +828,80 @@ export const ProfilePage: React.FC = () => {
   return (
     <div className="space-y-6 md:space-y-10">
       {user && !user.email_verified && <UnverifiedEmailNotice />}
-      {/* Переключатель профилей */}
-      <div className="flex justify-center mb-4 md:mb-6">
-        <div className="flex bg-white/10 rounded-lg p-1 border border-white/20">
-          <button
-            onClick={() => setShowBrandCabinet(false)}
-            className={`flex items-center gap-1.5 md:gap-2 px-3 md:px-6 py-1.5 md:py-2 rounded-lg transition-all text-xs md:text-base ${
-              !showBrandCabinet 
-                ? 'bg-purple-600 text-white shadow-lg shadow-purple-500/25' 
-                : 'text-gray-300 hover:text-white'
-            }`}
-          >
-            <User className="w-3.5 h-3.5 md:w-4 md:h-4" />
-            <span className="hidden sm:inline">{t('profilePage.user')}</span>
-            <span className="sm:hidden">{t('profilePage.profile')}</span>
-          </button>
-          <button
-            onClick={() => setShowBrandCabinet(true)}
-            className={`flex items-center gap-1.5 md:gap-2 px-3 md:px-6 py-1.5 md:py-2 rounded-lg transition-all text-xs md:text-base ${
-              showBrandCabinet 
-                ? 'bg-green-600 text-white shadow-lg shadow-green-500/25' 
-                : 'text-gray-300 hover:text-white'
-            }`}
-          >
-            <Factory className="w-3.5 h-3.5 md:w-4 md:h-4" />
-            <span className="hidden sm:inline">{t('profilePage.company')}</span>
-            <span className="sm:hidden">{t('profilePage.brand')}</span>
-          </button>
-        </div>
-      </div>
-      
-      {/* Header — компактная строка: аватар + имя·роль + ачивки (без крупного «Мой профиль») */}
-      <div className="mb-4 md:mb-6 min-[1140px]:!-mt-16">
-        <div className="flex items-center gap-3 mb-3 md:mb-4">
-          <label htmlFor="profile-avatar-upload" className="group/avatar relative w-11 h-11 md:w-14 md:h-14 shrink-0 rounded-xl overflow-hidden cursor-pointer shadow-lg shadow-purple-500/25" title={t('profilePage.avatarUpload')}>
-            {user.avatar_url ? (
-              <img src={user.avatar_url} alt={user.full_name || user.username} className="w-full h-full object-cover" />
-            ) : (
-              <span className="w-full h-full flex items-center justify-center bg-gradient-to-r from-purple-500 to-pink-500">
-                <User className="w-6 h-6 md:w-7 md:h-7 text-white" />
-              </span>
-            )}
-            <span className="absolute inset-0 flex items-center justify-center bg-black/45 opacity-0 group-hover/avatar:opacity-100 transition-opacity">
-              {isUploadingAvatar ? <Loader2 className="w-4 h-4 text-white animate-spin" /> : <Camera className="w-4 h-4 text-white" />}
-            </span>
-          </label>
-          <input
-            id="profile-avatar-upload"
-            type="file"
-            accept=".png,.jpg,.jpeg,.bmp,.webp"
-            onChange={handleAvatarUpload}
-            className="sr-only"
-            disabled={isUploadingAvatar}
-          />
-          <div className="min-w-0">
-            <p className="text-base md:text-xl font-bold text-white truncate">{user.full_name || user.username}</p>
-            {identityLine && (
-              <p className="text-xs md:text-sm text-gray-400 truncate">{identityLine}</p>
-            )}
-          </div>
-          {profileBadges.length > 0 && (
-            <div className="hidden sm:flex items-center gap-2 overflow-x-auto whitespace-nowrap scrollbar-hide min-w-0">
-              {profileBadges.map(renderExpandableProfileBadge)}
-            </div>
-          )}
-        </div>
-        {profileBadges.length > 0 && (
-          <div className="sm:hidden mb-3 w-full">
-            <div className="flex items-center gap-2 overflow-x-auto whitespace-nowrap scrollbar-hide">
-              {profileBadges.map(renderExpandableProfileBadge)}
+      <div className="space-y-3 md:space-y-4">
+        <div className="grid min-w-0 gap-3 min-[1140px]:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] min-[1140px]:items-center min-[1140px]:gap-x-6">
+          {/* Переключатель профилей */}
+          <div className="flex justify-center min-[1140px]:col-start-2 min-[1140px]:row-start-1">
+            <div className="flex bg-white/10 rounded-lg p-1 border border-white/20">
+              <button
+                onClick={() => setShowBrandCabinet(false)}
+                className={`flex items-center gap-1.5 md:gap-2 px-3 md:px-6 py-1.5 md:py-2 rounded-lg transition-all text-xs md:text-base ${
+                  !showBrandCabinet
+                    ? 'bg-purple-600 text-white shadow-lg shadow-purple-500/25'
+                    : 'text-gray-300 hover:text-white'
+                }`}
+              >
+                <User className="w-3.5 h-3.5 md:w-4 md:h-4" />
+                <span className="hidden sm:inline">{t('profilePage.user')}</span>
+                <span className="sm:hidden">{t('profilePage.profile')}</span>
+              </button>
+              <button
+                onClick={() => setShowBrandCabinet(true)}
+                className={`flex items-center gap-1.5 md:gap-2 px-3 md:px-6 py-1.5 md:py-2 rounded-lg transition-all text-xs md:text-base ${
+                  showBrandCabinet
+                    ? 'bg-green-600 text-white shadow-lg shadow-green-500/25'
+                    : 'text-gray-300 hover:text-white'
+                }`}
+              >
+                <Factory className="w-3.5 h-3.5 md:w-4 md:h-4" />
+                <span className="hidden sm:inline">{t('profilePage.company')}</span>
+                <span className="sm:hidden">{t('profilePage.brand')}</span>
+              </button>
             </div>
           </div>
-        )}
+
+          {/* Header — компактная строка: аватар + имя·роль + ачивки (без крупного «Мой профиль») */}
+          <div className="min-w-0 min-[1140px]:col-start-1 min-[1140px]:row-start-1">
+            <div className="flex min-w-0 items-center gap-3">
+              <label htmlFor="profile-avatar-upload" className="group/avatar relative w-11 h-11 md:w-14 md:h-14 shrink-0 rounded-xl overflow-hidden cursor-pointer shadow-lg shadow-purple-500/25" title={t('profilePage.avatarUpload')}>
+                {user.avatar_url ? (
+                  <img src={user.avatar_url} alt={user.full_name || user.username} className="w-full h-full object-cover" />
+                ) : (
+                  <span className="w-full h-full flex items-center justify-center bg-gradient-to-r from-purple-500 to-pink-500">
+                    <User className="w-6 h-6 md:w-7 md:h-7 text-white" />
+                  </span>
+                )}
+                <span className="absolute inset-0 flex items-center justify-center bg-black/45 opacity-0 group-hover/avatar:opacity-100 transition-opacity">
+                  {isUploadingAvatar ? <Loader2 className="w-4 h-4 text-white animate-spin" /> : <Camera className="w-4 h-4 text-white" />}
+                </span>
+              </label>
+              <input
+                id="profile-avatar-upload"
+                type="file"
+                accept=".png,.jpg,.jpeg,.bmp,.webp"
+                onChange={handleAvatarUpload}
+                className="sr-only"
+                disabled={isUploadingAvatar}
+              />
+              <div className="min-w-0 flex-1">
+                <p className="text-base md:text-xl font-bold text-white truncate">{user.full_name || user.username}</p>
+                {identityLine && (
+                  <p className="text-xs md:text-sm text-gray-400 truncate">{identityLine}</p>
+                )}
+                {profileBadges.length > 0 && (
+                  <div className="mt-2 hidden max-w-full sm:block">
+                    {renderAchievementsTray()}
+                  </div>
+                )}
+              </div>
+            </div>
+            {profileBadges.length > 0 && (
+              <div className="mt-3 w-full sm:hidden">
+                {renderAchievementsTray()}
+              </div>
+            )}
+          </div>
+        </div>
 
         {/* Tabs - горизонтальный скролл на мобильных */}
         <div className="overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0 scrollbar-hide">
@@ -1617,6 +1651,62 @@ export const ProfilePage: React.FC = () => {
         profile={editingPrintProfile}
         printerProfileContext={createPrintProfileContext}
       />
+
+      {showAchievementsModal && (
+        <ModalOverlay onClose={() => setShowAchievementsModal(false)}>
+          <div
+            className={`mx-4 flex w-full max-w-2xl flex-col overflow-hidden rounded-3xl border border-white/15 bg-gradient-to-br from-slate-950 via-purple-950/95 to-slate-950 shadow-[0_28px_100px_rgba(76,29,149,0.38)] ${
+              isHeaderVisible ? 'max-h-[calc(100vh-100px)]' : 'max-h-[90vh]'
+            }`}
+          >
+            <div className="relative overflow-hidden border-b border-white/10 px-5 py-5 sm:px-7">
+              <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(168,85,247,0.28),transparent_42%),radial-gradient(circle_at_top_right,rgba(236,72,153,0.18),transparent_38%)]" />
+              <div className="relative flex items-start justify-between gap-4">
+                <div>
+                  <div className="mb-2 flex items-center gap-2">
+                    <Star className="h-5 w-5 text-amber-300" />
+                    <span className="rounded-full border border-white/10 bg-white/8 px-2.5 py-1 text-xs font-semibold text-purple-100">
+                      {t('profilePage.achievementCount', { count: prioritizedProfileBadges.length })}
+                    </span>
+                  </div>
+                  <h2 className="text-xl font-bold text-white sm:text-2xl">{t('profilePage.achievements')}</h2>
+                  <p className="mt-1 max-w-xl text-sm leading-6 text-gray-300">
+                    {t('profilePage.achievementsDescription')}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowAchievementsModal(false)}
+                  className="shrink-0 rounded-xl p-2 text-gray-400 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-400/70"
+                  aria-label={t('common.close')}
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+            </div>
+
+            <div className="grid gap-3 overflow-y-auto p-5 sm:grid-cols-2 sm:p-7">
+              {prioritizedProfileBadges.map((badge) => {
+                const config = BADGE_CONFIG[badge];
+                return (
+                  <div
+                    key={badge}
+                    className="group flex min-w-0 items-center gap-4 rounded-2xl border border-white/10 bg-white/5 p-4 transition-colors hover:border-purple-300/25 hover:bg-white/8"
+                  >
+                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-black/25 shadow-[0_0_22px_rgba(168,85,247,0.13)]">
+                      <Badge type={badge} size="lg" />
+                    </div>
+                    <div className="min-w-0">
+                      <h3 className="truncate font-semibold text-white">{t(config.labelKey)}</h3>
+                      <p className="mt-1 text-sm leading-5 text-gray-400">{t(config.titleKey)}</p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </ModalOverlay>
+      )}
 
       {/* Help Modal */}
       {showHelpModal && (

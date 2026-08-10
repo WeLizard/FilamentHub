@@ -2487,6 +2487,9 @@
     "activeBrandChangeError": "Не удалось переключить бренд",
     "myProfile": "Мой профиль",
     "achievements": "Достижения",
+    "openAchievements": "Посмотреть ачивки и достижения",
+    "achievementCount": "Получено: {{count}}",
+    "achievementsDescription": "Ваши текущие ачивки и роли в FilamentHub. Коллекция будет пополняться вместе с вашим вкладом и активностью.",
     "role": {
       "brand": "Представитель бренда",
       "moderator": "Модератор",

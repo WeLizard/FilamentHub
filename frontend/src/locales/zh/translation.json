@@ -2864,6 +2864,9 @@
     "activeBrandChangeError": "无法切换当前品牌",
     "myProfile": "我的配置文件",
     "achievements": "成就",
+    "openAchievements": "查看徽章和成就",
+    "achievementCount": "已获得 {{count}} 个",
+    "achievementsDescription": "您当前在 FilamentHub 中的徽章和角色。此收藏将随着您的贡献和活动不断增加。",
     "role": {
       "brand": "品牌代表",
       "moderator": "版主",

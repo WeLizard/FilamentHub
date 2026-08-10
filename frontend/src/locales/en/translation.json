@@ -2869,6 +2869,9 @@
     "activeBrandChangeError": "Could not change the active brand",
     "myProfile": "My Profile",
     "achievements": "Achievements",
+    "openAchievements": "View badges and achievements",
+    "achievementCount": "{{count}} earned",
+    "achievementsDescription": "Your current FilamentHub badges and roles. This collection will grow with your contributions and activity.",
     "role": {
       "brand": "Brand representative",
       "moderator": "Moderator",
