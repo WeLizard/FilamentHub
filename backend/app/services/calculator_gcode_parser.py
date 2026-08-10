@@ -63,6 +63,12 @@ _EXTRUSION_RESET_RE = re.compile(
     re.IGNORECASE,
 )
 _TOOL_CHANGE_RE = re.compile(r"^T(\d+)\b", re.IGNORECASE)
+_FHUB_IDENTITY_RE = re.compile(
+    r"^kind=(material_preset|print_profile|printer_profile);"
+    r"(?:(?:tool=(\d+));)?id=(\d+)$"
+)
+_MAX_FHUB_TOOL_INDEX = 255
+_MAX_FHUB_IDENTITY_ID = 2**63 - 1
 
 
 def parse_gcode_payload(
@@ -105,7 +111,9 @@ def _parse_plain_gcode_payload(
         "slicer_name": slicer_name,
         "slicer_version": slicer_version,
         "printer_settings_id": None,
+        "print_settings_id": None,
         "printer_model": None,
+        "fhub_identities": [],
         "print_time_seconds": None,
         "first_layer_print_time_seconds": None,
         "total_filament_weight_g": None,
@@ -180,6 +188,8 @@ def _parse_plain_gcode_payload(
         "object_centers": set(),
         "object_names": set(),
         "support_roles": set(),
+        "fhub_identities": {},
+        "fhub_identity_conflicts": set(),
     }
 
     for line in lines:
@@ -233,6 +243,7 @@ def _parse_plain_gcode_payload(
     if collector["support_roles"]:
         parsed["support_used"] = True
 
+    _finalize_fhub_identities(parsed, collector)
     _finalize_objects(parsed, collector)
     _finalize_materials(parsed, collector)
     _apply_extrusion_role_usage(parsed, lines)
@@ -765,8 +776,16 @@ def _collect_key_value_metadata(parsed: dict[str, Any], collector: dict[str, Any
         parsed["printer_settings_id"] = value.strip().strip('"\'') or None
         return
 
+    if normalized_key == "print_settings_id" and parsed["print_settings_id"] is None:
+        parsed["print_settings_id"] = value.strip().strip('"\'') or None
+        return
+
     if normalized_key == "printer_model" and parsed["printer_model"] is None:
         parsed["printer_model"] = value.strip().strip('"\'') or None
+        return
+
+    if normalized_key == "fhub_identity_v1":
+        _collect_fhub_identity(collector, value)
         return
 
     if normalized_key in {"total_layers_count", "total_layers", "total_layer", "layer_count", "layercount"} and parsed["total_layers"] is None:
@@ -1038,6 +1057,49 @@ def _normalize_object_group_name(raw_name: str) -> str:
     )
     normalized = re.sub(r"_+", " ", without_extension).strip()
     return (normalized or raw_name)[:255]
+
+
+def _collect_fhub_identity(collector: dict[str, Any], value: str) -> None:
+    match = _FHUB_IDENTITY_RE.fullmatch(value.strip())
+    if match is None:
+        return
+    kind, raw_tool_index, raw_entity_id = match.groups()
+    if kind == "material_preset" and raw_tool_index is None:
+        return
+    if kind != "material_preset" and raw_tool_index is not None:
+        return
+    tool_index = int(raw_tool_index) if raw_tool_index is not None else None
+    entity_id = int(raw_entity_id)
+    if (
+        entity_id <= 0
+        or entity_id > _MAX_FHUB_IDENTITY_ID
+        or (tool_index is not None and tool_index > _MAX_FHUB_TOOL_INDEX)
+    ):
+        return
+
+    key = (kind, tool_index)
+    if key in collector["fhub_identity_conflicts"]:
+        return
+    existing = collector["fhub_identities"].get(key)
+    if existing is not None and existing != entity_id:
+        collector["fhub_identities"].pop(key, None)
+        collector["fhub_identity_conflicts"].add(key)
+        return
+    collector["fhub_identities"][key] = entity_id
+
+
+def _finalize_fhub_identities(parsed: dict[str, Any], collector: dict[str, Any]) -> None:
+    order = {"material_preset": 0, "print_profile": 1, "printer_profile": 2}
+    parsed["fhub_identities"] = [
+        {"kind": kind, "entity_id": entity_id, "tool_index": tool_index}
+        for (kind, tool_index), entity_id in sorted(
+            collector["fhub_identities"].items(),
+            key=lambda item: (
+                order[item[0][0]],
+                item[0][1] if item[0][1] is not None else -1,
+            ),
+        )
+    ]
 
 
 def _finalize_objects(parsed: dict[str, Any], collector: dict[str, Any]) -> None:

@@ -566,10 +566,11 @@ class CalculatorMaterialIdentityResolution(BaseModel):
     status: Literal["resolved", "ambiguous", "unresolved"]
     source: Literal[
         "filamenthub_filament_id",
+        "filamenthub_preset_id",
         "user_preset_filament_id",
         "catalog_preset_filament_id",
     ] | None = None
-    stable_id: str = Field(..., description="Исходный filament_id из профиля слайсера")
+    stable_id: str = Field(..., description="Исходный стабильный ID из G-code или профиля слайсера")
     filament_id: int | None = Field(None, ge=1)
     preset_id: int | None = Field(None, ge=1)
     candidate_filament_ids: list[int] = Field(default_factory=list)
@@ -634,6 +635,14 @@ class CalculatorParsedMaterial(BaseModel):
     )
 
 
+class CalculatorFhubIdentity(BaseModel):
+    """Versioned FilamentHub identity embedded in G-code by the Orca plugin."""
+
+    kind: Literal["material_preset", "print_profile", "printer_profile"]
+    entity_id: int = Field(..., ge=1, le=2**63 - 1)
+    tool_index: int | None = Field(None, ge=0, le=255)
+
+
 class CalculatorParsedObjectGroup(BaseModel):
     """Instances of one model name found in EXCLUDE_OBJECT metadata."""
 
@@ -659,7 +668,12 @@ class CalculatorGcodeParseResponse(BaseModel):
     slicer_name: str | None = Field(None, description="Определённый слайсер")
     slicer_version: str | None = Field(None, description="Версия слайсера")
     printer_settings_id: str | None = Field(None, description="Machine preset из G-code")
+    print_settings_id: str | None = Field(None, description="Process preset из G-code")
     printer_model: str | None = Field(None, description="Модель принтера из G-code")
+    fhub_identities: list[CalculatorFhubIdentity] = Field(
+        default_factory=list,
+        description="Доступные текущему пользователю стабильные FH identities из G-code",
+    )
     print_time_seconds: int | None = Field(None, ge=0, description="Оценка времени печати в секундах")
     first_layer_print_time_seconds: int | None = Field(
         None,

@@ -10,6 +10,7 @@ from sqlalchemy.sql import func
 from app.db.base import Base
 
 if TYPE_CHECKING:
+    from app.models.print_profile import PrintProfile
     from app.models.printer_profile import PrinterProfile
     from app.models.user import User
     from app.models.user_printer_device import UserPrinterDevice
@@ -37,10 +38,14 @@ class OrcaSliceReport(Base):
     printer_profile_id: Mapped[int | None] = mapped_column(
         ForeignKey("printer_profiles.id", ondelete="SET NULL"), nullable=True, index=True
     )
+    print_profile_id: Mapped[int | None] = mapped_column(
+        ForeignKey("print_profiles.id", ondelete="SET NULL"), nullable=True, index=True
+    )
 
     # Straight out of the file: the preset the slice was made with and the model
     # it names. Kept even when nothing on the account matches them yet.
     printer_settings_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    print_settings_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
     printer_model: Mapped[str | None] = mapped_column(String(200), nullable=True)
 
     file_name: Mapped[str] = mapped_column(String(300), nullable=False)
@@ -68,6 +73,7 @@ class OrcaSliceReport(Base):
     user: Mapped["User"] = relationship("User")
     physical_printer: Mapped["UserPrinterDevice | None"] = relationship("UserPrinterDevice")
     printer_profile: Mapped["PrinterProfile | None"] = relationship("PrinterProfile")
+    print_profile: Mapped["PrintProfile | None"] = relationship("PrintProfile")
 
     def __repr__(self) -> str:
         return (

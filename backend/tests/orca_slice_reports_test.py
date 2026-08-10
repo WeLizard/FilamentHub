@@ -7,6 +7,7 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.physical_printer_profile import UserPrinterProfileLink
+from app.models.print_profile import PrintProfile
 from app.models.printer_profile import PrinterProfile
 from app.models.user import User
 from app.models.user_printer_device import UserPrinterDevice
@@ -16,6 +17,7 @@ def _slice(**overrides) -> dict:
     payload = {
         "file_name": "Orca Head_PETG.gcode",
         "printer_settings_id": "Voron 2.4 350 0.4 nozzle",
+        "print_settings_id": "0.20mm Standard @Voron",
         "printer_model": "Voron 2.4 350",
         "target_host": "File",
         "slicer_version": "2.4.2",
@@ -118,6 +120,117 @@ async def test_a_slice_only_selects_an_unambiguous_printer_configuration(
     assert ambiguous["physical_printer_id"] is None
     assert ambiguous["physical_printer_name"] is None
     assert ambiguous["printer_profile_id"] == profile.id
+
+
+@pytest.mark.asyncio
+async def test_managed_machine_and_process_ids_win_over_mutable_orca_names(
+    auth_client: AsyncClient,
+    auth_user: User,
+    db_session: AsyncSession,
+) -> None:
+    printer = UserPrinterDevice(
+        user_id=auth_user.id,
+        name="Managed Voron",
+        device_fingerprint=None,
+        supports_hh=False,
+    )
+    machine = PrinterProfile(
+        owner_user_id=auth_user.id,
+        is_official=False,
+        name="Managed machine",
+        slug="managed-machine-slice-identity",
+        setting_id="original-machine-name",
+        active=True,
+        source="user",
+    )
+    process = PrintProfile(
+        owner_user_id=auth_user.id,
+        is_official=False,
+        name="Managed process",
+        slug="managed-process-slice-identity",
+        setting_id="original-process-name",
+        active=True,
+        source="user",
+    )
+    db_session.add_all([printer, machine, process])
+    await db_session.flush()
+    db_session.add(
+        UserPrinterProfileLink(
+            user_id=auth_user.id,
+            physical_printer_id=printer.id,
+            printer_profile_id=machine.id,
+        )
+    )
+    await db_session.commit()
+
+    response = await auth_client.post(
+        "/api/v1/orcaslicer/slices",
+        json={
+            "slices": [
+                _slice(
+                    printer_settings_id="renamed-machine",
+                    print_settings_id="renamed-process",
+                    fhub_printer_profile_id=machine.id,
+                    fhub_print_profile_id=process.id,
+                )
+            ]
+        },
+    )
+
+    assert response.status_code == 200
+    reported = (await auth_client.get("/api/v1/orcaslicer/slices")).json()[0]
+    assert reported["printer_profile_id"] == machine.id
+    assert reported["physical_printer_id"] == printer.id
+    assert reported["print_profile_id"] == process.id
+    assert reported["print_settings_id"] == "renamed-process"
+
+
+@pytest.mark.asyncio
+async def test_private_foreign_profile_ids_are_not_trusted(
+    auth_client: AsyncClient,
+    admin_user: User,
+    db_session: AsyncSession,
+) -> None:
+    machine = PrinterProfile(
+        owner_user_id=admin_user.id,
+        is_official=False,
+        name="Someone else's machine",
+        slug="foreign-private-machine-slice-identity",
+        setting_id="foreign-machine",
+        active=False,
+        source="user",
+    )
+    process = PrintProfile(
+        owner_user_id=admin_user.id,
+        is_official=False,
+        name="Someone else's process",
+        slug="foreign-private-process-slice-identity",
+        setting_id="foreign-process",
+        active=False,
+        source="user",
+    )
+    db_session.add_all([machine, process])
+    await db_session.commit()
+
+    response = await auth_client.post(
+        "/api/v1/orcaslicer/slices",
+        json={
+            "slices": [
+                _slice(
+                    printer_settings_id="foreign-machine",
+                    print_settings_id="foreign-process",
+                    fhub_printer_profile_id=machine.id,
+                    fhub_print_profile_id=process.id,
+                )
+            ]
+        },
+    )
+
+    assert response.status_code == 200
+    reported = (await auth_client.get("/api/v1/orcaslicer/slices")).json()[0]
+    assert reported["printer_profile_id"] is None
+    assert reported["physical_printer_id"] is None
+    assert reported["print_profile_id"] is None
 
 
 @pytest.mark.asyncio

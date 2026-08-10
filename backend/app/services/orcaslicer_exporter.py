@@ -37,8 +37,8 @@ ORCASLICER_SCALAR_SETTING_KEYS = {
     "compatible_prints_condition",
 }
 
-# Identity / profile-header fields set authoritatively from the FilamentHub preset
-# (name, type, ids…). They must never be re-processed by the generic
+# Identity / profile-header fields set authoritatively or deliberately reserved
+# by FilamentHub (name, type, ids…). They must never be re-processed by the generic
 # orcaslicer_settings loop below: that loop wraps scalars into OrcaSlicer's
 # string-array convention, which would turn the scalar string `name` into a
 # one-element list and make the export fail the plugin's non-empty-*string* check.
@@ -233,13 +233,12 @@ async def preset_to_orcaslicer_json(
         "filament_settings_id": [preset.name],  # ОБЯЗАТЕЛЬНО: OrcaSlicer определяет тип профиля по наличию этого поля
     }
 
-    # Уникальные идентификаторы
+    # Stable preset identity for Orca/FilamentHub lifecycle. Do not put the
+    # catalog Filament id into Orca's ``filament_id``: inherited material
+    # presets replace that field with the provider family id (for example
+    # OGFG99 for Generic PETG). The plugin writes our exact managed Preset id to
+    # the produced G-code through the namespaced fhub_identity_v1 contract.
     profile["setting_id"] = f"FHUB{preset.id:06d}"
-    # Orca keeps this scalar material identity unchanged when it builds the
-    # per-tool ``filament_ids`` array written into G-code. Keep it distinct
-    # from the preset's setting_id so two different FilamentHub entities never
-    # look like the same identifier in a round-trip or diagnostic log.
-    profile["filament_id"] = f"FHUB_F_{filament.id:06d}"
 
     # Наследование от базового профиля по типу материала (ОБЯЗАТЕЛЬНОЕ поле)
     # Мапим FilamentHub material_type на реальные имена системных пресетов OrcaSlicer

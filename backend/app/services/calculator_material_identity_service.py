@@ -15,6 +15,11 @@ from app.schemas.calculator import (
     CalculatorMaterialIdentityResolution,
     CalculatorParsedMaterial,
 )
+from app.services.slicer_identity_access import (
+    visible_material_presets,
+    visible_print_profile_ids,
+    visible_printer_profile_ids,
+)
 
 _FILAMENTHUB_FILAMENT_ID_RE = re.compile(
     r"^FHUB(?:_F_)?(\d+)$",
@@ -68,22 +73,61 @@ async def resolve_calculator_material_identities(
     *,
     user_id: int,
 ) -> CalculatorGcodeParseResponse:
-    """Resolve G-code ``filament_ids`` before any name-based UI fallback.
+    """Resolve namespaced FilamentHub identities, then provider filament ids.
 
-    ``FHUB_F_<n>`` is our reserved catalog namespace and maps directly to the
-    Filament written into an exported FilamentHub profile. The legacy
-    ``FHUB<n>`` form remains readable for profiles and G-code created before the
-    namespaces were separated. Provider-specific identifiers are accepted only
-    from the current user's own mapped presets or from trusted catalog presets.
-    Conflicting exact mappings remain ambiguous.
+    The plugin's ``fhub_identity_v1`` record identifies the selected managed
+    Preset/PrintProfile/PrinterProfile without overloading Orca's own
+    ``filament_id`` family identifier. Embedded ids remain untrusted input: only
+    entities visible to the current user survive. Legacy ``FHUB_F_<n>`` and
+    provider-specific material ids remain readable for older G-code.
     """
+    embedded_identities = list(parsed.fhub_identities)
+    material_identity_ids = {
+        item.entity_id for item in embedded_identities if item.kind == "material_preset"
+    }
+    print_profile_identity_ids = {
+        item.entity_id for item in embedded_identities if item.kind == "print_profile"
+    }
+    printer_profile_identity_ids = {
+        item.entity_id for item in embedded_identities if item.kind == "printer_profile"
+    }
+
+    material_presets_by_id = await visible_material_presets(
+        db, user_id=user_id, preset_ids=material_identity_ids
+    )
+    allowed_print_profile_ids = await visible_print_profile_ids(
+        db, user_id=user_id, profile_ids=print_profile_identity_ids
+    )
+    allowed_printer_profile_ids = await visible_printer_profile_ids(
+        db, user_id=user_id, profile_ids=printer_profile_identity_ids
+    )
+
+    visible_identities = [
+        item
+        for item in embedded_identities
+        if (
+            (item.kind == "material_preset" and item.entity_id in material_presets_by_id)
+            or (item.kind == "print_profile" and item.entity_id in allowed_print_profile_ids)
+            or (
+                item.kind == "printer_profile"
+                and item.entity_id in allowed_printer_profile_ids
+            )
+        )
+    ]
+    material_presets_by_tool = {
+        item.tool_index: material_presets_by_id[item.entity_id]
+        for item in visible_identities
+        if item.kind == "material_preset" and item.tool_index is not None
+    }
+
     stable_ids = {
         stable_id
         for material in parsed.materials
-        if (stable_id := _stable_id(material.slicer_filament_id)) is not None
+        if material.tool_index not in material_presets_by_tool
+        and (stable_id := _stable_id(material.slicer_filament_id)) is not None
     }
-    if not stable_ids:
-        return parsed
+    if not stable_ids and not material_presets_by_tool:
+        return parsed.model_copy(update={"fhub_identities": visible_identities})
 
     direct_ids_by_stable_id: dict[str, int] = {}
     direct_filament_ids: set[int] = set()
@@ -133,6 +177,30 @@ async def resolve_calculator_material_identities(
 
     resolved_materials: list[CalculatorParsedMaterial] = []
     for material in parsed.materials:
+        managed_preset = material_presets_by_tool.get(material.tool_index)
+        if managed_preset is not None:
+            stable_id = f"fhub:preset:{managed_preset.id}"
+            if managed_preset.filament_id is not None:
+                resolution = CalculatorMaterialIdentityResolution(
+                    status="resolved",
+                    source="filamenthub_preset_id",
+                    stable_id=stable_id,
+                    filament_id=managed_preset.filament_id,
+                    preset_id=managed_preset.id,
+                    candidate_filament_ids=[managed_preset.filament_id],
+                )
+            else:
+                resolution = CalculatorMaterialIdentityResolution(
+                    status="unresolved",
+                    source="filamenthub_preset_id",
+                    stable_id=stable_id,
+                    preset_id=managed_preset.id,
+                )
+            resolved_materials.append(
+                material.model_copy(update={"identity_resolution": resolution})
+            )
+            continue
+
         stable_id = _stable_id(material.slicer_filament_id)
         if stable_id is None:
             resolved_materials.append(material)
@@ -175,4 +243,9 @@ async def resolve_calculator_material_identities(
             material.model_copy(update={"identity_resolution": resolution})
         )
 
-    return parsed.model_copy(update={"materials": resolved_materials})
+    return parsed.model_copy(
+        update={
+            "materials": resolved_materials,
+            "fhub_identities": visible_identities,
+        }
+    )

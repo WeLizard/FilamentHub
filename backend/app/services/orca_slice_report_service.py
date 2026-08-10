@@ -11,10 +11,15 @@ from sqlalchemy.orm import selectinload
 
 from app.models.orca_slice_report import OrcaSliceReport
 from app.models.physical_printer_profile import UserPrinterProfileLink
+from app.models.print_profile import PrintProfile
 from app.models.printer_profile import PrinterProfile
 from app.schemas.orca_slice_report import (
     OrcaSliceReportIn,
     OrcaSliceReportResponse,
+)
+from app.services.slicer_identity_access import (
+    visible_print_profile_ids,
+    visible_printer_profile_ids,
 )
 
 
@@ -35,9 +40,36 @@ def _dedupe_key(user_id: int, payload: OrcaSliceReportIn) -> str:
 
 
 async def _resolve_printer(
-    db: AsyncSession, *, user_id: int, printer_settings_id: str | None
+    db: AsyncSession,
+    *,
+    user_id: int,
+    printer_settings_id: str | None,
+    fhub_printer_profile_id: int | None,
 ) -> tuple[int | None, int | None]:
     """Find the configuration the slice names, and the printer it is linked to."""
+    if fhub_printer_profile_id is not None:
+        visible_ids = await visible_printer_profile_ids(
+            db, user_id=user_id, profile_ids={fhub_printer_profile_id}
+        )
+        if fhub_printer_profile_id in visible_ids:
+            physical_printer_ids = set(
+                (
+                    await db.execute(
+                        select(UserPrinterProfileLink.physical_printer_id).where(
+                            UserPrinterProfileLink.user_id == user_id,
+                            UserPrinterProfileLink.printer_profile_id
+                            == fhub_printer_profile_id,
+                        )
+                    )
+                ).scalars().all()
+            )
+            physical_printer_id = (
+                next(iter(physical_printer_ids))
+                if len(physical_printer_ids) == 1
+                else None
+            )
+            return physical_printer_id, fhub_printer_profile_id
+
     if not printer_settings_id:
         return None, None
 
@@ -83,6 +115,34 @@ async def _resolve_printer(
     return None, profile_id
 
 
+async def _resolve_print_profile(
+    db: AsyncSession,
+    *,
+    user_id: int,
+    print_settings_id: str | None,
+    fhub_print_profile_id: int | None,
+) -> int | None:
+    if fhub_print_profile_id is not None:
+        visible_ids = await visible_print_profile_ids(
+            db, user_id=user_id, profile_ids={fhub_print_profile_id}
+        )
+        if fhub_print_profile_id in visible_ids:
+            return fhub_print_profile_id
+    if not print_settings_id:
+        return None
+    profile_ids = set(
+        (
+            await db.execute(
+                select(PrintProfile.id).where(
+                    PrintProfile.owner_user_id == user_id,
+                    PrintProfile.setting_id == print_settings_id,
+                )
+            )
+        ).scalars().all()
+    )
+    return next(iter(profile_ids)) if len(profile_ids) == 1 else None
+
+
 async def record_slice_reports(
     db: AsyncSession, *, user_id: int, payloads: list[OrcaSliceReportIn]
 ) -> tuple[int, int]:
@@ -101,13 +161,24 @@ async def record_slice_reports(
             continue
 
         physical_printer_id, profile_id = await _resolve_printer(
-            db, user_id=user_id, printer_settings_id=payload.printer_settings_id
+            db,
+            user_id=user_id,
+            printer_settings_id=payload.printer_settings_id,
+            fhub_printer_profile_id=payload.fhub_printer_profile_id,
+        )
+        print_profile_id = await _resolve_print_profile(
+            db,
+            user_id=user_id,
+            print_settings_id=payload.print_settings_id,
+            fhub_print_profile_id=payload.fhub_print_profile_id,
         )
         report = OrcaSliceReport(
             user_id=user_id,
             physical_printer_id=physical_printer_id,
             printer_profile_id=profile_id,
+            print_profile_id=print_profile_id,
             printer_settings_id=payload.printer_settings_id,
+            print_settings_id=payload.print_settings_id,
             printer_model=payload.printer_model,
             file_name=payload.file_name.strip()[:300],
             target_host=payload.target_host,
@@ -149,12 +220,14 @@ async def list_slice_reports(
             id=row.id,
             file_name=row.file_name,
             printer_settings_id=row.printer_settings_id,
+            print_settings_id=row.print_settings_id,
             printer_model=row.printer_model,
             physical_printer_id=row.physical_printer_id,
             physical_printer_name=(
                 row.physical_printer.name if row.physical_printer is not None else None
             ),
             printer_profile_id=row.printer_profile_id,
+            print_profile_id=row.print_profile_id,
             target_host=row.target_host,
             source_key=row.source_key,
             sliced_at=row.sliced_at,

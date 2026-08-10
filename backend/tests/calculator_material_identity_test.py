@@ -7,7 +7,7 @@ from app.models.brand import Brand
 from app.models.filament import Filament
 from app.models.preset import Preset
 from app.models.user import User
-from app.schemas.calculator import CalculatorGcodeParseResponse
+from app.schemas.calculator import CalculatorFhubIdentity, CalculatorGcodeParseResponse
 from app.services.calculator_material_identity_service import (
     resolve_calculator_material_identities,
 )
@@ -67,6 +67,105 @@ async def test_filamenthub_gcode_id_resolves_catalog_material_before_name(
     assert resolution.status == "resolved"
     assert resolution.source == "filamenthub_filament_id"
     assert resolution.filament_id == filament.id
+
+
+@pytest.mark.asyncio
+async def test_namespaced_managed_preset_resolves_before_orca_family_id(
+    db_session: AsyncSession,
+    auth_user: User,
+) -> None:
+    brand = Brand(name="Managed ID Brand", slug="managed-id-brand")
+    db_session.add(brand)
+    await db_session.flush()
+    filament = await _filament(
+        db_session,
+        brand,
+        name="Exact managed PETG",
+        slug="exact-managed-petg",
+    )
+    preset = Preset(
+        filament_id=filament.id,
+        user_id=auth_user.id,
+        name="Exact managed preset",
+        extruder_temp=240,
+        bed_temp=80,
+        is_official=False,
+        active=True,
+    )
+    db_session.add(preset)
+    await db_session.flush()
+    parsed = _parsed("OGFG99")
+    parsed = parsed.model_copy(
+        update={
+            "fhub_identities": [
+                CalculatorFhubIdentity(
+                    kind="material_preset", entity_id=preset.id, tool_index=0
+                )
+            ]
+        }
+    )
+
+    resolved = await resolve_calculator_material_identities(
+        db_session,
+        parsed,
+        user_id=auth_user.id,
+    )
+
+    resolution = resolved.materials[0].identity_resolution
+    assert resolution is not None
+    assert resolution.source == "filamenthub_preset_id"
+    assert resolution.preset_id == preset.id
+    assert resolution.filament_id == filament.id
+    assert resolved.fhub_identities[0].entity_id == preset.id
+
+
+@pytest.mark.asyncio
+async def test_private_foreign_preset_identity_is_not_trusted(
+    db_session: AsyncSession,
+    auth_user: User,
+    admin_user: User,
+) -> None:
+    brand = Brand(name="Private ID Brand", slug="private-id-brand")
+    db_session.add(brand)
+    await db_session.flush()
+    filament = await _filament(
+        db_session,
+        brand,
+        name="Private managed PETG",
+        slug="private-managed-petg",
+    )
+    preset = Preset(
+        filament_id=filament.id,
+        user_id=admin_user.id,
+        name="Someone else's draft",
+        extruder_temp=240,
+        bed_temp=80,
+        is_official=False,
+        active=False,
+    )
+    db_session.add(preset)
+    await db_session.flush()
+    parsed = _parsed("OGFG99").model_copy(
+        update={
+            "fhub_identities": [
+                CalculatorFhubIdentity(
+                    kind="material_preset", entity_id=preset.id, tool_index=0
+                )
+            ]
+        }
+    )
+
+    resolved = await resolve_calculator_material_identities(
+        db_session,
+        parsed,
+        user_id=auth_user.id,
+    )
+
+    assert resolved.fhub_identities == []
+    resolution = resolved.materials[0].identity_resolution
+    assert resolution is not None
+    assert resolution.status == "unresolved"
+    assert resolution.stable_id == "OGFG99"
 
 
 @pytest.mark.asyncio

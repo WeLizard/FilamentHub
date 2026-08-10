@@ -840,10 +840,12 @@ export interface OrcaSliceReport {
   id: number;
   file_name: string;
   printer_settings_id: string | null;
+  print_settings_id: string | null;
   printer_model: string | null;
   physical_printer_id: number | null;
   physical_printer_name: string | null;
   printer_profile_id: number | null;
+  print_profile_id: number | null;
   target_host: string | null;
   source_key: string | null;
   sliced_at: string | null;
@@ -1346,6 +1348,7 @@ export interface CalculatorMaterialIdentityResolution {
   status: 'resolved' | 'ambiguous' | 'unresolved';
   source?:
     | 'filamenthub_filament_id'
+    | 'filamenthub_preset_id'
     | 'user_preset_filament_id'
     | 'catalog_preset_filament_id'
     | null;
@@ -1389,13 +1392,21 @@ export interface CalculatorParsedObjectGroup {
   material_weights_g?: Record<string, number>;
 }
 
+export interface CalculatorFhubIdentity {
+  kind: 'material_preset' | 'print_profile' | 'printer_profile';
+  entity_id: number;
+  tool_index?: number | null;
+}
+
 export interface CalculatorGcodeParseResponse {
   file_name: string;
   file_size_bytes: number;
   slicer_name?: string | null;
   slicer_version?: string | null;
   printer_settings_id?: string | null;
+  print_settings_id?: string | null;
   printer_model?: string | null;
+  fhub_identities?: CalculatorFhubIdentity[];
   print_time_seconds?: number | null;
   first_layer_print_time_seconds?: number | null;
   total_filament_weight_g?: number | null;

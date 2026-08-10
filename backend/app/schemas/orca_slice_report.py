@@ -16,7 +16,10 @@ class OrcaSliceReportIn(BaseModel):
 
     file_name: str = Field(..., min_length=1, max_length=300)
     printer_settings_id: str | None = Field(None, max_length=200)
+    print_settings_id: str | None = Field(None, max_length=200)
     printer_model: str | None = Field(None, max_length=200)
+    fhub_printer_profile_id: int | None = Field(None, ge=1, le=2**63 - 1)
+    fhub_print_profile_id: int | None = Field(None, ge=1, le=2**63 - 1)
     target_host: str | None = Field(None, max_length=50)
     slicer_version: str | None = Field(None, max_length=50)
     # The plugin's handle for the file; it keeps the path on its own side.
@@ -34,10 +37,12 @@ class OrcaSliceReportResponse(BaseModel):
     id: int
     file_name: str
     printer_settings_id: str | None
+    print_settings_id: str | None
     printer_model: str | None
     physical_printer_id: int | None
     physical_printer_name: str | None
     printer_profile_id: int | None
+    print_profile_id: int | None
     target_host: str | None
     source_key: str | None
     sliced_at: datetime | None

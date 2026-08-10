@@ -60,6 +60,7 @@ the account access/refresh credentials never cross the iframe boundary. The
 capability may be cached locally until expiry so a reopened window can resume.
 """
 
+import csv
 import hashlib
 import http.server
 import json
@@ -2531,6 +2532,147 @@ _SLICE_INDEX_LOCK = threading.Lock()
 _SLICE_CACHE_DIR = os.path.join(PLUGIN_DIR, "slices")
 _SLICE_CACHE_FILES = 5
 _SLICE_CACHE_BYTES = 500 * 1024 * 1024
+_FHUB_IDENTITY_KEY = "fhub_identity_v1"
+_FHUB_IDENTITY_KINDS = {
+    "material_preset": (user_filament_dir, None),
+    "print_profile": (user_process_dir, "process"),
+    "printer_profile": (user_machine_dir, "machine"),
+}
+_FHUB_IDENTITY_RE = re.compile(
+    r"^kind=(material_preset|print_profile|printer_profile);"
+    r"(?:(?:tool=(\d+));)?id=(\d+)$"
+)
+_MAX_FHUB_TOOL_INDEX = 255
+_MAX_FHUB_IDENTITY_ID = 2 ** 63 - 1
+
+
+def _serialized_config_values(value):
+    """Decode Orca's opt_serialize output without losing material slot order."""
+    if value is None:
+        return []
+    try:
+        return [item.strip() for item in next(csv.reader(
+            [str(value)], delimiter=";", quotechar='"', escapechar="\\"
+        ))]
+    except (csv.Error, StopIteration):
+        return []
+
+
+def _managed_identity_id(value, identity_kind):
+    """Resolve one selected profile only through a plugin-owned managed file."""
+    spec = _FHUB_IDENTITY_KINDS.get(identity_kind)
+    if spec is None or not isinstance(value, str):
+        return None
+    stem = value.strip().strip('"\'').replace("\\", "/").rsplit("/", 1)[-1]
+    if not stem or stem in {".", ".."} or "\x00" in stem:
+        return None
+    folder_factory, managed_kind = spec
+    folder = os.path.realpath(folder_factory())
+    path = os.path.realpath(os.path.join(folder, stem + ".json"))
+    try:
+        if os.path.commonpath([folder, path]) != folder or not os.path.isfile(path):
+            return None
+        with open(path, "r", encoding="utf-8") as fh:
+            profile = json.load(fh)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(profile, dict):
+        return None
+    if identity_kind == "material_preset":
+        return managed_preset_id(path, profile)
+    return managed_profile_id(path, profile, managed_kind)
+
+
+def _fhub_identity_line(identity_kind, entity_id, tool_index=None):
+    parts = ["kind=%s" % identity_kind]
+    if tool_index is not None:
+        parts.append("tool=%d" % int(tool_index))
+    parts.append("id=%d" % int(entity_id))
+    return "; %s = %s" % (_FHUB_IDENTITY_KEY, ";".join(parts))
+
+
+def _parse_fhub_identity_value(value):
+    match = _FHUB_IDENTITY_RE.fullmatch((value or "").strip())
+    if match is None:
+        return None
+    identity_kind, tool_index, entity_id = match.groups()
+    if identity_kind == "material_preset" and tool_index is None:
+        return None
+    if identity_kind != "material_preset" and tool_index is not None:
+        return None
+    entity_id = int(entity_id)
+    if (
+        entity_id <= 0
+        or entity_id > _MAX_FHUB_IDENTITY_ID
+        or (tool_index is not None and int(tool_index) > _MAX_FHUB_TOOL_INDEX)
+    ):
+        return None
+    return {
+        "kind": identity_kind,
+        "tool_index": int(tool_index) if tool_index is not None else None,
+        "id": entity_id,
+    }
+
+
+def _slice_managed_identities(ctx):
+    """Stable FilamentHub identities selected in the resolved slice config."""
+    identities = []
+    try:
+        material_values = _serialized_config_values(
+            ctx.config_value("filament_settings_id")
+        )
+    except Exception:
+        material_values = []
+    for tool_index, value in enumerate(material_values):
+        preset_id = _managed_identity_id(value, "material_preset")
+        if preset_id is not None:
+            identities.append({
+                "kind": "material_preset",
+                "tool_index": tool_index,
+                "id": preset_id,
+            })
+
+    for config_key, identity_kind in (
+        ("print_settings_id", "print_profile"),
+        ("printer_settings_id", "printer_profile"),
+    ):
+        try:
+            values = _serialized_config_values(ctx.config_value(config_key))
+        except Exception:
+            values = []
+        if not values:
+            continue
+        profile_id = _managed_identity_id(values[0], identity_kind)
+        if profile_id is not None:
+            identities.append({"kind": identity_kind, "tool_index": None, "id": profile_id})
+    return identities
+
+
+def _append_fhub_slice_identities(path, identities):
+    """Append missing namespaced identity comments; repeated host calls are safe."""
+    lines = [
+        _fhub_identity_line(item["kind"], item["id"], item.get("tool_index"))
+        for item in identities
+    ]
+    if not lines:
+        return True
+    try:
+        size = os.path.getsize(path)
+        with open(path, "rb") as fh:
+            fh.seek(max(0, size - _TAIL_BYTES))
+            tail = fh.read().decode("utf-8", errors="replace")
+        existing = {line.strip() for line in tail.splitlines()}
+        missing = [line for line in lines if line not in existing]
+        if not missing:
+            return True
+        with open(path, "ab") as fh:
+            if size > 0 and not tail.endswith(("\n", "\r")):
+                fh.write(b"\n")
+            fh.write(("\n".join(missing) + "\n").encode("utf-8"))
+        return True
+    except OSError as exc:
+        fh_log("slice identity annotation failed: %s" % exc)
+        return False
 
 
 def _read_slice_identity(path):
@@ -2554,8 +2696,18 @@ def _read_slice_identity(path):
             continue
         if "printer_settings_id =" in s:
             identity["printer_settings_id"] = s.split("=", 1)[1].strip().strip('"')[:200]
+        elif "print_settings_id =" in s:
+            identity["print_settings_id"] = s.split("=", 1)[1].strip().strip('"')[:200]
         elif "printer_model =" in s:
             identity["printer_model"] = s.split("=", 1)[1].strip().strip('"')[:200]
+        elif s.startswith("; %s =" % _FHUB_IDENTITY_KEY):
+            item = _parse_fhub_identity_value(s.split("=", 1)[1])
+            if item is None:
+                continue
+            if item["kind"] == "printer_profile":
+                identity["fhub_printer_profile_id"] = item["id"]
+            elif item["kind"] == "print_profile":
+                identity["fhub_print_profile_id"] = item["id"]
     return identity or None
 
 
@@ -2703,6 +2855,7 @@ class _SliceReporterMixin:
             return orca.ExecutionResult.skipped(ui_text("sliceNotReady"))
 
         try:
+            _append_fhub_slice_identities(path, _slice_managed_identities(ctx))
             sent, reason = report_slice(
                 path,
                 getattr(ctx, "output_name", "") or "",
