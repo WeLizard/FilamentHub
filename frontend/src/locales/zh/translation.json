@@ -6342,9 +6342,11 @@
     "happyHare": {
       "hostname": "Klipper 主机名",
       "hostnameNotSet": "未设置",
-      "pairingTitle": "打印机还没有自报名称",
-      "pairingDescription": "在打印机控制台执行一次此命令 — 之后它就会自行报告各槽位的内容。",
-      "pairingWaiting": "把任意料盘放入槽位，命令就会出现在这里。",
+      "autoPairingTitle": "正在等待 Happy Hare",
+      "autoPairingDescription": "Happy Hare v4 及更高版本会在 Moonraker 重启后自动发送 Klipper 主机名。旧版本仍受支持；连接后会显示一次性配对步骤。",
+      "pairingTitle": "Happy Hare 已连接，但未发送主机名",
+      "pairingDescription": "对于 v4 之前的 Happy Hare，请在打印机控制台中执行一次此命令；也可以在上方手动输入主机名。",
+      "pairingWaiting": "将任意料盘分配到一个槽位以生成命令，或在上方输入主机名。",
       "linkHint": "把这段粘贴到打印机的 moonraker.conf 并重启 Moonraker。",
       "guide": {
         "title": "Happy Hare 设置",

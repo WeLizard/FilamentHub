@@ -6518,9 +6518,11 @@
     "happyHare": {
       "hostname": "Имя хоста Klipper",
       "hostnameNotSet": "не задано",
-      "pairingTitle": "Принтер ещё не представился",
-      "pairingDescription": "Выполните эту команду один раз в консоли принтера — после неё он начнёт сам сообщать, что стоит в слотах.",
-      "pairingWaiting": "Поставьте любую катушку в слот — команда появится здесь.",
+      "autoPairingTitle": "Ожидаем Happy Hare",
+      "autoPairingDescription": "Happy Hare v4 и новее передаст hostname Klipper автоматически после перезапуска Moonraker. Старые версии тоже поддерживаются: после подключения появится одноразовый шаг привязки.",
+      "pairingTitle": "Happy Hare подключён, но не передал hostname",
+      "pairingDescription": "Для Happy Hare до v4 выполните эту команду один раз в консоли принтера. Либо укажите hostname выше вручную.",
+      "pairingWaiting": "Назначьте любую катушку в слот, чтобы получить команду, или укажите hostname выше.",
       "linkHint": "Вставьте это в moonraker.conf на принтере и перезапустите Moonraker.",
       "guide": {
         "title": "Настройка Happy Hare",

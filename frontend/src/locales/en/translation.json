@@ -6349,9 +6349,11 @@
     "happyHare": {
       "hostname": "Klipper hostname",
       "hostnameNotSet": "not set",
-      "pairingTitle": "The printer has not introduced itself yet",
-      "pairingDescription": "Run this command once in the printer console — after that it starts reporting what sits in the slots.",
-      "pairingWaiting": "Put any spool into a slot and the command appears here.",
+      "autoPairingTitle": "Waiting for Happy Hare",
+      "autoPairingDescription": "Happy Hare v4 and newer sends its Klipper hostname automatically after Moonraker restarts. Earlier versions remain supported and will show a one-time pairing step after they connect.",
+      "pairingTitle": "Happy Hare connected without a hostname",
+      "pairingDescription": "For Happy Hare before v4, run this command once in the printer console. You can also enter the hostname above manually.",
+      "pairingWaiting": "Assign any spool to a slot to generate the command, or enter the hostname above.",
       "linkHint": "Paste this into moonraker.conf on the printer and restart Moonraker.",
       "guide": {
         "title": "Happy Hare setup",

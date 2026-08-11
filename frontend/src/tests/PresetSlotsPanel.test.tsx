@@ -149,6 +149,68 @@ describe('PresetSlotsPanel', () => {
     expect(screen.getByText('Bridge 0.1.0')).toBeInTheDocument();
   });
 
+  it('waits for automatic Happy Hare v4 pairing before using the legacy fallback', async () => {
+    const { feedAdapterFor } = await import(
+      '../components/presetSlots/adapters'
+    );
+    const adapter = feedAdapterFor('happy_hare');
+    const system = {
+      ...physicalPrinter.material_systems[0],
+      provider: 'happy_hare',
+    };
+
+    const pending = render(<>{adapter.renderSetup?.({
+      printer: physicalPrinter,
+      system,
+      gates: [],
+      linkConfirmed: false,
+    })}</>);
+    expect(screen.getByText('presetSlots.happyHare.autoPairingTitle')).toBeInTheDocument();
+    expect(screen.queryByText('presetSlots.happyHare.pairingTitle')).not.toBeInTheDocument();
+    pending.unmount();
+
+    const paired = render(<>{adapter.renderSetup?.({
+      printer: { ...physicalPrinter, printer_hostname: 'voron', reports_feed: true },
+      system,
+      gates: [],
+      linkConfirmed: true,
+    })}</>);
+    expect(paired.container).toBeEmptyDOMElement();
+  });
+
+  it('keeps the one-time pairing command for Happy Hare before v4', async () => {
+    const { feedAdapterFor } = await import(
+      '../components/presetSlots/adapters'
+    );
+    const adapter = feedAdapterFor('happy_hare');
+    const system = {
+      ...physicalPrinter.material_systems[0],
+      provider: 'happy_hare',
+    };
+
+    render(<>{adapter.renderSetup?.({
+      printer: { ...physicalPrinter, reports_feed: true },
+      system,
+      gates: [{
+        id: 41,
+        gate_index: 2,
+        preset_id: null,
+        spool_id: 73,
+        hh_material: null,
+        hh_color_hex: null,
+        hh_status: null,
+        source: 'web_manual',
+        source_ts: '2026-08-11T00:00:00Z',
+        is_active: true,
+        updated_at: '2026-08-11T00:00:00Z',
+      }],
+      linkConfirmed: true,
+    })}</>);
+
+    expect(screen.getByText('presetSlots.happyHare.pairingTitle')).toBeInTheDocument();
+    expect(screen.getByText('MMU_SPOOLMAN GATE=2 SPOOLID=73')).toBeInTheDocument();
+  });
+
   it('shows a manual physical printer and resolves exact linked profile ids', async () => {
     const { PresetSlotsPanel, shouldPollForAdapterContact } = await import(
       '../components/presetSlots/PresetSlotsPanel'

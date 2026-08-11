@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { AlertTriangle, Check, Copy, RefreshCw } from 'lucide-react';
+import { AlertTriangle, Check, Clock, Copy, RefreshCw } from 'lucide-react';
 
 import { devicesAPI } from '../../../api/client';
 import { toast } from '../../Toast';
@@ -64,7 +64,13 @@ function HostnameField({ printer }: { printer: AdapterViewContext['printer'] }) 
   );
 }
 
-function PairingStep({ gates }: { gates: AdapterViewContext['gates'] }) {
+function PairingStep({
+  gates,
+  hasContact,
+}: {
+  gates: AdapterViewContext['gates'];
+  hasContact: boolean;
+}) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [copied, setCopied] = useState(false);
@@ -84,6 +90,22 @@ function PairingStep({ gates }: { gates: AdapterViewContext['gates'] }) {
       toast.error(t('common.error'));
     }
   };
+
+  if (!hasContact) {
+    return (
+      <div className="mb-3 rounded-lg border border-purple-400/25 bg-purple-500/10 px-3 py-2">
+        <div className="flex items-center gap-2">
+          <Clock className="h-3.5 w-3.5 shrink-0 text-purple-300" />
+          <span className="text-xs font-medium text-purple-100">
+            {t('presetSlots.happyHare.autoPairingTitle')}
+          </span>
+        </div>
+        <p className="mt-1 text-[11px] leading-4 text-purple-100/70">
+          {t('presetSlots.happyHare.autoPairingDescription')}
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="mb-3 rounded-lg border border-amber-400/25 bg-amber-500/10 px-3 py-2">
@@ -195,6 +217,8 @@ sync_rate: 5`,
   },
   renderCreateHelp: () => <HappyHareCreationGuide />,
   renderSettings: ({ printer }) => <HostnameField printer={printer} />,
-  renderSetup: ({ gates, linkConfirmed }) =>
-    (linkConfirmed ? null : <PairingStep gates={gates} />),
+  renderSetup: ({ printer, gates }) =>
+    (printer.printer_hostname
+      ? null
+      : <PairingStep gates={gates} hasContact={printer.reports_feed} />),
 };
