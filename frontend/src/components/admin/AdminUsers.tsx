@@ -30,6 +30,7 @@ import { BadgeList, BADGE_CONFIG, type BadgeType } from '../Badge';
 import { toast } from '../Toast';
 import type { Brand } from '../../types/api';
 import type { AxiosError } from 'axios';
+import { useDebounce } from '../../hooks/useDebounce';
 
 export function AdminUsers() {
   const { t, i18n } = useTranslation();
@@ -39,12 +40,7 @@ export function AdminUsers() {
   const [roleFilter, setRoleFilter] = useState<string | undefined>(undefined);
   const [showOnlyWithBrand, setShowOnlyWithBrand] = useState(false);
   const [search, setSearch] = useState('');
-  const [debouncedSearch, setDebouncedSearch] = useState('');
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => setDebouncedSearch(search.trim()), 300);
-    return () => window.clearTimeout(timer);
-  }, [search]);
+  const debouncedSearch = useDebounce(search.trim(), 300);
 
   useEffect(() => {
     setPage(1);

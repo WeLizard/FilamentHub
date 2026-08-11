@@ -5,6 +5,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import { User, Lock, LogIn, Home, Clock3, Package, Settings, Calculator } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { PageBackground } from './PageBackground';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -48,20 +49,20 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, requir
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
+      <PageBackground className="flex items-center justify-center">
         <div className="text-center">
-          <div className="w-16 h-16 bg-gradient-to-r from-purple-500 to-pink-500 rounded-xl flex items-center justify-center mx-auto mb-4 animate-pulse">
+          <div className="w-16 h-16 bg-gradient-to-r from-purple-500 to-pink-500 rounded-xl flex items-center justify-center mx-auto mb-4">
             <User className="w-8 h-8 text-white" />
           </div>
           <div className="text-white text-xl">{t('protectedRoute.loading')}</div>
         </div>
-      </div>
+      </PageBackground>
     );
   }
 
   if (!isAuthenticated) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
+      <PageBackground className="flex items-center justify-center">
         <div className="w-full max-w-2xl px-6">
           <div className="rounded-3xl border border-white/15 bg-black/25 p-8 shadow-2xl shadow-black/30 backdrop-blur-md">
             <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-2xl bg-gradient-to-r from-purple-500/20 to-pink-500/20 ring-1 ring-purple-400/35">
@@ -127,14 +128,14 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, requir
 
           </div>
         </div>
-      </div>
+      </PageBackground>
     );
   }
 
   // Проверка роли
   if (requiredRole && user?.role !== requiredRole) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
+      <PageBackground className="flex items-center justify-center">
         <div className="text-center max-w-md mx-auto px-6">
           <div className="w-20 h-20 bg-gradient-to-r from-red-500 to-orange-500 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg shadow-red-500/25">
             <Lock className="w-10 h-10 text-white" />
@@ -144,7 +145,7 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, requir
             {requiredRole === 'admin' ? t('protectedRoute.access_denied_admin') : t('protectedRoute.access_denied_brand')}
           </p>
         </div>
-      </div>
+      </PageBackground>
     );
   }
 

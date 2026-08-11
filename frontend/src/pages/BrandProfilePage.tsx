@@ -927,7 +927,11 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({
 
           {/* Delete Confirmation Modal */}
           {deletingFilamentId && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+            <ModalOverlay
+              onClose={cancelDeleteFilament}
+              closeOnOverlayClick={!deleteFilamentMutation.isPending}
+              closeOnEscape={!deleteFilamentMutation.isPending}
+            >
               <div className="bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 rounded-2xl p-6 w-full max-w-md border border-white/20 shadow-2xl">
                 <div className="flex items-center space-x-3 mb-4">
                   <div className="w-12 h-12 bg-red-500/20 rounded-full flex items-center justify-center">
@@ -967,11 +971,15 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({
                   </button>
                 </div>
               </div>
-            </div>
+            </ModalOverlay>
           )}
 
           {deletingLine && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+            <ModalOverlay
+              onClose={() => setDeletingLine(null)}
+              closeOnOverlayClick={!deleteLineMutation.isPending}
+              closeOnEscape={!deleteLineMutation.isPending}
+            >
               <div className="bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 rounded-2xl p-6 w-full max-w-md border border-white/20 shadow-2xl">
                 <div className="flex items-center space-x-3 mb-4">
                   <div className="w-12 h-12 bg-red-500/20 rounded-full flex items-center justify-center">
@@ -1005,7 +1013,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({
                   </button>
                 </div>
               </div>
-            </div>
+            </ModalOverlay>
           )}
         </div>
       )}
@@ -3939,6 +3947,8 @@ const QRCodeCard: React.FC<QRCodeCardProps> = ({ filament, onOpen }) => {
               src={qrAPI.getQRCodeURL(filament.id, 128)}
               alt={`QR Code ${shortCode}`}
               className="w-full h-full"
+              loading="lazy"
+              decoding="async"
             />
           </div>
         )}

@@ -17,22 +17,19 @@ export const SharedQuotePage: React.FC = () => {
   const quoteUrl = `/api/v1/calculator/quote/${uuid}`;
 
   useEffect(() => {
-    let cancelled = false;
+    const controller = new AbortController();
     setStatus('loading');
-    fetch(quoteUrl)
+    fetch(quoteUrl, { signal: controller.signal })
       .then((res) => {
-        if (cancelled) return;
         if (res.ok) setStatus('ok');
         else if (res.status === 410) setStatus('expired');
         else if (res.status === 404) setStatus('notfound');
         else setStatus('error');
       })
-      .catch(() => {
-        if (!cancelled) setStatus('error');
+      .catch((error: unknown) => {
+        if (!(error instanceof DOMException && error.name === 'AbortError')) setStatus('error');
       });
-    return () => {
-      cancelled = true;
-    };
+    return () => controller.abort();
   }, [quoteUrl]);
 
   // Подгоняем высоту iframe под контент (same-origin — доступ разрешён).

@@ -52,7 +52,6 @@ import { extractQrShortCode, createQrFrameDecoder } from '../utils/qrScanner';
 import type { UserSpool, SpoolState, UserPrinterDevice } from '../api/client';
 import { SpoolIcon } from '../components/icons/SpoolIcon';
 import { NozzleRequirementBadge } from '../components/NozzleRequirementBadge';
-import api from '../api/client';
 import { translateApiError } from '../utils/translateApiError';
 import { getSpoolCurrentLocation, getSpoolLastLocation } from '../utils/spoolLocation';
 import { currencySymbol, normalizeCurrency } from '../utils/currency';
@@ -761,11 +760,7 @@ export const ProfilePage: React.FC = () => {
 
   const handleDownloadPrinterProfile = async (profile: PrinterProfile) => {
     try {
-      const response = await api.get(`/printer-profiles/${profile.id}/export/orcaslicer.json`, {
-        responseType: 'blob',
-      });
-      
-      const blob = new Blob([response.data], { type: 'application/json' });
+      const blob = await printerProfilesAPI.exportOrcaSlicer(profile.id);
       const base = safeDownloadStem(profile.slug || profile.name, `printer-profile-${profile.id}`);
       downloadBlob(blob, `${base}.orca_printer.json`);
     } catch (error: any) {
@@ -775,11 +770,7 @@ export const ProfilePage: React.FC = () => {
 
   const handleDownloadPrintProfile = async (profile: PrintProfile) => {
     try {
-      const response = await api.get(`/print-profiles/${profile.id}/export/orcaslicer.json`, {
-        responseType: 'blob',
-      });
-      
-      const blob = new Blob([response.data], { type: 'application/json' });
+      const blob = await printProfilesAPI.exportOrcaSlicer(profile.id);
       const base = safeDownloadStem(profile.slug || profile.name, `print-profile-${profile.id}`);
       downloadBlob(blob, `${base}.orca_process.json`);
     } catch (error: any) {
@@ -3515,18 +3506,14 @@ const PresetCard: React.FC<PresetCardProps> = ({ preset, onEdit, onView, onDelet
     
     setIsDownloading(true);
     try {
-      // Получаем JSON ответ от сервера
-      const response = await api.get(`/presets/${preset.id}/export/orcaslicer.json`, {
-        responseType: 'json', // Получаем JSON (axios автоматически парсит)
-      });
-
-      const jsonContent = response.data;
+      const exportedPreset = await presetsAPI.exportOrcaSlicer(preset.id);
+      const jsonContent = exportedPreset.data;
       
       // Получаем имя файла из заголовка Content-Disposition
       let filename = 'preset.json';
       
       // Пытаемся получить имя файла из заголовка Content-Disposition
-      const contentDisposition = response.headers['content-disposition'] || response.headers['Content-Disposition'];
+      const contentDisposition = exportedPreset.contentDisposition;
       
       if (contentDisposition) {
         // Парсим имя файла из заголовка

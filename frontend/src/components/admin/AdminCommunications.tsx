@@ -35,6 +35,7 @@ import type {
 import { translateApiError } from '../../utils/translateApiError';
 import { currentRequestLanguage } from '../../utils/requestLanguage';
 import { downloadBlob } from '../../utils/download';
+import { formatBytes } from '../../utils/formatBytes';
 import { toast } from '../Toast';
 import { ModalOverlay } from '../ModalOverlay';
 import { ConfirmModal } from '../ConfirmModal';
@@ -71,13 +72,6 @@ const emailDraftFingerprint = (
   draft.html,
   draft.attachments.map((file) => [file.name, file.size, file.lastModified]),
 ]);
-
-const formatBytes = (value: number | null, locale: string): string => {
-  if (value === null) return '';
-  if (value < 1024) return `${value} B`;
-  if (value < 1024 * 1024) return `${new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(value / 1024)} KB`;
-  return `${new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(value / (1024 * 1024))} MB`;
-};
 
 const deliveryStatusIcon = (status: EmailDeliveryStatus) => {
   if (status === 'delivered') return CheckCheck;

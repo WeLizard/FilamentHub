@@ -60,6 +60,7 @@ from app.schemas.preset import (
     RecommendedPresetResponse,
 )
 from app.schemas.printer import PrinterResponse
+from app.services.download_filename import attachment_content_disposition, safe_download_stem
 from app.services.notification_service import notify_preset_deleted, notify_preset_updated
 from app.services.orcaslicer_exporter import generate_profile_info, preset_to_orcaslicer_json
 from app.services.orcaslicer_preset_contract import (
@@ -934,32 +935,17 @@ async def export_preset_json(
     # Формируем безопасное имя файла (только латиница и безопасные символы для HTTP заголовков)
     brand_name = preset.filament.brand.name if preset.filament.brand else "Generic"
 
-    # Формируем читабельное имя файла (OrcaSlicer поддерживает кириллицу, пробелы и спецсимволы)
-    # Убираем только недопустимые символы для файловой системы: <>:"/\|?*
-    def to_safe_filename(text: str) -> str:
-        """Преобразует текст в безопасное имя файла, сохраняя кириллицу и пробелы."""
-        if not text:
-            return ""
-        # Убираем только действительно недопустимые символы для файловой системы
-        safe = text.replace("<", "_").replace(">", "_").replace(":", "_")
-        safe = safe.replace('"', "_").replace("/", "_").replace("\\", "_")
-        safe = safe.replace("|", "_").replace("?", "_").replace("*", "_")
-        # Убираем множественные подчеркивания
-        while "__" in safe:
-            safe = safe.replace("__", "_")
-        return safe.strip(" _")  # Убираем пробелы и подчеркивания в начале/конце
-
     # Формируем имя файла: используем имя пресета (OrcaSlicer поддерживает кириллицу, пробелы, спецсимволы)
     # Примеры из OrcaSlicer: "TEST-2 ABS.json", "ABS @FilamentHub2.json", "ABS HTP.json"
     if preset.name:
-        filename = to_safe_filename(preset.name) + ".json"
+        filename = safe_download_stem(preset.name, "preset") + ".json"
     else:
         # Fallback: Brand Material.json или просто Material.json
         filename_parts = []
         if brand_name:
-            filename_parts.append(to_safe_filename(brand_name))
+            filename_parts.append(safe_download_stem(brand_name, "Generic"))
         if preset.filament.material_type:
-            filename_parts.append(to_safe_filename(preset.filament.material_type))
+            filename_parts.append(safe_download_stem(preset.filament.material_type, "material"))
 
         if filename_parts:
             filename = " ".join(filename_parts) + ".json"
@@ -971,18 +957,11 @@ async def export_preset_json(
         # Обрезаем до 200 символов, стараясь не резать по середине слова
         filename = filename[:197].rsplit(" ", 1)[0] + ".json"
 
-    # Для HTTP заголовка используем RFC 5987 формат для поддержки Unicode
-    from urllib.parse import quote
-
-    # ASCII версия имени для совместимости
-    ascii_filename = filename.encode('ascii', 'replace').decode('ascii').replace('?', '_')
-
-    # Используем оба формата: ASCII для совместимости и UTF-8 для правильного отображения
     return JSONResponse(
         content=profile_dict,
         media_type="application/json",
         headers={
-            "Content-Disposition": f'attachment; filename="{ascii_filename}"; filename*=UTF-8\'\'{quote(filename, safe="")}',
+            "Content-Disposition": attachment_content_disposition(filename),
         }
     )
 

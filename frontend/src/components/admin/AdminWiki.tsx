@@ -549,7 +549,7 @@ export function AdminWiki() {
   ];
 
   return (
-    <div>
+    <div className="min-w-0">
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
@@ -559,7 +559,7 @@ export function AdminWiki() {
       </div>
 
       {/* Section tabs */}
-      <div className="flex gap-2 mb-6">
+      <div className="mb-6 flex flex-wrap gap-2">
         {sectionTabs.map((tab) => {
           const Icon = tab.icon;
           return (
@@ -746,21 +746,21 @@ export function AdminWiki() {
               {categories.map((cat) => (
                 <div
                   key={cat.id}
-                  className="flex items-center justify-between bg-white/5 border border-white/10 rounded-xl px-4 py-3 hover:bg-white/10 transition-colors"
+                  className="flex flex-col items-stretch gap-3 bg-white/5 border border-white/10 rounded-xl px-4 py-3 hover:bg-white/10 transition-colors sm:flex-row sm:items-center sm:justify-between"
                 >
-                  <div className="flex items-center gap-3">
-                    <span className="text-2xl">{cat.icon || '📄'}</span>
-                    <div>
-                      <div className="text-white font-medium">{cat.name}</div>
-                      <div className="text-xs text-gray-400">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <span className="shrink-0 text-2xl">{cat.icon || '📄'}</span>
+                    <div className="min-w-0">
+                      <div className="break-words text-white font-medium">{cat.name}</div>
+                      <div className="break-words text-xs text-gray-400">
                         {cat.slug} &middot; {cat.articles_count} {t('adminWiki.articlesCount')}
                       </div>
                       {cat.description && (
-                        <div className="text-xs text-gray-500 mt-1 max-w-lg truncate">{cat.description}</div>
+                        <div className="mt-1 break-words text-xs text-gray-500 sm:max-w-lg sm:truncate">{cat.description}</div>
                       )}
                     </div>
                   </div>
-                  <div className="flex items-center gap-1">
+                  <div className="flex shrink-0 items-center self-end gap-1 sm:self-auto">
                     <button
                       onClick={() => { setEditingCategory(cat); setShowCategoryModal(true); }}
                       className="p-1.5 text-gray-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
@@ -789,8 +789,8 @@ export function AdminWiki() {
         <div className="space-y-6">
           {/* Sync */}
           <div className="bg-white/5 border border-white/10 rounded-xl p-6">
-            <div className="flex items-start justify-between">
-              <div>
+            <div className="flex flex-col items-stretch gap-4 sm:flex-row sm:items-start sm:justify-between">
+              <div className="min-w-0">
                 <h3 className="text-lg font-semibold text-white flex items-center gap-2">
                   <RefreshCw className="w-5 h-5 text-blue-400" />
                   {t('adminWiki.sync')}
@@ -800,7 +800,7 @@ export function AdminWiki() {
               <button
                 onClick={() => syncMutation.mutate()}
                 disabled={syncMutation.isPending}
-                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+                className="flex w-full shrink-0 items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 sm:w-auto"
               >
                 {syncMutation.isPending ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
@@ -814,8 +814,8 @@ export function AdminWiki() {
 
           {/* Export */}
           <div className="bg-white/5 border border-white/10 rounded-xl p-6">
-            <div className="flex items-start justify-between">
-              <div>
+            <div className="flex flex-col items-stretch gap-4 sm:flex-row sm:items-start sm:justify-between">
+              <div className="min-w-0">
                 <h3 className="text-lg font-semibold text-white flex items-center gap-2">
                   <Upload className="w-5 h-5 text-green-400" />
                   {t('adminWiki.export')}
@@ -825,7 +825,7 @@ export function AdminWiki() {
               <button
                 onClick={() => exportMutation.mutate()}
                 disabled={exportMutation.isPending}
-                className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50"
+                className="flex w-full shrink-0 items-center justify-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 sm:w-auto"
               >
                 {exportMutation.isPending ? (
                   <Loader2 className="w-4 h-4 animate-spin" />

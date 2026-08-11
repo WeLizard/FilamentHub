@@ -36,6 +36,7 @@ from app.schemas.print_profile import (
     PrintProfileResponse,
     PrintProfileUpdate,
 )
+from app.services.download_filename import attachment_content_disposition, safe_download_stem
 from app.services.orca_import_guard import profile_external_id_taken
 from app.services.orcaslicer_machine_exporter import export_print_profile
 
@@ -517,25 +518,13 @@ async def export_print_profile_json(
         logger.error(f"Error exporting print profile {profile_id}: {str(e)}", exc_info=True)
         raise_error(500, ERR_EXPORT_PRINT_PROFILE_ERROR)
 
-    # Формируем безопасное имя файла
-    def to_safe_filename(text: str) -> str:
-        """Преобразует текст в безопасное имя файла, сохраняя кириллицу и пробелы."""
-        if not text:
-            return ""
-        safe = text.replace("<", "_").replace(">", "_").replace(":", "_")
-        safe = safe.replace('"', "_").replace("/", "_").replace("\\", "_")
-        safe = safe.replace("|", "_").replace("?", "_").replace("*", "_")
-        while "__" in safe:
-            safe = safe.replace("__", "_")
-        return safe.strip(" _")
-
-    filename = to_safe_filename(profile.name) + ".json"
+    filename = safe_download_stem(profile.name, f"print-profile-{profile.id}") + ".json"
 
     # Возвращаем JSON файл
     return Response(
         content=profile_json,
         media_type="application/json",
         headers={
-            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Content-Disposition": attachment_content_disposition(filename),
         },
     )

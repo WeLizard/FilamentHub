@@ -120,14 +120,14 @@ export function AdminBrandRequests() {
     <>
       <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="text-2xl font-bold text-white mb-2">{t('adminBrandRequests.title')}</h2>
           <p className="text-gray-400">{t('adminBrandRequests.total_requests', { count: data?.total || 0 })}</p>
         </div>
 
         {/* Фильтры */}
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           {(['all', 'pending', 'approved', 'rejected'] as const).map((status) => (
             <button
               key={status}

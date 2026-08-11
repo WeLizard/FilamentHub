@@ -12,7 +12,7 @@ import { isPluginEmbed, reportAuthStateToPlugin } from '../utils/pluginBridge';
 import { EmbedDebugOverlay } from './EmbedDebugOverlay';
 import { useTranslation } from 'react-i18next';
 import { filamentPublicPath } from '../utils/catalogUrls';
-import { AmbientBackground } from './AmbientBackground';
+import { PageBackground } from './PageBackground';
 
 const AuthModal = lazy(() => import('./AuthModal').then((module) => ({ default: module.AuthModal })));
 const FeedbackModal = lazy(() => import('./FeedbackModal').then((module) => ({ default: module.FeedbackModal })));
@@ -149,9 +149,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
   };
 
   return (
-    <div className="app-shell flex flex-col bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
-      {/* Ambient Background */}
-      <AmbientBackground />
+    <PageBackground className="app-shell flex flex-col" ambient>
 
       {/* Header - скрываем если открыто через OrcaSlicer или в iframe плагина */}
       {!hideChrome && (
@@ -513,6 +511,6 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
 
       {/* Экранное логирование ошибок в iframe плагина (DevTools там недоступен) */}
       {isPluginEmbed() && <EmbedDebugOverlay />}
-    </div>
+    </PageBackground>
   );
 };

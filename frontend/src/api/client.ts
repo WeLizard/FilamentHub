@@ -1132,6 +1132,16 @@ export const presetsAPI = {
     const response = await api.post<Preset>(`/presets/${id}/activate`, { filament_id });
     return response.data;
   },
+
+  exportOrcaSlicer: async (id: number): Promise<{ data: unknown; contentDisposition?: string }> => {
+    const response = await api.get<unknown>(`/presets/${id}/export/orcaslicer.json`, {
+      responseType: 'json',
+    });
+    return {
+      data: response.data,
+      contentDisposition: response.headers['content-disposition'] || response.headers['Content-Disposition'],
+    };
+  },
 };
 
 // Saved Presets API
@@ -1313,6 +1323,13 @@ export const printerProfilesAPI = {
   delete: async (id: number) => {
     await api.delete(`/printer-profiles/${id}`);
   },
+
+  exportOrcaSlicer: async (id: number): Promise<Blob> => {
+    const response = await api.get<Blob>(`/printer-profiles/${id}/export/orcaslicer.json`, {
+      responseType: 'blob',
+    });
+    return response.data;
+  },
 };
 
 // Print Profiles API
@@ -1368,6 +1385,13 @@ export const printProfilesAPI = {
 
   delete: async (id: number) => {
     await api.delete(`/print-profiles/${id}`);
+  },
+
+  exportOrcaSlicer: async (id: number): Promise<Blob> => {
+    const response = await api.get<Blob>(`/print-profiles/${id}/export/orcaslicer.json`, {
+      responseType: 'blob',
+    });
+    return response.data;
   },
 };
 
@@ -1617,7 +1641,34 @@ export const crmAPI = {
 
 // ==================== Admin API ====================
 
+export interface AdminMaintenanceInfo {
+  enabled: boolean;
+  message: string | null;
+}
+
+export interface AdminCalculatorSettings {
+  paywall_enforced: boolean;
+  trial_days: number | null;
+  counts?: { trialing: number; active: number };
+}
+
 export const adminAPI = {
+  getMaintenance: async (): Promise<AdminMaintenanceInfo> => {
+    const response = await api.get<AdminMaintenanceInfo>('/admin/maintenance');
+    return response.data;
+  },
+
+  updateMaintenance: async (
+    enabled: boolean,
+    message: string | null,
+  ): Promise<AdminMaintenanceInfo> => {
+    const response = await api.post<{ maintenance_mode: AdminMaintenanceInfo }>('/admin/maintenance', {
+      enabled,
+      message,
+    });
+    return response.data.maintenance_mode;
+  },
+
   listOrcaSchemaObservations: async (params?: {
     page?: number;
     size?: number;
@@ -1905,16 +1956,16 @@ export const adminAPI = {
     return response.data;
   },
 
-  getCalculatorSettings: async (): Promise<{ paywall_enforced: boolean; trial_days: number | null }> => {
-    const response = await api.get<{ paywall_enforced: boolean; trial_days: number | null }>('/admin/calculator-settings');
+  getCalculatorSettings: async (): Promise<AdminCalculatorSettings> => {
+    const response = await api.get<AdminCalculatorSettings>('/admin/calculator-settings');
     return response.data;
   },
 
   updateCalculatorSettings: async (
     paywallEnforced: boolean,
     trialDays: number | null,
-  ): Promise<{ paywall_enforced: boolean; trial_days: number | null }> => {
-    const response = await api.post<{ paywall_enforced: boolean; trial_days: number | null }>(
+  ): Promise<AdminCalculatorSettings> => {
+    const response = await api.post<AdminCalculatorSettings>(
       '/admin/calculator-settings',
       { paywall_enforced: paywallEnforced, trial_days: trialDays },
     );
@@ -2546,8 +2597,8 @@ export const adminCommunicationsAPI = {
 
 // Downloads API
 export const downloadsAPI = {
-  getPluginDownloads: async (): Promise<PluginDownloadsResponse> => {
-    const response = await api.get('/downloads/plugins');
+  getPluginDownloads: async (signal?: AbortSignal): Promise<PluginDownloadsResponse> => {
+    const response = await api.get('/downloads/plugins', { signal });
     return response.data;
   },
 };

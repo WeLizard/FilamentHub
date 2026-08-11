@@ -18,6 +18,7 @@ import {
 import { useDropzone } from 'react-dropzone';
 import { useTranslation } from 'react-i18next';
 import { toast } from '../Toast';
+import { formatBytes } from '../../utils/formatBytes';
 
 const MAX_ATTACHMENTS = 10;
 const MAX_ATTACHMENTS_BYTES = 15 * 1024 * 1024;
@@ -49,14 +50,6 @@ interface EmailComposerProps {
   disabled?: boolean;
   resetKey?: number;
 }
-
-const formatBytes = (value: number, locale: string): string => {
-  if (value < 1024) return `${value} B`;
-  if (value < 1024 * 1024) {
-    return `${new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(value / 1024)} KB`;
-  }
-  return `${new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(value / (1024 * 1024))} MB`;
-};
 
 function ToolbarButton({
   active = false,

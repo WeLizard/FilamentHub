@@ -17,6 +17,7 @@ from app.main import PublicStaticFiles
         "database_dumps/nested/backup.sql.gz",
         "brand_requests/proof.pdf",
         "printer_requests/proof.pdf",
+        "wiki_media/ab/asset.webp",
     ],
 )
 def test_protected_prefixes_cover_what_must_not_be_public(path: str):
@@ -33,6 +34,19 @@ def test_protected_prefixes_cover_what_must_not_be_public(path: str):
 )
 async def test_a_database_dump_is_never_served(client: AsyncClient, path: str):
     response = await client.get(path)
+    assert response.status_code == 404
+
+
+def test_managed_wiki_media_is_never_served_by_the_public_uploads_mount(tmp_path):
+    media_dir = tmp_path / "wiki_media" / "ab"
+    media_dir.mkdir(parents=True)
+    (media_dir / "asset.webp").write_bytes(b"private staged image")
+    static_app = Starlette()
+    static_app.mount("/uploads", PublicStaticFiles(directory=tmp_path))
+
+    with TestClient(static_app) as client:
+        response = client.get("/uploads/wiki_media/ab/asset.webp")
+
     assert response.status_code == 404
 
 

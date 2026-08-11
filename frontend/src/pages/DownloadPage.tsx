@@ -105,22 +105,21 @@ export function DownloadPage() {
   // Latest official OrcaSlicer release for the dynamic "get OrcaSlicer" link.
   // Best-effort: if GitHub is unreachable we fall back to the releases/latest URL.
   useEffect(() => {
-    let cancelled = false;
+    const controller = new AbortController();
     fetch('https://api.github.com/repos/OrcaSlicer/OrcaSlicer/releases/latest', {
       headers: { Accept: 'application/vnd.github+json' },
+      signal: controller.signal,
     })
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
-        if (cancelled || !data?.tag_name) return;
+        if (!data?.tag_name) return;
         setOrcaRelease({
           tag: data.tag_name,
           url: data.html_url || `https://github.com/OrcaSlicer/OrcaSlicer/releases/tag/${data.tag_name}`,
         });
       })
       .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
+    return () => controller.abort();
   }, []);
 
   // Two independent ways to the same packages. Our own server answers first: it
@@ -128,10 +127,11 @@ export function DownloadPage() {
   // straight from GitHub remains as the fallback for when our API cannot answer.
   useEffect(() => {
     let cancelled = false;
+    const controller = new AbortController();
 
     const fromFilamentHub = async () => {
       try {
-        const data = await downloadsAPI.getPluginDownloads();
+        const data = await downloadsAPI.getPluginDownloads(controller.signal);
         if (cancelled || !data.packages.length) return false;
         if (data.release_url) setPluginsReleaseUrl(data.release_url);
         const orca = data.packages.find((item: PluginDownload) => item.plugin === 'orcaslicer');
@@ -152,7 +152,7 @@ export function DownloadPage() {
       try {
         const response = await fetch(
           `https://api.github.com/repos/${FILAMENTHUB_PLUGIN_REPO}/releases?per_page=20`,
-          { headers: { Accept: 'application/vnd.github+json' } },
+          { headers: { Accept: 'application/vnd.github+json' }, signal: controller.signal },
         );
         if (!response.ok) return;
         const data = await response.json();
@@ -191,6 +191,7 @@ export function DownloadPage() {
 
     return () => {
       cancelled = true;
+      controller.abort();
     };
   }, []);
 

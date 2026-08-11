@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useMemo, useState, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { AxiosError } from 'axios';
 import {
@@ -24,6 +24,7 @@ import type {
 import { translateApiError } from '../../utils/translateApiError';
 import { ModalOverlay } from '../ModalOverlay';
 import { toast } from '../Toast';
+import { useDebounce } from '../../hooks/useDebounce';
 
 const AUDIENCES: NotificationCampaignAudience[] = ['active', 'all', 'selected'];
 
@@ -43,13 +44,8 @@ export function AdminNotificationCampaigns() {
   const [link, setLink] = useState('');
   const [selectedUserIds, setSelectedUserIds] = useState<number[]>([]);
   const [search, setSearch] = useState('');
-  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const debouncedSearch = useDebounce(search.trim(), 250);
   const [preview, setPreview] = useState<NotificationCampaignPreview | null>(null);
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => setDebouncedSearch(search.trim()), 250);
-    return () => window.clearTimeout(timer);
-  }, [search]);
 
   const usersQuery = useQuery({
     queryKey: ['admin-users-for-campaign', debouncedSearch],

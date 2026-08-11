@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { CheckCircle, XCircle, Loader, UserX } from 'lucide-react';
 import { authAPI } from '../api/client';
 import { translateApiError } from '../utils/translateApiError';
+import { PageBackground } from '../components/PageBackground';
 
 type PageState = 'loading' | 'verified' | 'rejected' | 'error';
 
@@ -45,7 +46,7 @@ export function VerifyEmailPage() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center p-4">
+    <PageBackground className="flex items-center justify-center p-4">
       <div className="w-full max-w-md bg-white/10 backdrop-blur-sm rounded-2xl border border-white/20 shadow-xl p-8 text-center">
         <img src="/logo.svg" alt="FilamentHub" className="w-14 h-14 object-contain mx-auto mb-4" />
 
@@ -98,6 +99,6 @@ export function VerifyEmailPage() {
           </>
         )}
       </div>
-    </div>
+    </PageBackground>
   );
 }

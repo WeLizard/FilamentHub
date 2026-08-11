@@ -5,7 +5,7 @@ import remarkGfm from 'remark-gfm';
 
 import { wikiAPI } from '../../api/client';
 import { safeStorage } from '../../utils/storage';
-import { generateHeadingId } from './TableOfContents';
+import { generateHeadingId, headingIdsBySourceLine } from './wikiHeadings';
 
 interface WikiContentRendererProps {
   content: string;
@@ -163,6 +163,7 @@ export function WikiContentRenderer({
   privateMedia = false,
 }: WikiContentRendererProps) {
   const [checkboxStates, setCheckboxStates] = useState<Record<string, boolean>>({});
+  const headingIds = useMemo(() => headingIdsBySourceLine(content), [content]);
 
   useEffect(() => {
     if (!taskStorageKey) {
@@ -237,16 +238,22 @@ export function WikiContentRenderer({
       );
     },
     h1(props: React.ComponentPropsWithoutRef<'h1'> & ExtraProps) {
-      const { children, ...rest } = props;
-      return <h1 id={generateHeadingId(textFromChildren(children))} className="scroll-mt-24" {...rest}>{children}</h1>;
+      const { children, node, ...rest } = props;
+      const line = node?.position?.start.line;
+      const id = (line && headingIds.get(line)) || `${generateHeadingId(textFromChildren(children))}-${line ?? 'heading'}`;
+      return <h1 id={id} className="scroll-mt-24" {...rest}>{children}</h1>;
     },
     h2(props: React.ComponentPropsWithoutRef<'h2'> & ExtraProps) {
-      const { children, ...rest } = props;
-      return <h2 id={generateHeadingId(textFromChildren(children))} className="scroll-mt-24" {...rest}>{children}</h2>;
+      const { children, node, ...rest } = props;
+      const line = node?.position?.start.line;
+      const id = (line && headingIds.get(line)) || `${generateHeadingId(textFromChildren(children))}-${line ?? 'heading'}`;
+      return <h2 id={id} className="scroll-mt-24" {...rest}>{children}</h2>;
     },
     h3(props: React.ComponentPropsWithoutRef<'h3'> & ExtraProps) {
-      const { children, ...rest } = props;
-      return <h3 id={generateHeadingId(textFromChildren(children))} className="scroll-mt-24" {...rest}>{children}</h3>;
+      const { children, node, ...rest } = props;
+      const line = node?.position?.start.line;
+      const id = (line && headingIds.get(line)) || `${generateHeadingId(textFromChildren(children))}-${line ?? 'heading'}`;
+      return <h3 id={id} className="scroll-mt-24" {...rest}>{children}</h3>;
     },
     li(props: React.ComponentPropsWithoutRef<'li'> & ExtraProps) {
       const { children, className: itemClassName, node, ...rest } = props;
@@ -280,7 +287,7 @@ export function WikiContentRenderer({
         </li>
       );
     },
-  }), [checkboxStates, privateMedia, taskStorageKey]);
+  }), [checkboxStates, headingIds, privateMedia, taskStorageKey]);
 
   return (
     <div className={`${ARTICLE_PROSE} ${className}`}>

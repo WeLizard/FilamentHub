@@ -164,10 +164,10 @@ function PageSpeedWidget({ t }: { t: (key: string) => string }) {
 
   const { data, isLoading, isFetching } = useQuery({
     queryKey: ['pagespeed', strategy, apiKey],
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       let url = `https://www.googleapis.com/pagespeedonline/v5/runPagespeed?url=https://filamenthub.ru&strategy=${strategy}&category=performance`;
       if (apiKey) url += `&key=${apiKey}`;
-      const res = await fetch(url);
+      const res = await fetch(url, { signal });
       if (res.status === 429) {
         setError(t('adminStats.pagespeed.rateLimited'));
         throw new Error('Rate limited');

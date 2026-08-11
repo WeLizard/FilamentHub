@@ -3,17 +3,12 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Settings, AlertTriangle, CheckCircle, Loader2 } from 'lucide-react';
-import api from '../../api/client';
+import { adminAPI, type AdminMaintenanceInfo } from '../../api/client';
 import { translateApiError } from '../../utils/translateApiError';
-
-interface MaintenanceInfo {
-  enabled: boolean;
-  message: string | null;
-}
 
 export function AdminMaintenance() {
   const { t } = useTranslation();
-  const [maintenanceInfo, setMaintenanceInfo] = useState<MaintenanceInfo | null>(null);
+  const [maintenanceInfo, setMaintenanceInfo] = useState<AdminMaintenanceInfo | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isUpdating, setIsUpdating] = useState(false);
   const [message, setMessage] = useState('');
@@ -27,9 +22,9 @@ export function AdminMaintenance() {
     try {
       setIsLoading(true);
       setError(null);
-      const response = await api.get('/admin/maintenance');
-      setMaintenanceInfo(response.data);
-      setMessage(response.data.message || '');
+      const info = await adminAPI.getMaintenance();
+      setMaintenanceInfo(info);
+      setMessage(info.message || '');
     } catch (err: any) {
       console.error('Failed to load maintenance status:', err);
       setError(translateApiError(t, err.response?.data?.detail, t('adminMaintenance.loadError')));
@@ -50,12 +45,9 @@ export function AdminMaintenance() {
     try {
       setIsUpdating(true);
       setError(null);
-      const response = await api.post('/admin/maintenance', {
-        enabled,
-        message: message.trim() || null,
-      });
-      setMaintenanceInfo(response.data.maintenance_mode);
-      setMessage(response.data.maintenance_mode.message || '');
+      const info = await adminAPI.updateMaintenance(enabled, message.trim() || null);
+      setMaintenanceInfo(info);
+      setMessage(info.message || '');
     } catch (err: any) {
       console.error('Failed to update maintenance mode:', err);
       setError(translateApiError(t, err.response?.data?.detail, t('adminMaintenance.updateError')));
@@ -149,12 +141,12 @@ export function AdminMaintenance() {
         </div>
 
         {/* Кнопки */}
-        <div className="flex gap-3">
+        <div className="flex flex-wrap gap-3">
           <button
             onClick={() => handleToggleMaintenance(true)}
             disabled={isUpdating || isEnabled}
             className={`
-              flex items-center gap-2 px-6 py-3 rounded-lg font-semibold transition-all
+              flex max-w-full items-center gap-2 px-6 py-3 rounded-lg font-semibold transition-all
               ${isEnabled
                 ? 'bg-gray-600/30 text-gray-400 cursor-not-allowed'
                 : 'bg-yellow-600 hover:bg-yellow-700 text-white'
@@ -178,7 +170,7 @@ export function AdminMaintenance() {
             onClick={() => handleToggleMaintenance(false)}
             disabled={isUpdating || !isEnabled}
             className={`
-              flex items-center gap-2 px-6 py-3 rounded-lg font-semibold transition-all
+              flex max-w-full items-center gap-2 px-6 py-3 rounded-lg font-semibold transition-all
               ${!isEnabled
                 ? 'bg-gray-600/30 text-gray-400 cursor-not-allowed'
                 : 'bg-green-600 hover:bg-green-700 text-white'

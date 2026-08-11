@@ -142,11 +142,11 @@ export function AdminPresets() {
                 key={preset.id}
                 className="bg-white/5 rounded-xl p-4 border border-white/10 hover:border-white/20 transition-all"
               >
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <div className="flex items-center space-x-3 mb-2">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0 flex-1">
+                    <div className="mb-2 flex min-w-0 items-center gap-3">
                       <Settings className="w-5 h-5 text-purple-400" />
-                      <h3 className="text-lg font-semibold text-white">{preset.name}</h3>
+                      <h3 className="min-w-0 break-words text-lg font-semibold text-white">{preset.name}</h3>
                     </div>
                     {preset.description && (
                       <p className="text-sm text-gray-400 mb-2">{preset.description}</p>
@@ -176,7 +176,7 @@ export function AdminPresets() {
                       </div>
                     )}
                   </div>
-                  <div className="grid grid-cols-2 gap-2 ml-4 shrink-0">
+                  <div className="grid w-full grid-cols-2 gap-2 sm:ml-4 sm:w-auto sm:shrink-0">
                     <button
                       onClick={() => setEditingPreset(preset)}
                       className="flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-all"

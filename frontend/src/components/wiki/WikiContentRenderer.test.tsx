@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { WikiContentRenderer } from './WikiContentRenderer';
+import { extractHeadings } from './wikiHeadings';
 
 const { getMediaBlobMock } = vi.hoisted(() => ({ getMediaBlobMock: vi.fn() }));
 
@@ -90,5 +91,24 @@ describe('WikiContentRenderer', () => {
 
     unmount();
     expect(revokeObjectUrl).toHaveBeenCalledWith(objectUrl);
+  });
+
+  it('assigns stable unique heading ids shared with the table of contents', () => {
+    const content = '## Что это?\n\n## Что это?\n\n## 配置\n\n## 配置';
+    const expectedIds = extractHeadings(content).map(({ id }) => id);
+    const { container } = render(<WikiContentRenderer content={content} />);
+
+    expect(expectedIds).toEqual(['что-это', 'что-это-2', '配置', '配置-2']);
+    expect(
+      Array.from(container.querySelectorAll('h2')).map((heading) => heading.id),
+    ).toEqual(expectedIds);
+  });
+
+  it('ignores markdown-looking headings inside fenced code blocks', () => {
+    const content = '```md\n## Not a heading\n```\n\nActual heading\n---';
+
+    expect(extractHeadings(content)).toEqual([
+      expect.objectContaining({ id: 'actual-heading', level: 2, sourceLine: 5 }),
+    ]);
   });
 });

@@ -4,7 +4,6 @@
  */
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { createPortal } from 'react-dom';
 import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -55,6 +54,7 @@ import {
 import { toast } from '../components/Toast';
 import { isPluginEmbed, requestSliceParse, subscribeToPluginSliceParse } from '../utils/pluginBridge';
 import { ConfirmDeleteModal } from '../components/ConfirmDeleteModal';
+import { ModalOverlay } from '../components/ModalOverlay';
 import { useAuth } from '../contexts/AuthContext';
 import { useHeaderVisible } from '../hooks/useHeaderVisible';
 import { USER_PREFERENCES_QUERY_KEY } from '../hooks/useUserCurrency';
@@ -6220,20 +6220,16 @@ const QuoteModal: React.FC<QuoteModalProps> = ({
     ? quoteItems.reduce((sum, qi) => sum + qi.lineItem.totalPrice, 0)
     : result?.cost_total ?? 0;
 
-  return createPortal(
-    <div
-      className={`fixed inset-0 z-50 overflow-y-auto bg-slate-950/75 backdrop-blur-md ${isHeaderVisible ? 'pt-[88px]' : ''}`}
-      onClick={(event) => {
-        if (event.target === event.currentTarget) {
-          onClose();
-        }
-      }}
+  return (
+    <ModalOverlay
+      onClose={onClose}
+      className={`!bg-slate-950/75 !backdrop-blur-md ${isHeaderVisible ? 'pt-[88px]' : ''}`}
+      contentClassName="flex min-h-full items-center justify-center p-4 md:p-6"
     >
-      <div className="flex min-h-full items-center justify-center p-4 md:p-6">
-        <div
-          className="w-full max-w-4xl overflow-hidden rounded-[2rem] border border-white/10 bg-[linear-gradient(180deg,rgba(15,23,42,0.95),rgba(15,23,42,0.9))] shadow-[0_40px_120px_-60px_rgba(15,23,42,1)]"
-          onClick={(event) => event.stopPropagation()}
-        >
+      <div
+        className="w-full max-w-4xl overflow-hidden rounded-[2rem] border border-white/10 bg-[linear-gradient(180deg,rgba(15,23,42,0.95),rgba(15,23,42,0.9))] shadow-[0_40px_120px_-60px_rgba(15,23,42,1)]"
+        onClick={(event) => event.stopPropagation()}
+      >
           <div className="flex items-center justify-between gap-4 border-b border-white/10 px-6 py-5 md:px-7">
             <div>
               <div className="inline-flex items-center gap-2 rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-200">
@@ -6528,10 +6524,8 @@ const QuoteModal: React.FC<QuoteModalProps> = ({
               </div>
             </div>
           </div>
-        </div>
       </div>
-    </div>,
-    document.body,
+    </ModalOverlay>
   );
 };
 

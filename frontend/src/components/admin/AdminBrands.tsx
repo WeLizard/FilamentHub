@@ -330,12 +330,12 @@ export function AdminBrands() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
           <h2 className="text-2xl font-bold text-white mb-2">{t('adminBrands.title')}</h2>
           <p className="text-gray-400">{t('adminBrands.total')}: {total}</p>
         </div>
-        <div className="flex flex-wrap justify-end gap-2">
+        <div className="flex flex-wrap gap-2 sm:justify-end">
           <button
             type="button"
             onClick={() => setShowInviteHistory(true)}
@@ -356,7 +356,7 @@ export function AdminBrands() {
       {/* Фильтры и поиск */}
       <div className="flex flex-col sm:flex-row gap-4">
         {/* Фильтры */}
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           {(['all', 'verified', 'unverified'] as FilterType[]).map((f) => (
             <button
               key={f}
@@ -400,9 +400,9 @@ export function AdminBrands() {
               key={brand.id}
               className="bg-white/5 rounded-xl p-4 border border-white/10 hover:border-white/20 transition-all"
             >
-              <div className="flex items-start justify-between">
-                <div className="flex-1">
-                  <div className="flex items-center space-x-3 mb-2">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                <div className="min-w-0 flex-1">
+                  <div className="mb-2 flex flex-wrap items-center gap-3">
                     <Building2 className="w-5 h-5 text-purple-400" />
                     <h3 className="text-lg font-semibold text-white">{brand.name}</h3>
                     {brand.verified ? (
@@ -432,7 +432,7 @@ export function AdminBrands() {
                       href={externalUrl(brand.website)!}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-sm text-purple-400 hover:text-purple-300 underline"
+                      className="break-all text-sm text-purple-400 underline hover:text-purple-300"
                     >
                       {brand.website}
                     </a>
@@ -441,7 +441,7 @@ export function AdminBrands() {
                     {t('adminBrands.created')}: {formatDateTime(brand.created_at)}
                   </p>
                 </div>
-                <div className="flex flex-wrap items-center justify-end gap-2">
+                <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
                   <button
                     onClick={() => setRightsBrand(brand)}
                     className="flex items-center space-x-2 rounded-lg border border-purple-400/30 bg-purple-500/10 px-4 py-2 text-purple-200 transition-all hover:bg-purple-500/20"

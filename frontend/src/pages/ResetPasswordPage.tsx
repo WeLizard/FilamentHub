@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { ResetPasswordModal } from '../components/ResetPasswordModal';
 import { useTranslation } from 'react-i18next';
+import { PageBackground } from '../components/PageBackground';
 
 export function ResetPasswordPage() {
   const { t } = useTranslation();
@@ -23,22 +24,22 @@ export function ResetPasswordPage() {
 
   if (!token) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center">
+      <PageBackground className="flex items-center justify-center">
         <div className="text-center">
           <div className="text-white text-xl">{t('resetPasswordPage.loading')}</div>
         </div>
-      </div>
+      </PageBackground>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center p-4">
+    <PageBackground className="flex items-center justify-center p-4">
       <ResetPasswordModal
         isOpen={true}
         onClose={() => navigate('/')}
         token={token}
       />
-    </div>
+    </PageBackground>
   );
 }
 

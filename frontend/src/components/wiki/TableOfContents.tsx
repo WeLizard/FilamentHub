@@ -2,12 +2,10 @@
 
 import { useCallback } from 'react';
 import { List, ChevronRight } from 'lucide-react';
+import type { TocItem } from './wikiHeadings';
 
-export interface TocItem {
-  id: string;
-  text: string;
-  level: number;
-}
+export { extractHeadings, generateHeadingId } from './wikiHeadings';
+export type { TocItem } from './wikiHeadings';
 
 interface TableOfContentsProps {
   headings: TocItem[];
@@ -15,46 +13,6 @@ interface TableOfContentsProps {
   progress: number;
   onHeadingSelect: (id: string) => void;
   className?: string;
-}
-
-/**
- * Извлекает заголовки из markdown контента
- */
-export function extractHeadings(content: string): TocItem[] {
-  const headings: TocItem[] = [];
-  const lines = content.split('\n');
-
-  for (const line of lines) {
-    // Проверяем заголовки markdown (## Heading)
-    const match = line.match(/^(#{1,3})\s+(.+)$/);
-    if (match) {
-      const level = match[1].length;
-      const text = match[2].trim();
-      // Генерируем ID из текста (slug)
-      const id = text
-        .toLowerCase()
-        .replace(/[^\w\sа-яё-]/gi, '')
-        .replace(/\s+/g, '-')
-        .replace(/-+/g, '-')
-        .trim();
-
-      headings.push({ id, text, level });
-    }
-  }
-
-  return headings;
-}
-
-/**
- * Генерирует ID для заголовка (используется в ReactMarkdown)
- */
-export function generateHeadingId(text: string): string {
-  return text
-    .toLowerCase()
-    .replace(/[^\w\sа-яё-]/gi, '')
-    .replace(/\s+/g, '-')
-    .replace(/-+/g, '-')
-    .trim();
 }
 
 export function TableOfContents({

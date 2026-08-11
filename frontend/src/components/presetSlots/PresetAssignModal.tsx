@@ -10,6 +10,7 @@ import { translateApiError } from '../../utils/translateApiError';
 import { getSpoolCurrentLocation, getSpoolLastLocation } from '../../utils/spoolLocation';
 import { ModalOverlay } from '../ModalOverlay';
 import { isUnidentifiedHHFilament, markHHGateEmptyCommand } from '../../utils/hhGateState';
+import { useDebounce } from '../../hooks/useDebounce';
 
 interface PresetAssignModalProps {
   isOpen: boolean;
@@ -44,7 +45,7 @@ export function PresetAssignModal({
   const queryClient = useQueryClient();
 
   const [search, setSearch] = useState('');
-  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const debouncedSearch = useDebounce(search, 300);
   const [selectedPresetId, setSelectedPresetId] = useState<number | null>(null);
   const [selectedSpoolId, setSelectedSpoolId] = useState<number | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -62,7 +63,6 @@ export function PresetAssignModal({
       setSelectedPresetId(gate?.preset_id ?? null);
       setSelectedSpoolId(gate?.spool_id ?? null);
       setSearch('');
-      setDebouncedSearch('');
       // Filament-first: start on the spool tab so the preset choice can be
       // narrowed to the loaded filament.
       setActiveTab('spool');
@@ -75,12 +75,6 @@ export function PresetAssignModal({
   useEffect(() => {
     if (isOpen) setTimeout(() => searchRef.current?.focus(), 80);
   }, [isOpen]);
-
-  // Debounce search
-  useEffect(() => {
-    const timer = setTimeout(() => setDebouncedSearch(search), 300);
-    return () => clearTimeout(timer);
-  }, [search]);
 
   // Filament of the selected spool scopes the preset list. Within that scope
   // the default is the user's own library for the filament (saved + created);

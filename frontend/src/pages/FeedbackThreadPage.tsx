@@ -40,6 +40,10 @@ export function FeedbackThreadPage() {
     queryKey: ['feedback-thread', parsedFeedbackId],
     queryFn: () => feedbackAPI.get(parsedFeedbackId),
     enabled: Number.isInteger(parsedFeedbackId) && parsedFeedbackId > 0,
+    // A missing or inaccessible thread is a stable, user-facing state. Retrying
+    // it only leaves the route looking blank behind a spinner before the same
+    // not-found view can be shown.
+    retry: false,
   });
 
   const replyMutation = useMutation({

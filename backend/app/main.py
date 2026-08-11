@@ -144,16 +144,19 @@ ensure_upload_dir_compatibility()
 
 
 class PublicStaticFiles(StaticFiles):
-    """Uploads mount minus verification proof documents.
+    """Uploads mount minus assets that require an authorization decision.
 
     Proof files are served only via the authed endpoints
     /brand-requests/{id}/proof/{file} and /printer-requests/{id}/proof/{file}.
+    Managed Wiki media is served via /api/v1/wiki/media/{public_id}.webp so staged
+    assets cannot bypass the publication and ownership checks.
     """
 
     _protected_prefixes = (
         "brand_requests/",
         "printer_requests/",
         "database_dumps/",
+        "wiki_media/",
     )
     _immutable_prefixes = (
         "avatars/",

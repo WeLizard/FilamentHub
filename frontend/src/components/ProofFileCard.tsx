@@ -59,7 +59,7 @@ export function ProofFileCard({ filePath, fileName, imageErrorText }: ProofFileC
               />
             </a>
           ) : (
-            <div className="h-32 bg-white/5 rounded-lg border border-white/20 animate-pulse" />
+            <div className="h-32 bg-white/5 rounded-lg border border-white/20" />
           )}
         </div>
       )}

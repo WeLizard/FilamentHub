@@ -239,7 +239,7 @@ export function UiKitPage() {
         </div>
       </div>
 
-      <div className="mt-8 grid gap-8 xl:grid-cols-[minmax(0,1.25fr)_minmax(340px,0.75fr)]">
+      <div className="mt-8 grid min-w-0 grid-cols-[minmax(0,1fr)] gap-8 xl:grid-cols-[minmax(0,1.25fr)_minmax(340px,0.75fr)]">
         <section className="rounded-3xl border border-white/10 bg-white/[0.035] p-5 sm:p-6">
           <SectionTitle
             eyebrow="01 · Scroll behavior"

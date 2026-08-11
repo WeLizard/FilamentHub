@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Sparkles, Loader2 } from 'lucide-react';
-import api from '../../api/client';
+import { adminAPI } from '../../api/client';
 import { translateApiError } from '../../utils/translateApiError';
 
 export function AdminSubscriptions() {
@@ -20,10 +20,10 @@ export function AdminSubscriptions() {
 
   const load = async () => {
     try {
-      const response = await api.get('/admin/calculator-settings');
-      setPaywallEnforced(Boolean(response.data.paywall_enforced));
-      setTrialDays(response.data.trial_days ?? null);
-      setCounts(response.data.counts ?? null);
+      const settings = await adminAPI.getCalculatorSettings();
+      setPaywallEnforced(Boolean(settings.paywall_enforced));
+      setTrialDays(settings.trial_days ?? null);
+      setCounts(settings.counts ?? null);
     } catch (err) {
       console.error('Failed to load calculator settings:', err);
     }
@@ -33,12 +33,9 @@ export function AdminSubscriptions() {
     try {
       setUpdating(true);
       setError(null);
-      const response = await api.post('/admin/calculator-settings', {
-        paywall_enforced: enforced,
-        trial_days: days,
-      });
-      setPaywallEnforced(Boolean(response.data.paywall_enforced));
-      setTrialDays(response.data.trial_days ?? null);
+      const settings = await adminAPI.updateCalculatorSettings(enforced, days);
+      setPaywallEnforced(Boolean(settings.paywall_enforced));
+      setTrialDays(settings.trial_days ?? null);
       await load();
     } catch (err: any) {
       setError(translateApiError(t, err.response?.data?.detail, t('adminMaintenance.updateError')));

@@ -1004,7 +1004,7 @@ export const FilamentDetailPage: React.FC = () => {
               >
                 {/* Три группы равной доли: стрелки остаются посередине, как бы
                     ни назывался пресет, и не переезжают при листании. */}
-                <div className="flex items-center gap-3 mb-4">
+                <div className="mb-4 flex flex-wrap items-center gap-3">
                   <div className="flex items-center gap-2 flex-1 min-w-0">
                     <h3 className="text-xl font-bold text-white flex items-center">
                       <Settings className="w-5 h-5 mr-2" />
@@ -1053,7 +1053,7 @@ export const FilamentDetailPage: React.FC = () => {
                       </div>
                   )}
 
-                  <div className="flex flex-1 items-center justify-end gap-3">
+                  <div className="flex w-full min-w-0 flex-wrap items-center justify-start gap-3 sm:w-auto sm:flex-1 sm:flex-nowrap sm:justify-end">
                     {primaryPreset.printers && primaryPreset.printers.length > 0 && (
                       <div className="flex items-center gap-1.5 flex-wrap">
                         {primaryPreset.printers.map((printer) => (

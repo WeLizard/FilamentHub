@@ -8,6 +8,7 @@ import { Shield, FileText, Building2, Users, BarChart3, CheckCircle, Home, Packa
 import { Printer3DIcon } from '../components/icons/Printer3DIcon';
 import { useAuth } from '../contexts/AuthContext';
 import { adminAPI } from '../api/client';
+import { PageBackground } from '../components/PageBackground';
 
 const AdminBrandRequests = lazy(() => import('../components/admin/AdminBrandRequests').then((module) => ({ default: module.AdminBrandRequests })));
 const AdminBrands = lazy(() => import('../components/admin/AdminBrands').then((module) => ({ default: module.AdminBrands })));
@@ -61,13 +62,13 @@ export function AdminPanel() {
 
   if (!user || user.role !== 'admin') {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-purple-900 via-purple-800 to-indigo-900 flex items-center justify-center p-4">
+      <PageBackground className="flex items-center justify-center p-4">
         <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-8 border border-white/20 text-center max-w-md">
           <Shield className="w-16 h-16 text-red-400 mx-auto mb-4" />
           <h1 className="text-2xl font-bold text-white mb-2">{t('adminPanel.accessDenied')}</h1>
           <p className="text-gray-300">{t('adminPanel.accessDeniedMessage')}</p>
         </div>
-      </div>
+      </PageBackground>
     );
   }
 
@@ -89,7 +90,7 @@ export function AdminPanel() {
   ];
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-900 via-purple-800 to-indigo-900 py-4 md:py-8 px-2 md:px-4">
+    <PageBackground className="py-4 md:py-8 px-2 md:px-4">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="mb-4 md:mb-8">
@@ -178,6 +179,6 @@ export function AdminPanel() {
           </Suspense>
         </div>
       </div>
-    </div>
+    </PageBackground>
   );
 }

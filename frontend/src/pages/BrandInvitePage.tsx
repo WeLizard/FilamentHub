@@ -7,6 +7,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { AuthModal } from '../components/AuthModal';
 import { translateApiError } from '../utils/translateApiError';
 import type { BrandInvitePublic } from '../types/api';
+import { PageBackground } from '../components/PageBackground';
 
 export function BrandInvitePage() {
   const { token = '' } = useParams();
@@ -69,7 +70,7 @@ export function BrandInvitePage() {
   ];
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 flex items-center justify-center p-4">
+    <PageBackground className="flex items-center justify-center p-4">
       <div className="w-full max-w-lg bg-white/10 backdrop-blur-sm rounded-2xl border border-white/20 shadow-xl p-8">
         <img src="/logo.svg" alt="FilamentHub" className="w-14 h-14 object-contain mx-auto mb-4" />
 
@@ -175,6 +176,6 @@ export function BrandInvitePage() {
         )}
       </div>
       <AuthModal isOpen={authOpen} onClose={() => setAuthOpen(false)} initialMode="register" />
-    </div>
+    </PageBackground>
   );
 }
