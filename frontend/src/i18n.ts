@@ -1,22 +1,32 @@
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
 import LanguageDetector from 'i18next-browser-languagedetector';
-
-// Import translations
-import translationEN from './locales/en/translation.json';
-import translationRU from './locales/ru/translation.json';
-import translationZH from './locales/zh/translation.json';
 import { getPathLocale } from './utils/siteLocale';
 
-const resources = {
-  en: {
-    translation: translationEN,
-  },
-  ru: {
-    translation: translationRU,
-  },
-  zh: {
-    translation: translationZH,
+type SupportedLocale = 'en' | 'ru' | 'zh';
+
+const localeLoaders: Record<SupportedLocale, () => Promise<{ default: Record<string, unknown> }>> = {
+  en: () => import('./locales/en/translation.json'),
+  ru: () => import('./locales/ru/translation.json'),
+  zh: () => import('./locales/zh/translation.json'),
+};
+
+const normalizeLocale = (language: string): SupportedLocale => {
+  const base = language.toLowerCase().split('-')[0];
+  return base === 'ru' || base === 'zh' ? base : 'en';
+};
+
+const translationBackend = {
+  type: 'backend' as const,
+  init: () => undefined,
+  read: (
+    language: string,
+    _namespace: string,
+    callback: (error: Error | null, resources?: Record<string, unknown>) => void,
+  ) => {
+    localeLoaders[normalizeLocale(language)]()
+      .then((module) => callback(null, module.default))
+      .catch((error: unknown) => callback(error instanceof Error ? error : new Error(String(error))));
   },
 };
 
@@ -26,11 +36,11 @@ languageDetector.addDetector({
   lookup: () => getPathLocale(window.location.pathname) ?? undefined,
 });
 
-i18n
+export const i18nReady = i18n
   .use(languageDetector)
+  .use(translationBackend)
   .use(initReactI18next)
   .init({
-    resources,
     supportedLngs: ['en', 'ru', 'zh'],
     fallbackLng: 'en',
     nonExplicitSupportedLngs: true,
@@ -60,7 +70,7 @@ const syncHtmlLang = (lng: string) => {
   const base = lng.split('-')[0];
   document.documentElement.lang = base === 'ru' || base === 'zh' ? base : 'en';
 };
-syncHtmlLang(i18n.language || 'en');
 i18n.on('languageChanged', syncHtmlLang);
+void i18nReady.then(() => syncHtmlLang(i18n.language || 'en'));
 
 export default i18n;

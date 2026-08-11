@@ -1,57 +1,36 @@
 /** Страница категории Wiki - список статей в категории */
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams, useNavigate } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { BookOpen, ArrowLeft, Eye, Clock, User, Loader2, AlertCircle } from 'lucide-react';
 import { wikiAPI } from '../api/client';
 import { SEOHead } from '../components/SEOHead';
-import type { WikiCategory, WikiArticleSummary, WikiLanguage } from '../types/api';
-import * as LucideIcons from 'lucide-react';
+import { WikiCategoryIcon } from '../components/wiki/WikiCategoryIcon';
+import type { WikiLanguage } from '../types/api';
 
 export function WikiCategoryPage() {
   const { t, i18n } = useTranslation();
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
 
-  const [category, setCategory] = useState<WikiCategory | null>(null);
-  const [articles, setArticles] = useState<WikiArticleSummary[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
   const languageCode = i18n.resolvedLanguage?.split('-')[0];
   const currentLanguage: WikiLanguage = languageCode === 'ru' || languageCode === 'zh' ? languageCode : 'en';
 
-  useEffect(() => {
-    loadCategoryAndArticles();
-  }, [slug, currentPage, currentLanguage]);
+  const categoryQuery = useQuery({
+    queryKey: ['wiki-category', slug, currentLanguage, currentPage],
+    enabled: Boolean(slug),
+    queryFn: async () => {
+      if (!slug) return null;
+      let [categoriesData, articlesData] = await Promise.all([
+        wikiAPI.listCategories({ page: 1, page_size: 100, space: 'knowledge', language: currentLanguage }),
+        wikiAPI.listArticles({ category_slug: slug, published_only: true, space: 'knowledge', language: currentLanguage, page: currentPage, page_size: 12 }),
+      ]);
+      let foundCategory = categoriesData.items.find((category) => category.slug === slug) ?? null;
+      if (!foundCategory) return null;
 
-  const loadCategoryAndArticles = async () => {
-    if (!slug) return;
-
-    try {
-      setIsLoading(true);
-      setError(null);
-
-      // Загружаем категорию
-      let categoriesData = await wikiAPI.listCategories({ page: 1, page_size: 100, space: 'knowledge', language: currentLanguage });
-      let foundCategory = categoriesData.items.find((cat: WikiCategory) => cat.slug === slug);
-
-      if (!foundCategory) {
-        setError(t('wikiCategoryPage.notFound'));
-        return;
-      }
-
-      // Загружаем статьи категории
-      let articlesData = await wikiAPI.listArticles({
-        category_slug: foundCategory.slug,
-        published_only: true,
-        space: 'knowledge',
-        language: currentLanguage,
-        page: currentPage,
-        page_size: 12,
-      });
       if (currentLanguage !== 'ru' && articlesData.total === 0) {
         [categoriesData, articlesData] = await Promise.all([
           wikiAPI.listCategories({ page: 1, page_size: 100, space: 'knowledge', language: 'ru' }),
@@ -64,28 +43,18 @@ export function WikiCategoryPage() {
             page_size: 12,
           }),
         ]);
-        foundCategory = categoriesData.items.find((cat: WikiCategory) => cat.slug === slug) || foundCategory;
+        foundCategory = categoriesData.items.find((category) => category.slug === slug) || foundCategory;
       }
+      return { category: foundCategory, articles: articlesData.items, totalPages: articlesData.total_pages };
+    },
+    staleTime: 60_000,
+  });
 
-      setCategory(foundCategory);
+  const category = categoryQuery.data?.category ?? null;
+  const articles = categoryQuery.data?.articles ?? [];
+  const totalPages = categoryQuery.data?.totalPages ?? 1;
 
-      setArticles(articlesData.items);
-      setTotalPages(articlesData.total_pages);
-    } catch (err: any) {
-      console.error('Failed to load category:', err);
-      setError(t('wikiCategoryPage.errorLoadFailed'));
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const getIconComponent = (iconName: string | null) => {
-    if (!iconName) return BookOpen;
-    const IconComponent = (LucideIcons as unknown as Record<string, LucideIcons.LucideIcon>)[iconName];
-    return IconComponent || BookOpen;
-  };
-
-  if (isLoading) {
+  if (categoryQuery.isLoading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
         <Loader2 className="w-8 h-8 text-purple-500 animate-spin" />
@@ -93,11 +62,13 @@ export function WikiCategoryPage() {
     );
   }
 
-  if (error || !category) {
+  if (categoryQuery.isError || !category) {
     return (
       <div className="max-w-4xl mx-auto px-4 md:px-6 py-12 text-center">
         <AlertCircle className="w-16 h-16 text-red-400 mx-auto mb-4" />
-        <h2 className="text-2xl font-bold text-white mb-4">{error || t('wikiCategoryPage.notFound')}</h2>
+        <h2 className="text-2xl font-bold text-white mb-4">
+          {categoryQuery.isError ? t('wikiCategoryPage.errorLoadFailed') : t('wikiCategoryPage.notFound')}
+        </h2>
         <button
           onClick={() => navigate('/wiki')}
           className="px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors"
@@ -107,8 +78,6 @@ export function WikiCategoryPage() {
       </div>
     );
   }
-
-  const IconComponent = getIconComponent(category.icon);
 
   return (
     <>
@@ -135,7 +104,7 @@ export function WikiCategoryPage() {
       <div className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-2xl p-6 md:p-8 mb-8">
         <div className="flex flex-col md:flex-row items-start md:items-center gap-4 md:gap-6">
           <div className="w-16 h-16 md:w-20 md:h-20 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-xl md:rounded-2xl flex items-center justify-center shadow-lg shadow-blue-500/25 shrink-0">
-            <IconComponent className="w-8 h-8 md:w-10 md:h-10 text-white" />
+            <WikiCategoryIcon name={category.icon} className="w-8 h-8 md:w-10 md:h-10 text-white" />
           </div>
           <div className="flex-1">
             <h1 className="text-2xl md:text-4xl font-bold text-white mb-2">{category.name}</h1>

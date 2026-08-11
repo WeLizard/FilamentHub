@@ -3,47 +3,25 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { List, X, ChevronRight } from 'lucide-react';
-import { TocItem, extractHeadings } from './TableOfContents';
+import type { TocItem } from './TableOfContents';
 
 interface MobileTocDrawerProps {
-  content: string;
+  headings: TocItem[];
+  activeId: string;
+  progress: number;
+  onHeadingSelect: (id: string) => void;
   articleTitle: string;
 }
 
-export function MobileTocDrawer({ content, articleTitle }: MobileTocDrawerProps) {
+export function MobileTocDrawer({
+  headings,
+  activeId,
+  progress,
+  onHeadingSelect,
+  articleTitle,
+}: MobileTocDrawerProps) {
   const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
-  const [headings, setHeadings] = useState<TocItem[]>([]);
-  const [activeId, setActiveId] = useState<string>('');
-
-  // Извлекаем заголовки
-  useEffect(() => {
-    const extracted = extractHeadings(content);
-    setHeadings(extracted);
-    if (extracted.length > 0) {
-      setActiveId(extracted[0].id);
-    }
-  }, [content]);
-
-  // Отслеживаем скролл
-  useEffect(() => {
-    const handleScroll = () => {
-      const scrollPosition = window.scrollY + 120;
-
-      for (let i = headings.length - 1; i >= 0; i--) {
-        const heading = headings[i];
-        const element = document.getElementById(heading.id);
-
-        if (element && element.offsetTop <= scrollPosition) {
-          setActiveId(heading.id);
-          break;
-        }
-      }
-    };
-
-    window.addEventListener('scroll', handleScroll, { passive: true });
-    return () => window.removeEventListener('scroll', handleScroll);
-  }, [headings]);
 
   // Блокируем скролл body когда шторка открыта
   useEffect(() => {
@@ -86,10 +64,10 @@ export function MobileTocDrawer({ content, articleTitle }: MobileTocDrawerProps)
           behavior: 'smooth',
         });
 
-        setActiveId(id);
+        onHeadingSelect(id);
       }
     }, 150);
-  }, []);
+  }, [onHeadingSelect]);
 
   if (headings.length === 0) {
     return null;
@@ -191,44 +169,21 @@ export function MobileTocDrawer({ content, articleTitle }: MobileTocDrawerProps)
 
         {/* Footer with progress */}
         <div className="p-4 border-t border-white/10">
-          <MobileReadingProgress />
+          <div>
+            <div className="flex items-center justify-between text-xs text-gray-500 mb-2">
+              <span>{t('mobileToc.readingProgress')}</span>
+              <span className="text-purple-400 font-medium">{Math.round(progress)}%</span>
+            </div>
+            <div className="h-2 bg-white/10 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-gradient-to-r from-purple-500 to-pink-500 rounded-full transition-all duration-150"
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+          </div>
         </div>
       </div>
     </>
-  );
-}
-
-function MobileReadingProgress() {
-  const { t } = useTranslation();
-  const [progress, setProgress] = useState(0);
-
-  useEffect(() => {
-    const updateProgress = () => {
-      const scrollTop = window.scrollY;
-      const docHeight = document.documentElement.scrollHeight - window.innerHeight;
-      const scrollPercent = docHeight > 0 ? (scrollTop / docHeight) * 100 : 0;
-      setProgress(Math.min(100, Math.max(0, scrollPercent)));
-    };
-
-    window.addEventListener('scroll', updateProgress, { passive: true });
-    updateProgress();
-
-    return () => window.removeEventListener('scroll', updateProgress);
-  }, []);
-
-  return (
-    <div>
-      <div className="flex items-center justify-between text-xs text-gray-500 mb-2">
-        <span>{t('mobileToc.readingProgress')}</span>
-        <span className="text-purple-400 font-medium">{Math.round(progress)}%</span>
-      </div>
-      <div className="h-2 bg-white/10 rounded-full overflow-hidden">
-        <div
-          className="h-full bg-gradient-to-r from-purple-500 to-pink-500 rounded-full transition-all duration-150"
-          style={{ width: `${progress}%` }}
-        />
-      </div>
-    </div>
   );
 }
 

@@ -1,21 +1,23 @@
 /** Базовый Layout с Header и навигацией */
 
-import { ReactNode, useState, useEffect, useRef } from 'react';
+import { lazy, ReactNode, Suspense, useState, useEffect, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Package, User, LogOut, Shield, MessageCircle, Download, Menu, X, BookOpen, ScanLine } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { QrScannerModal } from './QrScannerModal';
 import { authAPI, qrAPI } from '../api/client';
 import { ownQrShortCode } from '../utils/qrScanner';
-import { AuthModal } from './AuthModal';
-import { Notifications } from './Notifications';
-import { FeedbackModal } from './FeedbackModal';
 import { LanguageSwitcher } from './LanguageSwitcher';
 import { isPluginEmbed, reportAuthStateToPlugin } from '../utils/pluginBridge';
 import { EmbedDebugOverlay } from './EmbedDebugOverlay';
 import { useTranslation } from 'react-i18next';
 import { filamentPublicPath } from '../utils/catalogUrls';
+import { AmbientBackground } from './AmbientBackground';
+
+const AuthModal = lazy(() => import('./AuthModal').then((module) => ({ default: module.AuthModal })));
+const FeedbackModal = lazy(() => import('./FeedbackModal').then((module) => ({ default: module.FeedbackModal })));
+const QrScannerModal = lazy(() => import('./QrScannerModal').then((module) => ({ default: module.QrScannerModal })));
+const Notifications = lazy(() => import('./Notifications').then((module) => ({ default: module.Notifications })));
 
 interface LayoutProps {
   children: ReactNode;
@@ -149,10 +151,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
   return (
     <div className="app-shell flex flex-col bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
       {/* Ambient Background */}
-      <div aria-hidden="true" className="fixed inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute -top-40 -right-40 w-80 h-80 bg-purple-500/10 rounded-full blur-3xl"></div>
-        <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-blue-500/10 rounded-full blur-3xl"></div>
-      </div>
+      <AmbientBackground />
 
       {/* Header - скрываем если открыто через OrcaSlicer или в iframe плагина */}
       {!hideChrome && (
@@ -218,7 +217,11 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
                   <ScanLine className="w-5 h-5" />
                 </button>
               )}
-              {user && <Notifications />}
+              {user && (
+                <Suspense fallback={null}>
+                  <Notifications />
+                </Suspense>
+              )}
 
               <Link
                 to="/"
@@ -315,7 +318,11 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
                   <ScanLine className="w-5 h-5" />
                 </button>
               )}
-              {user && <Notifications />}
+              {user && (
+                <Suspense fallback={null}>
+                  <Notifications />
+                </Suspense>
+              )}
               <button
                 onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
                 className="p-2 text-gray-300 hover:text-white hover:bg-white/10 rounded-lg transition-all"
@@ -467,30 +474,42 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
       )}
 
       {/* Auth Modal */}
-      <AuthModal
-        isOpen={isAuthModalOpen}
-        onClose={() => {
-          setIsAuthModalOpen(false);
-          hasOpenedLoginModalRef.current = false; // Сбрасываем флаг при закрытии
-          if (!user) {
-            pendingReturnUrlRef.current = null;
-          }
-        }}
-        initialMode="login"
-      />
+      {isAuthModalOpen && (
+        <Suspense fallback={null}>
+          <AuthModal
+            isOpen
+            onClose={() => {
+              setIsAuthModalOpen(false);
+              hasOpenedLoginModalRef.current = false; // Сбрасываем флаг при закрытии
+              if (!user) {
+                pendingReturnUrlRef.current = null;
+              }
+            }}
+            initialMode="login"
+          />
+        </Suspense>
+      )}
 
       {/* Feedback Modal */}
-      <FeedbackModal
-        isOpen={isFeedbackModalOpen}
-        onClose={() => setIsFeedbackModalOpen(false)}
-      />
+      {isFeedbackModalOpen && (
+        <Suspense fallback={null}>
+          <FeedbackModal
+            isOpen
+            onClose={() => setIsFeedbackModalOpen(false)}
+          />
+        </Suspense>
+      )}
 
-      <QrScannerModal
-        isOpen={isScannerOpen}
-        onClose={() => setIsScannerOpen(false)}
-        onDetected={handleScanDetected}
-        busy={isScanResolving}
-      />
+      {isScannerOpen && (
+        <Suspense fallback={null}>
+          <QrScannerModal
+            isOpen
+            onClose={() => setIsScannerOpen(false)}
+            onDetected={handleScanDetected}
+            busy={isScanResolving}
+          />
+        </Suspense>
+      )}
 
       {/* Экранное логирование ошибок в iframe плагина (DevTools там недоступен) */}
       {isPluginEmbed() && <EmbedDebugOverlay />}

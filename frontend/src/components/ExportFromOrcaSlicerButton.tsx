@@ -1,8 +1,9 @@
 /** Кнопка экспорта filament presets из OrcaSlicer в FilamentHub */
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Upload, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
+import { useOrcaBridgeCapability } from '../hooks/useOrcaBridgeCapability';
 
 interface ExportFromOrcaSlicerButtonProps {
   onExportComplete?: (result: { success: boolean; message?: string }) => void;
@@ -13,24 +14,7 @@ export const ExportFromOrcaSlicerButton: React.FC<ExportFromOrcaSlicerButtonProp
   const [isExporting, setIsExporting] = useState(false);
   const [exportStatus, setExportStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [statusMessage, setStatusMessage] = useState<string>('');
-  const [isInOrcaSlicer, setIsInOrcaSlicer] = useState(false);
-
-  // Проверяем, запущен ли frontend внутри OrcaSlicer
-  useEffect(() => {
-    const checkOrcaSlicer = () => {
-      const inOrca = typeof window !== 'undefined' && (
-        window.filamenthub?.exportFilamentPresets ||
-        window.wx?.postMessage
-      );
-      setIsInOrcaSlicer(Boolean(inOrca));
-    };
-
-    checkOrcaSlicer();
-
-    // Периодически проверяем наличие API (на случай, если оно загружается асинхронно)
-    const interval = setInterval(checkOrcaSlicer, 1000);
-    return () => clearInterval(interval);
-  }, []);
+  const isInOrcaSlicer = useOrcaBridgeCapability('exportFilamentPresets');
 
   // Обработчик экспорта filament presets
   const handleExport = async () => {

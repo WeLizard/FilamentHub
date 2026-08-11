@@ -1,9 +1,10 @@
 /** Кнопка экспорта print profiles из OrcaSlicer в FilamentHub */
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Upload, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { useOrcaBridgeCapability } from '../hooks/useOrcaBridgeCapability';
 
 interface ExportPrintProfilesButtonProps {
   onExportComplete?: (result: { success: boolean; message?: string }) => void;
@@ -15,25 +16,8 @@ export const ExportPrintProfilesButton: React.FC<ExportPrintProfilesButtonProps>
   const [isExporting, setIsExporting] = useState(false);
   const [exportStatus, setExportStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [statusMessage, setStatusMessage] = useState<string>('');
-  const [isInOrcaSlicer, setIsInOrcaSlicer] = useState(false);
+  const isInOrcaSlicer = useOrcaBridgeCapability('exportPrintProfiles');
   const isExportDisabled = user?.allow_print_profiles_export === false;
-
-  // Проверяем, запущен ли frontend внутри OrcaSlicer
-  useEffect(() => {
-    const checkOrcaSlicer = () => {
-      const inOrca = typeof window !== 'undefined' && (
-        window.filamenthub?.exportPrintProfiles ||
-        window.wx?.postMessage
-      );
-      setIsInOrcaSlicer(Boolean(inOrca));
-    };
-
-    checkOrcaSlicer();
-
-    // Периодически проверяем наличие API (на случай, если оно загружается асинхронно)
-    const interval = setInterval(checkOrcaSlicer, 1000);
-    return () => clearInterval(interval);
-  }, []);
 
   // Обработчик экспорта print profiles
   const handleExport = async () => {

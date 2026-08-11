@@ -1,6 +1,6 @@
 import { cleanup, render, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import i18n from '../i18n';
+import i18n, { i18nReady } from '../i18n';
 import { SEOHead } from './SEOHead';
 
 const baseHead = `
@@ -23,6 +23,7 @@ const baseHead = `
 
 describe('SEOHead locale metadata', () => {
   beforeEach(async () => {
+    await i18nReady;
     document.head.innerHTML = baseHead;
     window.history.replaceState({}, '', '/ru/download');
     await i18n.changeLanguage('ru');

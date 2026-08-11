@@ -117,7 +117,9 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
     queryKey: ['notifications', user?.id],
     queryFn: () => notificationsAPI.list({ page: 1, size: 50 }),
     enabled: !!user,
-    refetchInterval: 30000, // Обновляем каждые 30 секунд
+    staleTime: 30_000,
+    refetchInterval: 120_000,
+    refetchOnWindowFocus: true,
   });
 
   const notifications = notificationsData?.items || [];

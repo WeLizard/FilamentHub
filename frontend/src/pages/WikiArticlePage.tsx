@@ -1,6 +1,6 @@
 /** Страница статьи Wiki - полный текст с Markdown */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import type { AxiosError } from 'axios';
 import { useTranslation } from 'react-i18next';
 import { useParams, useNavigate } from 'react-router-dom';
@@ -31,6 +31,7 @@ import { WikiAuthoringModal } from '../components/wiki/WikiAuthoringModal';
 import { WikiContentRenderer } from '../components/wiki/WikiContentRenderer';
 import { WikiGuideJourney } from '../components/wiki/WikiGuideJourney';
 import { withoutLeadingArticleHeading } from '../components/wiki/wikiMarkdown';
+import { useWikiScrollState } from '../components/wiki/useWikiScrollState';
 
 export function WikiArticlePage() {
   const { t, i18n } = useTranslation();
@@ -120,6 +121,12 @@ export function WikiArticlePage() {
   };
 
   const isHelpfulLoading = addHelpfulMutation.isPending || removeHelpfulMutation.isPending;
+  const articleContent = useMemo(
+    () => (article ? withoutLeadingArticleHeading(article.content) : ''),
+    [article],
+  );
+  const headings = useMemo(() => extractHeadings(articleContent), [articleContent]);
+  const { activeId, progress, selectHeading } = useWikiScrollState(headings);
 
   if (isLoading) {
     return (
@@ -143,8 +150,6 @@ export function WikiArticlePage() {
       </div>
     );
   }
-
-  const articleContent = withoutLeadingArticleHeading(article.content);
 
   // JSON-LD structured data для поисковиков
   const jsonLd = article
@@ -391,11 +396,16 @@ export function WikiArticlePage() {
           </div>
 
           {/* Desktop Sidebar TOC */}
-          {extractHeadings(articleContent).length > 0 && (
+          {headings.length > 0 && (
             <aside className="hidden lg:block">
               <div className="sticky top-24">
                 <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl p-4 max-h-[calc(100vh-8rem)] overflow-y-auto scrollbar-thin scrollbar-track-transparent scrollbar-thumb-white/10">
-                  <TableOfContents content={articleContent} />
+                  <TableOfContents
+                    headings={headings}
+                    activeId={activeId}
+                    progress={progress}
+                    onHeadingSelect={selectHeading}
+                  />
                 </div>
               </div>
             </aside>
@@ -422,7 +432,13 @@ export function WikiArticlePage() {
       )}
 
       {/* Mobile TOC Drawer */}
-      <MobileTocDrawer content={articleContent} articleTitle={article.title} />
+      <MobileTocDrawer
+        headings={headings}
+        activeId={activeId}
+        progress={progress}
+        onHeadingSelect={selectHeading}
+        articleTitle={article.title}
+      />
     </>
   );
 }

@@ -1,7 +1,6 @@
 import React, { Children, useEffect, useMemo, useRef, useState } from 'react';
 import type { ExtraProps } from 'react-markdown';
 import ReactMarkdown from 'react-markdown';
-import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import remarkGfm from 'remark-gfm';
 
 import { wikiAPI } from '../../api/client';
@@ -15,8 +14,8 @@ interface WikiContentRendererProps {
   privateMedia?: boolean;
 }
 
-const SyntaxHighlighter = React.lazy(() => import('react-syntax-highlighter').then(
-  ({ Prism }) => ({ default: Prism }),
+const SyntaxHighlighter = React.lazy(() => import('./LightweightSyntaxHighlighter').then(
+  ({ LightweightSyntaxHighlighter }) => ({ default: LightweightSyntaxHighlighter }),
 ));
 
 type MermaidApi = typeof import('mermaid')['default'];
@@ -199,9 +198,7 @@ export function WikiContentRenderer({
         return (
           <React.Suspense fallback={<pre><code>{value}</code></pre>}>
             <SyntaxHighlighter
-              style={vscDarkPlus as Record<string, React.CSSProperties>}
               language={match?.[1] || 'text'}
-              PreTag="div"
             >
               {value}
             </SyntaxHighlighter>

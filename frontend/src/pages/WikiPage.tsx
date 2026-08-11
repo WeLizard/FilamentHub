@@ -1,6 +1,6 @@
 /** Главная страница Wiki - каталог знаний о 3D печати */
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -33,25 +33,17 @@ import { WikiAuthoringModal, WikiPeerReviewModal } from '../components/wiki';
 import { plainWikiSummary } from '../components/wiki/wikiMarkdown';
 import { toast } from '../components/Toast';
 import { useAuth } from '../contexts/AuthContext';
-import type { WikiCategory, WikiArticleSummary, WikiLanguage, WikiRevision } from '../types/api';
-
-// Маппинг названий иконок Lucide на компоненты
-import * as LucideIcons from 'lucide-react';
+import { WikiCategoryIcon } from '../components/wiki/WikiCategoryIcon';
+import type { WikiArticleSummary, WikiLanguage, WikiRevision } from '../types/api';
 
 export function WikiPage() {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { user } = useAuth();
-  const [categories, setCategories] = useState<WikiCategory[]>([]);
-  const [guideArticles, setGuideArticles] = useState<WikiArticleSummary[]>([]);
-  const [popularArticles, setPopularArticles] = useState<WikiArticleSummary[]>([]);
-  const [recentArticles, setRecentArticles] = useState<WikiArticleSummary[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<WikiArticleSummary[] | null>(null);
   const [isSearching, setIsSearching] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [authoringRevision, setAuthoringRevision] = useState<WikiRevision | 'new' | null>(null);
   const [reviewRevision, setReviewRevision] = useState<WikiRevision | null>(null);
   const languageCode = i18n.resolvedLanguage?.split('-')[0];
@@ -68,29 +60,6 @@ export function WikiPage() {
     ru: 'filamenthub-workflow-overview',
     en: 'from-spool-to-print-en',
     zh: 'from-spool-to-print-zh',
-  };
-  const mainGuide = guideArticles.find((article) => article.slug === primaryGuideSlug[currentLanguage]) ?? guideArticles[0];
-  const ruJourneySlugs = new Set(guideJourneySteps.map(({ ruSlug }) => ruSlug));
-  const additionalGuides = guideArticles
-    .filter((article) => article.id !== mainGuide?.id && !ruJourneySlugs.has(article.slug))
-    .slice(0, 3);
-  const visiblePopularArticles = popularArticles.slice(0, 4);
-  const visibleRecentArticles = recentArticles.slice(0, 5);
-
-  const findJourneyGuide = (ruSlug: string) => (
-    currentLanguage === 'ru'
-      ? guideArticles.find((article) => article.slug === ruSlug)
-      : mainGuide
-  );
-
-  const openGuideAtStep = (ruSlug: string, fallbackStep: number) => {
-    const guide = findJourneyGuide(ruSlug);
-    if (currentLanguage === 'ru' && guide) {
-      navigate(`/wiki/articles/${guide.slug}?start=1`);
-      return;
-    }
-    if (!mainGuide) return;
-    navigate(`/wiki/articles/${mainGuide.slug}?step=${fallbackStep}&start=1`);
   };
 
   const { data: ownRevisions } = useQuery({
@@ -116,15 +85,9 @@ export function WikiPage() {
     onError: () => toast.error(t('wikiAuthoring.retryError')),
   });
 
-  useEffect(() => {
-    void loadData();
-  }, [currentLanguage]);
-
-  const loadData = async () => {
-    try {
-      setIsLoading(true);
-      setError(null);
-
+  const wikiDataQuery = useQuery({
+    queryKey: ['wiki-home', currentLanguage],
+    queryFn: async () => {
       let [categoriesData, guidesData, articlesData] = await Promise.all([
         wikiAPI.listCategories({ page: 1, page_size: 50, space: 'knowledge', language: currentLanguage }),
         wikiAPI.listArticles({ page: 1, page_size: 20, published_only: true, space: 'guides', language: currentLanguage }),
@@ -139,25 +102,46 @@ export function WikiPage() {
       if (currentLanguage !== 'ru' && guidesData.total === 0) {
         guidesData = await wikiAPI.listArticles({ page: 1, page_size: 20, published_only: true, space: 'guides', language: 'ru' });
       }
-      setCategories(categoriesData.items);
-      setGuideArticles(guidesData.items);
-      
-      // Сортируем по просмотрам локально
       const sortedByViews = [...articlesData.items].sort((a, b) => b.views - a.views);
-      setPopularArticles(sortedByViews.slice(0, 6));
-
-      // Сортируем по дате создания
       const sortedByDate = [...articlesData.items].sort((a, b) => 
         new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
       );
-      setRecentArticles(sortedByDate.slice(0, 6));
+      return {
+        categories: categoriesData.items,
+        guideArticles: guidesData.items,
+        popularArticles: sortedByViews.slice(0, 6),
+        recentArticles: sortedByDate.slice(0, 6),
+      };
+    },
+    staleTime: 60_000,
+  });
 
-    } catch (err: any) {
-      console.error('Failed to load wiki data:', err);
-      setError(t('wikiPage.errorLoadFailed'));
-    } finally {
-      setIsLoading(false);
+  const categories = wikiDataQuery.data?.categories ?? [];
+  const guideArticles = wikiDataQuery.data?.guideArticles ?? [];
+  const popularArticles = wikiDataQuery.data?.popularArticles ?? [];
+  const recentArticles = wikiDataQuery.data?.recentArticles ?? [];
+  const mainGuide = guideArticles.find((article) => article.slug === primaryGuideSlug[currentLanguage]) ?? guideArticles[0];
+  const ruJourneySlugs = new Set(guideJourneySteps.map(({ ruSlug }) => ruSlug));
+  const additionalGuides = guideArticles
+    .filter((article) => article.id !== mainGuide?.id && !ruJourneySlugs.has(article.slug))
+    .slice(0, 3);
+  const visiblePopularArticles = popularArticles.slice(0, 4);
+  const visibleRecentArticles = recentArticles.slice(0, 5);
+
+  const findJourneyGuide = (ruSlug: string) => (
+    currentLanguage === 'ru'
+      ? guideArticles.find((article) => article.slug === ruSlug)
+      : mainGuide
+  );
+
+  const openGuideAtStep = (ruSlug: string, fallbackStep: number) => {
+    const guide = findJourneyGuide(ruSlug);
+    if (currentLanguage === 'ru' && guide) {
+      navigate(`/wiki/articles/${guide.slug}?start=1`);
+      return;
     }
+    if (!mainGuide) return;
+    navigate(`/wiki/articles/${mainGuide.slug}?step=${fallbackStep}&start=1`);
   };
 
   const handleSearch = async (e: React.FormEvent) => {
@@ -183,15 +167,7 @@ export function WikiPage() {
     setSearchResults(null);
   };
 
-  const getIconComponent = (iconName: string | null) => {
-    if (!iconName) return BookOpen;
-    
-    // Преобразуем имя иконки в PascalCase если нужно
-    const IconComponent = (LucideIcons as unknown as Record<string, LucideIcons.LucideIcon>)[iconName];
-    return IconComponent || BookOpen;
-  };
-
-  if (isLoading) {
+  if (wikiDataQuery.isLoading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
         <Loader2 className="w-8 h-8 text-purple-500 animate-spin" />
@@ -199,12 +175,12 @@ export function WikiPage() {
     );
   }
 
-  if (error) {
+  if (wikiDataQuery.isError) {
     return (
       <div className="text-center py-12">
-        <p className="text-red-400">{error}</p>
+        <p className="text-red-400">{t('wikiPage.errorLoadFailed')}</p>
         <button
-          onClick={loadData}
+          onClick={() => void wikiDataQuery.refetch()}
           className="mt-4 px-6 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors"
         >
           {t('wikiPage.retry')}
@@ -434,9 +410,7 @@ export function WikiPage() {
           </div>
         </div>
         <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-          {categories.map((category) => {
-            const IconComponent = getIconComponent(category.icon);
-            return (
+          {categories.map((category) => (
               <button
                 key={category.id}
                 onClick={() => navigate(`/wiki/${category.slug}`)}
@@ -445,7 +419,7 @@ export function WikiPage() {
                 <span className="absolute inset-y-0 left-0 w-3 border-r border-white/10 bg-black/15 shadow-[3px_0_12px_rgba(0,0,0,0.18)]" />
                 <div className="flex items-start justify-between">
                   <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-cyan-500 shadow-lg shadow-blue-950/30">
-                    <IconComponent className="w-6 h-6 text-white" />
+                    <WikiCategoryIcon name={category.icon} className="w-6 h-6 text-white" />
                   </div>
                   <ChevronRight className="h-5 w-5 text-slate-500 transition group-hover:translate-x-0.5 group-hover:text-cyan-200" />
                 </div>
@@ -455,8 +429,7 @@ export function WikiPage() {
                   {category.articles_count} {t('wikiPage.articles')}
                 </div>
               </button>
-            );
-          })}
+          ))}
         </div>
       </section>
 

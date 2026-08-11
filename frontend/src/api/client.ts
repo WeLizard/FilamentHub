@@ -1380,9 +1380,10 @@ export const printersAPI = {
     manufacturer?: string;
     search?: string;
     ids?: number[];
-  }) => {
+  }, signal?: AbortSignal) => {
     const response = await api.get<ListResponse<Printer>>('/printers/', {
       params,
+      signal,
       // FastAPI reads a repeated query parameter, not the bracketed form axios
       // produces for arrays by default.
       paramsSerializer: { indexes: null },

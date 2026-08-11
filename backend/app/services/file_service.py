@@ -33,6 +33,8 @@ IMAGE_FORMATS_BY_EXTENSION = {
 }
 MAX_AVATAR_SOURCE_PIXELS = 25_000_000
 MAX_BRAND_LOGO_SOURCE_PIXELS = 25_000_000
+MAX_BRAND_LOGO_EDGE = 1024
+MAX_BRAND_LOGO_OUTPUT_BYTES = 512 * 1024
 MAX_WIKI_IMAGE_SOURCE_PIXELS = 25_000_000
 MAX_WIKI_IMAGE_EDGE = 2400
 MAX_WIKI_IMAGE_OUTPUT_BYTES = 2 * 1024 * 1024
@@ -66,9 +68,13 @@ def _load_validated_raster_image(
         # and extension disagree.
         with Image.open(BytesIO(content), formats=[expected_format]) as image:
             if image.format != expected_format:
-                raise_error(status.HTTP_400_BAD_REQUEST, ERR_FILE_CONTENT_MISMATCH, {"ext": file_ext})
+                raise_error(
+                    status.HTTP_400_BAD_REQUEST, ERR_FILE_CONTENT_MISMATCH, {"ext": file_ext}
+                )
             if image.width <= 0 or image.height <= 0:
-                raise_error(status.HTTP_400_BAD_REQUEST, ERR_FILE_CONTENT_MISMATCH, {"ext": file_ext})
+                raise_error(
+                    status.HTTP_400_BAD_REQUEST, ERR_FILE_CONTENT_MISMATCH, {"ext": file_ext}
+                )
             if image.width * image.height > pixel_budget:
                 raise_error(
                     status.HTTP_400_BAD_REQUEST,
@@ -159,14 +165,38 @@ def normalize_brand_logo_upload(content: bytes, file_ext: str) -> tuple[bytes, s
         pixel_budget=MAX_BRAND_LOGO_SOURCE_PIXELS,
         context="Rejected invalid brand logo upload",
     )
-    has_alpha = "A" in image.getbands() or (
-        image.mode == "P" and "transparency" in image.info
-    )
+    has_alpha = "A" in image.getbands() or (image.mode == "P" and "transparency" in image.info)
     converted = image.convert("RGBA" if has_alpha else "RGB")
+    if max(converted.size) > MAX_BRAND_LOGO_EDGE:
+        converted.thumbnail(
+            (MAX_BRAND_LOGO_EDGE, MAX_BRAND_LOGO_EDGE),
+            Image.Resampling.LANCZOS,
+        )
 
-    output = BytesIO()
-    converted.save(output, "WEBP", quality=90, method=6)
-    return output.getvalue(), ".webp"
+    encoded = b""
+    for quality in (88, 82, 76, 70):
+        output = BytesIO()
+        converted.save(
+            output,
+            "WEBP",
+            quality=quality,
+            method=6,
+            exif=b"",
+            xmp=b"",
+            icc_profile=None,
+        )
+        encoded = output.getvalue()
+        if len(encoded) <= MAX_BRAND_LOGO_OUTPUT_BYTES:
+            return encoded, ".webp"
+
+    raise_error(
+        status.HTTP_400_BAD_REQUEST,
+        ERR_FILE_SIZE_EXCEEDED,
+        {
+            "size_mb": f"{len(encoded) / (1024 * 1024):.2f}",
+            "max_mb": f"{MAX_BRAND_LOGO_OUTPUT_BYTES / (1024 * 1024):.1f}",
+        },
+    )
 
 
 def normalize_avatar_upload(content: bytes, file_ext: str, size: int = 256) -> tuple[bytes, str]:
@@ -181,9 +211,7 @@ def normalize_avatar_upload(content: bytes, file_ext: str, size: int = 256) -> t
         pixel_budget=MAX_AVATAR_SOURCE_PIXELS,
         context="Rejected invalid avatar upload",
     )
-    has_alpha = "A" in image.getbands() or (
-        image.mode == "P" and "transparency" in image.info
-    )
+    has_alpha = "A" in image.getbands() or (image.mode == "P" and "transparency" in image.info)
     converted = image.convert("RGBA" if has_alpha else "RGB")
     width, height = converted.size
     side = min(width, height)
@@ -214,9 +242,7 @@ def normalize_wiki_image_upload(
         context="Rejected invalid Wiki image upload",
         reject_animation=True,
     )
-    has_alpha = "A" in image.getbands() or (
-        image.mode == "P" and "transparency" in image.info
-    )
+    has_alpha = "A" in image.getbands() or (image.mode == "P" and "transparency" in image.info)
     normalized = image.convert("RGBA" if has_alpha else "RGB")
     if max(normalized.size) > MAX_WIKI_IMAGE_EDGE:
         normalized.thumbnail(
@@ -258,11 +284,19 @@ def get_allowed_extensions() -> list[str]:
 def validate_file(file: UploadFile) -> None:
     """Валидация загружаемого файла."""
     if not file.filename:
-        raise_error(status.HTTP_400_BAD_REQUEST, ERR_FILE_EXT_NOT_ALLOWED, {"ext": "", "allowed": ", ".join(get_allowed_extensions())})
+        raise_error(
+            status.HTTP_400_BAD_REQUEST,
+            ERR_FILE_EXT_NOT_ALLOWED,
+            {"ext": "", "allowed": ", ".join(get_allowed_extensions())},
+        )
 
     file_ext = Path(file.filename).suffix.lower()
     if file_ext not in get_allowed_extensions():
-        raise_error(status.HTTP_400_BAD_REQUEST, ERR_FILE_EXT_NOT_ALLOWED, {"ext": file_ext, "allowed": ", ".join(get_allowed_extensions())})
+        raise_error(
+            status.HTTP_400_BAD_REQUEST,
+            ERR_FILE_EXT_NOT_ALLOWED,
+            {"ext": file_ext, "allowed": ", ".join(get_allowed_extensions())},
+        )
 
 
 # Magic-byte signatures per allowed extension. A missing key means the extension
@@ -313,7 +347,11 @@ async def save_proof_file(
 
     # Проверяем количество файлов
     if existing_files is not None and len(existing_files) >= settings.MAX_FILES_PER_REQUEST:
-        raise_error(status.HTTP_400_BAD_REQUEST, ERR_MAX_FILES_EXCEEDED, {"max": settings.MAX_FILES_PER_REQUEST})
+        raise_error(
+            status.HTTP_400_BAD_REQUEST,
+            ERR_MAX_FILES_EXCEEDED,
+            {"max": settings.MAX_FILES_PER_REQUEST},
+        )
 
     # Читаем содержимое файла
     file_content = await file.read()
@@ -321,7 +359,11 @@ async def save_proof_file(
 
     # Проверяем размер файла
     if file_size_mb > settings.MAX_UPLOAD_SIZE_MB:
-        raise_error(status.HTTP_400_BAD_REQUEST, ERR_FILE_SIZE_EXCEEDED, {"size_mb": f"{file_size_mb:.2f}", "max_mb": str(settings.MAX_UPLOAD_SIZE_MB)})
+        raise_error(
+            status.HTTP_400_BAD_REQUEST,
+            ERR_FILE_SIZE_EXCEEDED,
+            {"size_mb": f"{file_size_mb:.2f}", "max_mb": str(settings.MAX_UPLOAD_SIZE_MB)},
+        )
 
     # Проверяем сигнатуру: расширение должно соответствовать реальному содержимому
     validate_file_signature(Path(original_filename).suffix.lower(), file_content)

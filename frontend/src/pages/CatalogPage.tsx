@@ -1,6 +1,6 @@
 /** Страница каталога материалов */
 
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { memo, useCallback, useState, useEffect, useMemo, useRef } from 'react';
 import { useInfiniteQuery, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
@@ -59,6 +59,7 @@ export const CatalogPage: React.FC = () => {
   const debouncedBrandSearch = useDebounce(brandSearch.trim(), 250);
   const [printerFilter, setPrinterFilter] = useState<number | null>(null);
   const [printerSearch, setPrinterSearch] = useState('');
+  const debouncedPrinterSearch = useDebounce(printerSearch.trim(), 250);
   const configuredNozzleHrc = useConfiguredNozzleHrc();
   const [selectedFilament, _setSelectedFilament] = useState<number | null>(null);
   const [showQR, setShowQR] = useState<number | null>(null);
@@ -70,14 +71,17 @@ export const CatalogPage: React.FC = () => {
     enabled: !!user?.id,
   });
 
-  const savedPresetIds = new Set(savedPresets?.items.map(sp => sp.preset_id) || []);
+  const savedPresetIds = useMemo(
+    () => new Set(savedPresets?.items.map((savedPreset) => savedPreset.preset_id) ?? []),
+    [savedPresets],
+  );
 
   // The catalog holds hundreds of models, so the list stays short and typing
   // searches the rest on the server instead of scrolling.
   const { data: catalogPrinters } = useQuery({
-    queryKey: ['printers', 'catalog-filter', printerSearch],
-    queryFn: () =>
-      printersAPI.list({ active_only: true, size: 50, search: printerSearch || undefined }),
+    queryKey: ['printers', 'catalog-filter', debouncedPrinterSearch],
+    queryFn: ({ signal }) =>
+      printersAPI.list({ active_only: true, size: 50, search: debouncedPrinterSearch || undefined }, signal),
   });
   const { data: ownedPrinters } = useQuery({
     queryKey: ['physical-printers'],
@@ -152,7 +156,7 @@ export const CatalogPage: React.FC = () => {
     },
   });
 
-  const handleSavePreset = (presetId: number) => {
+  const handleSavePreset = useCallback((presetId: number) => {
     // Signed-out: route into sign-in instead of firing the save (which 401s
     // and surfaces a misleading "failed to add preset" error). Layout opens
     // AuthModal on ?auth=login.
@@ -163,7 +167,15 @@ export const CatalogPage: React.FC = () => {
       return;
     }
     savePresetMutation.mutate(presetId);
-  };
+  }, [location.search, navigate, savePresetMutation.mutate, user]);
+
+  const handleToggleQr = useCallback((filamentId: number) => {
+    setShowQR((current) => current === filamentId ? null : filamentId);
+  }, []);
+
+  const handleOpenFilament = useCallback((filament: Filament) => {
+    navigate(filamentPublicPath(filament));
+  }, [navigate]);
 
   // Загружаем материалы
   const {
@@ -397,9 +409,9 @@ export const CatalogPage: React.FC = () => {
             filament={filament}
             isSelected={selectedFilament === filament.id}
             onSelect={handleSavePreset}
-            onShowQR={() => setShowQR(showQR === filament.id ? null : filament.id)}
+            onShowQR={handleToggleQr}
             showQR={showQR === filament.id}
-            onClick={() => navigate(filamentPublicPath(filament))}
+            onClick={handleOpenFilament}
             savedPresetIds={savedPresetIds}
             configuredNozzleHrc={configuredNozzleHrc}
             fitsPrinter={printerMatchedIds.has(filament.id)}
@@ -457,15 +469,15 @@ interface MaterialCardProps {
   filament: Filament;
   isSelected: boolean;
   onSelect: (presetId: number) => void;
-  onShowQR: () => void;
+  onShowQR: (filamentId: number) => void;
   showQR: boolean;
-  onClick: () => void;
+  onClick: (filament: Filament) => void;
   savedPresetIds: Set<number>;
   configuredNozzleHrc: number | null;
   fitsPrinter?: boolean;
 }
 
-const MaterialCard: React.FC<MaterialCardProps> = ({
+const MaterialCard = memo(function MaterialCard({
   filament,
   isSelected,
   onSelect,
@@ -475,7 +487,7 @@ const MaterialCard: React.FC<MaterialCardProps> = ({
   savedPresetIds,
   configuredNozzleHrc,
   fitsPrinter = false,
-}) => {
+}: MaterialCardProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [currentPresetIndex, setCurrentPresetIndex] = useState(0);
@@ -528,7 +540,7 @@ const MaterialCard: React.FC<MaterialCardProps> = ({
     if (target.closest('button')) {
       return;
     }
-    onClick();
+    onClick(filament);
   };
 
   const canShowQR = Boolean(filament.qr_code && brand?.verified);
@@ -591,6 +603,7 @@ const MaterialCard: React.FC<MaterialCardProps> = ({
   return (
     <div 
       onClick={handleCardClick}
+      style={{ contentVisibility: 'auto', containIntrinsicSize: '620px' }}
       className="bg-white/10 backdrop-blur-sm rounded-xl sm:rounded-2xl p-4 sm:p-6 border border-white/20 hover:bg-white/15 transition-all duration-300 group shadow-xl cursor-pointer"
     >
       {/* Header с названием, ценой и рейтингом */}
@@ -661,7 +674,7 @@ const MaterialCard: React.FC<MaterialCardProps> = ({
               {canShowQR && (
                 <button
                   type="button"
-                  onClick={onShowQR}
+                  onClick={() => onShowQR(filament.id)}
                   className="flex-shrink-0 rounded-lg border border-white/20 bg-white/10 p-2 text-white transition-all hover:bg-white/20"
                   aria-label={t('catalogPage.qrCode')}
                   title={t('catalogPage.qrCode')}
@@ -886,5 +899,5 @@ const MaterialCard: React.FC<MaterialCardProps> = ({
       )}
     </div>
   );
-};
+});
 

@@ -1,27 +1,28 @@
 /** Админ-панель для управления платформой */
 
-import { useState } from 'react';
+import { lazy, Suspense, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Shield, FileText, Building2, Users, BarChart3, CheckCircle, Home, Package, User, LogOut, Database, Mail, Settings, BookOpen, Sparkles, ScanSearch, Layers } from 'lucide-react';
+import { Shield, FileText, Building2, Users, BarChart3, CheckCircle, Home, Package, User, LogOut, Database, Mail, Settings, BookOpen, Sparkles, ScanSearch, Layers, Loader2 } from 'lucide-react';
 import { Printer3DIcon } from '../components/icons/Printer3DIcon';
 import { useAuth } from '../contexts/AuthContext';
-import { AdminBrandRequests } from '../components/admin/AdminBrandRequests';
-import { AdminBrands } from '../components/admin/AdminBrands';
-import { AdminMaterials } from '../components/admin/AdminMaterials';
-import { AdminPresets } from '../components/admin/AdminPresets';
-import { AdminUsers } from '../components/admin/AdminUsers';
-import { AdminStats } from '../components/admin/AdminStats';
-import { AdminPrinters } from '../components/admin/AdminPrinters';
-import { AdminPrinterRequests } from '../components/admin/AdminPrinterRequests';
-import { AdminDatabaseDiagnostics } from '../components/admin/AdminDatabaseDiagnostics';
-import { AdminCommunications } from '../components/admin/AdminCommunications';
-import { AdminMaintenance } from '../components/admin/AdminMaintenance';
-import { AdminWiki } from '../components/admin/AdminWiki';
-import { AdminSubscriptions } from '../components/admin/AdminSubscriptions';
-import { AdminOrcaSchemaObservations } from '../components/admin/AdminOrcaSchemaObservations';
 import { adminAPI } from '../api/client';
+
+const AdminBrandRequests = lazy(() => import('../components/admin/AdminBrandRequests').then((module) => ({ default: module.AdminBrandRequests })));
+const AdminBrands = lazy(() => import('../components/admin/AdminBrands').then((module) => ({ default: module.AdminBrands })));
+const AdminMaterials = lazy(() => import('../components/admin/AdminMaterials').then((module) => ({ default: module.AdminMaterials })));
+const AdminPresets = lazy(() => import('../components/admin/AdminPresets').then((module) => ({ default: module.AdminPresets })));
+const AdminUsers = lazy(() => import('../components/admin/AdminUsers').then((module) => ({ default: module.AdminUsers })));
+const AdminStats = lazy(() => import('../components/admin/AdminStats').then((module) => ({ default: module.AdminStats })));
+const AdminPrinters = lazy(() => import('../components/admin/AdminPrinters').then((module) => ({ default: module.AdminPrinters })));
+const AdminPrinterRequests = lazy(() => import('../components/admin/AdminPrinterRequests').then((module) => ({ default: module.AdminPrinterRequests })));
+const AdminDatabaseDiagnostics = lazy(() => import('../components/admin/AdminDatabaseDiagnostics').then((module) => ({ default: module.AdminDatabaseDiagnostics })));
+const AdminCommunications = lazy(() => import('../components/admin/AdminCommunications').then((module) => ({ default: module.AdminCommunications })));
+const AdminMaintenance = lazy(() => import('../components/admin/AdminMaintenance').then((module) => ({ default: module.AdminMaintenance })));
+const AdminWiki = lazy(() => import('../components/admin/AdminWiki').then((module) => ({ default: module.AdminWiki })));
+const AdminSubscriptions = lazy(() => import('../components/admin/AdminSubscriptions').then((module) => ({ default: module.AdminSubscriptions })));
+const AdminOrcaSchemaObservations = lazy(() => import('../components/admin/AdminOrcaSchemaObservations').then((module) => ({ default: module.AdminOrcaSchemaObservations })));
 
 type AdminTab = 'requests' | 'brands' | 'materials' | 'presets' | 'users' | 'stats' | 'printers' | 'printer-requests' | 'communications' | 'database' | 'maintenance' | 'wiki' | 'subscriptions' | 'orca-schema';
 
@@ -159,20 +160,22 @@ export function AdminPanel() {
 
         {/* Content */}
         <div className="bg-white/10 backdrop-blur-sm rounded-lg md:rounded-xl border border-white/20 p-3 md:p-6">
-          {activeTab === 'requests' && <AdminBrandRequests />}
-          {activeTab === 'brands' && <AdminBrands />}
-          {activeTab === 'materials' && <AdminMaterials />}
-          {activeTab === 'presets' && <AdminPresets />}
-          {activeTab === 'printers' && <AdminPrinters />}
-          {activeTab === 'printer-requests' && <AdminPrinterRequests />}
-          {activeTab === 'users' && <AdminUsers />}
-          {activeTab === 'communications' && <AdminCommunications />}
-          {activeTab === 'wiki' && <AdminWiki />}
-          {activeTab === 'stats' && <AdminStats />}
-          {activeTab === 'database' && <AdminDatabaseDiagnostics />}
-          {activeTab === 'orca-schema' && <AdminOrcaSchemaObservations />}
-          {activeTab === 'subscriptions' && <AdminSubscriptions />}
-          {activeTab === 'maintenance' && <AdminMaintenance />}
+          <Suspense fallback={<div className="flex min-h-48 items-center justify-center"><Loader2 className="h-7 w-7 animate-spin text-purple-300" /></div>}>
+            {activeTab === 'requests' && <AdminBrandRequests />}
+            {activeTab === 'brands' && <AdminBrands />}
+            {activeTab === 'materials' && <AdminMaterials />}
+            {activeTab === 'presets' && <AdminPresets />}
+            {activeTab === 'printers' && <AdminPrinters />}
+            {activeTab === 'printer-requests' && <AdminPrinterRequests />}
+            {activeTab === 'users' && <AdminUsers />}
+            {activeTab === 'communications' && <AdminCommunications />}
+            {activeTab === 'wiki' && <AdminWiki />}
+            {activeTab === 'stats' && <AdminStats />}
+            {activeTab === 'database' && <AdminDatabaseDiagnostics />}
+            {activeTab === 'orca-schema' && <AdminOrcaSchemaObservations />}
+            {activeTab === 'subscriptions' && <AdminSubscriptions />}
+            {activeTab === 'maintenance' && <AdminMaintenance />}
+          </Suspense>
         </div>
       </div>
     </div>

@@ -1,8 +1,12 @@
-import { afterEach, describe, expect, it } from 'vitest';
-import i18n from '../i18n';
+import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+import i18n, { i18nReady } from '../i18n';
 import { formatDate, formatDateTime } from './formatDate';
 
 const MOMENT = '2026-03-14T15:54:09.944084Z';
+
+beforeAll(async () => {
+  await i18nReady;
+});
 
 afterEach(async () => {
   await i18n.changeLanguage('ru');

@@ -4,28 +4,24 @@ import { AuthProvider } from './contexts/AuthContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { Layout } from './components/Layout';
 import { CatalogPage } from './pages/CatalogPage';
-import { FilamentDetailPage } from './pages/FilamentDetailPage';
-import { TermsPage } from './pages/TermsPage';
-import { ConsentPage } from './pages/ConsentPage';
-import { ResetPasswordPage } from './pages/ResetPasswordPage';
-import { OAuthCallbackPage } from './pages/OAuthCallbackPage';
-import { OAuthPluginStartPage } from './pages/OAuthPluginStartPage';
-import { VerifyEmailPage } from './pages/VerifyEmailPage';
-import { ConfirmEmailChangePage } from './pages/ConfirmEmailChangePage';
-import { BrandInvitePage } from './pages/BrandInvitePage';
-import { DownloadPage } from './pages/DownloadPage';
 import { ToastContainer, toast } from './components/Toast';
 import { useOrcaSlicerNotifications } from './hooks/useOrcaSlicerNotifications';
 import { lazy, Suspense, useEffect, useState } from 'react';
 import { isPluginEmbed, subscribeToPluginNavigation, subscribeToPluginSyncResult, subscribeToPluginRecoverList, sendRecoverImport, type RecoverItem } from './utils/pluginBridge';
-import { Notifications } from './components/Notifications';
 import { useAuth } from './contexts/AuthContext';
-import { MaintenancePage } from './components/MaintenancePage';
-import { NotFoundPage } from './pages/NotFoundPage';
-import { RecoverPresetsModal } from './components/RecoverPresetsModal';
-import { LegalOnboardingModal } from './components/LegalOnboardingModal';
 
 // Lazy-loaded pages (code splitting)
+const FilamentDetailPage = lazy(() => import('./pages/FilamentDetailPage').then(m => ({ default: m.FilamentDetailPage })));
+const TermsPage = lazy(() => import('./pages/TermsPage').then(m => ({ default: m.TermsPage })));
+const ConsentPage = lazy(() => import('./pages/ConsentPage').then(m => ({ default: m.ConsentPage })));
+const ResetPasswordPage = lazy(() => import('./pages/ResetPasswordPage').then(m => ({ default: m.ResetPasswordPage })));
+const OAuthCallbackPage = lazy(() => import('./pages/OAuthCallbackPage').then(m => ({ default: m.OAuthCallbackPage })));
+const OAuthPluginStartPage = lazy(() => import('./pages/OAuthPluginStartPage').then(m => ({ default: m.OAuthPluginStartPage })));
+const VerifyEmailPage = lazy(() => import('./pages/VerifyEmailPage').then(m => ({ default: m.VerifyEmailPage })));
+const ConfirmEmailChangePage = lazy(() => import('./pages/ConfirmEmailChangePage').then(m => ({ default: m.ConfirmEmailChangePage })));
+const BrandInvitePage = lazy(() => import('./pages/BrandInvitePage').then(m => ({ default: m.BrandInvitePage })));
+const DownloadPage = lazy(() => import('./pages/DownloadPage').then(m => ({ default: m.DownloadPage })));
+const NotFoundPage = lazy(() => import('./pages/NotFoundPage').then(m => ({ default: m.NotFoundPage })));
 const ProfilePage = lazy(() => import('./pages/ProfilePage').then(m => ({ default: m.ProfilePage })));
 const CalculatorPage = lazy(() => import('./pages/CalculatorPage').then(m => ({ default: m.CalculatorPage })));
 const CrmWorkspacePage = lazy(() => import('./pages/CrmWorkspacePage').then(m => ({ default: m.CrmWorkspacePage })));
@@ -38,30 +34,13 @@ const WikiArticlePage = lazy(() => import('./pages/WikiArticlePage').then(m => (
 const PrivacyPolicyPage = lazy(() => import('./pages/PrivacyPolicyPage').then(m => ({ default: m.PrivacyPolicyPage })));
 const SharedQuotePage = lazy(() => import('./pages/SharedQuotePage').then(m => ({ default: m.SharedQuotePage })));
 const FeedbackThreadPage = lazy(() => import('./pages/FeedbackThreadPage').then(m => ({ default: m.FeedbackThreadPage })));
+const Notifications = lazy(() => import('./components/Notifications').then(m => ({ default: m.Notifications })));
+const RecoverPresetsModal = lazy(() => import('./components/RecoverPresetsModal').then(m => ({ default: m.RecoverPresetsModal })));
+const LegalOnboardingModal = lazy(() => import('./components/LegalOnboardingModal').then(m => ({ default: m.LegalOnboardingModal })));
+const MaintenancePage = lazy(() => import('./components/MaintenancePage').then(m => ({ default: m.MaintenancePage })));
 const DevUiKitPage = import.meta.env.DEV
   ? lazy(() => import('./pages/dev/UiKitPage').then(m => ({ default: m.UiKitPage })))
   : null;
-
-// Prefetch all lazy chunks after initial page load so navigation feels instant
-if (typeof window !== 'undefined') {
-  window.addEventListener('load', () => {
-    setTimeout(() => {
-      import('./pages/ProfilePage');
-      import('./pages/CalculatorPage');
-      import('./pages/CrmWorkspacePage');
-      import('./pages/BrandDetailPage');
-      import('./pages/AdminPanel');
-      import('./pages/WikiPage');
-      import('./pages/WikiWorkspacePage');
-      import('./pages/WikiCategoryPage');
-      import('./pages/WikiArticlePage');
-      import('./pages/PrivacyPolicyPage');
-      import('./pages/FeedbackThreadPage');
-      import('./components/CreatePresetModal');
-      import('./components/CreatePrinterProfileModal');
-    }, 2000);
-  }, { once: true });
-}
 
 function PageLoader() {
   return (
@@ -129,13 +108,15 @@ function AppContent() {
     return (
       <>
         <ToastContainer />
-        <MaintenancePage 
-          message={maintenanceMessage || undefined}
-          onLoginSuccess={() => {
-            // После успешного входа — обновляем состояние
-            clearMaintenanceMode();
-          }}
-        />
+        <Suspense fallback={<PageLoader />}>
+          <MaintenancePage
+            message={maintenanceMessage || undefined}
+            onLoginSuccess={() => {
+              // После успешного входа — обновляем состояние
+              clearMaintenanceMode();
+            }}
+          />
+        </Suspense>
       </>
     );
   }
@@ -143,19 +124,29 @@ function AppContent() {
   return (
     <>
       <ToastContainer />
-      {user?.legal_onboarding_required && !onLegalPage && <LegalOnboardingModal />}
+      {user?.legal_onboarding_required && !onLegalPage && (
+        <Suspense fallback={null}>
+          <LegalOnboardingModal />
+        </Suspense>
+      )}
       {recoverItems && (
-        <RecoverPresetsModal
-          items={recoverItems}
-          onClose={() => setRecoverItems(null)}
-          onImport={(names) => {
-            sendRecoverImport(names);
-            setRecoverItems(null);
-          }}
-        />
+        <Suspense fallback={null}>
+          <RecoverPresetsModal
+            items={recoverItems}
+            onClose={() => setRecoverItems(null)}
+            onImport={(names) => {
+              sendRecoverImport(names);
+              setRecoverItems(null);
+            }}
+          />
+        </Suspense>
       )}
       {/* Плавающая кнопка уведомлений для OrcaSlicer (когда нет хедера) */}
-      {isInOrcaSlicer && user && <Notifications floating={true} />}
+      {isInOrcaSlicer && user && (
+        <Suspense fallback={null}>
+          <Notifications floating={true} />
+        </Suspense>
+      )}
       <Routes>
         <Route
           path="/"
@@ -169,7 +160,9 @@ function AppContent() {
           path="/filaments/:id"
           element={
             <Layout>
-              <FilamentDetailPage />
+              <Suspense fallback={<PageLoader />}>
+                <FilamentDetailPage />
+              </Suspense>
             </Layout>
           }
         />
@@ -177,7 +170,9 @@ function AppContent() {
           path="/brands/:brandSlug/filaments/:filamentSlug"
           element={
             <Layout>
-              <FilamentDetailPage />
+              <Suspense fallback={<PageLoader />}>
+                <FilamentDetailPage />
+              </Suspense>
             </Layout>
           }
         />
@@ -253,7 +248,9 @@ function AppContent() {
           path="/download"
           element={
             <Layout>
-              <DownloadPage />
+              <Suspense fallback={<PageLoader />}>
+                <DownloadPage />
+              </Suspense>
             </Layout>
           }
         />
@@ -304,15 +301,15 @@ function AppContent() {
             идёт с кнопок шелла плагина (postMessage → subscribeToPluginNavigation) */}
         <Route path="/embed" element={<Layout><CatalogPage /></Layout>} />
         <Route path="/embed/catalog" element={<Layout><CatalogPage /></Layout>} />
-        <Route path="/user-agreement" element={<TermsPage />} />
+        <Route path="/user-agreement" element={<Suspense fallback={<PageLoader />}><TermsPage /></Suspense>} />
         <Route path="/privacy-policy" element={<Suspense fallback={<PageLoader />}><PrivacyPolicyPage /></Suspense>} />
-        <Route path="/personal-data-consent" element={<ConsentPage />} />
-        <Route path="/reset-password" element={<ResetPasswordPage />} />
-        <Route path="/verify-email" element={<VerifyEmailPage />} />
-        <Route path="/confirm-email-change" element={<ConfirmEmailChangePage />} />
-        <Route path="/brand-invite/:token" element={<BrandInvitePage />} />
-        <Route path="/oauth/callback/:provider" element={<OAuthCallbackPage />} />
-        <Route path="/oauth/plugin-start/:provider" element={<OAuthPluginStartPage />} />
+        <Route path="/personal-data-consent" element={<Suspense fallback={<PageLoader />}><ConsentPage /></Suspense>} />
+        <Route path="/reset-password" element={<Suspense fallback={<PageLoader />}><ResetPasswordPage /></Suspense>} />
+        <Route path="/verify-email" element={<Suspense fallback={<PageLoader />}><VerifyEmailPage /></Suspense>} />
+        <Route path="/confirm-email-change" element={<Suspense fallback={<PageLoader />}><ConfirmEmailChangePage /></Suspense>} />
+        <Route path="/brand-invite/:token" element={<Suspense fallback={<PageLoader />}><BrandInvitePage /></Suspense>} />
+        <Route path="/oauth/callback/:provider" element={<Suspense fallback={<PageLoader />}><OAuthCallbackPage /></Suspense>} />
+        <Route path="/oauth/plugin-start/:provider" element={<Suspense fallback={<PageLoader />}><OAuthPluginStartPage /></Suspense>} />
         {DevUiKitPage && (
           <Route
             path="/dev/ui-kit"
@@ -335,7 +332,7 @@ function AppContent() {
             </Layout>
           }
         />
-        <Route path="*" element={<NotFoundPage />} />
+        <Route path="*" element={<Suspense fallback={<PageLoader />}><NotFoundPage /></Suspense>} />
       </Routes>
     </>
   );

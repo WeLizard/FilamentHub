@@ -9,6 +9,7 @@ import { useTranslation } from 'react-i18next';
 import { authAPI } from '../api/client';
 import type { LegalDocumentType, LegalPack } from '../types/api';
 import { normalizeSiteLocale } from '../utils/siteLocale';
+import { AmbientBackground } from './AmbientBackground';
 import { SEOHead } from './SEOHead';
 
 interface LegalDocumentPageProps {
@@ -59,10 +60,7 @@ export function LegalDocumentPage({
     <>
       <SEOHead title={title} url={route} type="website" allowAI={false} />
       <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
-        <div aria-hidden="true" className="pointer-events-none fixed inset-0 overflow-hidden">
-          <div className="absolute -right-40 -top-40 h-80 w-80 rounded-full bg-purple-500/10 blur-3xl" />
-          <div className="absolute -bottom-40 -left-40 h-80 w-80 rounded-full bg-blue-500/10 blur-3xl" />
-        </div>
+        <AmbientBackground />
 
         <main className="relative z-10 mx-auto max-w-4xl px-4 py-8 sm:px-6">
           <Link

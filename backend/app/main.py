@@ -114,6 +114,7 @@ async def _stop_provisional_account_sweeper() -> None:
         with suppress(asyncio.CancelledError):
             await task
 
+
 # Catalogue caching sits inside maintenance and CORS: a maintenance block must
 # never be cached, and the CORS headers must reach even a 304.
 app.add_middleware(CatalogueCacheMiddleware)
@@ -154,11 +155,19 @@ class PublicStaticFiles(StaticFiles):
         "printer_requests/",
         "database_dumps/",
     )
+    _immutable_prefixes = (
+        "avatars/",
+        "brand_logos/",
+    )
 
     async def get_response(self, path: str, scope):
-        if path.replace("\\", "/").lstrip("/").startswith(self._protected_prefixes):
+        normalized_path = path.replace("\\", "/").lstrip("/")
+        if normalized_path.startswith(self._protected_prefixes):
             raise StarletteHTTPException(status_code=404)
-        return await super().get_response(path, scope)
+        response = await super().get_response(path, scope)
+        if response.status_code == 200 and normalized_path.startswith(self._immutable_prefixes):
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        return response
 
 
 app.mount("/uploads", PublicStaticFiles(directory=str(upload_dir)), name="uploads")

@@ -11,7 +11,8 @@ describe('embedded catalog language', () => {
     window.localStorage.setItem('i18nextLng', 'en');
     window.history.replaceState({}, '', '/embed/catalog?lng=ru');
 
-    const { default: i18n } = await import('../i18n');
+    const { default: i18n, i18nReady } = await import('../i18n');
+    await i18nReady;
 
     expect(i18n.resolvedLanguage).toBe('ru');
     expect(document.documentElement.lang).toBe('ru');
@@ -21,7 +22,8 @@ describe('embedded catalog language', () => {
     window.localStorage.setItem('i18nextLng', 'ru');
     window.history.replaceState({}, '', '/zh/wiki?lng=en');
 
-    const { default: i18n } = await import('../i18n');
+    const { default: i18n, i18nReady } = await import('../i18n');
+    await i18nReady;
 
     expect(i18n.resolvedLanguage).toBe('zh');
     expect(document.documentElement.lang).toBe('zh');

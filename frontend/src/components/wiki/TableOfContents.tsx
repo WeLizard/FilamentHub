@@ -1,6 +1,6 @@
 /** Компонент оглавления для Wiki статей */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useCallback } from 'react';
 import { List, ChevronRight } from 'lucide-react';
 
 export interface TocItem {
@@ -10,7 +10,10 @@ export interface TocItem {
 }
 
 interface TableOfContentsProps {
-  content: string;
+  headings: TocItem[];
+  activeId: string;
+  progress: number;
+  onHeadingSelect: (id: string) => void;
   className?: string;
 }
 
@@ -54,44 +57,13 @@ export function generateHeadingId(text: string): string {
     .trim();
 }
 
-export function TableOfContents({ content, className }: TableOfContentsProps) {
-  const [headings, setHeadings] = useState<TocItem[]>([]);
-  const [activeId, setActiveId] = useState<string>('');
-
-  // Извлекаем заголовки при изменении контента
-  useEffect(() => {
-    const extracted = extractHeadings(content);
-    setHeadings(extracted);
-
-    // Сбрасываем активный заголовок на первый при смене контента
-    if (extracted.length > 0) {
-      setActiveId(extracted[0].id);
-    }
-  }, [content]);
-
-  // Отслеживаем скролл для подсветки активной секции
-  useEffect(() => {
-    const handleScroll = () => {
-      const scrollPosition = window.scrollY + 120; // offset для header
-
-      // Находим текущую секцию
-      for (let i = headings.length - 1; i >= 0; i--) {
-        const heading = headings[i];
-        const element = document.getElementById(heading.id);
-
-        if (element && element.offsetTop <= scrollPosition) {
-          setActiveId(heading.id);
-          break;
-        }
-      }
-    };
-
-    window.addEventListener('scroll', handleScroll, { passive: true });
-    handleScroll(); // Вызываем сразу для инициализации
-
-    return () => window.removeEventListener('scroll', handleScroll);
-  }, [headings]);
-
+export function TableOfContents({
+  headings,
+  activeId,
+  progress,
+  onHeadingSelect,
+  className,
+}: TableOfContentsProps) {
   // Плавная прокрутка к секции
   const scrollToHeading = useCallback((id: string) => {
     const element = document.getElementById(id);
@@ -105,9 +77,9 @@ export function TableOfContents({ content, className }: TableOfContentsProps) {
         behavior: 'smooth',
       });
 
-      setActiveId(id);
+      onHeadingSelect(id);
     }
-  }, []);
+  }, [onHeadingSelect]);
 
   if (headings.length === 0) {
     return null;
@@ -155,44 +127,19 @@ export function TableOfContents({ content, className }: TableOfContentsProps) {
       </ul>
 
       {/* Прогресс чтения */}
-      <ReadingProgress />
+      <div className="mt-4 px-3">
+        <div className="flex items-center justify-between text-xs text-gray-500 mb-1">
+          <span>Прогресс</span>
+          <span>{Math.round(progress)}%</span>
+        </div>
+        <div className="h-1 bg-white/10 rounded-full overflow-hidden">
+          <div
+            className="h-full bg-gradient-to-r from-purple-500 to-pink-500 rounded-full transition-all duration-150"
+            style={{ width: `${progress}%` }}
+          />
+        </div>
+      </div>
     </nav>
-  );
-}
-
-/**
- * Индикатор прогресса чтения статьи
- */
-function ReadingProgress() {
-  const [progress, setProgress] = useState(0);
-
-  useEffect(() => {
-    const updateProgress = () => {
-      const scrollTop = window.scrollY;
-      const docHeight = document.documentElement.scrollHeight - window.innerHeight;
-      const scrollPercent = docHeight > 0 ? (scrollTop / docHeight) * 100 : 0;
-      setProgress(Math.min(100, Math.max(0, scrollPercent)));
-    };
-
-    window.addEventListener('scroll', updateProgress, { passive: true });
-    updateProgress();
-
-    return () => window.removeEventListener('scroll', updateProgress);
-  }, []);
-
-  return (
-    <div className="mt-4 px-3">
-      <div className="flex items-center justify-between text-xs text-gray-500 mb-1">
-        <span>Прогресс</span>
-        <span>{Math.round(progress)}%</span>
-      </div>
-      <div className="h-1 bg-white/10 rounded-full overflow-hidden">
-        <div
-          className="h-full bg-gradient-to-r from-purple-500 to-pink-500 rounded-full transition-all duration-150"
-          style={{ width: `${progress}%` }}
-        />
-      </div>
-    </div>
   );
 }
 

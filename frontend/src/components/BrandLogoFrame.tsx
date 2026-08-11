@@ -11,6 +11,7 @@ interface BrandLogoFrameProps {
   fallbackBackgroundClassName?: string;
   position?: 'relative' | 'absolute';
   className?: string;
+  loading?: 'eager' | 'lazy';
   onError?: (event: SyntheticEvent<HTMLImageElement>) => void;
 }
 
@@ -45,6 +46,7 @@ export function BrandLogoFrame({
   fallbackBackgroundClassName = 'bg-white/10',
   position = 'relative',
   className = '',
+  loading = size === 'hero' || size === 'cabinet' ? 'eager' : 'lazy',
   onError,
 }: BrandLogoFrameProps) {
   const hasLogo = Boolean(src);
@@ -65,6 +67,9 @@ export function BrandLogoFrame({
         <img
           src={src!}
           alt={alt}
+          loading={loading}
+          decoding="async"
+          fetchPriority={size === 'hero' ? 'high' : undefined}
           className={`relative z-10 block h-auto w-auto object-contain drop-shadow-sm ${imageSizeClasses[size]}`}
           onError={onError}
         />

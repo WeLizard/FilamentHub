@@ -85,11 +85,12 @@ import { PresetSyncToggle } from '../components/PresetSyncToggle';
 import { Badge, BADGE_CONFIG, type BadgeType } from '../components/Badge';
 import { PresetSlotsPanel } from '../components/presetSlots/PresetSlotsPanel';
 import { SpoolUsageModal } from '../components/SpoolUsageModal';
-import { BrandProfilePage } from './BrandProfilePage';
-import { CalculatorPage } from './CalculatorPage';
-import { CrmWorkspacePage } from './CrmWorkspacePage';
 import type { Preset, PrinterProfile, PrintProfile, Filament } from '../types/api';
 import { formatDate, formatDateTime as formatLocalDateTime } from '../utils/formatDate';
+
+const BrandProfilePage = lazy(() => import('./BrandProfilePage').then((module) => ({ default: module.BrandProfilePage })));
+const CalculatorPage = lazy(() => import('./CalculatorPage').then((module) => ({ default: module.CalculatorPage })));
+const CrmWorkspacePage = lazy(() => import('./CrmWorkspacePage').then((module) => ({ default: module.CrmWorkspacePage })));
 
 type CalculatorWorkspaceMode = 'calculator' | 'history' | 'quotes' | 'orders' | 'customers';
 
@@ -217,6 +218,12 @@ export const ProfilePage: React.FC = () => {
   const [_viewMode, _setViewMode] = useState<'grid' | 'list'>('grid');
   const [presetFilter, setPresetFilter] = useState<'all' | 'own' | 'saved' | 'drafts'>('all');
   const [isScanning, setIsScanning] = useState(false);
+  const needsPresetData = !showBrandCabinet && (userTab === 'dashboard' || userTab === 'presets');
+  const needsPrinterProfileData = !showBrandCabinet && (
+    userTab === 'dashboard' || userTab === 'printer-profiles' || userTab === 'spools'
+  );
+  const needsDashboardData = !showBrandCabinet && userTab === 'dashboard';
+  const needsSpoolData = !showBrandCabinet && (userTab === 'dashboard' || userTab === 'spools' || isAddSpoolOpen);
 
   useEffect(() => {
     const requestedTab = profileSearchParams.get('tab');
@@ -303,14 +310,16 @@ export const ProfilePage: React.FC = () => {
   const { data: userPresetsData } = useQuery({
     queryKey: ['user-presets', user?.id],
     queryFn: () => presetsAPI.list({ active_only: false, page: 1, size: 100, user_id: user?.id }),
-    enabled: !!user?.id,
+    enabled: !!user?.id && needsPresetData,
+    staleTime: 60_000,
   });
 
   // Загружаем сохранённые пресеты
   const { data: savedPresetsData } = useQuery({
     queryKey: ['saved-presets', user?.id],
     queryFn: () => savedPresetsAPI.list(),
-    enabled: !!user?.id,
+    enabled: !!user?.id && needsPresetData,
+    staleTime: 60_000,
   });
 
 
@@ -337,7 +346,8 @@ export const ProfilePage: React.FC = () => {
       });
       return response.items || [];
     },
-    enabled: savedPresetIds.length > 0,
+    enabled: needsPresetData && savedPresetIds.length > 0,
+    staleTime: 60_000,
   });
 
   const { data: printerProfilesData, isLoading: isLoadingPrinterProfiles } = useQuery({
@@ -349,7 +359,8 @@ export const ProfilePage: React.FC = () => {
         size: 50,
         active_only: false,
       }),
-    enabled: !!user?.id,
+    enabled: !!user?.id && needsPrinterProfileData,
+    staleTime: 60_000,
   });
 
   const { data: printProfilesData, isLoading: _isLoadingPrintProfiles } = useQuery({
@@ -361,7 +372,8 @@ export const ProfilePage: React.FC = () => {
         size: 50,
         active_only: false,
       }),
-    enabled: !!user?.id,
+    enabled: !!user?.id && needsPrinterProfileData,
+    staleTime: 60_000,
   });
 
   // Объединяем пресеты: созданные пользователем + сохранённые из каталога
@@ -432,6 +444,8 @@ export const ProfilePage: React.FC = () => {
   const { data: myPhysicalPrinters } = useQuery({
     queryKey: ['physical-printers'],
     queryFn: physicalPrintersAPI.list,
+    enabled: !!user?.id && !showBrandCabinet && userTab === 'printer-profiles',
+    staleTime: 60_000,
   });
 
   // Конфигурации, уже закреплённые за реальным принтером: они живут в его
@@ -635,7 +649,8 @@ export const ProfilePage: React.FC = () => {
   const { data: userReviewsData } = useQuery({
     queryKey: ['user-reviews', user?.id],
     queryFn: () => filamentReviewsAPI.getMyReviews({ page: 1, size: 100, active_only: true }),
-    enabled: !!user?.id,
+    enabled: !!user?.id && needsDashboardData,
+    staleTime: 60_000,
   });
 
   // Вычисляем статистику из отзывов
@@ -663,7 +678,8 @@ export const ProfilePage: React.FC = () => {
   const { data: presetsStats } = useQuery({
     queryKey: ['presets-stats', user?.id],
     queryFn: () => authAPI.getPresetsStats(),
-    enabled: !!user?.id,
+    enabled: !!user?.id && needsDashboardData,
+    staleTime: 60_000,
   });
 
   // Мутация для удаления пресета (созданного пользователем)
@@ -730,7 +746,8 @@ export const ProfilePage: React.FC = () => {
   const { data: spoolsData = [], refetch: refetchSpools } = useQuery({
     queryKey: ['user-spools', user?.id],
     queryFn: () => spoolsAPI.list(),
-    enabled: !!user?.id,
+    enabled: !!user?.id && needsSpoolData,
+    staleTime: 60_000,
   });
 
   const formatDateTime = (value: string) =>
@@ -813,13 +830,15 @@ export const ProfilePage: React.FC = () => {
               : 'md:mt-12'
           }
         >
-          <BrandProfilePage
-            onBack={() => setShowBrandCabinet(false)}
-            initialEditing={Boolean((location.state as { editBrand?: boolean } | null)?.editBrand)}
-            initialClaimBrandId={(location.state as { onboardingBrandId?: number } | null)?.onboardingBrandId}
-            initialClaimBrandName={(location.state as { onboardingBrandName?: string } | null)?.onboardingBrandName}
-            onAddBrandFlowChange={setIsAddBrandFlowActive}
-          />
+          <Suspense fallback={<div className="flex min-h-[50vh] items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-purple-400" /></div>}>
+            <BrandProfilePage
+              onBack={() => setShowBrandCabinet(false)}
+              initialEditing={Boolean((location.state as { editBrand?: boolean } | null)?.editBrand)}
+              initialClaimBrandId={(location.state as { onboardingBrandId?: number } | null)?.onboardingBrandId}
+              initialClaimBrandName={(location.state as { onboardingBrandName?: string } | null)?.onboardingBrandName}
+              onAddBrandFlowChange={setIsAddBrandFlowActive}
+            />
+          </Suspense>
         </div>
       </div>
     );
@@ -1215,24 +1234,28 @@ export const ProfilePage: React.FC = () => {
 
           {calculatorWorkspaceMode === 'calculator' || calculatorWorkspaceMode === 'history' ? (
             <div className="mx-auto max-w-7xl">
-              <CalculatorPage
-                embedded
-                activeTab={calculatorWorkspaceMode}
-                onActiveTabChange={setCalculatorWorkspaceMode}
-                staticSettingsOpen={calculatorEconomicsOpen}
-                quoteProfileOpen={calculatorQuoteProfileOpen}
-                onStaticSettingsOpenChange={setCalculatorEconomicsOpen}
-                onQuoteProfileOpenChange={setCalculatorQuoteProfileOpen}
-              />
+              <Suspense fallback={<div className="flex min-h-64 items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-purple-400" /></div>}>
+                <CalculatorPage
+                  embedded
+                  activeTab={calculatorWorkspaceMode}
+                  onActiveTabChange={setCalculatorWorkspaceMode}
+                  staticSettingsOpen={calculatorEconomicsOpen}
+                  quoteProfileOpen={calculatorQuoteProfileOpen}
+                  onStaticSettingsOpenChange={setCalculatorEconomicsOpen}
+                  onQuoteProfileOpenChange={setCalculatorQuoteProfileOpen}
+                />
+              </Suspense>
             </div>
           ) : (
             <div className="mx-auto max-w-7xl">
-              <CrmWorkspacePage
-                embedded
-                activeTab={calculatorWorkspaceMode}
-                onActiveTabChange={setCalculatorWorkspaceMode}
-                onNewCalculation={() => setCalculatorWorkspaceMode('calculator')}
-              />
+              <Suspense fallback={<div className="flex min-h-64 items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-purple-400" /></div>}>
+                <CrmWorkspacePage
+                  embedded
+                  activeTab={calculatorWorkspaceMode}
+                  onActiveTabChange={setCalculatorWorkspaceMode}
+                  onNewCalculation={() => setCalculatorWorkspaceMode('calculator')}
+                />
+              </Suspense>
             </div>
           )}
         </div>
@@ -2259,6 +2282,7 @@ const SpoolForm: React.FC<SpoolFormProps> = ({
       return Promise.all(Array.from(uniqueIds, (filamentId) => filamentsAPI.get(filamentId)));
     },
     enabled: !!user?.id,
+    staleTime: 60_000,
   });
 
   const devicesQuery = useQuery<UserPrinterDevice[]>({

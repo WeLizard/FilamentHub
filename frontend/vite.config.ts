@@ -1,12 +1,33 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
+import { rm } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
 
 // https://vite.dev/config/
 const proxyTarget = process.env.VITE_PROXY_TARGET || 'http://localhost:8000';
+const unreferencedPublicSourceMedia = [
+  'catalog-presets.png',
+  'orcaslicer-win-main.png',
+  'presets-sync.png',
+  'step-download-orca.JPG',
+];
 
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [
+    react(),
+    tailwindcss(),
+    {
+      name: 'exclude-unreferenced-public-source-media',
+      apply: 'build',
+      async closeBundle() {
+        await Promise.all(unreferencedPublicSourceMedia.map((fileName) => rm(
+          fileURLToPath(new URL(`./dist/download-media/${fileName}`, import.meta.url)),
+          { force: true },
+        )));
+      },
+    },
+  ],
   esbuild: {
     drop: process.env.NODE_ENV === 'production' ? ['console', 'debugger'] : [],
   },
