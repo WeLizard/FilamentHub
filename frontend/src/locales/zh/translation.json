@@ -1393,6 +1393,9 @@
     "openExactStep": "打开对应阶段",
     "fullJourney": "新手完整流程",
     "openGuide": "打开指南",
+    "guideCompleted": "已在此浏览器中完成指南",
+    "manufacturerJourneyTitle": "制造商流程",
+    "manufacturerJourneyHint": "从认证代表身份，到材料、二维码和用户反馈。",
     "guidesEmpty": "指南正在准备发布。您可以先使用搜索和 3D 打印知识库。",
     "journey": {
       "shelf": "货架上的线轴",
@@ -1409,6 +1412,22 @@
       "slicer": "选择、创建或恢复材料预设",
       "printer": "将线轴连接到打印机或供料系统",
       "production": "检查库存、用量和生产成本"
+    },
+    "manufacturerJourney": {
+      "representation": "代表身份",
+      "profile": "品牌页面",
+      "materials": "材料",
+      "presets": "官方预设",
+      "qr": "二维码",
+      "insights": "结果"
+    },
+    "manufacturerJourneyDescriptions": {
+      "representation": "申请品牌或特定国家/地区的代表身份",
+      "profile": "完善公共品牌页面和本地市场信息",
+      "materials": "准确描述产品变体并避免重复",
+      "presets": "将官方打印设置关联到材料",
+      "qr": "为包装和线轴准备标签",
+      "insights": "管理团队、分析数据并查看反馈"
     },
     "workTitle": "您的创作",
     "workDescription": "草稿、修改建议和审核中的文章集中显示，同时不打断阅读体验。",

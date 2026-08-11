@@ -1,6 +1,6 @@
 /** Главная страница Wiki - каталог знаний о 3D печати */
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -9,20 +9,24 @@ import {
   BookOpen,
   Boxes,
   Calculator,
+  Check,
   ChevronRight,
   Clock,
   Compass,
   Eye,
   FilePenLine,
   Files,
+  Factory,
   LibraryBig,
   Loader2,
   PackageOpen,
   Printer,
+  QrCode,
   Search,
   SearchCheck,
   ShieldCheck,
   SlidersHorizontal,
+  Settings,
   Store,
   TrendingUp,
   X,
@@ -34,6 +38,10 @@ import { plainWikiSummary } from '../components/wiki/wikiMarkdown';
 import { toast } from '../components/Toast';
 import { useAuth } from '../contexts/AuthContext';
 import { WikiCategoryIcon } from '../components/wiki/WikiCategoryIcon';
+import {
+  getCompletedWikiGuideIds,
+  WIKI_GUIDE_PROGRESS_EVENT,
+} from '../components/wiki/wikiGuideProgress';
 import type { WikiArticleSummary, WikiLanguage, WikiRevision } from '../types/api';
 
 export function WikiPage() {
@@ -46,21 +54,40 @@ export function WikiPage() {
   const [isSearching, setIsSearching] = useState(false);
   const [authoringRevision, setAuthoringRevision] = useState<WikiRevision | 'new' | null>(null);
   const [reviewRevision, setReviewRevision] = useState<WikiRevision | null>(null);
+  const [completedGuideIds, setCompletedGuideIds] = useState(() => getCompletedWikiGuideIds());
   const languageCode = i18n.resolvedLanguage?.split('-')[0];
   const currentLanguage: WikiLanguage = languageCode === 'ru' || languageCode === 'zh' ? languageCode : 'en';
   const guideJourneySteps = [
-    { key: 'shelf', icon: Store, fallbackStep: 0, ruSlug: 'spool-on-shelf' },
-    { key: 'catalog', icon: PackageOpen, fallbackStep: 1, ruSlug: 'catalog-material' },
-    { key: 'spools', icon: Boxes, fallbackStep: 2, ruSlug: 'my-filaments-guide' },
-    { key: 'slicer', icon: SlidersHorizontal, fallbackStep: 3, ruSlug: 'orca-preset-guide' },
-    { key: 'printer', icon: Printer, fallbackStep: 5, ruSlug: 'printer-feed-guide' },
-    { key: 'production', icon: Calculator, fallbackStep: 7, ruSlug: 'production-calculation-guide' },
+    { key: 'shelf', icon: Store, fallbackStep: 0, ruSlug: 'spool-on-shelf', progressId: 'user:shelf' },
+    { key: 'catalog', icon: PackageOpen, fallbackStep: 1, ruSlug: 'catalog-material', progressId: 'user:catalog' },
+    { key: 'spools', icon: Boxes, fallbackStep: 2, ruSlug: 'my-filaments-guide', progressId: 'user:spools' },
+    { key: 'slicer', icon: SlidersHorizontal, fallbackStep: 3, ruSlug: 'orca-preset-guide', progressId: 'user:slicer' },
+    { key: 'printer', icon: Printer, fallbackStep: 5, ruSlug: 'printer-feed-guide', progressId: 'user:printer' },
+    { key: 'production', icon: Calculator, fallbackStep: 7, ruSlug: 'production-calculation-guide', progressId: 'user:production' },
+  ];
+  const manufacturerJourneySteps = [
+    { key: 'representation', icon: ShieldCheck, ruSlug: 'brand-representation-guide', progressId: 'brand:representation' },
+    { key: 'profile', icon: Factory, ruSlug: 'brand-profile-guide', progressId: 'brand:profile' },
+    { key: 'materials', icon: PackageOpen, ruSlug: 'brand-materials-guide', progressId: 'brand:materials' },
+    { key: 'presets', icon: Settings, ruSlug: 'brand-official-presets-guide', progressId: 'brand:presets' },
+    { key: 'qr', icon: QrCode, ruSlug: 'brand-qr-guide', progressId: 'brand:qr' },
+    { key: 'insights', icon: TrendingUp, ruSlug: 'brand-insights-guide', progressId: 'brand:insights' },
   ];
   const primaryGuideSlug: Record<WikiLanguage, string> = {
     ru: 'filamenthub-workflow-overview',
     en: 'from-spool-to-print-en',
     zh: 'from-spool-to-print-zh',
   };
+
+  useEffect(() => {
+    const refreshProgress = () => setCompletedGuideIds(getCompletedWikiGuideIds());
+    window.addEventListener('storage', refreshProgress);
+    window.addEventListener(WIKI_GUIDE_PROGRESS_EVENT, refreshProgress);
+    return () => {
+      window.removeEventListener('storage', refreshProgress);
+      window.removeEventListener(WIKI_GUIDE_PROGRESS_EVENT, refreshProgress);
+    };
+  }, []);
 
   const { data: ownRevisions } = useQuery({
     queryKey: ['wiki-own-revisions', user?.id],
@@ -90,7 +117,7 @@ export function WikiPage() {
     queryFn: async () => {
       let [categoriesData, guidesData, articlesData] = await Promise.all([
         wikiAPI.listCategories({ page: 1, page_size: 50, space: 'knowledge', language: currentLanguage }),
-        wikiAPI.listArticles({ page: 1, page_size: 20, published_only: true, space: 'guides', language: currentLanguage }),
+        wikiAPI.listArticles({ page: 1, page_size: 40, published_only: true, space: 'guides', language: currentLanguage }),
         wikiAPI.listArticles({ page: 1, page_size: 12, published_only: true, space: 'knowledge', language: currentLanguage }),
       ]);
       if (currentLanguage !== 'ru' && articlesData.total === 0) {
@@ -122,8 +149,13 @@ export function WikiPage() {
   const recentArticles = wikiDataQuery.data?.recentArticles ?? [];
   const mainGuide = guideArticles.find((article) => article.slug === primaryGuideSlug[currentLanguage]) ?? guideArticles[0];
   const ruJourneySlugs = new Set(guideJourneySteps.map(({ ruSlug }) => ruSlug));
+  const manufacturerJourneySlugs = new Set(manufacturerJourneySteps.map(({ ruSlug }) => ruSlug));
   const additionalGuides = guideArticles
-    .filter((article) => article.id !== mainGuide?.id && !ruJourneySlugs.has(article.slug))
+    .filter((article) => (
+      article.id !== mainGuide?.id
+      && !ruJourneySlugs.has(article.slug)
+      && !manufacturerJourneySlugs.has(article.slug)
+    ))
     .slice(0, 3);
   const visiblePopularArticles = popularArticles.slice(0, 4);
   const visibleRecentArticles = recentArticles.slice(0, 5);
@@ -134,14 +166,20 @@ export function WikiPage() {
       : mainGuide
   );
 
-  const openGuideAtStep = (ruSlug: string, fallbackStep: number) => {
+  const openGuideAtStep = (ruSlug: string, fallbackStep: number, progressId: string) => {
     const guide = findJourneyGuide(ruSlug);
     if (currentLanguage === 'ru' && guide) {
-      navigate(`/wiki/articles/${guide.slug}?start=1`);
+      navigate(`/wiki/articles/${guide.slug}?start=1&journey=${encodeURIComponent(progressId)}`);
       return;
     }
     if (!mainGuide) return;
-    navigate(`/wiki/articles/${mainGuide.slug}?step=${fallbackStep}&start=1`);
+    navigate(`/wiki/articles/${mainGuide.slug}?step=${fallbackStep}&start=1&journey=${encodeURIComponent(progressId)}`);
+  };
+
+  const openManufacturerGuide = (ruSlug: string, progressId: string) => {
+    const guide = guideArticles.find((article) => article.slug === ruSlug);
+    if (!guide) return;
+    navigate(`/wiki/articles/${guide.slug}?start=1&journey=${encodeURIComponent(progressId)}`);
   };
 
   const handleSearch = async (e: React.FormEvent) => {
@@ -322,38 +360,81 @@ export function WikiPage() {
               <span className="text-[11px] font-medium text-cyan-300/70">{t('wikiPage.openExactStep')}</span>
             </div>
             <div className="grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-6">
-              {guideJourneySteps.map(({ key, icon: StepIcon, fallbackStep, ruSlug }) => {
+              {guideJourneySteps.map(({ key, icon: StepIcon, fallbackStep, ruSlug, progressId }, index) => {
                 const guide = findJourneyGuide(ruSlug);
+                const isCompleted = completedGuideIds.has(progressId)
+                  || Boolean(guide && completedGuideIds.has(`article:${guide.slug}`));
                 return (
-                <button
-                  key={key}
-                  type="button"
-                  disabled={!guide}
-                  onClick={() => openGuideAtStep(ruSlug, fallbackStep)}
-                  className="group flex min-w-0 flex-col items-start gap-2 rounded-xl border border-white/[0.07] bg-white/[0.035] px-3 py-3 text-left transition hover:-translate-y-0.5 hover:border-cyan-300/25 hover:bg-cyan-300/[0.07] disabled:cursor-not-allowed disabled:opacity-45"
-                >
-                  <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-cyan-400/10 text-cyan-200 ring-1 ring-cyan-300/15 transition group-hover:bg-cyan-400/15"><StepIcon className="h-4 w-4" /></span>
-                  <span className="line-clamp-2 text-xs font-semibold leading-4 text-slate-300 transition group-hover:text-white">{t(`wikiPage.journey.${key}`)}</span>
-                  <span className="line-clamp-2 text-[10px] leading-4 text-slate-500">{t(`wikiPage.journeyDescriptions.${key}`)}</span>
-                </button>
+                  <div key={key} className="relative min-w-0">
+                    <button
+                      type="button"
+                      disabled={!guide}
+                      onClick={() => openGuideAtStep(ruSlug, fallbackStep, progressId)}
+                      className="group relative z-10 flex h-full w-full min-w-0 flex-col items-start gap-2 rounded-xl border border-white/[0.07] bg-white/[0.035] px-3 py-3 text-left transition hover:-translate-y-0.5 hover:border-cyan-300/25 hover:bg-cyan-300/[0.07] disabled:cursor-not-allowed disabled:opacity-45"
+                    >
+                      <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-cyan-400/10 text-cyan-200 ring-1 ring-cyan-300/15 transition group-hover:bg-cyan-400/15"><StepIcon className="h-4 w-4" /></span>
+                      {isCompleted && (
+                        <span className="absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded-full border border-emerald-300/35 bg-emerald-400/15 text-emerald-200 shadow-sm shadow-emerald-950/50" title={t('wikiPage.guideCompleted')} aria-label={t('wikiPage.guideCompleted')}>
+                          <Check className="h-3 w-3" />
+                        </span>
+                      )}
+                      <span className="line-clamp-2 text-xs font-semibold leading-4 text-slate-300 transition group-hover:text-white">{t(`wikiPage.journey.${key}`)}</span>
+                      <span className="line-clamp-2 text-[10px] leading-4 text-slate-500">{t(`wikiPage.journeyDescriptions.${key}`)}</span>
+                    </button>
+                    {index < guideJourneySteps.length - 1 && (
+                      <span aria-hidden="true" className="pointer-events-none absolute -right-3 top-5 z-30 hidden h-7 w-7 items-center justify-center rounded-full border border-cyan-300/25 bg-[#0b1a30] text-cyan-200 shadow-lg shadow-cyan-950/50 xl:flex">
+                        <ArrowRight className="h-3.5 w-3.5" />
+                      </span>
+                    )}
+                  </div>
                 );
               })}
             </div>
           </div>
 
-          {mainGuide ? (
-            <button type="button" onClick={() => navigate(`/wiki/articles/${mainGuide.slug}`)} className="group relative mt-5 w-full overflow-hidden rounded-2xl border border-white/10 bg-[#0b1730]/75 p-5 text-left transition hover:-translate-y-0.5 hover:border-cyan-300/30 hover:bg-[#10203d] md:p-6">
-              <span className="absolute inset-y-0 left-0 w-1.5 bg-gradient-to-b from-cyan-300 via-blue-400 to-purple-500" />
-              <div className="pr-10">
-                <span className="text-xs font-semibold uppercase tracking-[0.14em] text-cyan-300">{t('wikiPage.fullJourney')}</span>
-                <h3 className="mt-2 text-lg font-semibold text-white transition group-hover:text-cyan-100 md:text-xl">{mainGuide.title}</h3>
-                <p className="mt-2 line-clamp-2 text-sm leading-6 text-slate-400">{plainWikiSummary(mainGuide.summary)}</p>
+          <div className="relative mt-5 rounded-2xl border border-purple-300/15 bg-[#160f2d]/55 p-3 md:p-4">
+            <div className="mb-3 flex flex-wrap items-end justify-between gap-2 px-1">
+              <div>
+                <h3 className="flex items-center gap-2 text-sm font-semibold text-white">
+                  <Factory className="h-4 w-4 text-purple-200" />
+                  {t('wikiPage.manufacturerJourneyTitle')}
+                </h3>
+                <p className="mt-1 text-xs leading-5 text-slate-500">{t('wikiPage.manufacturerJourneyHint')}</p>
               </div>
-              <span className="mt-4 inline-flex items-center gap-1.5 text-sm font-medium text-cyan-300">{t('wikiPage.openGuide')}<ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" /></span>
-            </button>
-          ) : (
-            <div className="relative mt-5 rounded-2xl border border-dashed border-cyan-300/20 bg-[#0b1730]/45 px-5 py-6 text-sm leading-6 text-slate-400">{t('wikiPage.guidesEmpty')}</div>
-          )}
+              <span className="text-[11px] font-medium text-purple-200/70">{t('wikiPage.openExactStep')}</span>
+            </div>
+            <div className="grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-6">
+              {manufacturerJourneySteps.map(({ key, icon: StepIcon, ruSlug, progressId }, index) => {
+                const guide = guideArticles.find((article) => article.slug === ruSlug);
+                const isCompleted = completedGuideIds.has(progressId)
+                  || Boolean(guide && completedGuideIds.has(`article:${guide.slug}`));
+                return (
+                  <div key={key} className="relative min-w-0">
+                    <button
+                      type="button"
+                      disabled={!guide}
+                      onClick={() => openManufacturerGuide(ruSlug, progressId)}
+                      className="group relative z-10 flex h-full w-full min-w-0 flex-col items-start gap-2 rounded-xl border border-purple-200/[0.08] bg-purple-300/[0.035] px-3 py-3 text-left transition hover:-translate-y-0.5 hover:border-purple-200/25 hover:bg-purple-300/[0.08] disabled:cursor-not-allowed disabled:opacity-45"
+                    >
+                      <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-purple-400/10 text-purple-100 ring-1 ring-purple-300/15 transition group-hover:bg-purple-400/15"><StepIcon className="h-4 w-4" /></span>
+                      {isCompleted && (
+                        <span className="absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded-full border border-emerald-300/35 bg-emerald-400/15 text-emerald-200 shadow-sm shadow-emerald-950/50" title={t('wikiPage.guideCompleted')} aria-label={t('wikiPage.guideCompleted')}>
+                          <Check className="h-3 w-3" />
+                        </span>
+                      )}
+                      <span className="line-clamp-2 text-xs font-semibold leading-4 text-slate-300 transition group-hover:text-white">{t(`wikiPage.manufacturerJourney.${key}`)}</span>
+                      <span className="line-clamp-2 text-[10px] leading-4 text-slate-500">{t(`wikiPage.manufacturerJourneyDescriptions.${key}`)}</span>
+                    </button>
+                    {index < manufacturerJourneySteps.length - 1 && (
+                      <span aria-hidden="true" className="pointer-events-none absolute -right-3 top-5 z-30 hidden h-7 w-7 items-center justify-center rounded-full border border-purple-300/25 bg-[#1a1032] text-purple-100 shadow-lg shadow-purple-950/60 xl:flex">
+                        <ArrowRight className="h-3.5 w-3.5" />
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
 
           {additionalGuides.length > 0 && (
             <div className="relative mt-4 grid gap-2 md:grid-cols-2">

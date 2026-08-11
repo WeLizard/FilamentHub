@@ -1394,6 +1394,9 @@
     "openExactStep": "Opens the matching stage",
     "fullJourney": "Complete journey for newcomers",
     "openGuide": "Open guide",
+    "guideCompleted": "Guide completed in this browser",
+    "manufacturerJourneyTitle": "Manufacturer journey",
+    "manufacturerJourneyHint": "From verified representation to materials, QR codes, and feedback.",
     "guidesEmpty": "The guide is being prepared for publication. For now, use search and the 3D Printing Knowledge Base.",
     "journey": {
       "shelf": "Spool on the shelf",
@@ -1410,6 +1413,22 @@
       "slicer": "Choose, create, or recover a material preset",
       "printer": "Connect a spool to a printer or feed system",
       "production": "Check inventory, usage, and production cost"
+    },
+    "manufacturerJourney": {
+      "representation": "Representation",
+      "profile": "Brand page",
+      "materials": "Materials",
+      "presets": "Official presets",
+      "qr": "QR codes",
+      "insights": "Results"
+    },
+    "manufacturerJourneyDescriptions": {
+      "representation": "Apply for a brand or a country representation",
+      "profile": "Complete the shared page and local market details",
+      "materials": "Describe exact product variants without duplicates",
+      "presets": "Connect official print settings to materials",
+      "qr": "Prepare labels for packaging and spools",
+      "insights": "Work with your team, analytics, and feedback"
     },
     "workTitle": "Your work",
     "workDescription": "Drafts, proposed changes, and articles under review stay close at hand without interrupting the reading experience.",

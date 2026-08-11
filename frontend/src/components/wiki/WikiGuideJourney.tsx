@@ -23,6 +23,7 @@ import {
   WikiGuideImageViewer,
 } from './WikiGuideImageViewer';
 import { parseWikiGuide, type WikiGuideImage } from './wikiGuide';
+import { markWikiGuideCompleted } from './wikiGuideProgress';
 
 interface WikiGuideJourneyProps {
   article: WikiArticle;
@@ -44,6 +45,7 @@ export function WikiGuideJourney({ article, content, onBack }: WikiGuideJourneyP
   const [viewerImage, setViewerImage] = useState<WikiGuideImage | null>(null);
   const [activeCallout, setActiveCallout] = useState<number | null>(null);
   const workspaceRef = useRef<HTMLDivElement>(null);
+  const journeyId = searchParams.get('journey');
 
   useEffect(() => {
     setActiveIndex(initialIndex);
@@ -83,6 +85,11 @@ export function WikiGuideJourney({ article, content, onBack }: WikiGuideJourneyP
     nextParams.set('step', String(activeIndex));
     nextParams.set('start', '1');
     setSearchParams(nextParams, { replace: true });
+  };
+
+  const finishGuide = () => {
+    markWikiGuideCompleted(journeyId ?? `article:${article.slug}`);
+    onBack();
   };
 
   return (
@@ -216,7 +223,7 @@ export function WikiGuideJourney({ article, content, onBack }: WikiGuideJourneyP
               </button>
               <button
                 type="button"
-                onClick={() => isLastStep ? onBack() : selectStep(activeIndex + 1)}
+                onClick={() => isLastStep ? finishGuide() : selectStep(activeIndex + 1)}
                 className="inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-blue-500 to-cyan-500 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-950/30 transition hover:brightness-110"
               >
                 {isLastStep ? t('wikiGuide.finish') : t('wikiGuide.next')}
