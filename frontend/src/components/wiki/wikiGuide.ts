@@ -14,7 +14,7 @@ export interface WikiGuideStep {
   id: string;
   title: string;
   content: string;
-  image: WikiGuideImage | null;
+  images: WikiGuideImage[];
 }
 
 export interface ParsedWikiGuide {
@@ -23,8 +23,9 @@ export interface ParsedWikiGuide {
 }
 
 const STEP_HEADING = /^##\s+(.+?)\s*$/gm;
-const MARKDOWN_IMAGE = /!\[([^\]]*)\]\(([^)\s]+)(?:\s+["'][^"']*["'])?\)/;
+const MARKDOWN_IMAGE = /!\[([^\]]*)\]\(([^)\s]+)(?:\s+["'][^"']*["'])?\)/g;
 const GUIDE_CALLOUT = /<!--\s*guide-callout\s+x=(\d+(?:\.\d+)?)\s+y=(\d+(?:\.\d+)?)\s*:\s*(.*?)\s*-->/g;
+const GUIDE_MEDIA_PLAN = /<!--\s*guide-media-plan[\s\S]*?-->/g;
 
 function extractCallouts(body: string): WikiGuideCallout[] {
   return Array.from(body.matchAll(GUIDE_CALLOUT), (match) => ({
@@ -45,21 +46,28 @@ function stepId(title: string, index: number): string {
 }
 
 function extractStep(title: string, body: string, index: number): WikiGuideStep {
-  const imageMatch = body.match(MARKDOWN_IMAGE);
-  const callouts = extractCallouts(body);
-  const image = imageMatch
-    ? { alt: imageMatch[1]?.trim() || title, src: imageMatch[2], callouts }
-    : null;
-  const bodyWithoutImage = imageMatch
-    ? `${body.slice(0, imageMatch.index)}${body.slice((imageMatch.index ?? 0) + imageMatch[0].length)}`.trim()
-    : body.trim();
-  const content = bodyWithoutImage.replace(GUIDE_CALLOUT, '').trim();
+  const imageMatches = Array.from(body.matchAll(MARKDOWN_IMAGE));
+  const images = imageMatches.map((imageMatch, imageIndex) => {
+    const segmentStart = (imageMatch.index ?? 0) + imageMatch[0].length;
+    const segmentEnd = imageMatches[imageIndex + 1]?.index ?? body.length;
+
+    return {
+      alt: imageMatch[1]?.trim() || title,
+      src: imageMatch[2],
+      callouts: extractCallouts(body.slice(segmentStart, segmentEnd)),
+    };
+  });
+  const content = body
+    .replace(MARKDOWN_IMAGE, '')
+    .replace(GUIDE_CALLOUT, '')
+    .replace(GUIDE_MEDIA_PLAN, '')
+    .trim();
 
   return {
     id: stepId(title, index),
     title: title.trim(),
     content,
-    image,
+    images,
   };
 }
 

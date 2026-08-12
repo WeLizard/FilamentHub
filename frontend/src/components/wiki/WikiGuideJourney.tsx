@@ -43,7 +43,7 @@ export function WikiGuideJourney({ article, content, onBack }: WikiGuideJourneyP
   const [started, setStarted] = useState(searchParams.get('start') === '1' || searchParams.has('step'));
   const [overviewExpanded, setOverviewExpanded] = useState(false);
   const [viewerImage, setViewerImage] = useState<WikiGuideImage | null>(null);
-  const [activeCallout, setActiveCallout] = useState<number | null>(null);
+  const [activeCallout, setActiveCallout] = useState<{ imageIndex: number; calloutIndex: number } | null>(null);
   const workspaceRef = useRef<HTMLDivElement>(null);
   const journeyId = searchParams.get('journey');
 
@@ -194,15 +194,33 @@ export function WikiGuideJourney({ article, content, onBack }: WikiGuideJourneyP
             </nav>
 
             <section className="overflow-hidden rounded-3xl border border-white/10 bg-[#0d1728]/75 shadow-xl shadow-black/20">
-              {activeStep.image && (
-                <figure className="border-b border-white/10 bg-[#07111f] p-3 md:p-5">
-                  <WikiGuideImageCanvas image={activeStep.image} onOpen={() => setViewerImage(activeStep.image)} activeCallout={activeCallout} onActiveCalloutChange={setActiveCallout} />
-                  <figcaption className="mt-2 px-1 text-xs leading-5 text-slate-500">
-                    {activeStep.image.alt} · {t('wikiGuide.openImage')}
-                  </figcaption>
-                  <WikiGuideCalloutLegend image={activeStep.image} activeCallout={activeCallout} onActiveCalloutChange={setActiveCallout} />
-                </figure>
-              )}
+              {activeStep.images.map((image, imageIndex) => {
+                const imageActiveCallout = activeCallout?.imageIndex === imageIndex
+                  ? activeCallout.calloutIndex
+                  : null;
+                const setImageActiveCallout = (calloutIndex: number | null) => {
+                  setActiveCallout(calloutIndex === null ? null : { imageIndex, calloutIndex });
+                };
+
+                return (
+                  <figure key={`${image.src}-${imageIndex}`} className="border-b border-white/10 bg-[#07111f] p-3 md:p-5">
+                    <WikiGuideImageCanvas
+                      image={image}
+                      onOpen={() => setViewerImage(image)}
+                      activeCallout={imageActiveCallout}
+                      onActiveCalloutChange={setImageActiveCallout}
+                    />
+                    <figcaption className="mt-2 px-1 text-xs leading-5 text-slate-500">
+                      {image.alt} · {t('wikiGuide.openImage')}
+                    </figcaption>
+                    <WikiGuideCalloutLegend
+                      image={image}
+                      activeCallout={imageActiveCallout}
+                      onActiveCalloutChange={setImageActiveCallout}
+                    />
+                  </figure>
+                );
+              })}
 
               <div className="p-5 md:p-8">
             <div className="text-xs font-semibold uppercase tracking-[0.16em] text-cyan-300">{t('wikiGuide.stepOf', { current: activeIndex + 1, total: guide.steps.length })}</div>
