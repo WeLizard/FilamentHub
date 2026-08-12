@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.field_encryption import decrypt_field
 from app.models.crm import CrmQuote, CrmQuoteStatus, CrmQuoteVersion
 from app.models.shared_quote import SharedQuote
+from app.models.user_spool import UserSpool, UserSpoolState
 from app.services import subscription_service
 
 
@@ -46,6 +47,158 @@ def quote_payload() -> dict:
             }
         ],
     }
+
+
+@pytest.mark.asyncio
+async def test_order_reservation_reduces_preflight_stock_until_production_starts(
+    auth_client,
+    auth_user,
+    db_session: AsyncSession,
+) -> None:
+    """A planning hold protects stock without becoming irreversible consumption."""
+    await subscription_service.set_paywall_enforced(db_session, False)
+    spool = UserSpool(
+        user_id=auth_user.id,
+        initial_weight_g=100,
+        used_weight_g=0,
+        state=UserSpoolState.active,
+        source="manual",
+    )
+    db_session.add(spool)
+    await db_session.commit()
+    await db_session.refresh(spool)
+
+    payload = quote_payload()
+    payload["calculation_snapshot"] = {
+        "operational_preflight": {
+            "request": {
+                "safety_buffer_percent": 0,
+                "lines": [
+                    {
+                        "line_id": "tool-0",
+                        "label": "PLA black",
+                        "weight_g": 80,
+                        "spool_ids": [spool.id],
+                    }
+                ],
+            },
+            "result": {
+                "lines": [
+                    {
+                        "line_id": "tool-0",
+                        "required_base_g": 80,
+                        "required_planned_g": 80,
+                        "allocations": [
+                            {"spool_id": spool.id, "planned_coverage_g": 80}
+                        ],
+                    }
+                ]
+            },
+        }
+    }
+    quote_response = await auth_client.post("/api/v1/crm/quotes", json=payload)
+    assert quote_response.status_code == 201, quote_response.text
+    accepted_response = await auth_client.post(
+        f"/api/v1/crm/quotes/{quote_response.json()['id']}/status",
+        json={"status": "accepted"},
+    )
+    assert accepted_response.status_code == 200, accepted_response.text
+    order = accepted_response.json()["order"]
+    assert order["material_requirements"] == [
+        {
+            "line_id": "tool-0",
+            "label": "PLA black",
+            "filament_id": None,
+            "required_base_g": 80.0,
+            "required_planned_g": 80.0,
+            "suggested_spool_ids": [spool.id],
+            "suggested_allocations": [{"spool_id": spool.id, "weight_g": 80.0}],
+        }
+    ]
+
+    unknown_line_response = await auth_client.put(
+        f"/api/v1/crm/orders/{order['id']}/reservations",
+        json={
+            "items": [
+                {
+                    "material_line_key": "invented-line",
+                    "spool_id": spool.id,
+                    "weight_g": 10,
+                }
+            ]
+        },
+    )
+    assert unknown_line_response.status_code == 409
+    assert (
+        unknown_line_response.json()["detail"]["code"]
+        == "ERR_CRM_SPOOL_RESERVATION_MATERIAL_MISMATCH"
+    )
+
+    reserve_response = await auth_client.put(
+        f"/api/v1/crm/orders/{order['id']}/reservations",
+        json={
+            "items": [
+                {
+                    "material_line_key": "tool-0",
+                    "material_label": "PLA black",
+                    "spool_id": spool.id,
+                    "weight_g": 80,
+                }
+            ]
+        },
+    )
+    assert reserve_response.status_code == 200, reserve_response.text
+    assert reserve_response.json()["spool_reservations"][0]["weight_g"] == 80
+
+    preflight_response = await auth_client.post(
+        "/api/v1/calculator/preflight",
+        json={
+            "safety_buffer_percent": 0,
+            "lines": [{"line_id": "next-job", "weight_g": 50, "spool_ids": [spool.id]}],
+        },
+    )
+    assert preflight_response.status_code == 200, preflight_response.text
+    preflight_line = preflight_response.json()["lines"][0]
+    assert preflight_line["selected_remaining_g"] == 20
+    assert preflight_line["shortfall_base_g"] == 30
+    assert preflight_line["allocations"][0]["reserved_elsewhere_g"] == 80
+
+    overbook_response = await auth_client.put(
+        f"/api/v1/crm/orders/{order['id']}/reservations",
+        json={
+            "items": [
+                {
+                    "material_line_key": "tool-0",
+                    "spool_id": spool.id,
+                    "weight_g": 101,
+                }
+            ]
+        },
+    )
+    assert overbook_response.status_code == 409
+    assert (
+        overbook_response.json()["detail"]["code"]
+        == "ERR_CRM_SPOOL_RESERVATION_EXCEEDS_AVAILABLE"
+    )
+
+    production_response = await auth_client.patch(
+        f"/api/v1/crm/orders/{order['id']}",
+        json={"status": "in_production"},
+    )
+    assert production_response.status_code == 200, production_response.text
+    assert production_response.json()["spool_reservations"] == []
+
+    released_preflight = await auth_client.post(
+        "/api/v1/calculator/preflight",
+        json={
+            "safety_buffer_percent": 0,
+            "lines": [{"line_id": "after-release", "weight_g": 50, "spool_ids": [spool.id]}],
+        },
+    )
+    assert released_preflight.status_code == 200, released_preflight.text
+    assert released_preflight.json()["lines"][0]["selected_remaining_g"] == 100
+    await db_session.refresh(spool)
+    assert spool.used_weight_g == 0
 
 
 @pytest.mark.asyncio

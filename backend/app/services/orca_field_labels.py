@@ -32,6 +32,7 @@ ORCA_FIELD_LABELS: dict[str, FieldLabel] = {
     "eng_plate_temp": {"label": "Engineering plate temperature", "unit": "°C"},
     "idle_temperature": {"label": "Idle temperature", "unit": "°C"},
     "chamber_temperature": {"label": "Chamber temperature", "unit": "°C"},
+    "chamber_minimal_temperature": {"label": "Minimum chamber temperature", "unit": "°C"},
 
     # Flow & extrusion
     "filament_flow_ratio": {"label": "Flow ratio", "unit": None},
@@ -48,14 +49,32 @@ ORCA_FIELD_LABELS: dict[str, FieldLabel] = {
     "overhang_fan_speed": {"label": "Overhang fan speed", "unit": "%"},
     "overhang_fan_threshold": {"label": "Overhang fan threshold", "unit": None},
     "close_fan_the_first_x_layers": {"label": "Fan off first N layers", "unit": None},
+    "initial_layer_fan_speed": {"label": "First layer fan speed", "unit": "%"},
     "full_fan_speed_layer": {"label": "Full fan speed layer", "unit": None},
     "slow_down_layer_time": {"label": "Slow down layer time", "unit": "s"},
     "slow_down_min_speed": {"label": "Slow down min speed", "unit": "mm/s"},
     "reduce_fan_stop_start_freq": {"label": "Reduce fan stop/start", "unit": None},
+    "activate_air_filtration_during_print": {
+        "label": "Air filtration during print",
+        "unit": None,
+    },
+    "activate_air_filtration_on_completion": {
+        "label": "Air filtration after print",
+        "unit": None,
+    },
 
     # Retraction (filament-level overrides)
     "filament_retraction_length": {"label": "Retraction length", "unit": "mm"},
     "filament_retraction_speed": {"label": "Retraction speed", "unit": "mm/s"},
+    "filament_retract_after_wipe": {"label": "Retraction after wipe", "unit": "%"},
+    "filament_retract_length_toolchange": {
+        "label": "Material-change retraction length",
+        "unit": "mm",
+    },
+    "filament_retract_restart_extra_toolchange": {
+        "label": "Material-change extra feed",
+        "unit": "mm",
+    },
     "filament_z_hop": {"label": "Z hop", "unit": "mm"},
     "filament_wipe": {"label": "Wipe", "unit": None},
 
@@ -76,7 +95,54 @@ ORCA_FIELD_LABELS: dict[str, FieldLabel] = {
 
     # G-code hooks
     "filament_start_gcode": {"label": "Start G-code", "unit": None},
+    "filament_change_extrusion_role_gcode": {
+        "label": "Change extrusion role G-code",
+        "unit": None,
+    },
     "filament_end_gcode": {"label": "End G-code", "unit": None},
+
+    # Process: quality / strength / speed / multimaterial
+    "zaa_enabled": {"label": "Z contouring enabled", "unit": None},
+    "zaa_minimize_perimeter_height": {
+        "label": "Minimize wall height angle",
+        "unit": "°",
+    },
+    "zaa_min_z": {"label": "Minimum Z height", "unit": "mm"},
+    "zaa_dont_alternate_fill_direction": {
+        "label": "Do not alternate fill direction",
+        "unit": None,
+    },
+    "wall_maximum_resolution": {"label": "Maximum wall resolution", "unit": "mm"},
+    "wall_maximum_deviation": {"label": "Maximum wall deviation", "unit": "mm"},
+    "top_surface_fill_order": {"label": "Top surface fill order", "unit": None},
+    "top_layer_direction": {"label": "Top layer direction", "unit": "°"},
+    "top_surface_expansion": {"label": "Top surface expansion", "unit": "mm"},
+    "top_surface_expansion_margin": {
+        "label": "Top surface expansion margin",
+        "unit": "mm",
+    },
+    "top_surface_expansion_direction": {
+        "label": "Top surface expansion direction",
+        "unit": None,
+    },
+    "sparse_infill_smooth_factor": {
+        "label": "Sparse infill smooth factor",
+        "unit": "%",
+    },
+    "separated_infills": {"label": "Separated infills", "unit": None},
+    "small_support_perimeter_speed": {
+        "label": "Small support perimeters",
+        "unit": "mm/s or %",
+    },
+    "small_support_perimeter_threshold": {
+        "label": "Small support perimeters threshold",
+        "unit": "mm",
+    },
+    "toolchange_ordering": {"label": "Toolchange ordering", "unit": None},
+    "brim_ears_outer_only": {
+        "label": "Brim ears on outer corners only",
+        "unit": None,
+    },
 }
 
 

@@ -5,7 +5,12 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
 
-from app.models.crm import CrmOrderStatus, CrmQuoteEventType, CrmQuoteStatus
+from app.models.crm import (
+    CrmOrderStatus,
+    CrmQuoteEventType,
+    CrmQuoteStatus,
+    CrmReservationStatus,
+)
 
 
 class CrmCustomerCreate(BaseModel):
@@ -142,6 +147,8 @@ class CrmOrderResponse(BaseModel):
     total: float
     due_date: date | None
     note: str | None
+    material_requirements: list["CrmOrderMaterialRequirement"] = Field(default_factory=list)
+    spool_reservations: list["CrmOrderSpoolReservationResponse"] = Field(default_factory=list)
     completed_at: datetime | None
     created_at: datetime
     updated_at: datetime
@@ -192,6 +199,54 @@ class CrmOrderUpdate(BaseModel):
     note: str | None = Field(None, max_length=5000)
 
 
+class CrmOrderMaterialRequirement(BaseModel):
+    line_id: str = Field(..., min_length=1, max_length=160)
+    label: str | None = Field(None, max_length=255)
+    filament_id: int | None = Field(None, ge=1)
+    required_base_g: float = Field(..., ge=0)
+    required_planned_g: float = Field(..., ge=0)
+    suggested_spool_ids: list[int] = Field(default_factory=list, max_length=16)
+    suggested_allocations: list["CrmOrderMaterialAllocationSuggestion"] = Field(
+        default_factory=list,
+        max_length=16,
+    )
+
+
+class CrmOrderMaterialAllocationSuggestion(BaseModel):
+    spool_id: int = Field(..., ge=1)
+    weight_g: float = Field(..., gt=0)
+
+
+class CrmOrderSpoolReservationCreate(BaseModel):
+    material_line_key: str = Field(..., min_length=1, max_length=160)
+    material_label: str | None = Field(None, max_length=255)
+    spool_id: int = Field(..., ge=1)
+    weight_g: float = Field(..., gt=0, le=1_000_000)
+
+
+class CrmOrderSpoolReservationReplace(BaseModel):
+    items: list[CrmOrderSpoolReservationCreate] = Field(default_factory=list, max_length=256)
+
+    @model_validator(mode="after")
+    def validate_unique_allocations(self) -> "CrmOrderSpoolReservationReplace":
+        identities = [(item.material_line_key, item.spool_id) for item in self.items]
+        if len(identities) != len(set(identities)):
+            raise ValueError("reservation allocations must be unique per line and spool")
+        return self
+
+
+class CrmOrderSpoolReservationResponse(BaseModel):
+    id: int
+    material_line_key: str
+    material_label: str | None
+    spool_id: int
+    filament_id: int | None
+    spool_label: str
+    weight_g: float
+    status: CrmReservationStatus
+    created_at: datetime
+
+
 class CrmOrderListResponse(BaseModel):
     items: list[CrmOrderResponse]
     total: int
@@ -212,3 +267,7 @@ class CrmShareQuoteResponse(BaseModel):
     uuid: str
     share_url: str
     expires_at: datetime | None
+
+
+CrmOrderMaterialRequirement.model_rebuild()
+CrmOrderResponse.model_rebuild()

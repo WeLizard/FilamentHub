@@ -28,6 +28,7 @@ from app.schemas.calculator import (
 from app.services.calculator_printer_compatibility_service import (
     calculate_printer_compatibility,
 )
+from app.services.crm_spool_reservation_service import active_reserved_weights
 
 _REMAINING_STALE_AFTER = timedelta(days=30)
 _IMPORTED_SPOOL_SOURCES = {
@@ -247,6 +248,7 @@ def _spool_suggestions(
     candidate_spools: list[UserSpool],
     selected_spool_ids: set[int],
     expected_remaining: dict[int, float],
+    reserved_by_spool: dict[int, float],
     remaining_evidence_by_spool: dict[int, _RemainingEvidence],
     selected_remaining_g: float,
     required_planned_g: float,
@@ -277,6 +279,7 @@ def _spool_suggestions(
                 relation=relation,
                 requires_reslice=requires_reslice,
                 remaining_g=_rounded(expected_remaining[spool.id]),
+                reserved_elsewhere_g=_rounded(reserved_by_spool.get(spool.id, 0)),
                 coverage_target_g=_rounded(coverage_target),
                 covers_target=(
                     evidence.status == "known"
@@ -382,8 +385,17 @@ async def calculate_material_preflight(
         )
         for spool_id, spool in spools_by_id.items()
     }
+    reserved_by_spool = await active_reserved_weights(
+        db,
+        user_id=user_id,
+        spool_ids=relevant_spool_ids,
+    )
     expected_remaining = {
-        spool_id: spool.remaining_weight_g for spool_id, spool in spools_by_id.items()
+        spool_id: max(
+            0.0,
+            spool.remaining_weight_g - reserved_by_spool.get(spool_id, 0),
+        )
+        for spool_id, spool in spools_by_id.items()
     }
 
     results: list[CalculatorPreflightLineResponse] = []
@@ -433,6 +445,7 @@ async def calculate_material_preflight(
                         ),
                         selected_spool_ids=set(),
                         expected_remaining=expected_remaining,
+                        reserved_by_spool=reserved_by_spool,
                         remaining_evidence_by_spool=remaining_evidence_by_spool,
                         selected_remaining_g=0,
                         required_planned_g=required_planned,
@@ -472,6 +485,7 @@ async def calculate_material_preflight(
                     filament_id=spool.filament_id,
                     state=spool.state.value,
                     remaining_before_g=_rounded(expected_remaining[spool.id]),
+                    reserved_elsewhere_g=_rounded(reserved_by_spool.get(spool.id, 0)),
                     planned_coverage_g=0,
                     expected_consumption_g=0,
                     expected_after_g=_rounded(expected_remaining[spool.id]),
@@ -518,6 +532,7 @@ async def calculate_material_preflight(
                         ),
                         selected_spool_ids=set(line.spool_ids),
                         expected_remaining=expected_remaining,
+                        reserved_by_spool=reserved_by_spool,
                         remaining_evidence_by_spool=remaining_evidence_by_spool,
                         selected_remaining_g=selected_remaining,
                         required_planned_g=required_planned,
@@ -618,6 +633,7 @@ async def calculate_material_preflight(
                     ),
                     selected_spool_ids=set(line.spool_ids),
                     expected_remaining=expected_remaining,
+                    reserved_by_spool=reserved_by_spool,
                     remaining_evidence_by_spool=remaining_evidence_by_spool,
                     selected_remaining_g=selected_remaining,
                     required_planned_g=required_planned,

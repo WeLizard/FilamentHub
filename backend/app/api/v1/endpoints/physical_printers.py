@@ -5,7 +5,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.dependencies import get_current_active_user
+from app.core.dependencies import get_current_active_user, require_printer_bundle_read
 from app.core.errors import (
     ERR_EXPORT_PRINTER_DISABLED,
     raise_error,
@@ -92,7 +92,7 @@ async def get_item(
 @router.get("/{physical_printer_id}/orcaslicer-bundle", response_model=None)
 async def get_orcaslicer_bundle(
     physical_printer_id: int,
-    current_user: Annotated[User, Depends(get_current_active_user)],
+    current_user: Annotated[User, Depends(require_printer_bundle_read)],
     db: Annotated[AsyncSession, Depends(get_db)],
     archive: bool = False,
 ) -> dict | Response:

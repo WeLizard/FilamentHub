@@ -23,7 +23,7 @@ import {
   Layers3,
   Loader2,
   Plus,
-  Printer,
+  RefreshCw,
   Save,
   Settings2,
   Sparkles,
@@ -47,6 +47,7 @@ import { PrinterEconomicsColumn } from '../components/calculator/PrinterEconomic
 import { PowerPartsBreakdown } from '../components/calculator/PowerPartsBreakdown';
 import { QuickPicks } from '../components/calculator/QuickPicks';
 import { LayeredPrinterIcon } from '../components/icons/LayeredPrinterIcon';
+import { Printer3DIcon } from '../components/icons/Printer3DIcon';
 import {
   MaterialPreflightPanel,
   type MaterialPreflightUiLine,
@@ -87,6 +88,7 @@ import type {
   CalculatorParsedMaterial,
   CalculatorPreflightRequest,
   CalculatorPreflightResponse,
+  CalculatorProfileResponse,
   CalculatorPrintJobRequest,
   CrmCustomer,
   Filament,
@@ -824,6 +826,32 @@ const extractStaticSettings = (form: CalculatorFormState): CalculatorStaticSetti
   minOrderPrice: form.minOrderPrice,
   roundToNearest: form.roundToNearest,
   roundingMode: form.roundingMode,
+});
+
+const profileToStaticSettings = (
+  profile: CalculatorProfileResponse,
+): CalculatorStaticSettings => ({
+  electricityCostPerKwh: profile.electricity_cost_per_kwh,
+  printerPowerW: profile.printer_power_w,
+  powerHotendW: profile.power_hotend_w,
+  powerBedW: profile.power_bed_w,
+  powerSteppersW: profile.power_steppers_w,
+  powerElectronicsW: profile.power_electronics_w,
+  modelingRatePerHour: profile.modeling_rate_per_hour,
+  postprocessingRatePerHour: profile.postprocessing_rate_per_hour,
+  printingRatePerHour: profile.printing_rate_per_hour,
+  amortizationRatePerHour: profile.amortization_rate_per_hour,
+  maintenanceCostPerHour: profile.maintenance_cost_per_hour,
+  printerPurchasePrice: profile.printer_purchase_price,
+  printerUsefulHours: profile.printer_useful_hours,
+  overheadPercent: profile.overhead_percent,
+  markupPercent: profile.markup_percent,
+  taxRatePercent: profile.tax_rate_percent,
+  fixedCosts: profile.fixed_costs,
+  bedPrepCostPerPrint: profile.bed_prep_cost_per_print,
+  minOrderPrice: profile.min_order_price,
+  roundToNearest: profile.round_to_nearest,
+  roundingMode: profile.rounding_mode as RoundingMode,
 });
 
 const loadStoredCalculatorDefaults = (): CalculatorStaticSettings => {
@@ -1871,27 +1899,7 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
         const profileCurrency = normalizeCurrency(profile.currency);
         setForm((prev) => ({
           ...prev,
-          electricityCostPerKwh: profile.electricity_cost_per_kwh,
-          printerPowerW: profile.printer_power_w,
-          modelingRatePerHour: profile.modeling_rate_per_hour,
-          postprocessingRatePerHour: profile.postprocessing_rate_per_hour,
-          printingRatePerHour: profile.printing_rate_per_hour,
-          amortizationRatePerHour: profile.amortization_rate_per_hour,
-          overheadPercent: profile.overhead_percent,
-          markupPercent: profile.markup_percent,
-          taxRatePercent: profile.tax_rate_percent,
-          fixedCosts: profile.fixed_costs,
-          bedPrepCostPerPrint: profile.bed_prep_cost_per_print,
-          minOrderPrice: profile.min_order_price,
-          roundToNearest: profile.round_to_nearest,
-          roundingMode: profile.rounding_mode as RoundingMode,
-          printerPurchasePrice: profile.printer_purchase_price,
-          printerUsefulHours: profile.printer_useful_hours,
-          maintenanceCostPerHour: profile.maintenance_cost_per_hour,
-          powerHotendW: profile.power_hotend_w,
-          powerBedW: profile.power_bed_w,
-          powerSteppersW: profile.power_steppers_w,
-          powerElectronicsW: profile.power_electronics_w,
+          ...profileToStaticSettings(profile),
         }));
         setQuoteProfile((prev) => ({
           ...prev,
@@ -2837,6 +2845,7 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
           quoteProfile.currency,
         )
       : null;
+    const preflightRequest = currentPreflightRequest();
 
     try {
       await saveQuoteToWorkspaceMutation.mutateAsync({
@@ -2864,7 +2873,17 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
           inn: quoteParties.buyerInn,
           address: quoteParties.buyerAddress,
         },
-        calculation_snapshot: calculationSnapshot ? { ...calculationSnapshot } : null,
+        calculation_snapshot: calculationSnapshot
+          ? {
+              ...calculationSnapshot,
+              operational_preflight: preflightRequest
+                ? {
+                    request: preflightRequest,
+                    result: preflightMutation.data ?? null,
+                  }
+                : null,
+            }
+          : null,
         payment_terms: quoteParties.paymentTerms,
         disclaimer_mode: quoteParties.disclaimerMode,
         tax_total: 0,
@@ -2954,6 +2973,9 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
     setIsCloudBusy(true);
     try {
       const profile = await calculatorAPI.getProfile();
+      const staticSettings = profileToStaticSettings(profile);
+      setForm((prev) => ({ ...prev, ...staticSettings }));
+      saveStoredCalculatorDefaults(staticSettings);
       setQuoteProfile((prev) => ({
         ...prev,
         sellerName: profile.seller_name,
@@ -2990,6 +3012,24 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
       setHistoryFeedback({
         kind: 'error',
         message: translateApiError(t, error, tc('cloudLoadError')),
+      });
+    } finally {
+      setIsCloudBusy(false);
+    }
+  };
+
+  const handlePlatformDefaultsReset = async () => {
+    setIsCloudBusy(true);
+    try {
+      const profile = await calculatorAPI.resetProfileDefaults();
+      const staticSettings = profileToStaticSettings(profile);
+      setForm((prev) => ({ ...prev, ...staticSettings }));
+      saveStoredCalculatorDefaults(staticSettings);
+      setHistoryFeedback({ kind: 'success', message: tc('platformDefaultsApplied') });
+    } catch (error) {
+      setHistoryFeedback({
+        kind: 'error',
+        message: translateApiError(t, error, tc('platformDefaultsError')),
       });
     } finally {
       setIsCloudBusy(false);
@@ -3082,8 +3122,13 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
             ...(material.brim_weight_g != null
               ? { brim: material.brim_weight_g }
               : {}),
+            ...(material.prime_tower_weight_g != null
+              ? { prime_tower: material.prime_tower_weight_g }
+              : {}),
           },
-          role_weight_source: material.support_weight_g != null || material.brim_weight_g != null
+          role_weight_source: material.support_weight_g != null
+            || material.brim_weight_g != null
+            || material.prime_tower_weight_g != null
             ? 'gcode_extrusion_roles'
             : null,
         };
@@ -3092,24 +3137,21 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
           const candidate = match.match.item;
           baseLine.filament_id = candidate.filamentId;
           baseLine.mappingSource = 'automatic';
-          if (candidate.spoolIds.length === 1) {
-            const spool = availableSpools.find((item) => item.id === candidate.spoolIds[0]);
-            if (spool) {
-              const defaults = deriveUserSpoolDefaults(spool);
-              const priceCurrency = resolveUserSpoolPriceCurrency(spool);
-              const currencyMatches =
-                !priceCurrency || priceCurrency === calcCurrencyRef.current;
-              baseLine.selectionValue = `spool:${spool.id}`;
-              baseLine.spool_id = spool.id;
-              baseLine.filament_id = spool.filament_id;
-              baseLine.spool_price = currencyMatches ? (defaults.spoolPrice ?? 0) : 0;
-              baseLine.spool_weight_kg = defaults.spoolWeightKg ?? 1;
-              baseLine.price_source = spool.price != null ? 'spool' : 'filamenthub';
-              baseLine.priceResolved = currencyMatches && defaults.spoolPrice != null;
-            }
-          } else {
-            baseLine.selectionValue = '';
-            baseLine.requiresSpoolChoice = true;
+          const catalogFilament = catalogFilaments.find(
+            (filament) => filament.id === candidate.filamentId,
+          );
+          if (catalogFilament) {
+            const defaults = deriveCatalogFilamentDefaults(catalogFilament);
+            const brandCurrency = catalogFilament.currency
+              ? normalizeCurrency(catalogFilament.currency)
+              : null;
+            const currencyMatches =
+              !brandCurrency || brandCurrency === calcCurrencyRef.current;
+            baseLine.selectionValue = `filament:${catalogFilament.id}`;
+            baseLine.spool_price = currencyMatches ? (defaults.spoolPrice ?? 0) : 0;
+            baseLine.spool_weight_kg = defaults.spoolWeightKg ?? 1;
+            baseLine.price_source = 'filamenthub';
+            baseLine.priceResolved = currencyMatches && defaults.spoolPrice != null;
           }
         } else if (match?.source === 'catalog') {
           const filament = match.match.item;
@@ -3200,22 +3242,16 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
     if (prioritizedMatch?.source === 'user') {
       const spoolMatch = prioritizedMatch.match;
       priceManuallyEditedRef.current = false;
-      const exactSpoolId = spoolMatch.item.spoolIds.length === 1 ? spoolMatch.item.spoolIds[0] : '';
-      if (!exactSpoolId) {
-        skipNextFilamentDefaultsRef.current = true;
-        setMaterialPriceSource('unset');
-      }
-      setSelectedSpoolId(exactSpoolId);
+      setSelectedSpoolId('');
       setForm((prev) => ({
         ...prev,
         selectedFilamentId: spoolMatch.item.filamentId,
-        ...(!exactSpoolId ? { spoolPrice: 0 } : {}),
       }));
       setAutoMaterialMatch({
         confidence: spoolMatch.confidence,
         method: spoolMatch.method,
         source: 'spool',
-        requiresSpoolChoice: !exactSpoolId,
+        requiresSpoolChoice: true,
       });
       return;
     }
@@ -3481,6 +3517,7 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
           onSaveToHistory={handleSaveToHistory}
           onCloudSave={handleCloudSave}
           onCloudLoad={handleCloudLoad}
+          onPlatformDefaultsReset={handlePlatformDefaultsReset}
           isCloudBusy={isCloudBusy}
           formatCurrency={formatCurrency}
         />
@@ -3619,6 +3656,7 @@ interface CalculatorViewProps {
   onSaveToHistory: () => Promise<void>;
   onCloudSave: () => Promise<void>;
   onCloudLoad: () => Promise<void>;
+  onPlatformDefaultsReset: () => Promise<void>;
   isCloudBusy: boolean;
   formatCurrency: (value: number | null | undefined) => string;
 }
@@ -3695,6 +3733,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
   onSaveToHistory,
   onCloudSave,
   onCloudLoad,
+  onPlatformDefaultsReset,
   isCloudBusy,
   formatCurrency,
 }) => {
@@ -3971,6 +4010,9 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
     const brimWeightG = roleWeightSource === 'gcode_extrusion_roles'
       ? roleWeights.brim
       : null;
+    const primeTowerWeightG = roleWeightSource === 'gcode_extrusion_roles'
+      ? roleWeights.prime_tower
+      : null;
     const supportWeightLabel = owningJob?.parsed.raft_layers != null
       && owningJob.parsed.raft_layers > 0
       ? tc('materialSupportAndRaftWeight')
@@ -4049,6 +4091,11 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
             {brimWeightG != null && brimWeightG > 0 ? (
               <span className="shrink-0 font-medium text-sky-200/85">
                 {tc('materialBrimWeight')}: {brimWeightG.toFixed(2)} {tc('grams')}
+              </span>
+            ) : null}
+            {primeTowerWeightG != null && primeTowerWeightG > 0 ? (
+              <span className="shrink-0 font-medium text-orange-200/85">
+                {tc('materialPrimeTowerWeight')}: {primeTowerWeightG.toFixed(2)} {tc('grams')}
               </span>
             ) : null}
           </div>
@@ -4670,6 +4717,15 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                   {isCloudBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CloudDownload className="h-4 w-4" />}
                   {tc('cloudLoad')}
                 </button>
+                <button
+                  type="button"
+                  onClick={onPlatformDefaultsReset}
+                  disabled={isCloudBusy}
+                  className={ghostButtonClass}
+                >
+                  {isCloudBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                  {tc('platformDefaultsReset')}
+                </button>
                 <span className="flex items-center">
                   <HelpTooltip text={tc('cloudStorageTooltip')} />
                 </span>
@@ -4801,7 +4857,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                         accent
                       />
                       <BatchMetric
-                        icon={<Printer className="h-4 w-4" />}
+                        icon={<Printer3DIcon className="h-4 w-4" />}
                         label={tc('partyRuns')}
                         value={String(batchSummary.printRunCount)}
                       />
@@ -5434,6 +5490,13 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                           value={`${parsedGcode.brim_filament_weight_g.toFixed(2)} ${tc('grams')}`}
                         />
                       ) : null}
+                      {parsedGcode.prime_tower_filament_weight_g != null
+                        && parsedGcode.prime_tower_filament_weight_g > 0 ? (
+                        <CompactMetric
+                          label={tc('parsedPrimeTowerWeight')}
+                          value={`${parsedGcode.prime_tower_filament_weight_g.toFixed(2)} ${tc('grams')}`}
+                        />
+                      ) : null}
                       {parsedGcode.support_used && parsedGcode.support_filament_weight_g == null ? (
                         <p className="rounded-xl border border-amber-400/15 bg-amber-400/[0.07] px-3 py-2 text-xs leading-5 text-amber-100/85">
                           {tc('supportBreakdownUnavailable')}
@@ -5463,6 +5526,19 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                         <CompactMetric
                           label={tc('parsedObjectCount')}
                           value={String(parsedGcode.object_count)}
+                        />
+                      ) : null}
+                      {parsedGcode.object_filament_weight_g != null ? (
+                        <CompactMetric
+                          label={tc('parsedObjectScopeWeight')}
+                          value={`${parsedGcode.object_filament_weight_g.toFixed(2)} ${tc('grams')}`}
+                        />
+                      ) : null}
+                      {parsedGcode.shared_filament_weight_g != null
+                        && parsedGcode.shared_filament_weight_g > 0 ? (
+                        <CompactMetric
+                          label={tc('parsedSharedWeight')}
+                          value={`${parsedGcode.shared_filament_weight_g.toFixed(2)} ${tc('grams')}`}
                         />
                       ) : null}
                       <CompactMetric
@@ -5898,7 +5974,9 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                                         ? jobsWithRaft.has(line.job_key ?? '')
                                           ? tc('materialSupportAndRaftCost')
                                           : tc('materialSupportCost')
-                                        : tc('materialBrimCost')}: {roleCost.weight_g.toFixed(2)} {tc('grams')} · {formatCurrency(roleCost.cost)}
+                                        : roleCost.role === 'brim'
+                                          ? tc('materialBrimCost')
+                                          : tc('materialPrimeTowerCost')}: {roleCost.weight_g.toFixed(2)} {tc('grams')} · {formatCurrency(roleCost.cost)}
                                     </span>
                                   ))}
                                   <span>
@@ -6252,7 +6330,7 @@ const QuoteModal: React.FC<QuoteModalProps> = ({
               <div className="rounded-[1.5rem] border border-white/10 bg-white/5 p-5">
                 <div className="flex items-center gap-3">
                   <div className="flex h-10 w-10 items-center justify-center rounded-[1rem] border border-white/10 bg-white/5">
-                    <Printer className="h-5 w-5 text-cyan-300" />
+                    <Printer3DIcon className="h-5 w-5 text-cyan-300" />
                   </div>
                   <div>
                     <p className="text-base font-semibold text-white">{tc('quoteSellerSection')}</p>

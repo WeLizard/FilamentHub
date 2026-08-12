@@ -23,6 +23,10 @@ export interface OrcaStructuredFieldDef {
   kind: OrcaStructuredFieldKind;
   tab: OrcaStructuredFieldTab;
   section: string;
+  min?: number;
+  max?: number;
+  step?: number | 'any';
+  placeholder?: string;
 }
 
 const splitLines = (value: string): string[] =>
@@ -57,6 +61,7 @@ export const ORCA_STRUCTURED_SECTION_ORDER: Record<OrcaStructuredFieldTab, strin
     'seam',
     'precision',
     'ironing',
+    'zContouring',
     'wallGenerator',
     'wallsAndSurfaces',
     'bridging',
@@ -70,6 +75,23 @@ export const ORCA_STRUCTURED_SECTION_ORDER: Record<OrcaStructuredFieldTab, strin
 };
 
 export const ORCA_ADVANCED_FIELD_DEFS: OrcaStructuredFieldDef[] = [
+  { key: 'zaa_enabled', kind: 'boolean', tab: 'quality', section: 'zContouring' },
+  { key: 'zaa_minimize_perimeter_height', kind: 'float', tab: 'quality', section: 'zContouring', min: 0, max: 90, step: 0.1, placeholder: '35' },
+  { key: 'zaa_min_z', kind: 'float', tab: 'quality', section: 'zContouring', min: 0, max: 100, step: 0.01, placeholder: '0.05' },
+  { key: 'zaa_dont_alternate_fill_direction', kind: 'boolean', tab: 'quality', section: 'zContouring' },
+  { key: 'wall_maximum_resolution', kind: 'float', tab: 'quality', section: 'wallGenerator', min: 0.005, max: 0.5, step: 0.005, placeholder: '0.5' },
+  { key: 'wall_maximum_deviation', kind: 'float', tab: 'quality', section: 'wallGenerator', min: 0.005, max: 0.05, step: 0.005, placeholder: '0.025' },
+  { key: 'top_surface_fill_order', kind: 'enum', tab: 'strength', section: 'topBottomShells' },
+  { key: 'top_layer_direction', kind: 'float', tab: 'strength', section: 'topBottomShells', min: -1, max: 360, step: 1, placeholder: '-1' },
+  { key: 'top_surface_expansion', kind: 'float', tab: 'strength', section: 'topBottomShells', min: 0, step: 0.01, placeholder: '0' },
+  { key: 'top_surface_expansion_margin', kind: 'float', tab: 'strength', section: 'topBottomShells', min: 0, max: 10, step: 0.01, placeholder: '0' },
+  { key: 'top_surface_expansion_direction', kind: 'enum', tab: 'strength', section: 'topBottomShells' },
+  { key: 'sparse_infill_smooth_factor', kind: 'percent', tab: 'strength', section: 'infill', min: 0, max: 100, step: 1, placeholder: '0' },
+  { key: 'separated_infills', kind: 'boolean', tab: 'strength', section: 'infill' },
+  { key: 'small_support_perimeter_speed', kind: 'floatOrPercent', tab: 'speed', section: 'otherLayersSpeed', placeholder: '50%' },
+  { key: 'small_support_perimeter_threshold', kind: 'float', tab: 'speed', section: 'otherLayersSpeed', min: 0, step: 0.1, placeholder: '0' },
+  { key: 'toolchange_ordering', kind: 'enum', tab: 'multimaterial', section: 'advanced' },
+  { key: 'brim_ears_outer_only', kind: 'boolean', tab: 'others', section: 'brim' },
   ...buildFieldDefs(
     'boolean',
     'strength',
@@ -1170,6 +1192,23 @@ wiping_volumes_extruders
 export const ORCA_ADVANCED_FIELD_KEYS = new Set(ORCA_ADVANCED_FIELD_DEFS.map((field) => field.key));
 
 export const ORCA_ADVANCED_FIELD_LABELS: Record<string, { en: string; ru: string }> = {
+  brim_ears_outer_only: { en: 'Brim ears outer corners only', ru: 'Ушки каймы только на внешних углах' },
+  separated_infills: { en: 'Separated infills', ru: 'Раздельное заполнение' },
+  small_support_perimeter_speed: { en: 'Small support perimeters', ru: 'Малые периметры поддержек' },
+  small_support_perimeter_threshold: { en: 'Small support perimeters threshold', ru: 'Порог малых периметров поддержек' },
+  sparse_infill_smooth_factor: { en: 'Sparse infill smooth factor', ru: 'Сглаживание разреженного заполнения' },
+  toolchange_ordering: { en: 'Toolchange ordering', ru: 'Порядок смены инструмента' },
+  top_layer_direction: { en: 'Top layer direction', ru: 'Направление верхнего слоя' },
+  top_surface_expansion: { en: 'Top surface expansion', ru: 'Расширение верхней поверхности' },
+  top_surface_expansion_direction: { en: 'Top expansion direction', ru: 'Направление расширения верхней поверхности' },
+  top_surface_expansion_margin: { en: 'Top surface expansion margin', ru: 'Граница расширения верхней поверхности' },
+  top_surface_fill_order: { en: 'Top surface fill order', ru: 'Порядок заполнения верхней поверхности' },
+  wall_maximum_deviation: { en: 'Maximum wall deviation', ru: 'Максимальное отклонение стенки' },
+  wall_maximum_resolution: { en: 'Maximum wall resolution', ru: 'Максимальное разрешение стенки' },
+  zaa_dont_alternate_fill_direction: { en: "Don't alternate fill direction", ru: 'Не чередовать направление заполнения' },
+  zaa_enabled: { en: 'Z contouring enabled', ru: 'Включить Z-контурирование' },
+  zaa_min_z: { en: 'Minimum Z height', ru: 'Минимальная высота Z' },
+  zaa_minimize_perimeter_height: { en: 'Minimize wall height angle', ru: 'Угол уменьшения высоты стенки' },
   accel_to_decel_enable: { en: 'Enable accel_to_decel', ru: 'Включить accel_to_decel' },
   accel_to_decel_factor: { en: 'accel_to_decel factor', ru: 'Коэффициент accel_to_decel' },
   adaptive_layer_height: { en: 'Adaptive layer height', ru: 'Адаптивная высота слоя' },
@@ -1413,6 +1452,20 @@ export const ORCA_ADVANCED_FIELD_LABELS: Record<string, { en: string; ru: string
   xy_hole_compensation: { en: 'X-Y hole compensation', ru: 'Расширение пустот в слое' },
 };
 export const ORCA_ADVANCED_ENUM_OPTIONS: Record<string, string[]> = {
+  top_surface_fill_order: enumValues(`
+default
+outward
+inward
+`),
+  top_surface_expansion_direction: enumValues(`
+inward_and_outward
+inward
+outward
+`),
+  toolchange_ordering: enumValues(`
+default
+cyclic
+`),
   slicing_mode: enumValues(`
 regular
 even_odd
@@ -1582,6 +1635,20 @@ all
 };
 
 export const ORCA_ADVANCED_ENUM_LABELS: Record<string, Record<string, { en: string; ru: string }>> = {
+  top_surface_fill_order: {
+    default: { en: 'Default', ru: 'По умолчанию' },
+    outward: { en: 'Outward', ru: 'Наружу' },
+    inward: { en: 'Inward', ru: 'Внутрь' },
+  },
+  top_surface_expansion_direction: {
+    inward_and_outward: { en: 'Inward and outward', ru: 'Внутрь и наружу' },
+    inward: { en: 'Inward', ru: 'Внутрь' },
+    outward: { en: 'Outward', ru: 'Наружу' },
+  },
+  toolchange_ordering: {
+    default: { en: 'Default', ru: 'По умолчанию' },
+    cyclic: { en: 'Cyclic', ru: 'Циклически' },
+  },
   slicing_mode: {
     regular: { en: 'Regular', ru: 'Обычный' },
     even_odd: { en: 'Even-odd', ru: 'Чёт-нечёт' },

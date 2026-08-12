@@ -9,6 +9,8 @@ const mocks = vi.hoisted(() => ({
   installBundle: vi.fn(),
   isPluginEmbed: vi.fn(),
   requestCapabilities: vi.fn(),
+  listPrinters: vi.fn(),
+  getPrinterProfile: vi.fn(),
   capabilityListener: null as ((capabilities: ReadonlySet<string>) => void) | null,
 }));
 
@@ -18,22 +20,12 @@ vi.mock('react-i18next', () => ({
 
 vi.mock('../api/client', () => ({
   physicalPrintersAPI: {
-    list: vi.fn().mockResolvedValue([
-      {
-        id: 1,
-        name: 'Printer One',
-        printer_profile_ids: [11],
-        material_systems: [],
-      },
-      {
-        id: 2,
-        name: 'Printer Two',
-        printer_profile_ids: [22],
-        material_systems: [],
-      },
-    ]),
+    list: (...args: unknown[]) => mocks.listPrinters(...args),
     listBindings: vi.fn().mockResolvedValue([]),
     downloadOrcaBundle: (...args: unknown[]) => mocks.downloadBundle(...args),
+  },
+  printerProfilesAPI: {
+    get: (...args: unknown[]) => mocks.getPrinterProfile(...args),
   },
 }));
 
@@ -85,6 +77,20 @@ describe('MyPrintersList Orca bundle action', () => {
     vi.clearAllMocks();
     mocks.capabilityListener = null;
     mocks.downloadBundle.mockResolvedValue(new Blob(['bundle']));
+    mocks.listPrinters.mockResolvedValue([
+      {
+        id: 1,
+        name: 'Printer One',
+        printer_profile_ids: [11],
+        material_systems: [],
+      },
+      {
+        id: 2,
+        name: 'Printer Two',
+        printer_profile_ids: [22],
+        material_systems: [],
+      },
+    ]);
   });
 
   it('shows install actions only after a supporting plugin advertises the capability', async () => {
@@ -154,5 +160,28 @@ describe('MyPrintersList Orca bundle action', () => {
 
     act(() => resolveDownload?.(new Blob(['bundle'])));
     await waitFor(() => expect((actions[0] as HTMLButtonElement).disabled).toBe(false));
+  });
+
+  it('loads an official configuration linked to a physical printer by id', async () => {
+    mocks.isPluginEmbed.mockReturnValue(false);
+    mocks.listPrinters.mockResolvedValue([
+      {
+        id: 3,
+        name: 'Printer with official configuration',
+        printer_profile_ids: [33],
+        material_systems: [],
+      },
+    ]);
+    mocks.getPrinterProfile.mockResolvedValue({
+      id: 33,
+      name: 'Official machine configuration',
+      is_official: true,
+      owner_user_id: null,
+    });
+
+    renderList();
+
+    expect(await screen.findByText('Official machine configuration')).toBeInTheDocument();
+    expect(mocks.getPrinterProfile).toHaveBeenCalledWith(33);
   });
 });

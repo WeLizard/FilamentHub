@@ -484,6 +484,8 @@ export interface PrintProfile {
   quality_tier: string | null;
   default_nozzle: string | null;
   layer_height_mm: number | null;
+  printer_profile_ids?: number[];
+  configuration_links_resolved?: boolean;
   compatible_printers: string[] | null;
   compatible_filaments: string[] | null;
   orcaslicer_settings: Record<string, any>;
@@ -1035,7 +1037,7 @@ export interface CalculatorMaterialLineRequest {
   support_weight_source?: CalculatorMaterialRoleSource | null;
 }
 
-export type CalculatorMaterialRole = 'support' | 'brim';
+export type CalculatorMaterialRole = 'support' | 'brim' | 'prime_tower';
 export type CalculatorMaterialRoleSource = 'gcode_extrusion_roles';
 
 export interface CalculatorMaterialRoleCost {
@@ -1120,6 +1122,7 @@ export interface CalculatorPreflightSpoolAllocation {
   filament_id: number | null;
   state: string;
   remaining_before_g: number;
+  reserved_elsewhere_g: number;
   planned_coverage_g: number;
   expected_consumption_g: number;
   expected_after_g: number;
@@ -1154,6 +1157,7 @@ export interface CalculatorPreflightSpoolSuggestion {
   relation: 'same_filament' | 'same_line' | 'same_material_type';
   requires_reslice: boolean;
   remaining_g: number;
+  reserved_elsewhere_g: number;
   coverage_target_g: number;
   covers_target: boolean;
   remaining_status: 'known' | 'stale' | 'unknown';
@@ -1383,6 +1387,7 @@ export interface CalculatorParsedMaterial {
   infill_weight_g?: number | null;
   support_weight_g?: number | null;
   brim_weight_g?: number | null;
+  prime_tower_weight_g?: number | null;
 }
 
 export interface CalculatorParsedObjectGroup {
@@ -1415,6 +1420,9 @@ export interface CalculatorGcodeParseResponse {
   infill_filament_weight_g?: number | null;
   support_filament_weight_g?: number | null;
   brim_filament_weight_g?: number | null;
+  prime_tower_filament_weight_g?: number | null;
+  object_filament_weight_g?: number | null;
+  shared_filament_weight_g?: number | null;
   layer_height_mm?: number | null;
   initial_layer_height_mm?: number | null;
   sparse_infill_density_percent?: number | null;
@@ -1536,6 +1544,24 @@ export interface CalculatorProfileResponse {
 
 export type CalculatorProfileUpdate = Partial<Omit<CalculatorProfileResponse, 'updated_at'>>;
 
+export type CalculatorProfileDefaults = Omit<
+  CalculatorProfileResponse,
+  | 'seller_name'
+  | 'seller_inn'
+  | 'seller_phone'
+  | 'payment_terms'
+  | 'seller_registration_id'
+  | 'seller_tax_code'
+  | 'seller_address'
+  | 'seller_bank_details'
+  | 'quote_market'
+  | 'validity_days'
+  | 'disclaimer_mode'
+  | 'currency'
+  | 'quote_number_prefix'
+  | 'updated_at'
+>;
+
 export interface SharedQuoteCreate {
   title?: string;
   html_content: string;
@@ -1652,10 +1678,41 @@ export interface CrmOrder {
   total: number;
   due_date: string | null;
   note: string | null;
+  material_requirements: CrmOrderMaterialRequirement[];
+  spool_reservations: CrmOrderSpoolReservation[];
   completed_at: string | null;
   created_at: string;
   updated_at: string;
   customer: CrmCustomer | null;
+}
+
+export interface CrmOrderMaterialRequirement {
+  line_id: string;
+  label: string | null;
+  filament_id: number | null;
+  required_base_g: number;
+  required_planned_g: number;
+  suggested_spool_ids: number[];
+  suggested_allocations: Array<{ spool_id: number; weight_g: number }>;
+}
+
+export interface CrmOrderSpoolReservation {
+  id: number;
+  material_line_key: string;
+  material_label: string | null;
+  spool_id: number;
+  filament_id: number | null;
+  spool_label: string;
+  weight_g: number;
+  status: 'active' | 'released';
+  created_at: string;
+}
+
+export interface CrmOrderSpoolReservationCreate {
+  material_line_key: string;
+  material_label?: string | null;
+  spool_id: number;
+  weight_g: number;
 }
 
 export interface CrmQuote {

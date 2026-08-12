@@ -122,6 +122,9 @@ def _parse_plain_gcode_payload(
         "infill_filament_weight_g": None,
         "support_filament_weight_g": None,
         "brim_filament_weight_g": None,
+        "prime_tower_filament_weight_g": None,
+        "object_filament_weight_g": None,
+        "shared_filament_weight_g": None,
         "layer_height_mm": None,
         "initial_layer_height_mm": None,
         "sparse_infill_density_percent": None,
@@ -1244,6 +1247,8 @@ def _apply_extrusion_role_usage(parsed: dict[str, Any], lines: Iterable[str]) ->
     """
     relative_extrusion = False
     current_tool = 0
+    observed_tool: int | None = None
+    observed_toolchange_count = 0
     current_role = "unclassified"
     current_object: str | None = None
     last_absolute_e: dict[int, float] = {}
@@ -1294,7 +1299,11 @@ def _apply_extrusion_role_usage(parsed: dict[str, Any], lines: Iterable[str]) ->
         if head in "Tt":
             tool_match = _TOOL_CHANGE_RE.match(command)
             if tool_match:
-                current_tool = int(tool_match.group(1))
+                next_tool = int(tool_match.group(1))
+                if observed_tool is not None and next_tool != observed_tool:
+                    observed_toolchange_count += 1
+                observed_tool = next_tool
+                current_tool = next_tool
             continue
 
         if head not in "Gg":
@@ -1336,6 +1345,12 @@ def _apply_extrusion_role_usage(parsed: dict[str, Any], lines: Iterable[str]) ->
             tool_objects = extrusion_by_tool_object.setdefault(current_tool, {})
             tool_objects[current_object] = tool_objects.get(current_object, 0.0) + consumed
 
+    if parsed["toolchange_count"] is None and observed_tool is not None:
+        # The first Tn selects the initial tool. Only later transitions are
+        # changes. Prefer slicer metadata when it exists because it may also
+        # know about non-Tn changes such as an explicit manual swap.
+        parsed["toolchange_count"] = observed_toolchange_count
+
     if not extrusion_by_tool_role or not parsed["materials"]:
         return
 
@@ -1345,22 +1360,30 @@ def _apply_extrusion_role_usage(parsed: dict[str, Any], lines: Iterable[str]) ->
     total_infill_weight = 0.0
     total_support_weight = 0.0
     total_brim_weight = 0.0
+    total_prime_tower_weight = 0.0
     object_group_weights: dict[str, float] = {}
     object_group_material_weights: dict[str, dict[int, float]] = {}
     resolved_any = False
+    all_weighted_materials_resolved = True
+    resolved_material_weight = 0.0
 
     for material in materials:
         tool_index = material.get("tool_index")
         role_tool = role_tools[0] if single_material_fallback else tool_index
         role_usage = extrusion_by_tool_role.get(role_tool)
         material_weight = material.get("weight_g")
-        if not role_usage or material_weight is None or material_weight <= 0:
+        if material_weight is None or material_weight <= 0:
+            continue
+        if not role_usage:
+            all_weighted_materials_resolved = False
             continue
 
         total_extrusion = sum(role_usage.values())
         if total_extrusion <= 0:
+            all_weighted_materials_resolved = False
             continue
 
+        resolved_material_weight += float(material_weight)
         grams_per_extrusion_mm = float(material_weight) / total_extrusion
         infill_extrusion = sum(
             amount for role, amount in role_usage.items() if "infill" in role
@@ -1369,15 +1392,23 @@ def _apply_extrusion_role_usage(parsed: dict[str, Any], lines: Iterable[str]) ->
             amount for role, amount in role_usage.items() if role.startswith("support")
         )
         brim_extrusion = role_usage.get("brim", 0.0)
+        prime_tower_extrusion = sum(
+            amount
+            for role, amount in role_usage.items()
+            if role in {"prime tower", "wipe tower", "purge tower"}
+        )
         infill_weight = infill_extrusion * grams_per_extrusion_mm
         support_weight = support_extrusion * grams_per_extrusion_mm
         brim_weight = brim_extrusion * grams_per_extrusion_mm
+        prime_tower_weight = prime_tower_extrusion * grams_per_extrusion_mm
         material["infill_weight_g"] = round(infill_weight, 3)
         material["support_weight_g"] = round(support_weight, 3)
         material["brim_weight_g"] = round(brim_weight, 3)
+        material["prime_tower_weight_g"] = round(prime_tower_weight, 3)
         total_infill_weight += infill_weight
         total_support_weight += support_weight
         total_brim_weight += brim_weight
+        total_prime_tower_weight += prime_tower_weight
         for raw_object_name, object_extrusion in extrusion_by_tool_object.get(role_tool, {}).items():
             group_name = _normalize_object_group_name(raw_object_name)
             object_weight = object_extrusion * grams_per_extrusion_mm
@@ -1396,6 +1427,7 @@ def _apply_extrusion_role_usage(parsed: dict[str, Any], lines: Iterable[str]) ->
         parsed["infill_filament_weight_g"] = round(total_infill_weight, 3)
         parsed["support_filament_weight_g"] = round(total_support_weight, 3)
         parsed["brim_filament_weight_g"] = round(total_brim_weight, 3)
+        parsed["prime_tower_filament_weight_g"] = round(total_prime_tower_weight, 3)
     total_object_weight = sum(object_group_weights.values())
     if total_object_weight > 0:
         for group in parsed.get("object_groups", []):
@@ -1409,6 +1441,13 @@ def _apply_extrusion_role_usage(parsed: dict[str, Any], lines: Iterable[str]) ->
                     object_group_material_weights.get(group["name"], {}).items()
                 )
             }
+    if all_weighted_materials_resolved and resolved_material_weight > 0 and parsed.get("object_groups"):
+        object_weight = min(resolved_material_weight, total_object_weight)
+        parsed["object_filament_weight_g"] = round(object_weight, 3)
+        parsed["shared_filament_weight_g"] = round(
+            max(0.0, resolved_material_weight - object_weight),
+            3,
+        )
 
 
 def _finalize_totals(parsed: dict[str, Any]) -> None:
@@ -1439,8 +1478,22 @@ def _finalize_totals(parsed: dict[str, Any]) -> None:
         parsed["support_filament_weight_g"] = round(float(parsed["support_filament_weight_g"]), 3)
     if parsed["brim_filament_weight_g"] is not None:
         parsed["brim_filament_weight_g"] = round(float(parsed["brim_filament_weight_g"]), 3)
+    if parsed["prime_tower_filament_weight_g"] is not None:
+        parsed["prime_tower_filament_weight_g"] = round(
+            float(parsed["prime_tower_filament_weight_g"]),
+            3,
+        )
+    if parsed["object_filament_weight_g"] is not None:
+        parsed["object_filament_weight_g"] = round(float(parsed["object_filament_weight_g"]), 3)
+    if parsed["shared_filament_weight_g"] is not None:
+        parsed["shared_filament_weight_g"] = round(float(parsed["shared_filament_weight_g"]), 3)
     for material in parsed["materials"]:
-        for field in ("infill_weight_g", "support_weight_g", "brim_weight_g"):
+        for field in (
+            "infill_weight_g",
+            "support_weight_g",
+            "brim_weight_g",
+            "prime_tower_weight_g",
+        ):
             if material.get(field) is not None:
                 material[field] = round(float(material[field]), 3)
     if parsed["layer_height_mm"] is not None:

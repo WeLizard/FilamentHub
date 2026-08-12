@@ -66,6 +66,7 @@ from app.schemas.brand_request import (
     BrandRequestResponse,
     BrandRequestUpdate,
 )
+from app.schemas.calculator import CalculatorProfileDefaults
 from app.schemas.database import (
     DatabaseExportRequest,
     DatabaseIntegrityResponse,
@@ -87,6 +88,10 @@ from app.schemas.printer_request import (
 )
 from app.schemas.user import AccountDeletionStats, UserListResponse, UserResponse
 from app.services.brand_slug_service import apply_brand_slug_rename, choose_brand_slug
+from app.services.calculator_defaults_service import (
+    get_calculator_profile_defaults,
+    set_calculator_profile_defaults,
+)
 from app.services.database_service import (
     get_database_stats as get_database_stats_service,
 )
@@ -2069,6 +2074,9 @@ async def get_calculator_settings(
     return {
         "paywall_enforced": paywall_enforced(),
         "trial_days": trial_days(),
+        "profile_defaults": (
+            await get_calculator_profile_defaults(db)
+        ).model_dump(mode="json"),
         "counts": {"trialing": trialing or 0, "active": active or 0},
     }
 
@@ -2079,15 +2087,27 @@ async def update_calculator_settings(
     db: Annotated[AsyncSession, Depends(get_db)],
     paywall_enforced_value: bool = Body(..., alias="paywall_enforced", embed=True),
     trial_days_value: int | None = Body(None, alias="trial_days", embed=True),
+    profile_defaults_value: CalculatorProfileDefaults | None = Body(
+        None,
+        alias="profile_defaults",
+        embed=True,
+    ),
 ) -> dict:
     """Изменить глобальные настройки калькулятора (рубильник пейволла + длина триала)."""
     await set_paywall_enforced(db, paywall_enforced_value)
     await set_trial_days(db, trial_days_value)
+    if profile_defaults_value is not None:
+        await set_calculator_profile_defaults(db, profile_defaults_value)
+    profile_defaults = await get_calculator_profile_defaults(db)
     logger.info(
         f"Admin {admin.id} set calculator settings: paywall_enforced={paywall_enforced_value}, "
         f"trial_days={trial_days_value}"
     )
-    return {"paywall_enforced": paywall_enforced(), "trial_days": trial_days()}
+    return {
+        "paywall_enforced": paywall_enforced(),
+        "trial_days": trial_days(),
+        "profile_defaults": profile_defaults.model_dump(mode="json"),
+    }
 
 
 # ==================== Wiki Sync ====================

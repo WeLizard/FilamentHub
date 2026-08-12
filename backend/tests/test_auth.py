@@ -1310,7 +1310,11 @@ async def test_plugin_session_is_short_lived_and_endpoint_scoped(
     decoded = decode_plugin_token(plugin_token)
     assert decoded is not None
     assert decoded["user_id"] == auth_user.id
-    assert set(decoded["scopes"]) == {"presets:read", "presets:write"}
+    assert set(decoded["scopes"]) == {
+        "presets:read",
+        "presets:write",
+        "printer-bundles:read",
+    }
     plugin_headers = {"Authorization": f"Bearer {plugin_token}"}
 
     regular_api = await auth_client.get("/api/v1/auth/me", headers=plugin_headers)

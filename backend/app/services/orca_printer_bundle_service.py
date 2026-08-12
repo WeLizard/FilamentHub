@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.print_profile import PrintProfile
+from app.models.print_profile_configuration import PrintProfileConfigurationLink
 from app.models.print_profile_printer import PrintProfilePrinter
 from app.models.printer_profile import PrinterProfile
 from app.models.user_printer_device import UserPrinterDevice
@@ -72,7 +73,21 @@ def _matching_machine_profiles(
     process_profile: PrintProfile,
     machine_profiles: list[PrinterProfile],
 ) -> list[PrinterProfile]:
-    matches: list[PrinterProfile] = []
+    exact_configuration_ids = {
+        link.printer_profile_id for link in process_profile.configuration_links
+    }
+    if exact_configuration_ids and process_profile.configuration_links_resolved:
+        return [
+            machine_profile
+            for machine_profile in machine_profiles
+            if machine_profile.id in exact_configuration_ids
+        ]
+
+    matches_by_id: dict[int, PrinterProfile] = {
+        machine_profile.id: machine_profile
+        for machine_profile in machine_profiles
+        if machine_profile.id in exact_configuration_ids
+    }
     for machine_profile in machine_profiles:
         keys = _machine_match_keys(machine_profile)
         for link in process_profile.printer_links:
@@ -82,9 +97,13 @@ def _matching_machine_profiles(
                 link.printer_id is not None
                 and machine_profile.printer_id == link.printer_id
             ) or link.printer_slug in keys:
-                matches.append(machine_profile)
+                matches_by_id[machine_profile.id] = machine_profile
                 break
-    return matches
+    return [
+        machine_profile
+        for machine_profile in machine_profiles
+        if machine_profile.id in matches_by_id
+    ]
 
 
 async def build_orca_printer_bundle(
@@ -148,40 +167,64 @@ async def build_orca_printer_bundle(
         if printer_slugs:
             link_conditions.append(PrintProfilePrinter.printer_slug.in_(printer_slugs))
 
+        profiles_by_id: dict[int, PrintProfile] = {}
+        profile_options = (
+            selectinload(PrintProfile.printer_links),
+            selectinload(PrintProfile.configuration_links),
+        )
+        exact_result = await db.execute(
+            select(PrintProfile)
+            .join(PrintProfileConfigurationLink)
+            .options(*profile_options)
+            .where(
+                PrintProfile.owner_user_id == user_id,
+                PrintProfile.active.is_(True),
+                PrintProfileConfigurationLink.printer_profile_id.in_(profile_ids),
+            )
+        )
+        profiles_by_id.update(
+            (profile.id, profile) for profile in exact_result.scalars().unique().all()
+        )
+
         if link_conditions:
-            result = await db.execute(
+            legacy_result = await db.execute(
                 select(PrintProfile)
                 .join(PrintProfilePrinter)
-                .options(selectinload(PrintProfile.printer_links))
+                .options(*profile_options)
                 .where(
                     PrintProfile.owner_user_id == user_id,
                     PrintProfile.active.is_(True),
+                    PrintProfile.configuration_links_resolved.is_(False),
                     PrintProfilePrinter.relation_type == "explicit",
                     or_(*link_conditions),
                 )
-                .order_by(PrintProfile.id)
             )
-            for profile in result.scalars().unique().all():
-                matching_machines = _matching_machine_profiles(profile, machine_profiles)
-                if not matching_machines:
-                    continue
-                compatible_names = [
-                    str(machine_payload_by_id[machine.id]["name"])
-                    for machine in matching_machines
-                ]
-                payload = await print_profile_to_orca_json(
-                    profile,
-                    db,
-                    compatible_printer_names=compatible_names,
-                    printer_for_tag=matching_machines[0].printer,
-                )
-                process_entries.append(
-                    {
-                        "id": profile.id,
-                        "name": payload.get("name") or profile.name,
-                        "profile": payload,
-                    }
-                )
+            profiles_by_id.update(
+                (profile.id, profile)
+                for profile in legacy_result.scalars().unique().all()
+            )
+
+        for profile in sorted(profiles_by_id.values(), key=lambda item: item.id):
+            matching_machines = _matching_machine_profiles(profile, machine_profiles)
+            if not matching_machines:
+                continue
+            compatible_names = [
+                str(machine_payload_by_id[machine.id]["name"])
+                for machine in matching_machines
+            ]
+            payload = await print_profile_to_orca_json(
+                profile,
+                db,
+                compatible_printer_names=compatible_names,
+                printer_for_tag=matching_machines[0].printer,
+            )
+            process_entries.append(
+                {
+                    "id": profile.id,
+                    "name": payload.get("name") or profile.name,
+                    "profile": payload,
+                }
+            )
 
     return {
         "format": ORCA_PRINTER_BUNDLE_FORMAT,

@@ -1,7 +1,9 @@
-"""Versioned OrcaSlicer preset field registry generated from the bundled catalog.
+"""Versioned OrcaSlicer preset field registry based on the bundled catalog.
 
 Values are deliberately absent: the observer compares top-level field names only.
-Regenerate this snapshot when backend/data/catalog_sources/orca/bundle.zip changes.
+The sets also include reviewed forward-compatible fields already supported by the
+editors. Regenerate the bundled snapshot when bundle.zip changes, then retain
+those reviewed additions until the bundle itself contains them.
 """
 
 ORCA_FIELD_REGISTRY_VERSION = (
@@ -12,6 +14,8 @@ ORCA_PRESET_FIELDS: dict[str, frozenset[str]] = {
     "filament": frozenset(
         {
             "activate_air_filtration",
+            "activate_air_filtration_during_print",
+            "activate_air_filtration_on_completion",
             "activate_chamber_layer",
             "activate_chamber_temp_control",
             "adaptive_pressure_advance",
@@ -29,6 +33,7 @@ ORCA_PRESET_FIELDS: dict[str, frozenset[str]] = {
             "box_temperature_range_high",
             "box_temperature_range_low",
             "chamber_temperature",
+            "chamber_minimal_temperature",
             "chamber_temperatures",
             "circle_compensation_speed",
             "close_additional_fan_first_x_layers",
@@ -83,6 +88,7 @@ ORCA_PRESET_FIELDS: dict[str, frozenset[str]] = {
             "filament_bridge_speed",
             "filament_change_length",
             "filament_change_length_nc",
+            "filament_change_extrusion_role_gcode",
             "filament_color",
             "filament_cooling_before_tower",
             "filament_cooling_final_speed",
@@ -144,12 +150,15 @@ ORCA_PRESET_FIELDS: dict[str, frozenset[str]] = {
             "filament_ramming_volumetric_speed",
             "filament_ramming_volumetric_speed_nc",
             "filament_retract_before_wipe",
+            "filament_retract_after_wipe",
             "filament_retract_layer_change",
+            "filament_retract_length_toolchange",
             "filament_retract_length_nc",
             "filament_retract_lift_above",
             "filament_retract_lift_below",
             "filament_retract_lift_enforce",
             "filament_retract_restart_extra",
+            "filament_retract_restart_extra_toolchange",
             "filament_retract_when_changing_layer",
             "filament_retraction_distances_when_cut",
             "filament_retraction_distances_when_ec",
@@ -201,6 +210,7 @@ ORCA_PRESET_FIELDS: dict[str, frozenset[str]] = {
             "idle_temperture",
             "impact_strength_z",
             "inherits",
+            "initial_layer_fan_speed",
             "instantiation",
             "internal_bridge_fan_speed",
             "ironing_fan_speed",
@@ -283,6 +293,7 @@ ORCA_PRESET_FIELDS: dict[str, frozenset[str]] = {
             "bridge_speed",
             "brim_ears_detection_length",
             "brim_ears_max_angle",
+            "brim_ears_outer_only",
             "brim_object_gap",
             "brim_type",
             "brim_use_efc_outline",
@@ -523,6 +534,7 @@ ORCA_PRESET_FIELDS: dict[str, frozenset[str]] = {
             "seam_slope_start_height",
             "seam_slope_steps",
             "seam_slope_type",
+            "separated_infills",
             "set_other_flow_ratios",
             "setting_id",
             "single_extruder_multi_material_priming",
@@ -554,6 +566,8 @@ ORCA_PRESET_FIELDS: dict[str, frozenset[str]] = {
             "small_area_infill_flow_compensation_model",
             "small_perimeter_speed",
             "small_perimeter_threshold",
+            "small_support_perimeter_speed",
+            "small_support_perimeter_threshold",
             "smooth_coefficient",
             "smooth_speed_discontinuity_area",
             "solid_infill_direction",
@@ -571,6 +585,7 @@ ORCA_PRESET_FIELDS: dict[str, frozenset[str]] = {
             "sparse_infill_patter",
             "sparse_infill_pattern",
             "sparse_infill_rotate_template",
+            "sparse_infill_smooth_factor",
             "sparse_infill_speed",
             "speed_limit_to_height",
             "speed_limit_to_height_enable",
@@ -631,6 +646,7 @@ ORCA_PRESET_FIELDS: dict[str, frozenset[str]] = {
             "top_color_penetration_layers",
             "top_shell_layers",
             "top_shell_thickness",
+            "top_layer_direction",
             "top_solid_infill_flow_ratio",
             "top_surface_acceleration",
             "top_surface_density",
@@ -639,7 +655,12 @@ ORCA_PRESET_FIELDS: dict[str, frozenset[str]] = {
             "top_surface_jerk",
             "top_surface_line_width",
             "top_surface_pattern",
+            "top_surface_expansion",
+            "top_surface_expansion_direction",
+            "top_surface_expansion_margin",
+            "top_surface_fill_order",
             "top_surface_speed",
+            "toolchange_ordering",
             "travel_acceleration",
             "travel_jerk",
             "travel_short_distance_acceleration",
@@ -672,6 +693,8 @@ ORCA_PRESET_FIELDS: dict[str, frozenset[str]] = {
             "wall_infill_order",
             "wall_loop_direction",
             "wall_loops",
+            "wall_maximum_deviation",
+            "wall_maximum_resolution",
             "wall_sequence",
             "wall_transition_angle",
             "wall_transition_filter_deviation",
@@ -695,6 +718,10 @@ ORCA_PRESET_FIELDS: dict[str, frozenset[str]] = {
             "wiping_volumes_extruders",
             "xy_contour_compensation",
             "xy_hole_compensation",
+            "zaa_dont_alternate_fill_direction",
+            "zaa_enabled",
+            "zaa_min_z",
+            "zaa_minimize_perimeter_height",
             "z_direction_outwall_speed_continuous",
         }
     ),

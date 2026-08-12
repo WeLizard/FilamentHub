@@ -8,8 +8,12 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.dependencies import get_current_active_user
+from app.core.dependencies import (
+    get_current_active_user,
+    get_current_active_user_optional,
+)
 from app.core.errors import (
+    ERR_AUTH_REQUIRED,
     ERR_CANNOT_ASSIGN_OTHER_OWNER,
     ERR_EXPORT_PRINTER_PROFILE_ERROR,
     ERR_EXTERNAL_ID_EXISTS,
@@ -39,8 +43,20 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/printer-profiles", tags=["printer-profiles"])
 
 
+def _can_read_profile(profile: PrinterProfile, current_user: User | None) -> bool:
+    if profile.is_official and profile.active:
+        return True
+    if current_user is None:
+        return False
+    return (
+        current_user.role == UserRole.ADMIN
+        or profile.owner_user_id == current_user.id
+    )
+
+
 @router.get("/", response_model=PrinterProfileListResponse)
 async def list_printer_profiles(
+    current_user: Annotated[User | None, Depends(get_current_active_user_optional)],
     db: Annotated[AsyncSession, Depends(get_db)],
     page: int = Query(1, ge=1),
     size: int = Query(50, ge=1, le=100),
@@ -60,8 +76,31 @@ async def list_printer_profiles(
         query = query.where(PrinterProfile.is_official.is_(is_official))
     if printer_id is not None:
         query = query.where(PrinterProfile.printer_id == printer_id)
-    if owner_user_id is not None:
-        query = query.where(PrinterProfile.owner_user_id == owner_user_id)
+    if current_user is None:
+        if owner_user_id is not None:
+            raise_error(status.HTTP_401_UNAUTHORIZED, ERR_AUTH_REQUIRED)
+        query = query.where(
+            PrinterProfile.is_official.is_(True),
+            PrinterProfile.active.is_(True),
+        )
+    elif current_user.role == UserRole.ADMIN:
+        if owner_user_id is not None:
+            query = query.where(PrinterProfile.owner_user_id == owner_user_id)
+    else:
+        if owner_user_id is not None and owner_user_id != current_user.id:
+            raise_error(status.HTTP_403_FORBIDDEN, ERR_NO_PERMISSION)
+        if owner_user_id == current_user.id:
+            query = query.where(PrinterProfile.owner_user_id == current_user.id)
+        else:
+            query = query.where(
+                or_(
+                    PrinterProfile.owner_user_id == current_user.id,
+                    (
+                        PrinterProfile.is_official.is_(True)
+                        & PrinterProfile.active.is_(True)
+                    ),
+                )
+            )
     if search:
         like = like_pattern(search)
         query = query.where(
@@ -95,6 +134,7 @@ async def list_printer_profiles(
 @router.get("/{profile_id}", response_model=PrinterProfileResponse)
 async def get_printer_profile(
     profile_id: int,
+    current_user: Annotated[User | None, Depends(get_current_active_user_optional)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> PrinterProfileResponse:
     """Get printer profile by ID."""
@@ -104,7 +144,7 @@ async def get_printer_profile(
     )
     profile = result.scalar_one_or_none()
 
-    if profile is None:
+    if profile is None or not _can_read_profile(profile, current_user):
         raise_error(status.HTTP_404_NOT_FOUND, ERR_PRINTER_PROFILE_NOT_FOUND)
 
     return PrinterProfileResponse.model_validate(profile)
@@ -269,6 +309,7 @@ async def delete_printer_profile(
 @router.get("/{profile_id}/export/orcaslicer.json")
 async def export_printer_profile_json(
     profile_id: int,
+    current_user: Annotated[User | None, Depends(get_current_active_user_optional)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> Response:
     """
@@ -281,11 +322,11 @@ async def export_printer_profile_json(
     result = await db.execute(
         select(PrinterProfile)
         .options(selectinload(PrinterProfile.printer))
-        .where(PrinterProfile.id == profile_id, PrinterProfile.active == True)
+        .where(PrinterProfile.id == profile_id)
     )
     profile = result.scalar_one_or_none()
 
-    if not profile:
+    if not profile or not _can_read_profile(profile, current_user):
         raise_error(404, ERR_PRINTER_PROFILE_NOT_FOUND)
 
     # Экспортируем в JSON

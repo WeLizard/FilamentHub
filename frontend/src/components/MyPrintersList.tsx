@@ -1,15 +1,19 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQueries, useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Download, Loader2, Plus, RefreshCw, Settings, Wifi } from 'lucide-react';
 import {
   physicalPrintersAPI,
+  printerProfilesAPI,
   type PhysicalPrinter,
   type PrinterConnectionBinding,
 } from '../api/client';
-import type { PrinterProfile } from '../types/api';
+import type { PrinterProfile, PrintProfile } from '../types/api';
 import { PhysicalPrinterSettingsModal } from './PhysicalPrinterSettingsModal';
-import { PrinterConfigurationRow } from './PrinterConfigurationRow';
+import {
+  PrinterConfigurationRow,
+  type ConfigurationPrintProfile,
+} from './PrinterConfigurationRow';
 import { AddPhysicalPrinterModal } from './AddPhysicalPrinterModal';
 import { toast } from './Toast';
 import {
@@ -25,12 +29,20 @@ import { LayeredPrinterIcon } from './icons/LayeredPrinterIcon';
 interface MyPrintersListProps {
   /** The user's Orca machine profiles, shown under the printer they belong to. */
   printerProfiles: PrinterProfile[];
-  /** How many print profiles each configuration carries, by configuration id. */
-  printProfileCounts?: Map<number, number>;
+  /** Process profiles assigned to each machine configuration. */
+  printProfilesByConfiguration?: Map<number, ConfigurationPrintProfile[]>;
+  currentUserId?: number | null;
   /** Open the configuration (PrinterProfile) editor. */
   onEditConfiguration?: (profile: PrinterProfile) => void;
   /** Open the read-only configuration view. */
   onViewConfiguration?: (profile: PrinterProfile) => void;
+  onViewPrintProfile?: (profile: PrintProfile) => void;
+  onEditPrintProfile?: (
+    profile: PrintProfile,
+    configuration: PrinterProfile,
+  ) => void;
+  onCreatePrintProfile?: (configuration: PrinterProfile) => void;
+  onDownloadPrintProfile?: (profile: PrintProfile) => void;
 }
 
 /**
@@ -40,9 +52,14 @@ interface MyPrintersListProps {
  */
 export function MyPrintersList({
   printerProfiles,
-  printProfileCounts,
+  printProfilesByConfiguration,
+  currentUserId,
   onEditConfiguration,
   onViewConfiguration,
+  onViewPrintProfile,
+  onEditPrintProfile,
+  onCreatePrintProfile,
+  onDownloadPrintProfile,
 }: MyPrintersListProps) {
   const { t } = useTranslation();
   const pluginEmbed = isPluginEmbed();
@@ -74,11 +91,34 @@ export function MyPrintersList({
     queryFn: physicalPrintersAPI.listBindings,
   });
 
-  const profileById = useMemo(() => {
-    const map = new Map<number, PrinterProfile>();
-    printerProfiles.forEach((p) => map.set(p.id, p));
-    return map;
-  }, [printerProfiles]);
+  const knownProfileIds = useMemo(
+    () => new Set(printerProfiles.map((profile) => profile.id)),
+    [printerProfiles],
+  );
+  const missingLinkedProfileIds = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          (printers ?? []).flatMap((printer) => printer.printer_profile_ids),
+        ),
+      )
+        .filter((profileId) => !knownProfileIds.has(profileId))
+        .sort((left, right) => left - right),
+    [knownProfileIds, printers],
+  );
+  const linkedProfileQueries = useQueries({
+    queries: missingLinkedProfileIds.map((profileId) => ({
+      queryKey: ['printer-profile', profileId],
+      queryFn: () => printerProfilesAPI.get(profileId),
+      staleTime: 60_000,
+    })),
+  });
+
+  const profileById = new Map<number, PrinterProfile>();
+  printerProfiles.forEach((profile) => profileById.set(profile.id, profile));
+  linkedProfileQueries.forEach((query) => {
+    if (query.data) profileById.set(query.data.id, query.data);
+  });
 
   const bindingByPrinter = useMemo(() => {
     const map = new Map<number, PrinterConnectionBinding>();
@@ -226,9 +266,14 @@ export function MyPrintersList({
                           <PrinterConfigurationRow
                             key={id}
                             profile={profile}
-                            printProfileCount={printProfileCounts?.get(id) ?? 0}
+                            printProfiles={printProfilesByConfiguration?.get(id) ?? []}
+                            currentUserId={currentUserId}
                             onEdit={onEditConfiguration}
                             onView={onViewConfiguration}
+                            onViewPrintProfile={onViewPrintProfile}
+                            onEditPrintProfile={onEditPrintProfile}
+                            onCreatePrintProfile={onCreatePrintProfile}
+                            onDownloadPrintProfile={onDownloadPrintProfile}
                           />
                         ) : null;
                       })}

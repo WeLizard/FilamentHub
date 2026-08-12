@@ -1017,7 +1017,7 @@ async def create_plugin_session(
             "sub": current_user.email,
             "user_id": current_user.id,
         },
-        scopes=["presets:read", "presets:write"],
+        scopes=["presets:read", "presets:write", "printer-bundles:read"],
     )
     response.headers["Cache-Control"] = "no-store"
     return PluginSessionTokenResponse(

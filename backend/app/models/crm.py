@@ -9,6 +9,7 @@ from sqlalchemy import (
     Boolean,
     Date,
     DateTime,
+    Float,
     ForeignKey,
     Index,
     Integer,
@@ -27,6 +28,7 @@ if TYPE_CHECKING:
     from app.models.calculator_history_entry import CalculatorHistoryEntry
     from app.models.shared_quote import SharedQuote
     from app.models.user import User
+    from app.models.user_spool import UserSpool
 
 
 class CrmQuoteStatus(str, Enum):
@@ -58,6 +60,13 @@ class CrmQuoteEventType(str, Enum):
     STATUS_CHANGED = "status_changed"
     CUSTOMER_CHANGED = "customer_changed"
     SHARED = "shared"
+
+
+class CrmReservationStatus(str, Enum):
+    """Lifecycle of an explicit order material reservation."""
+
+    ACTIVE = "active"
+    RELEASED = "released"
 
 
 class CrmCustomer(Base):
@@ -276,6 +285,7 @@ class CrmOrder(Base):
     total: Mapped[float] = mapped_column(Numeric(14, 2), nullable=False)
     due_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    material_requirements: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -286,3 +296,62 @@ class CrmOrder(Base):
 
     quote: Mapped[CrmQuote] = relationship(back_populates="order")
     customer: Mapped[CrmCustomer | None] = relationship(back_populates="orders")
+    spool_reservations: Mapped[list["CrmOrderSpoolReservation"]] = relationship(
+        back_populates="order",
+        cascade="all, delete-orphan",
+        order_by="CrmOrderSpoolReservation.created_at",
+    )
+
+
+class CrmOrderSpoolReservation(Base):
+    """Material held for an order without changing confirmed spool consumption."""
+
+    __tablename__ = "crm_order_spool_reservations"
+    __table_args__ = (
+        Index(
+            "ix_crm_order_spool_reservations_user_status_spool",
+            "user_id",
+            "status",
+            "spool_id",
+        ),
+        Index(
+            "ix_crm_order_spool_reservations_order_status",
+            "order_id",
+            "status",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    order_id: Mapped[int] = mapped_column(
+        ForeignKey("crm_orders.id", ondelete="CASCADE"), nullable=False
+    )
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    spool_id: Mapped[int] = mapped_column(
+        ForeignKey("user_spools.id", ondelete="RESTRICT"), nullable=False
+    )
+    material_line_key: Mapped[str] = mapped_column(String(160), nullable=False)
+    material_label: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    weight_g: Mapped[float] = mapped_column(Float, nullable=False)
+    status: Mapped[CrmReservationStatus] = mapped_column(
+        SQLEnum(
+            CrmReservationStatus,
+            values_callable=lambda enum: [item.value for item in enum],
+            name="crmreservationstatus",
+            native_enum=False,
+        ),
+        nullable=False,
+        default=CrmReservationStatus.ACTIVE,
+    )
+    released_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    release_reason: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    order: Mapped[CrmOrder] = relationship(back_populates="spool_reservations")
+    spool: Mapped["UserSpool"] = relationship()

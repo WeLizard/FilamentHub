@@ -38,6 +38,47 @@ def test_detector_reports_only_unknown_top_level_field_metadata() -> None:
     assert all("secret_nested_value" not in item.field_name for item in detected)
 
 
+def test_detector_accepts_reviewed_orca_fields_exposed_by_the_editors() -> None:
+    filament_settings = {
+        key: ["fixture"]
+        for key in {
+            "initial_layer_fan_speed",
+            "filament_retract_restart_extra_toolchange",
+            "filament_retract_length_toolchange",
+            "filament_retract_after_wipe",
+            "filament_change_extrusion_role_gcode",
+            "chamber_minimal_temperature",
+            "activate_air_filtration_on_completion",
+            "activate_air_filtration_during_print",
+        }
+    }
+    process_settings = {
+        key: "fixture"
+        for key in {
+            "sparse_infill_smooth_factor",
+            "brim_ears_outer_only",
+            "zaa_minimize_perimeter_height",
+            "zaa_min_z",
+            "zaa_enabled",
+            "zaa_dont_alternate_fill_direction",
+            "wall_maximum_resolution",
+            "wall_maximum_deviation",
+            "top_surface_fill_order",
+            "top_surface_expansion_margin",
+            "top_surface_expansion_direction",
+            "top_surface_expansion",
+            "top_layer_direction",
+            "toolchange_ordering",
+            "small_support_perimeter_threshold",
+            "small_support_perimeter_speed",
+            "separated_infills",
+        }
+    }
+
+    assert detect_unknown_orca_fields(filament_settings, "filament") == []
+    assert detect_unknown_orca_fields(process_settings, "process") == []
+
+
 def test_detector_is_bounded_and_ignores_filamenthub_private_fields() -> None:
     settings = {f"future_{index:03d}": index for index in range(100)}
     settings.update(

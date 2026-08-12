@@ -21,7 +21,7 @@ class RoundingMode(str, Enum):
     NEAREST = "nearest"
 
 
-CalculatorMaterialRole = Literal["support", "brim"]
+CalculatorMaterialRole = Literal["support", "brim", "prime_tower"]
 CalculatorMaterialRoleSource = Literal["gcode_extrusion_roles"]
 
 
@@ -214,6 +214,7 @@ class CalculatorPreflightSpoolAllocation(BaseModel):
     filament_id: int | None
     state: str
     remaining_before_g: float = Field(ge=0)
+    reserved_elsewhere_g: float = Field(default=0, ge=0)
     planned_coverage_g: float = Field(ge=0)
     expected_consumption_g: float = Field(ge=0)
     expected_after_g: float = Field(ge=0)
@@ -246,6 +247,7 @@ class CalculatorPreflightSpoolSuggestion(BaseModel):
     relation: Literal["same_filament", "same_line", "same_material_type"]
     requires_reslice: bool
     remaining_g: float = Field(ge=0)
+    reserved_elsewhere_g: float = Field(default=0, ge=0)
     coverage_target_g: float = Field(ge=0)
     covers_target: bool
     remaining_status: CalculatorRemainingStatus
@@ -633,6 +635,11 @@ class CalculatorParsedMaterial(BaseModel):
         ge=0,
         description="Расход материала на G-code роль brim, нормализованный к весу tool",
     )
+    prime_tower_weight_g: float | None = Field(
+        None,
+        ge=0,
+        description="Расход материала на G-code роль prime/wipe tower, нормализованный к весу tool",
+    )
 
 
 class CalculatorFhubIdentity(BaseModel):
@@ -697,6 +704,21 @@ class CalculatorGcodeParseResponse(BaseModel):
         None,
         ge=0,
         description="Суммарный фактический расход на роль brim",
+    )
+    prime_tower_filament_weight_g: float | None = Field(
+        None,
+        ge=0,
+        description="Суммарный фактический расход на роль prime/wipe tower",
+    )
+    object_filament_weight_g: float | None = Field(
+        None,
+        ge=0,
+        description="Экструзия внутри именованных EXCLUDE_OBJECT scopes",
+    )
+    shared_filament_weight_g: float | None = Field(
+        None,
+        ge=0,
+        description="Экструзия вне именованных объектов: общие и служебные структуры",
     )
     layer_height_mm: float | None = Field(None, ge=0, description="Высота слоя")
     initial_layer_height_mm: float | None = Field(None, ge=0, description="Высота первого слоя")
@@ -837,6 +859,32 @@ class CalculatorProfileUpdate(BaseModel):
     disclaimer_mode: str | None = Field(None, pattern=r"^(offer|not_offer)$")
     currency: str | None = Field(None, pattern=r"^[A-Z]{3}$")
     quote_number_prefix: str | None = Field(None, max_length=32)
+
+
+class CalculatorProfileDefaults(BaseModel):
+    """Platform starting economics, never an implicit overwrite of a user profile."""
+
+    electricity_cost_per_kwh: float = Field(6.0, ge=0)
+    printer_power_w: float = Field(350.0, gt=0)
+    modeling_rate_per_hour: float = Field(934.0, ge=0)
+    postprocessing_rate_per_hour: float = Field(100.0, ge=0)
+    printing_rate_per_hour: float = Field(170.0, ge=0)
+    amortization_rate_per_hour: float = Field(16.0, ge=0)
+    overhead_percent: float = Field(20.0, ge=0, le=100)
+    markup_percent: float = Field(30.0, ge=0, le=200)
+    tax_rate_percent: float = Field(0.0, ge=0, le=100)
+    fixed_costs: float = Field(0.0, ge=0)
+    bed_prep_cost_per_print: float = Field(0.0, ge=0)
+    min_order_price: float = Field(0.0, ge=0)
+    round_to_nearest: int = Field(10, ge=0)
+    rounding_mode: RoundingMode = RoundingMode.UP
+    printer_purchase_price: float = Field(0.0, ge=0)
+    printer_useful_hours: int = Field(0, ge=0)
+    maintenance_cost_per_hour: float = Field(0.0, ge=0)
+    power_hotend_w: float = Field(0.0, ge=0)
+    power_bed_w: float = Field(0.0, ge=0)
+    power_steppers_w: float = Field(0.0, ge=0)
+    power_electronics_w: float = Field(0.0, ge=0)
 
 
 # ── Shared quote (public link) ───────────────────────────────────────

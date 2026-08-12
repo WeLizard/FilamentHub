@@ -32,6 +32,7 @@ from app.models.calculator_profile import UserCalculatorProfile
 from app.models.crm import (
     CrmCustomer,
     CrmOrder,
+    CrmOrderSpoolReservation,
     CrmOrderStatus,
     CrmQuote,
     CrmQuoteEvent,
@@ -39,9 +40,11 @@ from app.models.crm import (
     CrmQuoteLine,
     CrmQuoteStatus,
     CrmQuoteVersion,
+    CrmReservationStatus,
 )
 from app.models.shared_quote import SharedQuote
 from app.models.user import User
+from app.models.user_spool import UserSpool
 from app.schemas.crm import (
     CrmCustomerCreate,
     CrmCustomerListResponse,
@@ -49,6 +52,8 @@ from app.schemas.crm import (
     CrmCustomerUpdate,
     CrmOrderListResponse,
     CrmOrderResponse,
+    CrmOrderSpoolReservationReplace,
+    CrmOrderSpoolReservationResponse,
     CrmOrderUpdate,
     CrmQuoteCreate,
     CrmQuoteDetailResponse,
@@ -62,6 +67,10 @@ from app.schemas.crm import (
     CrmQuoteVersionResponse,
     CrmShareQuoteResponse,
     CrmWorkspaceSummary,
+)
+from app.services.crm_spool_reservation_service import (
+    release_order_reservations,
+    replace_order_reservations,
 )
 
 router = APIRouter(prefix="/crm", tags=["crm"])
@@ -224,6 +233,12 @@ def _serialize_order(order: CrmOrder | None) -> CrmOrderResponse | None:
         total=float(order.total),
         due_date=order.due_date,
         note=order.note,
+        material_requirements=list(order.material_requirements or []),
+        spool_reservations=[
+            _serialize_spool_reservation(reservation)
+            for reservation in order.spool_reservations
+            if reservation.status == CrmReservationStatus.ACTIVE
+        ],
         completed_at=order.completed_at,
         created_at=order.created_at,
         updated_at=order.updated_at,
@@ -266,6 +281,89 @@ def _serialize_quote_detail(quote: CrmQuote) -> CrmQuoteDetailResponse:
     )
 
 
+def _serialize_spool_reservation(
+    reservation: CrmOrderSpoolReservation,
+) -> CrmOrderSpoolReservationResponse:
+    filament = reservation.spool.filament
+    if filament is None:
+        spool_label = f"#{reservation.spool_id}"
+    else:
+        spool_label = " · ".join(
+            part
+            for part in (
+                filament.name,
+                f"#{reservation.spool_id}",
+            )
+            if part
+        )
+    return CrmOrderSpoolReservationResponse(
+        id=reservation.id,
+        material_line_key=reservation.material_line_key,
+        material_label=reservation.material_label,
+        spool_id=reservation.spool_id,
+        filament_id=reservation.spool.filament_id,
+        spool_label=spool_label,
+        weight_g=reservation.weight_g,
+        status=reservation.status,
+        created_at=reservation.created_at,
+    )
+
+
+def _order_material_requirements(calculation_snapshot: dict | None) -> list[dict]:
+    """Freeze the accepted preflight demand without creating reservations."""
+    if not isinstance(calculation_snapshot, dict):
+        return []
+    preflight = calculation_snapshot.get("operational_preflight")
+    if not isinstance(preflight, dict):
+        return []
+    request = preflight.get("request")
+    result = preflight.get("result")
+    if not isinstance(request, dict):
+        return []
+    result_lines = {
+        line.get("line_id"): line
+        for line in (result.get("lines", []) if isinstance(result, dict) else [])
+        if isinstance(line, dict) and isinstance(line.get("line_id"), str)
+    }
+    requirements: list[dict] = []
+    for line in request.get("lines", []):
+        if not isinstance(line, dict) or not isinstance(line.get("line_id"), str):
+            continue
+        resolved = result_lines.get(line["line_id"], {})
+        required_base = resolved.get("required_base_g", line.get("weight_g", 0))
+        required_planned = resolved.get("required_planned_g", required_base)
+        allocations = resolved.get("allocations", [])
+        suggested_spool_ids = [
+            item["spool_id"]
+            for item in allocations
+            if isinstance(item, dict)
+            and isinstance(item.get("spool_id"), int)
+            and float(item.get("planned_coverage_g") or 0) > 0
+        ]
+        suggested_allocations = [
+            {
+                "spool_id": item["spool_id"],
+                "weight_g": float(item.get("planned_coverage_g") or 0),
+            }
+            for item in allocations
+            if isinstance(item, dict)
+            and isinstance(item.get("spool_id"), int)
+            and float(item.get("planned_coverage_g") or 0) > 0
+        ]
+        requirements.append(
+            {
+                "line_id": line["line_id"],
+                "label": line.get("label"),
+                "filament_id": line.get("filament_id"),
+                "required_base_g": max(0.0, float(required_base or 0)),
+                "required_planned_g": max(0.0, float(required_planned or 0)),
+                "suggested_spool_ids": suggested_spool_ids[:16],
+                "suggested_allocations": suggested_allocations[:16],
+            }
+        )
+    return requirements
+
+
 def _validate_quote_protected_fields(quote: CrmQuote) -> None:
     for version in quote.versions:
         _open_snapshot(version.seller_snapshot)
@@ -279,6 +377,10 @@ def _quote_load_options():
         selectinload(CrmQuote.versions).selectinload(CrmQuoteVersion.lines),
         selectinload(CrmQuote.events),
         selectinload(CrmQuote.order).selectinload(CrmOrder.customer),
+        selectinload(CrmQuote.order)
+        .selectinload(CrmOrder.spool_reservations)
+        .selectinload(CrmOrderSpoolReservation.spool)
+        .selectinload(UserSpool.filament),
     )
 
 
@@ -312,7 +414,12 @@ async def _load_order(db: AsyncSession, user_id: int, order_id: int) -> CrmOrder
         await db.execute(
             select(CrmOrder)
             .execution_options(populate_existing=True)
-            .options(selectinload(CrmOrder.customer))
+            .options(
+                selectinload(CrmOrder.customer),
+                selectinload(CrmOrder.spool_reservations)
+                .selectinload(CrmOrderSpoolReservation.spool)
+                .selectinload(UserSpool.filament),
+            )
             .where(CrmOrder.id == order_id, CrmOrder.user_id == user_id)
         )
     ).scalar_one_or_none()
@@ -732,6 +839,7 @@ async def update_quote_status(
             title=quote.title,
             currency=quote.currency,
             total=current.grand_total,
+            material_requirements=_order_material_requirements(current.calculation_snapshot),
         )
         db.add(order)
         await db.flush()
@@ -805,7 +913,12 @@ async def list_orders(
     total = await db.scalar(count_query) or 0
     orders = (
         await db.execute(
-            query.options(selectinload(CrmOrder.customer))
+            query.options(
+                selectinload(CrmOrder.customer),
+                selectinload(CrmOrder.spool_reservations)
+                .selectinload(CrmOrderSpoolReservation.spool)
+                .selectinload(UserSpool.filament),
+            )
             .order_by(CrmOrder.updated_at.desc())
             .offset((page - 1) * size)
             .limit(size)
@@ -833,7 +946,32 @@ async def update_order(
             )
         order.status = target
         order.completed_at = datetime.now(timezone.utc) if target == CrmOrderStatus.COMPLETED else None
+        if target in {
+            CrmOrderStatus.IN_PRODUCTION,
+            CrmOrderStatus.READY,
+            CrmOrderStatus.COMPLETED,
+            CrmOrderStatus.CANCELLED,
+        }:
+            await release_order_reservations(
+                db,
+                order_id=order.id,
+                reason=f"order_{target.value}",
+            )
     for field_name, value in changes.items():
         setattr(order, field_name, value)
+    await db.commit()
+    return _serialize_order(await _load_order(db, current_user.id, order.id))
+
+
+@router.put("/orders/{order_id}/reservations", response_model=CrmOrderResponse)
+async def replace_order_spool_reservations(
+    order_id: int,
+    payload: CrmOrderSpoolReservationReplace,
+    current_user: Annotated[User, Depends(require_calculator_access)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> CrmOrderResponse:
+    """Replace explicit planning holds for an order without consuming stock."""
+    order = await _load_order(db, current_user.id, order_id)
+    await replace_order_reservations(db, order=order, payload=payload)
     await db.commit()
     return _serialize_order(await _load_order(db, current_user.id, order.id))

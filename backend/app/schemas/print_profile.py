@@ -23,6 +23,7 @@ class PrintProfileBase(BaseModel):
     quality_tier: str | None = Field(None, max_length=50)
     default_nozzle: str | None = Field(None, max_length=20)
     layer_height_mm: float | None = None
+    printer_profile_ids: list[int] | None = Field(None, max_length=100)
     compatible_printers: list[str] | None = None
     compatible_filaments: list[str] | None = None
     orcaslicer_settings: dict[str, Any] = Field(default_factory=dict)
@@ -78,6 +79,7 @@ class PrintProfileUpdate(BaseModel):
     quality_tier: str | None = Field(None, max_length=50)
     default_nozzle: str | None = Field(None, max_length=20)
     layer_height_mm: float | None = None
+    printer_profile_ids: list[int] | None = Field(None, max_length=100)
     compatible_printers: list[str] | None = None
     compatible_filaments: list[str] | None = None
     orcaslicer_settings: dict[str, Any] | None = None
@@ -91,6 +93,7 @@ class PrintProfileResponse(PrintProfileBase):
     id: int
     created_at: datetime
     updated_at: datetime
+    configuration_links_resolved: bool = False
     printer_links: list[PrintProfilePrinterLink] = Field(default_factory=list)
     filament_links: list[PrintProfileFilamentLink] = Field(default_factory=list)
 

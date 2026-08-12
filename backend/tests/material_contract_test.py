@@ -17,6 +17,7 @@ from app.models.material_slot_assignment import MaterialSlotAssignment
 from app.models.material_system import MaterialSlot, MaterialSystem, PhysicalPrinterConnector
 from app.models.preset_gate_state import PresetGateState
 from app.models.print_profile import PrintProfile
+from app.models.print_profile_configuration import PrintProfileConfigurationLink
 from app.models.print_profile_printer import PrintProfilePrinter
 from app.models.printer import Printer
 from app.models.printer_profile import PrinterProfile
@@ -137,6 +138,7 @@ async def test_physical_printer_exports_explicit_orca_bundle(
         slug="020-mm-bundle",
         owner_user_id=auth_user.id,
         active=True,
+        configuration_links_resolved=True,
         orcaslicer_settings={"layer_height": "0.2"},
     )
     process.printer_links = [
@@ -147,6 +149,70 @@ async def test_physical_printer_exports_explicit_orca_bundle(
         )
     ]
     db_session.add(process)
+    await db_session.flush()
+    db_session.add(
+        PrintProfileConfigurationLink(
+            print_profile_id=process.id,
+            printer_profile_id=nozzle_04.id,
+        )
+    )
+
+    partially_resolved_process = PrintProfile(
+        name="0.24 mm partial exact compatibility",
+        slug="024-mm-partial-exact-compatibility",
+        owner_user_id=auth_user.id,
+        active=True,
+        configuration_links_resolved=False,
+        orcaslicer_settings={"layer_height": "0.24"},
+    )
+    partially_resolved_process.printer_links = [
+        PrintProfilePrinter(
+            printer_id=catalog_printer.id,
+            printer_slug=catalog_printer.slug,
+            relation_type="explicit",
+        )
+    ]
+    db_session.add(partially_resolved_process)
+    await db_session.flush()
+    db_session.add(
+        PrintProfileConfigurationLink(
+            print_profile_id=partially_resolved_process.id,
+            printer_profile_id=nozzle_04.id,
+        )
+    )
+
+    legacy_process = PrintProfile(
+        name="0.28 mm legacy model compatibility",
+        slug="028-mm-legacy-model-compatibility",
+        owner_user_id=auth_user.id,
+        active=True,
+        orcaslicer_settings={"layer_height": "0.28"},
+    )
+    legacy_process.printer_links = [
+        PrintProfilePrinter(
+            printer_id=catalog_printer.id,
+            printer_slug=catalog_printer.slug,
+            relation_type="explicit",
+        )
+    ]
+    db_session.add(legacy_process)
+
+    resolved_unassigned = PrintProfile(
+        name="0.12 mm deliberately unassigned",
+        slug="012-mm-deliberately-unassigned",
+        owner_user_id=auth_user.id,
+        active=True,
+        configuration_links_resolved=True,
+        orcaslicer_settings={"layer_height": "0.12"},
+    )
+    resolved_unassigned.printer_links = [
+        PrintProfilePrinter(
+            printer_id=catalog_printer.id,
+            printer_slug=catalog_printer.slug,
+            relation_type="explicit",
+        )
+    ]
+    db_session.add(resolved_unassigned)
     await db_session.commit()
 
     response = await auth_client.get(
@@ -166,11 +232,30 @@ async def test_physical_printer_exports_explicit_orca_bundle(
     first_machine = bundle["machine_profiles"][0]["profile"]
     assert first_machine["from"] == "user"
     assert first_machine["nozzle_diameter"] == ["0.4"]
-    assert [entry["id"] for entry in bundle["process_profiles"]] == [process.id]
+    assert [entry["id"] for entry in bundle["process_profiles"]] == [
+        process.id,
+        partially_resolved_process.id,
+        legacy_process.id,
+    ]
     machine_names = {
         entry["profile"]["name"] for entry in bundle["machine_profiles"]
     }
-    assert set(bundle["process_profiles"][0]["profile"]["compatible_printers"]) == machine_names
+    machine_name_by_id = {
+        entry["id"]: entry["profile"]["name"]
+        for entry in bundle["machine_profiles"]
+    }
+    process_payload_by_id = {
+        entry["id"]: entry["profile"] for entry in bundle["process_profiles"]
+    }
+    assert process_payload_by_id[process.id]["compatible_printers"] == [
+        machine_name_by_id[nozzle_04.id]
+    ]
+    assert set(
+        process_payload_by_id[partially_resolved_process.id]["compatible_printers"]
+    ) == machine_names
+    assert set(
+        process_payload_by_id[legacy_process.id]["compatible_printers"]
+    ) == machine_names
 
     archive_response = await auth_client.get(
         f"/api/v1/physical-printers/{physical_printer_id}/orcaslicer-bundle",
@@ -182,9 +267,40 @@ async def test_physical_printer_exports_explicit_orca_bundle(
         names = archive.namelist()
         assert "manifest.json" in names
         assert len([name for name in names if name.startswith("machine/")]) == 2
-        assert len([name for name in names if name.startswith("process/")]) == 1
+        assert len([name for name in names if name.startswith("process/")]) == 3
         manifest = json.loads(archive.read("manifest.json"))
         assert manifest["physical_printer"]["id"] == physical_printer_id
+
+    issued = await auth_client.post("/api/v1/auth/plugin-session", json={})
+    assert issued.status_code == 200
+    plugin_headers = {
+        "Authorization": f"Bearer {issued.json()['plugin_token']}"
+    }
+    plugin_bundle = await auth_client.get(
+        f"/api/v1/physical-printers/{physical_printer_id}/orcaslicer-bundle",
+        headers=plugin_headers,
+    )
+    assert plugin_bundle.status_code == 200
+    assert plugin_bundle.json()["physical_printer"]["id"] == physical_printer_id
+
+    plugin_cannot_list_account_printers = await auth_client.get(
+        "/api/v1/physical-printers",
+        headers=plugin_headers,
+    )
+    assert plugin_cannot_list_account_printers.status_code == 401
+
+    from app.core.security import create_plugin_token
+
+    old_scope_token = create_plugin_token(
+        {"sub": auth_user.email, "user_id": auth_user.id},
+        ["presets:read", "presets:write"],
+    )
+    missing_bundle_scope = await auth_client.get(
+        f"/api/v1/physical-printers/{physical_printer_id}/orcaslicer-bundle",
+        headers={"Authorization": f"Bearer {old_scope_token}"},
+    )
+    assert missing_bundle_scope.status_code == 403
+    assert missing_bundle_scope.json()["detail"]["code"] == "ERR_ACCESS_DENIED"
 
     auth_user.allow_print_profiles_export = False
     await db_session.commit()

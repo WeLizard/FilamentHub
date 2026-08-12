@@ -75,6 +75,7 @@ import { SpoolImportButton } from '../components/SpoolManagerImportButton';
 import { ExportFromOrcaSlicerButton } from '../components/ExportFromOrcaSlicerButton';
 import { ExportPrinterProfilesButton } from '../components/ExportPrinterProfilesButton';
 import { MyPrintersList } from '../components/MyPrintersList';
+import type { ConfigurationPrintProfile } from '../components/PrinterConfigurationRow';
 import { AddPhysicalPrinterModal } from '../components/AddPhysicalPrinterModal';
 const CreatePrinterProfileModal = lazy(() =>
   import('../components/CreatePrinterProfileModal').then(m => ({ default: m.CreatePrinterProfileModal }))
@@ -351,26 +352,14 @@ export const ProfilePage: React.FC = () => {
 
   const { data: printerProfilesData, isLoading: isLoadingPrinterProfiles } = useQuery({
     queryKey: ['printer-profiles', user?.id],
-    queryFn: () =>
-      printerProfilesAPI.list({
-        owner_user_id: user!.id,
-        page: 1,
-        size: 50,
-        active_only: false,
-      }),
+    queryFn: () => printerProfilesAPI.listAllOwned(user!.id),
     enabled: !!user?.id && needsPrinterProfileData,
     staleTime: 60_000,
   });
 
   const { data: printProfilesData, isLoading: _isLoadingPrintProfiles } = useQuery({
     queryKey: ['print-profiles', user?.id],
-    queryFn: () =>
-      printProfilesAPI.list({
-        owner_user_id: user!.id,
-        page: 1,
-        size: 50,
-        active_only: false,
-      }),
+    queryFn: () => printProfilesAPI.listAllOwned(user!.id),
     enabled: !!user?.id && needsPrinterProfileData,
     staleTime: 60_000,
   });
@@ -414,8 +403,8 @@ export const ProfilePage: React.FC = () => {
 
   const userPresets = filteredPresets;
 
-  const myPrinterProfiles = useMemo(() => printerProfilesData?.items ?? [], [printerProfilesData]);
-  const myPrintProfiles = useMemo(() => printProfilesData?.items ?? [], [printProfilesData]);
+  const myPrinterProfiles = useMemo(() => printerProfilesData ?? [], [printerProfilesData]);
+  const myPrintProfiles = useMemo(() => printProfilesData ?? [], [printProfilesData]);
 
   // Lookup map для PrintProfile по slug -> name (для отображения вместо slug)
   const printProfileNameBySlug = useMemo(() => {
@@ -457,24 +446,43 @@ export const ProfilePage: React.FC = () => {
     return linked;
   }, [myPhysicalPrinters]);
 
-  const printProfileCountByConfiguration = useMemo(() => {
-    const counts = new Map<number, number>();
-    myPrinterProfiles.forEach((profile) => {
-      if (!profile.printer_slug) {
-        counts.set(profile.id, 0);
-        return;
+  const printProfilesByConfiguration = useMemo(() => {
+    const grouped = new Map<number, ConfigurationPrintProfile[]>();
+    myPrinterProfiles.forEach((configuration) => grouped.set(configuration.id, []));
+
+    myPrintProfiles.forEach((printProfile) => {
+      const exactIds = printProfile.printer_profile_ids ?? [];
+      if (exactIds.length > 0) {
+        exactIds.forEach((configurationId) => {
+          const existing = grouped.get(configurationId) ?? [];
+          existing.push({ profile: printProfile, exact: true });
+          grouped.set(configurationId, existing);
+        });
       }
-      counts.set(
-        profile.id,
-        myPrintProfiles.filter(
-          (pp) =>
-            pp.printer_links?.some((link) => link.printer_slug === profile.printer_slug) ||
-            pp.compatible_printers?.includes(profile.printer_slug || '') ||
-            pp.compatible_printers?.includes(profile.name || ''),
-        ).length,
-      );
+      if (printProfile.configuration_links_resolved) return;
+
+      myPrinterProfiles.forEach((configuration) => {
+        if (!configuration.printer_slug) return;
+        const compatible =
+          printProfile.printer_links?.some(
+            (link) => link.printer_slug === configuration.printer_slug,
+          ) ||
+          printProfile.compatible_printers?.includes(configuration.printer_slug) ||
+          printProfile.compatible_printers?.includes(configuration.name);
+        if (compatible) {
+          const existing = grouped.get(configuration.id) ?? [];
+          if (!existing.some((entry) => entry.profile.id === printProfile.id)) {
+            existing.push({ profile: printProfile, exact: false });
+            grouped.set(configuration.id, existing);
+          }
+        }
+      });
     });
-    return counts;
+
+    grouped.forEach((profiles) => {
+      profiles.sort((left, right) => left.profile.name.localeCompare(right.profile.name));
+    });
+    return grouped;
   }, [myPrinterProfiles, myPrintProfiles]);
 
   const printersWithProfiles = useMemo(() => {
@@ -1281,12 +1289,25 @@ export const ProfilePage: React.FC = () => {
 
           <MyPrintersList
             printerProfiles={myPrinterProfiles}
-            printProfileCounts={printProfileCountByConfiguration}
+            printProfilesByConfiguration={printProfilesByConfiguration}
+            currentUserId={user?.id ?? null}
             onEditConfiguration={(profile) => {
               setEditingPrinterProfile(profile);
               setIsCreatePrinterProfileModalOpen(true);
             }}
             onViewConfiguration={setSelectedPrinterProfile}
+            onViewPrintProfile={setSelectedPrintProfile}
+            onEditPrintProfile={(printProfile, configuration) => {
+              setEditingPrintProfile(printProfile);
+              setCreatePrintProfileContext(configuration);
+              setIsCreatePrintProfileModalOpen(true);
+            }}
+            onCreatePrintProfile={(configuration) => {
+              setEditingPrintProfile(null);
+              setCreatePrintProfileContext(configuration);
+              setIsCreatePrintProfileModalOpen(true);
+            }}
+            onDownloadPrintProfile={(profile) => void handleDownloadPrintProfile(profile)}
           />
 
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between pt-6 border-t border-white/10">
@@ -1358,16 +1379,9 @@ export const ProfilePage: React.FC = () => {
                     <div className="space-y-2 mt-4 pt-4 border-t border-white/10">
                       {printer.profiles.map((profile) => {
                           // Фильтруем профили печати для этого профиля принтера
-                          const printProfilesForPrinterProfile = profile.printer_slug
-                            ? myPrintProfiles.filter((pp) => {
-                                const hasPrinterLink = pp.printer_links?.some(
-                                  (link) => link.printer_slug === profile.printer_slug
-                                );
-                                const hasCompatiblePrinterSlug = pp.compatible_printers?.includes(profile.printer_slug || '');
-                                const hasCompatiblePrinterName = pp.compatible_printers?.includes(profile.name || '');
-                                return hasPrinterLink || hasCompatiblePrinterSlug || hasCompatiblePrinterName;
-                              })
-                            : [];
+                          const printProfilesForPrinterProfile = (
+                            printProfilesByConfiguration.get(profile.id) ?? []
+                          ).map((entry) => entry.profile);
 
                           const isProfileExpanded = expandedPrinterProfileId === profile.id;
                           // Полный профиль для редактирования (карточка из printer.profiles
@@ -1544,6 +1558,7 @@ export const ProfilePage: React.FC = () => {
                                                   type="button"
                                                   onClick={() => {
                                                     setEditingPrintProfile(printProfile);
+                                                    setCreatePrintProfileContext(profile);
                                                     setIsCreatePrintProfileModalOpen(true);
                                                   }}
                                                   className="px-2 py-1 rounded border border-white/20 text-xs text-white/90 hover:bg-white/10 transition-all flex items-center gap-1"

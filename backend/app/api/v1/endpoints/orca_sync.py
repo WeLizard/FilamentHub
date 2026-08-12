@@ -84,6 +84,9 @@ from app.services.orcaslicer_service import (
     save_user_deleted_preset_rule,
 )
 from app.services.preset_moderation import moderate_preset, validate_text_field
+from app.services.print_profile_configuration_service import (
+    infer_and_replace_configuration_links,
+)
 from app.services.slug_service import generate_unique_slug
 
 logger = logging.getLogger(__name__)
@@ -472,6 +475,7 @@ async def _sync_imported_print_profile_links(
         )
 
     await db.flush()
+    await infer_and_replace_configuration_links(db, profile=profile)
 
 
 def _extract_material_type_from_inherits(inherits: str | None) -> str:
@@ -1729,6 +1733,7 @@ async def list_print_profiles_for_sync(
     query = select(PrintProfile).options(
         selectinload(PrintProfile.printer_links),
         selectinload(PrintProfile.filament_links),
+        selectinload(PrintProfile.configuration_links),
     )
     if include_official:
         query = query.where(

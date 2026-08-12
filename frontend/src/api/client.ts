@@ -1347,6 +1347,7 @@ type CreatePrintProfilePayload = {
   quality_tier?: string | null;
   default_nozzle?: string | null;
   layer_height_mm?: number | null;
+  printer_profile_ids?: number[] | null;
   compatible_printers?: string[] | null;
   compatible_filaments?: string[] | null;
   orcaslicer_settings?: Record<string, any>;
@@ -1392,6 +1393,21 @@ export const printProfilesAPI = {
       responseType: 'blob',
     });
     return response.data;
+  },
+
+  listAllOwned: async (ownerUserId: number): Promise<PrintProfile[]> => {
+    const size = 100;
+    const first = await printProfilesAPI.list({
+      owner_user_id: ownerUserId, page: 1, size, active_only: false,
+    });
+    const items = [...first.items];
+    for (let page = 2; page <= first.pages; page += 1) {
+      const next = await printProfilesAPI.list({
+        owner_user_id: ownerUserId, page, size, active_only: false,
+      });
+      items.push(...next.items);
+    }
+    return items;
   },
 };
 
@@ -1559,6 +1575,11 @@ export const calculatorAPI = {
     return response.data;
   },
 
+  resetProfileDefaults: async () => {
+    const response = await api.post<CalculatorProfileResponse>('/calculator/profile/reset-defaults');
+    return response.data;
+  },
+
   shareQuote: async (data: import('../types/api').SharedQuoteCreate) => {
     const response = await api.post<import('../types/api').SharedQuoteResponse>('/calculator/quote/share', data);
     return response.data;
@@ -1637,6 +1658,17 @@ export const crmAPI = {
     const response = await api.patch<import('../types/api').CrmOrder>(`/crm/orders/${orderId}`, data);
     return response.data;
   },
+
+  replaceOrderReservations: async (
+    orderId: number,
+    items: import('../types/api').CrmOrderSpoolReservationCreate[],
+  ) => {
+    const response = await api.put<import('../types/api').CrmOrder>(
+      `/crm/orders/${orderId}/reservations`,
+      { items },
+    );
+    return response.data;
+  },
 };
 
 // ==================== Admin API ====================
@@ -1649,6 +1681,7 @@ export interface AdminMaintenanceInfo {
 export interface AdminCalculatorSettings {
   paywall_enforced: boolean;
   trial_days: number | null;
+  profile_defaults: import('../types/api').CalculatorProfileDefaults;
   counts?: { trialing: number; active: number };
 }
 
@@ -1964,10 +1997,15 @@ export const adminAPI = {
   updateCalculatorSettings: async (
     paywallEnforced: boolean,
     trialDays: number | null,
+    profileDefaults?: import('../types/api').CalculatorProfileDefaults,
   ): Promise<AdminCalculatorSettings> => {
     const response = await api.post<AdminCalculatorSettings>(
       '/admin/calculator-settings',
-      { paywall_enforced: paywallEnforced, trial_days: trialDays },
+      {
+        paywall_enforced: paywallEnforced,
+        trial_days: trialDays,
+        ...(profileDefaults ? { profile_defaults: profileDefaults } : {}),
+      },
     );
     return response.data;
   },

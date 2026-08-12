@@ -9,8 +9,12 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.dependencies import get_current_active_user
+from app.core.dependencies import (
+    get_current_active_user,
+    get_current_active_user_optional,
+)
 from app.core.errors import (
+    ERR_AUTH_REQUIRED,
     ERR_CANNOT_ASSIGN_OTHER_OWNER,
     ERR_EXPORT_PRINT_PROFILE_ERROR,
     ERR_EXTERNAL_ID_EXISTS,
@@ -39,10 +43,25 @@ from app.schemas.print_profile import (
 from app.services.download_filename import attachment_content_disposition, safe_download_stem
 from app.services.orca_import_guard import profile_external_id_taken
 from app.services.orcaslicer_machine_exporter import export_print_profile
+from app.services.print_profile_configuration_service import (
+    infer_and_replace_configuration_links,
+    replace_configuration_links,
+)
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/print-profiles", tags=["print-profiles"])
+
+
+def _can_read_profile(profile: PrintProfile, current_user: User | None) -> bool:
+    if profile.is_official and profile.active:
+        return True
+    if current_user is None:
+        return False
+    return (
+        current_user.role == UserRole.ADMIN
+        or profile.owner_user_id == current_user.id
+    )
 
 
 def _extract_base_printer_name(name: str) -> str:
@@ -251,6 +270,7 @@ async def _load_print_profile_with_links(
             .options(
                 selectinload(PrintProfile.printer_links),
                 selectinload(PrintProfile.filament_links),
+                selectinload(PrintProfile.configuration_links),
             )
             .where(PrintProfile.id == profile_id)
         )
@@ -259,6 +279,7 @@ async def _load_print_profile_with_links(
 
 @router.get("/", response_model=PrintProfileListResponse)
 async def list_print_profiles(
+    current_user: Annotated[User | None, Depends(get_current_active_user_optional)],
     db: Annotated[AsyncSession, Depends(get_db)],
     page: int = Query(1, ge=1),
     size: int = Query(50, ge=1, le=100),
@@ -273,14 +294,38 @@ async def list_print_profiles(
     query = select(PrintProfile).options(
         selectinload(PrintProfile.printer_links),
         selectinload(PrintProfile.filament_links),
+        selectinload(PrintProfile.configuration_links),
     )
 
     if active_only:
         query = query.where(PrintProfile.active.is_(True))
     if is_official is not None:
         query = query.where(PrintProfile.is_official.is_(is_official))
-    if owner_user_id is not None:
-        query = query.where(PrintProfile.owner_user_id == owner_user_id)
+    if current_user is None:
+        if owner_user_id is not None:
+            raise_error(status.HTTP_401_UNAUTHORIZED, ERR_AUTH_REQUIRED)
+        query = query.where(
+            PrintProfile.is_official.is_(True),
+            PrintProfile.active.is_(True),
+        )
+    elif current_user.role == UserRole.ADMIN:
+        if owner_user_id is not None:
+            query = query.where(PrintProfile.owner_user_id == owner_user_id)
+    else:
+        if owner_user_id is not None and owner_user_id != current_user.id:
+            raise_error(status.HTTP_403_FORBIDDEN, ERR_NO_PERMISSION)
+        if owner_user_id == current_user.id:
+            query = query.where(PrintProfile.owner_user_id == current_user.id)
+        else:
+            query = query.where(
+                or_(
+                    PrintProfile.owner_user_id == current_user.id,
+                    (
+                        PrintProfile.is_official.is_(True)
+                        & PrintProfile.active.is_(True)
+                    ),
+                )
+            )
     if category:
         query = query.where(PrintProfile.category == category)
     if search:
@@ -313,12 +358,13 @@ async def list_print_profiles(
 @router.get("/{profile_id}", response_model=PrintProfileResponse)
 async def get_print_profile(
     profile_id: int,
+    current_user: Annotated[User | None, Depends(get_current_active_user_optional)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> PrintProfileResponse:
     """Get print profile by ID."""
 
     profile = await _load_print_profile_with_links(db=db, profile_id=profile_id)
-    if profile is None:
+    if profile is None or not _can_read_profile(profile, current_user):
         raise_error(status.HTTP_404_NOT_FOUND, ERR_PRINT_PROFILE_NOT_FOUND)
     return PrintProfileResponse.model_validate(profile)
 
@@ -387,6 +433,14 @@ async def create_print_profile(
     db.add(profile)
     await db.flush()
     await _sync_print_profile_links(db=db, profile=profile)
+    if data.printer_profile_ids is None:
+        await infer_and_replace_configuration_links(db, profile=profile)
+    else:
+        await replace_configuration_links(
+            db,
+            profile=profile,
+            printer_profile_ids=data.printer_profile_ids,
+        )
     await db.commit()
 
     profile_with_links = await _load_print_profile_with_links(db=db, profile_id=profile.id)
@@ -414,6 +468,10 @@ async def update_print_profile(
         raise_error(status.HTTP_403_FORBIDDEN, ERR_NO_PERMISSION)
 
     update_data = data.model_dump(exclude_unset=True)
+    configuration_ids_supplied = "printer_profile_ids" in update_data
+    printer_profile_ids = update_data.pop("printer_profile_ids", None)
+    compatibility_changed = "compatible_printers" in update_data
+    owner_changed = "owner_user_id" in update_data
 
     if "slug" in update_data:
         slug_exists = await db.execute(
@@ -457,6 +515,14 @@ async def update_print_profile(
         setattr(profile, field, value)
 
     await _sync_print_profile_links(db=db, profile=profile)
+    if configuration_ids_supplied:
+        await replace_configuration_links(
+            db,
+            profile=profile,
+            printer_profile_ids=printer_profile_ids or [],
+        )
+    elif compatibility_changed or owner_changed:
+        await infer_and_replace_configuration_links(db, profile=profile)
     await db.commit()
 
     profile_with_links = await _load_print_profile_with_links(db=db, profile_id=profile_id)
@@ -489,6 +555,7 @@ async def delete_print_profile(
 @router.get("/{profile_id}/export/orcaslicer.json")
 async def export_print_profile_json(
     profile_id: int,
+    current_user: Annotated[User | None, Depends(get_current_active_user_optional)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> Response:
     """
@@ -503,12 +570,13 @@ async def export_print_profile_json(
         .options(
             selectinload(PrintProfile.printer_links),
             selectinload(PrintProfile.filament_links),
+            selectinload(PrintProfile.configuration_links),
         )
-        .where(PrintProfile.id == profile_id, PrintProfile.active == True)
+        .where(PrintProfile.id == profile_id)
     )
     profile = result.scalar_one_or_none()
 
-    if not profile:
+    if not profile or not _can_read_profile(profile, current_user):
         raise_error(404, ERR_PRINT_PROFILE_NOT_FOUND)
 
     # Экспортируем в JSON

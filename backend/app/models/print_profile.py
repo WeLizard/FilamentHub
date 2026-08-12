@@ -10,6 +10,7 @@ from sqlalchemy.sql import func
 from app.db.base import Base
 
 if TYPE_CHECKING:
+    from app.models.print_profile_configuration import PrintProfileConfigurationLink
     from app.models.print_profile_filament import PrintProfileFilament
     from app.models.print_profile_printer import PrintProfilePrinter
     from app.models.user import User
@@ -46,6 +47,12 @@ class PrintProfile(Base):
     quality_tier: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)
     default_nozzle: Mapped[str | None] = mapped_column(String(20), nullable=True, index=True)
     layer_height_mm: Mapped[float | None] = mapped_column(Float, nullable=True, index=True)
+    configuration_links_resolved: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        server_default="false",
+        nullable=False,
+    )
 
     compatible_printers: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     compatible_filaments: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
@@ -76,9 +83,17 @@ class PrintProfile(Base):
         back_populates="profile",
         cascade="all, delete-orphan",
     )
+    configuration_links: Mapped[list["PrintProfileConfigurationLink"]] = relationship(
+        "PrintProfileConfigurationLink",
+        back_populates="print_profile",
+        cascade="all, delete-orphan",
+    )
+
+    @property
+    def printer_profile_ids(self) -> list[int]:
+        """Exact machine configurations assigned to this process profile."""
+        return sorted(link.printer_profile_id for link in self.configuration_links)
 
     def __repr__(self) -> str:
         status = "official" if self.is_official else "user"
         return f"<PrintProfile(id={self.id}, name='{self.name}', status={status})>"
-
-

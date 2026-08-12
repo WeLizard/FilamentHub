@@ -24,6 +24,7 @@ from app.models.calculator_profile import UserCalculatorProfile
 from app.models.crm import (
     CrmCustomer,
     CrmOrder,
+    CrmOrderSpoolReservation,
     CrmOrderStatus,
     CrmQuote,
     CrmQuoteEvent,
@@ -31,6 +32,7 @@ from app.models.crm import (
     CrmQuoteLine,
     CrmQuoteStatus,
     CrmQuoteVersion,
+    CrmReservationStatus,
 )
 from app.models.email_communication import EmailMessage, EmailSendReservation, EmailThread
 from app.models.feedback import Feedback, FeedbackMessage, FeedbackStatus, FeedbackType
@@ -64,6 +66,7 @@ from app.models.preset_usage_event import PresetUsageEvent, PresetUsageEventType
 from app.models.preset_version import PresetVersion, PresetVersionSource
 from app.models.print_problem import PrintProblem, PrintProblemSeverity
 from app.models.print_profile import PrintProfile
+from app.models.print_profile_configuration import PrintProfileConfigurationLink
 from app.models.print_profile_filament import PrintProfileFilament
 from app.models.print_profile_printer import PrintProfilePrinter
 from app.models.printer import Printer
@@ -115,6 +118,7 @@ __all__ = [
     "UserCalculatorProfile",
     "CrmCustomer",
     "CrmOrder",
+    "CrmOrderSpoolReservation",
     "CrmOrderStatus",
     "CrmQuote",
     "CrmQuoteEvent",
@@ -122,6 +126,7 @@ __all__ = [
     "CrmQuoteLine",
     "CrmQuoteStatus",
     "CrmQuoteVersion",
+    "CrmReservationStatus",
     "Feedback",
     "FeedbackMessage",
     "FeedbackType",
@@ -175,6 +180,7 @@ __all__ = [
     "PrintProblemSeverity",
     "UserPrinterProfileLink",
     "PrintProfile",
+    "PrintProfileConfigurationLink",
     "PrintProfilePrinter",
     "PrintProfileFilament",
     "SharedQuote",

@@ -17,6 +17,7 @@ import {
   type OrcaStructuredFieldTab,
 } from './createPrintProfileOrcaFields';
 import { Dropdown } from './Dropdown';
+import { applyOrcaStructuredUiSetting } from '../utils/orcaPresetSettings';
 import { translateApiError } from '../utils/translateApiError';
 import { useAuth } from '../contexts/AuthContext';
 import type { Filament, PrintProfile, PrinterProfile } from '../types/api';
@@ -74,7 +75,7 @@ const INFILL_PATTERN_OPTIONS = [
 const SUPPORT_TYPE_OPTIONS = ['normal(auto)', 'tree(auto)', 'normal(manual)', 'tree(manual)'];
 const SEAM_POSITION_OPTIONS = ['aligned', 'aligned_back', 'nearest', 'back', 'random'];
 const IRONING_TYPE_OPTIONS = ['no ironing', 'top', 'topmost', 'solid'];
-const BOOLEAN_OVERRIDE_OPTIONS = ['0', '1'];
+const BOOLEAN_OVERRIDE_OPTIONS = ['', '0', '1'];
 const DEFAULT_NOZZLE_SIZES = ['0.2', '0.25', '0.3', '0.4', '0.5', '0.6', '0.8', '1.0'];
 const CORE_STRUCTURED_PROCESS_KEYS = new Set([
   'type',
@@ -164,7 +165,8 @@ const readSettingList = (settings: Record<string, unknown> | undefined, key: str
 };
 
 const readSettingBooleanString = (settings: Record<string, unknown> | undefined, key: string): string => {
-  const value = settings?.[key];
+  const rawValue = settings?.[key];
+  const value = Array.isArray(rawValue) ? rawValue[0] : rawValue;
   if (typeof value === 'boolean') {
     return value ? '1' : '0';
   }
@@ -404,25 +406,21 @@ const normalizeStructuredAdvancedFieldValue = (field: OrcaStructuredFieldDef, ra
   }
 };
 
-const buildStructuredAdvancedSettings = (values: Record<string, string>): Record<string, unknown> =>
+const buildStructuredAdvancedSettings = (
+  values: Record<string, string>,
+  sourceSettings?: Record<string, unknown>,
+): Record<string, unknown> =>
   ORCA_ADVANCED_FIELD_DEFS.reduce<Record<string, unknown>>((acc, field) => {
-    const normalized = normalizeStructuredAdvancedFieldValue(field, values[field.key] ?? '');
-
-    if (Array.isArray(normalized)) {
-      if (normalized.length > 0) {
-        acc[field.key] = normalized;
-      }
-      return acc;
-    }
-
-    if (typeof normalized === 'string') {
-      if (normalized.length > 0) {
-        acc[field.key] = normalized;
-      }
-      return acc;
-    }
-
-    acc[field.key] = normalized;
+    const currentUiValue = values[field.key] ?? '';
+    const normalized = normalizeStructuredAdvancedFieldValue(field, currentUiValue);
+    applyOrcaStructuredUiSetting(
+      acc,
+      sourceSettings ?? {},
+      field.key,
+      currentUiValue,
+      readStructuredAdvancedFieldValue(sourceSettings, field),
+      normalized,
+    );
     return acc;
   }, {});
 
@@ -433,6 +431,9 @@ const stripAdvancedProcessSettings = (settings: Record<string, unknown> | undefi
 
   const next = { ...settings };
   Object.keys(pickAdvancedProcessSettings(settings)).forEach((key) => {
+    delete next[key];
+  });
+  ORCA_ADVANCED_FIELD_KEYS.forEach((key) => {
     delete next[key];
   });
   delete next.compatible_printers_condition;
@@ -541,6 +542,7 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
   const [ironingType, setIroningType] = useState('');
   const [enableArcFitting, setEnableArcFitting] = useState('');
   const [spiralMode, setSpiralMode] = useState('');
+  const [selectedPrinterProfileIds, setSelectedPrinterProfileIds] = useState<number[]>([]);
   const [selectedCompatiblePrinters, setSelectedCompatiblePrinters] = useState<string[]>([]);
   const [compatiblePrinterSearch, setCompatiblePrinterSearch] = useState('');
   const [selectedCompatibleFilaments, setSelectedCompatibleFilaments] = useState<string[]>([]);
@@ -558,12 +560,7 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
 
   const printerProfilesQuery = useQuery({
     queryKey: ['create-print-profile-modal', 'printer-profiles', user?.id],
-    queryFn: () =>
-      printerProfilesAPI.list({
-        owner_user_id: user?.id,
-        active_only: true,
-        size: 100,
-      }),
+    queryFn: () => printerProfilesAPI.listAllOwned(user!.id),
     enabled: isOpen && Boolean(user?.id),
     staleTime: 60_000,
   });
@@ -579,22 +576,38 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
     staleTime: 60_000,
   });
 
-  const availablePrinterProfiles = printerProfilesQuery.data?.items ?? [];
+  const availablePrinterProfiles = useMemo(() => {
+    const profiles = printerProfilesQuery.data ?? [];
+    if (
+      printerProfileContext &&
+      !profiles.some((profileItem) => profileItem.id === printerProfileContext.id)
+    ) {
+      return [...profiles, printerProfileContext];
+    }
+    return profiles;
+  }, [printerProfileContext, printerProfilesQuery.data]);
   const availableFilaments = filamentsQuery.data?.items ?? [];
   const recommendedPrinterTag = selectedCompatiblePrinters[0] || printerProfileContext?.name || 'FilamentHub';
   const recommendedName =
     !profile && !baseProfile && layerHeight.trim() && qualityTier.trim()
       ? buildRecommendedName(layerHeight, qualityTier, recommendedPrinterTag)
       : '';
-  const normalizedSelectedCompatiblePrinterNames = new Set(
-    selectedCompatiblePrinters.map(normalizeComparableValue),
-  );
+  const selectedPrinterProfileIdSet = new Set(selectedPrinterProfileIds);
   const availableCompatiblePrinterOptions = availablePrinterProfiles
-    .filter((printerProfile) => !normalizedSelectedCompatiblePrinterNames.has(normalizeComparableValue(printerProfile.name)))
+    .filter((printerProfile) => !selectedPrinterProfileIdSet.has(printerProfile.id))
     .map((printerProfile) => ({
       value: printerProfile.id,
       label: buildPrinterProfileOptionLabel(printerProfile),
     }));
+  const selectedExactPrinterProfiles = selectedPrinterProfileIds
+    .map((id) => availablePrinterProfiles.find((printerProfile) => printerProfile.id === id))
+    .filter((printerProfile): printerProfile is PrinterProfile => Boolean(printerProfile));
+  const selectedExactPrinterNames = new Set(
+    selectedExactPrinterProfiles.map((printerProfile) => normalizeComparableValue(printerProfile.name)),
+  );
+  const selectedLegacyPrinterNames = selectedCompatiblePrinters.filter(
+    (name) => !selectedExactPrinterNames.has(normalizeComparableValue(name)),
+  );
   const knownCompatiblePrinterNames = new Set(
     availablePrinterProfiles.map((printerProfile) => normalizeComparableValue(printerProfile.name)),
   );
@@ -672,6 +685,11 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
         : printerProfileContext?.name
           ? [printerProfileContext.name]
           : [];
+    const fallbackPrinterProfileIds = sourceProfile?.printer_profile_ids?.length
+      ? sourceProfile.printer_profile_ids
+      : printerProfileContext
+        ? [printerProfileContext.id]
+        : [];
     const sourceExtraMetadata =
       sourceProfile?.extra_metadata && typeof sourceProfile.extra_metadata === 'object' ? sourceProfile.extra_metadata : null;
     const nextCompatiblePrintersCondition =
@@ -715,6 +733,7 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
       setIroningType(readSettingString(sourceSettings, 'ironing_type'));
       setEnableArcFitting(readSettingBooleanString(sourceSettings, 'enable_arc_fitting'));
       setSpiralMode(readSettingBooleanString(sourceSettings, 'spiral_mode'));
+      setSelectedPrinterProfileIds(fallbackPrinterProfileIds);
       setSelectedCompatiblePrinters(fallbackCompatiblePrinters);
       setCompatiblePrinterSearch('');
       setSelectedCompatibleFilaments(nextCompatibleFilaments);
@@ -761,6 +780,7 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
       setIroningType(readSettingString(sourceSettings, 'ironing_type'));
       setEnableArcFitting(readSettingBooleanString(sourceSettings, 'enable_arc_fitting'));
       setSpiralMode(readSettingBooleanString(sourceSettings, 'spiral_mode'));
+      setSelectedPrinterProfileIds(fallbackPrinterProfileIds);
       setSelectedCompatiblePrinters(fallbackCompatiblePrinters);
       setCompatiblePrinterSearch('');
       setSelectedCompatibleFilaments(nextCompatibleFilaments);
@@ -806,6 +826,7 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
     setIroningType('');
     setEnableArcFitting('');
     setSpiralMode('');
+    setSelectedPrinterProfileIds(printerProfileContext ? [printerProfileContext.id] : []);
     setSelectedCompatiblePrinters(printerProfileContext?.name ? [printerProfileContext.name] : []);
     setCompatiblePrinterSearch('');
     setSelectedCompatibleFilaments([]);
@@ -840,7 +861,22 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
 
     const trimmedName = name.trim();
     const trimmedSlug = slug.trim();
-    const compatiblePrinters = dedupeStringValues(selectedCompatiblePrinters);
+    const compatiblePrinters = dedupeStringValues([
+      ...selectedCompatiblePrinters,
+      ...selectedExactPrinterProfiles.map((printerProfile) => printerProfile.name),
+    ]);
+    const inferredPrinterProfileIds = compatiblePrinters.flatMap((printerName) => {
+      const normalizedName = normalizeComparableValue(printerName);
+      const matches = availablePrinterProfiles.filter(
+        (printerProfile) =>
+          normalizeComparableValue(printerProfile.name) === normalizedName ||
+          normalizeComparableValue(printerProfile.slug) === normalizedName,
+      );
+      return matches.length === 1 ? [matches[0].id] : [];
+    });
+    const printerProfileIds = Array.from(
+      new Set([...selectedPrinterProfileIds, ...inferredPrinterProfileIds]),
+    ).sort((left, right) => left - right);
     const compatibleFilaments = dedupeStringValues(selectedCompatibleFilaments);
     const compatiblePrintersConditionValue = compatiblePrintersCondition.trim();
 
@@ -877,7 +913,10 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
       setAdvancedSettingsError(null);
     }
 
-    const structuredAdvancedSettingsObject = buildStructuredAdvancedSettings(structuredAdvancedValues);
+    const structuredAdvancedSettingsObject = buildStructuredAdvancedSettings(
+      structuredAdvancedValues,
+      sourceSettings,
+    );
 
     const layerHeightValue = normalizeNumericString(layerHeight);
     const initialLayerHeightValue = normalizeNumericString(initialLayerHeight);
@@ -982,6 +1021,7 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
       quality_tier: qualityTier.trim() || null,
       default_nozzle: defaultNozzle.trim() || null,
       layer_height_mm: layerHeightValue ? Number(layerHeightValue) : null,
+      printer_profile_ids: printerProfileIds,
       compatible_printers: compatiblePrinters,
       compatible_filaments: compatibleFilaments.length > 0 ? compatibleFilaments : null,
       extra_metadata: Object.keys(nextExtraMetadata).length > 0 ? nextExtraMetadata : null,
@@ -1011,7 +1051,10 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
           ? baseProfile.extra_metadata.compatible_printers_condition.trim()
           : readSettingString(baseSettings, 'compatible_printers_condition');
       const baseAdvancedSettings = pickAdvancedProcessSettings(baseSettings);
-      const baseStructuredAdvancedSettings = buildStructuredAdvancedSettings(buildStructuredAdvancedValues(baseSettings));
+      const baseStructuredAdvancedSettings = buildStructuredAdvancedSettings(
+        buildStructuredAdvancedValues(baseSettings),
+        baseSettings,
+      );
       const baseComparableValues = {
         qualityTier: baseProfile.quality_tier ?? '',
         defaultNozzle: baseProfile.default_nozzle ?? readSettingString(baseSettings, 'default_nozzle_diameter'),
@@ -1115,8 +1158,9 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
       [key]: value,
     }));
   };
-  const getBooleanOverrideLabel = (option: string) => t(`createPrintProfile.booleanOptions.${option}`);
-  const getBooleanSelectValue = (value: string) => (value === '1' ? '1' : '0');
+  const getBooleanOverrideLabel = (option: string) =>
+    t(`createPrintProfile.booleanOptions.${option || 'inherit'}`);
+  const getBooleanSelectValue = (value: string) => (value === '1' || value === '0' ? value : '');
   const structuredLabelLocale = i18n.resolvedLanguage?.startsWith('ru') ? 'ru' : 'en';
   const getStructuredFieldLabel = (fieldKey: string) =>
     t(`createPrintProfile.fieldLabels.${fieldKey}`, {
@@ -1132,10 +1176,13 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
     const label = getStructuredFieldLabel(field.key);
     const commonClassName =
       'w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-white placeholder-gray-500 focus:border-purple-500 focus:outline-none';
-    const commonHint =
+    const hintKey = `createPrintProfile.fieldHints.${field.key}`;
+    const translatedHint = i18n.exists(hintKey) ? t(hintKey) : '';
+    const commonHint = translatedHint || (
       field.kind === 'stringList' || field.kind === 'integerList' || field.kind === 'floatList'
         ? t('createPrintProfile.structuredListHint')
-        : undefined;
+        : undefined
+    );
 
     let control: ReactNode;
     switch (field.kind) {
@@ -1174,10 +1221,13 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
         control = (
           <input
             type="number"
-            step="1"
+            min={field.min}
+            max={field.max}
+            step={field.step ?? 1}
             value={value}
             onChange={(event) => setStructuredAdvancedFieldValue(field.key, event.target.value)}
             className={commonClassName}
+            placeholder={field.placeholder}
           />
         );
         break;
@@ -1185,10 +1235,13 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
         control = (
           <input
             type="number"
-            step="0.01"
+            min={field.min}
+            max={field.max}
+            step={field.step ?? 0.01}
             value={value}
             onChange={(event) => setStructuredAdvancedFieldValue(field.key, event.target.value)}
             className={commonClassName}
+            placeholder={field.placeholder}
           />
         );
         break;
@@ -1196,11 +1249,13 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
         control = (
           <input
             type="number"
-            step="0.01"
+            min={field.min}
+            max={field.max}
+            step={field.step ?? 0.01}
             value={value}
             onChange={(event) => setStructuredAdvancedFieldValue(field.key, event.target.value)}
             className={commonClassName}
-            placeholder="0-100"
+            placeholder={field.placeholder ?? '0-100'}
           />
         );
         break;
@@ -1211,7 +1266,7 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
             value={value}
             onChange={(event) => setStructuredAdvancedFieldValue(field.key, event.target.value)}
             className={commonClassName}
-            placeholder="20 or 35%"
+            placeholder={field.placeholder ?? '20 or 35%'}
           />
         );
         break;
@@ -1383,6 +1438,7 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
           </FormField>
         </div>,
       )}
+      {renderStructuredSectionCard('quality', 'zContouring')}
       {renderStructuredSectionCard('quality', 'wallGenerator')}
       {renderStructuredSectionCard('quality', 'wallsAndSurfaces')}
       {renderStructuredSectionCard('quality', 'bridging')}
@@ -1928,6 +1984,9 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
                       if (!selectedPrinter) {
                         return;
                       }
+                      setSelectedPrinterProfileIds((prev) =>
+                        Array.from(new Set([...prev, selectedPrinter.id])),
+                      );
                       setSelectedCompatiblePrinters((prev) => dedupeStringValues([...prev, selectedPrinter.name]));
                       setCompatiblePrinterSearch('');
                     }}
@@ -1943,16 +2002,49 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
                   />
                 </FormField>
 
-                {selectedCompatiblePrinters.length > 0 && (
+                {(selectedExactPrinterProfiles.length > 0 || selectedLegacyPrinterNames.length > 0) && (
                   <div className="mt-3 flex flex-wrap gap-2">
-                    {selectedCompatiblePrinters.map((printerName) => {
+                    {selectedExactPrinterProfiles.map((printerProfile) => (
+                      <span
+                        key={`configuration-${printerProfile.id}`}
+                        className="flex items-center gap-2 rounded-lg border border-purple-500/30 bg-purple-600/20 px-3 py-1.5 text-sm text-white"
+                      >
+                        <span>{buildPrinterProfileOptionLabel(printerProfile)}</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedPrinterProfileIds((prev) =>
+                              prev.filter((id) => id !== printerProfile.id),
+                            );
+                            const normalizedName = normalizeComparableValue(printerProfile.name);
+                            const sameNameRemains = selectedExactPrinterProfiles.some(
+                              (candidate) =>
+                                candidate.id !== printerProfile.id &&
+                                normalizeComparableValue(candidate.name) === normalizedName,
+                            );
+                            if (!sameNameRemains) {
+                              setSelectedCompatiblePrinters((prev) =>
+                                prev.filter(
+                                  (value) => normalizeComparableValue(value) !== normalizedName,
+                                ),
+                              );
+                            }
+                          }}
+                          className="rounded p-0.5 text-inherit transition-colors hover:text-red-300"
+                          title={t('createPrintProfile.removeCompatiblePrinter')}
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </span>
+                    ))}
+                    {selectedLegacyPrinterNames.map((printerName) => {
                       const isKnownPrinter =
                         printerProfilesQuery.isPending ||
                         knownCompatiblePrinterNames.has(normalizeComparableValue(printerName));
 
                       return (
                         <span
-                          key={printerName}
+                          key={`legacy-${printerName}`}
                           className={`flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm ${
                             isKnownPrinter
                               ? 'border-purple-500/30 bg-purple-600/20 text-white'

@@ -233,6 +233,20 @@ async def require_preset_write(
     )
 
 
+async def require_printer_bundle_read(
+    request: Request,
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> User:
+    """Allow a browser session or the plugin to read one owned printer bundle."""
+    return await _get_current_user_or_plugin_scope(
+        request=request,
+        credentials=credentials,
+        db=db,
+        required_scope="printer-bundles:read",
+    )
+
+
 async def get_current_active_user(
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> User:

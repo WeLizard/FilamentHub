@@ -17,7 +17,7 @@ interface EditGCodeModalProps {
   onClose: () => void;
   onInsert: (placeholderText: string) => void;
   title: string;
-  gcodeType?: 'filament_start_gcode' | 'filament_end_gcode';
+  gcodeType?: 'filament_start_gcode' | 'filament_end_gcode' | 'filament_change_extrusion_role_gcode';
 }
 
 // Базовые плейсхолдеры из OrcaSlicer (из PrintConfig.cpp и EditGCodeDialog.cpp)
@@ -132,6 +132,15 @@ export const EditGCodeModal: React.FC<EditGCodeModalProps> = ({
         { key: 'filament_extruder_id', name: 'filament_extruder_id', description: 'The current extruder ID (same as current_extruder)', type: 'scalar' as const, category: 'Filament G-code' },
         ...PLACEHOLDERS.filter(p => !['layer_num', 'layer_z'].includes(p.key)),
         ...FILAMENT_PLACEHOLDERS,
+      ];
+    }
+
+    if (gcodeType === 'filament_change_extrusion_role_gcode') {
+      return [
+        { key: 'layer_num', name: 'layer_num', description: 'Index of the current layer', type: 'scalar' as const, category: 'Extrusion role change' },
+        { key: 'layer_z', name: 'layer_z', description: 'Height of the current layer above the print bed', type: 'scalar' as const, category: 'Extrusion role change' },
+        { key: 'extrusion_role', name: 'extrusion_role', description: 'New extrusion role', type: 'scalar' as const, category: 'Extrusion role change' },
+        { key: 'last_extrusion_role', name: 'last_extrusion_role', description: 'Previous extrusion role', type: 'scalar' as const, category: 'Extrusion role change' },
       ];
     }
     
@@ -311,4 +320,3 @@ export const EditGCodeModal: React.FC<EditGCodeModalProps> = ({
     </div>
   );
 };
-

@@ -23,18 +23,20 @@ import {
   Search,
   Send,
   Sparkles,
+  Trash2,
   UserRound,
   UsersRound,
   X,
 } from 'lucide-react';
 
-import { calculatorAPI, crmAPI } from '../api/client';
+import { calculatorAPI, crmAPI, spoolsAPI, type UserSpool } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 import { translateApiError } from '../utils/translateApiError';
 import type {
   CrmCustomer,
   CrmCustomerCreate,
   CrmOrder,
+  CrmOrderSpoolReservationCreate,
   CrmOrderStatus,
   CrmQuote,
   CrmQuoteDetail,
@@ -127,6 +129,7 @@ export const CrmWorkspacePage: React.FC<CrmWorkspacePageProps> = ({
   const [feedback, setFeedback] = useState<Feedback>(null);
   const [customerDialog, setCustomerDialog] = useState<CrmCustomer | 'new' | null>(null);
   const [selectedQuoteId, setSelectedQuoteId] = useState<number | null>(null);
+  const [reservationOrder, setReservationOrder] = useState<CrmOrder | null>(null);
   const hasAccess = user?.has_calculator_access ?? false;
 
   const summaryQuery = useQuery({
@@ -153,6 +156,11 @@ export const CrmWorkspacePage: React.FC<CrmWorkspacePageProps> = ({
     queryKey: ['crm', 'quote', selectedQuoteId],
     queryFn: () => crmAPI.getQuote(selectedQuoteId!),
     enabled: hasAccess && selectedQuoteId !== null,
+  });
+  const spoolsQuery = useQuery({
+    queryKey: ['crm', 'reservation-spools'],
+    queryFn: spoolsAPI.list,
+    enabled: hasAccess && reservationOrder !== null,
   });
 
   const refreshWorkspace = async () => {
@@ -199,6 +207,21 @@ export const CrmWorkspacePage: React.FC<CrmWorkspacePageProps> = ({
     ),
     onSuccess: async () => {
       setFeedback({ kind: 'success', text: t('crmWorkspace.feedback.orderStatus') });
+      await refreshWorkspace();
+    },
+    onError: (error) => setFeedback({
+      kind: 'error',
+      text: translateApiError(t, error, t('crmWorkspace.feedback.error')),
+    }),
+  });
+
+  const reservationMutation = useMutation({
+    mutationFn: ({ orderId, items }: { orderId: number; items: CrmOrderSpoolReservationCreate[] }) => (
+      crmAPI.replaceOrderReservations(orderId, items)
+    ),
+    onSuccess: async () => {
+      setReservationOrder(null);
+      setFeedback({ kind: 'success', text: t('crmWorkspace.feedback.reservationsSaved') });
       await refreshWorkspace();
     },
     onError: (error) => setFeedback({
@@ -375,6 +398,7 @@ export const CrmWorkspacePage: React.FC<CrmWorkspacePageProps> = ({
             <OrdersList
               orders={ordersQuery.data?.items ?? []}
               onStatus={(orderId, status) => orderMutation.mutate({ orderId, status })}
+              onReservations={setReservationOrder}
               busy={orderMutation.isPending}
             />
           ) : (
@@ -395,6 +419,21 @@ export const CrmWorkspacePage: React.FC<CrmWorkspacePageProps> = ({
         onSave={(payload) => customerMutation.mutate({
           id: customerDialog && customerDialog !== 'new' ? customerDialog.id : undefined,
           payload,
+        })}
+      />
+      <OrderReservationsDialog
+        order={reservationOrder}
+        spools={spoolsQuery.data ?? []}
+        isLoading={spoolsQuery.isPending && reservationOrder !== null}
+        isSaving={reservationMutation.isPending}
+        error={spoolsQuery.error
+          ? translateApiError(t, spoolsQuery.error, t('crmWorkspace.feedback.error'))
+          : null}
+        onClose={() => setReservationOrder(null)}
+        onRetry={() => void spoolsQuery.refetch()}
+        onSave={(items) => reservationOrder && reservationMutation.mutate({
+          orderId: reservationOrder.id,
+          items,
         })}
       />
       {selectedQuoteId !== null && quoteDetailError ? (
@@ -494,16 +533,146 @@ const QuotesList: React.FC<{ quotes: CrmQuote[]; onOpen: (id: number) => void; o
   })}</div>;
 };
 
-const OrdersList: React.FC<{ orders: CrmOrder[]; onStatus: (id: number, status: CrmOrderStatus) => void; busy: boolean }> = ({ orders, onStatus, busy }) => {
+const OrdersList: React.FC<{
+  orders: CrmOrder[];
+  onStatus: (id: number, status: CrmOrderStatus) => void;
+  onReservations: (order: CrmOrder) => void;
+  busy: boolean;
+}> = ({ orders, onStatus, onReservations, busy }) => {
   const { t } = useTranslation();
   if (orders.length === 0) return <EmptyState icon={<BriefcaseBusiness />} title={t('crmWorkspace.orders.emptyTitle')} text={t('crmWorkspace.orders.emptyText')} />;
-  return <div className="grid gap-3 lg:grid-cols-2">{orders.map((order) => (
-    <article key={order.id} className="rounded-2xl border border-white/10 bg-white/[0.035] p-5">
-      <div className="flex items-start justify-between gap-4"><div><p className="font-mono text-xs text-cyan-300">{order.number}</p><h2 className="mt-2 text-lg font-semibold text-white">{order.title}</h2><p className="mt-1 text-sm text-slate-400">{order.customer?.name ?? t('crmWorkspace.quotes.noCustomer')}</p></div><StatusBadge status={order.status} kind="order" /></div>
-      <div className="mt-5 grid grid-cols-2 gap-3 rounded-xl border border-white/5 bg-black/15 p-3 text-sm"><div><p className="text-xs text-slate-500">{t('crmWorkspace.orders.amount')}</p><p className="mt-1 font-semibold text-white">{makeCurrencyFormatter(order.currency).format(order.total)}</p></div><div><p className="text-xs text-slate-500">{t('crmWorkspace.orders.dueDate')}</p><p className="mt-1 font-medium text-slate-200">{formatDate(order.due_date)}</p></div></div>
-      <div className="mt-4 flex items-center justify-between gap-3"><span className="text-xs text-slate-500">{t('crmWorkspace.orders.fromQuote')}</span><StatusSelect value={order.status} options={ORDER_TRANSITIONS[order.status]} label={(status) => t(`crmWorkspace.status.order.${status}`)} onChange={(status) => onStatus(order.id, status)} disabled={busy} /></div>
-    </article>
-  ))}</div>;
+  return <div className="grid gap-3 lg:grid-cols-2">{orders.map((order) => {
+    const reservedWeight = order.spool_reservations.reduce((total, item) => total + item.weight_g, 0);
+    return (
+      <article key={order.id} className="rounded-2xl border border-white/10 bg-white/[0.035] p-5">
+        <div className="flex items-start justify-between gap-4"><div><p className="font-mono text-xs text-cyan-300">{order.number}</p><h2 className="mt-2 text-lg font-semibold text-white">{order.title}</h2><p className="mt-1 text-sm text-slate-400">{order.customer?.name ?? t('crmWorkspace.quotes.noCustomer')}</p></div><StatusBadge status={order.status} kind="order" /></div>
+        <div className="mt-5 grid grid-cols-2 gap-3 rounded-xl border border-white/5 bg-black/15 p-3 text-sm"><div><p className="text-xs text-slate-500">{t('crmWorkspace.orders.amount')}</p><p className="mt-1 font-semibold text-white">{makeCurrencyFormatter(order.currency).format(order.total)}</p></div><div><p className="text-xs text-slate-500">{t('crmWorkspace.orders.dueDate')}</p><p className="mt-1 font-medium text-slate-200">{formatDate(order.due_date)}</p></div></div>
+        <button type="button" onClick={() => onReservations(order)} className="mt-3 flex w-full items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/[0.04] px-3.5 py-3 text-left transition hover:border-cyan-400/25 hover:bg-cyan-400/[0.07]">
+          <span><span className="block text-xs text-slate-500">{t('crmWorkspace.reservations.materialPlan')}</span><span className="mt-0.5 block text-sm font-medium text-slate-200">{reservedWeight > 0 ? t('crmWorkspace.reservations.reservedSummary', { weight: Math.round(reservedWeight), count: order.spool_reservations.length }) : t('crmWorkspace.reservations.notReserved')}</span></span>
+          <ChevronRight className="h-4 w-4 shrink-0 text-slate-500" />
+        </button>
+        <div className="mt-4 flex items-center justify-between gap-3"><span className="text-xs text-slate-500">{t('crmWorkspace.orders.fromQuote')}</span><StatusSelect value={order.status} options={ORDER_TRANSITIONS[order.status]} label={(status) => t(`crmWorkspace.status.order.${status}`)} onChange={(status) => onStatus(order.id, status)} disabled={busy} /></div>
+      </article>
+    );
+  })}</div>;
+};
+
+type ReservationDraft = {
+  key: string;
+  materialLineKey: string;
+  materialLabel: string | null;
+  spoolId: string;
+  weightG: string;
+};
+
+let reservationDraftSequence = 0;
+const newReservationDraftKey = () => `reservation-${reservationDraftSequence += 1}`;
+
+const spoolDisplayName = (spool: UserSpool): string => {
+  const filament = spool.filament;
+  const material = filament?.material_type ? ` · ${filament.material_type}` : '';
+  return `${filament?.name ?? `#${spool.id}`}${material} · ${Math.round(spool.remaining_weight_g)} g`;
+};
+
+const OrderReservationsDialog: React.FC<{
+  order: CrmOrder | null;
+  spools: UserSpool[];
+  isLoading: boolean;
+  isSaving: boolean;
+  error: string | null;
+  onClose: () => void;
+  onRetry: () => void;
+  onSave: (items: CrmOrderSpoolReservationCreate[]) => void;
+}> = ({ order, spools, isLoading, isSaving, error, onClose, onRetry, onSave }) => {
+  const { t } = useTranslation();
+  const [drafts, setDrafts] = useState<ReservationDraft[]>([]);
+
+  useEffect(() => {
+    if (!order) {
+      setDrafts([]);
+      return;
+    }
+    if (order.spool_reservations.length > 0) {
+      setDrafts(order.spool_reservations.map((item) => ({
+        key: newReservationDraftKey(),
+        materialLineKey: item.material_line_key,
+        materialLabel: item.material_label,
+        spoolId: String(item.spool_id),
+        weightG: String(item.weight_g),
+      })));
+      return;
+    }
+    setDrafts(order.material_requirements.flatMap((requirement) => (
+      requirement.suggested_allocations.map((allocation) => ({
+        key: newReservationDraftKey(),
+        materialLineKey: requirement.line_id,
+        materialLabel: requirement.label,
+        spoolId: String(allocation.spool_id),
+        weightG: String(Math.round(allocation.weight_g * 1000) / 1000),
+      }))
+    )));
+  }, [order]);
+
+  if (!order) return null;
+
+  const editable = order.status === 'new' || order.status === 'planned';
+  const validSpools = spools.filter((spool) => spool.state === 'active' || spool.state === 'shelf');
+  const hasInvalidDraft = drafts.some((draft) => (
+    !draft.spoolId || !Number.isFinite(Number(draft.weightG)) || Number(draft.weightG) <= 0
+  ));
+  const updateDraft = (key: string, changes: Partial<ReservationDraft>) => {
+    setDrafts((current) => current.map((item) => item.key === key ? { ...item, ...changes } : item));
+  };
+  const addDraft = (lineId: string, label: string | null, suggestedWeight: number) => {
+    setDrafts((current) => [...current, {
+      key: newReservationDraftKey(),
+      materialLineKey: lineId,
+      materialLabel: label,
+      spoolId: '',
+      weightG: suggestedWeight > 0 ? String(Math.round(suggestedWeight * 1000) / 1000) : '',
+    }]);
+  };
+  const submit = () => onSave(drafts.map((draft) => ({
+    material_line_key: draft.materialLineKey,
+    material_label: draft.materialLabel,
+    spool_id: Number(draft.spoolId),
+    weight_g: Number(draft.weightG),
+  })));
+
+  return (
+    <ModalOverlay onClose={onClose}>
+      <div className={`${surfaceClass} max-h-[calc(100dvh-2rem)] w-full max-w-3xl overflow-y-auto p-5 md:p-7`}>
+        <div className="flex items-start justify-between gap-4">
+          <div><p className="font-mono text-xs text-cyan-300">{order.number}</p><h2 className="mt-2 text-2xl font-semibold text-white">{t('crmWorkspace.reservations.title')}</h2><p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">{t('crmWorkspace.reservations.description')}</p></div>
+          <button type="button" onClick={onClose} className="rounded-xl border border-white/10 bg-white/5 p-2.5 text-slate-300 hover:bg-white/10"><X className="h-5 w-5" /></button>
+        </div>
+
+        {!editable && <div className="mt-5 rounded-xl border border-amber-300/20 bg-amber-300/10 px-4 py-3 text-sm leading-6 text-amber-100">{t('crmWorkspace.reservations.readOnly')}</div>}
+        {error ? <div className="mt-5"><QueryErrorState message={error} retryLabel={t('crmWorkspace.actions.retry')} onRetry={onRetry} /></div> : isLoading ? <div className="flex min-h-48 items-center justify-center"><Loader2 className="h-7 w-7 animate-spin text-cyan-300" /></div> : order.material_requirements.length === 0 ? <div className="mt-5 rounded-2xl border border-dashed border-white/10 bg-black/10 p-6 text-center"><p className="font-medium text-white">{t('crmWorkspace.reservations.noPlanTitle')}</p><p className="mt-2 text-sm leading-6 text-slate-400">{t('crmWorkspace.reservations.noPlanText')}</p></div> : <div className="mt-6 space-y-4">
+          {order.material_requirements.map((requirement) => {
+            const lineDrafts = drafts.filter((draft) => draft.materialLineKey === requirement.line_id);
+            const reserved = lineDrafts.reduce((total, draft) => total + (Number(draft.weightG) || 0), 0);
+            const remaining = Math.max(0, requirement.required_planned_g - reserved);
+            const matchingSpools = validSpools.filter((spool) => requirement.filament_id === null || spool.filament_id === requirement.filament_id);
+            return <section key={requirement.line_id} className="rounded-2xl border border-white/10 bg-black/15 p-4 md:p-5">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><h3 className="font-semibold text-white">{requirement.label || t('crmWorkspace.reservations.materialFallback')}</h3><p className="mt-1 text-xs text-slate-400">{t('crmWorkspace.reservations.required', { weight: Math.round(requirement.required_planned_g) })}</p></div><span className={`w-fit rounded-full border px-2.5 py-1 text-xs ${remaining <= 0 ? 'border-emerald-400/20 bg-emerald-400/10 text-emerald-100' : 'border-amber-300/20 bg-amber-300/10 text-amber-100'}`}>{remaining <= 0 ? t('crmWorkspace.reservations.covered') : t('crmWorkspace.reservations.missing', { weight: Math.round(remaining) })}</span></div>
+              <div className="mt-4 space-y-2">{lineDrafts.map((draft) => <div key={draft.key} className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_9rem_auto]">
+                <select value={draft.spoolId} disabled={!editable} onChange={(event) => updateDraft(draft.key, { spoolId: event.target.value })} className={inputClass}><option value="">{t('crmWorkspace.reservations.chooseSpool')}</option>{matchingSpools.map((spool) => <option key={spool.id} value={spool.id}>{spoolDisplayName(spool)}</option>)}</select>
+                <label className="relative"><input type="number" min="0.001" step="0.1" value={draft.weightG} disabled={!editable} onChange={(event) => updateDraft(draft.key, { weightG: event.target.value })} className={`${inputClass} pr-8`} aria-label={t('crmWorkspace.reservations.weight')} /><span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-500">g</span></label>
+                {editable && <button type="button" onClick={() => setDrafts((current) => current.filter((item) => item.key !== draft.key))} className="flex h-10.5 items-center justify-center rounded-xl border border-white/10 bg-white/5 px-3 text-slate-400 transition hover:border-rose-400/25 hover:text-rose-200" title={t('crmWorkspace.reservations.remove')}><Trash2 className="h-4 w-4" /></button>}
+              </div>)}</div>
+              {editable && <button type="button" onClick={() => addDraft(requirement.line_id, requirement.label, remaining)} className="mt-3 inline-flex items-center gap-2 rounded-xl border border-cyan-400/20 bg-cyan-400/10 px-3 py-2 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-400/15"><Plus className="h-3.5 w-3.5" />{t('crmWorkspace.reservations.addSpool')}</button>}
+            </section>;
+          })}
+        </div>}
+
+        <div className="mt-6 flex flex-col-reverse gap-3 border-t border-white/10 pt-5 sm:flex-row sm:items-center sm:justify-between">
+          <p className="max-w-xl text-xs leading-5 text-slate-500">{t('crmWorkspace.reservations.releaseHint')}</p>
+          <div className="flex shrink-0 justify-end gap-2"><button type="button" onClick={onClose} className="rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-slate-200 hover:bg-white/10">{editable ? t('crmWorkspace.actions.cancel') : t('crmWorkspace.actions.close')}</button>{editable && order.material_requirements.length > 0 && <button type="button" disabled={isSaving || hasInvalidDraft} onClick={submit} className="inline-flex items-center gap-2 rounded-xl bg-cyan-500 px-4 py-2.5 text-sm font-semibold text-slate-950 transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-45">{isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}{t('crmWorkspace.actions.save')}</button>}</div>
+        </div>
+      </div>
+    </ModalOverlay>
+  );
 };
 
 const CustomersList: React.FC<{ customers: CrmCustomer[]; onEdit: (customer: CrmCustomer) => void; onArchive: (id: number) => void; busy: boolean }> = ({ customers, onEdit, onArchive, busy }) => {

@@ -366,6 +366,7 @@ def test_pull_keeps_managed_identity_when_server_info_is_unavailable(
     assert result is not None
     path = tmp_path / "Managed PLA.json"
     saved = json.loads(path.read_text(encoding="utf-8"))
+    assert "inherits" not in saved
     saved.pop("bundle_id")
     path.write_text(json.dumps(saved), encoding="utf-8")
     assert plugin_module.managed_preset_id(str(path), saved) == 42
@@ -404,7 +405,6 @@ def test_push_preserves_legacy_remote_name_and_canonical_parent(
     local_profile = {
         "name": "PLA_0.4",
         "filament_settings_id": ["PLA_0.4"],
-        "inherits": plugin_module.FALLBACK_PARENT,
         "nozzle_temperature": ["220"],
     }
     local_path.write_text(json.dumps(local_profile), encoding="utf-8")
@@ -475,6 +475,7 @@ def test_explicit_printer_bundle_install_creates_only_managed_profiles(
                 "name": "Workshop 0.4",
                 "type": "machine",
                 "printer_settings_id": "Workshop 0.4",
+                "inherits": "fdm_machine_common",
             },
         }],
         "process_profiles": [{
@@ -484,6 +485,7 @@ def test_explicit_printer_bundle_install_creates_only_managed_profiles(
                 "name": "Fast 0.20",
                 "type": "process",
                 "print_settings_id": "Fast 0.20",
+                "inherits": "fdm_process_common",
                 "compatible_printers": ["Workshop 0.4"],
             },
         }],
@@ -497,12 +499,51 @@ def test_explicit_printer_bundle_install_creates_only_managed_profiles(
     assert counts == {"machine": 1, "process": 1}
     assert json.loads(unmanaged.read_text(encoding="utf-8")) == unmanaged_payload
     assert machine_payload["printer_settings_id"] == "Workshop 0.4 (FH-Machine-41)"
+    assert "inherits" not in machine_payload
+    assert "inherits" not in process_payload
     assert process_payload["compatible_printers"] == [
         "Workshop 0.4 (FH-Machine-41)"
     ]
     assert (machine_dir / "Workshop 0.4 (FH-Machine-41).info").read_text(
         encoding="utf-8"
     ) == "sync_info = filamenthub:machine:41\n"
+
+
+def test_legacy_parent_repair_touches_only_filamenthub_managed_files(
+    plugin_module, monkeypatch, tmp_path
+):
+    monkeypatch.setattr(plugin_module, "user_bundle_dir", lambda: str(tmp_path))
+    machine_dir = tmp_path / "machine"
+    filament_dir = tmp_path / "filament"
+    process_dir = tmp_path / "process"
+    for folder in (machine_dir, filament_dir, process_dir):
+        folder.mkdir()
+
+    managed = {
+        machine_dir / "Managed machine.json": {
+            "bundle_id": "filamenthub:41",
+            "inherits": "fdm_machine_common",
+        },
+        filament_dir / "Managed filament.json": {
+            "bundle_id": "filamenthub:42",
+            "inherits": "fdm_filament_common",
+        },
+        process_dir / "Managed process.json": {
+            "bundle_id": "filamenthub:43",
+            "inherits": "fdm_process_vendor_common",
+        },
+    }
+    for path, payload in managed.items():
+        path.write_text(json.dumps(payload), encoding="utf-8")
+    unmanaged = machine_dir / "User machine.json"
+    unmanaged.write_text(
+        json.dumps({"inherits": "fdm_machine_common"}), encoding="utf-8"
+    )
+
+    assert plugin_module.repair_local_bundle_parents() == 3
+    for path in managed:
+        assert "inherits" not in json.loads(path.read_text(encoding="utf-8"))
+    assert json.loads(unmanaged.read_text(encoding="utf-8"))["inherits"] == "fdm_machine_common"
 
 
 def test_printer_bundle_message_is_explicit_and_uses_saved_session(

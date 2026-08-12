@@ -55,7 +55,8 @@ Runtime surface used (confirmed against the current upstream plugin API):
   * the injected window.orca bridge (PluginWebDialog.cpp:ORCA_BRIDGE_JS)
 
 Login/token: the user signs in inside the iframe on our own site (normal flow).
-The page mints a short-lived, plugin-scoped capability for preset read/write;
+The page mints a short-lived, plugin-scoped capability for preset read/write
+and reading an explicitly selected owned printer bundle;
 the account access/refresh credentials never cross the iframe boundary. The
 capability may be cached locally until expiry so a reopened window can resume.
 """
@@ -954,6 +955,39 @@ def validate_filament_profile(profile):
     return profile
 
 
+def _parent_name(profile):
+    inherits = profile.get("inherits") if isinstance(profile, dict) else None
+    if isinstance(inherits, list):
+        inherits = inherits[0] if inherits else ""
+    return inherits.strip() if isinstance(inherits, str) else ""
+
+
+def _is_internal_fdm_parent(name):
+    """Whether an Orca parent is a vendor-bundle implementation detail.
+
+    Names beginning with ``fdm_`` are abstract/intermediate presets resolved only
+    while Orca loads the vendor bundle that declares them. They are not present in
+    the global user-preset collection, so a profile copied into our local bundle
+    cannot inherit one even when another vendor contains the same name.
+    """
+    return isinstance(name, str) and name.startswith("fdm_")
+
+
+def normalize_local_bundle_parent(profile, known_presets=None):
+    """Keep only a parent that Orca can resolve from a local user bundle.
+
+    A missing parent is valid: Orca starts from the type's default configuration
+    and applies the profile overrides. ``known_presets`` is supplied for filament
+    imports, where the host exposes the concrete installed preset names.
+    """
+    inherits = _parent_name(profile)
+    unavailable = known_presets is not None and inherits not in known_presets
+    if not inherits or _is_internal_fdm_parent(inherits) or unavailable:
+        return profile.pop("inherits", None) is not None
+    profile["inherits"] = inherits
+    return False
+
+
 def preset_file_path(folder, name, preset_id):
     """Path for a managed preset file. OrcaSlicer displays user presets by the
     file stem, so the stem must be the clean preset name; identity lives in the
@@ -1086,6 +1120,49 @@ def remove_stale_managed_profile_files(folder, profile_id, kind, keep_path):
                 pass
 
 
+def repair_local_bundle_parents():
+    """Repair legacy FilamentHub files that reference vendor-private parents.
+
+    Only profiles carrying our durable ``bundle_id``/``.info`` identity are
+    touched. The change becomes visible on this startup when plugins register
+    before user presets are loaded; otherwise Orca picks it up on the next one.
+    """
+    repaired = 0
+    for kind, folder in (
+        ("filament", user_filament_dir()),
+        ("machine", user_machine_dir()),
+        ("process", user_process_dir()),
+    ):
+        try:
+            filenames = os.listdir(folder)
+        except OSError:
+            continue
+        for filename in filenames:
+            if not filename.endswith(".json"):
+                continue
+            path = os.path.join(folder, filename)
+            try:
+                with open(path, "r", encoding="utf-8") as fh:
+                    profile = json.load(fh)
+            except (OSError, ValueError):
+                continue
+            if not isinstance(profile, dict):
+                continue
+            if kind == "filament":
+                profile_id = managed_preset_id(path, profile)
+            else:
+                profile_id = managed_profile_id(path, profile, kind)
+            if profile_id is None or not _is_internal_fdm_parent(_parent_name(profile)):
+                continue
+            normalize_local_bundle_parent(profile)
+            try:
+                write_json_atomic(path, profile)
+            except OSError:
+                continue
+            repaired += 1
+    return repaired
+
+
 def _validated_bundle_entries(bundle, key, kind, maximum):
     entries = bundle.get(key)
     if not isinstance(entries, list) or len(entries) > maximum:
@@ -1112,6 +1189,7 @@ def _validated_bundle_entries(bundle, key, kind, maximum):
         if profile_type not in (None, expected_type):
             raise ValueError("Invalid %s profile type" % kind)
         profile["type"] = expected_type
+        normalize_local_bundle_parent(profile)
         profile["bundle_id"] = "filamenthub:%d" % profile_id
         validated.append({"id": profile_id, "name": name.strip(), "profile": profile})
     return validated
@@ -1174,37 +1252,16 @@ def install_printer_bundle(bundle):
     return counts
 
 
-# Universal base filament preset present in every OrcaSlicer install.
-FALLBACK_PARENT = "fdm_filament_common"
-
-
 def ensure_parent_exists(profile, known_presets):
-    """Make the imported preset's parent resolvable, mirroring the fork's import.
-
-    A preset inherits a system preset by name. If that parent is not installed
-    (the user has a different printer/vendor), the preset loads as incompatible
-    and never shows in the dropdown. Fall back to the universal base so the
-    preset always loads; its own overrides are preserved.
-    """
-    inherits = profile.get("inherits")
-    if isinstance(inherits, list):
-        inherits = inherits[0] if inherits else ""
-    if not inherits or inherits not in known_presets:
-        profile["inherits"] = FALLBACK_PARENT
+    """Remove a parent that the local FilamentHub bundle cannot resolve."""
+    normalize_local_bundle_parent(profile, known_presets)
 
 
 def restore_remote_parent_for_upload(profile, preset_id, token):
-    """Do not persist a local fallback parent as the canonical FH parent.
-
-    The fallback only makes a preset usable when its original vendor parent is
-    unavailable on this Orca installation. A later local edit must not replace
-    that original parent in FilamentHub.
-    """
+    """Restore a locally omitted parent before updating the canonical preset."""
     upload = dict(profile)
-    inherits = upload.get("inherits")
-    if isinstance(inherits, list):
-        inherits = inherits[0] if inherits else ""
-    if inherits != FALLBACK_PARENT:
+    inherits = _parent_name(upload)
+    if inherits and not _is_internal_fdm_parent(inherits):
         return upload
 
     status, body = http_get(
@@ -1217,12 +1274,10 @@ def restore_remote_parent_for_upload(profile, preset_id, token):
         return None
     if not isinstance(remote, dict):
         return None
-    remote_parent = remote.get("inherits")
-    if isinstance(remote_parent, list):
-        remote_parent = remote_parent[0] if remote_parent else ""
-    if remote_parent and remote_parent != FALLBACK_PARENT:
+    remote_parent = _parent_name(remote)
+    if remote_parent:
         upload["inherits"] = remote_parent
-    elif not remote_parent:
+    else:
         upload.pop("inherits", None)
     return upload
 
@@ -3597,6 +3652,9 @@ class FilamentHubPlugin(orca.base):
     def register_capabilities(self):
         refresh_ui_language()
         configure_plugin_storage()
+        repaired = repair_local_bundle_parents()
+        if repaired:
+            fh_log("repaired %d local bundle parent reference(s)" % repaired)
         if FilamentHubPage is not None:
             orca.register_capability(FilamentHubPage)
         else:

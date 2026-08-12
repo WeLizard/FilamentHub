@@ -89,7 +89,7 @@ async def test_calculator_estimate_uses_independent_multi_material_lines(
                 "price_source": "spool",
                 "spool_id": 10,
                 "filament_id": 20,
-                "role_weights_g": {"support": 10, "brim": 5},
+                "role_weights_g": {"support": 10, "brim": 5, "prime_tower": 15},
                 "role_weight_source": "gcode_extrusion_roles",
             },
             {
@@ -145,9 +145,15 @@ async def test_calculator_estimate_uses_independent_multi_material_lines(
                     "cost": 8.0,
                     "source": "gcode_extrusion_roles",
                 },
+                {
+                    "role": "prime_tower",
+                    "weight_g": 30.0,
+                    "cost": 24.0,
+                    "source": "gcode_extrusion_roles",
+                },
             ],
-            "other_weight_g": 170.0,
-            "other_cost": 136.0,
+            "other_weight_g": 140.0,
+            "other_cost": 112.0,
         },
         {
             "line_id": "job-1:t1",

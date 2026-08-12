@@ -4,7 +4,6 @@ import {
   Loader2,
   PackageCheck,
   Plus,
-  Printer,
   RefreshCw,
   X,
 } from 'lucide-react';
@@ -12,6 +11,7 @@ import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 
 import type { UserSpool } from '../../api/client';
+import { Printer3DIcon } from '../icons/Printer3DIcon';
 import type {
   CalculatorPreflightLineResponse,
   CalculatorPreflightResponse,
@@ -100,7 +100,7 @@ const PrinterCompatibilityCard = ({ compatibility }: { compatibility: Calculator
     <div className={`mt-3 rounded-2xl border p-3 ${compatibilityTone[compatibility.status]}`}>
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2">
-          <Printer className="h-4 w-4 shrink-0" />
+          <Printer3DIcon className="h-4 w-4 shrink-0" />
           <p className="truncate text-xs font-semibold">
             {t('profilePage.calculator.printerCompatibilityTitle', {
               name: compatibility.physical_printer_name,
@@ -423,6 +423,9 @@ export const MaterialPreflightPanel = ({
                                   ? 'profilePage.calculator.preflightSuggestionCovers'
                                   : 'profilePage.calculator.preflightSuggestionPartial',
                               )}
+                              {suggestion.reserved_elsewhere_g > 0
+                                ? ` · ${t('profilePage.calculator.preflightReservedElsewhere', { value: weight(suggestion.reserved_elsewhere_g) })}`
+                                : ''}
                             </span>
                           </span>
                         </button>
@@ -469,6 +472,9 @@ export const MaterialPreflightPanel = ({
                             })}
                             {' · '}
                             {t(`profilePage.calculator.preflightRemainingStatus.${suggestion.remaining_status}`)}
+                            {suggestion.reserved_elsewhere_g > 0
+                              ? ` · ${t('profilePage.calculator.preflightReservedElsewhere', { value: weight(suggestion.reserved_elsewhere_g) })}`
+                              : ''}
                           </p>
                         </div>
                       );
@@ -527,6 +533,9 @@ export const MaterialPreflightPanel = ({
                             {t('profilePage.calculator.preflightInventoryUpdated', {
                               value: formatDateTime(allocation.remaining_updated_at),
                             })}
+                            {allocation.reserved_elsewhere_g > 0
+                              ? ` · ${t('profilePage.calculator.preflightReservedElsewhere', { value: weight(allocation.reserved_elsewhere_g) })}`
+                              : ''}
                             {allocationCost
                               ? ` · ${t('profilePage.calculator.preflightAllocationCost', { value: allocationCost })}`
                               : ''}

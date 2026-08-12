@@ -32,6 +32,7 @@ import { FilamentFeaturesEditor } from './FilamentFeaturesEditor';
 import { mergeVisualEffects } from '../data/filamentFeatures';
 import { currencySymbol } from '../utils/currency';
 import {
+  applyOrcaBooleanFromUi,
   applyOrcaLinesFromUi,
   applyOrcaUiSetting,
   cloneOrcaSettings,
@@ -175,8 +176,11 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
   const [deretractionSpeed, setDeretractionSpeed] = useState<number | ''>('');
   const [retractionMinimumTravel, setRetractionMinimumTravel] = useState<number | ''>('');
   const [retractBeforeWipe, setRetractBeforeWipe] = useState('');
+  const [retractAfterWipe, setRetractAfterWipe] = useState('');
   const [retractWhenChangingLayer, setRetractWhenChangingLayer] = useState(false);
   const [retractRestartExtra, setRetractRestartExtra] = useState<number | ''>('');
+  const [retractLengthToolchange, setRetractLengthToolchange] = useState<number | ''>('');
+  const [retractRestartExtraToolchange, setRetractRestartExtraToolchange] = useState<number | ''>('');
   const [filamentZHop, setFilamentZHop] = useState<number | ''>('');
   const [filamentZHopTypes, setFilamentZHopTypes] = useState('');
   const [retractLiftAbove, setRetractLiftAbove] = useState<number | ''>('');
@@ -194,6 +198,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
   const [adaptivePABridges, setAdaptivePABridges] = useState<number | ''>('');
   const [adaptivePAOverhangs, setAdaptivePAOverhangs] = useState(false);
   const [chamberTemp, setChamberTemp] = useState<number | ''>('');
+  const [chamberMinimalTemp, setChamberMinimalTemp] = useState<number | ''>('');
   const [enableChamberControl, setEnableChamberControl] = useState(false);
   
   // Вкладка "Охлаждение"
@@ -205,6 +210,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
   const [overhangFanSpeed, setOverhangFanSpeed] = useState<number | ''>('');
   const [overhangFanThreshold, setOverhangFanThreshold] = useState('');
   const [closeFanFirstXLayers, setCloseFanFirstXLayers] = useState<number | ''>('');
+  const [initialLayerFanSpeed, setInitialLayerFanSpeed] = useState<number | ''>('');
   const [fullFanSpeedLayer, setFullFanSpeedLayer] = useState<number | ''>('');
   const [reduceFanStopStartFreq, setReduceFanStopStartFreq] = useState(false);
   const [additionalCoolingFanSpeed, setAdditionalCoolingFanSpeed] = useState<number | ''>('');
@@ -215,7 +221,8 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
   const [enableExhaustFan, setEnableExhaustFan] = useState(false); // Вкл. вытяжной вентилятор
   const [completePrintExhaustFanSpeed, setCompletePrintExhaustFanSpeed] = useState<number | ''>('');
   const [duringPrintExhaustFanSpeed, setDuringPrintExhaustFanSpeed] = useState<number | ''>('');
-  const [activateAirFiltration, setActivateAirFiltration] = useState(false);
+  const [activateAirFiltrationDuringPrint, setActivateAirFiltrationDuringPrint] = useState(true);
+  const [activateAirFiltrationOnCompletion, setActivateAirFiltrationOnCompletion] = useState(true);
   
   // Вкладка "Переопределение параметров"
   const [slowDownForLayerCooling, setSlowDownForLayerCooling] = useState(false);
@@ -229,6 +236,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
   
   // Вкладка "Дополнительно"
   const [filamentStartGcode, setFilamentStartGcode] = useState(''); // Стартовый G-код прутка
+  const [filamentChangeExtrusionRoleGcode, setFilamentChangeExtrusionRoleGcode] = useState('');
   const [filamentEndGcode, setFilamentEndGcode] = useState(''); // Завершающий G-код прутка
   const [filamentMultitoolRamming, setFilamentMultitoolRamming] = useState(false);
   const [filamentMultitoolRammingFlow, setFilamentMultitoolRammingFlow] = useState<number | ''>('');
@@ -507,6 +515,13 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
         const numericSetting = (key: string): number | '' => readOrcaNumber(rawSettings, key) ?? '';
         const textSetting = (key: string): string => readOrcaText(rawSettings, key);
         const percentSetting = (key: string): string => textSetting(key).replace('%', '');
+        const booleanSetting = (key: string, fallback = false): boolean => {
+          const rawValue = firstOrcaSetting(rawSettings, key);
+          if (rawValue === undefined || rawValue === null || String(rawValue).trim().toLowerCase() === 'nil') {
+            return fallback;
+          }
+          return ['1', 'true', 'yes'].includes(String(rawValue).trim().toLowerCase());
+        };
         setTempRangeLow(numericSetting('nozzle_temperature_range_low'));
         setTempRangeHigh(numericSetting('nozzle_temperature_range_high'));
         setVolumetricSpeed(numericSetting('filament_max_volumetric_speed'));
@@ -539,6 +554,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
         setIdleTemperature(numericSetting('idle_temperature'));
         setSofteningTemperature(numericSetting('temperature_vitrification'));
         setChamberTemp(numericSetting('chamber_temperature'));
+        setChamberMinimalTemp(numericSetting('chamber_minimal_temperature'));
         setEnableChamberControl(settings.activate_chamber_temp_control?.[0] === '1' || settings.activate_chamber_temp_control?.[0] === 1);
         
         // G-code
@@ -550,6 +566,12 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
         } else {
           setFilamentStartGcode('');
         }
+        const roleChangeGcode = rawSettings.filament_change_extrusion_role_gcode;
+        setFilamentChangeExtrusionRoleGcode(
+          Array.isArray(roleChangeGcode)
+            ? roleChangeGcode.map((line) => String(line)).join('\n')
+            : textSetting('filament_change_extrusion_role_gcode'),
+        );
         if (settings.filament_end_gcode && Array.isArray(settings.filament_end_gcode)) {
           setFilamentEndGcode(settings.filament_end_gcode.join('\n'));
         } else if (settings.end_filament_gcode && Array.isArray(settings.end_filament_gcode)) {
@@ -613,8 +635,11 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
         setDeretractionSpeed(numericSetting('filament_deretraction_speed'));
         setRetractionMinimumTravel(numericSetting('filament_retraction_minimum_travel'));
         setRetractBeforeWipe(percentSetting('filament_retract_before_wipe'));
+        setRetractAfterWipe(percentSetting('filament_retract_after_wipe'));
         setRetractWhenChangingLayer(settings.filament_retract_when_changing_layer?.[0] === '1' || settings.filament_retract_when_changing_layer?.[0] === 1);
         setRetractRestartExtra(numericSetting('filament_retract_restart_extra'));
+        setRetractLengthToolchange(numericSetting('filament_retract_length_toolchange'));
+        setRetractRestartExtraToolchange(numericSetting('filament_retract_restart_extra_toolchange'));
         
         // Lift (подъем Z)
         setFilamentZHop(numericSetting('filament_z_hop'));
@@ -639,6 +664,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
         setFanMaxSpeedLayerTime(numericSetting('slow_down_layer_time')); // slow_down_layer_time используется для fanMaxSpeedLayerTime
         setFullFanSpeedLayer(numericSetting('full_fan_speed_layer'));
         setCloseFanFirstXLayers(numericSetting('close_fan_the_first_x_layers'));
+        setInitialLayerFanSpeed(numericSetting('initial_layer_fan_speed'));
         setSlowDownForLayerCooling(settings.slow_down_for_layer_cooling?.[0] === '1' || settings.slow_down_for_layer_cooling?.[0] === 1);
         setEnableOverhangBridgeFan(settings.enable_overhang_bridge_fan?.[0] === '1' || settings.enable_overhang_bridge_fan?.[0] === 1);
         setOverhangFanSpeed(numericSetting('overhang_fan_speed'));
@@ -647,10 +673,15 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
         setIroningFanSpeed(numericSetting('ironing_fan_speed'));
         setSupportMaterialInterfaceFanSpeed(numericSetting('support_material_interface_fan_speed'));
         setAdditionalCoolingFanSpeed(numericSetting('additional_cooling_fan_speed'));
-        setEnableExhaustFan(settings.enable_exhaust_fan?.[0] === '1' || settings.enable_exhaust_fan?.[0] === 1 || !!settings.during_print_exhaust_fan_speed || !!settings.complete_print_exhaust_fan_speed);
+        setEnableExhaustFan(
+          booleanSetting('activate_air_filtration')
+          || !!settings.during_print_exhaust_fan_speed
+          || !!settings.complete_print_exhaust_fan_speed,
+        );
         setDuringPrintExhaustFanSpeed(numericSetting('during_print_exhaust_fan_speed'));
         setCompletePrintExhaustFanSpeed(numericSetting('complete_print_exhaust_fan_speed'));
-        setActivateAirFiltration(settings.activate_air_filtration?.[0] === '1' || settings.activate_air_filtration?.[0] === 1);
+        setActivateAirFiltrationDuringPrint(booleanSetting('activate_air_filtration_during_print', true));
+        setActivateAirFiltrationOnCompletion(booleanSetting('activate_air_filtration_on_completion', true));
         
         // === ВКЛАДКА "ПЕРЕОПРЕДЕЛЕНИЕ ПАРАМЕТРОВ" ===
         setSlowDownMinSpeed(numericSetting('slow_down_min_speed'));
@@ -737,8 +768,11 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
         setDeretractionSpeed('');
         setRetractionMinimumTravel('');
         setRetractBeforeWipe('');
+        setRetractAfterWipe('');
         setRetractWhenChangingLayer(false);
         setRetractRestartExtra('');
+        setRetractLengthToolchange('');
+        setRetractRestartExtraToolchange('');
         setFilamentZHop('');
         setFilamentZHopTypes('');
         setRetractLiftAbove('');
@@ -751,10 +785,12 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
         setAdaptivePressureAdvance(false);
         setAdaptivePABridges('');
         setAdaptivePAOverhangs(false);
+        setChamberMinimalTemp('');
         setFanCoolingLayerTime('');
         setFanMaxSpeedLayerTime('');
         setFullFanSpeedLayer('');
         setCloseFanFirstXLayers('');
+        setInitialLayerFanSpeed('');
         setSlowDownForLayerCooling(false);
         setEnableOverhangBridgeFan(false);
         setOverhangFanSpeed('');
@@ -766,13 +802,15 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
         setEnableExhaustFan(false);
         setDuringPrintExhaustFanSpeed('');
         setCompletePrintExhaustFanSpeed('');
-        setActivateAirFiltration(false);
+        setActivateAirFiltrationDuringPrint(true);
+        setActivateAirFiltrationOnCompletion(true);
         setSlowDownMinSpeed('');
         setDontSlowDownOuterWall(false);
         setRetractionDistancesWhenCut('');
         setLongRetractionsWhenCut('');
         setLongRetractionsWhenEC(false);
         setRetractionDistancesWhenEC('');
+        setFilamentChangeExtrusionRoleGcode('');
         setFilamentMultitoolRamming(false);
         setFilamentMultitoolRammingFlow('');
         setFilamentMultitoolRammingVolume('');
@@ -843,8 +881,11 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
       setDeretractionSpeed('');
       setRetractionMinimumTravel('');
       setRetractBeforeWipe('');
+      setRetractAfterWipe('');
       setRetractWhenChangingLayer(false);
       setRetractRestartExtra('');
+      setRetractLengthToolchange('');
+      setRetractRestartExtraToolchange('');
       setFilamentZHop('');
       setFilamentZHopTypes('');
       setRetractLiftAbove('');
@@ -860,6 +901,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
       setAdaptivePABridges('');
       setAdaptivePAOverhangs(false);
       setChamberTemp('');
+      setChamberMinimalTemp('');
       setEnableChamberControl(false);
       setFanMinSpeed('');
       setFanMaxSpeed('');
@@ -867,6 +909,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
       setFanMaxSpeedLayerTime('');
       setFullFanSpeedLayer('');
       setCloseFanFirstXLayers('');
+      setInitialLayerFanSpeed('');
       setReduceFanStopStartFreq(false);
       setSlowDownForLayerCooling(false);
       setEnableOverhangBridgeFan(false);
@@ -879,7 +922,8 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
       setEnableExhaustFan(false);
       setDuringPrintExhaustFanSpeed('');
       setCompletePrintExhaustFanSpeed('');
-      setActivateAirFiltration(false);
+      setActivateAirFiltrationDuringPrint(true);
+      setActivateAirFiltrationOnCompletion(true);
       setSlowDownMinSpeed('');
       setDontSlowDownOuterWall(false);
       setRetractionDistancesWhenCut('');
@@ -887,6 +931,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
       setLongRetractionsWhenEC(false);
       setRetractionDistancesWhenEC('');
       setFilamentStartGcode('');
+      setFilamentChangeExtrusionRoleGcode('');
       setFilamentEndGcode('');
       setFilamentMultitoolRamming(false);
       setFilamentMultitoolRammingFlow('');
@@ -1359,22 +1404,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
 
     // Вспомогательная функция для добавления boolean параметра
     const addBoolParam = (key: string, value: boolean) => {
-      const target = value ? '1' : '0';
-      const hasOriginal = Object.prototype.hasOwnProperty.call(sourceSettings, key);
-      const original = firstOrcaSetting(sourceSettings, key);
-      if (hasOriginal && String(original) === target) {
-        return;
-      }
-      if (value) {
-        settings[key] = ['1'];
-        hasSettings = true;
-      } else if (hasOriginal) {
-        if (String(original).toLowerCase() !== 'nil') {
-          settings[key] = ['0'];
-        }
-      } else {
-        delete settings[key];
-      }
+      applyOrcaBooleanFromUi(settings, sourceSettings, key, value);
     };
 
     // Вспомогательная функция для добавления процентного значения
@@ -1464,6 +1494,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
     addParam('idle_temperature', idleTemperature); // Температура ожидания
     addParam('temperature_vitrification', softeningTemperature); // Температура витрификации (размягчения)
     addParam('chamber_temperature', chamberTemp);
+    addParam('chamber_minimal_temperature', chamberMinimalTemp);
     addBoolParam('activate_chamber_temp_control', enableChamberControl);
 
     // Свойства филамента
@@ -1509,8 +1540,11 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
     addParam('filament_deretraction_speed', deretractionSpeed);
     addParam('filament_retraction_minimum_travel', retractionMinimumTravel);
     addPercentParam('filament_retract_before_wipe', retractBeforeWipe);
+    addPercentParam('filament_retract_after_wipe', retractAfterWipe);
     addBoolParam('filament_retract_when_changing_layer', retractWhenChangingLayer);
     addParam('filament_retract_restart_extra', retractRestartExtra);
+    addParam('filament_retract_length_toolchange', retractLengthToolchange);
+    addParam('filament_retract_restart_extra_toolchange', retractRestartExtraToolchange);
 
     // Lift (подъем Z)
     addParam('filament_z_hop', filamentZHop);
@@ -1554,6 +1588,12 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
     addBoolParam('reduce_fan_stop_start_freq', reduceFanStopStartFreq);
     addParam('full_fan_speed_layer', fullFanSpeedLayer); // Полная скорость вентилятора на слое
     addParam('close_fan_the_first_x_layers', closeFanFirstXLayers); // Закрыть вентилятор на первых X слоях
+    const hasInitialLayerFanSpeed = Object.prototype.hasOwnProperty.call(sourceSettings, 'initial_layer_fan_speed');
+    const initialLayerFanSpeedValue = Number(closeFanFirstXLayers) > 0
+      && (initialLayerFanSpeed !== '' || hasInitialLayerFanSpeed)
+      ? -1
+      : initialLayerFanSpeed;
+    addParam('initial_layer_fan_speed', initialLayerFanSpeedValue);
 
     // Замедление для охлаждения (связано с вентилятором)
     addBoolParam('slow_down_for_layer_cooling', slowDownForLayerCooling);
@@ -1580,14 +1620,25 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
     // Вспомогательный вентилятор модели
     addParam('additional_cooling_fan_speed', additionalCoolingFanSpeed);
 
-    // Вытяжной вентилятор
-    // enable_exhaust_fan - возможно есть в OrcaSlicer, но может называться по-другому
-    // Пока не добавляем, так как не уверены в точном имени параметра
-    // Но если enableExhaustFan включен, добавляем скорости
-    if (enableExhaustFan || duringPrintExhaustFanSpeed !== '' || completePrintExhaustFanSpeed !== '') {
+    // Вытяжной вентилятор — структура совпадает с секцией Exhaust fan в OrcaSlicer.
+    addBoolParam('activate_air_filtration', enableExhaustFan);
+    if (enableExhaustFan) {
+      applyOrcaBooleanFromUi(
+        settings,
+        sourceSettings,
+        'activate_air_filtration_during_print',
+        activateAirFiltrationDuringPrint,
+        true,
+      );
       addParam('during_print_exhaust_fan_speed', duringPrintExhaustFanSpeed);
+      applyOrcaBooleanFromUi(
+        settings,
+        sourceSettings,
+        'activate_air_filtration_on_completion',
+        activateAirFiltrationOnCompletion,
+        true,
+      );
       addParam('complete_print_exhaust_fan_speed', completePrintExhaustFanSpeed);
-      addBoolParam('activate_air_filtration', activateAirFiltration);
     }
 
     // === ВКЛАДКА "ПЕРЕОПРЕДЕЛЕНИЕ ПАРАМЕТРОВ" ===
@@ -1619,6 +1670,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
         ? 'end_filament_gcode'
         : 'filament_end_gcode';
     addLinesParam(startGcodeKey, filamentStartGcode);
+    addLinesParam('filament_change_extrusion_role_gcode', filamentChangeExtrusionRoleGcode);
     addLinesParam(endGcodeKey, filamentEndGcode);
     
     // Мультитул
@@ -3366,9 +3418,9 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                 <div>
                   <h4 className="text-sm font-semibold text-white mb-3 pb-2 border-b border-white/10">{t('presetModal.chamberTempSection')}</h4>
                   
-                  <div className="flex items-center space-x-3">
-                    <div className="flex-1">
-                      <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.chamberTemp')}</label>
+                  <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] md:items-end">
+                    <div>
+                      <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.chamberTargetTemp')}</label>
                       <div className="relative">
                         <input
                           type="number"
@@ -3377,14 +3429,34 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                           min={0}
                           max={100}
                           step="1"
-                          placeholder="1"
+                          placeholder="45"
                           className={`w-full pl-3 pr-10 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                         />
                         <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">°C</span>
                       </div>
                     </div>
 
-                    <div className="flex items-center space-x-3 mt-6">
+                    <div>
+                      <label className="block text-gray-300 mb-1 text-sm">
+                        {t('presetModal.chamberMinimalTemp')}{' '}
+                        <InfoHint text={t('paramHints.chamberMinimalTemp')} />
+                      </label>
+                      <div className="relative">
+                        <input
+                          type="number"
+                          value={chamberMinimalTemp}
+                          onChange={(e) => { setChamberMinimalTemp(e.target.value === '' ? '' : Number(e.target.value)); }}
+                          min={0}
+                          max={chamberTemp === '' ? 100 : chamberTemp}
+                          step="1"
+                          placeholder="0"
+                          className="w-full rounded-lg border border-white/20 bg-white/10 py-2 pl-3 pr-10 text-sm text-white placeholder-gray-500 transition-all focus:border-transparent focus:outline-none focus:ring-2 focus:ring-purple-500"
+                        />
+                        <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">°C</span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center space-x-3 pb-2">
                       <input
                         type="checkbox"
                         id="enableChamber"
@@ -3501,7 +3573,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                   <div>
                     <h4 className="text-sm font-semibold text-white mb-3 pb-2 border-b border-white/10">{t('presetModal.layerFanControl')}</h4>
                     
-                    <div className="space-y-4">
+                    <div className="grid gap-4 md:grid-cols-2">
                       {/* Не включать вентилятор на первых */}
                       <div>
                         <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.disableFanFirstLayers')} <InfoHint text={t('paramHints.closeFanFirstLayers')} /></label>
@@ -3516,6 +3588,27 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                             className={`w-full pl-3 pr-16 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
                           />
                           <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">{t('presetModal.layers')}</span>
+                        </div>
+                      </div>
+
+                      <div className={isVisibleAtMode('advanced', settingMode) ? '' : 'hidden'}>
+                        <label className="block text-gray-300 mb-1 text-sm">
+                          {t('presetModal.initialLayerFanSpeed')}{' '}
+                          <InfoHint text={t('paramHints.initialLayerFanSpeed')} />
+                        </label>
+                        <div className="relative">
+                          <input
+                            type="number"
+                            value={Number(closeFanFirstXLayers) > 0 ? -1 : initialLayerFanSpeed}
+                            onChange={(e) => { setInitialLayerFanSpeed(e.target.value === '' ? '' : Number(e.target.value)); }}
+                            min={-1}
+                            max={100}
+                            step="1"
+                            placeholder="-1"
+                            disabled={Number(closeFanFirstXLayers) > 0}
+                            className="w-full rounded-lg border border-white/20 bg-white/10 py-2 pl-3 pr-8 text-sm text-white placeholder-gray-500 transition-all focus:border-transparent focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:cursor-not-allowed disabled:opacity-50"
+                          />
+                          <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">%</span>
                         </div>
                       </div>
 
@@ -3844,51 +3937,58 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
 
                       {enableExhaustFan && (
                         <>
-                          <div>
-                            <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.exhaustFanDuringPrint')}</label>
-                            <div className="relative">
-                              <input
-                                type="number"
-                                value={duringPrintExhaustFanSpeed}
-                                onChange={(e) => { setDuringPrintExhaustFanSpeed(e.target.value === '' ? '' : Number(e.target.value)); }}
-                                min={0}
-                                max={100}
-                                step="1"
-                                placeholder="70"
-                                className={`w-full pl-3 pr-8 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
-                              />
-                              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">%</span>
+                          <div className="grid gap-4 md:grid-cols-2">
+                            <div>
+                              <label className="mb-2 flex items-center gap-2 text-sm text-gray-300">
+                                <input
+                                  type="checkbox"
+                                  checked={activateAirFiltrationDuringPrint}
+                                  onChange={(e) => { setActivateAirFiltrationDuringPrint(e.target.checked); }}
+                                  className="h-4 w-4 rounded border-white/20 bg-white/10 text-purple-500 focus:ring-purple-500"
+                                />
+                                {t('presetModal.exhaustFanDuringPrint')}
+                              </label>
+                              <div className="relative">
+                                <input
+                                  type="number"
+                                  value={duringPrintExhaustFanSpeed}
+                                  onChange={(e) => { setDuringPrintExhaustFanSpeed(e.target.value === '' ? '' : Number(e.target.value)); }}
+                                  min={0}
+                                  max={100}
+                                  step="1"
+                                  placeholder="60"
+                                  disabled={!activateAirFiltrationDuringPrint}
+                                  className="w-full rounded-lg border border-white/20 bg-white/10 py-2 pl-3 pr-8 text-sm text-white placeholder-gray-500 transition-all focus:border-transparent focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:cursor-not-allowed disabled:opacity-50"
+                                />
+                                <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">%</span>
+                              </div>
                             </div>
-                          </div>
 
-                          <div>
-                            <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.exhaustFanAfterPrint')}</label>
-                            <div className="relative">
-                              <input
-                                type="number"
-                                value={completePrintExhaustFanSpeed}
-                                onChange={(e) => { setCompletePrintExhaustFanSpeed(e.target.value === '' ? '' : Number(e.target.value)); }}
-                                min={0}
-                                max={100}
-                                step="1"
-                                placeholder="70"
-                                className={`w-full pl-3 pr-8 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all `}
-                              />
-                              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">%</span>
+                            <div>
+                              <label className="mb-2 flex items-center gap-2 text-sm text-gray-300">
+                                <input
+                                  type="checkbox"
+                                  checked={activateAirFiltrationOnCompletion}
+                                  onChange={(e) => { setActivateAirFiltrationOnCompletion(e.target.checked); }}
+                                  className="h-4 w-4 rounded border-white/20 bg-white/10 text-purple-500 focus:ring-purple-500"
+                                />
+                                {t('presetModal.exhaustFanAfterPrint')}
+                              </label>
+                              <div className="relative">
+                                <input
+                                  type="number"
+                                  value={completePrintExhaustFanSpeed}
+                                  onChange={(e) => { setCompletePrintExhaustFanSpeed(e.target.value === '' ? '' : Number(e.target.value)); }}
+                                  min={0}
+                                  max={100}
+                                  step="1"
+                                  placeholder="80"
+                                  disabled={!activateAirFiltrationOnCompletion}
+                                  className="w-full rounded-lg border border-white/20 bg-white/10 py-2 pl-3 pr-8 text-sm text-white placeholder-gray-500 transition-all focus:border-transparent focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:cursor-not-allowed disabled:opacity-50"
+                                />
+                                <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">%</span>
+                              </div>
                             </div>
-                          </div>
-
-                          <div className="flex items-center space-x-3">
-                            <input
-                              type="checkbox"
-                              id="activateAirFiltration"
-                              checked={activateAirFiltration}
-                              onChange={(e) => { setActivateAirFiltration(e.target.checked); }}
-                              className="w-4 h-4 rounded border-white/20 bg-white/10 text-purple-500 focus:ring-purple-500"
-                            />
-                            <label htmlFor="activateAirFiltration" className="text-gray-300 text-sm">
-                              {t('presetModal.activateAirFilter')}
-                            </label>
                           </div>
                         </>
                       )}
@@ -4109,7 +4209,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
 
                       {/* Расстояние очистки / Величина отката перед очисткой (advanced) */}
                       {filamentWipe && isVisibleAtMode('advanced', settingMode) && (
-                        <div className="grid grid-cols-2 gap-4">
+                        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                           <div>
                             <label className="block text-gray-300 mb-1 text-sm">{t('presetModal.wipeDistance')} <InfoHint text={t('paramHints.wipeDistance')} /></label>
                             <div className="relative">
@@ -4138,8 +4238,70 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                               <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">%</span>
                             </div>
                           </div>
+                          <div className={isVisibleAtMode('expert', settingMode) ? '' : 'hidden'}>
+                            <label className="block text-gray-300 mb-1 text-sm">
+                              {t('presetModal.retractAfterWipe')}{' '}
+                              <InfoHint text={t('paramHints.retractAfterWipe')} />
+                            </label>
+                            <div className="relative">
+                              <input
+                                type="number"
+                                value={retractAfterWipe}
+                                onChange={(e) => { setRetractAfterWipe(e.target.value); }}
+                                min={0}
+                                max={Math.max(0, 100 - (Number(retractBeforeWipe) || 0))}
+                                step="1"
+                                placeholder="0"
+                                className="w-full rounded-lg border border-white/20 bg-white/10 py-2 pl-3 pr-8 text-sm text-white placeholder-gray-500 transition-all focus:border-transparent focus:outline-none focus:ring-2 focus:ring-purple-500"
+                              />
+                              <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">%</span>
+                            </div>
+                          </div>
                         </div>
                       )}
+                    </div>
+                  </div>
+
+                  <div className={isVisibleAtMode('advanced', settingMode) ? '' : 'hidden'}>
+                    <h4 className="mb-3 border-b border-white/10 pb-2 text-sm font-semibold text-white">
+                      {t('presetModal.retractionOnMaterialChange')}
+                    </h4>
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <div>
+                        <label className="block text-gray-300 mb-1 text-sm">
+                          {t('presetModal.retractLengthToolchange')}{' '}
+                          <InfoHint text={t('paramHints.retractLengthToolchange')} />
+                        </label>
+                        <div className="relative">
+                          <input
+                            type="number"
+                            value={retractLengthToolchange}
+                            onChange={(e) => { setRetractLengthToolchange(e.target.value === '' ? '' : Number(e.target.value)); }}
+                            min={0}
+                            step="0.1"
+                            placeholder="10"
+                            className="w-full rounded-lg border border-white/20 bg-white/10 py-2 pl-3 pr-12 text-sm text-white placeholder-gray-500 transition-all focus:border-transparent focus:outline-none focus:ring-2 focus:ring-purple-500"
+                          />
+                          <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">mm</span>
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-gray-300 mb-1 text-sm">
+                          {t('presetModal.retractRestartExtraToolchange')}{' '}
+                          <InfoHint text={t('paramHints.retractRestartExtraToolchange')} />
+                        </label>
+                        <div className="relative">
+                          <input
+                            type="number"
+                            value={retractRestartExtraToolchange}
+                            onChange={(e) => { setRetractRestartExtraToolchange(e.target.value === '' ? '' : Number(e.target.value)); }}
+                            step="0.1"
+                            placeholder="0"
+                            className="w-full rounded-lg border border-white/20 bg-white/10 py-2 pl-3 pr-12 text-sm text-white placeholder-gray-500 transition-all focus:border-transparent focus:outline-none focus:ring-2 focus:ring-purple-500"
+                          />
+                          <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">mm</span>
+                        </div>
+                      </div>
                     </div>
                   </div>
 
@@ -4263,6 +4425,51 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                     </div>
                     <p className="text-xs text-gray-500 mt-2">
                       {t('presetModal.startGcodeHint')}
+                    </p>
+                  </div>
+
+                  <div>
+                    <h4 className="mb-3 flex items-center space-x-2 border-b border-white/10 pb-2 text-sm font-semibold text-white">
+                      <span className="text-gray-400">&lt; &gt;</span>
+                      <span>{t('presetModal.changeExtrusionRoleGcode')}</span>
+                    </h4>
+                    <div
+                      className="flex items-start space-x-3"
+                      onClick={(e) => e.stopPropagation()}
+                      onMouseDown={(e) => e.stopPropagation()}
+                    >
+                      <textarea
+                        id="filament-change-extrusion-role-gcode"
+                        value={filamentChangeExtrusionRoleGcode}
+                        onChange={(e) => { setFilamentChangeExtrusionRoleGcode(e.target.value); }}
+                        placeholder="; G-code for extrusion role change"
+                        rows={8}
+                        className="flex-1 resize-y rounded-lg border border-white/20 bg-white/10 px-3 py-2 font-mono text-sm text-white placeholder-gray-500 transition-all focus:border-transparent focus:outline-none focus:ring-2 focus:ring-purple-500"
+                      />
+                      <EditGCodeModal
+                        isOpen={activeTab === 'advanced'}
+                        onClose={() => {}}
+                        onInsert={(placeholderText) => {
+                          const textarea = document.getElementById('filament-change-extrusion-role-gcode') as HTMLTextAreaElement;
+                          if (!textarea) return;
+
+                          const start = textarea.selectionStart;
+                          const end = textarea.selectionEnd;
+                          const nextValue = `${filamentChangeExtrusionRoleGcode.substring(0, start)}${placeholderText}${filamentChangeExtrusionRoleGcode.substring(end)}`;
+                          setFilamentChangeExtrusionRoleGcode(nextValue);
+
+                          setTimeout(() => {
+                            const nextCursorPosition = start + placeholderText.length;
+                            textarea.setSelectionRange(nextCursorPosition, nextCursorPosition);
+                            textarea.focus();
+                          }, 0);
+                        }}
+                        title="Placeholders"
+                        gcodeType="filament_change_extrusion_role_gcode"
+                      />
+                    </div>
+                    <p className="mt-2 text-xs text-gray-500">
+                      {t('presetModal.changeExtrusionRoleGcodeHint')}
                     </p>
                   </div>
 

@@ -49,6 +49,7 @@ from app.schemas.calculator import (
     CalculatorMaterialRoleCost,
     CalculatorPreflightRequest,
     CalculatorPreflightResponse,
+    CalculatorProfileDefaults,
     CalculatorProfileResponse,
     CalculatorProfileUpdate,
     PricingMethod,
@@ -57,6 +58,10 @@ from app.schemas.calculator import (
     SharedQuoteResponse,
 )
 from app.schemas.user import UserResponse
+from app.services.calculator_defaults_service import (
+    calculator_profile_default_values,
+    get_calculator_profile_defaults,
+)
 from app.services.calculator_gcode_parser import (
     SUPPORTED_GCODE_EXTENSIONS,
     is_supported_gcode_filename,
@@ -205,7 +210,7 @@ def _calculate_material_lines(
         role_costs: list[CalculatorMaterialRoleCost] = []
         remaining_weight_g = rounded_line_weight_g
         remaining_cost = rounded_line_cost
-        for role in ("support", "brim"):
+        for role in ("support", "brim", "prime_tower"):
             raw_role_weight_g = role_weights_g.get(role)
             if raw_role_weight_g is None:
                 continue
@@ -852,7 +857,11 @@ async def get_calculator_profile(
     profile = result.scalar_one_or_none()
 
     if not profile:
-        profile = UserCalculatorProfile(user_id=current_user.id)
+        defaults = await get_calculator_profile_defaults(db)
+        profile = UserCalculatorProfile(
+            user_id=current_user.id,
+            **calculator_profile_default_values(defaults),
+        )
         db.add(profile)
         await db.commit()
         await db.refresh(profile)
@@ -873,7 +882,11 @@ async def update_calculator_profile(
     profile = result.scalar_one_or_none()
 
     if not profile:
-        profile = UserCalculatorProfile(user_id=current_user.id)
+        defaults = await get_calculator_profile_defaults(db)
+        profile = UserCalculatorProfile(
+            user_id=current_user.id,
+            **calculator_profile_default_values(defaults),
+        )
         db.add(profile)
     else:
         _profile_response(profile)
@@ -883,6 +896,29 @@ async def update_calculator_profile(
             value = encrypt_field(value)
         setattr(profile, field_name, value)
 
+    await db.commit()
+    await db.refresh(profile)
+    return _profile_response(profile)
+
+
+@router.post("/profile/reset-defaults", response_model=CalculatorProfileResponse)
+async def reset_calculator_profile_defaults(
+    current_user: Annotated[User, Depends(require_calculator_access)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> CalculatorProfileResponse:
+    """Explicitly reset only economics to the current platform defaults."""
+    profile = await db.scalar(
+        select(UserCalculatorProfile).where(UserCalculatorProfile.user_id == current_user.id)
+    )
+    defaults: CalculatorProfileDefaults = await get_calculator_profile_defaults(db)
+    values = calculator_profile_default_values(defaults)
+    if profile is None:
+        profile = UserCalculatorProfile(user_id=current_user.id, **values)
+        db.add(profile)
+    else:
+        _profile_response(profile)
+        for field_name, value in values.items():
+            setattr(profile, field_name, value)
     await db.commit()
     await db.refresh(profile)
     return _profile_response(profile)

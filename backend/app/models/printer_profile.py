@@ -11,6 +11,7 @@ from app.db.base import Base
 
 if TYPE_CHECKING:
     from app.models.physical_printer_profile import UserPrinterProfileLink
+    from app.models.print_profile_configuration import PrintProfileConfigurationLink
     from app.models.printer import Printer
     from app.models.user import User
 
@@ -78,8 +79,12 @@ class PrinterProfile(Base):
         back_populates="printer_profile",
         cascade="all, delete-orphan",
     )
+    print_profile_configuration_links: Mapped[list["PrintProfileConfigurationLink"]] = relationship(
+        "PrintProfileConfigurationLink",
+        back_populates="printer_profile",
+        cascade="all, delete-orphan",
+    )
 
     def __repr__(self) -> str:
         status = "official" if self.is_official else "user"
         return f"<PrinterProfile(id={self.id}, name='{self.name}', status={status})>"
-

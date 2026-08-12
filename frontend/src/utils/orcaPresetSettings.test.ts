@@ -1,12 +1,15 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  applyOrcaBooleanFromUi,
   applyOrcaLinesFromUi,
+  applyOrcaStructuredUiSetting,
   applyOrcaUiSetting,
   cloneOrcaSettings,
   formatOrcaFlowRatio,
   isOrcaBedTemperatureSentinel,
   normalizeOrcaSettingsForUi,
+  readOrcaBoolean,
   readOrcaNumber,
   readOrcaText,
 } from './orcaPresetSettings';
@@ -35,6 +38,12 @@ describe('Orca preset settings', () => {
     expect(readOrcaText({ value: 0 }, 'value')).toBe('0');
     expect(readOrcaText({ value: ['0'] }, 'value')).toBe('0');
     expect(readOrcaText({ value: ['nil'] }, 'value')).toBe('');
+  });
+
+  it('reads boolean settings in the scalar and vector forms observed from Orca', () => {
+    expect(readOrcaBoolean({ value: true }, 'value')).toBe(true);
+    expect(readOrcaBoolean({ value: ['0'] }, 'value')).toBe(false);
+    expect(readOrcaBoolean({ value: ['nil'] }, 'value')).toBeNull();
   });
 
   it('recognizes Orca inherited bed-temperature sentinels', () => {
@@ -75,6 +84,29 @@ describe('Orca preset settings', () => {
 
     applyOrcaLinesFromUi(target, source, 'filament_start_gcode', 'G28\n\nM117 Printing');
     expect(target.filament_start_gcode).toEqual(['G28', '', 'M117 Printing']);
+  });
+
+  it('does not materialize inherited booleans and preserves structured shapes until edited', () => {
+    const source = {
+      zaa_enabled: [false],
+      top_surface_fill_order: ['default'],
+    };
+    const target = cloneOrcaSettings(source);
+
+    applyOrcaBooleanFromUi(target, source, 'inherited_air_filter', true, true);
+    applyOrcaStructuredUiSetting(target, source, 'zaa_enabled', '0', '0', '0');
+    applyOrcaStructuredUiSetting(
+      target,
+      source,
+      'top_surface_fill_order',
+      'outward',
+      'default',
+      'outward',
+    );
+
+    expect(target).not.toHaveProperty('inherited_air_filter');
+    expect(target.zaa_enabled).toEqual([false]);
+    expect(target.top_surface_fill_order).toBe('outward');
   });
 
   it('serializes flow ratio without reducing Orca precision', () => {
