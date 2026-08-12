@@ -202,11 +202,24 @@ export const FilamentDetailPage: React.FC = () => {
   const [activeCarousel, setActiveCarousel] = useState(0);
   const [presetSort, setPresetSort] = useState<'best' | 'new'>('best');
   const [presetPrinterId, setPresetPrinterId] = useState<number | null>(null);
+  const detailTabsRef = useRef<HTMLDivElement | null>(null);
   const loadMorePresetsRef = useRef<HTMLDivElement | null>(null);
   const isQrEntry = new URLSearchParams(location.search).get('qr') === 'true';
   
   // Определяем откуда пришли (из каталога или профиля)
   const cameFrom = location.state?.from || 'catalog';
+
+  const openDetailTab = (tab: 'presets' | 'reviews') => {
+    setActiveTab(tab);
+    window.requestAnimationFrame(() => {
+      detailTabsRef.current?.scrollIntoView({
+        behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+          ? 'auto'
+          : 'smooth',
+        block: 'start',
+      });
+    });
+  };
 
   // Загружаем филамент
   const resourceKey = id ?? `${brandSlug ?? ''}/${filamentSlug ?? ''}`;
@@ -524,14 +537,15 @@ export const FilamentDetailPage: React.FC = () => {
         />
       )}
       <div className="space-y-4 md:space-y-6">
-        {/* Back action remains contextual; breadcrumbs describe public hierarchy. */}
-        <button
-        onClick={() => navigate(cameFrom === 'profile' ? '/profile' : '/')}
-        className="flex items-center gap-2 text-gray-300 hover:text-white active:text-white transition-colors text-sm md:text-base"
-      >
-        <ArrowLeft className="w-4 h-4 md:w-5 md:h-5" />
-        <span>{cameFrom === 'profile' ? t('filamentDetailPage.backToProfile') : t('filamentDetailPage.backToCatalog')}</span>
-      </button>
+        {cameFrom === 'profile' && (
+          <button
+            onClick={() => navigate('/profile')}
+            className="flex items-center gap-2 text-sm text-gray-300 transition-colors hover:text-white active:text-white md:text-base"
+          >
+            <ArrowLeft className="h-4 w-4 md:h-5 md:w-5" />
+            <span>{t('filamentDetailPage.backToProfile')}</span>
+          </button>
+        )}
       <nav
         aria-label={t('filamentDetailPage.backToCatalog')}
         className="flex min-w-0 items-center gap-1.5 text-xs text-gray-400 md:text-sm"
@@ -616,17 +630,36 @@ export const FilamentDetailPage: React.FC = () => {
                   )}
                 </span>
               )}
-              {/* Количество пресетов */}
-              <span className="flex items-center text-gray-300" title={t('filamentDetailPage.presetsCountTitle')}>
-                <TrendingUp className="w-3.5 h-3.5 md:w-5 md:h-5 mr-1 md:mr-2 text-blue-400" />
-                <span className="font-bold text-white">{totalPresets} <span className="hidden md:inline">{t('filamentDetailPage.presetsWord', { count: totalPresets })}</span></span>
-              </span>
-              {/* Количество отзывов */}
-              {ratingStats && ratingStats.total_reviews > 0 && (
-                <span className="hidden md:flex items-center text-gray-300" title={t('filamentDetailPage.reviewsCountTitle')}>
-                  <MessageCircle className="w-5 h-5 mr-2 text-purple-400" />
-                  <span className="font-bold text-white">{t('filamentDetailPage.reviewsWithCount', { count: ratingStats.total_reviews })}</span>
+              <button
+                type="button"
+                onClick={() => openDetailTab('presets')}
+                aria-controls="filament-detail-tabs"
+                aria-label={`${t('filamentDetailPage.presetsCountTitle')}: ${t('filamentDetailPage.presetsCount', { count: totalPresets })}`}
+                className="group -m-1 flex items-center rounded-lg p-1 text-gray-300 transition-colors hover:bg-white/5 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-400"
+                title={t('filamentDetailPage.presetsCountTitle')}
+              >
+                <TrendingUp className="mr-1 h-3.5 w-3.5 text-blue-400 transition-colors group-hover:text-blue-300 md:mr-2 md:h-5 md:w-5" />
+                <span className="font-bold text-white">
+                  {totalPresets}{' '}
+                  <span className="hidden md:inline">
+                    {t('filamentDetailPage.presetsWord', { count: totalPresets })}
+                  </span>
                 </span>
+              </button>
+              {ratingStats && ratingStats.total_reviews > 0 && (
+                <button
+                  type="button"
+                  onClick={() => openDetailTab('reviews')}
+                  aria-controls="filament-detail-tabs"
+                  aria-label={`${t('filamentDetailPage.reviewsCountTitle')}: ${t('filamentDetailPage.reviewsCount', { count: ratingStats.total_reviews })}`}
+                  className="group -m-1 hidden items-center rounded-lg p-1 text-gray-300 transition-colors hover:bg-white/5 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-400 md:flex"
+                  title={t('filamentDetailPage.reviewsCountTitle')}
+                >
+                  <MessageCircle className="mr-2 h-5 w-5 text-purple-400 transition-colors group-hover:text-purple-300" />
+                  <span className="font-bold text-white">
+                    {t('filamentDetailPage.reviewsWithCount', { count: ratingStats.total_reviews })}
+                  </span>
+                </button>
               )}
             </div>
 
@@ -963,7 +996,11 @@ export const FilamentDetailPage: React.FC = () => {
 
 
       {/* Табы: Пресеты / Отзывы */}
-      <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 shadow-xl">
+      <div
+        id="filament-detail-tabs"
+        ref={detailTabsRef}
+        className="scroll-mt-24 bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 shadow-xl"
+      >
         <div className="flex space-x-4 mb-6 border-b border-white/10">
           <button
             onClick={() => setActiveTab('presets')}
