@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class FilamentReviewBase(BaseModel):
@@ -57,6 +57,8 @@ class FilamentReviewUpdate(BaseModel):
 class FilamentReviewResponse(FilamentReviewBase):
     """Схема ответа с отзывом."""
 
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     filament_id: int
     user_id: int | None = None
@@ -67,12 +69,6 @@ class FilamentReviewResponse(FilamentReviewBase):
     active: bool
     created_at: datetime
     updated_at: datetime
-
-    class Config:
-        """Pydantic config."""
-
-        from_attributes = True
-
 
 class FilamentReviewListResponse(BaseModel):
     """Схема списка отзывов."""

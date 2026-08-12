@@ -1,8 +1,9 @@
 """Pytest configuration and fixtures."""
 
-import asyncio
+from __future__ import annotations
+
 import os
-from typing import AsyncGenerator
+from typing import TYPE_CHECKING, AsyncGenerator
 
 import pytest
 import pytest_asyncio
@@ -10,6 +11,9 @@ from fastapi.testclient import TestClient
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
+
+if TYPE_CHECKING:
+    from app.models.user import User
 
 # Ensure tests are self-contained and do not require local .env/Redis.
 os.environ["SECRET_KEY"] = "test-secret-key"
@@ -25,19 +29,10 @@ from app.main import app
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 
 
-@pytest.fixture(scope="session")
-def event_loop():
-    """Create an instance of the default event loop for the test session."""
-    loop = asyncio.get_event_loop_policy().new_event_loop()
-    yield loop
-    loop.close()
-
-
 @pytest_asyncio.fixture(scope="function")
 async def db_session() -> AsyncGenerator[AsyncSession, None]:
-    """
-    Create a test database session.
-    
+    """Create a test database session.
+
     Uses in-memory SQLite for fast, isolated tests.
     Each test gets a fresh database that doesn't affect others.
     """
@@ -70,9 +65,8 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
 
 @pytest_asyncio.fixture(scope="function")
 async def client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
-    """
-    Create a test HTTP client.
-    
+    """Create a test HTTP client.
+
     Overrides the database dependency to use the test session.
     """
     async def override_get_db():
@@ -167,9 +161,8 @@ async def admin_client(client: AsyncClient, admin_user: "User") -> AsyncClient:
 
 @pytest.fixture
 def test_client() -> TestClient:
-    """
-    Create a synchronous test client (for simple tests).
-    
+    """Create a synchronous test client (for simple tests).
+
     Note: For async tests, use the 'client' fixture instead.
     """
     return TestClient(app)

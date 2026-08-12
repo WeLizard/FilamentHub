@@ -182,7 +182,7 @@ async def list_filament_reviews(
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
     active_only: bool = Query(True),
-    order_by: str = Query("created_at", regex="^(created_at|rating|updated_at)$"),
+    order_by: str = Query("created_at", pattern="^(created_at|rating|updated_at)$"),
     order_desc: bool = Query(True),
 ) -> FilamentReviewListResponse:
     """Получить список отзывов для материала."""

@@ -1,7 +1,8 @@
 """FilamentHub FastAPI Application."""
 
 import asyncio
-from contextlib import suppress
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -23,6 +24,16 @@ from app.services.file_service import ensure_upload_dir_compatibility, get_uploa
 from app.services.maintenance_service import get_maintenance_info
 from app.services.request_region_service import geoip_database_health
 
+
+@asynccontextmanager
+async def _lifespan(application: FastAPI) -> AsyncIterator[None]:
+    try:
+        await _start_background_tasks(application)
+        yield
+    finally:
+        await _stop_background_tasks(application)
+
+
 # Create FastAPI app
 # Hide OpenAPI docs in production [INFRA-15]
 app = FastAPI(
@@ -31,6 +42,7 @@ app = FastAPI(
     openapi_url=f"{settings.API_V1_PREFIX}/openapi.json" if settings.DEBUG else None,
     docs_url=f"{settings.API_V1_PREFIX}/docs" if settings.DEBUG else None,
     redoc_url=f"{settings.API_V1_PREFIX}/redoc" if settings.DEBUG else None,
+    lifespan=_lifespan,
 )
 
 # Rate limiting setup
@@ -50,9 +62,8 @@ async def _field_decryption_error_handler(
     )
 
 
-@app.on_event("startup")
-async def _warm_app_settings_cache() -> None:
-    """Load global settings (paywall_enforced, trial_days) so sync serialization has current values."""
+async def _start_background_tasks(application: FastAPI) -> None:
+    """Warm application state and start long-running service tasks."""
     import logging as _logging
 
     from app.db.session import AsyncSessionLocal
@@ -69,14 +80,14 @@ async def _warm_app_settings_cache() -> None:
     except Exception:
         _logging.getLogger(__name__).warning("Failed to warm app-settings cache", exc_info=True)
 
-    app.state.provisional_account_sweeper_task = asyncio.create_task(
+    application.state.provisional_account_sweeper_task = asyncio.create_task(
         run_provisional_account_sweeper(AsyncSessionLocal),
         name="provisional-account-sweeper",
     )
 
     from app.services.inbound_mail_service import run_inbound_mail_poller
 
-    app.state.inbound_mail_task = asyncio.create_task(
+    application.state.inbound_mail_task = asyncio.create_task(
         run_inbound_mail_poller(AsyncSessionLocal),
         name="inbound-mail-poller",
     )
@@ -85,7 +96,7 @@ async def _warm_app_settings_cache() -> None:
     # made the first person to ask for a quote after every deploy wait a second
     # and a half for someone else's import. Pay it here, in the background,
     # where nobody is waiting.
-    app.state.pdf_warmup_task = asyncio.create_task(
+    application.state.pdf_warmup_task = asyncio.create_task(
         _warm_pdf_renderer(), name="pdf-renderer-warmup"
     )
 
@@ -104,10 +115,9 @@ async def _warm_pdf_renderer() -> None:
         _logging.getLogger(__name__).warning("PDF renderer unavailable", exc_info=True)
 
 
-@app.on_event("shutdown")
-async def _stop_provisional_account_sweeper() -> None:
+async def _stop_background_tasks(application: FastAPI) -> None:
     for name in ("provisional_account_sweeper_task", "inbound_mail_task", "pdf_warmup_task"):
-        task = getattr(app.state, name, None)
+        task = getattr(application.state, name, None)
         if task is None:
             continue
         task.cancel()

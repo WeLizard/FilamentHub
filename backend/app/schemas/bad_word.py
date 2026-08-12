@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class BadWordBase(BaseModel):
@@ -28,12 +28,11 @@ class BadWordUpdate(BaseModel):
 class BadWordResponse(BadWordBase):
     """Bad word response schema."""
 
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     created_at: datetime
     updated_at: datetime
-
-    class Config:
-        from_attributes = True
 
 
 class BadWordListResponse(BaseModel):
@@ -44,4 +43,3 @@ class BadWordListResponse(BaseModel):
     page: int
     size: int
     pages: int
-
