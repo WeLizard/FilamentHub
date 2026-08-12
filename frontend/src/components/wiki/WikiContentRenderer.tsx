@@ -198,12 +198,12 @@ export function WikiContentRenderer({
         if (!match || match[1] === 'text') {
           return (
             <pre>
-              <code className="text-sm text-slate-100">{value}</code>
+              <code className="text-sm text-cyan-300">{value}</code>
             </pre>
           );
         }
         return (
-          <React.Suspense fallback={<pre><code className="text-sm text-slate-100">{value}</code></pre>}>
+          <React.Suspense fallback={<pre><code className="text-sm text-cyan-300">{value}</code></pre>}>
             <SyntaxHighlighter
               language={match?.[1] || 'text'}
             >
