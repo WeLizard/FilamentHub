@@ -34,7 +34,16 @@ export function LightweightSyntaxHighlighter({ language, children }: { language:
     <SyntaxHighlighter
       style={vscDarkPlus}
       language={language}
-      PreTag="div"
+      PreTag="pre"
+      customStyle={{
+        margin: 0,
+        overflowX: 'auto',
+        borderRadius: '0.75rem',
+        border: '1px solid rgb(255 255 255 / 0.15)',
+        background: 'rgb(0 0 0 / 0.6)',
+        padding: '1rem',
+      }}
+      codeTagProps={{ className: 'text-sm' }}
     >
       {children}
     </SyntaxHighlighter>

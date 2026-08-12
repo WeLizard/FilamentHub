@@ -147,7 +147,6 @@ const ARTICLE_PROSE = `prose prose-lg max-w-none break-words text-slate-200
   [&_p]:my-4 [&_p]:break-words [&_p]:leading-7 [&_p]:text-slate-200
   [&_a]:text-cyan-300 [&_a]:no-underline hover:[&_a]:text-cyan-200 hover:[&_a]:underline
   [&_strong]:font-semibold [&_strong]:text-white
-  [&_code]:rounded [&_code]:bg-black/40 [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:text-sm [&_code]:text-cyan-300
   [&_pre]:overflow-x-auto [&_pre]:rounded-xl [&_pre]:border [&_pre]:border-white/15 [&_pre]:bg-black/60 [&_pre]:p-4
   [&_blockquote]:my-6 [&_blockquote]:rounded-r-xl [&_blockquote]:border-l-4 [&_blockquote]:border-cyan-400 [&_blockquote]:bg-cyan-400/[0.06] [&_blockquote]:py-2 [&_blockquote]:pl-6 [&_blockquote]:pr-4 [&_blockquote]:text-slate-200
   [&_ul]:my-4 [&_ul]:list-disc [&_ul]:space-y-2 [&_ul]:pl-6
@@ -196,8 +195,15 @@ export function WikiContentRenderer({
 
       if (!isInline && match?.[1] === 'mermaid') return <MermaidDiagram chart={value} />;
       if (!isInline) {
+        if (!match || match[1] === 'text') {
+          return (
+            <pre>
+              <code className="text-sm text-slate-100">{value}</code>
+            </pre>
+          );
+        }
         return (
-          <React.Suspense fallback={<pre><code>{value}</code></pre>}>
+          <React.Suspense fallback={<pre><code className="text-sm text-slate-100">{value}</code></pre>}>
             <SyntaxHighlighter
               language={match?.[1] || 'text'}
             >
@@ -206,7 +212,21 @@ export function WikiContentRenderer({
           </React.Suspense>
         );
       }
-      return <code className={codeClassName} {...rest}>{children}</code>;
+      return (
+        <code
+          className={`rounded bg-black/40 px-1.5 py-0.5 text-sm text-cyan-300 ${codeClassName || ''}`}
+          {...rest}
+        >
+          {children}
+        </code>
+      );
+    },
+    pre(props: React.ComponentPropsWithoutRef<'pre'> & ExtraProps) {
+      const { children } = props;
+      // Block renderers own their frame. Removing react-markdown's additional
+      // wrapper prevents a visible nested <pre> swap when the lazy syntax
+      // highlighter finishes loading.
+      return <>{children}</>;
     },
     table(props: React.ComponentPropsWithoutRef<'table'> & ExtraProps) {
       const { children, ...rest } = props;

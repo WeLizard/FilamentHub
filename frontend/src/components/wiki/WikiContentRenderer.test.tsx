@@ -72,6 +72,18 @@ describe('WikiContentRenderer', () => {
     expect(container.querySelector('p div')).toBeNull();
   });
 
+  it('renders a plain fenced example with one stable code frame', () => {
+    const { container } = render(
+      <WikiContentRenderer content={'```text\nNorthLayer PETG Polar Blue\n```'} />,
+    );
+
+    const code = screen.getByText('NorthLayer PETG Polar Blue');
+    expect(code.tagName).toBe('CODE');
+    expect(code.closest('pre')).not.toBeNull();
+    expect(container.querySelectorAll('pre')).toHaveLength(1);
+    expect(container.querySelector('pre pre')).toBeNull();
+  });
+
   it('loads staged managed media through the authenticated API in private previews', async () => {
     const objectUrl = 'blob:wiki-preview';
     getMediaBlobMock.mockResolvedValue(new Blob(['webp'], { type: 'image/webp' }));
