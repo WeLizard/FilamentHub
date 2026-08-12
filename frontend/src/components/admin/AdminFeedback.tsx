@@ -11,10 +11,11 @@ import { toast } from '../Toast';
 import { ConfirmDeleteModal } from '../ConfirmDeleteModal';
 import { translateApiError } from '../../utils/translateApiError';
 import { createIdempotencyKey } from '../../utils/idempotencyKey';
+import { formatMediumDateTime } from '../../utils/formatDate';
 import type { AxiosError } from 'axios';
 
 export function AdminFeedback() {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [selectedStatus, setSelectedStatus] = useState<FeedbackStatus | 'all'>('all');
   const [selectedType, setSelectedType] = useState<FeedbackType | 'all'>('all');
@@ -118,12 +119,6 @@ export function AdminFeedback() {
       idempotencyKey: replyIdempotencyKey,
     });
   };
-
-  const formatDate = (value: string) =>
-    new Intl.DateTimeFormat(i18n.resolvedLanguage || i18n.language, {
-      dateStyle: 'medium',
-      timeStyle: 'short',
-    }).format(new Date(value));
 
   const getStatusBadge = (status: FeedbackStatus) => {
     switch (status) {
@@ -312,7 +307,7 @@ export function AdminFeedback() {
                       <h3 className="text-white font-medium mb-1">{feedback.subject}</h3>
                       <p className="text-gray-400 text-sm line-clamp-2">{feedback.message}</p>
                       <div className="flex items-center gap-4 mt-2 text-xs text-gray-500">
-                        <span>{formatDate(feedback.created_at)}</span>
+                        <span>{formatMediumDateTime(feedback.created_at)}</span>
                         {feedback.email && <span>{t('adminFeedback.email', { email: feedback.email })}</span>}
                         {feedback.admin_response && (
                           <span className="text-green-400">{t('adminFeedback.responded')}</span>
@@ -371,7 +366,7 @@ export function AdminFeedback() {
                     </div>
                     <h2 className="text-2xl font-semibold text-white">{selectedFeedbackView.subject}</h2>
                     <div className="flex items-center gap-4 mt-2 text-sm text-gray-400">
-                      <span>{formatDate(selectedFeedbackView.created_at)}</span>
+                      <span>{formatMediumDateTime(selectedFeedbackView.created_at)}</span>
                       {selectedFeedbackView.user_id ? (
                         <span>{t('adminFeedback.user_id', { id: selectedFeedbackView.user_id })}</span>
                       ) : (
@@ -414,7 +409,7 @@ export function AdminFeedback() {
                                   ? t('adminFeedback.you')
                                   : t('adminFeedback.user')}
                                 {' · '}
-                                {formatDate(threadMessage.created_at)}
+                                {formatMediumDateTime(threadMessage.created_at)}
                               </div>
                               <div
                                 className={`whitespace-pre-wrap break-words rounded-xl border p-3 text-sm leading-6 text-gray-200 ${

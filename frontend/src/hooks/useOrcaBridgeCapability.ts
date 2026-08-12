@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 
-type OrcaBridgeCapability = 'exportFilamentPresets' | 'exportPrinterProfiles' | 'exportPrintProfiles';
+export type OrcaBridgeCapability = 'exportFilamentPresets' | 'exportPrinterProfiles' | 'exportPrintProfiles';
 
 const hasCapability = (capability: OrcaBridgeCapability): boolean => (
   typeof window !== 'undefined'

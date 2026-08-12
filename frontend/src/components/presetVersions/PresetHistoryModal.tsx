@@ -11,6 +11,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
 import { ModalOverlay } from '../ModalOverlay';
 import { toast } from '../Toast';
+import { formatDateTime } from '../../utils/formatDate';
 import { translateApiError } from '../../utils/translateApiError';
 import {
   presetVersionsAPI,
@@ -32,14 +33,6 @@ const SOURCE_COLORS: Record<string, string> = {
   enrichment: 'bg-emerald-500/15 text-emerald-300',
   migration: 'bg-gray-500/15 text-gray-400',
 };
-
-function formatDate(iso: string): string {
-  try {
-    return new Date(iso).toLocaleString();
-  } catch {
-    return iso;
-  }
-}
 
 export const PresetHistoryModal: React.FC<Props> = ({ presetId, canRestore = false, onClose }) => {
   const { t } = useTranslation();
@@ -187,7 +180,7 @@ export const PresetHistoryModal: React.FC<Props> = ({ presetId, canRestore = fal
                         {v.label && (
                           <div className="text-xs text-amber-300 font-medium">🏷 {v.label}</div>
                         )}
-                        <div className="text-[11px] text-gray-500">{formatDate(v.created_at)}</div>
+                        <div className="text-[11px] text-gray-500">{formatDateTime(v.created_at) || v.created_at}</div>
                       </button>
                     </li>
                   );

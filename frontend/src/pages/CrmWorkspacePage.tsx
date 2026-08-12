@@ -31,6 +31,7 @@ import {
 
 import { calculatorAPI, crmAPI, spoolsAPI, type UserSpool } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
+import { formatMediumDate } from '../utils/formatDate';
 import { translateApiError } from '../utils/translateApiError';
 import type {
   CrmCustomer,
@@ -89,11 +90,7 @@ const statusTone: Record<CrmQuoteStatus | CrmOrderStatus, string> = {
   cancelled: 'border-rose-400/25 bg-rose-400/10 text-rose-100',
 };
 
-const formatDate = (value: string | null | undefined): string => (
-  value
-    ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date(value))
-    : '—'
-);
+const formatDate = (value: string | null | undefined): string => formatMediumDate(value) || '—';
 
 const makeCurrencyFormatter = (currency: string) => {
   try {

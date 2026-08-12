@@ -19,6 +19,7 @@ import { toast } from '../components/Toast';
 import type { FeedbackStatus } from '../types/api';
 import { createIdempotencyKey } from '../utils/idempotencyKey';
 import { translateApiError } from '../utils/translateApiError';
+import { formatMediumDateTime } from '../utils/formatDate';
 
 const statusStyles: Record<FeedbackStatus, string> = {
   open: 'border-amber-300/25 bg-amber-300/10 text-amber-200',
@@ -32,7 +33,7 @@ export function FeedbackThreadPage() {
   const parsedFeedbackId = Number(feedbackId);
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const [message, setMessage] = useState('');
   const [idempotencyKey, setIdempotencyKey] = useState(createIdempotencyKey);
 
@@ -70,12 +71,6 @@ export function FeedbackThreadPage() {
       queryClient.invalidateQueries({ queryKey: ['feedback-thread', parsedFeedbackId] });
     },
   });
-
-  const formatDate = (value: string) =>
-    new Intl.DateTimeFormat(i18n.resolvedLanguage || i18n.language, {
-      dateStyle: 'medium',
-      timeStyle: 'short',
-    }).format(new Date(value));
 
   if (!Number.isInteger(parsedFeedbackId) || parsedFeedbackId <= 0) {
     return (
@@ -170,7 +165,7 @@ export function FeedbackThreadPage() {
                         ? t('feedbackThread.support')
                         : t('feedbackThread.you')}
                     </span>
-                    <span className="text-slate-500">{formatDate(threadMessage.created_at)}</span>
+                    <span className="text-slate-500">{formatMediumDateTime(threadMessage.created_at)}</span>
                   </div>
                   <div
                     className={`whitespace-pre-wrap break-words rounded-2xl px-4 py-3 text-left text-sm leading-6 shadow-lg ${

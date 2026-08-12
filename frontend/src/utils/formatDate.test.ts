@@ -1,6 +1,6 @@
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import i18n, { i18nReady } from '../i18n';
-import { formatDate, formatDateTime } from './formatDate';
+import { formatDate, formatDateTime, formatMediumDate, formatMediumDateTime } from './formatDate';
 
 const MOMENT = '2026-03-14T15:54:09.944084Z';
 
@@ -56,5 +56,14 @@ describe('formatDate', () => {
     expect(formatDate('')).toBe('');
     expect(formatDate('not a date at all')).toBe('');
     expect(formatDateTime(null)).toBe('');
+  });
+
+  it('provides shared compact formats for cards and event feeds', () => {
+    expect(formatMediumDate(MOMENT)).toBe(
+      formatDate(MOMENT, { dateStyle: 'medium' }),
+    );
+    expect(formatMediumDateTime(MOMENT)).toBe(
+      formatDateTime(MOMENT, { dateStyle: 'medium', timeStyle: 'short' }),
+    );
   });
 });

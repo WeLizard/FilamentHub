@@ -137,10 +137,15 @@ export function InboundHtmlMessage({
 }) {
   const frameRef = useRef<HTMLIFrameElement>(null);
   const [height, setHeight] = useState(180);
-  const [letter, setLetter] = useState(html);
+  const [resolvedLetter, setResolvedLetter] = useState<{
+    sourceHtml: string;
+    threadId: number;
+    messageId: number;
+    attachments: EmailAttachment[];
+    html: string;
+  } | null>(null);
 
   useEffect(() => {
-    setLetter(html);
     if (threadId === undefined || messageId === undefined || !attachments?.length) return;
 
     const inlineImages = attachments.filter(
@@ -172,13 +177,29 @@ export function InboundHtmlMessage({
           // Одна не открывшаяся картинка не должна прятать письмо целиком.
         }
       }
-      if (!cancelled && resolved.size) setLetter(withInlineImages(html, resolved));
+      if (!cancelled && resolved.size) {
+        setResolvedLetter({
+          sourceHtml: html,
+          threadId,
+          messageId,
+          attachments,
+          html: withInlineImages(html, resolved),
+        });
+      }
     })();
 
     return () => {
       cancelled = true;
     };
   }, [html, threadId, messageId, attachments]);
+
+  const letter = resolvedLetter
+    && resolvedLetter.sourceHtml === html
+    && resolvedLetter.threadId === threadId
+    && resolvedLetter.messageId === messageId
+    && resolvedLetter.attachments === attachments
+    ? resolvedLetter.html
+    : html;
 
   const fitToContent = () => {
     // Readable only because the frame keeps our origin; scripts stay blocked,

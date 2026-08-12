@@ -1,6 +1,6 @@
 /** Verification proof file card: authed image preview + download (no token in URL) */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Download } from 'lucide-react';
 import { proofFilesAPI } from '../api/client';
 
@@ -16,11 +16,41 @@ interface ProofFileCardProps {
 export function ProofFileCard({ filePath, fileName, imageErrorText }: ProofFileCardProps) {
   const ext = fileName.split('.').pop()?.toLowerCase() || '';
   const isImage = IMAGE_EXTENSIONS.includes(ext);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [previewFailed, setPreviewFailed] = useState(false);
+  const cardRef = useRef<HTMLDivElement>(null);
+  const [shouldLoadPreview, setShouldLoadPreview] = useState(
+    () => typeof IntersectionObserver === 'undefined',
+  );
+  const [preview, setPreview] = useState<{
+    filePath: string;
+    url: string | null;
+    failed: boolean;
+  } | null>(null);
 
   useEffect(() => {
-    if (!isImage) return;
+    if (!isImage || shouldLoadPreview) return;
+    if (typeof IntersectionObserver === 'undefined') {
+      setShouldLoadPreview(true);
+      return;
+    }
+
+    const card = cardRef.current;
+    if (!card) return;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (!entry.isIntersecting) return;
+        setShouldLoadPreview(true);
+        observer.disconnect();
+      },
+      { rootMargin: '240px 0px' },
+    );
+    observer.observe(card);
+
+    return () => observer.disconnect();
+  }, [isImage, shouldLoadPreview]);
+
+  useEffect(() => {
+    if (!isImage || !shouldLoadPreview) return;
     let objectUrl: string | null = null;
     let cancelled = false;
     proofFilesAPI
@@ -31,30 +61,34 @@ export function ProofFileCard({ filePath, fileName, imageErrorText }: ProofFileC
           return;
         }
         objectUrl = url;
-        setPreviewUrl(url);
+        setPreview({ filePath, url, failed: false });
       })
       .catch(() => {
-        if (!cancelled) setPreviewFailed(true);
+        if (!cancelled) setPreview({ filePath, url: null, failed: true });
       });
     return () => {
       cancelled = true;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [filePath, isImage]);
+  }, [filePath, isImage, shouldLoadPreview]);
+
+  const currentPreview = preview?.filePath === filePath ? preview : null;
 
   return (
-    <div className="bg-white/5 rounded-lg p-3 border border-white/10">
+    <div ref={cardRef} className="bg-white/5 rounded-lg p-3 border border-white/10">
       {isImage && (
         <div className="mb-2">
-          {previewFailed ? (
+          {currentPreview?.failed ? (
             <div className="flex items-center justify-center h-32 bg-white/5 rounded-lg border border-white/20">
               <span className="text-gray-400 text-sm">{imageErrorText}</span>
             </div>
-          ) : previewUrl ? (
-            <a href={previewUrl} target="_blank" rel="noopener noreferrer" className="block cursor-pointer">
+          ) : currentPreview?.url ? (
+            <a href={currentPreview.url} target="_blank" rel="noopener noreferrer" className="block cursor-pointer">
               <img
-                src={previewUrl}
+                src={currentPreview.url}
                 alt={fileName}
+                loading="lazy"
+                decoding="async"
                 className="max-w-full h-auto max-h-64 rounded-lg border border-white/20 hover:border-purple-400/50 transition-colors"
               />
             </a>

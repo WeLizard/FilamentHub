@@ -55,3 +55,13 @@ export const formatDateTime = (
   const date = asDate(value);
   return date ? date.toLocaleString(currentLocale(), options) : '';
 };
+
+/** Короткий календарный формат для списков и карточек. */
+export const formatMediumDate = (
+  value: string | number | Date | null | undefined,
+): string => formatDate(value, { dateStyle: 'medium' });
+
+/** Компактные дата и время для лент сообщений и событий. */
+export const formatMediumDateTime = (
+  value: string | number | Date | null | undefined,
+): string => formatDateTime(value, { dateStyle: 'medium', timeStyle: 'short' });

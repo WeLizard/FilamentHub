@@ -77,6 +77,7 @@ import { safeStorage } from '../utils/storage';
 import { quoteMarketRules, resolveQuoteMarket, QUOTE_MARKETS } from '../utils/quoteMarket';
 import { CALCULATOR_DEFAULTS_STORAGE_KEY } from '../utils/calculatorDefaults';
 import { normalizeFilamentColor, resolveMaterialDisplayColors } from '../utils/calculatorMaterialColors';
+import { formatBytes } from '../utils/formatBytes';
 import type {
   CalculatorEstimateRequest,
   CalculatorEstimateResponse,
@@ -917,18 +918,6 @@ const splitSeconds = (totalSeconds: number): { hours: number; minutes: number; s
     minutes: Math.floor((safeSeconds % 3600) / 60),
     seconds: safeSeconds % 60,
   };
-};
-
-const formatFileSize = (bytes: number): string => {
-  if (!Number.isFinite(bytes) || bytes <= 0) {
-    return '—';
-  }
-
-  if (bytes < 1024 * 1024) {
-    return `${(bytes / 1024).toFixed(1)} KB`;
-  }
-
-  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
 };
 
 const translateCalculator = (t: TFunction, key: string): string =>
@@ -3737,7 +3726,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
   isCloudBusy,
   formatCurrency,
 }) => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const tc = (key: string) => translateCalculator(t, key);
   const [advancedSettingsOpen, setAdvancedSettingsOpen] = useState(false);
   const [postprocessChecked, setPostprocessChecked] = useState<Record<string, boolean>>({});
@@ -5421,7 +5410,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                             {tc('parsedSlicer')}: {[parsedGcode.slicer_name, parsedGcode.slicer_version].filter(Boolean).join(' ') || tc('notDetected')}
                           </StatusPill>
                           <StatusPill tone="neutral">
-                            {tc('fileSize')}: {formatFileSize(parsedGcode.file_size_bytes)}
+                            {tc('fileSize')}: {formatBytes(parsedGcode.file_size_bytes, i18n.language) || '—'}
                           </StatusPill>
                           {primaryParsedMaterial ? (
                             <StatusPill tone="neutral">

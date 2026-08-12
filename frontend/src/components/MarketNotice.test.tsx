@@ -1,8 +1,15 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 
 import { MarketNotice } from './MarketNotice';
 import type { Filament } from '../types/api';
+
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key: string, values?: { country?: string }) => `${key}:${values?.country ?? ''}`,
+    i18n: { language: 'en' },
+  }),
+}));
 
 const material = (extra: Partial<Filament>): Filament =>
   ({ id: 1, name: 'PLA', ...extra }) as Filament;
