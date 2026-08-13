@@ -22,6 +22,10 @@ ALLOWED_IDENTITY_COLUMNS = {
     # User-level Spoolman-compat API key: account credential, not hardware
     # identity, but matched by the pattern below.
     ("users", "api_key"),
+    # Owner-reviewed Orca sync contract (2026-08-13): these are keyed HMAC
+    # blind indexes over opt-in encrypted endpoints, never raw network data.
+    ("orca_printer_connection_observations", "endpoint_fingerprint"),
+    ("printer_connection_bindings", "endpoint_fingerprint"),
 }
 
 SUSPICIOUS = re.compile(

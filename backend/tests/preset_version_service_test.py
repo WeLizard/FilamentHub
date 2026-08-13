@@ -210,7 +210,7 @@ async def test_diff_is_human_readable(db_session: AsyncSession):
 @pytest.mark.asyncio
 async def test_list_labeled_only_filter(db_session: AsyncSession):
     user, preset = await _seed(db_session)
-    v1 = await svc.record_version(db_session, preset, PresetVersionSource.WEB_EDIT, user.id)
+    await svc.record_version(db_session, preset, PresetVersionSource.WEB_EDIT, user.id)
     await db_session.commit()
     preset.orcaslicer_settings = {"nozzle_temperature": "220"}
     v2 = await svc.record_version(db_session, preset, PresetVersionSource.WEB_EDIT, user.id)

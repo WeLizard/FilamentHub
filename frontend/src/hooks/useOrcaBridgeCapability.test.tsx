@@ -10,6 +10,14 @@ afterEach(() => {
 });
 
 describe('useOrcaBridgeCapability', () => {
+  it('does not treat the generic Orca web bridge as a legacy export capability', () => {
+    window.wx = { postMessage: vi.fn() };
+
+    const { result } = renderHook(() => useOrcaBridgeCapability('exportPrinterProfiles'));
+
+    expect(result.current).toBe(false);
+  });
+
   it('detects an asynchronously injected bridge and stops steady-state polling', () => {
     vi.useFakeTimers();
     const { result } = renderHook(() => useOrcaBridgeCapability('exportFilamentPresets'));

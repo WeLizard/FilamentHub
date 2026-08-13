@@ -93,13 +93,21 @@ function observationLabel(
   t: (key: string) => string,
 ): string {
   if (state === 'empty') return t('presetSlots.hhStatus.empty');
-  if (state === 'buffer') {
-    return material
-      ? `${material} · ${t('presetSlots.hhStatus.buffer')}`
-      : t('presetSlots.hhStatus.buffer');
+  if (state === 'buffer' || state === 'loaded') {
+    return material ?? t('presetSlots.hhStatus.loaded');
   }
-  if (state === 'loaded') return material ?? t('presetSlots.hhStatus.spool');
   if (state === 'unknown') return t('presetSlots.hhStatus.unknown');
+  return t('presetSlots.observation.noData');
+}
+
+function observationTooltip(
+  state: ReturnType<typeof compareMaterialSlot>['observationState'],
+  t: (key: string) => string,
+): string {
+  if (state === 'empty') return t('presetSlots.hhStatus.emptyTooltip');
+  if (state === 'buffer') return t('presetSlots.hhStatus.bufferTooltip');
+  if (state === 'loaded') return t('presetSlots.hhStatus.spoolTooltip');
+  if (state === 'unknown') return t('presetSlots.hhStatus.unknownTooltip');
   return t('presetSlots.observation.noData');
 }
 
@@ -121,7 +129,10 @@ export function GateMapGrid({
   );
 
   return (
-    <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4 xl:grid-cols-8">
+    <div className={[
+      'grid grid-cols-2 gap-1.5 sm:grid-cols-4',
+      sortedSlots.length > 4 ? 'xl:grid-cols-8' : '',
+    ].join(' ')}>
       {sortedSlots.map((slot) => {
         const gate = gateMap.get(slot.provider_index) ?? null;
         const desiredSpoolId = slot.assignment?.spool_id ?? gate?.spool_id ?? null;
@@ -138,14 +149,14 @@ export function GateMapGrid({
           ? `#${comparison.observedColorHex}`
           : null;
         const isUnidentified = isUnidentifiedHHFilament(gate);
-        const displayColor = spoolColor ?? (isUnidentified ? '#F59E0B' : null);
-        const displayMaterial = spool?.filament?.material_type ?? null;
+        const displayColor = spoolColor
+          ?? (comparison.observationState === 'loaded' ? observedColor : null)
+          ?? (isUnidentified ? '#F59E0B' : null);
+        const displayMaterial = spool?.filament?.material_type
+          ?? (comparison.observationState === 'loaded' ? comparison.observedMaterial : null);
         const hasContent = comparison.desiredPresetId != null || comparison.desiredSpoolId != null;
         const hasObservation = comparison.observationState !== 'none';
         const hasConflict = comparison.conflict != null;
-        const actionKey = comparison.conflict
-          ? `presetSlots.observation.action.${comparison.conflict}`
-          : null;
 
         return (
           <button
@@ -154,11 +165,9 @@ export function GateMapGrid({
             onClick={() => onGateClick(gate, slot)}
             title={slot.label ?? undefined}
             className={[
-              'group relative flex flex-col items-center gap-1 rounded-xl border px-2 py-2 text-center transition',
+              'group relative flex h-full flex-col items-center gap-1 rounded-xl border px-2 py-2 text-center transition',
               'hover:border-purple-500/50 hover:bg-purple-500/8 focus:outline-none focus:ring-2 focus:ring-purple-500/40',
-              hasConflict || isUnidentified
-                ? 'border-amber-400/35 bg-amber-500/[0.07]'
-                : hasContent
+              hasContent
                 ? 'border-purple-500/25 bg-purple-500/[0.04]'
                 : 'border-white/[0.06] bg-white/[0.015]',
             ].join(' ')}
@@ -172,16 +181,24 @@ export function GateMapGrid({
               >
                 {slot.provider_index}
               </span>
-              {hasObservation && !hasConflict ? (
+              {hasObservation ? (
                 <span
-                  title={observationLabel(
-                    comparison.observationState,
-                    comparison.observedMaterial,
-                    t,
-                  )}
-                  className="inline-flex min-w-0 max-w-[7rem] items-center gap-1 rounded-full bg-emerald-500/[0.08] px-1.5 py-0.5 text-[9px] text-emerald-200/80"
+                  title={[
+                    hasConflict
+                      ? t(`presetSlots.observation.conflict.${comparison.conflict}`)
+                      : null,
+                    observationTooltip(comparison.observationState, t),
+                  ].filter(Boolean).join(' ')}
+                  className={[
+                    'inline-flex min-w-0 max-w-[7rem] items-center gap-1 rounded-full px-1.5 py-0.5 text-[9px]',
+                    hasConflict
+                      ? 'bg-amber-500/[0.08] text-amber-200/80'
+                      : 'bg-emerald-500/[0.08] text-emerald-200/80',
+                  ].join(' ')}
                 >
-                  <CheckCircle2 className="h-2.5 w-2.5 shrink-0" />
+                  {hasConflict
+                    ? <AlertTriangle className="h-2.5 w-2.5 shrink-0" />
+                    : <CheckCircle2 className="h-2.5 w-2.5 shrink-0" />}
                   {observedColor && comparison.observationState !== 'empty' && (
                     <span
                       className="h-2 w-2 shrink-0 rounded-full border border-white/20"
@@ -196,27 +213,31 @@ export function GateMapGrid({
                     )}
                   </span>
                 </span>
-              ) : (
-                <span className="text-[9px] font-medium uppercase tracking-wide text-gray-500">
-                  {t('presetSlots.assignment.label')}
+              ) : displayMaterial ? (
+                <span className="max-w-[7rem] truncate text-[9px] font-medium uppercase tracking-wide text-gray-400">
+                  {displayMaterial}
                 </span>
-              )}
+              ) : null}
             </div>
 
             <div className="py-0.5">
               <SpoolIcon
                 color={displayColor}
-                remainingPct={spool?.remaining_pct}
-                isEmpty={!hasContent}
+                remainingPct={spool?.remaining_pct ?? slot.observation?.remaining_percent}
+                isEmpty={
+                  !hasContent
+                  && !isUnidentified
+                  && comparison.observationState !== 'loaded'
+                }
                 isUnknown={isUnidentified}
               />
             </div>
 
-            {displayMaterial ? (
-              <span className="text-xs font-medium text-gray-200">{displayMaterial}</span>
-            ) : (
-              <span className="text-[11px] text-gray-400">
-                {t('presetSlots.assignment.notAssigned')}
+            {!hasContent && (isUnidentified || !displayMaterial) && (
+              <span className="text-[10px] leading-tight text-gray-400">
+                {t(isUnidentified
+                  ? 'presetSlots.assignment.unknownSpool'
+                  : 'presetSlots.assignment.empty')}
               </span>
             )}
 
@@ -233,15 +254,15 @@ export function GateMapGrid({
               compact
             />
 
-            {isUnidentified && (
-              <p className="max-w-full truncate text-[10px] leading-tight text-amber-300/80">
-                {t('presetSlots.identifySpool')}
-              </p>
-            )}
-
             {spool && (
               <span className="text-[10px] tabular-nums text-gray-300">
                 {spool.remaining_weight_g.toFixed(0)}g &middot; {spool.remaining_pct.toFixed(0)}%
+              </span>
+            )}
+
+            {!spool && slot.observation?.remaining_grams != null && (
+              <span className="text-[10px] tabular-nums text-cyan-200/75">
+                {slot.observation.remaining_grams.toFixed(0)}g
               </span>
             )}
 
@@ -254,38 +275,6 @@ export function GateMapGrid({
               </div>
             )}
 
-            {hasConflict && (
-              <div
-                title={t(`presetSlots.observation.conflict.${comparison.conflict}`)}
-                className="mt-1 flex w-full min-w-0 items-center gap-1.5 rounded-lg border border-amber-400/20 bg-amber-500/10 px-2 py-1.5 text-left"
-              >
-                <AlertTriangle className="h-3 w-3 shrink-0 text-amber-300" />
-                {observedColor && comparison.observationState !== 'empty' && (
-                  <span
-                    className="h-2.5 w-2.5 shrink-0 rounded-full border border-white/20"
-                    style={{ backgroundColor: observedColor }}
-                  />
-                )}
-                <span className="min-w-0 flex-1 truncate text-[9px] text-amber-200">
-                  {observationLabel(
-                    comparison.observationState,
-                    comparison.observedMaterial,
-                    t,
-                  )}
-                </span>
-                {actionKey && (
-                  <span className="shrink-0 text-[9px] font-medium text-amber-200 underline decoration-amber-300/40 underline-offset-2">
-                    {t(actionKey)}
-                  </span>
-                )}
-              </div>
-            )}
-
-            <span className="absolute inset-0 flex items-center justify-center rounded-xl opacity-0 transition group-hover:opacity-100">
-              <span className="rounded-lg bg-purple-600/90 px-2.5 py-1 text-[10px] font-medium text-white shadow-lg backdrop-blur-sm">
-                {t(isUnidentified ? 'presetSlots.identifySpool' : 'presetSlots.assignPreset')}
-              </span>
-            </span>
           </button>
         );
       })}

@@ -415,6 +415,7 @@ export const authAPI = {
     allow_print_profiles_import?: boolean;
     allow_print_profiles_export?: boolean;
     auto_import_local_presets?: boolean;
+    sync_printer_endpoints?: boolean;
   }) => {
     const response = await api.patch<User>('/auth/me/settings', data);
     return response.data;
@@ -1330,6 +1331,27 @@ export const printerProfilesAPI = {
     });
     return response.data;
   },
+
+  listAllForPrinter: async (printerId: number): Promise<PrinterProfile[]> => {
+    const size = 100;
+    const first = await printerProfilesAPI.list({
+      printer_id: printerId,
+      page: 1,
+      size,
+      active_only: true,
+    });
+    const items = [...first.items];
+    for (let page = 2; page <= first.pages; page += 1) {
+      const next = await printerProfilesAPI.list({
+        printer_id: printerId,
+        page,
+        size,
+        active_only: true,
+      });
+      items.push(...next.items);
+    }
+    return items;
+  },
 };
 
 // Print Profiles API
@@ -1362,10 +1384,14 @@ export const printProfilesAPI = {
     active_only?: boolean;
     is_official?: boolean;
     owner_user_id?: number;
+    printer_profile_ids?: number[];
     search?: string;
     category?: string;
   }) => {
-    const response = await api.get<ListResponse<PrintProfile>>('/print-profiles/', { params });
+    const response = await api.get<ListResponse<PrintProfile>>('/print-profiles/', {
+      params,
+      paramsSerializer: { indexes: null },
+    });
     return response.data;
   },
 
@@ -1409,6 +1435,33 @@ export const printProfilesAPI = {
     }
     return items;
   },
+
+  listAllForConfigurations: async (printerProfileIds: number[]): Promise<PrintProfile[]> => {
+    const ids = Array.from(new Set(printerProfileIds)).sort((left, right) => left - right);
+    if (ids.length === 0) return [];
+    const size = 100;
+    const first = await printProfilesAPI.list({
+      printer_profile_ids: ids,
+      page: 1,
+      size,
+      active_only: true,
+    });
+    const items = [...first.items];
+    for (let page = 2; page <= first.pages; page += 1) {
+      const next = await printProfilesAPI.list({
+        printer_profile_ids: ids,
+        page,
+        size,
+        active_only: true,
+      });
+      items.push(...next.items);
+    }
+    return items.filter((profile) => {
+      const instantiation = profile.orcaslicer_settings?.instantiation;
+      return instantiation !== false && instantiation !== 'false';
+    });
+  },
+
 };
 
 // Printers API
@@ -1729,7 +1782,20 @@ export const adminAPI = {
 
   // Printer catalog: data sources (OrcaSlicer is one source; PrusaSlicer/Cura/Bambu may follow)
   getCatalogSourceOrcaInfo: async (): Promise<{
-    bundle: { exists: boolean; path: string; size_mb: number | null; vendor_count: number | null };
+    bundle: {
+      exists: boolean;
+      path: string;
+      size_mb: number | null;
+      vendor_count: number | null;
+      source: {
+        repository: string;
+        ref: string;
+        commit: string;
+        profiles_commit?: string;
+        commit_date: string;
+        profiles_tree?: string | null;
+      } | null;
+    };
     catalog: { printers_total: number; printers_system: number };
   }> => {
     const response = await api.get('/admin/catalog/sources/orca/info');
@@ -3096,6 +3162,42 @@ export const orcaSlicesAPI = {
   },
 };
 
+export const printJobsAPI = {
+  list: async (params?: {
+    physical_printer_id?: number;
+    page?: number;
+    size?: number;
+  }): Promise<import('../types/api').PrintJobListResponse> => {
+    const response = await api.get<import('../types/api').PrintJobListResponse>(
+      '/print-jobs',
+      { params },
+    );
+    return response.data;
+  },
+
+  create: async (
+    payload: import('../types/api').PrintJobCreate,
+  ): Promise<import('../types/api').PrintJob> => {
+    const response = await api.post<import('../types/api').PrintJob>('/print-jobs', payload);
+    return response.data;
+  },
+
+  transition: async (
+    jobId: number,
+    payload: {
+      idempotency_key: string;
+      status: import('../types/api').PrintJobStatus;
+      note?: string | null;
+    },
+  ): Promise<import('../types/api').PrintJob> => {
+    const response = await api.post<import('../types/api').PrintJob>(
+      `/print-jobs/${jobId}/events`,
+      payload,
+    );
+    return response.data;
+  },
+};
+
 export const spoolsAPI = {
   list: async (): Promise<UserSpool[]> => {
     const response = await api.get<UserSpool[]>('/spools');
@@ -3219,7 +3321,7 @@ export interface DeviceRegenerateKeyResponse {
   api_key: string;
 }
 
-/** gate_status from Happy Hare: -1=unknown, 0=empty, 1=spool, 2=buffer */
+/** gate_status from Happy Hare: -1=unknown, 0=empty, 1=available, 2=available from buffer */
 export interface GateState {
   id: number;
   gate_index: number;
@@ -3281,7 +3383,20 @@ export interface MaterialSlot {
   kind: string;
   active: boolean;
   assignment: MaterialSlotAssignment | null;
+  observation?: MaterialSlotObservation | null;
   legacy_projection: LegacySlotProjection | null;
+}
+
+export interface MaterialSlotObservation {
+  source: string;
+  observed_at: string;
+  received_at: string;
+  present: boolean | null;
+  active_feed: boolean | null;
+  material: string | null;
+  color_hex: string | null;
+  remaining_percent: number | null;
+  remaining_grams: number | null;
 }
 
 export interface MaterialSystem {
@@ -3300,9 +3415,30 @@ export interface PhysicalPrinterConnector {
   material_system_id: number | null;
   provider: string;
   transport: string;
+  source_instance_id?: string | null;
   capabilities: string[];
   active: boolean;
   last_seen_at: string | null;
+  status_observation?: PhysicalPrinterStatusObservation | null;
+}
+
+export interface PhysicalPrinterStatusObservation {
+  source: string;
+  observed_at: string;
+  received_at: string;
+  state: string;
+  progress_percent: number | null;
+  remaining_seconds: number | null;
+  current_layer: number | null;
+  total_layers: number | null;
+  job_name: string | null;
+  nozzle_temperature: number | null;
+  nozzle_target_temperature: number | null;
+  bed_temperature: number | null;
+  bed_target_temperature: number | null;
+  chamber_temperature: number | null;
+  wifi_signal: string | null;
+  error_code: string | null;
 }
 
 export interface PhysicalPrinter {
@@ -3333,6 +3469,19 @@ export interface OctoPrintBridgeStatus {
 }
 
 export interface OctoPrintPairingCode {
+  pairing_code: string;
+  expires_at: string;
+}
+
+export interface PrinterBridgeStatus {
+  configured: boolean;
+  paired: boolean;
+  pairing_expires_at: string | null;
+  last_seen_at: string | null;
+  source_instance_id: string | null;
+}
+
+export interface PrinterBridgePairingCode {
   pairing_code: string;
   expires_at: string;
 }
@@ -3399,8 +3548,10 @@ export interface PrinterEconomicsSuggestion {
 // physical_printer_id; the endpoint is a volatile label, never identity.
 export interface PrinterConnectionBinding {
   physical_printer_id: number;
+  connection_ref: string | null;
   provider: string | null;
   display_endpoint: string | null;
+  endpoint_shared: boolean;
   last_seen_at: string;
 }
 
@@ -3416,6 +3567,7 @@ export interface CurrentPrinterContext {
 export interface InstalledPrinterCandidate {
   model: string;
   printer_id: number | null;
+  printer_profile_id: number | null;
   catalog_name: string | null;
   last_seen_at: string;
 }
@@ -3601,7 +3753,7 @@ export const physicalPrintersAPI = {
       kind: string;
       provider: string;
       capabilities: Array<'read' | 'write' | 'presence' | 'spool_identity' | 'consumption' | 'local_command'>;
-      slot_count: number;
+      slot_count?: number;
     },
   ): Promise<PhysicalPrinter> => {
     const response = await api.post<PhysicalPrinter>(
@@ -3660,6 +3812,28 @@ export const octoprintBridgeAPI = {
     await api.delete(
       `/octoprint-bridge/connections/${physicalPrinterId}/${materialSystemId}`,
     );
+  },
+};
+
+export const printerBridgeAPI = {
+  status: async (
+    physicalPrinterId: number,
+    materialSystemId: number,
+  ): Promise<PrinterBridgeStatus> => {
+    const response = await api.get<PrinterBridgeStatus>(
+      `/printer-bridge/connections/${physicalPrinterId}/${materialSystemId}`,
+    );
+    return response.data;
+  },
+
+  issuePairingCode: async (
+    physicalPrinterId: number,
+    materialSystemId: number,
+  ): Promise<PrinterBridgePairingCode> => {
+    const response = await api.post<PrinterBridgePairingCode>(
+      `/printer-bridge/connections/${physicalPrinterId}/${materialSystemId}/pairing-code`,
+    );
+    return response.data;
   },
 };
 

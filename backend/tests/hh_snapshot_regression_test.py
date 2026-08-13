@@ -15,6 +15,7 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.material_system import MaterialSlot, MaterialSystem
 from app.models.preset_gate_state import PresetGateState, PresetGateStateSource
 from app.models.user import User
 from app.models.user_printer_device import UserPrinterDevice
@@ -257,3 +258,82 @@ async def test_snapshot_autoregisters_unknown_device(db_session: AsyncSession):
     assert device.gate_count == 8
     assert device.last_seen_at is not None
     assert updated == 0  # no known gates yet — nothing to mark empty
+    system = await db_session.scalar(
+        select(MaterialSystem).where(MaterialSystem.physical_printer_id == device.id)
+    )
+    assert system is not None
+    assert system.declared_slot_count == 8
+    slots = list(
+        (
+            await db_session.execute(
+                select(MaterialSlot)
+                .where(MaterialSlot.material_system_id == system.id)
+                .order_by(MaterialSlot.provider_index)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert [slot.provider_index for slot in slots] == list(range(8))
+
+
+@pytest.mark.asyncio
+async def test_snapshot_can_target_owned_physical_printer_without_fingerprint(
+    db_session: AsyncSession,
+):
+    """The Orca plugin binds by the owned physical-printer id and must not
+    create a second device merely because connection discovery has no legacy
+    device fingerprint."""
+    user, device = await _seed_user_device(db_session)
+    device.device_fingerprint = None
+    await db_session.commit()
+
+    resolved, _, _ = await handle_hh_snapshot(
+        db_session,
+        user,
+        HHSnapshotRequest(
+            physical_printer_id=device.id,
+            gate_count=6,
+            snapshot_ts=datetime.now(timezone.utc),
+            gates=[],
+        ),
+    )
+
+    assert resolved.id == device.id
+    assert resolved.device_fingerprint is None
+    assert resolved.gate_count == 6
+    device_ids = list(
+        (
+            await db_session.execute(
+                select(UserPrinterDevice.id).where(UserPrinterDevice.user_id == user.id)
+            )
+        ).scalars()
+    )
+    assert device_ids == [device.id]
+
+
+@pytest.mark.asyncio
+async def test_snapshot_normalizes_legacy_happy_hare_system_to_mmu(
+    db_session: AsyncSession,
+):
+    user, device = await _seed_user_device(db_session)
+    system = MaterialSystem(
+        user_id=user.id,
+        physical_printer_id=device.id,
+        name="Happy Hare",
+        kind="direct_feed",
+        provider="happy_hare",
+        capabilities=[],
+    )
+    db_session.add(system)
+    await db_session.commit()
+
+    await handle_hh_snapshot(
+        db_session,
+        user,
+        _snapshot([], datetime.now(timezone.utc), gate_count=8),
+    )
+
+    await db_session.refresh(system)
+    assert system.kind == "mmu"
+    assert system.declared_slot_count == 8

@@ -8,11 +8,16 @@ from sqlalchemy.orm import selectinload
 
 from app.models.brand import Brand
 from app.models.filament import Filament
+from app.models.orca_profile_sync import OrcaProfileBinding
 from app.models.print_profile import PrintProfile
 from app.models.printer import Printer
 from app.models.printer_profile import PrinterProfile
 from app.models.user import User
 from tests.conftest import registration_payload
+
+
+def _durable_external_id(account_id: str, local_profile_id: str) -> str:
+    return f"orca-local-v1:{account_id}:{local_profile_id}"
 
 
 async def _register_and_login(
@@ -612,6 +617,45 @@ async def test_reimport_recognizes_a_configuration_by_name(
 
 
 @pytest.mark.asyncio
+async def test_shared_orca_setting_id_does_not_merge_named_configurations(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    headers, email = await _register_and_login(client, "orca-config-siblings")
+    user = (
+        await db_session.execute(select(User).where(User.email == email))
+    ).scalar_one()
+
+    async def send(name: str, external_id: str) -> dict:
+        response = await client.post(
+            "/api/v1/orcaslicer/printer-profiles/import",
+            headers=headers,
+            json={
+                "profiles": [
+                    {
+                        "name": name,
+                        "external_id": external_id,
+                        "setting_id": "Bambu Lab A1 mini 0.4 nozzle",
+                    }
+                ]
+            },
+        )
+        assert response.status_code == 200
+        return response.json()["results"][0]
+
+    first = await send("Workshop A1 mini", "legacy-shared-id")
+    second = await send("Office A1 mini", "legacy-shared-id")
+
+    assert first["fhub_id"] != second["fhub_id"]
+    rows = (
+        await db_session.execute(
+            select(PrinterProfile).where(PrinterProfile.owner_user_id == user.id)
+        )
+    ).scalars().all()
+    assert {row.name for row in rows} == {"Workshop A1 mini", "Office A1 mini"}
+
+
+@pytest.mark.asyncio
 async def test_import_reads_compatibility_from_the_hosts_own_format(
     client: AsyncClient,
     db_session: AsyncSession,
@@ -724,6 +768,57 @@ async def test_configuration_takes_its_model_from_the_parent_preset(
 
 
 @pytest.mark.asyncio
+async def test_process_import_inherits_effective_compatibility_from_parent(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    headers, _ = await _register_and_login(client, "orca-process-inherits-compat")
+    parent = PrintProfile(
+        owner_user_id=None,
+        is_official=True,
+        name="0.20mm Standard @Voron",
+        slug="020-standard-voron-parent-compat",
+        active=True,
+        source="system",
+        compatible_printers=["Voron 2.4 350 0.4 nozzle"],
+        compatible_filaments=["Generic PLA"],
+        extra_metadata={
+            "compatible_printers_condition": 'printer_model=="Voron 2.4 350"'
+        },
+    )
+    db_session.add(parent)
+    await db_session.commit()
+
+    response = await client.post(
+        "/api/v1/orcaslicer/print-profiles/import",
+        headers=headers,
+        json={
+            "profiles": [
+                {
+                    "name": "My 0.20mm Standard",
+                    "external_id": "my-020-standard-voron",
+                    "orcaslicer_settings": {
+                        "inherits": parent.name,
+                        "wall_loops": "3",
+                    },
+                }
+            ]
+        },
+    )
+
+    assert response.status_code == 200
+    imported = await db_session.get(
+        PrintProfile,
+        response.json()["results"][0]["fhub_id"],
+    )
+    assert imported.compatible_printers == ["Voron 2.4 350 0.4 nozzle"]
+    assert imported.compatible_filaments == ["Generic PLA"]
+    assert imported.extra_metadata["compatible_printers_condition"] == (
+        'printer_model=="Voron 2.4 350"'
+    )
+
+
+@pytest.mark.asyncio
 async def test_a_failed_item_reports_a_code_and_never_the_exception_text(
     client: AsyncClient,
     monkeypatch,
@@ -751,3 +846,229 @@ async def test_a_failed_item_reports_a_code_and_never_the_exception_text(
     assert result["message"] == "ERR_SYNC_ITEM_FAILED"
     assert "does not exist" not in response.text
     assert "print_profiles" not in response.text
+
+
+@pytest.mark.asyncio
+async def test_profile_snapshot_preserves_rename_and_marks_absence_without_deleting(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    headers, email = await _register_and_login(client, "orca-durable-profile")
+    user = (
+        await db_session.execute(select(User).where(User.email == email))
+    ).scalar_one()
+    source_id = "source-installation-00000001"
+    account_id = "11111111-1111-4111-8111-111111111111"
+    first_local_id = "22222222-2222-4222-8222-222222222222"
+    second_local_id = "33333333-3333-4333-8333-333333333333"
+
+    start = await client.post(
+        "/api/v1/orcaslicer/profile-snapshots/start",
+        headers=headers,
+        json={
+            "kind": "machine",
+            "source_instance_id": source_id,
+            "account_id": account_id,
+        },
+    )
+    assert start.status_code == 200
+    assert start.json()["bound_local_profile_ids"] == []
+    first_snapshot_id = start.json()["snapshot_id"]
+    imported = await client.post(
+        "/api/v1/orcaslicer/printer-profiles/import",
+        headers=headers,
+        json={
+            "source_instance_id": source_id,
+            "account_id": account_id,
+            "snapshot_id": first_snapshot_id,
+            "profiles": [
+                {
+                    "name": "Voron workshop",
+                    "local_profile_id": first_local_id,
+                    "external_id": _durable_external_id(account_id, first_local_id),
+                    "orcaslicer_settings": {"nozzle_diameter": ["0.4"]},
+                },
+                {
+                    "name": "Voron spare",
+                    "local_profile_id": second_local_id,
+                    "external_id": _durable_external_id(account_id, second_local_id),
+                    "orcaslicer_settings": {"nozzle_diameter": ["0.6"]},
+                },
+            ],
+        },
+    )
+    assert imported.status_code == 200
+    first_profile_id, second_profile_id = [
+        result["fhub_id"] for result in imported.json()["results"]
+    ]
+    finalized = await client.post(
+        "/api/v1/orcaslicer/profile-snapshots/finalize",
+        headers=headers,
+        json={
+            "kind": "machine",
+            "source_instance_id": source_id,
+            "account_id": account_id,
+            "snapshot_id": first_snapshot_id,
+            "present_local_profile_ids": [first_local_id, second_local_id],
+        },
+    )
+    assert finalized.json()["status"] == "finalized"
+
+    second_start = await client.post(
+        "/api/v1/orcaslicer/profile-snapshots/start",
+        headers=headers,
+        json={
+            "kind": "machine",
+            "source_instance_id": source_id,
+            "account_id": account_id,
+        },
+    )
+    assert second_start.json()["bound_local_profile_ids"] == sorted(
+        [first_local_id, second_local_id]
+    )
+    second_snapshot_id = second_start.json()["snapshot_id"]
+    stale_import = await client.post(
+        "/api/v1/orcaslicer/printer-profiles/import",
+        headers=headers,
+        json={
+            "source_instance_id": source_id,
+            "account_id": account_id,
+            "snapshot_id": first_snapshot_id,
+            "profiles": [
+                {
+                    "name": "stale overwrite",
+                    "local_profile_id": first_local_id,
+                    "external_id": _durable_external_id(account_id, first_local_id),
+                    "orcaslicer_settings": {"nozzle_diameter": ["1.0"]},
+                }
+            ],
+        },
+    )
+    assert stale_import.status_code == 409
+    assert stale_import.json()["detail"]["code"] == "ERR_ORCA_PROFILE_SNAPSHOT_SUPERSEDED"
+    stale_finalize = await client.post(
+        "/api/v1/orcaslicer/profile-snapshots/finalize",
+        headers=headers,
+        json={
+            "kind": "machine",
+            "source_instance_id": source_id,
+            "account_id": account_id,
+            "snapshot_id": first_snapshot_id,
+            "present_local_profile_ids": [],
+        },
+    )
+    assert stale_finalize.json()["status"] == "superseded"
+
+    renamed = await client.post(
+        "/api/v1/orcaslicer/printer-profiles/import",
+        headers=headers,
+        json={
+            "source_instance_id": source_id,
+            "account_id": account_id,
+            "snapshot_id": second_snapshot_id,
+            "profiles": [
+                {
+                    "name": "Voron main",
+                    "local_profile_id": first_local_id,
+                    "external_id": _durable_external_id(account_id, first_local_id),
+                    "orcaslicer_settings": {"nozzle_diameter": ["0.4"]},
+                }
+            ],
+        },
+    )
+    assert renamed.status_code == 200
+    assert renamed.json()["results"][0]["fhub_id"] == first_profile_id
+    assert renamed.json()["results"][0]["status"] == "updated"
+    final = await client.post(
+        "/api/v1/orcaslicer/profile-snapshots/finalize",
+        headers=headers,
+        json={
+            "kind": "machine",
+            "source_instance_id": source_id,
+            "account_id": account_id,
+            "snapshot_id": second_snapshot_id,
+            "present_local_profile_ids": [first_local_id],
+        },
+    )
+    assert final.json() == {
+        "status": "finalized",
+        "present_count": 1,
+        "absent_count": 1,
+    }
+
+    assert (await db_session.get(PrinterProfile, first_profile_id)).name == "Voron main"
+    assert await db_session.get(PrinterProfile, second_profile_id) is not None
+    bindings = list(
+        (
+            await db_session.execute(
+                select(OrcaProfileBinding)
+                .where(OrcaProfileBinding.owner_user_id == user.id)
+                .order_by(OrcaProfileBinding.local_profile_id)
+            )
+        ).scalars()
+    )
+    assert [(binding.local_profile_id, binding.present) for binding in bindings] == [
+        (first_local_id, True),
+        (second_local_id, False),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_first_durable_snapshot_adopts_one_exact_legacy_orca_profile(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    headers, email = await _register_and_login(client, "orca-adopt-legacy-profile")
+    user = (
+        await db_session.execute(select(User).where(User.email == email))
+    ).scalar_one()
+    legacy = PrinterProfile(
+        owner_user_id=user.id,
+        name="Voron legacy",
+        slug="voron-legacy-durable-adoption",
+        is_official=False,
+        active=True,
+        source="orcaslicer",
+        external_id="orca-user:voron-legacy:old-name-hash",
+        setting_id="Voron 2.4 350 0.4 nozzle",
+        orcaslicer_settings={"nozzle_diameter": ["0.4"]},
+    )
+    db_session.add(legacy)
+    await db_session.commit()
+    legacy_id = legacy.id
+
+    source_id = "source-installation-legacy01"
+    account_id = "44444444-4444-4444-8444-444444444444"
+    local_profile_id = "55555555-5555-4555-8555-555555555555"
+    start = await client.post(
+        "/api/v1/orcaslicer/profile-snapshots/start",
+        headers=headers,
+        json={
+            "kind": "machine",
+            "source_instance_id": source_id,
+            "account_id": account_id,
+        },
+    )
+    response = await client.post(
+        "/api/v1/orcaslicer/printer-profiles/import",
+        headers=headers,
+        json={
+            "source_instance_id": source_id,
+            "account_id": account_id,
+            "snapshot_id": start.json()["snapshot_id"],
+            "profiles": [
+                {
+                    "name": legacy.name,
+                    "local_profile_id": local_profile_id,
+                    "external_id": _durable_external_id(account_id, local_profile_id),
+                    "setting_id": legacy.setting_id,
+                    "orcaslicer_settings": {"nozzle_diameter": ["0.4"]},
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["results"][0]["fhub_id"] == legacy_id
+    await db_session.refresh(legacy)
+    assert legacy.external_id == _durable_external_id(account_id, local_profile_id)

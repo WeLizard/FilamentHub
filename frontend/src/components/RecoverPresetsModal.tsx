@@ -13,21 +13,21 @@ interface RecoverPresetsModalProps {
 export function RecoverPresetsModal({ items, onClose, onImport }: RecoverPresetsModalProps) {
   const { t } = useTranslation();
   const [selected, setSelected] = useState<Set<string>>(
-    () => new Set(items.filter((i) => !i.imported).map((i) => i.name)),
+    () => new Set(items.filter((i) => !i.imported).map((i) => i.key)),
   );
 
-  const toggle = (name: string) => {
+  const toggle = (key: string) => {
     setSelected((prev) => {
       const next = new Set(prev);
-      if (next.has(name)) next.delete(name);
-      else next.add(name);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
       return next;
     });
   };
 
   const allSelected = items.length > 0 && selected.size === items.length;
   const toggleAll = () => {
-    setSelected(allSelected ? new Set() : new Set(items.map((i) => i.name)));
+    setSelected(allSelected ? new Set() : new Set(items.map((i) => i.key)));
   };
 
   return (
@@ -57,16 +57,24 @@ export function RecoverPresetsModal({ items, onClose, onImport }: RecoverPresets
             <div className="flex-1 space-y-1 overflow-y-auto px-5 py-3">
               {items.map((item) => (
                 <label
-                  key={item.name}
+                  key={item.key}
                   className="flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2 hover:bg-white/5"
                 >
                   <input
                     type="checkbox"
-                    checked={selected.has(item.name)}
-                    onChange={() => toggle(item.name)}
+                    checked={selected.has(item.key)}
+                    onChange={() => toggle(item.key)}
                     className="h-4 w-4 accent-purple-600"
                   />
-                  <span className="flex-1 truncate text-sm text-gray-200">{item.name}</span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm text-gray-200">{item.name}</span>
+                    <span className="text-[11px] text-gray-500">
+                      {t(`recover.kind.${item.kind}`)}
+                      {' · '}
+                      {t(`recover.source.${item.source}`)}
+                      {item.account ? ` · ${item.account}` : ''}
+                    </span>
+                  </span>
                   {item.imported && (
                     <span className="rounded-full bg-white/10 px-1.5 py-0.5 text-[11px] text-gray-400">
                       {t('recover.alreadyImported')}

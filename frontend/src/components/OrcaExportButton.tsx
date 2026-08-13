@@ -6,6 +6,7 @@ import {
   useOrcaBridgeCapability,
   type OrcaBridgeCapability,
 } from '../hooks/useOrcaBridgeCapability';
+import { isPluginEmbed, requestPluginProfileSync } from '../utils/pluginBridge';
 
 export interface OrcaExportResult {
   success: boolean;
@@ -89,8 +90,8 @@ export function OrcaExportButton({
   const handleExport = async () => {
     if (inFlightRef.current || !available || disabled) return;
 
-    const exporter = window.filamenthub?.[capability];
-    if (!exporter) {
+    const legacyExporter = window.filamenthub?.[capability];
+    if (!legacyExporter && !isPluginEmbed()) {
       setStatus('error');
       setStatusMessage(t(`${translationPrefix}.exportError`));
       scheduleReset(5000);
@@ -103,7 +104,9 @@ export function OrcaExportButton({
     setStatusMessage('');
 
     try {
-      const result = await exporter();
+      const result = legacyExporter
+        ? await legacyExporter()
+        : await requestPluginProfileSync();
       if (!mountedRef.current) return;
       setStatus('success');
       onExportComplete?.({ success: true, message: result.message });

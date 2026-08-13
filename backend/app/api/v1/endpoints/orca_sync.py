@@ -6,6 +6,7 @@ import hashlib
 import json
 import logging
 import re
+import uuid
 from datetime import datetime, timezone
 from typing import Annotated, Any
 
@@ -31,6 +32,9 @@ from app.core.errors import (
     ERR_INVALID_FILENAME,
     ERR_NO_NOTIFICATION_DATA,
     ERR_NOTIFICATION_NOT_FOUND,
+    ERR_ORCA_LOCAL_PROFILE_ID_REQUIRED,
+    ERR_ORCA_PROFILE_SNAPSHOT_CONTEXT_REQUIRED,
+    ERR_ORCA_PROFILE_SNAPSHOT_SUPERSEDED,
     ERR_PRESET_IDS_REQUIRED,
     ERR_PRESET_NOT_FOUND,
     ERR_SYNC_ITEM_FAILED,
@@ -42,6 +46,7 @@ from app.db.session import get_db
 from app.models.brand import Brand
 from app.models.filament import Filament
 from app.models.notification import Notification, NotificationType
+from app.models.orca_profile_sync import OrcaProfileBinding, OrcaProfileSyncScope
 from app.models.preset import PUBLIC_PRESET_STATUSES, Preset, PresetModerationStatus
 from app.models.print_profile import PrintProfile
 from app.models.print_profile_filament import PrintProfileFilament
@@ -60,6 +65,10 @@ from app.schemas.orca_sync import (
     DeletedPresetsResponse,
     FilamentPresetSyncRequest,
     FilamentPresetSyncResponse,
+    OrcaProfileSnapshotFinalizeRequest,
+    OrcaProfileSnapshotFinalizeResponse,
+    OrcaProfileSnapshotStartRequest,
+    OrcaProfileSnapshotStartResponse,
     OrcaSyncResult,
     PrinterProfileSyncRequest,
     PrinterProfileSyncResponse,
@@ -86,6 +95,7 @@ from app.services.orcaslicer_service import (
 from app.services.preset_moderation import moderate_preset, validate_text_field
 from app.services.print_profile_configuration_service import (
     infer_and_replace_configuration_links,
+    refresh_owner_configuration_projections,
 )
 from app.services.slug_service import generate_unique_slug
 
@@ -1055,6 +1065,197 @@ def _can_edit_profile(profile: PrinterProfile | PrintProfile, user: User) -> boo
     return profile.owner_user_id == user.id and not profile.is_official
 
 
+async def _disambiguate_local_external_id(
+    *,
+    db: AsyncSession,
+    model: type[PrinterProfile] | type[PrintProfile],
+    owner_user_id: int,
+    external_id: str | None,
+    name: str,
+) -> str | None:
+    """Keep legacy id-only clients from colliding sibling named profiles."""
+    if not external_id:
+        return None
+    if external_id.startswith("orca-local-v1:"):
+        return external_id
+    existing = (
+        await db.execute(
+            select(model).where(
+                model.owner_user_id == owner_user_id,
+                model.external_id == external_id,
+            )
+        )
+    ).scalars().first()
+    if existing is None or existing.name == name:
+        return external_id
+    name_hash = hashlib.sha256(name.encode("utf-8")).hexdigest()[:16]
+    return f"orca-user:{external_id[:165]}:{name_hash}"
+
+
+def _has_durable_local_identity(payload: Any) -> bool:
+    return bool(
+        getattr(payload, "local_profile_id", None)
+        and str(getattr(payload, "external_id", "") or "").startswith("orca-local-v1:")
+    )
+
+
+def _profile_import_snapshot_context(request: Any, kind: str) -> tuple[str, str, str, str] | None:
+    values = (
+        getattr(request, "source_instance_id", None),
+        getattr(request, "account_id", None),
+        getattr(request, "snapshot_id", None),
+    )
+    if not any(values):
+        return None
+    if not all(values):
+        raise_error(
+            status.HTTP_400_BAD_REQUEST,
+            ERR_ORCA_PROFILE_SNAPSHOT_CONTEXT_REQUIRED,
+        )
+    return kind, values[0], values[1], values[2]
+
+
+async def _require_current_profile_snapshot(
+    *,
+    db: AsyncSession,
+    owner_user_id: int,
+    context: tuple[str, str, str, str],
+) -> OrcaProfileSyncScope:
+    kind, source_instance_id, account_id, snapshot_id = context
+    scope = (
+        await db.execute(
+            select(OrcaProfileSyncScope)
+            .where(
+                OrcaProfileSyncScope.owner_user_id == owner_user_id,
+                OrcaProfileSyncScope.source_instance_id == source_instance_id,
+                OrcaProfileSyncScope.account_id == account_id,
+                OrcaProfileSyncScope.kind == kind,
+            )
+            .with_for_update()
+        )
+    ).scalars().first()
+    if (
+        scope is None
+        or scope.current_snapshot_id != snapshot_id
+        or scope.status != "open"
+    ):
+        raise_error(
+            status.HTTP_409_CONFLICT,
+            ERR_ORCA_PROFILE_SNAPSHOT_SUPERSEDED,
+        )
+    return scope
+
+
+async def _bound_profile_id(
+    *,
+    db: AsyncSession,
+    owner_user_id: int,
+    context: tuple[str, str, str, str] | None,
+    local_profile_id: str | None,
+) -> int | None:
+    if context is None or not local_profile_id:
+        return None
+    kind, source_instance_id, account_id, _snapshot_id = context
+    binding = (
+        await db.execute(
+            select(OrcaProfileBinding).where(
+                OrcaProfileBinding.owner_user_id == owner_user_id,
+                OrcaProfileBinding.source_instance_id == source_instance_id,
+                OrcaProfileBinding.account_id == account_id,
+                OrcaProfileBinding.kind == kind,
+                OrcaProfileBinding.local_profile_id == local_profile_id,
+            )
+        )
+    ).scalars().first()
+    if binding is None:
+        return None
+    return binding.printer_profile_id if kind == "machine" else binding.print_profile_id
+
+
+async def _legacy_profile_id_for_durable_identity(
+    *,
+    db: AsyncSession,
+    model: type[PrinterProfile] | type[PrintProfile],
+    owner_user_id: int,
+    payload: Any,
+) -> int | None:
+    """Adopt one exact pre-registry Orca row during the protocol upgrade."""
+    if not _has_durable_local_identity(payload) or not payload.setting_id:
+        return None
+    candidates = list(
+        (
+            await db.execute(
+                select(model).where(
+                    model.owner_user_id == owner_user_id,
+                    model.is_official.is_(False),
+                    model.source == "orcaslicer",
+                    model.name == payload.name,
+                    model.setting_id == payload.setting_id,
+                    or_(
+                        model.external_id.is_(None),
+                        ~model.external_id.like("orca-local-v1:%"),
+                    ),
+                )
+            )
+        ).scalars()
+    )
+    return candidates[0].id if len(candidates) == 1 else None
+
+
+async def _record_profile_binding(
+    *,
+    db: AsyncSession,
+    owner_user_id: int,
+    context: tuple[str, str, str, str] | None,
+    local_profile_id: str | None,
+    profile_id: int | None,
+    name: str,
+    settings: dict[str, Any],
+) -> None:
+    if context is None or not local_profile_id or profile_id is None:
+        return
+    kind, source_instance_id, account_id, snapshot_id = context
+    binding = (
+        await db.execute(
+            select(OrcaProfileBinding).where(
+                OrcaProfileBinding.owner_user_id == owner_user_id,
+                OrcaProfileBinding.source_instance_id == source_instance_id,
+                OrcaProfileBinding.account_id == account_id,
+                OrcaProfileBinding.kind == kind,
+                OrcaProfileBinding.local_profile_id == local_profile_id,
+            )
+        )
+    ).scalars().first()
+    content_hash = hashlib.sha256(
+        json.dumps(settings, sort_keys=True, ensure_ascii=False).encode("utf-8")
+    ).hexdigest()
+    now = datetime.now(timezone.utc)
+    if binding is None:
+        binding = OrcaProfileBinding(
+            owner_user_id=owner_user_id,
+            source_instance_id=source_instance_id,
+            account_id=account_id,
+            kind=kind,
+            local_profile_id=local_profile_id,
+            printer_profile_id=profile_id if kind == "machine" else None,
+            print_profile_id=profile_id if kind == "process" else None,
+            present=True,
+            last_snapshot_id=snapshot_id,
+            last_name=name,
+            content_hash=content_hash,
+            last_seen_at=now,
+        )
+        db.add(binding)
+        return
+    binding.printer_profile_id = profile_id if kind == "machine" else None
+    binding.print_profile_id = profile_id if kind == "process" else None
+    binding.present = True
+    binding.last_snapshot_id = snapshot_id
+    binding.last_name = name
+    binding.content_hash = content_hash
+    binding.last_seen_at = now
+
+
 async def _upsert_printer_profile(
     *,
     payload,
@@ -1090,6 +1291,13 @@ async def _upsert_printer_profile(
                 )
 
     profile: PrinterProfile | None = None
+    storage_external_id = await _disambiguate_local_external_id(
+        db=db,
+        model=PrinterProfile,
+        owner_user_id=current_user.id,
+        external_id=payload.external_id,
+        name=payload.name,
+    )
 
     # Проверяем метки из orcaslicer_settings (приоритетный способ идентификации)
     orcaslicer_settings = payload.orcaslicer_settings or {}
@@ -1128,26 +1336,36 @@ async def _upsert_printer_profile(
                 logger.warning(f"Invalid fhub_id in metadata: {fhub_id_from_metadata}")
 
     # Приоритет 3: Ищем по external_id (fallback)
-    if profile is None and payload.external_id:
+    if profile is None and storage_external_id:
         query = select(PrinterProfile).where(
-            PrinterProfile.external_id == payload.external_id,
+            PrinterProfile.external_id == storage_external_id,
             PrinterProfile.owner_user_id == current_user.id,
         )
         if current_user.role != UserRole.ADMIN:
             query = query.where(PrinterProfile.is_official.is_(False))
         result = await db.execute(query)
         profile = result.scalars().first()
+        if (
+            profile is not None
+            and profile.name != payload.name
+            and not _has_durable_local_identity(payload)
+        ):
+            # Older plugin builds used raw setting_id as external_id. Orca can
+            # keep that id in several separately named user configurations, so
+            # an id-only hit is not enough evidence that this is the same one.
+            profile = None
         if profile:
             logger.info(
                 f"Found printer profile by external_id {payload.external_id} instead of fhub_id {payload.fhub_id}"
             )
 
     # Приоритет 4: настройка Orca, если она приехала
-    if profile is None and payload.setting_id:
+    if profile is None and payload.setting_id and not _has_durable_local_identity(payload):
         query = (
             select(PrinterProfile)
             .where(
                 PrinterProfile.setting_id == payload.setting_id,
+                PrinterProfile.name == payload.name,
                 PrinterProfile.owner_user_id == current_user.id,
                 PrinterProfile.is_official.is_(False),
             )
@@ -1159,7 +1377,7 @@ async def _upsert_printer_profile(
     # Приоритет 5: имя внутри аккаунта. Идентификаторы Orca за историю сменили
     # формат трижды, а имя пресета внутри бандла уникально и переживает это,
     # поэтому без этого шага каждая смена формата плодила копию.
-    if profile is None and payload.name:
+    if profile is None and payload.name and not _has_durable_local_identity(payload):
         query = (
             select(PrinterProfile)
             .where(
@@ -1173,7 +1391,7 @@ async def _upsert_printer_profile(
         profile = result.scalars().first()
 
     # Приоритет 6: Ищем по slug (fallback)
-    if profile is None and payload.slug:
+    if profile is None and payload.slug and not _has_durable_local_identity(payload):
         query = select(PrinterProfile).where(
             PrinterProfile.slug == payload.slug,
             PrinterProfile.owner_user_id == current_user.id,
@@ -1214,7 +1432,7 @@ async def _upsert_printer_profile(
         profile.source = payload.source or profile.source
         profile.vendor = payload.vendor or profile.vendor
         profile.setting_id = payload.setting_id or profile.setting_id
-        profile.external_id = payload.external_id or profile.external_id
+        profile.external_id = storage_external_id or profile.external_id
         profile.default_print_profile_slug = (
             payload.default_print_profile_slug or profile.default_print_profile_slug
         )
@@ -1366,7 +1584,7 @@ async def _upsert_printer_profile(
         source=payload.source or "user",
         vendor=payload.vendor,
         setting_id=payload.setting_id,
-        external_id=payload.external_id,
+        external_id=storage_external_id,
         default_print_profile_slug=payload.default_print_profile_slug,
         nozzle_diameters=nozzle_diameters,
         printable_area=printable_area,
@@ -1432,6 +1650,13 @@ async def _upsert_print_profile(
                 )
 
     profile: PrintProfile | None = None
+    storage_external_id = await _disambiguate_local_external_id(
+        db=db,
+        model=PrintProfile,
+        owner_user_id=current_user.id,
+        external_id=payload.external_id,
+        name=payload.name,
+    )
 
     # Проверяем метки из orcaslicer_settings (приоритетный способ идентификации)
     orcaslicer_settings = payload.orcaslicer_settings or {}
@@ -1470,26 +1695,35 @@ async def _upsert_print_profile(
                 logger.warning(f"Invalid fhub_id in metadata: {fhub_id_from_metadata}")
 
     # Приоритет 3: Ищем по external_id (fallback)
-    if profile is None and payload.external_id:
+    if profile is None and storage_external_id:
         query = select(PrintProfile).where(
-            PrintProfile.external_id == payload.external_id,
+            PrintProfile.external_id == storage_external_id,
             PrintProfile.owner_user_id == current_user.id,
         )
         if current_user.role != UserRole.ADMIN:
             query = query.where(PrintProfile.is_official.is_(False))
         result = await db.execute(query)
         profile = result.scalars().first()
+        if (
+            profile is not None
+            and profile.name != payload.name
+            and not _has_durable_local_identity(payload)
+        ):
+            # See the printer-profile branch above: a legacy raw Orca id can be
+            # shared by several differently named saved process profiles.
+            profile = None
         if profile:
             logger.info(
                 f"Found print profile by external_id {payload.external_id} instead of fhub_id {payload.fhub_id}"
             )
 
     # Приоритет 4: настройка Orca, если она приехала
-    if profile is None and payload.setting_id:
+    if profile is None and payload.setting_id and not _has_durable_local_identity(payload):
         query = (
             select(PrintProfile)
             .where(
                 PrintProfile.setting_id == payload.setting_id,
+                PrintProfile.name == payload.name,
                 PrintProfile.owner_user_id == current_user.id,
                 PrintProfile.is_official.is_(False),
             )
@@ -1500,7 +1734,7 @@ async def _upsert_print_profile(
 
     # Приоритет 5: имя внутри аккаунта, по той же причине, что и у конфигураций
     # принтера: имя пресета переживает смену формата идентификаторов Orca.
-    if profile is None and payload.name:
+    if profile is None and payload.name and not _has_durable_local_identity(payload):
         query = (
             select(PrintProfile)
             .where(
@@ -1514,7 +1748,7 @@ async def _upsert_print_profile(
         profile = result.scalars().first()
 
     # Приоритет 6: Ищем по slug (fallback)
-    if profile is None and payload.slug:
+    if profile is None and payload.slug and not _has_durable_local_identity(payload):
         query = select(PrintProfile).where(
             PrintProfile.slug == payload.slug,
             PrintProfile.owner_user_id == current_user.id,
@@ -1538,6 +1772,77 @@ async def _upsert_print_profile(
         if payload.compatible_filaments
         else settings_for_compat.get("compatible_filaments")
     )
+    # A saved Orca process normally contains only its local delta. Effective
+    # compatible_printers may therefore live on the system/user parent. Resolve
+    # that lineage server-side as a fallback for recovery and older plugins;
+    # never guess when names are ambiguous.
+    inherits = str(settings_for_compat.get("inherits") or "").strip()
+    process_parent_chain_resolved = True
+    visited_process_parents: set[int] = set()
+    while inherits and (
+        compatible_printers is None
+        or compatible_filaments is None
+        or not compatible_condition
+    ):
+        parent_candidates = list(
+            (
+                await db.execute(
+                    select(PrintProfile)
+                    .where(
+                        PrintProfile.name == inherits,
+                        PrintProfile.active.is_(True),
+                        or_(
+                            PrintProfile.owner_user_id == current_user.id,
+                            (
+                                PrintProfile.owner_user_id.is_(None)
+                                & PrintProfile.is_official.is_(True)
+                            ),
+                        ),
+                    )
+                    .order_by(
+                        (PrintProfile.owner_user_id == current_user.id).desc(),
+                        PrintProfile.id,
+                    )
+                )
+            ).scalars()
+        )
+        owned_parents = [
+            candidate
+            for candidate in parent_candidates
+            if candidate.owner_user_id == current_user.id
+        ]
+        parent = (
+            owned_parents[0]
+            if len(owned_parents) == 1
+            else parent_candidates[0]
+            if not owned_parents and len(parent_candidates) == 1
+            else None
+        )
+        if parent is not None:
+            if parent.id in visited_process_parents:
+                break
+            visited_process_parents.add(parent.id)
+            if compatible_printers is None:
+                compatible_printers = parent.compatible_printers
+            if compatible_filaments is None:
+                compatible_filaments = parent.compatible_filaments
+            if not compatible_condition and isinstance(parent.extra_metadata, dict):
+                compatible_condition = (
+                    str(
+                        parent.extra_metadata.get("compatible_printers_condition")
+                        or ""
+                    ).strip()
+                    or None
+                )
+            parent_settings = (
+                parent.orcaslicer_settings
+                if isinstance(parent.orcaslicer_settings, dict)
+                else {}
+            )
+            inherits = str(parent_settings.get("inherits") or "").strip()
+        else:
+            process_parent_chain_resolved = False
+            break
 
     if profile is not None and not _can_edit_profile(profile, current_user):
         # Defensive: resolution above only yields editable profiles
@@ -1560,7 +1865,7 @@ async def _upsert_print_profile(
         profile.source = payload.source or profile.source
         profile.vendor = payload.vendor or profile.vendor
         profile.setting_id = payload.setting_id or profile.setting_id
-        profile.external_id = payload.external_id or profile.external_id
+        profile.external_id = storage_external_id or profile.external_id
         profile.quality_tier = payload.quality_tier or profile.quality_tier
         profile.default_nozzle = payload.default_nozzle or profile.default_nozzle
         if payload.layer_height_mm is not None:
@@ -1596,6 +1901,8 @@ async def _upsert_print_profile(
             profile.extra_metadata = extra
         profile.notes = payload.notes
         await _sync_imported_print_profile_links(db=db, profile=profile)
+        if not process_parent_chain_resolved:
+            profile.configuration_links_resolved = False
 
         return OrcaSyncResult(
             external_id=payload.external_id,
@@ -1632,7 +1939,7 @@ async def _upsert_print_profile(
         active=payload.active if payload.active is not None else True,
         source=payload.source or "user",
         vendor=payload.vendor,
-        external_id=payload.external_id,
+        external_id=storage_external_id,
         setting_id=payload.setting_id,
         quality_tier=payload.quality_tier,
         default_nozzle=payload.default_nozzle,
@@ -1655,6 +1962,8 @@ async def _upsert_print_profile(
             "fhub_id": profile.id,
         }
     await _sync_imported_print_profile_links(db=db, profile=profile)
+    if not process_parent_chain_resolved:
+        profile.configuration_links_resolved = False
 
     return OrcaSyncResult(
         external_id=payload.external_id,
@@ -1796,6 +2105,156 @@ async def get_preset_info_file(
     return PlainTextResponse(content=info_content, media_type="text/plain")
 
 
+def _require_profile_import_preference(user: User, kind: str) -> None:
+    if kind == "machine" and not user.allow_printer_profiles_import:
+        raise_error(status.HTTP_403_FORBIDDEN, ERR_IMPORT_PRINTER_DISABLED)
+    if kind == "process" and not user.allow_print_profiles_import:
+        raise_error(status.HTTP_403_FORBIDDEN, ERR_IMPORT_PRINT_DISABLED)
+
+
+@router.post(
+    "/profile-snapshots/start",
+    response_model=OrcaProfileSnapshotStartResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def start_profile_snapshot(
+    payload: OrcaProfileSnapshotStartRequest,
+    current_user: Annotated[User, Depends(require_preset_write)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> OrcaProfileSnapshotStartResponse:
+    """Open the only current snapshot for this local Orca profile collection."""
+    _require_profile_import_preference(current_user, payload.kind)
+    await hold_account_import_lock(db, current_user.id)
+    scope = (
+        await db.execute(
+            select(OrcaProfileSyncScope)
+            .where(
+                OrcaProfileSyncScope.owner_user_id == current_user.id,
+                OrcaProfileSyncScope.source_instance_id == payload.source_instance_id,
+                OrcaProfileSyncScope.account_id == payload.account_id,
+                OrcaProfileSyncScope.kind == payload.kind,
+            )
+            .with_for_update()
+        )
+    ).scalars().first()
+    snapshot_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc)
+    if scope is None:
+        scope = OrcaProfileSyncScope(
+            owner_user_id=current_user.id,
+            source_instance_id=payload.source_instance_id,
+            account_id=payload.account_id,
+            kind=payload.kind,
+            current_snapshot_id=snapshot_id,
+            status="open",
+            created_at=now,
+        )
+        db.add(scope)
+    else:
+        scope.current_snapshot_id = snapshot_id
+        scope.status = "open"
+        scope.created_at = now
+        scope.finalized_at = None
+    bound_local_profile_ids = list(
+        (
+            await db.execute(
+                select(OrcaProfileBinding.local_profile_id).where(
+                    OrcaProfileBinding.owner_user_id == current_user.id,
+                    OrcaProfileBinding.source_instance_id == payload.source_instance_id,
+                    OrcaProfileBinding.account_id == payload.account_id,
+                    OrcaProfileBinding.kind == payload.kind,
+                ).order_by(OrcaProfileBinding.local_profile_id)
+            )
+        ).scalars()
+    )
+    await db.commit()
+    return OrcaProfileSnapshotStartResponse(
+        snapshot_id=snapshot_id,
+        bound_local_profile_ids=bound_local_profile_ids,
+    )
+
+
+@router.post(
+    "/profile-snapshots/finalize",
+    response_model=OrcaProfileSnapshotFinalizeResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def finalize_profile_snapshot(
+    payload: OrcaProfileSnapshotFinalizeRequest,
+    current_user: Annotated[User, Depends(require_preset_write)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> OrcaProfileSnapshotFinalizeResponse:
+    """Record presence without deleting a profile that disappeared locally."""
+    _require_profile_import_preference(current_user, payload.kind)
+    await hold_account_import_lock(db, current_user.id)
+    scope = (
+        await db.execute(
+            select(OrcaProfileSyncScope)
+            .where(
+                OrcaProfileSyncScope.owner_user_id == current_user.id,
+                OrcaProfileSyncScope.source_instance_id == payload.source_instance_id,
+                OrcaProfileSyncScope.account_id == payload.account_id,
+                OrcaProfileSyncScope.kind == payload.kind,
+            )
+            .with_for_update()
+        )
+    ).scalars().first()
+    if scope is None or scope.current_snapshot_id != payload.snapshot_id:
+        return OrcaProfileSnapshotFinalizeResponse(status="superseded")
+    if scope.status == "finalized":
+        bindings = list(
+            (
+                await db.execute(
+                    select(OrcaProfileBinding).where(
+                        OrcaProfileBinding.owner_user_id == current_user.id,
+                        OrcaProfileBinding.source_instance_id == payload.source_instance_id,
+                        OrcaProfileBinding.account_id == payload.account_id,
+                        OrcaProfileBinding.kind == payload.kind,
+                    )
+                )
+            ).scalars()
+        )
+        return OrcaProfileSnapshotFinalizeResponse(
+            status="already_finalized",
+            present_count=sum(1 for binding in bindings if binding.present),
+            absent_count=sum(1 for binding in bindings if not binding.present),
+        )
+
+    present_ids = set(payload.present_local_profile_ids)
+    bindings = list(
+        (
+            await db.execute(
+                select(OrcaProfileBinding)
+                .where(
+                    OrcaProfileBinding.owner_user_id == current_user.id,
+                    OrcaProfileBinding.source_instance_id == payload.source_instance_id,
+                    OrcaProfileBinding.account_id == payload.account_id,
+                    OrcaProfileBinding.kind == payload.kind,
+                )
+                .with_for_update()
+            )
+        ).scalars()
+    )
+    now = datetime.now(timezone.utc)
+    present_count = absent_count = 0
+    for binding in bindings:
+        binding.present = binding.local_profile_id in present_ids
+        binding.last_snapshot_id = payload.snapshot_id
+        if binding.present:
+            binding.last_seen_at = now
+            present_count += 1
+        else:
+            absent_count += 1
+    scope.status = "finalized"
+    scope.finalized_at = now
+    await db.commit()
+    return OrcaProfileSnapshotFinalizeResponse(
+        status="finalized",
+        present_count=present_count,
+        absent_count=absent_count,
+    )
+
+
 @router.post(
     "/printer-profiles/import",
     response_model=PrinterProfileSyncResponse,
@@ -1812,17 +2271,53 @@ async def import_printer_profiles(
         raise_error(status.HTTP_403_FORBIDDEN, ERR_IMPORT_PRINTER_DISABLED)
 
     await hold_account_import_lock(db, current_user.id)
+    snapshot_context = _profile_import_snapshot_context(payload, "machine")
+    if snapshot_context is not None:
+        await _require_current_profile_snapshot(
+            db=db,
+            owner_user_id=current_user.id,
+            context=snapshot_context,
+        )
+        if any(item.local_profile_id is None for item in payload.profiles):
+            raise_error(
+                status.HTTP_400_BAD_REQUEST,
+                ERR_ORCA_LOCAL_PROFILE_ID_REQUIRED,
+            )
 
     results: list[OrcaSyncResult] = []
 
     for item in payload.profiles:
         try:
+            bound_profile_id = await _bound_profile_id(
+                db=db,
+                owner_user_id=current_user.id,
+                context=snapshot_context,
+                local_profile_id=item.local_profile_id,
+            )
+            if bound_profile_id is None:
+                bound_profile_id = await _legacy_profile_id_for_durable_identity(
+                    db=db,
+                    model=PrinterProfile,
+                    owner_user_id=current_user.id,
+                    payload=item,
+                )
+            if bound_profile_id is not None:
+                item.fhub_id = bound_profile_id
             result = await _upsert_printer_profile(
                 payload=item,
                 current_user=current_user,
                 db=db,
             )
             if result.status != "error":
+                await _record_profile_binding(
+                    db=db,
+                    owner_user_id=current_user.id,
+                    context=snapshot_context,
+                    local_profile_id=item.local_profile_id,
+                    profile_id=result.fhub_id,
+                    name=item.name,
+                    settings=item.orcaslicer_settings,
+                )
                 await observe_orca_schema_fields(
                     db=db,
                     settings=item.orcaslicer_settings,
@@ -1848,6 +2343,14 @@ async def import_printer_profiles(
             )
         results.append(result)
 
+    if any(result.status != "error" for result in results):
+        # A process may target the factory parent of a newly imported custom
+        # machine. Re-project those inherited links even when the unchanged
+        # process profile was correctly omitted from this incremental sync.
+        await refresh_owner_configuration_projections(
+            db,
+            owner_user_id=current_user.id,
+        )
     await db.commit()
     return PrinterProfileSyncResponse(results=results)
 
@@ -1868,17 +2371,53 @@ async def import_print_profiles(
         raise_error(status.HTTP_403_FORBIDDEN, ERR_IMPORT_PRINT_DISABLED)
 
     await hold_account_import_lock(db, current_user.id)
+    snapshot_context = _profile_import_snapshot_context(payload, "process")
+    if snapshot_context is not None:
+        await _require_current_profile_snapshot(
+            db=db,
+            owner_user_id=current_user.id,
+            context=snapshot_context,
+        )
+        if any(item.local_profile_id is None for item in payload.profiles):
+            raise_error(
+                status.HTTP_400_BAD_REQUEST,
+                ERR_ORCA_LOCAL_PROFILE_ID_REQUIRED,
+            )
 
     results: list[OrcaSyncResult] = []
 
     for item in payload.profiles:
         try:
+            bound_profile_id = await _bound_profile_id(
+                db=db,
+                owner_user_id=current_user.id,
+                context=snapshot_context,
+                local_profile_id=item.local_profile_id,
+            )
+            if bound_profile_id is None:
+                bound_profile_id = await _legacy_profile_id_for_durable_identity(
+                    db=db,
+                    model=PrintProfile,
+                    owner_user_id=current_user.id,
+                    payload=item,
+                )
+            if bound_profile_id is not None:
+                item.fhub_id = bound_profile_id
             result = await _upsert_print_profile(
                 payload=item,
                 current_user=current_user,
                 db=db,
             )
             if result.status != "error":
+                await _record_profile_binding(
+                    db=db,
+                    owner_user_id=current_user.id,
+                    context=snapshot_context,
+                    local_profile_id=item.local_profile_id,
+                    profile_id=result.fhub_id,
+                    name=item.name,
+                    settings=item.orcaslicer_settings,
+                )
                 await observe_orca_schema_fields(
                     db=db,
                     settings=item.orcaslicer_settings,
@@ -3028,7 +3567,10 @@ async def get_sync_prefs(
 ) -> dict:
     """Sync preferences the plugin reads with its preset-scoped token (it never
     holds a full account session, so /auth/me is out of reach)."""
-    return {"auto_import_local_presets": bool(current_user.auto_import_local_presets)}
+    return {
+        "auto_import_local_presets": bool(current_user.auto_import_local_presets),
+        "sync_printer_endpoints": bool(current_user.sync_printer_endpoints),
+    }
 
 
 @router.post("/deleted-presets", response_model=DeletedPresetsResponse, status_code=status.HTTP_200_OK)

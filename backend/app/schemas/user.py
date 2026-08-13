@@ -66,6 +66,7 @@ class UserUpdate(BaseModel):
     allow_print_profiles_import: bool | None = None
     allow_print_profiles_export: bool | None = None
     auto_import_local_presets: bool | None = None
+    sync_printer_endpoints: bool | None = None
 
 
 class UserSettingsUpdate(BaseModel):
@@ -78,6 +79,7 @@ class UserSettingsUpdate(BaseModel):
     allow_print_profiles_import: bool | None = None
     allow_print_profiles_export: bool | None = None
     auto_import_local_presets: bool | None = None
+    sync_printer_endpoints: bool | None = None
 
 
 class UserPreferencesResponse(BaseModel):
@@ -149,6 +151,7 @@ class UserResponse(UserBase):
     allow_print_profiles_import: bool = True
     allow_print_profiles_export: bool = True
     auto_import_local_presets: bool | None = None
+    sync_printer_endpoints: bool | None = None
     oauth_provider: str | None = None
     has_password: bool = False
     created_at: datetime

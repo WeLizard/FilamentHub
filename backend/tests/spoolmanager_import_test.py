@@ -14,7 +14,6 @@ from app.models.preset import Preset, PresetModerationStatus
 from app.models.user_saved_preset import UserSavedPreset
 from app.models.user_spool import UserSpool
 
-
 HEADERS = (
     '"Spool Name","Color Name","Color Code [hex]","Vendor","Material",'
     '"Serialnumber","Density [g/cm3]","Diameter [mm]","Diameter Tolerance[mm]",'

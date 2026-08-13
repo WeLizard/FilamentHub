@@ -17,6 +17,7 @@ export const ExportPrintProfilesButton: React.FC<ExportPrintProfilesButtonProps>
       translationPrefix="exportPrintProfiles"
       successLabel="done"
       disabled={isExportDisabled}
+      hideWhenUnavailable
       errorContext="Print profiles"
       onExportComplete={onExportComplete}
     />

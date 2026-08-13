@@ -143,13 +143,17 @@ async def build_orca_printer_bundle(
     for profile in machine_profiles:
         payload = await printer_profile_to_orca_json(profile, db)
         machine_payload_by_id[profile.id] = payload
-        machine_entries.append(
-            {
-                "id": profile.id,
-                "name": payload.get("name") or profile.name,
-                "profile": payload,
-            }
-        )
+        # Stock Orca profiles already exist in the slicer's vendor bundle. They
+        # are matching context for custom process profiles, not files to install:
+        # exporting them would create a managed duplicate beside the original.
+        if profile.owner_user_id == user_id:
+            machine_entries.append(
+                {
+                    "id": profile.id,
+                    "name": payload.get("name") or profile.name,
+                    "profile": payload,
+                }
+            )
 
     process_entries: list[dict[str, Any]] = []
     if include_process_profiles and machine_profiles:

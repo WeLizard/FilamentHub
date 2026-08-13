@@ -2106,7 +2106,7 @@
     "filamentDescriptionPlaceholder": "耗材特性、特点、应用等描述...",
     "presetName": "预设名称",
     "presetNamePlaceholder": "例如：PLA 标准",
-    "printers": "打印机（可选）",
+    "printers": "已在以下打印机上验证",
     "addPrinter": "添加打印机",
     "printerNotFound": "未找到打印机",
     "moreCount": "还有 {{count}} 个",
@@ -2284,7 +2284,8 @@
       "examplePrice": "例如：1500",
       "exampleWeight": "例如：1000"
     },
-    "defaultMinusOne": "-1 = 默认"
+    "defaultMinusOne": "-1 = 默认",
+    "printersHint": "这是推荐而非限制：该预设同样可用于其他打印机。"
   },
   "dropdown": {
     "placeholder": "请选择...",
@@ -3033,6 +3034,7 @@
     "presetFilterAll": "全部",
     "presetFilterOwn": "我的",
     "presetFilterSaved": "已保存",
+    "presetFilterSynced": "已同步",
     "presetFilterDrafts": "草稿",
     "newPreset": "新预设",
     "add": "添加",
@@ -4689,9 +4691,12 @@
       "bundleStatus": "预设包",
       "bundleReady": "就绪 ({{size}} MB)",
       "bundleMissing": "未找到",
+      "bundleLegacy": "缺少来源信息",
       "bundleMissingHint": "预设包未随部署一起发送。本地运行 scripts/build_catalog_source_orca.py 并提交 backend/data/catalog_sources/orca/bundle.zip。",
       "bundleVendors": "预设包中的供应商",
       "systemPrinters": "数据库中的系统打印机",
+      "upstreamRevision": "Orca 版本",
+      "upstreamUnknown": "未知",
       "importButton": "导入目录",
       "importing": "导入中…",
       "importSuccess": "导入完成",
@@ -4700,12 +4705,21 @@
   },
   "recover": {
     "title": "恢复预设",
-    "found": "找到 {{count}} 个本地预设。勾选要作为草稿导入到个人资料的预设。",
-    "empty": "未找到本地耗材预设。",
+    "found": "找到 {{count}} 个本地预设。请选择要恢复的材料、打印机配置和打印配置文件。",
+    "empty": "未找到可恢复的本地预设。",
+    "kind": {
+      "filament": "材料",
+      "machine": "打印机配置",
+      "process": "打印配置文件"
+    },
+    "source": {
+      "live": "当前数据",
+      "backup": "备份"
+    },
     "selectAll": "全选",
     "deselectAll": "取消全选",
-    "alreadyImported": "已导入",
-    "import": "导入（{{count}}）",
+    "alreadyImported": "已恢复",
+    "import": "恢复（{{count}}）",
     "close": "关闭",
     "cancel": "取消"
   },
@@ -4748,6 +4762,8 @@
     "syncDescription": "哪些内容从 OrcaSlicer 上传到 FilamentHub，以及哪些回传。",
     "autoImportLocal": "自动导入本地预设",
     "autoImportLocalHint": "您在 OrcaSlicer 中的耗材预设将作为私人草稿导入您的个人资料。在您自行发布之前，其他人无法看到。",
+    "syncPrinterEndpoints": "在 FilamentHub 中保存打印机地址",
+    "syncPrinterEndpointsHint": "可选。默认情况下，IP 和地址仅保留在 OrcaSlicer 中。启用后会在服务器上加密保存；密码、令牌和密钥绝不会上传。",
     "regionTitle": "语言与地区",
     "regionDescription": "界面语言、计算货币和您所在的国家",
     "country": "国家",
@@ -6208,6 +6224,9 @@
     "ERR_IMPORT_PRINTER_DISABLED": "打印机配置导入已禁用",
     "ERR_IMPORT_PRINT_DISABLED": "打印配置导入已禁用",
     "ERR_IMPORT_FILAMENT_DISABLED": "耗材配置导入已禁用",
+    "ERR_ORCA_PROFILE_SNAPSHOT_CONTEXT_REQUIRED": "Orca 配置同步上下文不完整",
+    "ERR_ORCA_PROFILE_SNAPSHOT_SUPERSEDED": "已开始更新的 Orca 配置同步",
+    "ERR_ORCA_LOCAL_PROFILE_ID_REQUIRED": "同步的 Orca 配置缺少本地标识",
     "ERR_TOO_MANY_PROFILES": "配置过多：{{count}} 个超过允许的 {{max}} 个限制",
     "ERR_NO_NOTIFICATION_DATA": "无通知数据",
     "ERR_PRESET_IDS_REQUIRED": "需要预设 ID",
@@ -6277,13 +6296,22 @@
     "ERR_OCTOPRINT_BRIDGE_WRONG_PROVIDER": "该供料系统未配置为使用 OctoPrint Bridge",
     "ERR_OCTOPRINT_BRIDGE_NOT_CONFIGURED": "该供料系统尚未配置 OctoPrint Bridge",
     "ERR_OCTOPRINT_BRIDGE_PAIRING_INVALID": "OctoPrint Bridge 配对码无效或已过期",
+    "ERR_PRINTER_BRIDGE_WRONG_PROVIDER": "此供料系统未配置为 Bambu LAN",
+    "ERR_PRINTER_BRIDGE_NOT_CONFIGURED": "本地打印机桥接尚未配置",
+    "ERR_PRINTER_BRIDGE_PAIRING_INVALID": "打印机配对码无效或已过期",
+    "ERR_PRINTER_BRIDGE_UNAUTHORIZED": "本地桥接密钥无效或已被撤销",
     "ERR_OCTOPRINT_BRIDGE_UNAUTHORIZED": "OctoPrint Bridge 连接已不再获得授权",
     "ERR_OCTOPRINT_BRIDGE_EVENT_CONFLICT": "OctoPrint Bridge 已使用此标识符发送了不同的事件",
+    "ERR_PRINT_JOB_NOT_FOUND": "未找到打印记录",
+    "ERR_PRINT_JOB_REFERENCE_INVALID": "所选计算或文件不属于此打印任务",
+    "ERR_PRINT_JOB_INVALID_TRANSITION": "当前状态下无法执行此操作",
+    "ERR_PRINT_JOB_REPLAY_CONFLICT": "重复请求包含不同的打印数据",
     "ERR_MATERIAL_SYSTEM_EXISTS": "该打印机已有供料系统。",
     "ERR_USAGE_EVENT_NOT_FOUND": "未找到用量记录",
     "ERR_USAGE_EVENT_NOT_REVERTIBLE": "该记录无法撤销",
     "ERR_USAGE_EVENT_ALREADY_REVERTED": "该记录已撤销",
-    "ERR_EMAIL_NOT_VERIFIED": "请确认您的邮箱地址——链接在注册时发送的邮件中。您可以在个人资料中重新申请。"
+    "ERR_EMAIL_NOT_VERIFIED": "请确认您的邮箱地址——链接在注册时发送的邮件中。您可以在个人资料中重新申请。",
+    "ERR_COUNTRY_REQUIRED": "请选择您代表的国家或地区。"
   },
   "printerSettings": {
     "title": "打印机设置",
@@ -6299,6 +6327,7 @@
     "configurations": "Orca 配置",
     "noConfigurations": "尚未关联配置",
     "attachConfiguration": "关联配置",
+    "currentInOrca": "Orca 当前选中",
     "detach": "解除关联",
     "editConfiguration": "编辑配置",
     "connection": "连接",
@@ -6324,6 +6353,7 @@
   },
   "myPrinters": {
     "title": "我的打印机",
+    "liveLayer": "第 {{current}} / {{total}} 层",
     "subtitle": "通过网络打印时，它们会自动从 OrcaSlicer 出现。",
     "loading": "加载中…",
     "loadError": "无法加载打印机。",
@@ -6343,7 +6373,70 @@
     "gates_one": "{{count}} 个槽位",
     "gates_few": "{{count}} 个槽位",
     "gates_many": "{{count}} 个槽位",
-    "noFeedSystem": "未描述供料系统"
+    "noFeedSystem": "未描述供料系统",
+    "localConnection": "地址保存在 OrcaSlicer 中"
+  },
+  "printJobs": {
+    "open": "打印历史",
+    "title": "打印 · {{printer}}",
+    "subtitle": "真实打印尝试、所用材料及状态记录。",
+    "new": "新建打印",
+    "createTitle": "准备打印",
+    "create": "创建",
+    "created": "打印已加入历史",
+    "createError": "无法创建打印",
+    "transitionError": "无法更改打印状态",
+    "loadError": "无法加载打印历史。",
+    "empty": "此打印机暂无打印历史。",
+    "emptyHint": "可手动创建，或等待已连接的服务报告。",
+    "expand": "显示详情",
+    "collapse": "隐藏详情",
+    "materials": "耗材卷",
+    "noMaterials": "此打印未选择耗材卷。",
+    "timeline": "打印进程",
+    "confirmedConsumption": "已确认用量：{{value}} 克",
+    "pagination": {
+      "label": "打印历史分页",
+      "previous": "上一页",
+      "next": "下一页",
+      "page": "第 {{page}} 页，共 {{total}} 页"
+    },
+    "fields": {
+      "name": "名称",
+      "namePlaceholder": "例如：控制器外壳",
+      "calculation": "已保存的计算",
+      "withoutCalculation": "不关联计算",
+      "calculationPlate": "计算中的任务",
+      "allPlates": "全部任务",
+      "slice": "OrcaSlicer 切片",
+      "withoutSlice": "不关联切片",
+      "spools": "本次打印使用的耗材卷",
+      "loadedSelected": "打印机中已装载的耗材卷已预选",
+      "noSpools": "暂无合适的耗材卷。",
+      "unknownSpool": "耗材卷 #{{id}}"
+    },
+    "status": {
+      "prepared": "已准备",
+      "sent": "已发送",
+      "printing": "打印中",
+      "paused": "已暂停",
+      "completed": "已完成",
+      "cancelled": "已取消",
+      "failed": "失败"
+    },
+    "actions": {
+      "sent": "标记为已发送",
+      "printing": "开始 / 继续",
+      "paused": "暂停",
+      "completed": "完成",
+      "cancelled": "取消",
+      "failed": "标记失败"
+    },
+    "source": {
+      "user": "手动",
+      "manual": "手动",
+      "octoprint": "OctoPrint"
+    }
   },
   "deviceLink": {
     "label": "插件连接",
@@ -6372,6 +6465,12 @@
       "title": "新的供料系统",
       "printer": "打印机",
       "printerPlaceholder": "选择打印机",
+      "printerHint": "请选择这些料盘实际装入的打印机。",
+      "connectionDetected": "已找到连接",
+      "connections_other": "{{count}} 个连接",
+      "orcaConfigurations_other": "仅 OrcaSlicer · {{count}} 个配置",
+      "notConnected": "未找到连接",
+      "deviceNumber": "设备 #{{id}}",
       "slotCount": "槽位数量",
       "create": "创建",
       "done": "完成",
@@ -6381,9 +6480,15 @@
       "system": "系统"
     },
     "provider": {
+      "bambu": "Bambu LAN",
       "happy_hare": "Happy Hare",
       "legacy": "Klipper",
       "manual": "手动",
+      "octoprint": "OctoPrint"
+    },
+    "connectionProvider": {
+      "bambu": "Bambu LAN",
+      "moonraker": "Moonraker",
       "octoprint": "OctoPrint"
     },
     "slotCount": {
@@ -6400,6 +6505,8 @@
     "assignPreset": "分配预设",
     "clearAll": "清空所有位置",
     "deleteSystem": "删除系统",
+    "collapseSystem": "收起系统",
+    "expandSystem": "展开系统",
     "deleteSystemConfirm": "删除「{{name}}」？槽位将消失，其中的料盘退回库存。打印机保留。",
     "systemDeleted": "系统已删除，料盘已退回库存。",
     "clearAllConfirm": "清空 \"{{name}}\" 的所有分配？",
@@ -6412,7 +6519,9 @@
     },
     "assignment": {
       "label": "已分配",
-      "notAssigned": "未分配线轴"
+      "notAssigned": "未分配线轴",
+      "empty": "空闲",
+      "unknownSpool": "未知料盘"
     },
     "observation": {
       "noData": "暂无数据",
@@ -6430,8 +6539,13 @@
     "hhStatus": {
       "unknown": "未知",
       "empty": "空",
-      "spool": "线轴",
-      "buffer": "缓冲区"
+      "loaded": "可用",
+      "spool": "可用",
+      "buffer": "可用",
+      "unknownTooltip": "Happy Hare 暂时无法确定该槽位的物理状态。",
+      "emptyTooltip": "Happy Hare 报告该槽位当前为空；FilamentHub 中分配的料盘仍会保留。",
+      "spoolTooltip": "根据 Happy Hare 数据，可以从此槽位加载耗材。",
+      "bufferTooltip": "根据 Happy Hare 数据，可以从此槽位加载耗材。"
     },
     "pairing": {
       "copy": "复制",
@@ -6459,6 +6573,7 @@
       "assigned": "位置 {{gate}} 的分配已保存"
     },
     "feedSystem": {
+      "bambu": "Bambu LAN",
       "direct": "直接供料",
       "happy_hare": "Happy Hare",
       "octoprint": "OctoPrint"
@@ -6472,6 +6587,41 @@
       "pairingDescription": "对于 v4 之前的 Happy Hare，请在打印机控制台中执行一次此命令；也可以在上方手动输入主机名。",
       "pairingWaiting": "将任意料盘分配到一个槽位以生成命令，或在上方输入主机名。",
       "linkHint": "把这段粘贴到打印机的 moonraker.conf 并重启 Moonraker。",
+      "refresh": {
+        "title": "Happy Hare 槽位映射",
+        "localOnly": "连接信息仅保留在 OrcaSlicer 中",
+        "description": "插件会安全读取真实槽位数量，并将打印机分配与 FilamentHub 进行比较；只有确认后才会更改。",
+        "fallback": "请在 OrcaSlicer 中打开此页面以预览更改。没有插件时，只能复制 Happy Hare 的官方刷新命令。",
+        "check": "检查打印机",
+        "copyCommand": "复制命令",
+        "gate": "槽位 {{gate}}",
+        "inSync": "Happy Hare 已连接：检测到 {{count}} 个槽位，分配一致。",
+        "previewTitle": "将这些分配应用到 Happy Hare？",
+        "previewDescription": "将更改 {{count}} 个分配。插件只会运行 MMU_SPOOLMAN REFRESH=1，然后再次验证映射。",
+        "apply": "应用到打印机",
+        "applied": "Happy Hare 分配已更新并验证。",
+        "pullRequired": "应用操作需要 spoolman_support: pull。其他模式下 FilamentHub 不会更改打印机映射。",
+        "busy": "打印或暂停期间禁止执行该命令。请等待打印机空闲后重新检查。",
+        "errors": {
+          "auth": "插件会话已过期。请在 OrcaSlicer 中重新登录 FilamentHub。",
+          "access": "插件尚未获得打印机绑定访问权限。请在 OrcaSlicer 中刷新 FilamentHub 页面以获取最新权限。",
+          "server": "无法加载 FilamentHub 数据。",
+          "not_found": "您的个人资料中没有这台打印机。",
+          "connection_not_found": "插件无法为这台打印机找到唯一的本地连接。请检查 OrcaSlicer 用户配置中的 Moonraker 地址并运行完整同步。",
+          "ambiguous_connection": "找到多个匹配连接。请为每台物理打印机保留独立的 OrcaSlicer 用户配置。",
+          "unreachable": "Moonraker 未响应或拒绝了本地 API 密钥。",
+          "device_not_ready": "打印机连接尚未完成。请在 OrcaSlicer 中运行完整同步。",
+          "material_system_not_found": "该打印机已没有这个 Happy Hare 系统。请刷新页面。",
+          "spool_ids_unavailable": "此 Happy Hare 版本未提供料盘 ID 映射，无法盲目应用分配。",
+          "pull_required": "应用前请启用 spoolman_support: pull。",
+          "printer_busy": "打印或暂停期间禁止执行该命令。",
+          "command_failed": "Moonraker 未执行 Happy Hare 刷新命令。",
+          "verification_failed": "命令已接受，但无法再次读取打印机映射。",
+          "not_applied": "命令已执行，但仍有分配不一致。请检查 Spoolman 后重新检查。",
+          "timeout": "插件未及时响应。请检查 OrcaSlicer 和 Moonraker。",
+          "unknown": "无法检查 Happy Hare。"
+        }
+      },
       "guide": {
         "title": "Happy Hare 设置",
         "description": "创建系统前请准备好这两个 Happy Hare 参数。创建后，FilamentHub 会提供可直接粘贴到 moonraker.conf 的配置块。",
@@ -6487,6 +6637,34 @@
         "colorAllgates": "allgates — 显示所有槽位颜色，包括空槽位",
         "colorOff": "off — 在打印机界面中禁用颜色",
         "next": "创建系统后，将生成的 [spoolman] 配置块复制到 moonraker.conf 并重启 Moonraker。"
+      }
+    },
+    "bambu": {
+      "title": "通过 OrcaSlicer 获取 Bambu 数据",
+      "description": "插件从局域网中的打印机读取数据，并将打印状态和 AMS 槽位观测发送到 FilamentHub。OrcaSlicer 必须保持运行。",
+      "createDescription": "无需填写槽位数量或编号。插件会直接从打印机读取 AMS、AMS HT 和外置料架的真实拓扑。",
+      "connect": "在 OrcaSlicer 中连接",
+      "changeConnection": "修改连接",
+      "openInPlugin": "请在 OrcaSlicer 中打开此页面",
+      "updatePlugin": "请更新 FilamentHub 插件",
+      "checking": "正在检查连接…",
+      "connected": "插件已连接",
+      "waiting": "正在等待 OrcaSlicer",
+      "notConnected": "尚未连接",
+      "localOnly": "IP 地址、序列号和访问码只保存在插件的本地私有存储中，绝不会发送到 FilamentHub。",
+      "stateLabel": "状态",
+      "progress": "进度",
+      "layers": "层数",
+      "temperatures": "喷嘴 · 热床 · 腔体",
+      "slots_other": "来自打印机的 {{count}} 个槽位",
+      "state": {
+        "unknown": "未知",
+        "idle": "就绪",
+        "preparing": "准备中",
+        "printing": "打印中",
+        "paused": "已暂停",
+        "finished": "已完成",
+        "failed": "错误"
       }
     },
     "link": {

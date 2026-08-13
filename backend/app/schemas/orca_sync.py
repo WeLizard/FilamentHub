@@ -3,8 +3,14 @@
 from __future__ import annotations
 
 from typing import Any, Literal
+from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
+
+_UUID_PATTERN = (
+    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
+    r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+)
 
 
 class OrcaSyncResult(BaseModel):
@@ -26,10 +32,19 @@ class OrcaPrinterProfilePayload(BaseModel):
     """Payload для импорта профилей принтера из OrcaSlicer."""
 
     external_id: str | None = Field(
-        default=None, description="Уникальный ID профиля в OrcaSlicer (полезно для сопоставления)."
+        default=None,
+        max_length=200,
+        description="Уникальный ID профиля в OrcaSlicer (полезно для сопоставления).",
     )
     fhub_id: int | None = Field(
         default=None, ge=1, description="ID существующего профиля в FilamentHub (если обновляем)."
+    )
+    local_profile_id: str | None = Field(
+        default=None,
+        min_length=36,
+        max_length=36,
+        pattern=_UUID_PATTERN,
+        description="Непрозрачный устойчивый UUID локального профиля из реестра плагина.",
     )
     name: str = Field(..., max_length=200)
     slug: str | None = Field(
@@ -66,7 +81,14 @@ class OrcaPrinterProfilePayload(BaseModel):
 class PrinterProfileSyncRequest(BaseModel):
     """Запрос с профилями принтера для импорта/обновления."""
 
-    profiles: list[OrcaPrinterProfilePayload]
+    profiles: list[OrcaPrinterProfilePayload] = Field(..., max_length=50)
+    source_instance_id: str | None = Field(default=None, min_length=16, max_length=100)
+    account_id: str | None = Field(
+        default=None, min_length=36, max_length=36, pattern=_UUID_PATTERN
+    )
+    snapshot_id: str | None = Field(
+        default=None, min_length=36, max_length=36, pattern=_UUID_PATTERN
+    )
 
 
 class PrinterProfileSyncResponse(BaseModel):
@@ -78,8 +100,11 @@ class PrinterProfileSyncResponse(BaseModel):
 class OrcaPrintProfilePayload(BaseModel):
     """Payload для импорта профилей печати."""
 
-    external_id: str | None = Field(default=None)
+    external_id: str | None = Field(default=None, max_length=200)
     fhub_id: int | None = Field(default=None, ge=1)
+    local_profile_id: str | None = Field(
+        default=None, min_length=36, max_length=36, pattern=_UUID_PATTERN
+    )
     name: str = Field(..., max_length=200)
     slug: str | None = Field(default=None, max_length=200)
     description: str | None = Field(default=None, max_length=10_000)
@@ -111,13 +136,58 @@ class OrcaPrintProfilePayload(BaseModel):
 class PrintProfileSyncRequest(BaseModel):
     """Запрос на импорт профилей печати."""
 
-    profiles: list[OrcaPrintProfilePayload]
+    profiles: list[OrcaPrintProfilePayload] = Field(..., max_length=50)
+    source_instance_id: str | None = Field(default=None, min_length=16, max_length=100)
+    account_id: str | None = Field(
+        default=None, min_length=36, max_length=36, pattern=_UUID_PATTERN
+    )
+    snapshot_id: str | None = Field(
+        default=None, min_length=36, max_length=36, pattern=_UUID_PATTERN
+    )
 
 
 class PrintProfileSyncResponse(BaseModel):
     """Результат импорта профилей печати."""
 
     results: list[OrcaSyncResult]
+
+
+class OrcaProfileSnapshotStartRequest(BaseModel):
+    """Start a complete profile-list snapshot for one local Orca account."""
+
+    kind: Literal["machine", "process"]
+    source_instance_id: str = Field(..., min_length=16, max_length=100)
+    account_id: str = Field(..., min_length=36, max_length=36, pattern=_UUID_PATTERN)
+
+
+class OrcaProfileSnapshotStartResponse(BaseModel):
+    snapshot_id: str
+    bound_local_profile_ids: list[str] = Field(default_factory=list)
+
+
+class OrcaProfileSnapshotFinalizeRequest(BaseModel):
+    """Finalize a snapshot only after every changed profile was accepted."""
+
+    kind: Literal["machine", "process"]
+    source_instance_id: str = Field(..., min_length=16, max_length=100)
+    account_id: str = Field(..., min_length=36, max_length=36, pattern=_UUID_PATTERN)
+    snapshot_id: str = Field(..., min_length=36, max_length=36, pattern=_UUID_PATTERN)
+    present_local_profile_ids: list[str] = Field(default_factory=list, max_length=500)
+
+    @field_validator("present_local_profile_ids")
+    @classmethod
+    def validate_local_profile_ids(cls, values: list[str]) -> list[str]:
+        try:
+            normalized = [str(UUID(value)) for value in values]
+        except (TypeError, ValueError, AttributeError) as exc:
+            raise ValueError("Every local profile id must be a UUID") from exc
+        return list(dict.fromkeys(normalized))
+
+
+class OrcaProfileSnapshotFinalizeResponse(BaseModel):
+    status: Literal["finalized", "already_finalized", "superseded"]
+    present_count: int = 0
+    absent_count: int = 0
 
 
 class OrcaFilamentPresetPayload(BaseModel):

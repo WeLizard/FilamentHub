@@ -247,6 +247,34 @@ async def require_printer_bundle_read(
     )
 
 
+async def require_material_topology_read(
+    request: Request,
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> User:
+    """Read the owned printer/slot binding needed by a local adapter."""
+    return await _get_current_user_or_plugin_scope(
+        request=request,
+        credentials=credentials,
+        db=db,
+        required_scope="material-topology:read",
+    )
+
+
+async def require_material_topology_report(
+    request: Request,
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> User:
+    """Accept an owned material-topology observation from a local adapter."""
+    return await _get_current_user_or_plugin_scope(
+        request=request,
+        credentials=credentials,
+        db=db,
+        required_scope="material-topology:report",
+    )
+
+
 async def get_current_active_user(
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> User:

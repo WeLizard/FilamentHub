@@ -2761,7 +2761,8 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
               />
             </div>
             <div>
-              <label className="block text-gray-300 mb-2 text-sm font-medium">{t('presetModal.printers')}</label>
+              <label className="block text-gray-300 mb-1 text-sm font-medium">{t('presetModal.printers')}</label>
+              <p className="mb-2 text-xs leading-4 text-gray-400">{t('presetModal.printersHint')}</p>
           <Dropdown
             label=""
             value=""

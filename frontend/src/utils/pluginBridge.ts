@@ -213,7 +213,11 @@ export function subscribeToPluginSyncResult(onResult: (text: string) => void): (
 }
 
 export interface RecoverItem {
+  key: string;
+  kind: 'filament' | 'machine' | 'process';
   name: string;
+  account?: string;
+  source: 'live' | 'backup';
   imported: boolean;
 }
 
@@ -232,20 +236,40 @@ export function subscribeToPluginRecoverList(onList: (items: RecoverItem[]) => v
     }
     const items = (data as { items?: unknown }).items;
     if (Array.isArray(items)) {
-      onList(
-        items.filter(
-          (i): i is RecoverItem => !!i && typeof (i as RecoverItem).name === 'string',
-        ),
-      );
+      const normalized = items.flatMap((raw): RecoverItem[] => {
+        if (!raw || typeof raw !== 'object') return [];
+        const item = raw as Partial<RecoverItem>;
+        if (typeof item.name !== 'string' || !item.name) return [];
+        const imported = typeof item.imported === 'boolean' ? item.imported : false;
+        if (
+          typeof item.key === 'string' &&
+          ['filament', 'machine', 'process'].includes(item.kind ?? '') &&
+          ['live', 'backup'].includes(item.source ?? '') &&
+          (item.account === undefined || typeof item.account === 'string')
+        ) {
+          return [{ ...item, imported } as RecoverItem];
+        }
+        // Compatibility with installed plugin builds that only recovered
+        // filaments and sent {name, imported}. The old plugin also expects the
+        // selected name back verbatim, hence key=name here.
+        return [{
+          key: item.name,
+          kind: 'filament',
+          name: item.name,
+          source: 'live',
+          imported,
+        }];
+      });
+      onList(normalized);
     }
   };
   window.addEventListener('message', handler);
   return () => window.removeEventListener('message', handler);
 }
 
-/** Отправить плагину выбранные для импорта имена (из окна Recover). */
-export function sendRecoverImport(names: string[]): void {
-  postToPlugin({ source: PLUGIN_MESSAGE_SOURCE, type: 'recover-import', names });
+/** Отправить плагину непротиворечивые kind:name ключи выбранных пресетов. */
+export function sendRecoverImport(keys: string[]): void {
+  postToPlugin({ source: PLUGIN_MESSAGE_SOURCE, type: 'recover-import', names: keys });
 }
 
 /**
@@ -294,6 +318,44 @@ export function notifyProfileChanged(): void {
     return;
   }
   postToPlugin({ source: PLUGIN_MESSAGE_SOURCE, type: 'profile-changed' });
+}
+
+/**
+ * Run the same complete preset sync as the Sync control in the plugin shell.
+ * Machine, process and filament profiles are reconciled together by Python;
+ * the page waits for the real result before refreshing its server data.
+ */
+export function requestPluginProfileSync(): Promise<{ message?: string }> {
+  if (!isPluginEmbed()) {
+    return Promise.reject(new Error());
+  }
+
+  return new Promise((resolve, reject) => {
+    let timeoutId: number | null = null;
+    const cleanup = () => {
+      window.removeEventListener('message', onMessage);
+      if (timeoutId !== null) window.clearTimeout(timeoutId);
+    };
+    const onMessage = (event: MessageEvent) => {
+      if (!isTrustedPluginParentEvent(event)) {
+        return;
+      }
+      const data = event.data as Partial<PluginMessage> | undefined;
+      if (!data || data.source !== PLUGIN_MESSAGE_SOURCE || data.type !== 'sync-result') {
+        return;
+      }
+      const text = (data as { text?: unknown }).text;
+      cleanup();
+      resolve({ message: typeof text === 'string' ? text : undefined });
+    };
+
+    window.addEventListener('message', onMessage);
+    timeoutId = window.setTimeout(() => {
+      cleanup();
+      reject(new Error());
+    }, 120_000);
+    postToPlugin({ source: PLUGIN_MESSAGE_SOURCE, type: 'sync' });
+  });
 }
 
 /**
@@ -379,6 +441,116 @@ export function installPrinterBundleInPlugin(physicalPrinterId: number): void {
     type: 'install-printer-bundle',
     physicalPrinterId,
     token: activePluginToken ?? '',
+  });
+}
+
+/**
+ * Open the plugin-owned Bambu LAN form. The site sends only FilamentHub IDs and
+ * a display label; IP, serial and access code are entered in the local shell and
+ * never cross into this iframe or the FilamentHub API.
+ */
+export function configureBambuBridgeInPlugin(
+  physicalPrinterId: number,
+  materialSystemId: number,
+  printerName: string,
+  pairingCode: string,
+): void {
+  postToPlugin({
+    source: PLUGIN_MESSAGE_SOURCE,
+    type: 'configure-bambu',
+    physicalPrinterId,
+    materialSystemId,
+    printerName,
+    pairingCode,
+  });
+}
+
+/**
+ * Remove the matching local Bambu binding when a material system is deleted
+ * from the shared web UI inside OrcaSlicer. Outside the plugin this is a no-op;
+ * the running bridge will receive 401 for the deleted server credential and
+ * remove the same local binding on its next contact.
+ */
+export function removeBambuBridgeInPlugin(physicalPrinterId: number): void {
+  if (!isPluginEmbed()) return;
+  postToPlugin({
+    source: PLUGIN_MESSAGE_SOURCE,
+    type: 'remove-bambu-local',
+    physicalPrinterId,
+  });
+}
+
+export interface HappyHareAssignmentChange {
+  gate: number;
+  actualSpoolId: number | null;
+  desiredSpoolId: number | null;
+}
+
+export interface HappyHareActionResult {
+  ok: boolean;
+  operation: 'preview' | 'apply';
+  code?: string | null;
+  physicalPrinterId: number;
+  materialSystemId: number;
+  gateCount?: number;
+  printerHostname?: string | null;
+  spoolmanSupport?: string | null;
+  printState?: string | null;
+  changes?: HappyHareAssignmentChange[];
+  remainingChanges?: HappyHareAssignmentChange[];
+  applied?: boolean;
+}
+
+/**
+ * Ask the local Orca plugin to inspect Happy Hare or apply the already saved
+ * FilamentHub assignments. The page sends only owned server IDs and an
+ * allowlisted operation; the Moonraker address, key and G-code stay in Python.
+ */
+export function requestHappyHareAction(
+  operation: 'preview' | 'apply',
+  physicalPrinterId: number,
+  materialSystemId: number,
+): Promise<HappyHareActionResult> {
+  if (!isPluginEmbed() || !activePluginCapabilities.has('happy-hare-moonraker')) {
+    return Promise.reject(new Error('happy-hare-moonraker unavailable'));
+  }
+  const requestId = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID()
+    : `hh-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+  return new Promise((resolve, reject) => {
+    let timeoutId: number | null = null;
+    const cleanup = () => {
+      window.removeEventListener('message', onMessage);
+      if (timeoutId !== null) window.clearTimeout(timeoutId);
+    };
+    const onMessage = (event: MessageEvent) => {
+      if (!isTrustedPluginParentEvent(event)) return;
+      const data = event.data as Partial<PluginMessage> | undefined;
+      if (!data || data.source !== PLUGIN_MESSAGE_SOURCE || data.type !== 'happy-hare-result') {
+        return;
+      }
+      if ((data as { requestId?: unknown }).requestId !== requestId) return;
+      const result = (data as { result?: unknown }).result;
+      cleanup();
+      if (!result || typeof result !== 'object') {
+        reject(new Error('invalid happy-hare result'));
+        return;
+      }
+      resolve(result as HappyHareActionResult);
+    };
+    window.addEventListener('message', onMessage);
+    timeoutId = window.setTimeout(() => {
+      cleanup();
+      reject(new Error('happy-hare request timeout'));
+    }, 30_000);
+    postToPlugin({
+      source: PLUGIN_MESSAGE_SOURCE,
+      type: operation === 'apply' ? 'happy-hare-apply' : 'happy-hare-preview',
+      requestId,
+      physicalPrinterId,
+      materialSystemId,
+    });
   });
 }
 
@@ -481,6 +653,27 @@ export function subscribeToPluginSliceParse(
  */
 export function startPluginOAuth(provider: 'google' | 'yandex'): void {
   postToPlugin({ source: PLUGIN_MESSAGE_SOURCE, type: 'open-oauth', provider });
+}
+
+/**
+ * Открыть страницу сайта в системном браузере, когда каталог живёт внутри панели
+ * плагина: второй вкладке там появиться негде, а увести единственный фрейм со
+ * страницы вики значит потерять место, на котором человек читает.
+ *
+ * Плагину уходит только путь — origin подставляет он сам, поэтому встроенная
+ * страница не может превратить это в «открой любой адрес». Возвращает false,
+ * если мы не в плагине или установленная версия такого ещё не умеет: вызывающий
+ * код тогда оставляет обычный переход по ссылке.
+ */
+export function openSitePathInBrowser(path: string): boolean {
+  if (!isPluginEmbed() || !activePluginCapabilities.has('open-external')) {
+    return false;
+  }
+  if (!path.startsWith('/') || path.startsWith('//')) {
+    return false;
+  }
+  postToPlugin({ source: PLUGIN_MESSAGE_SOURCE, type: 'open-external', path });
+  return true;
 }
 
 export interface PluginAuthRestore {

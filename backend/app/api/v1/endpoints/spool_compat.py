@@ -337,21 +337,6 @@ async def _accept_printer_name_hint(
     await db.flush()
 
 
-async def _update_device_gate_count(db: AsyncSession, device: UserPrinterDevice, location_map: dict[int, str]) -> None:
-    """Derive gate_count from the highest gate index seen in location map."""
-    max_gate = -1
-    for loc in location_map.values():
-        match = _LOCATION_HH_PATTERN.match(loc) or _LOCATION_PATTERN.match(loc) or _LOCATION_FALLBACK_PATTERN.match(loc)
-        if match:
-            max_gate = max(max_gate, int(match.group("gate")))
-    if max_gate >= 0:
-        new_count = max_gate + 1
-        # Only auto-increment gate_count, never shrink (user may have set it manually)
-        if device.gate_count is None or new_count > device.gate_count:
-            device.gate_count = new_count
-            logger.info("Updated HH device id=%s gate_count=%s", device.id, new_count)
-
-
 async def _build_location_map(
     db: AsyncSession, user_id: int
 ) -> tuple[dict[int, str], dict[int, tuple[str, int, str, Preset | None]]]:
@@ -457,7 +442,10 @@ def _to_spool_payload(
         "location": location,
         "lot_nr": spool.lot_nr,
         "comment": spool.comment,
-        "archived": spool.state == UserSpoolState.archived,
+        # Spoolman-compatible consumers only have an archived flag. A fully
+        # consumed spool is historical inventory too: exposing it as active
+        # makes Happy Hare offer a 0 g spool for loading.
+        "archived": spool.state in {UserSpoolState.archived, UserSpoolState.empty},
         "extra": extra,
     }
 
@@ -964,10 +952,11 @@ async def _list_spools_impl(
     spools = list(result.scalars().all())
     location_map, gate_meta_map = await _build_location_map(db, user.id)
 
-    # Update gate_count from location data when accessed via device api_key
+    # A successful Happy Hare pull proves that the adapter is alive. It does
+    # not reveal the complete topology: one assignment to gate 0 says nothing
+    # about whether the machine has one, five or eight gates.
     if device is not None:
         device.reports_feed = True
-        await _update_device_gate_count(db, device, location_map)
         await db.commit()
 
     filament_ids = _parse_int_list(filament_id)
@@ -975,7 +964,10 @@ async def _list_spools_impl(
 
     payloads: list[dict] = []
     for spool in spools:
-        if not allow_archived and spool.state == UserSpoolState.archived:
+        if not allow_archived and spool.state in {
+            UserSpoolState.archived,
+            UserSpoolState.empty,
+        }:
             continue
 
         payload = _to_spool_payload(spool, location_map, gate_meta_map)

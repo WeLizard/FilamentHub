@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQueries, useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { Download, Loader2, Plus, RefreshCw, Settings, Wifi } from 'lucide-react';
+import { Activity, Download, History, Loader2, Plus, RefreshCw, Settings, Wifi } from 'lucide-react';
 import {
   physicalPrintersAPI,
+  printProfilesAPI,
   printerProfilesAPI,
   type PhysicalPrinter,
   type PrinterConnectionBinding,
@@ -25,6 +26,7 @@ import {
 import { downloadBlob, safeDownloadStem } from '../utils/download';
 import { translateApiError } from '../utils/translateApiError';
 import { LayeredPrinterIcon } from './icons/LayeredPrinterIcon';
+import { PrintJobHistoryModal } from './PrintJobHistoryModal';
 
 interface MyPrintersListProps {
   /** The user's Orca machine profiles, shown under the printer they belong to. */
@@ -61,9 +63,10 @@ export function MyPrintersList({
   onCreatePrintProfile,
   onDownloadPrintProfile,
 }: MyPrintersListProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const pluginEmbed = isPluginEmbed();
   const [settingsPrinter, setSettingsPrinter] = useState<PhysicalPrinter | null>(null);
+  const [historyPrinter, setHistoryPrinter] = useState<PhysicalPrinter | null>(null);
   const [showAdd, setShowAdd] = useState(false);
   const [pluginCanInstallBundle, setPluginCanInstallBundle] = useState(!pluginEmbed);
   const [bundleActionPrinterIds, setBundleActionPrinterIds] = useState<Set<number>>(
@@ -113,6 +116,12 @@ export function MyPrintersList({
       staleTime: 60_000,
     })),
   });
+  const { data: linkedPrintProfiles = [] } = useQuery({
+    queryKey: ['print-profiles', 'for-configurations', missingLinkedProfileIds],
+    queryFn: () => printProfilesAPI.listAllForConfigurations(missingLinkedProfileIds),
+    enabled: missingLinkedProfileIds.length > 0,
+    staleTime: 60_000,
+  });
 
   const profileById = new Map<number, PrinterProfile>();
   printerProfiles.forEach((profile) => profileById.set(profile.id, profile));
@@ -120,9 +129,56 @@ export function MyPrintersList({
     if (query.data) profileById.set(query.data.id, query.data);
   });
 
-  const bindingByPrinter = useMemo(() => {
-    const map = new Map<number, PrinterConnectionBinding>();
-    (bindings ?? []).forEach((b) => map.set(b.physical_printer_id, b));
+  const printProfilesForConfiguration = (
+    configurationId: number,
+    configuration: PrinterProfile,
+  ): ConfigurationPrintProfile[] => {
+    const merged = new Map<number, ConfigurationPrintProfile>();
+    (printProfilesByConfiguration?.get(configurationId) ?? []).forEach((entry) => {
+      merged.set(entry.profile.id, entry);
+    });
+
+    linkedPrintProfiles.forEach((profile) => {
+      const exact = (profile.printer_profile_ids ?? []).includes(configurationId);
+      const modelCompatible =
+        profile.configuration_links_resolved !== true &&
+        profile.printer_links.some(
+          (link) =>
+            link.relation_type === 'explicit' &&
+            ((link.printer_id != null && link.printer_id === configuration.printer_id) ||
+              link.printer_slug === configuration.printer_slug),
+        );
+      if (exact || modelCompatible) {
+        const previous = merged.get(profile.id);
+        merged.set(profile.id, { profile, exact: exact || previous?.exact === true });
+      }
+    });
+
+    return Array.from(merged.values()).sort((left, right) =>
+      left.profile.name.localeCompare(right.profile.name),
+    );
+  };
+
+  const hasRestorableBundle = (printer: PhysicalPrinter): boolean =>
+    printer.printer_profile_ids.some((configurationId) => {
+      const configuration = profileById.get(configurationId);
+      if (!configuration) return false;
+      if (configuration.owner_user_id === currentUserId) return true;
+      return printProfilesForConfiguration(configurationId, configuration).some(
+        (entry) => entry.profile.owner_user_id === currentUserId,
+      );
+    });
+
+  const bindingsByPrinter = useMemo(() => {
+    const map = new Map<number, PrinterConnectionBinding[]>();
+    (bindings ?? []).forEach((binding) => {
+      const current = map.get(binding.physical_printer_id) ?? [];
+      current.push(binding);
+      map.set(binding.physical_printer_id, current);
+    });
+    map.forEach((items) => items.sort((left, right) =>
+      right.last_seen_at.localeCompare(left.last_seen_at),
+    ));
     return map;
   }, [bindings]);
 
@@ -130,7 +186,7 @@ export function MyPrintersList({
 
   const handlePrinterBundle = async (printer: PhysicalPrinter) => {
     if (
-      printer.printer_profile_ids.length === 0 ||
+      !hasRestorableBundle(printer) ||
       bundleActionPrinterIds.has(printer.id)
     ) {
       return;
@@ -200,7 +256,12 @@ export function MyPrintersList({
       ) : (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {list.map((printer) => {
-            const binding = bindingByPrinter.get(printer.id);
+            const printerBindings = bindingsByPrinter.get(printer.id) ?? [];
+            const liveConnector = (printer.connectors ?? []).find(
+              (connector) => connector.active && connector.status_observation,
+            );
+            const live = liveConnector?.status_observation ?? null;
+            const bundleAvailable = hasRestorableBundle(printer);
             return (
               <div key={printer.id} className="bg-white/5 rounded-xl border border-white/10 p-4 flex flex-col gap-3">
                 <div className="flex items-center gap-2 min-w-0">
@@ -210,12 +271,12 @@ export function MyPrintersList({
                     type="button"
                     onClick={() => void handlePrinterBundle(printer)}
                     disabled={
-                      printer.printer_profile_ids.length === 0 ||
+                      !bundleAvailable ||
                       bundleActionPrinterIds.has(printer.id)
                     }
                     className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md text-gray-400 transition-colors hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-35"
                     title={
-                      printer.printer_profile_ids.length === 0
+                      !bundleAvailable
                         ? t('myPrinters.bundleUnavailable')
                         : pluginEmbed
                           ? t('myPrinters.installBundleInOrca')
@@ -237,6 +298,15 @@ export function MyPrintersList({
                   </button>}
                   <button
                     type="button"
+                    onClick={() => setHistoryPrinter(printer)}
+                    className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md text-gray-400 transition-colors hover:bg-white/10 hover:text-white"
+                    title={t('printJobs.open')}
+                    aria-label={t('printJobs.open')}
+                  >
+                    <History className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => setSettingsPrinter(printer)}
                     className="text-gray-400 hover:text-white transition-colors flex-shrink-0"
                     title={t('printerSettings.title')}
@@ -245,12 +315,62 @@ export function MyPrintersList({
                   </button>
                 </div>
 
-                {binding && (binding.provider || binding.display_endpoint) && (
-                  <div className="flex items-center gap-1.5 text-xs text-gray-400">
-                    <Wifi className="w-3.5 h-3.5 flex-shrink-0" />
-                    <span className="truncate">
-                      {[binding.provider, binding.display_endpoint].filter(Boolean).join(' · ')}
-                    </span>
+                {printerBindings.length > 0 && (
+                  <div className="space-y-1">
+                    {printerBindings.map((binding, index) => (
+                      <div
+                        key={`${binding.connection_ref ?? binding.display_endpoint ?? 'binding'}-${index}`}
+                        className="flex items-center gap-1.5 text-xs text-gray-400"
+                      >
+                        <Wifi className="w-3.5 h-3.5 flex-shrink-0" />
+                        <span className="truncate">
+                          {[
+                            binding.provider
+                              ? t(`presetSlots.connectionProvider.${binding.provider}`, {
+                                defaultValue: binding.provider,
+                              })
+                              : null,
+                            binding.display_endpoint
+                              ?? (binding.connection_ref ? t('myPrinters.localConnection') : null),
+                          ].filter(Boolean).join(' · ')}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {live && (
+                  <div className="rounded-lg border border-cyan-400/15 bg-cyan-400/[0.06] px-2.5 py-2 text-[11px] text-cyan-100/80">
+                    <div className="flex min-w-0 items-center gap-1.5">
+                      <Activity className="h-3.5 w-3.5 shrink-0 text-cyan-300" />
+                      <span className="font-medium text-cyan-100">
+                        {t(`presetSlots.bambu.state.${live.state}`, { defaultValue: live.state })}
+                      </span>
+                      {live.progress_percent != null && (
+                        <span className="tabular-nums">{live.progress_percent}%</span>
+                      )}
+                      {live.current_layer != null && (
+                        <span className="tabular-nums">
+                          {t('myPrinters.liveLayer', {
+                            current: live.current_layer,
+                            total: live.total_layers ?? '—',
+                          })}
+                        </span>
+                      )}
+                      {liveConnector?.last_seen_at && (
+                        <span className="ml-auto shrink-0 text-cyan-100/45">
+                          {new Date(liveConnector.last_seen_at).toLocaleTimeString(i18n.language, {
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}
+                        </span>
+                      )}
+                    </div>
+                    {live.job_name && (
+                      <p className="mt-1 truncate text-cyan-100/55" title={live.job_name}>
+                        {live.job_name}
+                      </p>
+                    )}
                   </div>
                 )}
 
@@ -266,7 +386,7 @@ export function MyPrintersList({
                           <PrinterConfigurationRow
                             key={id}
                             profile={profile}
-                            printProfiles={printProfilesByConfiguration?.get(id) ?? []}
+                            printProfiles={printProfilesForConfiguration(id, profile)}
                             currentUserId={currentUserId}
                             onEdit={onEditConfiguration}
                             onView={onViewConfiguration}
@@ -291,7 +411,9 @@ export function MyPrintersList({
                           key={system.id}
                           className="text-xs px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-400/25 text-emerald-200"
                         >
-                          {system.name} · {t('myPrinters.gates', { count: system.slots.length })}
+                          {system.name} · {t('myPrinters.gates', {
+                            count: system.slots.filter((slot) => slot.active).length,
+                          })}
                         </span>
                       ))}
                     </div>
@@ -314,12 +436,18 @@ export function MyPrintersList({
       <PhysicalPrinterSettingsModal
         isOpen
         printer={settingsPrinter}
-        binding={bindingByPrinter.get(settingsPrinter.id) ?? null}
+        bindings={bindingsByPrinter.get(settingsPrinter.id) ?? []}
         onClose={() => setSettingsPrinter(null)}
         onEditConfiguration={(profile) => {
           setSettingsPrinter(null);
           onEditConfiguration?.(profile);
         }}
+      />
+    )}
+    {historyPrinter && (
+      <PrintJobHistoryModal
+        printer={historyPrinter}
+        onClose={() => setHistoryPrinter(null)}
       />
     )}
     </>

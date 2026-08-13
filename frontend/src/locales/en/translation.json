@@ -2111,7 +2111,7 @@
     "filamentDescriptionPlaceholder": "Description of filament features, characteristics, applications...",
     "presetName": "Preset name",
     "presetNamePlaceholder": "e.g.: PLA Standard",
-    "printers": "Printers (optional)",
+    "printers": "Verified on printers",
     "addPrinter": "Add printer",
     "printerNotFound": "Printer not found",
     "moreCount": "{{count}} more",
@@ -2289,7 +2289,8 @@
       "examplePrice": "E.g.: 1500",
       "exampleWeight": "E.g.: 1000"
     },
-    "defaultMinusOne": "-1 = default"
+    "defaultMinusOne": "-1 = default",
+    "printersHint": "A recommendation, not a restriction: the preset still works on other printers."
   },
   "dropdown": {
     "placeholder": "Select...",
@@ -3038,6 +3039,7 @@
     "presetFilterAll": "All",
     "presetFilterOwn": "My own",
     "presetFilterSaved": "Saved",
+    "presetFilterSynced": "Synced",
     "presetFilterDrafts": "Drafts",
     "newPreset": "New preset",
     "add": "Add",
@@ -4695,9 +4697,12 @@
       "bundleStatus": "Bundle",
       "bundleReady": "ready ({{size}} MB)",
       "bundleMissing": "not found",
+      "bundleLegacy": "source metadata missing",
       "bundleMissingHint": "Bundle was not shipped with deploy. Run scripts/build_catalog_source_orca.py locally and commit backend/data/catalog_sources/orca/bundle.zip.",
       "bundleVendors": "Vendors in bundle",
       "systemPrinters": "System printers in DB",
+      "upstreamRevision": "Orca revision",
+      "upstreamUnknown": "unknown",
       "importButton": "Import catalog",
       "importing": "Importing…",
       "importSuccess": "Import complete",
@@ -4706,12 +4711,21 @@
   },
   "recover": {
     "title": "Recover presets",
-    "found": "Found {{count}} local preset(s). Check the ones to import into your profile as drafts.",
-    "empty": "No local filament presets found.",
+    "found": "Found {{count}} local preset(s). Select the materials, printer configurations, and print profiles to recover.",
+    "empty": "No recoverable local presets found.",
+    "kind": {
+      "filament": "Material",
+      "machine": "Printer configuration",
+      "process": "Print profile"
+    },
+    "source": {
+      "live": "current data",
+      "backup": "backup"
+    },
     "selectAll": "Select all",
     "deselectAll": "Deselect all",
-    "alreadyImported": "already imported",
-    "import": "Import ({{count}})",
+    "alreadyImported": "already recovered",
+    "import": "Recover ({{count}})",
     "close": "Close",
     "cancel": "Cancel"
   },
@@ -4754,6 +4768,8 @@
     "syncDescription": "What goes from OrcaSlicer to FilamentHub and what comes back.",
     "autoImportLocal": "Auto-import local presets",
     "autoImportLocalHint": "Your OrcaSlicer filament presets land in your profile as private drafts. Nobody sees them until you publish them yourself.",
+    "syncPrinterEndpoints": "Store printer addresses in FilamentHub",
+    "syncPrinterEndpointsHint": "Optional. IPs and addresses stay only in OrcaSlicer by default. When enabled they are encrypted on the server; passwords, tokens and keys are never sent.",
     "regionTitle": "Language and region",
     "regionDescription": "Interface language, calculation currency and your country",
     "country": "Country",
@@ -6214,6 +6230,9 @@
     "ERR_IMPORT_PRINTER_DISABLED": "Printer profile import is disabled",
     "ERR_IMPORT_PRINT_DISABLED": "Print profile import is disabled",
     "ERR_IMPORT_FILAMENT_DISABLED": "Filament profile import is disabled",
+    "ERR_ORCA_PROFILE_SNAPSHOT_CONTEXT_REQUIRED": "The Orca profile sync context is incomplete",
+    "ERR_ORCA_PROFILE_SNAPSHOT_SUPERSEDED": "A newer Orca profile sync has already started",
+    "ERR_ORCA_LOCAL_PROFILE_ID_REQUIRED": "A synced Orca profile is missing its local identity",
     "ERR_TOO_MANY_PROFILES": "Too many profiles: {{count}} out of {{max}} allowed",
     "ERR_NO_NOTIFICATION_DATA": "No notification data",
     "ERR_PRESET_IDS_REQUIRED": "Preset IDs are required",
@@ -6283,13 +6302,22 @@
     "ERR_OCTOPRINT_BRIDGE_WRONG_PROVIDER": "This material system is not configured for OctoPrint Bridge",
     "ERR_OCTOPRINT_BRIDGE_NOT_CONFIGURED": "OctoPrint Bridge is not configured for this material system",
     "ERR_OCTOPRINT_BRIDGE_PAIRING_INVALID": "The OctoPrint Bridge pairing code is invalid or has expired",
+    "ERR_PRINTER_BRIDGE_WRONG_PROVIDER": "This feed system is not configured as Bambu LAN",
+    "ERR_PRINTER_BRIDGE_NOT_CONFIGURED": "The local printer bridge is not configured yet",
+    "ERR_PRINTER_BRIDGE_PAIRING_INVALID": "The printer pairing code is invalid or has expired",
+    "ERR_PRINTER_BRIDGE_UNAUTHORIZED": "The local bridge key is invalid or has been revoked",
     "ERR_OCTOPRINT_BRIDGE_UNAUTHORIZED": "The OctoPrint Bridge connection is no longer authorized",
     "ERR_OCTOPRINT_BRIDGE_EVENT_CONFLICT": "OctoPrint Bridge already sent a different event with this identifier",
+    "ERR_PRINT_JOB_NOT_FOUND": "Print record was not found",
+    "ERR_PRINT_JOB_REFERENCE_INVALID": "The selected calculation or file does not belong to this print",
+    "ERR_PRINT_JOB_INVALID_TRANSITION": "This action is unavailable in the current state",
+    "ERR_PRINT_JOB_REPLAY_CONFLICT": "The repeated request contains different print data",
     "ERR_MATERIAL_SYSTEM_EXISTS": "This printer already has a feed system.",
     "ERR_USAGE_EVENT_NOT_FOUND": "Consumption record not found",
     "ERR_USAGE_EVENT_NOT_REVERTIBLE": "This record cannot be reverted",
     "ERR_USAGE_EVENT_ALREADY_REVERTED": "This record has already been reverted",
-    "ERR_EMAIL_NOT_VERIFIED": "Confirm your email address — the link is in the letter we sent when you signed up. You can request it again from your profile."
+    "ERR_EMAIL_NOT_VERIFIED": "Confirm your email address — the link is in the letter we sent when you signed up. You can request it again from your profile.",
+    "ERR_COUNTRY_REQUIRED": "Select the country you represent."
   },
   "printerSettings": {
     "title": "Printer settings",
@@ -6305,6 +6333,7 @@
     "configurations": "Orca configurations",
     "noConfigurations": "No configurations linked yet",
     "attachConfiguration": "Attach a configuration",
+    "currentInOrca": "currently selected in Orca",
     "detach": "Detach",
     "editConfiguration": "Edit configuration",
     "connection": "Connection",
@@ -6330,6 +6359,7 @@
   },
   "myPrinters": {
     "title": "My Printers",
+    "liveLayer": "layer {{current}} / {{total}}",
     "subtitle": "They show up on their own from OrcaSlicer when you print over the network.",
     "loading": "Loading…",
     "loadError": "Failed to load printers.",
@@ -6349,7 +6379,70 @@
     "gates_other": "{{count}} gates",
     "gates_few": "{{count}} slots",
     "gates_many": "{{count}} slots",
-    "noFeedSystem": "No feed system described"
+    "noFeedSystem": "No feed system described",
+    "localConnection": "address stored in OrcaSlicer"
+  },
+  "printJobs": {
+    "open": "Print history",
+    "title": "Prints · {{printer}}",
+    "subtitle": "Actual print attempts, their materials, and lifecycle.",
+    "new": "New print",
+    "createTitle": "Prepare a print",
+    "create": "Create",
+    "created": "Print added to history",
+    "createError": "Could not create the print",
+    "transitionError": "Could not change the print status",
+    "loadError": "Could not load print history.",
+    "empty": "This printer has no print history yet.",
+    "emptyHint": "Create one manually or wait for a connected provider report.",
+    "expand": "Show details",
+    "collapse": "Hide details",
+    "materials": "Spools",
+    "noMaterials": "No spools were selected for this print.",
+    "timeline": "Print timeline",
+    "confirmedConsumption": "Confirmed consumption: {{value}} g",
+    "pagination": {
+      "label": "Print history pages",
+      "previous": "Previous",
+      "next": "Next",
+      "page": "Page {{page}} of {{total}}"
+    },
+    "fields": {
+      "name": "Name",
+      "namePlaceholder": "For example, controller enclosure",
+      "calculation": "Saved calculation",
+      "withoutCalculation": "Without a calculation",
+      "calculationPlate": "Calculation job",
+      "allPlates": "All jobs",
+      "slice": "OrcaSlicer slice",
+      "withoutSlice": "Without a slice",
+      "spools": "Spools for this print",
+      "loadedSelected": "Spools loaded in the printer are preselected",
+      "noSpools": "No suitable spools yet.",
+      "unknownSpool": "Spool #{{id}}"
+    },
+    "status": {
+      "prepared": "Prepared",
+      "sent": "Sent",
+      "printing": "Printing",
+      "paused": "Paused",
+      "completed": "Completed",
+      "cancelled": "Cancelled",
+      "failed": "Failed"
+    },
+    "actions": {
+      "sent": "Mark sent",
+      "printing": "Start / resume",
+      "paused": "Pause",
+      "completed": "Complete",
+      "cancelled": "Cancel",
+      "failed": "Mark failed"
+    },
+    "source": {
+      "user": "manual",
+      "manual": "manual",
+      "octoprint": "OctoPrint"
+    }
   },
   "deviceLink": {
     "label": "Plugin link",
@@ -6378,6 +6471,14 @@
       "title": "New material system",
       "printer": "Printer",
       "printerPlaceholder": "Pick a printer",
+      "printerHint": "Choose the physical printer these spools will be loaded into.",
+      "connectionDetected": "connection found",
+      "connections_one": "{{count}} connection",
+      "connections_other": "{{count}} connections",
+      "orcaConfigurations_one": "OrcaSlicer only · {{count}} configuration",
+      "orcaConfigurations_other": "OrcaSlicer only · {{count}} configurations",
+      "notConnected": "no connection found",
+      "deviceNumber": "device #{{id}}",
       "slotCount": "How many slots",
       "create": "Create",
       "done": "Done",
@@ -6387,9 +6488,15 @@
       "system": "System"
     },
     "provider": {
+      "bambu": "Bambu LAN",
       "happy_hare": "Happy Hare",
       "legacy": "Klipper",
       "manual": "Manual",
+      "octoprint": "OctoPrint"
+    },
+    "connectionProvider": {
+      "bambu": "Bambu LAN",
+      "moonraker": "Moonraker",
       "octoprint": "OctoPrint"
     },
     "slotCount": {
@@ -6407,6 +6514,8 @@
     "assignPreset": "Assign preset",
     "clearAll": "Clear all slots",
     "deleteSystem": "Remove system",
+    "collapseSystem": "Collapse system",
+    "expandSystem": "Expand system",
     "deleteSystemConfirm": "Remove \"{{name}}\"? The slots go away and their spools return to storage. The printer stays.",
     "systemDeleted": "System removed, spools returned to storage.",
     "clearAllConfirm": "Clear all assignments for \"{{name}}\"?",
@@ -6419,7 +6528,9 @@
     },
     "assignment": {
       "label": "Assigned",
-      "notAssigned": "No spool assigned"
+      "notAssigned": "No spool assigned",
+      "empty": "Empty",
+      "unknownSpool": "Unknown spool"
     },
     "observation": {
       "noData": "No data",
@@ -6437,8 +6548,13 @@
     "hhStatus": {
       "unknown": "Unknown",
       "empty": "Empty",
-      "spool": "Spool",
-      "buffer": "Buffer"
+      "loaded": "Available",
+      "spool": "Available",
+      "buffer": "Available",
+      "unknownTooltip": "Happy Hare cannot determine the physical state of this gate yet.",
+      "emptyTooltip": "Happy Hare reports that the gate is currently empty. Its FilamentHub spool assignment is kept.",
+      "spoolTooltip": "According to Happy Hare, filament can be loaded from this slot.",
+      "bufferTooltip": "According to Happy Hare, filament can be loaded from this slot."
     },
     "pairing": {
       "copy": "Copy",
@@ -6466,6 +6582,7 @@
       "assigned": "Assignment for gate {{gate}} saved"
     },
     "feedSystem": {
+      "bambu": "Bambu LAN",
       "direct": "Direct feed",
       "happy_hare": "Happy Hare",
       "octoprint": "OctoPrint"
@@ -6479,6 +6596,41 @@
       "pairingDescription": "For Happy Hare before v4, run this command once in the printer console. You can also enter the hostname above manually.",
       "pairingWaiting": "Assign any spool to a slot to generate the command, or enter the hostname above.",
       "linkHint": "Paste this into moonraker.conf on the printer and restart Moonraker.",
+      "refresh": {
+        "title": "Happy Hare slot map",
+        "localOnly": "the connection stays in OrcaSlicer",
+        "description": "The plugin safely reads the real gate count and compares the printer assignments with FilamentHub. Nothing changes until you confirm.",
+        "fallback": "Open this page in OrcaSlicer to preview changes. Without the plugin, you can only copy Happy Hare's official refresh command.",
+        "check": "Check printer",
+        "copyCommand": "Copy command",
+        "gate": "Slot {{gate}}",
+        "inSync": "Happy Hare is connected: {{count}} slots found and assignments match.",
+        "previewTitle": "Apply these assignments to Happy Hare?",
+        "previewDescription": "{{count}} assignments will change. The plugin will run only MMU_SPOOLMAN REFRESH=1 and then verify the map again.",
+        "apply": "Apply to printer",
+        "applied": "Happy Hare assignments were updated and verified.",
+        "pullRequired": "Applying requires spoolman_support: pull. FilamentHub never changes the printer map in other modes.",
+        "busy": "The command is blocked while printing or paused. Wait until the printer is idle and check again.",
+        "errors": {
+          "auth": "The plugin session expired. Sign in to FilamentHub inside OrcaSlicer.",
+          "access": "The plugin was not granted access to printer bindings. Refresh the FilamentHub page in OrcaSlicer to obtain current permissions.",
+          "server": "FilamentHub data could not be loaded.",
+          "not_found": "This printer was not found in your profile.",
+          "connection_not_found": "The plugin could not find one unambiguous local connection for this printer. Check its Moonraker address in the OrcaSlicer user profile and run the full Sync.",
+          "ambiguous_connection": "Several connections match. Give each physical printer its own OrcaSlicer user profile.",
+          "unreachable": "Moonraker did not respond or rejected the local API key.",
+          "device_not_ready": "The printer link is not ready yet. Run the full Sync in OrcaSlicer.",
+          "material_system_not_found": "This printer no longer has that Happy Hare system. Refresh the page.",
+          "spool_ids_unavailable": "This Happy Hare version did not expose its spool ID map, so assignments cannot be applied blindly.",
+          "pull_required": "Enable spoolman_support: pull before applying assignments.",
+          "printer_busy": "The command is blocked while the printer is printing or paused.",
+          "command_failed": "Moonraker did not execute the Happy Hare refresh command.",
+          "verification_failed": "The command was accepted, but the printer map could not be read again.",
+          "not_applied": "The command ran, but some assignments still differ. Check Spoolman and run the check again.",
+          "timeout": "The plugin did not respond in time. Check OrcaSlicer and Moonraker.",
+          "unknown": "Happy Hare could not be checked."
+        }
+      },
       "guide": {
         "title": "Happy Hare setup",
         "description": "Prepare these two Happy Hare settings before creating the system. FilamentHub will then provide a ready-to-paste moonraker.conf block.",
@@ -6494,6 +6646,35 @@
         "colorAllgates": "allgates — displays every gate color, including empty gates",
         "colorOff": "off — colors are disabled in the printer interface",
         "next": "After creating the system, copy the generated [spoolman] block into moonraker.conf and restart Moonraker."
+      }
+    },
+    "bambu": {
+      "title": "Bambu data through OrcaSlicer",
+      "description": "The plugin reads the printer on your local network and sends print state and AMS slot observations to FilamentHub. OrcaSlicer must be running.",
+      "createDescription": "You do not need to enter slot numbers or a slot count. The plugin reads the actual AMS, AMS HT and external-spool topology directly from the printer.",
+      "connect": "Connect in OrcaSlicer",
+      "changeConnection": "Change connection",
+      "openInPlugin": "Open this page in OrcaSlicer",
+      "updatePlugin": "Update the FilamentHub plugin",
+      "checking": "Checking connection…",
+      "connected": "Plugin connected",
+      "waiting": "Waiting for OrcaSlicer",
+      "notConnected": "Not connected yet",
+      "localOnly": "The IP address, serial number and access code stay in the plugin's private local storage and are never sent to FilamentHub.",
+      "stateLabel": "State",
+      "progress": "Progress",
+      "layers": "Layers",
+      "temperatures": "Nozzle · bed · chamber",
+      "slots_one": "{{count}} printer slot",
+      "slots_other": "{{count}} printer slots",
+      "state": {
+        "unknown": "Unknown",
+        "idle": "Ready",
+        "preparing": "Preparing",
+        "printing": "Printing",
+        "paused": "Paused",
+        "finished": "Finished",
+        "failed": "Error"
       }
     },
     "link": {

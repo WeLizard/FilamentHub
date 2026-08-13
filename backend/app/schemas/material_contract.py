@@ -128,6 +128,20 @@ class LegacySlotProjectionResponse(BaseModel):
     updated_at: datetime
 
 
+class MaterialSlotObservationResponse(BaseModel):
+    source: str
+    observed_at: datetime
+    received_at: datetime
+    present: bool | None
+    active_feed: bool | None
+    material: str | None
+    color_hex: str | None
+    remaining_percent: int | None
+    remaining_grams: int | None
+
+    model_config = {"from_attributes": True}
+
+
 class MaterialSlotAssignmentResponse(BaseModel):
     id: int
     preset_id: int | None
@@ -144,6 +158,7 @@ class MaterialSlotResponse(BaseModel):
     kind: str
     active: bool
     assignment: MaterialSlotAssignmentResponse | None = None
+    observation: MaterialSlotObservationResponse | None = None
     legacy_projection: LegacySlotProjectionResponse | None = None
 
     model_config = {"from_attributes": True}
@@ -167,9 +182,32 @@ class PhysicalPrinterConnectorResponse(BaseModel):
     material_system_id: int | None
     provider: str
     transport: str
+    source_instance_id: str | None
     capabilities: list[str]
     active: bool
     last_seen_at: datetime | None
+    status_observation: "PhysicalPrinterStatusObservationResponse | None" = None
+
+    model_config = {"from_attributes": True}
+
+
+class PhysicalPrinterStatusObservationResponse(BaseModel):
+    source: str
+    observed_at: datetime
+    received_at: datetime
+    state: str
+    progress_percent: int | None
+    remaining_seconds: int | None
+    current_layer: int | None
+    total_layers: int | None
+    job_name: str | None
+    nozzle_temperature: float | None
+    nozzle_target_temperature: float | None
+    bed_temperature: float | None
+    bed_target_temperature: float | None
+    chamber_temperature: float | None
+    wifi_signal: str | None
+    error_code: str | None
 
     model_config = {"from_attributes": True}
 
@@ -247,6 +285,11 @@ class PhysicalPrinterResponse(BaseModel):
                     kind=slot.kind,
                     active=slot.active,
                     assignment=assignment,
+                    observation=(
+                        MaterialSlotObservationResponse.model_validate(slot.observation)
+                        if slot.observation is not None
+                        else None
+                    ),
                     legacy_projection=projection,
                 )
             )
@@ -260,3 +303,76 @@ class PhysicalPrinterResponse(BaseModel):
             declared_slot_count=system.declared_slot_count,
             slots=slots,
         )
+
+
+PrinterBridgeState = Literal[
+    "unknown",
+    "idle",
+    "preparing",
+    "printing",
+    "paused",
+    "finished",
+    "failed",
+]
+
+
+class PrinterBridgeStatusSnapshot(BaseModel):
+    state: PrinterBridgeState = "unknown"
+    progress_percent: int | None = Field(default=None, ge=0, le=100)
+    remaining_seconds: int | None = Field(default=None, ge=0, le=2_592_000)
+    current_layer: int | None = Field(default=None, ge=0, le=10_000_000)
+    total_layers: int | None = Field(default=None, ge=0, le=10_000_000)
+    job_name: str | None = Field(default=None, max_length=300)
+    nozzle_temperature: float | None = Field(default=None, ge=-100, le=600)
+    nozzle_target_temperature: float | None = Field(default=None, ge=-100, le=600)
+    bed_temperature: float | None = Field(default=None, ge=-100, le=250)
+    bed_target_temperature: float | None = Field(default=None, ge=-100, le=250)
+    chamber_temperature: float | None = Field(default=None, ge=-100, le=150)
+    wifi_signal: str | None = Field(default=None, max_length=32)
+    error_code: str | None = Field(default=None, max_length=80)
+
+    model_config = {"str_strip_whitespace": True, "extra": "forbid"}
+
+
+class PrinterBridgeSlotSnapshot(BaseModel):
+    provider_index: int = Field(ge=0, le=1023)
+    label: str | None = Field(default=None, max_length=100)
+    kind: str = Field(default="slot", min_length=1, max_length=50)
+    present: bool | None = None
+    active_feed: bool | None = None
+    material: str | None = Field(default=None, max_length=80)
+    color_hex: str | None = Field(default=None, pattern=r"^[0-9A-Fa-f]{6}$")
+    remaining_percent: int | None = Field(default=None, ge=0, le=100)
+    remaining_grams: int | None = Field(default=None, ge=0, le=100_000)
+
+    model_config = {"str_strip_whitespace": True, "extra": "forbid"}
+
+
+class PrinterBridgeSnapshotRequest(BaseModel):
+    material_system_id: int = Field(ge=1)
+    provider: Literal["bambu"]
+    transport: Literal["orca_plugin_lan"]
+    source_instance_id: str = Field(min_length=16, max_length=100)
+    observed_at: datetime
+    printer: PrinterBridgeStatusSnapshot | None = None
+    slots: list[PrinterBridgeSlotSnapshot] = Field(default_factory=list, max_length=256)
+    slot_topology_complete: bool = False
+
+    @model_validator(mode="after")
+    def unique_slot_indices(self) -> "PrinterBridgeSnapshotRequest":
+        indices = [slot.provider_index for slot in self.slots]
+        if len(indices) != len(set(indices)):
+            raise ValueError("slot provider_index values must be unique within a snapshot")
+        if self.printer is None and not self.slots:
+            raise ValueError("a bridge snapshot must contain printer or slot facts")
+        return self
+
+    model_config = {"extra": "forbid"}
+
+
+class PrinterBridgeSnapshotResponse(BaseModel):
+    accepted: bool
+    stale: bool
+    connector_id: int
+    material_system_id: int
+    slots_seen: int

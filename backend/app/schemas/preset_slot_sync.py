@@ -149,7 +149,8 @@ class HHGateItem(BaseModel):
 class HHSnapshotRequest(BaseModel):
     """HH snapshot payload from OrcaSlicer."""
 
-    device_fingerprint: str = Field(..., max_length=200)
+    device_fingerprint: str | None = Field(default=None, max_length=200)
+    physical_printer_id: int | None = Field(default=None, ge=1)
     gate_count: int = Field(..., ge=1, le=256)
     snapshot_ts: datetime
     gates: list[HHGateItem]
@@ -166,6 +167,8 @@ class HHSnapshotRequest(BaseModel):
 
     @model_validator(mode="after")
     def gate_indices_within_gate_count(self) -> "HHSnapshotRequest":
+        if not self.device_fingerprint and self.physical_printer_id is None:
+            raise ValueError("device_fingerprint or physical_printer_id is required")
         max_gate = self.gate_count - 1
         for gate_item in self.gates:
             if gate_item.gate > max_gate:
@@ -181,6 +184,36 @@ class HHSnapshotResponse(BaseModel):
     device_id: int
     updated_gates: int
     mismatches: list[int] = Field(default_factory=list)
+
+
+class PluginMaterialSlotContext(BaseModel):
+    """Only the desired state a local material adapter needs for one slot."""
+
+    provider_index: int = Field(ge=0, le=1023)
+    spool_id: int | None = Field(default=None, ge=1)
+
+
+class PluginMaterialSystemContext(BaseModel):
+    """Owned material system exposed to the plugin without account metadata."""
+
+    id: int
+    provider: str
+    slots: list[PluginMaterialSlotContext]
+
+
+class PluginPhysicalPrinterContext(BaseModel):
+    """Opaque physical identity plus bindings belonging to this Orca install."""
+
+    id: int
+    connection_refs: list[str]
+    material_systems: list[PluginMaterialSystemContext]
+
+
+class PluginMaterialTopologyContextResponse(BaseModel):
+    """Minimal provider-neutral context for a single Orca plugin instance."""
+
+    source_instance_id: str
+    printers: list[PluginPhysicalPrinterContext]
 
 
 class ManualAssignmentRequest(BaseModel):

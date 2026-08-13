@@ -20,6 +20,7 @@ class OrcaSliceReportIn(BaseModel):
     printer_model: str | None = Field(None, max_length=200)
     fhub_printer_profile_id: int | None = Field(None, ge=1, le=2**63 - 1)
     fhub_print_profile_id: int | None = Field(None, ge=1, le=2**63 - 1)
+    source_instance_id: str | None = Field(None, min_length=16, max_length=100)
     target_host: str | None = Field(None, max_length=50)
     slicer_version: str | None = Field(None, max_length=50)
     # The plugin's handle for the file; it keeps the path on its own side.

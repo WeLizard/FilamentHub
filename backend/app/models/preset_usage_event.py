@@ -4,7 +4,7 @@ import enum
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import JSON, DateTime, Enum, Float, ForeignKey, Integer, String
+from sqlalchemy import JSON, DateTime, Enum, Float, ForeignKey, Index, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
@@ -12,6 +12,7 @@ from app.db.base import Base
 
 if TYPE_CHECKING:
     from app.models.preset import Preset
+    from app.models.print_job import PrintJob
     from app.models.user import User
     from app.models.user_printer_device import UserPrinterDevice
     from app.models.user_spool import UserSpool
@@ -30,6 +31,7 @@ class PresetUsageEvent(Base):
     """A single filament usage event (print estimate, manual adjustment, etc.)."""
 
     __tablename__ = "preset_usage_events"
+    __table_args__ = (Index("ix_preset_usage_print_job", "print_job_id"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     user_id: Mapped[int] = mapped_column(
@@ -43,6 +45,9 @@ class PresetUsageEvent(Base):
     )
     spool_id: Mapped[int | None] = mapped_column(
         ForeignKey("user_spools.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    print_job_id: Mapped[int | None] = mapped_column(
+        ForeignKey("print_jobs.id", ondelete="SET NULL"), nullable=True
     )
 
     event_type: Mapped[PresetUsageEventType] = mapped_column(
@@ -65,6 +70,7 @@ class PresetUsageEvent(Base):
     device: Mapped["UserPrinterDevice | None"] = relationship("UserPrinterDevice")
     preset: Mapped["Preset | None"] = relationship("Preset")
     spool: Mapped["UserSpool | None"] = relationship("UserSpool")
+    print_job: Mapped["PrintJob | None"] = relationship("PrintJob", back_populates="usage_events")
 
     def __repr__(self) -> str:
         return (

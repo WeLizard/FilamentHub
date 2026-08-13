@@ -8,10 +8,198 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.security import create_access_token
 from app.models.print_profile import PrintProfile
 from app.models.print_profile_configuration import PrintProfileConfigurationLink
+from app.models.print_profile_printer import PrintProfilePrinter
+from app.models.printer import Printer
 from app.models.printer_profile import PrinterProfile
 from app.models.user import User
+from app.services.print_profile_configuration_service import replace_configuration_links
 
 from .conftest import accepted_legal
+
+
+@pytest.mark.asyncio
+async def test_process_targeting_factory_parent_is_projected_to_user_machine_child(
+    db_session: AsyncSession,
+    auth_user: User,
+) -> None:
+    parent = PrinterProfile(
+        name="Voron 2.4 350 0.4 nozzle",
+        slug="voron-parent-projection",
+        owner_user_id=None,
+        source="system",
+        is_official=True,
+        active=True,
+        orcaslicer_settings={},
+    )
+    child = PrinterProfile(
+        name="Voron 2.4 350 0.4 nozzle - Copy",
+        slug="voron-child-projection",
+        owner_user_id=auth_user.id,
+        source="orcaslicer",
+        is_official=False,
+        active=True,
+        orcaslicer_settings={"inherits": parent.name, "machine_max_acceleration_x": [9000]},
+    )
+    process = PrintProfile(
+        name="0.20 mm Standard @Voron",
+        slug="voron-process-projection",
+        owner_user_id=auth_user.id,
+        source="orcaslicer",
+        active=True,
+        configuration_links_resolved=True,
+        orcaslicer_settings={"layer_height": "0.2"},
+    )
+    db_session.add_all([parent, child, process])
+    await db_session.flush()
+
+    await replace_configuration_links(
+        db_session,
+        profile=process,
+        printer_profile_ids=[parent.id],
+    )
+    await db_session.commit()
+
+    links = list(
+        (
+            await db_session.execute(
+                select(PrintProfileConfigurationLink)
+                .where(PrintProfileConfigurationLink.print_profile_id == process.id)
+                .order_by(PrintProfileConfigurationLink.printer_profile_id)
+            )
+        ).scalars()
+    )
+    assert {(link.printer_profile_id, link.relation_type) for link in links} == {
+        (parent.id, "explicit"),
+        (child.id, "inherited_machine"),
+    }
+
+
+@pytest.mark.asyncio
+async def test_factory_process_is_returned_for_user_machine_child(
+    auth_client: AsyncClient,
+    db_session: AsyncSession,
+    auth_user: User,
+) -> None:
+    parent = PrinterProfile(
+        name="Bambu Lab P2S 0.4 nozzle",
+        slug="p2s-parent-runtime-projection",
+        owner_user_id=None,
+        source="system",
+        is_official=True,
+        active=True,
+        orcaslicer_settings={},
+    )
+    child = PrinterProfile(
+        name="Workshop P2S",
+        slug="p2s-child-runtime-projection",
+        owner_user_id=auth_user.id,
+        source="orcaslicer",
+        active=True,
+        orcaslicer_settings={"inherits": parent.name},
+    )
+    process = PrintProfile(
+        name="0.20 mm Standard @P2S",
+        slug="p2s-process-runtime-projection",
+        owner_user_id=None,
+        source="system",
+        is_official=True,
+        active=True,
+        configuration_links_resolved=True,
+        orcaslicer_settings={"layer_height": "0.2"},
+    )
+    db_session.add_all([parent, child, process])
+    await db_session.flush()
+    db_session.add(
+        PrintProfileConfigurationLink(
+            print_profile_id=process.id,
+            printer_profile_id=parent.id,
+            relation_type="explicit",
+        )
+    )
+    await db_session.commit()
+
+    response = await auth_client.get(
+        "/api/v1/print-profiles/",
+        params={"printer_profile_ids": child.id, "size": 100},
+    )
+
+    assert response.status_code == 200
+    item = next(item for item in response.json()["items"] if item["id"] == process.id)
+    assert child.id in item["printer_profile_ids"]
+
+
+@pytest.mark.asyncio
+async def test_configuration_filter_returns_canonical_exact_and_model_processes(
+    auth_client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    printer = Printer(
+        name="Bambu Lab P2S",
+        manufacturer="Bambu Lab",
+        model="P2S",
+        slug="bambu-lab-p2s-filter",
+        source="system",
+        active=True,
+    )
+    db_session.add(printer)
+    await db_session.flush()
+    configuration = PrinterProfile(
+        name="Bambu Lab P2S 0.4 nozzle",
+        slug="bambu-lab-p2s-04-filter",
+        printer_id=printer.id,
+        owner_user_id=None,
+        source="system",
+        is_official=True,
+        active=True,
+        orcaslicer_settings={"nozzle_diameter": ["0.4"]},
+    )
+    db_session.add(configuration)
+    await db_session.flush()
+
+    exact = PrintProfile(
+        name="0.20 mm Standard P2S",
+        slug="020-standard-p2s-filter",
+        owner_user_id=None,
+        source="system",
+        is_official=True,
+        active=True,
+        configuration_links_resolved=True,
+        orcaslicer_settings={"layer_height": "0.2"},
+    )
+    model = PrintProfile(
+        name="0.28 mm Draft P2S",
+        slug="028-draft-p2s-filter",
+        owner_user_id=None,
+        source="system",
+        is_official=True,
+        active=True,
+        configuration_links_resolved=False,
+        orcaslicer_settings={"layer_height": "0.28"},
+    )
+    model.printer_links = [
+        PrintProfilePrinter(
+            printer_id=printer.id,
+            printer_slug=printer.slug,
+            relation_type="explicit",
+        )
+    ]
+    db_session.add_all([exact, model])
+    await db_session.flush()
+    db_session.add(
+        PrintProfileConfigurationLink(
+            print_profile_id=exact.id,
+            printer_profile_id=configuration.id,
+        )
+    )
+    await db_session.commit()
+
+    response = await auth_client.get(
+        "/api/v1/print-profiles/",
+        params={"printer_profile_ids": configuration.id, "size": 100},
+    )
+
+    assert response.status_code == 200
+    assert {item["id"] for item in response.json()["items"]} == {exact.id, model.id}
 
 
 async def _configuration(

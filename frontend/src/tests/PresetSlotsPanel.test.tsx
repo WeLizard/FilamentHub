@@ -1,6 +1,6 @@
-import { render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
-import type { PhysicalPrinter } from '../api/client';
+import { fireEvent, render, screen } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { PhysicalPrinter, PrinterConnectionBinding } from '../api/client';
 
 const physicalPrinter: PhysicalPrinter = {
   id: 11,
@@ -39,10 +39,17 @@ const physicalPrinter: PhysicalPrinter = {
   updated_at: '2026-07-18T00:00:00Z',
 };
 
+let physicalPrintersForQuery = [physicalPrinter];
+let printerBindingsForQuery: PrinterConnectionBinding[] = [];
+
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string, options?: Record<string, unknown>) =>
-      typeof options?.name === 'string' ? `${key}:${options.name}` : key,
+      typeof options?.name === 'string'
+        ? `${key}:${options.name}`
+        : typeof options?.id === 'number'
+          ? `${key}:${options.id}`
+          : key,
     i18n: { language: 'en' },
   }),
 }));
@@ -51,7 +58,10 @@ vi.mock('@tanstack/react-query', () => ({
   useQueryClient: () => ({ invalidateQueries: vi.fn() }),
   useQuery: ({ queryKey }: { queryKey: unknown[] }) => {
     if (queryKey[0] === 'physical-printers') {
-      return { data: [physicalPrinter], isLoading: false };
+      return { data: physicalPrintersForQuery, isLoading: false };
+    }
+    if (queryKey[0] === 'printer-bindings') {
+      return { data: printerBindingsForQuery, isLoading: false };
     }
     if (queryKey[0] === 'presets') {
       return { data: { items: [] }, isLoading: false };
@@ -68,6 +78,19 @@ vi.mock('@tanstack/react-query', () => ({
         refetch: vi.fn(),
       };
     }
+    if (queryKey[0] === 'printer-bridge-status') {
+      return {
+        data: {
+          configured: true,
+          paired: false,
+          pairing_expires_at: null,
+          last_seen_at: null,
+          source_instance_id: null,
+        },
+        isLoading: false,
+        refetch: vi.fn(),
+      };
+    }
     return { data: [], isLoading: false };
   },
 }));
@@ -75,6 +98,7 @@ vi.mock('@tanstack/react-query', () => ({
 vi.mock('../api/client', () => ({
   physicalPrintersAPI: { list: vi.fn(), clearSystem: vi.fn() },
   octoprintBridgeAPI: { status: vi.fn(), issuePairingCode: vi.fn(), revoke: vi.fn() },
+  printerBridgeAPI: { status: vi.fn(), issuePairingCode: vi.fn() },
   presetsAPI: { list: vi.fn(), get: vi.fn() },
   spoolsAPI: { list: vi.fn() },
 }));
@@ -96,6 +120,12 @@ vi.mock('../components/Toast', () => ({
 }));
 
 describe('PresetSlotsPanel', () => {
+  beforeEach(() => {
+    physicalPrintersForQuery = [physicalPrinter];
+    printerBindingsForQuery = [];
+    window.localStorage.clear();
+  });
+
   it('declares only the capabilities supported by each feed adapter', async () => {
     const { feedAdapterFor } = await import(
       '../components/presetSlots/adapters'
@@ -108,7 +138,9 @@ describe('PresetSlotsPanel', () => {
       'presence',
       'spool_identity',
       'consumption',
+      'local_command',
     ]);
+    expect(feedAdapterFor('happy_hare').topologyFromProvider).toBe(true);
     expect(feedAdapterFor('octoprint').capabilities).toEqual([
       'read',
       'write',
@@ -124,6 +156,35 @@ describe('PresetSlotsPanel', () => {
     expect(feedAdapterFor('octoprint').contactMode).toBe('periodic');
     expect(feedAdapterFor('octoprint').slotCountLabelKey)
       .toBe('presetSlots.octoprint.slotCount');
+    expect(feedAdapterFor('bambu').capabilities).toEqual(['read', 'presence']);
+    expect(feedAdapterFor('bambu').topologyFromProvider).toBe(true);
+
+    const bambuSystem = {
+      ...physicalPrinter.material_systems[0],
+      provider: 'bambu',
+    };
+    render(<>{feedAdapterFor('bambu').renderSetup?.({
+      printer: {
+        ...physicalPrinter,
+        material_systems: [bambuSystem],
+        connectors: [{
+          id: 91,
+          material_system_id: bambuSystem.id,
+          provider: 'bambu',
+          transport: 'orca_plugin_lan',
+          capabilities: ['read', 'presence'],
+          active: true,
+          last_seen_at: null,
+        }],
+      },
+      system: bambuSystem,
+      gates: [],
+      spools: [],
+      linkConfirmed: false,
+    })}</>);
+    expect(screen.getByText('presetSlots.bambu.notConnected')).toBeInTheDocument();
+    expect(screen.queryByText('presetSlots.bambu.changeConnection')).not.toBeInTheDocument();
+    expect(screen.getByText('presetSlots.bambu.openInPlugin')).toBeInTheDocument();
 
     render(<>{feedAdapterFor('happy_hare').renderCreateHelp?.()}</>);
     expect(screen.getByText('presetSlots.happyHare.guide.title')).toBeInTheDocument();
@@ -141,6 +202,7 @@ describe('PresetSlotsPanel', () => {
       printer: { ...physicalPrinter, material_systems: [octoprintSystem] },
       system: octoprintSystem,
       gates: [],
+      spools: [],
       linkConfirmed: true,
     })}</>);
     expect(screen.getByText('presetSlots.link.label')).toBeInTheDocument();
@@ -163,19 +225,33 @@ describe('PresetSlotsPanel', () => {
       printer: physicalPrinter,
       system,
       gates: [],
+      spools: [],
       linkConfirmed: false,
     })}</>);
     expect(screen.getByText('presetSlots.happyHare.autoPairingTitle')).toBeInTheDocument();
     expect(screen.queryByText('presetSlots.happyHare.pairingTitle')).not.toBeInTheDocument();
     pending.unmount();
 
-    const paired = render(<>{adapter.renderSetup?.({
+    const pairedContext = {
       printer: { ...physicalPrinter, printer_hostname: 'voron', reports_feed: true },
       system,
       gates: [],
+      spools: [],
       linkConfirmed: true,
-    })}</>);
-    expect(paired.container).toBeEmptyDOMElement();
+    };
+    const paired = render(<>
+      {adapter.renderSetup?.(pairedContext)}
+      {adapter.renderActions?.(pairedContext)}
+    </>);
+    expect(screen.getByText('presetSlots.happyHare.refresh.check')).toBeInTheDocument();
+    expect(screen.queryByText('presetSlots.happyHare.refresh.title')).not.toBeInTheDocument();
+    expect(screen.queryByText('presetSlots.happyHare.refresh.fallback')).not.toBeInTheDocument();
+    expect(screen.queryByText('presetSlots.happyHare.refresh.copyCommand')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText('presetSlots.happyHare.refresh.check'));
+    expect(screen.getByText('presetSlots.happyHare.refresh.title')).toBeInTheDocument();
+    expect(screen.getByText('presetSlots.happyHare.refresh.fallback')).toBeInTheDocument();
+    expect(screen.getByText('presetSlots.happyHare.refresh.copyCommand')).toBeInTheDocument();
+    expect(paired.container).not.toBeEmptyDOMElement();
   });
 
   it('keeps the one-time pairing command for Happy Hare before v4', async () => {
@@ -204,6 +280,7 @@ describe('PresetSlotsPanel', () => {
         is_active: true,
         updated_at: '2026-08-11T00:00:00Z',
       }],
+      spools: [],
       linkConfirmed: true,
     })}</>);
 
@@ -247,5 +324,85 @@ describe('PresetSlotsPanel', () => {
     ).toBeInTheDocument();
     expect(screen.queryByText(/Unrelated catalog-id collision/)).not.toBeInTheDocument();
     expect(screen.getByTestId('gate-map')).toBeInTheDocument();
+  });
+
+  it('remembers a collapsed MMU system without changing its assignments', async () => {
+    physicalPrintersForQuery = [{
+      ...physicalPrinter,
+      material_systems: [{
+        ...physicalPrinter.material_systems[0],
+        name: 'Workshop MMU',
+        kind: 'direct_feed',
+        provider: 'happy_hare',
+      }],
+    }];
+    const { PresetSlotsPanel } = await import(
+      '../components/presetSlots/PresetSlotsPanel'
+    );
+
+    const first = render(<PresetSlotsPanel spools={[]} printerProfiles={[]} />);
+    expect(screen.getByTestId('gate-map')).toBeInTheDocument();
+    fireEvent.click(screen.getByTitle('presetSlots.collapseSystem'));
+    expect(screen.queryByTestId('gate-map')).not.toBeInTheDocument();
+    expect(window.localStorage.getItem('filamenthub:material-system:collapsed:1:21')).toBe('1');
+    first.unmount();
+
+    render(<PresetSlotsPanel spools={[]} printerProfiles={[]} />);
+    expect(screen.queryByTestId('gate-map')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTitle('presetSlots.expandSystem'));
+    expect(screen.getByTestId('gate-map')).toBeInTheDocument();
+  });
+
+  it('makes same-named physical printers distinguishable before adding a material system', async () => {
+    physicalPrintersForQuery = [
+      {
+        ...physicalPrinter,
+        id: 41,
+        logical_id: 'printer-41',
+        name: 'Voron 2.4 350',
+        printer_profile_ids: [401],
+        material_systems: [],
+      },
+      {
+        ...physicalPrinter,
+        id: 42,
+        logical_id: 'printer-42',
+        name: 'Voron 2.4 350',
+        printer_profile_ids: [402, 403],
+        material_systems: [],
+      },
+    ];
+    printerBindingsForQuery = [{
+      physical_printer_id: 41,
+      connection_ref: 'local-printer-41',
+      provider: 'moonraker',
+      display_endpoint: null,
+      endpoint_shared: false,
+      last_seen_at: '2026-08-13T00:00:00Z',
+    }];
+
+    const { PresetSlotsPanel } = await import(
+      '../components/presetSlots/PresetSlotsPanel'
+    );
+    render(<PresetSlotsPanel
+      spools={[]}
+      printerProfiles={[
+        { id: 401, name: 'Workshop Voron 0.4' },
+        { id: 402, name: 'Office Voron 0.4' },
+        { id: 403, name: 'Office Voron 0.6' },
+      ]}
+    />);
+
+    fireEvent.click(screen.getByText('presetSlots.newSystem.add'));
+    fireEvent.focus(screen.getByPlaceholderText('presetSlots.newSystem.printerPlaceholder'));
+
+    expect(
+      (screen.getByPlaceholderText(
+        'presetSlots.newSystem.printerPlaceholder',
+      ) as HTMLInputElement).value,
+    ).toContain('presetSlots.connectionProvider.moonraker · myPrinters.localConnection');
+    expect(screen.getByText(/Workshop Voron 0\.4/)).toBeInTheDocument();
+    expect(screen.getByText('Office Voron 0.4 / Office Voron 0.6')).toBeInTheDocument();
+    expect(screen.getByText('presetSlots.newSystem.printerHint')).toBeInTheDocument();
   });
 });

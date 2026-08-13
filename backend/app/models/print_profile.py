@@ -92,7 +92,13 @@ class PrintProfile(Base):
     @property
     def printer_profile_ids(self) -> list[int]:
         """Exact machine configurations assigned to this process profile."""
-        return sorted(link.printer_profile_id for link in self.configuration_links)
+        response_ids = getattr(self, "_response_printer_profile_ids", ())
+        return sorted(
+            {
+                *(link.printer_profile_id for link in self.configuration_links),
+                *response_ids,
+            }
+        )
 
     def __repr__(self) -> str:
         status = "official" if self.is_official else "user"

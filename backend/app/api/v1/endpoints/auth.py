@@ -19,6 +19,7 @@ from fastapi import (
     status,
 )
 from sqlalchemy import func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -412,7 +413,9 @@ async def register(
         raise_error(status.HTTP_400_BAD_REQUEST, ERR_EMAIL_EXISTS)
 
     # Проверка существования username
-    result = await db.execute(select(User).where(User.username == data.username))
+    result = await db.execute(
+        select(User).where(func.lower(User.username) == data.username.lower())
+    )
     existing_user = result.scalar_one_or_none()
     if existing_user:
         raise_error(status.HTTP_400_BAD_REQUEST, ERR_USERNAME_EXISTS)
@@ -598,14 +601,28 @@ async def login(
     """
     login_value = data.email.strip().lower()
 
-    # Ищем по email ИЛИ username (case-insensitive)
+    # Email takes precedence over username so the two identifier namespaces
+    # cannot make one login value ambiguous. Both lookups ignore letter case.
     result = await db.execute(
-        select(User).where(
-            (func.lower(User.email) == login_value) |
-            (func.lower(User.username) == login_value)
-        )
+        select(User).where(func.lower(User.email) == login_value)
     )
     user = result.scalar_one_or_none()
+    if user is None:
+        username_result = await db.execute(
+            select(User)
+            .where(func.lower(User.username) == login_value)
+            .limit(2)
+        )
+        username_matches = username_result.scalars().all()
+        if len(username_matches) == 1:
+            user = username_matches[0]
+        elif len(username_matches) > 1:
+            # A pre-constraint database must fail closed instead of choosing an
+            # arbitrary account or leaking an internal MultipleResultsFound.
+            logger.error(
+                "Ambiguous case-insensitive username during login: matches=%d",
+                len(username_matches),
+            )
 
     password_matches = bool(user and user.password_hash) and await check_password(
         data.password, user.password_hash
@@ -836,88 +853,39 @@ async def get_my_presets_stats(
     - total_presets: всего пресетов (созданные + добавленные из каталога)
     - synced_presets: количество пресетов с включенной синхронизацией (sync_enabled=True)
     """
-    from sqlalchemy import func
-
-    # 1. Подсчитываем пресеты, созданные напрямую пользователем
-    await db.scalar(
-        select(func.count(Preset.id)).where(
-            Preset.user_id == current_user.id,
-            Preset.active == True,
-        )
-    ) or 0
-
-    # 2. Подсчитываем пресеты из user_saved_presets (добавленные из каталога)
-    # Нужно исключить те, которые уже созданы пользователем напрямую
-    saved_presets_query = (
-        select(func.count(UserSavedPreset.id))
+    eligible = or_(Preset.active.is_(True), Preset.user_id == current_user.id)
+    saved_preset_ids_query = (
+        select(UserSavedPreset.preset_id)
         .join(Preset)
-        .where(
-            UserSavedPreset.user_id == current_user.id,
-            Preset.active == True,
-            ~Preset.user_id.in_([current_user.id]),  # Исключаем пресеты, созданные пользователем
-        )
+        .where(UserSavedPreset.user_id == current_user.id, eligible)
     )
-    await db.scalar(saved_presets_query) or 0
-
-    # Но на самом деле нужно считать иначе:
-    # Всего = все пресеты, связанные с пользователем (созданные + сохранённые)
-    # Для этого лучше использовать другой подход:
-    # - Все созданные пресеты пользователя
-    # - Все сохранённые пресеты (включая те, которые созданы пользователем, но были также сохранены)
-
-    # Пересчитываем более точно:
-    # Получаем все ID пресетов из user_saved_presets
-    saved_preset_ids_query = select(UserSavedPreset.preset_id).where(
-        UserSavedPreset.user_id == current_user.id
-    ).join(Preset).where(Preset.active == True)
     saved_preset_ids_result = await db.execute(saved_preset_ids_query)
     saved_preset_ids = {row[0] for row in saved_preset_ids_result.all()}
 
-    # Получаем все ID пресетов, созданных пользователем
-    direct_preset_ids_query = select(Preset.id).where(
-        Preset.user_id == current_user.id,
-        Preset.active == True,
-    )
+    # Own drafts are part of the user's library even before catalog activation.
+    direct_preset_ids_query = select(Preset.id).where(Preset.user_id == current_user.id)
     direct_preset_ids_result = await db.execute(direct_preset_ids_query)
     direct_preset_ids = {row[0] for row in direct_preset_ids_result.all()}
 
-    # Объединяем множества - это и есть общее количество пресетов
     total_preset_ids = saved_preset_ids | direct_preset_ids
     total_presets = len(total_preset_ids)
 
-    # 3. Подсчитываем пресеты с включенной синхронизацией (sync=True)
-    await db.scalar(
-        select(func.count(UserSavedPreset.id))
+    synced_result = await db.execute(
+        select(UserSavedPreset.preset_id)
         .join(Preset)
         .where(
             UserSavedPreset.user_id == current_user.id,
-            UserSavedPreset.sync == True,
-            Preset.active == True,
+            UserSavedPreset.sync.is_(True),
+            eligible,
         )
-    ) or 0
-
-    # Также нужно добавить созданные пресеты, которые могут быть не в user_saved_presets
-    # Но по логике, если пресет создан пользователем, он должен быть доступен для синхронизации
-    # Однако sync_enabled относится только к user_saved_presets
-    # Поэтому для полной картины считаем так:
-    # synced_presets = пресеты из user_saved_presets с sync_enabled=True + созданные пресеты (если они не в user_saved_presets)
-
-    # Пересчитываем synced_presets более точно:
-    synced_from_saved = await db.scalar(
-        select(func.count(UserSavedPreset.id))
-        .join(Preset)
-        .where(
-            UserSavedPreset.user_id == current_user.id,
-            UserSavedPreset.sync == True,
-            Preset.active == True,
-        )
-    ) or 0
-
-    # Созданные пресеты, которых нет в user_saved_presets, тоже считаются доступными для синхронизации
-    # (потому что они автоматически доступны в /my-presets)
-    created_not_in_saved = len(direct_preset_ids - saved_preset_ids)
-
-    synced_presets = 0 if not current_user.allow_filament_presets_export else synced_from_saved + created_not_in_saved
+    )
+    synced_ids = {row[0] for row in synced_result.all()}
+    # Historical own presets without a saved relation remain syncable; all new
+    # writers create that relation and therefore honour its explicit toggle.
+    synced_ids.update(direct_preset_ids - saved_preset_ids)
+    synced_presets = (
+        len(synced_ids) if current_user.allow_filament_presets_export else 0
+    )
 
     return {
         "total_presets": total_presets,
@@ -954,23 +922,25 @@ async def get_my_presets(
     #    Это нужно для случаев, когда пресет был создан до добавления логики user_saved_presets
     #    или если по какой-то причине запись в user_saved_presets отсутствует
 
-    # 1. Пресеты из user_saved_presets с включенной синхронизацией
+    # Active saved catalog presets plus the owner's private drafts. A draft may
+    # not be linked to a Filament yet, but it is still a complete Orca profile
+    # and participates in the same global sync when its toggle is enabled.
+    eligible = or_(Preset.active.is_(True), Preset.user_id == current_user.id)
     saved_query = select(UserSavedPreset).where(
         UserSavedPreset.user_id == current_user.id,
-        UserSavedPreset.sync == True,  # Только пресеты с включенной синхронизацией
+        UserSavedPreset.sync.is_(True),
     )
 
     if updated_since:
-        # Проверяем либо saved_at, либо updated_at самого пресета
         saved_query = saved_query.join(Preset).where(
-            Preset.active == True,  # Пресет должен быть активен
+            eligible,
             or_(
                 UserSavedPreset.saved_at >= updated_since,
                 Preset.updated_at >= updated_since,
             ),
         )
     else:
-        saved_query = saved_query.join(Preset).where(Preset.active == True)
+        saved_query = saved_query.join(Preset).where(eligible)
 
     saved_result = await db.execute(
         saved_query.options(selectinload(UserSavedPreset.preset).selectinload(Preset.filament))
@@ -979,10 +949,9 @@ async def get_my_presets(
 
     for saved_preset_relation in saved_presets_relations:
         preset = saved_preset_relation.preset
-        if preset.active:  # Проверяем, что пресет активен
-            preset_id = preset.id
-            preset_ids.add(preset_id)
-            presets_dict[preset_id] = preset
+        preset_id = preset.id
+        preset_ids.add(preset_id)
+        presets_dict[preset_id] = preset
 
     # 2. УДАЛЕНО: Старая логика проверки presets.sync_enabled
     # Теперь ВСЕ пресеты (свои + чужие) управляются через user_saved_presets.sync_enabled
@@ -1017,7 +986,13 @@ async def create_plugin_session(
             "sub": current_user.email,
             "user_id": current_user.id,
         },
-        scopes=["presets:read", "presets:write", "printer-bundles:read"],
+        scopes=[
+            "presets:read",
+            "presets:write",
+            "printer-bundles:read",
+            "material-topology:read",
+            "material-topology:report",
+        ],
     )
     response.headers["Cache-Control"] = "no-store"
     return PluginSessionTokenResponse(
@@ -1044,7 +1019,11 @@ async def update_current_user(
         update_data["password_hash"] = await hash_password(update_data.pop("password"))
 
     if "username" in update_data and update_data["username"]:
-        result = await db.execute(select(User).where(User.username == update_data["username"]))
+        result = await db.execute(
+            select(User).where(
+                func.lower(User.username) == update_data["username"].lower()
+            )
+        )
         existing_user = result.scalar_one_or_none()
         if existing_user and existing_user.id != current_user.id:
             raise_error(status.HTTP_400_BAD_REQUEST, ERR_USERNAME_EXISTS)
@@ -1099,7 +1078,13 @@ async def update_current_user(
         elif hasattr(current_user, key):
             setattr(current_user, key, value)
 
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        if "username" in update_data:
+            raise_error(status.HTTP_400_BAD_REQUEST, ERR_USERNAME_EXISTS)
+        raise
     await db.refresh(current_user)
 
     return UserResponse.model_validate(current_user)
@@ -1464,14 +1449,20 @@ async def update_user_username(
 ) -> UserResponse:
     """Изменить username текущего пользователя."""
     # Проверяем уникальность нового username
-    result = await db.execute(select(User).where(User.username == data.new_username))
+    result = await db.execute(
+        select(User).where(func.lower(User.username) == data.new_username.lower())
+    )
     existing_user = result.scalar_one_or_none()
     if existing_user and existing_user.id != current_user.id:
         raise_error(status.HTTP_400_BAD_REQUEST, ERR_USERNAME_EXISTS)
 
     # Обновляем username
     current_user.username = data.new_username
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise_error(status.HTTP_400_BAD_REQUEST, ERR_USERNAME_EXISTS)
     await db.refresh(current_user)
 
     return UserResponse.model_validate(current_user)

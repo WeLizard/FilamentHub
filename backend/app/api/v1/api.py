@@ -33,7 +33,9 @@ from app.api.v1.endpoints import (
     preset_slots,
     preset_versions,
     presets,
+    print_jobs,
     print_profiles,
+    printer_bridge,
     printer_connections,
     printer_profiles,
     printer_requests,
@@ -57,6 +59,7 @@ api_router.include_router(brand_invites.admin_router)
 api_router.include_router(email_communications.admin_router)
 api_router.include_router(devices.router)
 api_router.include_router(physical_printers.router)
+api_router.include_router(printer_bridge.router)
 api_router.include_router(printer_connections.router)
 api_router.include_router(brand_requests.router)
 api_router.include_router(brand_team.router)
@@ -66,6 +69,7 @@ api_router.include_router(filament_lines.router)
 api_router.include_router(filament_import.router)
 api_router.include_router(presets.router)
 api_router.include_router(preset_versions.router)
+api_router.include_router(print_jobs.router)
 api_router.include_router(qr.router)
 api_router.include_router(printers.router)
 api_router.include_router(printer_profiles.router)

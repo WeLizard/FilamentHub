@@ -12,6 +12,10 @@ from app.db.base import Base
 if TYPE_CHECKING:
     from app.models.material_slot_assignment import MaterialSlotAssignment
     from app.models.preset_gate_state import PresetGateState
+    from app.models.printer_bridge_observation import (
+        MaterialSlotObservation,
+        PhysicalPrinterStatusObservation,
+    )
     from app.models.user_printer_device import UserPrinterDevice
 
 
@@ -115,6 +119,13 @@ class MaterialSlot(Base):
         single_parent=True,
         uselist=False,
     )
+    observation: Mapped["MaterialSlotObservation | None"] = relationship(
+        "MaterialSlotObservation",
+        back_populates="material_slot",
+        cascade="all, delete-orphan",
+        single_parent=True,
+        uselist=False,
+    )
 
 
 class PhysicalPrinterConnector(Base):
@@ -136,6 +147,7 @@ class PhysicalPrinterConnector(Base):
     )
     provider: Mapped[str] = mapped_column(String(50), nullable=False)
     transport: Mapped[str] = mapped_column(String(50), nullable=False)
+    source_instance_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
     capabilities: Mapped[list[str]] = mapped_column(
         JSON, nullable=False, default=list, server_default="[]"
     )
@@ -165,4 +177,16 @@ class PhysicalPrinterConnector(Base):
     )
     material_system: Mapped["MaterialSystem | None"] = relationship(
         "MaterialSystem", back_populates="connectors"
+    )
+    status_observation: Mapped["PhysicalPrinterStatusObservation | None"] = relationship(
+        "PhysicalPrinterStatusObservation",
+        back_populates="connector",
+        cascade="all, delete-orphan",
+        single_parent=True,
+        uselist=False,
+    )
+    slot_observations: Mapped[list["MaterialSlotObservation"]] = relationship(
+        "MaterialSlotObservation",
+        back_populates="connector",
+        cascade="all, delete-orphan",
     )

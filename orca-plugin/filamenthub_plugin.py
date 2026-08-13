@@ -62,20 +62,26 @@ capability may be cached locally until expiry so a reopened window can resume.
 """
 
 import csv
+import datetime
 import hashlib
 import http.server
+import ipaddress
 import json
 import os
 import queue
 import re
 import secrets
 import shutil
+import socket
 import ssl
+import struct
 import tempfile
 import threading
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import uuid
 import webbrowser
 
 import orca
@@ -291,6 +297,25 @@ def localized_embed_url(language=None):
     return EMBED_URL + separator + urllib.parse.urlencode({"lng": language})
 
 
+def open_in_system_browser(url):
+    # Mirror how OrcaSlicer itself opens URLs: wxLaunchDefaultBrowser(), which
+    # on Windows is ShellExecute("open", url). os.startfile is that same call
+    # and works inside Orca's embedded Python, where webbrowser.open can report
+    # success without actually launching anything. Fall back to webbrowser on
+    # non-Windows or if startfile is unavailable/raises.
+    try:
+        startfile = getattr(os, "startfile", None)
+        if startfile is not None:
+            startfile(url)
+            return True
+        return bool(webbrowser.open(url))
+    except Exception:
+        try:
+            return bool(webbrowser.open(url))
+        except Exception:
+            return False
+
+
 def _temporary_path(path):
     return "%s.tmp.%d.%d" % (path, os.getpid(), threading.get_ident())
 
@@ -365,7 +390,7 @@ def refresh_user_preset_folder():
     global _user_preset_folder
     try:
         bundle = orca.host.preset_bundle()
-        for collection in (bundle.filaments, bundle.printers):
+        for collection in (bundle.filaments, bundle.printers, bundle.prints):
             for i in range(collection.size()):
                 preset = collection.preset(i)
                 if preset.is_user():
@@ -405,6 +430,17 @@ def user_bundle_dir():
     # filament/ subfolder (PresetBundle.cpp bundle loading). Presets written here
     # show under the "FilamentHub" group instead of "User presets".
     return os.path.join(DATA_DIR, "user", resolve_user_preset_folder(), "_local", BUNDLE_ID)
+
+
+def profile_identity_registry_path():
+    """Plugin-owned identity state, outside Orca's preset file collections."""
+    return os.path.join(
+        DATA_DIR,
+        "user",
+        resolve_user_preset_folder(),
+        ".filamenthub",
+        "profile_identity.json",
+    )
 
 
 def user_filament_dir():
@@ -484,7 +520,7 @@ def configure_plugin_storage():
     request to the plugin; importing this module must stay host-version agnostic.
     """
     global PLUGIN_STORAGE_DIR
-    global SYNC_LOG_FILE, AUTH_FILE, IMPORTED_DRAFTS_FILE, SYNC_STATE_FILE
+    global SYNC_LOG_FILE, AUTH_FILE, BAMBU_CONFIG_FILE, IMPORTED_DRAFTS_FILE, SYNC_STATE_FILE
     global _SLICE_INDEX_FILE, _SLICE_CACHE_DIR
 
     plugin_host = getattr(getattr(orca, "host", None), "plugin", None)
@@ -505,6 +541,7 @@ def configure_plugin_storage():
         ".fh_imported.json",
         ".fh_sync.json",
         ".fh_slices.json",
+        ".fh_bambu.json",
     )
     for name in file_names:
         source = os.path.join(PLUGIN_DIR, name)
@@ -526,6 +563,7 @@ def configure_plugin_storage():
     PLUGIN_STORAGE_DIR = target_root
     SYNC_LOG_FILE = os.path.join(target_root, ".fh_sync.log")
     AUTH_FILE = os.path.join(target_root, ".auth.json")
+    BAMBU_CONFIG_FILE = os.path.join(target_root, ".fh_bambu.json")
     IMPORTED_DRAFTS_FILE = os.path.join(target_root, ".fh_imported.json")
     SYNC_STATE_FILE = os.path.join(target_root, ".fh_sync.json")
     _SLICE_INDEX_FILE = os.path.join(target_root, ".fh_slices.json")
@@ -585,6 +623,7 @@ def read_sync_log():
 # storage is partitioned and dies with the window. Same role as the fork's
 # AppConfig token storage.
 AUTH_FILE = os.path.join(PLUGIN_DIR, ".auth.json")
+BAMBU_CONFIG_FILE = os.path.join(PLUGIN_DIR, ".fh_bambu.json")
 
 
 # Shown in the user's real browser at the end of the external OAuth flow, right
@@ -1059,7 +1098,143 @@ def _managed_profile_id_from_info(path, kind):
                         return int(tail) if tail.isdigit() else None
     except OSError:
         pass
-    return None
+
+
+MAX_BAMBU_BRIDGES = 8
+
+
+def _empty_bambu_config():
+    return {
+        "version": 1,
+        "source_instance_id": secrets.token_urlsafe(24),
+        "printers": [],
+    }
+
+
+def load_bambu_config():
+    """Read the private local bridge file without ever logging its contents."""
+    try:
+        with open(BAMBU_CONFIG_FILE, "r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+    except (OSError, ValueError):
+        return _empty_bambu_config()
+    if not isinstance(payload, dict):
+        return _empty_bambu_config()
+    instance_id = payload.get("source_instance_id")
+    if not isinstance(instance_id, str) or not (16 <= len(instance_id) <= 100):
+        instance_id = secrets.token_urlsafe(24)
+    printers = []
+    for item in payload.get("printers") or []:
+        if not isinstance(item, dict):
+            continue
+        physical_id = item.get("physical_printer_id")
+        system_id = item.get("material_system_id")
+        host = item.get("host")
+        access_code = item.get("access_code")
+        serial = item.get("serial") or ""
+        bridge_token = item.get("bridge_token") or ""
+        if (
+            isinstance(serial, str)
+            and serial
+            and not re.fullmatch(r"[A-Za-z0-9._-]{4,80}", serial)
+        ):
+            serial = ""
+        if (
+            isinstance(physical_id, int)
+            and physical_id > 0
+            and isinstance(system_id, int)
+            and system_id > 0
+            and isinstance(host, str)
+            and host
+            and isinstance(access_code, str)
+            and access_code
+            and isinstance(serial, str)
+            and isinstance(bridge_token, str)
+        ):
+            printers.append(
+                {
+                    "physical_printer_id": physical_id,
+                    "material_system_id": system_id,
+                    "host": host[:253],
+                    "access_code": access_code[:128],
+                    "serial": serial[:80],
+                    "bridge_token": bridge_token[:256],
+                }
+            )
+        if len(printers) >= MAX_BAMBU_BRIDGES:
+            break
+    return {
+        "version": 1,
+        "source_instance_id": instance_id,
+        "printers": printers,
+    }
+
+
+def save_bambu_config(payload):
+    write_json_atomic(BAMBU_CONFIG_FILE, payload, mode=0o600)
+
+
+def configure_bambu_bridge(
+    physical_printer_id,
+    material_system_id,
+    host,
+    access_code,
+    serial="",
+    bridge_token="",
+):
+    """Create or replace one local-only Bambu LAN binding."""
+    if not isinstance(physical_printer_id, int) or physical_printer_id <= 0:
+        raise ValueError("invalid physical printer")
+    if not isinstance(material_system_id, int) or material_system_id <= 0:
+        raise ValueError("invalid material system")
+    host = str(host or "").strip()
+    access_code = str(access_code or "").strip()
+    serial = str(serial or "").strip()
+    bridge_token = str(bridge_token or "").strip()
+    if not host or len(host) > 253 or any(ch in host for ch in "/\\?#@"):
+        raise ValueError("invalid LAN address")
+    if not access_code or len(access_code) > 128:
+        raise ValueError("invalid access code")
+    if serial and not re.fullmatch(r"[A-Za-z0-9._-]{4,80}", serial):
+        raise ValueError("invalid serial")
+    if bridge_token and (not bridge_token.startswith("fhpb_") or len(bridge_token) > 256):
+        raise ValueError("invalid bridge token")
+
+    payload = load_bambu_config()
+    printers = [
+        item
+        for item in payload["printers"]
+        if item["physical_printer_id"] != physical_printer_id
+    ]
+    printers.append(
+        {
+            "physical_printer_id": physical_printer_id,
+            "material_system_id": material_system_id,
+            "host": host,
+            "access_code": access_code,
+            "serial": serial,
+            "bridge_token": bridge_token,
+        }
+    )
+    if len(printers) > MAX_BAMBU_BRIDGES:
+        raise ValueError("too many Bambu bridges")
+    payload["printers"] = printers
+    save_bambu_config(payload)
+    return payload
+
+
+def remove_bambu_bridge(physical_printer_id):
+    payload = load_bambu_config()
+    before = len(payload["printers"])
+    payload["printers"] = [
+        item
+        for item in payload["printers"]
+        if item["physical_printer_id"] != physical_printer_id
+    ]
+    if len(payload["printers"]) != before:
+        save_bambu_config(payload)
+        return True
+    return False
 
 
 def managed_profile_id(json_path, profile, kind):
@@ -1327,6 +1502,40 @@ def http_post_json(path, token, payload):
         return 0, str(exc).encode("utf-8", errors="replace")
 
 
+def http_post_bridge_json(path, bridge_token, payload):
+    data = json.dumps(payload).encode("utf-8")
+    headers = {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "User-Agent": "FilamentHub-OrcaPlugin/" + PLUGIN_VERSION,
+        "X-FilamentHub-Bridge-Token": bridge_token,
+    }
+    req = urllib.request.Request(API_BASE + path, data=data, headers=headers, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT, context=_SSL_CTX) as resp:
+            return resp.getcode(), _read_response_limited(resp)
+    except urllib.error.HTTPError as exc:
+        return exc.code, exc.read(MAX_RESPONSE_BYTES)
+    except (OSError, ValueError, urllib.error.URLError):
+        return 0, b""
+
+
+def http_delete_bridge(path, bridge_token):
+    headers = {
+        "Accept": "application/json",
+        "User-Agent": "FilamentHub-OrcaPlugin/" + PLUGIN_VERSION,
+        "X-FilamentHub-Bridge-Token": bridge_token,
+    }
+    req = urllib.request.Request(API_BASE + path, headers=headers, method="DELETE")
+    try:
+        with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT, context=_SSL_CTX) as resp:
+            return resp.getcode()
+    except urllib.error.HTTPError as exc:
+        return exc.code
+    except (OSError, ValueError, urllib.error.URLError):
+        return 0
+
+
 def http_post_file(path, token, file_path, field="file", file_name=""):
     """Send one file to FilamentHub the way a browser upload would.
 
@@ -1362,22 +1571,51 @@ def http_post_file(path, token, file_path, field="file", file_name=""):
         return 0, str(exc).encode("utf-8", errors="replace")
 
 
+def _preset_scalar(value):
+    """Return one stable Orca identity value from scalar/list config options."""
+    if isinstance(value, (list, tuple)):
+        value = next((item for item in value if item not in (None, "")), "")
+    return str(value or "").strip()
+
+
+def _preset_config_value(preset, key):
+    try:
+        return preset.config_value(key)
+    except Exception:
+        return None
+
+
+def _profile_settings_fingerprint(settings):
+    """Hash a sanitized technical delta for conservative server matching."""
+    try:
+        reduced = {
+            key: value
+            for key, value in settings.items()
+            if key not in {"bundle_id", "fhub_id", "fhub_source", "updated_at"}
+        }
+        blob = json.dumps(
+            reduced,
+            sort_keys=True,
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+        return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+    except Exception:
+        return ""
+
+
 def observe_printer_presets():
     """What OrcaSlicer knows about the machines this person has (UI thread —
     reads preset_bundle). Two kinds of entry, and printhost_apikey is in neither:
 
-    * a preset with a network endpoint — the connection FilamentHub can observe;
-    * every installed printer model, with no endpoint. A model is only present
-      because the person picked that machine in Orca's setup wizard, so it is a
-      statement of ownership rather than vendor data — which is how a Bambu, whose
-      presets never carry an endpoint, becomes visible at all. Reported once per
-      model: choosing one machine installs a preset per nozzle size, and those are
-      four presets of one printer. The model alone is enough, since the catalog
-      already mirrors Orca's models; an untouched vendor preset has nothing else
-      worth copying.
+    * every saved user preset, including distinct endpoints/names;
+    * visible system presets. Orca marks the models enabled by the person in its
+      setup separately from the rest of each vendor bundle, so visibility is the
+      evidence that a stock machine belongs in the user's workspace.
     """
-    observed = []
-    seen_models = set()
+    observed_connections = []
+    identity_items = []
+    identity_observations = []
     try:
         bundle = orca.host.preset_bundle()
         # The preset selected right now: the site can then offer the machine the
@@ -1389,94 +1627,724 @@ def observe_printer_presets():
         printers = bundle.printers
         for i in range(printers.size()):
             preset = printers.preset(i)
-            model = preset.config_value("printer_model") or ""
-            host = preset.config_value("print_host") if preset.is_user() else ""
-            if host:
-                observed.append({
-                    "preset_name": preset.name,
-                    "printer_settings_id": preset.config_value("printer_settings_id") or "",
-                    "inherits": preset.config_value("inherits") or "",
-                    "printer_model": model,
-                    "print_host": host,
-                    "host_type": preset.config_value("host_type") or "",
-                    "is_current": preset.name == current_name,
-                })
-            elif model and model not in seen_models:
-                seen_models.add(model)
-                observed.append({
-                    "preset_name": model,
-                    "printer_settings_id": model,
-                    "inherits": "",
-                    "printer_model": model,
-                    "print_host": "",
-                    "host_type": "",
-                    "is_current": preset.name == current_name,
-                })
-    except Exception:
-        pass
-    return observed
+            model = _preset_scalar(_preset_config_value(preset, "printer_model"))
+            try:
+                is_user = bool(preset.is_user())
+            except Exception:
+                is_user = False
+            host = _preset_config_value(preset, "print_host") if is_user else ""
+            if not model and not host:
+                continue
+            is_current = preset.name == current_name
+            try:
+                is_system = bool(preset.is_system)
+            except Exception:
+                is_system = not is_user
+            try:
+                is_visible = bool(preset.is_visible)
+            except Exception:
+                # Older hosts did not expose visibility. Keep the selected
+                # profile working there without treating an entire vendor
+                # bundle as the user's printer list.
+                is_visible = False
+            observation = {
+                "preset_name": str(preset.name or "")[:200],
+                "printer_settings_id": _preset_scalar(
+                    _preset_config_value(preset, "printer_settings_id")
+                    or _preset_config_value(preset, "setting_id")
+                )[:200],
+                "inherits": _preset_scalar(_preset_config_value(preset, "inherits"))[:200],
+                "printer_model": model[:200],
+                "nozzle_diameter": _preset_scalar(
+                    _preset_config_value(preset, "nozzle_diameter")
+                    or _preset_config_value(preset, "printer_variant")
+                )[:20],
+                "vendor_id": str(getattr(preset, "bundle_id", "") or "")[:100],
+                "profile_fingerprint": None,
+                "print_host": _preset_scalar(host)[:500],
+                "host_type": _preset_scalar(_preset_config_value(preset, "host_type"))[:50],
+                "is_system": is_system,
+                "is_visible": is_visible,
+                "is_current": is_current,
+            }
+            if is_user:
+                try:
+                    analysis = analyze_user_profile(printers, preset, "machine")
+                except Exception:
+                    analysis = None
+                if analysis is not None:
+                    identity_items.append({
+                        "name": str(preset.name or ""),
+                        "locator": _local_profile_locator(
+                            preset, "machine", preset.name
+                        ),
+                        # Connection keys were already removed by the analysis;
+                        # changing an IP therefore preserves this identity.
+                        "settings": analysis["settings"],
+                    })
+                    identity_observations.append(observation)
+                    observation["inherits"] = analysis["inherits"][:200]
+                    if analysis["parent_vendor_id"]:
+                        observation["vendor_id"] = analysis["parent_vendor_id"][:100]
+                    observation["has_technical_changes"] = (
+                        analysis["has_technical_changes"]
+                        if analysis["parent_resolved"]
+                        else None
+                    )
+                    if (
+                        analysis["parent_resolved"]
+                        and analysis["has_technical_changes"]
+                    ):
+                        observation["profile_fingerprint"] = (
+                            _profile_settings_fingerprint(analysis["settings"]) or None
+                        )
+            if (
+                observation["print_host"]
+                or is_user
+                or is_current
+                or (is_system and is_visible)
+            ):
+                # A user may have several physical printers of one model. Each
+                # endpoint or named user profile is its own observation and must
+                # survive the sync. A visible stock profile represents a model
+                # explicitly enabled in Orca's setup, not every vendor preset.
+                observed_connections.append(observation)
+        if identity_items:
+            account_id, identity_items, registry_saved = (
+                reconcile_local_profile_identities(
+                    "machine", identity_items, authoritative=True
+                )
+            )
+            if registry_saved:
+                for observation, identity in zip(
+                    identity_observations, identity_items
+                ):
+                    observation["connection_ref"] = local_profile_external_id(
+                        account_id, identity["local_profile_id"]
+                    )[:120]
+    except Exception as exc:
+        fh_log("printer observation scan failed: %s" % exc)
+    return observed_connections
 
 
-def send_printer_observations(token, observations):
+def observe_local_moonraker_connections(observations):
+    """Collect local-only Moonraker access for observed user machine presets.
+
+    The server receives the stable ``connection_ref`` through the normal printer
+    observation payload.  The endpoint and API key stay in this in-memory list
+    and are never added to that payload or written by FilamentHub.
+    """
+    by_preset = {}
+    for observation in observations or []:
+        connection_ref = observation.get("connection_ref")
+        host = _preset_scalar(observation.get("print_host"))
+        name = str(observation.get("preset_name") or "")
+        if connection_ref and host:
+            by_preset.setdefault((name, host), []).append(connection_ref)
+
+    candidates = {}
+    ambiguous = set()
+    try:
+        printers = orca.host.preset_bundle().printers
+        for index in range(printers.size()):
+            preset = printers.preset(index)
+            try:
+                if not bool(preset.is_user()):
+                    continue
+            except Exception:
+                continue
+            host = _preset_scalar(_preset_config_value(preset, "print_host"))
+            host_type = _preset_scalar(
+                _preset_config_value(preset, "host_type")
+            ).lower()
+            printer_agent = _preset_scalar(
+                _preset_config_value(preset, "printer_agent")
+            ).lower()
+            if not host or "moonraker" not in {host_type, printer_agent}:
+                continue
+            refs = by_preset.get((str(preset.name or ""), host)) or []
+            if len(refs) != 1:
+                continue
+            connection_ref = refs[0]
+            candidate = {
+                "connection_ref": connection_ref,
+                "print_host": host,
+                "api_key": _preset_scalar(
+                    _preset_config_value(preset, "printhost_apikey")
+                ),
+            }
+            if connection_ref in candidates and candidates[connection_ref] != candidate:
+                ambiguous.add(connection_ref)
+            else:
+                candidates[connection_ref] = candidate
+    except Exception as exc:
+        fh_log("local Moonraker scan failed: %s" % exc)
+    return [
+        candidate
+        for connection_ref, candidate in candidates.items()
+        if connection_ref not in ambiguous
+    ]
+
+
+def _moonraker_base_url(value):
+    raw = str(value or "").strip()
+    if not raw:
+        raise ValueError("Moonraker address is empty")
+    if "://" not in raw:
+        raw = "http://" + raw
+    parsed = urllib.parse.urlsplit(raw)
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+        or parsed.path not in {"", "/"}
+    ):
+        raise ValueError("Moonraker address is not a plain HTTP(S) origin")
+    try:
+        port = parsed.port
+    except ValueError as exc:
+        raise ValueError("Moonraker port is invalid") from exc
+    host = parsed.hostname
+    if ":" in host:
+        host = "[" + host + "]"
+    return "%s://%s%s" % (
+        parsed.scheme,
+        host,
+        (":" + str(port)) if port is not None else "",
+    )
+
+
+def _moonraker_json(connection, path, payload=None):
+    """Call only the endpoint read from Orca's local machine preset."""
+    base_url = _moonraker_base_url(connection.get("print_host"))
+    headers = {
+        "Accept": "application/json",
+        "User-Agent": "FilamentHub-OrcaPlugin/" + PLUGIN_VERSION,
+    }
+    api_key = str(connection.get("api_key") or "")
+    if api_key:
+        headers["X-Api-Key"] = api_key
+    data = None
+    method = "GET"
+    if payload is not None:
+        data = json.dumps(payload).encode("utf-8")
+        headers["Content-Type"] = "application/json"
+        method = "POST"
+    request = urllib.request.Request(
+        base_url + path,
+        data=data,
+        headers=headers,
+        method=method,
+    )
+    try:
+        with urllib.request.urlopen(
+            request,
+            timeout=min(HTTP_TIMEOUT, 10),
+            context=_SSL_CTX,
+        ) as response:
+            status = response.getcode()
+            body = _read_response_limited(response)
+    except urllib.error.HTTPError as exc:
+        status = exc.code
+        body = exc.read(MAX_RESPONSE_BYTES)
+    except (OSError, ValueError, urllib.error.URLError) as exc:
+        return 0, {}, str(exc)
+    try:
+        decoded = json.loads(body.decode("utf-8")) if body else {}
+    except (UnicodeDecodeError, ValueError):
+        return status, {}, "invalid JSON"
+    return status, decoded if isinstance(decoded, dict) else {}, ""
+
+
+_HH_ARRAY_FIELDS = (
+    "gate_status",
+    "gate_material",
+    "gate_color",
+    "gate_temperature",
+    "gate_spool_id",
+)
+
+
+def read_happy_hare_snapshot(connection):
+    """Read one complete Happy Hare topology through Moonraker, without writes."""
+    query_status, query, query_error = _moonraker_json(
+        connection,
+        "/printer/objects/query",
+        {
+            "objects": {
+                "mmu": [
+                    "num_gates",
+                    "gate_status",
+                    "gate_material",
+                    "gate_color",
+                    "gate_temperature",
+                    "gate_spool_id",
+                    "spoolman_support",
+                ],
+                "print_stats": ["state"],
+            }
+        },
+    )
+    if query_status != 200:
+        raise RuntimeError(query_error or "Moonraker query HTTP %s" % query_status)
+    result = query.get("result")
+    status_map = result.get("status") if isinstance(result, dict) else None
+    mmu = status_map.get("mmu") if isinstance(status_map, dict) else None
+    if not isinstance(mmu, dict):
+        raise ValueError("Happy Hare object 'mmu' is unavailable")
+
+    arrays = {}
+    lengths = set()
+    for key in _HH_ARRAY_FIELDS:
+        value = mmu.get(key)
+        if value is None:
+            arrays[key] = None
+            continue
+        if not isinstance(value, list):
+            raise ValueError("Happy Hare %s is not an array" % key)
+        arrays[key] = value
+        lengths.add(len(value))
+
+    raw_count = mmu.get("num_gates")
+    if isinstance(raw_count, bool):
+        raw_count = None
+    try:
+        gate_count = int(raw_count) if raw_count is not None else None
+    except (TypeError, ValueError):
+        gate_count = None
+    if gate_count is None:
+        if len(lengths) != 1:
+            raise ValueError("Happy Hare gate count cannot be determined safely")
+        gate_count = next(iter(lengths))
+    if gate_count < 1 or gate_count > 256:
+        raise ValueError("Happy Hare gate count is outside 1..256")
+    if any(length != gate_count for length in lengths):
+        raise ValueError("Happy Hare gate arrays disagree with num_gates")
+
+    def value_at(key, index, default):
+        values = arrays.get(key)
+        return values[index] if values is not None else default
+
+    gates = []
+    actual_spool_ids = []
+    for gate in range(gate_count):
+        try:
+            hh_status = int(value_at("gate_status", gate, -1))
+        except (TypeError, ValueError):
+            hh_status = -1
+        if hh_status not in {-1, 0, 1, 2}:
+            hh_status = -1
+        material = str(value_at("gate_material", gate, "") or "")[:50]
+        color = str(value_at("gate_color", gate, "") or "").lstrip("#").upper()
+        if not re.fullmatch(r"[0-9A-F]{6}", color):
+            color = ""
+        try:
+            temperature = max(0, int(value_at("gate_temperature", gate, 0) or 0))
+        except (TypeError, ValueError):
+            temperature = 0
+        try:
+            spool_id = int(value_at("gate_spool_id", gate, -1))
+        except (TypeError, ValueError):
+            spool_id = -1
+        actual_spool_ids.append(spool_id if spool_id > 0 else None)
+        gates.append({
+            "gate": gate,
+            "status": hh_status,
+            "material": material,
+            "color_hex": color,
+            "temperature": temperature,
+        })
+
+    info_status, info, _info_error = _moonraker_json(
+        connection, "/printer/info"
+    )
+    info_result = info.get("result") if info_status == 200 else None
+    hostname = (
+        str(info_result.get("hostname") or "")[:200]
+        if isinstance(info_result, dict)
+        else ""
+    )
+    print_stats = (
+        status_map.get("print_stats") if isinstance(status_map, dict) else None
+    )
+    print_state = (
+        str(print_stats.get("state") or "").strip().lower()
+        if isinstance(print_stats, dict)
+        else ""
+    )
+    return {
+        "gate_count": gate_count,
+        "gates": gates,
+        "actual_spool_ids": actual_spool_ids,
+        "spool_ids_known": arrays.get("gate_spool_id") is not None,
+        "spoolman_support": str(mmu.get("spoolman_support") or "").strip().lower(),
+        "print_state": print_state,
+        "printer_hostname": hostname,
+    }
+
+
+def upload_happy_hare_snapshot(token, physical_printer_id, snapshot):
+    status, body = http_post_json(
+        "/orcaslicer/preset-slot-sync/hh/snapshot",
+        token,
+        {
+            "physical_printer_id": physical_printer_id,
+            "gate_count": snapshot["gate_count"],
+            "snapshot_ts": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "gates": snapshot["gates"],
+        },
+    )
+    if status != 200:
+        return status, {}
+    try:
+        result = json.loads(body.decode("utf-8")) or {}
+    except (AttributeError, UnicodeDecodeError, ValueError):
+        result = {}
+    return status, result if isinstance(result, dict) else {}
+
+
+def _filamenthub_json_get(path, token):
+    status, body = http_get(path, token=token)
+    if status != 200:
+        return status, None
+    try:
+        decoded = json.loads(body.decode("utf-8"))
+    except (AttributeError, UnicodeDecodeError, ValueError):
+        return status, None
+    return status, decoded
+
+
+def _happy_hare_server_inventory(token):
+    source_instance_id = plugin_source_instance_id()
+    status, context = _filamenthub_json_get(
+        "/orcaslicer/preset-slot-sync/plugin-context?source_instance_id="
+        + urllib.parse.quote(source_instance_id, safe=""),
+        token,
+    )
+    if status == 401:
+        return None, "auth"
+    if status == 403:
+        return None, "access"
+    if status != 200:
+        return None, "server"
+    if (
+        not isinstance(context, dict)
+        or context.get("source_instance_id") != source_instance_id
+        or not isinstance(context.get("printers"), list)
+    ):
+        return None, "server"
+    return {
+        "source_instance_id": source_instance_id,
+        "printers": [
+            item for item in context["printers"] if isinstance(item, dict)
+        ],
+    }, None
+
+
+def resolve_happy_hare_connection(
+    token,
+    local_connections,
+    physical_printer_id,
+    inventory=None,
+):
+    """Resolve one server-owned printer to one local Orca connection.
+
+    Stable ``connection_ref`` wins.  The only fallback is an exact hostname
+    reported by Moonraker itself; display names, model names and endpoints from
+    the web page are never used to guess a LAN target.
+    """
+    if inventory is None:
+        inventory, inventory_error = _happy_hare_server_inventory(token)
+        if inventory_error or inventory is None:
+            return None, None, None, inventory_error or "server"
+    device = next(
+        (
+            item
+            for item in inventory["printers"]
+            if item.get("id") == physical_printer_id
+        ),
+        None,
+    )
+    if device is None:
+        return None, None, None, "not_found"
+
+    local_by_ref = {}
+    duplicate_refs = set()
+    for connection in local_connections or []:
+        connection_ref = connection.get("connection_ref")
+        if not connection_ref:
+            continue
+        if connection_ref in local_by_ref:
+            duplicate_refs.add(connection_ref)
+        else:
+            local_by_ref[connection_ref] = connection
+    exact = []
+    connection_refs = device.get("connection_refs")
+    if not isinstance(connection_refs, list):
+        return None, None, device, "server"
+    for connection_ref in connection_refs:
+        if not isinstance(connection_ref, str):
+            continue
+        if connection_ref in duplicate_refs:
+            continue
+        connection = local_by_ref.get(connection_ref)
+        if connection is not None:
+            exact.append(connection)
+    unique_exact = {
+        (item.get("connection_ref"), item.get("print_host")): item
+        for item in exact
+    }
+    if len(unique_exact) == 1:
+        connection = next(iter(unique_exact.values()))
+        try:
+            snapshot = read_happy_hare_snapshot(connection)
+        except (RuntimeError, ValueError) as exc:
+            fh_log("Happy Hare read failed for bound connection: %s" % exc)
+            return None, None, device, "unreachable"
+        return connection, snapshot, device, None
+    if len(unique_exact) > 1:
+        return None, None, device, "ambiguous_connection"
+    return None, None, device, "connection_not_found"
+
+
+def _desired_happy_hare_spools(physical_printer, material_system_id):
+    systems = physical_printer.get("material_systems")
+    if not isinstance(systems, list):
+        return None
+    system = next(
+        (
+            item
+            for item in systems
+            if isinstance(item, dict) and item.get("id") == material_system_id
+        ),
+        None,
+    )
+    if system is None or system.get("provider") != "happy_hare":
+        return None
+    desired = {}
+    for slot in system.get("slots") or []:
+        if not isinstance(slot, dict) or not slot.get("active", True):
+            continue
+        index = slot.get("provider_index")
+        if not isinstance(index, int) or index < 0:
+            continue
+        spool_id = slot.get("spool_id")
+        desired[index] = spool_id if isinstance(spool_id, int) and spool_id > 0 else None
+    return desired
+
+
+def _happy_hare_assignment_changes(actual_spool_ids, desired_spool_ids):
+    changes = []
+    for gate, actual in enumerate(actual_spool_ids):
+        desired = desired_spool_ids.get(gate)
+        if actual != desired:
+            changes.append({
+                "gate": gate,
+                "actualSpoolId": actual,
+                "desiredSpoolId": desired,
+            })
+    return changes
+
+
+def sync_happy_hare_topologies(token, local_connections):
+    """Quietly upload complete read-only HH snapshots during normal sync."""
+    if not token or not local_connections:
+        return 0, 0
+    inventory, inventory_error = _happy_hare_server_inventory(token)
+    if inventory_error or inventory is None:
+        return 0, len(local_connections)
+    synced = failed = 0
+    for device in inventory["printers"]:
+        physical_printer_id = device.get("id")
+        if not isinstance(physical_printer_id, int):
+            continue
+        _connection, snapshot, _device, error = resolve_happy_hare_connection(
+            token,
+            local_connections,
+            physical_printer_id,
+            inventory=inventory,
+        )
+        if error or snapshot is None:
+            if error not in {"connection_not_found"}:
+                failed += 1
+            continue
+        status, _result = upload_happy_hare_snapshot(
+            token, physical_printer_id, snapshot
+        )
+        if status == 200:
+            synced += 1
+        else:
+            failed += 1
+    if synced or failed:
+        fh_log("Happy Hare topology sync: synced=%d failed=%d" % (synced, failed))
+    return synced, failed
+
+
+def send_printer_observations(token, observations, source_instance_id=""):
     """POST observed printer connection data. The backend records it raw; the
     plugin makes no physical-printer identity decisions."""
     if not token or not observations:
-        return
-    http_post_json("/orcaslicer/printer-connections/observe", token,
-                   {"observations": observations})
+        return None, {}
+    status, body = http_post_json(
+        "/orcaslicer/printer-connections/observe",
+        token,
+        {
+            "observations": observations,
+            "source_instance_id": source_instance_id or None,
+        },
+    )
+    if status != 200:
+        fh_log("printer observations HTTP %s for %d profile(s)" % (status, len(observations)))
+        return status, {}
+    try:
+        result = json.loads(body.decode("utf-8")) or {}
+    except (AttributeError, UnicodeDecodeError, ValueError):
+        result = {}
+    fh_log(
+        "printer observations: sent=%d accepted=%d matched=%d unmatched=%d created=%d"
+        % (
+            len(observations),
+            int(result.get("accepted") or 0),
+            int(result.get("matched") or 0),
+            int(result.get("unmatched") or 0),
+            int(result.get("created") or 0),
+        )
+    )
+    return status, result
 
 
-def _collect_filament_presets(root, into, only_new):
-    """Walk {root}/<account>/filament/ (incl. base/) and add each preset by name to
-    `into`. only_new keeps existing entries (live set wins over older backups).
-    Skips our [fh]-managed presets and a "filamenthub:<id>" bundle_id."""
+RECOVERY_PROFILE_FOLDERS = {
+    "filament": "filament",
+    "machine": "machine",
+    "process": "process",
+}
+
+
+def _is_managed_recovery_profile(kind, path, profile):
+    if "[fh]" in str(profile.get("name") or "") or "@fh" in str(
+        profile.get("name") or ""
+    ):
+        return True
+    if kind == "filament":
+        return managed_preset_id(path, profile) is not None
+    return managed_profile_id(path, profile, kind) is not None
+
+
+def _collect_recovery_presets(root, into, only_new, source):
+    """Collect recoverable user presets from one live/backup Orca user tree."""
     try:
         accounts = os.listdir(root)
     except OSError:
         return
     for account in accounts:
-        base = os.path.join(root, account, "filament")
-        if not os.path.isdir(base):
-            continue
-        for dirpath, _dirs, files in os.walk(base):
-            for fn in files:
-                if not fn.endswith(".json"):
-                    continue
-                path = os.path.join(dirpath, fn)
-                try:
-                    with open(path, "r", encoding="utf-8") as fh:
-                        profile = json.load(fh)
-                except (OSError, ValueError):
-                    continue
-                if not isinstance(profile, dict) or not profile:
-                    continue
-                name = profile.get("name") or fn[:-len(".json")]
-                if "[fh]" in name or "@fh" in name:
-                    continue
-                if managed_preset_id(path, profile) is not None:
-                    continue
-                if only_new and name in into:
-                    continue
-                into.setdefault(name, profile)
+        for kind, folder in RECOVERY_PROFILE_FOLDERS.items():
+            base = os.path.join(root, account, folder)
+            if not os.path.isdir(base):
+                continue
+            for dirpath, _dirs, files in os.walk(base):
+                for fn in files:
+                    if not fn.endswith(".json"):
+                        continue
+                    path = os.path.join(dirpath, fn)
+                    try:
+                        with open(path, "r", encoding="utf-8") as fh:
+                            profile = json.load(fh)
+                    except (OSError, ValueError):
+                        continue
+                    if not isinstance(profile, dict) or not profile:
+                        continue
+                    name = str(profile.get("name") or fn[:-len(".json")]).strip()
+                    if not name or _is_managed_recovery_profile(kind, path, profile):
+                        continue
+                    # Two Orca accounts can legitimately contain differently
+                    # edited presets with the same display name. Account is
+                    # part of recovery identity; a live file still shadows an
+                    # older backup of that same account/kind/name.
+                    identity = "%s:%s:%s" % (kind, account, name)
+                    if only_new and identity in into:
+                        continue
+                    into.setdefault(identity, {
+                        "key": identity,
+                        "kind": kind,
+                        "name": name,
+                        "account": account,
+                        "profile": profile,
+                        "source": source,
+                    })
 
 
-def scan_recovery_filaments():
-    """Every filament preset the user has on disk, for the explicit "find lost
-    filaments" action. Walks {data_dir}/user/<account>/filament/ (all accounts,
-    incl. base/) then the user_backup-v* version snapshots, adding a backup preset
-    only when its name is absent from the live set — so old/deleted presets are
-    recovered without stale duplicates. Skips our [fh]-managed ones; the Orca
-    system/ library is never touched. Vendor-materialized presets may come along;
-    the user picks what to keep. Read-only; disk-only, so it runs off the UI thread."""
-    by_name = {}
-    _collect_filament_presets(os.path.join(DATA_DIR, "user"), by_name, only_new=False)
+def scan_recovery_presets():
+    """Find unmanaged filament, machine and process presets in live/backups.
+
+    Live files win over version snapshots with the same kind/name. Managed
+    FilamentHub files are repairable from the server and are deliberately kept
+    out of this import list.
+    """
+    by_identity = {}
+    _collect_recovery_presets(
+        os.path.join(DATA_DIR, "user"),
+        by_identity,
+        only_new=False,
+        source="live",
+    )
     try:
-        backups = [d for d in os.listdir(DATA_DIR) if d.startswith("user_backup")]
+        backups = [
+            d for d in os.listdir(DATA_DIR) if d.startswith("user_backup")
+        ]
+        backups.sort(
+            key=lambda name: os.path.getmtime(os.path.join(DATA_DIR, name)),
+            reverse=True,
+        )
     except OSError:
         backups = []
     for backup in backups:
-        _collect_filament_presets(os.path.join(DATA_DIR, backup), by_name, only_new=True)
-    return [{"name": name, "profile": profile} for name, profile in by_name.items()]
+        _collect_recovery_presets(
+            os.path.join(DATA_DIR, backup),
+            by_identity,
+            only_new=True,
+            source="backup",
+        )
+    return list(by_identity.values())
+
+
+def scan_recovery_filaments():
+    """Backward-compatible filament-only view used by older callers/tests."""
+    return [item for item in scan_recovery_presets() if item["kind"] == "filament"]
+
+
+def disambiguate_recovery_candidates(candidates):
+    """Preserve same-named profiles when several Orca accounts are selected.
+
+    FilamentHub profile identity cannot safely distinguish two recovered rows
+    that have the same kind and display name. Keep the familiar name when only
+    one is selected; when both are selected, append the source account to each
+    recovered copy instead of silently letting the second overwrite the first.
+    """
+    counts = {}
+    for candidate in candidates:
+        identity = (candidate["kind"], candidate["name"])
+        counts[identity] = counts.get(identity, 0) + 1
+
+    result = []
+    for candidate in candidates:
+        identity = (candidate["kind"], candidate["name"])
+        if counts[identity] < 2:
+            result.append(candidate)
+            continue
+        account = str(candidate.get("account") or "Orca")
+        suffix = " [%s]" % account
+        recovered_name = candidate["name"][: max(1, 200 - len(suffix))] + suffix
+        recovered = dict(candidate)
+        recovered["name"] = recovered_name
+        recovered["profile"] = {
+            **candidate["profile"],
+            "name": recovered_name,
+        }
+        result.append(recovered)
+    return result
 
 
 def preset_config_dict(preset, include_metadata=False):
@@ -1531,17 +2399,37 @@ def scan_active_user_filaments():
     return candidates
 
 
-def _auto_import_enabled(token):
-    """Whether the user opted into auto-importing local presets. Uses the
-    plugin-scoped /orcaslicer/sync-prefs (the plugin has no full account session)."""
+def _sync_preferences(token):
+    """Read account sync preferences through the plugin-scoped endpoint."""
     status, body = http_get("/orcaslicer/sync-prefs", token=token)
     if status != 200:
-        fh_log("sync-prefs HTTP %s -> auto-import off" % status)
-        return False
+        fh_log("sync-prefs HTTP %s -> privacy-safe defaults" % status)
+        return {
+            "auto_import_local_presets": False,
+            "sync_printer_endpoints": False,
+        }
     try:
-        return bool(json.loads(body.decode("utf-8")).get("auto_import_local_presets"))
+        raw = json.loads(body.decode("utf-8")) or {}
+        return {
+            "auto_import_local_presets": bool(raw.get("auto_import_local_presets")),
+            "sync_printer_endpoints": bool(raw.get("sync_printer_endpoints")),
+        }
     except ValueError:
-        return False
+        return {
+            "auto_import_local_presets": False,
+            "sync_printer_endpoints": False,
+        }
+
+
+def _observations_for_sync(observations, share_endpoints=False):
+    """Keep LAN addresses local unless the account explicitly opted in."""
+    prepared = []
+    for observation in observations or []:
+        item = dict(observation)
+        if not share_endpoints:
+            item["print_host"] = ""
+        prepared.append(item)
+    return prepared
 
 
 def _draft_id(name):
@@ -1646,6 +2534,72 @@ def save_sync_state(state):
         pass
 
 
+def _valid_uuid(value):
+    try:
+        return str(uuid.UUID(str(value)))
+    except (ValueError, TypeError, AttributeError):
+        return None
+
+
+def load_profile_identity_registry():
+    path = profile_identity_registry_path()
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            registry = json.load(fh)
+    except (OSError, ValueError):
+        registry = {}
+    if not isinstance(registry, dict):
+        registry = {}
+    account_id = _valid_uuid(registry.get("account_id")) or str(uuid.uuid4())
+    profiles = registry.get("profiles")
+    if not isinstance(profiles, dict):
+        profiles = {}
+    for kind in PROFILE_KINDS:
+        if not isinstance(profiles.get(kind), dict):
+            profiles[kind] = {}
+    return {
+        "version": 1,
+        "account_id": account_id,
+        "profiles": profiles,
+    }
+
+
+def save_profile_identity_registry(registry):
+    try:
+        write_json_atomic(profile_identity_registry_path(), registry, mode=0o600)
+        return True
+    except OSError as exc:
+        fh_log("profile identity registry write failed: %s" % exc)
+        return False
+
+
+def plugin_source_instance_id():
+    """Persistent identity of this Orca data directory, not a printer identity."""
+    path = os.path.join(DATA_DIR, ".filamenthub", "source_identity.json")
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            stored = json.load(fh)
+        value = stored.get("source_instance_id") if isinstance(stored, dict) else None
+    except (OSError, ValueError):
+        value = None
+    if isinstance(value, str) and 16 <= len(value) <= 100:
+        return value
+
+    # Preserve the identity generated by earlier plugin builds when upgrading.
+    state = load_sync_state()
+    value = state.get("_source_instance_id")
+    if not isinstance(value, str) or not 16 <= len(value) <= 100:
+        value = secrets.token_urlsafe(24)
+    try:
+        write_json_atomic(path, {"source_instance_id": value}, mode=0o600)
+    except OSError:
+        # The old state remains a safe compatibility fallback if a filesystem
+        # policy temporarily prevents creating the durable data-dir record.
+        state["_source_instance_id"] = value
+        save_sync_state(state)
+    return value
+
+
 def recover_sync_record(pid, token, known_presets, local_entry, remote_updated):
     """The sync state file is a cache next to the plugin and dies with it (a
     dialog-driven plugin update recreates the whole directory). A local preset
@@ -1728,77 +2682,529 @@ PROFILE_KINDS = {
     },
 }
 
-# A printer preset carries the credentials of its network host. They stay on the
-# user's machine: the profile is stripped before anything goes to FilamentHub.
-PRINTHOST_SECRET_KEYS = ("printhost_apikey", "printhost_password", "printhost_user")
+# Connection fields describe one mutable physical-printer binding, not slicing
+# behaviour.  Keep all of them out of PrinterProfile payloads.  Credentials and
+# local certificate paths never leave the machine; safe endpoint facts travel
+# only through the dedicated observation endpoint.
+PRINTHOST_CONNECTION_KEYS = frozenset({
+    "preset_name",
+    "preset_names",
+    "host_type",
+    "printer_agent",
+    "print_host",
+    "print_host_webui",
+    "printhost_port",
+    "printhost_apikey",
+    "printhost_user",
+    "printhost_password",
+    "printhost_cafile",
+    "printhost_ssl_ignore_revoke",
+    "printhost_authorization_type",
+    "flashforge_serial_number",
+    "bbl_use_printhost",
+    "bbl_use_print_host_webui",
+})
+
+PROFILE_BOOKKEEPING_KEYS = frozenset({
+    "type",
+    "name",
+    "from",
+    "setting_id",
+    "printer_settings_id",
+    "print_settings_id",
+    "instantiation",
+    "bundle_id",
+    "fhub_id",
+    "fhub_source",
+    "updated_at",
+    "user_id",
+    "base_id",
+    "version",
+})
 
 
 def strip_printhost_secrets(settings):
-    return {k: v for k, v in settings.items() if k not in PRINTHOST_SECRET_KEYS}
+    return {k: v for k, v in settings.items() if k not in PRINTHOST_CONNECTION_KEYS}
+
+
+def _profile_parent(collection, preset):
+    parent_name = _preset_scalar(_preset_config_value(preset, "inherits"))
+    if not parent_name:
+        return "", None
+    try:
+        parent = collection.find_preset(parent_name)
+        if parent is not None:
+            return parent_name, parent
+    except Exception:
+        pass
+    # Defensive fallback for compatible host builds/mocks that expose indexed
+    # collections but not find_preset yet. Names are unique inside one Orca
+    # collection, and using the exact parent is safer than flattening the child.
+    try:
+        for index in range(collection.size()):
+            candidate = collection.preset(index)
+            if str(getattr(candidate, "name", "") or "") == parent_name:
+                return parent_name, candidate
+    except Exception:
+        pass
+    return parent_name, None
+
+
+def analyze_user_profile(collection, preset, kind):
+    """Split a saved Orca preset into lineage, technical delta and connection.
+
+    The host exposes resolved configs. Comparing the child with its exact loaded
+    parent recreates Orca's semantic intent without reading OrcaSlicer.conf or
+    freezing every current factory default into FilamentHub.
+    """
+    resolved = preset_config_dict(preset)
+    parent_name, parent = _profile_parent(collection, preset)
+    parent_resolved = not parent_name or parent is not None
+    parent_settings = preset_config_dict(parent) if parent is not None else {}
+    technical = {}
+    if parent_resolved:
+        for key, value in resolved.items():
+            if key in PRINTHOST_CONNECTION_KEYS or key in PROFILE_BOOKKEEPING_KEYS:
+                continue
+            if parent is not None and key in parent_settings and parent_settings[key] == value:
+                continue
+            technical[key] = value
+    if parent_name:
+        technical["inherits"] = parent_name
+
+    meaningful_keys = set(technical) - {"inherits"}
+    id_key = PROFILE_KINDS[kind]["id_key"]
+    setting_id = _preset_scalar(resolved.get(id_key) or getattr(preset, "name", ""))
+    analysis = {
+        "settings": technical,
+        "inherits": parent_name,
+        "parent_vendor_id": (
+            str(getattr(parent, "bundle_id", "") or "") if parent is not None else ""
+        ),
+        "parent_resolved": parent_resolved,
+        "setting_id": setting_id,
+        "has_technical_changes": bool(meaningful_keys),
+    }
+    if kind == "process":
+        analysis.update({
+            "compatible_printers": resolved.get("compatible_printers"),
+            "compatible_filaments": resolved.get("compatible_filaments"),
+            "compatible_printers_condition": resolved.get(
+                "compatible_printers_condition"
+            ),
+        })
+    return analysis
+
+
+def _local_profile_locator_from_path(preset_file, kind, name):
+    preset_file = str(preset_file or "").strip()
+    if preset_file:
+        account_root = os.path.abspath(
+            os.path.join(DATA_DIR, "user", resolve_user_preset_folder())
+        )
+        candidate = os.path.abspath(preset_file)
+        try:
+            if os.path.normcase(os.path.commonpath((account_root, candidate))) == os.path.normcase(
+                account_root
+            ):
+                relative = os.path.relpath(candidate, account_root)
+                return "file:" + os.path.normcase(relative).replace("\\", "/")
+        except (OSError, ValueError):
+            pass
+    return "host:%s:%s" % (kind, str(name or "").strip())
+
+
+def _local_profile_locator(preset, kind, name):
+    """A private disk locator used only to reconcile rename versus Save As."""
+    return _local_profile_locator_from_path(
+        getattr(preset, "file", ""), kind, name
+    )
+
+
+def _local_profile_signature(kind, item):
+    payload = {"settings": item.get("settings") or {}}
+    if kind == "process":
+        for key in (
+            "compatible_printers",
+            "compatible_filaments",
+            "compatible_printers_condition",
+        ):
+            value = item.get(key)
+            if value not in (None, "", []):
+                payload[key] = value
+    encoded = json.dumps(payload, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def reconcile_local_profile_identities(kind, items, authoritative=True):
+    """Assign durable UUIDs and conservatively recognize a one-to-one rename."""
+    registry = load_profile_identity_registry()
+    entries = registry["profiles"][kind]
+    current_locators = {item.get("locator") for item in items}
+    if authoritative:
+        for entry in entries.values():
+            if isinstance(entry, dict):
+                entry["present"] = False
+
+    used_ids = set()
+    unresolved = []
+    for item in items:
+        locator = str(item.get("locator") or "host:%s:%s" % (kind, item.get("name", "")))
+        signature = _local_profile_signature(kind, item)
+        previous = entries.get(locator)
+        local_id = _valid_uuid(previous.get("local_id")) if isinstance(previous, dict) else None
+        if local_id and local_id not in used_ids:
+            item["local_profile_id"] = local_id
+            used_ids.add(local_id)
+        else:
+            unresolved.append((item, locator, signature))
+        item["locator"] = locator
+        item["identity_signature"] = signature
+
+    if authoritative:
+        missing_by_signature = {}
+        for locator, entry in entries.items():
+            if locator in current_locators or not isinstance(entry, dict):
+                continue
+            local_id = _valid_uuid(entry.get("local_id"))
+            signature = entry.get("signature")
+            if local_id and local_id not in used_ids and isinstance(signature, str):
+                missing_by_signature.setdefault(signature, []).append((locator, local_id))
+
+        new_by_signature = {}
+        for unresolved_item in unresolved:
+            new_by_signature.setdefault(unresolved_item[2], []).append(unresolved_item)
+        for signature, new_items in new_by_signature.items():
+            missing = missing_by_signature.get(signature) or []
+            if len(new_items) == 1 and len(missing) == 1:
+                item, _locator, _signature = new_items[0]
+                item["local_profile_id"] = missing[0][1]
+                used_ids.add(missing[0][1])
+
+    for item, _locator, _signature in unresolved:
+        if not item.get("local_profile_id"):
+            item["local_profile_id"] = str(uuid.uuid4())
+
+    for item in items:
+        entries[item["locator"]] = {
+            "local_id": item["local_profile_id"],
+            "signature": item["identity_signature"],
+            "name": item.get("name") or "",
+            "present": True,
+        }
+    saved = save_profile_identity_registry(registry)
+    return registry["account_id"], items, saved
+
+
+def local_profile_external_id(account_id, local_profile_id):
+    return "orca-local-v1:%s:%s" % (account_id, local_profile_id)
 
 
 def scan_user_profiles(kind):
-    """The loaded account's own presets of one collection (UI thread — reads
-    preset_bundle). Values come from config_value, which resolves inheritance:
-    the file on disk holds only the overrides, so a nozzle inherited from the
-    system preset would otherwise never reach FilamentHub."""
+    """Saved user profiles only; system presets travel as observations.
+
+    Importing a selected stock profile would turn the global read-only
+    definition into a user-owned FilamentHub copy and later export it back.
+    Selection is evidence/reference, not ownership.
+    """
     out = []
     try:
-        collection = getattr(orca.host.preset_bundle(), PROFILE_KINDS[kind]["collection"])
+        spec = PROFILE_KINDS[kind]
+        bundle = orca.host.preset_bundle()
+        collection = getattr(bundle, spec["collection"])
+        seen_names = set()
         for i in range(collection.size()):
             preset = collection.preset(i)
-            if not preset.is_user():
+            name = str(getattr(preset, "name", "") or "")
+            if name in seen_names:
                 continue
-            name = preset.name or ""
+            try:
+                is_user = bool(preset.is_user())
+            except Exception:
+                is_user = False
+            if not is_user:
+                continue
             if "[fh]" in name or "@fh" in name:
                 continue
             if str(getattr(preset, "bundle_id", "") or "").startswith(BUNDLE_ID):
                 continue
-            settings = preset_config_dict(preset)
-            if settings:
-                out.append({"name": name, "settings": settings})
-    except Exception:
-        pass
+            analysis = analyze_user_profile(collection, preset, kind)
+            if not analysis["parent_resolved"]:
+                # The host gives us a flattened child config. Without its exact
+                # declared parent there is no honest way to recover the user's
+                # delta, so keep it as observation evidence and retry after the
+                # parent bundle becomes available instead of uploading a clone.
+                seen_names.add(name)
+                continue
+            # A child created only to hold an IP/credentials is not a new
+            # technical configuration. It is still sent as an observation by
+            # observe_printer_presets(), where it can bind a physical printer to
+            # the canonical parent without polluting the profile list.
+            if not analysis["has_technical_changes"]:
+                seen_names.add(name)
+                continue
+            out.append({
+                "name": name,
+                "locator": _local_profile_locator(preset, kind, name),
+                "settings": analysis["settings"],
+                "setting_id": analysis["setting_id"],
+                "inherits": analysis["inherits"],
+                "compatible_printers": analysis.get("compatible_printers"),
+                "compatible_filaments": analysis.get("compatible_filaments"),
+                "compatible_printers_condition": analysis.get(
+                    "compatible_printers_condition"
+                ),
+            })
+            seen_names.add(name)
+    except Exception as exc:
+        fh_log("%s profile scan failed: %s" % (kind, exc))
     return out
 
 
-def push_user_profiles(kind, token, items, state):
+def push_user_profiles(kind, token, items, state, authoritative=True):
     """Send the profiles whose content changed since the last sync. Returns
     (sent, failed); unchanged profiles are silently left alone."""
     spec = PROFILE_KINDS[kind]
+    account_id, items, registry_saved = reconcile_local_profile_identities(
+        kind, items, authoritative=authoritative
+    )
+    if not registry_saved:
+        return 0, max(1, len(items))
+
+    source_instance_id = plugin_source_instance_id()
+    snapshot_id = None
+    server_bound_ids = None
+    protocol_key = "_profile_snapshot_v1:%s:%s" % (account_id, kind)
+    if authoritative:
+        start_status, start_body = http_post_json(
+            "/orcaslicer/profile-snapshots/start",
+            token,
+            {
+                "kind": kind,
+                "source_instance_id": source_instance_id,
+                "account_id": account_id,
+            },
+        )
+        if start_status == 200:
+            try:
+                start_result = json.loads(start_body.decode("utf-8")) or {}
+                snapshot_id = _valid_uuid(start_result.get("snapshot_id"))
+                raw_bound_ids = start_result.get("bound_local_profile_ids")
+                if raw_bound_ids is not None:
+                    if not isinstance(raw_bound_ids, list):
+                        raise ValueError("bound_local_profile_ids must be a list")
+                    server_bound_ids = {
+                        _valid_uuid(value) for value in raw_bound_ids
+                    }
+                    if None in server_bound_ids:
+                        raise ValueError("bound_local_profile_ids contains an invalid id")
+            except (AttributeError, UnicodeDecodeError, ValueError):
+                snapshot_id = None
+                server_bound_ids = None
+            if snapshot_id is None:
+                fh_log("%s snapshot start returned an invalid id" % kind)
+                return 0, max(1, len(items))
+        elif start_status not in (404, 405):
+            fh_log("%s snapshot start HTTP %s" % (kind, start_status))
+            return 0, max(1, len(items))
+
+    force_full_snapshot = snapshot_id is not None and not state.get(protocol_key)
     changed = []
     for item in items:
         settings = item["settings"]
         if kind == "machine":
             settings = strip_printhost_secrets(settings)
-        key = "%s:%s" % (spec["state_prefix"], _draft_id(item["name"]))
-        digest = preset_content_hash(settings)
-        if state.get(key) == digest:
+        local_profile_id = item["local_profile_id"]
+        key = "%s:%s" % (spec["state_prefix"], local_profile_id)
+        digest_payload = dict(settings)
+        digest_payload["__name"] = item["name"]
+        if kind == "process":
+            for compatibility_key in (
+                "compatible_printers",
+                "compatible_filaments",
+                "compatible_printers_condition",
+            ):
+                if item.get(compatibility_key) not in (None, "", []):
+                    digest_payload["__effective_%s" % compatibility_key] = item[
+                        compatibility_key
+                    ]
+        digest = preset_content_hash(digest_payload)
+        binding_missing = (
+            server_bound_ids is not None
+            and local_profile_id not in server_bound_ids
+        )
+        if not force_full_snapshot and not binding_missing and state.get(key) == digest:
             continue
         # setting_id is how FilamentHub ties a network observation of this printer
         # back to its profile, so it must travel with the profile, not only as the
         # external id.
-        orca_id = str(settings.get(spec["id_key"]) or item["name"])[:200]
-        changed.append((key, digest, {
+        setting_id = _preset_scalar(
+            item.get("setting_id") or settings.get(spec["id_key"]) or item["name"]
+        )[:100]
+        payload = {
             "name": item["name"][:200],
-            "external_id": orca_id,
-            "setting_id": orca_id,
+            "external_id": local_profile_external_id(account_id, local_profile_id),
+            "local_profile_id": local_profile_id,
+            "setting_id": setting_id,
             "orcaslicer_settings": settings,
             "source": "orcaslicer",
-        }))
+        }
+        if kind == "process":
+            for compatibility_key in (
+                "compatible_printers",
+                "compatible_filaments",
+                "compatible_printers_condition",
+            ):
+                value = item.get(compatibility_key)
+                if value not in (None, "", []):
+                    payload[compatibility_key] = value
+        changed.append((key, digest, payload))
     sent = failed = 0
     for batch_start in range(0, len(changed), 25):
         batch = changed[batch_start:batch_start + 25]
-        status, _ = http_post_json(spec["import_path"], token,
-                                   {"profiles": [entry[2] for entry in batch]})
+        request_payload = {"profiles": [entry[2] for entry in batch]}
+        if snapshot_id is not None:
+            request_payload.update({
+                "source_instance_id": source_instance_id,
+                "account_id": account_id,
+                "snapshot_id": snapshot_id,
+            })
+        status, body = http_post_json(spec["import_path"], token, request_payload)
         if status == 200:
-            for key, digest, _payload in batch:
-                state[key] = digest
-            sent += len(batch)
+            try:
+                response = json.loads(body.decode("utf-8")) or {}
+            except (AttributeError, UnicodeDecodeError, ValueError):
+                response = {}
+            results = response.get("results")
+            if isinstance(results, list):
+                for index, (key, digest, _payload) in enumerate(batch):
+                    item_result = results[index] if index < len(results) else None
+                    if (
+                        isinstance(item_result, dict)
+                        and item_result.get("status") in {"created", "updated", "skipped"}
+                    ):
+                        state[key] = digest
+                        sent += 1
+                    else:
+                        failed += 1
+            else:
+                if snapshot_id is not None:
+                    # The snapshot API and per-item results ship together. An
+                    # incomplete 200 must not finalize absence based on a batch
+                    # whose individual writes were never acknowledged.
+                    failed += len(batch)
+                else:
+                    # Compatibility with older API builds that acknowledged a
+                    # whole successful batch without returning item results.
+                    for key, digest, _payload in batch:
+                        state[key] = digest
+                    sent += len(batch)
         else:
             fh_log("%s push HTTP %s for %d profile(s)" % (kind, status, len(batch)))
             failed += len(batch)
+
+    if snapshot_id is not None and failed == 0:
+        finalize_status, finalize_body = http_post_json(
+            "/orcaslicer/profile-snapshots/finalize",
+            token,
+            {
+                "kind": kind,
+                "source_instance_id": source_instance_id,
+                "account_id": account_id,
+                "snapshot_id": snapshot_id,
+                "present_local_profile_ids": [
+                    item["local_profile_id"] for item in items
+                ],
+            },
+        )
+        finalize_result = {}
+        if finalize_status == 200:
+            try:
+                finalize_result = json.loads(finalize_body.decode("utf-8")) or {}
+            except (AttributeError, UnicodeDecodeError, ValueError):
+                finalize_result = {}
+        if finalize_result.get("status") in {"finalized", "already_finalized"}:
+            state[protocol_key] = 1
+        else:
+            fh_log("%s snapshot finalize failed: HTTP %s" % (kind, finalize_status))
+            failed += 1
     return sent, failed
+
+
+RECOVERY_MACHINE_STRUCTURAL_KEYS = frozenset({
+    # Orca writes these to a user machine file to keep the file structurally
+    # valid even when they equal the system parent. They are not evidence of a
+    # customized slicing configuration on their own.
+    "printer_extruder_id",
+    "printer_extruder_variant",
+})
+
+
+def recovery_profile_sync_item(candidate):
+    """Convert one raw recovery file into the normal delta import contract."""
+    kind = candidate["kind"]
+    profile = dict(candidate["profile"])
+    settings = {}
+    for key, value in profile.items():
+        if key in PRINTHOST_CONNECTION_KEYS or key in PROFILE_BOOKKEEPING_KEYS:
+            continue
+        settings[key] = value
+    inherits = _parent_name(profile)
+    if inherits:
+        settings["inherits"] = inherits
+
+    meaningful = set(settings) - {"inherits"}
+    if kind == "machine":
+        meaningful -= RECOVERY_MACHINE_STRUCTURAL_KEYS
+        if not meaningful:
+            return None
+
+    item = {
+        "name": candidate["name"],
+        "locator": _local_profile_locator_from_path(
+            candidate.get("path"), kind, candidate["name"]
+        ),
+        "settings": settings,
+        "setting_id": _preset_scalar(
+            profile.get(PROFILE_KINDS[kind]["id_key"]) or candidate["name"]
+        ),
+        "inherits": inherits,
+    }
+    if kind == "process":
+        for key in (
+            "compatible_printers",
+            "compatible_filaments",
+            "compatible_printers_condition",
+        ):
+            if profile.get(key) not in (None, "", []):
+                item[key] = profile[key]
+    return item
+
+
+def recovery_connection_observation(candidate):
+    """Return safe physical-printer evidence from a connection-only backup."""
+    profile = candidate["profile"]
+    host = _preset_scalar(profile.get("print_host"))
+    if not host:
+        return None
+    return {
+        "preset_name": candidate["name"][:200],
+        "printer_settings_id": _preset_scalar(
+            profile.get("printer_settings_id") or candidate["name"]
+        )[:200],
+        "inherits": _parent_name(profile)[:200],
+        "printer_model": _preset_scalar(profile.get("printer_model"))[:200],
+        "nozzle_diameter": _preset_scalar(
+            profile.get("nozzle_diameter") or profile.get("printer_variant")
+        )[:20],
+        "vendor_id": "",
+        "profile_fingerprint": None,
+        "print_host": host[:500],
+        "host_type": _preset_scalar(profile.get("host_type"))[:50],
+        "is_system": False,
+        "has_technical_changes": False,
+        "is_current": False,
+    }
 
 
 # --------------------------------------------------------------------------- #
@@ -2053,7 +3459,9 @@ function sendPluginCapabilities() {
   try {
     frame.contentWindow.postMessage(
       { source: 'filamenthub-plugin', type: 'plugin-capabilities',
-        pluginVersion: '__PLUGIN_VERSION__', capabilities: ['printer-bundle-install'] },
+        pluginVersion: '__PLUGIN_VERSION__',
+        capabilities: ['printer-bundle-install', 'bambu-lan-bridge', 'profile-sync',
+                       'happy-hare-moonraker', 'open-external'] },
       SITE_ORIGIN);
   } catch (e) { /* iframe not ready */ }
 }
@@ -2103,8 +3511,14 @@ window.addEventListener('message', function (event) {
     startOAuthPolling();
     return;
   }
-  if (data.type === 'profile-changed' || data.type === 'recover-import' ||
-      data.type === 'install-printer-bundle') { startSyncPolling(); }
+  if (data.type === 'configure-bambu') {
+    showBambuOverlay(data);
+    return;
+  }
+  if (data.type === 'sync' || data.type === 'profile-changed' || data.type === 'recover-import' ||
+      data.type === 'install-printer-bundle' || data.type === 'remove-bambu-local') {
+    startSyncPolling();
+  }
   try { orca.postMessage(data); } catch (e) { /* bridge not ready */ }
 });
 
@@ -2205,6 +3619,110 @@ function showOAuthOverlay(url) {
   box.appendChild(row);
   ov.appendChild(box);
   document.body.appendChild(ov);
+}
+
+function hideBambuOverlay() {
+  var overlay = document.getElementById('bambu-overlay');
+  if (overlay) overlay.remove();
+}
+function showBambuOverlay(binding) {
+  hideBambuOverlay();
+  var printerId = Number(binding.physicalPrinterId);
+  var systemId = Number(binding.materialSystemId);
+  var pairingCode = typeof binding.pairingCode === 'string' ? binding.pairingCode : '';
+  if (!Number.isInteger(printerId) || printerId < 1 ||
+      !Number.isInteger(systemId) || systemId < 1 || !pairingCode) return;
+  var overlay = document.createElement('div');
+  overlay.id = 'bambu-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:2147483647;display:flex;' +
+    'align-items:center;justify-content:center;background:rgba(0,0,0,0.72);';
+  var box = document.createElement('form');
+  box.style.cssText = 'width:min(520px,calc(100% - 32px));padding:22px;box-sizing:border-box;' +
+    'border-radius:12px;background:var(--orca-bg,#1e1e2e);color:var(--orca-fg,#e0e0e0);' +
+    'border:1px solid var(--orca-border,#3c3c4c);font-size:13px;';
+  var title = document.createElement('div');
+  title.textContent = uiCopy.bambuTitle + (binding.printerName ? ' · ' + binding.printerName : '');
+  title.style.cssText = 'font-weight:650;font-size:16px;margin-bottom:7px;';
+  var hint = document.createElement('div');
+  hint.textContent = uiCopy.bambuHint;
+  hint.style.cssText = 'color:var(--orca-muted,#a0a0a0);line-height:1.45;margin-bottom:16px;';
+  function field(labelText, type, placeholder, required) {
+    var wrap = document.createElement('label');
+    wrap.style.cssText = 'display:block;margin-top:11px;color:var(--orca-muted,#a0a0a0);';
+    var label = document.createElement('span');
+    label.textContent = labelText;
+    label.style.cssText = 'display:block;margin-bottom:5px;';
+    var input = document.createElement('input');
+    input.type = type;
+    input.placeholder = placeholder || '';
+    input.required = !!required;
+    input.autocomplete = 'off';
+    input.style.cssText = 'width:100%;box-sizing:border-box;padding:9px 10px;border-radius:7px;' +
+      'background:rgba(255,255,255,.06);color:inherit;' +
+      'border:1px solid var(--orca-border,#3c3c4c);font:inherit;';
+    wrap.appendChild(label);
+    wrap.appendChild(input);
+    box.appendChild(wrap);
+    return input;
+  }
+  box.appendChild(title);
+  box.appendChild(hint);
+  var host = field(uiCopy.bambuAddress, 'text', uiCopy.bambuAddressPlaceholder, true);
+  var code = field(uiCopy.bambuCode, 'password', '', true);
+  var serial = field(uiCopy.bambuSerial, 'text', uiCopy.bambuSerialHint, false);
+  var local = document.createElement('div');
+  local.textContent = uiCopy.bambuLocalOnly;
+  local.style.cssText = 'margin-top:12px;color:var(--orca-muted,#a0a0a0);font-size:11px;line-height:1.45;';
+  box.appendChild(local);
+  var row = document.createElement('div');
+  row.style.cssText = 'display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end;margin-top:18px;';
+  function button(text, accent) {
+    var element = document.createElement('button');
+    element.type = 'button';
+    element.textContent = text;
+    element.style.cssText = 'padding:7px 14px;border-radius:7px;cursor:pointer;font:inherit;' +
+      'border:1px solid ' + (accent ? 'var(--orca-accent,#8b7cf8)' : 'var(--orca-border,#3c3c4c)') + ';' +
+      'background:' + (accent ? 'var(--orca-accent,#8b7cf8)' : 'transparent') + ';' +
+      'color:' + (accent ? '#fff' : 'var(--orca-fg,#e0e0e0)') + ';';
+    return element;
+  }
+  var remove = button(uiCopy.bambuRemove, false);
+  remove.style.marginRight = 'auto';
+  remove.addEventListener('click', function () {
+    try {
+      orca.postMessage({ source:'filamenthub-plugin', type:'remove-bambu-local',
+        physicalPrinterId:printerId });
+      startSyncPolling();
+    } catch (e) {}
+    hideBambuOverlay();
+  });
+  var cancel = button(uiCopy.cancel, false);
+  cancel.addEventListener('click', hideBambuOverlay);
+  var save = button(uiCopy.bambuSave, true);
+  save.type = 'submit';
+  row.appendChild(remove);
+  row.appendChild(cancel);
+  row.appendChild(save);
+  box.appendChild(row);
+  box.addEventListener('submit', function (event) {
+    event.preventDefault();
+    if (!host.value.trim() || !code.value.trim()) return;
+    try {
+      orca.postMessage({ source:'filamenthub-plugin', type:'configure-bambu-local',
+        physicalPrinterId:printerId, materialSystemId:systemId,
+        host:host.value.trim(), accessCode:code.value.trim(), serial:serial.value.trim(),
+        pairingCode:pairingCode });
+      startSyncPolling();
+    } catch (e) {}
+    code.value = '';
+    hideBambuOverlay();
+  });
+  overlay.addEventListener('click', function (event) {
+    if (event.target === overlay) hideBambuOverlay();
+  });
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+  host.focus();
 }
 
 // Toolbar -> catalog: SPA navigation inside the iframe (no page reload).
@@ -2409,6 +3927,13 @@ try {
             keys: data.keys || [], hook: data.hook || null },
           SITE_ORIGIN);
       } catch (e) { /* iframe not ready */ }
+    } else if (data.type === 'happy-hare-result') {
+      try {
+        frame.contentWindow.postMessage(
+          { source: 'filamenthub-plugin', type: 'happy-hare-result',
+            requestId: data.requestId || '', result: data.result || {} },
+          SITE_ORIGIN);
+      } catch (e) { /* iframe not ready */ }
     } else if (data.type === 'diagnostics') {
       copyDiagnostics(data.text || '');
     }
@@ -2474,13 +3999,32 @@ BAMBU_EXTERNAL_TRAY_DEPUTY = 254
 # Single-slot units (AMS HT) carry their own flat number from 0x80 up instead of
 # being addressed as unit*4 + slot, and tray_now reports them that way as well.
 BAMBU_WIDE_UNIT_BASE = 128
+BAMBU_AMS_TYPE_N3S = 4
+BAMBU_AMS_TYPE_MIXED = 5
 
 
-def bambu_slot_index(unit_id, slot_id):
+def _bambu_ams_type(unit_info):
+    bits = _bambu_bits(unit_info)
+    return None if bits is None else bits & 0xF
+
+
+def bambu_slot_index(unit_id, slot_id, unit_info=None):
     if unit_id in (BAMBU_EXTERNAL_TRAY_MAIN, BAMBU_EXTERNAL_TRAY_DEPUTY):
         return unit_id
-    if unit_id >= BAMBU_WIDE_UNIT_BASE:
+    ams_type = _bambu_ams_type(unit_info)
+    if unit_id >= BAMBU_WIDE_UNIT_BASE or ams_type == BAMBU_AMS_TYPE_N3S:
         return unit_id
+    if ams_type == BAMBU_AMS_TYPE_MIXED:
+        return 24 + slot_id
+    return unit_id * 4 + slot_id
+
+
+def _bambu_presence_bit_index(unit_id, slot_id, unit_info=None):
+    ams_type = _bambu_ams_type(unit_info)
+    if unit_id >= BAMBU_WIDE_UNIT_BASE or ams_type == BAMBU_AMS_TYPE_N3S:
+        return 16 + max(unit_id - BAMBU_WIDE_UNIT_BASE, 0) + slot_id
+    if ams_type == BAMBU_AMS_TYPE_MIXED:
+        return 24 + slot_id
     return unit_id * 4 + slot_id
 
 
@@ -2524,7 +4068,7 @@ def _bambu_amount(value):
 
 
 def _bambu_slot(tray, index, present):
-    uid = (tray.get("tray_uuid") or "").strip()
+    uid = (tray.get("tray_uuid") or tray.get("tag_uid") or "").strip()
     return {
         "index": index,
         "present": present,
@@ -2580,17 +4124,383 @@ def parse_bambu_feed(report):
             slot_id = _bambu_int(tray.get("id"))
             if slot_id is None:
                 continue
-            index = bambu_slot_index(unit_id, slot_id)
+            unit_info = unit.get("info")
+            index = bambu_slot_index(unit_id, slot_id, unit_info)
             if exist_bits is None:
                 present = bool((tray.get("tray_type") or "").strip())
             else:
-                present = bool(exist_bits & (1 << index))
+                presence_index = _bambu_presence_bit_index(unit_id, slot_id, unit_info)
+                present = bool(exist_bits & (1 << presence_index))
             slots.append(_bambu_slot(tray, index, present))
 
     slots.extend(external)
     slots.sort(key=lambda slot: slot["index"])
     active = _bambu_int(feed.get("tray_now")) if isinstance(feed, dict) else None
     return {"slots": slots, "active_index": active}
+
+
+_BAMBU_STATES = {
+    "RUNNING": "printing",
+    "PAUSE": "paused",
+    "PAUSED": "paused",
+    "IDLE": "idle",
+    "FINISH": "finished",
+    "FAILED": "failed",
+    "PREPARE": "preparing",
+    "SLICING": "preparing",
+}
+BAMBU_MQTT_PORT = 8883
+BAMBU_POLL_SECONDS = 30.0
+BAMBU_MQTT_TIMEOUT = 12.0
+
+
+def _mqtt_len(length):
+    encoded = bytearray()
+    while True:
+        digit = length & 0x7F
+        length >>= 7
+        if length:
+            digit |= 0x80
+        encoded.append(digit)
+        if not length:
+            return bytes(encoded)
+
+
+def _mqtt_field(payload):
+    return struct.pack("!H", len(payload)) + payload
+
+
+def _recv_exact(sock, length, deadline):
+    chunks = bytearray()
+    while len(chunks) < length:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError("Bambu MQTT timed out")
+        sock.settimeout(max(0.1, remaining))
+        chunk = sock.recv(length - len(chunks))
+        if not chunk:
+            raise ConnectionError("Bambu MQTT connection closed")
+        chunks.extend(chunk)
+    return bytes(chunks)
+
+
+def _mqtt_read_packet(sock, deadline):
+    header = _recv_exact(sock, 1, deadline)[0]
+    length = 0
+    multiplier = 1
+    for _ in range(4):
+        digit = _recv_exact(sock, 1, deadline)[0]
+        length += (digit & 0x7F) * multiplier
+        if not digit & 0x80:
+            body = _recv_exact(sock, length, deadline) if length else b""
+            return header, body
+        multiplier *= 128
+    raise ValueError("invalid MQTT remaining length")
+
+
+def _resolved_bambu_address(host):
+    """Resolve once and return only a private/link-local LAN destination."""
+    if not isinstance(host, str):
+        raise ValueError("invalid LAN address")
+    host = host.strip().strip("[]")
+    if not host or len(host) > 253 or any(ch in host for ch in "/\\?#@"):
+        raise ValueError("invalid LAN address")
+    addresses = socket.getaddrinfo(
+        host,
+        BAMBU_MQTT_PORT,
+        type=socket.SOCK_STREAM,
+        proto=socket.IPPROTO_TCP,
+    )
+    for family, socktype, proto, _, sockaddr in addresses:
+        try:
+            address = ipaddress.ip_address(sockaddr[0])
+        except ValueError:
+            continue
+        allowed = (
+            DEV_CONTOUR if address.is_loopback else address.is_private or address.is_link_local
+        )
+        if allowed and not (address.is_multicast or address.is_unspecified):
+            return family, socktype, proto, sockaddr
+    raise ValueError("Bambu address must resolve inside the local network")
+
+
+def _open_bambu_mqtt(host, access_code, timeout):
+    family, socktype, proto, sockaddr = _resolved_bambu_address(host)
+    raw = socket.socket(family, socktype, proto)
+    raw.settimeout(timeout)
+    try:
+        raw.connect(sockaddr)
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+        return context.wrap_socket(raw, server_hostname=None)
+    except Exception:
+        raw.close()
+        raise
+
+
+def read_bambu_lan_snapshot(config, timeout=BAMBU_MQTT_TIMEOUT):
+    """Read one full-ish Bambu MQTT report and disconnect.
+
+    The access code is used only for this local TLS connection. The returned
+    payload deliberately contains no address or credential.
+    """
+    host = config.get("host") or ""
+    access_code = config.get("access_code") or ""
+    serial = (config.get("serial") or "").strip()
+    if not access_code:
+        raise ValueError("missing Bambu access code")
+    deadline = time.monotonic() + timeout
+    sock = _open_bambu_mqtt(host, access_code, timeout)
+    try:
+        variable = _mqtt_field(b"MQTT") + bytes([4, 0xC2]) + struct.pack("!H", 30)
+        client_id = ("fhub-" + secrets.token_hex(6)).encode("ascii")
+        connection = (
+            variable
+            + _mqtt_field(client_id)
+            + _mqtt_field(b"bblp")
+            + _mqtt_field(access_code.encode("utf-8"))
+        )
+        sock.sendall(b"\x10" + _mqtt_len(len(connection)) + connection)
+        header, connack = _mqtt_read_packet(sock, deadline)
+        if (header & 0xF0) != 0x20 or len(connack) < 2 or connack[1] != 0:
+            raise PermissionError("Bambu MQTT authentication rejected")
+
+        report_topic = (
+            "device/%s/report" % serial if serial else "device/+/report"
+        ).encode("utf-8")
+        subscribe = struct.pack("!H", 1) + _mqtt_field(report_topic) + b"\x00"
+        sock.sendall(b"\x82" + _mqtt_len(len(subscribe)) + subscribe)
+        sub_header, suback = _mqtt_read_packet(sock, deadline)
+        if (
+            (sub_header & 0xF0) != 0x90
+            or len(suback) < 3
+            or suback[2] == 0x80
+        ):
+            raise ConnectionError("Bambu MQTT subscription rejected")
+
+        def request_full_snapshot(target_serial):
+            topic = ("device/%s/request" % target_serial).encode("utf-8")
+            body = json.dumps(
+                {"pushing": {"sequence_id": "0", "command": "pushall"}},
+                separators=(",", ":"),
+            ).encode("utf-8")
+            publish = _mqtt_field(topic) + body
+            sock.sendall(b"\x30" + _mqtt_len(len(publish)) + publish)
+
+        if serial:
+            request_full_snapshot(serial)
+
+        fallback = None
+        while time.monotonic() < deadline:
+            header, packet = _mqtt_read_packet(sock, deadline)
+            packet_type = header & 0xF0
+            if packet_type == 0xC0:
+                sock.sendall(b"\xD0\x00")
+                continue
+            if packet_type != 0x30 or len(packet) < 2:
+                continue
+            topic_length = struct.unpack("!H", packet[:2])[0]
+            if len(packet) < 2 + topic_length:
+                continue
+            topic = packet[2 : 2 + topic_length].decode("utf-8", "replace")
+            parts = topic.split("/")
+            if len(parts) != 3 or parts[0] != "device" or parts[2] != "report":
+                continue
+            topic_serial = parts[1]
+            if not re.fullmatch(r"[A-Za-z0-9._-]{4,80}", topic_serial):
+                continue
+            if serial and topic_serial != serial:
+                continue
+            if not serial:
+                serial = topic_serial
+                request_full_snapshot(serial)
+            payload_offset = 2 + topic_length
+            qos = (header >> 1) & 0x03
+            if qos == 0x03:
+                continue
+            if qos:
+                if len(packet) < payload_offset + 2:
+                    continue
+                payload_offset += 2
+            try:
+                message = json.loads(packet[payload_offset:].decode("utf-8"))
+            except (UnicodeDecodeError, ValueError):
+                continue
+            report = message.get("print") if isinstance(message, dict) else None
+            if not isinstance(report, dict):
+                continue
+            if "gcode_state" in report or "nozzle_temper" in report:
+                fallback = report
+            if "gcode_state" in report and (
+                "ams" in report or "vt_tray" in report or "vir_slot" in report
+            ):
+                return serial, report
+        if fallback is not None:
+            return serial, fallback
+        raise TimeoutError("Bambu MQTT report timed out")
+    finally:
+        try:
+            sock.sendall(b"\xE0\x00")
+        except Exception:
+            pass
+        try:
+            sock.close()
+        except Exception:
+            pass
+
+
+def _bambu_number(report, name):
+    value = report.get(name)
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _bambu_slot_label(index):
+    if index == BAMBU_EXTERNAL_TRAY_MAIN:
+        return "External spool"
+    if index == BAMBU_EXTERNAL_TRAY_DEPUTY:
+        return "External spool 2"
+    if index >= BAMBU_WIDE_UNIT_BASE:
+        return "AMS HT %d" % (index - BAMBU_WIDE_UNIT_BASE + 1)
+    return "AMS %d · %d" % (index // 4 + 1, index % 4 + 1)
+
+
+def build_bambu_bridge_snapshot(config, source_instance_id, report):
+    """Normalize a Bambu report into the server's provider-neutral contract."""
+    state = str(report.get("gcode_state") or "").strip().upper()
+    progress = _bambu_int(report.get("mc_percent"))
+    remaining_minutes = _bambu_int(report.get("mc_remaining_time"))
+    print_error = report.get("print_error")
+    printer = {
+        "state": _BAMBU_STATES.get(state, "unknown"),
+        "progress_percent": progress if progress is None else max(0, min(progress, 100)),
+        "remaining_seconds": (
+            max(0, remaining_minutes * 60) if remaining_minutes is not None else None
+        ),
+        "current_layer": _bambu_int(report.get("layer_num")),
+        "total_layers": _bambu_int(report.get("total_layer_num")),
+        "job_name": (report.get("subtask_name") or report.get("gcode_file") or "")[:300]
+        or None,
+        "nozzle_temperature": _bambu_number(report, "nozzle_temper"),
+        "nozzle_target_temperature": _bambu_number(report, "nozzle_target_temper"),
+        "bed_temperature": _bambu_number(report, "bed_temper"),
+        "bed_target_temperature": _bambu_number(report, "bed_target_temper"),
+        "chamber_temperature": _bambu_number(report, "chamber_temper"),
+        "wifi_signal": str(report.get("wifi_signal") or "")[:32] or None,
+        "error_code": str(print_error)[:80] if print_error not in (None, 0, "0", "") else None,
+    }
+    feed = parse_bambu_feed(report)
+    active_index = feed.get("active_index") if feed else None
+    slots = []
+    for slot in (feed or {}).get("slots") or []:
+        index = slot["index"]
+        slots.append(
+            {
+                "provider_index": index,
+                "label": _bambu_slot_label(index),
+                "kind": "external" if index in {254, 255} else "slot",
+                "present": slot.get("present"),
+                "active_feed": index == active_index if active_index is not None else None,
+                "material": slot.get("material"),
+                "color_hex": slot.get("color_hex"),
+                "remaining_percent": slot.get("remaining_pct"),
+                "remaining_grams": slot.get("remaining_g"),
+            }
+        )
+    return {
+        "material_system_id": config["material_system_id"],
+        "provider": "bambu",
+        "transport": "orca_plugin_lan",
+        "source_instance_id": source_instance_id,
+        "observed_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "printer": printer,
+        "slots": slots,
+        "slot_topology_complete": feed is not None,
+    }
+
+
+def _persist_discovered_bambu_serial(physical_printer_id, serial):
+    if not serial:
+        return
+    payload = load_bambu_config()
+    changed = False
+    for item in payload["printers"]:
+        if item["physical_printer_id"] == physical_printer_id and not item.get("serial"):
+            item["serial"] = serial[:80]
+            changed = True
+    if changed:
+        save_bambu_config(payload)
+
+
+class BambuBridgeRuntime:
+    """One bounded daemon serializes all configured local Bambu observations."""
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._thread = None
+        self._wake = threading.Event()
+
+    def start(self):
+        with self._lock:
+            if self._thread is not None and self._thread.is_alive():
+                return
+            self._thread = threading.Thread(
+                target=self._run,
+                name="filamenthub-bambu-bridge",
+                daemon=True,
+            )
+            self._thread.start()
+
+    def wake(self):
+        self.start()
+        self._wake.set()
+
+    def _run(self):
+        while True:
+            local = load_bambu_config()
+            active = [item for item in local["printers"] if item.get("bridge_token")]
+            if not active:
+                with self._lock:
+                    self._thread = None
+                return
+            for config in active:
+                try:
+                    serial, report = read_bambu_lan_snapshot(config)
+                    snapshot = build_bambu_bridge_snapshot(
+                        config, local["source_instance_id"], report
+                    )
+                    status, _ = http_post_bridge_json(
+                        "/printer-bridge/snapshot",
+                        config["bridge_token"],
+                        snapshot,
+                    )
+                    if status == 401:
+                        # The owner may have removed the system from the site or
+                        # replaced this binding elsewhere. The rejected token is
+                        # authoritative: drop the LAN credentials too instead of
+                        # leaving an unreachable secret behind forever.
+                        remove_bambu_bridge(config["physical_printer_id"])
+                        continue
+                    if status == 200:
+                        _persist_discovered_bambu_serial(
+                            config["physical_printer_id"], serial
+                        )
+                    else:
+                        fh_log("Bambu bridge upload failed: HTTP %s" % status)
+                except Exception as exc:
+                    # Never stringify network exceptions: addresses are local
+                    # configuration and do not belong in a support log.
+                    fh_log("Bambu bridge poll failed: %s" % type(exc).__name__)
+            self._wake.wait(BAMBU_POLL_SECONDS)
+            self._wake.clear()
+
+
+BAMBU_BRIDGE_RUNTIME = BambuBridgeRuntime()
 
 
 # --------------------------------------------------------------------------- #
@@ -2909,6 +4819,7 @@ def report_slice(gcode_path, output_name="", host=""):
         os.path.basename(output_name or gcode_path) or "print.gcode"
     )[:300]
     identity["source_key"] = _remember_slice_path(gcode_path, identity["file_name"])
+    identity["source_instance_id"] = plugin_source_instance_id()
     if host:
         identity["target_host"] = host[:50]
     status, _ = http_post_json("/orcaslicer/slices", token, {"slices": [identity]})
@@ -3005,6 +4916,8 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
         known = self._known_filament_preset_names()  # host read on the UI thread
         refresh_user_preset_folder()
         observations = observe_printer_presets()  # UI thread: read printer connection data
+        moonraker_connections = observe_local_moonraker_connections(observations)
+        source_instance_id = plugin_source_instance_id()
         active_filaments = scan_active_user_filaments()  # UI thread: loaded account's user presets
         host_profiles = self._host_profiles()  # UI thread: machine/process presets
         BACKGROUND_WORKER.submit(
@@ -3015,6 +4928,8 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
             active_filaments,
             host_profiles,
             observations,
+            source_instance_id,
+            moonraker_connections,
         )
 
     def execute(self):
@@ -3082,10 +4997,107 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
         if not self._deliver("parsed-slice", result=result):
             SHELL_SERVER.set_slice_parse(result)
 
+    def _deliver_happy_hare_result(self, request_id, result):
+        self._deliver(
+            "happy-hare-result",
+            requestId=request_id,
+            result=result,
+        )
+
     def _do_check_slices(self, wanted, hook):
         alive = [key for key in wanted if slice_path_for_key(key)]
         if not self._deliver("slices-alive", keys=alive, hook=hook):
             SHELL_SERVER.set_slice_alive(alive, hook)
+
+    def _do_configure_bambu(
+        self,
+        physical_printer_id,
+        material_system_id,
+        host,
+        access_code,
+        serial,
+        pairing_code,
+    ):
+        try:
+            _resolved_bambu_address(host)
+            pending = {
+                "physical_printer_id": physical_printer_id,
+                "material_system_id": material_system_id,
+                "host": host,
+                "access_code": access_code,
+                "serial": serial,
+            }
+            discovered_serial, report = read_bambu_lan_snapshot(pending)
+            local = load_bambu_config()
+            pair_status, pair_body = http_post_json(
+                "/printer-bridge/pair",
+                "",
+                {
+                    "pairing_code": pairing_code,
+                    "provider": "bambu",
+                    "transport": "orca_plugin_lan",
+                    "source_instance_id": local["source_instance_id"],
+                    "plugin_version": PLUGIN_VERSION,
+                    "capabilities": ["read", "presence"],
+                },
+            )
+            if pair_status != 200:
+                self._deliver_sync_result(ui_text("bambuPairingFailed"))
+                return
+            paired = json.loads(pair_body.decode("utf-8"))
+            bridge_token = paired.get("bridge_token") if isinstance(paired, dict) else ""
+            if not isinstance(bridge_token, str) or not bridge_token.startswith("fhpb_"):
+                self._deliver_sync_result(ui_text("bambuPairingFailed"))
+                return
+            configure_bambu_bridge(
+                physical_printer_id,
+                material_system_id,
+                host,
+                access_code,
+                discovered_serial or serial,
+                bridge_token,
+            )
+            configured = load_bambu_config()
+            stored = next(
+                (
+                    item
+                    for item in configured["printers"]
+                    if item["physical_printer_id"] == physical_printer_id
+                ),
+                None,
+            )
+            if stored is not None:
+                snapshot = build_bambu_bridge_snapshot(
+                    stored,
+                    configured["source_instance_id"],
+                    report,
+                )
+                http_post_bridge_json("/printer-bridge/snapshot", bridge_token, snapshot)
+        except (OSError, TypeError, ValueError, UnicodeDecodeError):
+            self._deliver_sync_result(ui_text("bambuInvalid"))
+            return
+        BAMBU_BRIDGE_RUNTIME.wake()
+        self._deliver_sync_result(ui_text("bambuSaved"))
+
+    def _do_remove_bambu(self, physical_printer_id):
+        local = load_bambu_config()
+        configured = next(
+            (
+                item
+                for item in local["printers"]
+                if item["physical_printer_id"] == physical_printer_id
+            ),
+            None,
+        )
+        bridge_token = configured.get("bridge_token") if configured else ""
+        if bridge_token:
+            revoke_status = http_delete_bridge("/printer-bridge/connection", bridge_token)
+            if revoke_status not in {204, 401}:
+                self._deliver_sync_result(ui_text("bambuRemoveFailed"))
+                return
+        remove_bambu_bridge(physical_printer_id)
+        BAMBU_BRIDGE_RUNTIME.wake()
+        self._deliver_sync_result(ui_text("bambuRemoved"))
 
     # on_message runs on the UI thread — offload network + disk work to a worker.
     def _do_parse_slice(self, key, token, file_name=""):
@@ -3112,6 +5124,117 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
             self._deliver_slice_result({"error": "body"})
             return
         self._deliver_slice_result({"parsed": parsed})
+
+    def _do_happy_hare_action(
+        self,
+        request_id,
+        operation,
+        physical_printer_id,
+        material_system_id,
+        token,
+        local_connections,
+    ):
+        def finish(**result):
+            result.setdefault("operation", operation)
+            result.setdefault("physicalPrinterId", physical_printer_id)
+            result.setdefault("materialSystemId", material_system_id)
+            self._deliver_happy_hare_result(request_id, result)
+
+        if not token:
+            finish(ok=False, code="auth")
+            return
+        connection, snapshot, device, error = resolve_happy_hare_connection(
+            token,
+            local_connections,
+            physical_printer_id,
+        )
+        if error or connection is None or snapshot is None or device is None:
+            finish(ok=False, code=error or "connection_not_found")
+            return
+        snapshot_status, _snapshot_result = upload_happy_hare_snapshot(
+            token, physical_printer_id, snapshot
+        )
+        if snapshot_status != 200:
+            finish(
+                ok=False,
+                code=(
+                    "auth" if snapshot_status == 401
+                    else "access" if snapshot_status == 403
+                    else "server"
+                ),
+                status=snapshot_status,
+            )
+            return
+        desired = _desired_happy_hare_spools(device, material_system_id)
+        if desired is None:
+            finish(ok=False, code="material_system_not_found")
+            return
+        if snapshot.get("spoolman_support") != "pull":
+            finish(
+                ok=False,
+                code="pull_required",
+                gateCount=snapshot["gate_count"],
+                printerHostname=snapshot.get("printer_hostname") or None,
+                spoolmanSupport=snapshot.get("spoolman_support") or None,
+                printState=snapshot.get("print_state") or None,
+                changes=[],
+            )
+            return
+        if not snapshot.get("spool_ids_known"):
+            finish(ok=False, code="spool_ids_unavailable")
+            return
+        changes = _happy_hare_assignment_changes(
+            snapshot["actual_spool_ids"], desired
+        )
+        common = {
+            "gateCount": snapshot["gate_count"],
+            "printerHostname": snapshot.get("printer_hostname") or None,
+            "spoolmanSupport": snapshot.get("spoolman_support") or None,
+            "printState": snapshot.get("print_state") or None,
+            "changes": changes,
+        }
+        if operation == "preview":
+            finish(ok=True, **common)
+            return
+        if snapshot.get("print_state") in {"printing", "paused"}:
+            finish(ok=False, code="printer_busy", **common)
+            return
+        if not changes:
+            finish(ok=True, applied=False, remainingChanges=[], **common)
+            return
+
+        # This is deliberately not derived from a web message.  It is the only
+        # Happy Hare G-code this bridge permits, and the explicit preview/confirm
+        # flow in the site is the only path that reaches it.
+        command_status, _command_result, _command_error = _moonraker_json(
+            connection,
+            "/printer/gcode/script",
+            {"script": "MMU_SPOOLMAN REFRESH=1"},
+        )
+        if command_status != 200:
+            finish(ok=False, code="command_failed", status=command_status, **common)
+            return
+        time.sleep(0.35)
+        try:
+            refreshed = read_happy_hare_snapshot(connection)
+        except (RuntimeError, ValueError):
+            finish(ok=False, code="verification_failed", **common)
+            return
+        upload_happy_hare_snapshot(token, physical_printer_id, refreshed)
+        remaining = _happy_hare_assignment_changes(
+            refreshed["actual_spool_ids"], desired
+        ) if refreshed.get("spool_ids_known") else changes
+        finish(
+            ok=not remaining,
+            code=None if not remaining else "not_applied",
+            applied=True,
+            remainingChanges=remaining,
+            gateCount=refreshed["gate_count"],
+            printerHostname=refreshed.get("printer_hostname") or None,
+            spoolmanSupport=refreshed.get("spoolman_support") or None,
+            printState=refreshed.get("print_state") or None,
+            changes=changes,
+        )
 
     def on_message(self, msg):
         if not isinstance(msg, dict):
@@ -3156,6 +5279,37 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
                 physical_printer_id,
                 token,
             )
+        elif msg_type == "configure-bambu-local":
+            physical_printer_id = msg.get("physicalPrinterId")
+            material_system_id = msg.get("materialSystemId")
+            host = msg.get("host")
+            access_code = msg.get("accessCode")
+            serial = msg.get("serial") or ""
+            pairing_code = msg.get("pairingCode") or ""
+            if not (
+                isinstance(physical_printer_id, int)
+                and isinstance(material_system_id, int)
+                and isinstance(host, str)
+                and isinstance(access_code, str)
+                and isinstance(serial, str)
+                and isinstance(pairing_code, str)
+                and 8 <= len(pairing_code) <= 32
+            ):
+                return
+            BACKGROUND_WORKER.submit(
+                self._do_configure_bambu,
+                physical_printer_id,
+                material_system_id,
+                host,
+                access_code,
+                serial,
+                pairing_code,
+            )
+        elif msg_type == "remove-bambu-local":
+            physical_printer_id = msg.get("physicalPrinterId")
+            if not isinstance(physical_printer_id, int) or physical_printer_id <= 0:
+                return
+            BACKGROUND_WORKER.submit(self._do_remove_bambu, physical_printer_id)
         elif msg_type == "check-slices":
             # The list on the site outlives the files behind it; answer which of
             # those slices can still be turned into a calculation.
@@ -3183,6 +5337,8 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
             active_filaments = scan_active_user_filaments()  # UI thread: loaded account's user presets
             host_profiles = self._host_profiles()  # UI thread: machine/process presets
             observations = observe_printer_presets()  # UI thread: printer connection data
+            moonraker_connections = observe_local_moonraker_connections(observations)
+            source_instance_id = plugin_source_instance_id()
             BACKGROUND_WORKER.submit(
                 self._do_sync,
                 token,
@@ -3191,6 +5347,33 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
                 active_filaments,
                 host_profiles,
                 observations,
+                source_instance_id,
+                moonraker_connections,
+            )
+        elif msg_type in {"happy-hare-preview", "happy-hare-apply"}:
+            request_id = msg.get("requestId")
+            physical_printer_id = msg.get("physicalPrinterId")
+            material_system_id = msg.get("materialSystemId")
+            if not (
+                isinstance(request_id, str)
+                and 0 < len(request_id) <= 100
+                and isinstance(physical_printer_id, int)
+                and physical_printer_id > 0
+                and isinstance(material_system_id, int)
+                and material_system_id > 0
+            ):
+                return
+            token = (load_saved_auth() or {}).get("accessToken") or ""
+            observations = observe_printer_presets()
+            local_connections = observe_local_moonraker_connections(observations)
+            BACKGROUND_WORKER.submit(
+                self._do_happy_hare_action,
+                request_id,
+                "apply" if msg_type == "happy-hare-apply" else "preview",
+                physical_printer_id,
+                material_system_id,
+                token,
+                local_connections,
             )
         elif msg_type == "auth-token":
             # Login / token refresh in the catalog — persist for session restore,
@@ -3198,6 +5381,7 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
             access = msg.get("accessToken") or ""
             if isinstance(access, str) and 0 < len(access) <= MAX_TOKEN_LENGTH:
                 save_auth(access)
+                BAMBU_BRIDGE_RUNTIME.wake()
                 self._auto_sync()
         elif msg_type == "profile-changed":
             # The catalog saved/removed a preset in the user's profile — reconcile
@@ -3205,6 +5389,8 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
             self._auto_sync(announce=True)
         elif msg_type == "open-oauth":
             self._start_external_oauth(msg.get("provider"))
+        elif msg_type == "open-external":
+            self._open_site_path(msg.get("path"))
         elif msg_type == "auth-logout":
             clear_auth()
         elif msg_type == "recover":
@@ -3215,27 +5401,98 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
             BACKGROUND_WORKER.submit(self._do_recover_import, token, msg.get("names"))
 
     def _do_recover_scan(self, token):
-        # Disk-only scan across every account + version backup; hand the list to the
-        # embed (via loopback) to show its checkbox picker. Marks already-imported.
-        candidates = scan_recovery_filaments()
+        # Disk-only scan across every account + version backup; hand the list to
+        # the embed to show its checkbox picker. Marks already-imported.
+        candidates = scan_recovery_presets()
         imported = load_imported_draft_ids()
         self._deliver_recovery(
-            [{"name": c["name"], "imported": _draft_id(c["name"]) in imported} for c in candidates])
+            [
+                {
+                    "key": c["key"],
+                    "kind": c["kind"],
+                    "name": c["name"],
+                    "account": c["account"],
+                    "source": c["source"],
+                    "imported": (
+                        _draft_id(c["key"]) in imported
+                        or (
+                            c["kind"] == "filament"
+                            and _draft_id(c["name"]) in imported
+                        )
+                    ),
+                }
+                for c in candidates
+            ]
+        )
 
-    def _do_recover_import(self, token, names):
-        # Push only the presets the user checked in the embed picker as drafts.
-        if not token or not isinstance(names, list) or not names:
+    def _do_recover_import(self, token, keys):
+        # Push only the checked presets. Filaments remain drafts; machine/process
+        # files reuse the normal delta contract. A connection-only machine is
+        # recovered as physical-printer evidence rather than a duplicate profile.
+        if not token or not isinstance(keys, list) or not keys:
             self._deliver_sync_result(ui_text("recoveryNone"))
             return
-        wanted = {str(n) for n in names}
-        candidates = [c for c in scan_recovery_filaments() if c["name"] in wanted]
-        sent_ids = push_filament_drafts(token, candidates)
-        if sent_ids:
-            imported = load_imported_draft_ids()
-            for did in sent_ids:
-                imported[did] = 1
+        wanted = {str(key) for key in keys}
+        candidates = disambiguate_recovery_candidates(
+            [c for c in scan_recovery_presets() if c["key"] in wanted]
+        )
+        imported = load_imported_draft_ids()
+        recovered_keys = set()
+
+        filament_candidates = [c for c in candidates if c["kind"] == "filament"]
+        sent_filaments = set(push_filament_drafts(token, filament_candidates))
+        for candidate in filament_candidates:
+            if _draft_id(candidate["name"]) in sent_filaments:
+                recovered_keys.add(candidate["key"])
+
+        observations = []
+        observation_keys = {}
+        for kind in ("machine", "process"):
+            kind_candidates = [c for c in candidates if c["kind"] == kind]
+            sync_items = []
+            keys_by_name = {}
+            for candidate in kind_candidates:
+                item = recovery_profile_sync_item(candidate)
+                if item is None:
+                    if kind == "machine":
+                        observation = recovery_connection_observation(candidate)
+                        if observation is not None:
+                            observations.append(observation)
+                            observation_keys.setdefault(candidate["name"], []).append(
+                                candidate["key"]
+                            )
+                    continue
+                sync_items.append(item)
+                keys_by_name.setdefault(candidate["name"], []).append(candidate["key"])
+            if sync_items:
+                sent, failed = push_user_profiles(
+                    kind, token, sync_items, {}, authoritative=False
+                )
+                if failed == 0 and sent == len(sync_items):
+                    for item in sync_items:
+                        recovered_keys.update(keys_by_name.get(item["name"], []))
+
+        if observations:
+            sync_preferences = _sync_preferences(token)
+            status, _result = send_printer_observations(
+                token,
+                _observations_for_sync(
+                    observations,
+                    share_endpoints=sync_preferences["sync_printer_endpoints"],
+                ),
+                plugin_source_instance_id(),
+            )
+            if status == 200:
+                for observation in observations:
+                    recovered_keys.update(
+                        observation_keys.get(observation["preset_name"], [])
+                    )
+
+        for key in recovered_keys:
+            imported[_draft_id(key)] = 1
+        if recovered_keys:
             save_imported_draft_ids(imported)
-        self._deliver_sync_result(ui_text("recoveryDone", count=len(sent_ids)))
+        self._deliver_sync_result(ui_text("recoveryDone", count=len(recovered_keys)))
 
     def _do_install_printer_bundle(self, physical_printer_id, token):
         if not token:
@@ -3283,25 +5540,17 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
         start_url = "%s/oauth/plugin-start/%s?%s" % (
             SITE_URL, provider,
             urllib.parse.urlencode({"cb": deliver, "nonce": nonce}))
-        # Mirror how OrcaSlicer itself opens URLs: wxLaunchDefaultBrowser(), which
-        # on Windows is ShellExecute("open", url). os.startfile is that same call
-        # and works inside Orca's embedded Python, where webbrowser.open can report
-        # success without actually launching anything. Fall back to webbrowser on
-        # non-Windows or if startfile is unavailable/raises.
-        opened = False
-        try:
-            startfile = getattr(os, "startfile", None)
-            if startfile is not None:
-                startfile(start_url)
-                opened = True
-            else:
-                opened = bool(webbrowser.open(start_url))
-        except Exception:
-            try:
-                opened = bool(webbrowser.open(start_url))
-            except Exception:
-                opened = False
+        opened = open_in_system_browser(start_url)
         SHELL_SERVER.arm_oauth(nonce, opened, start_url)
+
+    def _open_site_path(self, path):
+        # A wiki page links to other parts of the site. Inside this panel there is
+        # nowhere for a second tab to go, so the link opens in the real browser.
+        # Only a site-relative path is accepted and the origin is added here, so
+        # the embedded page cannot turn this into "open any address".
+        if not isinstance(path, str) or not path.startswith("/") or path.startswith("//"):
+            return
+        open_in_system_browser(SITE_URL + path)
 
     def _do_import(self, preset_id, token, known_presets):
         try:
@@ -3417,7 +5666,8 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
                 "hash": local_entry["hash"], "name": profile.get("name") or ""}
 
     def _do_sync(self, token, known_presets, announce=True, active_filaments=None,
-                 host_profiles=None, observations=None):
+                 host_profiles=None, observations=None, source_instance_id="",
+                 moonraker_connections=None):
         if not token:
             if announce:
                 orca.host.ui.message(ui_text("syncSignIn"),
@@ -3448,11 +5698,23 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
                 orca.host.ui.message(
                     ui_text("syncUnexpected"), title="FilamentHub", icon="error")
             return
+        sync_preferences = _sync_preferences(token)
 
         local = scan_local_fh_presets(folder)
         state = load_sync_state()
-        fh_log("sync start: plugin %s, %d remote, %d local, folder=%s"
-               % (PLUGIN_VERSION, len(remote_items), len(local), folder))
+        fh_log(
+            "sync start: plugin %s, %d remote, %d local, machine=%d, process=%d, "
+            "printer_obs=%d, folder=%s"
+            % (
+                PLUGIN_VERSION,
+                len(remote_items),
+                len(local),
+                len((host_profiles or {}).get("machine") or []),
+                len((host_profiles or {}).get("process") or []),
+                len(observations or []),
+                folder,
+            )
+        )
         pulled = updated = pushed = skipped = failed = renamed = 0
         for rp in remote_items:
             pid = rp.get("id")
@@ -3561,7 +5823,31 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
         # After the profiles, never before: FilamentHub ties an observed printer to
         # its profile by the Orca preset id, so the profile has to exist first or
         # the printer stays unlinked until the next sync.
-        send_printer_observations(token, observations)
+        observation_status, observation_result = send_printer_observations(
+            token,
+            _observations_for_sync(
+                observations,
+                share_endpoints=sync_preferences["sync_printer_endpoints"],
+            ),
+            source_instance_id,
+        )
+        if observation_status == 200 and int(observation_result.get("created") or 0):
+            profile_parts.append(
+                "%s: %s"
+                % (
+                    ui_text("profileMachine"),
+                    ui_text("summaryNew", count=int(observation_result["created"])),
+                )
+            )
+        elif observation_status not in (None, 200):
+            profile_parts.append(
+                "%s: %s"
+                % (
+                    ui_text("profileMachine"),
+                    ui_text("summaryFailed", count=len(observations or [])),
+                )
+            )
+        sync_happy_hare_topologies(token, moonraker_connections)
 
         parts = []
         if pulled:
@@ -3578,7 +5864,7 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
             parts.append(ui_text("summaryCurrent", count=skipped))
         if failed:
             parts.append(ui_text("summaryFailed", count=failed))
-        if active_filaments and _auto_import_enabled(token):
+        if active_filaments and sync_preferences["auto_import_local_presets"]:
             imported = load_imported_draft_ids()
             fresh = [c for c in active_filaments if _draft_id(c["name"]) not in imported]
             sent_ids = push_filament_drafts(token, fresh) if fresh else []
@@ -3652,6 +5938,8 @@ class FilamentHubPlugin(orca.base):
     def register_capabilities(self):
         refresh_ui_language()
         configure_plugin_storage()
+        if any(item.get("bridge_token") for item in load_bambu_config()["printers"]):
+            BAMBU_BRIDGE_RUNTIME.start()
         repaired = repair_local_bundle_parents()
         if repaired:
             fh_log("repaired %d local bundle parent reference(s)" % repaired)

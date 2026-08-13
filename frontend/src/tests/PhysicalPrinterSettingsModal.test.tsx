@@ -15,6 +15,8 @@ const profiles = [
 
 vi.mock('@tanstack/react-query', () => ({
   useQueryClient: () => ({ invalidateQueries: vi.fn() }),
+  useQueries: ({ queries }: { queries: unknown[] }) =>
+    queries.map(() => ({ data: undefined })),
   useQuery: ({ queryKey }: { queryKey: unknown[] }) => {
     const key = queryKey[0];
     if (key === 'printers') return { data: { items: [{ id: 1, name: 'Voron 2.4 350' }] } };
@@ -66,14 +68,17 @@ const basePrinter = {
   updated_at: '',
 };
 
-async function renderModal(overrides: Record<string, unknown> = {}) {
+async function renderModal(
+  overrides: Record<string, unknown> = {},
+  bindings: Array<Record<string, unknown>> = [],
+) {
   const { PhysicalPrinterSettingsModal } = await import('../components/PhysicalPrinterSettingsModal');
   const onClose = vi.fn();
   render(
     <PhysicalPrinterSettingsModal
       isOpen
       printer={{ ...basePrinter, ...overrides } as never}
-      binding={null}
+      bindings={bindings as never}
       onClose={onClose}
     />,
   );
@@ -91,6 +96,34 @@ describe('PhysicalPrinterSettingsModal', () => {
     await renderModal();
     expect(screen.getByDisplayValue('My Voron')).toBeTruthy();
     expect(screen.getByText(/Voron 2\.4 350 · 0\.4/)).toBeTruthy();
+  });
+
+  it('shows every connection bound to the physical printer', async () => {
+    await renderModal({}, [
+      {
+        physical_printer_id: 5,
+        connection_ref: 'moonraker-ref',
+        provider: 'moonraker',
+        display_endpoint: '192.168.0.122:7125',
+        endpoint_shared: true,
+        last_seen_at: '2026-08-13T20:00:00Z',
+      },
+      {
+        physical_printer_id: 5,
+        connection_ref: 'octoprint-ref',
+        provider: 'octoprint',
+        display_endpoint: 'workshop.local:5000',
+        endpoint_shared: true,
+        last_seen_at: '2026-08-13T20:01:00Z',
+      },
+    ]);
+
+    expect(
+      screen.getByText('presetSlots.connectionProvider.moonraker · 192.168.0.122:7125'),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('presetSlots.connectionProvider.octoprint · workshop.local:5000'),
+    ).toBeInTheDocument();
   });
 
   it('saves name and catalog model without touching configurations when unchanged', async () => {

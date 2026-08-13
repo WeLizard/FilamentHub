@@ -9,7 +9,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from fastapi.responses import HTMLResponse, Response
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.capacity import Gate
@@ -35,6 +35,7 @@ from app.core.field_encryption import decrypt_field, encrypt_field
 from app.db.session import get_db
 from app.models.calculator_history_entry import CalculatorHistoryEntry
 from app.models.calculator_profile import UserCalculatorProfile
+from app.models.print_job import PrintJob
 from app.models.shared_quote import SharedQuote
 from app.models.user import User
 from app.schemas.calculator import (
@@ -82,16 +83,12 @@ router = APIRouter(prefix="/calculator", tags=["calculator"])
 logger = logging.getLogger(__name__)
 
 _pdf_gate = Gate("pdf", settings.PDF_RENDER_CONCURRENCY, settings.PDF_RENDER_WAIT_SECONDS)
-_gcode_gate = Gate(
-    "gcode", settings.GCODE_PARSE_CONCURRENCY, settings.GCODE_PARSE_WAIT_SECONDS
-)
+_gcode_gate = Gate("gcode", settings.GCODE_PARSE_CONCURRENCY, settings.GCODE_PARSE_WAIT_SECONDS)
 
 
 def _parse_gcode_bytes(file_name: str, raw_bytes: bytes, plate_index: int | None):
     """Named so the gate has something to call with plain arguments."""
-    return parse_gcode_payload(
-        file_name=file_name, raw_bytes=raw_bytes, plate_index=plate_index
-    )
+    return parse_gcode_payload(file_name=file_name, raw_bytes=raw_bytes, plate_index=plate_index)
 
 
 @router.post("/start-trial", response_model=UserResponse)
@@ -154,9 +151,9 @@ def _resolve_print_execution(
         repeats_by_job = {job.job_key: job.repeats for job in data.print_jobs}
         quantity = sum(job.output_quantity_per_run * job.repeats for job in data.print_jobs)
         print_runs = sum(job.repeats for job in data.print_jobs)
-        time_hours_total = sum(
-            job.print_time_seconds * job.repeats for job in data.print_jobs
-        ) / 3600.0
+        time_hours_total = (
+            sum(job.print_time_seconds * job.repeats for job in data.print_jobs) / 3600.0
+        )
         average_time_per_run = time_hours_total / print_runs
         return quantity, print_runs, average_time_per_run, time_hours_total, repeats_by_job
 
@@ -243,9 +240,7 @@ def _calculate_material_lines(
             else None
         )
         non_support_cost = (
-            round(rounded_line_cost - support_cost, 2)
-            if support_cost is not None
-            else None
+            round(rounded_line_cost - support_cost, 2) if support_cost is not None else None
         )
         total_cost += line_cost
         total_weight_g += line_weight_g
@@ -412,7 +407,11 @@ async def _build_estimate(data: CalculatorEstimateRequest) -> CalculatorEstimate
 
             delivery = data.delivery_cost or 0.0
             weight_kg = (data.weight_g * quantity) / 1000.0
-            cost_material = ((data.spool_price + delivery) / data.spool_weight_kg) / 1000.0 * (data.weight_g * quantity)
+            cost_material = (
+                ((data.spool_price + delivery) / data.spool_weight_kg)
+                / 1000.0
+                * (data.weight_g * quantity)
+            )
 
         cost_electricity = 0.0
         time_hours = time_hours_per_run if time_hours_total > 0 else None
@@ -447,7 +446,12 @@ async def _build_estimate(data: CalculatorEstimateRequest) -> CalculatorEstimate
         )
 
     elif data.pricing_method == PricingMethod.BY_TIME:
-        if not data.print_jobs and data.time_sec is None and data.time_hours is None and data.time_minutes is None:
+        if (
+            not data.print_jobs
+            and data.time_sec is None
+            and data.time_hours is None
+            and data.time_minutes is None
+        ):
             raise_error(400, ERR_TIME_REQUIRED)
         if data.price_per_hour is None:
             raise_error(400, ERR_PRICE_PER_HOUR_REQUIRED)
@@ -475,12 +479,18 @@ async def _build_estimate(data: CalculatorEstimateRequest) -> CalculatorEstimate
             cost_postprocessing=0.0,
             cost_amortization=0.0,
             cost_tax=round(cost_tax, 2),
-            cost_first_part=round(cost_total / quantity, 2) if quantity > 0 else round(cost_total, 2),  # Цена одной детали
-            cost_subsequent_parts=round(cost_total / quantity, 2) if quantity > 0 else round(cost_total, 2),
+            cost_first_part=round(cost_total / quantity, 2)
+            if quantity > 0
+            else round(cost_total, 2),  # Цена одной детали
+            cost_subsequent_parts=round(cost_total / quantity, 2)
+            if quantity > 0
+            else round(cost_total, 2),
             cost_total=round(cost_total, 2),  # Общая стоимость всей партии
             cost_final=round(cost_total, 2),
             weight_kg=round(weight_kg, 3) if weight_kg else None,
-            time_hours=round(time_hours_per_run, 2) if time_hours_per_run > 0 else None,  # Время одного запуска / стола
+            time_hours=round(time_hours_per_run, 2)
+            if time_hours_per_run > 0
+            else None,  # Время одного запуска / стола
             quantity=quantity,
             print_runs=print_runs,
             pricing_method=data.pricing_method,
@@ -506,7 +516,9 @@ async def _build_estimate(data: CalculatorEstimateRequest) -> CalculatorEstimate
             supports_weight = (data.supports_weight_g or 0.0) * quantity
             supports_loss_coef = data.supports_loss_coefficient or 1.2
 
-            cost_material = (part_weight * price_per_gram) + (supports_weight * price_per_gram * supports_loss_coef)
+            cost_material = (part_weight * price_per_gram) + (
+                supports_weight * price_per_gram * supports_loss_coef
+            )
 
         cost_bed_prep = 0.0
         if data.bed_prep_cost_per_print and data.bed_prep_cost_per_print > 0:
@@ -533,7 +545,9 @@ async def _build_estimate(data: CalculatorEstimateRequest) -> CalculatorEstimate
 
         cost_postprocessing = 0.0
         if data.postprocessing_rate_per_hour:
-            postprocessing_time_per_part = _convert_time_to_hours(data.postprocessing_hours, data.postprocessing_minutes)
+            postprocessing_time_per_part = _convert_time_to_hours(
+                data.postprocessing_hours, data.postprocessing_minutes
+            )
             postprocessing_time_total = postprocessing_time_per_part * quantity
             cost_postprocessing = postprocessing_time_total * data.postprocessing_rate_per_hour
 
@@ -564,22 +578,26 @@ async def _build_estimate(data: CalculatorEstimateRequest) -> CalculatorEstimate
                 )
             elif data.weight_g:
                 density = data.filament_density or 1.24
-                total_weight_g = data.weight_g * quantity + (data.supports_weight_g or 0.0) * quantity
+                total_weight_g = (
+                    data.weight_g * quantity + (data.supports_weight_g or 0.0) * quantity
+                )
                 extruded_volume_cm3 = total_weight_g / density
                 abrasiveness = data.material_abrasiveness or 1.0
-                cost_nozzle_wear = data.nozzle_price * (extruded_volume_cm3 / data.nozzle_life_cm3) * abrasiveness
+                cost_nozzle_wear = (
+                    data.nozzle_price * (extruded_volume_cm3 / data.nozzle_life_cm3) * abrasiveness
+                )
 
         cost_direct = (
-            cost_material +
-            cost_bed_prep +
-            cost_waste +
-            cost_electricity +
-            cost_modeling +
-            cost_printing +
-            cost_postprocessing +
-            cost_monitoring +
-            cost_amortization +
-            cost_nozzle_wear
+            cost_material
+            + cost_bed_prep
+            + cost_waste
+            + cost_electricity
+            + cost_modeling
+            + cost_printing
+            + cost_postprocessing
+            + cost_monitoring
+            + cost_amortization
+            + cost_nozzle_wear
         )
 
         overhead_percent = data.overhead_percent or 20.0  # По умолчанию 20%
@@ -598,7 +616,9 @@ async def _build_estimate(data: CalculatorEstimateRequest) -> CalculatorEstimate
         complexity_coef = data.complexity_coefficient or 1.0
         volume_discount_coef = data.volume_discount_coefficient or 1.0
 
-        taxable_subtotal = intermediate_price * urgency_coef * complexity_coef * volume_discount_coef
+        taxable_subtotal = (
+            intermediate_price * urgency_coef * complexity_coef * volume_discount_coef
+        )
 
         if data.min_order_price and taxable_subtotal < data.min_order_price:
             taxable_subtotal = data.min_order_price
@@ -612,19 +632,31 @@ async def _build_estimate(data: CalculatorEstimateRequest) -> CalculatorEstimate
 
         if quantity > 1:
             cost_without_modeling = (
-                cost_material +
-                cost_bed_prep +
-                cost_waste +
-                cost_electricity +
-                cost_printing +
-                cost_postprocessing +
-                cost_monitoring +
-                cost_amortization +
-                cost_nozzle_wear
+                cost_material
+                + cost_bed_prep
+                + cost_waste
+                + cost_electricity
+                + cost_printing
+                + cost_postprocessing
+                + cost_monitoring
+                + cost_amortization
+                + cost_nozzle_wear
             )
-            cost_without_modeling_with_overhead = (cost_without_modeling + (cost_without_modeling * overhead_percent / 100.0) + fixed_costs)
-            cost_without_modeling_final = (cost_without_modeling_with_overhead * (1 + markup_percent / 100.0)) * urgency_coef * complexity_coef * volume_discount_coef
-            cost_subsequent_parts = (cost_without_modeling_final + _calculate_tax(cost_without_modeling_final, tax_rate_percent)) / quantity
+            cost_without_modeling_with_overhead = (
+                cost_without_modeling
+                + (cost_without_modeling * overhead_percent / 100.0)
+                + fixed_costs
+            )
+            cost_without_modeling_final = (
+                (cost_without_modeling_with_overhead * (1 + markup_percent / 100.0))
+                * urgency_coef
+                * complexity_coef
+                * volume_discount_coef
+            )
+            cost_subsequent_parts = (
+                cost_without_modeling_final
+                + _calculate_tax(cost_without_modeling_final, tax_rate_percent)
+            ) / quantity
             cost_first_part = cost_final - (cost_subsequent_parts * (quantity - 1))
         else:
             cost_first_part = cost_final
@@ -639,14 +671,20 @@ async def _build_estimate(data: CalculatorEstimateRequest) -> CalculatorEstimate
             modeling_time = _convert_time_to_hours(data.modeling_hours, data.modeling_minutes)
             total_time_hours += modeling_time  # Моделирование делается один раз
         if data.postprocessing_hours or data.postprocessing_minutes:
-            postprocessing_time_per_part = _convert_time_to_hours(data.postprocessing_hours, data.postprocessing_minutes)
-            postprocessing_time_total = postprocessing_time_per_part * quantity  # Постобработка каждой детали
+            postprocessing_time_per_part = _convert_time_to_hours(
+                data.postprocessing_hours, data.postprocessing_minutes
+            )
+            postprocessing_time_total = (
+                postprocessing_time_per_part * quantity
+            )  # Постобработка каждой детали
             total_time_hours += postprocessing_time_total
 
         cost_of_goods_sold = cost_before_markup
         revenue_before_tax = max(cost_final - cost_tax, 0.0)
         profit_margin = revenue_before_tax - cost_of_goods_sold
-        profit_margin_percent = (profit_margin / revenue_before_tax * 100.0) if revenue_before_tax > 0 else 0.0
+        profit_margin_percent = (
+            (profit_margin / revenue_before_tax * 100.0) if revenue_before_tax > 0 else 0.0
+        )
 
         return CalculatorEstimateResponse(
             cost_material=round(cost_material, 2),
@@ -670,13 +708,23 @@ async def _build_estimate(data: CalculatorEstimateRequest) -> CalculatorEstimate
             cost_total=round(cost_total, 2),
             cost_final=round(cost_final, 2),
             weight_kg=round(weight_kg, 3) if weight_kg else None,
-            time_hours=round(time_hours_per_run, 2) if time_hours_per_run > 0 else None,  # Время одного запуска / стола
-            total_time_hours=round(total_time_hours, 2) if total_time_hours and total_time_hours > 0 else None,
+            time_hours=round(time_hours_per_run, 2)
+            if time_hours_per_run > 0
+            else None,  # Время одного запуска / стола
+            total_time_hours=round(total_time_hours, 2)
+            if total_time_hours and total_time_hours > 0
+            else None,
             quantity=quantity,
             print_runs=print_runs,
-            cost_of_goods_sold=round(cost_of_goods_sold, 2) if data.pricing_method == PricingMethod.COMBINED else None,
-            profit_margin=round(profit_margin, 2) if data.pricing_method == PricingMethod.COMBINED else None,
-            profit_margin_percent=round(profit_margin_percent, 2) if data.pricing_method == PricingMethod.COMBINED and profit_margin_percent else None,
+            cost_of_goods_sold=round(cost_of_goods_sold, 2)
+            if data.pricing_method == PricingMethod.COMBINED
+            else None,
+            profit_margin=round(profit_margin, 2)
+            if data.pricing_method == PricingMethod.COMBINED
+            else None,
+            profit_margin_percent=round(profit_margin_percent, 2)
+            if data.pricing_method == PricingMethod.COMBINED and profit_margin_percent
+            else None,
             pricing_method=data.pricing_method,
             applied_urgency_coefficient=urgency_coef if urgency_coef != 1.0 else None,
             applied_complexity_coefficient=complexity_coef if complexity_coef != 1.0 else None,
@@ -702,7 +750,13 @@ async def parse_uploaded_gcode(
     """
     if not is_supported_gcode_filename(file.filename):
         file_name = file.filename or ""
-        file_ext = ".gcode.gz" if file_name.lower().endswith(".gcode.gz") else file_name[file_name.rfind(".") :].lower() if "." in file_name else ""
+        file_ext = (
+            ".gcode.gz"
+            if file_name.lower().endswith(".gcode.gz")
+            else file_name[file_name.rfind(".") :].lower()
+            if "." in file_name
+            else ""
+        )
         raise_error(
             status.HTTP_400_BAD_REQUEST,
             ERR_INVALID_FILE_EXT,
@@ -712,7 +766,11 @@ async def parse_uploaded_gcode(
     raw_bytes = await file.read()
     max_bytes = settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024
     if len(raw_bytes) > max_bytes:
-        raise_error(status.HTTP_400_BAD_REQUEST, ERR_FILE_TOO_LARGE, {"max_size": f"{settings.MAX_UPLOAD_SIZE_MB}MB"})
+        raise_error(
+            status.HTTP_400_BAD_REQUEST,
+            ERR_FILE_TOO_LARGE,
+            {"max_size": f"{settings.MAX_UPLOAD_SIZE_MB}MB"},
+        )
 
     try:
         # Reading a sliced model walks every line of it — eight seconds for a
@@ -765,7 +823,9 @@ async def list_calculator_history(
     query = select(CalculatorHistoryEntry).where(CalculatorHistoryEntry.user_id == current_user.id)
     total = (
         await db.execute(
-            select(func.count()).select_from(CalculatorHistoryEntry).where(CalculatorHistoryEntry.user_id == current_user.id)
+            select(func.count())
+            .select_from(CalculatorHistoryEntry)
+            .where(CalculatorHistoryEntry.user_id == current_user.id)
         )
     ).scalar_one()
 
@@ -781,7 +841,9 @@ async def list_calculator_history(
     )
 
 
-@router.post("/history", response_model=CalculatorHistoryEntryResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/history", response_model=CalculatorHistoryEntryResponse, status_code=status.HTTP_201_CREATED
+)
 async def save_calculator_history(
     data: CalculatorHistoryEntryCreate,
     current_user: Annotated[User, Depends(require_calculator_access)],
@@ -795,7 +857,9 @@ async def save_calculator_history(
         request_data=data.request_data.model_dump(mode="json"),
         result_data=data.result_data.model_dump(mode="json"),
         parsed_gcode=_encode_history_gcode(data),
-        filament_snapshot=data.filament_snapshot.model_dump(mode="json") if data.filament_snapshot else None,
+        filament_snapshot=data.filament_snapshot.model_dump(mode="json")
+        if data.filament_snapshot
+        else None,
     )
     db.add(entry)
     await db.commit()
@@ -820,10 +884,13 @@ async def delete_calculator_history(
     if not entry:
         raise_error(status.HTTP_404_NOT_FOUND, ERR_CALCULATOR_HISTORY_NOT_FOUND)
 
+    await db.execute(
+        update(PrintJob)
+        .where(PrintJob.calculator_history_id == entry.id)
+        .values(calculator_history_id=None)
+    )
     await db.delete(entry)
     await db.commit()
-
-
 
 
 ENCRYPTED_PROFILE_FIELDS = (
@@ -924,7 +991,6 @@ async def reset_calculator_profile_defaults(
     return _profile_response(profile)
 
 
-
 SHARED_QUOTE_LIFETIME_DAYS = 90
 
 _SHARED_QUOTE_CSP = (
@@ -933,7 +999,9 @@ _SHARED_QUOTE_CSP = (
 )
 
 
-@router.post("/quote/share", response_model=SharedQuoteResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/quote/share", response_model=SharedQuoteResponse, status_code=status.HTTP_201_CREATED
+)
 async def create_shared_quote(
     data: SharedQuoteCreate,
     current_user: Annotated[User, Depends(require_calculator_access)],
@@ -962,9 +1030,7 @@ async def get_shared_quote(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> HTMLResponse:
     """Return a shared quote as a standalone HTML page (no auth required)."""
-    result = await db.execute(
-        select(SharedQuote).where(SharedQuote.uuid == uuid)
-    )
+    result = await db.execute(select(SharedQuote).where(SharedQuote.uuid == uuid))
     quote = result.scalar_one_or_none()
 
     if not quote:
@@ -1013,7 +1079,7 @@ async def generate_quote_pdf(
         media_type="application/pdf",
         headers={
             "Content-Disposition": (
-                f"attachment; filename=\"{ascii_fallback}.pdf\"; "
+                f'attachment; filename="{ascii_fallback}.pdf"; '
                 f"filename*=UTF-8''{utf8_encoded}.pdf"
             ),
         },

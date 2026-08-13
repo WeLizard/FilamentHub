@@ -8,9 +8,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.physical_printer_profile import UserPrinterProfileLink
 from app.models.print_profile import PrintProfile
+from app.models.printer_connection_binding import PrinterConnectionBinding
 from app.models.printer_profile import PrinterProfile
 from app.models.user import User
 from app.models.user_printer_device import UserPrinterDevice
+from app.schemas.printer_connection_observation import PrinterConnectionObservationIn
+from app.services.physical_printer_discovery_service import normalize_endpoint
+from app.services.printer_connection_observation_service import record_observations
 
 
 def _slice(**overrides) -> dict:
@@ -120,6 +124,166 @@ async def test_a_slice_only_selects_an_unambiguous_printer_configuration(
     assert ambiguous["physical_printer_id"] is None
     assert ambiguous["physical_printer_name"] is None
     assert ambiguous["printer_profile_id"] == profile.id
+
+
+@pytest.mark.asyncio
+async def test_native_orca_child_name_resolves_through_same_plugin_observation(
+    auth_client: AsyncClient,
+    auth_user: User,
+    db_session: AsyncSession,
+) -> None:
+    printer = UserPrinterDevice(
+        user_id=auth_user.id,
+        name="Workshop P2S",
+        device_fingerprint=None,
+        supports_hh=False,
+    )
+    profile = PrinterProfile(
+        owner_user_id=None,
+        is_official=True,
+        name="Bambu Lab P2S 0.4 nozzle",
+        slug="bambu-lab-p2s-04-observed-slice",
+        source="system",
+        vendor="BambuLab",
+        active=True,
+        extra_metadata={"orca_vendor_id": "BBL"},
+    )
+    db_session.add_all([printer, profile])
+    await db_session.flush()
+    db_session.add(
+        UserPrinterProfileLink(
+            user_id=auth_user.id,
+            physical_printer_id=printer.id,
+            printer_profile_id=profile.id,
+        )
+    )
+    await db_session.commit()
+
+    source_instance_id = "fixture-plugin-instance-0002"
+    await record_observations(
+        db_session,
+        auth_user.id,
+        source_instance_id,
+        [
+            PrinterConnectionObservationIn(
+                preset_name="Workshop P2S",
+                printer_settings_id="Workshop P2S",
+                inherits=profile.name,
+                vendor_id="BBL",
+                has_technical_changes=False,
+                print_host="192.168.1.31",
+            )
+        ],
+    )
+
+    response = await auth_client.post(
+        "/api/v1/orcaslicer/slices",
+        json={
+            "slices": [
+                _slice(
+                    printer_settings_id="Workshop P2S",
+                    source_instance_id=source_instance_id,
+                )
+            ]
+        },
+    )
+
+    assert response.status_code == 200
+    reported = (await auth_client.get("/api/v1/orcaslicer/slices")).json()[0]
+    assert reported["printer_profile_id"] == profile.id
+    assert reported["physical_printer_id"] == printer.id
+
+
+@pytest.mark.asyncio
+async def test_observed_endpoint_selects_one_of_two_printers_using_the_same_profile(
+    auth_client: AsyncClient,
+    auth_user: User,
+    db_session: AsyncSession,
+) -> None:
+    home = UserPrinterDevice(
+        user_id=auth_user.id,
+        name="Home Voron",
+        device_fingerprint=None,
+        supports_hh=False,
+    )
+    workshop = UserPrinterDevice(
+        user_id=auth_user.id,
+        name="Workshop Voron",
+        device_fingerprint=None,
+        supports_hh=False,
+    )
+    profile = PrinterProfile(
+        owner_user_id=None,
+        is_official=True,
+        name="Voron shared profile",
+        slug="voron-shared-observed-endpoint",
+        source="system",
+        vendor="Voron",
+        active=True,
+        extra_metadata={"orca_vendor_id": "Voron"},
+    )
+    db_session.add_all([home, workshop, profile])
+    await db_session.flush()
+    db_session.add_all(
+        [
+            UserPrinterProfileLink(
+                user_id=auth_user.id,
+                physical_printer_id=printer.id,
+                printer_profile_id=profile.id,
+            )
+            for printer in (home, workshop)
+        ]
+    )
+    endpoint = normalize_endpoint("192.168.1.31:7125", "moonraker")
+    db_session.add(
+        PrinterConnectionBinding(
+            user_id=auth_user.id,
+            physical_printer_id=workshop.id,
+            normalized_endpoint=endpoint["normalized"],
+            provider=endpoint["provider"],
+            scheme=endpoint["scheme"],
+            host=endpoint["host"],
+            port=endpoint["port"],
+            path=endpoint["path"],
+            print_host="192.168.1.31:7125",
+        )
+    )
+    await db_session.commit()
+
+    source_instance_id = "fixture-plugin-instance-endpoint"
+    await record_observations(
+        db_session,
+        auth_user.id,
+        source_instance_id,
+        [
+            PrinterConnectionObservationIn(
+                preset_name="Workshop connection",
+                printer_settings_id="Workshop connection",
+                inherits=profile.name,
+                vendor_id="Voron",
+                has_technical_changes=False,
+                print_host="192.168.1.31:7125",
+                host_type="moonraker",
+            )
+        ],
+    )
+
+    response = await auth_client.post(
+        "/api/v1/orcaslicer/slices",
+        json={
+            "slices": [
+                _slice(
+                    printer_settings_id="Workshop connection",
+                    source_instance_id=source_instance_id,
+                )
+            ]
+        },
+    )
+
+    assert response.status_code == 200
+    reported = (await auth_client.get("/api/v1/orcaslicer/slices")).json()[0]
+    assert reported["printer_profile_id"] == profile.id
+    assert reported["physical_printer_id"] == workshop.id
 
 
 @pytest.mark.asyncio

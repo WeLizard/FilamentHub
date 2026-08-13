@@ -216,7 +216,7 @@ export const ProfilePage: React.FC = () => {
   const [editingPrintProfile, setEditingPrintProfile] = useState<PrintProfile | null>(null);
   const [createPrintProfileContext, setCreatePrintProfileContext] = useState<PrinterProfile | null>(null);
   const [_viewMode, _setViewMode] = useState<'grid' | 'list'>('grid');
-  const [presetFilter, setPresetFilter] = useState<'all' | 'own' | 'saved' | 'drafts'>('all');
+  const [presetFilter, setPresetFilter] = useState<'all' | 'own' | 'saved' | 'synced' | 'drafts'>('all');
   const [isScanning, setIsScanning] = useState(false);
   const needsPresetData = !showBrandCabinet && (userTab === 'dashboard' || userTab === 'presets');
   const needsPrinterProfileData = !showBrandCabinet && (
@@ -381,9 +381,21 @@ export const ProfilePage: React.FC = () => {
     return m;
   }, [savedPresetsData]);
 
+  // Global Orca sync includes active saved profiles and every own draft whose
+  // sync toggle is enabled. Historical own profiles without a saved row use
+  // the backend's default-on fallback.
+  const syncedPresetIds = useMemo(() => new Set(
+    user?.allow_filament_presets_export === false
+      ? []
+      : allMyPresets
+          .filter((p) => (
+            (p.active || p.source === 'own')
+            && (syncByPresetId.has(p.id) ? syncByPresetId.get(p.id) === true : p.source === 'own')
+          ))
+          .map(p => p.id),
+  ), [allMyPresets, syncByPresetId, user?.allow_filament_presets_export]);
+
   const filteredPresets = useMemo(() => {
-    const isSynced = (p: (typeof allMyPresets)[number]) =>
-      syncByPresetId.has(p.id) ? syncByPresetId.get(p.id)! : p.source === 'own';
     let list: typeof allMyPresets;
     switch (presetFilter) {
       case 'own':
@@ -392,14 +404,17 @@ export const ProfilePage: React.FC = () => {
       case 'saved':
         list = allMyPresets.filter(p => p.source === 'saved');
         break;
+      case 'synced':
+        list = allMyPresets.filter(p => syncedPresetIds.has(p.id));
+        break;
       case 'drafts':
         list = allMyPresets.filter(p => p.source === 'own' && (!p.active || p.moderation_status === 'pending'));
         break;
       default:
         list = allMyPresets;
     }
-    return [...list].sort((a, b) => Number(isSynced(b)) - Number(isSynced(a)));
-  }, [allMyPresets, presetFilter, syncByPresetId]);
+    return list;
+  }, [allMyPresets, presetFilter, syncedPresetIds]);
 
   const userPresets = filteredPresets;
 
@@ -1081,6 +1096,7 @@ export const ProfilePage: React.FC = () => {
                 { key: 'all' as const, label: t('profilePage.presetFilterAll'), count: allMyPresets.length },
                 { key: 'own' as const, label: t('profilePage.presetFilterOwn'), count: allMyPresets.filter(p => p.source === 'own' && p.active).length },
                 { key: 'saved' as const, label: t('profilePage.presetFilterSaved'), count: allMyPresets.filter(p => p.source === 'saved').length },
+                { key: 'synced' as const, label: t('profilePage.presetFilterSynced'), count: syncedPresetIds.size },
                 { key: 'drafts' as const, label: t('profilePage.presetFilterDrafts'), count: allMyPresets.filter(p => p.source === 'own' && (!p.active || p.moderation_status === 'pending')).length },
               ]).filter(f => f.key === 'all' || f.count > 0).map(f => (
                 <button

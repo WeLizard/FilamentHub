@@ -10,7 +10,7 @@ here so the same machine survives config changes and merge/split later.
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, String
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
@@ -34,6 +34,8 @@ class PrinterConnectionBinding(Base):
     source: Mapped[str] = mapped_column(
         String(50), default="orcaslicer_plugin", server_default="orcaslicer_plugin"
     )
+    source_instance_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    connection_ref: Mapped[str | None] = mapped_column(String(120), nullable=True)
     # Canonical "provider|scheme|host|port|path" — the discovery/matching key.
     normalized_endpoint: Mapped[str] = mapped_column(String(600))
     provider: Mapped[str | None] = mapped_column(String(50), nullable=True)
@@ -43,6 +45,8 @@ class PrinterConnectionBinding(Base):
     path: Mapped[str | None] = mapped_column(String(255), nullable=True)
     # Raw observed host (credential-stripped) for display.
     print_host: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    endpoint_ciphertext: Mapped[str | None] = mapped_column(Text, nullable=True)
+    endpoint_fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -52,6 +56,13 @@ class PrinterConnectionBinding(Base):
 
     __table_args__ = (
         Index("ix_pcb_user_endpoint", "user_id", "normalized_endpoint", unique=True),
+        Index(
+            "uq_pcb_user_source_connection_ref",
+            "user_id",
+            "source_instance_id",
+            "connection_ref",
+            unique=True,
+        ),
         Index("ix_pcb_physical_printer", "physical_printer_id"),
     )
 

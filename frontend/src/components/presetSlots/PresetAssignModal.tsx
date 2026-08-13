@@ -197,12 +197,12 @@ export function PresetAssignModal({
   const providerLabel = t(`presetSlots.provider.${provider}`, { defaultValue: provider });
   const observedStatus = gate?.hh_status === 0
     ? t('presetSlots.hhStatus.empty')
-    : gate?.hh_status === 2
-      ? t('presetSlots.hhStatus.buffer')
-      : gate?.hh_status === 1
-        ? t('presetSlots.hhStatus.spool')
+    : gate?.hh_status === 1 || gate?.hh_status === 2
+      ? t('presetSlots.hhStatus.loaded')
         : t('presetSlots.hhStatus.unknown');
-  const observedDescription = [gate?.hh_material, observedStatus].filter(Boolean).join(' · ');
+  const observedDescription = gate?.hh_status === 1 || gate?.hh_status === 2
+    ? gate?.hh_material ?? observedStatus
+    : [gate?.hh_material, observedStatus].filter(Boolean).join(' · ');
   const hasProviderObservation = gate?.hh_status != null || gate?.hh_material != null || colorHex != null;
   const hasExistingAssignment = !!(gate?.preset_id || gate?.spool_id);
   const canSave = selectedPresetId !== null || selectedSpoolId !== null;

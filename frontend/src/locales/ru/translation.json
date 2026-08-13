@@ -2278,7 +2278,7 @@
     "filamentDescriptionPlaceholder": "Описание особенностей материала, характеристик, применения...",
     "presetName": "Название пресета",
     "presetNamePlaceholder": "Например: PLA Standard",
-    "printers": "Принтеры (опционально)",
+    "printers": "Проверено на принтерах",
     "addPrinter": "Добавить принтер",
     "printerNotFound": "Принтер не найден",
     "moreCount": "ещё {{count}}",
@@ -2456,7 +2456,8 @@
       "examplePrice": "Например: 1500",
       "exampleWeight": "Например: 1000"
     },
-    "defaultMinusOne": "-1 = по умолчанию"
+    "defaultMinusOne": "-1 = по умолчанию",
+    "printersHint": "Рекомендация, а не ограничение: на других принтерах пресет тоже можно использовать."
   },
   "dropdown": {
     "placeholder": "Выберите...",
@@ -2647,6 +2648,7 @@
     "presetFilterAll": "Все",
     "presetFilterOwn": "Мои",
     "presetFilterSaved": "Сохранённые",
+    "presetFilterSynced": "Синхронизированы",
     "presetFilterDrafts": "Заготовки",
     "newPreset": "Новый пресет",
     "add": "Добавить",
@@ -4864,9 +4866,12 @@
       "bundleStatus": "Bundle",
       "bundleReady": "готов ({{size}} MB)",
       "bundleMissing": "не найден",
+      "bundleLegacy": "без сведений об источнике",
       "bundleMissingHint": "Bundle не приехал с деплоем. Запустите scripts/build_catalog_source_orca.py локально и закоммитьте backend/data/catalog_sources/orca/bundle.zip.",
       "bundleVendors": "Вендоров в bundle",
       "systemPrinters": "Системных принтеров в БД",
+      "upstreamRevision": "Версия Orca",
+      "upstreamUnknown": "неизвестна",
       "importButton": "Импортировать каталог",
       "importing": "Импорт…",
       "importSuccess": "Импорт завершён",
@@ -4875,12 +4880,21 @@
   },
   "recover": {
     "title": "Восстановление пресетов",
-    "found": "Найдено локальных пресетов: {{count}}. Отметьте те, что загрузить в профиль как черновики.",
-    "empty": "Локальные пресеты филамента не найдены.",
+    "found": "Найдено локальных пресетов: {{count}}. Выберите материалы, конфигурации принтера и профили печати, которые нужно восстановить.",
+    "empty": "Локальные пресеты для восстановления не найдены.",
+    "kind": {
+      "filament": "Материал",
+      "machine": "Конфигурация принтера",
+      "process": "Профиль печати"
+    },
+    "source": {
+      "live": "текущие данные",
+      "backup": "резервная копия"
+    },
     "selectAll": "Выбрать все",
     "deselectAll": "Снять все",
-    "alreadyImported": "уже загружен",
-    "import": "Загрузить ({{count}})",
+    "alreadyImported": "уже восстановлен",
+    "import": "Восстановить ({{count}})",
     "close": "Закрыть",
     "cancel": "Отмена"
   },
@@ -4923,6 +4937,8 @@
     "syncDescription": "Что уходит из OrcaSlicer в FilamentHub и что возвращается обратно.",
     "autoImportLocal": "Автоимпорт локальных пресетов",
     "autoImportLocalHint": "Ваши пресеты филамента из OrcaSlicer попадут в профиль как приватные черновики. Никто их не увидит, пока вы сами не опубликуете.",
+    "syncPrinterEndpoints": "Хранить адреса принтеров в FilamentHub",
+    "syncPrinterEndpointsHint": "Необязательно. По умолчанию IP и адреса остаются только в OrcaSlicer. При включении они сохраняются на сервере в зашифрованном виде; пароли, токены и ключи никогда не отправляются.",
     "regionTitle": "Язык и регион",
     "regionDescription": "Язык интерфейса, валюта расчётов и ваша страна",
     "country": "Страна",
@@ -6383,6 +6399,9 @@
     "ERR_IMPORT_PRINTER_DISABLED": "Импорт профилей принтеров отключён",
     "ERR_IMPORT_PRINT_DISABLED": "Импорт профилей печати отключён",
     "ERR_IMPORT_FILAMENT_DISABLED": "Импорт профилей филаментов отключён",
+    "ERR_ORCA_PROFILE_SNAPSHOT_CONTEXT_REQUIRED": "Не хватает данных контекста синхронизации профилей Orca",
+    "ERR_ORCA_PROFILE_SNAPSHOT_SUPERSEDED": "Уже началась более новая синхронизация профилей Orca",
+    "ERR_ORCA_LOCAL_PROFILE_ID_REQUIRED": "У синхронизируемого профиля Orca отсутствует локальный идентификатор",
     "ERR_TOO_MANY_PROFILES": "Слишком много профилей: {{count}} из {{max}} допустимых",
     "ERR_NO_NOTIFICATION_DATA": "Нет данных для уведомления",
     "ERR_PRESET_IDS_REQUIRED": "Укажите ID пресетов",
@@ -6452,13 +6471,22 @@
     "ERR_OCTOPRINT_BRIDGE_WRONG_PROVIDER": "Эта система подачи не настроена для OctoPrint Bridge",
     "ERR_OCTOPRINT_BRIDGE_NOT_CONFIGURED": "OctoPrint Bridge не настроен для этой системы подачи",
     "ERR_OCTOPRINT_BRIDGE_PAIRING_INVALID": "Код подключения OctoPrint Bridge неверен или уже истёк",
+    "ERR_PRINTER_BRIDGE_WRONG_PROVIDER": "Эта система подачи не настроена как Bambu LAN",
+    "ERR_PRINTER_BRIDGE_NOT_CONFIGURED": "Локальный мост принтера ещё не настроен",
+    "ERR_PRINTER_BRIDGE_PAIRING_INVALID": "Код подключения принтера неверен или уже истёк",
+    "ERR_PRINTER_BRIDGE_UNAUTHORIZED": "Ключ локального моста недействителен или отозван",
     "ERR_OCTOPRINT_BRIDGE_UNAUTHORIZED": "Подключение OctoPrint Bridge больше не авторизовано",
     "ERR_OCTOPRINT_BRIDGE_EVENT_CONFLICT": "OctoPrint Bridge уже отправил другое событие с таким идентификатором",
+    "ERR_PRINT_JOB_NOT_FOUND": "Запись печати не найдена",
+    "ERR_PRINT_JOB_REFERENCE_INVALID": "Выбранный расчёт или файл не относится к этой печати",
+    "ERR_PRINT_JOB_INVALID_TRANSITION": "Для текущего состояния это действие недоступно",
+    "ERR_PRINT_JOB_REPLAY_CONFLICT": "Повторный запрос содержит другие данные печати",
     "ERR_MATERIAL_SYSTEM_EXISTS": "На этом принтере уже есть система подачи.",
     "ERR_USAGE_EVENT_NOT_FOUND": "Запись расхода не найдена",
     "ERR_USAGE_EVENT_NOT_REVERTIBLE": "Эту запись отменить нельзя",
     "ERR_USAGE_EVENT_ALREADY_REVERTED": "Эта запись уже отменена",
-    "ERR_EMAIL_NOT_VERIFIED": "Подтвердите адрес почты — ссылка есть в письме, которое мы отправили при регистрации. В профиле можно выслать его повторно."
+    "ERR_EMAIL_NOT_VERIFIED": "Подтвердите адрес почты — ссылка есть в письме, которое мы отправили при регистрации. В профиле можно выслать его повторно.",
+    "ERR_COUNTRY_REQUIRED": "Укажите страну представительства."
   },
   "printerSettings": {
     "title": "Настройки принтера",
@@ -6474,6 +6502,7 @@
     "configurations": "Конфигурации Orca",
     "noConfigurations": "Конфигурации ещё не привязаны",
     "attachConfiguration": "Привязать конфигурацию",
+    "currentInOrca": "сейчас выбрана в Orca",
     "detach": "Отвязать",
     "editConfiguration": "Настроить конфигурацию",
     "connection": "Подключение",
@@ -6499,6 +6528,7 @@
   },
   "myPrinters": {
     "title": "Мои принтеры",
+    "liveLayer": "слой {{current}} / {{total}}",
     "subtitle": "Появляются сами из OrcaSlicer, когда вы печатаете по сети.",
     "loading": "Загрузка…",
     "loadError": "Не удалось загрузить принтеры.",
@@ -6517,7 +6547,70 @@
     "gates_one": "{{count}} слот",
     "gates_few": "{{count}} слота",
     "gates_many": "{{count}} слотов",
-    "noFeedSystem": "Система подачи не описана"
+    "noFeedSystem": "Система подачи не описана",
+    "localConnection": "адрес хранится в OrcaSlicer"
+  },
+  "printJobs": {
+    "open": "История печатей",
+    "title": "Печати · {{printer}}",
+    "subtitle": "Реальные попытки печати, их материалы и последовательность состояний.",
+    "new": "Новая печать",
+    "createTitle": "Подготовить печать",
+    "create": "Создать",
+    "created": "Печать добавлена в историю",
+    "createError": "Не удалось создать печать",
+    "transitionError": "Не удалось изменить состояние печати",
+    "loadError": "Не удалось загрузить историю печатей.",
+    "empty": "У этого принтера пока нет истории.",
+    "emptyHint": "Создайте печать вручную или дождитесь отчёта подключённого провайдера.",
+    "expand": "Показать подробности",
+    "collapse": "Скрыть подробности",
+    "materials": "Катушки",
+    "noMaterials": "Катушки для этой печати не указаны.",
+    "timeline": "Ход печати",
+    "confirmedConsumption": "Подтверждённый расход: {{value}} г",
+    "pagination": {
+      "label": "Страницы истории печатей",
+      "previous": "Назад",
+      "next": "Вперёд",
+      "page": "Страница {{page}} из {{total}}"
+    },
+    "fields": {
+      "name": "Название",
+      "namePlaceholder": "Например, корпус контроллера",
+      "calculation": "Сохранённый расчёт",
+      "withoutCalculation": "Без расчёта",
+      "calculationPlate": "Задание из расчёта",
+      "allPlates": "Все задания",
+      "slice": "Нарезка OrcaSlicer",
+      "withoutSlice": "Без нарезки",
+      "spools": "Катушки для печати",
+      "loadedSelected": "Загруженные в принтер уже выбраны",
+      "noSpools": "Подходящих катушек пока нет.",
+      "unknownSpool": "Катушка №{{id}}"
+    },
+    "status": {
+      "prepared": "Подготовлена",
+      "sent": "Отметить отправленной",
+      "printing": "Печатается",
+      "paused": "На паузе",
+      "completed": "Завершена",
+      "cancelled": "Отменена",
+      "failed": "Ошибка"
+    },
+    "actions": {
+      "sent": "Отправлена",
+      "printing": "Начать / продолжить",
+      "paused": "Пауза",
+      "completed": "Завершить",
+      "cancelled": "Отменить",
+      "failed": "Отметить ошибку"
+    },
+    "source": {
+      "user": "вручную",
+      "manual": "вручную",
+      "octoprint": "OctoPrint"
+    }
   },
   "deviceLink": {
     "label": "Связь с плагином",
@@ -6546,6 +6639,18 @@
       "title": "Новая система подачи",
       "printer": "Принтер",
       "printerPlaceholder": "Выберите принтер",
+      "printerHint": "Выберите физический принтер, в который будут загружены эти катушки.",
+      "connectionDetected": "подключение найдено",
+      "connections_one": "{{count}} подключение",
+      "connections_few": "{{count}} подключения",
+      "connections_many": "{{count}} подключений",
+      "connections_other": "{{count}} подключения",
+      "orcaConfigurations_one": "только OrcaSlicer · {{count}} конфигурация",
+      "orcaConfigurations_few": "только OrcaSlicer · {{count}} конфигурации",
+      "orcaConfigurations_many": "только OrcaSlicer · {{count}} конфигураций",
+      "orcaConfigurations_other": "только OrcaSlicer · {{count}} конфигурации",
+      "notConnected": "подключение не найдено",
+      "deviceNumber": "устройство №{{id}}",
       "slotCount": "Сколько слотов",
       "create": "Создать",
       "done": "Готово",
@@ -6555,9 +6660,15 @@
       "system": "Система"
     },
     "provider": {
+      "bambu": "Bambu LAN",
       "happy_hare": "Happy Hare",
       "legacy": "Klipper",
       "manual": "Вручную",
+      "octoprint": "OctoPrint"
+    },
+    "connectionProvider": {
+      "bambu": "Bambu LAN",
+      "moonraker": "Moonraker",
       "octoprint": "OctoPrint"
     },
     "slotCount": {
@@ -6576,6 +6687,8 @@
     "assignPreset": "Назначить пресет",
     "clearAll": "Очистить все слоты",
     "deleteSystem": "Удалить систему",
+    "collapseSystem": "Свернуть систему",
+    "expandSystem": "Развернуть систему",
     "deleteSystemConfirm": "Удалить «{{name}}»? Слоты исчезнут, катушки из них вернутся в запас. Принтер останется.",
     "systemDeleted": "Система удалена, катушки вернулись в запас.",
     "clearAllConfirm": "Очистить все назначения для «{{name}}»?",
@@ -6588,7 +6701,9 @@
     },
     "assignment": {
       "label": "Назначено",
-      "notAssigned": "Катушка не назначена"
+      "notAssigned": "Катушка не назначена",
+      "empty": "Свободно",
+      "unknownSpool": "Катушка неизвестна"
     },
     "observation": {
       "noData": "Нет данных",
@@ -6606,8 +6721,13 @@
     "hhStatus": {
       "unknown": "Неизвестно",
       "empty": "Пусто",
-      "spool": "Катушка",
-      "buffer": "Буфер"
+      "loaded": "Доступен",
+      "spool": "Доступен",
+      "buffer": "Доступен",
+      "unknownTooltip": "Happy Hare пока не может определить физическое состояние этого гейта.",
+      "emptyTooltip": "Happy Hare сообщает, что гейт сейчас пуст. Назначенная в FilamentHub катушка при этом сохраняется.",
+      "spoolTooltip": "По данным Happy Hare, из этого слота можно загрузить филамент.",
+      "bufferTooltip": "По данным Happy Hare, из этого слота можно загрузить филамент."
     },
     "pairing": {
       "copy": "Копировать",
@@ -6635,6 +6755,7 @@
       "assigned": "Назначение для слота {{gate}} сохранено"
     },
     "feedSystem": {
+      "bambu": "Bambu LAN",
       "direct": "Прямая подача",
       "happy_hare": "Happy Hare",
       "octoprint": "OctoPrint"
@@ -6648,6 +6769,41 @@
       "pairingDescription": "Для Happy Hare до v4 выполните эту команду один раз в консоли принтера. Либо укажите hostname выше вручную.",
       "pairingWaiting": "Назначьте любую катушку в слот, чтобы получить команду, или укажите hostname выше.",
       "linkHint": "Вставьте это в moonraker.conf на принтере и перезапустите Moonraker.",
+      "refresh": {
+        "title": "Карта слотов Happy Hare",
+        "localOnly": "подключение остаётся в OrcaSlicer",
+        "description": "Плагин безопасно прочитает реальное число гейтов и сравнит назначения принтера с FilamentHub. Изменения применяются только после подтверждения.",
+        "fallback": "Откройте эту страницу в OrcaSlicer для проверки перед применением. Без плагина можно только скопировать официальную команду обновления.",
+        "check": "Проверить принтер",
+        "copyCommand": "Копировать команду",
+        "gate": "Слот {{gate}}",
+        "inSync": "Happy Hare на связи: найдено слотов — {{count}}, назначения совпадают.",
+        "previewTitle": "Применить назначения к Happy Hare?",
+        "previewDescription": "Будет изменено назначений: {{count}}. Плагин выполнит только MMU_SPOOLMAN REFRESH=1 и затем снова проверит карту.",
+        "apply": "Применить к принтеру",
+        "applied": "Назначения Happy Hare обновлены и проверены.",
+        "pullRequired": "Для применения нужен spoolman_support: pull. В остальных режимах FilamentHub не меняет карту принтера.",
+        "busy": "Во время печати или паузы команда заблокирована. Дождитесь состояния готовности и проверьте снова.",
+        "errors": {
+          "auth": "Сессия плагина истекла. Войдите в FilamentHub внутри OrcaSlicer.",
+          "access": "Плагину не выдан доступ к связям принтеров. Обновите окно FilamentHub в OrcaSlicer, чтобы получить актуальные разрешения.",
+          "server": "Не удалось получить данные FilamentHub.",
+          "not_found": "Принтер не найден в вашем профиле.",
+          "connection_not_found": "Плагин не нашёл однозначную локальную связь с этим принтером. Проверьте адрес Moonraker в его пользовательском профиле OrcaSlicer и запустите общий Sync.",
+          "ambiguous_connection": "Найдено несколько подходящих подключений. Оставьте у каждого физического принтера собственный пользовательский профиль OrcaSlicer.",
+          "unreachable": "Moonraker не отвечает или отклонил локальный API-ключ.",
+          "device_not_ready": "Связь с принтером ещё не завершена. Запустите общий Sync в OrcaSlicer.",
+          "material_system_not_found": "Система Happy Hare больше не существует у этого принтера. Обновите страницу.",
+          "spool_ids_unavailable": "Эта версия Happy Hare не отдала карту spool ID; применять назначения вслепую нельзя.",
+          "pull_required": "Для применения включите spoolman_support: pull.",
+          "printer_busy": "Команда заблокирована во время печати или паузы.",
+          "command_failed": "Moonraker не выполнил команду обновления Happy Hare.",
+          "verification_failed": "Команда принята, но повторно прочитать карту принтера не удалось.",
+          "not_applied": "Команда выполнена, но часть назначений ещё не совпала. Проверьте Spoolman и повторите проверку.",
+          "timeout": "Плагин не ответил вовремя. Проверьте OrcaSlicer и Moonraker.",
+          "unknown": "Не удалось проверить Happy Hare."
+        }
+      },
       "guide": {
         "title": "Настройка Happy Hare",
         "description": "До создания системы подготовьте два параметра Happy Hare. После создания FilamentHub покажет готовый блок для moonraker.conf.",
@@ -6663,6 +6819,36 @@
         "colorAllgates": "allgates — показываются цвета всех слотов, включая пустые",
         "colorOff": "off — цвета в интерфейсе принтера отключены",
         "next": "После создания скопируйте выданный блок [spoolman] в moonraker.conf и перезапустите Moonraker."
+      }
+    },
+    "bambu": {
+      "title": "Данные Bambu через OrcaSlicer",
+      "description": "Плагин читает принтер в локальной сети и передаёт в FilamentHub состояние печати и слотов AMS. OrcaSlicer должна быть запущена.",
+      "createDescription": "Количество и номера слотов задавать не нужно: плагин возьмёт реальную топологию AMS, AMS HT и внешних держателей непосредственно у принтера.",
+      "connect": "Подключить в OrcaSlicer",
+      "changeConnection": "Изменить подключение",
+      "openInPlugin": "Откройте страницу в OrcaSlicer",
+      "updatePlugin": "Обновите плагин FilamentHub",
+      "checking": "Проверяем подключение…",
+      "connected": "Плагин подключён",
+      "waiting": "Ожидаем OrcaSlicer",
+      "notConnected": "Ещё не подключено",
+      "localOnly": "IP, серийный номер и код доступа остаются только в локальном приватном хранилище плагина и не отправляются в FilamentHub.",
+      "stateLabel": "Состояние",
+      "progress": "Прогресс",
+      "layers": "Слои",
+      "temperatures": "Сопло · стол · камера",
+      "slots_one": "{{count}} слот от принтера",
+      "slots_few": "{{count}} слота от принтера",
+      "slots_many": "{{count}} слотов от принтера",
+      "state": {
+        "unknown": "Неизвестно",
+        "idle": "Готов",
+        "preparing": "Подготовка",
+        "printing": "Печатает",
+        "paused": "Пауза",
+        "finished": "Завершено",
+        "failed": "Ошибка"
       }
     },
     "link": {

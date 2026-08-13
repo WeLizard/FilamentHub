@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import hmac
 import logging
 
 from cryptography.fernet import Fernet, InvalidToken
@@ -51,3 +52,18 @@ def decrypt_field(value: str | None) -> str:
     except (InvalidToken, UnicodeError, ValueError) as exc:
         logger.warning("Could not decrypt a stored field", exc_info=True)
         raise FieldDecryptionError("Protected stored data is unreadable") from exc
+
+
+def blind_index(value: str, *, context: str) -> str:
+    """Return a keyed, non-reversible equality index for protected data.
+
+    A plain SHA-256 hash is not sufficient for LAN endpoints: the private IPv4
+    search space is small enough to enumerate from a leaked database.  This
+    HMAC lets the application compare encrypted values without making that
+    offline dictionary attack useful.
+    """
+    key = hashlib.sha256(
+        f"field-blind-index:{settings.SECRET_KEY}".encode("utf-8")
+    ).digest()
+    message = f"{context}\0{value}".encode("utf-8")
+    return hmac.new(key, message, hashlib.sha256).hexdigest()

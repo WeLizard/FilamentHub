@@ -35,6 +35,7 @@ from app.models.material_system import MaterialSlot, MaterialSystem, PhysicalPri
 from app.models.octoprint_bridge import OctoPrintBridgeConnection, OctoPrintBridgeEvent
 from app.models.preset_gate_state import PresetGateStateSource
 from app.models.preset_usage_event import PresetUsageEventType
+from app.models.print_job import PrintJobStatus
 from app.models.user_spool import UserSpool, UserSpoolState
 from app.schemas.octoprint_bridge import (
     OctoPrintBridgeHeartbeatRequest,
@@ -50,6 +51,10 @@ from app.schemas.octoprint_bridge import (
     OctoPrintPairingCodeResponse,
 )
 from app.services.material_contract_service import require_physical_printer
+from app.services.print_job_service import (
+    confirmed_consumption_for_job,
+    ensure_provider_terminal_job,
+)
 from app.services.spool_service import clear_spool_gate_assignments, clear_spool_location_projection
 from app.services.spool_usage_service import record_spool_usage
 
@@ -330,7 +335,6 @@ async def pair_bridge(
         raise_error(401, ERR_OCTOPRINT_BRIDGE_PAIRING_INVALID)
     if connector.material_system_id is None:
         raise_error(409, ERR_OCTOPRINT_BRIDGE_NOT_CONFIGURED)
-
     token = _new_bridge_token()
     now = _now()
     connection.token_hash = _digest(token)
@@ -536,6 +540,9 @@ async def record_usage_event(
         raise_error(401, ERR_OCTOPRINT_BRIDGE_UNAUTHORIZED)
     if connector.material_system_id is None:
         raise_error(409, ERR_OCTOPRINT_BRIDGE_NOT_CONFIGURED)
+    physical_printer = await require_physical_printer(
+        db, connector.user_id, connector.physical_printer_id
+    )
 
     payload_hash = _usage_payload_hash(payload)
     existing = await db.scalar(
@@ -571,7 +578,7 @@ async def record_usage_event(
             await db.execute(
                 select(UserSpool)
                 .where(UserSpool.id.in_(spool_ids), UserSpool.user_id == connector.user_id)
-                .options(selectinload(UserSpool.filament))
+                .options(selectinload(UserSpool.filament).selectinload(Filament.brand))
                 .with_for_update()
             )
         ).scalars()
@@ -579,6 +586,50 @@ async def record_usage_event(
     spools_by_id = {spool.id: spool for spool in spools}
     if set(spools_by_id) != spool_ids:
         raise_error(404, ERR_ACCESS_DENIED)
+
+    terminal_payload_hash = hashlib.sha256(
+        json.dumps(
+            payload.model_dump(mode="json", exclude={"event_id"}),
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        ).encode("utf-8")
+    ).hexdigest()
+    print_job, print_job_created = await ensure_provider_terminal_job(
+        db,
+        user_id=connector.user_id,
+        physical_printer_id=connector.physical_printer_id,
+        printer_name=physical_printer.name,
+        source=OCTOPRINT_PROVIDER,
+        source_ref=f"{connection.id}:{payload.job_id}",
+        event_key=f"terminal:{payload.event_id}",
+        payload_hash=terminal_payload_hash,
+        status=PrintJobStatus(payload.outcome),
+        title=payload.file_name or payload.job_id,
+        file_name=payload.file_name,
+        actual_duration_s=payload.duration_s,
+        materials=[
+            (spools_by_id[item.spool_id], f"slot:{item.slot_index}", None) for item in payload.items
+        ],
+    )
+    if not print_job_created:
+        consumed_weight_g = await confirmed_consumption_for_job(db, print_job.id)
+        db.add(
+            OctoPrintBridgeEvent(
+                connection_id=connection.id,
+                event_id=payload.event_id,
+                payload_hash=payload_hash,
+                consumed_weight_g=consumed_weight_g,
+            )
+        )
+        connector.last_seen_at = _now()
+        connection.observed_at = connector.last_seen_at
+        await db.commit()
+        return OctoPrintBridgeUsageResponse(
+            accepted=True,
+            deduplicated=True,
+            consumed_weight_g=consumed_weight_g,
+        )
 
     now = _now()
     total_consumed = 0.0
@@ -613,6 +664,7 @@ async def record_usage_event(
             event_type=PresetUsageEventType.printer_report,
             delta_weight_g=consumed,
             device_id=connector.physical_printer_id,
+            print_job_id=print_job.id,
             job_ref=f"octoprint_bridge:{payload.event_id}:{spool.id}",
             reported_weight_g=reported_weight,
             meta={

@@ -144,7 +144,7 @@ describe('GateMapGrid material slots', () => {
     const slot = observedSlot(
       {
         id: 20,
-        preset_id: null,
+        preset_id: 77,
         spool_id: 40,
         source: 'web_manual',
         source_ts: '2026-07-30T00:00:00Z',
@@ -159,14 +159,26 @@ describe('GateMapGrid material slots', () => {
       <GateMapGrid
         slots={[slot]}
         gates={[observedEmptyGate]}
-        presets={{}}
+        presets={{
+          77: {
+            id: 77,
+            name: 'Voron PETG 0.20',
+            extruder_temp: 240,
+            bed_temp: 80,
+          },
+        }}
         spools={[assignedSpool]}
         onGateClick={onGateClick}
       />,
     );
 
-    expect(screen.getByText('PLA')).toBeInTheDocument();
     expect(screen.getByText('presetSlots.hhStatus.empty')).toBeInTheDocument();
+    expect(screen.getByText('presetSlots.hhStatus.empty').closest('[title]')).toHaveAttribute(
+      'title',
+      'presetSlots.observation.conflict.assigned_but_observed_empty presetSlots.hhStatus.emptyTooltip',
+    );
+    expect(screen.getByText('Example Signal Red')).toBeInTheDocument();
+    expect(screen.getByText('Voron PETG 0.20')).toBeInTheDocument();
     fireEvent.click(screen.getByText('presetSlots.hhStatus.empty'));
     expect(onGateClick).toHaveBeenCalledWith(observedEmptyGate, slot);
   });
@@ -194,7 +206,50 @@ describe('GateMapGrid material slots', () => {
     );
 
     expect(screen.getByText('PETG')).toBeInTheDocument();
-    expect(screen.getAllByText('presetSlots.identifySpool').length).toBeGreaterThan(0);
+    expect(screen.getByText('presetSlots.assignment.unknownSpool')).toBeInTheDocument();
+    expect(screen.queryByText('presetSlots.observation.action.observed_loaded_without_spool'))
+      .not.toBeInTheDocument();
+    expect(screen.queryByText('presetSlots.assignment.notAssigned')).not.toBeInTheDocument();
+    expect(screen.queryByText('presetSlots.identifySpool')).not.toBeInTheDocument();
+    expect(screen.queryByText('presetSlots.hhStatus.spool')).not.toBeInTheDocument();
+  });
+
+  it('shows user-facing availability without exposing the internal Happy Hare buffer state', () => {
+    const bufferedGate: GateState = {
+      ...gate,
+      spool_id: null,
+      hh_material: 'PLA',
+      hh_status: 2,
+      source: 'hh_snapshot',
+      source_ts: FRESH_SOURCE_TS,
+    };
+    const view = render(
+      <GateMapGrid
+        slots={[observedSlot(null, 2, 'PLA', null)]}
+        gates={[bufferedGate]}
+        presets={{}}
+        spools={[]}
+        onGateClick={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText('PLA')).toBeInTheDocument();
+    expect(screen.queryByText('presetSlots.hhStatus.buffer')).not.toBeInTheDocument();
+    expect(screen.getByText('PLA').closest('[title]')).toHaveAttribute(
+      'title',
+      'presetSlots.observation.conflict.observed_loaded_without_spool presetSlots.hhStatus.bufferTooltip',
+    );
+
+    view.rerender(
+      <GateMapGrid
+        slots={[observedSlot(null, 2, null, null)]}
+        gates={[{ ...bufferedGate, hh_material: null }]}
+        presets={{}}
+        spools={[]}
+        onGateClick={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('presetSlots.hhStatus.loaded')).toBeInTheDocument();
   });
 
   it('does not invent provider telemetry from a Spoolman-compatible assignment', () => {

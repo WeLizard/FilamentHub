@@ -11,15 +11,18 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping
 
 from pydantic import ValidationError
-from sqlalchemy import Select, or_, select
+from sqlalchemy import Select, delete, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.models import (
+    Bundle,
+    BundleSource,
     Filament,
     Printer,
     PrinterProfile,
     PrintProfile,
+    PrintProfileConfigurationLink,
     PrintProfileFilament,
     PrintProfilePrinter,
 )
@@ -48,6 +51,10 @@ class OrcaBundleImporter:
         self._printer_cache: dict[tuple[str, str], Printer] = {}
         self._printer_profile_cache: dict[tuple[str, str], PrinterProfile] = {}
         self._filament_cache: dict[str, Filament | None] = {}
+        self._current_vendor_id: str | None = None
+        self._seen_printers: list[Printer] = []
+        self._seen_printer_profiles: list[PrinterProfile] = []
+        self._seen_print_profiles: list[PrintProfile] = []
 
     async def import_all(
         self, db: AsyncSession, *, bundle_id: int | None = None
@@ -58,6 +65,9 @@ class OrcaBundleImporter:
         created or touched gets `created_from_bundle_id = bundle_id` (RFC §3,4).
         """
         self._bundle_id = bundle_id
+        self._seen_printers.clear()
+        self._seen_printer_profiles.clear()
+        self._seen_print_profiles.clear()
         if not self.root_path.exists():
             raise FileNotFoundError(f"Orca presets path not found: {self.root_path}")
 
@@ -67,6 +77,9 @@ class OrcaBundleImporter:
             "printer_profiles": 0,
             "print_profiles": 0,
             "common_profiles": 0,
+            "printers_deactivated": 0,
+            "printer_profiles_deactivated": 0,
+            "print_profiles_deactivated": 0,
         }
         vendor_files = sorted(self.root_path.glob("*.json"))
         for vendor_file in vendor_files:
@@ -85,6 +98,11 @@ class OrcaBundleImporter:
             summary["printer_profiles"] += vendor_result["printer_profiles"]
             summary["print_profiles"] += vendor_result["print_profiles"]
             summary["common_profiles"] += vendor_result.get("common_profiles", 0)
+
+        if bundle_id is not None:
+            await db.flush()
+            deactivated = await self._deactivate_missing_orca_records(db)
+            summary.update(deactivated)
 
         # ВАЖНО: Синхронизируем ВСЕ системные принтеры после импорта всех vendor'ов
         # Это гарантирует, что все принтеры получат правильные данные из профилей
@@ -107,6 +125,7 @@ class OrcaBundleImporter:
         vendor: OrcaVendorBundle,
         vendor_dir: Path,
     ) -> dict[str, int]:
+        self._current_vendor_id = vendor_dir.name
         counters = {"printers": 0, "printer_profiles": 0, "print_profiles": 0, "common_profiles": 0}
         if not vendor_dir.exists():
             LOG.warning("Vendor directory missing: %s", vendor_dir)
@@ -123,17 +142,23 @@ class OrcaBundleImporter:
         printer_lookup = await self._import_machine_models(db, vendor, vendor_dir)
         counters["printers"] = len(printer_lookup)
 
-        process_slug_lookup = await self._import_process_presets(db, vendor, vendor_dir, printer_lookup)
-        counters["print_profiles"] = len(process_slug_lookup)
+        process_lookup = await self._import_process_presets(db, vendor, vendor_dir, printer_lookup)
+        counters["print_profiles"] = len(process_lookup)
 
         printer_profile_count = await self._import_machine_presets(
             db=db,
             vendor=vendor,
             vendor_dir=vendor_dir,
             printer_lookup=printer_lookup,
-            process_lookup=process_slug_lookup,
+            process_lookup={name: profile.slug for name, profile in process_lookup.items()},
         )
         counters["printer_profiles"] = printer_profile_count
+
+        await self._sync_vendor_configuration_links(
+            db=db,
+            vendor_name=vendor.name,
+            profiles=process_lookup.values(),
+        )
 
         # Обновляем printer.extra_metadata данными из printer_profiles (с разрешением наследования)
         await self._sync_printer_metadata_from_profiles(db, printer_lookup)
@@ -159,20 +184,31 @@ class OrcaBundleImporter:
         vendor: OrcaVendorBundle,
         vendor_dir: Path,
         printer_lookup: Mapping[str, Printer],
-    ) -> dict[str, str]:
-        slug_lookup: dict[str, str] = {}
+    ) -> dict[str, PrintProfile]:
+        profile_lookup: dict[str, PrintProfile] = {}
+        raw_presets: dict[str, OrcaProcessPreset] = {}
         for pointer in vendor.process_list:
             process_path = vendor_dir / pointer.sub_path
-            process = self._load_json(process_path, OrcaProcessPreset)
+            raw_presets[pointer.name] = self._load_json(process_path, OrcaProcessPreset)
+
+        effective_cache: dict[str, OrcaProcessPreset] = {}
+        for pointer in vendor.process_list:
+            process = raw_presets[pointer.name]
+            effective_process = _resolve_effective_process_preset(
+                process.name,
+                presets=raw_presets,
+                cache=effective_cache,
+            )
             profile = await self._upsert_print_profile(
                 db=db,
                 vendor_name=vendor.name,
                 process=process,
+                effective_process=effective_process,
                 printer_lookup=printer_lookup,
             )
-            slug_lookup[process.name] = profile.slug
+            profile_lookup[process.name] = profile
         await db.flush()
-        return slug_lookup
+        return profile_lookup
 
     async def _import_common_profiles(
         self,
@@ -186,7 +222,7 @@ class OrcaBundleImporter:
         for preset_path in self._iter_machine_preset_paths(vendor_dir):
             preset = self._load_json(preset_path, OrcaMachinePreset)
             # Common-профили имеют instantiation="false" или отсутствует printer_model
-            if preset.instantiation == "false" or not preset.printer_model:
+            if preset.instantiation is False or not preset.printer_model:
                 profile = await self._upsert_common_profile(
                     db=db,
                     vendor_name=vendor.name,
@@ -211,7 +247,7 @@ class OrcaBundleImporter:
         for preset_path in self._iter_machine_preset_paths(vendor_dir):
             preset = self._load_json(preset_path, OrcaMachinePreset)
             # Пропускаем common-профили (они уже импортированы)
-            if preset.instantiation == "false" or not preset.printer_model:
+            if preset.instantiation is False or not preset.printer_model:
                 continue
             printer = printer_lookup.get(preset.printer_model or "")
             if not printer:
@@ -289,9 +325,15 @@ class OrcaBundleImporter:
         if machine_model.metadata:
             merged_metadata = dict(printer.extra_metadata or {})
             merged_metadata.update(machine_model.metadata)
-            printer.extra_metadata = merged_metadata or None
+        else:
+            merged_metadata = dict(printer.extra_metadata or {})
+        merged_metadata["catalog_source"] = "orca"
+        if self._current_vendor_id:
+            merged_metadata["orca_vendor_id"] = self._current_vendor_id
+        printer.extra_metadata = merged_metadata
 
         self._stamp_bundle(printer)
+        self._seen_printers.append(printer)
         return printer
 
     async def _upsert_printer_profile(
@@ -308,6 +350,7 @@ class OrcaBundleImporter:
             vendor_name=vendor_name,
             setting_id=preset.setting_id,
             name=preset.name,
+            renamed_from=_renamed_aliases(preset.parameters.get("renamed_from")),
         )
         if profile is None:
             slug = await generate_unique_slug(
@@ -384,10 +427,14 @@ class OrcaBundleImporter:
             full_metadata.setdefault("printer_model", preset.printer_model)
         if preset.nozzle_diameter:
             full_metadata.setdefault("nozzle_diameter", preset.nozzle_diameter)
+        full_metadata["catalog_source"] = "orca"
+        if self._current_vendor_id:
+            full_metadata["orca_vendor_id"] = self._current_vendor_id
         profile.extra_metadata = full_metadata or None
 
         self._stamp_bundle(profile)
         self._stamp_content_hash(profile, profile.orcaslicer_settings)
+        self._seen_printer_profiles.append(profile)
         return profile
 
     async def _upsert_common_profile(
@@ -475,10 +522,14 @@ class OrcaBundleImporter:
             full_metadata.setdefault("default_print_profile", preset.default_print_profile)
         if preset.nozzle_diameter:
             full_metadata.setdefault("nozzle_diameter", preset.nozzle_diameter)
+        full_metadata["catalog_source"] = "orca"
+        if self._current_vendor_id:
+            full_metadata["orca_vendor_id"] = self._current_vendor_id
         profile.extra_metadata = full_metadata or None
 
         self._stamp_bundle(profile)
         self._stamp_content_hash(profile, profile.orcaslicer_settings)
+        self._seen_printer_profiles.append(profile)
         return profile
 
     async def _upsert_print_profile(
@@ -487,6 +538,7 @@ class OrcaBundleImporter:
         db: AsyncSession,
         vendor_name: str,
         process: OrcaProcessPreset,
+        effective_process: OrcaProcessPreset,
         printer_lookup: Mapping[str, Printer],
     ) -> PrintProfile:
         profile = await self._find_print_profile(
@@ -494,6 +546,7 @@ class OrcaBundleImporter:
             vendor_name=vendor_name,
             setting_id=process.setting_id,
             name=process.name,
+            renamed_from=_renamed_aliases(process.parameters.get("renamed_from")),
         )
         if profile is None:
             slug = await generate_unique_slug(
@@ -508,6 +561,11 @@ class OrcaBundleImporter:
                 source="system",
                 vendor=vendor_name,
                 setting_id=process.setting_id,
+                # Initialise async relationships explicitly. The first lookup
+                # below can autoflush this pending row; an uninitialised
+                # collection would then try to lazy-load outside greenlet_spawn.
+                printer_links=[],
+                filament_links=[],
             )
             db.add(profile)
 
@@ -521,14 +579,23 @@ class OrcaBundleImporter:
         profile.active = True
         profile.quality_tier = _derive_quality_tier(process.name)
         profile.default_nozzle = _derive_default_nozzle(process.name, process.parameters)
-        profile.layer_height_mm = _derive_layer_height(process.parameters)
+        profile.layer_height_mm = _derive_layer_height(effective_process.parameters)
 
-        profile.compatible_printers = _ensure_list_str(process.parameters.get("compatible_printers"))
-        profile.compatible_filaments = _ensure_list_str(process.parameters.get("compatible_filaments"))
+        profile.compatible_printers = _ensure_list_str(
+            effective_process.parameters.get("compatible_printers")
+        )
+        profile.compatible_filaments = _ensure_list_str(
+            effective_process.parameters.get("compatible_filaments")
+        )
 
         profile.orcaslicer_settings = _build_process_settings_dict(process)
         extra_metadata = dict(process.parameters)
-        extra_metadata["compatible_printers_condition"] = process.compatible_printers_condition
+        extra_metadata["compatible_printers_condition"] = (
+            effective_process.compatible_printers_condition
+        )
+        extra_metadata["catalog_source"] = "orca"
+        if self._current_vendor_id:
+            extra_metadata["orca_vendor_id"] = self._current_vendor_id
         profile.extra_metadata = extra_metadata if extra_metadata else None
 
         await self._sync_print_profile_links(
@@ -536,13 +603,171 @@ class OrcaBundleImporter:
             profile=profile,
             vendor_name=vendor_name,
             compatible_printers=profile.compatible_printers,
-            compatible_printers_condition=process.compatible_printers_condition,
+            compatible_printers_condition=effective_process.compatible_printers_condition,
             compatible_filaments=profile.compatible_filaments,
         )
 
         self._stamp_bundle(profile)
         self._stamp_content_hash(profile, profile.orcaslicer_settings)
+        self._seen_print_profiles.append(profile)
         return profile
+
+    async def _sync_vendor_configuration_links(
+        self,
+        *,
+        db: AsyncSession,
+        vendor_name: str,
+        profiles: Iterable[PrintProfile],
+    ) -> None:
+        """Materialise Orca's effective process-to-machine compatibility.
+
+        Process profiles are imported before concrete machine profiles because
+        machine defaults point back to process slugs.  Once both sides exist,
+        replace the exact links in one bounded pass.  The raw process payload is
+        still preserved on ``orcaslicer_settings``; only compatibility is
+        inherited here.
+        """
+        profile_list = [profile for profile in profiles if profile.id is not None]
+        if not profile_list:
+            return
+
+        identifiers = {
+            str(identifier).strip()
+            for profile in profile_list
+            for identifier in (profile.compatible_printers or [])
+            if str(identifier).strip()
+        }
+        candidates_by_name: dict[str, list[PrinterProfile]] = {}
+        if identifiers:
+            candidates = list(
+                (
+                    await db.execute(
+                        select(PrinterProfile).where(
+                            PrinterProfile.name.in_(identifiers),
+                            PrinterProfile.owner_user_id.is_(None),
+                            PrinterProfile.is_official.is_(True),
+                            PrinterProfile.active.is_(True),
+                        )
+                    )
+                ).scalars()
+            )
+            for candidate in candidates:
+                candidates_by_name.setdefault(candidate.name, []).append(candidate)
+
+        profile_ids = [profile.id for profile in profile_list]
+        await db.execute(
+            delete(PrintProfileConfigurationLink).where(
+                PrintProfileConfigurationLink.print_profile_id.in_(profile_ids)
+            )
+        )
+
+        links: list[PrintProfileConfigurationLink] = []
+        resolved_by_profile_id: dict[int, set[int]] = {}
+        for profile in profile_list:
+            resolved_ids: set[int] = set()
+            all_resolved = True
+            for identifier in profile.compatible_printers or []:
+                name = str(identifier).strip()
+                if not name:
+                    continue
+                current_vendor = self._printer_profile_cache.get((vendor_name, name))
+                if current_vendor is not None and current_vendor.id is not None:
+                    resolved_ids.add(current_vendor.id)
+                    continue
+
+                matches = candidates_by_name.get(name, [])
+                same_vendor = [item for item in matches if item.vendor == vendor_name]
+                if len(same_vendor) == 1:
+                    resolved_ids.add(same_vendor[0].id)
+                elif not same_vendor and len(matches) == 1:
+                    resolved_ids.add(matches[0].id)
+                else:
+                    all_resolved = False
+
+            links.extend(
+                PrintProfileConfigurationLink(
+                    print_profile_id=profile.id,
+                    printer_profile_id=printer_profile_id,
+                    relation_type="explicit",
+                )
+                for printer_profile_id in sorted(resolved_ids)
+            )
+            resolved_by_profile_id[profile.id] = resolved_ids
+            profile.configuration_links_resolved = all_resolved
+
+        profiles_by_name: dict[str, list[PrintProfile]] = {}
+        for profile in profile_list:
+            profiles_by_name.setdefault(profile.name, []).append(profile)
+
+        def inherited_process_ids(
+            profile: PrintProfile,
+            visited: set[int],
+        ) -> tuple[set[int], bool]:
+            direct = resolved_by_profile_id.get(profile.id, set())
+            if direct or profile.compatible_printers is not None:
+                return direct, profile.configuration_links_resolved
+            settings = (
+                profile.orcaslicer_settings
+                if isinstance(profile.orcaslicer_settings, dict)
+                else {}
+            )
+            parent_name = str(settings.get("inherits") or "").strip()
+            if not parent_name:
+                return set(), True
+            parents = profiles_by_name.get(parent_name, [])
+            if len(parents) != 1 or parents[0].id in visited:
+                return set(), False
+            parent = parents[0]
+            return inherited_process_ids(parent, {*visited, parent.id})
+
+        for profile in profile_list:
+            if resolved_by_profile_id.get(profile.id) or profile.compatible_printers is not None:
+                continue
+            inherited_ids, inherited_resolved = inherited_process_ids(
+                profile,
+                {profile.id},
+            )
+            links.extend(
+                PrintProfileConfigurationLink(
+                    print_profile_id=profile.id,
+                    printer_profile_id=printer_profile_id,
+                    relation_type="inherited_process",
+                )
+                for printer_profile_id in sorted(inherited_ids)
+            )
+            profile.configuration_links_resolved = inherited_resolved
+
+        db.add_all(links)
+        await db.flush()
+
+    async def _deactivate_missing_orca_records(self, db: AsyncSession) -> dict[str, int]:
+        """Retire records removed upstream without deleting user-linked history."""
+        orca_bundle_ids = select(Bundle.id).where(Bundle.source == BundleSource.ORCA)
+
+        async def retire(model: type, seen_ids: set[int]) -> int:
+            conditions = [
+                model.source == "system",
+                model.active.is_(True),
+                model.created_from_bundle_id.in_(orca_bundle_ids),
+            ]
+            if seen_ids:
+                conditions.append(model.id.not_in(seen_ids))
+            result = await db.execute(update(model).where(*conditions).values(active=False))
+            return result.rowcount or 0
+
+        return {
+            "printers_deactivated": await retire(
+                Printer, {item.id for item in self._seen_printers if item.id is not None}
+            ),
+            "printer_profiles_deactivated": await retire(
+                PrinterProfile,
+                {item.id for item in self._seen_printer_profiles if item.id is not None},
+            ),
+            "print_profiles_deactivated": await retire(
+                PrintProfile,
+                {item.id for item in self._seen_print_profiles if item.id is not None},
+            ),
+        }
 
     async def _sync_print_profile_links(
         self,
@@ -803,7 +1028,11 @@ class OrcaBundleImporter:
             # Получаем все printer_profiles для этого принтера
             result = await db.execute(
                 select(PrinterProfile)
-                .where(PrinterProfile.printer_id == printer.id, PrinterProfile.source == "system")
+                .where(
+                    PrinterProfile.printer_id == printer.id,
+                    PrinterProfile.source == "system",
+                    PrinterProfile.active.is_(True),
+                )
                 .order_by(PrinterProfile.id.asc())
             )
             profiles = result.scalars().all()
@@ -915,6 +1144,7 @@ class OrcaBundleImporter:
         vendor_name: str,
         setting_id: str | None,
         name: str,
+        renamed_from: set[str],
     ) -> PrinterProfile | None:
         # setting_id repeats across a vendor's models, the name does not.
         stmt = (
@@ -923,17 +1153,23 @@ class OrcaBundleImporter:
             .order_by(PrinterProfile.id)
         )
         found = (await db.execute(stmt)).scalars().first()
-        if found is not None or not setting_id:
+        if found is not None:
             return found
-        stmt = (
-            select(PrinterProfile)
-            .where(
-                PrinterProfile.vendor == vendor_name,
-                PrinterProfile.setting_id == setting_id,
-            )
-            .order_by(PrinterProfile.id)
+        if not renamed_from:
+            return None
+        renamed = list(
+            (
+                await db.execute(
+                    select(PrinterProfile).where(
+                        PrinterProfile.vendor == vendor_name,
+                        PrinterProfile.name.in_(renamed_from),
+                    )
+                )
+            ).scalars()
         )
-        return (await db.execute(stmt)).scalars().first()
+        if setting_id and len(renamed) > 1:
+            renamed = [profile for profile in renamed if profile.setting_id == setting_id]
+        return renamed[0] if len(renamed) == 1 else None
 
     async def _find_print_profile(
         self,
@@ -942,6 +1178,7 @@ class OrcaBundleImporter:
         vendor_name: str,
         setting_id: str | None,
         name: str,
+        renamed_from: set[str],
     ) -> PrintProfile | None:
         stmt = (
             select(PrintProfile)
@@ -949,17 +1186,23 @@ class OrcaBundleImporter:
             .order_by(PrintProfile.id)
         )
         found = (await db.execute(stmt)).scalars().first()
-        if found is not None or not setting_id:
+        if found is not None:
             return found
-        stmt = (
-            select(PrintProfile)
-            .where(
-                PrintProfile.vendor == vendor_name,
-                PrintProfile.setting_id == setting_id,
-            )
-            .order_by(PrintProfile.id)
+        if not renamed_from:
+            return None
+        renamed = list(
+            (
+                await db.execute(
+                    select(PrintProfile).where(
+                        PrintProfile.vendor == vendor_name,
+                        PrintProfile.name.in_(renamed_from),
+                    )
+                )
+            ).scalars()
         )
-        return (await db.execute(stmt)).scalars().first()
+        if setting_id and len(renamed) > 1:
+            renamed = [profile for profile in renamed if profile.setting_id == setting_id]
+        return renamed[0] if len(renamed) == 1 else None
 
     def _iter_machine_preset_paths(self, vendor_dir: Path) -> list[Path]:
         machine_dir = vendor_dir / "machine"
@@ -1114,12 +1357,72 @@ def _build_process_settings_dict(process: OrcaProcessPreset) -> dict[str, Any]:
     return settings
 
 
+def _resolve_effective_process_preset(
+    name: str,
+    *,
+    presets: Mapping[str, OrcaProcessPreset],
+    cache: dict[str, OrcaProcessPreset],
+    resolving: tuple[str, ...] = (),
+) -> OrcaProcessPreset:
+    """Resolve one process preset exactly far enough for compatibility.
+
+    Orca keeps ``compatible_printers`` on common parents while named process
+    files contain only their local overrides.  Preserve the child object and
+    merge inherited parameters into a separate effective copy.  A missing or
+    cyclic parent degrades to the raw child instead of inventing compatibility.
+    """
+    cached = cache.get(name)
+    if cached is not None:
+        return cached
+
+    process = presets[name]
+    parent_name = (process.inherits or "").strip()
+    if not parent_name or parent_name not in presets or parent_name in resolving:
+        cache[name] = process
+        return process
+
+    parent = _resolve_effective_process_preset(
+        parent_name,
+        presets=presets,
+        cache=cache,
+        resolving=(*resolving, name),
+    )
+    parameters = dict(parent.parameters)
+    parameters.update(process.parameters)
+    condition = (
+        process.compatible_printers_condition
+        if "compatible_printers_condition" in process.model_fields_set
+        else parent.compatible_printers_condition
+    )
+    effective = process.model_copy(
+        update={
+            "parameters": parameters,
+            "compatible_printers_condition": condition,
+        }
+    )
+    cache[name] = effective
+    return effective
+
+
 def _ensure_list_str(value: Any) -> list[str] | None:
     if value is None:
         return None
     if isinstance(value, list):
         return [str(item) for item in value if item is not None]
     return [str(value)]
+
+
+def _renamed_aliases(value: Any) -> set[str]:
+    aliases = _ensure_list_str(value) or []
+    result: set[str] = set()
+    for alias in aliases:
+        for part in alias.split(";"):
+            cleaned = part.strip()
+            if cleaned.lower().endswith(".json"):
+                cleaned = cleaned[:-5]
+            if cleaned:
+                result.add(cleaned)
+    return result
 
 
 def _derive_layer_height(parameters: Mapping[str, Any]) -> float | None:

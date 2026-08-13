@@ -5,7 +5,7 @@ from __future__ import annotations
 import io
 import json
 import zipfile
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from httpx import AsyncClient
@@ -20,11 +20,224 @@ from app.models.print_profile import PrintProfile
 from app.models.print_profile_configuration import PrintProfileConfigurationLink
 from app.models.print_profile_printer import PrintProfilePrinter
 from app.models.printer import Printer
+from app.models.printer_bridge_observation import (
+    MaterialSlotObservation,
+    PhysicalPrinterStatusObservation,
+)
 from app.models.printer_profile import PrinterProfile
 from app.models.user import User
 from app.models.user_printer_device import UserPrinterDevice
 from app.models.user_spool import UserSpool, UserSpoolState
 from app.services.material_contract_service import ensure_material_topology
+
+
+@pytest.mark.asyncio
+async def test_bambu_bridge_keeps_credentials_local_and_observations_separate(
+    auth_client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    created = await auth_client.post(
+        "/api/v1/physical-printers",
+        json={"name": "LAN X1C"},
+    )
+    assert created.status_code == 201
+    printer_id = created.json()["id"]
+    system_response = await auth_client.post(
+        f"/api/v1/physical-printers/{printer_id}/material-systems",
+        json={
+            "name": "Bambu AMS",
+            "kind": "mmu",
+            "provider": "bambu",
+            "capabilities": ["read", "presence"],
+        },
+    )
+    assert system_response.status_code == 201
+    system_id = system_response.json()["material_systems"][0]["id"]
+
+    issued = await auth_client.post(
+        f"/api/v1/printer-bridge/connections/{printer_id}/{system_id}/pairing-code"
+    )
+    assert issued.status_code == 200
+    source_instance_id = "fixture-plugin-instance-0001"
+    paired = await auth_client.post(
+        "/api/v1/printer-bridge/pair",
+        json={
+            "pairing_code": issued.json()["pairing_code"],
+            "provider": "bambu",
+            "transport": "orca_plugin_lan",
+            "source_instance_id": source_instance_id,
+            "plugin_version": "0.1.0-test",
+            "capabilities": ["read", "presence", "admin"],
+        },
+    )
+    assert paired.status_code == 200
+    bridge_headers = {
+        "X-FilamentHub-Bridge-Token": paired.json()["bridge_token"],
+    }
+    replayed_pairing = await auth_client.post(
+        "/api/v1/printer-bridge/pair",
+        json={
+            "pairing_code": issued.json()["pairing_code"],
+            "provider": "bambu",
+            "transport": "orca_plugin_lan",
+            "source_instance_id": source_instance_id,
+            "plugin_version": "0.1.0-test",
+        },
+    )
+    assert replayed_pairing.status_code == 401
+    observed_at = datetime.now(timezone.utc)
+    snapshot = {
+        "material_system_id": system_id,
+        "provider": "bambu",
+        "transport": "orca_plugin_lan",
+        "source_instance_id": source_instance_id,
+        "observed_at": observed_at.isoformat(),
+        "printer": {
+            "state": "printing",
+            "progress_percent": 42,
+            "remaining_seconds": 3600,
+            "current_layer": 17,
+            "total_layers": 80,
+            "job_name": "fixture.3mf",
+            "nozzle_temperature": 220.5,
+            "bed_temperature": 60.0,
+        },
+        "slots": [
+            {
+                "provider_index": 128,
+                "label": "AMS HT 1",
+                "present": True,
+                "active_feed": True,
+                "material": "PLA",
+                "color_hex": "ff6a13",
+                "remaining_percent": 65,
+                "remaining_grams": 428,
+            },
+            {
+                "provider_index": 255,
+                "label": "External spool",
+                "present": False,
+                "active_feed": False,
+            },
+        ],
+        "slot_topology_complete": True,
+    }
+    accepted = await auth_client.post(
+        "/api/v1/printer-bridge/snapshot",
+        headers=bridge_headers,
+        json=snapshot,
+    )
+    assert accepted.status_code == 200
+    assert accepted.json()["accepted"] is True
+    assert accepted.json()["slots_seen"] == 2
+
+    printer = (
+        await auth_client.get(f"/api/v1/physical-printers/{printer_id}")
+    ).json()
+    assert [slot["provider_index"] for slot in printer["material_systems"][0]["slots"]] == [
+        128,
+        255,
+    ]
+    slot = printer["material_systems"][0]["slots"][0]
+    assert slot["assignment"] is None
+    assert slot["observation"]["remaining_grams"] == 428
+    assert slot["observation"]["color_hex"] == "FF6A13"
+    connector = printer["connectors"][0]
+    assert connector["provider"] == "bambu"
+    assert connector["status_observation"]["progress_percent"] == 42
+    assert "access_code" not in json.dumps(printer)
+    assert "serial" not in json.dumps(printer)
+
+    old_snapshot = dict(snapshot)
+    old_snapshot["observed_at"] = (observed_at - timedelta(minutes=5)).isoformat()
+    old_snapshot["printer"] = {"state": "idle", "progress_percent": 0}
+    old_snapshot["slots"] = [
+        {
+            "provider_index": 128,
+            "present": True,
+            "active_feed": False,
+            "remaining_grams": 999,
+        },
+        {
+            "provider_index": 42,
+            "present": True,
+            "material": "STALE",
+        },
+    ]
+    stale = await auth_client.post(
+        "/api/v1/printer-bridge/snapshot",
+        headers=bridge_headers,
+        json=old_snapshot,
+    )
+    assert stale.status_code == 200
+    assert stale.json()["accepted"] is False
+    assert stale.json()["stale"] is True
+    stale_view = (
+        await auth_client.get(f"/api/v1/physical-printers/{printer_id}")
+    ).json()
+    assert next(
+        item
+        for item in stale_view["material_systems"][0]["slots"]
+        if item["provider_index"] == 255
+    )["active"] is True
+    assert all(
+        item["provider_index"] != 42
+        for item in stale_view["material_systems"][0]["slots"]
+    )
+
+    fresh_topology = dict(snapshot)
+    fresh_topology["observed_at"] = datetime.now(timezone.utc).isoformat()
+    fresh_topology["printer"] = None
+    fresh_topology["slots"] = [snapshot["slots"][0]]
+    refreshed = await auth_client.post(
+        "/api/v1/printer-bridge/snapshot",
+        headers=bridge_headers,
+        json=fresh_topology,
+    )
+    assert refreshed.status_code == 200
+    assert refreshed.json()["accepted"] is True
+    refreshed_view = (
+        await auth_client.get(f"/api/v1/physical-printers/{printer_id}")
+    ).json()
+    assert next(
+        item
+        for item in refreshed_view["material_systems"][0]["slots"]
+        if item["provider_index"] == 255
+    )["active"] is False
+    status_row = await db_session.scalar(select(PhysicalPrinterStatusObservation))
+    slot_row = await db_session.scalar(
+        select(MaterialSlotObservation).where(MaterialSlotObservation.remaining_grams.is_not(None))
+    )
+    assert status_row is not None and status_row.progress_percent == 42
+    assert slot_row is not None and slot_row.remaining_grams == 428
+
+    denied = await auth_client.post(
+        "/api/v1/printer-bridge/snapshot",
+        headers={"X-FilamentHub-Bridge-Token": "fhpb_invalid"},
+        json=snapshot,
+    )
+    assert denied.status_code == 401
+
+    leaked = dict(snapshot)
+    leaked["access_code"] = "must-never-cross-the-boundary"
+    rejected_secret = await auth_client.post(
+        "/api/v1/printer-bridge/snapshot",
+        headers=bridge_headers,
+        json=leaked,
+    )
+    assert rejected_secret.status_code == 422
+
+    removed = await auth_client.delete(
+        f"/api/v1/physical-printers/{printer_id}/material-systems/{system_id}"
+    )
+    assert removed.status_code == 200
+    assert removed.json()["material_systems"] == []
+    rejected_after_owner_removal = await auth_client.post(
+        "/api/v1/printer-bridge/snapshot",
+        headers=bridge_headers,
+        json=snapshot,
+    )
+    assert rejected_after_owner_removal.status_code == 401
 
 
 async def _profile(
@@ -117,7 +330,17 @@ async def test_physical_printer_exports_explicit_orca_bundle(
         active=True,
         orcaslicer_settings={"nozzle_diameter": ["0.6"]},
     )
-    db_session.add_all([nozzle_04, nozzle_06])
+    stock_nozzle = PrinterProfile(
+        name="Bundle printer stock 0.4",
+        slug="bundle-printer-stock-04",
+        owner_user_id=None,
+        printer_id=catalog_printer.id,
+        source="system",
+        is_official=True,
+        active=True,
+        orcaslicer_settings={"nozzle_diameter": ["0.4"]},
+    )
+    db_session.add_all([nozzle_04, nozzle_06, stock_nozzle])
     await db_session.commit()
     await db_session.refresh(nozzle_04)
     await db_session.refresh(nozzle_06)
@@ -127,7 +350,7 @@ async def test_physical_printer_exports_explicit_orca_bundle(
         json={
             "name": "Workshop bundle printer",
             "printer_id": catalog_printer.id,
-            "printer_profile_ids": [nozzle_04.id, nozzle_06.id],
+            "printer_profile_ids": [nozzle_04.id, nozzle_06.id, stock_nozzle.id],
         },
     )
     assert created.status_code == 201
@@ -240,6 +463,7 @@ async def test_physical_printer_exports_explicit_orca_bundle(
     machine_names = {
         entry["profile"]["name"] for entry in bundle["machine_profiles"]
     }
+    all_compatible_machine_names = machine_names | {stock_nozzle.name}
     machine_name_by_id = {
         entry["id"]: entry["profile"]["name"]
         for entry in bundle["machine_profiles"]
@@ -252,10 +476,10 @@ async def test_physical_printer_exports_explicit_orca_bundle(
     ]
     assert set(
         process_payload_by_id[partially_resolved_process.id]["compatible_printers"]
-    ) == machine_names
+    ) == all_compatible_machine_names
     assert set(
         process_payload_by_id[legacy_process.id]["compatible_printers"]
-    ) == machine_names
+    ) == all_compatible_machine_names
 
     archive_response = await auth_client.get(
         f"/api/v1/physical-printers/{physical_printer_id}/orcaslicer-bundle",

@@ -73,7 +73,12 @@ async def test_a_users_own_preset_arrives_as_a_draft(
     """Someone else's preset is not published — it waits as the author's draft."""
     headers, person = await _signed_in(client, db_session, "orca-import-draft")
 
-    response = await _import(client, headers, _preset("Shop PLA"))
+    profile = _preset("Shop PLA")
+    profile["orcaslicer_settings"]["future_orca_field"] = {
+        "mode": "keep-shape",
+        "values": [1, "two"],
+    }
+    response = await _import(client, headers, profile)
 
     assert response.status_code == 200
     result = response.json()["results"][0]
@@ -88,6 +93,34 @@ async def test_a_users_own_preset_arrives_as_a_draft(
     assert draft.moderation_status == PresetModerationStatus.PENDING
     assert draft.extruder_temp == 210
     assert draft.orcaslicer_settings["fhub_draft_id"] == f"draft_{person.id}_orca-shop-pla"
+
+    global_sync = await client.get("/api/v1/auth/my-presets", headers=headers)
+    assert global_sync.status_code == 200
+    assert [item["id"] for item in global_sync.json()["items"]] == [draft.id]
+
+    exported = await client.get(
+        f"/api/v1/presets/{draft.id}/export/orcaslicer.json",
+        headers=headers,
+    )
+    assert exported.status_code == 200
+    exported_profile = exported.json()
+    assert exported_profile["name"] == "Shop PLA"
+    assert exported_profile["setting_id"] == f"FHUB{draft.id:06d}"
+    assert exported_profile["filament_settings_id"] == ["Shop PLA"]
+    assert exported_profile["fhub_draft_id"] == f"draft_{person.id}_orca-shop-pla"
+    assert exported_profile["future_orca_field"] == {
+        "mode": "keep-shape",
+        "values": [1, "two"],
+    }
+
+    outsider_headers, _ = await _signed_in(
+        client, db_session, "orca-import-draft-outsider"
+    )
+    hidden = await client.get(
+        f"/api/v1/presets/{draft.id}/export/orcaslicer.json",
+        headers=outsider_headers,
+    )
+    assert hidden.status_code == 404
 
 
 @pytest.mark.asyncio

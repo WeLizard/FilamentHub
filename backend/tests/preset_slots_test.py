@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.brand import Brand
 from app.models.filament import Filament
 from app.models.preset import Preset, PresetModerationStatus
+from app.models.printer_connection_binding import PrinterConnectionBinding
 from app.models.user import User
 from app.models.user_spool import UserSpool, UserSpoolState
 from tests.conftest import registration_payload
@@ -316,3 +317,179 @@ async def test_hh_snapshot_rejects_gate_index_out_of_range(
     )
 
     assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_hh_snapshot_cannot_target_another_users_physical_printer(
+    client: AsyncClient,
+):
+    owner_headers, _ = await _register_and_login(client, "hh-owned-printer")
+    intruder_headers, _ = await _register_and_login(client, "hh-foreign-printer")
+
+    heartbeat_response = await client.post(
+        "/api/v1/orcaslicer/preset-slot-sync/device/heartbeat",
+        json={
+            "device_fingerprint": "device-hh-owned-printer",
+            "device_name": "Owned Happy Hare",
+            "supports_hh": True,
+            "gate_count": 6,
+        },
+        headers=owner_headers,
+    )
+    assert heartbeat_response.status_code == 200
+    physical_printer_id = heartbeat_response.json()["device_id"]
+
+    response = await client.post(
+        "/api/v1/orcaslicer/preset-slot-sync/hh/snapshot",
+        json={
+            "physical_printer_id": physical_printer_id,
+            "gate_count": 6,
+            "snapshot_ts": "2026-08-13T00:00:00Z",
+            "gates": [],
+        },
+        headers=intruder_headers,
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"]["code"] == "ERR_DEVICE_NOT_OWNER"
+
+
+@pytest.mark.asyncio
+async def test_plugin_material_topology_is_minimal_scoped_and_owned(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    owner_headers, owner_email = await _register_and_login(
+        client, "plugin-topology-owner"
+    )
+    foreign_headers, _ = await _register_and_login(
+        client, "plugin-topology-foreign"
+    )
+    source_instance_id = "orca-plugin-instance-123456"
+
+    owner_device = await client.post(
+        "/api/v1/orcaslicer/preset-slot-sync/device/heartbeat",
+        json={
+            "device_fingerprint": "plugin-topology-owned-device",
+            "device_name": "Workshop Voron",
+            "supports_hh": True,
+            "gate_count": 2,
+        },
+        headers=owner_headers,
+    )
+    assert owner_device.status_code == 200
+    owner_device_id = owner_device.json()["device_id"]
+
+    foreign_device = await client.post(
+        "/api/v1/orcaslicer/preset-slot-sync/device/heartbeat",
+        json={
+            "device_fingerprint": "plugin-topology-foreign-device",
+            "device_name": "Foreign Voron",
+            "supports_hh": True,
+            "gate_count": 4,
+        },
+        headers=foreign_headers,
+    )
+    assert foreign_device.status_code == 200
+    foreign_device_id = foreign_device.json()["device_id"]
+
+    owner = (
+        await db_session.execute(select(User).where(User.email == owner_email))
+    ).scalar_one()
+    db_session.add(
+        PrinterConnectionBinding(
+            user_id=owner.id,
+            physical_printer_id=owner_device_id,
+            source="orcaslicer_plugin",
+            source_instance_id=source_instance_id,
+            connection_ref="fh-local-profile-ref-1",
+            normalized_endpoint="ref:fixture-owned-binding",
+            provider="moonraker",
+        )
+    )
+    await db_session.commit()
+
+    issued = await client.post(
+        "/api/v1/auth/plugin-session", json={}, headers=owner_headers
+    )
+    assert issued.status_code == 200
+    plugin_headers = {
+        "Authorization": f"Bearer {issued.json()['plugin_token']}"
+    }
+    context = await client.get(
+        "/api/v1/orcaslicer/preset-slot-sync/plugin-context",
+        params={"source_instance_id": source_instance_id},
+        headers=plugin_headers,
+    )
+
+    assert context.status_code == 200
+    payload = context.json()
+    assert payload["source_instance_id"] == source_instance_id
+    assert [printer["id"] for printer in payload["printers"]] == [owner_device_id]
+    printer = payload["printers"][0]
+    assert printer["connection_refs"] == ["fh-local-profile-ref-1"]
+    assert [slot["provider_index"] for slot in printer["material_systems"][0]["slots"]] == [0, 1]
+    serialized = str(payload)
+    assert "Workshop Voron" not in serialized
+    assert "normalized_endpoint" not in serialized
+    assert "print_host" not in serialized
+    assert "printer_hostname" not in serialized
+
+    other_install = await client.get(
+        "/api/v1/orcaslicer/preset-slot-sync/plugin-context",
+        params={"source_instance_id": "another-orca-instance-654321"},
+        headers=plugin_headers,
+    )
+    assert other_install.status_code == 200
+    assert other_install.json()["printers"][0]["connection_refs"] == []
+
+    browser_context = await client.get(
+        "/api/v1/orcaslicer/preset-slot-sync/plugin-context",
+        params={"source_instance_id": source_instance_id},
+        headers=owner_headers,
+    )
+    assert browser_context.status_code == 200
+
+    from app.core.security import create_plugin_token
+
+    old_scope_token = create_plugin_token(
+        {"sub": owner.email, "user_id": owner.id},
+        ["presets:read", "presets:write", "printer-bundles:read"],
+    )
+    missing_scope = await client.get(
+        "/api/v1/orcaslicer/preset-slot-sync/plugin-context",
+        params={"source_instance_id": source_instance_id},
+        headers={"Authorization": f"Bearer {old_scope_token}"},
+    )
+    assert missing_scope.status_code == 403
+    assert missing_scope.json()["detail"]["code"] == "ERR_ACCESS_DENIED"
+
+    broad_account_api = await client.get(
+        "/api/v1/physical-printers", headers=plugin_headers
+    )
+    assert broad_account_api.status_code == 401
+
+    owned_snapshot = await client.post(
+        "/api/v1/orcaslicer/preset-slot-sync/hh/snapshot",
+        json={
+            "physical_printer_id": owner_device_id,
+            "gate_count": 2,
+            "snapshot_ts": "2026-08-13T00:00:00Z",
+            "gates": [],
+        },
+        headers=plugin_headers,
+    )
+    assert owned_snapshot.status_code == 200
+
+    foreign_snapshot = await client.post(
+        "/api/v1/orcaslicer/preset-slot-sync/hh/snapshot",
+        json={
+            "physical_printer_id": foreign_device_id,
+            "gate_count": 4,
+            "snapshot_ts": "2026-08-13T00:00:00Z",
+            "gates": [],
+        },
+        headers=plugin_headers,
+    )
+    assert foreign_snapshot.status_code == 403
+    assert foreign_snapshot.json()["detail"]["code"] == "ERR_DEVICE_NOT_OWNER"

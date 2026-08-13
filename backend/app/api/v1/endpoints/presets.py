@@ -47,7 +47,7 @@ from app.models.preset import PUBLIC_PRESET_STATUSES, Preset, PresetModerationSt
 from app.models.preset_printer import PresetPrinter
 from app.models.printer import Printer
 from app.models.printer_profile import PrinterProfile
-from app.models.user import User
+from app.models.user import User, UserRole
 from app.models.user_printer_device import UserPrinterDevice
 from app.schemas.preset import (
     PresetActivateRequest,
@@ -869,19 +869,39 @@ async def export_preset_json(
     Returns:
         JSONResponse: JSON файл профиля OrcaSlicer
     """
-    # Получаем preset с filament и brand
+    # Active catalog presets are public to authenticated readers. An inactive
+    # draft is private, but its owner must still be able to round-trip it through
+    # the Orca plugin before assigning it to a catalog Filament.
     result = await db.execute(
         select(Preset)
         .options(selectinload(Preset.filament).selectinload(Filament.brand))
-        .where(Preset.id == preset_id, Preset.active == True)
+        .where(Preset.id == preset_id)
     )
     preset = result.scalar_one_or_none()
 
     if not preset:
         raise_error(404, ERR_PRESET_NOT_FOUND)
 
+    if (
+        not preset.active
+        and preset.user_id != current_user.id
+        and current_user.role != UserRole.ADMIN
+    ):
+        # Hide private draft existence from other accounts.
+        raise_error(404, ERR_PRESET_NOT_FOUND)
+
     if not preset.filament:
-        raise_error(404, ERR_FILAMENT_NOT_FOUND)
+        from app.services.orcaslicer_exporter import draft_preset_to_orcaslicer_json
+
+        profile_dict = draft_preset_to_orcaslicer_json(preset)
+        filename = safe_download_stem(preset.name, "preset") + ".json"
+        return JSONResponse(
+            content=profile_dict,
+            media_type="application/json",
+            headers={
+                "Content-Disposition": attachment_content_disposition(filename),
+            },
+        )
 
     # EXPORT-6 fix: валидация обязательных полей перед экспортом → HTTP 422
     missing_fields = []

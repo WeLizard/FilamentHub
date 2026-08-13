@@ -593,6 +593,7 @@ export interface User {
   allow_print_profiles_import?: boolean;
   allow_print_profiles_export?: boolean;
   auto_import_local_presets?: boolean | null;
+  sync_printer_endpoints?: boolean | null;
   api_key?: string | null;
   id: number;
   email: string;
@@ -1035,6 +1036,81 @@ export interface CalculatorMaterialLineRequest {
   role_weight_source?: CalculatorMaterialRoleSource | null;
   support_weight_g?: number | null;
   support_weight_source?: CalculatorMaterialRoleSource | null;
+}
+
+export type PrintJobStatus =
+  | 'prepared'
+  | 'sent'
+  | 'printing'
+  | 'paused'
+  | 'completed'
+  | 'cancelled'
+  | 'failed';
+
+export interface PrintJobMaterial {
+  id: number;
+  spool_id: number | null;
+  material_line_key: string | null;
+  tool_index: number | null;
+  planned_weight_g: number | null;
+  spool_name: string;
+  filament_name: string | null;
+  material_type: string | null;
+  color_hex: string | null;
+}
+
+export interface PrintJobEvent {
+  id: number;
+  status: PrintJobStatus;
+  source: string;
+  note: string | null;
+  occurred_at: string;
+  received_at: string;
+}
+
+export interface PrintJob {
+  id: number;
+  logical_id: string;
+  physical_printer_id: number | null;
+  printer_name: string | null;
+  calculator_history_id: number | null;
+  calculation_title: string | null;
+  calculator_job_key: string | null;
+  orca_slice_report_id: number | null;
+  file_name: string | null;
+  title: string;
+  status: PrintJobStatus;
+  source: string;
+  estimated_duration_s: number | null;
+  actual_duration_s: number | null;
+  confirmed_consumption_g: number;
+  started_at: string | null;
+  finished_at: string | null;
+  created_at: string;
+  updated_at: string;
+  materials: PrintJobMaterial[];
+  events: PrintJobEvent[];
+}
+
+export interface PrintJobListResponse {
+  items: PrintJob[];
+  total: number;
+}
+
+export interface PrintJobCreate {
+  idempotency_key: string;
+  title: string;
+  physical_printer_id: number;
+  calculator_history_id?: number | null;
+  calculator_job_key?: string | null;
+  orca_slice_report_id?: number | null;
+  estimated_duration_s?: number | null;
+  materials?: Array<{
+    spool_id: number;
+    material_line_key?: string | null;
+    tool_index?: number | null;
+    planned_weight_g?: number | null;
+  }>;
 }
 
 export type CalculatorMaterialRole = 'support' | 'brim' | 'prime_tower';

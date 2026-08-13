@@ -27,7 +27,8 @@ type SyncSettingKey =
   | 'allow_printer_profiles_export'
   | 'allow_print_profiles_import'
   | 'allow_print_profiles_export'
-  | 'auto_import_local_presets';
+  | 'auto_import_local_presets'
+  | 'sync_printer_endpoints';
 
 // A printer is the machine, its configurations and their print processes, so one
 // switch covers all three. Sending them back to the slicer has no consumer yet:
@@ -91,6 +92,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
     allow_print_profiles_import: user.allow_print_profiles_import ?? true,
     allow_print_profiles_export: user.allow_print_profiles_export ?? true,
     auto_import_local_presets: user.auto_import_local_presets ?? false,
+    sync_printer_endpoints: user.sync_printer_endpoints ?? false,
   });
 
   // Состояния для формы изменения username
@@ -880,6 +882,28 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
             <div
               className={`w-11 h-6 rounded-full transition-colors duration-200 flex items-center px-0.5 ${
                 syncSettings.auto_import_local_presets ? 'bg-purple-600 justify-end' : 'bg-gray-600 justify-start'
+              }`}
+            >
+              <div className="w-5 h-5 bg-white rounded-full shadow-md" />
+            </div>
+          </div>
+        </label>
+
+        <label className="mt-4 flex items-start justify-between gap-4 bg-white/5 rounded-xl p-4 border border-white/10 cursor-pointer group">
+          <div className="min-w-0">
+            <div className="text-sm font-semibold text-white">{t('settings.syncPrinterEndpoints')}</div>
+            <p className="text-xs text-gray-400 mt-0.5">{t('settings.syncPrinterEndpointsHint')}</p>
+          </div>
+          <div className="relative flex-shrink-0 mt-0.5">
+            <input
+              type="checkbox"
+              checked={syncSettings.sync_printer_endpoints}
+              onChange={(e) => handleSyncSettingsChange('sync_printer_endpoints', e.target.checked)}
+              className="sr-only"
+            />
+            <div
+              className={`w-11 h-6 rounded-full transition-colors duration-200 flex items-center px-0.5 ${
+                syncSettings.sync_printer_endpoints ? 'bg-purple-600 justify-end' : 'bg-gray-600 justify-start'
               }`}
             >
               <div className="w-5 h-5 bg-white rounded-full shadow-md" />

@@ -62,10 +62,7 @@ async def find_printer_report_replay(
         )
         if existing is not None:
             existing_weight = _reported_weight(existing)
-            conflict = (
-                existing_weight is None
-                or abs(existing_weight - reported_weight_g) > 1e-9
-            )
+            conflict = existing_weight is None or abs(existing_weight - reported_weight_g) > 1e-9
             return existing, conflict, "idempotency_key"
         return None, False, None
 
@@ -88,10 +85,7 @@ async def find_printer_report_replay(
     ).scalars()
     for event in recent:
         previous_weight = _reported_weight(event)
-        if (
-            previous_weight is not None
-            and abs(previous_weight - reported_weight_g) <= 1e-9
-        ):
+        if previous_weight is not None and abs(previous_weight - reported_weight_g) <= 1e-9:
             return event, False, "octoprint_retry_window"
 
     return None, False, None
@@ -114,6 +108,7 @@ async def record_spool_usage(
     delta_weight_g: float | None,
     device_id: int | None = None,
     preset_id: int | None = None,
+    print_job_id: int | None = None,
     job_ref: str | None = None,
     meta: dict | None = None,
     reported_weight_g: float | None = None,
@@ -135,6 +130,7 @@ async def record_spool_usage(
         user_id=spool.user_id,
         device_id=device_id,
         preset_id=preset_id,
+        print_job_id=print_job_id,
         spool_id=spool.id,
         event_type=event_type,
         delta_weight_g=delta_weight_g,
@@ -155,16 +151,20 @@ async def list_spool_usage(
         raise_error(404, ERR_ACCESS_DENIED)
 
     rows = (
-        await db.execute(
-            select(PresetUsageEvent)
-            .where(
-                PresetUsageEvent.spool_id == spool_id,
-                PresetUsageEvent.user_id == user_id,
+        (
+            await db.execute(
+                select(PresetUsageEvent)
+                .where(
+                    PresetUsageEvent.spool_id == spool_id,
+                    PresetUsageEvent.user_id == user_id,
+                )
+                .options(selectinload(PresetUsageEvent.device))
+                .order_by(PresetUsageEvent.created_at.desc(), PresetUsageEvent.id.desc())
             )
-            .options(selectinload(PresetUsageEvent.device))
-            .order_by(PresetUsageEvent.created_at.desc(), PresetUsageEvent.id.desc())
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
     return [
         SpoolUsageEventResponse(
@@ -224,6 +224,7 @@ async def revert_spool_usage(
         event_type=PresetUsageEventType.manual_adjust,
         delta_weight_g=-delta,
         device_id=event.device_id,
+        print_job_id=event.print_job_id,
         meta={"reverts_event_id": event.id},
     )
     await db.commit()

@@ -44,12 +44,13 @@ class User(Base):
     __tablename__ = "users"
     __table_args__ = (
         Index("ix_users_email_lower", text("lower(email)"), unique=True),
+        Index("ix_users_username_lower", text("lower(username)"), unique=True),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
-    # Stored as the person typed it. The functional index in __table_args__ is what
-    # keeps one mailbox from becoming two accounts written in different case.
+    # Stored as the person typed it. Functional indexes keep both login identifiers
+    # unique regardless of letter case.
     username: Mapped[str] = mapped_column(String(100), unique=True, index=True, nullable=False)
     password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
     oauth_provider: Mapped[str | None] = mapped_column(String(32), nullable=True)
@@ -81,6 +82,9 @@ class User(Base):
     # null = согласие ещё не спрашивали; true/false = решение. Проактивный забор
     # НЕсвязанных локальных пресетов Orca в драфты, отдельно от allow_* гейтов синка.
     auto_import_local_presets: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    # Network addresses are local-only unless the person explicitly opts in.
+    # Credentials are never synchronized regardless of this preference.
+    sync_printer_endpoints: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
 
     # Deleted preset rule (правило обработки удалённых пресетов)
     deleted_preset_rule: Mapped[str | None] = mapped_column(String(50), nullable=True)

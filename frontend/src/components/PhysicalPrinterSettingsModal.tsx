@@ -3,7 +3,7 @@
  *  volume, limits) live in the configuration (PrinterProfile), not here. */
 
 import { useMemo, useRef, useState, FormEvent } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Coins, Loader2, Save, Wifi, X, Link2Off, SlidersHorizontal, Trash2 } from 'lucide-react';
 import type { AxiosError } from 'axios';
@@ -25,7 +25,7 @@ interface PhysicalPrinterSettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
   printer: PhysicalPrinter;
-  binding?: PrinterConnectionBinding | null;
+  bindings?: PrinterConnectionBinding[];
   onEditConfiguration?: (profile: PrinterProfile) => void;
 }
 
@@ -33,7 +33,7 @@ export const PhysicalPrinterSettingsModal: React.FC<PhysicalPrinterSettingsModal
   isOpen,
   onClose,
   printer,
-  binding,
+  bindings = [],
   onEditConfiguration,
 }) => {
   const { t, i18n } = useTranslation();
@@ -69,12 +69,50 @@ export const PhysicalPrinterSettingsModal: React.FC<PhysicalPrinterSettingsModal
     queryFn: () => printerProfilesAPI.listAllOwned(user!.id),
     enabled: isOpen && !!user,
   });
+  const { data: catalogProfiles = [] } = useQuery({
+    queryKey: ['printer-profiles', 'for-printer', printerId],
+    queryFn: () => printerProfilesAPI.listAllForPrinter(printerId!),
+    enabled: isOpen && printerId != null,
+    staleTime: 60_000,
+  });
+  const { data: currentOrcaContext } = useQuery({
+    queryKey: ['printer-context', 'current'],
+    queryFn: physicalPrintersAPI.getCurrent,
+    enabled: isOpen,
+    staleTime: 30_000,
+  });
+
+  const availableProfiles = useMemo(() => {
+    const map = new Map<number, PrinterProfile>();
+    (profilesList ?? []).forEach((profile) => map.set(profile.id, profile));
+    catalogProfiles.forEach((profile) => map.set(profile.id, profile));
+    return Array.from(map.values());
+  }, [catalogProfiles, profilesList]);
+
+  const ownedProfileIds = useMemo(
+    () => new Set(availableProfiles.map((profile) => profile.id)),
+    [availableProfiles],
+  );
+  const missingLinkedProfileIds = useMemo(
+    () => profileIds.filter((id) => !ownedProfileIds.has(id)),
+    [ownedProfileIds, profileIds],
+  );
+  const linkedProfileQueries = useQueries({
+    queries: missingLinkedProfileIds.map((profileId) => ({
+      queryKey: ['printer-profile', profileId],
+      queryFn: () => printerProfilesAPI.get(profileId),
+      staleTime: 60_000,
+    })),
+  });
 
   const profileById = useMemo(() => {
     const map = new Map<number, PrinterProfile>();
-    (profilesList ?? []).forEach((p) => map.set(p.id, p));
+    availableProfiles.forEach((p) => map.set(p.id, p));
+    linkedProfileQueries.forEach((query) => {
+      if (query.data) map.set(query.data.id, query.data);
+    });
     return map;
-  }, [profilesList]);
+  }, [availableProfiles, linkedProfileQueries]);
 
   const catalogOptions = useMemo(() => {
     const list = [...(catalogList?.items ?? [])];
@@ -84,10 +122,22 @@ export const PhysicalPrinterSettingsModal: React.FC<PhysicalPrinterSettingsModal
 
   const attachableOptions = useMemo(
     () =>
-      (profilesList ?? [])
+      availableProfiles
         .filter((p) => !profileIds.includes(p.id))
-        .map((p) => ({ value: p.id, label: configLabel(p, t) })),
-    [profilesList, profileIds, t],
+        .sort((left, right) => {
+          const currentId = currentOrcaContext?.printer_profile_id;
+          if (left.id === currentId) return -1;
+          if (right.id === currentId) return 1;
+          return left.name.localeCompare(right.name);
+        })
+        .map((p) => ({
+          value: p.id,
+          label:
+            p.id === currentOrcaContext?.printer_profile_id
+              ? `${configLabel(p, t)} · ${t('printerSettings.currentInOrca')}`
+              : configLabel(p, t),
+        })),
+    [availableProfiles, currentOrcaContext?.printer_profile_id, profileIds, t],
   );
 
   // Save is two calls (basics, then configurations). Report the partial case
@@ -244,7 +294,7 @@ export const PhysicalPrinterSettingsModal: React.FC<PhysicalPrinterSettingsModal
                         <span className="flex-1 text-sm text-white truncate">
                           {profile ? configLabel(profile, t) : `#${id}`}
                         </span>
-                        {profile && onEditConfiguration && (
+                        {profile && profile.owner_user_id === user?.id && onEditConfiguration && (
                           <button
                             type="button"
                             onClick={() => guard(() => onEditConfiguration(profile))}
@@ -302,15 +352,30 @@ export const PhysicalPrinterSettingsModal: React.FC<PhysicalPrinterSettingsModal
               <h3 className="text-xs uppercase tracking-wide text-gray-500">
                 {t('printerSettings.connection')}
               </h3>
-              {binding && (binding.provider || binding.display_endpoint) ? (
-                <div className="flex items-center gap-2 text-sm text-gray-300">
-                  <Wifi className="w-4 h-4 text-gray-400 flex-shrink-0" />
-                  <span className="truncate">
-                    {[binding.provider, binding.display_endpoint].filter(Boolean).join(' · ')}
-                  </span>
-                  <span className="text-xs text-gray-500 ml-auto flex-shrink-0">
-                    {formatLastSeen(binding.last_seen_at, t, i18n.language)}
-                  </span>
+              {bindings.length > 0 ? (
+                <div className="space-y-1.5">
+                  {bindings.map((binding, index) => (
+                    <div
+                      key={`${binding.connection_ref ?? binding.display_endpoint ?? 'binding'}-${index}`}
+                      className="flex items-center gap-2 text-sm text-gray-300"
+                    >
+                      <Wifi className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                      <span className="truncate">
+                        {[
+                          binding.provider
+                            ? t(`presetSlots.connectionProvider.${binding.provider}`, {
+                              defaultValue: binding.provider,
+                            })
+                            : null,
+                          binding.display_endpoint
+                            ?? (binding.connection_ref ? t('myPrinters.localConnection') : null),
+                        ].filter(Boolean).join(' · ')}
+                      </span>
+                      <span className="text-xs text-gray-500 ml-auto flex-shrink-0">
+                        {formatLastSeen(binding.last_seen_at, t, i18n.language)}
+                      </span>
+                    </div>
+                  ))}
                 </div>
               ) : (
                 <p className="text-xs text-gray-500">{t('printerSettings.noConnection')}</p>

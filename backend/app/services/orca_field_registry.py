@@ -7,7 +7,7 @@ those reviewed additions until the bundle itself contains them.
 """
 
 ORCA_FIELD_REGISTRY_VERSION = (
-    "bundle-sha256:c0f9b479052e0a9a5f2f0c394f7dccd92f8d5f2dad2127515bbc865129d994c5"
+    "bundle-sha256:4675124b5f41accee8eaa2b2c27ac8a7476dab69d54c51c0717ac642929817f6"
 )
 
 ORCA_PRESET_FIELDS: dict[str, frozenset[str]] = {
@@ -814,6 +814,7 @@ ORCA_PRESET_FIELDS: dict[str, frozenset[str]] = {
             "is_support_air_condition",
             "is_support_mqtt",
             "is_support_multi_box",
+            "is_support_polar_cooler",
             "is_support_timelapse",
             "layer_change_gcode",
             "long_retractions_when_cut",
@@ -954,6 +955,7 @@ ORCA_PRESET_FIELDS: dict[str, frozenset[str]] = {
             "use_firmware_retraction",
             "use_rect_grid",
             "use_relative_e_distances",
+            "wait_for_temp_on_wipe_tower",
             "wipe",
             "wipe_distance",
             "wipe_tower_type",

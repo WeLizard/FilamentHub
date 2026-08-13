@@ -1,10 +1,22 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { AlertTriangle, Check, Clock, Copy, RefreshCw } from 'lucide-react';
+import { AlertTriangle, Check, Clock, Copy, Loader2, RefreshCw, X } from 'lucide-react';
 
 import { devicesAPI } from '../../../api/client';
+import type { UserSpool } from '../../../api/client';
+import {
+  isPluginEmbed,
+  requestHappyHareAction,
+  requestPluginCapabilities,
+  subscribeToPluginCapabilities,
+} from '../../../utils/pluginBridge';
+import type {
+  HappyHareActionResult,
+  HappyHareAssignmentChange,
+} from '../../../utils/pluginBridge';
 import { toast } from '../../Toast';
+import { ModalOverlay } from '../../ModalOverlay';
 import { translateApiError } from '../../../utils/translateApiError';
 import type { AdapterViewContext, FeedAdapter } from './types';
 
@@ -204,11 +216,295 @@ function HappyHareCreationGuide() {
   );
 }
 
+function useHappyHarePlugin(): boolean | null {
+  const embedded = isPluginEmbed();
+  const [available, setAvailable] = useState<boolean | null>(embedded ? null : false);
+
+  useEffect(() => {
+    if (!embedded) {
+      setAvailable(false);
+      return undefined;
+    }
+    const unsubscribe = subscribeToPluginCapabilities((capabilities) => {
+      setAvailable(capabilities.has('happy-hare-moonraker'));
+    });
+    requestPluginCapabilities();
+    const timeout = window.setTimeout(() => setAvailable((current) => current ?? false), 1500);
+    return () => {
+      window.clearTimeout(timeout);
+      unsubscribe();
+    };
+  }, [embedded]);
+
+  return available;
+}
+
+function spoolLabel(spools: UserSpool[], spoolId: number | null): string {
+  if (spoolId == null) return '—';
+  const spool = spools.find((item) => item.id === spoolId);
+  if (!spool) return `#${spoolId}`;
+  const filament = spool.filament;
+  const name = [filament?.brand_name, filament?.name].filter(Boolean).join(' ');
+  return name ? `${name} · #${spoolId}` : `#${spoolId}`;
+}
+
+function AssignmentChanges({
+  changes,
+  spools,
+}: {
+  changes: HappyHareAssignmentChange[];
+  spools: UserSpool[];
+}) {
+  const { t } = useTranslation();
+  return (
+    <div className="mt-3 max-h-64 space-y-1.5 overflow-y-auto pr-1">
+      {changes.map((change) => (
+        <div
+          key={change.gate}
+          className="grid grid-cols-[auto_1fr_auto_1fr] items-center gap-2 rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-xs"
+        >
+          <span className="font-medium text-white">
+            {t('presetSlots.happyHare.refresh.gate', { gate: change.gate + 1 })}
+          </span>
+          <span className="truncate text-gray-400">
+            {spoolLabel(spools, change.actualSpoolId)}
+          </span>
+          <span className="text-gray-600">→</span>
+          <span className="truncate text-purple-200">
+            {spoolLabel(spools, change.desiredSpoolId)}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function HappyHareRefreshAction({
+  printer,
+  system,
+  spools,
+  pluginAvailable,
+}: Pick<AdapterViewContext, 'printer' | 'system' | 'spools'> & {
+  pluginAvailable: boolean | null;
+}) {
+  const { t } = useTranslation();
+  const queryClient = useQueryClient();
+  const [loading, setLoading] = useState<'preview' | 'apply' | null>(null);
+  const [preview, setPreview] = useState<HappyHareActionResult | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [fallbackOpen, setFallbackOpen] = useState(false);
+  const changes = preview?.changes ?? [];
+  const busy = preview?.printState === 'printing' || preview?.printState === 'paused';
+  const canApply = preview?.ok === true
+    && changes.length > 0
+    && preview.spoolmanSupport === 'pull'
+    && !busy;
+  const errorText = (code?: string | null) => (
+    t(`presetSlots.happyHare.refresh.errors.${code || 'unknown'}`, {
+      defaultValue: t('presetSlots.happyHare.refresh.errors.unknown'),
+    })
+  );
+
+  const refreshData = async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['physical-printers'] }),
+      queryClient.invalidateQueries({ queryKey: ['devices'] }),
+    ]);
+  };
+
+  const check = async () => {
+    setLoading('preview');
+    try {
+      const result = await requestHappyHareAction('preview', printer.id, system.id);
+      await refreshData();
+      if (!result.ok) {
+        setPreview(null);
+        toast.error(errorText(result.code));
+      } else if ((result.changes?.length ?? 0) === 0) {
+        setPreview(null);
+        toast.success(t('presetSlots.happyHare.refresh.inSync', {
+          count: result.gateCount ?? 0,
+        }));
+      } else {
+        setPreview(result);
+      }
+    } catch {
+      setPreview(null);
+      toast.error(errorText('timeout'));
+    } finally {
+      setLoading(null);
+    }
+  };
+
+  const apply = async () => {
+    if (!canApply) return;
+    setLoading('apply');
+    try {
+      const result = await requestHappyHareAction('apply', printer.id, system.id);
+      await refreshData();
+      if (result.ok) {
+        toast.success(t('presetSlots.happyHare.refresh.applied'));
+        setPreview(null);
+      } else {
+        toast.error(errorText(result.code));
+      }
+    } catch {
+      toast.error(errorText('timeout'));
+    } finally {
+      setLoading(null);
+    }
+  };
+
+  const copyFallback = async () => {
+    try {
+      await navigator.clipboard.writeText('MMU_SPOOLMAN REFRESH=1');
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1800);
+    } catch {
+      toast.error(t('common.error'));
+    }
+  };
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => {
+          if (pluginAvailable) void check();
+          else if (pluginAvailable === false) setFallbackOpen(true);
+        }}
+        disabled={pluginAvailable == null || loading != null}
+        title={t('presetSlots.happyHare.refresh.description')}
+        className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-300/25 bg-emerald-500/10 px-2.5 py-1.5 text-xs font-medium text-emerald-100 transition hover:bg-emerald-500/20 disabled:cursor-wait disabled:opacity-40"
+      >
+        {loading === 'preview'
+          ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          : <RefreshCw className="h-3.5 w-3.5" />}
+        {t('presetSlots.happyHare.refresh.check')}
+      </button>
+
+      {fallbackOpen && (
+        <ModalOverlay onClose={() => setFallbackOpen(false)}>
+          <div className="w-full max-w-lg rounded-2xl border border-white/15 bg-gray-950 p-5 text-white shadow-2xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h3 className="text-lg font-semibold">
+                  {t('presetSlots.happyHare.refresh.title')}
+                </h3>
+                <p className="mt-1 text-sm leading-5 text-gray-400">
+                  {t('presetSlots.happyHare.refresh.fallback')}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setFallbackOpen(false)}
+                className="rounded-lg p-1.5 text-gray-400 hover:bg-white/10 hover:text-white"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={copyFallback}
+              className="mt-4 inline-flex items-center gap-1.5 rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm text-gray-200 transition hover:bg-white/10"
+            >
+              {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+              {t(copied
+                ? 'presetSlots.pairing.copied'
+                : 'presetSlots.happyHare.refresh.copyCommand')}
+            </button>
+          </div>
+        </ModalOverlay>
+      )}
+
+      {preview?.ok && changes.length > 0 && (
+        <ModalOverlay
+          onClose={() => { if (!loading) setPreview(null); }}
+          closeOnOverlayClick={!loading}
+          closeOnEscape={!loading}
+        >
+          <div className="w-full max-w-2xl rounded-2xl border border-white/15 bg-gray-950 p-5 text-white shadow-2xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h3 className="text-lg font-semibold">
+                  {t('presetSlots.happyHare.refresh.previewTitle')}
+                </h3>
+                <p className="mt-1 text-sm leading-5 text-gray-400">
+                  {t('presetSlots.happyHare.refresh.previewDescription', {
+                    count: changes.length,
+                  })}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPreview(null)}
+                disabled={loading != null}
+                className="rounded-lg p-1.5 text-gray-400 hover:bg-white/10 hover:text-white disabled:opacity-40"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <AssignmentChanges changes={changes} spools={spools} />
+            {preview.spoolmanSupport !== 'pull' && (
+              <p className="mt-3 rounded-lg border border-amber-400/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
+                {t('presetSlots.happyHare.refresh.pullRequired')}
+              </p>
+            )}
+            {busy && (
+              <p className="mt-3 rounded-lg border border-amber-400/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
+                {t('presetSlots.happyHare.refresh.busy')}
+              </p>
+            )}
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setPreview(null)}
+                disabled={loading != null}
+                className="rounded-lg border border-white/15 px-3 py-2 text-sm text-gray-300 hover:bg-white/5 disabled:opacity-40"
+              >
+                {t('common.cancel')}
+              </button>
+              <button
+                type="button"
+                onClick={apply}
+                disabled={!canApply || loading != null}
+                className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {loading === 'apply' && <Loader2 className="h-4 w-4 animate-spin" />}
+                {t('presetSlots.happyHare.refresh.apply')}
+              </button>
+            </div>
+          </div>
+        </ModalOverlay>
+      )}
+    </>
+  );
+}
+
+function HappyHareSetup(context: AdapterViewContext) {
+  const pluginAvailable = useHappyHarePlugin();
+  if (pluginAvailable !== false || context.printer.printer_hostname) return null;
+  return <PairingStep gates={context.gates} hasContact={context.printer.reports_feed} />;
+}
+
+function HappyHareActions(context: AdapterViewContext) {
+  const pluginAvailable = useHappyHarePlugin();
+  return (
+    <HappyHareRefreshAction
+      printer={context.printer}
+      system={context.system}
+      spools={context.spools}
+      pluginAvailable={pluginAvailable}
+    />
+  );
+}
+
 export const happyHareAdapter: FeedAdapter = {
   id: 'happy_hare',
   labelKey: 'presetSlots.feedSystem.happy_hare',
   fixedSlots: null,
-  capabilities: ['read', 'write', 'presence', 'spool_identity', 'consumption'],
+  topologyFromProvider: true,
+  capabilities: ['read', 'write', 'presence', 'spool_identity', 'consumption', 'local_command'],
   link: {
     hintKey: 'presetSlots.happyHare.linkHint',
     snippet: (baseUrl, apiKey) => `[spoolman]
@@ -217,8 +513,6 @@ sync_rate: 5`,
   },
   renderCreateHelp: () => <HappyHareCreationGuide />,
   renderSettings: ({ printer }) => <HostnameField printer={printer} />,
-  renderSetup: ({ printer, gates }) =>
-    (printer.printer_hostname
-      ? null
-      : <PairingStep gates={gates} hasContact={printer.reports_feed} />),
+  renderActions: (context) => <HappyHareActions {...context} />,
+  renderSetup: (context) => <HappyHareSetup {...context} />,
 };

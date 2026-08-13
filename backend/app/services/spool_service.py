@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
@@ -23,6 +23,7 @@ from app.models.filament import Filament
 from app.models.material_slot_assignment import MaterialSlotAssignment
 from app.models.preset_gate_state import PresetGateState, PresetGateStateSource
 from app.models.preset_usage_event import PresetUsageEventType
+from app.models.print_job import PrintJobMaterial
 from app.models.user import User
 from app.models.user_printer_device import UserPrinterDevice
 from app.models.user_spool import UserSpool, UserSpoolState
@@ -55,9 +56,7 @@ def clear_spool_location_projection(spool: UserSpool) -> None:
     if printer and gate >= 0:
         extra["fhub_last_printer"] = json.dumps(printer)
         extra["fhub_last_gate"] = json.dumps(gate)
-        extra["fhub_last_unloaded_at"] = json.dumps(
-            datetime.now(timezone.utc).isoformat()
-        )
+        extra["fhub_last_unloaded_at"] = json.dumps(datetime.now(timezone.utc).isoformat())
     extra["printer_name"] = json.dumps("")
     extra["mmu_gate_map"] = json.dumps(-1)
     spool.extra = extra
@@ -74,9 +73,7 @@ def set_spool_location_projection(
 
 async def lock_spool_row(db: AsyncSession, spool_id: int) -> None:
     """Serialize concurrent moves of the same physical spool (no-op on SQLite)."""
-    await db.execute(
-        select(UserSpool.id).where(UserSpool.id == spool_id).with_for_update()
-    )
+    await db.execute(select(UserSpool.id).where(UserSpool.id == spool_id).with_for_update())
 
 
 async def shelf_spool_if_unassigned(db: AsyncSession, spool: UserSpool) -> None:
@@ -201,9 +198,7 @@ async def clear_spool_gate_assignments(
 ) -> int:
     """Clear current slot bindings for a physical spool without committing."""
     result = await db.execute(
-        select(PresetGateState)
-        .where(PresetGateState.spool_id == spool.id)
-        .with_for_update()
+        select(PresetGateState).where(PresetGateState.spool_id == spool.id).with_for_update()
     )
     states = list(result.scalars().all())
     now = datetime.now(timezone.utc)
@@ -250,9 +245,7 @@ async def clear_spool_gate_assignments(
 
 async def spool_has_gate_assignment(db: AsyncSession, spool_id: int) -> bool:
     result = await db.execute(
-        select(PresetGateState.id)
-        .where(PresetGateState.spool_id == spool_id)
-        .limit(1)
+        select(PresetGateState.id).where(PresetGateState.spool_id == spool_id).limit(1)
     )
     if result.scalar_one_or_none() is not None:
         return True
@@ -271,9 +264,7 @@ def _validate_spool_weights(initial_weight_g: float, used_weight_g: float) -> No
 
 async def _load_filament_info(db: AsyncSession, filament_id: int) -> Filament | None:
     result = await db.execute(
-        select(Filament)
-        .options(joinedload(Filament.brand))
-        .where(Filament.id == filament_id)
+        select(Filament).options(joinedload(Filament.brand)).where(Filament.id == filament_id)
     )
     return result.unique().scalars().first()
 
@@ -319,9 +310,7 @@ def _build_response(spool: UserSpool, filament: Filament | None) -> SpoolRespons
 
 async def list_spools(db: AsyncSession, user_id: int) -> list[SpoolResponse]:
     result = await db.execute(
-        select(UserSpool)
-        .where(UserSpool.user_id == user_id)
-        .order_by(UserSpool.created_at.desc())
+        select(UserSpool).where(UserSpool.user_id == user_id).order_by(UserSpool.created_at.desc())
     )
     spools = list(result.scalars().all())
 
@@ -330,13 +319,13 @@ async def list_spools(db: AsyncSession, user_id: int) -> list[SpoolResponse]:
     filaments: dict[int, Filament] = {}
     if fil_ids:
         fil_result = await db.execute(
-            select(Filament)
-            .options(joinedload(Filament.brand))
-            .where(Filament.id.in_(fil_ids))
+            select(Filament).options(joinedload(Filament.brand)).where(Filament.id.in_(fil_ids))
         )
         filaments = {f.id: f for f in fil_result.unique().scalars().all()}
 
-    return [_build_response(s, filaments.get(s.filament_id) if s.filament_id else None) for s in spools]
+    return [
+        _build_response(s, filaments.get(s.filament_id) if s.filament_id else None) for s in spools
+    ]
 
 
 async def create_spool(
@@ -382,9 +371,7 @@ async def update_spool(
     spool_id: int,
     payload: SpoolUpdateRequest,
 ) -> SpoolResponse:
-    result = await db.execute(
-        select(UserSpool).where(UserSpool.id == spool_id)
-    )
+    result = await db.execute(select(UserSpool).where(UserSpool.id == spool_id))
     spool = result.scalars().first()
     if spool is None or spool.user_id != user.id:
         raise_error(404, ERR_ACCESS_DENIED)
@@ -405,14 +392,10 @@ async def update_spool(
         filament = await _load_filament_info(db, spool.filament_id) if spool.filament_id else None
 
     next_initial_weight = (
-        payload.initial_weight_g
-        if payload.initial_weight_g is not None
-        else spool.initial_weight_g
+        payload.initial_weight_g if payload.initial_weight_g is not None else spool.initial_weight_g
     )
     next_used_weight = (
-        payload.used_weight_g
-        if payload.used_weight_g is not None
-        else spool.used_weight_g
+        payload.used_weight_g if payload.used_weight_g is not None else spool.used_weight_g
     )
     _validate_spool_weights(next_initial_weight, next_used_weight)
     spool.initial_weight_g = next_initial_weight
@@ -473,9 +456,7 @@ async def use_spool(
     spool_id: int,
     delta_weight_g: float,
 ) -> SpoolResponse:
-    result = await db.execute(
-        select(UserSpool).where(UserSpool.id == spool_id)
-    )
+    result = await db.execute(select(UserSpool).where(UserSpool.id == spool_id))
     spool = result.scalars().first()
     if spool is None or spool.user_id != user.id:
         raise_error(404, ERR_ACCESS_DENIED)
@@ -507,11 +488,12 @@ async def use_spool(
 
 
 async def delete_spool(db: AsyncSession, user: User, spool_id: int) -> None:
-    result = await db.execute(
-        select(UserSpool).where(UserSpool.id == spool_id)
-    )
+    result = await db.execute(select(UserSpool).where(UserSpool.id == spool_id))
     spool = result.scalars().first()
     if spool is None or spool.user_id != user.id:
         raise_error(404, ERR_ACCESS_DENIED)
+    await db.execute(
+        update(PrintJobMaterial).where(PrintJobMaterial.spool_id == spool.id).values(spool_id=None)
+    )
     await db.delete(spool)
     await db.commit()

@@ -635,6 +635,37 @@ async def test_login(client: AsyncClient):
 
 
 @pytest.mark.asyncio
+async def test_username_identity_is_case_insensitive(client: AsyncClient):
+    """Username case must not create a second account or break login."""
+    first = {
+        "email": "username-case@example.com",
+        "username": "CaseSensitiveDisplay",
+        "password": "password123",
+        "role": "user",
+        **LEGAL_REGISTRATION_FIELDS,
+    }
+    registered = await client.post("/api/v1/auth/register", json=first)
+    assert registered.status_code == 201
+
+    login = await client.post(
+        "/api/v1/auth/login",
+        json={"email": "casesensitivedisplay", "password": "password123"},
+    )
+    assert login.status_code == 200
+
+    duplicate = await client.post(
+        "/api/v1/auth/register",
+        json={
+            **first,
+            "email": "username-case-duplicate@example.com",
+            "username": "casesensitivedisplay",
+        },
+    )
+    assert duplicate.status_code == 400
+    assert duplicate.json()["detail"]["code"] == "ERR_USERNAME_EXISTS"
+
+
+@pytest.mark.asyncio
 async def test_login_wrong_password(client: AsyncClient):
     """Test login with wrong password."""
     # Register first
@@ -1311,6 +1342,8 @@ async def test_plugin_session_is_short_lived_and_endpoint_scoped(
     assert decoded is not None
     assert decoded["user_id"] == auth_user.id
     assert set(decoded["scopes"]) == {
+        "material-topology:read",
+        "material-topology:report",
         "presets:read",
         "presets:write",
         "printer-bundles:read",

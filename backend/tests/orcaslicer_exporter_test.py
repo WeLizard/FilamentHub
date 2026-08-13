@@ -68,6 +68,24 @@ async def test_filament_scope_keys_survive():
 
 
 @pytest.mark.asyncio
+async def test_unknown_filament_fields_keep_their_exact_json_shape():
+    untouched = {
+        "future_scalar": 7.25,
+        "future_vector": ["left", 2, False],
+        "future_object": {"mode": "adaptive", "levels": [1, 3]},
+        "future_nullable": None,
+    }
+
+    profile = await preset_to_orcaslicer_json(
+        _preset(untouched), _filament(), db=None
+    )
+
+    for key, value in untouched.items():
+        assert profile[key] == value
+        assert type(profile[key]) is type(value)
+
+
+@pytest.mark.asyncio
 async def test_identity_name_stays_a_scalar_string():
     # A reverse-synced blob carries name/filament_settings_id/ids. The array-wrapping
     # passthrough must NOT re-process them, or the scalar `name` becomes a one-element
@@ -87,6 +105,19 @@ async def test_identity_name_stays_a_scalar_string():
     # Orca owns filament_id as an inherited material-family id. Exact FH
     # identity is added to produced G-code by the plugin's post-process hook.
     assert "filament_id" not in profile
+
+
+@pytest.mark.asyncio
+async def test_catalogue_colour_overrides_conflicting_orca_colour_keys():
+    preset = _preset({
+        "default_filament_colour": ["#00FF00"],
+        "filament_colour": ["#0000FF"],
+    })
+
+    profile = await preset_to_orcaslicer_json(preset, _filament(), db=None)
+
+    assert profile["default_filament_colour"] == ["#FF0000"]
+    assert profile["filament_colour"] == ["#FF0000"]
 
 
 @pytest.mark.asyncio

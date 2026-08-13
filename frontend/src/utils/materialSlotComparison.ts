@@ -33,6 +33,27 @@ function observationState(
   slot: MaterialSlot,
   now: number,
 ): MaterialSlotObservationState {
+  const normalized = slot.observation;
+  if (normalized) {
+    const observedAt = new Date(normalized.observed_at).getTime();
+    const age = now - observedAt;
+    if (
+      !Number.isFinite(observedAt)
+      || age > MATERIAL_SLOT_OBSERVATION_FRESH_MS
+      || age < -60_000
+    ) {
+      return 'none';
+    }
+    if (normalized.present === false) return 'empty';
+    if (
+      normalized.present === true
+      || normalized.material != null
+      || normalized.color_hex != null
+    ) {
+      return 'loaded';
+    }
+    return 'unknown';
+  }
   const observation = slot.legacy_projection;
   if (observation?.source !== 'hh_snapshot') return 'none';
 
@@ -82,7 +103,10 @@ export function compareMaterialSlot(
   const desiredPresetId = slot.assignment?.preset_id ?? gate?.preset_id ?? null;
   const desiredSpoolId = slot.assignment?.spool_id ?? gate?.spool_id ?? null;
   const observation = slot.legacy_projection;
+  const normalizedObservation = slot.observation;
   const state = observationState(slot, now);
+  const observedMaterialValue = normalizedObservation?.material ?? observation?.hh_material ?? null;
+  const observedColorValue = normalizedObservation?.color_hex ?? observation?.hh_color_hex ?? null;
 
   let conflict: MaterialSlotConflict = null;
   if (state === 'empty' && (desiredPresetId != null || desiredSpoolId != null)) {
@@ -91,9 +115,9 @@ export function compareMaterialSlot(
     conflict = 'observed_loaded_without_spool';
   } else if ((state === 'loaded' || state === 'buffer') && desiredSpool?.filament) {
     const desiredMaterial = normalizeMaterial(desiredSpool.filament.material_type);
-    const observedMaterial = normalizeMaterial(observation?.hh_material);
+    const observedMaterial = normalizeMaterial(observedMaterialValue);
     const desiredColor = normalizeHex(desiredSpool.filament.color_hex);
-    const observedColor = normalizeHex(observation?.hh_color_hex);
+    const observedColor = normalizeHex(observedColorValue);
     if (
       (desiredMaterial != null && observedMaterial != null && desiredMaterial !== observedMaterial)
       || (desiredColor != null && observedColor != null && desiredColor !== observedColor)
@@ -106,8 +130,8 @@ export function compareMaterialSlot(
     desiredPresetId,
     desiredSpoolId,
     observationState: state,
-    observedMaterial: observation?.hh_material ?? null,
-    observedColorHex: normalizeHex(observation?.hh_color_hex),
+    observedMaterial: observedMaterialValue,
+    observedColorHex: normalizeHex(observedColorValue),
     conflict,
   };
 }

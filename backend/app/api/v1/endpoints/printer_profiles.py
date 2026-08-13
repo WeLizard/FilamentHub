@@ -26,6 +26,7 @@ from app.core.errors import (
 )
 from app.core.utils import like_pattern
 from app.db.session import get_db
+from app.models.physical_printer_profile import UserPrinterProfileLink
 from app.models.printer_profile import PrinterProfile
 from app.models.user import User, UserRole
 from app.schemas.printer_profile import (
@@ -144,7 +145,22 @@ async def get_printer_profile(
     )
     profile = result.scalar_one_or_none()
 
-    if profile is None or not _can_read_profile(profile, current_user):
+    linked_to_user_printer = False
+    if profile is not None and current_user is not None:
+        linked_to_user_printer = (
+            await db.scalar(
+                select(UserPrinterProfileLink.id)
+                .where(
+                    UserPrinterProfileLink.user_id == current_user.id,
+                    UserPrinterProfileLink.printer_profile_id == profile.id,
+                )
+                .limit(1)
+            )
+        ) is not None
+
+    if profile is None or (
+        not _can_read_profile(profile, current_user) and not linked_to_user_printer
+    ):
         raise_error(status.HTTP_404_NOT_FOUND, ERR_PRINTER_PROFILE_NOT_FOUND)
 
     return PrinterProfileResponse.model_validate(profile)

@@ -1,14 +1,19 @@
 """Unknown OrcaSlicer field observation and admin review tests."""
 
 import hashlib
-from pathlib import Path
+import json
+import zipfile
+from pathlib import Path, PurePosixPath
 from unittest.mock import Mock
 
 import pytest
 from sqlalchemy import select
 
 from app.models.orca_schema_observation import OrcaSchemaObservation
-from app.services.orca_field_registry import ORCA_FIELD_REGISTRY_VERSION
+from app.services.orca_field_registry import (
+    ORCA_FIELD_REGISTRY_VERSION,
+    ORCA_PRESET_FIELDS,
+)
 from app.services.orca_schema_observer import (
     detect_unknown_orca_fields,
     observe_orca_schema_fields,
@@ -20,6 +25,29 @@ def test_registry_version_matches_bundled_orca_catalog() -> None:
     expected = f"bundle-sha256:{hashlib.sha256(bundle_path.read_bytes()).hexdigest()}"
 
     assert ORCA_FIELD_REGISTRY_VERSION == expected
+
+
+def test_every_current_bundle_field_is_accepted_by_the_registry() -> None:
+    bundle_path = Path(__file__).resolve().parents[1] / "data/catalog_sources/orca/bundle.zip"
+    observed = {scope: set() for scope in ORCA_PRESET_FIELDS}
+
+    with zipfile.ZipFile(bundle_path) as archive:
+        for name in archive.namelist():
+            path = PurePosixPath(name)
+            scope = next(
+                (candidate for candidate in observed if candidate in path.parts),
+                None,
+            )
+            if scope is None or path.suffix.lower() != ".json":
+                continue
+            document = json.loads(archive.read(name))
+            if isinstance(document, dict):
+                observed[scope].update(document)
+
+    assert {
+        scope: sorted(fields - ORCA_PRESET_FIELDS[scope])
+        for scope, fields in observed.items()
+    } == {"filament": [], "process": [], "machine": []}
 
 
 def test_detector_reports_only_unknown_top_level_field_metadata() -> None:

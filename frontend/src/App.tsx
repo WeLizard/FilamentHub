@@ -9,6 +9,7 @@ import { useOrcaSlicerNotifications } from './hooks/useOrcaSlicerNotifications';
 import { lazy, Suspense, useEffect, useState } from 'react';
 import { isPluginEmbed, subscribeToPluginNavigation, subscribeToPluginSyncResult, subscribeToPluginRecoverList, sendRecoverImport, type RecoverItem } from './utils/pluginBridge';
 import { useAuth } from './contexts/AuthContext';
+import { useQueryClient } from '@tanstack/react-query';
 
 // Lazy-loaded pages (code splitting)
 const FilamentDetailPage = lazy(() => import('./pages/FilamentDetailPage').then(m => ({ default: m.FilamentDetailPage })));
@@ -56,6 +57,7 @@ function AppContent() {
   // Обработчик уведомлений от OrcaSlicer
   useOrcaSlicerNotifications();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const location = useLocation();
   const { user, isMaintenanceMode, maintenanceMessage, clearMaintenanceMode } = useAuth();
   // The onboarding modal links to these pages; covering them makes the documents
@@ -91,8 +93,11 @@ function AppContent() {
     if (!isPluginEmbed()) {
       return;
     }
-    return subscribeToPluginSyncResult((text) => toast.success(text, undefined, 'sync'));
-  }, []);
+    return subscribeToPluginSyncResult((text) => {
+      toast.success(text, undefined, 'sync');
+      void queryClient.invalidateQueries({ queryKey: ['physical-printers'] });
+    });
+  }, [queryClient]);
 
   const [recoverItems, setRecoverItems] = useState<RecoverItem[] | null>(null);
   useEffect(() => {

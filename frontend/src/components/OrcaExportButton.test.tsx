@@ -3,10 +3,19 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { OrcaExportButton } from './OrcaExportButton';
 
-const bridgeState = vi.hoisted(() => ({ available: true }));
+const bridgeState = vi.hoisted(() => ({
+  available: true,
+  embedded: false,
+  requestPluginProfileSync: vi.fn(),
+}));
 
 vi.mock('../hooks/useOrcaBridgeCapability', () => ({
   useOrcaBridgeCapability: () => bridgeState.available,
+}));
+
+vi.mock('../utils/pluginBridge', () => ({
+  isPluginEmbed: () => bridgeState.embedded,
+  requestPluginProfileSync: (...args: unknown[]) => bridgeState.requestPluginProfileSync(...args),
 }));
 
 vi.mock('react-i18next', () => ({
@@ -16,6 +25,8 @@ vi.mock('react-i18next', () => ({
 describe('OrcaExportButton', () => {
   beforeEach(() => {
     bridgeState.available = true;
+    bridgeState.embedded = false;
+    bridgeState.requestPluginProfileSync.mockReset();
     window.filamenthub = {};
   });
 
@@ -59,6 +70,27 @@ describe('OrcaExportButton', () => {
     );
 
     expect(container).toBeEmptyDOMElement();
+  });
+
+  it('uses the official plugin sync from the embedded page', async () => {
+    bridgeState.embedded = true;
+    bridgeState.requestPluginProfileSync.mockResolvedValue({ message: 'synced' });
+
+    render(
+      <OrcaExportButton
+        capability="exportPrinterProfiles"
+        translationPrefix="exportPrinterProfiles"
+        successLabel="done"
+        errorContext="Printer profiles"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'exportPrinterProfiles.button' }));
+
+    await waitFor(() => expect(bridgeState.requestPluginProfileSync).toHaveBeenCalledTimes(1));
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'exportPrinterProfiles.done' })).toBeEnabled();
+    });
   });
 
   it('honours a disabled sync direction without invoking the bridge', () => {

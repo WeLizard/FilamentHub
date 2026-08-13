@@ -29,6 +29,10 @@ from app.schemas.preset_slot_sync import (
     DeviceUpdateRequest,
     HHSnapshotRequest,
     ManualAssignmentRequest,
+    PluginMaterialSlotContext,
+    PluginMaterialSystemContext,
+    PluginMaterialTopologyContextResponse,
+    PluginPhysicalPrinterContext,
     UsageEstimateRequest,
 )
 from app.services.material_assignment_service import (
@@ -36,7 +40,11 @@ from app.services.material_assignment_service import (
     require_accessible_spool,
     sync_legacy_material_assignment,
 )
-from app.services.material_contract_service import ensure_material_topology
+from app.services.material_contract_service import (
+    ensure_material_topology,
+    list_physical_printers,
+)
+from app.services.physical_printer_discovery_service import list_user_bindings
 from app.services.spool_service import (
     clear_spool_gate_assignments,
     lock_spool_row,
@@ -417,9 +425,14 @@ async def handle_hh_snapshot(
     payload: HHSnapshotRequest,
 ) -> tuple[UserPrinterDevice, int, list[int]]:
     """Process HH snapshot. Returns (device, updated_count, mismatch_gate_indices)."""
-    device = await get_device_by_fingerprint(db, user.id, payload.device_fingerprint)
+    device = (
+        await require_device(db, user.id, payload.physical_printer_id)
+        if payload.physical_printer_id is not None
+        else await get_device_by_fingerprint(db, user.id, payload.device_fingerprint or "")
+    )
 
     if device is None:
+        assert payload.device_fingerprint is not None
         device = UserPrinterDevice(
             user_id=user.id,
             device_fingerprint=payload.device_fingerprint,
@@ -526,10 +539,84 @@ async def handle_hh_snapshot(
         device,
         gate_indices={state.gate_index for _, state in gate_state_updates}
         | set(state_by_gate),
+        exact_gate_count=payload.gate_count,
     )
     await db.commit()
     await db.refresh(device)
     return device, updated, mismatches
+
+
+async def build_plugin_material_topology_context(
+    db: AsyncSession,
+    user_id: int,
+    source_instance_id: str,
+) -> PluginMaterialTopologyContextResponse:
+    """Return only the local bindings and desired HH slots a plugin needs.
+
+    A machine profile is configuration, not physical identity.  The stable
+    ``(source_instance_id, connection_ref)`` binding created by printer sync is
+    therefore the only automatic route from a local Orca connection to a
+    FilamentHub physical printer.  Endpoints, credentials, names and unrelated
+    account data deliberately never cross this capability boundary.
+    """
+    printers = await list_physical_printers(db, user_id)
+    bindings = await list_user_bindings(db, user_id)
+    refs_by_printer: dict[int, set[str]] = {}
+    for binding in bindings:
+        if (
+            binding.source_instance_id == source_instance_id
+            and binding.connection_ref
+        ):
+            refs_by_printer.setdefault(binding.physical_printer_id, set()).add(
+                binding.connection_ref
+            )
+
+    result: list[PluginPhysicalPrinterContext] = []
+    for printer in printers:
+        systems: list[PluginMaterialSystemContext] = []
+        for system in sorted(printer.material_systems, key=lambda item: item.id):
+            if not system.active or system.provider != "happy_hare":
+                continue
+            slots: list[PluginMaterialSlotContext] = []
+            for slot in sorted(
+                system.slots, key=lambda item: (item.provider_index, item.id)
+            ):
+                if not slot.active:
+                    continue
+                spool_id = None
+                if slot.assignment is not None and slot.assignment.active:
+                    spool_id = slot.assignment.spool_id
+                elif (
+                    slot.legacy_gate_state is not None
+                    and slot.legacy_gate_state.is_active
+                ):
+                    spool_id = slot.legacy_gate_state.spool_id
+                slots.append(
+                    PluginMaterialSlotContext(
+                        provider_index=slot.provider_index,
+                        spool_id=spool_id,
+                    )
+                )
+            systems.append(
+                PluginMaterialSystemContext(
+                    id=system.id,
+                    provider=system.provider,
+                    slots=slots,
+                )
+            )
+        if systems:
+            result.append(
+                PluginPhysicalPrinterContext(
+                    id=printer.id,
+                    connection_refs=sorted(refs_by_printer.get(printer.id, set())),
+                    material_systems=systems,
+                )
+            )
+
+    return PluginMaterialTopologyContextResponse(
+        source_instance_id=source_instance_id,
+        printers=result,
+    )
 
 
 # ── Manual assignment ──────────────────────────────────────────────────────

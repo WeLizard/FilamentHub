@@ -29,6 +29,7 @@ from app.core.utils import like_pattern
 from app.db.session import get_db
 from app.models.filament import Filament
 from app.models.print_profile import PrintProfile
+from app.models.print_profile_configuration import PrintProfileConfigurationLink
 from app.models.print_profile_filament import PrintProfileFilament
 from app.models.print_profile_printer import PrintProfilePrinter
 from app.models.printer import Printer
@@ -44,6 +45,7 @@ from app.services.download_filename import attachment_content_disposition, safe_
 from app.services.orca_import_guard import profile_external_id_taken
 from app.services.orcaslicer_machine_exporter import export_print_profile
 from app.services.print_profile_configuration_service import (
+    configuration_ancestor_map,
     infer_and_replace_configuration_links,
     replace_configuration_links,
 )
@@ -286,6 +288,7 @@ async def list_print_profiles(
     active_only: bool = Query(True),
     is_official: bool | None = Query(None),
     owner_user_id: int | None = Query(None, ge=1),
+    printer_profile_ids: list[int] | None = Query(None),
     category: str | None = Query(None, min_length=1),
     search: str | None = Query(None, min_length=1),
 ) -> PrintProfileListResponse:
@@ -326,6 +329,44 @@ async def list_print_profiles(
                     ),
                 )
             )
+    requested_configuration_ancestors: dict[int, set[int]] = {}
+    if printer_profile_ids:
+        configuration_ids = sorted(set(printer_profile_ids))
+        if len(configuration_ids) > 100 or any(value <= 0 for value in configuration_ids):
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY)
+
+        requested_configuration_ancestors = await configuration_ancestor_map(
+            db,
+            owner_user_id=current_user.id if current_user is not None else None,
+            printer_profile_ids=configuration_ids,
+        )
+        filter_configuration_ids = sorted(
+            {
+                ancestor_id
+                for ancestor_ids in requested_configuration_ancestors.values()
+                for ancestor_id in ancestor_ids
+            }
+            or set(configuration_ids)
+        )
+        printer_ids = select(PrinterProfile.printer_id).where(
+            PrinterProfile.id.in_(filter_configuration_ids),
+            PrinterProfile.printer_id.is_not(None),
+        )
+        query = query.where(
+            or_(
+                PrintProfile.configuration_links.any(
+                    PrintProfileConfigurationLink.printer_profile_id.in_(
+                        filter_configuration_ids
+                    )
+                ),
+                (
+                    PrintProfile.configuration_links_resolved.is_(False)
+                    & PrintProfile.printer_links.any(
+                        PrintProfilePrinter.printer_id.in_(printer_ids)
+                    )
+                ),
+            )
+        )
     if category:
         query = query.where(PrintProfile.category == category)
     if search:
@@ -344,6 +385,16 @@ async def list_print_profiles(
     query = query.order_by(PrintProfile.created_at.desc()).offset(offset).limit(size)
 
     profiles = (await db.execute(query)).scalars().all()
+    if requested_configuration_ancestors:
+        for profile in profiles:
+            linked_ids = {
+                link.printer_profile_id for link in profile.configuration_links
+            }
+            profile._response_printer_profile_ids = {
+                requested_id
+                for requested_id, ancestor_ids in requested_configuration_ancestors.items()
+                if linked_ids & ancestor_ids
+            }
     pages = (total + size - 1) // size if total else 0
 
     return PrintProfileListResponse(

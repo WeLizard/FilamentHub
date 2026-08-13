@@ -623,13 +623,20 @@ def test_active_filaments_use_the_host_preset_api(plugin_module, monkeypatch):
 
         @staticmethod
         def config_keys():
-            return ["filament_type", "nozzle_temperature"]
+            return [
+                "filament_type",
+                "nozzle_temperature",
+                "future_orca_object",
+                "future_orca_nullable",
+            ]
 
         @staticmethod
         def config_value(key):
             return {
                 "filament_type": ["PETG"],
                 "nozzle_temperature": ["245"],
+                "future_orca_object": {"mode": "adaptive", "levels": [1, 3]},
+                "future_orca_nullable": None,
             }[key]
 
     collection = SimpleNamespace(
@@ -648,10 +655,729 @@ def test_active_filaments_use_the_host_preset_api(plugin_module, monkeypatch):
         "profile": {
             "filament_type": ["PETG"],
             "nozzle_temperature": ["245"],
+            "future_orca_object": {"mode": "adaptive", "levels": [1, 3]},
+            "future_orca_nullable": None,
             "name": "Local PETG",
             "bundle_id": "user-bundle",
         },
     }]
+
+
+def test_profile_sync_imports_user_profiles_but_not_selected_system_profile(
+    plugin_module, monkeypatch
+):
+    class Preset:
+        def __init__(self, name, *, user=False, bundle_id="system"):
+            self.name = name
+            self.bundle_id = bundle_id
+            self._user = user
+
+        def is_user(self):
+            return self._user
+
+        @staticmethod
+        def config_keys():
+            return ["printer_settings_id", "nozzle_diameter"]
+
+        def config_value(self, key):
+            return {
+                "printer_settings_id": self.name,
+                "nozzle_diameter": ["0.4"],
+            }[key]
+
+    selected_system = Preset("Bambu Lab P2S 0.4 nozzle")
+    unselected_system = Preset("Bambu Lab A1 mini 0.4 nozzle")
+    user_profile = Preset("Workshop Voron", user=True, bundle_id="user")
+    collection = SimpleNamespace(
+        size=lambda: 3,
+        preset=lambda index: [selected_system, unselected_system, user_profile][index],
+    )
+    bundle = SimpleNamespace(
+        printers=collection,
+        current_printer_preset=lambda: selected_system,
+    )
+    monkeypatch.setattr(
+        plugin_module.orca.host,
+        "preset_bundle",
+        lambda: bundle,
+        raising=False,
+    )
+
+    profiles = plugin_module.scan_user_profiles("machine")
+
+    assert [profile["name"] for profile in profiles] == ["Workshop Voron"]
+
+
+def test_connection_only_machine_child_is_observed_but_not_imported(
+    plugin_module, monkeypatch
+):
+    class Preset:
+        is_system = False
+
+        def __init__(self, name, values, *, user):
+            self.name = name
+            self.bundle_id = "user" if user else "Voron"
+            self._values = values
+            self._user = user
+
+        def is_user(self):
+            return self._user
+
+        def config_keys(self):
+            return list(self._values)
+
+        def config_value(self, key):
+            return self._values.get(key)
+
+    parent_values = {
+        "printer_settings_id": "Voron 2.4 350 0.4 nozzle",
+        "printer_model": "Voron 2.4 350",
+        "nozzle_diameter": ["0.4"],
+        "machine_max_acceleration_x": ["8000"],
+    }
+    parent = Preset("Voron 2.4 350 0.4 nozzle", parent_values, user=False)
+    child = Preset(
+        "Workshop Voron",
+        {
+            **parent_values,
+            "inherits": parent.name,
+            "print_host": "192.168.1.21:7125",
+            "host_type": "moonraker",
+        },
+        user=True,
+    )
+    collection = SimpleNamespace(
+        size=lambda: 2,
+        preset=lambda index: [parent, child][index],
+        find_preset=lambda name: parent if name == parent.name else None,
+    )
+    monkeypatch.setattr(
+        plugin_module.orca.host,
+        "preset_bundle",
+        lambda: SimpleNamespace(
+            printers=collection,
+            current_printer_preset=lambda: child,
+        ),
+        raising=False,
+    )
+
+    assert plugin_module.scan_user_profiles("machine") == []
+    observation = plugin_module.observe_printer_presets()[0]
+    assert observation["preset_name"] == "Workshop Voron"
+    assert observation["inherits"] == parent.name
+    assert observation["vendor_id"] == "Voron"
+    assert observation["has_technical_changes"] is False
+    assert observation["profile_fingerprint"] is None
+    assert observation["print_host"] == "192.168.1.21:7125"
+    assert observation["connection_ref"].startswith("orca-local-v1:")
+
+
+def test_printer_endpoint_sync_is_local_only_until_opt_in(plugin_module):
+    observations = [
+        {
+            "connection_ref": "orca-local-v1:account:machine",
+            "print_host": "192.168.1.21:7125",
+            "host_type": "moonraker",
+        }
+    ]
+
+    private = plugin_module._observations_for_sync(observations)
+    shared = plugin_module._observations_for_sync(
+        observations, share_endpoints=True
+    )
+
+    assert private[0]["connection_ref"] == observations[0]["connection_ref"]
+    assert private[0]["print_host"] == ""
+    assert shared[0]["print_host"] == "192.168.1.21:7125"
+    assert observations[0]["print_host"] == "192.168.1.21:7125"
+
+
+def test_moonraker_api_key_stays_in_local_connection_scan(plugin_module, monkeypatch):
+    values = {
+        "printer_settings_id": "Workshop Voron",
+        "printer_model": "Voron 2.4 350",
+        "print_host": "192.168.1.21:7125",
+        "host_type": "moonraker",
+        "printhost_apikey": "local-secret",
+        "nozzle_diameter": ["0.4"],
+    }
+
+    class Preset:
+        name = "Workshop Voron"
+        bundle_id = "user"
+        file = ""
+
+        @staticmethod
+        def is_user():
+            return True
+
+        @staticmethod
+        def config_keys():
+            return list(values)
+
+        @staticmethod
+        def config_value(key):
+            return values.get(key)
+
+    preset = Preset()
+    collection = SimpleNamespace(
+        size=lambda: 1,
+        preset=lambda _index: preset,
+        find_preset=lambda _name: None,
+    )
+    monkeypatch.setattr(
+        plugin_module.orca.host,
+        "preset_bundle",
+        lambda: SimpleNamespace(
+            printers=collection,
+            current_printer_preset=lambda: preset,
+        ),
+        raising=False,
+    )
+
+    observations = plugin_module.observe_printer_presets()
+    local = plugin_module.observe_local_moonraker_connections(observations)
+
+    assert len(local) == 1
+    assert local[0]["api_key"] == "local-secret"
+    assert "api_key" not in observations[0]
+    assert "printhost_apikey" not in observations[0]
+    assert "local-secret" not in json.dumps(
+        plugin_module._observations_for_sync(observations)
+    )
+
+
+def test_happy_hare_snapshot_requires_one_exact_topology(plugin_module, monkeypatch):
+    def moonraker(_connection, path, payload=None):
+        if path == "/printer/info":
+            return 200, {"result": {"hostname": "voron"}}, ""
+        assert payload is not None
+        return 200, {
+            "result": {
+                "status": {
+                    "mmu": {
+                        "num_gates": 2,
+                        "gate_status": [2, 1],
+                        "gate_material": ["PLA"],
+                        "gate_color": ["ff0000", "00ff00"],
+                        "gate_temperature": [210, 220],
+                        "gate_spool_id": [41, -1],
+                        "spoolman_support": "pull",
+                    },
+                    "print_stats": {"state": "standby"},
+                }
+            }
+        }, ""
+
+    monkeypatch.setattr(plugin_module, "_moonraker_json", moonraker)
+
+    with pytest.raises(ValueError, match="disagree"):
+        plugin_module.read_happy_hare_snapshot({"print_host": "voron:7125"})
+
+
+def test_happy_hare_v3_can_report_exact_count_before_gate_arrays(
+    plugin_module, monkeypatch
+):
+    def moonraker(_connection, path, payload=None):
+        if path == "/printer/info":
+            return 200, {"result": {"hostname": "voron"}}, ""
+        assert payload is not None
+        return 200, {
+            "result": {
+                "status": {
+                    "mmu": {"num_gates": 8, "spoolman_support": "off"},
+                    "print_stats": {"state": "standby"},
+                }
+            }
+        }, ""
+
+    monkeypatch.setattr(plugin_module, "_moonraker_json", moonraker)
+
+    snapshot = plugin_module.read_happy_hare_snapshot(
+        {"print_host": "voron:7125"}
+    )
+
+    assert snapshot["gate_count"] == 8
+    assert len(snapshot["gates"]) == 8
+    assert snapshot["actual_spool_ids"] == [None] * 8
+    assert snapshot["spool_ids_known"] is False
+    assert snapshot["spoolman_support"] == "off"
+
+
+def test_happy_hare_action_explains_pull_before_missing_spool_ids(
+    plugin_module, monkeypatch
+):
+    snapshot = {
+        "gate_count": 8,
+        "gates": [],
+        "actual_spool_ids": [None] * 8,
+        "spool_ids_known": False,
+        "spoolman_support": "off",
+        "print_state": "standby",
+        "printer_hostname": "voron",
+    }
+    connection = {"print_host": "voron:7125"}
+    monkeypatch.setattr(
+        plugin_module,
+        "resolve_happy_hare_connection",
+        lambda *_args, **_kwargs: (
+            connection,
+            snapshot,
+            {
+                "id": 3,
+                "material_systems": [{
+                    "id": 7,
+                    "provider": "happy_hare",
+                    "slots": [],
+                }],
+            },
+            None,
+        ),
+    )
+    monkeypatch.setattr(
+        plugin_module,
+        "upload_happy_hare_snapshot",
+        lambda *_args, **_kwargs: (200, {}),
+    )
+    delivered = []
+    catalog = plugin_module.FilamentHubCatalog()
+    monkeypatch.setattr(
+        catalog,
+        "_deliver_happy_hare_result",
+        lambda request_id, result: delivered.append((request_id, result)),
+    )
+
+    catalog._do_happy_hare_action("request-1", "preview", 3, 7, "token", [connection])
+
+    assert delivered[0][1]["ok"] is False
+    assert delivered[0][1]["code"] == "pull_required"
+    assert delivered[0][1]["gateCount"] == 8
+
+
+def test_happy_hare_apply_uses_only_allowlisted_refresh(plugin_module, monkeypatch):
+    before = {
+        "gate_count": 2,
+        "gates": [],
+        "actual_spool_ids": [None, 22],
+        "spool_ids_known": True,
+        "spoolman_support": "pull",
+        "print_state": "standby",
+        "printer_hostname": "voron",
+    }
+    after = {**before, "actual_spool_ids": [11, None]}
+    connection = {"print_host": "voron:7125", "api_key": "secret"}
+    monkeypatch.setattr(
+        plugin_module,
+        "resolve_happy_hare_connection",
+        lambda *_args, **_kwargs: (
+            connection,
+            before,
+            {
+                "id": 3,
+                "material_systems": [{
+                    "id": 7,
+                    "provider": "happy_hare",
+                    "slots": [
+                        {"provider_index": 0, "spool_id": 11},
+                        {"provider_index": 1, "spool_id": None},
+                    ],
+                }],
+            },
+            None,
+        ),
+    )
+    monkeypatch.setattr(
+        plugin_module,
+        "upload_happy_hare_snapshot",
+        lambda *_args, **_kwargs: (200, {}),
+    )
+    command_calls = []
+    monkeypatch.setattr(
+        plugin_module,
+        "_moonraker_json",
+        lambda _connection, path, payload=None: (
+            command_calls.append((path, payload)) or (200, {"result": "ok"}, "")
+        ),
+    )
+    monkeypatch.setattr(plugin_module, "read_happy_hare_snapshot", lambda _connection: after)
+    monkeypatch.setattr(plugin_module.time, "sleep", lambda _seconds: None)
+    delivered = []
+    catalog = plugin_module.FilamentHubCatalog()
+    monkeypatch.setattr(
+        catalog,
+        "_deliver_happy_hare_result",
+        lambda request_id, result: delivered.append((request_id, result)),
+    )
+
+    catalog._do_happy_hare_action("request-1", "apply", 3, 7, "token", [connection])
+
+    assert command_calls == [
+        ("/printer/gcode/script", {"script": "MMU_SPOOLMAN REFRESH=1"})
+    ]
+    assert delivered[0][1]["ok"] is True
+    assert delivered[0][1]["remainingChanges"] == []
+
+
+def test_happy_hare_context_uses_one_scoped_endpoint(plugin_module, monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        plugin_module, "plugin_source_instance_id", lambda: "orca-instance-123456"
+    )
+
+    def get_json(path, token):
+        calls.append((path, token))
+        return 200, {
+            "source_instance_id": "orca-instance-123456",
+            "printers": [],
+        }
+
+    monkeypatch.setattr(plugin_module, "_filamenthub_json_get", get_json)
+
+    inventory, error = plugin_module._happy_hare_server_inventory("plugin-token")
+
+    assert error is None
+    assert inventory == {
+        "source_instance_id": "orca-instance-123456",
+        "printers": [],
+    }
+    assert calls == [(
+        "/orcaslicer/preset-slot-sync/plugin-context?source_instance_id="
+        "orca-instance-123456",
+        "plugin-token",
+    )]
+
+
+@pytest.mark.parametrize(
+    ("status", "error"),
+    [(401, "auth"), (403, "access"), (500, "server")],
+)
+def test_happy_hare_context_reports_authorization_separately_from_server_errors(
+    plugin_module, monkeypatch, status, error
+):
+    monkeypatch.setattr(
+        plugin_module, "plugin_source_instance_id", lambda: "orca-instance-123456"
+    )
+    monkeypatch.setattr(
+        plugin_module,
+        "_filamenthub_json_get",
+        lambda *_args, **_kwargs: (status, None),
+    )
+
+    assert plugin_module._happy_hare_server_inventory("token") == (None, error)
+
+
+def test_happy_hare_resolves_only_the_bound_connection_ref(
+    plugin_module, monkeypatch
+):
+    wanted = {"connection_ref": "fh-ref-1", "print_host": "voron:7125"}
+    other = {"connection_ref": "fh-ref-2", "print_host": "other:7125"}
+    snapshot = {"gate_count": 8}
+    monkeypatch.setattr(
+        plugin_module,
+        "read_happy_hare_snapshot",
+        lambda connection: snapshot if connection is wanted else pytest.fail(
+            "an unbound connection was queried"
+        ),
+    )
+    inventory = {
+        "source_instance_id": "orca-instance-123456",
+        "printers": [{
+            "id": 3,
+            "connection_refs": ["fh-ref-1"],
+            "material_systems": [],
+        }],
+    }
+
+    connection, result, printer, error = plugin_module.resolve_happy_hare_connection(
+        "token", [other, wanted], 3, inventory=inventory
+    )
+
+    assert error is None
+    assert connection is wanted
+    assert result is snapshot
+    assert printer["id"] == 3
+
+
+def test_custom_machine_child_imports_only_technical_delta(
+    plugin_module, monkeypatch
+):
+    class Preset:
+        is_system = False
+
+        def __init__(self, name, values, *, user):
+            self.name = name
+            self.bundle_id = "user" if user else "Voron"
+            self._values = values
+            self._user = user
+
+        def is_user(self):
+            return self._user
+
+        def config_keys(self):
+            return list(self._values)
+
+        def config_value(self, key):
+            return self._values.get(key)
+
+    parent_values = {
+        "printer_settings_id": "Voron 2.4 350 0.4 nozzle",
+        "printer_model": "Voron 2.4 350",
+        "nozzle_diameter": ["0.4"],
+        "machine_max_acceleration_x": ["8000"],
+    }
+    parent = Preset("Voron 2.4 350 0.4 nozzle", parent_values, user=False)
+    child = Preset(
+        "Fast workshop Voron",
+        {
+            **parent_values,
+            "inherits": parent.name,
+            "machine_max_acceleration_x": ["12000"],
+            "print_host": "192.168.1.21:7125",
+            "printhost_apikey": "must-never-leave-orca",
+            "bbl_use_printhost": "1",
+        },
+        user=True,
+    )
+    collection = SimpleNamespace(
+        size=lambda: 2,
+        preset=lambda index: [parent, child][index],
+        find_preset=lambda name: parent if name == parent.name else None,
+    )
+    monkeypatch.setattr(
+        plugin_module.orca.host,
+        "preset_bundle",
+        lambda: SimpleNamespace(printers=collection),
+        raising=False,
+    )
+
+    profiles = plugin_module.scan_user_profiles("machine")
+
+    assert len(profiles) == 1
+    assert profiles[0]["settings"] == {
+        "machine_max_acceleration_x": ["12000"],
+        "inherits": parent.name,
+    }
+    assert "print_host" not in profiles[0]["settings"]
+    assert "printhost_apikey" not in profiles[0]["settings"]
+    assert "bbl_use_printhost" not in profiles[0]["settings"]
+
+
+def test_child_with_unavailable_parent_is_not_flattened_into_a_custom_profile(
+    plugin_module, monkeypatch
+):
+    class Preset:
+        is_system = False
+        name = "Temporarily orphaned Voron"
+        bundle_id = "user"
+
+        @staticmethod
+        def is_user():
+            return True
+
+        @staticmethod
+        def config_keys():
+            return [
+                "inherits",
+                "printer_settings_id",
+                "printer_model",
+                "machine_max_acceleration_x",
+                "print_host",
+            ]
+
+        @staticmethod
+        def config_value(key):
+            return {
+                "inherits": "Missing vendor parent",
+                "printer_settings_id": "Missing vendor parent",
+                "printer_model": "Voron 2.4 350",
+                "machine_max_acceleration_x": ["8000"],
+                "print_host": "192.168.1.21:7125",
+            }[key]
+
+    child = Preset()
+    collection = SimpleNamespace(
+        size=lambda: 1,
+        preset=lambda _index: child,
+        find_preset=lambda _name: None,
+    )
+    monkeypatch.setattr(
+        plugin_module.orca.host,
+        "preset_bundle",
+        lambda: SimpleNamespace(
+            printers=collection,
+            current_printer_preset=lambda: child,
+        ),
+        raising=False,
+    )
+
+    assert plugin_module.scan_user_profiles("machine") == []
+    observation = plugin_module.observe_printer_presets()[0]
+    assert observation["inherits"] == "Missing vendor parent"
+    assert observation["has_technical_changes"] is None
+    assert observation["profile_fingerprint"] is None
+
+
+def test_printer_observations_keep_two_endpoints_using_one_profile(
+    plugin_module, monkeypatch
+):
+    class Preset:
+        is_system = False
+
+        def __init__(self, name, host):
+            self.name = name
+            self.bundle_id = "user"
+            self._host = host
+
+        @staticmethod
+        def is_user():
+            return True
+
+        def config_value(self, key):
+            return {
+                "printer_settings_id": "shared-voron-profile",
+                "printer_model": "Voron 2.4 350",
+                "print_host": self._host,
+                "host_type": "moonraker",
+                "nozzle_diameter": ["0.4"],
+            }.get(key)
+
+    presets = [
+        Preset("Workshop left", "192.168.1.21:7125"),
+        Preset("Workshop right", "192.168.1.22:7125"),
+    ]
+    collection = SimpleNamespace(
+        size=lambda: len(presets),
+        preset=lambda index: presets[index],
+    )
+    monkeypatch.setattr(
+        plugin_module.orca.host,
+        "preset_bundle",
+        lambda: SimpleNamespace(
+            printers=collection,
+            current_printer_preset=lambda: presets[0],
+        ),
+        raising=False,
+    )
+
+    observations = plugin_module.observe_printer_presets()
+
+    assert [(item["preset_name"], item["print_host"]) for item in observations] == [
+        ("Workshop left", "192.168.1.21:7125"),
+        ("Workshop right", "192.168.1.22:7125"),
+    ]
+
+
+def test_printer_observations_keep_separate_named_user_profiles_without_hosts(
+    plugin_module, monkeypatch
+):
+    def preset(name):
+        values = {
+            "printer_settings_id": "shared-p2s-profile",
+            "printer_model": "Bambu Lab P2S",
+            "nozzle_diameter": ["0.4"],
+        }
+        return SimpleNamespace(
+            name=name,
+            bundle_id="user",
+            is_system=False,
+            is_user=lambda: True,
+            config_value=lambda key: values.get(key),
+        )
+
+    presets = [preset("P2S workshop"), preset("P2S home")]
+    collection = SimpleNamespace(
+        size=lambda: len(presets),
+        preset=lambda index: presets[index],
+    )
+    monkeypatch.setattr(
+        plugin_module.orca.host,
+        "preset_bundle",
+        lambda: SimpleNamespace(
+            printers=collection,
+            current_printer_preset=lambda: presets[0],
+        ),
+        raising=False,
+    )
+
+    observations = plugin_module.observe_printer_presets()
+
+    assert [item["preset_name"] for item in observations] == [
+        "P2S workshop",
+        "P2S home",
+    ]
+
+
+def test_printer_observations_send_visible_system_profiles_but_not_the_whole_bundle(
+    plugin_module, monkeypatch
+):
+    def preset(name, model, *, visible=False):
+        values = {
+            "printer_model": model,
+            "nozzle_diameter": ["0.4"],
+        }
+        return SimpleNamespace(
+            name=name,
+            bundle_id="BBL",
+            is_system=True,
+            is_visible=visible,
+            is_user=lambda: False,
+            config_value=lambda key: values.get(key),
+        )
+
+    selected = preset(
+        "Bambu Lab P2S 0.4 nozzle", "Bambu Lab P2S", visible=True
+    )
+    other_bundle_profiles = [
+        preset("Bambu Lab A1 0.4 nozzle", "Bambu Lab A1", visible=True),
+        preset("Bambu Lab X1 Carbon 0.4 nozzle", "Bambu Lab X1 Carbon"),
+    ]
+    presets = other_bundle_profiles + [selected]
+    collection = SimpleNamespace(
+        size=lambda: len(presets),
+        preset=lambda index: presets[index],
+    )
+    monkeypatch.setattr(
+        plugin_module.orca.host,
+        "preset_bundle",
+        lambda: SimpleNamespace(
+            printers=collection,
+            current_printer_preset=lambda: selected,
+        ),
+        raising=False,
+    )
+
+    observations = plugin_module.observe_printer_presets()
+
+    assert [item["preset_name"] for item in observations] == [
+        "Bambu Lab A1 0.4 nozzle",
+        selected.name,
+    ]
+    assert all(item["is_visible"] for item in observations)
+
+
+def test_profile_sync_still_excludes_a_selected_filamenthub_copy(
+    plugin_module, monkeypatch
+):
+    managed = SimpleNamespace(
+        name="Restored printer",
+        bundle_id="filamenthub:machine:41",
+        is_user=lambda: False,
+        config_keys=lambda: ["printer_settings_id"],
+        config_value=lambda _key: "Restored printer",
+    )
+    collection = SimpleNamespace(size=lambda: 1, preset=lambda _index: managed)
+    bundle = SimpleNamespace(
+        printers=collection,
+        current_printer_preset=lambda: managed,
+    )
+    monkeypatch.setattr(
+        plugin_module.orca.host,
+        "preset_bundle",
+        lambda: bundle,
+        raising=False,
+    )
+
+    assert plugin_module.scan_user_profiles("machine") == []
 
 
 def test_profile_payload_must_be_an_object(plugin_module):
@@ -672,6 +1398,79 @@ def test_atomic_json_write_replaces_complete_file(plugin_module, tmp_path):
         "name": "FilamentHub",
     }
     assert list(tmp_path.glob("*.tmp.*")) == []
+
+
+def test_recovery_scans_all_profile_kinds_and_live_copy_wins(
+    plugin_module, monkeypatch, tmp_path
+):
+    def write_profile(root, account, kind, name, payload):
+        folder = root / account / kind
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / f"{name}.json").write_text(
+            json.dumps({"name": name, **payload}),
+            encoding="utf-8",
+        )
+
+    live = tmp_path / "user"
+    backup = tmp_path / "user_backup_20260813"
+    write_profile(live, "account", "filament", "Workshop PLA", {"filament_type": ["PLA"]})
+    write_profile(live, "account", "machine", "Workshop Voron", {"inherits": "Voron 2.4"})
+    write_profile(
+        live,
+        "account",
+        "process",
+        "Workshop quality",
+        {"layer_height": "0.20"},
+    )
+    write_profile(
+        backup,
+        "account",
+        "process",
+        "Workshop quality",
+        {"layer_height": "0.28"},
+    )
+    write_profile(
+        backup,
+        "account",
+        "machine",
+        "Old backup machine",
+        {"nozzle_diameter": ["0.6"]},
+    )
+    write_profile(
+        backup,
+        "second-account",
+        "process",
+        "Workshop quality",
+        {"layer_height": "0.12"},
+    )
+    monkeypatch.setattr(plugin_module, "DATA_DIR", str(tmp_path))
+
+    recovered = plugin_module.scan_recovery_presets()
+
+    assert {(item["kind"], item["name"]) for item in recovered} == {
+        ("filament", "Workshop PLA"),
+        ("machine", "Workshop Voron"),
+        ("machine", "Old backup machine"),
+        ("process", "Workshop quality"),
+    }
+    qualities = [item for item in recovered if item["kind"] == "process"]
+    assert len(qualities) == 2
+    quality = next(item for item in qualities if item["account"] == "account")
+    assert quality["source"] == "live"
+    assert quality["profile"]["layer_height"] == "0.20"
+    second = next(item for item in qualities if item["account"] == "second-account")
+    assert second["source"] == "backup"
+    assert second["profile"]["layer_height"] == "0.12"
+
+    disambiguated = plugin_module.disambiguate_recovery_candidates(qualities)
+    assert {item["name"] for item in disambiguated} == {
+        "Workshop quality [account]",
+        "Workshop quality [second-account]",
+    }
+    assert {item["profile"]["name"] for item in disambiguated} == {
+        "Workshop quality [account]",
+        "Workshop quality [second-account]",
+    }
 
 
 def test_build_packages_locale_catalogs_and_checksums(plugin_module, tmp_path):
@@ -724,11 +1523,33 @@ def test_dev_build_is_single_file_with_localhost_and_embedded_locales(plugin_mod
     standalone_module = _load_module(dev_plugin, "filamenthub_dev_standalone_smoke")
     assert standalone_module.DEV_CONTOUR is True
     assert standalone_module.UI_COPY["ru"]["catalog"] == "Каталог"
+    standalone_module._CACHED_UI_LANGUAGE = "ru"
+    assert standalone_module.ui_text(
+        "syncComplete",
+        summary=standalone_module.ui_text("summaryCurrent", count=4),
+        note="",
+    ).strip() == "Синхронизация завершена: актуальны: 4."
 
 
-def test_printer_profiles_never_leave_with_host_credentials(plugin_module, monkeypatch):
+def _isolate_profile_identity(plugin_module, monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        plugin_module,
+        "profile_identity_registry_path",
+        lambda: str(tmp_path / "profile_identity.json"),
+    )
+    monkeypatch.setattr(
+        plugin_module,
+        "plugin_source_instance_id",
+        lambda: "test-source-instance-00000001",
+    )
+
+
+def test_printer_profiles_never_leave_with_host_credentials(
+    plugin_module, monkeypatch, tmp_path
+):
     # A printer preset holds the credentials of its network host; they must stay
     # on the user's machine even though the rest of the preset is reported.
+    _isolate_profile_identity(plugin_module, monkeypatch, tmp_path)
     sent = []
     monkeypatch.setattr(
         plugin_module, "http_post_json",
@@ -743,19 +1564,182 @@ def test_printer_profiles_never_leave_with_host_credentials(plugin_module, monke
         "nozzle_diameter": ["0.4"],
     }}]
     state = {}
-    assert plugin_module.push_user_profiles("machine", "tok", items, state) == (1, 0)
+    assert plugin_module.push_user_profiles(
+        "machine", "tok", items, state, authoritative=False
+    ) == (1, 0)
     path, payload = sent[0]
     assert path == "/orcaslicer/printer-profiles/import"
     settings = payload["profiles"][0]["orcaslicer_settings"]
     assert "printhost_apikey" not in settings
     assert "printhost_password" not in settings
     assert "printhost_user" not in settings
-    assert settings["print_host"] == "192.168.1.50"
+    assert "print_host" not in settings
+    assert "host_type" not in settings
     assert settings["nozzle_diameter"] == ["0.4"]
-    assert payload["profiles"][0]["external_id"] == "voron-350"
+    assert payload["profiles"][0]["setting_id"] == "voron-350"
+    assert payload["profiles"][0]["external_id"].startswith("orca-local-v1:")
 
 
-def test_unchanged_profiles_are_not_reported_again(plugin_module, monkeypatch):
+def test_sibling_printer_profiles_with_shared_orca_id_keep_distinct_sync_ids(
+    plugin_module,
+    monkeypatch,
+    tmp_path,
+):
+    _isolate_profile_identity(plugin_module, monkeypatch, tmp_path)
+    sent = []
+    monkeypatch.setattr(
+        plugin_module,
+        "http_post_json",
+        lambda path, token, payload: (sent.append(payload), (200, b"{}"))[1],
+    )
+    items = [
+        {
+            "name": "Workshop A1 mini",
+            "settings": {"printer_settings_id": "Bambu Lab A1 mini 0.4 nozzle"},
+        },
+        {
+            "name": "Office A1 mini",
+            "settings": {"printer_settings_id": "Bambu Lab A1 mini 0.4 nozzle"},
+        },
+    ]
+
+    assert plugin_module.push_user_profiles(
+        "machine", "tok", items, {}, authoritative=False
+    ) == (2, 0)
+    profiles = sent[0]["profiles"]
+    assert profiles[0]["setting_id"] == profiles[1]["setting_id"]
+    assert profiles[0]["external_id"] != profiles[1]["external_id"]
+
+
+def test_profile_registry_distinguishes_rename_from_save_as(
+    plugin_module, monkeypatch, tmp_path
+):
+    _isolate_profile_identity(plugin_module, monkeypatch, tmp_path)
+    original = [{
+        "name": "Voron workshop",
+        "locator": "file:machine/voron-workshop.json",
+        "settings": {"nozzle_diameter": ["0.4"]},
+    }]
+    account_id, original, saved = plugin_module.reconcile_local_profile_identities(
+        "machine", original
+    )
+    assert saved
+    original_id = original[0]["local_profile_id"]
+
+    renamed = [{
+        "name": "Voron main",
+        "locator": "file:machine/voron-main.json",
+        "settings": {"nozzle_diameter": ["0.4"]},
+    }]
+    same_account_id, renamed, saved = plugin_module.reconcile_local_profile_identities(
+        "machine", renamed
+    )
+    assert saved
+    assert same_account_id == account_id
+    assert renamed[0]["local_profile_id"] == original_id
+
+    copied = [
+        renamed[0],
+        {
+            "name": "Voron spare",
+            "locator": "file:machine/voron-spare.json",
+            "settings": {"nozzle_diameter": ["0.4"]},
+        },
+    ]
+    _account_id, copied, saved = plugin_module.reconcile_local_profile_identities(
+        "machine", copied
+    )
+    assert saved
+    assert copied[0]["local_profile_id"] == original_id
+    assert copied[1]["local_profile_id"] != original_id
+
+    monkeypatch.setattr(
+        plugin_module,
+        "profile_identity_registry_path",
+        lambda: str(tmp_path / "other-account" / "profile_identity.json"),
+    )
+    other_account_id, other_account_items, saved = (
+        plugin_module.reconcile_local_profile_identities(
+            "machine",
+            [{
+                "name": "Voron main",
+                "locator": "file:machine/voron-main.json",
+                "settings": {"nozzle_diameter": ["0.4"]},
+            }],
+        )
+    )
+    assert saved
+    assert other_account_id != account_id
+    assert other_account_items[0]["local_profile_id"] != original_id
+
+
+def test_authoritative_profile_sync_uses_start_batch_finalize(
+    plugin_module, monkeypatch, tmp_path
+):
+    _isolate_profile_identity(plugin_module, monkeypatch, tmp_path)
+    snapshot_id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    calls = []
+    server_bound_ids = set()
+
+    def post(path, _token, payload):
+        calls.append((path, payload))
+        if path.endswith("/start"):
+            return 200, json.dumps({
+                "snapshot_id": snapshot_id,
+                "bound_local_profile_ids": sorted(server_bound_ids),
+            }).encode()
+        if path.endswith("/finalize"):
+            return 200, json.dumps({"status": "finalized"}).encode()
+        server_bound_ids.update(
+            item["local_profile_id"] for item in payload["profiles"]
+        )
+        return 200, json.dumps({"results": [{"status": "created"}]}).encode()
+
+    monkeypatch.setattr(plugin_module, "http_post_json", post)
+    items = [{
+        "name": "Voron 350",
+        "locator": "file:machine/voron-350.json",
+        "settings": {"nozzle_diameter": ["0.4"]},
+    }]
+    state = {}
+
+    assert plugin_module.push_user_profiles("machine", "tok", items, state) == (1, 0)
+    assert [path for path, _payload in calls] == [
+        "/orcaslicer/profile-snapshots/start",
+        "/orcaslicer/printer-profiles/import",
+        "/orcaslicer/profile-snapshots/finalize",
+    ]
+    import_payload = calls[1][1]
+    finalize_payload = calls[2][1]
+    assert import_payload["snapshot_id"] == snapshot_id
+    assert finalize_payload["present_local_profile_ids"] == [
+        import_payload["profiles"][0]["local_profile_id"]
+    ]
+
+    calls.clear()
+    assert plugin_module.push_user_profiles("machine", "tok", items, state) == (0, 0)
+    assert [path for path, _payload in calls] == [
+        "/orcaslicer/profile-snapshots/start",
+        "/orcaslicer/profile-snapshots/finalize",
+    ]
+
+    # A local digest is only an optimization. If the server lost the durable
+    # binding (for example after a dev DB reset), the unchanged source profile
+    # is authoritative and must be sent again.
+    server_bound_ids.clear()
+    calls.clear()
+    assert plugin_module.push_user_profiles("machine", "tok", items, state) == (1, 0)
+    assert [path for path, _payload in calls] == [
+        "/orcaslicer/profile-snapshots/start",
+        "/orcaslicer/printer-profiles/import",
+        "/orcaslicer/profile-snapshots/finalize",
+    ]
+
+
+def test_unchanged_profiles_are_not_reported_again(
+    plugin_module, monkeypatch, tmp_path
+):
+    _isolate_profile_identity(plugin_module, monkeypatch, tmp_path)
     calls = []
     monkeypatch.setattr(
         plugin_module, "http_post_json",
@@ -763,28 +1747,87 @@ def test_unchanged_profiles_are_not_reported_again(plugin_module, monkeypatch):
     )
     items = [{"name": "0.2mm Standard", "settings": {"layer_height": "0.2"}}]
     state = {}
-    assert plugin_module.push_user_profiles("process", "tok", items, state) == (1, 0)
-    assert plugin_module.push_user_profiles("process", "tok", items, state) == (0, 0)
+    assert plugin_module.push_user_profiles(
+        "process", "tok", items, state, authoritative=False
+    ) == (1, 0)
+    assert plugin_module.push_user_profiles(
+        "process", "tok", items, state, authoritative=False
+    ) == (0, 0)
     assert len(calls) == 1
 
     items[0]["settings"]["layer_height"] = "0.3"
-    assert plugin_module.push_user_profiles("process", "tok", items, state) == (1, 0)
+    assert plugin_module.push_user_profiles(
+        "process", "tok", items, state, authoritative=False
+    ) == (1, 0)
     assert len(calls) == 2
 
 
-def test_failed_upload_is_retried_on_the_next_sync(plugin_module, monkeypatch):
+def test_failed_upload_is_retried_on_the_next_sync(
+    plugin_module, monkeypatch, tmp_path
+):
     # A rejected batch must not be recorded as reported, or the profile would be
     # silently dropped until the user happens to edit it again.
+    _isolate_profile_identity(plugin_module, monkeypatch, tmp_path)
     monkeypatch.setattr(plugin_module, "http_post_json",
                         lambda path, token, payload: (503, b""))
     items = [{"name": "Voron 350", "settings": {"nozzle_diameter": ["0.4"]}}]
     state = {}
-    assert plugin_module.push_user_profiles("machine", "tok", items, state) == (0, 1)
+    assert plugin_module.push_user_profiles(
+        "machine", "tok", items, state, authoritative=False
+    ) == (0, 1)
     assert state == {}
 
     monkeypatch.setattr(plugin_module, "http_post_json",
                         lambda path, token, payload: (200, b"{}"))
-    assert plugin_module.push_user_profiles("machine", "tok", items, state) == (1, 0)
+    assert plugin_module.push_user_profiles(
+        "machine", "tok", items, state, authoritative=False
+    ) == (1, 0)
+
+
+def test_item_level_import_error_is_not_recorded_as_synced(
+    plugin_module, monkeypatch, tmp_path
+):
+    _isolate_profile_identity(plugin_module, monkeypatch, tmp_path)
+    responses = [
+        (
+            200,
+            json.dumps({
+                "results": [
+                    {"external_id": "first", "status": "created"},
+                    {"external_id": "second", "status": "error"},
+                ]
+            }).encode("utf-8"),
+        ),
+        (
+            200,
+            json.dumps({
+                "results": [{"external_id": "second", "status": "updated"}]
+            }).encode("utf-8"),
+        ),
+    ]
+    sent_batches = []
+
+    def post(_path, _token, payload):
+        sent_batches.append(payload["profiles"])
+        return responses.pop(0)
+
+    monkeypatch.setattr(plugin_module, "http_post_json", post)
+    items = [
+        {"name": "First", "settings": {"nozzle_diameter": ["0.4"]}},
+        {"name": "Second", "settings": {"nozzle_diameter": ["0.6"]}},
+    ]
+    state = {}
+
+    assert plugin_module.push_user_profiles(
+        "machine", "tok", items, state, authoritative=False
+    ) == (1, 1)
+    assert plugin_module.push_user_profiles(
+        "machine", "tok", items, state, authoritative=False
+    ) == (1, 0)
+    assert [[profile["name"] for profile in batch] for batch in sent_batches] == [
+        ["First", "Second"],
+        ["Second"],
+    ]
 
 
 def test_automatic_machine_and_process_sync_remains_outbound_only(plugin_module):
@@ -1030,6 +2073,10 @@ def test_host_storage_migrates_mutable_state_without_deleting_legacy(
     storage = tmp_path / "plugin_data" / "filamenthub"
     legacy.mkdir()
     (legacy / ".auth.json").write_text('{"accessToken":"fixture"}', encoding="utf-8")
+    (legacy / ".fh_bambu.json").write_text(
+        '{"version":1,"source_instance_id":"fixture-instance-0001","printers":[]}',
+        encoding="utf-8",
+    )
     (legacy / ".fh_sync.json").write_text('{"known":true}', encoding="utf-8")
     (legacy / "slices").mkdir()
     (legacy / "slices" / "fixture.gcode").write_text("G28", encoding="utf-8")
@@ -1038,6 +2085,7 @@ def test_host_storage_migrates_mutable_state_without_deleting_legacy(
     monkeypatch.setattr(plugin_module, "PLUGIN_STORAGE_DIR", str(legacy))
     monkeypatch.setattr(plugin_module, "SYNC_LOG_FILE", str(legacy / ".fh_sync.log"))
     monkeypatch.setattr(plugin_module, "AUTH_FILE", str(legacy / ".auth.json"))
+    monkeypatch.setattr(plugin_module, "BAMBU_CONFIG_FILE", str(legacy / ".fh_bambu.json"))
     monkeypatch.setattr(
         plugin_module, "IMPORTED_DRAFTS_FILE", str(legacy / ".fh_imported.json")
     )
@@ -1055,11 +2103,13 @@ def test_host_storage_migrates_mutable_state_without_deleting_legacy(
 
     assert plugin_module.PLUGIN_STORAGE_DIR == str(storage)
     assert plugin_module.AUTH_FILE == str(storage / ".auth.json")
+    assert plugin_module.BAMBU_CONFIG_FILE == str(storage / ".fh_bambu.json")
     assert plugin_module.SYNC_STATE_FILE == str(storage / ".fh_sync.json")
     assert plugin_module._SLICE_CACHE_DIR == str(storage / "slices")
     assert (storage / ".auth.json").read_text(encoding="utf-8") == (
         '{"accessToken":"fixture"}'
     )
+    assert (storage / ".fh_bambu.json").exists()
     assert (storage / "slices" / "fixture.gcode").read_text(encoding="utf-8") == "G28"
     assert (legacy / ".auth.json").exists()
     assert (legacy / "slices" / "fixture.gcode").exists()
@@ -1171,3 +2221,129 @@ def test_bambu_feed_without_any_ams_still_reads_the_holder(plugin_module):
 
     assert [slot["index"] for slot in feed["slots"]] == [255]
     assert feed["active_index"] is None
+
+
+def test_bambu_ht_presence_uses_bit_position_without_renumbering_identity(plugin_module):
+    report = {
+        "ams": {
+            "tray_now": "128",
+            "tray_exist_bits": "10000",
+            "ams": [
+                {
+                    "id": "128",
+                    "info": "4",
+                    "tray": [
+                        {
+                            "id": "0",
+                            "tray_type": "PA6-CF",
+                            "tray_color": "111111FF",
+                            "remain_g": "315",
+                        }
+                    ],
+                }
+            ],
+        }
+    }
+
+    feed = plugin_module.parse_bambu_feed(report)
+
+    assert feed["active_index"] == 128
+    assert feed["slots"][0]["index"] == 128
+    assert feed["slots"][0]["present"] is True
+
+
+def test_bambu_snapshot_keeps_tag_identity_local(plugin_module):
+    report = _bambu_report(
+        gcode_state="RUNNING",
+        mc_percent="42",
+        mc_remaining_time="60",
+        layer_num="17",
+        total_layer_num="80",
+        subtask_name="fixture.3mf",
+        nozzle_temper="220.5",
+        bed_temper=60,
+        wifi_signal="-52dBm",
+    )
+    config = {"physical_printer_id": 9, "material_system_id": 12}
+
+    snapshot = plugin_module.build_bambu_bridge_snapshot(
+        config, "fixture-plugin-instance-0001", report
+    )
+
+    assert snapshot["printer"]["state"] == "printing"
+    assert snapshot["printer"]["remaining_seconds"] == 3600
+    assert snapshot["printer"]["current_layer"] == 17
+    assert snapshot["slot_topology_complete"] is True
+    assert snapshot["slots"][0]["remaining_grams"] == 812
+    serialized = json.dumps(snapshot)
+    assert "provider_uid" not in serialized
+    assert "D1E2F3" not in serialized
+    assert "access_code" not in serialized
+    assert "serial" not in serialized
+
+
+def test_bambu_local_binding_is_private_and_replaceable(plugin_module, tmp_path, monkeypatch):
+    target = tmp_path / ".fh_bambu.json"
+    monkeypatch.setattr(plugin_module, "BAMBU_CONFIG_FILE", str(target))
+
+    plugin_module.configure_bambu_bridge(
+        3, 4, "192.168.1.42", "local-secret", "SERIAL-1", "fhpb_first"
+    )
+    plugin_module.configure_bambu_bridge(
+        3, 5, "192.168.1.43", "new-secret", "SERIAL-2", "fhpb_second"
+    )
+
+    stored = plugin_module.load_bambu_config()
+    assert len(stored["printers"]) == 1
+    assert stored["printers"][0]["material_system_id"] == 5
+    assert stored["printers"][0]["access_code"] == "new-secret"
+    assert stored["printers"][0]["bridge_token"] == "fhpb_second"
+    assert len(stored["source_instance_id"]) >= 16
+    with pytest.raises(ValueError, match="invalid serial"):
+        plugin_module.configure_bambu_bridge(
+            9, 9, "192.168.1.44", "secret", "device/+/report", "fhpb_bad"
+        )
+    assert plugin_module.remove_bambu_bridge(3)
+    assert plugin_module.load_bambu_config()["printers"] == []
+
+
+def test_bambu_runtime_removes_local_secrets_after_server_rejects_binding(
+    plugin_module, tmp_path, monkeypatch
+):
+    target = tmp_path / ".fh_bambu.json"
+    monkeypatch.setattr(plugin_module, "BAMBU_CONFIG_FILE", str(target))
+    plugin_module.configure_bambu_bridge(
+        3, 5, "192.168.1.43", "local-secret", "SERIAL-2", "fhpb_revoked"
+    )
+    monkeypatch.setattr(
+        plugin_module,
+        "read_bambu_lan_snapshot",
+        lambda _config: ("SERIAL-2", _bambu_report()),
+    )
+    monkeypatch.setattr(
+        plugin_module,
+        "http_post_bridge_json",
+        lambda _path, _token, _payload: (401, b""),
+    )
+
+    runtime = plugin_module.BambuBridgeRuntime()
+    monkeypatch.setattr(runtime._wake, "wait", lambda _timeout: True)
+    runtime._run()
+
+    assert plugin_module.load_bambu_config()["printers"] == []
+
+
+def test_bambu_address_must_resolve_to_the_lan(plugin_module, monkeypatch):
+    def public(*_args, **_kwargs):
+        return [(2, 1, 6, "", ("8.8.8.8", 8883))]
+
+    monkeypatch.setattr(plugin_module.socket, "getaddrinfo", public)
+    with pytest.raises(ValueError, match="local network"):
+        plugin_module._resolved_bambu_address("printer.example")
+
+    def private(*_args, **_kwargs):
+        return [(2, 1, 6, "", ("192.168.1.42", 8883))]
+
+    monkeypatch.setattr(plugin_module.socket, "getaddrinfo", private)
+    resolved = plugin_module._resolved_bambu_address("bambu.local")
+    assert resolved[3] == ("192.168.1.42", 8883)

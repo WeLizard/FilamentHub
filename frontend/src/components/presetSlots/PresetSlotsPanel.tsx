@@ -1,21 +1,30 @@
 import { useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { Cpu, Clock, Eraser, KeyRound, Layers, Trash2, Loader2, Wifi, WifiOff, AlertTriangle, Check, Plus } from 'lucide-react';
+import { Cpu, Clock, Eraser, KeyRound, Layers, Trash2, Loader2, Wifi, WifiOff, AlertTriangle, Check, ChevronDown, Plus } from 'lucide-react';
 import { devicesAPI, physicalPrintersAPI, presetsAPI, printerProfilesAPI, spoolsAPI } from '../../api/client';
-import type { GateState, MaterialSlot, MaterialSystem, PhysicalPrinter, UserSpool } from '../../api/client';
+import type {
+  GateState,
+  MaterialSlot,
+  MaterialSystem,
+  PhysicalPrinter,
+  PrinterConnectionBinding,
+  UserSpool,
+} from '../../api/client';
 import type { Preset } from '../../types/api';
 import { ConfirmDeleteModal } from '../ConfirmDeleteModal';
 import { FEED_ADAPTERS, feedAdapterFor } from './adapters';
 import { Dropdown } from '../Dropdown';
 import { GateMapGrid } from './GateMapGrid';
 import { LinkInstructions } from './LinkInstructions';
+import { removeBambuBridgeInPlugin } from '../../utils/pluginBridge';
 import { PresetAssignModal } from './PresetAssignModal';
 import { toast } from '../Toast';
 import { translateApiError } from '../../utils/translateApiError';
 import { formatLastSeen, getDeviceLinkState, latestDeviceContact, useNow } from '../../utils/deviceLink';
 import { configuredNozzleHrc } from '../../utils/nozzleHardness';
 import { useAuth } from '../../contexts/AuthContext';
+import { safeStorage } from '../../utils/storage';
 
 interface MaterialSystemSectionProps {
   printer: PhysicalPrinter;
@@ -76,10 +85,14 @@ function materialSlotGateState(slot: MaterialSlot): GateState | null {
 
 function NewSystemCard({
   printers,
+  bindings,
+  printerProfileNameById,
   spoolCompatBaseUrl,
   onDone,
 }: {
   printers: PhysicalPrinter[];
+  bindings: PrinterConnectionBinding[];
+  printerProfileNameById: ReadonlyMap<number, string>;
   spoolCompatBaseUrl: string;
   onDone: () => void;
 }) {
@@ -91,9 +104,71 @@ function NewSystemCard({
   const [issuedKey, setIssuedKey] = useState<string | null>(null);
 
   const chosen = feedAdapterFor(system);
-  const count = chosen.fixedSlots ?? Number(slotCount);
-  const valid = printerId !== '' && Number.isInteger(count) && count >= 1 && count <= 256;
+  const count = chosen.topologyFromProvider ? null : (chosen.fixedSlots ?? Number(slotCount));
+  const valid = printerId !== '' && (
+    chosen.topologyFromProvider
+    || (Number.isInteger(count) && Number(count) >= 1 && Number(count) <= 256)
+  );
   const chosenPrinter = printers.find((printer) => printer.id === Number(printerId)) ?? null;
+  const bindingsByPrinter = useMemo(() => {
+    const map = new Map<number, PrinterConnectionBinding[]>();
+    bindings.forEach((binding) => {
+      const current = map.get(binding.physical_printer_id) ?? [];
+      current.push(binding);
+      map.set(binding.physical_printer_id, current);
+    });
+    return map;
+  }, [bindings]);
+  const printerOptions = useMemo(() => {
+    const options = printers.map((printer) => {
+      const printerBindings = bindingsByPrinter.get(printer.id) ?? [];
+      const connectionLabels = Array.from(new Set(printerBindings.map((binding) => {
+        const provider = binding.provider
+          ? t(`presetSlots.connectionProvider.${binding.provider}`, {
+            defaultValue: binding.provider,
+          })
+          : null;
+        const connection = binding.display_endpoint
+          ?? (binding.connection_ref ? t('myPrinters.localConnection') : null);
+        return [provider, connection].filter(Boolean).join(' · ')
+          || t('presetSlots.newSystem.connectionDetected');
+      })));
+      const connectionDetail = connectionLabels.length <= 2
+        ? connectionLabels.join(' / ')
+        : t('presetSlots.newSystem.connections', { count: connectionLabels.length });
+      const configurationNames = printer.printer_profile_ids
+        .map((profileId) => printerProfileNameById.get(profileId))
+        .filter((name): name is string => Boolean(name));
+      const configurationDetail = configurationNames.length > 0
+        ? configurationNames.join(' / ')
+        : printer.printer_profile_ids.length > 0
+          ? t('presetSlots.newSystem.orcaConfigurations', {
+            count: printer.printer_profile_ids.length,
+          })
+          : null;
+      const detail = [connectionDetail || null, configurationDetail]
+        .filter(Boolean)
+        .join(' · ') || t('presetSlots.newSystem.notConnected');
+
+      return {
+        value: printer.id,
+        name: printer.name,
+        detail,
+        baseLabel: `${printer.name} — ${detail}`,
+        connected: printerBindings.length > 0,
+      };
+    });
+    const labelCounts = new Map<string, number>();
+    options.forEach((option) => {
+      labelCounts.set(option.baseLabel, (labelCounts.get(option.baseLabel) ?? 0) + 1);
+    });
+    return options.map((option) => ({
+      ...option,
+      label: (labelCounts.get(option.baseLabel) ?? 0) > 1
+        ? `${option.baseLabel} · ${t('presetSlots.newSystem.deviceNumber', { id: option.value })}`
+        : option.baseLabel,
+    }));
+  }, [bindingsByPrinter, printerProfileNameById, printers, t]);
 
   const handleCreate = async () => {
     if (!valid) return;
@@ -101,10 +176,10 @@ function NewSystemCard({
     try {
       await physicalPrintersAPI.createSystem(Number(printerId), {
         name: t(chosen.labelKey),
-        kind: count > 1 ? 'mmu' : 'direct_feed',
+        kind: chosen.topologyFromProvider || Number(count) > 1 ? 'mmu' : 'direct_feed',
         provider: chosen.id,
         capabilities: chosen.capabilities,
-        slot_count: count,
+        ...(count == null ? {} : { slot_count: count }),
       });
       // A printer that already holds a key is already linked; issuing a new one
       // here would silently break the connection its other system relies on.
@@ -149,9 +224,42 @@ function NewSystemCard({
             size="sm"
             value={printerId}
             onChange={(value) => setPrinterId(value === '' ? '' : Number(value))}
-            options={printers.map((printer) => ({ value: printer.id, label: printer.name }))}
+            options={printerOptions}
             placeholder={t('presetSlots.newSystem.printerPlaceholder')}
+            renderOption={(option) => {
+              const printerOption = printerOptions.find((candidate) => candidate.value === option.value);
+              return (
+                <>
+                  <span className="flex min-w-0 items-start gap-2">
+                    {printerOption?.connected ? (
+                      <Wifi className="mt-0.5 h-4 w-4 flex-shrink-0 text-emerald-400" />
+                    ) : (
+                      <WifiOff className="mt-0.5 h-4 w-4 flex-shrink-0 text-gray-500" />
+                    )}
+                    <span className="min-w-0">
+                      <span className="block truncate font-medium">
+                        {printerOption?.name ?? option.label}
+                      </span>
+                      {printerOption && (
+                        <span className="block truncate text-xs text-gray-400">
+                          {printerOption.detail}
+                          {printerOption.label !== printerOption.baseLabel
+                            ? ` · ${t('presetSlots.newSystem.deviceNumber', { id: printerOption.value })}`
+                            : ''}
+                        </span>
+                      )}
+                    </span>
+                  </span>
+                  {printerId === option.value && (
+                    <Check className="h-5 w-5 flex-shrink-0 text-purple-400" />
+                  )}
+                </>
+              );
+            }}
           />
+          <p className="mt-1 text-[11px] leading-4 text-gray-500">
+            {t('presetSlots.newSystem.printerHint')}
+          </p>
         </div>
         <div className="min-w-0">
           <p className="mb-1 text-xs text-gray-400">{t('presetSlots.newSystem.system')}</p>
@@ -165,7 +273,7 @@ function NewSystemCard({
             }))}
           />
         </div>
-        {chosen.fixedSlots == null && (
+        {chosen.fixedSlots == null && !chosen.topologyFromProvider && (
           <div className="min-w-0">
             <p className="mb-1 text-xs text-gray-400">
               {t(chosen.slotCountLabelKey ?? 'presetSlots.newSystem.slotCount')}
@@ -209,7 +317,9 @@ function NewSystemCard({
 
 function MaterialSystemSection({ printer, system, presetsSeedMap, spools, spoolCompatBaseUrl, printerProfileName = null, nozzleHrc = null, onGateClick }: MaterialSystemSectionProps) {
   const { t, i18n } = useTranslation();
+  const { user } = useAuth();
   const queryClient = useQueryClient();
+  const adapter = feedAdapterFor(system.provider);
   const [clearing, setClearing] = useState(false);
   const [slotCountDraft, setSlotCountDraft] = useState('');
   const [editingSlots, setEditingSlots] = useState(false);
@@ -218,11 +328,17 @@ function MaterialSystemSection({ printer, system, presetsSeedMap, spools, spoolC
   const [deleting, setDeleting] = useState(false);
   const [issuedKey, setIssuedKey] = useState<string | null>(null);
   const [issuingKey, setIssuingKey] = useState(false);
+  const canCollapse = system.kind === 'mmu'
+    || adapter.topologyFromProvider === true
+    || system.slots.filter((slot) => slot.active).length > 1;
+  const collapseStorageKey = `filamenthub:material-system:collapsed:${user?.id ?? 'anonymous'}:${system.id}`;
+  const [collapsed, setCollapsed] = useState(
+    () => canCollapse && safeStorage.get(collapseStorageKey) === '1',
+  );
   const now = useNow();
   const connector = printer.connectors.find(
     (item) => item.material_system_id === system.id && item.active,
   ) ?? null;
-  const adapter = feedAdapterFor(system.provider);
   // The key belongs to the printer, so a system without its own connector still
   // hears from it; falling back keeps a reporting printer from looking silent.
   const lastSeenAt = latestDeviceContact(connector?.last_seen_at, printer.last_seen_at);
@@ -232,9 +348,14 @@ function MaterialSystemSection({ printer, system, presetsSeedMap, spools, spoolC
     defaultValue: system.provider,
   });
   const systemLabel = GENERATED_SYSTEM_NAMES.has(system.name) ? providerLabel : system.name;
-  const gates = useMemo(
-    () => system.slots.map(materialSlotGateState).filter((gate): gate is GateState => gate !== null),
+  const visibleSlots = useMemo(
+    () => system.slots.filter((slot) => slot.active),
     [system.slots],
+  );
+  const compactCardLayout = visibleSlots.length <= 4;
+  const gates = useMemo(
+    () => visibleSlots.map(materialSlotGateState).filter((gate): gate is GateState => gate !== null),
+    [visibleSlots],
   );
 
   const handleIssueKey = async () => {
@@ -242,12 +363,22 @@ function MaterialSystemSection({ printer, system, presetsSeedMap, spools, spoolC
     try {
       const { api_key } = await devicesAPI.regenerateKey(printer.id);
       setIssuedKey(api_key);
+      setCollapsed(false);
       await queryClient.invalidateQueries({ queryKey: ['physical-printers'] });
     } catch (err: any) {
       toast.error(translateApiError(t, err?.response?.data?.detail, t('common.error')));
     } finally {
       setIssuingKey(false);
     }
+  };
+
+  const toggleCollapsed = () => {
+    if (!canCollapse) return;
+    setCollapsed((current) => {
+      const next = !current;
+      safeStorage.set(collapseStorageKey, next ? '1' : '0');
+      return next;
+    });
   };
 
   const missingPresetIds = useMemo(() => {
@@ -309,6 +440,9 @@ function MaterialSystemSection({ printer, system, presetsSeedMap, spools, spoolC
     setDeleting(true);
     try {
       await physicalPrintersAPI.deleteSystem(printer.id, system.id);
+      if (adapter.id === 'bambu') {
+        removeBambuBridgeInPlugin(printer.id);
+      }
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['physical-printers'] }),
         queryClient.invalidateQueries({ queryKey: ['spools'] }),
@@ -343,14 +477,18 @@ function MaterialSystemSection({ printer, system, presetsSeedMap, spools, spoolC
   };
 
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/3 p-5">
-      <div className="mb-4 flex flex-wrap items-start justify-between gap-3 md:grid md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]">
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-purple-500/20">
+    <div className={`${collapsed ? '' : 'h-full'} rounded-2xl border border-white/10 bg-white/3 p-5`}>
+      <div className={compactCardLayout
+        ? `${collapsed ? '' : 'mb-4'} grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3 gap-y-2`
+        : `${collapsed ? '' : 'mb-4'} flex flex-wrap items-start justify-between gap-3 md:grid md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]`}>
+        <div className="min-w-0 flex items-center gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-purple-500/20">
             <Cpu className="h-5 w-5 text-purple-300" />
           </div>
-          <div>
-            <h2 className="text-sm font-semibold text-white">{printer.name}</h2>
+          <div className="min-w-0">
+            <h2 className="truncate text-sm font-semibold text-white" title={printer.name}>
+              {printer.name}
+            </h2>
             <p className="mt-0.5 text-[11px] text-gray-400">{systemLabel}</p>
             {printerProfileName
               && !printer.name.includes(printerProfileName)
@@ -362,7 +500,9 @@ function MaterialSystemSection({ printer, system, presetsSeedMap, spools, spoolC
           </div>
         </div>
 
-        <div className="flex min-w-0 flex-col items-start gap-1.5 md:items-center md:justify-self-center">
+        <div className={compactCardLayout
+          ? 'col-span-2 row-start-2 flex min-w-0 flex-col items-start gap-1.5'
+          : 'flex min-w-0 flex-col items-start gap-1.5 md:items-center md:justify-self-center'}>
           <div className="flex flex-wrap items-center gap-1.5 md:justify-center">
             <span
               title={t(linkState === 'ready' ? 'deviceLink.onDemandTooltip' : 'deviceLink.tooltip')}
@@ -390,7 +530,7 @@ function MaterialSystemSection({ printer, system, presetsSeedMap, spools, spoolC
               )}
               {t(`deviceLink.${linkState}`)}
             </span>
-            {editingSlots ? (
+            {!adapter.topologyFromProvider && editingSlots ? (
               <span className="flex items-center gap-1">
                 <input
                   type="number"
@@ -412,18 +552,24 @@ function MaterialSystemSection({ printer, system, presetsSeedMap, spools, spoolC
                   {savingSlotCount ? '…' : t('common.save')}
                 </button>
               </span>
+            ) : adapter.topologyFromProvider ? (
+              <span className="rounded-full bg-white/5 px-2 py-0.5 text-[11px] text-gray-400">
+                {t(adapter.slotCountSummaryKey ?? 'presetSlots.gates', {
+                  count: visibleSlots.length,
+                })}
+              </span>
             ) : (
               <button
                 type="button"
                 onClick={() => {
-                  setSlotCountDraft(String(system.slots.length));
+                  setSlotCountDraft(String(visibleSlots.length));
                   setEditingSlots(true);
                 }}
                 title={t('presetSlots.slotCount.change')}
                 className="rounded-full bg-white/5 px-2 py-0.5 text-[11px] text-gray-400 transition hover:bg-white/10 hover:text-white"
               >
                 {t(adapter.slotCountSummaryKey ?? 'presetSlots.gates', {
-                  count: system.slots.length,
+                  count: visibleSlots.length,
                 })}
               </button>
             )}
@@ -454,7 +600,7 @@ function MaterialSystemSection({ printer, system, presetsSeedMap, spools, spoolC
                   </>
                 )}
               </span>
-              {adapter.renderSettings?.({ printer, system, gates, linkConfirmed })}
+              {adapter.renderSettings?.({ printer, system, gates, spools, linkConfirmed })}
               <button
                 type="button"
                 onClick={handleIssueKey}
@@ -466,10 +612,24 @@ function MaterialSystemSection({ printer, system, presetsSeedMap, spools, spoolC
               </button>
             </div>
           )}
-          {!adapter.link && adapter.renderSettings?.({ printer, system, gates, linkConfirmed })}
+          {!adapter.link && adapter.renderSettings?.({ printer, system, gates, spools, linkConfirmed })}
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 md:justify-self-end">
+        <div className={compactCardLayout
+          ? 'col-start-2 row-start-1 flex flex-wrap items-center gap-2 justify-self-end'
+          : 'flex flex-wrap items-center gap-2 md:justify-self-end'}>
+          {canCollapse && (
+            <button
+              type="button"
+              onClick={toggleCollapsed}
+              aria-expanded={!collapsed}
+              title={t(collapsed ? 'presetSlots.expandSystem' : 'presetSlots.collapseSystem')}
+              className="rounded-lg border border-white/10 bg-white/5 p-1.5 text-gray-400 transition hover:bg-white/10 hover:text-white"
+            >
+              <ChevronDown className={`h-3.5 w-3.5 transition-transform ${collapsed ? '' : 'rotate-180'}`} />
+            </button>
+          )}
+          {adapter.renderActions?.({ printer, system, gates, spools, linkConfirmed })}
           <button
             type="button"
             onClick={handleClearAll}
@@ -509,9 +669,9 @@ function MaterialSystemSection({ printer, system, presetsSeedMap, spools, spoolC
         message={t('presetSlots.deleteSystemConfirm', { name: systemLabel })}
       />
 
-      {adapter.renderSetup?.({ printer, system, gates, linkConfirmed })}
+      {!collapsed && adapter.renderSetup?.({ printer, system, gates, spools, linkConfirmed })}
 
-      {issuedKey && adapter.link && !linkConfirmed && (
+      {!collapsed && issuedKey && adapter.link && !linkConfirmed && (
         <div className="mb-4 rounded-xl border border-white/10 bg-white/5 p-4">
           <LinkInstructions
             link={adapter.link}
@@ -522,16 +682,18 @@ function MaterialSystemSection({ printer, system, presetsSeedMap, spools, spoolC
         </div>
       )}
 
-      {system.declared_slot_count == null && system.slots.length > 0 && (
+      {!collapsed && !adapter.topologyFromProvider
+        && system.declared_slot_count == null
+        && visibleSlots.length > 0 && (
         <div className="mb-4 rounded-xl border border-white/10 bg-white/5 p-4">
           <p className="text-sm text-white">
-            {t('presetSlots.slotCount.question', { count: system.slots.length })}
+            {t('presetSlots.slotCount.question', { count: visibleSlots.length })}
           </p>
           <p className="mt-1 text-xs text-gray-400">{t('presetSlots.slotCount.hint')}</p>
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <button
               type="button"
-              onClick={() => handleConfirmSlotCount(system.slots.length)}
+              onClick={() => handleConfirmSlotCount(visibleSlots.length)}
               disabled={savingSlotCount}
               className="inline-flex items-center gap-1.5 rounded-lg bg-purple-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-purple-500 disabled:opacity-50"
             >
@@ -564,14 +726,16 @@ function MaterialSystemSection({ printer, system, presetsSeedMap, spools, spoolC
         </div>
       )}
 
-      <GateMapGrid
-        slots={system.slots}
-        gates={gates}
-        presets={effectivePresetsMap}
-        spools={spools}
-        nozzleHrc={nozzleHrc}
-        onGateClick={(gate, slot) => onGateClick(gate, slot, printer, system)}
-      />
+      {!collapsed && (
+        <GateMapGrid
+          slots={visibleSlots}
+          gates={gates}
+          presets={effectivePresetsMap}
+          spools={spools}
+          nozzleHrc={nozzleHrc}
+          onGateClick={(gate, slot) => onGateClick(gate, slot, printer, system)}
+        />
+      )}
     </div>
   );
 }
@@ -621,6 +785,13 @@ export function PresetSlotsPanel({
     },
   });
 
+  const { data: printerBindings = [] } = useQuery({
+    queryKey: ['printer-bindings'],
+    queryFn: physicalPrintersAPI.listBindings,
+    enabled: physicalPrinters.length > 0,
+    staleTime: 10_000,
+  });
+
   const { data: presetsPage } = useQuery({
     queryKey: ['presets', { page: 1, size: 100, userId: user?.id }],
     queryFn: () => presetsAPI.list({ page: 1, size: 100, user_id: user?.id }),
@@ -662,11 +833,14 @@ export function PresetSlotsPanel({
 
   const printerProfileNameById = useMemo(() => {
     const map = new Map<number, string>();
+    for (const profile of ownedProfiles ?? []) {
+      map.set(profile.id, profile.name);
+    }
     for (const profile of printerProfiles ?? []) {
       map.set(profile.id, profile.name);
     }
     return map;
-  }, [printerProfiles]);
+  }, [ownedProfiles, printerProfiles]);
 
   const materialSections = useMemo(
     () => physicalPrinters.flatMap((printer) =>
@@ -758,26 +932,37 @@ export function PresetSlotsPanel({
         {addingSystem && (
           <NewSystemCard
             printers={freePrinters}
+            bindings={printerBindings}
+            printerProfileNameById={printerProfileNameById}
             spoolCompatBaseUrl={spoolCompatBaseUrl}
             onDone={handleSystemAdded}
           />
         )}
-        {materialSections.map(({ printer, system }) => (
-          <MaterialSystemSection
-            key={system.id}
-            printer={printer}
-            system={system}
-            presetsSeedMap={presetsMap}
-            spools={spools}
-            spoolCompatBaseUrl={spoolCompatBaseUrl}
-            printerProfileName={printer.printer_profile_ids
-              .map((profileId) => printerProfileNameById.get(profileId))
-              .filter((name): name is string => name != null)
-              .join(', ') || null}
-            nozzleHrc={nozzleHrcByPrinterId.get(printer.id) ?? null}
-            onGateClick={handleGateClick}
-          />
-        ))}
+        <div className="grid gap-4 xl:grid-cols-2">
+          {materialSections.map(({ printer, system }) => {
+            const activeSlotCount = system.slots.filter((slot) => slot.active).length;
+            return (
+              <div
+                key={system.id}
+                className={activeSlotCount > 4 ? 'xl:col-span-2' : undefined}
+              >
+                <MaterialSystemSection
+                  printer={printer}
+                  system={system}
+                  presetsSeedMap={presetsMap}
+                  spools={spools}
+                  spoolCompatBaseUrl={spoolCompatBaseUrl}
+                  printerProfileName={printer.printer_profile_ids
+                    .map((profileId) => printerProfileNameById.get(profileId))
+                    .filter((name): name is string => name != null)
+                    .join(', ') || null}
+                  nozzleHrc={nozzleHrcByPrinterId.get(printer.id) ?? null}
+                  onGateClick={handleGateClick}
+                />
+              </div>
+            );
+          })}
+        </div>
       </div>
 
       {modalState.printer && modalState.system && modalState.slot && (

@@ -39,6 +39,7 @@ export function AddPhysicalPrinterModal({
   const [name, setName] = useState(initialName);
   // Dropdown carries a plain value, so 0 stands for "model not chosen".
   const [printerId, setPrinterId] = useState<number>(initialPrinterId ?? 0);
+  const [observedProfileIds, setObservedProfileIds] = useState<number[]>([]);
   const [search, setSearch] = useState('');
   const [error, setError] = useState<string | null>(null);
   const debouncedSearch = useDebounce(search, 250);
@@ -68,7 +69,8 @@ export function AddPhysicalPrinterModal({
       physicalPrintersAPI.create({
         name: name.trim(),
         printer_id: printerId || null,
-        printer_profile_ids: initialProfileIds,
+        printer_profile_ids:
+          initialProfileIds.length > 0 ? initialProfileIds : observedProfileIds,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['physical-printers'] });
@@ -120,6 +122,9 @@ export function AddPhysicalPrinterModal({
                       onClick={() => {
                         setName(candidate.model);
                         setPrinterId(candidate.printer_id ?? 0);
+                        setObservedProfileIds(
+                          candidate.printer_profile_id ? [candidate.printer_profile_id] : [],
+                        );
                       }}
                       className="rounded-full border border-purple-400/30 bg-purple-500/15 px-2.5 py-1 text-xs text-purple-100 transition-colors hover:bg-purple-500/25"
                     >
@@ -147,7 +152,10 @@ export function AddPhysicalPrinterModal({
               <div className="mt-1">
                 <Dropdown
                   value={printerId}
-                  onChange={(value) => setPrinterId(Number(value))}
+                  onChange={(value) => {
+                    setPrinterId(Number(value));
+                    setObservedProfileIds([]);
+                  }}
                   options={modelOptions}
                   placeholder={t('addPrinter.modelPlaceholder')}
                   filterable

@@ -1,0 +1,36 @@
+name: Orca catalog source freshness
+
+on:
+  schedule:
+    - cron: "23 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - name: Compare bundled profiles with OrcaSlicer
+        id: freshness
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -o pipefail
+          python scripts/check_orca_catalog_source.py --json | tee orca-catalog-freshness.json
+      - name: Write summary
+        if: always()
+        run: |
+          echo '## Orca catalog source' >> "$GITHUB_STEP_SUMMARY"
+          echo '```json' >> "$GITHUB_STEP_SUMMARY"
+          cat orca-catalog-freshness.json >> "$GITHUB_STEP_SUMMARY" || true
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+      - name: Fail when update is required
+        if: steps.freshness.outcome != 'success'
+        run: exit 1

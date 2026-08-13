@@ -1,6 +1,9 @@
 """Tests for the OrcaSlicer printer-connection observation staging (stage A)."""
 
+import hashlib
+
 import pytest
+from httpx import AsyncClient
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -10,6 +13,7 @@ from app.models.user import User
 from app.schemas.printer_connection_observation import PrinterConnectionObservationIn
 from app.services.printer_connection_observation_service import (
     _sanitize_host,
+    observed_endpoint,
     record_observations,
 )
 
@@ -46,7 +50,9 @@ async def test_unmatched_observation_is_accepted_and_stored(db_session: AsyncSes
     assert (accepted, matched, unmatched) == (1, 0, 1)
     row = (await db_session.execute(select(OrcaPrinterConnectionObservation))).scalar_one()
     assert row.matched_printer_profile_id is None
-    assert row.print_host == "http://192.168.1.21:7125"
+    assert row.print_host is None
+    assert row.endpoint_ciphertext and row.endpoint_ciphertext.startswith("fh1:")
+    assert observed_endpoint(row) == "http://192.168.1.21:7125"
     assert row.first_seen_at is not None
 
 
@@ -55,12 +61,258 @@ async def test_matched_by_exact_settings_id(db_session: AsyncSession, auth_user:
     profile = await _make_profile(db_session, auth_user, "a", "Voron 0.4")
     _, matched, _ = await record_observations(
         db_session, auth_user.id, "inst-1",
-        [_obs(printer_settings_id="Voron 0.4", preset_name="My Voron",
+        [_obs(printer_settings_id="Voron 0.4", preset_name="Voron a",
               print_host="192.168.1.21", host_type="moonraker")],
     )
     assert matched == 1
     row = (await db_session.execute(select(OrcaPrinterConnectionObservation))).scalar_one()
     assert row.matched_printer_profile_id == profile.id
+
+
+@pytest.mark.asyncio
+async def test_same_settings_id_uses_the_named_user_profile(
+    db_session: AsyncSession, auth_user: User
+):
+    workshop = await _make_profile(db_session, auth_user, "workshop", "shared-id")
+    await _make_profile(db_session, auth_user, "home", "shared-id")
+
+    _, matched, unmatched = await record_observations(
+        db_session,
+        auth_user.id,
+        "inst-1",
+        [_obs(printer_settings_id="shared-id", preset_name="Voron workshop")],
+    )
+
+    assert (matched, unmatched) == (1, 0)
+    row = (await db_session.execute(select(OrcaPrinterConnectionObservation))).scalar_one()
+    assert row.matched_printer_profile_id == workshop.id
+
+
+@pytest.mark.asyncio
+async def test_shared_setting_id_does_not_match_a_differently_named_user_profile(
+    db_session: AsyncSession, auth_user: User
+):
+    existing = await _make_profile(db_session, auth_user, "workshop", "shared-id")
+
+    accepted, matched, unmatched = await record_observations(
+        db_session,
+        auth_user.id,
+        "inst-1",
+        [_obs(printer_settings_id="shared-id", preset_name="Office A1 mini")],
+    )
+
+    assert (accepted, matched, unmatched) == (1, 0, 1)
+    row = (await db_session.execute(select(OrcaPrinterConnectionObservation))).scalar_one()
+    assert row.matched_printer_profile_id is None
+    assert row.matched_printer_profile_id != existing.id
+
+
+@pytest.mark.asyncio
+async def test_stock_observation_matches_global_official_profile(
+    db_session: AsyncSession, auth_user: User
+):
+    profile = PrinterProfile(
+        owner_user_id=None,
+        name="Bambu Lab P2S 0.4 nozzle",
+        slug="bambu-lab-p2s-04-nozzle",
+        setting_id="BBL-P2S-0.4",
+        source="system",
+        is_official=True,
+        active=True,
+        extra_metadata={"printer_model": "Bambu Lab P2S"},
+    )
+    db_session.add(profile)
+    await db_session.commit()
+    await db_session.refresh(profile)
+
+    _, matched, unmatched = await record_observations(
+        db_session,
+        auth_user.id,
+        "inst-1",
+        [
+            _obs(
+                printer_settings_id="BBL-P2S-0.4",
+                preset_name="Bambu Lab P2S 0.4 nozzle",
+                printer_model="Bambu Lab P2S",
+                is_system=True,
+                is_current=True,
+            )
+        ],
+    )
+
+    assert (matched, unmatched) == (1, 0)
+    row = (await db_session.execute(select(OrcaPrinterConnectionObservation))).scalar_one()
+    assert row.matched_printer_profile_id == profile.id
+
+
+@pytest.mark.asyncio
+async def test_connection_only_user_child_matches_its_official_parent(
+    db_session: AsyncSession, auth_user: User
+):
+    parent = PrinterProfile(
+        owner_user_id=None,
+        name="Voron 2.4 350 0.4 nozzle",
+        slug="voron-2-4-350-04-connection-parent",
+        vendor="Voron",
+        source="system",
+        is_official=True,
+        active=True,
+        extra_metadata={"orca_vendor_id": "Voron"},
+    )
+    db_session.add(parent)
+    await db_session.commit()
+    await db_session.refresh(parent)
+
+    _, matched, unmatched = await record_observations(
+        db_session,
+        auth_user.id,
+        "inst-1",
+        [
+            _obs(
+                preset_name="Workshop Voron",
+                printer_settings_id="Workshop Voron",
+                inherits=parent.name,
+                vendor_id="Voron",
+                print_host="192.168.1.21:7125",
+                host_type="moonraker",
+                is_system=False,
+                has_technical_changes=False,
+            )
+        ],
+    )
+
+    assert (matched, unmatched) == (1, 0)
+    row = (await db_session.execute(select(OrcaPrinterConnectionObservation))).scalar_one()
+    assert row.matched_printer_profile_id == parent.id
+    assert row.sanitized_payload["has_technical_changes"] is False
+
+
+@pytest.mark.asyncio
+async def test_ambiguous_owned_parents_do_not_fall_back_to_official(
+    db_session: AsyncSession, auth_user: User
+):
+    parent_name = "Shared workshop machine"
+    profiles = [
+        PrinterProfile(
+            owner_user_id=auth_user.id,
+            name=parent_name,
+            slug=f"shared-workshop-owned-{index}",
+            active=True,
+        )
+        for index in range(2)
+    ]
+    profiles.append(
+        PrinterProfile(
+            owner_user_id=None,
+            name=parent_name,
+            slug="shared-workshop-official",
+            source="system",
+            is_official=True,
+            active=True,
+            extra_metadata={"orca_vendor_id": "VendorA"},
+        )
+    )
+    db_session.add_all(profiles)
+    await db_session.commit()
+
+    _, matched, unmatched = await record_observations(
+        db_session,
+        auth_user.id,
+        "inst-1",
+        [
+            _obs(
+                preset_name="Connected child",
+                inherits=parent_name,
+                vendor_id="VendorA",
+                has_technical_changes=False,
+            )
+        ],
+    )
+
+    assert (matched, unmatched) == (0, 1)
+
+
+@pytest.mark.asyncio
+async def test_connection_parent_never_crosses_vendor_boundary(
+    db_session: AsyncSession, auth_user: User
+):
+    parent = PrinterProfile(
+        owner_user_id=None,
+        name="Shared machine name",
+        slug="shared-machine-vendor-a",
+        source="system",
+        is_official=True,
+        active=True,
+        extra_metadata={"orca_vendor_id": "VendorA"},
+    )
+    db_session.add(parent)
+    await db_session.commit()
+
+    _, matched, unmatched = await record_observations(
+        db_session,
+        auth_user.id,
+        "inst-1",
+        [
+            _obs(
+                preset_name="Connected child",
+                inherits=parent.name,
+                vendor_id="VendorB",
+                has_technical_changes=False,
+            )
+        ],
+    )
+
+    assert (matched, unmatched) == (0, 1)
+
+
+@pytest.mark.asyncio
+async def test_current_and_visible_profile_state_is_replaced_within_one_orca_installation(
+    db_session: AsyncSession, auth_user: User
+):
+    await record_observations(
+        db_session,
+        auth_user.id,
+        "inst-1",
+        [
+            _obs(
+                preset_name="First",
+                is_system=True,
+                is_visible=True,
+                is_current=True,
+            )
+        ],
+    )
+    await record_observations(
+        db_session,
+        auth_user.id,
+        "inst-1",
+        [
+            _obs(
+                preset_name="Second",
+                is_system=True,
+                is_visible=True,
+                is_current=True,
+            )
+        ],
+    )
+
+    rows = list(
+        (
+            await db_session.execute(
+                select(OrcaPrinterConnectionObservation).order_by(
+                    OrcaPrinterConnectionObservation.id
+                )
+            )
+        ).scalars()
+    )
+    assert [bool((row.sanitized_payload or {}).get("is_current")) for row in rows] == [
+        False,
+        True,
+    ]
+    assert [bool((row.sanitized_payload or {}).get("is_visible")) for row in rows] == [
+        False,
+        True,
+    ]
 
 
 @pytest.mark.asyncio
@@ -109,4 +361,37 @@ async def test_stored_host_has_no_credentials(db_session: AsyncSession, auth_use
     row = (await db_session.execute(select(OrcaPrinterConnectionObservation))).scalar_one()
     assert "secret" not in (row.print_host or "")
     assert "secret" not in str(row.sanitized_payload)
-    assert row.print_host == "http://192.168.1.21:990"
+    assert "192.168.1.21" not in (row.endpoint_ciphertext or "")
+    assert row.endpoint_fingerprint != hashlib.sha256(
+        b"moonraker|http://192.168.1.21:990"
+    ).hexdigest()
+    assert observed_endpoint(row) == "http://192.168.1.21:990"
+
+
+@pytest.mark.asyncio
+async def test_observation_endpoint_respects_disabled_printer_import(
+    auth_client: AsyncClient,
+    db_session: AsyncSession,
+    auth_user: User,
+):
+    auth_user.allow_printer_profiles_import = False
+    await db_session.commit()
+
+    response = await auth_client.post(
+        "/api/v1/orcaslicer/printer-connections/observe",
+        json={
+            "source_instance_id": "disabled-import-instance",
+            "observations": [
+                {
+                    "preset_name": "Bambu Lab P2S 0.4 nozzle",
+                    "printer_model": "Bambu Lab P2S",
+                    "is_system": True,
+                    "is_current": True,
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"]["code"] == "ERR_IMPORT_PRINTER_DISABLED"
+    assert await _count(db_session) == 0

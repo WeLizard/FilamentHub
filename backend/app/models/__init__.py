@@ -50,6 +50,7 @@ from app.models.notification import Notification, NotificationType
 from app.models.notification_campaign import NotificationCampaign, NotificationCampaignRecipient
 from app.models.octoprint_bridge import OctoPrintBridgeConnection, OctoPrintBridgeEvent
 from app.models.orca_printer_connection_observation import OrcaPrinterConnectionObservation
+from app.models.orca_profile_sync import OrcaProfileBinding, OrcaProfileSyncScope
 from app.models.orca_schema_observation import OrcaSchemaObservation
 from app.models.orca_slice_report import OrcaSliceReport
 from app.models.organization import (
@@ -64,12 +65,18 @@ from app.models.preset_gate_state import PresetGateState, PresetGateStateSource
 from app.models.preset_printer import PresetPrinter
 from app.models.preset_usage_event import PresetUsageEvent, PresetUsageEventType
 from app.models.preset_version import PresetVersion, PresetVersionSource
+from app.models.print_job import PrintJob, PrintJobEvent, PrintJobMaterial, PrintJobStatus
 from app.models.print_problem import PrintProblem, PrintProblemSeverity
 from app.models.print_profile import PrintProfile
 from app.models.print_profile_configuration import PrintProfileConfigurationLink
 from app.models.print_profile_filament import PrintProfileFilament
 from app.models.print_profile_printer import PrintProfilePrinter
 from app.models.printer import Printer
+from app.models.printer_bridge_credential import PrinterBridgeCredential
+from app.models.printer_bridge_observation import (
+    MaterialSlotObservation,
+    PhysicalPrinterStatusObservation,
+)
 from app.models.printer_connection_binding import PrinterConnectionBinding
 from app.models.printer_profile import PrinterProfile
 from app.models.printer_request import PrinterRequest, PrinterRequestStatus
@@ -153,6 +160,9 @@ __all__ = [
     "MaterialSlot",
     "MaterialSystem",
     "PhysicalPrinterConnector",
+    "MaterialSlotObservation",
+    "PhysicalPrinterStatusObservation",
+    "PrinterBridgeCredential",
     "Notification",
     "NotificationCampaign",
     "NotificationCampaignRecipient",
@@ -160,6 +170,8 @@ __all__ = [
     "OctoPrintBridgeConnection",
     "OctoPrintBridgeEvent",
     "OrcaPrinterConnectionObservation",
+    "OrcaProfileBinding",
+    "OrcaProfileSyncScope",
     "OrcaSchemaObservation",
     "OrcaSliceReport",
     "Organization",
@@ -183,6 +195,10 @@ __all__ = [
     "PrinterProfile",
     "PrintProblem",
     "PrintProblemSeverity",
+    "PrintJob",
+    "PrintJobEvent",
+    "PrintJobMaterial",
+    "PrintJobStatus",
     "UserPrinterProfileLink",
     "PrintProfile",
     "PrintProfileConfigurationLink",

@@ -114,6 +114,31 @@ async def test_adapter_touch_persists_after_request(client: AsyncClient, db_sess
 
 
 @pytest.mark.asyncio
+async def test_one_assigned_gate_does_not_claim_the_complete_hh_topology(
+    client: AsyncClient, db_session: AsyncSession
+):
+    user, spool, device = await _seed_spool_context(db_session)
+    db_session.add(
+        PresetGateState(
+            user_id=user.id,
+            device_id=device.id,
+            gate_index=0,
+            spool_id=spool.id,
+            source=PresetGateStateSource.provider_report,
+            source_ts=datetime.now(timezone.utc),
+            is_active=True,
+        )
+    )
+    await db_session.commit()
+
+    response = await client.get(f"/api/v1/spool_compat/{device.api_key}/v1/spool")
+
+    assert response.status_code == 200
+    await db_session.refresh(device)
+    assert device.gate_count is None
+
+
+@pytest.mark.asyncio
 async def test_spool_compat_sync_legacy_deprecated(client: AsyncClient):
     """Legacy /sync endpoint should remain available but marked deprecated."""
     response = await client.get("/api/v1/spool_compat/sync")
@@ -240,6 +265,49 @@ async def test_spool_compat_v1_list_get_use_spool(client: AsyncClient, db_sessio
     assert use_response.status_code == 200
     used_weight = use_response.json()["used_weight"]
     assert used_weight == pytest.approx(150.0, rel=1e-6)
+
+
+@pytest.mark.asyncio
+async def test_spool_compat_hides_empty_spools_from_printer_inventory(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    """A consumed spool is history, not material Happy Hare can load."""
+    user, available_spool, device = await _seed_spool_context(db_session)
+    empty_spool = UserSpool(
+        user_id=user.id,
+        filament_id=available_spool.filament_id,
+        initial_weight_g=1000,
+        used_weight_g=1000,
+        state=UserSpoolState.empty,
+        source="manual",
+    )
+    archived_spool = UserSpool(
+        user_id=user.id,
+        filament_id=available_spool.filament_id,
+        initial_weight_g=1000,
+        used_weight_g=250,
+        state=UserSpoolState.archived,
+        source="manual",
+    )
+    db_session.add_all([empty_spool, archived_spool])
+    await db_session.commit()
+    await db_session.refresh(empty_spool)
+    await db_session.refresh(archived_spool)
+    endpoint = f"/api/v1/spool_compat/{device.api_key}/v1/spool"
+
+    available = await client.get(endpoint)
+    history = await client.get(endpoint, params={"allow_archived": True})
+
+    assert available.status_code == 200
+    assert available.headers["x-total-count"] == "1"
+    assert [item["id"] for item in available.json()] == [available_spool.id]
+
+    assert history.status_code == 200
+    by_id = {item["id"]: item for item in history.json()}
+    assert by_id[available_spool.id]["archived"] is False
+    assert by_id[empty_spool.id]["archived"] is True
+    assert by_id[archived_spool.id]["archived"] is True
 
 
 @pytest.mark.asyncio

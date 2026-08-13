@@ -7,7 +7,7 @@ configuration. Stage B reads these to build PhysicalPrinter/ConnectionBinding.
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Index, Integer, String
+from sqlalchemy import JSON, DateTime, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
 
@@ -32,6 +32,9 @@ class OrcaPrinterConnectionObservation(Base):
     )
     # Stable identity of the plugin install, when available; nullable until we have one.
     source_instance_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # Stable local profile identity. Unlike an IP/name, this survives endpoint
+    # edits and never contains LAN addressing or credentials.
+    connection_ref: Mapped[str | None] = mapped_column(String(120), nullable=True)
 
     printer_settings_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
     preset_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
@@ -39,15 +42,18 @@ class OrcaPrinterConnectionObservation(Base):
     printer_model: Mapped[str | None] = mapped_column(String(200), nullable=True)
     # Raw observed endpoint after credential stripping. Normalization happens in stage B.
     print_host: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    endpoint_ciphertext: Mapped[str | None] = mapped_column(Text, nullable=True)
+    endpoint_fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True)
     host_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
     payload_version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
 
-    # Content dedup hash only (owner/source/source_instance/printer_settings_id/
-    # host_type/print_host). NOT a device fingerprint or a PhysicalPrinter identity.
+    # Content dedup hash over the source installation, preset identity/settings
+    # fingerprint and endpoint. NOT a PhysicalPrinter identity.
     observation_hash: Mapped[str] = mapped_column(String(64))
 
-    # Match by exact printer_settings_id in the owner scope; nullable when unmatched.
+    # Conservative match using all supplied evidence; nullable when ambiguous
+    # or when any identity evidence conflicts.
     matched_printer_profile_id: Mapped[int | None] = mapped_column(
         ForeignKey("printer_profiles.id", ondelete="SET NULL"), nullable=True
     )

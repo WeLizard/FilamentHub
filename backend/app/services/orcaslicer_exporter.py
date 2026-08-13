@@ -2,6 +2,7 @@
 
 import json
 import logging
+from copy import deepcopy
 from typing import Any
 
 from sqlalchemy import select
@@ -29,19 +30,9 @@ from app.services.profile_validator import (
 logger = logging.getLogger(__name__)
 
 
-# OrcaSlicer stores most preset settings as single-item string arrays,
-# but a small set of metadata keys must remain scalar values.
-ORCASLICER_SCALAR_SETTING_KEYS = {
-    "inherits",
-    "compatible_printers_condition",
-    "compatible_prints_condition",
-}
-
 # Identity / profile-header fields set authoritatively or deliberately reserved
 # by FilamentHub (name, type, ids…). They must never be re-processed by the generic
-# orcaslicer_settings loop below: that loop wraps scalars into OrcaSlicer's
-# string-array convention, which would turn the scalar string `name` into a
-# one-element list and make the export fail the plugin's non-empty-*string* check.
+# orcaslicer_settings loop below.
 IDENTITY_KEYS = frozenset({
     "name", "type", "version", "from", "instantiation",
     "filament_settings_id", "setting_id", "filament_id",
@@ -125,6 +116,77 @@ setting_id = {setting_id}
 base_id = {base_id}
 updated_time = {updated_time}
 """
+
+
+def draft_preset_to_orcaslicer_json(preset: Preset) -> dict[str, Any]:
+    """Export an owner's unlinked draft without inventing catalog material data.
+
+    Orca is the authority for the raw settings captured in a draft. Keep every
+    known and unknown value in its original JSON shape, then refresh only the
+    managed identity and fill structured fields that may have been edited on the
+    site. This lets private drafts participate in the same global round trip as
+    active presets without requiring a Filament row first.
+    """
+    profile = (
+        deepcopy(preset.orcaslicer_settings)
+        if isinstance(preset.orcaslicer_settings, dict)
+        else {}
+    )
+    name = preset.name or f"FilamentHub preset {preset.id}"
+    profile.update(
+        {
+            "version": str(profile.get("version") or "2.3.0.0"),
+            "type": "filament",
+            "name": name,
+            "from": "user",
+            "instantiation": "true",
+            "filament_settings_id": [name],
+            "setting_id": f"FHUB{preset.id:06d}",
+            "fhub_id": str(preset.id),
+            "fhub_source": "filamenthub",
+        }
+    )
+
+    def set_array(key: str, value: Any) -> None:
+        if value is not None and key not in profile:
+            profile[key] = [str(value)]
+
+    if preset.extruder_temp is not None:
+        nozzle = format_orca_number(preset.extruder_temp)
+        set_array("nozzle_temperature", nozzle)
+        set_array("nozzle_temperature_initial_layer", nozzle)
+    if preset.bed_temp is not None:
+        bed = format_orca_number(preset.bed_temp)
+        for key in (
+            "hot_plate_temp",
+            "hot_plate_temp_initial_layer",
+            "cool_plate_temp",
+            "cool_plate_temp_initial_layer",
+            "eng_plate_temp",
+            "eng_plate_temp_initial_layer",
+            "textured_plate_temp",
+            "textured_plate_temp_initial_layer",
+            "supertack_plate_temp",
+            "supertack_plate_temp_initial_layer",
+            "textured_cool_plate_temp",
+            "textured_cool_plate_temp_initial_layer",
+        ):
+            set_array(key, bed)
+    if preset.fan_speed is not None:
+        set_array("fan_min_speed", max(0, min(100, preset.fan_speed)))
+    if preset.retraction_length is not None:
+        set_array(
+            "filament_retraction_length",
+            format_orca_number(preset.retraction_length),
+        )
+    if preset.retraction_speed is not None:
+        set_array(
+            "filament_retraction_speed",
+            format_orca_number(preset.retraction_speed),
+        )
+    if preset.flow_rate is not None:
+        set_array("filament_flow_ratio", format_orca_flow_ratio(preset.flow_rate))
+    return profile
 
 
 def _escape_condition_value(value: str) -> str:
@@ -364,27 +426,13 @@ async def preset_to_orcaslicer_json(
             if key in PROCESS_SCOPE_KEYS:
                 logger.debug(f"Dropping process-scope key '{key}' from filament export of preset {preset.id}")
                 continue
-            # Пропускаем только если значение None или пустое
-            if value is not None:
-                try:
-                    if key in ORCASLICER_SCALAR_SETTING_KEYS:
-                        if isinstance(value, list):
-                            profile[key] = str(value[0]) if value else ""
-                        else:
-                            profile[key] = str(value)
-                    # Конвертируем значение в массив строк если это еще не массив
-                    elif isinstance(value, list):
-                        # Уже массив, проверяем что все элементы - строки
-                        profile[key] = [str(v) for v in value]
-                    else:
-                        # Одиночное значение, конвертируем в массив строк (стандарт OrcaSlicer)
-                        profile[key] = to_array(value)
-                except Exception as e:
-                    # Логируем ошибку, но продолжаем обработку остальных ключей
-                    # Не критично если какой-то параметр не удалось экспортировать
-                    logger.warning(f"Error exporting key '{key}' from orcaslicer_settings: {str(e)}")
-                    # Пропускаем проблемный ключ
-                    continue
+            # The raw Orca object is the round-trip authority for settings that
+            # were not deliberately rewritten above. In particular, a field that
+            # arrived before FilamentHub learned its schema must retain its exact
+            # JSON representation (scalar/vector/object/null). The web editor
+            # already serialises fields it actually changes into Orca's expected
+            # representation, so a generic exporter must not guess and reshape it.
+            profile[key] = deepcopy(value)
 
     # Material identity from FilamentHub is authoritative over imported raw
     # metadata. Preset values remain represented in both structured columns and
@@ -393,7 +441,14 @@ async def preset_to_orcaslicer_json(
     if hasattr(filament, 'brand') and filament.brand is not None:
         profile["filament_vendor"] = to_array(filament.brand.name)
     if filament.color_hex:
+        # Orca keeps the preset colour under two keys depending on the code
+        # path. A reverse-synced blob may contain both with different values;
+        # managed profiles must project the one representative catalogue
+        # colour consistently. The full multi-colour palette remains in
+        # Filament.visual_settings and is not flattened into Orca's per-tool
+        # colour array.
         profile["default_filament_colour"] = [filament.color_hex]
+        profile["filament_colour"] = [filament.color_hex]
 
     # Совместимые принтеры. Приоритет — явно заданный library scope пользователя:
     # targeted/compatible пресет сужается до его собственных machine-профилей

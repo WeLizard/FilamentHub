@@ -19,6 +19,7 @@ export const ExportPrinterProfilesButton: React.FC<ExportPrinterProfilesButtonPr
       translationPrefix="exportPrinterProfiles"
       successLabel="done"
       disabled={isExportDisabled}
+      hideWhenUnavailable
       errorContext="Printer profiles"
       onExportComplete={onExportComplete}
     />

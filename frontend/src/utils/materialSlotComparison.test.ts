@@ -18,6 +18,7 @@ function slot(
     kind: 'slot',
     active: true,
     assignment,
+    observation: null,
     legacy_projection: observation,
   };
 }
@@ -209,5 +210,28 @@ describe('compareMaterialSlot', () => {
 
     expect(result.observationState).toBe('none');
     expect(result.conflict).toBeNull();
+  });
+
+  it('uses normalized Bambu observations without assigning a physical spool', () => {
+    const target = slot(null, null);
+    target.observation = {
+      source: 'bambu_lan_mqtt',
+      observed_at: '2026-07-30T00:01:00Z',
+      received_at: '2026-07-30T00:01:01Z',
+      present: true,
+      active_feed: true,
+      material: 'PLA',
+      color_hex: 'FF6A13',
+      remaining_percent: 65,
+      remaining_grams: 428,
+    };
+
+    const result = compareMaterialSlot(target, null, null, NOW);
+
+    expect(result.observationState).toBe('loaded');
+    expect(result.observedMaterial).toBe('PLA');
+    expect(result.observedColorHex).toBe('FF6A13');
+    expect(result.desiredSpoolId).toBeNull();
+    expect(result.conflict).toBe('observed_loaded_without_spool');
   });
 });

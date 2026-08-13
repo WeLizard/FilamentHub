@@ -52,7 +52,8 @@ Python on_message  ──GET /api/v1/presets/{id}/export/orcaslicer.json (Bearer
   dialog, which keeps us clear of the existing `useOrcaSlicerNotifications`
   message listener.
 
-**shell → iframe** (toolbar navigation): the shell renders an
+**shell → iframe** (toolbar navigation, session restore and operation results):
+the shell renders an
 Orca-themed toolbar (host `--orca-*` CSS variables — same role as the native
 Catalog/Profile/Wiki buttons of the C++ fork panel) and posts
 
@@ -62,7 +63,9 @@ Catalog/Profile/Wiki buttons of the C++ fork panel) and posts
 
 into the iframe (targetOrigin = our site). The SPA subscribes via
 `subscribeToPluginNavigation()` in `utils/pluginBridge.ts` and switches routes
-without reloading.
+without reloading. The same origin/source-checked direction carries
+`auth-restore`, sync/recovery results and parsed slice data. It is therefore a
+deliberately bounded two-way bridge, not the old one-way MVP.
 
 **Session persistence + toolbar status** — the iframe's storage is
 partitioned (dies with the window), so the plugin plays the fork's AppConfig
@@ -86,10 +89,34 @@ Account access/refresh credentials are never stored there. The label comes
 ready-made (i18n happens in the SPA) from the same `/auth/me/presets-stats`
 endpoint the fork's panel used.
 
+### Bambu LAN bridge
+
+The Bambu adapter is a separate, narrower trust boundary from preset sync:
+
+1. the authenticated embed requests a ten-minute, single-use pairing code;
+2. the shell opens the plugin-owned local form, where the user enters the LAN
+   address and access code (the iframe never receives either value);
+3. Python verifies that the address resolves only to a private/link-local host
+   and confirms MQTT-over-TLS access to the printer on port 8883;
+4. after the printer answers, the pairing code is exchanged for a revocable
+   `fhpb_...` bridge token bound to that physical printer, material system and
+   plugin instance;
+5. while OrcaSlicer is running, the plugin posts only normalized print/AMS
+   observations using that bridge token. It does not depend on the 30-minute
+   account plugin capability remaining alive.
+
+The LAN address, Bambu serial and access code stay in `.fh_bambu.json` in the
+private plugin storage. The server receives none of them and stores only a
+SHA-256 digest of the FilamentHub bridge token. Removing the connection revokes
+the server token before the local secret is deleted. This first slice is
+read-only: it does not expose pause, temperature, AMS movement or other remote
+printer commands.
+
 ### Frontend embed route (in this repo)
 
-- `App.tsx` — routes `/embed` and `/embed/catalog` render `<CatalogPage />` in a
-  chrome-less `EmbedShell` (no `<Layout>` header/footer).
+- `App.tsx` — routes `/embed` and `/embed/catalog` render the ordinary catalog
+  inside `Layout`; embed detection makes that shared layout chrome-less rather
+  than maintaining a second `EmbedShell`.
 - `utils/pluginBridge.ts` — `isPluginEmbed()` (route-based, sticky for the iframe
   session via `sessionStorage`) and the profile/auth bridge messages.
 - `CatalogPage.tsx` — the normal save action becomes **"Import into OrcaSlicer"**
@@ -97,9 +124,9 @@ endpoint the fork's panel used.
   of using a second direct-import path.
 - `Layout.tsx` — also hides header/footer in embed mode, so navigating to a
   material detail page inside the iframe stays chrome-less.
-- The existing fork bridge (`window.filamenthub` / `window.wx`,
-  `Export*Button`, `useOrcaSlicerNotifications`) is **untouched** — this is a
-  parallel path.
+- The legacy-compatible browser bridge (`window.filamenthub` / `window.wx`,
+  `Export*Button`, `useOrcaSlicerNotifications`) remains for rolling
+  compatibility. It does not revive or authorize the retired C++ fork.
 
 ---
 
@@ -122,6 +149,25 @@ endpoint the fork's panel used.
 
 Zero dependencies (stdlib `urllib`/`json`/`ssl`/`threading`). `network` is the
 forward-looking outbound-HTTPS allow-list we're proposing upstream.
+
+### Current host surfaces
+
+The plugin feature-detects the evolving host API instead of assuming every
+OrcaSlicer build exposes the same capabilities:
+
+- `orca.pages.PagesPluginCapabilityBase` provides the native page when present;
+- `orca.script.ScriptPluginCapabilityBase` remains the compatible window
+  fallback;
+- `orca.slicing.SlicingPipelineCapabilityBase` reports and annotates completed
+  G-code at `psGCodePostProcess` when the host exposes it;
+- `orca.host.ui`, `orca.host.preset_bundle()`, optional
+  `orca.host.app_language()` and optional `orca.host.plugin.storage()` provide
+  UI, read-only preset observations, locale and private plugin state.
+
+Preset installation is not a host capability in the reviewed API snapshot.
+Managed filament/machine/process files are therefore written atomically below
+the plugin-owned user preset folder and become selectable after OrcaSlicer
+reload/restart. The plugin never edits an unmanaged profile.
 
 The shell accepts messages only from `https://filamenthub.ru` and only from its
 catalog iframe. HTTP responses are bounded to 5 MiB; preset/state writes use

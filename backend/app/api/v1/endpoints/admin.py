@@ -1,5 +1,6 @@
 """Admin endpoints for moderation and verification."""
 
+import json
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
@@ -2240,14 +2241,29 @@ async def get_catalog_source_orca_info(
     bundle_exists = _ORCA_BUNDLE_PATH.exists()
     bundle_size_mb: float | None = None
     bundle_vendor_count: int | None = None
+    bundle_source: dict | None = None
     if bundle_exists:
         bundle_size_mb = round(_ORCA_BUNDLE_PATH.stat().st_size / 1024 / 1024, 2)
         import zipfile as _zip
         with _zip.ZipFile(_ORCA_BUNDLE_PATH) as zf:
-            # Vendor manifests are top-level *.json (no slash in name)
-            bundle_vendor_count = sum(
-                1 for n in zf.namelist() if n.endswith(".json") and "/" not in n
-            )
+            bundle_vendor_count = 0
+            for name in zf.namelist():
+                if (
+                    not name.endswith(".json")
+                    or "/" in name
+                    or name == "filamenthub-source.json"
+                ):
+                    continue
+                try:
+                    value = json.loads(zf.read(name))
+                except (UnicodeDecodeError, json.JSONDecodeError):
+                    continue
+                if isinstance(value, dict) and value.get("name") and value.get("version"):
+                    bundle_vendor_count += 1
+            try:
+                bundle_source = json.loads(zf.read("filamenthub-source.json"))
+            except (KeyError, UnicodeDecodeError, json.JSONDecodeError):
+                bundle_source = None
 
     printers_total = await db.scalar(select(func.count(Printer.id)))
     printers_system = await db.scalar(
@@ -2260,6 +2276,7 @@ async def get_catalog_source_orca_info(
             "path": str(_ORCA_BUNDLE_PATH),
             "size_mb": bundle_size_mb,
             "vendor_count": bundle_vendor_count,
+            "source": bundle_source,
         },
         "catalog": {
             "printers_total": printers_total or 0,

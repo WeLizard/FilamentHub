@@ -7,7 +7,11 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.dependencies import get_current_active_user
+from app.core.dependencies import (
+    get_current_active_user,
+    require_material_topology_read,
+    require_material_topology_report,
+)
 from app.core.errors import ERR_DEVICE_NOT_FOUND, raise_error
 from app.db.session import get_db
 from app.models.preset_gate_state import PresetGateStateSource
@@ -20,11 +24,13 @@ from app.schemas.preset_slot_sync import (
     HHSnapshotResponse,
     ManualAssignmentRequest,
     ManualAssignmentResponse,
+    PluginMaterialTopologyContextResponse,
     SlotStateResponse,
     UsageEstimateRequest,
     UsageEstimateResponse,
 )
 from app.services.preset_slot_sync_service import (
+    build_plugin_material_topology_context,
     get_device_by_fingerprint,
     get_gate_states,
     handle_heartbeat,
@@ -37,6 +43,23 @@ router = APIRouter(
     prefix="/orcaslicer/preset-slot-sync",
     tags=["orca-preset-slot-sync"],
 )
+
+
+@router.get(
+    "/plugin-context",
+    response_model=PluginMaterialTopologyContextResponse,
+)
+async def get_plugin_material_topology_context(
+    source_instance_id: Annotated[str, Query(min_length=16, max_length=100)],
+    current_user: Annotated[User, Depends(require_material_topology_read)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> PluginMaterialTopologyContextResponse:
+    """Minimal owned topology for the calling Orca plugin installation."""
+    return await build_plugin_material_topology_context(
+        db,
+        current_user.id,
+        source_instance_id,
+    )
 
 
 @router.post("/device/heartbeat", response_model=HeartbeatResponse)
@@ -60,7 +83,7 @@ async def device_heartbeat(
 @router.post("/hh/snapshot", response_model=HHSnapshotResponse)
 async def hh_snapshot(
     payload: HHSnapshotRequest,
-    current_user: Annotated[User, Depends(get_current_active_user)],
+    current_user: Annotated[User, Depends(require_material_topology_report)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> HHSnapshotResponse:
     """Upload a Happy Hare gate snapshot from OrcaSlicer."""

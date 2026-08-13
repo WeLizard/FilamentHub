@@ -10,6 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.brand import Brand
 from app.models.filament import Filament
 from app.models.octoprint_bridge import OctoPrintBridgeEvent
+from app.models.preset_usage_event import PresetUsageEvent
+from app.models.print_job import PrintJob
 from app.models.user_spool import UserSpool, UserSpoolState
 
 
@@ -198,6 +200,27 @@ async def test_bridge_pair_snapshot_usage_replay_and_revoke(
     assert spool.used_weight_g == pytest.approx(expected_weight)
     events = list((await db_session.execute(select(OctoPrintBridgeEvent))).scalars())
     assert len(events) == 1
+    print_jobs = list((await db_session.execute(select(PrintJob))).scalars())
+    assert len(print_jobs) == 1
+    assert print_jobs[0].status.value == "completed"
+    usage_events = list((await db_session.execute(select(PresetUsageEvent))).scalars())
+    assert len(usage_events) == 1
+    assert usage_events[0].print_job_id == print_jobs[0].id
+
+    # A provider may retry the same physical job under a new transport event id.
+    # Job identity, not only the request id, must prevent a second consumption.
+    second_transport_event = {**usage_payload, "event_id": "print-job-1-terminal-retry"}
+    job_replay = await auth_client.post(
+        "/api/v1/octoprint-bridge/usage",
+        headers=bridge_headers,
+        json=second_transport_event,
+    )
+    assert job_replay.status_code == 200
+    assert job_replay.json()["deduplicated"] is True
+    await db_session.refresh(spool)
+    assert spool.used_weight_g == pytest.approx(expected_weight)
+    usage_events = list((await db_session.execute(select(PresetUsageEvent))).scalars())
+    assert len(usage_events) == 1
 
     revoke_response = await auth_client.delete(
         f"/api/v1/octoprint-bridge/connections/{printer_id}/{system_id}"
