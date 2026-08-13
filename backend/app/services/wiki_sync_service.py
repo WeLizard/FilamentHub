@@ -97,12 +97,19 @@ async def sync_article(
     title = metadata.get("title")
     category_slug = metadata.get("category")
     slug = metadata.get("slug")
+    content_key = metadata.get("content_key") or slug
 
-    if not all([title, category_slug, slug]):
+    if not all([title, category_slug, slug, content_key]):
         return {
             "file": file_path.name,
             "status": "skipped",
             "reason": "missing required metadata (title, category, or slug)"
+        }
+    if not re.fullmatch(r"[a-z0-9-]{1,200}", content_key):
+        return {
+            "file": file_path.name,
+            "status": "skipped",
+            "reason": "content_key must contain only lowercase letters, numbers, and hyphens",
         }
 
     category = await get_or_create_category(db, category_slug)
@@ -126,9 +133,7 @@ async def sync_article(
             "reason": "language must be ru, en, or zh",
         }
 
-    result = await db.execute(
-        select(WikiArticle).where(WikiArticle.slug == slug)
-    )
+    result = await db.execute(select(WikiArticle).where(WikiArticle.slug == slug))
     article = result.scalar_one_or_none()
 
     if article is not None and article.language != language:
@@ -140,6 +145,37 @@ async def sync_article(
                 f"refusing to replace it with '{language}'"
             ),
         }
+
+    identity_article = (
+        await db.execute(
+            select(WikiArticle).where(
+                WikiArticle.content_key == content_key,
+                WikiArticle.language == language,
+            )
+        )
+    ).scalar_one_or_none()
+    if article is None:
+        article = identity_article
+    elif identity_article is not None and identity_article.id != article.id:
+        return {
+            "file": file_path.name,
+            "status": "skipped",
+            "reason": (
+                f"content_key '{content_key}' already belongs to another "
+                f"'{language}' article"
+            ),
+        }
+
+    if article is not None and article.slug != slug:
+        slug_owner = (
+            await db.execute(select(WikiArticle.id).where(WikiArticle.slug == slug))
+        ).scalar_one_or_none()
+        if slug_owner is not None and slug_owner != article.id:
+            return {
+                "file": file_path.name,
+                "status": "skipped",
+                "reason": f"slug '{slug}' already belongs to another article",
+            }
 
     # Parse tags
     tags = metadata.get("tags", [])
@@ -175,11 +211,15 @@ async def sync_article(
                 article.category_id != category.id,
                 article.space_id != space_ids[space_key],
                 article.language != language,
+                article.content_key != content_key,
+                article.slug != slug,
             )
         )
         article.category_id = category.id
         article.space_id = space_ids[space_key]
         article.language = language
+        article.content_key = content_key
+        article.slug = slug
         article.updated_by_id = author_id
         if content_changed:
             await publish_editorial_snapshot(
@@ -201,6 +241,7 @@ async def sync_article(
         article = WikiArticle(
             title=title,
             slug=slug,
+            content_key=content_key,
             summary=summary,
             content=content,
             category_id=category.id,
@@ -255,6 +296,7 @@ def generate_frontmatter(article: "WikiArticle", category_slug: str) -> str:
         f"summary: {json.dumps(article.summary, ensure_ascii=False)}",
         f"category: {category_slug}",
         f"slug: {article.slug}",
+        f"content_key: {article.content_key}",
         f"tags: {tags_str}",
         f"status: {article.status.value}",
         f"space: {article.space.key}",

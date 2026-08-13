@@ -15,11 +15,14 @@ from app.core.errors import (
     ERR_FILE_SAVE_FAILED,
     ERR_INVALID_FILE_PATH,
     ERR_WIKI_MEDIA_NOT_FOUND,
+    ERR_WIKI_MEDIA_IN_USE,
     ERR_WIKI_MEDIA_QUOTA_EXCEEDED,
     raise_error,
 )
 from app.models.user import User, UserRole
+from app.models.wiki_article import WikiArticle
 from app.models.wiki_media import WikiMediaAsset
+from app.models.wiki_revision import WikiRevision
 from app.services.file_service import get_upload_root_dir, normalize_wiki_image_upload
 
 logger = logging.getLogger(__name__)
@@ -151,6 +154,80 @@ async def get_wiki_media_asset(
     if asset is None:
         raise_error(status.HTTP_404_NOT_FOUND, ERR_WIKI_MEDIA_NOT_FOUND)
     return asset
+
+
+async def list_unpublished_user_wiki_media(
+    db: AsyncSession,
+    user_id: int,
+) -> list[WikiMediaAsset]:
+    """List the uploader's reusable private assets, newest first."""
+
+    return list(
+        (
+            await db.execute(
+                select(WikiMediaAsset)
+                .where(
+                    WikiMediaAsset.uploaded_by_id == user_id,
+                    WikiMediaAsset.published.is_(False),
+                )
+                .order_by(WikiMediaAsset.created_at.desc(), WikiMediaAsset.id.desc())
+                .limit(WIKI_MEDIA_MAX_USER_ASSETS)
+            )
+        ).scalars().all()
+    )
+
+
+async def delete_unpublished_wiki_media_asset(
+    db: AsyncSession,
+    *,
+    public_id: str,
+    user: User,
+) -> None:
+    """Delete an unused private upload owned by the current user."""
+
+    asset = (
+        await db.execute(
+            select(WikiMediaAsset)
+            .where(WikiMediaAsset.public_id == public_id)
+            .with_for_update()
+        )
+    ).scalar_one_or_none()
+    if (
+        asset is None
+        or asset.published
+        or asset.uploaded_by_id != user.id
+    ):
+        raise_error(status.HTTP_404_NOT_FOUND, ERR_WIKI_MEDIA_NOT_FOUND)
+
+    reference = f"%{wiki_media_url(public_id)}%"
+    revision_in_use = (
+        await db.execute(
+            select(WikiRevision.id)
+            .where(WikiRevision.content.like(reference))
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    article_in_use = (
+        await db.execute(
+            select(WikiArticle.id)
+            .where(WikiArticle.content.like(reference))
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    if revision_in_use is not None or article_in_use is not None:
+        raise_error(status.HTTP_409_CONFLICT, ERR_WIKI_MEDIA_IN_USE)
+
+    file_path = resolve_wiki_media_path(asset.storage_path)
+    try:
+        file_path.unlink(missing_ok=True)
+    except OSError:
+        logger.warning(
+            "Failed to delete staged Wiki media public_id=%s",
+            public_id,
+            exc_info=True,
+        )
+        raise_error(status.HTTP_500_INTERNAL_SERVER_ERROR, ERR_FILE_SAVE_FAILED)
+    await db.delete(asset)
 
 
 def can_view_wiki_media(asset: WikiMediaAsset, user: User | None) -> bool:

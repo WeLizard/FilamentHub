@@ -56,7 +56,7 @@ describe('WikiGuideImageViewer', () => {
     expect(legendItem).toHaveAttribute('data-active', 'true');
   });
 
-  it('keeps the regular wheel for panning and zooms with a modified wheel gesture', () => {
+  it('keeps regular and browser-reserved wheel gestures for panning and zooms with Alt + wheel', () => {
     const requestAnimationFrame = vi
       .spyOn(window, 'requestAnimationFrame')
       .mockImplementation((callback) => {
@@ -71,6 +71,14 @@ describe('WikiGuideImageViewer', () => {
 
     fireEvent.wheel(scrollArea, {
       ctrlKey: true,
+      deltaY: -100,
+      clientX: 200,
+      clientY: 150,
+    });
+    expect(screen.getByText(/100%/)).toBeInTheDocument();
+
+    fireEvent.wheel(scrollArea, {
+      altKey: true,
       deltaY: -100,
       clientX: 200,
       clientY: 150,
@@ -94,6 +102,12 @@ describe('WikiGuideImageViewer', () => {
     fireEvent.pointerUp(scrollArea, { pointerId: 1 });
     expect(scrollArea).not.toHaveClass('cursor-grabbing');
     requestAnimationFrame.mockRestore();
+  });
+
+  it('disables native image dragging so an enlarged image pans with the pointer', () => {
+    render(<WikiGuideImageViewer image={image} onClose={vi.fn()} />);
+
+    expect(screen.getByRole('img', { name: image.alt })).toHaveAttribute('draggable', 'false');
   });
 
   it('supports pinch zoom for touch screens', () => {

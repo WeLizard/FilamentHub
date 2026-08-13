@@ -39,6 +39,8 @@ export function WikiArticlePage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { user } = useAuth();
+  const languageCode = i18n.resolvedLanguage?.split('-')[0];
+  const currentLanguage = languageCode === 'ru' || languageCode === 'zh' ? languageCode : 'en';
 
   const [article, setArticle] = useState<WikiArticle | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -48,29 +50,75 @@ export function WikiArticlePage() {
 
   // Загружаем статью
   useEffect(() => {
-    loadArticle();
-  }, [slug]);
-
-  const loadArticle = async () => {
     if (!slug) return;
+    let active = true;
 
-    try {
-      setIsLoading(true);
-      setError(null);
+    const loadArticle = async () => {
+      try {
+        setIsLoading(true);
+        setError(null);
 
-      const articleData = await wikiAPI.getArticle(slug);
-      setArticle(articleData);
-    } catch (err: any) {
-      console.error('Failed to load article:', err);
-      if (err.response?.status === 404) {
-        setError(t('wikiArticlePage.notFound'));
-      } else {
-        setError(t('wikiArticlePage.errorLoadFailed'));
+        const articleData = await wikiAPI.getArticle(slug);
+        if (articleData.language !== currentLanguage) {
+          try {
+            const translation = await wikiAPI.getArticleTranslation(slug, currentLanguage);
+            if (active && translation.slug !== slug) {
+              navigate(`/wiki/articles/${translation.slug}${window.location.search}`, { replace: true });
+              return;
+            }
+          } catch (translationError) {
+            const responseStatus = (translationError as AxiosError).response?.status;
+            if (responseStatus === 404) {
+              if (active) setError(t('wikiArticlePage.notFound'));
+              return;
+            }
+            throw translationError;
+          }
+        }
+        if (active) setArticle(articleData);
+      } catch (err) {
+        console.error('Failed to load article:', err);
+        if (!active) return;
+        if ((err as AxiosError).response?.status === 404) {
+          setError(t('wikiArticlePage.notFound'));
+        } else {
+          setError(t('wikiArticlePage.errorLoadFailed'));
+        }
+      } finally {
+        if (active) setIsLoading(false);
       }
-    } finally {
-      setIsLoading(false);
+    };
+
+    void loadArticle();
+    return () => {
+      active = false;
+    };
+  }, [currentLanguage, navigate, slug, t]);
+
+  useEffect(() => {
+    if (!article || article.slug !== slug || !article.published) return;
+    const storageKey = `filamenthub:wiki-view:${article.content_key}`;
+    try {
+      if (window.sessionStorage.getItem(storageKey)) return;
+      window.sessionStorage.setItem(storageKey, 'pending');
+    } catch {
+      // Counting is non-critical when storage is unavailable.
     }
-  };
+
+    void wikiAPI.recordArticleView(article.slug).then(() => {
+      try {
+        window.sessionStorage.setItem(storageKey, 'recorded');
+      } catch {
+        // Counting succeeded; storage remains optional.
+      }
+    }).catch(() => {
+      try {
+        window.sessionStorage.removeItem(storageKey);
+      } catch {
+        // A failed analytics write must not affect reading.
+      }
+    });
+  }, [article, slug]);
 
   // Загружаем статистику обратной связи
   const { data: feedbackStats } = useQuery<WikiFeedbackStats>({
@@ -199,7 +247,12 @@ export function WikiArticlePage() {
           jsonLd={jsonLd}
           allowAI={true}
         />
-        <WikiGuideJourney article={article} content={articleContent} onBack={() => navigate('/wiki')} />
+        <WikiGuideJourney
+          article={article}
+          content={articleContent}
+          onBack={() => navigate('/wiki')}
+          accountBackedProgress={Boolean(user)}
+        />
 
         <div className="mx-auto mb-10 flex max-w-4xl flex-col items-center justify-between gap-4 rounded-2xl border border-white/10 bg-white/5 p-5 sm:flex-row md:px-6">
           <div className="text-sm font-medium text-slate-400">{t('wikiArticlePage.wasHelpful')}</div>

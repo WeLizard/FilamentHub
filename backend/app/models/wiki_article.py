@@ -4,7 +4,7 @@ from datetime import datetime
 from enum import Enum
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.dialects.postgresql import JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -36,10 +36,43 @@ class WikiArticleProvenance(str, Enum):
     COMMUNITY = "community"
 
 
+class WikiGuideProgress(Base):
+    """Account-backed completion marker for one stable Wiki guide identity."""
+
+    __tablename__ = "wiki_guide_progress"
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id",
+            "guide_id",
+            name="uq_wiki_guide_progress_user_guide",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    guide_id: Mapped[str] = mapped_column(String(96), nullable=False)
+    completed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+
 class WikiArticle(Base):
     """Статья Wiki."""
 
     __tablename__ = "wiki_articles"
+    __table_args__ = (
+        UniqueConstraint(
+            "content_key",
+            "language",
+            name="uq_wiki_article_content_key_language",
+        ),
+    )
 
     # Primary key
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
@@ -80,6 +113,9 @@ class WikiArticle(Base):
     title: Mapped[str] = mapped_column(String(200), nullable=False, index=True)
     slug: Mapped[str] = mapped_column(String(200), nullable=False, unique=True, index=True)
     # slug: URL-friendly версия заголовка (например, "pla-for-beginners")
+
+    content_key: Mapped[str] = mapped_column(String(200), nullable=False, index=True)
+    # content_key: стабильная идентичность одного материала во всех языках.
 
     summary: Mapped[str] = mapped_column(Text, nullable=False)
     # summary: краткое описание для карточки (1-2 предложения)

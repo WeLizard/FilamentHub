@@ -74,7 +74,13 @@ export function WikiGuideImageCanvas({
       className={`relative overflow-hidden rounded-2xl border border-white/10 bg-black/20 shadow-2xl shadow-black/30 ${onOpen ? 'cursor-zoom-in' : ''}`}
       onClick={onOpen}
     >
-      <img src={image.src} alt={image.alt} className="block h-auto w-full" />
+      <img
+        src={image.src}
+        alt={image.alt}
+        draggable={false}
+        onDragStart={(event) => event.preventDefault()}
+        className="block h-auto w-full select-none"
+      />
       {image.callouts.map((callout, index) => {
         const position = calloutPosition(callout.x, callout.y);
         const isActive = activeCallout === index;
@@ -317,7 +323,7 @@ export function WikiGuideImageViewer({ image, onClose }: WikiGuideImageViewerPro
           className={`scrollbar-contained min-h-0 flex-1 overflow-auto bg-black/35 p-2 sm:p-4 ${zoom > MIN_ZOOM ? (isDragging ? 'cursor-grabbing select-none' : 'cursor-grab') : ''}`}
           style={{ touchAction: 'none', overscrollBehavior: 'contain' }}
           onWheel={(event) => {
-            if (!event.ctrlKey && !event.metaKey) return;
+            if (!event.altKey) return;
             event.preventDefault();
             setClampedZoom(
               zoomRef.current * Math.exp(-event.deltaY * WHEEL_ZOOM_SENSITIVITY),
@@ -339,6 +345,7 @@ export function WikiGuideImageViewer({ image, onClose }: WikiGuideImageViewerPro
               scrollTop: event.currentTarget.scrollTop,
             };
             setIsDragging(true);
+            event.preventDefault();
           }}
           onPointerMove={(event) => {
             if (activePointersRef.current.has(event.pointerId)) {

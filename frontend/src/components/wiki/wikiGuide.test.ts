@@ -22,7 +22,7 @@ Record the physical spool separately.
     expect(guide.intro).toBe('Short introduction.');
     expect(guide.steps).toEqual([
       {
-        id: '1-find-a-material',
+        id: 'step-1',
         title: '1. Find a material',
         images: [{
           alt: 'Catalog search',
@@ -32,7 +32,7 @@ Record the physical spool separately.
         content: 'Use the filters and open the exact product variant.',
       },
       {
-        id: '2-add-your-spool',
+        id: 'step-2',
         title: '2. Add your spool',
         images: [],
         content: 'Record the physical spool separately.',
@@ -108,5 +108,40 @@ Continue here.
 `);
 
     expect(guide.intro).toBe('The guide introduction.');
+  });
+
+  it('keeps an explicit step identity stable across translated titles', () => {
+    const russian = parseWikiGuide(`
+## Найдите материал
+<!-- guide-step id=find-material -->
+
+Откройте каталог.
+`);
+    const english = parseWikiGuide(`
+## Find the material
+<!-- guide-step id=find-material -->
+
+Open the catalog.
+`);
+
+    expect(russian.steps[0].id).toBe('find-material');
+    expect(english.steps[0].id).toBe('find-material');
+    expect(russian.steps[0].content).not.toContain('guide-step');
+  });
+
+  it('makes accidentally duplicated step identities unique', () => {
+    const guide = parseWikiGuide(`
+## First
+<!-- guide-step id=shared -->
+
+One.
+
+## Second
+<!-- guide-step id=shared -->
+
+Two.
+`);
+
+    expect(guide.steps.map((step) => step.id)).toEqual(['shared', 'shared-2']);
   });
 });

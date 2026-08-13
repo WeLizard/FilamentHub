@@ -6,18 +6,21 @@ import {
   Heading2,
   Heading3,
   Image,
+  Images,
   Italic,
   Link,
   List,
   ListOrdered,
   Quote,
   Loader2,
+  Trash2,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 import { wikiAPI } from '../../api/client';
 import { translateApiError } from '../../utils/translateApiError';
 import { toast } from '../Toast';
+import type { WikiMediaAsset } from '../../types/api';
 
 
 interface WikiMarkdownEditorProps {
@@ -62,6 +65,65 @@ export function WikiMarkdownEditor({ value, onChange, placeholder }: WikiMarkdow
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imageSelectionRef = useRef({ start: 0, end: 0 });
   const [uploadingImage, setUploadingImage] = useState(false);
+  const [mediaOpen, setMediaOpen] = useState(false);
+  const [mediaLoading, setMediaLoading] = useState(false);
+  const [deletingMediaId, setDeletingMediaId] = useState<string | null>(null);
+  const [stagedMedia, setStagedMedia] = useState<WikiMediaAsset[]>([]);
+
+  const insertImage = (url: string, alt: string, start: number, end: number) => {
+    const markdown = `![${alt}](${url})`;
+    const before = value.slice(0, start);
+    const after = value.slice(end);
+    const prefix = before && !before.endsWith('\n\n')
+      ? before.endsWith('\n') ? '\n' : '\n\n'
+      : '';
+    const suffix = after && !after.startsWith('\n\n')
+      ? after.startsWith('\n') ? '\n' : '\n\n'
+      : '';
+    const inserted = `${prefix}${markdown}${suffix}`;
+    onChange(`${before}${inserted}${after}`);
+    requestAnimationFrame(() => {
+      const nextCursor = before.length + inserted.length;
+      textareaRef.current?.focus();
+      textareaRef.current?.setSelectionRange(nextCursor, nextCursor);
+    });
+  };
+
+  const toggleMediaLibrary = async () => {
+    const opening = !mediaOpen;
+    setMediaOpen(opening);
+    if (!opening) return;
+    setMediaLoading(true);
+    try {
+      setStagedMedia(await wikiAPI.listStagedMedia());
+    } catch (error) {
+      const apiError = error as AxiosError<{ detail?: unknown }>;
+      toast.error(translateApiError(t, apiError.response?.data?.detail, t('wikiAuthoring.mediaLoadError')));
+    } finally {
+      setMediaLoading(false);
+    }
+  };
+
+  const reuseMedia = (asset: WikiMediaAsset) => {
+    const textarea = textareaRef.current;
+    const start = textarea?.selectionStart ?? value.length;
+    const end = textarea?.selectionEnd ?? start;
+    insertImage(asset.url, t('wikiAuthoring.imageAltFallback'), start, end);
+  };
+
+  const deleteMedia = async (asset: WikiMediaAsset) => {
+    setDeletingMediaId(asset.id);
+    try {
+      await wikiAPI.deleteStagedMedia(asset.id);
+      setStagedMedia((current) => current.filter((item) => item.id !== asset.id));
+      toast.success(t('wikiAuthoring.mediaDeleted'));
+    } catch (error) {
+      const apiError = error as AxiosError<{ detail?: unknown }>;
+      toast.error(translateApiError(t, apiError.response?.data?.detail, t('wikiAuthoring.mediaDeleteError')));
+    } finally {
+      setDeletingMediaId(null);
+    }
+  };
 
   const applyAction = (action: ToolbarAction) => {
     const textarea = textareaRef.current;
@@ -165,22 +227,8 @@ export function WikiMarkdownEditor({ value, onChange, placeholder }: WikiMarkdow
       const { start, end } = imageSelectionRef.current;
       const selectedText = value.slice(start, end);
       const alt = imageAltFromFile(file, selectedText, t('wikiAuthoring.imageAltFallback'));
-      const markdown = `![${alt}](${uploaded.url})`;
-      const before = value.slice(0, start);
-      const after = value.slice(end);
-      const prefix = before && !before.endsWith('\n\n')
-        ? before.endsWith('\n') ? '\n' : '\n\n'
-        : '';
-      const suffix = after && !after.startsWith('\n\n')
-        ? after.startsWith('\n') ? '\n' : '\n\n'
-        : '';
-      const inserted = `${prefix}${markdown}${suffix}`;
-      onChange(`${before}${inserted}${after}`);
-      requestAnimationFrame(() => {
-        const nextCursor = before.length + inserted.length;
-        textareaRef.current?.focus();
-        textareaRef.current?.setSelectionRange(nextCursor, nextCursor);
-      });
+      insertImage(uploaded.url, alt, start, end);
+      setStagedMedia((current) => [{ ...uploaded, created_at: new Date().toISOString() }, ...current]);
       toast.success(t('wikiAuthoring.imageUploaded'));
     } catch (error) {
       const apiError = error as AxiosError<{ detail?: unknown }>;
@@ -227,6 +275,16 @@ export function WikiMarkdownEditor({ value, onChange, placeholder }: WikiMarkdow
             ? <Loader2 className="h-4 w-4 animate-spin" />
             : <Image className="h-4 w-4" />}
         </button>
+        <button
+          type="button"
+          onClick={() => void toggleMediaLibrary()}
+          aria-expanded={mediaOpen}
+          className={`flex h-8 w-8 items-center justify-center rounded-lg transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 ${mediaOpen ? 'bg-cyan-400/10 text-cyan-200' : 'text-slate-400 hover:bg-white/10 hover:text-white'}`}
+          title={t('wikiAuthoring.mediaLibrary')}
+          aria-label={t('wikiAuthoring.mediaLibrary')}
+        >
+          <Images className="h-4 w-4" />
+        </button>
         <input
           ref={fileInputRef}
           type="file"
@@ -237,6 +295,29 @@ export function WikiMarkdownEditor({ value, onChange, placeholder }: WikiMarkdow
         />
         <span className="ml-auto px-2 text-[11px] font-medium uppercase tracking-wider text-slate-600">Markdown</span>
       </div>
+      {mediaOpen && (
+        <div className="max-h-44 shrink-0 overflow-y-auto border-b border-white/10 bg-[#0d1728] p-2">
+          {mediaLoading ? (
+            <div className="flex items-center justify-center gap-2 py-5 text-xs text-slate-400"><Loader2 className="h-4 w-4 animate-spin" />{t('wikiAuthoring.mediaLoading')}</div>
+          ) : stagedMedia.length === 0 ? (
+            <p className="px-2 py-4 text-center text-xs text-slate-500">{t('wikiAuthoring.mediaEmpty')}</p>
+          ) : (
+            <div className="space-y-1">
+              {stagedMedia.map((asset) => (
+                <div key={asset.id} className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.025] px-2 py-1.5">
+                  <button type="button" onClick={() => reuseMedia(asset)} className="min-w-0 flex-1 text-left text-xs text-slate-300 hover:text-cyan-200">
+                    <span className="block truncate font-mono">{asset.id.slice(0, 12)}</span>
+                    <span className="text-[10px] text-slate-600">{asset.width}×{asset.height} · {Math.max(1, Math.round(asset.size_bytes / 1024))} KB</span>
+                  </button>
+                  <button type="button" onClick={() => void deleteMedia(asset)} disabled={deletingMediaId === asset.id || value.includes(asset.url)} className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 transition hover:bg-red-500/10 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-30" title={value.includes(asset.url) ? t('wikiAuthoring.mediaInCurrentDraft') : t('wikiAuthoring.mediaDelete')} aria-label={t('wikiAuthoring.mediaDelete')}>
+                    {deletingMediaId === asset.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
       <textarea
         ref={textareaRef}
         value={value}

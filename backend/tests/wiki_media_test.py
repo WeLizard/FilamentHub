@@ -256,3 +256,62 @@ async def test_draft_cannot_reference_another_users_staged_media(
     # Editors may inspect staged media during moderation, but cannot silently
     # take ownership of it in a separate draft.
     assert response.status_code == 403
+
+
+async def test_owner_can_list_and_delete_only_unused_staged_media(
+    client,
+    auth_user,
+    db_session,
+    monkeypatch,
+    tmp_path,
+):
+    monkeypatch.setattr(
+        "app.services.wiki_media_service.get_upload_root_dir", lambda: tmp_path
+    )
+    category = await _seed_wiki(db_session)
+    headers = _headers(auth_user)
+
+    first = await client.post(
+        "/api/v1/wiki/author/media",
+        headers=headers,
+        files={"file": ("first.png", _png_bytes(), "image/png")},
+    )
+    second = await client.post(
+        "/api/v1/wiki/author/media",
+        headers=headers,
+        files={"file": ("second.png", _png_bytes(), "image/png")},
+    )
+    assert first.status_code == 201
+    assert second.status_code == 201
+
+    listed = await client.get("/api/v1/wiki/author/media", headers=headers)
+    assert listed.status_code == 200
+    assert {item["id"] for item in listed.json()} == {
+        first.json()["id"],
+        second.json()["id"],
+    }
+
+    draft = await client.post(
+        "/api/v1/wiki/author/articles",
+        headers=headers,
+        json={
+            "category_id": category.id,
+            "title": "Media draft",
+            "summary": "Keeps one staged image",
+            "content": f"![Referenced]({first.json()['url']})",
+        },
+    )
+    assert draft.status_code == 201, draft.text
+
+    in_use = await client.delete(
+        f"/api/v1/wiki/author/media/{first.json()['id']}", headers=headers
+    )
+    assert in_use.status_code == 409
+    assert in_use.json()["detail"]["code"] == "ERR_WIKI_MEDIA_IN_USE"
+
+    deleted = await client.delete(
+        f"/api/v1/wiki/author/media/{second.json()['id']}", headers=headers
+    )
+    assert deleted.status_code == 204
+    remaining = await client.get("/api/v1/wiki/author/media", headers=headers)
+    assert [item["id"] for item in remaining.json()] == [first.json()["id"]]

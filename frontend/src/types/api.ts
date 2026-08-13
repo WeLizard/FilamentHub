@@ -1796,6 +1796,7 @@ export interface WikiArticleSummary {
   provenance: WikiRevisionAuthorship;
   title: string;
   slug: string;
+  content_key: string;
   summary: string;
   tags: string[] | null;
   author: string | null;
@@ -1871,6 +1872,7 @@ export interface WikiRevision {
   article_id: number;
   article_category_id: number;
   article_slug: string;
+  article_content_key: string;
   article_title: string;
   article_space_key: WikiSpaceKey;
   article_language: WikiLanguage;
@@ -1899,6 +1901,26 @@ export interface WikiRevision {
   created_at: string;
   updated_at: string;
   peer_reviews: WikiRevisionReview[];
+}
+
+export interface WikiArticleTranslation {
+  content_key: string;
+  language: WikiLanguage;
+  slug: string;
+}
+
+export interface WikiMediaAsset {
+  id: string;
+  url: string;
+  mime_type: 'image/webp';
+  width: number;
+  height: number;
+  size_bytes: number;
+  created_at: string;
+}
+
+export interface WikiGuideProgressResponse {
+  guide_ids: string[];
 }
 
 export interface WikiRevisionListResponse {

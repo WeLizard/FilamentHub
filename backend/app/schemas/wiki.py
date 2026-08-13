@@ -72,6 +72,7 @@ class WikiArticleBase(BaseModel):
     category_id: int = Field(..., gt=0)
     title: str = Field(..., min_length=1, max_length=200)
     slug: str = Field(..., min_length=1, max_length=200)
+    content_key: str | None = Field(None, min_length=1, max_length=200)
     summary: str = Field(..., min_length=1)
     content: str = Field(..., min_length=1)
     tags: list[str] | None = Field(None, description="Array of tags")
@@ -79,11 +80,11 @@ class WikiArticleBase(BaseModel):
     published: bool = Field(default=True)
     order: int = Field(default=0, ge=0)
 
-    @field_validator("slug")
+    @field_validator("slug", "content_key")
     @classmethod
-    def validate_slug(cls, v: str) -> str:
+    def validate_slug(cls, v: str | None) -> str | None:
         """Validate slug format (lowercase, alphanumeric, hyphens only)."""
-        if not re.match(r"^[a-z0-9-]+$", v):
+        if v is not None and not re.match(r"^[a-z0-9-]+$", v):
             raise ValueError("Slug must contain only lowercase letters, numbers, and hyphens")
         return v
 
@@ -100,6 +101,7 @@ class WikiArticleUpdate(BaseModel):
     category_id: int | None = Field(None, gt=0)
     title: str | None = Field(None, min_length=1, max_length=200)
     slug: str | None = Field(None, min_length=1, max_length=200)
+    content_key: str | None = Field(None, min_length=1, max_length=200)
     summary: str | None = Field(None, min_length=1)
     content: str | None = Field(None, min_length=1)
     tags: list[str] | None = Field(None, description="Array of tags")
@@ -107,7 +109,7 @@ class WikiArticleUpdate(BaseModel):
     published: bool | None = None
     order: int | None = Field(None, ge=0)
 
-    @field_validator("slug")
+    @field_validator("slug", "content_key")
     @classmethod
     def validate_slug(cls, v: str | None) -> str | None:
         """Validate slug format (lowercase, alphanumeric, hyphens only)."""
@@ -126,6 +128,7 @@ class WikiArticleSummary(BaseModel):
     provenance: str = "editorial"
     title: str
     slug: str
+    content_key: str
     summary: str
     tags: list[str] | None
     author: str | None
@@ -145,6 +148,32 @@ class WikiArticleResponse(WikiArticleSummary):
     category_name: str | None = Field(default=None, description="Category name for convenience")
 
     model_config = {"from_attributes": True}
+
+
+class WikiArticleTranslationResponse(BaseModel):
+    """Route of another language edition of the same material."""
+
+    content_key: str
+    language: str
+    slug: str
+
+
+class WikiGuideProgressUpdate(BaseModel):
+    """One or more guide completion markers merged into the account."""
+
+    guide_ids: list[str] = Field(min_length=1, max_length=100)
+
+    @field_validator("guide_ids")
+    @classmethod
+    def validate_guide_ids(cls, value: list[str]) -> list[str]:
+        normalized = list(dict.fromkeys(item.strip() for item in value))
+        if any(not re.fullmatch(r"[a-zA-Z0-9:_-]{1,96}", item) for item in normalized):
+            raise ValueError("invalid guide id")
+        return normalized
+
+
+class WikiGuideProgressResponse(BaseModel):
+    guide_ids: list[str]
 
 
 # ============================================================================

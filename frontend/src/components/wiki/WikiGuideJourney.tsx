@@ -24,23 +24,48 @@ import {
 } from './WikiGuideImageViewer';
 import { parseWikiGuide, type WikiGuideImage } from './wikiGuide';
 import { markWikiGuideCompleted } from './wikiGuideProgress';
+import { wikiAPI } from '../../api/client';
+import { normalizeSiteLocale } from '../../utils/siteLocale';
 
 interface WikiGuideJourneyProps {
   article: WikiArticle;
   content: string;
   onBack: () => void;
+  accountBackedProgress?: boolean;
 }
 
-export function WikiGuideJourney({ article, content, onBack }: WikiGuideJourneyProps) {
-  const { t } = useTranslation();
-  const guide = useMemo(() => parseWikiGuide(content), [content]);
+export function WikiGuideJourney({ article, content, onBack, accountBackedProgress = false }: WikiGuideJourneyProps) {
+  const { t, i18n } = useTranslation();
+  const locale = normalizeSiteLocale(i18n.resolvedLanguage || i18n.language) || 'en';
+  const guide = useMemo(() => {
+    const parsed = parseWikiGuide(content);
+    return {
+      ...parsed,
+      steps: parsed.steps.map((step) => ({
+        ...step,
+        images: step.images.map((image) => ({
+          ...image,
+          src: image.src
+            .replace('{lang}', locale)
+            .replace(/(\/wiki_content\/images\/guides\/[^)\s]*\/)(ru|en|zh)(\/)/, `$1${locale}$3`),
+        })),
+      })),
+    };
+  }, [content, locale]);
   const [searchParams, setSearchParams] = useSearchParams();
-  const requestedStep = Number.parseInt(searchParams.get('step') ?? '', 10);
-  const initialIndex = Number.isFinite(requestedStep)
-    ? Math.min(Math.max(requestedStep, 0), Math.max(guide.steps.length - 1, 0))
-    : 0;
+  const requestedStep = searchParams.get('step');
+  const requestedStarted = searchParams.get('start') === '1' || searchParams.has('step');
+  const requestedStepIndex = requestedStep
+    ? guide.steps.findIndex((step) => step.id === requestedStep)
+    : -1;
+  const legacyStepIndex = Number.parseInt(requestedStep ?? '', 10);
+  const initialIndex = requestedStepIndex >= 0
+    ? requestedStepIndex
+    : Number.isFinite(legacyStepIndex)
+      ? Math.min(Math.max(legacyStepIndex, 0), Math.max(guide.steps.length - 1, 0))
+      : 0;
   const [activeIndex, setActiveIndex] = useState(initialIndex);
-  const [started, setStarted] = useState(searchParams.get('start') === '1' || searchParams.has('step'));
+  const [started, setStarted] = useState(requestedStarted);
   const [overviewExpanded, setOverviewExpanded] = useState(false);
   const [viewerImage, setViewerImage] = useState<WikiGuideImage | null>(null);
   const [activeCallout, setActiveCallout] = useState<{ imageIndex: number; calloutIndex: number } | null>(null);
@@ -49,16 +74,19 @@ export function WikiGuideJourney({ article, content, onBack }: WikiGuideJourneyP
 
   useEffect(() => {
     setActiveIndex(initialIndex);
-    setStarted(searchParams.get('start') === '1' || searchParams.has('step'));
-    setOverviewExpanded(false);
+    setStarted(requestedStarted);
     setViewerImage(null);
     setActiveCallout(null);
+  }, [article.id, initialIndex, requestedStarted, requestedStep]);
+
+  useEffect(() => {
+    setOverviewExpanded(false);
   }, [article.id]);
 
   if (guide.steps.length === 0) {
     return (
       <div className="mx-auto max-w-5xl px-4 py-8 md:px-6 md:py-12">
-        <WikiContentRenderer content={guide.intro} taskStorageKey={`wiki-guide-${article.slug}`} />
+        <WikiContentRenderer content={guide.intro} taskStorageKey={`wiki-guide-${article.content_key}`} />
       </div>
     );
   }
@@ -71,9 +99,9 @@ export function WikiGuideJourney({ article, content, onBack }: WikiGuideJourneyP
     setActiveIndex(index);
     setActiveCallout(null);
     const nextParams = new URLSearchParams(searchParams);
-    nextParams.set('step', String(index));
+    nextParams.set('step', guide.steps[index].id);
     nextParams.set('start', '1');
-    setSearchParams(nextParams, { replace: true });
+    setSearchParams(nextParams);
     window.requestAnimationFrame(() => {
       workspaceRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
@@ -82,13 +110,26 @@ export function WikiGuideJourney({ article, content, onBack }: WikiGuideJourneyP
   const startGuide = () => {
     setStarted(true);
     const nextParams = new URLSearchParams(searchParams);
-    nextParams.set('step', String(activeIndex));
+    nextParams.set('step', guide.steps[activeIndex].id);
     nextParams.set('start', '1');
-    setSearchParams(nextParams, { replace: true });
+    setSearchParams(nextParams);
   };
 
-  const finishGuide = () => {
-    markWikiGuideCompleted(journeyId ?? `article:${article.slug}`);
+  const finishGuide = async () => {
+    const guideId = journeyId ?? `article:${article.content_key}`;
+    markWikiGuideCompleted(guideId);
+    if (accountBackedProgress) {
+      try {
+        await wikiAPI.mergeGuideProgress([guideId]);
+      } catch {
+        // Local progress remains available and will be merged on the next Wiki visit.
+      }
+    }
+    const returnTo = searchParams.get('returnTo');
+    if (returnTo?.startsWith('/') && !returnTo.startsWith('//')) {
+      window.location.assign(returnTo);
+      return;
+    }
     onBack();
   };
 
@@ -226,7 +267,7 @@ export function WikiGuideJourney({ article, content, onBack }: WikiGuideJourneyP
             <div className="text-xs font-semibold uppercase tracking-[0.16em] text-cyan-300">{t('wikiGuide.stepOf', { current: activeIndex + 1, total: guide.steps.length })}</div>
             <h2 className="mt-2 text-2xl font-bold leading-tight text-white md:text-3xl">{activeStep.title.replace(/^\d+[.)]\s*/, '')}</h2>
             <div className="mt-5">
-              <WikiContentRenderer content={activeStep.content} taskStorageKey={`wiki-guide-${article.slug}-${activeStep.id}`} />
+              <WikiContentRenderer content={activeStep.content} taskStorageKey={`wiki-guide-${article.content_key}-${activeStep.id}`} />
             </div>
 
             <div className="mt-8 flex flex-col-reverse gap-3 border-t border-white/10 pt-5 sm:flex-row sm:items-center sm:justify-between">
@@ -241,7 +282,7 @@ export function WikiGuideJourney({ article, content, onBack }: WikiGuideJourneyP
               </button>
               <button
                 type="button"
-                onClick={() => isLastStep ? finishGuide() : selectStep(activeIndex + 1)}
+                onClick={() => isLastStep ? void finishGuide() : selectStep(activeIndex + 1)}
                 className="inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-blue-500 to-cyan-500 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-950/30 transition hover:brightness-110"
               >
                 {isLastStep ? t('wikiGuide.finish') : t('wikiGuide.next')}

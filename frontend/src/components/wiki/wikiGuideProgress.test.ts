@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import {
   getCompletedWikiGuideIds,
   markWikiGuideCompleted,
+  mergeCompletedWikiGuideIds,
   WIKI_GUIDE_PROGRESS_STORAGE_KEY,
 } from './wikiGuideProgress';
 
@@ -16,6 +17,15 @@ describe('wiki guide progress', () => {
     expect([...getCompletedWikiGuideIds()]).toEqual([
       'user:shelf',
       'brand:materials',
+    ]);
+  });
+
+  it('merges account progress without losing local completion markers', () => {
+    markWikiGuideCompleted('user:shelf');
+
+    expect([...mergeCompletedWikiGuideIds(['article:catalog-material'])]).toEqual([
+      'user:shelf',
+      'article:catalog-material',
     ]);
   });
 

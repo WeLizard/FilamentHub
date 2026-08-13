@@ -38,6 +38,7 @@ const draft: WikiRevision = {
   article_id: 20,
   article_category_id: 1,
   article_slug: 'workspace-draft',
+  article_content_key: 'workspace-draft',
   article_title: 'Workspace draft',
   article_space_key: 'knowledge',
   article_language: 'en',

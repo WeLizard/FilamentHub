@@ -4,12 +4,13 @@ import hashlib
 import logging
 from typing import Annotated, Optional
 
-from fastapi import APIRouter, Depends, Query, Request
-from sqlalchemy import String, cast, func, or_, select
+from fastapi import APIRouter, Depends, Query, Request, Response, status
+from sqlalchemy import String, cast, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.dependencies import (
+    get_current_active_user,
     get_current_active_user_optional,
     get_current_admin_user,
 )
@@ -25,13 +26,15 @@ from app.core.errors import (
     ERR_CATEGORY_SLUG_EXISTS,
     ERR_CATEGORY_SLUG_OR_NAME_EXISTS,
     ERR_HELPFUL_MARK_NOT_FOUND,
+    ERR_WIKI_CONTENT_KEY_EXISTS,
     ERR_WIKI_USE_FEEDBACK,
     raise_error,
 )
+from app.core.limiter import limiter
 from app.core.utils import like_pattern
 from app.db.session import get_db
 from app.models.user import User, UserRole
-from app.models.wiki_article import WikiArticle, WikiArticleStatus
+from app.models.wiki_article import WikiArticle, WikiArticleStatus, WikiGuideProgress
 from app.models.wiki_category import WikiCategory
 from app.models.wiki_feedback import WikiArticleFeedback, WikiFeedbackType
 from app.models.wiki_space import WikiSpace
@@ -40,6 +43,7 @@ from app.schemas.wiki import (
     WikiArticleListResponse,
     WikiArticleResponse,
     WikiArticleSummary,
+    WikiArticleTranslationResponse,
     WikiArticleUpdate,
     WikiCategoryCreate,
     WikiCategoryListResponse,
@@ -48,6 +52,8 @@ from app.schemas.wiki import (
     WikiFeedbackCreate,
     WikiFeedbackResponse,
     WikiFeedbackStats,
+    WikiGuideProgressResponse,
+    WikiGuideProgressUpdate,
 )
 from app.services.wiki_revision_service import (
     create_article_with_revision,
@@ -58,6 +64,56 @@ from app.services.wiki_revision_service import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/wiki", tags=["wiki"])
+
+
+@router.get("/progress", response_model=WikiGuideProgressResponse)
+async def get_guide_progress(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_active_user)],
+) -> WikiGuideProgressResponse:
+    """Return all completed guide identities for the signed-in account."""
+
+    guide_ids = (
+        await db.execute(
+            select(WikiGuideProgress.guide_id)
+            .where(WikiGuideProgress.user_id == current_user.id)
+            .order_by(WikiGuideProgress.completed_at.asc())
+        )
+    ).scalars().all()
+    return WikiGuideProgressResponse(guide_ids=list(guide_ids))
+
+
+@router.put("/progress", response_model=WikiGuideProgressResponse)
+async def merge_guide_progress(
+    data: WikiGuideProgressUpdate,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_active_user)],
+) -> WikiGuideProgressResponse:
+    """Idempotently merge browser completion markers into the account."""
+
+    existing = set(
+        (
+            await db.execute(
+                select(WikiGuideProgress.guide_id).where(
+                    WikiGuideProgress.user_id == current_user.id,
+                    WikiGuideProgress.guide_id.in_(data.guide_ids),
+                )
+            )
+        ).scalars().all()
+    )
+    for guide_id in data.guide_ids:
+        if guide_id not in existing:
+            db.add(WikiGuideProgress(user_id=current_user.id, guide_id=guide_id))
+    await db.commit()
+
+    merged = (
+        await db.execute(
+            select(WikiGuideProgress.guide_id)
+            .where(WikiGuideProgress.user_id == current_user.id)
+            .order_by(WikiGuideProgress.completed_at.asc())
+        )
+    ).scalars().all()
+    return WikiGuideProgressResponse(guide_ids=list(merged))
 
 
 # ============================================================================
@@ -377,6 +433,7 @@ async def list_articles(
             "provenance": article.provenance,
             "title": article.title,
             "slug": article.slug,
+            "content_key": article.content_key,
             "summary": article.summary,
             "tags": article.tags,
             "author": article.author,
@@ -406,7 +463,6 @@ async def get_article(
     """
     Получить статью по slug.
 
-    Автоматически увеличивает счетчик просмотров (только для published).
     Админы могут получить любую статью (включая черновики).
     """
     result = await db.execute(
@@ -432,12 +488,6 @@ async def get_article(
     if article.status != WikiArticleStatus.PUBLISHED and not is_admin:
         raise_error(404, ERR_ARTICLE_NOT_PUBLISHED)
 
-    # Увеличиваем счетчик просмотров (только для публичных просмотров)
-    if article.status == WikiArticleStatus.PUBLISHED:
-        article.views += 1
-        await db.commit()
-        await db.refresh(article)
-
     # Получаем имя категории
     category_result = await db.execute(
         select(WikiCategory.name).where(WikiCategory.id == article.category_id)
@@ -452,6 +502,7 @@ async def get_article(
         "provenance": article.provenance,
         "title": article.title,
         "slug": article.slug,
+        "content_key": article.content_key,
         "summary": article.summary,
         "content": article.content,
         "tags": article.tags,
@@ -465,6 +516,70 @@ async def get_article(
     }
 
     return WikiArticleResponse(**article_dict)
+
+
+@router.get(
+    "/articles/{article_slug}/translation/{language}",
+    response_model=WikiArticleTranslationResponse,
+)
+async def get_article_translation(
+    article_slug: str,
+    language: str,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> WikiArticleTranslationResponse:
+    """Resolve the published edition of one material in another language."""
+
+    if language not in {"ru", "en", "zh"}:
+        raise_error(404, ERR_ARTICLE_NOT_FOUND)
+    source_key = (
+        await db.execute(
+            select(WikiArticle.content_key).where(WikiArticle.slug == article_slug)
+        )
+    ).scalar_one_or_none()
+    if source_key is None:
+        raise_error(404, ERR_ARTICLE_NOT_FOUND)
+    translation = (
+        await db.execute(
+            select(WikiArticle).where(
+                WikiArticle.content_key == source_key,
+                WikiArticle.language == language,
+                WikiArticle.status == WikiArticleStatus.PUBLISHED,
+            )
+        )
+    ).scalar_one_or_none()
+    if translation is None:
+        raise_error(404, ERR_ARTICLE_NOT_FOUND)
+    return WikiArticleTranslationResponse(
+        content_key=translation.content_key,
+        language=translation.language,
+        slug=translation.slug,
+    )
+
+
+@router.post(
+    "/articles/{article_slug}/view",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+@limiter.limit("120/hour")
+async def record_article_view(
+    article_slug: str,
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> Response:
+    """Count an explicit client view without mutating the article GET request."""
+
+    result = await db.execute(
+        update(WikiArticle)
+        .where(
+            WikiArticle.slug == article_slug,
+            WikiArticle.status == WikiArticleStatus.PUBLISHED,
+        )
+        .values(views=WikiArticle.views + 1)
+    )
+    if result.rowcount == 0:
+        raise_error(404, ERR_ARTICLE_NOT_FOUND)
+    await db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/articles", response_model=WikiArticleResponse)
@@ -497,6 +612,7 @@ async def create_article(
         language="ru",
         title=data.title,
         slug=data.slug,
+        content_key=data.content_key,
         summary=data.summary,
         content=data.content,
         tags=data.tags,
@@ -517,6 +633,7 @@ async def create_article(
         provenance=article.provenance,
         title=article.title,
         slug=article.slug,
+        content_key=article.content_key,
         summary=article.summary,
         content=article.content,
         tags=article.tags,
@@ -567,6 +684,17 @@ async def update_article(
         if existing.scalar_one_or_none():
             raise_error(400, ERR_ARTICLE_SLUG_EXISTS)
 
+    if "content_key" in update_data and update_data["content_key"] != article.content_key:
+        existing = await db.execute(
+            select(WikiArticle.id).where(
+                WikiArticle.content_key == update_data["content_key"],
+                WikiArticle.language == article.language,
+                WikiArticle.id != article.id,
+            )
+        )
+        if existing.scalar_one_or_none() is not None:
+            raise_error(409, ERR_WIKI_CONTENT_KEY_EXISTS)
+
     content_fields = {"title", "summary", "content", "tags", "published"}
     if content_fields.intersection(update_data):
         await publish_editorial_snapshot(
@@ -605,6 +733,7 @@ async def update_article(
         provenance=article.provenance,
         title=article.title,
         slug=article.slug,
+        content_key=article.content_key,
         summary=article.summary,
         content=article.content,
         tags=article.tags,
@@ -701,6 +830,7 @@ async def search_articles(
             "provenance": article.provenance,
             "title": article.title,
             "slug": article.slug,
+            "content_key": article.content_key,
             "summary": article.summary,
             "tags": article.tags,
             "author": article.author,

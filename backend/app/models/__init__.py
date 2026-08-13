@@ -83,7 +83,12 @@ from app.models.user_legal_acceptance import UserLegalAcceptance
 from app.models.user_printer_device import UserPrinterDevice
 from app.models.user_saved_preset import UserSavedPreset, UserSavedPresetTarget
 from app.models.user_spool import UserSpool, UserSpoolState
-from app.models.wiki_article import WikiArticle, WikiArticleProvenance, WikiArticleStatus
+from app.models.wiki_article import (
+    WikiArticle,
+    WikiArticleProvenance,
+    WikiArticleStatus,
+    WikiGuideProgress,
+)
 from app.models.wiki_category import WikiCategory
 from app.models.wiki_feedback import WikiArticleFeedback, WikiFeedbackType
 from app.models.wiki_media import WikiMediaAsset
@@ -203,6 +208,7 @@ __all__ = [
     "WikiArticleProvenance",
     "WikiArticleFeedback",
     "WikiArticleStatus",
+    "WikiGuideProgress",
     "WikiCategory",
     "WikiFeedbackType",
     "WikiMediaAsset",

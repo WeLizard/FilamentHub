@@ -3,7 +3,7 @@
 import axios from 'axios';
 import type { InternalAxiosRequestConfig } from 'axios';
 import type { BrandAnalytics } from '../types/api';
-import type { AccessibleBrand, AdminUserListResponse, AuthMethods, Brand, BrandUsage, BrandCountryCell, BrandRepresentative, BrandRepresentativeInvite, BrandRequest, BrandRequestStatus, BrandTeamInvite, BrandTeamRole, BrandTeamWorkspace, Filament, FilamentAdditive, FilamentPropertyClaim, FilamentLine, FilamentImportResult, FilamentListResponse, FilamentPalettePayload, BrandInvitePublic, BrandInviteAdmin, BrandInviteAcceptResult, BrandInviteBatchPreview, BrandInviteBatchSendResult, FilamentAvailability, CountryAvailability, FilamentCountryCell, FilamentVisualSettings, FilamentReview, FilamentRatingStats, Notification, NotificationListResponse, Preset, RecommendedPreset, RecommendedForPrinterResponse, Printer, PrinterProfile, PrintProfile, PrinterRequest, User, Token, RefreshTokenRequest, RefreshTokenResponse, ListResponse, AccountDeletionStats, UserSavedPreset, CalculatorEstimateRequest, CalculatorEstimateResponse, CalculatorProfileResponse, CalculatorProfileUpdate, Feedback, FeedbackDetail, FeedbackListResponse, FeedbackType, CompatiblePrinter, CompatibleFilament, PluginDownloadsResponse, WikiCategory, WikiCategoryListResponse, WikiArticle, WikiArticleListResponse, WikiFeedbackStats, WikiFeedbackCreate, WikiFeedback, WikiLanguage, WikiReviewVerdict, WikiRevision, WikiRevisionListResponse, WikiPublicRevisionListResponse, WikiRevisionStatus, WikiSpace, WikiSpaceKey, EmailThreadDetail, EmailThreadListResponse, EmailThreadStatus, EmailMessage, EmailSenderProfile, EmailLanguage, NotificationCampaignAudience, NotificationCampaignHistoryResponse, NotificationCampaignPreview, NotificationCampaignSendResult, LegalAcceptancePayload, LegalDocument, LegalDocumentType, LegalPack, LegalRequirements, RegistrationPayload, SpoolUsageEvent, OrcaSliceReport, OrcaPresetScope, OrcaSchemaObservation, OrcaSchemaObservationListResponse, OrcaSchemaObservationStatus, UnreadCommunicationsCount } from '../types/api';
+import type { AccessibleBrand, AdminUserListResponse, AuthMethods, Brand, BrandUsage, BrandCountryCell, BrandRepresentative, BrandRepresentativeInvite, BrandRequest, BrandRequestStatus, BrandTeamInvite, BrandTeamRole, BrandTeamWorkspace, Filament, FilamentAdditive, FilamentPropertyClaim, FilamentLine, FilamentImportResult, FilamentListResponse, FilamentPalettePayload, BrandInvitePublic, BrandInviteAdmin, BrandInviteAcceptResult, BrandInviteBatchPreview, BrandInviteBatchSendResult, FilamentAvailability, CountryAvailability, FilamentCountryCell, FilamentVisualSettings, FilamentReview, FilamentRatingStats, Notification, NotificationListResponse, Preset, RecommendedPreset, RecommendedForPrinterResponse, Printer, PrinterProfile, PrintProfile, PrinterRequest, User, Token, RefreshTokenRequest, RefreshTokenResponse, ListResponse, AccountDeletionStats, UserSavedPreset, CalculatorEstimateRequest, CalculatorEstimateResponse, CalculatorProfileResponse, CalculatorProfileUpdate, Feedback, FeedbackDetail, FeedbackListResponse, FeedbackType, CompatiblePrinter, CompatibleFilament, PluginDownloadsResponse, WikiCategory, WikiCategoryListResponse, WikiArticle, WikiArticleListResponse, WikiArticleTranslation, WikiFeedbackStats, WikiFeedbackCreate, WikiFeedback, WikiGuideProgressResponse, WikiLanguage, WikiMediaAsset, WikiReviewVerdict, WikiRevision, WikiRevisionListResponse, WikiPublicRevisionListResponse, WikiRevisionStatus, WikiSpace, WikiSpaceKey, EmailThreadDetail, EmailThreadListResponse, EmailThreadStatus, EmailMessage, EmailSenderProfile, EmailLanguage, NotificationCampaignAudience, NotificationCampaignHistoryResponse, NotificationCampaignPreview, NotificationCampaignSendResult, LegalAcceptancePayload, LegalDocument, LegalDocumentType, LegalPack, LegalRequirements, RegistrationPayload, SpoolUsageEvent, OrcaSliceReport, OrcaPresetScope, OrcaSchemaObservation, OrcaSchemaObservationListResponse, OrcaSchemaObservationStatus, UnreadCommunicationsCount } from '../types/api';
 import { getCsrfToken, getRefreshToken, getToken, isCookieAuthMode, isJwtAuthMode, isOrcaEmbedded, removeToken, setToken, shouldPersistTokensLocally } from '../utils/auth';
 import { isPluginEmbed, reportPluginSessionToPlugin } from '../utils/pluginBridge';
 import { downloadBlob } from '../utils/download';
@@ -2643,6 +2643,18 @@ export const downloadsAPI = {
 
 // Wiki API
 export const wikiAPI = {
+  getGuideProgress: async (): Promise<WikiGuideProgressResponse> => {
+    const response = await api.get<WikiGuideProgressResponse>('/wiki/progress');
+    return response.data;
+  },
+
+  mergeGuideProgress: async (guideIds: string[]): Promise<WikiGuideProgressResponse> => {
+    const response = await api.put<WikiGuideProgressResponse>('/wiki/progress', {
+      guide_ids: guideIds,
+    });
+    return response.data;
+  },
+
   // Categories
   listCategories: async (params?: { page?: number; page_size?: number; space?: WikiSpaceKey; language?: WikiLanguage }): Promise<WikiCategoryListResponse> => {
     const response = await api.get('/wiki/categories', { params });
@@ -2671,6 +2683,15 @@ export const wikiAPI = {
   getArticle: async (slug: string): Promise<WikiArticle> => {
     const response = await api.get(`/wiki/articles/${slug}`);
     return response.data;
+  },
+
+  getArticleTranslation: async (slug: string, language: WikiLanguage): Promise<WikiArticleTranslation> => {
+    const response = await api.get(`/wiki/articles/${slug}/translation/${language}`);
+    return response.data;
+  },
+
+  recordArticleView: async (slug: string): Promise<void> => {
+    await api.post(`/wiki/articles/${slug}/view`);
   },
   
   searchArticles: async (q: string, params?: { page?: number; page_size?: number; space?: WikiSpaceKey; language?: WikiLanguage }): Promise<WikiArticleListResponse> => {
@@ -2719,6 +2740,15 @@ export const wikiAPI = {
     return response.data;
   },
 
+  listStagedMedia: async (): Promise<WikiMediaAsset[]> => {
+    const response = await api.get('/wiki/author/media');
+    return response.data;
+  },
+
+  deleteStagedMedia: async (publicId: string): Promise<void> => {
+    await api.delete(`/wiki/author/media/${publicId}`);
+  },
+
   getMediaBlob: async (url: string): Promise<Blob> => {
     const endpoint = url.startsWith(API_BASE_URL) ? url.slice(API_BASE_URL.length) : url;
     const response = await api.get(endpoint, { responseType: 'blob' });
@@ -2731,6 +2761,7 @@ export const wikiAPI = {
     language?: WikiLanguage;
     title: string;
     slug?: string | null;
+    content_key?: string | null;
     summary: string;
     content: string;
     tags?: string[] | null;
@@ -2833,6 +2864,7 @@ export const wikiAPI = {
     category_id: number;
     title: string;
     slug: string;
+    content_key?: string | null;
     summary: string;
     content: string;
     tags?: string[] | null;

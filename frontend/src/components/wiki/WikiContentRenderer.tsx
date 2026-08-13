@@ -2,9 +2,17 @@ import React, { Children, useEffect, useMemo, useRef, useState } from 'react';
 import type { ExtraProps } from 'react-markdown';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { useTranslation } from 'react-i18next';
 
 import { wikiAPI } from '../../api/client';
+import {
+  isPluginEmbed,
+  openSitePathInBrowser,
+  requestPluginCapabilities,
+  subscribeToPluginCapabilities,
+} from '../../utils/pluginBridge';
 import { safeStorage } from '../../utils/storage';
+import { normalizeSiteLocale, withLocalePrefix } from '../../utils/siteLocale';
 import { generateHeadingId, headingIdsBySourceLine } from './wikiHeadings';
 
 interface WikiContentRendererProps {
@@ -161,8 +169,20 @@ export function WikiContentRenderer({
   taskStorageKey,
   privateMedia = false,
 }: WikiContentRendererProps) {
+  const { i18n } = useTranslation();
+  const activeLocale = normalizeSiteLocale(i18n.resolvedLanguage || i18n.language) || 'en';
   const [checkboxStates, setCheckboxStates] = useState<Record<string, boolean>>({});
+  const [browserLinksAvailable, setBrowserLinksAvailable] = useState(false);
   const headingIds = useMemo(() => headingIdsBySourceLine(content), [content]);
+
+  useEffect(() => {
+    if (!isPluginEmbed()) return;
+    const unsubscribe = subscribeToPluginCapabilities((capabilities) => {
+      setBrowserLinksAvailable(capabilities.has('open-external'));
+    });
+    requestPluginCapabilities();
+    return unsubscribe;
+  }, []);
 
   useEffect(() => {
     if (!taskStorageKey) {
@@ -249,10 +269,27 @@ export function WikiContentRenderer({
       return <img src={src} alt={alt || ''} loading="lazy" {...rest} />;
     },
     a(props: React.ComponentPropsWithoutRef<'a'> & ExtraProps) {
-      const { href, children, ...rest } = props;
+      const { href, children, node: _node, ...rest } = props;
       const external = Boolean(href && /^(https?:)?\/\//i.test(href));
+      // A guide sends the reader to the screen it describes. Losing the page they
+      // are reading from is worse than an extra tab, so anything but an anchor
+      // within the same article opens separately.
+      const rawSitePath = !external && href?.startsWith('/') && !href.startsWith('//') ? href : null;
+      const sitePath = rawSitePath ? withLocalePrefix(rawSitePath, activeLocale) : null;
+      const newTab = external || Boolean(sitePath);
+      const openInBrowser = sitePath && browserLinksAvailable
+        ? (event: React.MouseEvent<HTMLAnchorElement>) => {
+            if (openSitePathInBrowser(sitePath)) event.preventDefault();
+          }
+        : undefined;
       return (
-        <a href={href} target={external ? '_blank' : undefined} rel={external ? 'noopener noreferrer' : undefined} {...rest}>
+        <a
+          href={sitePath || href}
+          target={newTab ? '_blank' : undefined}
+          rel={newTab ? 'noopener noreferrer' : undefined}
+          onClick={openInBrowser}
+          {...rest}
+        >
           {children}
         </a>
       );
@@ -307,7 +344,7 @@ export function WikiContentRenderer({
         </li>
       );
     },
-  }), [checkboxStates, headingIds, privateMedia, taskStorageKey]);
+  }), [activeLocale, browserLinksAvailable, checkboxStates, headingIds, privateMedia, taskStorageKey]);
 
   return (
     <div className={`${ARTICLE_PROSE} ${className}`}>

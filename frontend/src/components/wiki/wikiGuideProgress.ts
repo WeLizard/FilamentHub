@@ -52,3 +52,24 @@ export function markWikiGuideCompleted(
     // Progress is a convenience. A blocked or full storage must not break the guide.
   }
 }
+
+export function mergeCompletedWikiGuideIds(
+  guideIds: Iterable<string>,
+  storage: Storage | null = getStorage(),
+): Set<string> {
+  if (!storage) return new Set();
+  const progress = readProgress(storage);
+  const completedAt = new Date().toISOString();
+  for (const rawGuideId of guideIds) {
+    const guideId = rawGuideId.trim();
+    if (/^[a-z0-9:_-]{1,96}$/i.test(guideId) && !progress[guideId]) {
+      progress[guideId] = completedAt;
+    }
+  }
+  try {
+    storage.setItem(WIKI_GUIDE_PROGRESS_STORAGE_KEY, JSON.stringify(progress));
+  } catch {
+    // Reading progress remains possible even when browser storage is blocked.
+  }
+  return new Set(Object.keys(progress));
+}

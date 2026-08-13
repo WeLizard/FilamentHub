@@ -4,7 +4,7 @@ import logging
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, Query, Request, UploadFile, status
+from fastapi import APIRouter, Depends, File, Query, Request, Response, UploadFile, status
 from fastapi.responses import FileResponse
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -32,6 +32,7 @@ from app.models.wiki_space import WikiSpace
 from app.schemas.wiki_authoring import (
     WikiArticleDraftCreate,
     WikiMediaUploadResponse,
+    WikiMediaAssetResponse,
     WikiModerationDecision,
     WikiPublicRevisionListResponse,
     WikiPublicRevisionResponse,
@@ -49,7 +50,9 @@ from app.services.wiki_media_service import (
     WIKI_MEDIA_MAX_UPLOAD_BYTES,
     can_view_wiki_media,
     create_wiki_media_asset,
+    delete_unpublished_wiki_media_asset,
     get_wiki_media_asset,
+    list_unpublished_user_wiki_media,
     resolve_wiki_media_path,
     wiki_media_url,
 )
@@ -85,6 +88,7 @@ def _revision_response(revision: WikiRevision) -> WikiRevisionResponse:
         article_id=article.id,
         article_category_id=article.category_id,
         article_slug=article.slug,
+        article_content_key=article.content_key,
         article_title=article.title,
         article_space_key=article.space.key,
         article_language=article.language,
@@ -298,6 +302,43 @@ async def read_wiki_media(
             "X-Content-Type-Options": "nosniff",
         },
     )
+
+
+@router.get("/author/media", response_model=list[WikiMediaAssetResponse])
+async def list_own_staged_wiki_media(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_active_user)],
+) -> list[WikiMediaAssetResponse]:
+    assets = await list_unpublished_user_wiki_media(db, current_user.id)
+    return [
+        WikiMediaAssetResponse(
+            id=asset.public_id,
+            url=wiki_media_url(asset.public_id),
+            width=asset.width,
+            height=asset.height,
+            size_bytes=asset.size_bytes,
+            created_at=asset.created_at,
+        )
+        for asset in assets
+    ]
+
+
+@router.delete(
+    "/author/media/{public_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_own_staged_wiki_media(
+    public_id: str,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_active_user)],
+) -> Response:
+    await delete_unpublished_wiki_media_asset(
+        db,
+        public_id=public_id,
+        user=current_user,
+    )
+    await db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post(

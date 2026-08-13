@@ -16,6 +16,7 @@ from app.core.errors import (
     ERR_ARTICLE_SLUG_EXISTS,
     ERR_CATEGORY_NOT_FOUND,
     ERR_WIKI_ACTIVE_REVISION_EXISTS,
+    ERR_WIKI_CONTENT_KEY_EXISTS,
     ERR_WIKI_GUIDES_EDITOR_ONLY,
     ERR_WIKI_REVIEW_ALREADY_EXISTS,
     ERR_WIKI_REVISION_NOT_EDITABLE,
@@ -140,6 +141,23 @@ async def _ensure_slug_available(
         raise_error(status.HTTP_400_BAD_REQUEST, ERR_ARTICLE_SLUG_EXISTS)
 
 
+async def _ensure_content_key_available(
+    db: AsyncSession,
+    content_key: str,
+    language: str,
+    *,
+    exclude_id: int | None = None,
+) -> None:
+    statement = select(WikiArticle.id).where(
+        WikiArticle.content_key == content_key,
+        WikiArticle.language == language,
+    )
+    if exclude_id is not None:
+        statement = statement.where(WikiArticle.id != exclude_id)
+    if (await db.execute(statement)).scalar_one_or_none() is not None:
+        raise_error(status.HTTP_409_CONFLICT, ERR_WIKI_CONTENT_KEY_EXISTS)
+
+
 async def _next_revision_number(db: AsyncSession, article_id: int) -> int:
     result = await db.execute(
         select(func.max(WikiRevision.revision_number)).where(
@@ -204,6 +222,7 @@ async def create_article_with_revision(
     language: str,
     title: str,
     slug: str | None,
+    content_key: str | None,
     summary: str,
     content: str,
     tags: list[str] | None,
@@ -234,6 +253,9 @@ async def create_article_with_revision(
     else:
         await _ensure_slug_available(db, slug)
 
+    resolved_content_key = content_key or slug
+    await _ensure_content_key_available(db, resolved_content_key, language)
+
     provenance = (
         WikiArticleProvenance.EDITORIAL.value
         if editor
@@ -246,6 +268,7 @@ async def create_article_with_revision(
         provenance=provenance,
         title=title,
         slug=slug,
+        content_key=resolved_content_key,
         summary=summary,
         content=content,
         tags=tags,

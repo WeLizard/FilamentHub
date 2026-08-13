@@ -60,6 +60,7 @@ const draft: WikiRevision = {
   article_id: 20,
   article_category_id: 1,
   article_slug: 'safe-draft',
+  article_content_key: 'safe-draft',
   article_title: 'Safe draft',
   article_space_key: 'knowledge',
   article_language: 'en',

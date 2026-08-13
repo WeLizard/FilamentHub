@@ -55,6 +55,12 @@ class WikiMediaUploadResponse(BaseModel):
     size_bytes: int
 
 
+class WikiMediaAssetResponse(WikiMediaUploadResponse):
+    """Private staged media visible to its uploader."""
+
+    created_at: datetime
+
+
 class WikiArticleDraftCreate(BaseModel):
     """Create an article and its first revision."""
 
@@ -63,6 +69,7 @@ class WikiArticleDraftCreate(BaseModel):
     language: WikiLanguage = "ru"
     title: str = Field(..., min_length=1, max_length=200)
     slug: str | None = Field(None, min_length=1, max_length=200, pattern=r"^[a-z0-9-]+$")
+    content_key: str | None = Field(None, min_length=1, max_length=200, pattern=r"^[a-z0-9-]+$")
     summary: str = Field(..., min_length=1, max_length=1000)
     content: str = Field(..., min_length=1, max_length=200_000)
     tags: list[str] | None = None
@@ -157,6 +164,7 @@ class WikiRevisionResponse(BaseModel):
     article_id: int
     article_category_id: int
     article_slug: str
+    article_content_key: str
     article_title: str
     article_space_key: WikiSpaceKey
     article_language: WikiLanguage

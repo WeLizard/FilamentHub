@@ -24,27 +24,12 @@ export function WikiCategoryPage() {
     enabled: Boolean(slug),
     queryFn: async () => {
       if (!slug) return null;
-      let [categoriesData, articlesData] = await Promise.all([
+      const [categoriesData, articlesData] = await Promise.all([
         wikiAPI.listCategories({ page: 1, page_size: 100, space: 'knowledge', language: currentLanguage }),
         wikiAPI.listArticles({ category_slug: slug, published_only: true, space: 'knowledge', language: currentLanguage, page: currentPage, page_size: 12 }),
       ]);
-      let foundCategory = categoriesData.items.find((category) => category.slug === slug) ?? null;
+      const foundCategory = categoriesData.items.find((category) => category.slug === slug) ?? null;
       if (!foundCategory) return null;
-
-      if (currentLanguage !== 'ru' && articlesData.total === 0) {
-        [categoriesData, articlesData] = await Promise.all([
-          wikiAPI.listCategories({ page: 1, page_size: 100, space: 'knowledge', language: 'ru' }),
-          wikiAPI.listArticles({
-            category_slug: foundCategory.slug,
-            published_only: true,
-            space: 'knowledge',
-            language: 'ru',
-            page: currentPage,
-            page_size: 12,
-          }),
-        ]);
-        foundCategory = categoriesData.items.find((category) => category.slug === slug) || foundCategory;
-      }
       return { category: foundCategory, articles: articlesData.items, totalPages: articlesData.total_pages };
     },
     staleTime: 60_000,

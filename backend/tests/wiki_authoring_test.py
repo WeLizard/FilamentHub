@@ -626,6 +626,141 @@ async def test_markdown_sync_does_not_replace_article_of_another_language(
     assert article.content == "Русский текст"
 
 
+async def test_content_key_resolves_translation_and_survives_localized_slug_change(
+    client,
+    auth_user,
+    db_session,
+):
+    await _seed_wiki(db_session)
+    shared_key = "first-steps-material"
+    russian = await sync_article(
+        db_session,
+        Path("first-steps-ru.md"),
+        "Русский текст",
+        {
+            "title": "Первые шаги",
+            "slug": "pervye-shagi",
+            "content_key": shared_key,
+            "category": "materials",
+            "status": "published",
+            "language": "ru",
+            "author_id": auth_user.id,
+        },
+    )
+    english = await sync_article(
+        db_session,
+        Path("first-steps-en.md"),
+        "English text",
+        {
+            "title": "First steps",
+            "slug": "first-steps",
+            "content_key": shared_key,
+            "category": "materials",
+            "status": "published",
+            "language": "en",
+            "author_id": auth_user.id,
+        },
+    )
+    renamed = await sync_article(
+        db_session,
+        Path("first-steps-en.md"),
+        "Updated English text",
+        {
+            "title": "Getting started",
+            "slug": "getting-started",
+            "content_key": shared_key,
+            "category": "materials",
+            "status": "published",
+            "language": "en",
+            "author_id": auth_user.id,
+        },
+    )
+
+    assert russian["status"] == "created"
+    assert english["status"] == "created"
+    assert renamed["status"] == "updated"
+    articles = (
+        await db_session.execute(
+            select(WikiArticle).where(WikiArticle.content_key == shared_key)
+        )
+    ).scalars().all()
+    assert sorted((article.language, article.slug) for article in articles) == [
+        ("en", "getting-started"),
+        ("ru", "pervye-shagi"),
+    ]
+
+    translation = await client.get(
+        "/api/v1/wiki/articles/pervye-shagi/translation/en"
+    )
+    assert translation.status_code == 200, translation.text
+    assert translation.json() == {
+        "content_key": shared_key,
+        "language": "en",
+        "slug": "getting-started",
+    }
+
+
+async def test_article_get_is_read_only_and_explicit_view_is_counted(
+    client,
+    admin_user,
+    db_session,
+):
+    category = await _seed_wiki(db_session)
+    created = await client.post(
+        "/api/v1/wiki/author/articles",
+        headers=_auth_headers(admin_user),
+        json={
+            "category_id": category.id,
+            "title": "View counting",
+            "slug": "view-counting",
+            "summary": "Count only explicit views",
+            "content": "Published body",
+            "publish": True,
+        },
+    )
+    assert created.status_code == 201, created.text
+
+    first_get = await client.get("/api/v1/wiki/articles/view-counting")
+    second_get = await client.get("/api/v1/wiki/articles/view-counting")
+    assert first_get.status_code == 200
+    assert second_get.status_code == 200
+    assert first_get.json()["views"] == 0
+    assert second_get.json()["views"] == 0
+
+    recorded = await client.post("/api/v1/wiki/articles/view-counting/view")
+    assert recorded.status_code == 204
+    after = await client.get("/api/v1/wiki/articles/view-counting")
+    assert after.json()["views"] == 1
+
+
+async def test_guide_progress_is_idempotent_and_account_scoped(
+    client,
+    auth_user,
+):
+    headers = _auth_headers(auth_user)
+    merged = await client.put(
+        "/api/v1/wiki/progress",
+        headers=headers,
+        json={"guide_ids": ["user:shelf", "article:catalog-material"]},
+    )
+    assert merged.status_code == 200, merged.text
+    assert merged.json()["guide_ids"] == [
+        "user:shelf",
+        "article:catalog-material",
+    ]
+
+    repeated = await client.put(
+        "/api/v1/wiki/progress",
+        headers=headers,
+        json={"guide_ids": ["user:shelf"]},
+    )
+    assert repeated.status_code == 200
+    assert repeated.json() == merged.json()
+
+    anonymous = await client.get("/api/v1/wiki/progress")
+    assert anonymous.status_code == 401
+
+
 async def test_account_deletion_removes_private_wiki_work_and_anonymizes_published(
     client,
     admin_user,
