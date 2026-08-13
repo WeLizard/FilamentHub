@@ -689,6 +689,8 @@ export const filamentsAPI = {
     printer_id?: number;
     search?: string;
     country?: string;
+    color_group?: import('../types/api').FilamentColorGroup;
+    multicolor?: boolean;
   }) => {
     const response = await api.get<FilamentListResponse>('/filaments/', { params });
     return response.data;
@@ -732,6 +734,8 @@ export const filamentsAPI = {
     property_claims?: FilamentPropertyClaim[];
     color_name?: string;
     color_hex?: string;
+    color_group?: import('../types/api').FilamentColorGroup | null;
+    color_group_source?: import('../types/api').FilamentColorGroupSource;
     ral_code?: string | null;
     diameter?: number;
     density?: number;
@@ -758,8 +762,10 @@ export const filamentsAPI = {
       market_note?: string | null;
       market_color_name?: string | null;
     };
-  }) => {
-    const response = await api.post<Filament>('/filaments/', data);
+  }, confirmSimilar = false) => {
+    const response = await api.post<Filament>('/filaments/', data, {
+      params: confirmSimilar ? { confirm_similar: true } : undefined,
+    });
     return response.data;
   },
 
@@ -768,6 +774,8 @@ export const filamentsAPI = {
     material_type?: string;
     color_name?: string;
     color_hex?: string;
+    color_group?: import('../types/api').FilamentColorGroup | null;
+    color_group_source?: import('../types/api').FilamentColorGroupSource;
     ral_code?: string | null;
     visual_settings?: FilamentVisualSettings | null;
     additives?: FilamentAdditive[];
@@ -1503,6 +1511,7 @@ export const printersAPI = {
 export const brandRequestsAPI = {
   create: async (data: {
     request_type: 'join' | 'create' | 'representative';
+    claim_scope?: 'catalog_only' | 'brand' | 'representative';
     country?: string;
     organization_name?: string;
     brand_id?: number;
@@ -1533,6 +1542,11 @@ export const brandRequestsAPI = {
 
   cancel: async (id: number) => {
     await api.delete(`/brand-requests/${id}`);
+  },
+
+  verifySite: async (requestId: number) => {
+    const response = await api.post<BrandRequest>(`/brand-requests/${requestId}/verify-site`);
+    return response.data;
   },
 
   uploadFile: async (requestId: number, file: File) => {

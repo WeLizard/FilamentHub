@@ -26,6 +26,7 @@ from app.schemas.filament import (
     FilamentImportRowResult,
     normalize_ral_code,
 )
+from app.services.catalog_color_groups import classify_color_group
 from app.services.catalog_url_service import choose_filament_slug
 from app.services.country_market import filament_cell_has_public_data
 from app.services.preset_moderation import validate_text_field
@@ -38,9 +39,19 @@ from app.services.territorial_access import (
 router = APIRouter(prefix="/filament-import", tags=["filament-import"])
 
 CSV_COLUMNS = [
-    "name", "material_type", "color_name", "market_color_name", "color_hex", "ral_code",
-    "price_per_kg", "currency", "spool_weight", "line", "availability",
-    "product_url", "market_note",
+    "name",
+    "material_type",
+    "color_name",
+    "market_color_name",
+    "color_hex",
+    "ral_code",
+    "price_per_kg",
+    "currency",
+    "spool_weight",
+    "line",
+    "availability",
+    "product_url",
+    "market_note",
 ]
 
 _AVAILABILITY_VALUES = {a.value for a in FilamentAvailability}
@@ -66,10 +77,23 @@ async def download_template() -> Response:
     buffer = io.StringIO()
     writer = csv.writer(buffer)
     writer.writerow(CSV_COLUMNS)
-    writer.writerow([
-        "PLA Basic Red", "PLA", "Red", "Red", "#FF0000", "3020",
-        "1500", "RUB", "1000", "PLA Basic", "available", "", "",
-    ])
+    writer.writerow(
+        [
+            "PLA Basic Red",
+            "PLA",
+            "Red",
+            "Red",
+            "#FF0000",
+            "3020",
+            "1500",
+            "RUB",
+            "1000",
+            "PLA Basic",
+            "available",
+            "",
+            "",
+        ]
+    )
     # BOM — чтобы Excel распознал UTF-8; "sep=," — чтобы Excel (в т.ч. RU-локаль,
     # где разделитель по умолчанию ";") разбил файл на колонки по запятой.
     content = "﻿" + "sep=,\r\n" + buffer.getvalue()
@@ -118,9 +142,7 @@ async def import_filaments(
     result = FilamentImportResult()
     # Кэш линеек бренда по нижнему регистру имени, чтобы не плодить дубликаты.
     line_cache: dict[str, FilamentLine] = {}
-    existing_lines = await db.execute(
-        select(FilamentLine).where(FilamentLine.brand_id == brand_id)
-    )
+    existing_lines = await db.execute(select(FilamentLine).where(FilamentLine.brand_id == brand_id))
     for line in existing_lines.scalars():
         line_cache[line.name.strip().lower()] = line
 
@@ -130,33 +152,54 @@ async def import_filaments(
 
         if not name or not material_type:
             result.errors += 1
-            result.rows.append(FilamentImportRowResult(
-                row=index, status="error", name=name or None, message="ERR_VALIDATION_REQUIRED",
-            ))
+            result.rows.append(
+                FilamentImportRowResult(
+                    row=index,
+                    status="error",
+                    name=name or None,
+                    message="ERR_VALIDATION_REQUIRED",
+                )
+            )
             continue
 
         is_valid, _ = await validate_text_field(name, db, "filament_name")
         if not is_valid:
             result.errors += 1
-            result.rows.append(FilamentImportRowResult(
-                row=index, status="error", name=name, message="ERR_VALIDATION_TEXT",
-            ))
+            result.rows.append(
+                FilamentImportRowResult(
+                    row=index,
+                    status="error",
+                    name=name,
+                    message="ERR_VALIDATION_TEXT",
+                )
+            )
             continue
 
         color_name = (row.get("color_name") or "").strip() or None
         market_color_name = (row.get("market_color_name") or "").strip() or color_name
         color_hex = (row.get("color_hex") or "").strip().upper() or None
         ral_code_value = normalize_ral_code(row.get("ral_code"))
-        ral_code = ral_code_value if isinstance(ral_code_value, str) and ral_code_value.isdigit() and len(ral_code_value) == 4 else None
+        ral_code = (
+            ral_code_value
+            if isinstance(ral_code_value, str)
+            and ral_code_value.isdigit()
+            and len(ral_code_value) == 4
+            else None
+        )
         price_per_kg = _parse_float(row.get("price_per_kg"))
         currency = (row.get("currency") or "").strip().upper() or None
         spool_weight = _parse_float(row.get("spool_weight"))
 
         if country and price_per_kg is not None and currency is None:
             result.errors += 1
-            result.rows.append(FilamentImportRowResult(
-                row=index, status="error", name=name, message="ERR_PRICE_CURRENCY_PAIR",
-            ))
+            result.rows.append(
+                FilamentImportRowResult(
+                    row=index,
+                    status="error",
+                    name=name,
+                    message="ERR_PRICE_CURRENCY_PAIR",
+                )
+            )
             continue
 
         availability_raw = (row.get("availability") or "").strip().lower()
@@ -205,15 +248,25 @@ async def import_filaments(
                     cell.price_updated_at = datetime.now(timezone.utc)
                     cell.price_updated_by_id = current_user.id
                 result.updated += 1
-                result.rows.append(FilamentImportRowResult(
-                    row=index, status="updated", name=name, filament_id=duplicate,
-                ))
+                result.rows.append(
+                    FilamentImportRowResult(
+                        row=index,
+                        status="updated",
+                        name=name,
+                        filament_id=duplicate,
+                    )
+                )
                 continue
             result.skipped += 1
-            result.rows.append(FilamentImportRowResult(
-                row=index, status="skipped", name=name, filament_id=duplicate,
-                message="ERR_FILAMENT_ALREADY_EXISTS",
-            ))
+            result.rows.append(
+                FilamentImportRowResult(
+                    row=index,
+                    status="skipped",
+                    name=name,
+                    filament_id=duplicate,
+                    message="ERR_FILAMENT_ALREADY_EXISTS",
+                )
+            )
             continue
 
         # Линейка (создаём при необходимости).
@@ -237,12 +290,14 @@ async def import_filaments(
         )
         if slug is None:
             result.errors += 1
-            result.rows.append(FilamentImportRowResult(
-                row=index,
-                status="error",
-                name=name,
-                message="ERR_FILAMENT_ALREADY_EXISTS",
-            ))
+            result.rows.append(
+                FilamentImportRowResult(
+                    row=index,
+                    status="error",
+                    name=name,
+                    message="ERR_FILAMENT_ALREADY_EXISTS",
+                )
+            )
             continue
         filament = Filament(
             brand_id=brand_id,
@@ -252,6 +307,10 @@ async def import_filaments(
             material_type=material_type,
             color_name=color_name,
             color_hex=color_hex if color_hex and color_hex.startswith("#") else None,
+            color_group=classify_color_group(
+                color_hex if color_hex and color_hex.startswith("#") else None
+            ),
+            color_group_source="auto",
             ral_code=ral_code,
             price_per_kg=None if country else price_per_kg,
             spool_weight=spool_weight,
@@ -282,12 +341,18 @@ async def import_filaments(
 
         if brand.verified:
             from app.services.qr_service import ensure_filament_qr_code
+
             await ensure_filament_qr_code(filament, db)
 
         result.created += 1
-        result.rows.append(FilamentImportRowResult(
-            row=index, status="created", name=name, filament_id=filament.id,
-        ))
+        result.rows.append(
+            FilamentImportRowResult(
+                row=index,
+                status="created",
+                name=name,
+                filament_id=filament.id,
+            )
+        )
 
     await db.commit()
     return result

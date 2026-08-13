@@ -82,6 +82,21 @@ export interface FilamentPresetSummary {
 }
 
 export type FilamentAvailability = 'available' | 'out_of_stock' | 'discontinued' | 'coming_soon';
+export type FilamentColorGroup =
+  | 'black'
+  | 'white'
+  | 'gray'
+  | 'red'
+  | 'orange'
+  | 'yellow'
+  | 'green'
+  | 'blue'
+  | 'purple'
+  | 'pink'
+  | 'brown'
+  | 'gold'
+  | 'silver';
+export type FilamentColorGroupSource = 'auto' | 'manual';
 
 export interface Filament {
   id: number;
@@ -95,6 +110,8 @@ export interface Filament {
   material_type: string;
   color_name: string | null;
   color_hex: string | null;
+  color_group?: FilamentColorGroup | null;
+  color_group_source?: FilamentColorGroupSource;
   ral_code: string | null;
   visual_settings: FilamentVisualSettings | null; // Расширенные визуальные эффекты (только для сайта)
   additives?: FilamentAdditive[];
@@ -889,6 +906,10 @@ export interface BrandRequest {
   organization_name?: string | null;
   brand_id: number | null;
   brand_name?: string | null; // Название бренда для JOIN заявок
+  claim_scope?: string | null;
+  site_verification_token?: string | null;
+  site_verified_at?: string | null;
+  site_verified_domain?: string | null;
   new_brand_name: string | null;
   new_brand_slug: string | null;
   new_brand_description: string | null;
@@ -964,6 +985,15 @@ export interface FeedbackMessage {
 
 export interface FeedbackDetail extends Feedback {
   messages: FeedbackMessage[];
+}
+
+export interface SimilarFilamentCandidate {
+  filament_id: number;
+  filament_name: string;
+  material_type: string;
+  color_name: string | null;
+  color_hex: string | null;
+  diameter: number;
 }
 
 export interface UnreadCommunicationsCount {

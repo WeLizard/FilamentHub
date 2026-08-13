@@ -28,6 +28,7 @@ from app.schemas.filament import (
     FilamentLineUpdate,
     FilamentPaletteCreate,
 )
+from app.services.catalog_color_groups import classify_color_group
 from app.services.catalog_url_service import choose_filament_slug
 from app.services.country_market import filament_cell_has_public_data
 from app.services.preset_moderation import validate_text_field
@@ -157,18 +158,27 @@ async def create_line_variants(
         color_name = variant.color_name.strip()
         if not color_name:
             result.errors += 1
-            result.rows.append(FilamentImportRowResult(
-                row=index, status="error", message="ERR_VALIDATION_REQUIRED",
-            ))
+            result.rows.append(
+                FilamentImportRowResult(
+                    row=index,
+                    status="error",
+                    message="ERR_VALIDATION_REQUIRED",
+                )
+            )
             continue
 
         name = (variant.name or f"{line.name} {color_name}").strip()
         is_valid, _ = await validate_text_field(name, db, "filament_name")
         if not is_valid:
             result.errors += 1
-            result.rows.append(FilamentImportRowResult(
-                row=index, status="error", name=name, message="ERR_VALIDATION_TEXT",
-            ))
+            result.rows.append(
+                FilamentImportRowResult(
+                    row=index,
+                    status="error",
+                    name=name,
+                    message="ERR_VALIDATION_TEXT",
+                )
+            )
             continue
 
         color_hex = variant.color_hex.strip().upper() if variant.color_hex else None
@@ -184,10 +194,15 @@ async def create_line_variants(
         )
         if duplicate is not None:
             result.skipped += 1
-            result.rows.append(FilamentImportRowResult(
-                row=index, status="skipped", name=name, filament_id=duplicate,
-                message="ERR_FILAMENT_ALREADY_EXISTS",
-            ))
+            result.rows.append(
+                FilamentImportRowResult(
+                    row=index,
+                    status="skipped",
+                    name=name,
+                    filament_id=duplicate,
+                    message="ERR_FILAMENT_ALREADY_EXISTS",
+                )
+            )
             continue
 
         # visual_settings — общие, но первый цвет = цвет варианта.
@@ -206,12 +221,14 @@ async def create_line_variants(
         )
         if slug is None:
             result.errors += 1
-            result.rows.append(FilamentImportRowResult(
-                row=index,
-                status="error",
-                name=name,
-                message="ERR_FILAMENT_ALREADY_EXISTS",
-            ))
+            result.rows.append(
+                FilamentImportRowResult(
+                    row=index,
+                    status="error",
+                    name=name,
+                    message="ERR_FILAMENT_ALREADY_EXISTS",
+                )
+            )
             continue
         filament = Filament(
             brand_id=line.brand_id,
@@ -221,6 +238,11 @@ async def create_line_variants(
             material_type=material_type,
             color_name=color_name,
             color_hex=color_hex if color_hex and color_hex.startswith("#") else None,
+            color_group=classify_color_group(
+                color_hex if color_hex and color_hex.startswith("#") else None,
+                visual,
+            ),
+            color_group_source="auto",
             ral_code=variant.ral_code,
             visual_settings=visual,
             additives=[item.model_dump() for item in data.additives],
@@ -257,12 +279,18 @@ async def create_line_variants(
 
         if brand.verified:
             from app.services.qr_service import ensure_filament_qr_code
+
             await ensure_filament_qr_code(filament, db)
 
         result.created += 1
-        result.rows.append(FilamentImportRowResult(
-            row=index, status="created", name=name, filament_id=filament.id,
-        ))
+        result.rows.append(
+            FilamentImportRowResult(
+                row=index,
+                status="created",
+                name=name,
+                filament_id=filament.id,
+            )
+        )
 
     await db.commit()
     return result

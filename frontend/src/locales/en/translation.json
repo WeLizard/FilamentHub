@@ -695,7 +695,8 @@
     "alert_rejection_reason_required": "Please provide a rejection reason",
     "representative_request": "Representation of {{brandName}} — {{country}}",
     "claimed_country_label": "Country claimed",
-    "claimed_country_hint": "Approval gives the applicant their own organization and authority over this country only. The brand's common layer stays with its owner."
+    "claimed_country_hint": "Approval gives the applicant their own organization and authority over this country only. The brand's common layer stays with its owner.",
+    "siteVerified": "The applicant proved access to {{domain}}"
   },
   "adminDatabase": {
     "diag": {
@@ -1116,7 +1117,11 @@
     "error": "Error loading materials",
     "searchPlaceholder": "Name, brand, material, color, composition, or property...",
     "allTypes": "All types",
+    "allColors": "All colours",
+    "multicolor": "Multicolour",
     "allBrands": "All brands",
+    "market": "Market",
+    "generalMarket": "General data",
     "noResults": "No materials found",
     "errorLoginRequired": "Login required",
     "errorSavePreset": "Failed to add preset to profile",
@@ -1175,7 +1180,23 @@
     "density": "Density:",
     "price": "Price:",
     "priceSuffix": " RUB/kg",
-    "seoDescription": "{{name}} - {{count}} filament types for 3D printing. Presets, ratings and reviews on FilamentHub."
+    "seoDescription": "{{name}} - {{count}} filament types for 3D printing. Presets, ratings and reviews on FilamentHub.",
+    "verifiedMeaning": "The brand confirmed this page is theirs: the data and official presets are published by the manufacturer. This is not a judgement about product quality."
+  },
+  "colorGroups": {
+    "black": "Black",
+    "white": "White",
+    "gray": "Grey",
+    "red": "Red",
+    "orange": "Orange",
+    "yellow": "Yellow",
+    "green": "Green",
+    "blue": "Blue",
+    "purple": "Purple",
+    "pink": "Pink",
+    "brown": "Brown",
+    "gold": "Gold",
+    "silver": "Silver"
   },
   "downloadPage": {
     "seoTitle": "FilamentHub plugins — OrcaSlicer and OctoPrint",
@@ -1912,6 +1933,20 @@
     "other": "Other...",
     "noTypesFound": "No types found. Enter a new material type manually.",
     "colors": "Colors",
+    "multicolorOrcaHint": "The first palette colour is sent to OrcaSlicer; the remaining colours stay in FilamentHub.",
+    "colorGroupLabel": "Search colour",
+    "colorGroupAuto": "Automatic from the primary colour",
+    "colorGroupAutoWithResult": "Automatic — approximately {{group}}",
+    "colorGroupHint": "The approximate group is used only for search. The branded name and exact shade stay unchanged.",
+    "multicolorNoDominant": "Multicolour — no dominant colour",
+    "approximatePalette": "Approximate shade map",
+    "detectedColorGroup": "{{group}} · {{mode}}",
+    "colorGroupNotDetected": "Enter a valid HEX value to see the suggested group",
+    "selectApproximateShade": "Select approximate {{group}} shade {{hex}}",
+    "colorGroupSource": {
+      "auto": "detected automatically",
+      "manual": "selected manually"
+    },
     "pricePerKgLabel": "Price per kg ({{currency}})",
     "pricePerSpoolLabel": "Price per spool ({{currency}})",
     "rubPerSpool": "{{currency}} per spool",
@@ -1931,7 +1966,11 @@
     "commonEditRequestSending": "Sending…",
     "commonEditRequestSent": "Request sent to the global representative and administration.",
     "commonEditRequestFailed": "Could not send the request.",
-    "commonEditRequestNoRecipients": "There is nobody to receive this request right now. Contact support@filamenthub.ru."
+    "commonEditRequestNoRecipients": "There is nobody to receive this request right now. Contact support@filamenthub.ru.",
+    "similarTitle": "Similar records already exist",
+    "similarHint": "Check whether this is the same product. If it is a different one, go ahead.",
+    "similarConfirmHint": "Press “Create” again to add the material.",
+    "mm": "mm"
   },
   "unsavedGuard": {
     "title": "Discard changes?",
@@ -4409,7 +4448,7 @@
     "personalEmailWarning": "⚠️ You are using a personal email. Please attach proof documents.",
     "brandSocialMedia": "Brand social media",
     "add": "Add",
-    "proofDocsLabel": "Proof documents description",
+    "proofDocsLabel": "How can we confirm your rights to the brand",
     "optionalForCorporate": "optional for corporate email",
     "proofPlaceholderCorporate": "Optional: describe proof documents to speed up verification (power of attorney, business registration extract, etc.)",
     "proofPlaceholderPersonal": "When using personal email (e.g., @gmail.com), you must attach proof documents and describe their contents: power of attorney, business registration extract, links to social media, marketplaces, or product photos with logo or packaging",
@@ -4494,7 +4533,17 @@
     "settingsCurrency": "Brand currency",
     "settingsCommonGaps": "The name and logo are the same in every country. Empty fields may be filled in, so the brand does not wait for a global representative.",
     "countryFilled": "filled in",
-    "countryEmpty": "no data"
+    "countryEmpty": "no data",
+    "proofDocsHint": "Briefly: who you are to the brand and what you attach. A work address on the brand’s own domain is usually enough.",
+    "siteCheckTitle": "Confirm the brand site",
+    "siteCheckHint": "Faster than documents: place the code on the brand site and we will check it ourselves.",
+    "siteCheckPath": "File path",
+    "siteCheckCode": "Code",
+    "siteCheckStart": "Get the code",
+    "siteCheckRetry": "Check the site",
+    "siteCheckDone": "{{domain}} confirmed",
+    "siteCheckNotFound": "The code is not on the site yet. Upload the file and check again.",
+    "siteCheckFailed": "Could not check the site"
   },
   "viewPreset": {
     "yes": "Yes",
@@ -6043,6 +6092,7 @@
     "ERR_VALIDATION_REQUIRED": "Required fields missing (name, type)",
     "ERR_VALIDATION_TEXT": "Invalid text in the name",
     "ERR_FILAMENT_ALREADY_EXISTS": "This filament already exists. Select the existing one.",
+    "ERR_FILAMENT_SIMILAR_EXISTS": "The catalog already holds similar records. Check whether this is the same product.",
     "ERR_FILAMENT_HAS_CONTRIBUTIONS": "This filament cannot be deleted: people have already added presets or reviews to it, and deleting it would take their work with it. Correct the entry, or take it off the shelf — it leaves the catalogue while the presets and reviews stay.",
     "ERR_PRINTER_NOT_FOUND": "Printer not found",
     "ERR_REQUEST_NOT_FOUND": "Request not found",

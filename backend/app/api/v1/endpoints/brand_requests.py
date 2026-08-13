@@ -32,6 +32,7 @@ from app.core.errors import (
     ERR_USER_ALREADY_IN_BRAND,
     ERR_USER_NOT_FOUND,
     ERR_VIEW_OWN_REQUESTS_ONLY,
+    ERR_WEBSITE_REQUIRED,
     raise_error,
 )
 from app.db.session import get_db
@@ -62,6 +63,11 @@ from app.services.organization_access import (
     grant_brand_owner_membership,
 )
 from app.services.qr_service import backfill_brand_qr_codes
+from app.services.site_ownership import (
+    confirm_site_ownership,
+    new_verification_token,
+    utc_now,
+)
 
 router = APIRouter(prefix="/brand-requests", tags=["brand-requests"])
 
@@ -199,6 +205,11 @@ async def create_brand_request(
     # Валидация: для CREATE заявок проверяем корпоративность email и обязательность документов
     # Для JOIN заявок: если у бренда есть сотрудники - упрощенная заявка, если нет - полная как для CREATE
     if data.request_type == BrandRequestType.CREATE:
+        # Представительство всегда относится к конкретному рынку: без страны
+        # заявка не описывает, о каком праве идёт речь.
+        if data.claim_scope == "representative" and not data.country:
+            raise_error(status.HTTP_400_BAD_REQUEST, ERR_COUNTRY_REQUIRED)
+
         # Нормализуем URL сайта перед проверкой
         normalized_website = None
         if data.company_website:
@@ -248,6 +259,11 @@ async def create_brand_request(
         new_brand_slug=resolved_new_brand_slug,
         new_brand_description=data.new_brand_description,
         new_brand_website=new_brand_website_normalized,  # Сохраняем нормализованный URL
+        claim_scope=(
+            data.claim_scope
+            if data.request_type == BrandRequestType.CREATE
+            else None
+        ),
         message=data.message,
         # Структурированные поля для подтверждающих документов
         company_email=data.company_email,
@@ -470,8 +486,9 @@ async def update_brand_request(
                         approved_by_id=admin.id,
                     )
         elif request.request_type == BrandRequestType.CREATE:
-            # CREATE adds a missing catalog identity. It never creates a company
-            # workspace or grants authority over the brand; claims are separate.
+            user = await db.get(User, request.user_id)
+            if not user:
+                raise_error(status.HTTP_404_NOT_FOUND, ERR_USER_NOT_FOUND)
             selected_slug, available = await choose_brand_slug(
                 db,
                 name=request.new_brand_name or "",
@@ -501,6 +518,34 @@ async def update_brand_request(
             )
             db.add(new_brand)
             await db.flush()  # Чтобы получить ID бренда
+
+            if request.claim_scope in {"brand", "representative"}:
+                await backfill_brand_qr_codes(new_brand, db)
+                if request.claim_scope == "representative":
+                    await settle_territorial_application(
+                        db,
+                        brand=new_brand,
+                        user=user,
+                        country=request.country,
+                        organization_name=None,
+                        approved_by_id=admin.id,
+                    )
+                else:
+                    await grant_brand_owner_membership(
+                        db,
+                        brand=new_brand,
+                        user=user,
+                        granted_by_id=admin.id,
+                    )
+                    await db.flush()
+                    await issue_territorial_grant(
+                        db,
+                        brand=new_brand,
+                        user=user,
+                        country=None,
+                        source=GrantSource.application,
+                        approved_by_id=admin.id,
+                    )
 
     await db.commit()
     await db.refresh(request)
@@ -538,6 +583,39 @@ async def get_brand_request(
             response.social_media_urls = []
     return response
 
+
+@router.post("/{request_id}/verify-site", response_model=BrandRequestResponse)
+async def verify_request_site(
+    request_id: int,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> BrandRequestResponse:
+    """Проверить, что заявитель разместил выданный код на сайте бренда."""
+    request = await db.scalar(select(BrandRequest).where(BrandRequest.id == request_id))
+    if not request:
+        raise_error(status.HTTP_404_NOT_FOUND, ERR_REQUEST_NOT_FOUND)
+    if request.user_id != current_user.id:
+        raise_error(status.HTTP_403_FORBIDDEN, ERR_UPLOAD_OWN_REQUESTS_ONLY)
+    if request.status != BrandRequestStatus.PENDING:
+        raise_error(status.HTTP_400_BAD_REQUEST, ERR_REQUEST_NOT_PENDING)
+    if not request.company_website:
+        raise_error(status.HTTP_400_BAD_REQUEST, ERR_WEBSITE_REQUIRED)
+
+    if not request.site_verification_token:
+        request.site_verification_token = new_verification_token()
+        await db.commit()
+        await db.refresh(request)
+
+    confirmed, domain = await confirm_site_ownership(
+        request.company_website, request.site_verification_token
+    )
+    if confirmed:
+        request.site_verified_at = utc_now()
+        request.site_verified_domain = domain
+        await db.commit()
+        await db.refresh(request)
+
+    return BrandRequestResponse.model_validate(request)
 
 @router.get("/{request_id}/proof/{file_name}")
 async def download_proof_file(
@@ -688,4 +766,3 @@ async def delete_proof_file_endpoint(
     response = BrandRequestResponse.model_validate(request)
     # Файлы уже парсятся через валидатор в схеме, конвертация выполняется автоматически
     return response
-

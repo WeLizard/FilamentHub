@@ -1180,8 +1180,10 @@ async def update_brand_request(
                 )
 
         elif request.request_type == BrandRequestType.CREATE:
-            # CREATE registers a catalog Brand only. Representation and an
-            # organization workspace are granted through a separate claim.
+            # A create request carries what the applicant asked for. Approving it
+            # issues that right in the same action: the documents are already
+            # reviewed here, and a second moderation round would check the same
+            # evidence twice while the applicant waits for an empty record.
             if not request.new_brand_name:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
@@ -1211,6 +1213,34 @@ async def update_brand_request(
             )
             db.add(new_brand)
             await db.flush()  # Получаем ID бренда
+
+            if request.claim_scope in {"brand", "representative"}:
+                await backfill_brand_qr_codes(new_brand, db)
+                if request.claim_scope == "representative":
+                    await settle_territorial_application(
+                        db,
+                        brand=new_brand,
+                        user=user,
+                        country=request.country,
+                        organization_name=None,
+                        approved_by_id=admin.id,
+                    )
+                else:
+                    await grant_brand_owner_membership(
+                        db,
+                        brand=new_brand,
+                        user=user,
+                        granted_by_id=admin.id,
+                    )
+                    await db.flush()
+                    await issue_territorial_grant(
+                        db,
+                        brand=new_brand,
+                        user=user,
+                        country=None,
+                        source=GrantSource.application,
+                        approved_by_id=admin.id,
+                    )
 
     await db.commit()
     await db.refresh(request)

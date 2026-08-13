@@ -55,7 +55,8 @@ const OrcaSlicerSourceCard: React.FC = () => {
     },
   });
 
-  const bundleAvailable = info?.bundle.exists === true;
+  const bundleAvailable = info?.bundle.exists === true && info.bundle.source != null;
+  const bundleExistsWithoutSource = info?.bundle.exists === true && info.bundle.source == null;
 
   return (
     <div className="bg-gradient-to-br from-indigo-900/30 to-purple-900/20 border border-indigo-500/30 rounded-2xl p-6">
@@ -69,7 +70,7 @@ const OrcaSlicerSourceCard: React.FC = () => {
           <p className="text-sm text-gray-300 mb-4">{t('adminCatalogSources.orca.description')}</p>
 
           {/* Stats */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 mb-4">
             <StatBox
               icon={Package}
               label={t('adminCatalogSources.orca.bundleStatus')}
@@ -78,7 +79,9 @@ const OrcaSlicerSourceCard: React.FC = () => {
                   ? '…'
                   : bundleAvailable
                     ? t('adminCatalogSources.orca.bundleReady', { size: info?.bundle.size_mb ?? '?' })
-                    : t('adminCatalogSources.orca.bundleMissing')
+                    : bundleExistsWithoutSource
+                      ? t('adminCatalogSources.orca.bundleLegacy')
+                      : t('adminCatalogSources.orca.bundleMissing')
               }
               tone={bundleAvailable ? 'good' : 'warn'}
             />
@@ -95,6 +98,18 @@ const OrcaSlicerSourceCard: React.FC = () => {
                   ? '…'
                   : `${info?.catalog.printers_system ?? 0} / ${info?.catalog.printers_total ?? 0}`
               }
+            />
+            <StatBox
+              icon={CheckCircle}
+              label={t('adminCatalogSources.orca.upstreamRevision')}
+              value={
+                isLoadingInfo
+                  ? '…'
+                  : info?.bundle.source
+                    ? `${info.bundle.source.ref} · ${(info.bundle.source.profiles_commit ?? info.bundle.source.commit).slice(0, 8)}`
+                    : t('adminCatalogSources.orca.upstreamUnknown')
+              }
+              tone={info?.bundle.source ? 'good' : 'warn'}
             />
           </div>
 

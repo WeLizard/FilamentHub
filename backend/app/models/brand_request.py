@@ -66,6 +66,12 @@ class BrandRequest(Base):
     new_brand_description: Mapped[str | None] = mapped_column(Text, nullable=True)
     new_brand_website: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
+    # Что заявитель просит вместе с созданием записи: ничего, права на бренд или
+    # представительство в стране. Пусто — запись просто пополняет каталог, и
+    # права по ней не выдаются. Без этого поля заявителю приходилось ждать одну
+    # модерацию ради пустой записи и подавать вторую заявку за правами.
+    claim_scope: Mapped[str | None] = mapped_column(String(20), nullable=True)
+
     # Request message (optional)
     # Страна, на которую претендует заявитель. Пусто — просит глобальную
     # область, и она выдаётся только отдельным решением.
@@ -84,6 +90,15 @@ class BrandRequest(Base):
 
     company_website: Mapped[str | None] = mapped_column(String(500), nullable=True)
     # company_website: сайт компании/бренда (для проверки email на сайте)
+
+    # Доказательство доступа к сайту бренда вместо доверия к присланному скану:
+    # заявитель размещает выданный код у себя, сервис читает его и запоминает,
+    # что и когда подтвердилось.
+    site_verification_token: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    site_verified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    site_verified_domain: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     social_media_urls: Mapped[str | None] = mapped_column(Text, nullable=True)
     # social_media_urls: JSON массив ссылок на соцсети бренда (Instagram, VK, Facebook и т.д.)

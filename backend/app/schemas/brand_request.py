@@ -2,6 +2,7 @@
 
 import json
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -31,6 +32,13 @@ class BrandRequestCreate(BaseModel):
     )
 
     # Для CREATE заявок
+    claim_scope: Literal["catalog_only", "brand", "representative"] = Field(
+        "catalog_only",
+        description=(
+            "Что заявитель просит вместе с созданием записи: только пополнить "
+            "каталог, права на бренд или представительство в стране."
+        ),
+    )
     new_brand_name: str | None = Field(None, max_length=100)
     new_brand_slug: str | None = Field(None, max_length=100)
     new_brand_description: str | None = None
@@ -64,6 +72,10 @@ class BrandRequestResponse(BaseModel):
     request_type: BrandRequestType
     brand_id: int | None = None
     brand_name: str | None = None  # Название бренда для JOIN заявок
+    claim_scope: str | None = None
+    site_verification_token: str | None = None
+    site_verified_at: datetime | None = None
+    site_verified_domain: str | None = None
     new_brand_name: str | None = None
     new_brand_slug: str | None = None
     new_brand_description: str | None = None

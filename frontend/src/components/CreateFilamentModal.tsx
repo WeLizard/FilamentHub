@@ -8,6 +8,7 @@ import { filamentsAPI, brandsAPI, qrAPI, filamentLinesAPI } from '../api/client'
 import { translateApiError } from '../utils/translateApiError';
 import { MATERIAL_DENSITY } from '../utils/materialDensity';
 import { ColorMaterialSection } from './ColorMaterialSection';
+import { ColorGroupPalette } from './ColorGroupPalette';
 import { FilamentPaletteForm } from './FilamentPaletteForm';
 import { FloatingHSLColorPicker } from './FloatingHSLColorPicker';
 import { PriceUnitField } from './PriceUnitField';
@@ -28,7 +29,13 @@ import { ConfirmModal } from './ConfirmModal';
 import { InfoHint } from './InfoHint';
 import { FilamentFeaturesEditor } from './FilamentFeaturesEditor';
 import { deriveVisualEffectsFromAdditives, mergeVisualEffects } from '../data/filamentFeatures';
+import {
+  classifyFilamentColorGroup,
+  FILAMENT_COLOR_GROUPS,
+  MULTICOLOR_TYPES,
+} from '../utils/filamentColorGroups';
 import type { AxiosError } from 'axios';
+import type { FilamentColorGroup, FilamentColorGroupSource, SimilarFilamentCandidate } from '../types/api';
 
 interface CreateFilamentModalProps {
   isOpen: boolean;
@@ -56,6 +63,14 @@ interface CountryCellSaveDraft {
   commonGaps?: FilamentPatch;
 }
 
+function readSimilarCandidates(detail: unknown): SimilarFilamentCandidate[] | null {
+  if (!detail || typeof detail !== 'object') return null;
+  const payload = detail as { code?: string; params?: { candidates?: SimilarFilamentCandidate[] } };
+  if (payload.code !== 'ERR_FILAMENT_SIMILAR_EXISTS') return null;
+  const candidates = payload.params?.candidates;
+  return Array.isArray(candidates) && candidates.length > 0 ? candidates : null;
+}
+
 export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
   isOpen,
   onClose,
@@ -79,6 +94,8 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
   const [customMaterialType, setCustomMaterialType] = useState('');
   const [colorName, setColorName] = useState('');
   const [colorHex, setColorHex] = useState('#808080');
+  const [colorGroup, setColorGroup] = useState<FilamentColorGroup | null>(null);
+  const [colorGroupSource, setColorGroupSource] = useState<FilamentColorGroupSource>('auto');
   const [ralCode, setRalCode] = useState('');
   // Расширенные характеристики цвета
   const [visualColorType, setVisualColorType] = useState<'single' | 'two' | 'three' | 'gradient' | 'transition' | 'thermochromic'>('single');
@@ -185,6 +202,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
   const [description, setDescription] = useState('');
   const [availability, setAvailability] = useState<FilamentAvailability>('available');
   const [error, setError] = useState<string | null>(null);
+  const [similarCandidates, setSimilarCandidates] = useState<SimilarFilamentCandidate[] | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [createdFilament, setCreatedFilament] = useState<Filament | null>(null); // Для отображения QR-кода после создания
 
@@ -302,6 +320,11 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
     },
   });
   const resolvedVisualEffects = mergeVisualEffects(visualEffects, additives);
+  const automaticColorGroup = classifyFilamentColorGroup(
+    colorHex,
+    resolvedVisualEffects.includes('metallic'),
+  );
+  const isMulticolor = MULTICOLOR_TYPES.some((type) => type === visualColorType);
   // Old clients still read one primary effect from ``filler``.
   const effectiveFiller = resolvedVisualEffects[0] || 'none';
   const hasVisualSettings = showAdvancedVisual
@@ -349,6 +372,8 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
       }
       setColorName(filament.color_name || '');
       setColorHex(filament.color_hex || '#FFFFFF');
+      setColorGroup(filament.color_group ?? null);
+      setColorGroupSource(filament.color_group_source ?? 'auto');
       setRalCode(filament.ral_code || '');
       const nextAdditives = filament.additives || [];
       // Инициализация расширенных визуальных эффектов
@@ -406,6 +431,8 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
       setCustomMaterialType('');
       setColorName('');
       setColorHex('#808080');
+      setColorGroup(null);
+      setColorGroupSource('auto');
       setRalCode('');
       // Сброс расширенных визуальных эффектов
       setVisualColorType('single');
@@ -503,33 +530,12 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
 
   // Мутация для создания материала
   const createMutation = useMutation({
-    mutationFn: (data: {
-      brand_id: number;
-      name: string;
-      material_type: string;
-      color_name?: string;
-      color_hex?: string;
-      ral_code?: string | null;
-      visual_settings?: FilamentVisualSettings | null;
-      additives?: FilamentAdditive[];
-      property_claims?: FilamentPropertyClaim[];
-      diameter?: number;
-      density?: number;
-      price_per_kg?: number;
-      spool_weight?: number;
-      empty_spool_weight_g?: number;
-      recommended_nozzle_temp_min?: number;
-      recommended_nozzle_temp_max?: number;
-      recommended_bed_temp_min?: number;
-      recommended_bed_temp_max?: number;
-      required_nozzle_hrc?: number;
-      description?: string;
-      availability?: FilamentAvailability;
-      price_display_unit?: 'per_kg' | 'per_spool';
-      line_id?: number | null;
-      country_cell?: CountryCellDraft;
-    }) => filamentsAPI.create(data),
+    mutationFn: ({ data, confirmSimilar }: {
+      data: Parameters<typeof filamentsAPI.create>[0];
+      confirmSimilar?: boolean;
+    }) => filamentsAPI.create(data, confirmSimilar),
     onSuccess: (data: Filament) => {
+      setSimilarCandidates(null);
       queryClient.invalidateQueries({ queryKey: ['filaments'] });
       queryClient.invalidateQueries({ queryKey: ['filaments', 'material-types'] });
       queryClient.invalidateQueries({ queryKey: ['brands'] });
@@ -550,7 +556,17 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
       }, 1500);
     },
     onError: (err: AxiosError<{ detail: unknown }>) => {
-      setError(translateApiError(t, err.response?.data?.detail, t('createFilament.createError')));
+      const detail = err.response?.data?.detail;
+      const similar = readSimilarCandidates(detail);
+      if (similar) {
+        // Похожесть — не доказательство дубля: показываем найденное и оставляем
+        // решение автору, а не отказываем ему.
+        setSimilarCandidates(similar);
+        setError(null);
+        return;
+      }
+      setSimilarCandidates(null);
+      setError(translateApiError(t, detail, t('createFilament.createError')));
     },
   });
 
@@ -558,31 +574,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
   const updateMutation = useMutation({
     mutationFn: ({ id, data }: { 
       id: number; 
-      data: Partial<{
-        name?: string;
-        material_type?: string;
-        color_name?: string;
-        color_hex?: string;
-        ral_code?: string | null;
-        visual_settings?: FilamentVisualSettings | null;
-        additives?: FilamentAdditive[];
-        property_claims?: FilamentPropertyClaim[];
-        diameter?: number;
-        density?: number;
-        price_per_kg?: number;
-        spool_weight?: number;
-        empty_spool_weight_g?: number;
-        recommended_nozzle_temp_min?: number;
-        recommended_nozzle_temp_max?: number;
-        recommended_bed_temp_min?: number;
-        recommended_bed_temp_max?: number;
-        required_nozzle_hrc?: number;
-        description?: string;
-        active?: boolean;
-        availability?: FilamentAvailability;
-        price_display_unit?: 'per_kg' | 'per_spool';
-        line_id?: number | null;
-      }>
+      data: FilamentPatch;
     }) => filamentsAPI.update(id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['filaments'] });
@@ -701,6 +693,8 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
           material_type: finalMaterialType,
           color_name: colorName || undefined,
           color_hex: colorHex || undefined,
+          color_group: colorGroupSource === 'manual' ? colorGroup : null,
+          color_group_source: colorGroupSource,
           ral_code: ralCode || null,
           visual_settings: visualSettings,
           additives,
@@ -740,12 +734,14 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
           }
         : undefined;
       
-      createMutation.mutate({
+      createMutation.mutate({ data: {
         brand_id: brandIdValue,
         name,
         material_type: finalMaterialType,
         color_name: (scopeCountry ? marketColorName : colorName) || undefined,
         color_hex: colorHex || undefined,
+        color_group: colorGroupSource === 'manual' ? colorGroup : null,
+        color_group_source: colorGroupSource,
         ral_code: ralCode || undefined,
         visual_settings: visualSettings,
         additives,
@@ -765,7 +761,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
         price_display_unit: priceMode,
         line_id: lineId === '' ? null : lineId,
         country_cell: marketCellPayload ?? undefined,
-      });
+      }, confirmSimilar: similarCandidates !== null });
     }
   };
 
@@ -863,6 +859,33 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
           {error && (
             <div className="mb-4 p-3 bg-red-500/20 border border-red-500/30 rounded-lg text-red-300 text-sm">
               {error}
+            </div>
+          )}
+
+          {similarCandidates && (
+            <div className="mb-4 rounded-lg border border-amber-400/30 bg-amber-500/10 p-3 text-sm">
+              <p className="font-medium text-amber-200">{t('createFilament.similarTitle')}</p>
+              <p className="mt-1 text-xs leading-5 text-amber-100/70">{t('createFilament.similarHint')}</p>
+              <ul className="mt-2 space-y-1">
+                {similarCandidates.map((candidate) => (
+                  <li key={candidate.filament_id}>
+                    <a
+                      href={`/filaments/${candidate.filament_id}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-amber-100 underline decoration-amber-300/40 underline-offset-2 hover:text-white"
+                    >
+                      {candidate.filament_name}
+                    </a>
+                    <span className="text-amber-100/60">
+                      {' · '}{candidate.material_type}
+                      {candidate.color_name ? ` · ${candidate.color_name}` : ''}
+                      {` · ${candidate.diameter} ${t('createFilament.mm')}`}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-2 text-xs text-amber-100/70">{t('createFilament.similarConfirmHint')}</p>
             </div>
           )}
 
@@ -978,7 +1001,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
               </button>
             </div>
           )}
-          <fieldset disabled={commonLocked} className="space-y-6 disabled:opacity-60">
+          <fieldset disabled={commonLocked} className="min-w-0 space-y-6 disabled:opacity-60">
           {/* Name and Material Type in one row */}
           <div>
           <div className="flex items-end gap-4">
@@ -1038,8 +1061,8 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
             <div>
               <label className="block text-gray-300 mb-1 text-sm font-medium">{t('createFilament.lineLabel')}</label>
               <p className="text-gray-500 text-xs mb-2">{t('createFilament.lineHint')}</p>
-              <div className="flex gap-2">
-                <div className="flex-1">
+              <div className="grid gap-2 sm:grid-cols-[minmax(10rem,1fr)_minmax(10rem,1fr)_auto]">
+                <div className="min-w-0">
                   <Dropdown
                     value={lineId === '' ? '' : String(lineId)}
                     onChange={(val) => setLineId(val === '' ? '' : Number(val))}
@@ -1056,13 +1079,13 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
                   onChange={(e) => setNewLineName(e.target.value)}
                   placeholder={t('createFilament.lineNewPlaceholder')}
                   maxLength={200}
-                  className="flex-1 px-4 py-2 bg-white/10 border border-white/20 rounded-xl text-white text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                  className="min-w-0 w-full px-4 py-2 bg-white/10 border border-white/20 rounded-xl text-white text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
                 />
                 <button
                   type="button"
                   disabled={!newLineName.trim() || createLineMutation.isPending}
                   onClick={() => createLineMutation.mutate(newLineName.trim())}
-                  className="px-4 py-2 bg-white/10 border border-white/20 rounded-xl text-gray-300 hover:text-white hover:bg-white/20 transition-all text-sm whitespace-nowrap disabled:opacity-50"
+                  className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-xl text-gray-300 hover:text-white hover:bg-white/20 transition-all text-sm whitespace-nowrap disabled:opacity-50 sm:w-auto"
                 >
                   {t('createFilament.lineCreate')}
                 </button>
@@ -1097,6 +1120,72 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
             }
           />
 
+          {formMode === 'single' && (
+            <div className="mt-3 grid gap-2 sm:grid-cols-[minmax(13rem,20rem)_1fr] sm:items-center">
+              <Dropdown
+                value={colorGroupSource === 'manual' ? (colorGroup ?? 'multicolor') : 'auto'}
+                onChange={(value) => {
+                  const next = String(value);
+                  if (next === 'auto') {
+                    setColorGroup(null);
+                    setColorGroupSource('auto');
+                    return;
+                  }
+                  if (next === 'multicolor') {
+                    setColorGroup(null);
+                    setColorGroupSource('manual');
+                    return;
+                  }
+                  if (FILAMENT_COLOR_GROUPS.includes(next as FilamentColorGroup)) {
+                    setColorGroup(next as FilamentColorGroup);
+                    setColorGroupSource('manual');
+                  }
+                }}
+                options={[
+                  {
+                    value: 'auto',
+                    label: automaticColorGroup
+                      ? t('createFilament.colorGroupAutoWithResult', {
+                          group: t(`colorGroups.${automaticColorGroup}`),
+                        })
+                      : t('createFilament.colorGroupAuto'),
+                  },
+                  ...((isMulticolor || (colorGroupSource === 'manual' && colorGroup === null))
+                    ? [{ value: 'multicolor', label: t('createFilament.multicolorNoDominant') }]
+                    : []),
+                  ...FILAMENT_COLOR_GROUPS.map((group) => ({
+                    value: group,
+                    label: t(`colorGroups.${group}`),
+                  })),
+                ]}
+                placeholder={t('createFilament.colorGroupLabel')}
+                label={t('createFilament.colorGroupLabel')}
+                disabled={commonLocked}
+                size="sm"
+              />
+              <p className="text-xs leading-relaxed text-gray-400">
+                {t('createFilament.colorGroupHint')}
+              </p>
+            </div>
+          )}
+
+          {formMode === 'single' && (
+            <div className="mt-2">
+              <ColorGroupPalette
+                automaticGroup={automaticColorGroup}
+                selectedGroup={colorGroup}
+                source={colorGroupSource}
+                disabled={commonLocked || colorAppearanceLocked}
+                onSelect={(group, value) => {
+                  touchCommonGap('color_hex');
+                  setColorHex(value);
+                  setColorGroup(group);
+                  setColorGroupSource('manual');
+                }}
+              />
+            </div>
+          )}
+
           {/* Расширенные характеристики цвета (collapsible) */}
           {showAdvancedVisual && (
             <fieldset disabled={colorAppearanceLocked} className="mt-4 overflow-visible rounded-2xl border border-white/10 bg-white/[0.035] p-3 disabled:opacity-60">
@@ -1113,6 +1202,13 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
                         onClick={() => {
                           touchCommonGap('visual_settings');
                           setVisualColorType(type);
+                          if (
+                            !MULTICOLOR_TYPES.some((multicolorType) => multicolorType === type)
+                            && colorGroupSource === 'manual'
+                            && colorGroup === null
+                          ) {
+                            setColorGroupSource('auto');
+                          }
                           const requiredColors = type === 'single' ? 1 : type === 'two' ? 2 : type === 'three' ? 3 : type === 'transition' || type === 'thermochromic' ? 2 : 5;
                           setVisualColors((prevColors) => {
                             const base = colorHex || prevColors[0] || '#FFFFFF';
@@ -1166,6 +1262,11 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
                   <label className="mb-1.5 block text-sm font-medium text-gray-300">
                     {t('createFilament.colors')} ({visualColorType === 'single' ? 1 : visualColorType === 'two' ? 2 : visualColorType === 'three' ? 3 : visualColorType === 'transition' || visualColorType === 'thermochromic' ? 2 : 5})
                   </label>
+                  {visualColorType !== 'single' && (
+                    <p className="mb-2 text-xs leading-relaxed text-gray-400">
+                      {t('createFilament.multicolorOrcaHint')}
+                    </p>
+                  )}
                   <div className="grid grid-cols-5 gap-2">
                     {Array.from({ length: visualColorType === 'single' ? 1 : visualColorType === 'two' ? 2 : visualColorType === 'three' ? 3 : visualColorType === 'transition' || visualColorType === 'thermochromic' ? 2 : 5 }).map((_, idx) => {
                       const currentColor = visualColors[idx] || '#FF0000';

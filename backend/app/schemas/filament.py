@@ -9,29 +9,76 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.schemas.country_cell import FilamentCountryCellCreate
+from app.services.catalog_color_groups import ColorGroupSource, FilamentColorGroup
 
 # Legacy visual filler values. New clients use ``effects`` but ``filler`` remains
 # in the contract so old Orca/plugin and web clients continue to round-trip data.
-KNOWN_FILLERS = frozenset({
-    "none", "wood", "carbon", "glitter", "metallic", "luminescent",
-    "fibers", "stone", "glass", "pattern1", "pattern2", "pattern3",
-    "pattern4", "pattern5", "pattern6", "pattern7", "pattern8",
-    "pattern9", "pattern10", "pattern11", "pattern12",
-})
+KNOWN_FILLERS = frozenset(
+    {
+        "none",
+        "wood",
+        "carbon",
+        "glitter",
+        "metallic",
+        "luminescent",
+        "fibers",
+        "stone",
+        "glass",
+        "pattern1",
+        "pattern2",
+        "pattern3",
+        "pattern4",
+        "pattern5",
+        "pattern6",
+        "pattern7",
+        "pattern8",
+        "pattern9",
+        "pattern10",
+        "pattern11",
+        "pattern12",
+    }
+)
 
-KNOWN_ADDITIVES = frozenset({
-    "aramid_fiber", "bamboo", "basalt_fiber", "carbon_black", "carbon_fiber",
-    "carbon_nanotubes", "ceramic", "cork", "glass_beads", "glass_fiber",
-    "graphene", "hollow_spheres", "metal_powder", "mineral", "natural_fiber",
-    "ptfe", "wood",
-})
+KNOWN_ADDITIVES = frozenset(
+    {
+        "aramid_fiber",
+        "bamboo",
+        "basalt_fiber",
+        "carbon_black",
+        "carbon_fiber",
+        "carbon_nanotubes",
+        "ceramic",
+        "cork",
+        "glass_beads",
+        "glass_fiber",
+        "graphene",
+        "hollow_spheres",
+        "metal_powder",
+        "mineral",
+        "natural_fiber",
+        "ptfe",
+        "wood",
+    }
+)
 
-KNOWN_PROPERTY_CLAIMS = frozenset({
-    "antimicrobial", "chemical_resistant", "electrically_conductive",
-    "emi_shielding", "esd", "flame_retardant", "food_contact", "foaming",
-    "heat_resistant", "lightweight", "low_friction", "magnetically_detectable",
-    "uv_resistant", "wear_resistant",
-})
+KNOWN_PROPERTY_CLAIMS = frozenset(
+    {
+        "antimicrobial",
+        "chemical_resistant",
+        "electrically_conductive",
+        "emi_shielding",
+        "esd",
+        "flame_retardant",
+        "food_contact",
+        "foaming",
+        "heat_resistant",
+        "lightweight",
+        "low_friction",
+        "magnetically_detectable",
+        "uv_resistant",
+        "wear_resistant",
+    }
+)
 
 
 def _normalize_code(value: object) -> object:
@@ -80,7 +127,9 @@ class FilamentPropertyClaim(BaseModel):
 class FilamentVisualSettings(BaseModel):
     """Schema for extended visual settings (только для сайта, не передается в OrcaSlicer)."""
 
-    color_type: Literal["single", "two", "three", "gradient", "transition", "thermochromic"] = Field("single")
+    color_type: Literal["single", "two", "three", "gradient", "transition", "thermochromic"] = (
+        Field("single")
+    )
     # Тип цвета: одноцветный, двухцветный, трёхцветный, многоцветный градиент, переходной (любой цвет), термохромный (меняет цвет при нагреве)
 
     colors: list[str] = Field(default_factory=lambda: ["#FFFFFF"], max_length=5)
@@ -144,6 +193,8 @@ class FilamentBase(BaseModel):
     color_name: str | None = Field(None, max_length=100)
     color_hex: str | None = Field(None, pattern=r"^#[0-9A-Fa-f]{6}$")
     # color_hex: базовый цвет, используется в OrcaSlicer
+    color_group: FilamentColorGroup | None = None
+    color_group_source: ColorGroupSource = "auto"
     ral_code: str | None = Field(None, pattern=r"^\d{4}$")
     # RAL Classic reference supplied by the contributor; no embedded palette lookup.
     visual_settings: FilamentVisualSettings | None = Field(None)
@@ -162,7 +213,9 @@ class FilamentBase(BaseModel):
     recommended_bed_temp_max: int | None = Field(None, ge=0, le=300)
     required_nozzle_hrc: int | None = Field(None, ge=0, le=500)
     description: str | None = None
-    availability: Literal["available", "out_of_stock", "discontinued", "coming_soon"] = Field("available")
+    availability: Literal["available", "out_of_stock", "discontinued", "coming_soon"] = Field(
+        "available"
+    )
     price_display_unit: Literal["per_kg", "per_spool"] = Field("per_kg")
     line_id: int | None = Field(None, gt=0)  # линейка (группировка вариантов-цвета)
 
@@ -186,6 +239,8 @@ class FilamentUpdate(BaseModel):
     material_type: str | None = Field(None, max_length=50)
     color_name: str | None = Field(None, max_length=100)
     color_hex: str | None = Field(None, pattern=r"^#[0-9A-Fa-f]{6}$")
+    color_group: FilamentColorGroup | None = None
+    color_group_source: ColorGroupSource | None = None
     ral_code: str | None = Field(None, pattern=r"^\d{4}$")
     visual_settings: FilamentVisualSettings | None = None
     additives: list[FilamentAdditive] | None = Field(None, max_length=24)
@@ -361,7 +416,9 @@ class FilamentPaletteCreate(BaseModel):
     recommended_bed_temp_max: int | None = Field(None, ge=0, le=300)
     required_nozzle_hrc: int | None = Field(None, ge=0, le=500)
     description: str | None = None
-    availability: Literal["available", "out_of_stock", "discontinued", "coming_soon"] = Field("available")
+    availability: Literal["available", "out_of_stock", "discontinued", "coming_soon"] = Field(
+        "available"
+    )
     price_display_unit: Literal["per_kg", "per_spool"] = Field("per_kg")
     country_cell: FilamentCountryCellCreate | None = None
     variants: list[FilamentPaletteVariant] = Field(..., min_length=1, max_length=100)
@@ -374,8 +431,12 @@ class CompatiblePrinter(BaseModel):
     slug: str
     name: str
     manufacturer: str | None = None
-    relation_source: str = Field(..., description="Источник связи: via_preset, via_print_profile, etc.")
-    confidence_score: float = Field(..., ge=0.0, le=1.0, description="Уверенность в совместимости (0.0-1.0)")
+    relation_source: str = Field(
+        ..., description="Источник связи: via_preset, via_print_profile, etc."
+    )
+    confidence_score: float = Field(
+        ..., ge=0.0, le=1.0, description="Уверенность в совместимости (0.0-1.0)"
+    )
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -388,9 +449,11 @@ class CompatibleFilament(BaseModel):
     name: str
     material_type: str
     brand_name: str | None = None
-    relation_source: str = Field(..., description="Источник связи: via_preset, via_print_profile, etc.")
-    confidence_score: float = Field(..., ge=0.0, le=1.0, description="Уверенность в совместимости (0.0-1.0)")
+    relation_source: str = Field(
+        ..., description="Источник связи: via_preset, via_print_profile, etc."
+    )
+    confidence_score: float = Field(
+        ..., ge=0.0, le=1.0, description="Уверенность в совместимости (0.0-1.0)"
+    )
 
     model_config = ConfigDict(from_attributes=True)
-
-

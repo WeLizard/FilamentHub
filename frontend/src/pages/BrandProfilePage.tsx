@@ -69,6 +69,119 @@ import type { CountryAvailability, Filament, FilamentAvailability, Brand, BrandR
 import type { AxiosError } from 'axios';
 import { formatDate } from '../utils/formatDate';
 
+/** Согласие с соглашением: свой квадрат вместо системного чекбокса, который в
+ *  тёмной теме рисуется браузером по-своему. */
+function AccuracyConsent({
+  checked,
+  onChange,
+  text,
+  linkLabel,
+}: {
+  checked: boolean;
+  onChange: (value: boolean) => void;
+  text: string;
+  linkLabel: string;
+}) {
+  return (
+    <label className="flex cursor-pointer items-start gap-3">
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(event) => onChange(event.target.checked)}
+        className="peer sr-only"
+      />
+      <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border border-white/20 bg-white/10 text-transparent transition peer-checked:border-emerald-400/60 peer-checked:bg-emerald-500 peer-checked:text-white peer-focus-visible:ring-2 peer-focus-visible:ring-emerald-400/40">
+        <Check className="h-3.5 w-3.5" />
+      </span>
+      <span className="flex-1 text-sm leading-5 text-white">
+        {text}{' '}
+        <a
+          href="/user-agreement"
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={(event) => event.stopPropagation()}
+          className="text-emerald-300 underline underline-offset-2 hover:text-emerald-200"
+        >
+          {linkLabel}
+        </a>
+      </span>
+    </label>
+  );
+}
+
+type ClaimScopeOption = 'catalog_only' | 'brand' | 'representative';
+
+/** Что заявитель просит вместе с заявкой: одна форма для нового и существующего бренда. */
+function ClaimScopeSelector({
+  name,
+  options,
+  value,
+  onChange,
+  country,
+  onCountryChange,
+}: {
+  name: string;
+  options: readonly ClaimScopeOption[];
+  value: ClaimScopeOption;
+  onChange: (value: ClaimScopeOption) => void;
+  country: string;
+  onCountryChange: (value: string) => void;
+}) {
+  const { t, i18n } = useTranslation();
+
+  return (
+    <div className="rounded-xl border border-white/10 bg-white/[0.04] p-4">
+      <p className="mb-3 text-sm text-gray-300">{t('brandProfile.claimQuestion')}</p>
+      <div className="space-y-2">
+        {options.map((option) => (
+          <label
+            key={option}
+            className="flex cursor-pointer items-start gap-3 rounded-lg border border-white/10 bg-white/[0.03] p-3 transition hover:bg-white/[0.06]"
+          >
+            <input
+              type="radio"
+              name={name}
+              checked={value === option}
+              onChange={() => onChange(option)}
+              className="mt-1 h-4 w-4"
+            />
+            <span className="text-sm">
+              <span className="block font-medium text-white">
+                {t(`brandProfile.claim_${option}`)}
+              </span>
+              <span className="block text-xs leading-5 text-gray-400">
+                {t(`brandProfile.claim_${option}_hint`)}
+              </span>
+            </span>
+          </label>
+        ))}
+      </div>
+
+      {value === 'representative' && (
+        <div className="mt-4">
+          <label className="mb-1.5 block text-xs text-gray-300">
+            {t('brandProfile.claimCountry')}
+          </label>
+          <select
+            value={country}
+            onChange={(event) => onCountryChange(event.target.value)}
+            className="w-full rounded-xl border border-white/20 bg-white/10 px-4 py-2.5 text-white sm:max-w-xs"
+          >
+            <option value="" className="bg-gray-900">
+              {t('brandProfile.claimCountryPlaceholder')}
+            </option>
+            {COUNTRY_CODES.map((code) => (
+              <option key={code} value={code} className="bg-gray-900">
+                {countryName(code, i18n.language)}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+    </div>
+  );
+}
+
 interface BrandProfilePageProps {
   onBack?: () => void; // Callback для возврата в обычный профиль
   initialEditing?: boolean; // Открыть редактирование карточки сразу (после принятия инвайта)
@@ -1792,12 +1905,13 @@ interface BrandSelectionFormProps {
 }
 
 const BrandSelectionForm: React.FC<BrandSelectionFormProps> = ({ onClose, initialBrandId, initialBrandName }) => {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const { user, refreshUser } = useAuth();
   const queryClient = useQueryClient();
   const [selectedBrandId, setSelectedBrandId] = useState<number | null>(initialBrandId ?? null);
   // Что заявляет человек: марка его, либо он ведёт её в одной стране.
   const [claim, setClaim] = useState<'brand' | 'representative'>('brand');
+  const [newBrandClaim, setNewBrandClaim] = useState<ClaimScopeOption>('brand');
   const [claimCountry, setClaimCountry] = useState('');
 
   const [brandSearch, setBrandSearch] = useState(initialBrandName ?? ''); // Поиск бренда
@@ -1884,6 +1998,7 @@ const BrandSelectionForm: React.FC<BrandSelectionFormProps> = ({ onClose, initia
   const createRequestMutation = useMutation({
     mutationFn: async (data: {
       request_type: 'create' | 'join' | 'representative';
+      claim_scope?: ClaimScopeOption;
       country?: string;
       organization_name?: string;
       brand_id?: number;
@@ -1983,6 +2098,17 @@ const BrandSelectionForm: React.FC<BrandSelectionFormProps> = ({ onClose, initia
     },
     onError: (err: AxiosError<{ detail: unknown }>) => {
       setError(translateApiError(t, err.response?.data?.detail, t('brandProfile.errorUploadFile')));
+    },
+  });
+
+  const verifySiteMutation = useMutation({
+    mutationFn: (requestId: number) => brandRequestsAPI.verifySite(requestId),
+    onSuccess: (updated) => {
+      setSubmittedRequest(updated);
+      queryClient.invalidateQueries({ queryKey: ['brand-requests'] });
+    },
+    onError: (err: AxiosError<{ detail: unknown }>) => {
+      setError(translateApiError(t, err.response?.data?.detail, t('brandProfile.siteCheckFailed')));
     },
   });
 
@@ -2113,6 +2239,10 @@ const BrandSelectionForm: React.FC<BrandSelectionFormProps> = ({ onClose, initia
       setError(t('brandProfile.errorFillNameAndSlug'));
       return;
     }
+    if (newBrandClaim === 'representative' && !claimCountry) {
+      setError(t('brandProfile.errorClaimCountry'));
+      return;
+    }
     // Проверяем обязательное подтверждение достоверности данных
     if (!confirmAccuracy) {
       setError(t('brandProfile.errorConfirmAccuracy'));
@@ -2137,6 +2267,8 @@ const BrandSelectionForm: React.FC<BrandSelectionFormProps> = ({ onClose, initia
     setError(null);
     await createRequestMutation.mutateAsync({
       request_type: 'create',
+      claim_scope: newBrandClaim,
+      country: newBrandClaim === 'representative' ? claimCountry : undefined,
       new_brand_name: newBrandName.trim(),
       new_brand_slug: newBrandSlug.trim().toLowerCase().replace(/\s+/g, '-') || undefined,
       new_brand_description: newBrandDescription.trim() || undefined,
@@ -2272,6 +2404,47 @@ const BrandSelectionForm: React.FC<BrandSelectionFormProps> = ({ onClose, initia
           </div>
 
           <div className="space-y-4">
+            {submittedRequest.status === 'pending' && submittedRequest.company_website && (
+              <div className="rounded-xl border border-white/10 bg-white/5 p-4">
+                <h4 className="mb-1 font-medium text-white">{t('brandProfile.siteCheckTitle')}</h4>
+                <p className="text-xs leading-5 text-gray-400">{t('brandProfile.siteCheckHint')}</p>
+
+                {submittedRequest.site_verified_at ? (
+                  <p className="mt-3 text-sm font-medium text-green-400">
+                    {t('brandProfile.siteCheckDone', { domain: submittedRequest.site_verified_domain })}
+                  </p>
+                ) : (
+                  <>
+                    {submittedRequest.site_verification_token && (
+                      <div className="mt-3 space-y-2 text-sm">
+                        <div>
+                          <span className="text-gray-400">{t('brandProfile.siteCheckPath')}: </span>
+                          <code className="break-all text-white">/.well-known/filamenthub.txt</code>
+                        </div>
+                        <div>
+                          <span className="text-gray-400">{t('brandProfile.siteCheckCode')}: </span>
+                          <code className="break-all text-white">{submittedRequest.site_verification_token}</code>
+                        </div>
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => verifySiteMutation.mutate(submittedRequest.id)}
+                      disabled={verifySiteMutation.isPending}
+                      className="mt-3 rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-purple-700 disabled:opacity-50"
+                    >
+                      {submittedRequest.site_verification_token
+                        ? t('brandProfile.siteCheckRetry')
+                        : t('brandProfile.siteCheckStart')}
+                    </button>
+                    {verifySiteMutation.isSuccess && !submittedRequest.site_verified_at && submittedRequest.site_verification_token && (
+                      <p className="mt-2 text-xs text-yellow-300">{t('brandProfile.siteCheckNotFound')}</p>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+
             <div className="bg-white/5 rounded-xl p-4 border border-white/10">
               <h4 className="text-white font-medium mb-3">{t('brandProfile.requestDetails')}:</h4>
               <div className="space-y-3 text-sm">
@@ -2570,6 +2743,14 @@ const BrandSelectionForm: React.FC<BrandSelectionFormProps> = ({ onClose, initia
           </div>
 
           <form onSubmit={handleCreateBrandRequest} className="space-y-4">
+            <ClaimScopeSelector
+              name="new-brand-claim"
+              options={['brand', 'representative']}
+              value={newBrandClaim}
+              onChange={setNewBrandClaim}
+              country={claimCountry}
+              onCountryChange={setClaimCountry}
+            />
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-gray-300 mb-2 text-sm font-medium">
@@ -2747,6 +2928,7 @@ const BrandSelectionForm: React.FC<BrandSelectionFormProps> = ({ onClose, initia
                   );
                 })()}
               </label>
+              <p className="mb-2 text-xs leading-4 text-gray-400">{t('brandProfile.proofDocsHint')}</p>
               <textarea
                 value={proofText}
                 onChange={(e) => setProofText(e.target.value)}
@@ -2883,23 +3065,12 @@ const BrandSelectionForm: React.FC<BrandSelectionFormProps> = ({ onClose, initia
 
             {/* Обязательное подтверждение достоверности данных */}
             <div className="bg-white/5 rounded-xl p-4 border border-white/10 mb-4">
-              <label className="flex items-start space-x-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={confirmAccuracy}
-                  onChange={(e) => setConfirmAccuracy(e.target.checked)}
-                  required
-                  className="mt-1 w-4 h-4 rounded border-white/20 bg-white/10 text-green-500 focus:ring-2 focus:ring-green-500"
-                />
-                  <div className="flex-1">
-                    <span className="text-sm text-white">
-                      {t('brandProfile.confirmAccuracyText')} {' '}
-                      <a href="/user-agreement" target="_blank" className="text-green-400 hover:text-green-300 underline">
-                       {t('brandProfile.userAgreement')}
-                      </a>
-                    </span>
-                  </div>
-              </label>
+              <AccuracyConsent
+                checked={confirmAccuracy}
+                onChange={setConfirmAccuracy}
+                text={t('brandProfile.confirmAccuracyText')}
+                linkLabel={t('brandProfile.userAgreement')}
+              />
             </div>
 
             <div className="flex space-x-4 pt-4">
@@ -3107,55 +3278,14 @@ const BrandSelectionForm: React.FC<BrandSelectionFormProps> = ({ onClose, initia
           />
           {selectedBrandId && (
             <div className="space-y-4">
-              <div className="rounded-xl border border-white/10 bg-white/[0.04] p-4">
-                <p className="mb-3 text-sm text-gray-300">{t('brandProfile.claimQuestion')}</p>
-                <div className="space-y-2">
-                  {(['brand', 'representative'] as const).map((option) => (
-                    <label
-                      key={option}
-                      className="flex cursor-pointer items-start gap-3 rounded-lg border border-white/10 bg-white/[0.03] p-3 transition hover:bg-white/[0.06]"
-                    >
-                      <input
-                        type="radio"
-                        name="brand-claim"
-                        checked={claim === option}
-                        onChange={() => setClaim(option)}
-                        className="mt-1 h-4 w-4"
-                      />
-                      <span className="text-sm">
-                        <span className="block font-medium text-white">
-                          {t(`brandProfile.claim_${option}`)}
-                        </span>
-                        <span className="block text-xs leading-5 text-gray-400">
-                          {t(`brandProfile.claim_${option}_hint`)}
-                        </span>
-                      </span>
-                    </label>
-                  ))}
-                </div>
-
-                {claim === 'representative' && (
-                  <div className="mt-4">
-                    <label className="mb-1.5 block text-xs text-gray-300">
-                      {t('brandProfile.claimCountry')}
-                    </label>
-                    <select
-                      value={claimCountry}
-                      onChange={(event) => setClaimCountry(event.target.value)}
-                      className="w-full rounded-xl border border-white/20 bg-white/10 px-4 py-2.5 text-white sm:max-w-xs"
-                    >
-                      <option value="" className="bg-gray-900">
-                        {t('brandProfile.claimCountryPlaceholder')}
-                      </option>
-                      {COUNTRY_CODES.map((code) => (
-                        <option key={code} value={code} className="bg-gray-900">
-                          {countryName(code, i18n.language)}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-              </div>
+              <ClaimScopeSelector
+                name="brand-claim"
+                options={['brand', 'representative']}
+                value={claim}
+                onChange={(next) => setClaim(next as 'brand' | 'representative')}
+                country={claimCountry}
+                onCountryChange={setClaimCountry}
+              />
 
               {claim === 'brand' && selectedBrand?.verified && hasEmployees ? (
               <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4">
@@ -3309,6 +3439,7 @@ const BrandSelectionForm: React.FC<BrandSelectionFormProps> = ({ onClose, initia
                         );
                       })()}
                     </label>
+                    <p className="mb-2 text-xs leading-4 text-gray-400">{t('brandProfile.proofDocsHint')}</p>
                     <textarea
                       value={proofText}
                       onChange={(e) => setProofText(e.target.value)}
@@ -3426,23 +3557,12 @@ const BrandSelectionForm: React.FC<BrandSelectionFormProps> = ({ onClose, initia
 
               {/* Обязательное подтверждение достоверности данных */}
               <div className="bg-white/5 rounded-xl p-4 border border-white/10">
-                <label className="flex items-start space-x-3 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={confirmAccuracy}
-                    onChange={(e) => setConfirmAccuracy(e.target.checked)}
-                    required
-                    className="mt-1 w-4 h-4 rounded border-white/20 bg-white/10 text-green-500 focus:ring-2 focus:ring-green-500"
-                  />
-                  <div className="flex-1">
-                    <span className="text-sm text-white">
-                      {t('brandProfile.confirmAccuracyText')} 
-                      <a href="/user-agreement" target="_blank" className="text-green-400 hover:text-green-300 underline">
-                       {t('brandProfile.userAgreement')}
-                      </a>
-                    </span>
-                  </div>
-                </label>
+                <AccuracyConsent
+                  checked={confirmAccuracy}
+                  onChange={setConfirmAccuracy}
+                  text={t('brandProfile.confirmAccuracyText')}
+                  linkLabel={t('brandProfile.userAgreement')}
+                />
               </div>
 
               <button

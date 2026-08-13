@@ -214,3 +214,111 @@ async def test_approved_new_catalog_brand_does_not_grant_representation(
     assert claimant.active_organization_id is None
     assert claimant.role == UserRole.USER
     assert membership is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "endpoint_prefix",
+    ["/api/v1/admin/brand-requests", "/api/v1/brand-requests"],
+)
+async def test_approved_new_brand_claim_grants_owner_workspace(
+    endpoint_prefix: str,
+    admin_client: AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch,
+):
+    """A reviewed create-and-claim request is not sent through moderation twice."""
+    monkeypatch.setattr(qr_service, "save_qr_code_image", lambda *args, **kwargs: [])
+    suffix = endpoint_prefix.replace("/", "-").strip("-")
+    claimant = User(
+        email=f"owner-{suffix}@example.com",
+        username=f"owner_{len(suffix)}",
+        password_hash="$2b$12$test",
+        active=True,
+        role=UserRole.USER,
+    )
+    db_session.add(claimant)
+    await db_session.flush()
+    request = BrandRequest(
+        user_id=claimant.id,
+        request_type=BrandRequestType.CREATE,
+        claim_scope="brand",
+        new_brand_name=f"Owned Brand {suffix}",
+        new_brand_slug=f"owned-brand-{suffix}",
+    )
+    db_session.add(request)
+    await db_session.commit()
+
+    response = await admin_client.patch(
+        f"{endpoint_prefix}/{request.id}", json={"status": "approved"}
+    )
+
+    assert response.status_code == 200
+    brand = await db_session.scalar(select(Brand).where(Brand.slug == request.new_brand_slug))
+    assert brand is not None
+    assert brand.organization_id is not None
+    await db_session.refresh(claimant)
+    assert claimant.brand_id == brand.id
+    assert claimant.role == UserRole.BRAND
+    membership = await db_session.scalar(
+        select(OrganizationMembership).where(
+            OrganizationMembership.organization_id == brand.organization_id,
+            OrganizationMembership.user_id == claimant.id,
+        )
+    )
+    assert membership is not None
+    assert membership.role == OrganizationMemberRole.OWNER
+    assert membership.all_brands is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "endpoint_prefix",
+    ["/api/v1/admin/brand-requests", "/api/v1/brand-requests"],
+)
+async def test_approved_new_representative_claim_grants_only_its_country(
+    endpoint_prefix: str,
+    admin_client: AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch,
+):
+    """A reviewed territorial request creates a country-scoped grant."""
+    from app.models.brand_territorial_grant import BrandTerritorialGrant
+
+    monkeypatch.setattr(qr_service, "save_qr_code_image", lambda *args, **kwargs: [])
+    suffix = endpoint_prefix.replace("/", "-").strip("-")
+    claimant = User(
+        email=f"representative-{suffix}@example.com",
+        username=f"rep_{len(suffix)}",
+        password_hash="$2b$12$test",
+        active=True,
+        role=UserRole.USER,
+    )
+    db_session.add(claimant)
+    await db_session.flush()
+    request = BrandRequest(
+        user_id=claimant.id,
+        request_type=BrandRequestType.CREATE,
+        claim_scope="representative",
+        country="DE",
+        new_brand_name=f"Regional Brand {suffix}",
+        new_brand_slug=f"regional-brand-{suffix}",
+    )
+    db_session.add(request)
+    await db_session.commit()
+
+    response = await admin_client.patch(
+        f"{endpoint_prefix}/{request.id}", json={"status": "approved"}
+    )
+
+    assert response.status_code == 200
+    brand = await db_session.scalar(select(Brand).where(Brand.slug == request.new_brand_slug))
+    assert brand is not None
+    grant = await db_session.scalar(
+        select(BrandTerritorialGrant).where(BrandTerritorialGrant.brand_id == brand.id)
+    )
+    assert grant is not None
+    assert grant.country == "DE"
+    await db_session.refresh(claimant)
+    assert claimant.brand_id == brand.id
+    assert claimant.role == UserRole.BRAND

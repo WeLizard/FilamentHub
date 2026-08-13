@@ -4,7 +4,7 @@ import logging
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy import String, and_, case, cast, func, or_, select
+from sqlalchemy import String, and_, case, cast, false, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -17,6 +17,7 @@ from app.core.errors import (
     ERR_FILAMENT_HAS_CONTRIBUTIONS,
     ERR_FILAMENT_LINE_INVALID,
     ERR_FILAMENT_NOT_FOUND,
+    ERR_FILAMENT_SIMILAR_EXISTS,
     ERR_NO_PERMISSION_DELETE_FILAMENT,
     ERR_NO_PERMISSION_EDIT_FILAMENT,
     raise_error,
@@ -51,6 +52,12 @@ from app.schemas.filament import (
     FilamentUpdate,
     normalize_ral_code,
 )
+from app.services.catalog_color_groups import (
+    MULTICOLOR_COLOR_TYPES,
+    FilamentColorGroup,
+    resolve_color_group,
+)
+from app.services.catalog_feature_search import resolve_catalog_feature_codes
 from app.services.catalog_url_service import (
     choose_filament_slug,
     filament_public_path,
@@ -104,6 +111,7 @@ async def _validate_custom_filler(
     if current_user.role != UserRole.ADMIN and not (brand and brand.verified):
         raise_error(403, ERR_CUSTOM_FILLER_VERIFIED_ONLY)
     from app.services.preset_moderation import validate_text_field
+
     is_valid, error_msg = await validate_text_field(filler, db, "filler")
     if not is_valid:
         raise HTTPException(status_code=400, detail=error_msg)
@@ -157,6 +165,18 @@ async def _validate_material_features(
             raise HTTPException(status_code=400, detail=error_msg)
 
 
+def _comparable_name(value: str | None) -> str:
+    """Name reduced to letters and digits.
+
+    Catches the same product written differently: `PLA-Black`, `PLA Black` and
+    `pla  black` are one product, and a spelling difference must not be enough
+    to create a second catalog record.
+    """
+    if not value:
+        return ""
+    return "".join(char for char in value.lower() if char.isalnum())
+
+
 def _same_filament_color(
     existing_color_name: str | None,
     existing_color_hex: str | None,
@@ -182,17 +202,42 @@ def _catalog_search_filter(search: str, country: str | None):
     """Build the public catalog search condition for the reader's market."""
     search_term = like_pattern(search)
     ral_search_term = like_pattern(str(normalize_ral_code(search)))
+    feature_codes = resolve_catalog_feature_codes(search)
     conditions = [
-        Filament.name.ilike(search_term),
-        Brand.name.ilike(search_term),
-        Filament.material_type.ilike(search_term),
-        Filament.color_name.ilike(search_term),
-        Filament.ral_code.ilike(ral_search_term),
-        Filament.visual_settings["filler"].as_string().ilike(search_term),
-        Filament.visual_settings["effects"].as_string().ilike(search_term),
-        cast(Filament.additives, String).ilike(search_term),
-        cast(Filament.property_claims, String).ilike(search_term),
+        Filament.name.ilike(search_term, escape="\\"),
+        Brand.name.ilike(search_term, escape="\\"),
+        Filament.material_type.ilike(search_term, escape="\\"),
+        Filament.color_name.ilike(search_term, escape="\\"),
+        Filament.ral_code.ilike(ral_search_term, escape="\\"),
+        Filament.visual_settings["filler"].as_string().ilike(search_term, escape="\\"),
+        Filament.visual_settings["effects"].as_string().ilike(search_term, escape="\\"),
+        cast(Filament.additives, String).ilike(search_term, escape="\\"),
+        cast(Filament.property_claims, String).ilike(search_term, escape="\\"),
     ]
+    for code in feature_codes.effects:
+        code_pattern = like_pattern(code)
+        conditions.extend(
+            (
+                Filament.visual_settings["filler"].as_string().ilike(code_pattern, escape="\\"),
+                Filament.visual_settings["effects"].as_string().ilike(code_pattern, escape="\\"),
+            )
+        )
+    conditions.extend(
+        cast(Filament.additives, String).ilike(like_pattern(code), escape="\\")
+        for code in feature_codes.additives
+    )
+    conditions.extend(
+        cast(Filament.property_claims, String).ilike(like_pattern(code), escape="\\")
+        for code in feature_codes.claims
+    )
+    if feature_codes.color_groups:
+        conditions.append(Filament.color_group.in_(feature_codes.color_groups))
+    if feature_codes.color_types:
+        conditions.append(
+            Filament.visual_settings["color_type"].as_string().in_(feature_codes.color_types)
+        )
+    if feature_codes.transparent:
+        conditions.append(Filament.visual_settings["transparency"].as_boolean().is_(True))
 
     if country:
         market_match = (
@@ -203,8 +248,8 @@ def _catalog_search_filter(search: str, country: str | None):
                 FilamentCountryCell.country == country.upper(),
                 FilamentCountryCell.published.is_(True),
                 or_(
-                    FilamentCountryCell.market_color_name.ilike(search_term),
-                    FilamentCountryCell.market_note.ilike(search_term),
+                    FilamentCountryCell.market_color_name.ilike(search_term, escape="\\"),
+                    FilamentCountryCell.market_note.ilike(search_term, escape="\\"),
                 ),
             )
             .exists()
@@ -222,6 +267,8 @@ async def list_filaments(
     active_only: bool = Query(True),
     brand_id: int | None = Query(None),
     material_type: str | None = Query(None),
+    color_group: FilamentColorGroup | None = Query(None),
+    multicolor: bool = Query(False),
     printer_id: int | None = Query(None, gt=0),
     search: str | None = Query(
         None,
@@ -246,11 +293,15 @@ async def list_filaments(
         query = query.where(Filament.brand_id == brand_id)
     if material_type:
         query = query.where(Filament.material_type == material_type)
+    if color_group:
+        query = query.where(Filament.color_group == color_group)
+    if multicolor:
+        query = query.where(
+            Filament.visual_settings["color_type"].as_string().in_(MULTICOLOR_COLOR_TYPES)
+        )
     normalized_search = search.strip() if search else None
     if normalized_search:
-        query = query.outerjoin(Brand).where(
-            _catalog_search_filter(normalized_search, country)
-        )
+        query = query.outerjoin(Brand).where(_catalog_search_filter(normalized_search, country))
 
     # Count total
     count_query = select(func.count()).select_from(Filament)
@@ -260,6 +311,12 @@ async def list_filaments(
         count_query = count_query.where(Filament.brand_id == brand_id)
     if material_type:
         count_query = count_query.where(Filament.material_type == material_type)
+    if color_group:
+        count_query = count_query.where(Filament.color_group == color_group)
+    if multicolor:
+        count_query = count_query.where(
+            Filament.visual_settings["color_type"].as_string().in_(MULTICOLOR_COLOR_TYPES)
+        )
     if normalized_search:
         count_query = count_query.outerjoin(Brand).where(
             _catalog_search_filter(normalized_search, country)
@@ -326,7 +383,9 @@ async def list_filaments(
                 Preset.filament_id,
                 func.count().label("total"),
                 func.sum(case((Preset.is_official.is_(True), 1), else_=0)).label("official_count"),
-                func.sum(case((Preset.is_official.is_(False), 1), else_=0)).label("community_count"),
+                func.sum(case((Preset.is_official.is_(False), 1), else_=0)).label(
+                    "community_count"
+                ),
             )
             .where(
                 Preset.filament_id.in_(filament_ids),
@@ -528,21 +587,27 @@ async def get_filament_presets(
     from app.models.preset_printer import PresetPrinter
     from app.schemas.printer import PrinterResponse
 
-    query = select(Preset).options(
-        selectinload(Preset.printer_links).selectinload(PresetPrinter.printer)
-    ).where(
-        Preset.filament_id == filament_id,
-        Preset.active == True,
-        Preset.moderation_status.in_(PUBLIC_PRESET_STATUSES)  # виден = публичные статусы
+    query = (
+        select(Preset)
+        .options(selectinload(Preset.printer_links).selectinload(PresetPrinter.printer))
+        .where(
+            Preset.filament_id == filament_id,
+            Preset.active == True,
+            Preset.moderation_status.in_(PUBLIC_PRESET_STATUSES),  # виден = публичные статусы
+        )
     )
     if is_official is not None:
         query = query.where(Preset.is_official == is_official)
 
     # Count total
-    count_query = select(func.count()).select_from(Preset).where(
-        Preset.filament_id == filament_id,
-        Preset.active == True,
-        Preset.moderation_status.in_(PUBLIC_PRESET_STATUSES)
+    count_query = (
+        select(func.count())
+        .select_from(Preset)
+        .where(
+            Preset.filament_id == filament_id,
+            Preset.active == True,
+            Preset.moderation_status.in_(PUBLIC_PRESET_STATUSES),
+        )
     )
     if is_official is not None:
         count_query = count_query.where(Preset.is_official == is_official)
@@ -609,6 +674,10 @@ async def create_filament(
     data: FilamentCreate,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
+    confirm_similar: bool = Query(
+        False,
+        description="Proceed although the catalog already holds similar records",
+    ),
 ) -> FilamentResponse:
     """Создать материал."""
     # Check if brand exists
@@ -634,12 +703,15 @@ async def create_filament(
 
     # Проверка текстовых полей на плохие слова
     from app.services.preset_moderation import validate_text_field
+
     is_valid, error_msg = await validate_text_field(data.name, db, "filament_name")
     if not is_valid:
         raise HTTPException(status_code=400, detail=error_msg)
 
     if data.description:
-        is_valid, error_msg = await validate_text_field(data.description, db, "filament_description")
+        is_valid, error_msg = await validate_text_field(
+            data.description, db, "filament_description"
+        )
         if not is_valid:
             raise HTTPException(status_code=400, detail=error_msg)
 
@@ -667,22 +739,35 @@ async def create_filament(
     normalized_color_name = data.color_name.strip() if data.color_name else None
     normalized_color_hex = data.color_hex.strip().upper() if data.color_hex else None
 
-    duplicate_candidates_result = await db.execute(
+    # Diameter is part of the product identity: 1.75 and 2.85 of the same colour
+    # are two real products, and blocking the second one would force a distorted
+    # name just to get it into the catalog.
+    candidates_result = await db.execute(
         select(Filament)
         .where(
             Filament.brand_id == data.brand_id,
             Filament.active.is_(True),
-            func.lower(func.trim(Filament.name)) == normalized_name.lower(),
+            Filament.diameter == data.diameter,
             func.lower(func.trim(Filament.material_type)) == normalized_material_type.lower(),
+            or_(
+                func.lower(func.trim(Filament.name)) == normalized_name.lower(),
+                func.lower(func.trim(Filament.color_name)) == (normalized_color_name or "").lower()
+                if normalized_color_name
+                else false(),
+                Filament.color_hex == normalized_color_hex if normalized_color_hex else false(),
+            ),
         )
         .limit(20)
     )
-    duplicate_candidates = duplicate_candidates_result.scalars().all()
+    candidates = candidates_result.scalars().all()
+
+    incoming_name = _comparable_name(normalized_name)
     duplicate_filament = next(
         (
             candidate
-            for candidate in duplicate_candidates
-            if _same_filament_color(
+            for candidate in candidates
+            if _comparable_name(candidate.name) == incoming_name
+            and _same_filament_color(
                 candidate.color_name,
                 candidate.color_hex,
                 normalized_color_name,
@@ -707,12 +792,36 @@ async def create_filament(
             },
         )
 
+    # Anything else that looks like the same product is only a warning: the
+    # service cannot know whether two similar records are one product, so it
+    # shows what it found and lets the author decide.
+    if candidates and not confirm_similar:
+        raise_error(
+            409,
+            ERR_FILAMENT_SIMILAR_EXISTS,
+            {
+                "brand_name": brand.name,
+                "candidates": [
+                    {
+                        "filament_id": candidate.id,
+                        "filament_name": candidate.name,
+                        "material_type": candidate.material_type,
+                        "color_name": candidate.color_name,
+                        "color_hex": candidate.color_hex,
+                        "diameter": candidate.diameter,
+                    }
+                    for candidate in candidates
+                ],
+            },
+        )
+
     slug = await choose_filament_slug(
         db=db,
         brand_id=data.brand_id,
         name=normalized_name,
         color_name=normalized_color_name,
         ral_code=data.ral_code,
+        diameter=data.diameter,
     )
     if slug is None:
         # A public slug must describe a distinguishable variant. Do not hide an
@@ -725,6 +834,17 @@ async def create_filament(
     filament_payload["material_type"] = normalized_material_type
     filament_payload["color_name"] = normalized_color_name
     filament_payload["color_hex"] = normalized_color_hex
+    requested_source = filament_payload.get("color_group_source")
+    if "color_group" in data.model_fields_set and "color_group_source" not in data.model_fields_set:
+        requested_source = "manual" if data.color_group else "auto"
+    color_group, color_group_source = resolve_color_group(
+        color_hex=normalized_color_hex,
+        visual_settings=filament_payload.get("visual_settings"),
+        requested_group=filament_payload.get("color_group"),
+        requested_source=requested_source,
+    )
+    filament_payload["color_group"] = color_group
+    filament_payload["color_group_source"] = color_group_source
     filament_payload["availability"] = FilamentAvailability(filament_payload["availability"])
     # Вклад организации, если человек работает от неё и вправе заводить записи;
     # иначе это вклад сообщества.
@@ -768,6 +888,7 @@ async def create_filament(
 
     # Проверяем, есть ли уже маппинг для этого типа
     from app.models.material_mapping import MaterialMapping
+
     existing_mapping = await db.execute(
         select(MaterialMapping).where(
             MaterialMapping.material_type.ilike(escape_like(material_type_upper)),
@@ -796,6 +917,7 @@ async def create_filament(
         except Exception as e:
             # Логируем ошибку, но не блокируем создание филамента
             import logging
+
             logger = logging.getLogger(__name__)
             logger.warning(
                 f"Failed to create automatic material mapping for '{data.material_type}': {e}"
@@ -826,10 +948,7 @@ async def request_filament_common_edit(
         raise_error(404, ERR_BRAND_NOT_FOUND)
 
     grants = await active_grants_for(db, current_user, filament.brand_id)
-    if not any(
-        grant.country is not None and grant.manage_filament_country
-        for grant in grants
-    ):
+    if not any(grant.country is not None and grant.manage_filament_country for grant in grants):
         raise_error(403, ERR_NO_PERMISSION_EDIT_FILAMENT)
 
     from app.services.preset_moderation import validate_text_field
@@ -851,14 +970,12 @@ async def request_filament_common_edit(
         )
         .join(
             BrandTerritorialGrant,
-            BrandTerritorialGrant.organization_id
-            == OrganizationMembership.organization_id,
+            BrandTerritorialGrant.organization_id == OrganizationMembership.organization_id,
         )
         .outerjoin(
             OrganizationBrandAccess,
             and_(
-                OrganizationBrandAccess.membership_id
-                == OrganizationMembership.id,
+                OrganizationBrandAccess.membership_id == OrganizationMembership.id,
                 OrganizationBrandAccess.brand_id == filament.brand_id,
             ),
         )
@@ -935,6 +1052,7 @@ async def update_filament(
 
     # Проверка текстовых полей на плохие слова
     from app.services.preset_moderation import validate_text_field
+
     update_data = data.model_dump(exclude_unset=True)
 
     if may_fill_gaps:
@@ -976,7 +1094,9 @@ async def update_filament(
             raise HTTPException(status_code=400, detail=error_msg)
 
     if "description" in update_data:
-        is_valid, error_msg = await validate_text_field(update_data["description"], db, "filament_description")
+        is_valid, error_msg = await validate_text_field(
+            update_data["description"], db, "filament_description"
+        )
         if not is_valid:
             raise HTTPException(status_code=400, detail=error_msg)
 
@@ -1004,9 +1124,30 @@ async def update_filament(
         )
 
     if update_data.get("line_id") is not None:
-        line = await db.scalar(select(FilamentLine).where(FilamentLine.id == update_data["line_id"]))
+        line = await db.scalar(
+            select(FilamentLine).where(FilamentLine.id == update_data["line_id"])
+        )
         if line is None or line.brand_id != filament.brand_id:
             raise_error(400, ERR_FILAMENT_LINE_INVALID)
+
+    color_inputs_changed = bool(
+        {"color_hex", "visual_settings", "color_group", "color_group_source"} & update_data.keys()
+    )
+    if color_inputs_changed:
+        requested_source = update_data.get("color_group_source", filament.color_group_source)
+        if (
+            "color_group" in data.model_fields_set
+            and "color_group_source" not in data.model_fields_set
+        ):
+            requested_source = "manual" if data.color_group else "auto"
+        color_group, color_group_source = resolve_color_group(
+            color_hex=update_data.get("color_hex", filament.color_hex),
+            visual_settings=update_data.get("visual_settings", filament.visual_settings),
+            requested_group=update_data.get("color_group", filament.color_group),
+            requested_source=requested_source,
+        )
+        update_data["color_group"] = color_group
+        update_data["color_group_source"] = color_group_source
 
     # Update fields
     for field, value in update_data.items():
@@ -1116,13 +1257,15 @@ async def get_compatible_printers(
         printer_id, printer_slug, printer_name, relation_source, confidence_score = row
         printer = printers.get(printer_id)
         if printer:
-            compatible_printers.append({
-                "id": printer.id,
-                "slug": printer.slug,
-                "name": printer.name,
-                "manufacturer": printer.manufacturer,
-                "relation_source": relation_source,
-                "confidence_score": float(confidence_score),
-            })
+            compatible_printers.append(
+                {
+                    "id": printer.id,
+                    "slug": printer.slug,
+                    "name": printer.name,
+                    "manufacturer": printer.manufacturer,
+                    "relation_source": relation_source,
+                    "confidence_score": float(confidence_score),
+                }
+            )
 
     return compatible_printers

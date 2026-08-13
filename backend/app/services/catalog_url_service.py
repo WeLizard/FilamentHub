@@ -72,6 +72,7 @@ async def choose_filament_slug(
     name: str,
     color_name: str | None,
     ral_code: str | None = None,
+    diameter: float | None = None,
 ) -> str | None:
     """Choose an unambiguous stable slug; never invent an opaque numeric suffix."""
     base = slugify(filament_slug_source(name, color_name), "filament")
@@ -85,6 +86,16 @@ async def choose_filament_slug(
         candidate = f"{base[: FILAMENT_SLUG_MAX_LENGTH - len(suffix)].rstrip('-')}{suffix}"
         if await filament_slug_available(db, brand_id=brand_id, slug=candidate):
             return candidate
+
+    # The same colour in 1.75 and 2.85 are two real products. Without the
+    # diameter in the address the second one has nowhere to live, and the
+    # catalog would push its author into distorting the name instead.
+    if diameter is not None:
+        suffix = f"-{f'{diameter:g}'.replace('.', '-')}mm"
+        if suffix.strip("-") not in base:
+            candidate = f"{base[: FILAMENT_SLUG_MAX_LENGTH - len(suffix)].rstrip('-')}{suffix}"
+            if await filament_slug_available(db, brand_id=brand_id, slug=candidate):
+                return candidate
     return None
 
 

@@ -61,7 +61,11 @@ from app.services.file_service import (
     normalize_brand_logo_upload,
 )
 from app.services.organization_access import can_view_private_brand_data
-from app.services.territorial_access import active_grants_for, can_edit_brand_common
+from app.services.territorial_access import (
+    active_grants_for,
+    can_create_for_brand,
+    can_edit_brand_common,
+)
 
 router = APIRouter(prefix="/brands", tags=["brands"])
 
@@ -388,12 +392,17 @@ async def backfill_brand_qr(
     """Сгенерировать QR-коды для материалов бренда, у которых их ещё нет.
 
     Для верифицированного бренда: закрывает материалы, созданные до верификации
-    (напр. юзерами до прихода представителя). Доступно бренду или админу.
+    (напр. юзерами до прихода представителя).
+
+    Код принадлежит товарному варианту, а не рынку: он одинаков во всех странах.
+    Поэтому его достаточно права заводить материалы бренда — иначе материал
+    регионального представителя остаётся без кода до прихода кого-то с
+    глобальными правами.
     """
     brand = (await db.execute(select(Brand).where(Brand.id == brand_id))).scalar_one_or_none()
     if not brand:
         raise_error(404, ERR_BRAND_NOT_FOUND)
-    if not await can_edit_brand_common(db, current_user, brand_id):
+    if not await can_create_for_brand(db, current_user, brand_id):
         raise_error(403, ERR_NO_PERMISSION)
 
     from app.services.qr_service import backfill_brand_qr_codes

@@ -60,6 +60,8 @@ async def test_create_filament(auth_client: AsyncClient, db_session: AsyncSessio
     data = response.json()
     assert data["name"] == filament_data["name"]
     assert data["material_type"] == filament_data["material_type"]
+    assert data["color_group"] == "red"
+    assert data["color_group_source"] == "auto"
     assert data["ral_code"] == "3020"
     assert data["id"] is not None
     assert data["availability"] == "available"
@@ -67,6 +69,14 @@ async def test_create_filament(auth_client: AsyncClient, db_session: AsyncSessio
     search_response = await auth_client.get("/api/v1/filaments/?search=RAL%203020")
     assert search_response.status_code == 200
     assert [item["id"] for item in search_response.json()["items"]] == [data["id"]]
+
+    color_search = await auth_client.get("/api/v1/filaments/", params={"search": "красный"})
+    assert color_search.status_code == 200
+    assert [item["id"] for item in color_search.json()["items"]] == [data["id"]]
+
+    color_filter = await auth_client.get("/api/v1/filaments/", params={"color_group": "red"})
+    assert color_filter.status_code == 200
+    assert [item["id"] for item in color_filter.json()["items"]] == [data["id"]]
 
 
 @pytest.mark.asyncio
@@ -226,9 +236,7 @@ async def test_custom_material_feature_rejected_for_unverified_brand(
 
 
 @pytest.mark.asyncio
-async def test_filament_line_create_and_assign(
-    admin_client: AsyncClient, db_session: AsyncSession
-):
+async def test_filament_line_create_and_assign(admin_client: AsyncClient, db_session: AsyncSession):
     """A line can be created, a filament assigned to it, and grouping data returned."""
     brand = Brand(name="Line Brand", slug="line-brand", active=True)
     db_session.add(brand)
@@ -286,6 +294,16 @@ async def test_filament_import_csv(admin_client: AsyncClient, db_session: AsyncS
     assert len(lines.json()) == 1
     assert lines.json()[0]["filaments_count"] == 2
 
+    imported = await admin_client.get(f"/api/v1/filaments/?brand_id={brand.id}")
+    imported_groups = {
+        item["name"]: (item["color_group"], item["color_group_source"])
+        for item in imported.json()["items"]
+    }
+    assert imported_groups == {
+        "Imp Red": ("red", "auto"),
+        "Imp Blue": ("blue", "auto"),
+    }
+
     again = await admin_client.post(f"/api/v1/filament-import?brand_id={brand.id}", files=files)
     assert again.json()["skipped"] == 2
     assert again.json()["created"] == 0
@@ -326,6 +344,15 @@ async def test_filament_line_palette(admin_client: AsyncClient, db_session: Asyn
     assert "PLA Basic Red" in names
     assert "PLA Basic Blue" in names
     assert "Custom Green" in names
+    groups = {
+        item["name"]: (item["color_group"], item["color_group_source"])
+        for item in fil_list.json()["items"]
+    }
+    assert groups == {
+        "PLA Basic Red": ("red", "auto"),
+        "PLA Basic Blue": ("blue", "auto"),
+        "Custom Green": ("green", "auto"),
+    }
     for item in fil_list.json()["items"]:
         assert item["visual_settings"]["effects"] == ["metallic", "glitter"]
         assert item["additives"][0]["code"] == "glass_fiber"
@@ -420,9 +447,7 @@ async def test_get_filament_not_found(client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_list_filaments_filter_by_brand(
-    client: AsyncClient, db_session: AsyncSession
-):
+async def test_list_filaments_filter_by_brand(client: AsyncClient, db_session: AsyncSession):
     """Test filtering filaments by brand."""
     # Create brands
     brand1 = Brand(name="Brand 1", slug="brand-1", active=True)
@@ -519,9 +544,17 @@ async def test_list_filaments_searches_catalog_fields(
                 slug="engineering-material",
                 material_type="PETG-CF",
                 color_name="Galaxy Black",
-                visual_settings={"filler": "carbon", "effects": ["carbon"]},
+                visual_settings={
+                    "color_type": "three",
+                    "filler": "carbon",
+                    "effects": ["carbon"],
+                    "transparency": True,
+                },
                 additives=[{"code": "carbon_fiber"}, {"code": "carbon_nanotubes"}],
-                property_claims=[{"code": "esd", "standard": "IEC 61340"}],
+                property_claims=[
+                    {"code": "esd", "standard": "IEC 61340"},
+                    {"code": "wear_resistant"},
+                ],
                 active=True,
             ),
             Filament(
@@ -544,6 +577,11 @@ async def test_list_filaments_searches_catalog_fields(
         ("carbon", "Engineering Material"),
         ("nanotubes", "Engineering Material"),
         ("IEC 61340", "Engineering Material"),
+        ("Углеродное волокно", "Engineering Material"),
+        ("Износостойкий", "Engineering Material"),
+        ("碳纳米管", "Engineering Material"),
+        ("прозрачный", "Engineering Material"),
+        ("多色", "Engineering Material"),
     ]:
         response = await client.get("/api/v1/filaments/", params={"search": term})
         assert response.status_code == 200
@@ -590,9 +628,7 @@ async def test_catalog_search_uses_only_the_selected_country_cell(
     )
     await db_session.commit()
 
-    kz_name = await client.get(
-        "/api/v1/filaments/", params={"country": "KZ", "search": "Алмалы"}
-    )
+    kz_name = await client.get("/api/v1/filaments/", params={"country": "KZ", "search": "Алмалы"})
     assert kz_name.status_code == 200
     assert kz_name.json()["total"] == 1
     assert kz_name.json()["items"][0]["color_name"] == "Алмалы жасыл"
@@ -673,19 +709,59 @@ async def test_update_filament(admin_client: AsyncClient, db_session: AsyncSessi
         "name": "Updated Name",
         "description": "Updated description",
     }
-    response = await admin_client.patch(
-        f"/api/v1/filaments/{filament.id}", json=update_data
-    )
+    response = await admin_client.patch(f"/api/v1/filaments/{filament.id}", json=update_data)
     assert response.status_code == 200
     data = response.json()
     assert data["name"] == update_data["name"]
     assert data["description"] == update_data["description"]
 
+    manual_group = await admin_client.patch(
+        f"/api/v1/filaments/{filament.id}",
+        json={"color_group": "blue", "color_group_source": "manual"},
+    )
+    assert manual_group.status_code == 200
+    assert manual_group.json()["color_group"] == "blue"
+
+    changed_hex = await admin_client.patch(
+        f"/api/v1/filaments/{filament.id}", json={"color_hex": "#00FF00"}
+    )
+    assert changed_hex.status_code == 200
+    assert changed_hex.json()["color_group"] == "blue"
+    assert changed_hex.json()["color_group_source"] == "manual"
+
+    automatic_group = await admin_client.patch(
+        f"/api/v1/filaments/{filament.id}",
+        json={"color_group": None, "color_group_source": "auto"},
+    )
+    assert automatic_group.status_code == 200
+    assert automatic_group.json()["color_group"] == "green"
+    assert automatic_group.json()["color_group_source"] == "auto"
+
+    multicolor = await admin_client.patch(
+        f"/api/v1/filaments/{filament.id}",
+        json={
+            "color_group": None,
+            "color_group_source": "manual",
+            "visual_settings": {
+                "color_type": "gradient",
+                "colors": ["#00FF00", "#0000FF"],
+                "finish": "matte",
+                "filler": "none",
+                "effects": [],
+                "transparency": False,
+            },
+        },
+    )
+    assert multicolor.status_code == 200
+    assert multicolor.json()["color_group"] is None
+    assert multicolor.json()["color_group_source"] == "manual"
+
+    multicolor_filter = await admin_client.get("/api/v1/filaments/", params={"multicolor": True})
+    assert multicolor_filter.status_code == 200
+    assert [item["id"] for item in multicolor_filter.json()["items"]] == [filament.id]
 
 
-async def _brand_with_employee(
-    db_session: AsyncSession, employee: User, admin_user: User
-) -> Brand:
+async def _brand_with_employee(db_session: AsyncSession, employee: User, admin_user: User) -> Brand:
     """A verified brand whose catalog the employee may edit."""
     brand = Brand(name="Creality", slug="creality", active=True, verified=True)
     db_session.add(brand)
@@ -812,9 +888,7 @@ async def test_brand_employee_may_take_a_contributed_filament_off_the_shelf(
     )
     await db_session.commit()
 
-    response = await auth_client.patch(
-        f"/api/v1/filaments/{filament.id}", json={"active": False}
-    )
+    response = await auth_client.patch(f"/api/v1/filaments/{filament.id}", json={"active": False})
     assert response.status_code == 200
     assert response.json()["active"] is False
 

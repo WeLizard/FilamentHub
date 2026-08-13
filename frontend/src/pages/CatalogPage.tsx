@@ -40,11 +40,14 @@ import { formatDate } from '../utils/formatDate';
 import { useReaderCountry } from '../hooks/useReaderCountry';
 import { MarketNotice } from '../components/MarketNotice';
 import { filamentPublicPath } from '../utils/catalogUrls';
+import { sortedCountries } from '../utils/countries';
+import { FILAMENT_COLOR_GROUPS } from '../utils/filamentColorGroups';
+import type { FilamentColorGroup } from '../types/api';
 
 const CATALOG_PAGE_SIZE = 24;
 
 export const CatalogPage: React.FC = () => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const readerCountry = useReaderCountry();
   const navigate = useNavigate();
   const location = useLocation();
@@ -54,15 +57,22 @@ export const CatalogPage: React.FC = () => {
   const debouncedSearchQuery = useDebounce(searchQuery.trim(), 250);
   const [_printerModel, _setPrinterModel] = useState('Ender 3 Pro');
   const [materialTypeFilter, setMaterialTypeFilter] = useState<string | null>(null);
+  const [colorGroupFilter, setColorGroupFilter] = useState<FilamentColorGroup | 'multicolor' | null>(null);
   const [brandFilter, setBrandFilter] = useState<number | null>(null);
   const [brandSearch, setBrandSearch] = useState('');
   const debouncedBrandSearch = useDebounce(brandSearch.trim(), 250);
   const [printerFilter, setPrinterFilter] = useState<number | null>(null);
   const [printerSearch, setPrinterSearch] = useState('');
   const debouncedPrinterSearch = useDebounce(printerSearch.trim(), 250);
+  const [catalogCountry, setCatalogCountry] = useState<string | null>(readerCountry ?? null);
+  const [countrySearch, setCountrySearch] = useState('');
   const configuredNozzleHrc = useConfiguredNozzleHrc();
   const [selectedFilament, _setSelectedFilament] = useState<number | null>(null);
   const [showQR, setShowQR] = useState<number | null>(null);
+
+  useEffect(() => {
+    setCatalogCountry(readerCountry ?? null);
+  }, [readerCountry]);
   
   // Загружаем список сохранённых пресетов
   const { data: savedPresets } = useQuery({
@@ -193,10 +203,11 @@ export const CatalogPage: React.FC = () => {
       {
         search: debouncedSearchQuery,
         material_type: materialTypeFilter,
+        color_group: colorGroupFilter,
         brand_id: brandFilter,
         printer_id: printerFilter,
         // Страна — часть ключа: иначе москвич увидит немецкие цены из кеша.
-        country: readerCountry,
+        country: catalogCountry,
       },
     ],
     queryFn: ({ pageParam }) =>
@@ -204,9 +215,13 @@ export const CatalogPage: React.FC = () => {
         active_only: true,
         search: debouncedSearchQuery || undefined,
         material_type: materialTypeFilter || undefined,
+        color_group: colorGroupFilter && colorGroupFilter !== 'multicolor'
+          ? colorGroupFilter
+          : undefined,
+        multicolor: colorGroupFilter === 'multicolor' || undefined,
         brand_id: brandFilter || undefined,
         printer_id: printerFilter || undefined,
-        country: readerCountry,
+        country: catalogCountry || undefined,
         page: pageParam,
         size: CATALOG_PAGE_SIZE,
       }),
@@ -235,8 +250,8 @@ export const CatalogPage: React.FC = () => {
     }),
   });
   const { data: selectedBrand } = useQuery({
-    queryKey: ['brand', brandFilter, readerCountry],
-    queryFn: () => brandsAPI.get(brandFilter as number, undefined, readerCountry),
+    queryKey: ['brand', brandFilter, catalogCountry],
+    queryFn: () => brandsAPI.get(brandFilter as number, undefined, catalogCountry || undefined),
     enabled: brandFilter !== null,
   });
   const brandOptions = useMemo(() => {
@@ -254,6 +269,11 @@ export const CatalogPage: React.FC = () => {
     queryKey: ['filament-material-types'],
     queryFn: filamentsAPI.getMaterialTypes,
   });
+
+  const countryOptions = useMemo(
+    () => sortedCountries(i18n.language).map(({ code, name }) => ({ value: code, label: name })),
+    [i18n.language],
+  );
 
   const filaments = useMemo(
     () => filamentsData?.pages.flatMap((catalogPage) => catalogPage.items) ?? [],
@@ -355,7 +375,7 @@ export const CatalogPage: React.FC = () => {
           </div>
 
           {/* Filters - stack on mobile, row on desktop. */}
-          <div className="grid gap-2 sm:gap-4 grid-cols-2 sm:grid-cols-3">
+          <div className="grid grid-cols-2 gap-2 sm:gap-4 lg:grid-cols-5">
             <Dropdown
               value={materialTypeFilter || ''}
               onChange={(val) => {
@@ -366,6 +386,28 @@ export const CatalogPage: React.FC = () => {
                 ...materialTypes.map((type) => ({ value: type, label: type })),
               ]}
               placeholder={t('catalogPage.allTypes')}
+            />
+            <Dropdown
+              value={colorGroupFilter ?? ''}
+              onChange={(value) => {
+                const next = String(value);
+                setColorGroupFilter(
+                  next === 'multicolor'
+                    ? 'multicolor'
+                    : FILAMENT_COLOR_GROUPS.includes(next as FilamentColorGroup)
+                      ? next as FilamentColorGroup
+                      : null,
+                );
+              }}
+              options={[
+                { value: '', label: t('catalogPage.allColors') },
+                { value: 'multicolor', label: t('catalogPage.multicolor') },
+                ...FILAMENT_COLOR_GROUPS.map((group) => ({
+                  value: group,
+                  label: t(`colorGroups.${group}`),
+                })),
+              ]}
+              placeholder={t('catalogPage.allColors')}
             />
             <Dropdown
               value={brandFilter || ''}
@@ -391,6 +433,19 @@ export const CatalogPage: React.FC = () => {
               filterable
               filterValue={printerSearch}
               onFilterChange={setPrinterSearch}
+            />
+            <Dropdown
+              value={catalogCountry ?? ''}
+              onChange={(value) => setCatalogCountry(value === '' ? null : String(value))}
+              options={[
+                { value: '', label: t('catalogPage.generalMarket') },
+                ...countryOptions,
+              ]}
+              placeholder={t('catalogPage.market')}
+              filterable
+              filterValue={countrySearch}
+              onFilterChange={setCountrySearch}
+              className="col-span-2 lg:col-span-1"
             />
           </div>
         </div>

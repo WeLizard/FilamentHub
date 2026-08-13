@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 from sqlalchemy import (
     JSON,
     Boolean,
+    CheckConstraint,
     DateTime,
     Enum,
     Float,
@@ -49,6 +50,16 @@ class Filament(Base):
     __tablename__ = "filaments"
     __table_args__ = (
         UniqueConstraint("brand_id", "slug", name="uq_filaments_brand_slug"),
+        CheckConstraint(
+            "color_group IS NULL OR color_group IN "
+            "('black','white','gray','red','orange','yellow','green','blue',"
+            "'purple','pink','brown','gold','silver')",
+            name="ck_filaments_color_group",
+        ),
+        CheckConstraint(
+            "color_group_source IN ('auto','manual')",
+            name="ck_filaments_color_group_source",
+        ),
     )
 
     # Primary key
@@ -77,6 +88,11 @@ class Filament(Base):
     color_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
     color_hex: Mapped[str | None] = mapped_column(String(7), nullable=True)
     # color_hex: #FF0000 (базовый цвет, используется в OrcaSlicer)
+    color_group: Mapped[str | None] = mapped_column(String(16), nullable=True, index=True)
+    # color_group: переводимая поисковая категория; не заменяет фирменное имя.
+    color_group_source: Mapped[str] = mapped_column(
+        String(10), default="auto", server_default="auto", nullable=False
+    )
     ral_code: Mapped[str | None] = mapped_column(String(4), nullable=True, index=True)
     # ral_code: необязательный четырёхзначный код RAL Classic; не заменяет HEX
 
@@ -93,8 +109,12 @@ class Filament(Base):
 
     # Physical composition and declared functional properties are separate from
     # visual rendering. A material may combine several additives and claims.
-    additives: Mapped[list[dict]] = mapped_column(JSON, default=list, server_default="[]", nullable=False)
-    property_claims: Mapped[list[dict]] = mapped_column(JSON, default=list, server_default="[]", nullable=False)
+    additives: Mapped[list[dict]] = mapped_column(
+        JSON, default=list, server_default="[]", nullable=False
+    )
+    property_claims: Mapped[list[dict]] = mapped_column(
+        JSON, default=list, server_default="[]", nullable=False
+    )
 
     # Physical properties
     diameter: Mapped[float] = mapped_column(Float, default=1.75)

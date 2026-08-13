@@ -371,6 +371,13 @@ export function AdminBrandRequests() {
                           </a>
                         );
                       })()}
+                      {selectedRequest.site_verified_at && (
+                        <p className="mt-1 text-sm font-medium text-green-400">
+                          {t('adminBrandRequests.siteVerified', {
+                            domain: selectedRequest.site_verified_domain,
+                          })}
+                        </p>
+                      )}
                     </div>
                   )}
                 </div>

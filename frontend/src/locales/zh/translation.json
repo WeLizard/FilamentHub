@@ -695,7 +695,8 @@
     "alert_rejection_reason_required": "请提供拒绝原因",
     "representative_request": "{{brandName}} 代理 — {{country}}",
     "claimed_country_label": "申请的国家",
-    "claimed_country_hint": "批准后，申请人将获得自己的组织以及仅限该国的权限。品牌的通用信息仍归其所有者。"
+    "claimed_country_hint": "批准后，申请人将获得自己的组织以及仅限该国的权限。品牌的通用信息仍归其所有者。",
+    "siteVerified": "申请人已证明对 {{domain}} 的访问权限"
   },
   "adminDatabase": {
     "diag": {
@@ -1116,7 +1117,11 @@
     "error": "加载材料出错",
     "searchPlaceholder": "按名称、品牌、材料、颜色、成分或特性搜索...",
     "allTypes": "所有类型",
+    "allColors": "所有颜色",
+    "multicolor": "多色",
     "allBrands": "所有品牌",
+    "market": "市场",
+    "generalMarket": "通用数据",
     "noResults": "未找到材料",
     "errorLoginRequired": "需要登录",
     "errorSavePreset": "添加预设到配置文件失败",
@@ -1175,7 +1180,23 @@
     "density": "密度：",
     "price": "价格：",
     "priceSuffix": " RUB/kg",
-    "seoDescription": "{{name}} — {{count}} 种 3D 打印耗材。FilamentHub 上的预设、评分和评价。"
+    "seoDescription": "{{name}} — {{count}} 种 3D 打印耗材。FilamentHub 上的预设、评分和评价。",
+    "verifiedMeaning": "该品牌已确认此页面归其所有：数据与官方预设由制造商发布。这并非对产品质量的评价。"
+  },
+  "colorGroups": {
+    "black": "黑色",
+    "white": "白色",
+    "gray": "灰色",
+    "red": "红色",
+    "orange": "橙色",
+    "yellow": "黄色",
+    "green": "绿色",
+    "blue": "蓝色",
+    "purple": "紫色",
+    "pink": "粉色",
+    "brown": "棕色",
+    "gold": "金色",
+    "silver": "银色"
   },
   "downloadPage": {
     "seoTitle": "FilamentHub 插件 — OrcaSlicer 与 OctoPrint",
@@ -1907,6 +1928,20 @@
     "other": "其他...",
     "noTypesFound": "未找到类型。请手动输入新材料类型。",
     "colors": "颜色",
+    "multicolorOrcaHint": "调色板中的第一种颜色会发送到 OrcaSlicer，其余颜色仍保存在 FilamentHub 中。",
+    "colorGroupLabel": "搜索颜色",
+    "colorGroupAuto": "根据主色自动判断",
+    "colorGroupAutoWithResult": "自动判断 — 约为{{group}}",
+    "colorGroupHint": "近似颜色组仅用于搜索，不会更改品牌色名或精确色调。",
+    "multicolorNoDominant": "多色 — 无主导颜色",
+    "approximatePalette": "近似色调图",
+    "detectedColorGroup": "{{group}} · {{mode}}",
+    "colorGroupNotDetected": "输入有效的 HEX 值即可查看建议颜色组",
+    "selectApproximateShade": "选择近似{{group}}色调 {{hex}}",
+    "colorGroupSource": {
+      "auto": "自动识别",
+      "manual": "手动选择"
+    },
     "pricePerKgLabel": "每千克价格（{{currency}}）",
     "pricePerSpoolLabel": "每线轴价格（{{currency}}）",
     "rubPerSpool": "{{currency}} 每线轴",
@@ -1926,7 +1961,11 @@
     "commonEditRequestSending": "正在发送…",
     "commonEditRequestSent": "请求已发送给全球代表和管理员。",
     "commonEditRequestFailed": "无法发送请求。",
-    "commonEditRequestNoRecipients": "目前无人可接收此请求。请联系 support@filamenthub.ru。"
+    "commonEditRequestNoRecipients": "目前无人可接收此请求。请联系 support@filamenthub.ru。",
+    "similarTitle": "目录中已有相似条目",
+    "similarHint": "请确认是否为同一产品。如果不同，可以继续创建。",
+    "similarConfirmHint": "再次点击“创建”以添加该耗材。",
+    "mm": "mm"
   },
   "unsavedGuard": {
     "title": "放弃更改？",
@@ -4404,7 +4443,7 @@
     "personalEmailWarning": "⚠️ 您正在使用个人邮箱。请附加证明文件。",
     "brandSocialMedia": "品牌社交媒体",
     "add": "添加",
-    "proofDocsLabel": "证明文件描述",
+    "proofDocsLabel": "如何证明您对该品牌的权利",
     "optionalForCorporate": "公司邮箱可选",
     "proofPlaceholderCorporate": "可选：描述证明文件以加快验证速度（授权书、营业执照摘录等）",
     "proofPlaceholderPersonal": "使用个人邮箱（例如 @gmail.com）时，您必须附加证明文件并描述其内容：授权书、营业执照摘录、社交媒体链接、市场链接或带有标志或包装的产品照片",
@@ -4488,7 +4527,17 @@
     "settingsCurrency": "品牌货币",
     "settingsCommonGaps": "名称与标识在所有国家一致。空白字段可以填写，品牌无需等待全球代表。",
     "countryFilled": "已填写",
-    "countryEmpty": "无数据"
+    "countryEmpty": "无数据",
+    "proofDocsHint": "简要说明：您与该品牌的关系以及所附材料。使用品牌官网域名的工作邮箱通常即可。",
+    "siteCheckTitle": "验证品牌网站",
+    "siteCheckHint": "比提交文件更快：将代码放到品牌网站上，我们会自动核对。",
+    "siteCheckPath": "文件路径",
+    "siteCheckCode": "代码",
+    "siteCheckStart": "获取代码",
+    "siteCheckRetry": "检查网站",
+    "siteCheckDone": "已验证 {{domain}}",
+    "siteCheckNotFound": "尚未在网站上找到该代码。上传文件后请再次检查。",
+    "siteCheckFailed": "无法检查该网站"
   },
   "viewPreset": {
     "yes": "是",
@@ -6037,6 +6086,7 @@
     "ERR_VALIDATION_REQUIRED": "缺少必需字段（名称、类型）",
     "ERR_VALIDATION_TEXT": "名称中包含无效文本",
     "ERR_FILAMENT_ALREADY_EXISTS": "此耗材已存在。请选择现有的。",
+    "ERR_FILAMENT_SIMILAR_EXISTS": "目录中已有相似的耗材。请确认是否为同一产品。",
     "ERR_FILAMENT_HAS_CONTRIBUTIONS": "无法删除此耗材：用户已为它添加了预设或评价，删除会一并清除这些内容。请修改该条目，或将其下架——下架后它不再出现在目录中，而预设和评价会保留。",
     "ERR_PRINTER_NOT_FOUND": "未找到打印机",
     "ERR_REQUEST_NOT_FOUND": "未找到请求",

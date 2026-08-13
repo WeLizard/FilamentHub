@@ -188,7 +188,10 @@ export const BrandDetailPage: React.FC = () => {
             <div className="flex items-center space-x-3 mb-3">
               <h1 className="text-3xl font-bold text-white">{brand.name}</h1>
               {brand.verified && (
-                <span className="flex items-center space-x-1 px-3 py-1 bg-green-500/20 text-green-400 rounded-full border border-green-500/30">
+                <span
+                  className="flex items-center space-x-1 px-3 py-1 bg-green-500/20 text-green-400 rounded-full border border-green-500/30"
+                  title={t('brandDetailPage.verifiedMeaning')}
+                >
                   <Shield className="w-4 h-4" />
                   <span className="text-sm font-semibold">{t('brandDetailPage.verified')}</span>
                 </span>

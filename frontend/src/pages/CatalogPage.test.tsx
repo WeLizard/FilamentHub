@@ -17,6 +17,7 @@ vi.mock('react-router-dom', () => ({
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string) => key,
+    i18n: { language: 'en' },
   }),
 }));
 
@@ -121,6 +122,22 @@ describe('CatalogPage', () => {
     await waitFor(() => {
       expect(listFilamentsMock).toHaveBeenCalledWith(
         expect.objectContaining({ page: 1, search: 'Sakura' }),
+      );
+    });
+
+    fireEvent.focus(screen.getByPlaceholderText('catalogPage.allColors'));
+    fireEvent.click(await screen.findByRole('button', { name: 'colorGroups.red' }));
+    await waitFor(() => {
+      expect(listFilamentsMock).toHaveBeenCalledWith(
+        expect.objectContaining({ page: 1, color_group: 'red' }),
+      );
+    });
+
+    fireEvent.focus(screen.getByPlaceholderText('catalogPage.allColors'));
+    fireEvent.click(await screen.findByRole('button', { name: 'catalogPage.multicolor' }));
+    await waitFor(() => {
+      expect(listFilamentsMock).toHaveBeenCalledWith(
+        expect.objectContaining({ page: 1, color_group: undefined, multicolor: true }),
       );
     });
   });
