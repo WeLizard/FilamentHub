@@ -2,20 +2,20 @@
 
 import { useTranslation } from 'react-i18next';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState, useRef } from 'react';
-import type { LucideIcon } from 'lucide-react';
+import { useState, useRef, type ElementType } from 'react';
 import {
   BarChart3, Users, Building2, Settings, TrendingUp,
-  Package, HardDrive, Printer, BookOpen, Star,
+  Package, HardDrive, BookOpen, Star,
   Bell, RefreshCw, Globe, Search, Server,
   Activity, Gauge, Loader2, Calculator, FileText,
   Layers, Wifi,
 } from 'lucide-react';
 import { adminAPI } from '../../api/client';
+import { Printer3DIcon } from '../icons/Printer3DIcon';
 
 /* ─── Compact stat card (inline, 1-row friendly) ─── */
 function Stat({ icon: Icon, label, value, sub, accent }: {
-  icon: LucideIcon;
+  icon: ElementType;
   label: string;
   value: number | string;
   sub?: string;
@@ -60,7 +60,7 @@ function Breakdown({ title, counts, labelFor }: {
 
 /* ─── Section header ─── */
 function Section({ icon: Icon, title, children, cols }: {
-  icon: LucideIcon;
+  icon: ElementType;
   title: string;
   children: React.ReactNode;
   cols?: string;
@@ -467,7 +467,7 @@ export function AdminStats() {
       {/* Content */}
       <Section icon={Package} title={t('adminStats.content')}>
         <Stat icon={Package} label={t('adminStats.filaments')} value={stats.content.filaments} />
-        <Stat icon={Printer} label={t('adminStats.printers')} value={stats.content.printers} />
+        <Stat icon={Printer3DIcon} label={t('adminStats.printers')} value={stats.content.printers} />
         <Stat icon={Settings} label={t('adminStats.printerProfiles')} value={stats.content.printer_profiles} />
         <Stat icon={Star} label={t('adminStats.reviewsTotal')} value={stats.content.reviews_total}
           sub={t('adminStats.reviewsWeek', { count: stats.content.reviews_7d })} />
@@ -533,7 +533,7 @@ export function AdminStats() {
       <Section icon={Layers} title={t('adminStats.feed.title')}>
         <Stat icon={Layers} label={t('adminStats.feed.total')} value={stats.feed_systems.total}
           sub={t('adminStats.feed.active', { count: stats.feed_systems.active })} />
-        <Stat icon={Printer} label={t('adminStats.feed.printers')} value={stats.feed_systems.printers_with_system} />
+        <Stat icon={Printer3DIcon} label={t('adminStats.feed.printers')} value={stats.feed_systems.printers_with_system} />
         <Stat icon={Package} label={t('adminStats.feed.slots')} value={stats.feed_systems.slots} />
         <Stat icon={Settings} label={t('adminStats.feed.happyHare')} value={stats.feed_systems.devices_happy_hare}
           sub={t('adminStats.feed.reportingFeed', { count: stats.feed_systems.devices_reporting_feed })} />
