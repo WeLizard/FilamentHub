@@ -7,12 +7,13 @@ bundles (OrcaSlicer today; PrusaSlicer / Cura / Bambu Studio in the future).
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import shutil
 import tempfile
 import zipfile
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from sqlalchemy import select, update
@@ -40,6 +41,8 @@ def _backend_root() -> Path:
 
 
 UPLOAD_ROOT = _backend_root() / "data" / "uploaded_bundles"
+ORCA_SOURCE_MANIFEST = "filamenthub-source.json"
+ORCA_SOURCE_FORMAT = "filamenthub.catalog-source"
 
 
 class BundleServiceError(Exception):
@@ -126,11 +129,46 @@ class BundleService:
         try:
             with zipfile.ZipFile(path) as zf:
                 names = zf.namelist()
-                vendor_count = sum(
-                    1 for n in names if n.endswith(".json") and "/" not in n
-                )
+                unsafe_names = [
+                    name
+                    for name in names
+                    if (
+                        not name
+                        or "\\" in name
+                        or PurePosixPath(name).is_absolute()
+                        or ".." in PurePosixPath(name).parts
+                        or (PurePosixPath(name).parts and ":" in PurePosixPath(name).parts[0])
+                    )
+                ]
+                if unsafe_names:
+                    raise ValueError("archive contains unsafe paths")
+
+                vendor_count = 0
+                for name in names:
+                    if not name.endswith(".json") or "/" in name or name == ORCA_SOURCE_MANIFEST:
+                        continue
+                    try:
+                        value = json.loads(zf.read(name))
+                    except (UnicodeDecodeError, json.JSONDecodeError):
+                        continue
+                    if isinstance(value, dict) and value.get("name") and value.get("version"):
+                        vendor_count += 1
                 total_files = len(names)
-        except zipfile.BadZipFile as exc:
+                source_manifest = None
+                if bundle.source == BundleSource.ORCA:
+                    source_manifest = json.loads(zf.read(ORCA_SOURCE_MANIFEST))
+                    if (
+                        not isinstance(source_manifest, dict)
+                        or source_manifest.get("format") != ORCA_SOURCE_FORMAT
+                        or source_manifest.get("source") != BundleSource.ORCA
+                        or not source_manifest.get("commit")
+                        or not source_manifest.get("profiles_tree")
+                        or source_manifest.get("dirty") is True
+                    ):
+                        raise ValueError("invalid Orca source manifest")
+                    if vendor_count == 0:
+                        raise ValueError("archive contains no Orca vendor manifests")
+        except (KeyError, ValueError, zipfile.BadZipFile, json.JSONDecodeError) as exc:
             bundle.status = BundleStatus.FAILED
             bundle.rejection_reason = f"Invalid zip: {exc}"
             return
@@ -138,6 +176,7 @@ class BundleService:
         bundle.validation_summary = {
             "total_files": total_files,
             "vendor_count": vendor_count,
+            "source_manifest": source_manifest,
         }
         bundle.status = BundleStatus.VALIDATED
         bundle.rejection_reason = None
@@ -155,6 +194,17 @@ class BundleService:
             raise BundleServiceError(
                 "ERR_BUNDLE_NOT_VALIDATED",
                 "Bundle must be validated before import",
+                {"bundle_id": bundle.id, "status": bundle.status},
+            )
+        if bundle.source == BundleSource.ORCA and not (
+            isinstance(bundle.validation_summary, dict)
+            and isinstance(bundle.validation_summary.get("source_manifest"), dict)
+        ):
+            # Bundles validated before provenance became mandatory must not
+            # bypass the new rule merely because their old status is retained.
+            raise BundleServiceError(
+                "ERR_BUNDLE_NOT_VALIDATED",
+                "Orca bundle provenance is required; revalidate or upload a current bundle",
                 {"bundle_id": bundle.id, "status": bundle.status},
             )
 
