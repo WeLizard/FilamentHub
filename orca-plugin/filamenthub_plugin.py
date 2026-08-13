@@ -5203,9 +5203,9 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
             finish(ok=True, applied=False, remainingChanges=[], **common)
             return
 
-        # This is deliberately not derived from a web message.  It is the only
-        # Happy Hare G-code this bridge permits, and the explicit preview/confirm
-        # flow in the site is the only path that reaches it.
+        # The browser can select only this allowlisted operation. In pull mode
+        # Happy Hare rebuilds the map from the FilamentHub-backed Spoolman API;
+        # no web-supplied G-code or LAN credential crosses this boundary.
         command_status, _command_result, _command_error = _moonraker_json(
             connection,
             "/printer/gcode/script",
@@ -5214,16 +5214,28 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
         if command_status != 200:
             finish(ok=False, code="command_failed", status=command_status, **common)
             return
-        time.sleep(0.35)
-        try:
-            refreshed = read_happy_hare_snapshot(connection)
-        except (RuntimeError, ValueError):
+        refreshed = None
+        remaining = changes
+        for delay in (0.5, 1.0, 2.0, 3.0):
+            time.sleep(delay)
+            try:
+                candidate = read_happy_hare_snapshot(connection)
+            except (RuntimeError, ValueError):
+                continue
+            refreshed = candidate
+            remaining = (
+                _happy_hare_assignment_changes(
+                    candidate["actual_spool_ids"], desired
+                )
+                if candidate.get("spool_ids_known")
+                else changes
+            )
+            if not remaining:
+                break
+        if refreshed is None:
             finish(ok=False, code="verification_failed", **common)
             return
         upload_happy_hare_snapshot(token, physical_printer_id, refreshed)
-        remaining = _happy_hare_assignment_changes(
-            refreshed["actual_spool_ids"], desired
-        ) if refreshed.get("spool_ids_known") else changes
         finish(
             ok=not remaining,
             code=None if not remaining else "not_applied",

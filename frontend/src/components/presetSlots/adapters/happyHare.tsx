@@ -239,8 +239,12 @@ function useHappyHarePlugin(): boolean | null {
   return available;
 }
 
-function spoolLabel(spools: UserSpool[], spoolId: number | null): string {
-  if (spoolId == null) return '—';
+function spoolLabel(
+  spools: UserSpool[],
+  spoolId: number | null,
+  unassignedLabel: string,
+): string {
+  if (spoolId == null) return unassignedLabel;
   const spool = spools.find((item) => item.id === spoolId);
   if (!spool) return `#${spoolId}`;
   const filament = spool.filament;
@@ -258,6 +262,12 @@ function AssignmentChanges({
   const { t } = useTranslation();
   return (
     <div className="mt-3 max-h-64 space-y-1.5 overflow-y-auto pr-1">
+      <div className="grid grid-cols-[auto_1fr_auto_1fr] gap-2 px-3 text-[11px] font-medium text-gray-500">
+        <span />
+        <span>{t('presetSlots.happyHare.refresh.currentAssignment')}</span>
+        <span />
+        <span>{t('presetSlots.happyHare.refresh.targetAssignment')}</span>
+      </div>
       {changes.map((change) => (
         <div
           key={change.gate}
@@ -267,11 +277,19 @@ function AssignmentChanges({
             {t('presetSlots.happyHare.refresh.gate', { gate: change.gate + 1 })}
           </span>
           <span className="truncate text-gray-400">
-            {spoolLabel(spools, change.actualSpoolId)}
+            {spoolLabel(
+              spools,
+              change.actualSpoolId,
+              t('presetSlots.assignment.notAssigned'),
+            )}
           </span>
           <span className="text-gray-600">→</span>
           <span className="truncate text-purple-200">
-            {spoolLabel(spools, change.desiredSpoolId)}
+            {spoolLabel(
+              spools,
+              change.desiredSpoolId,
+              t('presetSlots.assignment.notAssigned'),
+            )}
           </span>
         </div>
       ))}

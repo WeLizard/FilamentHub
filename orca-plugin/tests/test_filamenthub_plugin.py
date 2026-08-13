@@ -954,7 +954,9 @@ def test_happy_hare_action_explains_pull_before_missing_spool_ids(
     assert delivered[0][1]["gateCount"] == 8
 
 
-def test_happy_hare_apply_uses_only_allowlisted_refresh(plugin_module, monkeypatch):
+def test_happy_hare_apply_waits_for_allowlisted_refresh_to_converge(
+    plugin_module, monkeypatch
+):
     before = {
         "gate_count": 2,
         "gates": [],
@@ -999,8 +1001,18 @@ def test_happy_hare_apply_uses_only_allowlisted_refresh(plugin_module, monkeypat
             command_calls.append((path, payload)) or (200, {"result": "ok"}, "")
         ),
     )
-    monkeypatch.setattr(plugin_module, "read_happy_hare_snapshot", lambda _connection: after)
-    monkeypatch.setattr(plugin_module.time, "sleep", lambda _seconds: None)
+    snapshots = iter([before, before, after])
+    monkeypatch.setattr(
+        plugin_module,
+        "read_happy_hare_snapshot",
+        lambda _connection: next(snapshots),
+    )
+    sleep_calls = []
+    monkeypatch.setattr(
+        plugin_module.time,
+        "sleep",
+        lambda seconds: sleep_calls.append(seconds),
+    )
     delivered = []
     catalog = plugin_module.FilamentHubCatalog()
     monkeypatch.setattr(
@@ -1014,6 +1026,7 @@ def test_happy_hare_apply_uses_only_allowlisted_refresh(plugin_module, monkeypat
     assert command_calls == [
         ("/printer/gcode/script", {"script": "MMU_SPOOLMAN REFRESH=1"})
     ]
+    assert sleep_calls == [0.5, 1.0, 2.0]
     assert delivered[0][1]["ok"] is True
     assert delivered[0][1]["remainingChanges"] == []
 
