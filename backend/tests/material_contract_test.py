@@ -1169,7 +1169,7 @@ async def test_a_gate_beyond_the_declared_count_asks_the_question_again(
 
 
 @pytest.mark.asyncio
-async def test_deleting_a_system_returns_spools_and_keeps_the_printer(
+async def test_deleting_a_system_returns_spools_keeps_the_printer_and_revokes_its_key(
     auth_client: AsyncClient,
     auth_user: User,
     db_session: AsyncSession,
@@ -1179,6 +1179,12 @@ async def test_deleting_a_system_returns_spools_and_keeps_the_printer(
     )
     assert created.status_code == 200
     device_id = created.json()["device"]["id"]
+    api_key = created.json()["api_key"]
+    linked_device = await db_session.get(UserPrinterDevice, device_id)
+    assert linked_device is not None
+    linked_device.printer_hostname = "voron-workshop"
+    linked_device.reports_feed = True
+    await db_session.commit()
     system_id = (
         await auth_client.get(f"/api/v1/physical-printers/{device_id}")
     ).json()["material_systems"][0]["id"]
@@ -1205,7 +1211,19 @@ async def test_deleting_a_system_returns_spools_and_keeps_the_printer(
     )
     assert removed.status_code == 200
     assert removed.json()["material_systems"] == []
-    assert removed.json()["has_api_key"] is True
+    assert removed.json()["has_api_key"] is False
+    assert removed.json()["printer_hostname"] == "voron-workshop"
+
+    device = await db_session.get(UserPrinterDevice, device_id)
+    assert device is not None
+    assert device.api_key is None
+    assert device.reports_feed is False
+    assert device.printer_hostname == "voron-workshop"
+
+    rejected_old_key = await auth_client.get(
+        f"/api/v1/spool_compat/{api_key}/v1/spool"
+    )
+    assert rejected_old_key.status_code == 401
 
     assert (await db_session.execute(select(MaterialSlot))).scalars().all() == []
     assert (

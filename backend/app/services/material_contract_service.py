@@ -830,8 +830,9 @@ async def delete_material_system(
 ) -> UserPrinterDevice:
     """Remove one material system, returning its spools to the shelf.
 
-    The printer keeps existing, and so does its key: the person can attach
-    another system later without asking for a new one.
+    The physical printer and its Orca configurations stay, but the material
+    system's reporting credential must not outlive the integration it grants.
+    A replacement system receives a fresh one-time key during its own setup.
     """
     system = await _require_material_system(
         db,
@@ -889,6 +890,7 @@ async def delete_material_system(
 
     printer = await require_physical_printer(db, user_id, physical_printer_id)
     _forget_reporting(printer)
+    printer.api_key = None
     if provider in KLIPPER_PROVIDERS:
         # The legacy gate map describes exactly this system, so it goes with it;
         # otherwise the next system would inherit a phantom slot count.

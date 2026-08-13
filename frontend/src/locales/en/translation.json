@@ -6481,6 +6481,7 @@
       "deviceNumber": "device #{{id}}",
       "slotCount": "How many slots",
       "create": "Create",
+      "next": "Next",
       "done": "Done",
       "keyTitle": "System created. Now link it to the printer",
       "hintManual": "A single slot — no layout is required. The remaining weight is entered manually.",

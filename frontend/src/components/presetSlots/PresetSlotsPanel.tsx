@@ -109,7 +109,6 @@ function NewSystemCard({
     chosen.topologyFromProvider
     || (Number.isInteger(count) && Number(count) >= 1 && Number(count) <= 256)
   );
-  const chosenPrinter = printers.find((printer) => printer.id === Number(printerId)) ?? null;
   const bindingsByPrinter = useMemo(() => {
     const map = new Map<number, PrinterConnectionBinding[]>();
     bindings.forEach((binding) => {
@@ -181,9 +180,10 @@ function NewSystemCard({
         capabilities: chosen.capabilities,
         ...(count == null ? {} : { slot_count: count }),
       });
-      // A printer that already holds a key is already linked; issuing a new one
-      // here would silently break the connection its other system relies on.
-      if (chosen.link && !chosenPrinter?.has_api_key) {
+      // This is an explicit new link setup. Always issue a fresh one-time key
+      // so the next step can show a complete, ready-to-paste configuration.
+      // The previous key (if any) is revoked by the backend.
+      if (chosen.link) {
         const { api_key } = await devicesAPI.regenerateKey(Number(printerId));
         setIssuedKey(api_key);
         return;
@@ -298,7 +298,7 @@ function NewSystemCard({
           className="inline-flex items-center gap-1.5 rounded-lg bg-purple-600 px-4 py-1.5 text-sm font-medium text-white transition hover:bg-purple-500 disabled:opacity-50"
         >
           {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-          {t('presetSlots.newSystem.create')}
+          {t(chosen.link ? 'presetSlots.newSystem.next' : 'presetSlots.newSystem.create')}
         </button>
         <button
           type="button"

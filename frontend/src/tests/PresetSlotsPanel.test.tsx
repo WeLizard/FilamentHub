@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PhysicalPrinter, PrinterConnectionBinding } from '../api/client';
 
@@ -41,6 +41,8 @@ const physicalPrinter: PhysicalPrinter = {
 
 let physicalPrintersForQuery = [physicalPrinter];
 let printerBindingsForQuery: PrinterConnectionBinding[] = [];
+const createSystem = vi.fn();
+const regenerateKey = vi.fn();
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -96,7 +98,8 @@ vi.mock('@tanstack/react-query', () => ({
 }));
 
 vi.mock('../api/client', () => ({
-  physicalPrintersAPI: { list: vi.fn(), clearSystem: vi.fn() },
+  devicesAPI: { regenerateKey },
+  physicalPrintersAPI: { list: vi.fn(), clearSystem: vi.fn(), createSystem },
   octoprintBridgeAPI: { status: vi.fn(), issuePairingCode: vi.fn(), revoke: vi.fn() },
   printerBridgeAPI: { status: vi.fn(), issuePairingCode: vi.fn() },
   presetsAPI: { list: vi.fn(), get: vi.fn() },
@@ -123,6 +126,10 @@ describe('PresetSlotsPanel', () => {
   beforeEach(() => {
     physicalPrintersForQuery = [physicalPrinter];
     printerBindingsForQuery = [];
+    createSystem.mockReset();
+    createSystem.mockResolvedValue({});
+    regenerateKey.mockReset();
+    regenerateKey.mockResolvedValue({ api_key: 'fresh-printer-key' });
     window.localStorage.clear();
   });
 
@@ -404,5 +411,38 @@ describe('PresetSlotsPanel', () => {
     expect(screen.getByText(/Workshop Voron 0\.4/)).toBeInTheDocument();
     expect(screen.getByText('Office Voron 0.4 / Office Voron 0.6')).toBeInTheDocument();
     expect(screen.getByText('presetSlots.newSystem.printerHint')).toBeInTheDocument();
+  });
+
+  it('uses a next step when the selected material system requires a printer link', async () => {
+    physicalPrintersForQuery = [{
+      ...physicalPrinter,
+      material_systems: [],
+    }];
+    const { PresetSlotsPanel } = await import(
+      '../components/presetSlots/PresetSlotsPanel'
+    );
+
+    render(<PresetSlotsPanel spools={[]} printerProfiles={[]} />);
+    fireEvent.click(screen.getByText('presetSlots.newSystem.add'));
+
+    expect(screen.getByText('presetSlots.newSystem.create')).toBeInTheDocument();
+    fireEvent.focus(screen.getByDisplayValue('presetSlots.feedSystem.direct'));
+    fireEvent.click(screen.getByText('presetSlots.feedSystem.happy_hare'));
+
+    expect(screen.getByText('presetSlots.newSystem.next')).toBeInTheDocument();
+    expect(screen.queryByText('presetSlots.newSystem.create')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('presetSlots.newSystem.next'));
+
+    await waitFor(() => {
+      expect(createSystem).toHaveBeenCalledWith(11, expect.objectContaining({
+        provider: 'happy_hare',
+      }));
+      expect(regenerateKey).toHaveBeenCalledWith(11);
+    });
+    expect(screen.getByText('presetSlots.newSystem.keyTitle')).toBeInTheDocument();
+    expect(screen.getByText(/fresh-printer-key/)).toBeInTheDocument();
+    expect(screen.getByText('presetSlots.happyHare.linkHint')).toBeInTheDocument();
+    expect(screen.getByText('presetSlots.newSystem.done')).toBeInTheDocument();
   });
 });
