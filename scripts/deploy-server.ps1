@@ -269,11 +269,7 @@ function Publish-RepositoryCommits {
         Write-Host "Более новых локальных коммитов останется: $remainingCount." -ForegroundColor DarkGray
     }
 
-    $confirmation = Read-Host "Введи ОПУБЛИКОВАТЬ $($selected.ShortSha) или PUBLISH $($selected.ShortSha), чтобы продолжить"
-    if ($confirmation -notin @(
-        "ОПУБЛИКОВАТЬ $($selected.ShortSha)",
-        "PUBLISH $($selected.ShortSha)"
-    )) {
+    if (-not (Confirm-Action "Опубликовать выбранные коммиты до $($selected.ShortSha)?")) {
         Write-Host 'Публикация отменена.' -ForegroundColor Yellow
         return
     }
