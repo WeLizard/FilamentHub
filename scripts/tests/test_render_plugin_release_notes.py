@@ -4,7 +4,12 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from scripts.render_plugin_release_notes import extract_changelog_section
+from scripts.render_plugin_release_notes import (
+    extract_changelog_section,
+    render_bridge_release_notes,
+    render_orca_release_notes,
+    render_release_notes,
+)
 
 
 class ChangelogSectionTest(unittest.TestCase):
@@ -32,6 +37,22 @@ class ChangelogSectionTest(unittest.TestCase):
 
             with self.assertRaisesRegex(ValueError, "expected 1.2.3"):
                 extract_changelog_section(changelog, "1.2.3")
+
+    def test_component_notes_do_not_mix_products(self) -> None:
+        orca_notes = render_orca_release_notes()
+        bridge_notes = render_bridge_release_notes()
+
+        self.assertIn("## FilamentHub for OrcaSlicer", orca_notes)
+        self.assertNotIn("OctoPrint", orca_notes)
+        self.assertIn("## FilamentHub Bridge for OctoPrint", bridge_notes)
+        self.assertNotIn("## FilamentHub for OrcaSlicer", bridge_notes)
+
+    def test_combined_notes_include_one_checksum_footer(self) -> None:
+        notes = render_release_notes()
+
+        self.assertIn("## FilamentHub for OrcaSlicer", notes)
+        self.assertIn("## FilamentHub Bridge for OctoPrint", notes)
+        self.assertEqual(notes.count("Package checksums are available"), 1)
 
 
 if __name__ == "__main__":

@@ -507,7 +507,7 @@ function Show-Menu {
         Write-Host '  7. Показать GitHub Releases плагинов'
         Write-Host '  8. Скачать и проверить файлы релиза плагинов'
         Write-Host '  9. Проверить релиз плагинов на странице Download'
-        Write-Host ' 10. Создать тег и выпустить релиз плагинов из changelog'
+        Write-Host ' 10. Выпустить GitHub bundle и Orca Cloud release из changelog'
         Write-Host ' 11. Опубликовать существующий draft релиза (аварийный путь)'
         Write-Host '  0. Выход'
         $choice = Read-Host 'Выбери действие'

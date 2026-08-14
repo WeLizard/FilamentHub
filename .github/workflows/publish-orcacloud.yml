@@ -1,0 +1,116 @@
+name: Publish FilamentHub to OrcaCloud
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing GitHub release tag, for example v0.1.1
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: publish-orcacloud-filamenthub-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.event.release.tag_name }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.event.release.tag_name, 'v')
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.event.release.tag_name }}
+    steps:
+      - name: Prepare FilamentHub release
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "$RELEASE_TAG" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+            echo "Invalid FilamentHub release tag: $RELEASE_TAG" >&2
+            exit 1
+          fi
+          version="${BASH_REMATCH[1]}"
+          release_dir="$RUNNER_TEMP/orcacloud-filamenthub"
+          mkdir -p "$release_dir"
+
+          gh release view "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --json tagName,isDraft,isPrerelease,body \
+            > "$release_dir/release.json"
+          gh release download "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern "filamenthub-${version}-py3-none-any.whl" \
+            --dir "$release_dir"
+
+          mapfile -t plugin_files < <(
+            find "$release_dir" -maxdepth 1 -type f \
+              -name "filamenthub-${version}-py3-none-any.whl" -print
+          )
+          if [[ "${#plugin_files[@]}" -ne 1 ]]; then
+            echo "Expected exactly one FilamentHub wheel, found ${#plugin_files[@]}" >&2
+            exit 1
+          fi
+
+          python - "$release_dir/release.json" "$release_dir/metadata.json" "$version" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          release_path, metadata_path, version = sys.argv[1:]
+          release = json.loads(Path(release_path).read_text(encoding="utf-8"))
+          expected_tag = f"v{version}"
+          if release["tagName"] != expected_tag:
+              raise SystemExit(f"Release tag mismatch: expected {expected_tag!r}")
+          if release["isDraft"] or release["isPrerelease"]:
+              raise SystemExit("Only a published non-prerelease GitHub release can be published")
+
+          heading = f"## FilamentHub for OrcaSlicer {version}"
+          lines = release["body"].splitlines()
+          try:
+              start = lines.index(heading) + 1
+          except ValueError as exc:
+              raise SystemExit(f"Release notes are missing {heading!r}") from exc
+
+          notes = []
+          for line in lines[start:]:
+              if line.startswith("## ") or line.startswith("Package checksums are available"):
+                  break
+              notes.append(line)
+          changelog = "\n".join(notes).strip()
+          if not changelog:
+              raise SystemExit("FilamentHub changelog section is empty")
+          encoded = changelog.encode("utf-8")
+          if len(encoded) > 4000:
+              changelog = encoded[:4000].decode("utf-8", errors="ignore").rstrip()
+
+          Path(metadata_path).write_text(
+              json.dumps({"version": version, "changelog": changelog}),
+              encoding="utf-8",
+          )
+          PY
+
+          echo "PLUGIN_FILE=${plugin_files[0]}" >> "$GITHUB_ENV"
+          echo "METADATA_FILE=$release_dir/metadata.json" >> "$GITHUB_ENV"
+
+      - name: Publish release to OrcaCloud
+        shell: bash
+        run: |
+          set -euo pipefail
+          oidc_token="$(curl -sS \
+            -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=orcacloud" \
+            | jq -er .value)"
+          metadata="$(cat "$METADATA_FILE")"
+          status="$(curl -sS -o response.json -w '%{http_code}' \
+            -H "Authorization: Bearer $oidc_token" \
+            -F "metadata=$metadata" \
+            -F "files=@$PLUGIN_FILE" \
+            https://api.orcaslicer.com/api/v1/plugin-publish/releases)"
+          cat response.json
+          echo
+          [[ "$status" == "201" ]]

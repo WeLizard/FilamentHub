@@ -59,10 +59,21 @@ def extract_changelog_section(path: Path, version: str) -> str:
     return body
 
 
-def render_release_notes(root: Path = ROOT) -> str:
+def render_orca_release_notes(root: Path = ROOT) -> str:
     orca_version = read_assignment(
         root / "orca-plugin" / "filamenthub_plugin.py", "PLUGIN_VERSION"
     )
+    orca_notes = extract_changelog_section(
+        root / "orca-plugin" / "CHANGELOG.md", orca_version
+    )
+    return (
+        f"## FilamentHub for OrcaSlicer {orca_version}\n\n"
+        f"{orca_notes}\n\n"
+        "Package checksums are available in `SHA256SUMS`.\n"
+    )
+
+
+def render_bridge_release_notes(root: Path = ROOT) -> str:
     bridge_package_version = read_project_version(
         root / "octoprint-plugin" / "pyproject.toml"
     )
@@ -76,16 +87,25 @@ def render_release_notes(root: Path = ROOT) -> str:
             f"package={bridge_package_version}, runtime={bridge_runtime_version}"
         )
 
-    orca_notes = extract_changelog_section(
-        root / "orca-plugin" / "CHANGELOG.md", orca_version
-    )
     bridge_notes = extract_changelog_section(
         root / "octoprint-plugin" / "CHANGELOG.md", bridge_package_version
     )
     return (
-        f"## FilamentHub for OrcaSlicer {orca_version}\n\n"
-        f"{orca_notes}\n\n"
         f"## FilamentHub Bridge for OctoPrint {bridge_package_version}\n\n"
+        f"{bridge_notes}\n\n"
+        "Package checksums are available in `SHA256SUMS`.\n"
+    )
+
+
+def render_release_notes(root: Path = ROOT) -> str:
+    orca_notes = render_orca_release_notes(root).removesuffix(
+        "Package checksums are available in `SHA256SUMS`.\n"
+    ).rstrip()
+    bridge_notes = render_bridge_release_notes(root).removesuffix(
+        "Package checksums are available in `SHA256SUMS`.\n"
+    ).strip()
+    return (
+        f"{orca_notes}\n\n"
         f"{bridge_notes}\n\n"
         "Package checksums are available in `SHA256SUMS`.\n"
     )
@@ -96,9 +116,19 @@ def main() -> int:
         description="Render GitHub release notes from the current plugin changelogs."
     )
     parser.add_argument("--output", type=Path)
+    parser.add_argument(
+        "--component",
+        choices=("all", "orca", "bridge"),
+        default="all",
+    )
     args = parser.parse_args()
 
-    notes = render_release_notes()
+    renderers = {
+        "all": render_release_notes,
+        "orca": render_orca_release_notes,
+        "bridge": render_bridge_release_notes,
+    }
+    notes = renderers[args.component]()
     if args.output is None:
         print(notes, end="")
     else:

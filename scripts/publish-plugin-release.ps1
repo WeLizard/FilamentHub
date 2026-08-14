@@ -214,13 +214,13 @@ if ($releaseSourceChanges) {
 
 $orcaVersion = Get-OrcaPluginVersion
 $bridgeVersion = Get-BridgeVersion
+$orcaCloudTag = "v$orcaVersion"
 $releaseNotes = Invoke-Checked -FilePath python -Arguments @('scripts/render_plugin_release_notes.py') -Capture
 if ([string]::IsNullOrWhiteSpace($Tag)) {
     $Tag = Get-NextBundleTag -RemoteName $Remote
 } elseif ($Tag -notmatch '^plugins-v\d+\.\d+\.\d+$') {
     throw "Тег '$Tag' не соответствует формату plugins-vX.Y.Z."
 }
-
 $currentBranch = Invoke-Checked -FilePath git -Arguments @('branch', '--show-current') -Capture
 if ($currentBranch -ne $Branch) {
     throw "Сейчас выбрана ветка '$currentBranch'. Перед релизом переключись на '$Branch'."
@@ -238,6 +238,25 @@ if ($tagExistsLocally) {
     $tagCommit = $headCommit
 }
 
+$localOrcaCloudTag = Invoke-Checked -FilePath git -Arguments @('tag', '--list', $orcaCloudTag) -Capture
+$orcaCloudTagExistsLocally = -not [string]::IsNullOrWhiteSpace($localOrcaCloudTag)
+$remoteOrcaCloudTagCommit = Get-RemoteTagCommit -RemoteName $Remote -ReleaseTag $orcaCloudTag
+if ($orcaCloudTagExistsLocally) {
+    $orcaCloudTagCommit = Invoke-Checked -FilePath git -Arguments @('rev-list', '-n', '1', $orcaCloudTag) -Capture
+    if ($remoteOrcaCloudTagCommit -and $remoteOrcaCloudTagCommit -ne $orcaCloudTagCommit) {
+        throw "Local и remote теги '$orcaCloudTag' указывают на разные коммиты. Перезапись запрещена."
+    }
+    if (-not $remoteOrcaCloudTagCommit -and $orcaCloudTagCommit -ne $headCommit) {
+        throw "Локальный тег '$orcaCloudTag' указывает на $orcaCloudTagCommit, а текущий HEAD — $headCommit."
+    }
+} else {
+    $orcaCloudTagCommit = if ($remoteOrcaCloudTagCommit) {
+        $remoteOrcaCloudTagCommit
+    } else {
+        $headCommit
+    }
+}
+
 $repository = Invoke-Checked -FilePath gh -Arguments @('repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner') -Capture
 Invoke-Checked -FilePath gh -Arguments @('auth', 'status')
 
@@ -251,6 +270,7 @@ Write-Host "Ветка      : $Branch ($headCommit)"
 Write-Host "FilamentHub: $orcaVersion"
 Write-Host "OctoPrint  : $bridgeVersion"
 Write-Host "Тег релиза : $Tag ($tagCommit)$(if (-not $tagExistsLocally) { ' [будет создан]' })"
+Write-Host "Orca Cloud : $orcaCloudTag ($orcaCloudTagCommit)$(if (-not $remoteOrcaCloudTagCommit) { ' [будет опубликован]' } else { ' [уже опубликован]' })"
 Write-Host 'Режим      : автоматическая публикация после успешной проверки workflow'
 if (-not $HideReleaseNotes) {
     Write-Host ''
@@ -326,13 +346,28 @@ Assert-ReleaseAssets -Release $release -BridgeVersion $bridgeVersion
 
 if (-not $release.isDraft) {
     Write-Host "Релиз опубликован: $($release.url)"
-    return
+} else {
+    if ($Publish) {
+        Invoke-Checked -FilePath gh -Arguments @('release', 'edit', $Tag, '--repo', $repository, '--draft=false')
+        $release = Get-Release -Repository $repository -ReleaseTag $Tag
+        Write-Host "Релиз опубликован: $($release.url)"
+    } else {
+        throw "Workflow оставил релиз '$Tag' в draft: $($release.url). Проверь завершение шага Publish tag-triggered release перед ручной публикацией."
+    }
 }
 
-if ($Publish) {
-    Invoke-Checked -FilePath gh -Arguments @('release', 'edit', $Tag, '--repo', $repository, '--draft=false')
-    $release = Get-Release -Repository $repository -ReleaseTag $Tag
-    Write-Host "Релиз опубликован: $($release.url)"
+if (-not $remoteOrcaCloudTagCommit) {
+    if (-not $orcaCloudTagExistsLocally) {
+        Invoke-Checked -FilePath git -Arguments @(
+            'tag', '-a', $orcaCloudTag, '-m', "FilamentHub for OrcaSlicer $orcaVersion"
+        )
+        $orcaCloudTagCommit = Invoke-Checked -FilePath git -Arguments @(
+            'rev-list', '-n', '1', $orcaCloudTag
+        ) -Capture
+        Write-Host "Создан Orca Cloud tag '$orcaCloudTag' на $orcaCloudTagCommit."
+    }
+    Invoke-Checked -FilePath git -Arguments @('push', $Remote, "refs/tags/$orcaCloudTag")
+    Write-Host "Запущен GitHub Release и Orca Cloud trusted publishing для '$orcaCloudTag'."
 } else {
-    throw "Workflow оставил релиз '$Tag' в draft: $($release.url). Проверь завершение шага Publish tag-triggered release перед ручной публикацией."
+    Write-Host "Orca Cloud tag '$orcaCloudTag' уже существует; повторная публикация не запускалась."
 }
