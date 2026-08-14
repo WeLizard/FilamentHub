@@ -37,6 +37,7 @@ from app.schemas.printer_profile import (
 )
 from app.services.download_filename import attachment_content_disposition, safe_download_stem
 from app.services.orca_import_guard import profile_external_id_taken
+from app.services.orca_settings_security import sanitize_orca_settings_for_storage
 from app.services.orcaslicer_machine_exporter import export_printer_profile
 
 logger = logging.getLogger(__name__)
@@ -221,7 +222,10 @@ async def create_printer_profile(
         printable_area=data.printable_area,
         printable_height_mm=data.printable_height_mm,
         default_print_profile_slug=data.default_print_profile_slug,
-        orcaslicer_settings=data.orcaslicer_settings or {},
+        orcaslicer_settings=sanitize_orca_settings_for_storage(
+            data.orcaslicer_settings,
+            "machine",
+        ),
         extra_metadata=data.extra_metadata,
         start_gcode=data.start_gcode,
         end_gcode=data.end_gcode,
@@ -289,6 +293,12 @@ async def update_printer_profile(
 
     if "owner_user_id" in update_data and current_user.role != UserRole.ADMIN:
         raise_error(status.HTTP_403_FORBIDDEN, ERR_ONLY_ADMIN_REASSIGN)
+
+    if "orcaslicer_settings" in update_data:
+        update_data["orcaslicer_settings"] = sanitize_orca_settings_for_storage(
+            update_data["orcaslicer_settings"],
+            "machine",
+        )
 
     for field, value in update_data.items():
         setattr(profile, field, value)

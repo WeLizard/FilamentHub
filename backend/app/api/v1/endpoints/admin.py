@@ -2141,6 +2141,21 @@ async def update_calculator_settings(
     }
 
 
+@router.put(
+    "/calculator-profile-defaults",
+    response_model=CalculatorProfileDefaults,
+)
+async def update_calculator_profile_defaults(
+    profile_defaults: CalculatorProfileDefaults,
+    admin: Annotated[User, Depends(get_current_admin_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> CalculatorProfileDefaults:
+    """Update only the platform defaults used to seed new calculator profiles."""
+    await set_calculator_profile_defaults(db, profile_defaults)
+    logger.info("Admin %s updated calculator profile defaults", admin.id)
+    return await get_calculator_profile_defaults(db)
+
+
 # ==================== Wiki Sync ====================
 
 

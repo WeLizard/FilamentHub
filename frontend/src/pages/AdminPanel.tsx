@@ -4,7 +4,7 @@ import { lazy, Suspense, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Shield, FileText, Building2, Users, BarChart3, CheckCircle, Home, Package, User, LogOut, Database, Mail, Settings, BookOpen, Sparkles, ScanSearch, Layers, Loader2 } from 'lucide-react';
+import { Shield, FileText, Building2, Users, BarChart3, CheckCircle, Home, Package, User, LogOut, Database, Mail, Settings, BookOpen, Sparkles, ScanSearch, Layers, Loader2, Calculator } from 'lucide-react';
 import { Printer3DIcon } from '../components/icons/Printer3DIcon';
 import { useAuth } from '../contexts/AuthContext';
 import { adminAPI } from '../api/client';
@@ -23,9 +23,10 @@ const AdminCommunications = lazy(() => import('../components/admin/AdminCommunic
 const AdminMaintenance = lazy(() => import('../components/admin/AdminMaintenance').then((module) => ({ default: module.AdminMaintenance })));
 const AdminWiki = lazy(() => import('../components/admin/AdminWiki').then((module) => ({ default: module.AdminWiki })));
 const AdminSubscriptions = lazy(() => import('../components/admin/AdminSubscriptions').then((module) => ({ default: module.AdminSubscriptions })));
+const AdminCalculatorDefaults = lazy(() => import('../components/admin/AdminCalculatorDefaults').then((module) => ({ default: module.AdminCalculatorDefaults })));
 const AdminOrcaSchemaObservations = lazy(() => import('../components/admin/AdminOrcaSchemaObservations').then((module) => ({ default: module.AdminOrcaSchemaObservations })));
 
-type AdminTab = 'requests' | 'brands' | 'materials' | 'presets' | 'users' | 'stats' | 'printers' | 'printer-requests' | 'communications' | 'database' | 'maintenance' | 'wiki' | 'subscriptions' | 'orca-schema';
+type AdminTab = 'requests' | 'brands' | 'materials' | 'presets' | 'users' | 'stats' | 'printers' | 'printer-requests' | 'communications' | 'database' | 'maintenance' | 'wiki' | 'subscriptions' | 'calculator' | 'orca-schema';
 
 export function AdminPanel() {
   const { t } = useTranslation();
@@ -85,6 +86,7 @@ export function AdminPanel() {
     { id: 'stats' as AdminTab, label: t('adminPanel.tabs.stats'), shortLabel: t('adminPanel.shortTabs.stats'), icon: BarChart3, count: null },
     { id: 'database' as AdminTab, label: t('adminPanel.tabs.database'), shortLabel: t('adminPanel.shortTabs.database'), icon: Database, count: null },
     { id: 'orca-schema' as AdminTab, label: t('adminPanel.tabs.orcaSchema'), shortLabel: t('adminPanel.shortTabs.orcaSchema'), icon: ScanSearch, count: schemaCountQuery.data?.new_count ?? null },
+    { id: 'calculator' as AdminTab, label: t('adminPanel.tabs.calculator'), shortLabel: t('adminPanel.shortTabs.calculator'), icon: Calculator, count: null },
     { id: 'subscriptions' as AdminTab, label: t('adminPanel.tabs.subscriptions'), shortLabel: t('adminPanel.shortTabs.subscriptions'), icon: Sparkles, count: null },
     { id: 'maintenance' as AdminTab, label: t('adminPanel.tabs.maintenance'), shortLabel: t('adminPanel.shortTabs.maintenance'), icon: Settings, count: null },
   ];
@@ -174,6 +176,7 @@ export function AdminPanel() {
             {activeTab === 'stats' && <AdminStats />}
             {activeTab === 'database' && <AdminDatabaseDiagnostics />}
             {activeTab === 'orca-schema' && <AdminOrcaSchemaObservations />}
+            {activeTab === 'calculator' && <AdminCalculatorDefaults />}
             {activeTab === 'subscriptions' && <AdminSubscriptions />}
             {activeTab === 'maintenance' && <AdminMaintenance />}
           </Suspense>

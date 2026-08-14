@@ -6,6 +6,7 @@ export type OrcaStructuredFieldKind =
   | 'percent'
   | 'floatOrPercent'
   | 'string'
+  | 'multiline'
   | 'stringList'
   | 'integerList'
   | 'floatList';
@@ -75,6 +76,11 @@ export const ORCA_STRUCTURED_SECTION_ORDER: Record<OrcaStructuredFieldTab, strin
 };
 
 export const ORCA_ADVANCED_FIELD_DEFS: OrcaStructuredFieldDef[] = [
+  { key: 'elefant_foot_layers_density', kind: 'percent', tab: 'quality', section: 'precision', min: 50, max: 100, step: 1, placeholder: '100' },
+  { key: 'hole_to_polyhole_max_edges', kind: 'integer', tab: 'quality', section: 'precision', min: 3, step: 1, placeholder: '50' },
+  { key: 'bridge_line_width', kind: 'floatOrPercent', tab: 'quality', section: 'bridging', min: 0, max: 100, placeholder: '100%' },
+  { key: 'relative_bridge_angle', kind: 'boolean', tab: 'quality', section: 'bridging' },
+  { key: 'ironing_expansion', kind: 'float', tab: 'quality', section: 'ironing', min: -100, max: 100, step: 0.01, placeholder: '0' },
   { key: 'zaa_enabled', kind: 'boolean', tab: 'quality', section: 'zContouring' },
   { key: 'zaa_minimize_perimeter_height', kind: 'float', tab: 'quality', section: 'zContouring', min: 0, max: 90, step: 0.1, placeholder: '35' },
   { key: 'zaa_min_z', kind: 'float', tab: 'quality', section: 'zContouring', min: 0, max: 100, step: 0.01, placeholder: '0.05' },
@@ -82,16 +88,30 @@ export const ORCA_ADVANCED_FIELD_DEFS: OrcaStructuredFieldDef[] = [
   { key: 'wall_maximum_resolution', kind: 'float', tab: 'quality', section: 'wallGenerator', min: 0.005, max: 0.5, step: 0.005, placeholder: '0.5' },
   { key: 'wall_maximum_deviation', kind: 'float', tab: 'quality', section: 'wallGenerator', min: 0.005, max: 0.05, step: 0.005, placeholder: '0.025' },
   { key: 'top_surface_fill_order', kind: 'enum', tab: 'strength', section: 'topBottomShells' },
+  { key: 'bottom_surface_fill_order', kind: 'enum', tab: 'strength', section: 'topBottomShells' },
   { key: 'top_layer_direction', kind: 'float', tab: 'strength', section: 'topBottomShells', min: -1, max: 360, step: 1, placeholder: '-1' },
+  { key: 'bottom_layer_direction', kind: 'float', tab: 'strength', section: 'topBottomShells', min: -1, max: 360, step: 1, placeholder: '-1' },
+  { key: 'center_of_surface_pattern', kind: 'enum', tab: 'strength', section: 'topBottomShells' },
   { key: 'top_surface_expansion', kind: 'float', tab: 'strength', section: 'topBottomShells', min: 0, step: 0.01, placeholder: '0' },
   { key: 'top_surface_expansion_margin', kind: 'float', tab: 'strength', section: 'topBottomShells', min: 0, max: 10, step: 0.01, placeholder: '0' },
   { key: 'top_surface_expansion_direction', kind: 'enum', tab: 'strength', section: 'topBottomShells' },
   { key: 'sparse_infill_smooth_factor', kind: 'percent', tab: 'strength', section: 'infill', min: 0, max: 100, step: 1, placeholder: '0' },
   { key: 'separated_infills', kind: 'boolean', tab: 'strength', section: 'infill' },
+  { key: 'gyroid_optimized', kind: 'boolean', tab: 'strength', section: 'infill' },
+  { key: 'lightning_overhang_angle', kind: 'float', tab: 'strength', section: 'infill', min: 5, max: 85, step: 1, placeholder: '45' },
+  { key: 'lightning_prune_angle', kind: 'float', tab: 'strength', section: 'infill', min: 5, max: 85, step: 1, placeholder: '45' },
+  { key: 'lightning_straightening_angle', kind: 'float', tab: 'strength', section: 'infill', min: 5, max: 85, step: 1, placeholder: '45' },
+  { key: 'initial_layer_travel_jerk', kind: 'floatOrPercent', tab: 'speed', section: 'jerk', min: 0, placeholder: '100%' },
   { key: 'small_support_perimeter_speed', kind: 'floatOrPercent', tab: 'speed', section: 'otherLayersSpeed', placeholder: '50%' },
   { key: 'small_support_perimeter_threshold', kind: 'float', tab: 'speed', section: 'otherLayersSpeed', min: 0, step: 0.1, placeholder: '0' },
   { key: 'toolchange_ordering', kind: 'enum', tab: 'multimaterial', section: 'advanced' },
   { key: 'brim_ears_outer_only', kind: 'boolean', tab: 'others', section: 'brim' },
+  { key: 'brim_flow_ratio', kind: 'float', tab: 'others', section: 'brim', min: 0, max: 2, step: 0.01, placeholder: '1' },
+  { key: 'combine_brims', kind: 'boolean', tab: 'others', section: 'brim' },
+  { key: 'fuzzy_skin_ripples_per_layer', kind: 'integer', tab: 'others', section: 'fuzzySkin', min: 1, step: 1, placeholder: '15' },
+  { key: 'fuzzy_skin_ripple_offset', kind: 'percent', tab: 'others', section: 'fuzzySkin', min: 0, max: 100, step: 1, placeholder: '50' },
+  { key: 'fuzzy_skin_layers_between_ripple_offset', kind: 'integer', tab: 'others', section: 'fuzzySkin', min: 1, step: 1, placeholder: '1' },
+  { key: 'process_change_extrusion_role_gcode', kind: 'multiline', tab: 'others', section: 'gcodeOutput' },
   ...buildFieldDefs(
     'boolean',
     'strength',
@@ -1192,6 +1212,25 @@ wiping_volumes_extruders
 export const ORCA_ADVANCED_FIELD_KEYS = new Set(ORCA_ADVANCED_FIELD_DEFS.map((field) => field.key));
 
 export const ORCA_ADVANCED_FIELD_LABELS: Record<string, { en: string; ru: string }> = {
+  bottom_layer_direction: { en: 'Bottom layer direction', ru: 'Направление нижнего слоя' },
+  bottom_surface_fill_order: { en: 'Bottom surface fill order', ru: 'Порядок заполнения нижней поверхности' },
+  bridge_line_width: { en: 'Bridge line width', ru: 'Ширина линии моста' },
+  brim_flow_ratio: { en: 'Brim flow ratio', ru: 'Коэффициент потока каймы' },
+  center_of_surface_pattern: { en: 'Center surface pattern on', ru: 'Центрировать рисунок поверхности по' },
+  combine_brims: { en: 'Combine brims', ru: 'Объединять близкие каймы' },
+  elefant_foot_layers_density: { en: 'Elephant foot layers density', ru: 'Плотность слоёв компенсации слоновьей ноги' },
+  fuzzy_skin_layers_between_ripple_offset: { en: 'Layers between ripple offset', ru: 'Слоёв между смещениями ряби' },
+  fuzzy_skin_ripple_offset: { en: 'Ripple offset', ru: 'Смещение ряби' },
+  fuzzy_skin_ripples_per_layer: { en: 'Ripples per layer', ru: 'Волн на слой' },
+  gyroid_optimized: { en: 'Gyroid Z-buckling optimization', ru: 'Оптимизация гироида против изгиба по Z' },
+  hole_to_polyhole_max_edges: { en: 'Maximum polyhole edge count', ru: 'Максимум граней полигонального отверстия' },
+  initial_layer_travel_jerk: { en: 'First layer travel jerk', ru: 'Рывок перемещений первого слоя' },
+  ironing_expansion: { en: 'Ironing expansion', ru: 'Расширение области разглаживания' },
+  lightning_overhang_angle: { en: 'Lightning overhang angle', ru: 'Угол нависания Lightning' },
+  lightning_prune_angle: { en: 'Lightning prune angle', ru: 'Угол отсечения ветвей Lightning' },
+  lightning_straightening_angle: { en: 'Lightning straightening angle', ru: 'Угол выпрямления Lightning' },
+  process_change_extrusion_role_gcode: { en: 'Change extrusion role G-code', ru: 'G-code при смене роли экструзии' },
+  relative_bridge_angle: { en: 'Relative bridge angle', ru: 'Относительный угол моста' },
   brim_ears_outer_only: { en: 'Brim ears outer corners only', ru: 'Ушки каймы только на внешних углах' },
   separated_infills: { en: 'Separated infills', ru: 'Раздельное заполнение' },
   small_support_perimeter_speed: { en: 'Small support perimeters', ru: 'Малые периметры поддержек' },
@@ -1452,6 +1491,16 @@ export const ORCA_ADVANCED_FIELD_LABELS: Record<string, { en: string; ru: string
   xy_hole_compensation: { en: 'X-Y hole compensation', ru: 'Расширение пустот в слое' },
 };
 export const ORCA_ADVANCED_ENUM_OPTIONS: Record<string, string[]> = {
+  bottom_surface_fill_order: enumValues(`
+default
+outward
+inward
+`),
+  center_of_surface_pattern: enumValues(`
+each_surface
+each_model
+each_assembly
+`),
   top_surface_fill_order: enumValues(`
 default
 outward
@@ -1635,6 +1684,16 @@ all
 };
 
 export const ORCA_ADVANCED_ENUM_LABELS: Record<string, Record<string, { en: string; ru: string }>> = {
+  bottom_surface_fill_order: {
+    default: { en: 'Default', ru: 'По умолчанию' },
+    outward: { en: 'Outward', ru: 'Наружу' },
+    inward: { en: 'Inward', ru: 'Внутрь' },
+  },
+  center_of_surface_pattern: {
+    each_surface: { en: 'Each surface', ru: 'Каждой поверхности' },
+    each_model: { en: 'Each model', ru: 'Каждой модели' },
+    each_assembly: { en: 'Each assembly', ru: 'Каждой сборке' },
+  },
   top_surface_fill_order: {
     default: { en: 'Default', ru: 'По умолчанию' },
     outward: { en: 'Outward', ru: 'Наружу' },

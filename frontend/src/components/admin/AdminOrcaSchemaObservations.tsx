@@ -97,6 +97,9 @@ export function AdminOrcaSchemaObservations() {
             <p className="mt-1 max-w-3xl text-sm text-gray-400">
               {t('adminOrcaSchema.description')}
             </p>
+            <p className="mt-2 max-w-3xl text-xs text-gray-500">
+              {t('adminOrcaSchema.queueHint')}
+            </p>
           </div>
         </div>
         <div className="flex items-center gap-2 self-start rounded-lg border border-white/10 bg-black/15 px-3 py-2 text-xs text-gray-400">

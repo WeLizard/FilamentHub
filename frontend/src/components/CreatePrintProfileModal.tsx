@@ -382,6 +382,7 @@ const normalizeStructuredAdvancedFieldValue = (field: OrcaStructuredFieldDef, ra
       return normalizeNumericOrPercentString(rawValue);
     case 'enum':
     case 'string':
+    case 'multiline':
       return rawValue.trim();
     case 'stringList': {
       const values = splitStructuredListInput(rawValue);
@@ -1277,6 +1278,16 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
             value={value}
             onChange={(event) => setStructuredAdvancedFieldValue(field.key, event.target.value)}
             className={commonClassName}
+          />
+        );
+        break;
+      case 'multiline':
+        control = (
+          <textarea
+            value={value}
+            onChange={(event) => setStructuredAdvancedFieldValue(field.key, event.target.value)}
+            rows={5}
+            className={`${commonClassName} resize-y font-mono text-sm`}
           />
         );
         break;

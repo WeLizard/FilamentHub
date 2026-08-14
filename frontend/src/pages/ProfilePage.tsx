@@ -216,7 +216,8 @@ export const ProfilePage: React.FC = () => {
   const [editingPrintProfile, setEditingPrintProfile] = useState<PrintProfile | null>(null);
   const [createPrintProfileContext, setCreatePrintProfileContext] = useState<PrinterProfile | null>(null);
   const [_viewMode, _setViewMode] = useState<'grid' | 'list'>('grid');
-  const [presetFilter, setPresetFilter] = useState<'all' | 'own' | 'saved' | 'synced' | 'drafts'>('all');
+  const [presetFilter, setPresetFilter] = useState<'all' | 'own' | 'saved' | 'drafts'>('all');
+  const [presetSyncFilter, setPresetSyncFilter] = useState<'all' | 'enabled' | 'disabled'>('all');
   const [isScanning, setIsScanning] = useState(false);
   const needsPresetData = !showBrandCabinet && (userTab === 'dashboard' || userTab === 'presets');
   const needsPrinterProfileData = !showBrandCabinet && (
@@ -399,13 +400,10 @@ export const ProfilePage: React.FC = () => {
     let list: typeof allMyPresets;
     switch (presetFilter) {
       case 'own':
-        list = allMyPresets.filter(p => p.source === 'own' && p.active);
+        list = allMyPresets.filter(p => p.source === 'own' && p.active && p.moderation_status !== 'pending');
         break;
       case 'saved':
         list = allMyPresets.filter(p => p.source === 'saved');
-        break;
-      case 'synced':
-        list = allMyPresets.filter(p => syncedPresetIds.has(p.id));
         break;
       case 'drafts':
         list = allMyPresets.filter(p => p.source === 'own' && (!p.active || p.moderation_status === 'pending'));
@@ -413,8 +411,14 @@ export const ProfilePage: React.FC = () => {
       default:
         list = allMyPresets;
     }
+    if (presetSyncFilter === 'enabled') {
+      return list.filter((preset) => syncedPresetIds.has(preset.id));
+    }
+    if (presetSyncFilter === 'disabled') {
+      return list.filter((preset) => !syncedPresetIds.has(preset.id));
+    }
     return list;
-  }, [allMyPresets, presetFilter, syncedPresetIds]);
+  }, [allMyPresets, presetFilter, presetSyncFilter, syncedPresetIds]);
 
   const userPresets = filteredPresets;
 
@@ -1091,12 +1095,12 @@ export const ProfilePage: React.FC = () => {
 
           {/* Filter chips */}
           {allMyPresets.length > 0 && (
-            <div className="flex flex-wrap gap-2">
-              {([
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
+              <div className="flex flex-wrap gap-2">
+                {([
                 { key: 'all' as const, label: t('profilePage.presetFilterAll'), count: allMyPresets.length },
-                { key: 'own' as const, label: t('profilePage.presetFilterOwn'), count: allMyPresets.filter(p => p.source === 'own' && p.active).length },
+                { key: 'own' as const, label: t('profilePage.presetFilterOwn'), count: allMyPresets.filter(p => p.source === 'own' && p.active && p.moderation_status !== 'pending').length },
                 { key: 'saved' as const, label: t('profilePage.presetFilterSaved'), count: allMyPresets.filter(p => p.source === 'saved').length },
-                { key: 'synced' as const, label: t('profilePage.presetFilterSynced'), count: syncedPresetIds.size },
                 { key: 'drafts' as const, label: t('profilePage.presetFilterDrafts'), count: allMyPresets.filter(p => p.source === 'own' && (!p.active || p.moderation_status === 'pending')).length },
               ]).filter(f => f.key === 'all' || f.count > 0).map(f => (
                 <button
@@ -1113,7 +1117,34 @@ export const ProfilePage: React.FC = () => {
                     {f.count}
                   </span>
                 </button>
-              ))}
+                ))}
+              </div>
+              <div className="flex flex-wrap items-center gap-2 border-l-0 border-white/10 sm:border-l sm:pl-5">
+                <span className="text-xs font-medium uppercase tracking-wide text-gray-500">
+                  {t('profilePage.presetSyncFilterLabel')}
+                </span>
+                {([
+                  { key: 'all' as const, label: t('profilePage.presetSyncFilterAll'), count: allMyPresets.length },
+                  { key: 'enabled' as const, label: t('profilePage.presetSyncFilterEnabled'), count: syncedPresetIds.size },
+                  { key: 'disabled' as const, label: t('profilePage.presetSyncFilterDisabled'), count: allMyPresets.length - syncedPresetIds.size },
+                ]).map((filter) => (
+                  <button
+                    key={filter.key}
+                    type="button"
+                    onClick={() => setPresetSyncFilter(filter.key)}
+                    className={`rounded-lg border px-2.5 py-1.5 text-xs transition-all ${
+                      presetSyncFilter === filter.key
+                        ? 'border-cyan-400/40 bg-cyan-400/15 text-cyan-100'
+                        : 'border-white/10 bg-white/5 text-gray-400 hover:bg-white/10 hover:text-white'
+                    }`}
+                  >
+                    {filter.label}
+                    <span className={`ml-1.5 ${presetSyncFilter === filter.key ? 'text-cyan-200/70' : 'text-gray-600'}`}>
+                      {filter.count}
+                    </span>
+                  </button>
+                ))}
+              </div>
             </div>
           )}
 

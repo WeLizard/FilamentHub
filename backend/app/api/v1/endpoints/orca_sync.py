@@ -81,6 +81,7 @@ from app.services.catalog_url_service import choose_filament_slug
 from app.services.notification_service import create_notification
 from app.services.orca_import_guard import hold_account_import_lock
 from app.services.orca_schema_observer import observe_orca_schema_fields
+from app.services.orca_settings_security import sanitize_orca_settings_for_storage
 from app.services.orcaslicer_preset_contract import (
     extract_structured_filament_values,
     is_allowed_orca_preset_name,
@@ -2288,6 +2289,10 @@ async def import_printer_profiles(
 
     for item in payload.profiles:
         try:
+            item.orcaslicer_settings = sanitize_orca_settings_for_storage(
+                item.orcaslicer_settings,
+                "machine",
+            )
             bound_profile_id = await _bound_profile_id(
                 db=db,
                 owner_user_id=current_user.id,

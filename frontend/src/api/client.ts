@@ -2077,15 +2077,23 @@ export const adminAPI = {
   updateCalculatorSettings: async (
     paywallEnforced: boolean,
     trialDays: number | null,
-    profileDefaults?: import('../types/api').CalculatorProfileDefaults,
   ): Promise<AdminCalculatorSettings> => {
     const response = await api.post<AdminCalculatorSettings>(
       '/admin/calculator-settings',
       {
         paywall_enforced: paywallEnforced,
         trial_days: trialDays,
-        ...(profileDefaults ? { profile_defaults: profileDefaults } : {}),
       },
+    );
+    return response.data;
+  },
+
+  updateCalculatorProfileDefaults: async (
+    profileDefaults: import('../types/api').CalculatorProfileDefaults,
+  ): Promise<import('../types/api').CalculatorProfileDefaults> => {
+    const response = await api.put<import('../types/api').CalculatorProfileDefaults>(
+      '/admin/calculator-profile-defaults',
+      profileDefaults,
     );
     return response.data;
   },

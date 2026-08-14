@@ -278,6 +278,25 @@ const ORCA_POWER_LOSS_RECOVERY_OPTIONS: CanonicalOption[] = [
   { value: 'disable', labelKey: 'printerProfile.options.powerLossRecovery.disable' },
 ];
 
+const ORCA_INPUT_SHAPING_TYPE_OPTIONS: CanonicalOption[] = [
+  'Default',
+  'MZV',
+  'ZV',
+  'ZVD',
+  'ZVDD',
+  'ZVDDD',
+  'EI',
+  'EI2',
+  '2HUMP_EI',
+  'EI3',
+  '3HUMP_EI',
+  'DAA',
+  'Disable',
+].map((value) => ({
+  value,
+  labelKey: `printerProfile.options.inputShapingType.${value.toLowerCase()}`,
+}));
+
 const ORCA_BED_TEMPERATURE_FORMULA_OPTIONS: CanonicalOption[] = [
   { value: 'by_first_filament', labelKey: 'printerProfile.options.bedTemperatureFormula.byFirstFilament' },
   { value: 'by_highest_temp', labelKey: 'printerProfile.options.bedTemperatureFormula.byHighestTemp' },
@@ -432,7 +451,14 @@ const KNOWN_ORCA_MACHINE_SETTING_KEYS = new Set<string>([
   'fan_speedup_time',
   'file_start_gcode',
   'gcode_flavor',
+  'gcode_skip_config_block',
   'high_current_on_filament_swap',
+  'input_shaping_damp_x',
+  'input_shaping_damp_y',
+  'input_shaping_emit',
+  'input_shaping_freq_x',
+  'input_shaping_freq_y',
+  'input_shaping_type',
   'hotend_model',
   'layer_change_gcode',
   'long_retractions_when_cut',
@@ -470,6 +496,7 @@ const KNOWN_ORCA_MACHINE_SETTING_KEYS = new Set<string>([
   'nozzle_type',
   'nozzle_volume',
   'parking_pos_retraction',
+  'part_cooling_fan_min_pwm',
   'pellet_modded_printer',
   'physical_extruder_map',
   'preferred_orientation',
@@ -486,6 +513,7 @@ const KNOWN_ORCA_MACHINE_SETTING_KEYS = new Set<string>([
   'purge_in_prime_tower',
   'resonance_avoidance',
   'retract_before_wipe',
+  'retract_after_wipe',
   'retract_length_toolchange',
   'retract_lift_above',
   'retract_lift_below',
@@ -507,6 +535,7 @@ const KNOWN_ORCA_MACHINE_SETTING_KEYS = new Set<string>([
   'thumbnails_format',
   'time_cost',
   'time_lapse_gcode',
+  'tool_change_on_wipe_tower',
   'travel_slope',
   'use_firmware_retraction',
   'use_relative_e_distances',
@@ -1451,6 +1480,7 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
     const coolingFanFields: Array<{ key: string; labelKey: string; placeholder?: string; unit?: string }> = [
       { key: 'fan_speedup_time', labelKey: 'printerProfile.cooling.speedupTime', placeholder: '2', unit: t('printerProfile.units.sec') },
       { key: 'fan_kickstart', labelKey: 'printerProfile.cooling.kickstart', placeholder: '0.25', unit: t('printerProfile.units.sec') },
+      { key: 'part_cooling_fan_min_pwm', labelKey: 'printerProfile.cooling.minimumPwm', placeholder: '0', unit: '%' },
     ];
     const extruderClearanceFields: Array<{ key: string; labelKey: string; placeholder?: string; unit?: string }> = [
       { key: 'extruder_clearance_radius', labelKey: 'printerProfile.extruderClearance.radius', placeholder: '65', unit: t('printerProfile.units.mm') },
@@ -2098,6 +2128,7 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
   };
 
   const renderMotionTab = () => {
+    const selectedInputShapingType = getMetadataString('input_shaping_type') || null;
     const motionFlagOptions: Array<{ key: string; labelKey: string; descriptionKey?: string }> = [
       {
         key: 'emit_machine_limits_to_gcode',
@@ -2170,6 +2201,61 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
                         placeholder={field.placeholder}
                         className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
                       />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <h5 className="mb-3 text-xs font-semibold uppercase tracking-wide text-purple-200/70">{t('printerProfile.motion.inputShapingTitle')}</h5>
+              <div className="space-y-4">
+                <div className="flex items-start gap-3">
+                  <input
+                    type="checkbox"
+                    id="input_shaping_emit"
+                    checked={getMetadataBoolean('input_shaping_emit')}
+                    onChange={(event) => handleMetadataBooleanChange('input_shaping_emit', event.target.checked)}
+                    className="mt-1 h-4 w-4 rounded border-white/30 bg-white/10"
+                  />
+                  <div>
+                    <label htmlFor="input_shaping_emit" className="text-sm font-medium text-gray-300">{t('printerProfile.motion.inputShapingEmit')}</label>
+                    <p className="text-xs text-gray-500">{t('printerProfile.motion.inputShapingEmitDesc')}</p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-gray-300">{t('printerProfile.motion.inputShapingType')}</label>
+                    <CustomSelect
+                      value={selectedInputShapingType}
+                      onChange={(value) => handleMetadataStringChange('input_shaping_type', (value as string) || '')}
+                      options={buildTranslatedOptions(ORCA_INPUT_SHAPING_TYPE_OPTIONS, selectedInputShapingType)}
+                      placeholder={t('printerProfile.selectType')}
+                    />
+                  </div>
+                  {([
+                    { key: 'input_shaping_freq_x', label: t('printerProfile.motion.inputShapingFrequencyX'), placeholder: '0', unit: 'Hz' },
+                    { key: 'input_shaping_freq_y', label: t('printerProfile.motion.inputShapingFrequencyY'), placeholder: '0', unit: 'Hz' },
+                    { key: 'input_shaping_damp_x', label: t('printerProfile.motion.inputShapingDampingX'), placeholder: '0.1', unit: '' },
+                    { key: 'input_shaping_damp_y', label: t('printerProfile.motion.inputShapingDampingY'), placeholder: '0.1', unit: '' },
+                  ] as const).map((field) => (
+                    <div key={field.key}>
+                      <label className="mb-2 block text-sm font-medium text-gray-300">{field.label}</label>
+                      <div className="relative">
+                        <input
+                          type="number"
+                          min="0"
+                          max={field.key.includes('damp') ? '1' : '1000'}
+                          step="0.01"
+                          value={getMetadataString(field.key)}
+                          onChange={(event) => handleMetadataStringChange(field.key, event.target.value)}
+                          placeholder={field.placeholder}
+                          className={`w-full rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-white placeholder-gray-500 focus:border-purple-500 focus:outline-none ${field.unit ? 'pr-14' : ''}`}
+                        />
+                        {field.unit && (
+                          <span className="pointer-events-none absolute inset-y-0 right-4 flex items-center text-xs text-gray-400">{field.unit}</span>
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -2571,6 +2657,7 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
       },
       { key: 'wipe_distance', labelKey: 'printerProfile.retraction.wipeDistance', mode: 'list', placeholder: '2' },
       { key: 'retract_before_wipe', labelKey: 'printerProfile.retraction.beforeWipe', mode: 'list', placeholder: '0%, 70%' },
+      { key: 'retract_after_wipe', labelKey: 'printerProfile.retraction.afterWipe', mode: 'list', placeholder: '0%' },
     ];
 
     const zHopFields: MetadataFieldConfig[] = [
@@ -2806,6 +2893,21 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
                     className="inline-flex items-center gap-1.5 text-sm text-gray-300"
                   />
                 </div>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="checkbox"
+                    id="tool_change_on_wipe_tower"
+                    checked={getMetadataBoolean('tool_change_on_wipe_tower')}
+                    onChange={(event) => handleMetadataBooleanChange('tool_change_on_wipe_tower', event.target.checked)}
+                    className="h-4 w-4 rounded border-white/30 bg-white/10"
+                  />
+                  <TooltipLabel
+                    htmlFor="tool_change_on_wipe_tower"
+                    label={t('printerProfile.multi.toolChangeOnWipeTower')}
+                    tooltipText={t('printerProfile.help.tooltips.toolChangeOnWipeTower')}
+                    className="inline-flex items-center gap-1.5 text-sm text-gray-300"
+                  />
+                </div>
               </div>
             </div>
 
@@ -2940,6 +3042,19 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
         </div>
       ) : (
         <div className="space-y-6">
+          <div className="flex items-start gap-3 rounded-xl border border-white/10 bg-white/5 px-4 py-3">
+            <input
+              type="checkbox"
+              id="gcode_skip_config_block"
+              checked={getMetadataBoolean('gcode_skip_config_block')}
+              onChange={(event) => handleMetadataBooleanChange('gcode_skip_config_block', event.target.checked)}
+              className="mt-1 h-4 w-4 rounded border-white/30 bg-white/10"
+            />
+            <div>
+              <label htmlFor="gcode_skip_config_block" className="text-sm font-medium text-gray-300">{t('printerProfile.gcode.skipConfigBlock')}</label>
+              <p className="text-xs text-gray-500">{t('printerProfile.gcode.skipConfigBlockDesc')}</p>
+            </div>
+          </div>
           {ORCA_PRINTER_GCODE_FIELDS.map(({ key, labelKey }) => {
             const textareaId = `printer-gcode-${key}`;
             const value = getMetadataString(key);

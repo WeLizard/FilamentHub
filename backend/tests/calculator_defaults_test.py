@@ -53,3 +53,28 @@ async def test_platform_defaults_seed_new_profile_without_overwriting_user_chang
     assert reset.json()["electricity_cost_per_kwh"] == 9.25
     assert reset.json()["overhead_percent"] == 44
     assert reset.json()["seller_name"] == "Private workshop"
+
+
+@pytest.mark.asyncio
+async def test_profile_defaults_update_does_not_rewrite_subscription_settings(
+    admin_client: AsyncClient,
+) -> None:
+    configured = await admin_client.post(
+        "/api/v1/admin/calculator-settings",
+        json={"paywall_enforced": True, "trial_days": 21},
+    )
+    assert configured.status_code == 200
+
+    defaults = configured.json()["profile_defaults"]
+    defaults["electricity_cost_per_kwh"] = 11.5
+    updated = await admin_client.put(
+        "/api/v1/admin/calculator-profile-defaults",
+        json=defaults,
+    )
+    assert updated.status_code == 200
+    assert updated.json()["electricity_cost_per_kwh"] == 11.5
+
+    settings = await admin_client.get("/api/v1/admin/calculator-settings")
+    assert settings.status_code == 200
+    assert settings.json()["paywall_enforced"] is True
+    assert settings.json()["trial_days"] == 21
