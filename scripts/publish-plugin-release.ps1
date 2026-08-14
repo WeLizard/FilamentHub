@@ -68,6 +68,24 @@ function Get-BridgeVersion {
     return $packageVersion
 }
 
+function Get-OrcaPluginVersion {
+    $pluginPath = 'orca-plugin/filamenthub_plugin.py'
+    $pluginContent = Get-Content -LiteralPath $pluginPath -Raw
+    $pluginMatch = [regex]::Match(
+        $pluginContent,
+        '(?m)^PLUGIN_VERSION\s*=\s*"(?<version>[^"]+)"\s*$'
+    )
+    if (-not $pluginMatch.Success) {
+        throw "Не удалось прочитать PLUGIN_VERSION из '$pluginPath'."
+    }
+
+    $version = $pluginMatch.Groups['version'].Value
+    if ($version -notmatch '^\d+\.\d+\.\d+$') {
+        throw "Версию FilamentHub '$version' нельзя использовать для Plugin Hub."
+    }
+    return $version
+}
+
 function Invoke-Checked {
     param(
         [Parameter(Mandatory)][string]$FilePath,
@@ -194,6 +212,7 @@ if ($releaseSourceChanges) {
     throw "Перед подготовкой релиза закоммить все изменения плагинов и release-workflow:`n$($releaseSourceChanges -join "`n")"
 }
 
+$orcaVersion = Get-OrcaPluginVersion
 $bridgeVersion = Get-BridgeVersion
 $releaseNotes = Invoke-Checked -FilePath python -Arguments @('scripts/render_plugin_release_notes.py') -Capture
 if ([string]::IsNullOrWhiteSpace($Tag)) {
@@ -229,7 +248,8 @@ if ($pendingChanges) {
 
 Write-Host "Репозиторий: $repository"
 Write-Host "Ветка      : $Branch ($headCommit)"
-Write-Host "Версия     : $bridgeVersion"
+Write-Host "FilamentHub: $orcaVersion"
+Write-Host "OctoPrint  : $bridgeVersion"
 Write-Host "Тег релиза : $Tag ($tagCommit)$(if (-not $tagExistsLocally) { ' [будет создан]' })"
 Write-Host 'Режим      : автоматическая публикация после успешной проверки workflow'
 if (-not $HideReleaseNotes) {
@@ -247,7 +267,7 @@ if ($DryRun) {
 }
 
 if (-not $tagExistsLocally) {
-    Invoke-Checked -FilePath git -Arguments @('tag', '-a', $Tag, '-m', "FilamentHub plugins $bridgeVersion")
+    Invoke-Checked -FilePath git -Arguments @('tag', '-a', $Tag, '-m', "FilamentHub plugins $Tag")
     $tagCommit = Invoke-Checked -FilePath git -Arguments @('rev-list', '-n', '1', $Tag) -Capture
     Write-Host "Создан локальный тег релиза '$Tag' на $tagCommit."
 }
