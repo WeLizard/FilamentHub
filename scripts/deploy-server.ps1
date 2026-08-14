@@ -474,12 +474,16 @@ function Invoke-PluginReleasePreparation {
     param([switch]$Publish)
 
     $tag = Read-ReleaseTag
+    $scriptPath = Join-Path $PSScriptRoot 'publish-plugin-release.ps1'
+    & $scriptPath -Tag $tag -DryRun
+    if (-not $?) {
+        throw 'Предварительная проверка релиза плагинов завершилась с ошибкой.'
+    }
     if ((Read-Host "Введи ОПУБЛИКОВАТЬ $tag, чтобы продолжить") -ne "ОПУБЛИКОВАТЬ $tag") {
         throw 'Публикация релиза отменена.'
     }
 
-    $scriptPath = Join-Path $PSScriptRoot 'publish-plugin-release.ps1'
-    & $scriptPath -Tag $tag -Publish:$Publish
+    & $scriptPath -Tag $tag -Publish:$Publish -HideReleaseNotes
     if (-not $?) {
         throw 'Скрипт публикации плагинов завершился с ошибкой.'
     }
@@ -503,7 +507,7 @@ function Show-Menu {
         Write-Host '  7. Показать GitHub Releases плагинов'
         Write-Host '  8. Скачать и проверить файлы релиза плагинов'
         Write-Host '  9. Проверить релиз плагинов на странице Download'
-        Write-Host ' 10. Создать тег и автоматически выпустить релиз плагинов'
+        Write-Host ' 10. Создать тег и выпустить релиз плагинов из changelog'
         Write-Host ' 11. Опубликовать существующий draft релиза (аварийный путь)'
         Write-Host '  0. Выход'
         $choice = Read-Host 'Выбери действие'

@@ -66,6 +66,9 @@ jobs:
       - name: Build OctoPrint bridge
         run: python -m build --wheel --sdist --outdir "$RUNNER_TEMP/release/octoprint" octoprint-plugin
 
+      - name: Prepare release notes from changelogs
+        run: python scripts/render_plugin_release_notes.py --output "$RUNNER_TEMP/release/RELEASE_NOTES.md"
+
       - name: Collect release assets and checksums
         shell: bash
         run: |
@@ -87,9 +90,12 @@ jobs:
             gh release create "$RELEASE_TAG" \
               --repo "$GITHUB_REPOSITORY" \
               --title "FilamentHub plugins $RELEASE_TAG" \
-              --notes "FilamentHub plugin packages for OrcaSlicer and OctoPrint. See SHA256SUMS for file checksums." \
+              --notes-file "$RUNNER_TEMP/release/RELEASE_NOTES.md" \
               --draft
           fi
+          gh release edit "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --notes-file "$RUNNER_TEMP/release/RELEASE_NOTES.md"
 
       - name: Upload plugin packages to release
         shell: bash

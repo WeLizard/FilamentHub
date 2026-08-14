@@ -17,6 +17,9 @@ param(
     [switch]$Publish,
 
     [Parameter()]
+    [switch]$HideReleaseNotes,
+
+    [Parameter()]
     [switch]$DryRun
 )
 
@@ -171,6 +174,7 @@ function Assert-ReleaseAssets {
 
 Assert-Command -Name git
 Assert-Command -Name gh
+Assert-Command -Name python
 
 $repositoryRoot = Invoke-Checked -FilePath git -Arguments @('rev-parse', '--show-toplevel') -Capture
 Set-Location -LiteralPath $repositoryRoot
@@ -178,7 +182,9 @@ Set-Location -LiteralPath $repositoryRoot
 $releaseSources = @(
     'orca-plugin',
     'octoprint-plugin',
-    '.github/workflows/release-plugins.yml'
+    '.github/workflows/release-plugins.yml',
+    'scripts/render_plugin_release_notes.py',
+    'scripts/tests/test_render_plugin_release_notes.py'
 )
 $releaseSourceChanges = & git status --porcelain --untracked-files=normal -- $releaseSources
 if ($LASTEXITCODE -ne 0) {
@@ -189,6 +195,7 @@ if ($releaseSourceChanges) {
 }
 
 $bridgeVersion = Get-BridgeVersion
+$releaseNotes = Invoke-Checked -FilePath python -Arguments @('scripts/render_plugin_release_notes.py') -Capture
 if ([string]::IsNullOrWhiteSpace($Tag)) {
     $Tag = Get-NextBundleTag -RemoteName $Remote
 } elseif ($Tag -notmatch '^plugins-v\d+\.\d+\.\d+$') {
@@ -225,6 +232,11 @@ Write-Host "Ветка      : $Branch ($headCommit)"
 Write-Host "Версия     : $bridgeVersion"
 Write-Host "Тег релиза : $Tag ($tagCommit)$(if (-not $tagExistsLocally) { ' [будет создан]' })"
 Write-Host 'Режим      : автоматическая публикация после успешной проверки workflow'
+if (-not $HideReleaseNotes) {
+    Write-Host ''
+    Write-Host 'Текст GitHub Release из changelog:' -ForegroundColor Cyan
+    Write-Host $releaseNotes
+}
 if ($Publish) {
     Write-Warning 'Ключ -Publish больше не требуется для tag-triggered релиза и сохранён только для восстановления старого draft.'
 }
