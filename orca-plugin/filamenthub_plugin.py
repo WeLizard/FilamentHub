@@ -2149,6 +2149,122 @@ def _happy_hare_assignment_changes(actual_spool_ids, desired_spool_ids):
     return changes
 
 
+def _happy_hare_reconciliation_payload(
+    physical_printer_id,
+    material_system_id,
+    connection,
+    snapshot,
+    expected_desired=None,
+):
+    connection_ref = connection.get("connection_ref")
+    if not isinstance(connection_ref, str) or not connection_ref:
+        return None
+    actual_spool_ids = snapshot.get("actual_spool_ids") or []
+    gates = []
+    for gate_item in snapshot.get("gates") or []:
+        gate = gate_item.get("gate") if isinstance(gate_item, dict) else None
+        if not isinstance(gate, int) or gate < 0 or gate >= len(actual_spool_ids):
+            return None
+        gates.append({
+            "gate": gate,
+            "status": gate_item.get("status", -1),
+            "spool_id": actual_spool_ids[gate],
+        })
+    if {item["gate"] for item in gates} != set(range(snapshot["gate_count"])):
+        return None
+    payload = {
+        "source_instance_id": plugin_source_instance_id(),
+        "connection_ref": connection_ref,
+        "physical_printer_id": physical_printer_id,
+        "material_system_id": material_system_id,
+        "gate_count": snapshot["gate_count"],
+        "spool_ids_known": bool(snapshot.get("spool_ids_known")),
+        "gates": gates,
+    }
+    if expected_desired is not None:
+        payload["expected_desired"] = expected_desired
+    return payload
+
+
+def _decode_happy_hare_reconciliation(result):
+    def differences(key):
+        decoded = []
+        for item in result.get(key) or []:
+            if not isinstance(item, dict) or not isinstance(item.get("gate"), int):
+                continue
+            decoded.append({
+                "gate": item["gate"],
+                "actualSpoolId": item.get("actual_spool_id"),
+                "desiredSpoolId": item.get("desired_spool_id"),
+            })
+        return decoded
+
+    import_changes = []
+    for item in result.get("import_changes") or []:
+        if not isinstance(item, dict) or not isinstance(item.get("gate"), int):
+            continue
+        import_changes.append({
+            "gate": item["gate"],
+            "proposedSpoolId": item.get("proposed_spool_id"),
+            "desiredSpoolId": item.get("desired_spool_id"),
+            "source": item.get("source"),
+        })
+    unresolved = []
+    for item in result.get("unresolved") or []:
+        if not isinstance(item, dict) or not isinstance(item.get("gate"), int):
+            continue
+        unresolved.append({"gate": item["gate"], "reason": item.get("reason")})
+    desired_assignments = []
+    for item in result.get("desired_assignments") or []:
+        if not isinstance(item, dict) or not isinstance(item.get("gate"), int):
+            continue
+        desired_assignments.append({
+            "gate": item["gate"],
+            "spool_id": item.get("spool_id"),
+        })
+    return {
+        "changes": differences("printer_changes"),
+        "importChanges": import_changes,
+        "unresolved": unresolved,
+        "desiredAssignments": desired_assignments,
+        "adoptedGates": int(result.get("adopted_gates") or 0),
+    }
+
+
+def request_happy_hare_reconciliation(
+    token,
+    operation,
+    physical_printer_id,
+    material_system_id,
+    connection,
+    snapshot,
+    expected_desired=None,
+):
+    payload = _happy_hare_reconciliation_payload(
+        physical_printer_id,
+        material_system_id,
+        connection,
+        snapshot,
+        expected_desired,
+    )
+    if payload is None:
+        return 400, {}
+    status, body = http_post_json(
+        "/orcaslicer/preset-slot-sync/hh/reconciliation/" + operation,
+        token,
+        payload,
+    )
+    if status != 200:
+        return status, {}
+    try:
+        result = json.loads(body.decode("utf-8")) or {}
+    except (AttributeError, UnicodeDecodeError, ValueError):
+        return status, {}
+    if not isinstance(result, dict):
+        return status, {}
+    return status, _decode_happy_hare_reconciliation(result)
+
+
 def sync_happy_hare_topologies(token, local_connections):
     """Quietly upload complete read-only HH snapshots during normal sync."""
     if not token or not local_connections:
@@ -5133,6 +5249,7 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
         material_system_id,
         token,
         local_connections,
+        expected_desired=None,
     ):
         def finish(**result):
             result.setdefault("operation", operation)
@@ -5169,37 +5286,102 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
         if desired is None:
             finish(ok=False, code="material_system_not_found")
             return
-        if snapshot.get("spoolman_support") != "pull":
+        preview_status, reconciliation = request_happy_hare_reconciliation(
+            token,
+            "preview",
+            physical_printer_id,
+            material_system_id,
+            connection,
+            snapshot,
+        )
+        if preview_status != 200:
             finish(
                 ok=False,
-                code="pull_required",
-                gateCount=snapshot["gate_count"],
-                printerHostname=snapshot.get("printer_hostname") or None,
-                spoolmanSupport=snapshot.get("spoolman_support") or None,
-                printState=snapshot.get("print_state") or None,
-                changes=[],
+                code=(
+                    "auth" if preview_status == 401
+                    else "access" if preview_status == 403
+                    else "server"
+                ),
+                status=preview_status,
             )
             return
-        if not snapshot.get("spool_ids_known"):
-            finish(ok=False, code="spool_ids_unavailable")
-            return
-        changes = _happy_hare_assignment_changes(
-            snapshot["actual_spool_ids"], desired
-        )
+        changes = reconciliation.get("changes") or []
+        import_changes = reconciliation.get("importChanges") or []
         common = {
             "gateCount": snapshot["gate_count"],
             "printerHostname": snapshot.get("printer_hostname") or None,
             "spoolmanSupport": snapshot.get("spoolman_support") or None,
             "printState": snapshot.get("print_state") or None,
             "changes": changes,
+            "importChanges": import_changes,
+            "unresolved": reconciliation.get("unresolved") or [],
+            "desiredAssignments": reconciliation.get("desiredAssignments") or [],
+        }
+        desired = {
+            item["gate"]: item.get("spool_id")
+            for item in common["desiredAssignments"]
         }
         if operation == "preview":
             finish(ok=True, **common)
             return
+        current_expected = reconciliation.get("desiredAssignments") or []
+        if expected_desired != current_expected:
+            finish(ok=False, code="stale_preview", **common)
+            return
+        if operation == "adopt":
+            needs_refresh = any(
+                item.get("source") == "last_known" for item in import_changes
+            )
+            if needs_refresh and snapshot.get("spoolman_support") != "pull":
+                finish(ok=False, code="pull_required", **common)
+                return
+            if needs_refresh and snapshot.get("print_state") in {"printing", "paused"}:
+                finish(ok=False, code="printer_busy", **common)
+                return
+            adopt_status, adopted = request_happy_hare_reconciliation(
+                token,
+                "adopt",
+                physical_printer_id,
+                material_system_id,
+                connection,
+                snapshot,
+                expected_desired=current_expected,
+            )
+            if adopt_status != 200:
+                finish(
+                    ok=False,
+                    code=(
+                        "auth" if adopt_status == 401
+                        else "access" if adopt_status == 403
+                        else "stale_preview" if adopt_status == 409
+                        else "server"
+                    ),
+                    status=adopt_status,
+                    **common,
+                )
+                return
+            if not needs_refresh:
+                finish(
+                    ok=True,
+                    adopted=True,
+                    adoptedGates=adopted.get("adoptedGates") or 0,
+                    **common,
+                )
+                return
+            for item in import_changes:
+                desired[item["gate"]] = item.get("proposedSpoolId")
+            common["adopted"] = True
+            common["adoptedGates"] = adopted.get("adoptedGates") or 0
+        elif snapshot.get("spoolman_support") != "pull":
+            finish(ok=False, code="pull_required", **common)
+            return
+        elif not snapshot.get("spool_ids_known"):
+            finish(ok=False, code="spool_ids_unavailable", **common)
+            return
         if snapshot.get("print_state") in {"printing", "paused"}:
             finish(ok=False, code="printer_busy", **common)
             return
-        if not changes:
+        if operation == "apply" and not changes:
             finish(ok=True, applied=False, remainingChanges=[], **common)
             return
 
@@ -5236,6 +5418,15 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
             finish(ok=False, code="verification_failed", **common)
             return
         upload_happy_hare_snapshot(token, physical_printer_id, refreshed)
+        final_common = dict(common)
+        for key in (
+            "gateCount",
+            "printerHostname",
+            "spoolmanSupport",
+            "printState",
+            "changes",
+        ):
+            final_common.pop(key, None)
         finish(
             ok=not remaining,
             code=None if not remaining else "not_applied",
@@ -5246,6 +5437,7 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
             spoolmanSupport=refreshed.get("spoolman_support") or None,
             printState=refreshed.get("print_state") or None,
             changes=changes,
+            **final_common,
         )
 
     def on_message(self, msg):
@@ -5362,30 +5554,55 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
                 source_instance_id,
                 moonraker_connections,
             )
-        elif msg_type in {"happy-hare-preview", "happy-hare-apply"}:
+        elif msg_type in {
+            "happy-hare-preview",
+            "happy-hare-apply",
+            "happy-hare-adopt",
+        }:
             request_id = msg.get("requestId")
             physical_printer_id = msg.get("physicalPrinterId")
             material_system_id = msg.get("materialSystemId")
+            expected_desired = msg.get("expectedDesiredAssignments")
             if not (
                 isinstance(request_id, str)
                 and 0 < len(request_id) <= 100
-                and isinstance(physical_printer_id, int)
+                and type(physical_printer_id) is int
                 and physical_printer_id > 0
-                and isinstance(material_system_id, int)
+                and type(material_system_id) is int
                 and material_system_id > 0
             ):
                 return
+            if msg_type != "happy-hare-preview":
+                if not isinstance(expected_desired, list) or len(expected_desired) > 256:
+                    return
+                for item in expected_desired:
+                    if not (
+                        isinstance(item, dict)
+                        and type(item.get("gate")) is int
+                        and item["gate"] >= 0
+                        and (
+                            item.get("spool_id") is None
+                            or type(item.get("spool_id")) is int
+                            and item["spool_id"] > 0
+                        )
+                    ):
+                        return
             token = (load_saved_auth() or {}).get("accessToken") or ""
             observations = observe_printer_presets()
             local_connections = observe_local_moonraker_connections(observations)
             BACKGROUND_WORKER.submit(
                 self._do_happy_hare_action,
                 request_id,
-                "apply" if msg_type == "happy-hare-apply" else "preview",
+                (
+                    "apply" if msg_type == "happy-hare-apply"
+                    else "adopt" if msg_type == "happy-hare-adopt"
+                    else "preview"
+                ),
                 physical_printer_id,
                 material_system_id,
                 token,
                 local_connections,
+                expected_desired,
             )
         elif msg_type == "auth-token":
             # Login / token refresh in the catalog — persist for session restore,

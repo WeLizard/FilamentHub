@@ -202,6 +202,46 @@ describe('pluginBridge inbound messages', () => {
       }));
 
       await expect(pending).resolves.toMatchObject({ ok: true, changes: [] });
+
+      const expectedDesiredAssignments = [
+        { gate: 0, spool_id: null },
+        { gate: 1, spool_id: 42 },
+      ];
+      const adopting = requestHappyHareAction(
+        'adopt',
+        12,
+        34,
+        expectedDesiredAssignments,
+      );
+      const adoptRequest = postMessage.mock.calls.at(-1)?.[0];
+      expect(adoptRequest).toMatchObject({
+        source: PLUGIN_MESSAGE_SOURCE,
+        type: 'happy-hare-adopt',
+        physicalPrinterId: 12,
+        materialSystemId: 34,
+        expectedDesiredAssignments,
+      });
+      expect(adoptRequest).not.toHaveProperty('actualSpoolIds');
+      expect(adoptRequest).not.toHaveProperty('host');
+      expect(adoptRequest).not.toHaveProperty('apiKey');
+
+      window.dispatchEvent(new MessageEvent('message', {
+        data: {
+          source: PLUGIN_MESSAGE_SOURCE,
+          type: 'happy-hare-result',
+          requestId: adoptRequest.requestId,
+          result: {
+            ok: true,
+            operation: 'adopt',
+            physicalPrinterId: 12,
+            materialSystemId: 34,
+            adoptedGates: 1,
+          },
+        },
+        origin: window.location.origin,
+        source: parent as unknown as Window,
+      }));
+      await expect(adopting).resolves.toMatchObject({ ok: true, adoptedGates: 1 });
     } finally {
       unsubscribe();
       Object.defineProperty(window, 'parent', {

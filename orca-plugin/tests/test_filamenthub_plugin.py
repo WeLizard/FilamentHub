@@ -578,6 +578,32 @@ def test_printer_bundle_message_is_explicit_and_uses_saved_session(
     assert submitted[0][1:] == (12, "saved-token")
 
 
+def test_happy_hare_mutation_message_rejects_boolean_ids(plugin_module, monkeypatch):
+    submitted = []
+    monkeypatch.setattr(
+        plugin_module,
+        "BACKGROUND_WORKER",
+        SimpleNamespace(submit=lambda *args: submitted.append(args)),
+    )
+    capability = plugin_module.FilamentHubCatalog()
+    common = {
+        "source": "filamenthub-plugin",
+        "type": "happy-hare-adopt",
+        "requestId": "request-1",
+        "materialSystemId": 7,
+        "expectedDesiredAssignments": [{"gate": 0, "spool_id": None}],
+    }
+
+    capability.on_message({**common, "physicalPrinterId": True})
+    capability.on_message({
+        **common,
+        "physicalPrinterId": 3,
+        "expectedDesiredAssignments": [{"gate": 0, "spool_id": True}],
+    })
+
+    assert submitted == []
+
+
 def test_profile_change_reports_automatic_sync_result(plugin_module):
     capability = plugin_module.FilamentHubCatalog()
     calls = []
@@ -904,7 +930,7 @@ def test_happy_hare_v3_can_report_exact_count_before_gate_arrays(
     assert snapshot["spoolman_support"] == "off"
 
 
-def test_happy_hare_action_explains_pull_before_missing_spool_ids(
+def test_happy_hare_preview_allows_server_validated_import_without_pull(
     plugin_module, monkeypatch
 ):
     snapshot = {
@@ -916,7 +942,7 @@ def test_happy_hare_action_explains_pull_before_missing_spool_ids(
         "print_state": "standby",
         "printer_hostname": "voron",
     }
-    connection = {"print_host": "voron:7125"}
+    connection = {"print_host": "voron:7125", "connection_ref": "fh-ref"}
     monkeypatch.setattr(
         plugin_module,
         "resolve_happy_hare_connection",
@@ -939,6 +965,26 @@ def test_happy_hare_action_explains_pull_before_missing_spool_ids(
         "upload_happy_hare_snapshot",
         lambda *_args, **_kwargs: (200, {}),
     )
+    monkeypatch.setattr(
+        plugin_module,
+        "request_happy_hare_reconciliation",
+        lambda *_args, **_kwargs: (
+            200,
+            {
+                "changes": [],
+                "importChanges": [{
+                    "gate": 0,
+                    "proposedSpoolId": 11,
+                    "desiredSpoolId": None,
+                    "source": "provider",
+                }],
+                "unresolved": [],
+                "desiredAssignments": [
+                    {"gate": gate, "spool_id": None} for gate in range(8)
+                ],
+            },
+        ),
+    )
     delivered = []
     catalog = plugin_module.FilamentHubCatalog()
     monkeypatch.setattr(
@@ -949,8 +995,8 @@ def test_happy_hare_action_explains_pull_before_missing_spool_ids(
 
     catalog._do_happy_hare_action("request-1", "preview", 3, 7, "token", [connection])
 
-    assert delivered[0][1]["ok"] is False
-    assert delivered[0][1]["code"] == "pull_required"
+    assert delivered[0][1]["ok"] is True
+    assert delivered[0][1]["importChanges"][0]["proposedSpoolId"] == 11
     assert delivered[0][1]["gateCount"] == 8
 
 
@@ -967,7 +1013,11 @@ def test_happy_hare_apply_waits_for_allowlisted_refresh_to_converge(
         "printer_hostname": "voron",
     }
     after = {**before, "actual_spool_ids": [11, None]}
-    connection = {"print_host": "voron:7125", "api_key": "secret"}
+    connection = {
+        "print_host": "voron:7125",
+        "api_key": "secret",
+        "connection_ref": "fh-ref",
+    }
     monkeypatch.setattr(
         plugin_module,
         "resolve_happy_hare_connection",
@@ -980,7 +1030,9 @@ def test_happy_hare_apply_waits_for_allowlisted_refresh_to_converge(
                     "id": 7,
                     "provider": "happy_hare",
                     "slots": [
-                        {"provider_index": 0, "spool_id": 11},
+                        # The context GET can race a browser edit; the scoped
+                        # server preview below is the state the user confirms.
+                        {"provider_index": 0, "spool_id": 99},
                         {"provider_index": 1, "spool_id": None},
                     ],
                 }],
@@ -992,6 +1044,26 @@ def test_happy_hare_apply_waits_for_allowlisted_refresh_to_converge(
         plugin_module,
         "upload_happy_hare_snapshot",
         lambda *_args, **_kwargs: (200, {}),
+    )
+    expected = [
+        {"gate": 0, "spool_id": 11},
+        {"gate": 1, "spool_id": None},
+    ]
+    monkeypatch.setattr(
+        plugin_module,
+        "request_happy_hare_reconciliation",
+        lambda *_args, **_kwargs: (
+            200,
+            {
+                "changes": [
+                    {"gate": 0, "actualSpoolId": None, "desiredSpoolId": 11},
+                    {"gate": 1, "actualSpoolId": 22, "desiredSpoolId": None},
+                ],
+                "importChanges": [],
+                "unresolved": [],
+                "desiredAssignments": expected,
+            },
+        ),
     )
     command_calls = []
     monkeypatch.setattr(
@@ -1021,13 +1093,160 @@ def test_happy_hare_apply_waits_for_allowlisted_refresh_to_converge(
         lambda request_id, result: delivered.append((request_id, result)),
     )
 
-    catalog._do_happy_hare_action("request-1", "apply", 3, 7, "token", [connection])
+    catalog._do_happy_hare_action(
+        "request-1", "apply", 3, 7, "token", [connection], expected
+    )
 
     assert command_calls == [
         ("/printer/gcode/script", {"script": "MMU_SPOOLMAN REFRESH=1"})
     ]
     assert sleep_calls == [0.5, 1.0, 2.0]
     assert delivered[0][1]["ok"] is True
+    assert delivered[0][1]["remainingChanges"] == []
+
+
+def test_happy_hare_reconciliation_sends_local_ids_only_to_scoped_backend(
+    plugin_module, monkeypatch
+):
+    calls = []
+    monkeypatch.setattr(
+        plugin_module, "plugin_source_instance_id", lambda: "orca-instance-123456"
+    )
+
+    def post(path, token, payload):
+        calls.append((path, token, payload))
+        return 200, json.dumps({
+            "printer_changes": [],
+            "import_changes": [{
+                "gate": 0,
+                "proposed_spool_id": 11,
+                "desired_spool_id": None,
+                "source": "provider",
+            }],
+            "unresolved": [],
+            "desired_assignments": [{"gate": 0, "spool_id": None}],
+            "adopted_gates": 0,
+        }).encode()
+
+    monkeypatch.setattr(plugin_module, "http_post_json", post)
+    status, result = plugin_module.request_happy_hare_reconciliation(
+        "plugin-token",
+        "preview",
+        3,
+        7,
+        {
+            "connection_ref": "fh-ref-1",
+            "print_host": "http://192.168.1.2:7125",
+            "api_key": "moonraker-secret",
+        },
+        {
+            "gate_count": 1,
+            "spool_ids_known": True,
+            "actual_spool_ids": [11],
+            "gates": [{"gate": 0, "status": 1}],
+        },
+    )
+
+    assert status == 200
+    assert result["importChanges"][0]["proposedSpoolId"] == 11
+    payload = calls[0][2]
+    assert payload["connection_ref"] == "fh-ref-1"
+    assert payload["gates"] == [{"gate": 0, "status": 1, "spool_id": 11}]
+    assert "print_host" not in str(payload)
+    assert "moonraker-secret" not in str(payload)
+
+
+def test_happy_hare_adopt_restores_last_known_map_then_verifies_printer(
+    plugin_module, monkeypatch
+):
+    before = {
+        "gate_count": 1,
+        "gates": [{"gate": 0, "status": 1}],
+        "actual_spool_ids": [None],
+        "spool_ids_known": True,
+        "spoolman_support": "pull",
+        "print_state": "standby",
+        "printer_hostname": "voron",
+    }
+    after = {**before, "actual_spool_ids": [11]}
+    expected = [{"gate": 0, "spool_id": None}]
+    connection = {
+        "connection_ref": "fh-ref-1",
+        "print_host": "voron:7125",
+        "api_key": "secret",
+    }
+    monkeypatch.setattr(
+        plugin_module,
+        "resolve_happy_hare_connection",
+        lambda *_args, **_kwargs: (
+            connection,
+            before,
+            {
+                "id": 3,
+                "material_systems": [{
+                    "id": 7,
+                    "provider": "happy_hare",
+                    "slots": [{"provider_index": 0, "spool_id": None}],
+                }],
+            },
+            None,
+        ),
+    )
+    monkeypatch.setattr(
+        plugin_module,
+        "upload_happy_hare_snapshot",
+        lambda *_args, **_kwargs: (200, {}),
+    )
+
+    def reconcile(_token, operation, *_args, **_kwargs):
+        common = {
+            "changes": [],
+            "importChanges": [{
+                "gate": 0,
+                "proposedSpoolId": 11,
+                "desiredSpoolId": None,
+                "source": "last_known",
+            }],
+            "unresolved": [],
+            "desiredAssignments": expected,
+        }
+        return 200, {**common, "adoptedGates": 1 if operation == "adopt" else 0}
+
+    monkeypatch.setattr(
+        plugin_module, "request_happy_hare_reconciliation", reconcile
+    )
+    commands = []
+    monkeypatch.setattr(
+        plugin_module,
+        "_moonraker_json",
+        lambda _connection, path, payload=None: (
+            commands.append((path, payload)) or (200, {"result": "ok"}, "")
+        ),
+    )
+    snapshots = iter([before, after])
+    monkeypatch.setattr(
+        plugin_module,
+        "read_happy_hare_snapshot",
+        lambda _connection: next(snapshots),
+    )
+    monkeypatch.setattr(plugin_module.time, "sleep", lambda _seconds: None)
+    delivered = []
+    catalog = plugin_module.FilamentHubCatalog()
+    monkeypatch.setattr(
+        catalog,
+        "_deliver_happy_hare_result",
+        lambda request_id, result: delivered.append((request_id, result)),
+    )
+
+    catalog._do_happy_hare_action(
+        "request-1", "adopt", 3, 7, "token", [connection], expected
+    )
+
+    assert commands == [
+        ("/printer/gcode/script", {"script": "MMU_SPOOLMAN REFRESH=1"})
+    ]
+    assert delivered[0][1]["ok"] is True
+    assert delivered[0][1]["adopted"] is True
     assert delivered[0][1]["remainingChanges"] == []
 
 

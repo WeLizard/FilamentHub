@@ -486,9 +486,26 @@ export interface HappyHareAssignmentChange {
   desiredSpoolId: number | null;
 }
 
+export interface HappyHareImportChange {
+  gate: number;
+  proposedSpoolId: number;
+  desiredSpoolId: number | null;
+  source: 'provider' | 'last_known';
+}
+
+export interface HappyHareUnresolvedGate {
+  gate: number;
+  reason: 'spool_unavailable' | 'identity_unknown' | 'ambiguous_last_known' | 'duplicate_spool';
+}
+
+export interface HappyHareExpectedAssignment {
+  gate: number;
+  spool_id: number | null;
+}
+
 export interface HappyHareActionResult {
   ok: boolean;
-  operation: 'preview' | 'apply';
+  operation: 'preview' | 'apply' | 'adopt';
   code?: string | null;
   physicalPrinterId: number;
   materialSystemId: number;
@@ -497,8 +514,13 @@ export interface HappyHareActionResult {
   spoolmanSupport?: string | null;
   printState?: string | null;
   changes?: HappyHareAssignmentChange[];
+  importChanges?: HappyHareImportChange[];
+  unresolved?: HappyHareUnresolvedGate[];
+  desiredAssignments?: HappyHareExpectedAssignment[];
   remainingChanges?: HappyHareAssignmentChange[];
   applied?: boolean;
+  adopted?: boolean;
+  adoptedGates?: number;
 }
 
 /**
@@ -507,9 +529,10 @@ export interface HappyHareActionResult {
  * allowlisted operation; the Moonraker address, key and G-code stay in Python.
  */
 export function requestHappyHareAction(
-  operation: 'preview' | 'apply',
+  operation: 'preview' | 'apply' | 'adopt',
   physicalPrinterId: number,
   materialSystemId: number,
+  expectedDesiredAssignments?: HappyHareExpectedAssignment[],
 ): Promise<HappyHareActionResult> {
   if (!isPluginEmbed() || !activePluginCapabilities.has('happy-hare-moonraker')) {
     return Promise.reject(new Error('happy-hare-moonraker unavailable'));
@@ -546,10 +569,15 @@ export function requestHappyHareAction(
     }, 30_000);
     postToPlugin({
       source: PLUGIN_MESSAGE_SOURCE,
-      type: operation === 'apply' ? 'happy-hare-apply' : 'happy-hare-preview',
+      type: operation === 'apply'
+        ? 'happy-hare-apply'
+        : operation === 'adopt'
+          ? 'happy-hare-adopt'
+          : 'happy-hare-preview',
       requestId,
       physicalPrinterId,
       materialSystemId,
+      ...(expectedDesiredAssignments ? { expectedDesiredAssignments } : {}),
     });
   });
 }

@@ -14,6 +14,7 @@ import {
 import type {
   HappyHareActionResult,
   HappyHareAssignmentChange,
+  HappyHareImportChange,
 } from '../../../utils/pluginBridge';
 import { toast } from '../../Toast';
 import { ModalOverlay } from '../../ModalOverlay';
@@ -297,6 +298,39 @@ function AssignmentChanges({
   );
 }
 
+function RecoveryChanges({
+  changes,
+  spools,
+}: {
+  changes: HappyHareImportChange[];
+  spools: UserSpool[];
+}) {
+  const { t } = useTranslation();
+  if (changes.length === 0) return null;
+  return (
+    <div className="mt-3 rounded-xl border border-purple-400/20 bg-purple-500/10 p-3">
+      <p className="text-xs font-medium text-purple-100">
+        {t('presetSlots.happyHare.refresh.recoveryTitle')}
+      </p>
+      <p className="mt-1 text-[11px] leading-4 text-purple-100/70">
+        {t('presetSlots.happyHare.refresh.recoveryDescription')}
+      </p>
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        {changes.map((change) => (
+          <span
+            key={change.gate}
+            className="rounded-md border border-white/10 bg-black/20 px-2 py-1 text-[11px] text-gray-200"
+          >
+            {t('presetSlots.happyHare.refresh.gate', { gate: change.gate + 1 })}
+            {' · '}
+            {spoolLabel(spools, change.proposedSpoolId, '')}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function HappyHareRefreshAction({
   printer,
   system,
@@ -307,16 +341,24 @@ function HappyHareRefreshAction({
 }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
-  const [loading, setLoading] = useState<'preview' | 'apply' | null>(null);
+  const [loading, setLoading] = useState<'preview' | 'apply' | 'adopt' | null>(null);
   const [preview, setPreview] = useState<HappyHareActionResult | null>(null);
   const [copied, setCopied] = useState(false);
   const [fallbackOpen, setFallbackOpen] = useState(false);
   const changes = preview?.changes ?? [];
+  const importChanges = preview?.importChanges ?? [];
+  const recoveryChanges = importChanges.filter((item) => item.source === 'last_known');
+  const unresolved = preview?.unresolved ?? [];
   const busy = preview?.printState === 'printing' || preview?.printState === 'paused';
   const canApply = preview?.ok === true
     && changes.length > 0
     && preview.spoolmanSupport === 'pull'
     && !busy;
+  const canAdopt = preview?.ok === true
+    && importChanges.length > 0
+    && (recoveryChanges.length === 0 || (
+      preview.spoolmanSupport === 'pull' && !busy
+    ));
   const errorText = (code?: string | null) => (
     t(`presetSlots.happyHare.refresh.errors.${code || 'unknown'}`, {
       defaultValue: t('presetSlots.happyHare.refresh.errors.unknown'),
@@ -327,6 +369,8 @@ function HappyHareRefreshAction({
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ['physical-printers'] }),
       queryClient.invalidateQueries({ queryKey: ['devices'] }),
+      queryClient.invalidateQueries({ queryKey: ['spools'] }),
+      queryClient.invalidateQueries({ queryKey: ['user-spools'] }),
     ]);
   };
 
@@ -338,7 +382,11 @@ function HappyHareRefreshAction({
       if (!result.ok) {
         setPreview(null);
         toast.error(errorText(result.code));
-      } else if ((result.changes?.length ?? 0) === 0) {
+      } else if (
+        (result.changes?.length ?? 0) === 0
+        && (result.importChanges?.length ?? 0) === 0
+        && (result.unresolved?.length ?? 0) === 0
+      ) {
         setPreview(null);
         toast.success(t('presetSlots.happyHare.refresh.inSync', {
           count: result.gateCount ?? 0,
@@ -358,10 +406,44 @@ function HappyHareRefreshAction({
     if (!canApply) return;
     setLoading('apply');
     try {
-      const result = await requestHappyHareAction('apply', printer.id, system.id);
+      const result = await requestHappyHareAction(
+        'apply',
+        printer.id,
+        system.id,
+        preview?.desiredAssignments,
+      );
       await refreshData();
       if (result.ok) {
         toast.success(t('presetSlots.happyHare.refresh.applied'));
+        setPreview(null);
+      } else {
+        toast.error(errorText(result.code));
+      }
+    } catch {
+      toast.error(errorText('timeout'));
+    } finally {
+      setLoading(null);
+    }
+  };
+
+  const adopt = async () => {
+    if (!canAdopt) return;
+    setLoading('adopt');
+    try {
+      const result = await requestHappyHareAction(
+        'adopt',
+        printer.id,
+        system.id,
+        preview?.desiredAssignments,
+      );
+      await refreshData();
+      if (result.ok) {
+        toast.success(t(recoveryChanges.length > 0
+          ? 'presetSlots.happyHare.refresh.restored'
+          : 'presetSlots.happyHare.refresh.adopted'));
+        setPreview(null);
+      } else if (result.adopted) {
+        toast.error(t('presetSlots.happyHare.refresh.savedButPending'));
         setPreview(null);
       } else {
         toast.error(errorText(result.code));
@@ -435,7 +517,9 @@ function HappyHareRefreshAction({
         </ModalOverlay>
       )}
 
-      {preview?.ok && changes.length > 0 && (
+      {preview?.ok && (
+        changes.length > 0 || importChanges.length > 0 || unresolved.length > 0
+      ) && (
         <ModalOverlay
           onClose={() => { if (!loading) setPreview(null); }}
           closeOnOverlayClick={!loading}
@@ -448,9 +532,7 @@ function HappyHareRefreshAction({
                   {t('presetSlots.happyHare.refresh.previewTitle')}
                 </h3>
                 <p className="mt-1 text-sm leading-5 text-gray-400">
-                  {t('presetSlots.happyHare.refresh.previewDescription', {
-                    count: changes.length,
-                  })}
+                  {t('presetSlots.happyHare.refresh.previewDescription')}
                 </p>
               </div>
               <button
@@ -462,8 +544,14 @@ function HappyHareRefreshAction({
                 <X className="h-4 w-4" />
               </button>
             </div>
-            <AssignmentChanges changes={changes} spools={spools} />
-            {preview.spoolmanSupport !== 'pull' && (
+            {changes.length > 0 && <AssignmentChanges changes={changes} spools={spools} />}
+            <RecoveryChanges changes={recoveryChanges} spools={spools} />
+            {unresolved.length > 0 && (
+              <p className="mt-3 rounded-lg border border-amber-400/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
+                {t('presetSlots.happyHare.refresh.unresolved', { count: unresolved.length })}
+              </p>
+            )}
+            {preview.spoolmanSupport !== 'pull' && (changes.length > 0 || recoveryChanges.length > 0) && (
               <p className="mt-3 rounded-lg border border-amber-400/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
                 {t('presetSlots.happyHare.refresh.pullRequired')}
               </p>
@@ -482,15 +570,30 @@ function HappyHareRefreshAction({
               >
                 {t('common.cancel')}
               </button>
-              <button
-                type="button"
-                onClick={apply}
-                disabled={!canApply || loading != null}
-                className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                {loading === 'apply' && <Loader2 className="h-4 w-4 animate-spin" />}
-                {t('presetSlots.happyHare.refresh.apply')}
-              </button>
+              {importChanges.length > 0 && (
+                <button
+                  type="button"
+                  onClick={adopt}
+                  disabled={!canAdopt || loading != null}
+                  className="inline-flex items-center gap-2 rounded-lg bg-purple-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-purple-500 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {loading === 'adopt' && <Loader2 className="h-4 w-4 animate-spin" />}
+                  {t(recoveryChanges.length > 0
+                    ? 'presetSlots.happyHare.refresh.restore'
+                    : 'presetSlots.happyHare.refresh.adopt')}
+                </button>
+              )}
+              {changes.length > 0 && (
+                <button
+                  type="button"
+                  onClick={apply}
+                  disabled={!canApply || loading != null}
+                  className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {loading === 'apply' && <Loader2 className="h-4 w-4 animate-spin" />}
+                  {t('presetSlots.happyHare.refresh.apply')}
+                </button>
+              )}
             </div>
           </div>
         </ModalOverlay>

@@ -1344,6 +1344,7 @@ async def test_plugin_session_is_short_lived_and_endpoint_scoped(
     assert set(decoded["scopes"]) == {
         "material-topology:read",
         "material-topology:report",
+        "material-topology:write",
         "presets:read",
         "presets:write",
         "printer-bundles:read",

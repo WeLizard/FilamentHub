@@ -275,6 +275,20 @@ async def require_material_topology_report(
     )
 
 
+async def require_material_topology_write(
+    request: Request,
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> User:
+    """Apply a user-confirmed material assignment through the local plugin."""
+    return await _get_current_user_or_plugin_scope(
+        request=request,
+        credentials=credentials,
+        db=db,
+        required_scope="material-topology:write",
+    )
+
+
 async def get_current_active_user(
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> User:

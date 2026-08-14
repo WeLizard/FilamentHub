@@ -992,6 +992,7 @@ async def create_plugin_session(
             "printer-bundles:read",
             "material-topology:read",
             "material-topology:report",
+            "material-topology:write",
         ],
     )
     response.headers["Cache-Control"] = "no-store"

@@ -11,6 +11,7 @@ from app.core.dependencies import (
     get_current_active_user,
     require_material_topology_read,
     require_material_topology_report,
+    require_material_topology_write,
 )
 from app.core.errors import ERR_DEVICE_NOT_FOUND, raise_error
 from app.db.session import get_db
@@ -20,6 +21,8 @@ from app.schemas.preset_slot_sync import (
     GateStateResponse,
     HeartbeatRequest,
     HeartbeatResponse,
+    HHReconciliationRequest,
+    HHReconciliationResponse,
     HHSnapshotRequest,
     HHSnapshotResponse,
     ManualAssignmentRequest,
@@ -30,6 +33,8 @@ from app.schemas.preset_slot_sync import (
     UsageEstimateResponse,
 )
 from app.services.preset_slot_sync_service import (
+    adopt_hh_reconciliation,
+    build_hh_reconciliation_preview,
     build_plugin_material_topology_context,
     get_device_by_fingerprint,
     get_gate_states,
@@ -93,6 +98,32 @@ async def hh_snapshot(
         updated_gates=updated,
         mismatches=mismatches,
     )
+
+
+@router.post(
+    "/hh/reconciliation/preview",
+    response_model=HHReconciliationResponse,
+)
+async def hh_reconciliation_preview(
+    payload: HHReconciliationRequest,
+    current_user: Annotated[User, Depends(require_material_topology_read)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> HHReconciliationResponse:
+    """Preview both safe directions without changing desired assignments."""
+    return await build_hh_reconciliation_preview(db, current_user, payload)
+
+
+@router.post(
+    "/hh/reconciliation/adopt",
+    response_model=HHReconciliationResponse,
+)
+async def hh_reconciliation_adopt(
+    payload: HHReconciliationRequest,
+    current_user: Annotated[User, Depends(require_material_topology_write)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> HHReconciliationResponse:
+    """Accept the provider map after an explicit, current user preview."""
+    return await adopt_hh_reconciliation(db, current_user, payload)
 
 
 @router.post("/manual/assignment", response_model=ManualAssignmentResponse)

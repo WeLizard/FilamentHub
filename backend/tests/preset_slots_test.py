@@ -1,5 +1,7 @@
 """Tests for preset-slot assignment behavior."""
 
+import json
+
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
@@ -493,3 +495,349 @@ async def test_plugin_material_topology_is_minimal_scoped_and_owned(
     )
     assert foreign_snapshot.status_code == 403
     assert foreign_snapshot.json()["detail"]["code"] == "ERR_DEVICE_NOT_OWNER"
+
+
+@pytest.mark.asyncio
+async def test_hh_reconciliation_adopts_owned_and_unambiguous_previous_spools(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    headers, email = await _register_and_login(client, "hh-reconcile-adopt")
+    owner = (
+        await db_session.execute(select(User).where(User.email == email))
+    ).scalar_one()
+    source_instance_id = "orca-reconcile-instance-123456"
+    connection_ref = "fh-reconcile-ref"
+
+    heartbeat = await client.post(
+        "/api/v1/orcaslicer/preset-slot-sync/device/heartbeat",
+        json={
+            "device_fingerprint": "hh-reconcile-device",
+            "device_name": "Reconcile Voron",
+            "supports_hh": True,
+            "gate_count": 2,
+        },
+        headers=headers,
+    )
+    assert heartbeat.status_code == 200
+    printer_id = heartbeat.json()["device_id"]
+    db_session.add(
+        PrinterConnectionBinding(
+            user_id=owner.id,
+            physical_printer_id=printer_id,
+            source="orcaslicer_plugin",
+            source_instance_id=source_instance_id,
+            connection_ref=connection_ref,
+            normalized_endpoint="ref:hh-reconcile",
+            provider="moonraker",
+        )
+    )
+    provider_spool = UserSpool(
+        user_id=owner.id,
+        initial_weight_g=1000,
+        used_weight_g=100,
+        state=UserSpoolState.shelf,
+        source="manual",
+    )
+    previous_spool = UserSpool(
+        user_id=owner.id,
+        initial_weight_g=1000,
+        used_weight_g=200,
+        state=UserSpoolState.shelf,
+        source="manual",
+        extra={
+            "fhub_last_printer": json.dumps("Reconcile Voron"),
+            "fhub_last_gate": json.dumps(1),
+        },
+    )
+    db_session.add_all([provider_spool, previous_spool])
+    await db_session.commit()
+    await db_session.refresh(provider_spool)
+    await db_session.refresh(previous_spool)
+
+    issued = await client.post("/api/v1/auth/plugin-session", json={}, headers=headers)
+    plugin_headers = {"Authorization": f"Bearer {issued.json()['plugin_token']}"}
+    context = await client.get(
+        "/api/v1/orcaslicer/preset-slot-sync/plugin-context",
+        params={"source_instance_id": source_instance_id},
+        headers=plugin_headers,
+    )
+    system_id = context.json()["printers"][0]["material_systems"][0]["id"]
+    payload = {
+        "source_instance_id": source_instance_id,
+        "connection_ref": connection_ref,
+        "physical_printer_id": printer_id,
+        "material_system_id": system_id,
+        "gate_count": 2,
+        "spool_ids_known": True,
+        "gates": [
+            {"gate": 0, "status": 1, "spool_id": provider_spool.id},
+            {"gate": 1, "status": 2, "spool_id": None},
+        ],
+    }
+    preview = await client.post(
+        "/api/v1/orcaslicer/preset-slot-sync/hh/reconciliation/preview",
+        json=payload,
+        headers=plugin_headers,
+    )
+    assert preview.status_code == 200
+    assert preview.json()["import_changes"] == [
+        {
+            "gate": 0,
+            "proposed_spool_id": provider_spool.id,
+            "desired_spool_id": None,
+            "source": "provider",
+        },
+        {
+            "gate": 1,
+            "proposed_spool_id": previous_spool.id,
+            "desired_spool_id": None,
+            "source": "last_known",
+        },
+    ]
+
+    adopted = await client.post(
+        "/api/v1/orcaslicer/preset-slot-sync/hh/reconciliation/adopt",
+        json={**payload, "expected_desired": preview.json()["desired_assignments"]},
+        headers=plugin_headers,
+    )
+    assert adopted.status_code == 200
+    assert adopted.json()["adopted_gates"] == 2
+    physical = await client.get("/api/v1/physical-printers", headers=headers)
+    slots = physical.json()[0]["material_systems"][0]["slots"]
+    assert [slot["assignment"]["spool_id"] for slot in slots] == [
+        provider_spool.id,
+        previous_spool.id,
+    ]
+
+
+@pytest.mark.asyncio
+async def test_hh_reconciliation_never_clears_desired_from_presence_status(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    headers, email = await _register_and_login(client, "hh-reconcile-boundary")
+    owner = (
+        await db_session.execute(select(User).where(User.email == email))
+    ).scalar_one()
+    source_instance_id = "orca-reconcile-boundary-1234"
+    heartbeat = await client.post(
+        "/api/v1/orcaslicer/preset-slot-sync/device/heartbeat",
+        json={
+            "device_fingerprint": "hh-reconcile-boundary-device",
+            "device_name": "Boundary Voron",
+            "supports_hh": True,
+            "gate_count": 1,
+        },
+        headers=headers,
+    )
+    printer_id = heartbeat.json()["device_id"]
+    db_session.add(
+        PrinterConnectionBinding(
+            user_id=owner.id,
+            physical_printer_id=printer_id,
+            source="orcaslicer_plugin",
+            source_instance_id=source_instance_id,
+            connection_ref="fh-boundary-ref",
+            normalized_endpoint="ref:hh-reconcile-boundary",
+            provider="moonraker",
+        )
+    )
+    spool = UserSpool(
+        user_id=owner.id,
+        initial_weight_g=1000,
+        used_weight_g=0,
+        state=UserSpoolState.shelf,
+        source="manual",
+    )
+    db_session.add(spool)
+    await db_session.commit()
+    await db_session.refresh(spool)
+    assigned = await client.patch(
+        f"/api/v1/preset-slots/{printer_id}/0",
+        json={"spool_id": spool.id},
+        headers=headers,
+    )
+    assert assigned.status_code == 200
+
+    issued = await client.post("/api/v1/auth/plugin-session", json={}, headers=headers)
+    plugin_headers = {"Authorization": f"Bearer {issued.json()['plugin_token']}"}
+    context = await client.get(
+        "/api/v1/orcaslicer/preset-slot-sync/plugin-context",
+        params={"source_instance_id": source_instance_id},
+        headers=plugin_headers,
+    )
+    system_id = context.json()["printers"][0]["material_systems"][0]["id"]
+    payload = {
+        "source_instance_id": source_instance_id,
+        "connection_ref": "fh-boundary-ref",
+        "physical_printer_id": printer_id,
+        "material_system_id": system_id,
+        "gate_count": 1,
+        "spool_ids_known": True,
+        "gates": [{"gate": 0, "status": 0, "spool_id": None}],
+    }
+    preview = await client.post(
+        "/api/v1/orcaslicer/preset-slot-sync/hh/reconciliation/preview",
+        json=payload,
+        headers=plugin_headers,
+    )
+    assert preview.status_code == 200
+    assert preview.json()["import_changes"] == []
+    assert preview.json()["printer_changes"][0]["desired_spool_id"] == spool.id
+
+    from app.core.security import create_plugin_token
+
+    read_only_token = create_plugin_token(
+        {"sub": owner.email, "user_id": owner.id},
+        ["material-topology:read", "material-topology:report"],
+    )
+    denied = await client.post(
+        "/api/v1/orcaslicer/preset-slot-sync/hh/reconciliation/adopt",
+        json={**payload, "expected_desired": preview.json()["desired_assignments"]},
+        headers={"Authorization": f"Bearer {read_only_token}"},
+    )
+    assert denied.status_code == 403
+    assert denied.json()["detail"]["code"] == "ERR_ACCESS_DENIED"
+
+    stale = await client.post(
+        "/api/v1/orcaslicer/preset-slot-sync/hh/reconciliation/adopt",
+        json={**payload, "expected_desired": [{"gate": 0, "spool_id": None}]},
+        headers=plugin_headers,
+    )
+    assert stale.status_code == 409
+    physical = await client.get("/api/v1/physical-printers", headers=headers)
+    slot = physical.json()[0]["material_systems"][0]["slots"][0]
+    assert slot["assignment"]["spool_id"] == spool.id
+
+
+@pytest.mark.asyncio
+async def test_hh_reconciliation_contains_untrusted_and_ambiguous_identity(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    owner_headers, owner_email = await _register_and_login(
+        client, "hh-reconcile-adversarial-owner"
+    )
+    _, foreign_email = await _register_and_login(
+        client, "hh-reconcile-adversarial-foreign"
+    )
+    owner = (
+        await db_session.execute(select(User).where(User.email == owner_email))
+    ).scalar_one()
+    foreign = (
+        await db_session.execute(select(User).where(User.email == foreign_email))
+    ).scalar_one()
+    source_instance_id = "orca-reconcile-adversarial-1234"
+    connection_ref = "fh-adversarial-ref"
+
+    heartbeat = await client.post(
+        "/api/v1/orcaslicer/preset-slot-sync/device/heartbeat",
+        json={
+            "device_fingerprint": "hh-reconcile-adversarial-device",
+            "device_name": "Adversarial Voron",
+            "supports_hh": True,
+            "gate_count": 4,
+        },
+        headers=owner_headers,
+    )
+    assert heartbeat.status_code == 200
+    printer_id = heartbeat.json()["device_id"]
+    db_session.add(
+        PrinterConnectionBinding(
+            user_id=owner.id,
+            physical_printer_id=printer_id,
+            source="orcaslicer_plugin",
+            source_instance_id=source_instance_id,
+            connection_ref=connection_ref,
+            normalized_endpoint="ref:hh-reconcile-adversarial",
+            provider="moonraker",
+        )
+    )
+    duplicated = UserSpool(
+        user_id=owner.id,
+        initial_weight_g=1000,
+        used_weight_g=0,
+        state=UserSpoolState.shelf,
+        source="manual",
+    )
+    ambiguous_a = UserSpool(
+        user_id=owner.id,
+        initial_weight_g=1000,
+        used_weight_g=0,
+        state=UserSpoolState.shelf,
+        source="manual",
+        extra={
+            "fhub_last_printer": json.dumps("Adversarial Voron"),
+            "fhub_last_gate": json.dumps(2),
+        },
+    )
+    ambiguous_b = UserSpool(
+        user_id=owner.id,
+        initial_weight_g=1000,
+        used_weight_g=0,
+        state=UserSpoolState.shelf,
+        source="manual",
+        extra={
+            "fhub_last_printer": json.dumps("Adversarial Voron"),
+            "fhub_last_gate": json.dumps(2),
+        },
+    )
+    foreign_spool = UserSpool(
+        user_id=foreign.id,
+        initial_weight_g=1000,
+        used_weight_g=0,
+        state=UserSpoolState.shelf,
+        source="manual",
+    )
+    db_session.add_all([duplicated, ambiguous_a, ambiguous_b, foreign_spool])
+    await db_session.commit()
+    for spool in (duplicated, ambiguous_a, ambiguous_b, foreign_spool):
+        await db_session.refresh(spool)
+
+    issued = await client.post(
+        "/api/v1/auth/plugin-session", json={}, headers=owner_headers
+    )
+    plugin_headers = {"Authorization": f"Bearer {issued.json()['plugin_token']}"}
+    context = await client.get(
+        "/api/v1/orcaslicer/preset-slot-sync/plugin-context",
+        params={"source_instance_id": source_instance_id},
+        headers=plugin_headers,
+    )
+    system_id = context.json()["printers"][0]["material_systems"][0]["id"]
+    payload = {
+        "source_instance_id": source_instance_id,
+        "connection_ref": connection_ref,
+        "physical_printer_id": printer_id,
+        "material_system_id": system_id,
+        "gate_count": 4,
+        "spool_ids_known": True,
+        "gates": [
+            {"gate": 0, "status": 1, "spool_id": duplicated.id},
+            {"gate": 1, "status": 1, "spool_id": duplicated.id},
+            {"gate": 2, "status": 1, "spool_id": None},
+            {"gate": 3, "status": 1, "spool_id": foreign_spool.id},
+        ],
+    }
+
+    wrong_binding = await client.post(
+        "/api/v1/orcaslicer/preset-slot-sync/hh/reconciliation/preview",
+        json={**payload, "connection_ref": "different-local-connection"},
+        headers=plugin_headers,
+    )
+    assert wrong_binding.status_code == 403
+    assert wrong_binding.json()["detail"]["code"] == "ERR_DEVICE_NOT_OWNER"
+
+    preview = await client.post(
+        "/api/v1/orcaslicer/preset-slot-sync/hh/reconciliation/preview",
+        json=payload,
+        headers=plugin_headers,
+    )
+    assert preview.status_code == 200
+    assert preview.json()["import_changes"] == []
+    assert preview.json()["unresolved"] == [
+        {"gate": 0, "reason": "duplicate_spool"},
+        {"gate": 1, "reason": "duplicate_spool"},
+        {"gate": 2, "reason": "ambiguous_last_known"},
+        {"gate": 3, "reason": "spool_unavailable"},
+    ]
