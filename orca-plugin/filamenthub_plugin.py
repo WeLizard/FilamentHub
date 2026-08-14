@@ -1025,6 +1025,130 @@ def managed_preset_id(json_path, profile):
     return preset_id_from_info_file(json_path[:-len(".json")] + ".info")
 
 
+def _managed_info_claim(path):
+    """Return (is_filamenthub_owned, preset_id) for one Orca .info file."""
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            content = fh.read()
+    except OSError:
+        return False, None
+    for line in content.splitlines():
+        key, separator, value = line.partition("=")
+        if not separator or key.strip() != "sync_info":
+            continue
+        value = value.strip()
+        claimed = (
+            value.startswith("filamenthub:preset:")
+            or value.startswith("fhub:") and value.endswith(":filamenthub")
+        )
+        return claimed, preset_id_from_sync_info(value)
+    return False, None
+
+
+def scan_managed_preset_artifacts(folder):
+    """Inventory every strongly marked FilamentHub material artifact.
+
+    Unlike ``scan_local_fh_presets``, this also sees orphan ``.info`` markers,
+    malformed managed JSON and conflicting markers. Those cannot be used as a
+    sync source, but they are still safe to remove from Orca's live bundle.
+    """
+    try:
+        names = os.listdir(folder)
+    except OSError:
+        return []
+    stems = {
+        name[:-len(extension)]
+        for name in names
+        for extension in (".json", ".info")
+        if name.endswith(extension)
+    }
+    artifacts = []
+    for stem in sorted(stems, key=str.casefold):
+        json_path = os.path.join(folder, stem + ".json")
+        info_path = os.path.join(folder, stem + ".info")
+        profile = None
+        bundle_claimed = False
+        bundle_id = None
+        if os.path.isfile(json_path):
+            try:
+                with open(json_path, "r", encoding="utf-8") as fh:
+                    decoded = json.load(fh)
+                if isinstance(decoded, dict):
+                    profile = decoded
+                    bundle_value = decoded.get("bundle_id")
+                    bundle_claimed = (
+                        isinstance(bundle_value, str)
+                        and bundle_value.startswith("filamenthub:")
+                    )
+                    bundle_id = preset_id_from_bundle(bundle_value)
+            except (OSError, ValueError):
+                pass
+        info_claimed, info_id = _managed_info_claim(info_path)
+        claimed_ids = {value for value in (bundle_id, info_id) if value is not None}
+        managed = bundle_claimed or info_claimed
+        if not managed:
+            continue
+        markers_valid = (
+            (not bundle_claimed or bundle_id is not None)
+            and (not info_claimed or info_id is not None)
+        )
+        preset_id = next(iter(claimed_ids)) if len(claimed_ids) == 1 else None
+        artifacts.append({
+            "json_path": json_path if os.path.isfile(json_path) else None,
+            "info_path": info_path if os.path.isfile(info_path) else None,
+            "profile": profile,
+            "preset_id": preset_id,
+            "claimed_ids": claimed_ids,
+            "healthy": (
+                profile is not None
+                and preset_id is not None
+                and len(claimed_ids) == 1
+                and markers_valid
+            ),
+        })
+    return artifacts
+
+
+def managed_preset_quarantine_dir():
+    return os.path.join(
+        os.path.dirname(profile_identity_registry_path()),
+        "removed-presets",
+    )
+
+
+def _quarantine_managed_preset_artifact(artifact, reason):
+    paths = [
+        path for path in (artifact.get("json_path"), artifact.get("info_path"))
+        if path and os.path.isfile(path)
+    ]
+    if not paths:
+        return False
+    batch = os.path.join(
+        managed_preset_quarantine_dir(),
+        "%s-%s-%s" % (
+            time.strftime("%Y%m%d-%H%M%S"),
+            safe_filename(reason),
+            secrets.token_hex(4),
+        ),
+    )
+    try:
+        os.makedirs(batch, mode=0o700, exist_ok=False)
+    except OSError as exc:
+        fh_log("managed preset quarantine unavailable: %r" % exc)
+        return False
+    moved = 0
+    for source in paths:
+        try:
+            os.replace(source, os.path.join(batch, os.path.basename(source)))
+        except OSError as exc:
+            fh_log("managed preset quarantine move failed: %r" % exc)
+        else:
+            moved += 1
+    if moved:
+        fh_log("managed preset quarantined: reason=%s files=%d" % (reason, moved))
+    return bool(moved)
+
+
 def validate_filament_profile(profile):
     if not isinstance(profile, dict):
         raise ValueError("Preset export must be a JSON object")
@@ -1096,33 +1220,47 @@ def apply_managed_filename_identity(profile, path):
 
 
 def remove_stale_preset_files(folder, preset_id, keep_path):
-    """Delete other files carrying this preset's managed identity — the old
+    """Move aside other files carrying this preset's managed identity — the old
     `__fh_<id>`-suffixed naming and leftovers from a rename on FilamentHub —
     so one preset never shows up twice in the dropdown. Touches only files
-    whose bundle_id or .info sync marker we own."""
-    try:
-        names = os.listdir(folder)
-    except OSError:
-        return
+    whose bundle_id or .info sync marker we own. Quarantine keeps cleanup
+    recoverable without leaving the broken copy in Orca's live preset folder."""
     keep = os.path.normcase(os.path.abspath(keep_path))
-    for fn in names:
-        if not fn.endswith(".json"):
+    removed = 0
+    for artifact in scan_managed_preset_artifacts(folder):
+        path = artifact.get("json_path")
+        if path and os.path.normcase(os.path.abspath(path)) == keep:
             continue
-        path = os.path.join(folder, fn)
-        if os.path.normcase(os.path.abspath(path)) == keep:
+        if (
+            artifact.get("preset_id") != int(preset_id)
+            and int(preset_id) not in artifact.get("claimed_ids", set())
+        ):
             continue
-        try:
-            with open(path, "r", encoding="utf-8") as fh:
-                profile = json.load(fh)
-        except (OSError, ValueError):
+        if _quarantine_managed_preset_artifact(artifact, "duplicate-%d" % int(preset_id)):
+            removed += 1
+    return removed
+
+
+def quarantine_unwanted_managed_preset_files(folder, remote_ids):
+    """Remove FilamentHub-owned artifacts absent from authoritative desired state.
+
+    State-cache membership is deliberately irrelevant: old plugin versions and
+    interrupted writes can lose that cache while leaving durable ownership in
+    ``bundle_id`` or ``sync_info``. Unmarked files are never touched.
+    """
+    wanted = {int(value) for value in remote_ids}
+    removed = 0
+    removed_ids = set()
+    for artifact in scan_managed_preset_artifacts(folder):
+        preset_id = artifact.get("preset_id")
+        if artifact.get("healthy") and preset_id in wanted:
             continue
-        if not isinstance(profile, dict) or managed_preset_id(path, profile) != int(preset_id):
-            continue
-        for stale in (path, path[:-len(".json")] + ".info"):
-            try:
-                os.remove(stale)
-            except OSError:
-                pass
+        reason = "invalid-managed" if preset_id is None else "not-in-profile-%d" % preset_id
+        if _quarantine_managed_preset_artifact(artifact, reason):
+            removed += 1
+            if preset_id is not None:
+                removed_ids.add(preset_id)
+    return removed, removed_ids
 
 
 def _managed_profile_id_from_info(path, kind):
@@ -2903,24 +3041,18 @@ def scan_local_fh_presets(folder):
     # drops unknown JSON headers when the user saves a preset, so the persistent
     # .info sync_info marker is the fallback identity after bundle_id disappears.
     out = {}
-    try:
-        names = os.listdir(folder)
-    except OSError:
-        return out
-    for fn in names:
-        if not fn.endswith(".json"):
+    for artifact in scan_managed_preset_artifacts(folder):
+        if not artifact.get("healthy"):
             continue
-        path = os.path.join(folder, fn)
-        try:
-            with open(path, "r", encoding="utf-8") as fh:
-                profile = json.load(fh)
-        except (OSError, ValueError):
-            continue
-        if not isinstance(profile, dict):
-            continue
-        pid = managed_preset_id(path, profile)
-        if pid is not None:
-            out[pid] = {"path": path, "profile": profile, "hash": preset_content_hash(profile)}
+        pid = artifact["preset_id"]
+        path = artifact["json_path"]
+        profile = artifact["profile"]
+        if pid not in out:
+            out[pid] = {
+                "path": path,
+                "profile": profile,
+                "hash": preset_content_hash(profile),
+            }
     return out
 
 
@@ -6680,6 +6812,7 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
                     res = self._push_one(pid, token, local_entry, rp)
                     if res:
                         state[str(pid)] = res
+                        remove_stale_preset_files(folder, pid, local_entry["path"])
                         pushed += 1
                     else:
                         failed += 1
@@ -6693,16 +6826,13 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
                 res = self._push_one(pid, token, local_entry, rp)
                 if res:
                     state[str(pid)] = res
+                    remove_stale_preset_files(folder, pid, local_entry["path"])
                     pushed += 1
                 else:
                     failed += 1
             elif remote_newer:
                 # Replace only the managed file. Stock OrcaSlicer discovers the
                 # new content on restart until an upstream reload API is available.
-                try:
-                    os.remove(local_entry["path"])
-                except OSError:
-                    pass
                 res = self._pull_one(pid, token, known_presets, folder, rp)
                 if res:
                     state[str(pid)] = res
@@ -6719,30 +6849,32 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
                 if os.path.normcase(os.path.abspath(canonical)) != os.path.normcase(os.path.abspath(local_entry["path"])):
                     try:
                         os.replace(local_entry["path"], canonical)
-                        info_old = local_entry["path"][:-len(".json")] + ".info"
-                        if os.path.exists(info_old):
-                            os.replace(info_old, canonical[:-len(".json")] + ".info")
                     except OSError:
                         pass
                     else:
+                        local_entry["path"] = canonical
+                        try:
+                            write_bytes_atomic(
+                                canonical[:-len(".json")] + ".info",
+                                managed_info_bytes(pid),
+                            )
+                        except OSError:
+                            pass
                         renamed += 1
+                remove_stale_preset_files(folder, pid, local_entry["path"])
                 skipped += 1
 
-        # Removal sync: a preset that was synced before but is no longer in the
-        # FilamentHub profile (unsubscribed / deleted there) is removed from the
-        # local bundle — the plugin only ever deletes its own managed files.
+        # Desired-state cleanup: every durable FilamentHub marker belongs to this
+        # managed bundle. State-cache loss must not make unsubscribed, duplicate,
+        # orphaned or malformed managed artifacts immortal. Move them out of the
+        # live Orca bundle while preserving them in a private quarantine.
         remote_ids = {rp.get("id") for rp in remote_items if isinstance(rp.get("id"), int)}
-        removed = 0
-        for pid, entry in list(local.items()):
-            if pid in remote_ids or str(pid) not in state:
-                continue
-            for path in (entry["path"], entry["path"][:-len(".json")] + ".info"):
-                try:
-                    os.remove(path)
-                except OSError:
-                    pass
-            state.pop(str(pid), None)
-            removed += 1
+        removed, _removed_ids = quarantine_unwanted_managed_preset_files(
+            folder, remote_ids
+        )
+        for key in list(state):
+            if key.isdigit() and int(key) not in remote_ids:
+                state.pop(key, None)
 
         profile_parts = []
         for kind in PROFILE_KINDS:

@@ -439,16 +439,211 @@ def test_push_preserves_legacy_remote_name_and_canonical_parent(
     assert result["updated_at"] == "2026-08-01"
 
 
-def test_stale_preset_files_are_removed_after_rename(plugin_module, tmp_path):
-    (tmp_path / "Old Name__fh_10.json").write_text(
+def test_stale_preset_files_are_removed_after_rename(
+    plugin_module, monkeypatch, tmp_path
+):
+    live = tmp_path / "live"
+    live.mkdir()
+    private = tmp_path / "private"
+    monkeypatch.setattr(
+        plugin_module,
+        "profile_identity_registry_path",
+        lambda: str(private / "profile_identity.json"),
+    )
+    (live / "Old Name__fh_10.json").write_text(
         json.dumps({"bundle_id": "filamenthub:10"}), encoding="utf-8"
     )
-    (tmp_path / "Old Name__fh_10.info").write_text("meta", encoding="utf-8")
-    keep = plugin_module.preset_file_path(str(tmp_path), "New Name", 10)
+    (live / "Old Name__fh_10.info").write_text(
+        "sync_info = filamenthub:preset:10\n", encoding="utf-8"
+    )
+    keep = plugin_module.preset_file_path(str(live), "New Name", 10)
     plugin_module.write_json_atomic(keep, {"bundle_id": "filamenthub:10", "name": "New Name"})
-    plugin_module.remove_stale_preset_files(str(tmp_path), 10, keep)
-    remaining = sorted(p.name for p in tmp_path.iterdir())
+    plugin_module.remove_stale_preset_files(str(live), 10, keep)
+    remaining = sorted(p.name for p in live.iterdir())
     assert remaining == ["New Name.json"]
+    quarantined = sorted(p.name for p in private.rglob("*.*"))
+    assert quarantined == ["Old Name__fh_10.info", "Old Name__fh_10.json"]
+
+
+def test_desired_state_cleanup_quarantines_stale_orphan_and_invalid_managed_files(
+    plugin_module, monkeypatch, tmp_path
+):
+    live = tmp_path / "live"
+    live.mkdir()
+    private = tmp_path / "private"
+    monkeypatch.setattr(
+        plugin_module,
+        "profile_identity_registry_path",
+        lambda: str(private / "profile_identity.json"),
+    )
+
+    (live / "Current.json").write_text(
+        json.dumps({"name": "Current", "bundle_id": "filamenthub:10"}),
+        encoding="utf-8",
+    )
+    (live / "Current.info").write_text(
+        "sync_info = filamenthub:preset:10\n", encoding="utf-8"
+    )
+    (live / "Stale.json").write_text(
+        json.dumps({"name": "Stale", "bundle_id": "filamenthub:20"}),
+        encoding="utf-8",
+    )
+    (live / "Orphan.info").write_text(
+        "sync_info = filamenthub:preset:30\n", encoding="utf-8"
+    )
+    (live / "Broken current.info").write_text(
+        "sync_info = filamenthub:preset:10\n", encoding="utf-8"
+    )
+    (live / "Broken.json").write_text(
+        json.dumps({"name": "Broken", "bundle_id": "filamenthub:not-an-id"}),
+        encoding="utf-8",
+    )
+    (live / "My local profile.json").write_text(
+        json.dumps({"name": "My local profile"}), encoding="utf-8"
+    )
+
+    removed, removed_ids = plugin_module.quarantine_unwanted_managed_preset_files(
+        str(live), {10}
+    )
+
+    assert removed == 4
+    assert removed_ids == {10, 20, 30}
+    assert sorted(path.name for path in live.iterdir()) == [
+        "Current.info",
+        "Current.json",
+        "My local profile.json",
+    ]
+    assert sorted(path.name for path in private.rglob("*.*")) == [
+        "Broken current.info",
+        "Broken.json",
+        "Orphan.info",
+        "Stale.json",
+    ]
+
+
+def test_sync_cleanup_does_not_require_a_surviving_state_record(
+    plugin_module, monkeypatch, tmp_path
+):
+    live = tmp_path / "live"
+    live.mkdir()
+    private = tmp_path / "private"
+    monkeypatch.setattr(plugin_module, "user_filament_dir", lambda: str(live))
+    monkeypatch.setattr(plugin_module, "ensure_bundle_metadata", lambda: None)
+    monkeypatch.setattr(
+        plugin_module,
+        "profile_identity_registry_path",
+        lambda: str(private / "profile_identity.json"),
+    )
+
+    current = {"name": "Current", "bundle_id": "filamenthub:10"}
+    current_path = live / "Current.json"
+    current_path.write_text(json.dumps(current), encoding="utf-8")
+    stale_path = live / "Stale.json"
+    stale_path.write_text(
+        json.dumps({"name": "Stale", "bundle_id": "filamenthub:20"}),
+        encoding="utf-8",
+    )
+    state = {
+        "10": {
+            "updated_at": "2026-08-01",
+            "hash": plugin_module.preset_content_hash(current),
+            "name": "Current",
+        }
+    }
+    monkeypatch.setattr(plugin_module, "load_sync_state", lambda: state)
+    monkeypatch.setattr(plugin_module, "save_sync_state", lambda value: None)
+    monkeypatch.setattr(
+        plugin_module,
+        "http_get",
+        lambda path, **kwargs: (
+            200,
+            json.dumps({
+                "items": [{
+                    "id": 10,
+                    "name": "Current",
+                    "updated_at": "2026-08-01",
+                }]
+            }).encode("utf-8"),
+        ),
+    )
+    monkeypatch.setattr(
+        plugin_module,
+        "_sync_preferences",
+        lambda token: {
+            "auto_import_local_presets": False,
+            "sync_printer_endpoints": False,
+        },
+    )
+    monkeypatch.setattr(plugin_module, "push_user_profiles", lambda *args, **kwargs: (0, 0))
+    monkeypatch.setattr(
+        plugin_module, "send_printer_observations", lambda *args, **kwargs: (None, {})
+    )
+    monkeypatch.setattr(plugin_module, "sync_happy_hare_topologies", lambda *args: None)
+
+    plugin_module.FilamentHubCatalog()._do_sync(
+        "token", set(), announce=False, source_instance_id="fixture"
+    )
+
+    assert current_path.exists()
+    assert not stale_path.exists()
+    assert "10" in state
+    assert "20" not in state
+    assert [path.name for path in private.rglob("*.json")] == ["Stale.json"]
+
+
+def test_failed_remote_update_keeps_last_valid_local_profile(
+    plugin_module, monkeypatch, tmp_path
+):
+    live = tmp_path / "live"
+    live.mkdir()
+    current = {"name": "Current", "bundle_id": "filamenthub:10"}
+    current_path = live / "Current.json"
+    current_path.write_text(json.dumps(current), encoding="utf-8")
+    state = {
+        "10": {
+            "updated_at": "2026-08-01",
+            "hash": plugin_module.preset_content_hash(current),
+            "name": "Current",
+        }
+    }
+    monkeypatch.setattr(plugin_module, "user_filament_dir", lambda: str(live))
+    monkeypatch.setattr(plugin_module, "ensure_bundle_metadata", lambda: None)
+    monkeypatch.setattr(plugin_module, "load_sync_state", lambda: state)
+    monkeypatch.setattr(plugin_module, "save_sync_state", lambda value: None)
+    monkeypatch.setattr(
+        plugin_module,
+        "http_get",
+        lambda path, **kwargs: (
+            200,
+            json.dumps({
+                "items": [{
+                    "id": 10,
+                    "name": "Current",
+                    "updated_at": "2026-08-02",
+                }]
+            }).encode("utf-8"),
+        ),
+    )
+    monkeypatch.setattr(
+        plugin_module,
+        "_sync_preferences",
+        lambda token: {
+            "auto_import_local_presets": False,
+            "sync_printer_endpoints": False,
+        },
+    )
+    monkeypatch.setattr(plugin_module, "push_user_profiles", lambda *args, **kwargs: (0, 0))
+    monkeypatch.setattr(
+        plugin_module, "send_printer_observations", lambda *args, **kwargs: (None, {})
+    )
+    monkeypatch.setattr(plugin_module, "sync_happy_hare_topologies", lambda *args: None)
+    catalog = plugin_module.FilamentHubCatalog()
+    monkeypatch.setattr(catalog, "_pull_one", lambda *args, **kwargs: None)
+
+    catalog._do_sync("token", set(), announce=False, source_instance_id="fixture")
+
+    assert current_path.exists()
+    assert json.loads(current_path.read_text(encoding="utf-8")) == current
 
 
 def test_explicit_printer_bundle_install_creates_only_managed_profiles(
