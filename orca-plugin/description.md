@@ -12,6 +12,7 @@ Find a filament by brand, material, or printer, import its preset into OrcaSlice
 - **Use the printer you already selected.** FilamentHub carries the active OrcaSlicer printer into the catalog, so you do not have to select the same machine again.
 - **Work with real spools and print costs.** Open your FilamentHub spool inventory and use a completed slice in the print-cost calculator without uploading the same G-code manually.
 - **Restore managed printer profiles when you need them.** A printer card can restore its FilamentHub-managed machine and process profiles through an explicit action.
+- **Reconcile Happy Hare locally.** Check the real gate map through OrcaSlicer, compare it with FilamentHub, and explicitly choose whether to accept the printer assignments or apply the saved map. Unknown and conflicting spools are left untouched.
 
 ![Saved filament presets and sync status in the FilamentHub profile](https://api.orcaslicer.com/api/v1/bundles/media/331b59c4-860d-4536-aba7-a7d7d819f704/content)
 
@@ -24,7 +25,8 @@ Find a filament by brand, material, or printer, import its preset into OrcaSlice
 - Only the presets you explicitly enable are synchronized.
 - Local edits take priority over remote updates and are never silently overwritten.
 - FilamentHub only removes local preset copies that it manages after you unsubscribe; unmanaged OrcaSlicer profiles are left untouched.
-- Automatic printer and process-profile reporting is one-way. Managed copies are restored only when you request them.
+- Automatic printer and process-profile reporting is one-way. Managed profile restoration and Happy Hare assignment changes happen only after an explicit action.
+- Happy Hare is reached by the plugin on your local network; the FilamentHub website never opens a connection into your LAN.
 - Printer host passwords and API keys never leave your computer.
 
 Your FilamentHub sign-in survives OrcaSlicer restarts, and the plugin toolbar shows the current preset and synchronization status.

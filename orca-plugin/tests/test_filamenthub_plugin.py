@@ -1763,6 +1763,21 @@ def test_dev_build_is_single_file_with_localhost_and_embedded_locales(plugin_mod
     ).strip() == "Синхронизация завершена: актуальны: 4."
 
 
+def test_combined_build_keeps_dev_and_prod_in_parity(plugin_module, tmp_path):
+    builder = _load_module(BUILD_PATH, "filamenthub_combined_build_package_test")
+
+    package_dir, dev_plugin = builder.build_all(tmp_path, wheel=False)
+    prod_source = (package_dir / "filamenthub_plugin.py").read_text(encoding="utf-8")
+    dev_source = dev_plugin.read_text(encoding="utf-8")
+
+    assert package_dir.name == f"filamenthub-{plugin_module.PLUGIN_VERSION}"
+    assert dev_plugin.parent.name == f"filamenthub-{plugin_module.PLUGIN_VERSION}-dev"
+    assert (
+        dev_source.replace(builder.DEV_SITE_DEFAULT, builder.PROD_SITE_DEFAULT)
+        == prod_source
+    )
+
+
 def _isolate_profile_identity(plugin_module, monkeypatch, tmp_path):
     monkeypatch.setattr(
         plugin_module,

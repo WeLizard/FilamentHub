@@ -142,7 +142,7 @@ printer commands.
 # name = "FilamentHub"
 # description = "Browse and sync community-rated filament profiles from FilamentHub, with spool inventory and print-cost tools."
 # author = "FilamentHub"
-# version = "0.1.0"
+# version = "0.1.1"
 # network = ["filamenthub.ru", "*.filamenthub.ru"]   # proposed; ignored by current host
 # ///
 ```
@@ -180,7 +180,8 @@ include the FilamentHub preset id to avoid collisions.
 
 The Orca package is intentionally a single `.py` file. The reproducible build
 validates Python syntax and PEP 723 metadata, checks that metadata/runtime
-versions agree, and writes a SHA-256 checksum:
+versions agree, stages matching production and localhost-development copies,
+and writes a SHA-256 checksum:
 
 ```powershell
 python orca-plugin/build_package.py
@@ -190,20 +191,25 @@ python -m pytest orca-plugin/tests -q
 Output:
 
 ```text
-orca-plugin/dist/filamenthub-0.1.0/
+orca-plugin/dist/filamenthub-0.1.1/
   filamenthub_plugin.py       # install this file
   package-metadata.json       # build provenance
   SHA256SUMS                  # integrity check
+orca-plugin/dist/filamenthub-0.1.1-dev/
+  filamenthub_plugin.py       # localhost development copy
+orca-plugin/dist/wheels/
+  filamenthub-0.1.1-py3-none-any.whl
 ```
 
-For local development against `http://localhost:3000`, stage a translation-
-complete single-file plugin without building a wheel:
+The legacy `--dev-source` flag remains a compatibility alias. It still stages
+both copies so a development build can never silently drift from the release
+source. Add `--no-wheel` when only the two single-file artifacts are needed:
 
 ```powershell
-python orca-plugin/build_package.py --dev-source
+python orca-plugin/build_package.py --dev-source --no-wheel
 ```
 
-Install `orca-plugin/dist/filamenthub-0.1.0-dev/filamenthub_plugin.py` in the
+Install `orca-plugin/dist/filamenthub-0.1.1-dev/filamenthub_plugin.py` in the
 isolated OrcaSlicer data directory. It keeps the localhost default and embeds
 the same locale catalogs as the release package.
 

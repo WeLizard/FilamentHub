@@ -218,6 +218,21 @@ def build(output_root: Path, wheel: bool = True) -> Path:
     return package_dir
 
 
+def build_all(output_root: Path, wheel: bool = True) -> tuple[Path, Path]:
+    """Stage production and development artifacts from the same source revision."""
+    package_dir = build(output_root, wheel=wheel)
+    dev_path = build_dev(output_root)
+
+    prod_source_text = (package_dir / "filamenthub_plugin.py").read_text(
+        encoding="utf-8"
+    )
+    dev_source_text = dev_path.read_text(encoding="utf-8")
+    normalized_dev = dev_source_text.replace(DEV_SITE_DEFAULT, PROD_SITE_DEFAULT)
+    if normalized_dev != prod_source_text:
+        raise ValueError("dev and prod plugin artifacts diverged beyond the site URL")
+    return package_dir, dev_path
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Build the FilamentHub OrcaSlicer plugin package")
     parser.add_argument(
@@ -234,15 +249,18 @@ def main() -> int:
     parser.add_argument(
         "--dev-source",
         action="store_true",
-        help="Stage one localhost-default .py with all locale catalogs embedded",
+        help=(
+            "Compatibility alias: stage the matching dev and prod artifacts "
+            "from one source revision"
+        ),
     )
     args = parser.parse_args()
-    if args.dev_source:
-        dev_path = build_dev(args.output.resolve())
-        print(dev_path)
-        return 0
-    package_dir = build(args.output.resolve(), wheel=not args.no_wheel)
+    package_dir, dev_path = build_all(
+        args.output.resolve(),
+        wheel=not args.no_wheel,
+    )
     print(package_dir)
+    print(dev_path)
     return 0
 
 
