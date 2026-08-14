@@ -31,8 +31,8 @@ from app.models.wiki_revision import (
 from app.models.wiki_space import WikiSpace
 from app.schemas.wiki_authoring import (
     WikiArticleDraftCreate,
-    WikiMediaUploadResponse,
     WikiMediaAssetResponse,
+    WikiMediaUploadResponse,
     WikiModerationDecision,
     WikiPublicRevisionListResponse,
     WikiPublicRevisionResponse,
