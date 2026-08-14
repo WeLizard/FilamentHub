@@ -479,8 +479,9 @@ def ensure_bundle_metadata():
 def resolve_plugin_dir():
     """The plugin's install dir (orca_plugins/<name>), stable across package
     formats. A wheel runs from __whl_extracted__/<pkg>/ INSIDE the install dir
-    and that cache is wiped on update — sidecar state (.auth.json, .fh_sync.json,
-    the icon) must live in the install dir, not wherever __file__ happens to be."""
+    and that cache is wiped on update.  This path is used to find legacy state;
+    configure_plugin_storage() moves mutable files outside the replaceable
+    install directory before normal plugin work starts."""
     here = os.path.dirname(os.path.abspath(__file__)).replace("\\", "/")
     parts = here.split("/")
     if "__whl_extracted__" in parts:
@@ -512,27 +513,54 @@ def ensure_icon():
     return target if os.path.isfile(target) else ""
 
 
-def configure_plugin_storage():
-    """Use Orca's private plugin storage when the host exposes it.
+def fallback_plugin_storage_dir():
+    """Stable data root for hosts that do not expose private plugin storage.
 
-    Existing sidecar state is copied once and retained as a rollback fallback.
-    The API is called from register_capabilities(), where Orca can attribute the
-    request to the plugin; importing this module must stay host-version agnostic.
+    Orca replaces ``orca_plugins/<plugin>`` during an update, so mutable state
+    must not remain inside that install directory.  Current plugin-capable
+    builds keep it directly below the Orca data root instead.  An unfamiliar
+    layout deliberately has no fallback: writing outside a known data root
+    would be a worse failure than asking the user to reconnect.
+    """
+    plugins_root = os.path.dirname(os.path.abspath(PLUGIN_DIR))
+    if os.path.basename(plugins_root).lower() != "orca_plugins":
+        return ""
+    data_root = os.path.dirname(plugins_root)
+    return os.path.join(data_root, ".filamenthub", "orca-plugin")
+
+
+def configure_plugin_storage():
+    """Use durable private storage without depending on a particular host API.
+
+    New hosts may expose ``orca.host.plugin.storage()``.  The current public
+    plugin host does not, so it falls back to a stable directory outside the
+    replaceable plugin package.  Existing sidecar state is copied once and
+    retained as a rollback fallback.
     """
     global PLUGIN_STORAGE_DIR
     global SYNC_LOG_FILE, AUTH_FILE, BAMBU_CONFIG_FILE, IMPORTED_DRAFTS_FILE, SYNC_STATE_FILE
     global _SLICE_INDEX_FILE, _SLICE_CACHE_DIR
 
+    fallback_root = fallback_plugin_storage_dir()
+    target_root = ""
     plugin_host = getattr(getattr(orca, "host", None), "plugin", None)
     storage = getattr(plugin_host, "storage", None)
-    if not callable(storage):
+    if callable(storage):
+        try:
+            target_root = os.path.abspath(storage())
+        except (OSError, RuntimeError, TypeError, ValueError):
+            target_root = ""
+    if not target_root:
+        target_root = fallback_root
+    if not target_root:
         return False
     try:
-        target_root = os.path.abspath(storage())
-        if not target_root:
-            return False
-        os.makedirs(target_root, exist_ok=True)
-    except (OSError, RuntimeError, TypeError, ValueError):
+        os.makedirs(target_root, mode=0o700, exist_ok=True)
+        try:
+            os.chmod(target_root, 0o700)
+        except OSError:
+            pass
+    except OSError:
         return False
 
     file_names = (
@@ -543,22 +571,35 @@ def configure_plugin_storage():
         ".fh_slices.json",
         ".fh_bambu.json",
     )
+    source_roots = []
+    for candidate in (fallback_root, PLUGIN_DIR):
+        if candidate and os.path.abspath(candidate) != os.path.abspath(target_root):
+            source_roots.append(candidate)
     for name in file_names:
-        source = os.path.join(PLUGIN_DIR, name)
         target = os.path.join(target_root, name)
-        if source != target and os.path.isfile(source) and not os.path.exists(target):
+        if os.path.exists(target):
+            continue
+        for source_root in source_roots:
+            source = os.path.join(source_root, name)
+            if not os.path.isfile(source):
+                continue
             try:
                 shutil.copy2(source, target)
             except OSError:
                 pass
+            break
 
-    legacy_cache = os.path.join(PLUGIN_DIR, "slices")
     target_cache = os.path.join(target_root, "slices")
-    if legacy_cache != target_cache and os.path.isdir(legacy_cache) and not os.path.exists(target_cache):
-        try:
-            shutil.copytree(legacy_cache, target_cache)
-        except OSError:
-            pass
+    if not os.path.exists(target_cache):
+        for source_root in source_roots:
+            legacy_cache = os.path.join(source_root, "slices")
+            if not os.path.isdir(legacy_cache):
+                continue
+            try:
+                shutil.copytree(legacy_cache, target_cache)
+            except OSError:
+                pass
+            break
 
     PLUGIN_STORAGE_DIR = target_root
     SYNC_LOG_FILE = os.path.join(target_root, ".fh_sync.log")
@@ -618,10 +659,9 @@ def read_sync_log():
         return ""
 
 
-# Session tokens live next to the plugin (inside data_dir, the allowed write
-# root) so signing in survives window/OrcaSlicer restarts — the iframe's own
-# storage is partitioned and dies with the window. Same role as the fork's
-# AppConfig token storage.
+# These are import-time legacy locations. configure_plugin_storage() redirects
+# them to durable private storage during capability registration. The iframe's
+# own storage is partitioned and dies with the window.
 AUTH_FILE = os.path.join(PLUGIN_DIR, ".auth.json")
 BAMBU_CONFIG_FILE = os.path.join(PLUGIN_DIR, ".fh_bambu.json")
 
@@ -2017,7 +2057,7 @@ def _filamenthub_json_get(path, token):
     return status, decoded
 
 
-def _happy_hare_server_inventory(token):
+def _plugin_material_server_inventory(token):
     source_instance_id = plugin_source_instance_id()
     status, context = _filamenthub_json_get(
         "/orcaslicer/preset-slot-sync/plugin-context?source_instance_id="
@@ -2042,6 +2082,10 @@ def _happy_hare_server_inventory(token):
             item for item in context["printers"] if isinstance(item, dict)
         ],
     }, None
+
+
+# Compatibility name for the existing Happy Hare reconciliation path.
+_happy_hare_server_inventory = _plugin_material_server_inventory
 
 
 def resolve_happy_hare_connection(
@@ -2488,6 +2532,115 @@ def preset_config_dict(preset, include_metadata=False):
     return settings
 
 
+def _loaded_preset_metadata(collection, preset, local_profile):
+    """Read identity metadata along the inheritance chain Orca actually loaded.
+
+    ``Preset.filament_id`` and ``Preset.setting_id`` exist in Orca's C++ model,
+    but the current Python host binding exposes neither property.  The host does
+    expose the loaded preset's backing file and ``find_preset``; use only those
+    host-selected files for metadata while keeping all resolved print settings
+    on the public ``config_value`` API.
+    """
+    metadata = {}
+    current = preset
+    first_profile = local_profile if isinstance(local_profile, dict) else None
+    visited = set()
+    for _depth in range(16):
+        name = str(getattr(current, "name", "") or "").strip()
+        if not name or name in visited:
+            break
+        visited.add(name)
+        raw = first_profile
+        first_profile = None
+        if raw is None:
+            path = str(getattr(current, "file", "") or "").strip()
+            if not path or not path.lower().endswith(".json"):
+                break
+            try:
+                if os.path.getsize(path) > 2 * 1024 * 1024:
+                    break
+                with open(path, "r", encoding="utf-8") as fh:
+                    candidate = json.load(fh)
+                raw = candidate if isinstance(candidate, dict) else None
+            except (OSError, ValueError):
+                break
+        if not isinstance(raw, dict):
+            break
+        for key in ("setting_id", "filament_id"):
+            value = raw.get(key)
+            if key not in metadata and isinstance(value, str) and value.strip():
+                metadata[key] = value.strip()
+        if "filament_id" in metadata:
+            break
+        parent_name = _parent_name(raw)
+        if not parent_name:
+            break
+        try:
+            current = collection.find_preset(parent_name)
+        except Exception:
+            break
+        if current is None:
+            break
+    return metadata
+
+
+def scan_managed_host_filaments():
+    """Resolved managed material presets currently loaded by Orca.
+
+    Bambu needs the provider family ``filament_id`` as well as the exact
+    ``setting_id``. Those values are inheritance results owned by Orca, so a
+    server export or a raw JSON file is not an honest substitute for the host's
+    loaded Preset object.
+    """
+    local_entries = scan_local_fh_presets(user_filament_dir())
+    local_names = {}
+    for preset_id, entry in local_entries.items():
+        path = entry.get("path") or ""
+        if path:
+            local_names[os.path.basename(path)[:-len(".json")]] = preset_id
+        profile_name = str((entry.get("profile") or {}).get("name") or "").strip()
+        if profile_name:
+            local_names[profile_name] = preset_id
+
+    resolved = {}
+    try:
+        filaments = orca.host.preset_bundle().filaments
+        for index in range(filaments.size()):
+            preset = filaments.preset(index)
+            name = str(getattr(preset, "name", "") or "").strip()
+            preset_id = preset_id_from_bundle(
+                str(getattr(preset, "bundle_id", "") or "")
+            )
+            if preset_id is None:
+                preset_id = local_names.get(name)
+            if preset_id is None:
+                continue
+            profile = preset_config_dict(preset, include_metadata=True)
+            local_profile = (local_entries.get(preset_id) or {}).get("profile") or {}
+            for key in (
+                "filament_type",
+                "filament_colour",
+                "default_filament_colour",
+                "nozzle_temperature_range_low",
+                "nozzle_temperature_range_high",
+            ):
+                if key in profile:
+                    continue
+                try:
+                    value = preset.config_value(key)
+                except Exception:
+                    continue
+                if value is None or isinstance(value, (str, int, float, bool, list, dict)):
+                    profile[key] = value
+            metadata = _loaded_preset_metadata(filaments, preset, local_profile)
+            profile.update(metadata)
+            profile["name"] = name or str(profile.get("name") or "")
+            resolved[preset_id] = profile
+    except Exception as exc:
+        fh_log("managed material host scan failed: %s" % type(exc).__name__)
+    return resolved
+
+
 def scan_active_user_filaments():
     """The loaded account's own filament presets (UI thread — reads preset_bundle).
     Keep is_user() presets, skip system/vendor and our [fh] ones. Configuration
@@ -2556,7 +2709,7 @@ IMPORTED_DRAFTS_FILE = os.path.join(PLUGIN_DIR, ".fh_imported.json")
 
 
 def load_imported_draft_ids():
-    """Draft-ids already pushed by auto-import, kept next to the plugin so each
+    """Draft-ids already pushed by auto-import, kept in plugin storage so each
     local preset is imported once: a draft the user later deletes on the site is
     not resurrected on the next sync."""
     try:
@@ -2604,7 +2757,7 @@ def push_filament_drafts(token, candidates):
 # model: identity is the "filamenthub:<id>" bundle_id while present, with the
 # persistent .info sync_info as fallback after Orca saves the preset. The
 # FilamentHub version is preset.updated_at; a local edit is detected by a content hash. A small state
-# file next to the plugin records, per preset, the (updated_at, hash) at the last
+# private state file records, per preset, the (updated_at, hash) at the last
 # sync so we can tell "remote changed" from "edited in OrcaSlicer".
 #   * remote newer than last sync  -> pull (download + overwrite local)
 #   * local hash changed           -> push (POST to the import endpoint; the
@@ -3577,7 +3730,7 @@ function sendPluginCapabilities() {
       { source: 'filamenthub-plugin', type: 'plugin-capabilities',
         pluginVersion: '__PLUGIN_VERSION__',
         capabilities: ['printer-bundle-install', 'bambu-lan-bridge', 'profile-sync',
-                       'happy-hare-moonraker', 'open-external'] },
+                       'bambu-material-write', 'happy-hare-moonraker', 'open-external'] },
       SITE_ORIGIN);
   } catch (e) { /* iframe not ready */ }
 }
@@ -4050,6 +4203,13 @@ try {
             requestId: data.requestId || '', result: data.result || {} },
           SITE_ORIGIN);
       } catch (e) { /* iframe not ready */ }
+    } else if (data.type === 'bambu-material-result') {
+      try {
+        frame.contentWindow.postMessage(
+          { source: 'filamenthub-plugin', type: 'bambu-material-result',
+            requestId: data.requestId || '', result: data.result || {} },
+          SITE_ORIGIN);
+      } catch (e) { /* iframe not ready */ }
     } else if (data.type === 'diagnostics') {
       copyDiagnostics(data.text || '');
     }
@@ -4169,7 +4329,7 @@ def _bambu_bits(value):
 
 def _bambu_color(value):
     """tray_color is RRGGBBAA; an unset slot reports it fully transparent."""
-    text = (value or "").strip().upper()
+    text = (value or "").strip().lstrip("#").upper()
     if not re.fullmatch(r"[0-9A-F]{6}([0-9A-F]{2})?", text):
         return None
     if len(text) == 8 and text[6:] == "00":
@@ -4192,9 +4352,44 @@ def _bambu_slot(tray, index, present):
         "color_hex": _bambu_color(tray.get("tray_color")),
         "remaining_pct": _bambu_amount(tray.get("remain")),
         "remaining_g": _bambu_amount(tray.get("remain_g")),
+        "filament_id": str(tray.get("tray_info_idx") or "").strip() or None,
+        "setting_id": str(tray.get("setting_id") or "").strip() or None,
+        "nozzle_temp_min": _bambu_int(tray.get("nozzle_temp_min")),
+        "nozzle_temp_max": _bambu_int(tray.get("nozzle_temp_max")),
         # A zeroed uuid is how an empty or non-Bambu tray reports "no tag".
         "provider_uid": uid if uid.strip("0") else None,
     }
+
+
+def _bambu_slot_locator(report, provider_index):
+    feed = report.get("ams") if isinstance(report, dict) else None
+    units = feed.get("ams") if isinstance(feed, dict) else None
+    for unit in units or []:
+        if not isinstance(unit, dict):
+            continue
+        unit_id = _bambu_int(unit.get("id"))
+        if unit_id is None:
+            continue
+        for tray in unit.get("tray") or []:
+            if not isinstance(tray, dict):
+                continue
+            slot_id = _bambu_int(tray.get("id"))
+            if slot_id is None:
+                continue
+            if bambu_slot_index(unit_id, slot_id, unit.get("info")) == provider_index:
+                return {"ams_id": unit_id, "slot_id": slot_id, "tray": tray}
+
+    holders = report.get("vir_slot") if isinstance(report, dict) else None
+    if not isinstance(holders, list):
+        holder = report.get("vt_tray") if isinstance(report, dict) else None
+        holders = [holder] if isinstance(holder, dict) else []
+    for holder in holders:
+        if not isinstance(holder, dict):
+            continue
+        ams_id = _bambu_int(holder.get("id"), BAMBU_EXTERNAL_TRAY_MAIN)
+        if ams_id == provider_index:
+            return {"ams_id": ams_id, "slot_id": 0, "tray": holder}
+    return None
 
 
 def _bambu_external_slots(report):
@@ -4466,6 +4661,208 @@ def read_bambu_lan_snapshot(config, timeout=BAMBU_MQTT_TIMEOUT):
             pass
 
 
+def _publish_bambu_json(config, serial, payload, timeout=BAMBU_MQTT_TIMEOUT):
+    """Publish one allowlisted local Bambu command over a short TLS session."""
+    access_code = config.get("access_code") or ""
+    if not access_code or not re.fullmatch(r"[A-Za-z0-9._-]{4,80}", serial or ""):
+        raise ValueError("invalid Bambu command context")
+    deadline = time.monotonic() + timeout
+    sock = _open_bambu_mqtt(config.get("host") or "", access_code, timeout)
+    try:
+        variable = _mqtt_field(b"MQTT") + bytes([4, 0xC2]) + struct.pack("!H", 30)
+        client_id = ("fhub-" + secrets.token_hex(6)).encode("ascii")
+        connection = (
+            variable
+            + _mqtt_field(client_id)
+            + _mqtt_field(b"bblp")
+            + _mqtt_field(access_code.encode("utf-8"))
+        )
+        sock.sendall(b"\x10" + _mqtt_len(len(connection)) + connection)
+        header, connack = _mqtt_read_packet(sock, deadline)
+        if (header & 0xF0) != 0x20 or len(connack) < 2 or connack[1] != 0:
+            raise PermissionError("Bambu MQTT authentication rejected")
+        topic = ("device/%s/request" % serial).encode("utf-8")
+        body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+        publish = _mqtt_field(topic) + body
+        sock.sendall(b"\x30" + _mqtt_len(len(publish)) + publish)
+    finally:
+        try:
+            sock.sendall(b"\xE0\x00")
+        except Exception:
+            pass
+        try:
+            sock.close()
+        except Exception:
+            pass
+
+
+def _bambu_scalar(value):
+    if isinstance(value, list):
+        value = value[0] if value else None
+    if isinstance(value, bool) or value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _bambu_material_target(preset_id, profile):
+    if not isinstance(profile, dict):
+        return None
+    filament_id = _bambu_scalar(profile.get("filament_id"))
+    setting_id = _bambu_scalar(profile.get("setting_id"))
+    material = _bambu_scalar(profile.get("filament_type"))
+    color = _bambu_color(
+        _bambu_scalar(profile.get("filament_colour"))
+        or _bambu_scalar(profile.get("default_filament_colour"))
+    )
+    nozzle_min = _bambu_int(_bambu_scalar(profile.get("nozzle_temperature_range_low")))
+    nozzle_max = _bambu_int(_bambu_scalar(profile.get("nozzle_temperature_range_high")))
+    if not all((filament_id, setting_id, material, color)):
+        return None
+    if nozzle_min is None or nozzle_max is None or nozzle_min > nozzle_max:
+        return None
+    return {
+        "preset_id": preset_id,
+        "name": str(profile.get("name") or "")[:200] or "#%d" % preset_id,
+        "filament_id": filament_id[:100],
+        "setting_id": setting_id[:100],
+        "material": material[:100],
+        "color_hex": color,
+        "nozzle_temp_min": nozzle_min,
+        "nozzle_temp_max": nozzle_max,
+    }
+
+
+def _bambu_material_matches(slot, target):
+    if not isinstance(slot, dict) or not isinstance(target, dict):
+        return False
+    return (
+        slot.get("filament_id") == target.get("filament_id")
+        and (
+            not slot.get("setting_id")
+            or slot.get("setting_id") == target.get("setting_id")
+        )
+        and str(slot.get("material") or "").upper()
+        == str(target.get("material") or "").upper()
+        and str(slot.get("color_hex") or "").upper()
+        == str(target.get("color_hex") or "").upper()
+        and slot.get("nozzle_temp_min") == target.get("nozzle_temp_min")
+        and slot.get("nozzle_temp_max") == target.get("nozzle_temp_max")
+    )
+
+
+def _bambu_material_command(locator, target):
+    ams_id = locator["ams_id"]
+    slot_id = locator["slot_id"]
+    tray_id = (
+        BAMBU_EXTERNAL_TRAY_DEPUTY
+        if ams_id in {BAMBU_EXTERNAL_TRAY_MAIN, BAMBU_EXTERNAL_TRAY_DEPUTY}
+        else slot_id
+    )
+    return {
+        "print": {
+            "command": "ams_filament_setting",
+            "sequence_id": str(secrets.randbelow(900000000) + 100000000),
+            "ams_id": ams_id,
+            "slot_id": slot_id,
+            "tray_id": tray_id,
+            "tray_info_idx": target["filament_id"],
+            "setting_id": target["setting_id"],
+            "tray_color": target["color_hex"] + "FF",
+            "nozzle_temp_min": target["nozzle_temp_min"],
+            "nozzle_temp_max": target["nozzle_temp_max"],
+            "tray_type": target["material"],
+        }
+    }
+
+
+def apply_bambu_material_targets(
+    config,
+    targets,
+    timeout=BAMBU_MQTT_TIMEOUT,
+    settle_delay=0.75,
+):
+    """Apply non-RFID material metadata and prove the resulting printer state."""
+    serial, report = read_bambu_lan_snapshot(config, timeout=timeout)
+    expected_serial = str(config.get("serial") or "").strip()
+    if expected_serial and serial != expected_serial:
+        return {"ok": False, "code": "printer_changed", "report": report}
+    state = str(report.get("gcode_state") or "").strip().upper()
+    if state not in {"IDLE", "FINISH", "FAILED"}:
+        return {"ok": False, "code": "printer_busy", "report": report}
+
+    prepared = []
+    feed = parse_bambu_feed(report) or {"slots": []}
+    slots = {item["index"]: item for item in feed.get("slots") or []}
+    for provider_index, target in targets.items():
+        slot = slots.get(provider_index)
+        locator = _bambu_slot_locator(report, provider_index)
+        if slot is None or locator is None:
+            return {"ok": False, "code": "slot_not_found", "report": report}
+        if (
+            not slot.get("present")
+            and provider_index
+            not in {BAMBU_EXTERNAL_TRAY_MAIN, BAMBU_EXTERNAL_TRAY_DEPUTY}
+        ):
+            return {"ok": False, "code": "slot_empty", "report": report}
+        if slot.get("provider_uid"):
+            return {"ok": False, "code": "rfid_managed", "report": report}
+        if not _bambu_material_matches(slot, target):
+            prepared.append((provider_index, locator, target))
+
+    try:
+        for _provider_index, locator, target in prepared:
+            _publish_bambu_json(
+                config,
+                serial,
+                _bambu_material_command(locator, target),
+                timeout=timeout,
+            )
+    except (OSError, PermissionError, TimeoutError, ValueError):
+        # MQTT has no multi-slot transaction. If the connection breaks after a
+        # preceding slot was accepted, preserve a fresh observation so the UI
+        # can ask for another check instead of pretending nothing happened.
+        try:
+            final_serial, final_report = read_bambu_lan_snapshot(
+                config, timeout=timeout
+            )
+            if final_serial != serial:
+                return {
+                    "ok": False,
+                    "code": "printer_changed",
+                    "report": final_report,
+                }
+        except (OSError, PermissionError, TimeoutError, ValueError):
+            final_report = report
+        return {"ok": False, "code": "write_failed", "report": final_report}
+
+    final_report = report
+    remaining = [item[0] for item in prepared]
+    for _attempt in range(3):
+        if not remaining:
+            break
+        if settle_delay > 0:
+            time.sleep(settle_delay)
+        final_serial, final_report = read_bambu_lan_snapshot(config, timeout=timeout)
+        if final_serial != serial:
+            return {"ok": False, "code": "printer_changed", "report": final_report}
+        final_feed = parse_bambu_feed(final_report) or {"slots": []}
+        final_slots = {item["index"]: item for item in final_feed.get("slots") or []}
+        remaining = [
+            provider_index
+            for provider_index in remaining
+            if not _bambu_material_matches(
+                final_slots.get(provider_index), targets[provider_index]
+            )
+        ]
+    return {
+        "ok": not remaining,
+        "code": None if not remaining else "verification_failed",
+        "report": final_report,
+        "remaining": remaining,
+    }
+
+
 def _bambu_number(report, name):
     value = report.get(name)
     if isinstance(value, bool) or value is None:
@@ -4551,6 +4948,113 @@ def _persist_discovered_bambu_serial(physical_printer_id, serial):
             changed = True
     if changed:
         save_bambu_config(payload)
+
+
+def _bambu_local_binding(physical_printer_id, material_system_id):
+    local = load_bambu_config()
+    binding = next(
+        (
+            item
+            for item in local["printers"]
+            if item.get("physical_printer_id") == physical_printer_id
+            and item.get("material_system_id") == material_system_id
+            and item.get("bridge_token")
+        ),
+        None,
+    )
+    return local, binding
+
+
+def _bambu_server_assignments(device, material_system_id):
+    systems = device.get("material_systems") if isinstance(device, dict) else None
+    system = next(
+        (
+            item
+            for item in systems or []
+            if isinstance(item, dict)
+            and item.get("id") == material_system_id
+            and item.get("provider") == "bambu"
+        ),
+        None,
+    )
+    if system is None:
+        return None
+    assignments = []
+    for slot in system.get("slots") or []:
+        if not isinstance(slot, dict):
+            continue
+        provider_index = slot.get("provider_index")
+        if type(provider_index) is not int or provider_index < 0:
+            continue
+        preset_id = slot.get("preset_id")
+        spool_id = slot.get("spool_id")
+        assignments.append({
+            "slot": provider_index,
+            "preset_id": preset_id if type(preset_id) is int and preset_id > 0 else None,
+            "spool_id": spool_id if type(spool_id) is int and spool_id > 0 else None,
+            "source_ts": str(slot.get("source_ts") or "") or None,
+        })
+    assignments.sort(key=lambda item: item["slot"])
+    return assignments
+
+
+def _bambu_assignment_snapshot(assignments):
+    return [
+        {
+            "slot": item["slot"],
+            "preset_id": item.get("preset_id"),
+            "spool_id": item.get("spool_id"),
+            "source_ts": item.get("source_ts"),
+        }
+        for item in assignments
+    ]
+
+
+def _bambu_material_preview(report, assignments, host_profiles):
+    feed = parse_bambu_feed(report) or {"slots": []}
+    slots = {item["index"]: item for item in feed.get("slots") or []}
+    changes = []
+    unresolved = []
+    targets = {}
+    for assignment in assignments:
+        provider_index = assignment["slot"]
+        preset_id = assignment.get("preset_id")
+        spool_id = assignment.get("spool_id")
+        slot = slots.get(provider_index)
+        if preset_id is None:
+            if spool_id is not None:
+                unresolved.append({"slot": provider_index, "reason": "preset_required"})
+            continue
+        if slot is None:
+            unresolved.append({"slot": provider_index, "reason": "slot_not_found"})
+            continue
+        if (
+            not slot.get("present")
+            and provider_index
+            not in {BAMBU_EXTERNAL_TRAY_MAIN, BAMBU_EXTERNAL_TRAY_DEPUTY}
+        ):
+            unresolved.append({"slot": provider_index, "reason": "slot_empty"})
+            continue
+        if slot.get("provider_uid"):
+            unresolved.append({"slot": provider_index, "reason": "rfid_managed"})
+            continue
+        target = _bambu_material_target(preset_id, host_profiles.get(preset_id))
+        if target is None:
+            unresolved.append({"slot": provider_index, "reason": "preset_not_loaded"})
+            continue
+        targets[provider_index] = target
+        if _bambu_material_matches(slot, target):
+            continue
+        changes.append({
+            "slot": provider_index,
+            "presetId": preset_id,
+            "presetName": target["name"],
+            "currentMaterial": slot.get("material"),
+            "currentColor": slot.get("color_hex"),
+            "targetMaterial": target["material"],
+            "targetColor": target["color_hex"],
+        })
+    return changes, unresolved, targets
 
 
 class BambuBridgeRuntime:
@@ -5120,6 +5624,13 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
             result=result,
         )
 
+    def _deliver_bambu_material_result(self, request_id, result):
+        self._deliver(
+            "bambu-material-result",
+            requestId=request_id,
+            result=result,
+        )
+
     def _do_check_slices(self, wanted, hook):
         alive = [key for key in wanted if slice_path_for_key(key)]
         if not self._deliver("slices-alive", keys=alive, hook=hook):
@@ -5134,6 +5645,7 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
         serial,
         pairing_code,
     ):
+        bridge_token = ""
         try:
             _resolved_bambu_address(host)
             pending = {
@@ -5145,6 +5657,12 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
             }
             discovered_serial, report = read_bambu_lan_snapshot(pending)
             local = load_bambu_config()
+            # A missing config produces a fresh source id. Persist it before
+            # pairing so configure_bambu_bridge() cannot generate a second id
+            # and make the immediately following snapshot fail its binding.
+            # This also proves local durability before the one-time code is
+            # consumed on the server.
+            save_bambu_config(local)
             pair_status, pair_body = http_post_json(
                 "/printer-bridge/pair",
                 "",
@@ -5154,7 +5672,7 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
                     "transport": "orca_plugin_lan",
                     "source_instance_id": local["source_instance_id"],
                     "plugin_version": PLUGIN_VERSION,
-                    "capabilities": ["read", "presence"],
+                    "capabilities": ["read", "write", "presence"],
                 },
             )
             if pair_status != 200:
@@ -5182,14 +5700,35 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
                 ),
                 None,
             )
-            if stored is not None:
-                snapshot = build_bambu_bridge_snapshot(
-                    stored,
-                    configured["source_instance_id"],
-                    report,
-                )
-                http_post_bridge_json("/printer-bridge/snapshot", bridge_token, snapshot)
+            if stored is None:
+                raise ValueError("Bambu bridge was not persisted")
+            snapshot = build_bambu_bridge_snapshot(
+                stored,
+                configured["source_instance_id"],
+                report,
+            )
+            snapshot_status, _ = http_post_bridge_json(
+                "/printer-bridge/snapshot", bridge_token, snapshot
+            )
+            if snapshot_status == 401:
+                remove_bambu_bridge(physical_printer_id)
+                self._deliver_sync_result(ui_text("bambuPairingFailed"))
+                return
+            if snapshot_status != 200:
+                # The durable local binding is valid and the background
+                # reader will retry.  Do not claim that data was received;
+                # the site distinguishes a paired bridge from last_seen_at.
+                fh_log("Initial Bambu bridge upload failed: HTTP %s" % snapshot_status)
         except (OSError, TypeError, ValueError, UnicodeDecodeError):
+            # Pairing consumes the one-time code.  If local persistence fails
+            # afterwards, revoke the fresh server credential so the site never
+            # remains green while no local reader can possibly use it.
+            if bridge_token:
+                try:
+                    http_delete_bridge("/printer-bridge/connection", bridge_token)
+                except (OSError, TypeError, ValueError):
+                    pass
+                remove_bambu_bridge(physical_printer_id)
             self._deliver_sync_result(ui_text("bambuInvalid"))
             return
         BAMBU_BRIDGE_RUNTIME.wake()
@@ -5214,6 +5753,124 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
         remove_bambu_bridge(physical_printer_id)
         BAMBU_BRIDGE_RUNTIME.wake()
         self._deliver_sync_result(ui_text("bambuRemoved"))
+
+    def _do_bambu_material_action(
+        self,
+        request_id,
+        operation,
+        physical_printer_id,
+        material_system_id,
+        token,
+        host_profiles,
+        expected_desired=None,
+    ):
+        def finish(**result):
+            result.setdefault("operation", operation)
+            result.setdefault("physicalPrinterId", physical_printer_id)
+            result.setdefault("materialSystemId", material_system_id)
+            self._deliver_bambu_material_result(request_id, result)
+
+        if not token:
+            finish(ok=False, code="auth")
+            return
+        local, binding = _bambu_local_binding(
+            physical_printer_id, material_system_id
+        )
+        if binding is None:
+            finish(ok=False, code="connection_not_found")
+            return
+        inventory, inventory_error = _plugin_material_server_inventory(token)
+        if inventory_error or inventory is None:
+            finish(ok=False, code=inventory_error or "server")
+            return
+        device = next(
+            (
+                item
+                for item in inventory["printers"]
+                if item.get("id") == physical_printer_id
+            ),
+            None,
+        )
+        if device is None:
+            finish(ok=False, code="connection_not_found")
+            return
+        assignments = _bambu_server_assignments(device, material_system_id)
+        if assignments is None:
+            finish(ok=False, code="material_system_not_found")
+            return
+        current_expected = _bambu_assignment_snapshot(assignments)
+        if operation == "apply" and expected_desired != current_expected:
+            finish(ok=False, code="stale_preview", desiredAssignments=current_expected)
+            return
+        try:
+            serial, report = read_bambu_lan_snapshot(binding)
+        except (OSError, PermissionError, TimeoutError, ValueError):
+            finish(ok=False, code="unreachable")
+            return
+        if binding.get("serial") and serial != binding.get("serial"):
+            finish(ok=False, code="printer_changed")
+            return
+        changes, unresolved, targets = _bambu_material_preview(
+            report, assignments, host_profiles
+        )
+        print_state = _BAMBU_STATES.get(
+            str(report.get("gcode_state") or "").strip().upper(), "unknown"
+        )
+        common = {
+            "printState": print_state,
+            "changes": changes,
+            "unresolved": unresolved,
+            "desiredAssignments": current_expected,
+        }
+        if operation == "preview":
+            finish(ok=True, **common)
+            return
+        if not changes:
+            finish(ok=True, applied=True, remainingChanges=[], **common)
+            return
+        selected_targets = {
+            item["slot"]: targets[item["slot"]]
+            for item in changes
+            if item["slot"] in targets
+        }
+        try:
+            applied = apply_bambu_material_targets(binding, selected_targets)
+        except (OSError, PermissionError, TimeoutError, ValueError):
+            finish(ok=False, code="unreachable", **common)
+            return
+        final_report = applied.get("report") if isinstance(applied, dict) else None
+        if isinstance(final_report, dict):
+            snapshot = build_bambu_bridge_snapshot(
+                binding,
+                local["source_instance_id"],
+                final_report,
+            )
+            status, _ = http_post_bridge_json(
+                "/printer-bridge/snapshot", binding["bridge_token"], snapshot
+            )
+            if status == 401:
+                remove_bambu_bridge(physical_printer_id)
+            elif status != 200:
+                fh_log("Bambu post-apply snapshot upload failed: HTTP %s" % status)
+        if not applied.get("ok"):
+            finish(ok=False, code=applied.get("code") or "verification_failed", **common)
+            return
+        final_changes, final_unresolved, _ = _bambu_material_preview(
+            final_report, assignments, host_profiles
+        )
+        finish(
+            ok=True,
+            applied=True,
+            changes=changes,
+            unresolved=final_unresolved,
+            desiredAssignments=current_expected,
+            remainingChanges=final_changes,
+            printState=_BAMBU_STATES.get(
+                str(final_report.get("gcode_state") or "").strip().upper(),
+                "unknown",
+            ),
+        )
+        BAMBU_BRIDGE_RUNTIME.wake()
 
     # on_message runs on the UI thread — offload network + disk work to a worker.
     def _do_parse_slice(self, key, token, file_name=""):
@@ -5514,6 +6171,57 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
             if not isinstance(physical_printer_id, int) or physical_printer_id <= 0:
                 return
             BACKGROUND_WORKER.submit(self._do_remove_bambu, physical_printer_id)
+        elif msg_type in {"bambu-material-preview", "bambu-material-apply"}:
+            request_id = msg.get("requestId")
+            physical_printer_id = msg.get("physicalPrinterId")
+            material_system_id = msg.get("materialSystemId")
+            expected_desired = msg.get("expectedDesiredAssignments")
+            if not (
+                isinstance(request_id, str)
+                and 0 < len(request_id) <= 100
+                and type(physical_printer_id) is int
+                and physical_printer_id > 0
+                and type(material_system_id) is int
+                and material_system_id > 0
+            ):
+                return
+            if msg_type == "bambu-material-apply":
+                if not isinstance(expected_desired, list) or len(expected_desired) > 256:
+                    return
+                for item in expected_desired:
+                    if not (
+                        isinstance(item, dict)
+                        and type(item.get("slot")) is int
+                        and 0 <= item["slot"] <= 1023
+                        and (
+                            item.get("preset_id") is None
+                            or type(item.get("preset_id")) is int
+                            and item["preset_id"] > 0
+                        )
+                        and (
+                            item.get("spool_id") is None
+                            or type(item.get("spool_id")) is int
+                            and item["spool_id"] > 0
+                        )
+                        and (
+                            item.get("source_ts") is None
+                            or isinstance(item.get("source_ts"), str)
+                            and len(item["source_ts"]) <= 64
+                        )
+                    ):
+                        return
+            token = (load_saved_auth() or {}).get("accessToken") or ""
+            host_profiles = scan_managed_host_filaments()
+            BACKGROUND_WORKER.submit(
+                self._do_bambu_material_action,
+                request_id,
+                "apply" if msg_type == "bambu-material-apply" else "preview",
+                physical_printer_id,
+                material_system_id,
+                token,
+                host_profiles,
+                expected_desired,
+            )
         elif msg_type == "check-slices":
             # The list on the site outlives the files behind it; answer which of
             # those slices can still be turned into a calculation.

@@ -498,6 +498,127 @@ async def test_plugin_material_topology_is_minimal_scoped_and_owned(
 
 
 @pytest.mark.asyncio
+async def test_plugin_context_exposes_bambu_assignment_only_to_paired_install(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    headers, email = await _register_and_login(client, "bambu-plugin-context")
+    user = (
+        await db_session.execute(select(User).where(User.email == email))
+    ).scalar_one()
+
+    brand = Brand(name="Bambu Context Brand", slug="bambu-context-brand", active=True)
+    db_session.add(brand)
+    await db_session.flush()
+    filament = Filament(
+        brand_id=brand.id,
+        name="Bambu Context PLA",
+        slug="bambu-context-pla",
+        material_type="PLA",
+        active=True,
+    )
+    db_session.add(filament)
+    await db_session.flush()
+    preset = Preset(
+        filament_id=filament.id,
+        user_id=user.id,
+        name="Bambu Context Preset",
+        is_official=False,
+        extruder_temp=215.0,
+        bed_temp=60.0,
+        moderation_status=PresetModerationStatus.APPROVED,
+        active=True,
+    )
+    db_session.add(preset)
+    await db_session.commit()
+    await db_session.refresh(preset)
+
+    created = await client.post(
+        "/api/v1/physical-printers",
+        json={"name": "Paired Bambu"},
+        headers=headers,
+    )
+    assert created.status_code == 201
+    printer_id = created.json()["id"]
+    system_response = await client.post(
+        f"/api/v1/physical-printers/{printer_id}/material-systems",
+        json={
+            "name": "AMS",
+            "kind": "mmu",
+            "provider": "bambu",
+            "capabilities": ["read", "write", "presence"],
+        },
+        headers=headers,
+    )
+    assert system_response.status_code == 201
+    system_id = system_response.json()["material_systems"][0]["id"]
+
+    pairing = await client.post(
+        f"/api/v1/printer-bridge/connections/{printer_id}/{system_id}/pairing-code",
+        headers=headers,
+    )
+    assert pairing.status_code == 200
+    source_instance_id = "bambu-plugin-instance-123456"
+    paired = await client.post(
+        "/api/v1/printer-bridge/pair",
+        json={
+            "pairing_code": pairing.json()["pairing_code"],
+            "provider": "bambu",
+            "transport": "orca_plugin_lan",
+            "source_instance_id": source_instance_id,
+            "plugin_version": "0.1.1-test",
+            "capabilities": ["read", "write", "presence"],
+        },
+        headers=headers,
+    )
+    assert paired.status_code == 200
+    snapshot = await client.post(
+        "/api/v1/printer-bridge/snapshot",
+        headers={"X-FilamentHub-Bridge-Token": paired.json()["bridge_token"]},
+        json={
+            "material_system_id": system_id,
+            "provider": "bambu",
+            "transport": "orca_plugin_lan",
+            "source_instance_id": source_instance_id,
+            "observed_at": "2026-08-14T00:00:00Z",
+            "slots": [{"provider_index": 0, "present": True}],
+            "slot_topology_complete": True,
+        },
+    )
+    assert snapshot.status_code == 200
+    slot_id = (
+        await client.get(f"/api/v1/physical-printers/{printer_id}", headers=headers)
+    ).json()["material_systems"][0]["slots"][0]["id"]
+    assigned = await client.patch(
+        f"/api/v1/physical-printers/{printer_id}/material-slots/{slot_id}",
+        json={"preset_id": preset.id},
+        headers=headers,
+    )
+    assert assigned.status_code == 200
+
+    issued = await client.post("/api/v1/auth/plugin-session", json={}, headers=headers)
+    plugin_headers = {"Authorization": f"Bearer {issued.json()['plugin_token']}"}
+    context = await client.get(
+        "/api/v1/orcaslicer/preset-slot-sync/plugin-context",
+        params={"source_instance_id": source_instance_id},
+        headers=plugin_headers,
+    )
+    assert context.status_code == 200
+    slot = context.json()["printers"][0]["material_systems"][0]["slots"][0]
+    assert slot["preset_id"] == preset.id
+    assert slot["spool_id"] is None
+    assert slot["source_ts"] is not None
+
+    other_install = await client.get(
+        "/api/v1/orcaslicer/preset-slot-sync/plugin-context",
+        params={"source_instance_id": "other-bambu-instance-123456"},
+        headers=plugin_headers,
+    )
+    assert other_install.status_code == 200
+    assert other_install.json()["printers"] == []
+
+
+@pytest.mark.asyncio
 async def test_hh_reconciliation_adopts_owned_and_unambiguous_previous_spools(
     client: AsyncClient,
     db_session: AsyncSession,

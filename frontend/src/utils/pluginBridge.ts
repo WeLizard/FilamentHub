@@ -480,6 +480,97 @@ export function removeBambuBridgeInPlugin(physicalPrinterId: number): void {
   });
 }
 
+export interface BambuMaterialChange {
+  slot: number;
+  presetId: number;
+  presetName: string;
+  currentMaterial: string | null;
+  currentColor: string | null;
+  targetMaterial: string;
+  targetColor: string;
+}
+
+export interface BambuMaterialUnresolved {
+  slot: number;
+  reason: 'preset_required' | 'slot_not_found' | 'slot_empty' | 'rfid_managed' | 'preset_not_loaded';
+}
+
+export interface BambuExpectedAssignment {
+  slot: number;
+  preset_id: number | null;
+  spool_id: number | null;
+  source_ts: string | null;
+}
+
+export interface BambuMaterialActionResult {
+  ok: boolean;
+  operation: 'preview' | 'apply';
+  code?: string | null;
+  physicalPrinterId: number;
+  materialSystemId: number;
+  printState?: string | null;
+  changes?: BambuMaterialChange[];
+  unresolved?: BambuMaterialUnresolved[];
+  desiredAssignments?: BambuExpectedAssignment[];
+  remainingChanges?: BambuMaterialChange[];
+  applied?: boolean;
+}
+
+/**
+ * Preview or explicitly apply saved FilamentHub material assignments to a
+ * paired Bambu printer. The page sends only owned entity IDs and the preview
+ * version; LAN credentials and the vendor MQTT command remain in Python.
+ */
+export function requestBambuMaterialAction(
+  operation: 'preview' | 'apply',
+  physicalPrinterId: number,
+  materialSystemId: number,
+  expectedDesiredAssignments?: BambuExpectedAssignment[],
+): Promise<BambuMaterialActionResult> {
+  if (!isPluginEmbed() || !activePluginCapabilities.has('bambu-material-write')) {
+    return Promise.reject(new Error('bambu-material-write unavailable'));
+  }
+  const requestId = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID()
+    : `bambu-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+  return new Promise((resolve, reject) => {
+    let timeoutId: number | null = null;
+    const cleanup = () => {
+      window.removeEventListener('message', onMessage);
+      if (timeoutId !== null) window.clearTimeout(timeoutId);
+    };
+    const onMessage = (event: MessageEvent) => {
+      if (!isTrustedPluginParentEvent(event)) return;
+      const data = event.data as Partial<PluginMessage> | undefined;
+      if (!data || data.source !== PLUGIN_MESSAGE_SOURCE || data.type !== 'bambu-material-result') {
+        return;
+      }
+      if ((data as { requestId?: unknown }).requestId !== requestId) return;
+      const result = (data as { result?: unknown }).result;
+      cleanup();
+      if (!result || typeof result !== 'object') {
+        reject(new Error('invalid Bambu material result'));
+        return;
+      }
+      resolve(result as BambuMaterialActionResult);
+    };
+    window.addEventListener('message', onMessage);
+    timeoutId = window.setTimeout(() => {
+      cleanup();
+      reject(new Error('Bambu material request timeout'));
+    }, 90_000);
+    postToPlugin({
+      source: PLUGIN_MESSAGE_SOURCE,
+      type: operation === 'apply' ? 'bambu-material-apply' : 'bambu-material-preview',
+      requestId,
+      physicalPrinterId,
+      materialSystemId,
+      ...(expectedDesiredAssignments ? { expectedDesiredAssignments } : {}),
+    });
+  });
+}
+
 export interface HappyHareAssignmentChange {
   gate: number;
   actualSpoolId: number | null;

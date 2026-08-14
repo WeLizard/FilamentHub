@@ -5,6 +5,7 @@ import {
   installPrinterBundleInPlugin,
   PLUGIN_MESSAGE_SOURCE,
   reportPluginSessionToPlugin,
+  requestBambuMaterialAction,
   requestHappyHareAction,
   requestPluginCapabilities,
   subscribeToPluginCapabilities,
@@ -242,6 +243,79 @@ describe('pluginBridge inbound messages', () => {
         source: parent as unknown as Window,
       }));
       await expect(adopting).resolves.toMatchObject({ ok: true, adoptedGates: 1 });
+    } finally {
+      unsubscribe();
+      Object.defineProperty(window, 'parent', {
+        configurable: true,
+        value: originalParent,
+      });
+      window.history.pushState({}, '', '/');
+    }
+  });
+
+  it('keeps Bambu LAN details out of the material confirmation bridge', async () => {
+    const originalParent = window.parent;
+    const postMessage = vi.fn();
+    const parent = { postMessage };
+    Object.defineProperty(window, 'parent', { configurable: true, value: parent });
+    window.history.pushState({}, '', '/embed/profile');
+    const unsubscribe = subscribeToPluginCapabilities(() => undefined);
+
+    try {
+      window.dispatchEvent(new MessageEvent('message', {
+        data: {
+          source: PLUGIN_MESSAGE_SOURCE,
+          type: 'plugin-capabilities',
+          capabilities: ['bambu-material-write'],
+        },
+        origin: window.location.origin,
+        source: parent as unknown as Window,
+      }));
+      const expectedDesiredAssignments = [{
+        slot: 0,
+        preset_id: 41,
+        spool_id: 301,
+        source_ts: '2026-08-14T00:00:00Z',
+      }];
+      const pending = requestBambuMaterialAction(
+        'apply',
+        12,
+        34,
+        expectedDesiredAssignments,
+      );
+      const request = postMessage.mock.calls.at(-1)?.[0];
+
+      expect(request).toMatchObject({
+        source: PLUGIN_MESSAGE_SOURCE,
+        type: 'bambu-material-apply',
+        physicalPrinterId: 12,
+        materialSystemId: 34,
+        expectedDesiredAssignments,
+      });
+      expect(request).not.toHaveProperty('host');
+      expect(request).not.toHaveProperty('accessCode');
+      expect(request).not.toHaveProperty('serial');
+      expect(request).not.toHaveProperty('command');
+      expect(request).not.toHaveProperty('token');
+
+      window.dispatchEvent(new MessageEvent('message', {
+        data: {
+          source: PLUGIN_MESSAGE_SOURCE,
+          type: 'bambu-material-result',
+          requestId: request.requestId,
+          result: {
+            ok: true,
+            operation: 'apply',
+            physicalPrinterId: 12,
+            materialSystemId: 34,
+            remainingChanges: [],
+          },
+        },
+        origin: window.location.origin,
+        source: parent as unknown as Window,
+      }));
+
+      await expect(pending).resolves.toMatchObject({ ok: true, remainingChanges: [] });
     } finally {
       unsubscribe();
       Object.defineProperty(window, 'parent', {

@@ -101,16 +101,23 @@ The Bambu adapter is a separate, narrower trust boundary from preset sync:
 4. after the printer answers, the pairing code is exchanged for a revocable
    `fhpb_...` bridge token bound to that physical printer, material system and
    plugin instance;
-5. while OrcaSlicer is running, the plugin posts only normalized print/AMS
+5. while OrcaSlicer is running, the plugin posts normalized print/AMS
    observations using that bridge token. It does not depend on the 30-minute
-   account plugin capability remaining alive.
+   account plugin capability remaining alive;
+6. from **My Filaments** the user may explicitly preview and apply the saved
+   material assignments. Python re-reads the owned server state, rejects stale
+   previews, RFID-managed trays and a busy printer, sends only Bambu's
+   `ams_filament_setting` command over the paired LAN connection, then proves
+   the result with a fresh printer snapshot.
 
 The LAN address, Bambu serial and access code stay in `.fh_bambu.json` in the
 private plugin storage. The server receives none of them and stores only a
 SHA-256 digest of the FilamentHub bridge token. Removing the connection revokes
-the server token before the local secret is deleted. This first slice is
-read-only: it does not expose pause, temperature, AMS movement or other remote
-printer commands.
+the server token before the local secret is deleted. The write surface is
+deliberately limited to user-confirmed third-party material metadata; it does
+not expose pause, temperature, motion, AMS movement or arbitrary printer
+commands. Exact FilamentHub spool identity remains in FilamentHub and is never
+written into Bambu firmware.
 
 ### Frontend embed route (in this repo)
 
@@ -264,7 +271,7 @@ with a retry action. Local OrcaSlicer presets remain available.
 | 1 | **No preset-install / hot-reload host API.** `orca.host` is read-only; `PluginType.Importer` has no capability base. | Filament, machine, and process imports need an **app restart**. Not a publish blocker; rough UX. | Atomic writes below `data_dir/user/<active>/_local/filamenthub/`; only FilamentHub-managed copies are updated. Ask upstream for `orca.host.presets.install(...)` / `reload_user_presets()`. |
 | 2 | **A short-lived plugin capability crosses the iframe boundary** with `targetOrigin: '*'` because the `file://` parent has an opaque origin. | The shell rejects every message not originating from the exact catalog iframe and `https://filamenthub.ru`; account access/refresh credentials never cross. | Keep the origin/source regression test and rotate the capability every 30 minutes. |
 | 3 | **Outbound HTTPS is ungated today** and the declared network allow-list is not enforced yet. | A future host policy may require an explicit permission contract. | Keep `network = [...]` declared and follow the host's audit-first permission design. |
-| 4 | **Package updates may recreate the plugin install directory on older hosts.** | Sidecar auth/sync caches are not guaranteed to survive an update without host storage. | Feature-detect `orca.host.plugin.storage()` from #14923, copy legacy mutable state without deleting it, and retain the install-directory fallback on older builds. |
+| 4 | **The Python `Preset` binding omits read-only `filament_id` and `setting_id`.** | A loaded managed material cannot be mapped to Bambu's exact material command from the public object alone. | Walk only the host-selected backing-file inheritance chain and block when it cannot be resolved. Ask upstream to expose both fields as read-only properties. |
 
 These limitations are disclosed in the alpha listing. Gap #1
 (restart-to-see-import on stock upstream) remains the main user-visible one.

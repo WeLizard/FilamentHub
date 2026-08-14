@@ -31,7 +31,7 @@ from app.services.material_contract_service import require_physical_printer
 PAIRING_TTL = timedelta(minutes=10)
 BAMBU_PROVIDER = "bambu"
 BAMBU_TRANSPORT = "orca_plugin_lan"
-BRIDGE_CAPABILITIES = {"read", "presence"}
+BRIDGE_CAPABILITIES = {"read", "write", "presence"}
 
 
 @dataclass(frozen=True)

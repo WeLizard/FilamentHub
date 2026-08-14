@@ -689,6 +689,85 @@ def test_active_filaments_use_the_host_preset_api(plugin_module, monkeypatch):
     }]
 
 
+def test_managed_filament_uses_host_loaded_metadata_chain(
+    plugin_module, tmp_path, monkeypatch
+):
+    managed_path = tmp_path / "OlgaCraft PLA.json"
+    parent_path = tmp_path / "Generic PLA @System.json"
+    base_path = tmp_path / "fdm_filament_pla.json"
+    managed_path.write_text(
+        json.dumps(
+            {
+                "name": "OlgaCraft PLA",
+                "bundle_id": "filamenthub:41",
+                "setting_id": "FHUB000041",
+                "inherits": "Generic PLA @System",
+            }
+        ),
+        encoding="utf-8",
+    )
+    parent_path.write_text(
+        json.dumps(
+            {
+                "name": "Generic PLA @System",
+                "inherits": "fdm_filament_pla",
+            }
+        ),
+        encoding="utf-8",
+    )
+    base_path.write_text(
+        json.dumps({"name": "fdm_filament_pla", "filament_id": "OGFL99"}),
+        encoding="utf-8",
+    )
+
+    class Preset:
+        def __init__(self, name, path, bundle_id=""):
+            self.name = name
+            self.file = str(path)
+            self.bundle_id = bundle_id
+
+        @staticmethod
+        def config_keys():
+            return [
+                "filament_type",
+                "filament_colour",
+                "nozzle_temperature_range_low",
+                "nozzle_temperature_range_high",
+            ]
+
+        @staticmethod
+        def config_value(key):
+            return {
+                "filament_type": ["PLA"],
+                "filament_colour": ["#3366CC"],
+                "nozzle_temperature_range_low": ["190"],
+                "nozzle_temperature_range_high": ["230"],
+            }[key]
+
+    managed = Preset("OlgaCraft PLA", managed_path, "filamenthub:41")
+    parent = Preset("Generic PLA @System", parent_path)
+    base = Preset("fdm_filament_pla", base_path)
+    by_name = {preset.name: preset for preset in (managed, parent, base)}
+    collection = SimpleNamespace(
+        size=lambda: 1,
+        preset=lambda _index: managed,
+        find_preset=lambda name: by_name.get(name),
+    )
+    monkeypatch.setattr(plugin_module, "user_filament_dir", lambda: str(tmp_path))
+    monkeypatch.setattr(
+        plugin_module.orca.host,
+        "preset_bundle",
+        lambda: SimpleNamespace(filaments=collection),
+        raising=False,
+    )
+
+    resolved = plugin_module.scan_managed_host_filaments()[41]
+
+    assert resolved["setting_id"] == "FHUB000041"
+    assert resolved["filament_id"] == "OGFL99"
+    assert resolved["filament_type"] == ["PLA"]
+
+
 def test_profile_sync_imports_user_profiles_but_not_selected_system_profile(
     plugin_module, monkeypatch
 ):
@@ -2362,6 +2441,49 @@ def test_host_storage_migrates_mutable_state_without_deleting_legacy(
     assert (legacy / "slices" / "fixture.gcode").exists()
 
 
+def test_host_without_storage_uses_data_root_outside_replaceable_plugin_dir(
+    plugin_module, tmp_path, monkeypatch
+):
+    data_root = tmp_path / "orca-data"
+    legacy = data_root / "orca_plugins" / "filamenthub_plugin.py"
+    stable = data_root / ".filamenthub" / "orca-plugin"
+    legacy.mkdir(parents=True)
+    (legacy / ".auth.json").write_text('{"accessToken":"fixture"}', encoding="utf-8")
+    (legacy / ".fh_bambu.json").write_text(
+        '{"version":1,"source_instance_id":"fixture-instance-0001","printers":[]}',
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(plugin_module, "PLUGIN_DIR", str(legacy))
+    monkeypatch.setattr(plugin_module, "PLUGIN_STORAGE_DIR", str(legacy))
+    monkeypatch.setattr(plugin_module, "SYNC_LOG_FILE", str(legacy / ".fh_sync.log"))
+    monkeypatch.setattr(plugin_module, "AUTH_FILE", str(legacy / ".auth.json"))
+    monkeypatch.setattr(plugin_module, "BAMBU_CONFIG_FILE", str(legacy / ".fh_bambu.json"))
+    monkeypatch.setattr(
+        plugin_module, "IMPORTED_DRAFTS_FILE", str(legacy / ".fh_imported.json")
+    )
+    monkeypatch.setattr(plugin_module, "SYNC_STATE_FILE", str(legacy / ".fh_sync.json"))
+    monkeypatch.setattr(plugin_module, "_SLICE_INDEX_FILE", str(legacy / ".fh_slices.json"))
+    monkeypatch.setattr(plugin_module, "_SLICE_CACHE_DIR", str(legacy / "slices"))
+    monkeypatch.setattr(
+        plugin_module.orca.host,
+        "plugin",
+        SimpleNamespace(),
+        raising=False,
+    )
+
+    assert plugin_module.configure_plugin_storage() is True
+
+    assert plugin_module.PLUGIN_STORAGE_DIR == str(stable)
+    assert plugin_module.AUTH_FILE == str(stable / ".auth.json")
+    assert plugin_module.BAMBU_CONFIG_FILE == str(stable / ".fh_bambu.json")
+    assert (stable / ".auth.json").read_text(encoding="utf-8") == (
+        '{"accessToken":"fixture"}'
+    )
+    assert (stable / ".fh_bambu.json").exists()
+    assert (legacy / ".auth.json").exists()
+
+
 def _bambu_report(**overrides):
     report = {
         "ams": {
@@ -2529,6 +2651,282 @@ def test_bambu_snapshot_keeps_tag_identity_local(plugin_module):
     assert "serial" not in serialized
 
 
+def _bambu_material_target():
+    return {
+        "preset_id": 41,
+        "name": "OlgaCraft PLA",
+        "filament_id": "GFL99",
+        "setting_id": "GFSL99_01",
+        "material": "PLA",
+        "color_hex": "3366CC",
+        "nozzle_temp_min": 190,
+        "nozzle_temp_max": 230,
+    }
+
+
+def test_bambu_material_command_matches_vendor_slot_addressing(plugin_module):
+    target = _bambu_material_target()
+
+    regular = plugin_module._bambu_material_command(
+        {"ams_id": 2, "slot_id": 1}, target
+    )["print"]
+    external = plugin_module._bambu_material_command(
+        {"ams_id": plugin_module.BAMBU_EXTERNAL_TRAY_MAIN, "slot_id": 0},
+        target,
+    )["print"]
+
+    assert regular == {
+        **regular,
+        "command": "ams_filament_setting",
+        "ams_id": 2,
+        "slot_id": 1,
+        "tray_id": 1,
+        "tray_info_idx": "GFL99",
+        "setting_id": "GFSL99_01",
+        "tray_color": "3366CCFF",
+        "nozzle_temp_min": 190,
+        "nozzle_temp_max": 230,
+        "tray_type": "PLA",
+    }
+    assert external["ams_id"] == plugin_module.BAMBU_EXTERNAL_TRAY_MAIN
+    assert external["slot_id"] == 0
+    assert external["tray_id"] == plugin_module.BAMBU_EXTERNAL_TRAY_DEPUTY
+
+
+def test_bambu_material_write_refuses_busy_or_rfid_slots(
+    plugin_module, monkeypatch
+):
+    published = []
+    reports = iter(
+        [
+            ("SERIAL-1", _bambu_report(gcode_state="RUNNING")),
+            ("SERIAL-1", _bambu_report(gcode_state="IDLE")),
+        ]
+    )
+    monkeypatch.setattr(
+        plugin_module, "read_bambu_lan_snapshot", lambda *_args, **_kwargs: next(reports)
+    )
+    monkeypatch.setattr(
+        plugin_module,
+        "_publish_bambu_json",
+        lambda *_args, **_kwargs: published.append(_args),
+    )
+
+    busy = plugin_module.apply_bambu_material_targets(
+        {"host": "printer.local", "access_code": "fixture"},
+        {1: _bambu_material_target()},
+        settle_delay=0,
+    )
+    rfid = plugin_module.apply_bambu_material_targets(
+        {"host": "printer.local", "access_code": "fixture"},
+        {0: _bambu_material_target()},
+        settle_delay=0,
+    )
+
+    assert busy["code"] == "printer_busy"
+    assert rfid["code"] == "rfid_managed"
+    assert published == []
+
+
+def test_bambu_material_write_is_confirmed_by_a_fresh_printer_snapshot(
+    plugin_module, monkeypatch
+):
+    before = _bambu_report(gcode_state="IDLE")
+    after = _bambu_report(gcode_state="IDLE")
+    after["ams"]["ams"][0]["tray"][1].update(
+        {
+            "tray_info_idx": "GFL99",
+            "setting_id": "GFSL99_01",
+            "tray_type": "PLA",
+            "tray_color": "3366CCFF",
+            "nozzle_temp_min": 190,
+            "nozzle_temp_max": 230,
+        }
+    )
+    reports = iter([("SERIAL-1", before), ("SERIAL-1", after)])
+    published = []
+    monkeypatch.setattr(
+        plugin_module, "read_bambu_lan_snapshot", lambda *_args, **_kwargs: next(reports)
+    )
+    monkeypatch.setattr(
+        plugin_module,
+        "_publish_bambu_json",
+        lambda _config, serial, payload, **_kwargs: published.append(
+            (serial, payload)
+        ),
+    )
+
+    result = plugin_module.apply_bambu_material_targets(
+        {"host": "printer.local", "access_code": "fixture"},
+        {1: _bambu_material_target()},
+        settle_delay=0,
+    )
+
+    assert result["ok"] is True
+    assert result["remaining"] == []
+    assert len(published) == 1
+    assert published[0][0] == "SERIAL-1"
+    assert published[0][1]["print"]["command"] == "ams_filament_setting"
+
+
+def test_bambu_material_write_never_reports_success_without_confirmation(
+    plugin_module, monkeypatch
+):
+    unchanged = _bambu_report(gcode_state="IDLE")
+    reports = iter([("SERIAL-1", unchanged)] * 4)
+    monkeypatch.setattr(
+        plugin_module, "read_bambu_lan_snapshot", lambda *_args, **_kwargs: next(reports)
+    )
+    monkeypatch.setattr(plugin_module, "_publish_bambu_json", lambda *_args, **_kwargs: None)
+
+    result = plugin_module.apply_bambu_material_targets(
+        {"host": "printer.local", "access_code": "fixture", "serial": "SERIAL-1"},
+        {1: _bambu_material_target()},
+        settle_delay=0,
+    )
+
+    assert result["ok"] is False
+    assert result["code"] == "verification_failed"
+    assert result["remaining"] == [1]
+
+
+def test_bambu_material_write_contains_a_partial_mqtt_failure(
+    plugin_module, monkeypatch
+):
+    before = _bambu_report(gcode_state="IDLE")
+    before["ams"]["ams"][0]["tray"][0]["tray_uuid"] = "00000000"
+    after_first = json.loads(json.dumps(before))
+    after_first["ams"]["ams"][0]["tray"][0].update(
+        {
+            "tray_info_idx": "GFL99",
+            "setting_id": "GFSL99_01",
+            "tray_type": "PLA",
+            "tray_color": "3366CCFF",
+            "nozzle_temp_min": 190,
+            "nozzle_temp_max": 230,
+        }
+    )
+    reports = iter([("SERIAL-1", before), ("SERIAL-1", after_first)])
+    publish_count = 0
+
+    def publish(*_args, **_kwargs):
+        nonlocal publish_count
+        publish_count += 1
+        if publish_count == 2:
+            raise ConnectionError("fixture disconnect")
+
+    monkeypatch.setattr(
+        plugin_module, "read_bambu_lan_snapshot", lambda *_args, **_kwargs: next(reports)
+    )
+    monkeypatch.setattr(plugin_module, "_publish_bambu_json", publish)
+
+    result = plugin_module.apply_bambu_material_targets(
+        {"host": "printer.local", "access_code": "fixture", "serial": "SERIAL-1"},
+        {0: _bambu_material_target(), 1: _bambu_material_target()},
+        settle_delay=0,
+    )
+
+    assert publish_count == 2
+    assert result["ok"] is False
+    assert result["code"] == "write_failed"
+    assert plugin_module.parse_bambu_feed(result["report"])["slots"][0][
+        "filament_id"
+    ] == "GFL99"
+
+
+def test_bambu_material_apply_rejects_a_stale_server_assignment(
+    plugin_module, monkeypatch
+):
+    local = {"source_instance_id": "fixture-instance-123456"}
+    binding = {
+        "physical_printer_id": 3,
+        "material_system_id": 7,
+        "bridge_token": "fhpb_fixture",
+    }
+    monkeypatch.setattr(
+        plugin_module, "_bambu_local_binding", lambda *_args: (local, binding)
+    )
+    monkeypatch.setattr(
+        plugin_module,
+        "_plugin_material_server_inventory",
+        lambda _token: (
+            {
+                "printers": [
+                    {
+                        "id": 3,
+                        "material_systems": [
+                            {
+                                "id": 7,
+                                "provider": "bambu",
+                                "slots": [
+                                    {
+                                        "provider_index": 1,
+                                        "preset_id": 42,
+                                        "spool_id": 302,
+                                        "source_ts": "2026-08-14T01:00:00Z",
+                                    }
+                                ],
+                            }
+                        ],
+                    }
+                ]
+            },
+            None,
+        ),
+    )
+    monkeypatch.setattr(
+        plugin_module,
+        "read_bambu_lan_snapshot",
+        lambda *_args, **_kwargs: pytest.fail("stale preview must not reach the LAN"),
+    )
+    delivered = []
+    catalog = plugin_module.FilamentHubCatalog()
+    monkeypatch.setattr(
+        catalog,
+        "_deliver_bambu_material_result",
+        lambda request_id, result: delivered.append((request_id, result)),
+    )
+
+    catalog._do_bambu_material_action(
+        "request-1",
+        "apply",
+        3,
+        7,
+        "plugin-token",
+        {},
+        [
+            {
+                "slot": 1,
+                "preset_id": 41,
+                "spool_id": 301,
+                "source_ts": "2026-08-14T00:00:00Z",
+            }
+        ],
+    )
+
+    assert delivered[0][1]["ok"] is False
+    assert delivered[0][1]["code"] == "stale_preview"
+
+
+def test_bambu_material_preview_never_invents_an_unloaded_preset(plugin_module):
+    assignments = [
+        {
+            "slot": 1,
+            "preset_id": 41,
+            "spool_id": 301,
+            "source_ts": "2026-08-14T00:00:00Z",
+        }
+    ]
+
+    changes, unresolved, targets = plugin_module._bambu_material_preview(
+        _bambu_report(gcode_state="IDLE"), assignments, {}
+    )
+
+    assert changes == []
+    assert unresolved == [{"slot": 1, "reason": "preset_not_loaded"}]
+    assert targets == {}
+
+
 def test_bambu_local_binding_is_private_and_replaceable(plugin_module, tmp_path, monkeypatch):
     target = tmp_path / ".fh_bambu.json"
     monkeypatch.setattr(plugin_module, "BAMBU_CONFIG_FILE", str(target))
@@ -2578,6 +2976,96 @@ def test_bambu_runtime_removes_local_secrets_after_server_rejects_binding(
     runtime._run()
 
     assert plugin_module.load_bambu_config()["printers"] == []
+
+
+def test_bambu_pair_is_revoked_when_local_binding_cannot_be_persisted(
+    plugin_module, monkeypatch
+):
+    monkeypatch.setattr(plugin_module, "_resolved_bambu_address", lambda _host: "192.168.1.42")
+    monkeypatch.setattr(
+        plugin_module,
+        "read_bambu_lan_snapshot",
+        lambda _config: ("SERIAL-2", _bambu_report()),
+    )
+    monkeypatch.setattr(
+        plugin_module,
+        "load_bambu_config",
+        lambda: {"source_instance_id": "fixture-instance-0001", "printers": []},
+    )
+    monkeypatch.setattr(plugin_module, "save_bambu_config", lambda _payload: None)
+    monkeypatch.setattr(
+        plugin_module,
+        "http_post_json",
+        lambda *_args, **_kwargs: (
+            200,
+            json.dumps({"bridge_token": "fhpb_fresh-token"}).encode("utf-8"),
+        ),
+    )
+    monkeypatch.setattr(
+        plugin_module,
+        "configure_bambu_bridge",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("disk full")),
+    )
+    revoked = []
+    removed = []
+    monkeypatch.setattr(
+        plugin_module,
+        "http_delete_bridge",
+        lambda path, token: revoked.append((path, token)) or 204,
+    )
+    monkeypatch.setattr(
+        plugin_module,
+        "remove_bambu_bridge",
+        lambda physical_printer_id: removed.append(physical_printer_id) or True,
+    )
+    monkeypatch.setattr(plugin_module, "ui_text", lambda key: key)
+    delivered = []
+    catalog = plugin_module.FilamentHubCatalog()
+    monkeypatch.setattr(catalog, "_deliver_sync_result", delivered.append)
+
+    catalog._do_configure_bambu(3, 5, "printer.local", "secret", "", "pair-code")
+
+    assert revoked == [("/printer-bridge/connection", "fhpb_fresh-token")]
+    assert removed == [3]
+    assert delivered == ["bambuInvalid"]
+
+
+def test_fresh_bambu_pair_and_first_snapshot_share_one_source_identity(
+    plugin_module, tmp_path, monkeypatch
+):
+    target = tmp_path / ".fh_bambu.json"
+    monkeypatch.setattr(plugin_module, "BAMBU_CONFIG_FILE", str(target))
+    monkeypatch.setattr(plugin_module, "_resolved_bambu_address", lambda _host: "192.168.1.42")
+    monkeypatch.setattr(
+        plugin_module,
+        "read_bambu_lan_snapshot",
+        lambda _config: ("SERIAL-2", _bambu_report()),
+    )
+    captured = {}
+
+    def pair(_path, _token, payload):
+        captured["pair_source"] = payload["source_instance_id"]
+        return 200, json.dumps({"bridge_token": "fhpb_fresh-token"}).encode("utf-8")
+
+    def snapshot(_path, _token, payload):
+        captured["snapshot_source"] = payload["source_instance_id"]
+        return 200, b"{}"
+
+    monkeypatch.setattr(plugin_module, "http_post_json", pair)
+    monkeypatch.setattr(plugin_module, "http_post_bridge_json", snapshot)
+    monkeypatch.setattr(plugin_module.BAMBU_BRIDGE_RUNTIME, "wake", lambda: None)
+    monkeypatch.setattr(plugin_module, "ui_text", lambda key: key)
+    delivered = []
+    catalog = plugin_module.FilamentHubCatalog()
+    monkeypatch.setattr(catalog, "_deliver_sync_result", delivered.append)
+
+    catalog._do_configure_bambu(3, 5, "printer.local", "secret", "", "pair-code")
+
+    assert captured["pair_source"] == captured["snapshot_source"]
+    stored = plugin_module.load_bambu_config()
+    assert stored["source_instance_id"] == captured["pair_source"]
+    assert len(stored["printers"]) == 1
+    assert delivered == ["bambuSaved"]
 
 
 def test_bambu_address_must_resolve_to_the_lan(plugin_module, monkeypatch):

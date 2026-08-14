@@ -564,7 +564,7 @@ async def build_plugin_material_topology_context(
     user_id: int,
     source_instance_id: str,
 ) -> PluginMaterialTopologyContextResponse:
-    """Return only the local bindings and desired HH slots a plugin needs.
+    """Return only the local bindings and desired slots a plugin needs.
 
     A machine profile is configuration, not physical identity.  The stable
     ``(source_instance_id, connection_ref)`` binding created by printer sync is
@@ -588,7 +588,16 @@ async def build_plugin_material_topology_context(
     for printer in printers:
         systems: list[PluginMaterialSystemContext] = []
         for system in sorted(printer.material_systems, key=lambda item: item.id):
-            if not system.active or system.provider != "happy_hare":
+            if not system.active or system.provider not in {"happy_hare", "bambu"}:
+                continue
+            if system.provider == "bambu" and not any(
+                connector.active
+                and connector.provider == "bambu"
+                and connector.transport == "orca_plugin_lan"
+                and connector.material_system_id == system.id
+                and connector.source_instance_id == source_instance_id
+                for connector in printer.connectors
+            ):
                 continue
             slots: list[PluginMaterialSlotContext] = []
             for slot in sorted(
@@ -596,18 +605,26 @@ async def build_plugin_material_topology_context(
             ):
                 if not slot.active:
                     continue
+                preset_id = None
                 spool_id = None
+                source_ts = None
                 if slot.assignment is not None and slot.assignment.active:
+                    preset_id = slot.assignment.preset_id
                     spool_id = slot.assignment.spool_id
+                    source_ts = slot.assignment.source_ts
                 elif (
                     slot.legacy_gate_state is not None
                     and slot.legacy_gate_state.is_active
                 ):
+                    preset_id = slot.legacy_gate_state.preset_id
                     spool_id = slot.legacy_gate_state.spool_id
+                    source_ts = slot.legacy_gate_state.source_ts
                 slots.append(
                     PluginMaterialSlotContext(
                         provider_index=slot.provider_index,
+                        preset_id=preset_id,
                         spool_id=spool_id,
+                        source_ts=source_ts,
                     )
                 )
             systems.append(

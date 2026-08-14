@@ -3,6 +3,8 @@
 Newest first. The top entry is the text pasted into the Plugin Hub on release.
 
 ## 0.1.1
+- Saved material assignments can be previewed in **My Filaments** and explicitly applied to editable Bambu AMS slots over the paired local connection; RFID trays, stale previews and active prints are left untouched.
+- Bambu LAN connections now survive plugin package updates, and the site reports a connection as live only after real printer data has arrived.
 - Physical printers, their OrcaSlicer machine configurations and compatible print profiles now stay connected without collapsing different network printers or filling FilamentHub with duplicate factory profiles.
 - Happy Hare v4 assignments can be checked from **My Filaments**. The plugin compares the real local gate map with FilamentHub and lets you explicitly choose the direction; unknown or conflicting spools are never changed automatically.
 - Completed slices now carry stable FilamentHub material, print-profile and printer-profile identities into calculations and print history without relying on OrcaSlicer profile names.

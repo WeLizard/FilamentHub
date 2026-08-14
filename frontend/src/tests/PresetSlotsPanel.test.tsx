@@ -1,6 +1,10 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { PhysicalPrinter, PrinterConnectionBinding } from '../api/client';
+import type {
+  PhysicalPrinter,
+  PrinterBridgeStatus,
+  PrinterConnectionBinding,
+} from '../api/client';
 
 const physicalPrinter: PhysicalPrinter = {
   id: 11,
@@ -41,6 +45,13 @@ const physicalPrinter: PhysicalPrinter = {
 
 let physicalPrintersForQuery = [physicalPrinter];
 let printerBindingsForQuery: PrinterConnectionBinding[] = [];
+let printerBridgeStatusForQuery: PrinterBridgeStatus = {
+  configured: true,
+  paired: false,
+  pairing_expires_at: null,
+  last_seen_at: null,
+  source_instance_id: null,
+};
 const createSystem = vi.fn();
 const regenerateKey = vi.fn();
 
@@ -82,13 +93,7 @@ vi.mock('@tanstack/react-query', () => ({
     }
     if (queryKey[0] === 'printer-bridge-status') {
       return {
-        data: {
-          configured: true,
-          paired: false,
-          pairing_expires_at: null,
-          last_seen_at: null,
-          source_instance_id: null,
-        },
+        data: printerBridgeStatusForQuery,
         isLoading: false,
         refetch: vi.fn(),
       };
@@ -126,6 +131,13 @@ describe('PresetSlotsPanel', () => {
   beforeEach(() => {
     physicalPrintersForQuery = [physicalPrinter];
     printerBindingsForQuery = [];
+    printerBridgeStatusForQuery = {
+      configured: true,
+      paired: false,
+      pairing_expires_at: null,
+      last_seen_at: null,
+      source_instance_id: null,
+    };
     createSystem.mockReset();
     createSystem.mockResolvedValue({});
     regenerateKey.mockReset();
@@ -163,7 +175,7 @@ describe('PresetSlotsPanel', () => {
     expect(feedAdapterFor('octoprint').contactMode).toBe('periodic');
     expect(feedAdapterFor('octoprint').slotCountLabelKey)
       .toBe('presetSlots.octoprint.slotCount');
-    expect(feedAdapterFor('bambu').capabilities).toEqual(['read', 'presence']);
+    expect(feedAdapterFor('bambu').capabilities).toEqual(['read', 'write', 'presence']);
     expect(feedAdapterFor('bambu').topologyFromProvider).toBe(true);
 
     const bambuSystem = {
@@ -216,6 +228,52 @@ describe('PresetSlotsPanel', () => {
     expect(screen.getByText('FilamentHub Bridge')).toBeInTheDocument();
     expect(screen.getByText('OctoPrint 1.11.8')).toBeInTheDocument();
     expect(screen.getByText('Bridge 0.1.0')).toBeInTheDocument();
+  });
+
+  it('does not present a paired Bambu bridge as live before its first snapshot', async () => {
+    const { feedAdapterFor } = await import('../components/presetSlots/adapters');
+    const bambuSystem = {
+      ...physicalPrinter.material_systems[0],
+      provider: 'bambu',
+    };
+    const context = {
+      printer: {
+        ...physicalPrinter,
+        material_systems: [bambuSystem],
+        connectors: [{
+          id: 91,
+          material_system_id: bambuSystem.id,
+          provider: 'bambu',
+          transport: 'orca_plugin_lan',
+          capabilities: ['read', 'presence'],
+          active: true,
+          last_seen_at: null,
+        }],
+      },
+      system: bambuSystem,
+      gates: [],
+      spools: [],
+      linkConfirmed: false,
+    };
+    printerBridgeStatusForQuery = {
+      configured: true,
+      paired: true,
+      pairing_expires_at: null,
+      last_seen_at: null,
+      source_instance_id: 'fixture-instance',
+    };
+
+    const first = render(<>{feedAdapterFor('bambu').renderSetup?.(context)}</>);
+    expect(screen.getByText('presetSlots.bambu.awaitingFirstData')).toBeInTheDocument();
+    expect(screen.queryByText('presetSlots.bambu.connected')).not.toBeInTheDocument();
+    first.unmount();
+
+    printerBridgeStatusForQuery = {
+      ...printerBridgeStatusForQuery,
+      last_seen_at: '2026-08-14T12:00:00Z',
+    };
+    render(<>{feedAdapterFor('bambu').renderSetup?.(context)}</>);
+    expect(screen.getByText('presetSlots.bambu.connected')).toBeInTheDocument();
   });
 
   it('waits for automatic Happy Hare v4 pairing before using the legacy fallback', async () => {
