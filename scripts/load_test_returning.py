@@ -38,7 +38,7 @@ from load_common import (  # noqa: E402
     timed,
 )
 
-PASSWORD = "LoadTest123"
+PASSWORD = "qwerty123"
 
 # Roughly the shape of a quote a customer receives: a page of tables, which is
 # what the renderer is asked to turn into a PDF.

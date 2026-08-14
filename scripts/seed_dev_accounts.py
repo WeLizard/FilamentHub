@@ -39,7 +39,7 @@ for stream in (sys.stdout, sys.stderr):
 
 LOCAL_DB_HOSTS = {"localhost", "127.0.0.1", "::1", "postgres-dev"}
 # The load run signs in with this; it never leaves a development machine.
-PASSWORD = "LoadTest123"
+PASSWORD = "qwerty123"
 EMAIL_PREFIX = "established"
 
 

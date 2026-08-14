@@ -47,7 +47,7 @@ POPULAR: list[int] = []
 # Reserved documentation domain: it resolves, so registration's domain check
 # passes, and nobody can ever receive mail at it.
 EMAIL_DOMAIN = "example.com"
-PASSWORD = "LoadTest123"
+PASSWORD = "qwerty123"
 
 
 async def browse(client: httpx.AsyncClient, headers: dict, recorder: Recorder) -> int | None:

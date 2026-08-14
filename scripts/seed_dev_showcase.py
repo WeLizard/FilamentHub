@@ -43,7 +43,7 @@ for stream in (sys.stdout, sys.stderr):
         reconfigure(encoding="utf-8", errors="replace")
 
 LOCAL_DB_HOSTS = {"localhost", "127.0.0.1", "::1", "postgres-dev"}
-SHOWCASE_PASSWORD = "Showcase123!"
+SHOWCASE_PASSWORD = "qwerty123"
 SHOWCASE_SOURCE = "dev_showcase"
 
 
