@@ -43,6 +43,17 @@ run_backend() {
 run_frontend() {
     files=$(echo "$staged" | grep -E '^frontend/src/.*\.(ts|tsx)$' || true)
     [ -z "$files" ] && return 0
+    # Git Bash on Windows does not inherit the Node install from PATH, so the
+    # usual location is checked before giving up on the frontend suite.
+    if ! command -v npx >/dev/null 2>&1; then
+        for candidate in "/c/Program Files/nodejs" "/c/Program Files (x86)/nodejs"; do
+            # A .cmd shim carries no executable bit under Git Bash, so presence
+            # is the only usable check here.
+            [ -e "$candidate/npx" ] || [ -e "$candidate/npx.cmd" ] || continue
+            PATH="$PATH:$candidate"
+            break
+        done
+    fi
     command -v npx >/dev/null 2>&1 || {
         echo "pre-commit: npx недоступен, frontend-тесты пропущены"
         return 0
