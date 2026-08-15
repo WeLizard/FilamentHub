@@ -2,6 +2,13 @@
 
 Newest first. The top entry is the text pasted into the Plugin Hub on release.
 
+## 0.1.2
+- Presets that OrcaSlicer silently refused now load. A single value in a shape the slicer cannot read used to cost the whole preset while the file sat on disk looking synchronised; values are now sent in a shape it accepts, and settings the plugin does not recognise travel through untouched.
+- The same fix applies to printer and print profiles.
+- A profile is checked before it is written, so a working file is never replaced by one the slicer cannot load. A damaged local file is restored from FilamentHub instead of sending the damage back.
+- The **FilamentHub** tab in the filament list now shows only what is actually synchronised. Files left behind by older plugin versions move into a private folder inside OrcaSlicer's data directory, so nothing is deleted and anything can be brought back.
+- The log now separates what you asked to synchronise, what is on disk and what OrcaSlicer really loaded, including profiles waiting for a restart.
+
 ## 0.1.1
 - Saved material assignments can be previewed in **My Filaments** and explicitly applied to editable Bambu AMS slots through the paired local connection; RFID trays, stale previews and assignments during active prints are left untouched.
 - Bambu LAN connections now survive plugin package updates and are reported as live only after real printer data has been received.
