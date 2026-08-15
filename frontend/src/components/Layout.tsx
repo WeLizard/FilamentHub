@@ -454,6 +454,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
           <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex flex-col sm:flex-row items-center justify-between gap-1.5 text-[11px] sm:text-xs text-gray-500">
             <span>{t('layout.footer_copyright', { year: new Date().getFullYear() })}</span>
             <div className="flex items-center gap-3 sm:gap-4">
+              <Link to="/about" className="hover:text-gray-300 transition-colors">{t('layout.footer_about')}</Link>
               <Link to="/user-agreement" className="hover:text-gray-300 transition-colors">{t('layout.footer_terms')}</Link>
               <Link to="/privacy-policy" className="hover:text-gray-300 transition-colors">{t('layout.footer_privacy')}</Link>
               <Link to="/personal-data-consent" className="hover:text-gray-300 transition-colors">{t('layout.footer_consent')}</Link>

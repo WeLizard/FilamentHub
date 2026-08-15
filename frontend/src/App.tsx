@@ -15,6 +15,7 @@ import { useQueryClient } from '@tanstack/react-query';
 const FilamentDetailPage = lazy(() => import('./pages/FilamentDetailPage').then(m => ({ default: m.FilamentDetailPage })));
 const TermsPage = lazy(() => import('./pages/TermsPage').then(m => ({ default: m.TermsPage })));
 const ConsentPage = lazy(() => import('./pages/ConsentPage').then(m => ({ default: m.ConsentPage })));
+const AboutPage = lazy(() => import('./pages/AboutPage').then(m => ({ default: m.AboutPage })));
 const ResetPasswordPage = lazy(() => import('./pages/ResetPasswordPage').then(m => ({ default: m.ResetPasswordPage })));
 const OAuthCallbackPage = lazy(() => import('./pages/OAuthCallbackPage').then(m => ({ default: m.OAuthCallbackPage })));
 const OAuthPluginStartPage = lazy(() => import('./pages/OAuthPluginStartPage').then(m => ({ default: m.OAuthPluginStartPage })));
@@ -306,6 +307,7 @@ function AppContent() {
             идёт с кнопок шелла плагина (postMessage → subscribeToPluginNavigation) */}
         <Route path="/embed" element={<Layout><CatalogPage /></Layout>} />
         <Route path="/embed/catalog" element={<Layout><CatalogPage /></Layout>} />
+        <Route path="/about" element={<Layout><Suspense fallback={<PageLoader />}><AboutPage /></Suspense></Layout>} />
         <Route path="/user-agreement" element={<Suspense fallback={<PageLoader />}><TermsPage /></Suspense>} />
         <Route path="/privacy-policy" element={<Suspense fallback={<PageLoader />}><PrivacyPolicyPage /></Suspense>} />
         <Route path="/personal-data-consent" element={<Suspense fallback={<PageLoader />}><ConsentPage /></Suspense>} />
