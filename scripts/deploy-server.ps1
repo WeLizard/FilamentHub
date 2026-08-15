@@ -500,7 +500,9 @@ function Invoke-PluginReleasePreparation {
     # The dry run above already printed the versions, the tag and the release
     # notes, so the decision is made with everything visible. Retyping the tag
     # protected against nothing: it was the same string, just entered twice.
-    $answer = Read-Host "Публикуем $tag? (y/n)"
+    # ${tag}: PowerShell allows '?' in variable names, so "$tag?" reads as a
+    # variable called tag? and throws before the prompt is ever shown.
+    $answer = Read-Host "Публикуем ${tag}? (y/n)"
     if ($answer -notmatch '^(y|yes|д|да)$') {
         throw 'Публикация релиза отменена.'
     }
