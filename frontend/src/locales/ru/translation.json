@@ -6900,7 +6900,9 @@
         "assigned_but_observed_empty": "Проверить",
         "observed_loaded_without_spool": "Сопоставить",
         "observed_details_differ": "Сверить"
-      }
+      },
+      "lastSeen": "Раньше: {{detail}} · {{age}}",
+      "lastSeenSpool": "катушка"
     },
     "hhStatus": {
       "unknown": "Неизвестно",

@@ -4,6 +4,7 @@ import type { GateState, MaterialSlot, UserSpool } from '../../api/client';
 import type { Preset } from '../../types/api';
 import { isUnidentifiedHHFilament } from '../../utils/hhGateState';
 import { compareMaterialSlot } from '../../utils/materialSlotComparison';
+import { formatLastSeen, useNow } from '../../utils/deviceLink';
 import { NozzleRequirementBadge } from '../NozzleRequirementBadge';
 
 interface GateMapGridProps {
@@ -119,7 +120,8 @@ export function GateMapGrid({
   nozzleHrc = null,
   onGateClick,
 }: GateMapGridProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const now = useNow();
 
   const gateMap = new Map<number, GateState>(gates.map((g) => [g.gate_index, g]));
   const spoolMap = new Map<number, UserSpool>(spools.map((s) => [s.id, s]));
@@ -157,6 +159,14 @@ export function GateMapGrid({
         const hasContent = comparison.desiredPresetId != null || comparison.desiredSpoolId != null;
         const hasObservation = comparison.observationState !== 'none';
         const hasConflict = comparison.conflict != null;
+        // An observation older than the freshness window stops describing the
+        // hardware, but it is still the last thing the printer told us. Keeping
+        // it visible and dated beats showing the slot as if nothing was known.
+        const staleObservation = !hasObservation
+          && slot.observation
+          && (slot.observation.present === true || slot.observation.material != null)
+          ? slot.observation
+          : null;
 
         return (
           <button
@@ -238,6 +248,16 @@ export function GateMapGrid({
                 {t(isUnidentified
                   ? 'presetSlots.assignment.unknownSpool'
                   : 'presetSlots.assignment.empty')}
+              </span>
+            )}
+
+            {staleObservation && (
+              <span className="max-w-full truncate text-[9px] leading-tight text-gray-500">
+                {t('presetSlots.observation.lastSeen', {
+                  detail: staleObservation.material
+                    ?? t('presetSlots.observation.lastSeenSpool'),
+                  age: formatLastSeen(staleObservation.observed_at, t, i18n.language, now),
+                })}
               </span>
             )}
 

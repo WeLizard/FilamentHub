@@ -6718,7 +6718,9 @@
         "assigned_but_observed_empty": "检查",
         "observed_loaded_without_spool": "匹配",
         "observed_details_differ": "核对"
-      }
+      },
+      "lastSeen": "此前：{{detail}} · {{age}}",
+      "lastSeenSpool": "线轴"
     },
     "hhStatus": {
       "unknown": "未知",

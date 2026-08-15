@@ -6727,7 +6727,9 @@
         "assigned_but_observed_empty": "Review",
         "observed_loaded_without_spool": "Match",
         "observed_details_differ": "Compare"
-      }
+      },
+      "lastSeen": "Earlier: {{detail}} · {{age}}",
+      "lastSeenSpool": "a spool"
     },
     "hhStatus": {
       "unknown": "Unknown",
