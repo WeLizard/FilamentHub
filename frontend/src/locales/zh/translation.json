@@ -3229,12 +3229,14 @@
     "spoolLastLocation": "上次位置：{{printer}} · 通道 {{gate}}",
     "spoolGateStep": {
       "title": "线轴已添加！放在哪里？",
-      "hint": "将线轴分配到MMU门槽，或跳过 — 您可以稍后从门图中分配它。",
-      "deviceLabel": "MMU设备",
-      "selectDevice": "选择设备",
-      "gateLabel": "门槽",
+      "hint": "将线轴分配到供料系统的槽位，或跳过 — 您可以稍后从槽位图中分配它。",
+      "gateLabel": "槽位",
       "assign": "分配",
-      "skip": "放在架上（跳过）"
+      "skip": "放在架上（跳过）",
+      "systemLabel": "供料系统",
+      "selectSystem": "选择系统",
+      "slotOccupied": "槽位已占用",
+      "slotOccupiedHint": "该槽位已有线轴 — 分配将会替换它。"
     },
     "spoolAddModal": {
       "title": "添加线轴",

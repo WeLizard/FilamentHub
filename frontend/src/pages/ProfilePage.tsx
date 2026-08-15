@@ -47,9 +47,9 @@ import { FilamentSpoolIcon } from '../components/icons/FilamentSpoolIcon';
 import { useAuth } from '../contexts/AuthContext';
 import { useHeaderVisible } from '../hooks/useHeaderVisible';
 import { useUserCurrency } from '../hooks/useUserCurrency';
-import { presetsAPI, filamentsAPI, brandsAPI, savedPresetsAPI, filamentReviewsAPI, printerProfilesAPI, printProfilesAPI, authAPI, spoolsAPI, qrAPI, devicesAPI, presetSlotsAPI, calculatorAPI, crmAPI, physicalPrintersAPI } from '../api/client';
+import { presetsAPI, filamentsAPI, brandsAPI, savedPresetsAPI, filamentReviewsAPI, printerProfilesAPI, printProfilesAPI, authAPI, spoolsAPI, qrAPI, calculatorAPI, crmAPI, physicalPrintersAPI } from '../api/client';
 import { extractQrShortCode, createQrFrameDecoder } from '../utils/qrScanner';
-import type { UserSpool, SpoolState, UserPrinterDevice } from '../api/client';
+import type { UserSpool, SpoolState, PhysicalPrinter, MaterialSlot } from '../api/client';
 import { SpoolIcon } from '../components/icons/SpoolIcon';
 import { NozzleRequirementBadge } from '../components/NozzleRequirementBadge';
 import { translateApiError } from '../utils/translateApiError';
@@ -57,6 +57,12 @@ import { getSpoolCurrentLocation, getSpoolLastLocation } from '../utils/spoolLoc
 import { currencySymbol, normalizeCurrency } from '../utils/currency';
 import { formatImportedPresetTemperature } from '../utils/presetImport';
 import { notifyProfileChanged } from '../utils/pluginBridge';
+import {
+  readUiChoice,
+  readUiPreference,
+  uiScopeForUser,
+  writeUiPreference,
+} from '../utils/uiPreferences';
 import { downloadBlob, safeDownloadStem } from '../utils/download';
 import { formatDecimalInput, parseDecimalInput } from '../utils/decimalInput';
 import { filamentPublicPath } from '../utils/catalogUrls';
@@ -92,7 +98,24 @@ const BrandProfilePage = lazy(() => import('./BrandProfilePage').then((module) =
 const CalculatorPage = lazy(() => import('./CalculatorPage').then((module) => ({ default: module.CalculatorPage })));
 const CrmWorkspacePage = lazy(() => import('./CrmWorkspacePage').then((module) => ({ default: module.CrmWorkspacePage })));
 
-type CalculatorWorkspaceMode = 'calculator' | 'history' | 'quotes' | 'orders' | 'customers';
+const CALCULATOR_WORKSPACE_MODES = ['calculator', 'history', 'quotes', 'orders', 'customers'] as const;
+type CalculatorWorkspaceMode = (typeof CALCULATOR_WORKSPACE_MODES)[number];
+
+const PRESET_FILTERS = ['all', 'own', 'saved', 'synced', 'drafts'] as const;
+type PresetFilter = (typeof PRESET_FILTERS)[number];
+
+const SPOOL_TABS = ['active', 'shelf', 'archived'] as const;
+type SpoolTab = (typeof SPOOL_TABS)[number];
+
+const PROFILE_TABS = [
+  'dashboard',
+  'presets',
+  'spools',
+  'calculator-pro',
+  'settings',
+  'printer-profiles',
+] as const;
+type ProfileTab = (typeof PROFILE_TABS)[number];
 
 const PROFILE_BADGE_LIMIT = 3;
 const PROFILE_BADGE_PRIORITY: BadgeType[] = [
@@ -180,20 +203,30 @@ export const ProfilePage: React.FC = () => {
     return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
   }, [profileSearchParams]);
   const spoolIntakeSource = profileSearchParams.get('source') === 'qr' ? 'qr' : 'manual';
-  const [showBrandCabinet, setShowBrandCabinet] = useState<boolean>(
-    () => Boolean((location.state as { brandCabinet?: boolean } | null)?.brandCabinet),
-  ); // Показывать ли кабинет производителя
+  const [showBrandCabinet, setShowBrandCabinet] = useState<boolean>(() => {
+    const requested = (location.state as { brandCabinet?: boolean } | null)?.brandCabinet;
+    if (typeof requested === 'boolean') return requested;
+    return readUiPreference(uiScopeForUser(user?.id), 'brandCabinet') === '1';
+  }); // Показывать ли кабинет производителя
   const [isAddBrandFlowActive, setIsAddBrandFlowActive] = useState(false);
-  const [userTab, setUserTab] = useState<'dashboard' | 'presets' | 'spools' | 'calculator-pro' | 'settings' | 'printer-profiles'>(() => {
+  const uiScope = uiScopeForUser(user?.id);
+  const [userTab, setUserTab] = useState<ProfileTab>(() => {
     // Deep-link на конкретную вкладку: navigate('/profile', { state: { tab } })
     const requested = profileSearchParams.get('tab')
       ?? (location.state as { tab?: string } | null)?.tab;
-    const valid = ['dashboard', 'presets', 'spools', 'calculator-pro', 'settings', 'printer-profiles'];
-    return valid.includes(requested ?? '')
-      ? (requested as 'dashboard' | 'presets' | 'spools' | 'calculator-pro' | 'settings' | 'printer-profiles')
-      : 'dashboard';
+    if (PROFILE_TABS.includes(requested as ProfileTab)) {
+      return requested as ProfileTab;
+    }
+    return readUiChoice(uiScopeForUser(user?.id), 'profileTab', PROFILE_TABS, 'dashboard');
   });
-  const [calculatorWorkspaceMode, setCalculatorWorkspaceMode] = useState<CalculatorWorkspaceMode>('calculator');
+  const [calculatorWorkspaceMode, setCalculatorWorkspaceMode] = useState<CalculatorWorkspaceMode>(
+    () => readUiChoice(
+      uiScopeForUser(user?.id),
+      'calculatorView',
+      CALCULATOR_WORKSPACE_MODES,
+      'calculator',
+    ),
+  );
   const [calculatorEconomicsOpen, setCalculatorEconomicsOpen] = useState(false);
   const [calculatorQuoteProfileOpen, setCalculatorQuoteProfileOpen] = useState(false);
   const [isAddSpoolOpen, setIsAddSpoolOpen] = useState(
@@ -216,7 +249,9 @@ export const ProfilePage: React.FC = () => {
   const [editingPrintProfile, setEditingPrintProfile] = useState<PrintProfile | null>(null);
   const [createPrintProfileContext, setCreatePrintProfileContext] = useState<PrinterProfile | null>(null);
   const [_viewMode, _setViewMode] = useState<'grid' | 'list'>('grid');
-  const [presetFilter, setPresetFilter] = useState<'all' | 'own' | 'saved' | 'synced' | 'drafts'>('all');
+  const [presetFilter, setPresetFilter] = useState<PresetFilter>(
+    () => readUiChoice(uiScopeForUser(user?.id), 'presetFilter', PRESET_FILTERS, 'all'),
+  );
   const [isScanning, setIsScanning] = useState(false);
   const needsPresetData = !showBrandCabinet && (userTab === 'dashboard' || userTab === 'presets');
   const needsPrinterProfileData = !showBrandCabinet && (
@@ -233,7 +268,31 @@ export const ProfilePage: React.FC = () => {
     if (profileSearchParams.get('add_spool') === '1' && spoolIntakeFilamentId !== null) {
       setIsAddSpoolOpen(true);
     }
-  }, [profileSearchParams, spoolIntakeFilamentId]);
+    // The deep link has done its job. Left in the address it would win over the
+    // remembered tab on every reload and pin the person to one section.
+    if (requestedTab !== null) {
+      const nextParams = new URLSearchParams(profileSearchParams);
+      nextParams.delete('tab');
+      const nextSearch = nextParams.toString();
+      navigate(`${location.pathname}${nextSearch ? `?${nextSearch}` : ''}`, { replace: true });
+    }
+  }, [profileSearchParams, spoolIntakeFilamentId, navigate, location.pathname]);
+
+  useEffect(() => {
+    writeUiPreference(uiScope, 'profileTab', userTab);
+  }, [uiScope, userTab]);
+
+  useEffect(() => {
+    writeUiPreference(uiScope, 'calculatorView', calculatorWorkspaceMode);
+  }, [uiScope, calculatorWorkspaceMode]);
+
+  useEffect(() => {
+    writeUiPreference(uiScope, 'brandCabinet', showBrandCabinet ? '1' : '0');
+  }, [uiScope, showBrandCabinet]);
+
+  useEffect(() => {
+    writeUiPreference(uiScope, 'presetFilter', presetFilter);
+  }, [uiScope, presetFilter]);
 
   const setAddSpoolOpen = (open: boolean) => {
     setIsAddSpoolOpen(open);
@@ -2213,6 +2272,37 @@ const SpoolCard: React.FC<SpoolCardProps> = ({
   );
 };
 
+interface FeedTarget {
+  key: string;
+  printerId: number;
+  printerName: string;
+  systemName: string;
+  slots: MaterialSlot[];
+}
+
+const collectFeedTargets = (printers: PhysicalPrinter[]): FeedTarget[] => {
+  const targets: FeedTarget[] = [];
+  printers.forEach((printer) => {
+    printer.material_systems
+      .filter((system) => system.active)
+      .forEach((system) => {
+        const slots = system.slots
+          .filter((slot) => slot.active)
+          .sort((left, right) => left.provider_index - right.provider_index || left.id - right.id);
+        if (slots.length > 0) {
+          targets.push({
+            key: `${printer.id}:${system.id}`,
+            printerId: printer.id,
+            printerName: printer.name,
+            systemName: system.name,
+            slots,
+          });
+        }
+      });
+  });
+  return targets;
+};
+
 interface SpoolFormProps {
   mode: 'create' | 'edit';
   spool?: UserSpool;
@@ -2275,8 +2365,8 @@ const SpoolForm: React.FC<SpoolFormProps> = ({
   const [saving, setSaving] = useState(false);
   const [gateStep, setGateStep] = useState(false);
   const [createdSpool, setCreatedSpool] = useState<UserSpool | null>(null);
-  const [selectedDeviceId, setSelectedDeviceId] = useState<string>('');
-  const [selectedGate, setSelectedGate] = useState<string>('');
+  const [selectedTargetKey, setSelectedTargetKey] = useState<string>('');
+  const [selectedSlotId, setSelectedSlotId] = useState<string>('');
   const [assigning, setAssigning] = useState(false);
   const { currency: userCurrency } = useUserCurrency();
   const priceCurrencyCode = normalizeCurrency(
@@ -2307,12 +2397,12 @@ const SpoolForm: React.FC<SpoolFormProps> = ({
     staleTime: 60_000,
   });
 
-  const devicesQuery = useQuery<UserPrinterDevice[]>({
-    queryKey: ['spool-form-devices'],
-    queryFn: () => devicesAPI.list(),
+  const printersQuery = useQuery<PhysicalPrinter[]>({
+    queryKey: ['physical-printers'],
+    queryFn: physicalPrintersAPI.list,
     enabled: mode === 'create',
+    staleTime: 10_000,
   });
-  const allDevices = devicesQuery.data ?? [];
 
   const { data: initialFilament } = useQuery({
     queryKey: ['spool-form-initial-filament', initialFilamentId],
@@ -2320,9 +2410,9 @@ const SpoolForm: React.FC<SpoolFormProps> = ({
     enabled: mode === 'create' && initialFilamentId !== null,
   });
 
-  const hhDevices = useMemo(
-    () => allDevices.filter((d) => d.supports_hh),
-    [allDevices],
+  const feedTargets = useMemo(
+    () => collectFeedTargets(printersQuery.data ?? []),
+    [printersQuery.data],
   );
 
   useEffect(() => {
@@ -2629,15 +2719,15 @@ const SpoolForm: React.FC<SpoolFormProps> = ({
       } else {
         const newSpool = await spoolsAPI.create(payload);
         queryClient.invalidateQueries({ queryKey: ['user-spools'] });
-        let availableHhDevices = hhDevices;
-        if (!devicesQuery.isSuccess) {
-          const refreshedDevices = await devicesQuery.refetch();
-          availableHhDevices = (refreshedDevices.data ?? []).filter((device) => device.supports_hh);
+        let availableTargets = feedTargets;
+        if (!printersQuery.isSuccess) {
+          const refreshed = await printersQuery.refetch();
+          availableTargets = collectFeedTargets(refreshed.data ?? []);
         }
-        if (availableHhDevices.length > 0) {
+        if (availableTargets.length > 0) {
           setCreatedSpool(newSpool);
-          if (availableHhDevices.length === 1) {
-            setSelectedDeviceId(String(availableHhDevices[0].id));
+          if (availableTargets.length === 1) {
+            setSelectedTargetKey(availableTargets[0].key);
           }
           setGateStep(true);
         } else {
@@ -2652,12 +2742,16 @@ const SpoolForm: React.FC<SpoolFormProps> = ({
   };
 
   const handleAssignToGate = async () => {
-    if (!createdSpool || !selectedDeviceId || selectedGate === '') return;
+    const target = feedTargets.find((item) => item.key === selectedTargetKey);
+    if (!createdSpool || !target || selectedSlotId === '') return;
     setAssigning(true);
     setErrorText(null);
     try {
-      await presetSlotsAPI.assign(Number(selectedDeviceId), Number(selectedGate), { spool_id: createdSpool.id });
+      await physicalPrintersAPI.assignSlot(target.printerId, Number(selectedSlotId), {
+        spool_id: createdSpool.id,
+      });
       queryClient.invalidateQueries({ queryKey: ['user-spools'] });
+      queryClient.invalidateQueries({ queryKey: ['physical-printers'] });
       onSaved();
     } catch (err: any) {
       setErrorText(translateApiError(t, err?.response?.data?.detail));
@@ -2683,8 +2777,7 @@ const SpoolForm: React.FC<SpoolFormProps> = ({
   const labelCls = 'block text-xs text-gray-400 mb-1';
 
   if (gateStep && createdSpool) {
-    const selectedDevice = hhDevices.find((d) => d.id === Number(selectedDeviceId));
-    const gateCount = selectedDevice?.gate_count ?? null;
+    const selectedTarget = feedTargets.find((item) => item.key === selectedTargetKey);
     return (
       <div className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-2xl p-4 md:p-5 space-y-4 max-w-2xl mx-auto">
         <div className="flex items-center gap-2">
@@ -2694,56 +2787,62 @@ const SpoolForm: React.FC<SpoolFormProps> = ({
         <p className="text-gray-400 text-sm">{t('profilePage.spoolGateStep.hint')}</p>
 
         <div className="space-y-3">
-          {hhDevices.length > 1 && (
+          {feedTargets.length > 1 ? (
             <div>
-              <label className={labelCls}>{t('profilePage.spoolGateStep.deviceLabel')}</label>
+              <label className={labelCls}>{t('profilePage.spoolGateStep.systemLabel')}</label>
               <select
-                value={selectedDeviceId}
-                onChange={(e) => { setSelectedDeviceId(e.target.value); setSelectedGate(''); }}
+                value={selectedTargetKey}
+                onChange={(e) => { setSelectedTargetKey(e.target.value); setSelectedSlotId(''); }}
                 className={inputCls}
               >
-                <option value="">{t('profilePage.spoolGateStep.selectDevice')}</option>
-                {hhDevices.map((d) => (
-                  <option key={d.id} value={d.id}>{d.name}</option>
+                <option value="">{t('profilePage.spoolGateStep.selectSystem')}</option>
+                {feedTargets.map((target) => (
+                  <option key={target.key} value={target.key}>
+                    {`${target.printerName} · ${target.systemName}`}
+                  </option>
                 ))}
               </select>
             </div>
+          ) : selectedTarget && (
+            <p className="text-xs text-gray-400">
+              {`${selectedTarget.printerName} · ${selectedTarget.systemName}`}
+            </p>
           )}
 
-          {selectedDeviceId && gateCount !== null && gateCount > 0 && (
+          {selectedTarget && (
             <div>
               <label className={labelCls}>{t('profilePage.spoolGateStep.gateLabel')}</label>
               <div className="flex flex-wrap gap-2">
-                {Array.from({ length: gateCount }, (_, i) => (
-                  <button
-                    key={i}
-                    type="button"
-                    onClick={() => setSelectedGate(String(i))}
-                    className={`w-10 h-10 rounded-lg border text-sm font-mono font-semibold transition-colors ${
-                      selectedGate === String(i)
-                        ? 'border-purple-500 bg-purple-500/30 text-purple-200'
-                        : 'border-white/20 bg-white/5 text-gray-300 hover:bg-white/10'
-                    }`}
-                  >
-                    {i}
-                  </button>
-                ))}
+                {selectedTarget.slots.map((slot) => {
+                  const occupied = slot.assignment?.spool_id != null;
+                  return (
+                    <button
+                      key={slot.id}
+                      type="button"
+                      onClick={() => setSelectedSlotId(String(slot.id))}
+                      title={slot.label ?? undefined}
+                      className={`relative w-10 h-10 rounded-lg border text-sm font-mono font-semibold transition-colors ${
+                        selectedSlotId === String(slot.id)
+                          ? 'border-purple-500 bg-purple-500/30 text-purple-200'
+                          : 'border-white/20 bg-white/5 text-gray-300 hover:bg-white/10'
+                      }`}
+                    >
+                      {slot.provider_index}
+                      {occupied && (
+                        <span
+                          title={t('profilePage.spoolGateStep.slotOccupied')}
+                          className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-amber-400"
+                        />
+                      )}
+                    </button>
+                  );
+                })}
               </div>
-            </div>
-          )}
-
-          {selectedDeviceId && gateCount === null && (
-            <div>
-              <label className={labelCls}>{t('profilePage.spoolGateStep.gateLabel')}</label>
-              <input
-                type="number"
-                min={0}
-                max={99}
-                value={selectedGate}
-                onChange={(e) => setSelectedGate(e.target.value)}
-                placeholder="0"
-                className={`w-24 ${inputCls}`}
-              />
+              {selectedSlotId !== '' && selectedTarget.slots.some(
+                (slot) => String(slot.id) === selectedSlotId && slot.assignment?.spool_id != null,
+              ) && (
+                <p className="mt-2 text-xs text-amber-300">{t('profilePage.spoolGateStep.slotOccupiedHint')}</p>
+              )}
             </div>
           )}
         </div>
@@ -2762,7 +2861,7 @@ const SpoolForm: React.FC<SpoolFormProps> = ({
           <button
             type="button"
             onClick={handleAssignToGate}
-            disabled={assigning || !selectedDeviceId || selectedGate === ''}
+            disabled={assigning || !selectedTarget || selectedSlotId === ''}
             className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg border border-white/20 text-gray-200 text-sm font-medium hover:bg-white/10 disabled:opacity-50 transition-colors"
           >
             {assigning && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
@@ -3082,7 +3181,15 @@ const SpoolsTab: React.FC<SpoolsTabProps> = ({
 }) => {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
-  const [spoolTab, setSpoolTab] = useState<'shelf' | 'active' | 'archived'>('active');
+  const { user } = useAuth();
+  const spoolUiScope = uiScopeForUser(user?.id);
+  const [spoolTab, setSpoolTab] = useState<SpoolTab>(
+    () => readUiChoice(uiScopeForUser(user?.id), 'spoolTab', SPOOL_TABS, 'active'),
+  );
+
+  useEffect(() => {
+    writeUiPreference(spoolUiScope, 'spoolTab', spoolTab);
+  }, [spoolUiScope, spoolTab]);
   const [editingSpool, setEditingSpool] = useState<UserSpool | null>(null);
   const [usingSpool, setUsingSpool] = useState<UserSpool | null>(null);
   const [busySpoolId, setBusySpoolId] = useState<number | null>(null);
@@ -3240,16 +3347,20 @@ const SpoolsTab: React.FC<SpoolsTabProps> = ({
 
       <div className="space-y-4 md:space-y-6">
         {isAddOpen && (
-          <SpoolForm
-            mode="create"
-            initialFilamentId={initialFilamentId}
-            initialSource={initialSource}
-            onSaved={() => {
-              setIsAddOpen(false);
-              onRefetch();
-            }}
-            onCancel={() => setIsAddOpen(false)}
-          />
+          <ModalOverlay onClose={() => setIsAddOpen(false)}>
+            <div className="w-full max-w-2xl">
+              <SpoolForm
+                mode="create"
+                initialFilamentId={initialFilamentId}
+                initialSource={initialSource}
+                onSaved={() => {
+                  setIsAddOpen(false);
+                  onRefetch();
+                }}
+                onCancel={() => setIsAddOpen(false)}
+              />
+            </div>
+          </ModalOverlay>
         )}
 
         {editingSpool && (
@@ -3346,7 +3457,7 @@ const SpoolsTab: React.FC<SpoolsTabProps> = ({
               )}
             </div>
           </div>
-        ) : spools.length === 0 && !isAddOpen ? (
+        ) : spools.length === 0 ? (
           <div className="text-center py-12 md:py-16">
             <Package className="w-14 h-14 md:w-20 md:h-20 text-gray-500 mx-auto mb-4" />
             <p className="text-gray-400 text-base md:text-lg">{t('profilePage.spoolsEmpty')}</p>

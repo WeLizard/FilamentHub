@@ -3234,12 +3234,14 @@
     "spoolLastLocation": "Last seen in: {{printer}} · gate {{gate}}",
     "spoolGateStep": {
       "title": "Spool added! Where to put it?",
-      "hint": "Assign the spool to an MMU gate slot, or skip - you can assign it later from the gate map.",
-      "deviceLabel": "MMU device",
-      "selectDevice": "Select device",
-      "gateLabel": "Gate slot",
+      "hint": "Assign the spool to a feed system slot, or skip - you can assign it later from the slot map.",
+      "gateLabel": "Slot",
       "assign": "Assign",
-      "skip": "Put on shelf (skip)"
+      "skip": "Put on shelf (skip)",
+      "systemLabel": "Feed system",
+      "selectSystem": "Select a system",
+      "slotOccupied": "Slot is occupied",
+      "slotOccupiedHint": "This slot already holds a spool - assigning will replace it."
     },
     "spoolAddModal": {
       "title": "Add spool",
