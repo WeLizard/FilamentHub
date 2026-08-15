@@ -6,7 +6,7 @@ import json
 import logging
 from datetime import datetime, timezone
 
-from sqlalchemy import and_, case, or_, select, update
+from sqlalchemy import and_, case, or_, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -50,7 +50,6 @@ from app.schemas.preset_slot_sync import (
 from app.services.material_assignment_service import (
     require_accessible_preset,
     require_accessible_spool,
-    sync_legacy_material_assignment,
 )
 from app.services.material_contract_service import (
     ensure_material_topology,
@@ -1133,86 +1132,3 @@ async def handle_usage_estimate(
     await db.commit()
     await db.refresh(event)
     return event
-
-
-# ── Web: assign preset to slot ─────────────────────────────────────────────
-
-
-async def web_assign_preset_to_slot(
-    db: AsyncSession,
-    user: User,
-    device_id: int,
-    gate_index: int,
-    preset_id: int | None,
-    spool_id: int | None,
-    *,
-    preset_id_provided: bool = True,
-    spool_id_provided: bool = True,
-) -> PresetGateState:
-    device = await require_device(db, user.id, device_id)
-
-    if device.gate_count is not None and gate_index >= device.gate_count:
-        raise_error(400, ERR_GATE_INDEX_INVALID, {"gate": gate_index, "max": device.gate_count - 1})
-
-    if preset_id is not None:
-        await require_accessible_preset(db, user.id, preset_id)
-
-    payload = ManualAssignmentRequest(
-        device_fingerprint=device.device_fingerprint or f"logical:{device.logical_id}",
-        gate=gate_index,
-        preset_id=preset_id,
-        spool_id=spool_id,
-    )
-    return await handle_manual_assignment(
-        db,
-        user,
-        payload,
-        PresetGateStateSource.web_manual,
-        device=device,
-        preset_id_provided=preset_id_provided,
-        spool_id_provided=spool_id_provided,
-    )
-
-
-async def clear_device_slots(
-    db: AsyncSession,
-    user: User,
-    device_id: int,
-) -> int:
-    device = await require_device(db, user.id, device_id)
-    now = _normalize_utc(datetime.now(timezone.utc))
-    spool_ids_result = await db.execute(
-        select(PresetGateState.spool_id).where(
-            PresetGateState.device_id == device.id,
-            PresetGateState.spool_id.is_not(None),
-        )
-    )
-    spool_ids = {spool_id for spool_id in spool_ids_result.scalars().all() if spool_id is not None}
-    result = await db.execute(
-        update(PresetGateState)
-        .where(PresetGateState.device_id == device.id)
-        .values(
-            preset_id=None,
-            spool_id=None,
-            source=PresetGateStateSource.web_manual,
-            source_ts=now,
-            is_active=True,
-        )
-    )
-    await db.flush()
-    states = await get_gate_states(db, device.id)
-    for state in states:
-        await sync_legacy_material_assignment(db, state)
-
-    if spool_ids:
-        spools_result = await db.execute(
-            select(UserSpool).where(
-                UserSpool.id.in_(spool_ids),
-                UserSpool.user_id == user.id,
-            )
-        )
-        for spool in spools_result.scalars().all():
-            await shelf_spool_if_unassigned(db, spool)
-
-    await db.commit()
-    return int(result.rowcount or 0)

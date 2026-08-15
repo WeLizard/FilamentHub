@@ -3873,21 +3873,4 @@ export const printerBridgeAPI = {
   },
 };
 
-export const presetSlotsAPI = {
-  list: async (device_id: number): Promise<GateState[]> => {
-    const response = await api.get<GateState[]>('/preset-slots', { params: { device_id } });
-    return response.data;
-  },
-
-  assign: async (device_id: number, gate_index: number, payload: SlotAssignPayload): Promise<GateState> => {
-    const response = await api.patch<GateState>(`/preset-slots/${device_id}/${gate_index}`, payload);
-    return response.data;
-  },
-
-  clear: async (device_id: number): Promise<{ cleared: number }> => {
-    const response = await api.post<{ cleared: number }>(`/preset-slots/${device_id}/clear`);
-    return response.data;
-  },
-};
-
 export default api;

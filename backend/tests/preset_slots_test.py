@@ -38,6 +38,19 @@ async def _register_and_login(
     return {"Authorization": f"Bearer {token}"}, email
 
 
+def _first_slot_id(printer_payload: dict) -> int:
+    slots = printer_payload["material_systems"][0]["slots"]
+    return min(slots, key=lambda slot: slot["provider_index"])["id"]
+
+
+def _slot_assignment(printer_payload: dict, slot_id: int) -> dict | None:
+    for system in printer_payload["material_systems"]:
+        for slot in system["slots"]:
+            if slot["id"] == slot_id:
+                return slot["assignment"]
+    raise AssertionError(f"slot {slot_id} is missing from the printer payload")
+
+
 @pytest.mark.asyncio
 async def test_slot_spool_update_does_not_clear_existing_preset(
     client: AsyncClient,
@@ -102,45 +115,58 @@ async def test_slot_spool_update_does_not_clear_existing_preset(
     assert heartbeat_response.status_code == 200
     device_id = heartbeat_response.json()["device_id"]
 
+    slot_id = _first_slot_id(
+        (
+            await client.get(
+                f"/api/v1/physical-printers/{device_id}",
+                headers=headers,
+            )
+        ).json()
+    )
+    slot_url = f"/api/v1/physical-printers/{device_id}/material-slots/{slot_id}"
+
     # 1) Assign preset only.
     assign_preset_response = await client.patch(
-        f"/api/v1/preset-slots/{device_id}/0",
+        slot_url,
         json={"preset_id": preset.id},
         headers=headers,
     )
     assert assign_preset_response.status_code == 200
-    assert assign_preset_response.json()["preset_id"] == preset.id
-    assert assign_preset_response.json()["spool_id"] is None
+    assignment = _slot_assignment(assign_preset_response.json(), slot_id)
+    assert assignment["preset_id"] == preset.id
+    assert assignment["spool_id"] is None
 
     # 2) Update spool only (preset must be preserved).
     assign_spool_response = await client.patch(
-        f"/api/v1/preset-slots/{device_id}/0",
+        slot_url,
         json={"spool_id": spool.id},
         headers=headers,
     )
     assert assign_spool_response.status_code == 200
-    assert assign_spool_response.json()["preset_id"] == preset.id
-    assert assign_spool_response.json()["spool_id"] == spool.id
+    assignment = _slot_assignment(assign_spool_response.json(), slot_id)
+    assert assignment["preset_id"] == preset.id
+    assert assignment["spool_id"] == spool.id
 
-    list_response = await client.get(
-        f"/api/v1/preset-slots?device_id={device_id}",
+    read_back = await client.get(
+        f"/api/v1/physical-printers/{device_id}",
         headers=headers,
     )
-    assert list_response.status_code == 200
-    state_gate_0 = next((s for s in list_response.json() if s["gate_index"] == 0), None)
-    assert state_gate_0 is not None
-    assert state_gate_0["preset_id"] == preset.id
-    assert state_gate_0["spool_id"] == spool.id
+    assert read_back.status_code == 200
+    assignment = _slot_assignment(read_back.json(), slot_id)
+    assert assignment["preset_id"] == preset.id
+    assert assignment["spool_id"] == spool.id
 
     # 3) Explicit clear should null both preset and spool.
     clear_response = await client.patch(
-        f"/api/v1/preset-slots/{device_id}/0",
+        slot_url,
         json={"preset_id": None, "spool_id": None},
         headers=headers,
     )
     assert clear_response.status_code == 200
-    assert clear_response.json()["preset_id"] is None
-    assert clear_response.json()["spool_id"] is None
+    assignment = _slot_assignment(clear_response.json(), slot_id)
+    assert assignment is None or (
+        assignment["preset_id"] is None and assignment["spool_id"] is None
+    )
 
 
 @pytest.mark.asyncio
@@ -193,8 +219,16 @@ async def test_assign_slot_rejects_foreign_spool_id(
     assert heartbeat_response.status_code == 200
     device_id = heartbeat_response.json()["device_id"]
 
+    slot_id = _first_slot_id(
+        (
+            await client.get(
+                f"/api/v1/physical-printers/{device_id}",
+                headers=owner_headers,
+            )
+        ).json()
+    )
     assign_response = await client.patch(
-        f"/api/v1/preset-slots/{device_id}/1",
+        f"/api/v1/physical-printers/{device_id}/material-slots/{slot_id}",
         json={"spool_id": foreign_spool.id},
         headers=owner_headers,
     )
@@ -774,8 +808,16 @@ async def test_hh_reconciliation_never_clears_desired_from_presence_status(
     db_session.add(spool)
     await db_session.commit()
     await db_session.refresh(spool)
+    slot_id = _first_slot_id(
+        (
+            await client.get(
+                f"/api/v1/physical-printers/{printer_id}",
+                headers=headers,
+            )
+        ).json()
+    )
     assigned = await client.patch(
-        f"/api/v1/preset-slots/{printer_id}/0",
+        f"/api/v1/physical-printers/{printer_id}/material-slots/{slot_id}",
         json={"spool_id": spool.id},
         headers=headers,
     )

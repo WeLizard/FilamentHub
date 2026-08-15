@@ -30,7 +30,6 @@ from app.api.v1.endpoints import (
     orca_slices,
     orca_sync,
     physical_printers,
-    preset_slots,
     preset_versions,
     presets,
     print_jobs,
@@ -89,7 +88,6 @@ api_router.include_router(octoprint_bridge.router)
 api_router.include_router(notification_campaigns.router)
 api_router.include_router(orca_sync.router)
 api_router.include_router(orca_preset_slot_sync.router)
-api_router.include_router(preset_slots.router)
 api_router.include_router(spools.router)
 api_router.include_router(feedback.router)
 api_router.include_router(downloads.router)
