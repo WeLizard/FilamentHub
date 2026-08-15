@@ -362,9 +362,27 @@ function Show-PluginReleases {
         Format-Table -AutoSize
 }
 
+function Get-PluginSourceVersion {
+    # The plugin source is the single source of truth for the version; the build
+    # validator checks the rest against it. Typing the tag by hand only adds a
+    # way to publish under the wrong number.
+    $pluginPath = Join-Path $repositoryRoot 'orca-plugin\filamenthub_plugin.py'
+    if (-not (Test-Path -LiteralPath $pluginPath -PathType Leaf)) {
+        throw "Не найден исходник плагина: $pluginPath"
+    }
+    $content = Get-Content -LiteralPath $pluginPath -Raw
+    if ($content -notmatch '(?m)^PLUGIN_VERSION\s*=\s*"(?<version>[^"]+)"\s*$') {
+        throw "Не удалось прочитать PLUGIN_VERSION из '$pluginPath'."
+    }
+    return $Matches.version
+}
+
 function Read-ReleaseTag {
     if ([string]::IsNullOrWhiteSpace($script:ReleaseTag)) {
-        $script:ReleaseTag = Read-Host 'Тег GitHub Release (например plugins-v0.1.0)'
+        $suggested = "plugins-v$(Get-PluginSourceVersion)"
+        Write-Host "Тег релиза из версии плагина: $suggested" -ForegroundColor Cyan
+        $answer = Read-Host 'Enter — принять, либо введи другой тег'
+        $script:ReleaseTag = if ([string]::IsNullOrWhiteSpace($answer)) { $suggested } else { $answer.Trim() }
     }
     if ($script:ReleaseTag -notmatch '^plugins-v\d+\.\d+\.\d+$') {
         throw "Неподдерживаемый тег релиза плагинов: $script:ReleaseTag"
@@ -479,7 +497,11 @@ function Invoke-PluginReleasePreparation {
     if (-not $?) {
         throw 'Предварительная проверка релиза плагинов завершилась с ошибкой.'
     }
-    if ((Read-Host "Введи ОПУБЛИКОВАТЬ $tag, чтобы продолжить") -ne "ОПУБЛИКОВАТЬ $tag") {
+    # The dry run above already printed the versions, the tag and the release
+    # notes, so the decision is made with everything visible. Retyping the tag
+    # protected against nothing: it was the same string, just entered twice.
+    $answer = Read-Host "Публикуем $tag? (y/n)"
+    if ($answer -notmatch '^(y|yes|д|да)$') {
         throw 'Публикация релиза отменена.'
     }
 
