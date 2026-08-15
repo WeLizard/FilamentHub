@@ -28,6 +28,14 @@ import { ModalOverlay } from './ModalOverlay';
 import { ConfirmModal } from './ConfirmModal';
 import { InfoHint } from './InfoHint';
 import { FilamentFeaturesEditor } from './FilamentFeaturesEditor';
+import { FilamentCorrectionRequestModal } from './FilamentCorrectionRequestModal';
+import {
+  FilamentHandlingEditor,
+  type FilamentHandlingFormValue,
+  isHandlingGuidanceComplete,
+  normalizeChemicalGuidance,
+  parseBedAdhesives,
+} from './FilamentHandlingEditor';
 import { deriveVisualEffectsFromAdditives, mergeVisualEffects } from '../data/filamentFeatures';
 import {
   classifyFilamentColorGroup,
@@ -112,6 +120,15 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
   const colorPickerButtonRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const [diameter, setDiameter] = useState(1.75);
   const [density, setDensity] = useState(1.24);
+  const [handling, setHandling] = useState<FilamentHandlingFormValue>({
+    dryingRequired: false,
+    dryingTemperatureC: '',
+    dryingDurationHours: '',
+    enclosureRequirement: 'none',
+    chamberTemperatureC: '',
+    bedAdhesivesText: '',
+    chemicals: [],
+  });
   const [priceMode, setPriceMode] = useState<'per_kg' | 'per_spool'>('per_kg');
   const [selectedCountry, setSelectedCountry] = useState<string | null>(initialCountry);
   const [marketAvailability, setMarketAvailability] = useState<CountryAvailability>('unknown');
@@ -207,33 +224,6 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
   const [createdFilament, setCreatedFilament] = useState<Filament | null>(null); // Для отображения QR-кода после создания
 
   const [commonEditRequestOpen, setCommonEditRequestOpen] = useState(false);
-  const [commonEditRequestMessage, setCommonEditRequestMessage] = useState('');
-  const [commonEditRequestError, setCommonEditRequestError] = useState<string | null>(null);
-  const commonEditRequestMutation = useMutation({
-    mutationFn: () => filamentsAPI.requestCommonEdit(
-      filament!.id,
-      commonEditRequestMessage.trim(),
-    ),
-    onSuccess: ({ recipients }) => {
-      if (recipients === 0) {
-        setCommonEditRequestError(t('createFilament.commonEditRequestNoRecipients'));
-        return;
-      }
-      setCommonEditRequestOpen(false);
-      setCommonEditRequestMessage('');
-      setCommonEditRequestError(null);
-      setSuccessMessage(t('createFilament.commonEditRequestSent'));
-    },
-    onError: (err: AxiosError<{ detail: unknown }>) => {
-      setCommonEditRequestError(
-        translateApiError(
-          t,
-          err.response?.data?.detail,
-          t('createFilament.commonEditRequestFailed'),
-        ),
-      );
-    },
-  });
 
   
   // Ref для отслеживания внутренних изменений цвета (из расширенных настроек)
@@ -402,6 +392,15 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
       setOpenColorPickers([]);
       setDiameter(filament.diameter || 1.75);
       setDensity(filament.density || 1.24);
+      setHandling({
+        dryingRequired: filament.drying_required ?? false,
+        dryingTemperatureC: filament.drying_temperature_c ?? '',
+        dryingDurationHours: filament.drying_duration_hours ?? '',
+        enclosureRequirement: filament.enclosure_requirement ?? 'none',
+        chamberTemperatureC: filament.chamber_temperature_c ?? '',
+        bedAdhesivesText: (filament.bed_adhesives ?? []).join(', '),
+        chemicals: filament.post_processing_chemicals ?? [],
+      });
       const initialPricePerKg = filament.price_per_kg || 0;
       const initialSpoolWeight = filament.spool_weight || 1000;
       setPricePerKg(initialPricePerKg);
@@ -446,6 +445,15 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
       setOpenColorPickers([]);
       setDiameter(1.75);
       setDensity(1.24);
+      setHandling({
+        dryingRequired: false,
+        dryingTemperatureC: '',
+        dryingDurationHours: '',
+        enclosureRequirement: 'none',
+        chamberTemperatureC: '',
+        bedAdhesivesText: '',
+        chemicals: [],
+      });
       setPricePerKg(0);
       setPricePerSpool(0);
       setSpoolWeight(1000);
@@ -601,6 +609,11 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
       return;
     }
 
+    if (canManageTechnicalFacts && !isHandlingGuidanceComplete(handling)) {
+      setError(t('filamentHandling.requiredParametersError'));
+      return;
+    }
+
     // price_per_kg is stored canonically; when the brand priced per spool we
     // derive it here. price_display_unit keeps the brand's chosen unit so the
     // card shows that price as primary and the other unit as a hint.
@@ -646,6 +659,15 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
         }
         if (touched.has('density') && filament.density == null && density > 0) {
           commonGaps.density = density;
+        }
+        if (touched.has('handling')) {
+          if (filament.drying_required == null) commonGaps.drying_required = handling.dryingRequired;
+          if (filament.drying_temperature_c == null && handling.dryingTemperatureC !== '') commonGaps.drying_temperature_c = handling.dryingTemperatureC;
+          if (filament.drying_duration_hours == null && handling.dryingDurationHours !== '') commonGaps.drying_duration_hours = handling.dryingDurationHours;
+          if (filament.enclosure_requirement == null) commonGaps.enclosure_requirement = handling.enclosureRequirement;
+          if (filament.chamber_temperature_c == null && handling.chamberTemperatureC !== '') commonGaps.chamber_temperature_c = handling.chamberTemperatureC;
+          if ((filament.bed_adhesives?.length ?? 0) === 0) commonGaps.bed_adhesives = parseBedAdhesives(handling.bedAdhesivesText);
+          if ((filament.post_processing_chemicals?.length ?? 0) === 0) commonGaps.post_processing_chemicals = normalizeChemicalGuidance(handling.chemicals);
         }
         if (touched.has('spool_weight') && filament.spool_weight == null && spoolWeight > 0) {
           commonGaps.spool_weight = spoolWeight;
@@ -700,7 +722,16 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
           additives,
           property_claims: propertyClaims,
           diameter,
-          density,
+          ...(canManageTechnicalFacts ? {
+            density,
+            drying_required: handling.dryingRequired,
+            drying_temperature_c: handling.dryingRequired && handling.dryingTemperatureC !== '' ? handling.dryingTemperatureC : null,
+            drying_duration_hours: handling.dryingRequired && handling.dryingDurationHours !== '' ? handling.dryingDurationHours : null,
+            enclosure_requirement: handling.enclosureRequirement,
+            chamber_temperature_c: handling.enclosureRequirement === 'active' && handling.chamberTemperatureC !== '' ? handling.chamberTemperatureC : null,
+            bed_adhesives: parseBedAdhesives(handling.bedAdhesivesText),
+            post_processing_chemicals: normalizeChemicalGuidance(handling.chemicals),
+          } : {}),
           price_per_kg: priceKg || undefined,
           spool_weight: spoolWeight || undefined,
           empty_spool_weight_g: emptySpoolWeight ?? undefined,
@@ -747,7 +778,16 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
         additives,
         property_claims: propertyClaims,
         diameter,
-        density,
+        ...(canManageTechnicalFacts ? {
+          density,
+          drying_required: handling.dryingRequired,
+          drying_temperature_c: handling.dryingRequired && handling.dryingTemperatureC !== '' ? handling.dryingTemperatureC : null,
+          drying_duration_hours: handling.dryingRequired && handling.dryingDurationHours !== '' ? handling.dryingDurationHours : null,
+          enclosure_requirement: handling.enclosureRequirement,
+          chamber_temperature_c: handling.enclosureRequirement === 'active' && handling.chamberTemperatureC !== '' ? handling.chamberTemperatureC : null,
+          bed_adhesives: parseBedAdhesives(handling.bedAdhesivesText),
+          post_processing_chemicals: normalizeChemicalGuidance(handling.chemicals),
+        } : {}),
         price_per_kg: scopeCountry ? undefined : priceKg || undefined,
         spool_weight: spoolWeight || undefined,
         empty_spool_weight_g: emptySpoolWeight ?? undefined,
@@ -771,8 +811,12 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
   const canEditFilamentCommon = Boolean(
     territoriesQuery.data?.is_admin || territoriesQuery.data?.can_edit_filament_common,
   );
+  const canManageTechnicalFacts = Boolean(
+    user?.role === 'admin' || (territoriesQuery.data?.territories?.length ?? 0) > 0,
+  );
   // A regional representative may define the shared shell when creating a
-  // missing product. Once it exists, common edits require the global grant.
+  // missing product. Once a global holder exists, regional representatives may
+  // fill gaps but request corrections for already populated shared values.
   const commonLocked = Boolean(filament && scopeCountry && !canEditFilamentCommon);
   const colorAppearanceLocked = Boolean(commonLocked && filament
     && filament.color_hex && filament.ral_code && filament.visual_settings
@@ -992,7 +1036,6 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
               <button
                 type="button"
                 onClick={() => {
-                  setCommonEditRequestError(null);
                   setCommonEditRequestOpen(true);
                 }}
                 className="whitespace-nowrap rounded-lg border border-white/15 bg-white/5 px-3 py-1.5 text-sm text-cyan-300 transition hover:bg-white/10"
@@ -1395,7 +1438,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
           )}
 
           {/* Diameter and Density */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <Dropdown
               label={<>{t('createFilament.diameterLabel')} * <InfoHint text={t('paramHints.diameter')} /></>}
               value={diameter}
@@ -1411,9 +1454,16 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
             <DensityField
               value={density}
               onChange={(value) => { touchCommonGap('density'); setDensity(value); }}
-              locked={densityLocked}
+              locked={!canManageTechnicalFacts || densityLocked}
             />
           </div>
+
+          {canManageTechnicalFacts && (
+            <FilamentHandlingEditor
+              value={handling}
+              onChange={(value) => { touchCommonGap('handling'); setHandling(value); }}
+            />
+          )}
 
           {/* Цена относится к рынку: у страновой организации она уходит в её
               ячейку, у глобальной — в общий слой. Поле одно и то же. */}
@@ -1566,77 +1616,14 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
         cancelText={t('unsavedGuard.cancel')}
       />
     </ModalOverlay>
-    {commonEditRequestOpen && (
-      <ModalOverlay
-        onClose={() => {
-          if (!commonEditRequestMutation.isPending) setCommonEditRequestOpen(false);
-        }}
-      >
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            commonEditRequestMutation.mutate();
-          }}
-          className="w-full max-w-lg rounded-2xl border border-white/20 bg-gray-900 p-6 shadow-2xl"
-        >
-          <div className="mb-5 flex items-start justify-between gap-4">
-            <div>
-              <h3 className="text-xl font-bold text-white">
-                {t('createFilament.commonEditRequestTitle')}
-              </h3>
-              <p className="mt-2 text-sm leading-6 text-gray-400">
-                {t('createFilament.commonEditRequestDescription')}
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setCommonEditRequestOpen(false)}
-              disabled={commonEditRequestMutation.isPending}
-              className="rounded-lg p-2 text-gray-400 transition hover:bg-white/10 hover:text-white"
-            >
-              <X className="h-5 w-5" />
-            </button>
-          </div>
-          <textarea
-            autoFocus
-            required
-            minLength={5}
-            maxLength={1000}
-            rows={5}
-            value={commonEditRequestMessage}
-            onChange={(event) => setCommonEditRequestMessage(event.target.value)}
-            placeholder={t('createFilament.commonEditRequestPlaceholder')}
-            className="w-full resize-y rounded-xl border border-white/20 bg-white/10 px-4 py-3 text-white placeholder-gray-500 outline-none focus:ring-2 focus:ring-cyan-500"
-          />
-          {commonEditRequestError && (
-            <p className="mt-3 text-sm text-red-300">{commonEditRequestError}</p>
-          )}
-          <div className="mt-5 flex justify-end gap-3">
-            <button
-              type="button"
-              onClick={() => setCommonEditRequestOpen(false)}
-              disabled={commonEditRequestMutation.isPending}
-              className="rounded-xl bg-white/10 px-4 py-2.5 text-white transition hover:bg-white/20"
-            >
-              {t('createFilament.commonEditRequestCancel')}
-            </button>
-            <button
-              type="submit"
-              disabled={commonEditRequestMutation.isPending || commonEditRequestMessage.trim().length < 5}
-              className="flex items-center gap-2 rounded-xl bg-cyan-600 px-4 py-2.5 text-white transition hover:bg-cyan-700"
-            >
-              {commonEditRequestMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-              {t(commonEditRequestMutation.isPending
-                ? 'createFilament.commonEditRequestSending'
-                : 'createFilament.commonEditRequestSend')}
-            </button>
-          </div>
-        </form>
-      </ModalOverlay>
+    {filament && (
+      <FilamentCorrectionRequestModal
+        filamentId={filament.id}
+        isOpen={commonEditRequestOpen}
+        onClose={() => setCommonEditRequestOpen(false)}
+        onSent={() => setSuccessMessage(t('createFilament.commonEditRequestSent'))}
+      />
     )}
     </>
   );
 };
-
-
-

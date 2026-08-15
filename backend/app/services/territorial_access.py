@@ -1,16 +1,17 @@
 """Кто и что может менять в бренде по своей территории.
 
 Один бренд, одни и те же филаменты, несколько официальных представителей: у
-каждого своя страна и своя часть данных. Правило простое и проверяется на
-сервере: править можно ячейку своей области, чужую нельзя, общий слой закрыт,
-пока его не открыли отдельно.
+каждого своя страна и своя часть данных. Правило проверяется на сервере:
+править можно ячейку своей области, чужую нельзя. Общий слой филаментов до
+появления глобального владельца поддерживают активные представители; затем
+окончательная власть над ним переходит глобальной организации.
 """
 
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.brand_territorial_grant import BrandTerritorialGrant, GrantStatus
-from app.models.organization import OrganizationMembership
+from app.models.organization import Organization, OrganizationMembership
 from app.models.user import User, UserRole
 
 
@@ -26,6 +27,10 @@ async def active_grants_for(
     query = (
         select(BrandTerritorialGrant)
         .join(
+            Organization,
+            Organization.id == BrandTerritorialGrant.organization_id,
+        )
+        .join(
             OrganizationMembership,
             OrganizationMembership.organization_id == BrandTerritorialGrant.organization_id,
         )
@@ -33,6 +38,7 @@ async def active_grants_for(
             BrandTerritorialGrant.brand_id == brand_id,
             BrandTerritorialGrant.status == GrantStatus.active,
             BrandTerritorialGrant.revoked_at.is_(None),
+            Organization.active.is_(True),
             OrganizationMembership.user_id == user.id,
             OrganizationMembership.active.is_(True),
         )
@@ -43,6 +49,33 @@ async def active_grants_for(
         BrandTerritorialGrant.organization_id == user.active_organization_id
     )
     return list(await db.scalars(query))
+
+
+async def brand_has_active_global_grant(db: AsyncSession, brand_id: int) -> bool:
+    """Whether the brand currently has an active global representative."""
+    grant_id = await db.scalar(
+        select(BrandTerritorialGrant.id)
+        .join(
+            Organization,
+            Organization.id == BrandTerritorialGrant.organization_id,
+        )
+        .where(
+            BrandTerritorialGrant.brand_id == brand_id,
+            BrandTerritorialGrant.country.is_(None),
+            BrandTerritorialGrant.status == GrantStatus.active,
+            BrandTerritorialGrant.revoked_at.is_(None),
+            Organization.active.is_(True),
+        )
+        .limit(1)
+    )
+    return grant_id is not None
+
+
+async def can_represent_brand(db: AsyncSession, user: User, brand_id: int) -> bool:
+    """Act on brand-wide operational assets such as its verified QR labels."""
+    if user.role == UserRole.ADMIN:
+        return True
+    return bool(await active_grants_for(db, user, brand_id))
 
 
 def _covers(grant: BrandTerritorialGrant, country: str | None) -> bool:
@@ -100,15 +133,19 @@ async def can_edit_filament_common(
     """Менять общие свойства товара — те, что одинаковы во всех странах.
 
     Provenance explains who contributed a catalog record but does not own it.
-    Common technical data is managed through an explicit global capability;
-    territorial organizations enrich their country cell instead.
+    A global holder has final authority. Until one exists, an active territorial
+    representative may maintain the shared catalogue layer, including records
+    originally contributed by ordinary users. Provenance remains audit data and
+    never turns a catalogue record into private organization property.
     """
     del contributed_by_organization_id
     if user.role == UserRole.ADMIN:
         return True
 
     grants = await active_grants_for(db, user, brand_id)
-    return any(grant.edit_all_filaments_common for grant in grants)
+    if any(grant.edit_all_filaments_common for grant in grants):
+        return True
+    return bool(grants) and not await brand_has_active_global_grant(db, brand_id)
 
 
 async def can_create_for_brand(db: AsyncSession, user: User, brand_id: int) -> bool:

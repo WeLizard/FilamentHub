@@ -123,6 +123,21 @@ class Filament(Base):
     density: Mapped[float | None] = mapped_column(Float, nullable=True)
     # density: г/см³ (для расчета веса)
 
+    # Product-specific handling guidance. These facts belong to the exact
+    # catalogue variant: additives and formulations can make two filaments of
+    # the same broad material type behave differently.
+    drying_required: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    drying_temperature_c: Mapped[float | None] = mapped_column(Float, nullable=True)
+    drying_duration_hours: Mapped[float | None] = mapped_column(Float, nullable=True)
+    enclosure_requirement: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    chamber_temperature_c: Mapped[float | None] = mapped_column(Float, nullable=True)
+    bed_adhesives: Mapped[list[str]] = mapped_column(
+        JSON, default=list, server_default="[]", nullable=False
+    )
+    post_processing_chemicals: Mapped[list[dict]] = mapped_column(
+        JSON, default=list, server_default="[]", nullable=False
+    )
+
     # Рекомендованные производителем диапазоны печати (спека материала).
     # Это ДИАПАЗОН-рекомендация вендора, НЕ конкретные значения профиля — Preset
     # подтягивает их как дефолт при создании. Пусто у community-материалов без спеки.

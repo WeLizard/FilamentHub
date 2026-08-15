@@ -739,6 +739,13 @@ export const filamentsAPI = {
     ral_code?: string | null;
     diameter?: number;
     density?: number;
+    drying_required?: boolean | null;
+    drying_temperature_c?: number | null;
+    drying_duration_hours?: number | null;
+    enclosure_requirement?: import('../types/api').FilamentEnclosureRequirement | null;
+    chamber_temperature_c?: number | null;
+    bed_adhesives?: string[];
+    post_processing_chemicals?: import('../types/api').FilamentChemicalGuidance[];
     price_per_kg?: number;
     spool_weight?: number;
     empty_spool_weight_g?: number;
@@ -782,6 +789,13 @@ export const filamentsAPI = {
     property_claims?: FilamentPropertyClaim[];
     diameter?: number;
     density?: number;
+    drying_required?: boolean | null;
+    drying_temperature_c?: number | null;
+    drying_duration_hours?: number | null;
+    enclosure_requirement?: import('../types/api').FilamentEnclosureRequirement | null;
+    chamber_temperature_c?: number | null;
+    bed_adhesives?: string[];
+    post_processing_chemicals?: import('../types/api').FilamentChemicalGuidance[];
     price_per_kg?: number;
     spool_weight?: number;
     empty_spool_weight_g?: number;

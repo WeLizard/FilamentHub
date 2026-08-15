@@ -19,7 +19,12 @@ from app.models.brand_territorial_grant import (
 from app.models.filament import Filament
 from app.models.filament_analytics_event import FilamentAnalyticsEvent
 from app.models.filament_country_cell import FilamentCountryCell
-from app.models.organization import Organization, OrganizationMemberRole, OrganizationMembership
+from app.models.notification import Notification
+from app.models.organization import (
+    Organization,
+    OrganizationMemberRole,
+    OrganizationMembership,
+)
 from app.models.user import User, UserRole
 from app.services.email_service import EmailSendResult
 from app.services.legal_acceptance_service import (
@@ -223,10 +228,10 @@ async def test_both_work_on_the_same_product_without_cloning_it(
 
 
 @pytest.mark.asyncio
-async def test_a_country_representative_does_not_touch_the_common_layer(
+async def test_a_country_representative_controls_filament_common_data_until_global_exists(
     client: AsyncClient, db_session: AsyncSession
 ):
-    """Свойства пластика одни на весь мир и из страны не переписываются."""
+    """Without a global holder, a verified regional organization maintains shared data."""
     brand, filament = await _brand_with_one_filament(db_session)
     russia = await _representative(db_session, brand, "ru-common", "RU")
     brand.website = "https://original.example"
@@ -235,15 +240,28 @@ async def test_a_country_representative_does_not_touch_the_common_layer(
     common = await client.patch(
         f"/api/v1/filaments/{filament.id}", headers=russia, json={"density": 9.9}
     )
-    assert common.status_code == 403
+    assert common.status_code == 200
 
+    # Brand identity remains protected by its separate authority model.
     brand_common = await client.patch(
         f"/api/v1/brands/{brand.id}", headers=russia, json={"website": "https://hijacked.example"}
     )
     assert brand_common.status_code == 403
 
     await db_session.refresh(filament)
-    assert filament.density == 1.24
+    assert filament.density == 9.9
+
+    await _representative(db_session, brand, "global-common", None)
+    protected = await client.patch(
+        f"/api/v1/filaments/{filament.id}", headers=russia, json={"density": 8.8}
+    )
+    assert protected.status_code == 403
+    gap = await client.patch(
+        f"/api/v1/filaments/{filament.id}",
+        headers=russia,
+        json={"empty_spool_weight_g": 240},
+    )
+    assert gap.status_code == 200
 
 
 @pytest.mark.asyncio
@@ -303,7 +321,8 @@ async def test_regional_creation_writes_one_catalog_item_and_its_country_cell(
     assert cell is not None
     assert cell.price == 1490
 
-    # A representative may fill a missing shared technical fact once.
+    # Until a global holder appears, the representative maintains the shared
+    # layer even though this record is organization-contributed catalogue data.
     common_edit = await client.patch(
         f"/api/v1/filaments/{created_id}",
         headers=russia,
@@ -315,7 +334,7 @@ async def test_regional_creation_writes_one_catalog_item_and_its_country_cell(
         headers=russia,
         json={"density": 8.8},
     )
-    assert overwrite.status_code == 403
+    assert overwrite.status_code == 200
     assert original.id != created_id
 
 
@@ -615,9 +634,120 @@ async def test_the_representative_is_told_where_their_area_ends(
     told = answer.json()
 
     assert [t["country"] for t in told["territories"]] == ["RU"]
-    # Общий слой закрыт, и интерфейсу есть что сказать вместо «поле недоступно».
+    # No global holder exists yet, so the regional workspace maintains the
+    # shared material layer while brand identity itself remains protected.
     assert told["can_edit_common"] is False
+    assert told["can_edit_filament_common"] is True
     assert told["is_admin"] is False
+
+
+@pytest.mark.asyncio
+async def test_only_a_brand_representative_can_request_a_catalogue_correction(
+    client: AsyncClient, db_session: AsyncSession
+):
+    """The request mails brand representatives, so it stays inside the brand's team.
+
+    A regional representative who cannot edit shared values asks whoever holds
+    them; an outsider has the public feedback channel instead.
+    """
+    brand, filament = await _brand_with_one_filament(db_session)
+    await _representative(db_session, brand, "global-correction", None)
+    global_user = await db_session.scalar(
+        select(User).where(User.email == "global-correction@example.com")
+    )
+    assert global_user is not None
+    requester = await _representative(db_session, brand, "regional-requester", "DE")
+
+    admin, _ = await _outsider(db_session, "correction-admin")
+    admin.role = UserRole.ADMIN
+    _, outsider = await _outsider(db_session, "correction-outsider")
+    await db_session.commit()
+
+    refused = await client.post(
+        f"/api/v1/filaments/{filament.id}/common-edit-request",
+        headers=outsider,
+        json={"message": "The manufacturer's datasheet lists a different density."},
+    )
+    assert refused.status_code == 403, refused.text
+
+    response = await client.post(
+        f"/api/v1/filaments/{filament.id}/common-edit-request",
+        headers=requester,
+        json={"message": "The manufacturer's datasheet lists a different density."},
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["recipients"] == 1
+    recipients = set(
+        await db_session.scalars(
+            select(Notification.user_id).where(
+                Notification.title == "filament_common_edit_requested"
+            )
+        )
+    )
+    assert recipients == {global_user.id}
+    assert admin.id not in recipients
+
+
+@pytest.mark.asyncio
+async def test_catalogue_correction_falls_back_to_moderation_without_responsible_org(
+    client: AsyncClient, db_session: AsyncSession
+):
+    brand, filament = await _brand_with_one_filament(db_session)
+    admin, _ = await _outsider(db_session, "fallback-admin")
+    admin.role = UserRole.ADMIN
+    requester = await _representative(db_session, brand, "fallback-requester", "DE")
+    await db_session.commit()
+
+    response = await client.post(
+        f"/api/v1/filaments/{filament.id}/common-edit-request",
+        headers=requester,
+        json={"message": "Please verify the material name against the packaging."},
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["recipients"] == 1
+    recipient = await db_session.scalar(
+        select(Notification.user_id).where(
+            Notification.title == "filament_common_edit_requested"
+        )
+    )
+    assert recipient == admin.id
+
+
+@pytest.mark.asyncio
+async def test_community_record_correction_reaches_regional_rep_when_no_global_holder(
+    client: AsyncClient, db_session: AsyncSession
+):
+    brand, filament = await _brand_with_one_filament(db_session)
+    await _representative(db_session, brand, "regional-correction", "DE")
+    representative = await db_session.scalar(
+        select(User).where(User.email == "regional-correction@example.com")
+    )
+    assert representative is not None
+
+    admin, _ = await _outsider(db_session, "regional-correction-admin")
+    admin.role = UserRole.ADMIN
+    requester = await _representative(db_session, brand, "regional-correction-asker", "FR")
+    await db_session.commit()
+
+    response = await client.post(
+        f"/api/v1/filaments/{filament.id}/common-edit-request",
+        headers=requester,
+        json={"message": "Please verify the density on this community-created record."},
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["recipients"] == 1
+    recipients = set(
+        await db_session.scalars(
+            select(Notification.user_id).where(
+                Notification.title == "filament_common_edit_requested"
+            )
+        )
+    )
+    assert recipients == {representative.id}
+    assert admin.id not in recipients
 
 
 @pytest.mark.asyncio

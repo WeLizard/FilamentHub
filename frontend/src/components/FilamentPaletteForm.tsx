@@ -13,6 +13,13 @@ import { PriceUnitField } from './PriceUnitField';
 import { RecommendedTempsField, RecommendedTemps } from './RecommendedTempsField';
 import { NozzleHardnessField } from './NozzleHardnessField';
 import { FilamentFeaturesEditor } from './FilamentFeaturesEditor';
+import {
+  FilamentHandlingEditor,
+  type FilamentHandlingFormValue,
+  isHandlingGuidanceComplete,
+  normalizeChemicalGuidance,
+  parseBedAdhesives,
+} from './FilamentHandlingEditor';
 import { deriveVisualEffectsFromAdditives, mergeVisualEffects } from '../data/filamentFeatures';
 import { translateApiError } from '../utils/translateApiError';
 import { normalizeRalCode } from '../utils/ralCode';
@@ -74,6 +81,9 @@ export function FilamentPaletteForm({
   const scopeCountry = initialCountry && grantedCountries.includes(initialCountry)
     ? initialCountry
     : grantedCountries[0];
+  const canManageTechnicalFacts = Boolean(
+    user?.role === 'admin' || (territories.data?.territories?.length ?? 0) > 0,
+  );
 
   const { data: lines = [] } = useQuery({
     queryKey: ['brand-lines', brandId],
@@ -90,6 +100,15 @@ export function FilamentPaletteForm({
   const [materialType, setMaterialType] = useState(sourceFilament?.material_type ?? '');
   const [diameter, setDiameter] = useState(sourceFilament?.diameter ?? 1.75);
   const [density, setDensity] = useState(sourceFilament?.density ?? 1.24);
+  const [handling, setHandling] = useState<FilamentHandlingFormValue>({
+    dryingRequired: sourceFilament?.drying_required ?? false,
+    dryingTemperatureC: sourceFilament?.drying_temperature_c ?? '',
+    dryingDurationHours: sourceFilament?.drying_duration_hours ?? '',
+    enclosureRequirement: sourceFilament?.enclosure_requirement ?? 'none',
+    chamberTemperatureC: sourceFilament?.chamber_temperature_c ?? '',
+    bedAdhesivesText: (sourceFilament?.bed_adhesives ?? []).join(', '),
+    chemicals: sourceFilament?.post_processing_chemicals ?? [],
+  });
   const [priceMode, setPriceMode] = useState<'per_kg' | 'per_spool'>(sourceFilament?.price_display_unit === 'per_spool' ? 'per_spool' : 'per_kg');
   const [pricePerKg, setPricePerKg] = useState(sourceFilament?.price_per_kg ?? 0);
   const [pricePerSpool, setPricePerSpool] = useState(0);
@@ -191,6 +210,10 @@ export function FilamentPaletteForm({
       setError(t('palette.errorNoColors'));
       return;
     }
+    if (canManageTechnicalFacts && !isHandlingGuidanceComplete(handling)) {
+      setError(t('filamentHandling.requiredParametersError'));
+      return;
+    }
 
     setSubmitting(true);
     try {
@@ -224,7 +247,16 @@ export function FilamentPaletteForm({
         additives,
         property_claims: propertyClaims,
         diameter,
-        density: density || null,
+        ...(canManageTechnicalFacts ? {
+          density: density || null,
+          drying_required: handling.dryingRequired,
+          drying_temperature_c: handling.dryingRequired && handling.dryingTemperatureC !== '' ? handling.dryingTemperatureC : null,
+          drying_duration_hours: handling.dryingRequired && handling.dryingDurationHours !== '' ? handling.dryingDurationHours : null,
+          enclosure_requirement: handling.enclosureRequirement,
+          chamber_temperature_c: handling.enclosureRequirement === 'active' && handling.chamberTemperatureC !== '' ? handling.chamberTemperatureC : null,
+          bed_adhesives: parseBedAdhesives(handling.bedAdhesivesText),
+          post_processing_chemicals: normalizeChemicalGuidance(handling.chemicals),
+        } : {}),
         price_per_kg: scopeCountry ? null : pricePerKg || null,
         spool_weight: spoolWeight || null,
         empty_spool_weight_g: emptySpoolWeight,
@@ -350,7 +382,7 @@ export function FilamentPaletteForm({
       {/* Общие параметры */}
       <div>
         <h4 className="text-sm font-medium text-gray-300 mb-2">{t('palette.sharedTitle')}</h4>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-4">
           <MaterialTypeSelect
             label={t('createFilament.materialTypeLabel')}
             value={materialType}
@@ -364,7 +396,11 @@ export function FilamentPaletteForm({
             options={STANDARD_DIAMETERS.map((d) => ({ value: d, label: `${d} ${t('palette.mm')}` }))}
             onChange={(val) => setDiameter(Number(val))}
           />
-          <DensityField value={density} onChange={setDensity} />
+          <DensityField
+            value={density}
+            onChange={setDensity}
+            locked={!canManageTechnicalFacts}
+          />
           {scopeCountry ? (
             <Dropdown
               label={t('createFilament.availabilityLabel')}
@@ -379,6 +415,11 @@ export function FilamentPaletteForm({
             <AvailabilitySelect value={availability} onChange={setAvailability} />
           )}
         </div>
+        {canManageTechnicalFacts && (
+          <div className="mt-4">
+            <FilamentHandlingEditor value={handling} onChange={setHandling} />
+          </div>
+        )}
         <div className="mt-3">
           <PriceUnitField
             priceMode={priceMode}

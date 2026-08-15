@@ -15,7 +15,6 @@ from app.core.errors import (
     ERR_BRAND_NOT_FOUND,
     ERR_FILAMENT_NOT_FOUND,
     ERR_OFFICIAL_PRESET_NOT_FOUND,
-    ERR_QR_NOT_FOUND,
     ERR_QR_VERIFIED_ONLY,
     raise_error,
 )
@@ -312,7 +311,8 @@ async def download_filament_qr_code(
     что на упаковку уходит вектор, и вариант без него был бы бесполезен ровно
     там, ради чего затевался.
     """
-    # Проверяем права доступа (только владелец бренда)
+    # Проверяем права доступа: код относится к подтверждённому бренду целиком,
+    # поэтому скачать макет может любой его действующий представитель.
     from app.models.brand import Brand
 
     # Получаем материал
@@ -322,20 +322,25 @@ async def download_filament_qr_code(
     if not filament:
         raise_error(404, ERR_FILAMENT_NOT_FOUND)
 
-    # Проверяем права (только владелец бренда или админ)
     brand_result = await db.execute(select(Brand).where(Brand.id == filament.brand_id))
     brand = brand_result.scalar_one_or_none()
 
     if not brand:
         raise_error(404, ERR_BRAND_NOT_FOUND)
 
-    from app.services.territorial_access import can_edit_brand_common
+    from app.services.territorial_access import can_represent_brand
 
-    if not await can_edit_brand_common(db, current_user, brand.id):
+    if not await can_represent_brand(db, current_user, brand.id):
         raise_error(403, ERR_ACCESS_DENIED)
 
     if not filament.qr_code:
-        raise_error(404, ERR_QR_NOT_FOUND)
+        if not brand.verified:
+            raise_error(403, ERR_QR_VERIFIED_ONLY)
+        # Download is itself a recovery path. Representatives do not need to
+        # find and press the separate bulk-repair button before preparing a
+        # label for a verified brand.
+        await ensure_filament_qr_code(filament, db)
+        await db.commit()
 
     # Вектор — для типографии: на упаковке код печатают каким угодно размером,
     # и растр под это пришлось бы отдавать в каждом.

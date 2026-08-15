@@ -3,6 +3,7 @@ import { Filament } from '../types/api';
 import { FilamentPreview } from './FilamentPreview';
 import { NozzleRequirementBadge } from './NozzleRequirementBadge';
 import { currencySymbol } from '../utils/currency';
+import { FilamentHandlingBadges } from './FilamentHandlingBadges';
 
 interface FilamentSummaryCardProps {
   filament: Filament;
@@ -93,6 +94,8 @@ export const FilamentSummaryCard: React.FC<FilamentSummaryCardProps> = ({
             ),
         )}
       </div>
+
+      <FilamentHandlingBadges filament={filament} compact className="mt-3 justify-center" />
 
       {showDescription && description && (
         <p className="mt-4 text-sm text-gray-300 whitespace-pre-line">{description}</p>

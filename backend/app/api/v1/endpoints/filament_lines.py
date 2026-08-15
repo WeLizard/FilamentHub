@@ -120,7 +120,10 @@ async def create_line_variants(
     Каждый цвет становится отдельным материалом (со своим QR у верифиц. бренда),
     но в одной линейке. Имя по умолчанию — «⟨Линейка⟩ ⟨Цвет⟩», можно переопределить.
     """
-    from app.api.v1.endpoints.filaments import _validate_material_features
+    from app.api.v1.endpoints.filaments import (
+        _validate_handling_guidance,
+        _validate_material_features,
+    )
 
     line = await db.scalar(select(FilamentLine).where(FilamentLine.id == line_id))
     if line is None:
@@ -147,6 +150,11 @@ async def create_line_variants(
         data.property_claims,
         brand,
         current_user,
+        db,
+    )
+    await _validate_handling_guidance(
+        data.bed_adhesives,
+        data.post_processing_chemicals,
         db,
     )
 
@@ -249,6 +257,15 @@ async def create_line_variants(
             property_claims=[item.model_dump() for item in data.property_claims],
             diameter=data.diameter,
             density=data.density,
+            drying_required=data.drying_required,
+            drying_temperature_c=data.drying_temperature_c,
+            drying_duration_hours=data.drying_duration_hours,
+            enclosure_requirement=data.enclosure_requirement,
+            chamber_temperature_c=data.chamber_temperature_c,
+            bed_adhesives=data.bed_adhesives,
+            post_processing_chemicals=[
+                item.model_dump() for item in data.post_processing_chemicals
+            ],
             price_per_kg=None if data.country_cell is not None else data.price_per_kg,
             spool_weight=data.spool_weight,
             empty_spool_weight_g=data.empty_spool_weight_g,

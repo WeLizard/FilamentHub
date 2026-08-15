@@ -189,6 +189,7 @@
     "footer_privacy": "隐私政策",
     "footer_consent": "数据处理",
     "footer_geoip_attribution": "IP 地理定位：DB-IP",
+    "footer_about": "关于项目",
     "footer_copyright": "© {{year}} FilamentHub",
     "pluginPresetsStats": "预设：{{total}}（已同步 {{synced}}）"
   },
@@ -461,6 +462,48 @@
           "11.3. 如果争议在第11.2条中规定的期间内未解决，争议可提交到管理员所在地的法院。"
         ]
       }
+    }
+  },
+  "aboutPage": {
+    "title": "关于项目",
+    "intro": "FilamentHub 是耗材与打印参数的目录。它只为一件事存在：手里拿着一卷耗材的人，应该能快速找到经过验证的参数直接打印，而不是重新调一遍。",
+    "free": "目录、预设以及自己耗材的库存管理都是免费的，今后也会保持免费。",
+    "roadmapTitle": "已完成与后续计划",
+    "working": {
+      "title": "已经可用",
+      "items": [
+        "耗材目录，支持按品牌、类型、颜色和特性搜索",
+        "打印预设：官方预设、社区发布的预设和您自己的预设",
+        "OrcaSlicer 插件：在切片软件内浏览目录并同步预设",
+        "耗材管理：剩余量、价格、批次和消耗历史",
+        "供料系统：AMS 槽位、Happy Hare 和 OctoPrint",
+        "基于 G-code 的生产核算：成本、报价单和订单",
+        "面向制造商的二维码与品牌页面",
+        "“维基”板块中的使用指南"
+      ]
+    },
+    "progress": {
+      "title": "进行中",
+      "items": [
+        "通过 OrcaSlicer 连接 Bambu 打印机",
+        "面向制造商的数据分析",
+        "RFID 与 NFC 标签"
+      ]
+    },
+    "next": {
+      "title": "后续计划",
+      "items": [
+        "多人协作的工作室模式",
+        "与外部库存系统交换数据",
+        "目录中提供更多现成数据"
+      ]
+    },
+    "roadmapNote": "不承诺具体日期：功能准备好了才发布，而不是赶工期。",
+    "support": {
+      "title": "支持本项目",
+      "text": "服务器、域名和邮件都需要费用。如果这个项目对您有用，可以支持一下。",
+      "note": "这不是购买：无论是否支持，服务中的一切都同样可用。如果您愿意支持，我们由衷感谢。",
+      "action": "支持"
     }
   },
   "consentPage": {
@@ -1163,6 +1206,7 @@
     "endOfCatalog": "已显示所有匹配的材料"
   },
   "brandDetailPage": {
+    "metaRestrictedNotice": "Facebook、Instagram 和 Threads 属于 Meta Platforms Inc.，该公司在俄罗斯被禁止运营。",
     "loading": "正在加载品牌信息...",
     "notFound": "未找到品牌",
     "back": "返回",
@@ -1895,7 +1939,7 @@
     "diameterLabel": "直径（mm）",
     "selectDiameter": "选择直径",
     "densityLabel": "密度（g/cm³）",
-    "densityLockedHint": "从材料类型设置",
+    "densityLockedHint": "仅管理员或品牌代表可编辑",
     "pricePerKg": "每千克",
     "pricePerSpool": "每线轴",
     "spoolWeightLabel": "线轴重量（g）",
@@ -1957,12 +2001,12 @@
     "typoSubject": "材料「{{name}}」信息有误",
     "requestCommonEdit": "请求更正",
     "commonEditRequestTitle": "请求修改公共数据",
-    "commonEditRequestDescription": "品牌全球代表和 FilamentHub 管理员会收到此请求。请说明需要修改的内容及原因。",
+    "commonEditRequestDescription": "负责该品牌的组织会收到此请求；如果没有可用的组织，请求将发送给 FilamentHub 审核员。请说明需要修改的内容及原因。",
     "commonEditRequestPlaceholder": "例如：制造商将建议喷嘴温度改为 205–225 °C。来源链接…",
     "commonEditRequestCancel": "取消",
     "commonEditRequestSend": "发送请求",
     "commonEditRequestSending": "正在发送…",
-    "commonEditRequestSent": "请求已发送给全球代表和管理员。",
+    "commonEditRequestSent": "请求已发送给相应的负责人。",
     "commonEditRequestFailed": "无法发送请求。",
     "commonEditRequestNoRecipients": "目前无人可接收此请求。请联系 support@filamenthub.ru。",
     "similarTitle": "目录中已有相似条目",
@@ -3078,10 +3122,8 @@
     "presetFilterSaved": "已保存",
     "presetFilterSynced": "已同步",
     "presetFilterDrafts": "草稿",
-    "presetSyncFilterLabel": "OrcaSlicer",
-    "presetSyncFilterAll": "全部",
-    "presetSyncFilterEnabled": "已启用",
-    "presetSyncFilterDisabled": "已禁用",
+    "awaitingModeration": "审核中",
+    "awaitingModerationTooltip": "预设已经可用，您可以正常使用。通过审核后它会出现在公共目录中。",
     "newPreset": "新预设",
     "add": "添加",
     "noPresets": "您还没有任何预设",
@@ -5564,6 +5606,47 @@
     "kg": "kg",
     "spoolWeight": "线轴重量",
     "g": "g"
+  },
+  "filamentHandling": {
+    "title": "打印前准备与安全",
+    "editorHint": "这些建议仅适用于这一具体耗材，不代表整个材料类别。",
+    "lockedHint": "仅管理员或品牌代表可编辑。",
+    "dryingSection": "烘干",
+    "dryingQuestion": "打印前需要烘干",
+    "dryingRequired": "需要烘干",
+    "dryingTemperature": "温度（°C）",
+    "dryingDuration": "时间（小时）",
+    "dryingRequiredWithParameters": "烘干：{{temperature}} °C · {{duration}} 小时",
+    "enclosureQuestion": "腔体要求",
+    "chamberTemperature": "温度（°C）",
+    "chamberTemperatureShort": "温度",
+    "activeEnclosureWithTemperature": "主动加热腔体：{{temperature}} °C",
+    "enclosure": {
+      "none": "不需要腔体",
+      "passive": "需要封闭腔体",
+      "active": "需要主动加热腔体"
+    },
+    "enclosureOptions": {
+      "none": "不需要",
+      "passive": "封闭（被动）",
+      "active": "主动加热"
+    },
+    "bedAdhesives": "热床粘合方式",
+    "bedAdhesivesPlaceholder": "例如：固体胶、PEI；请用逗号分隔",
+    "listHint": "请用逗号、分号或换行分隔各项。",
+    "chemicals": "化学后处理",
+    "chemicalsHint": "请说明用途，并单独填写安全提示。",
+    "addChemical": "添加",
+    "chemicalName": "物质或产品",
+    "chemicalPurpose": "用途，例如表面平滑",
+    "safetyNoteRequired": "必须填写安全提示",
+    "safetyNote": "安全提示",
+    "hazardous": "危险物质",
+    "removeChemical": "删除",
+    "chemicalSafetyNotice": "操作前请查阅供应商的安全数据表（SDS）。确保按要求通风并使用推荐的个人防护装备。没有可靠说明时不要混合化学品。",
+    "chemicalSafetyReference": "GB/T 16483-2008 — 化学品安全技术说明书",
+    "densitySuggestion": "{{materialType}} 的典型值；只会保存到这一具体耗材。",
+    "requiredParametersError": "烘干时请填写温度和时长；主动加热腔体还需填写腔体温度。"
   },
   "shareMenu": {
     "share": "分享",

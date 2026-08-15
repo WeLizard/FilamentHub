@@ -12,11 +12,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.brand import Brand
 from app.models.brand_request import BrandRequest, BrandRequestType
+from app.models.brand_territorial_grant import BrandTerritorialGrant, GrantSource, GrantStatus
 from app.models.filament import Filament
-from app.models.organization import OrganizationMemberRole, OrganizationMembership
+from app.models.organization import Organization, OrganizationMemberRole, OrganizationMembership
 from app.models.user import User, UserRole
 from app.services import qr_service
-from app.services.qr_service import backfill_brand_qr_codes
+from app.services.legal_acceptance_service import (
+    CURRENT_PERSONAL_DATA_CONSENT_VERSION,
+    CURRENT_TERMS_VERSION,
+)
+from app.services.qr_service import backfill_brand_qr_codes, repair_verified_brand_qr_codes
 
 
 async def _brand_with_filaments(db: AsyncSession, *, verified: bool, tag: str) -> Brand:
@@ -65,6 +70,32 @@ async def test_backfill_noop_for_unverified(db_session: AsyncSession, monkeypatc
 
 
 @pytest.mark.asyncio
+async def test_startup_repair_restores_only_verified_brand_codes(
+    db_session: AsyncSession, monkeypatch
+):
+    monkeypatch.setattr(qr_service, "save_qr_code_image", lambda *a, **k: [])
+    verified = await _brand_with_filaments(db_session, verified=True, tag="repair-v")
+    unverified = await _brand_with_filaments(db_session, verified=False, tag="repair-u")
+
+    assigned = await repair_verified_brand_qr_codes(db_session)
+    await db_session.commit()
+
+    assert assigned == 2
+    assert await db_session.scalar(
+        select(Filament.id).where(
+            Filament.brand_id == verified.id,
+            Filament.qr_code.is_(None),
+        )
+    ) is None
+    assert await db_session.scalar(
+        select(Filament.id).where(
+            Filament.brand_id == unverified.id,
+            Filament.qr_code.is_(None),
+        )
+    ) is not None
+
+
+@pytest.mark.asyncio
 async def test_backfill_endpoint_forbidden_for_non_owner(client: AsyncClient, db_session: AsyncSession):
     brand = Brand(name="Other Brand", slug="other-brand", active=True, verified=True)
     db_session.add(brand)
@@ -86,6 +117,73 @@ async def test_backfill_endpoint_forbidden_for_non_owner(client: AsyncClient, db
 
     response = await client.post(f"/api/v1/brands/{brand.id}/backfill-qr", headers=headers)
     assert response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_any_active_representative_gets_automatic_and_manual_qr_recovery(
+    client: AsyncClient, db_session: AsyncSession, monkeypatch
+):
+    monkeypatch.setattr(qr_service, "save_qr_code_image", lambda *a, **k: [])
+    brand = await _brand_with_filaments(db_session, verified=True, tag="regional")
+    organization = Organization(name="Regional QR", slug="regional-qr")
+    user = User(
+        email="regional-qr@example.com",
+        username="regional_qr",
+        password_hash="$2b$12$test",
+        active=True,
+        email_verified=True,
+        role=UserRole.USER,
+        terms_version_accepted=CURRENT_TERMS_VERSION,
+        personal_data_consent_version=CURRENT_PERSONAL_DATA_CONSENT_VERSION,
+    )
+    db_session.add_all([organization, user])
+    await db_session.flush()
+    user.active_organization_id = organization.id
+    db_session.add_all([
+        OrganizationMembership(
+            organization_id=organization.id,
+            user_id=user.id,
+            role=OrganizationMemberRole.OWNER,
+            active=True,
+            all_brands=True,
+        ),
+        BrandTerritorialGrant(
+            brand_id=brand.id,
+            organization_id=organization.id,
+            country="DE",
+            status=GrantStatus.active,
+            source=GrantSource.application,
+            create_filaments=False,
+        ),
+    ])
+    await db_session.commit()
+
+    from app.core.security import create_access_token
+
+    headers = {"Authorization": f"Bearer {create_access_token({'sub': user.email})}"}
+    filament_id = await db_session.scalar(
+        select(Filament.id)
+        .where(Filament.brand_id == brand.id, Filament.qr_code.is_(None))
+        .order_by(Filament.id)
+    )
+    assert filament_id is not None
+
+    # A direct label download repairs its own missing code.
+    download = await client.get(
+        f"/api/v1/qr/filaments/{filament_id}/qr-code/download",
+        headers=headers,
+    )
+    assert download.status_code == 200, download.text
+    assert download.headers["content-type"] == "image/png"
+
+    # The visible bulk action remains a fallback for the rest of the brand.
+    response = await client.post(
+        f"/api/v1/brands/{brand.id}/backfill-qr",
+        headers=headers,
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["assigned"] == 1
 
 
 @pytest.mark.asyncio

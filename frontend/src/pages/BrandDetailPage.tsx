@@ -13,18 +13,73 @@ import {
   Search,
 } from 'lucide-react';
 import { brandsAPI, filamentsAPI, filamentReviewsAPI } from '../api/client';
+import type { Filament } from '../types/api';
 import { useReaderCountry } from '../hooks/useReaderCountry';
-import { currencySymbol } from '../utils/currency';
-import { FilamentPreview } from '../components/FilamentPreview';
 import { Dropdown } from '../components/Dropdown';
 import { SEOHead } from '../components/SEOHead';
 import { SocialIcon } from '../components/socialIcons';
 import { BrandLogoFrame } from '../components/BrandLogoFrame';
+import { FilamentPreview } from '../components/FilamentPreview';
+import { FilamentHandlingBadges } from '../components/FilamentHandlingBadges';
+import { NozzleRequirementBadge } from '../components/NozzleRequirementBadge';
 import { externalUrl, externalUrlHost } from '../utils/externalUrl';
 import { filamentPublicPath } from '../utils/catalogUrls';
+import { hasMetaNetworkLink } from '../utils/restrictedNetworks';
+
+interface BrandFilamentCardProps {
+  filament: Filament;
+  onClick: () => void;
+}
+
+const BrandFilamentCard: React.FC<BrandFilamentCardProps> = ({ filament, onClick }) => (
+  <button
+    type="button"
+    onClick={onClick}
+    className="group flex min-h-36 w-full flex-col rounded-xl border border-white/15 bg-white/[0.07] p-4 text-left shadow-lg backdrop-blur-sm transition-all hover:-translate-y-0.5 hover:border-purple-300/40 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-purple-400"
+  >
+    <div className="flex items-start justify-between gap-3">
+      <div className="min-w-0 flex-1">
+        <h3 className="line-clamp-2 text-base font-bold leading-snug text-white transition-colors group-hover:text-purple-200">
+          {filament.name}
+        </h3>
+        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+          <span className="rounded-full border border-purple-500/30 bg-purple-500/20 px-2 py-0.5 text-xs font-medium text-purple-200">
+            {filament.material_type}
+          </span>
+          <NozzleRequirementBadge
+            requiredHrc={filament.required_nozzle_hrc}
+            compact
+            size="tight"
+          />
+        </div>
+      </div>
+
+      <FilamentPreview
+        colorHex={filament.color_hex || '#FFFFFF'}
+        visualSettings={filament.visual_settings}
+        size="small"
+        className="shrink-0 origin-right scale-75"
+      />
+    </div>
+
+    <div className="mt-auto flex min-w-0 items-end justify-between gap-3 pt-3">
+      <div className="min-w-0 text-xs text-gray-300">
+        <p className="truncate">{filament.color_name || filament.color_hex || '—'}</p>
+        {filament.ral_code && (
+          <p className="mt-0.5 font-mono text-[10px] text-gray-500">RAL {filament.ral_code}</p>
+        )}
+      </div>
+      <FilamentHandlingBadges
+        filament={filament}
+        compact
+        className="shrink-0 justify-end"
+      />
+    </div>
+  </button>
+);
 
 export const BrandDetailPage: React.FC = () => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { identifier } = useParams<{ identifier: string }>();
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
@@ -113,27 +168,10 @@ export const BrandDetailPage: React.FC = () => {
     }
     return true;
   });
-
-  // Группируем по линейке (НЕ сливаем): филаменты с line_name идут под заголовком
-  // линейки, остальные — отдельной группой без заголовка.
-  const lineGroups = (() => {
-    const byLine = new Map<string, { lineName: string; filaments: typeof filteredFilaments }>();
-    const ungrouped: typeof filteredFilaments = [];
-    for (const f of filteredFilaments) {
-      if (f.line_name && f.line_id) {
-        const key = String(f.line_id);
-        const g = byLine.get(key);
-        if (g) g.filaments.push(f);
-        else byLine.set(key, { lineName: f.line_name, filaments: [f] });
-      } else {
-        ungrouped.push(f);
-      }
-    }
-    const groups: { key: string; lineName: string | null; filaments: typeof filteredFilaments }[] =
-      Array.from(byLine.entries()).map(([key, v]) => ({ key, lineName: v.lineName, filaments: v.filaments }));
-    if (ungrouped.length) groups.push({ key: 'ungrouped', lineName: null, filaments: ungrouped });
-    return groups;
-  })();
+  const orderedFilaments = [
+    ...filteredFilaments.filter((filament) => filament.line_id != null),
+    ...filteredFilaments.filter((filament) => filament.line_id == null),
+  ];
 
   // Вычисляем статистику
   const totalFilaments = filaments.length;
@@ -149,6 +187,13 @@ export const BrandDetailPage: React.FC = () => {
     ? brand.description.slice(0, 160)
     : t('brandDetailPage.seoDescription', { name: brand.name, count: totalFilaments });
   const websiteUrl = externalUrl(brand.website);
+  // The ban notice is a Russian legal requirement, so it follows the Russian
+  // interface rather than the visitor's location.
+  const showMetaNotice = i18n.language.startsWith('ru') && hasMetaNetworkLink([
+    brand.website,
+    ...(brand.social_media_urls ?? []),
+    ...(brand.shop_links?.map((shop) => shop.url) ?? []),
+  ]);
 
   return (
     <>
@@ -263,6 +308,12 @@ export const BrandDetailPage: React.FC = () => {
                 ) : null;
               })}
             </div>
+
+            {showMetaNotice && (
+              <p className="mt-2 text-[11px] leading-4 text-gray-500">
+                {t('brandDetailPage.metaRestrictedNotice')}
+              </p>
+            )}
           </div>
         </div>
       </div>
@@ -309,70 +360,13 @@ export const BrandDetailPage: React.FC = () => {
           <p className="text-gray-400 text-xl">{t('brandDetailPage.noFilamentsFound')}</p>
         </div>
       ) : (
-        <div className="space-y-8">
-          {lineGroups.map((group) => (
-            <div key={group.key}>
-              {group.lineName && (
-                <h2 className="text-lg font-semibold text-white mb-3">{group.lineName}</h2>
-              )}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {group.filaments.map((filament) => (
-            <div
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+          {orderedFilaments.map((filament) => (
+            <BrandFilamentCard
               key={filament.id}
+              filament={filament}
               onClick={() => navigate(filamentPublicPath(filament))}
-              className="bg-white/10 backdrop-blur-sm rounded-xl p-6 border border-white/20 hover:bg-white/15 transition-all cursor-pointer group"
-            >
-              {/* Превью филамента */}
-              <div className="flex items-center justify-center mb-4">
-                <FilamentPreview
-                  colorHex={filament.color_hex || '#FFFFFF'}
-                  visualSettings={filament.visual_settings}
-                  size="medium"
-                />
-              </div>
-
-              {/* Название и тип */}
-              <h3 className="text-lg font-bold text-white mb-2 group-hover:text-purple-300 transition-colors">
-                {filament.name}
-              </h3>
-              <div className="flex items-center space-x-2 mb-4">
-                <span className="px-2 py-1 bg-purple-500/20 text-purple-300 text-xs rounded-full border border-purple-500/30">
-                  {filament.material_type}
-                </span>
-                {filament.color_name && (
-                  <span className="text-sm text-gray-400">{filament.color_name}</span>
-                )}
-              </div>
-
-              {/* Характеристики */}
-              <div className="space-y-2 text-sm">
-                {filament.diameter && (
-                  <div className="flex items-center justify-between text-gray-300">
-                    <span>{t('brandDetailPage.diameter')}</span>
-                    <span className="text-white">{filament.diameter}mm</span>
-                  </div>
-                )}
-                {filament.density && (
-                  <div className="flex items-center justify-between text-gray-300">
-                    <span>{t('brandDetailPage.density')}</span>
-                    <span className="text-white">{filament.density}g/cm³</span>
-                  </div>
-                )}
-                {filament.price_per_kg && (
-                  <div className="flex items-center justify-between text-gray-300">
-                    <span>{t('brandDetailPage.price')}</span>
-                    <span className="text-green-400 font-semibold">
-                      {filament.price_display_unit === 'per_spool'
-                        ? `${filament.price_per_kg} ${currencySymbol(filament.currency || brand.currency)}/${t('catalogPage.units.spool')}`
-                        : `${Math.round(filament.price_per_kg)} ${currencySymbol(filament.currency || brand.currency)}/${t('catalogPage.units.kg')}`}
-                    </span>
-                  </div>
-                )}
-              </div>
-            </div>
-                ))}
-              </div>
-            </div>
+            />
           ))}
         </div>
       )}
@@ -380,4 +374,3 @@ export const BrandDetailPage: React.FC = () => {
     </>
   );
 };
-

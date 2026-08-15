@@ -39,6 +39,7 @@ import type { AxiosError } from 'axios';
 import { formatDate } from '../utils/formatDate';
 import { useReaderCountry } from '../hooks/useReaderCountry';
 import { MarketNotice } from '../components/MarketNotice';
+import { FilamentHandlingBadges } from '../components/FilamentHandlingBadges';
 import { filamentPublicPath } from '../utils/catalogUrls';
 import { sortedCountries } from '../utils/countries';
 import { FILAMENT_COLOR_GROUPS } from '../utils/filamentColorGroups';
@@ -459,7 +460,7 @@ export const CatalogPage: React.FC = () => {
         aria-busy={isFetchingFilaments}
       >
         {filaments.map((filament) => (
-          <MaterialCard
+          <CatalogFilamentCard
             key={filament.id}
             filament={filament}
             isSelected={selectedFilament === filament.id}
@@ -522,25 +523,27 @@ export const CatalogPage: React.FC = () => {
 
 interface MaterialCardProps {
   filament: Filament;
-  isSelected: boolean;
-  onSelect: (presetId: number) => void;
-  onShowQR: (filamentId: number) => void;
-  showQR: boolean;
+  isSelected?: boolean;
+  onSelect?: (presetId: number) => void;
+  onShowQR?: (filamentId: number) => void;
+  showQR?: boolean;
   onClick: (filament: Filament) => void;
-  savedPresetIds: Set<number>;
-  configuredNozzleHrc: number | null;
+  savedPresetIds?: Set<number>;
+  configuredNozzleHrc?: number | null;
   fitsPrinter?: boolean;
 }
 
-const MaterialCard = memo(function MaterialCard({
+const EMPTY_SAVED_PRESET_IDS = new Set<number>();
+
+export const CatalogFilamentCard = memo(function CatalogFilamentCard({
   filament,
-  isSelected,
+  isSelected: _isSelected = false,
   onSelect,
   onShowQR,
-  showQR,
+  showQR = false,
   onClick,
-  savedPresetIds,
-  configuredNozzleHrc,
+  savedPresetIds = EMPTY_SAVED_PRESET_IDS,
+  configuredNozzleHrc = null,
   fitsPrinter = false,
 }: MaterialCardProps) {
   const { t } = useTranslation();
@@ -598,7 +601,7 @@ const MaterialCard = memo(function MaterialCard({
     onClick(filament);
   };
 
-  const canShowQR = Boolean(filament.qr_code && brand?.verified);
+  const canShowQR = Boolean(onShowQR && filament.qr_code && brand?.verified);
 
   const formatPresetValue = (value: number | null | undefined, suffix: string) => {
     if (value === null || value === undefined) return '—';
@@ -637,7 +640,7 @@ const MaterialCard = memo(function MaterialCard({
 
   const handleSavePreset = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (currentPreset) {
+    if (currentPreset && onSelect) {
       onSelect(currentPreset.id);
     }
   };
@@ -729,7 +732,7 @@ const MaterialCard = memo(function MaterialCard({
               {canShowQR && (
                 <button
                   type="button"
-                  onClick={() => onShowQR(filament.id)}
+                  onClick={() => onShowQR?.(filament.id)}
                   className="flex-shrink-0 rounded-lg border border-white/20 bg-white/10 p-2 text-white transition-all hover:bg-white/20"
                   aria-label={t('catalogPage.qrCode')}
                   title={t('catalogPage.qrCode')}
@@ -832,6 +835,7 @@ const MaterialCard = memo(function MaterialCard({
             {propertyLabels.length > 2 && <span className="text-gray-400">+{propertyLabels.length - 2}</span>}
           </div>
         )}
+        <FilamentHandlingBadges filament={filament} compact />
       </div>
 
       {/* Пресеты и детальная информация загружаются только на странице материала для оптимизации */}
@@ -916,7 +920,7 @@ const MaterialCard = memo(function MaterialCard({
                   </button>
                 </div>
               )}
-              <button
+              {onSelect && <button
                 onClick={handleSavePreset}
                 className="px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg border border-white/20 text-xs sm:text-sm text-white hover:bg-white/10 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                 disabled={isPresetSaved}
@@ -929,7 +933,7 @@ const MaterialCard = memo(function MaterialCard({
                       ? t('catalogPage.importToOrca')
                       : t('catalogPage.addToProfile')}
                 </span>
-              </button>
+              </button>}
             </div>
           </div>
         </div>

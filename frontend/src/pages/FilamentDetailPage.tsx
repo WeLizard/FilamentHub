@@ -52,6 +52,8 @@ import type { Preset } from '../types/api';
 import type { AxiosError } from 'axios';
 import { useReaderCountry } from '../hooks/useReaderCountry';
 import { MarketNotice } from '../components/MarketNotice';
+import { FilamentCorrectionRequestModal } from '../components/FilamentCorrectionRequestModal';
+import { FilamentHandlingDetails } from '../components/FilamentHandlingDetails';
 import {
   brandPublicPath,
   filamentPublicPath,
@@ -193,6 +195,7 @@ export const FilamentDetailPage: React.FC = () => {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [showQR, setShowQR] = useState(false);
+  const [correctionRequestOpen, setCorrectionRequestOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'presets' | 'reviews'>('presets');
   const [detailPreset, setDetailPreset] = useState<Preset | null>(null);
   const [showCreateReviewModal, setShowCreateReviewModal] = useState(false);
@@ -857,6 +860,8 @@ export const FilamentDetailPage: React.FC = () => {
           </div>
         )}
 
+        <FilamentHandlingDetails filament={filament} className="mb-4 md:mb-6" />
+
         {isQrEntry && (
           <div className="mb-4 flex flex-col gap-3 rounded-xl border border-emerald-400/25 bg-emerald-500/10 p-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-start gap-3">
@@ -880,7 +885,7 @@ export const FilamentDetailPage: React.FC = () => {
         )}
 
         {/* Кнопки действий */}
-        <div className="flex space-x-4">
+        <div className="flex flex-wrap gap-4">
           {primaryPreset ? (
             !user ? (
               <button
@@ -926,9 +931,20 @@ export const FilamentDetailPage: React.FC = () => {
           <button
             onClick={() => setShowQR(!showQR)}
             className="px-6 py-4 bg-white/10 hover:bg-white/20 text-white rounded-xl transition-all border border-white/20"
+            aria-label={t('filamentDetailPage.qrCode')}
           >
             <QrCode className="w-6 h-6" />
           </button>
+          {user?.email_verified && (
+            <button
+              type="button"
+              onClick={() => setCorrectionRequestOpen(true)}
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/20 bg-white/10 px-5 py-4 text-white transition-all hover:bg-white/20"
+            >
+              <MessageCircle className="h-5 w-5" />
+              <span className="hidden sm:inline">{t('createFilament.requestCommonEdit')}</span>
+            </button>
+          )}
         </div>
 
         {/* QR Code */}
@@ -1705,6 +1721,14 @@ export const FilamentDetailPage: React.FC = () => {
           message={t('filamentDetailPage.confirmDeleteReview')}
           isLoading={deleteReviewMutation.isPending}
         />
+        {filament && (
+          <FilamentCorrectionRequestModal
+            filamentId={filament.id}
+            isOpen={correctionRequestOpen}
+            onClose={() => setCorrectionRequestOpen(false)}
+            onSent={() => toast.success(t('createFilament.commonEditRequestSent'))}
+          />
+        )}
       </div>
       </div>
     </>

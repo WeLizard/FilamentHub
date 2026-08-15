@@ -33,6 +33,7 @@ from app.models.filament_line import FilamentLine
 from app.models.filament_review import FilamentReview
 from app.models.notification import Notification, NotificationType
 from app.models.organization import (
+    Organization,
     OrganizationBrandAccess,
     OrganizationMemberRole,
     OrganizationMembership,
@@ -74,11 +75,25 @@ from app.services.territorial_access import (
     can_create_for_brand,
     can_edit_filament_common,
     can_manage_filament_country,
+    can_represent_brand,
 )
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/filaments", tags=["filaments"])
+
+REPRESENTATIVE_ONLY_FILAMENT_FACTS = frozenset(
+    {
+        "density",
+        "drying_required",
+        "drying_temperature_c",
+        "drying_duration_hours",
+        "enclosure_requirement",
+        "chamber_temperature_c",
+        "bed_adhesives",
+        "post_processing_chemicals",
+    }
+)
 
 
 def _normalize_text(value: str | None) -> str | None:
@@ -93,6 +108,85 @@ def _normalize_hex(value: str | None) -> str | None:
         return None
     normalized = value.strip().lower()
     return normalized or None
+
+
+async def _validate_handling_guidance(
+    bed_adhesives: object,
+    post_processing_chemicals: object,
+    db: AsyncSession,
+) -> None:
+    """Moderate free-form handling guidance before it reaches public catalogue pages."""
+    from app.services.preset_moderation import validate_text_field
+
+    for adhesive in bed_adhesives or []:
+        is_valid, error_msg = await validate_text_field(str(adhesive), db, "bed_adhesive")
+        if not is_valid:
+            raise HTTPException(status_code=400, detail=error_msg)
+
+    for item in post_processing_chemicals or []:
+        values = item.model_dump() if hasattr(item, "model_dump") else item
+        if not isinstance(values, dict):
+            continue
+        for key in ("name", "purpose", "safety_note"):
+            value = values.get(key)
+            if not value:
+                continue
+            is_valid, error_msg = await validate_text_field(
+                str(value), db, f"chemical_{key}"
+            )
+            if not is_valid:
+                raise HTTPException(status_code=400, detail=error_msg)
+
+
+async def _active_brand_organization_members(
+    db: AsyncSession,
+    brand_id: int,
+    *,
+    organization_id: int | None = None,
+    global_only: bool = False,
+) -> set[int]:
+    """Active people who may receive a catalogue correction for an organization."""
+    query = (
+        select(User.id)
+        .join(
+            OrganizationMembership,
+            OrganizationMembership.user_id == User.id,
+        )
+        .join(
+            Organization,
+            Organization.id == OrganizationMembership.organization_id,
+        )
+        .join(
+            BrandTerritorialGrant,
+            BrandTerritorialGrant.organization_id == OrganizationMembership.organization_id,
+        )
+        .outerjoin(
+            OrganizationBrandAccess,
+            and_(
+                OrganizationBrandAccess.membership_id == OrganizationMembership.id,
+                OrganizationBrandAccess.brand_id == brand_id,
+            ),
+        )
+        .where(
+            BrandTerritorialGrant.brand_id == brand_id,
+            BrandTerritorialGrant.status == GrantStatus.active,
+            BrandTerritorialGrant.revoked_at.is_(None),
+            Organization.active.is_(True),
+            OrganizationMembership.active.is_(True),
+            User.active.is_(True),
+            or_(
+                OrganizationMembership.role == OrganizationMemberRole.OWNER,
+                OrganizationMembership.all_brands.is_(True),
+                OrganizationBrandAccess.id.is_not(None),
+            ),
+        )
+        .distinct()
+    )
+    if organization_id is not None:
+        query = query.where(BrandTerritorialGrant.organization_id == organization_id)
+    if global_only:
+        query = query.where(BrandTerritorialGrant.country.is_(None))
+    return set(await db.scalars(query))
 
 
 async def _validate_custom_filler(
@@ -692,6 +786,17 @@ async def create_filament(
     if not brand:
         raise_error(404, ERR_BRAND_NOT_FOUND)
 
+    requested_representative_fact = bool(
+        REPRESENTATIVE_ONLY_FILAMENT_FACTS & data.model_fields_set
+    )
+    if requested_representative_fact and not await can_represent_brand(
+        db, current_user, data.brand_id
+    ):
+        # The catalogue remains open: a community member may add the missing
+        # product shell, but cannot publish authoritative physical or safety
+        # guidance on behalf of its manufacturer.
+        raise_error(403, ERR_NO_PERMISSION_EDIT_FILAMENT)
+
     if data.country_cell is not None and not await can_manage_filament_country(
         db, current_user, data.brand_id, data.country_cell.country
     ):
@@ -726,6 +831,11 @@ async def create_filament(
         data.property_claims,
         brand,
         current_user,
+        db,
+    )
+    await _validate_handling_guidance(
+        data.bed_adhesives,
+        data.post_processing_chemicals,
         db,
     )
 
@@ -938,7 +1048,13 @@ async def request_filament_common_edit(
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_verified_user)],
 ) -> FilamentCommonEditRequestResponse:
-    """Send a locked common-data correction request to the global holder and platform."""
+    """Send a catalogue correction request to the holders of the shared values.
+
+    The request reaches brand representatives by mail, so it stays with people who
+    already work on this brand: a regional representative who cannot edit shared
+    values asks whoever holds them. The button is shown only to them, and the
+    endpoint enforces the same boundary instead of trusting the interface.
+    """
     del request
     filament = await db.get(Filament, filament_id)
     if filament is None:
@@ -946,9 +1062,7 @@ async def request_filament_common_edit(
     brand = await db.get(Brand, filament.brand_id)
     if brand is None:
         raise_error(404, ERR_BRAND_NOT_FOUND)
-
-    grants = await active_grants_for(db, current_user, filament.brand_id)
-    if not any(grant.country is not None and grant.manage_filament_country for grant in grants):
+    if not await can_represent_brand(db, current_user, filament.brand_id):
         raise_error(403, ERR_NO_PERMISSION_EDIT_FILAMENT)
 
     from app.services.preset_moderation import validate_text_field
@@ -962,46 +1076,46 @@ async def request_filament_common_edit(
     if not is_valid:
         raise HTTPException(status_code=400, detail=error_msg)
 
-    global_member_ids = await db.scalars(
-        select(User.id)
-        .join(
-            OrganizationMembership,
-            OrganizationMembership.user_id == User.id,
+    recipient_ids: set[int] = set()
+    if filament.contributed_by_organization_id is not None:
+        recipient_ids = await _active_brand_organization_members(
+            db,
+            filament.brand_id,
+            organization_id=filament.contributed_by_organization_id,
         )
-        .join(
-            BrandTerritorialGrant,
-            BrandTerritorialGrant.organization_id == OrganizationMembership.organization_id,
+    recipient_ids.discard(current_user.id)
+
+    if not recipient_ids:
+        recipient_ids = await _active_brand_organization_members(
+            db,
+            filament.brand_id,
+            global_only=True,
         )
-        .outerjoin(
-            OrganizationBrandAccess,
-            and_(
-                OrganizationBrandAccess.membership_id == OrganizationMembership.id,
-                OrganizationBrandAccess.brand_id == filament.brand_id,
-            ),
+        recipient_ids.discard(current_user.id)
+
+    # A community-created record may have no contributor organization and a
+    # brand may not have a global holder yet. In that transition state every
+    # active representative can maintain the shared material layer, so the
+    # request goes to those organizations before falling back to moderation.
+    if not recipient_ids:
+        recipient_ids = await _active_brand_organization_members(
+            db,
+            filament.brand_id,
         )
-        .where(
-            BrandTerritorialGrant.brand_id == filament.brand_id,
-            BrandTerritorialGrant.country.is_(None),
-            BrandTerritorialGrant.status == GrantStatus.active,
-            BrandTerritorialGrant.revoked_at.is_(None),
-            BrandTerritorialGrant.edit_all_filaments_common.is_(True),
-            OrganizationMembership.active.is_(True),
-            User.active.is_(True),
-            or_(
-                OrganizationMembership.role == OrganizationMemberRole.OWNER,
-                OrganizationMembership.all_brands.is_(True),
-                OrganizationBrandAccess.id.is_not(None),
-            ),
+        recipient_ids.discard(current_user.id)
+
+    # A platform moderator is the fallback only when no responsible active
+    # organization can receive the request.
+    if not recipient_ids:
+        recipient_ids = set(
+            await db.scalars(
+                select(User.id).where(
+                    User.role == UserRole.ADMIN,
+                    User.active.is_(True),
+                    User.id != current_user.id,
+                )
+            )
         )
-        .distinct()
-    )
-    admin_ids = await db.scalars(
-        select(User.id).where(
-            User.role == UserRole.ADMIN,
-            User.active.is_(True),
-        )
-    )
-    recipient_ids = (set(global_member_ids) | set(admin_ids)) - {current_user.id}
 
     requester_name = current_user.full_name or current_user.username
     for recipient_id in recipient_ids:
@@ -1067,6 +1181,13 @@ async def update_filament(
             "additives",
             "property_claims",
             "density",
+            "drying_required",
+            "drying_temperature_c",
+            "drying_duration_hours",
+            "enclosure_requirement",
+            "chamber_temperature_c",
+            "bed_adhesives",
+            "post_processing_chemicals",
             "spool_weight",
             "empty_spool_weight_g",
             "recommended_nozzle_temp_min",
@@ -1120,6 +1241,16 @@ async def update_filament(
             data.property_claims,
             brand_result.scalar_one_or_none(),
             current_user,
+            db,
+        )
+
+    if (
+        data.bed_adhesives is not None
+        or data.post_processing_chemicals is not None
+    ):
+        await _validate_handling_guidance(
+            data.bed_adhesives,
+            data.post_processing_chemicals,
             db,
         )
 

@@ -80,6 +80,14 @@ async def _start_background_tasks(application: FastAPI) -> None:
     except Exception:
         _logging.getLogger(__name__).warning("Failed to warm app-settings cache", exc_info=True)
 
+    # QR recovery may need to render many images after a storage restore. It is
+    # deliberately detached from startup readiness; public QR endpoints still
+    # repair an individual missing asset on demand while this sweep is running.
+    application.state.qr_repair_task = asyncio.create_task(
+        _repair_verified_qr_codes(AsyncSessionLocal),
+        name="verified-brand-qr-repair",
+    )
+
     application.state.provisional_account_sweeper_task = asyncio.create_task(
         run_provisional_account_sweeper(AsyncSessionLocal),
         name="provisional-account-sweeper",
@@ -115,8 +123,34 @@ async def _warm_pdf_renderer() -> None:
         _logging.getLogger(__name__).warning("PDF renderer unavailable", exc_info=True)
 
 
+async def _repair_verified_qr_codes(session_factory) -> None:
+    import logging as _logging
+
+    from app.services.qr_service import repair_verified_brand_qr_codes
+
+    try:
+        async with session_factory() as db:
+            repaired = await repair_verified_brand_qr_codes(db)
+            await db.commit()
+        if repaired:
+            _logging.getLogger(__name__).info(
+                "Restored %d missing verified-brand QR codes", repaired
+            )
+    except Exception:  # noqa: BLE001 — recovery must never make the API unavailable
+        # The public QR endpoint and representative fallback can still repair
+        # individual labels if the background sweep cannot complete.
+        _logging.getLogger(__name__).warning(
+            "Failed to repair verified-brand QR codes", exc_info=True
+        )
+
+
 async def _stop_background_tasks(application: FastAPI) -> None:
-    for name in ("provisional_account_sweeper_task", "inbound_mail_task", "pdf_warmup_task"):
+    for name in (
+        "provisional_account_sweeper_task",
+        "inbound_mail_task",
+        "pdf_warmup_task",
+        "qr_repair_task",
+    ):
         task = getattr(application.state, name, None)
         if task is None:
             continue

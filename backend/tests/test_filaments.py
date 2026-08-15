@@ -50,7 +50,8 @@ async def test_create_filament(auth_client: AsyncClient, db_session: AsyncSessio
         "color_hex": "#FF0000",
         "ral_code": "RAL 3020",
         "diameter": 1.75,
-        "density": 1.24,
+        # Density belongs to the manufacturer's facts: only a brand representative
+        # may publish it (see filament_handling_guidance_test).
         "price_per_kg": 800.0,
         "spool_weight": 1000.0,
         "description": "Test filament description",

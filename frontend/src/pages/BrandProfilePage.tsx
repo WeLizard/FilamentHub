@@ -282,7 +282,8 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({
     queryFn: () => brandsAPI.myTerritories(user!.brand_id!),
     enabled: !!user?.brand_id,
   });
-  // Общий слой правит владелец марки; представитель ведёт свою страну.
+  // Общий слой филаментов временно ведут представители, пока у марки нет
+  // глобального владельца; территориальная витрина всегда остаётся отдельной.
   const activeOrganizationName = (accessibleBrandsQuery.data ?? []).find(
     (item) => item.brand_id === user?.brand_id && item.organization_id === user?.active_organization_id,
   )?.organization_name;
@@ -1288,7 +1289,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({
         <div className="space-y-6">
           <div className="flex items-center justify-between gap-4">
             <h3 className="text-2xl font-bold text-white">{t('brandProfile.qrCodes')}</h3>
-            {canEditCommon && brandData?.verified && filaments.some(f => !f.qr_code) && (
+            {canOpenEditor && brandData?.verified && filaments.some(f => !f.qr_code) && (
               <button
                 onClick={() => backfillQrMutation.mutate()}
                 disabled={backfillQrMutation.isPending}

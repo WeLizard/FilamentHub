@@ -353,8 +353,13 @@ def get_qr_code_path(short_code: str, size: int = 300, error_correction: str = "
     return None
 
 
-async def ensure_filament_qr_code(filament: Filament, db: AsyncSession) -> bool:
-    """Assign a QR short code + label images to a filament that lacks one.
+async def ensure_filament_qr_code(
+    filament: Filament,
+    db: AsyncSession,
+    *,
+    render_images: bool = True,
+) -> bool:
+    """Assign a QR short code and optionally render label images.
 
     Idempotent: a no-op if the filament already has a code. Collisions get an
     id-based suffix. Returns True when a code was newly assigned. Shared by
@@ -368,8 +373,9 @@ async def ensure_filament_qr_code(filament: Filament, db: AsyncSession) -> bool:
         short_code = f"{short_code}-{filament.id % 1000}"
 
     filament.qr_code = short_code
-    # 300px (web), 600px (print), 1200px (high quality) for labels.
-    save_qr_code_image(short_code, sizes=[300, 600, 1200])
+    if render_images:
+        # 300px (web), 600px (print), 1200px (high quality) for labels.
+        save_qr_code_image(short_code, sizes=[300, 600, 1200])
     return True
 
 
@@ -392,6 +398,34 @@ async def backfill_brand_qr_codes(brand: Brand, db: AsyncSession) -> int:
     assigned = 0
     for filament in result.scalars().all():
         if await ensure_filament_qr_code(filament, db):
+            assigned += 1
+    return assigned
+
+
+async def repair_verified_brand_qr_codes(db: AsyncSession) -> int:
+    """Restore missing QR codes for every active material of a verified brand.
+
+    This is the application-startup safety net. Normal creation and verification
+    paths already assign the code immediately; this repair closes gaps left by
+    old data, interrupted maintenance or an accidental cleared value without
+    replacing any existing code.
+    """
+    result = await db.execute(
+        select(Filament)
+        .join(Brand, Brand.id == Filament.brand_id)
+        .where(
+            Brand.verified.is_(True),
+            Brand.active.is_(True),
+            Filament.active.is_(True),
+            Filament.qr_code.is_(None),
+        )
+    )
+    assigned = 0
+    for filament in result.scalars().all():
+        # Startup recovery restores the durable identity only. Rendering every
+        # raster size here would stall the event loop on a large catalogue;
+        # public and download endpoints already render a missing asset on demand.
+        if await ensure_filament_qr_code(filament, db, render_images=False):
             assigned += 1
     return assigned
 

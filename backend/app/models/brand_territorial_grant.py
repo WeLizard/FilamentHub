@@ -80,8 +80,10 @@ class BrandTerritorialGrant(Base):
     manage_filament_country: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     create_filaments: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     edit_own_created_filaments: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    # Общий слой по умолчанию закрыт: региональный представитель не переписывает
-    # ни бренд, ни свойства чужих товаров.
+    # Явные расширенные полномочия. Базовое переходное правило общего слоя
+    # филаментов проверяется отдельно: пока глобального гранта нет, его может
+    # вести любой активный представитель; после появления глобального владельца
+    # существующие общие значения региональным представителям закрываются.
     edit_brand_common: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     edit_all_filaments_common: Mapped[bool] = mapped_column(
         Boolean, default=False, nullable=False

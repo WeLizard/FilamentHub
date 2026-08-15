@@ -27,6 +27,7 @@ from app.core.errors import (
 from app.db.session import get_db
 from app.models.brand import Brand
 from app.models.brand_country_cell import BrandCountryCell
+from app.models.brand_territorial_grant import BrandTerritorialGrant, GrantStatus
 from app.models.filament import Filament
 from app.models.filament_country_cell import FilamentCountryCell
 from app.models.organization import Organization
@@ -335,11 +336,21 @@ async def my_territories(
     brand = await _require_brand(db, brand_id)
     grants = await active_grants_for(db, actor, brand_id)
 
-    common_owner: str | None = None
-    if brand.organization_id is not None:
-        common_owner = await db.scalar(
-            select(Organization.name).where(Organization.id == brand.organization_id)
+    common_owner = await db.scalar(
+        select(Organization.name)
+        .join(
+            BrandTerritorialGrant,
+            BrandTerritorialGrant.organization_id == Organization.id,
         )
+        .where(
+            BrandTerritorialGrant.brand_id == brand.id,
+            BrandTerritorialGrant.country.is_(None),
+            BrandTerritorialGrant.status == GrantStatus.active,
+            BrandTerritorialGrant.revoked_at.is_(None),
+            Organization.active.is_(True),
+        )
+        .limit(1)
+    )
 
     return {
         "brand_id": brand_id,

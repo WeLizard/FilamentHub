@@ -66,6 +66,15 @@ export interface FilamentPropertyClaim {
   rating?: string | null;
 }
 
+export type FilamentEnclosureRequirement = 'none' | 'passive' | 'active';
+
+export interface FilamentChemicalGuidance {
+  name: string;
+  purpose?: string | null;
+  safety_note?: string | null;
+  hazardous: boolean;
+}
+
 export interface FilamentPresetSummary {
   id: number;
   name: string;
@@ -118,6 +127,13 @@ export interface Filament {
   property_claims?: FilamentPropertyClaim[];
   diameter: number;
   density: number | null;
+  drying_required?: boolean | null;
+  drying_temperature_c?: number | null;
+  drying_duration_hours?: number | null;
+  enclosure_requirement?: FilamentEnclosureRequirement | null;
+  chamber_temperature_c?: number | null;
+  bed_adhesives?: string[];
+  post_processing_chemicals?: FilamentChemicalGuidance[];
   price_per_kg: number | null;
   spool_weight: number | null;
   empty_spool_weight_g: number | null;
@@ -191,6 +207,13 @@ export interface FilamentPalettePayload {
   property_claims?: FilamentPropertyClaim[];
   diameter?: number;
   density?: number | null;
+  drying_required?: boolean | null;
+  drying_temperature_c?: number | null;
+  drying_duration_hours?: number | null;
+  enclosure_requirement?: FilamentEnclosureRequirement | null;
+  chamber_temperature_c?: number | null;
+  bed_adhesives?: string[];
+  post_processing_chemicals?: FilamentChemicalGuidance[];
   price_per_kg?: number | null;
   spool_weight?: number | null;
   empty_spool_weight_g?: number | null;

@@ -189,6 +189,7 @@
     "footer_privacy": "Privacy Policy",
     "footer_consent": "Data Processing",
     "footer_geoip_attribution": "IP geolocation by DB-IP",
+    "footer_about": "About",
     "footer_copyright": "© {{year}} FilamentHub",
     "pluginPresetsStats": "Presets: {{total}} ({{synced}} synced)"
   },
@@ -461,6 +462,48 @@
           "11.3. If the dispute is not settled within the period specified in clause 11.2, the dispute may be referred to a court at the location of the Administration."
         ]
       }
+    }
+  },
+  "aboutPage": {
+    "title": "About the project",
+    "intro": "FilamentHub is a catalogue of filaments and print settings. It exists for one thing: someone holding a spool should quickly find proven parameters and print, instead of dialling them in again.",
+    "free": "The catalogue, the presets and tracking your own spools are free, and they will stay free.",
+    "roadmapTitle": "What is done and what comes next",
+    "working": {
+      "title": "Already working",
+      "items": [
+        "Material catalogue with search by brand, type, colour and properties",
+        "Print presets: official, published by the community, and your own",
+        "OrcaSlicer plugin: the catalogue inside the slicer and preset sync",
+        "Spool tracking: remaining weight, price, batch and consumption history",
+        "Feed systems: AMS slots, Happy Hare and OctoPrint",
+        "Production costing from G-code: cost, quotations and orders",
+        "QR codes and a brand page for manufacturers",
+        "Guides in the Wiki section"
+      ]
+    },
+    "progress": {
+      "title": "In progress",
+      "items": [
+        "Bambu printer link through OrcaSlicer",
+        "Analytics for manufacturers",
+        "RFID and NFC tags"
+      ]
+    },
+    "next": {
+      "title": "Next",
+      "items": [
+        "Shops with several people working together",
+        "Data exchange with external inventory systems",
+        "More ready-made data in the catalogue"
+      ]
+    },
+    "roadmapNote": "No dates promised: things ship when they are ready, not to a deadline.",
+    "support": {
+      "title": "Support the project",
+      "text": "Servers, domains and mail cost money. If the project is useful to you, you can support it.",
+      "note": "This is not a purchase: everything in the service works the same for those who support it and those who do not. Thank you if you do.",
+      "action": "Support"
     }
   },
   "consentPage": {
@@ -1163,6 +1206,7 @@
     "endOfCatalog": "You've seen all matching materials"
   },
   "brandDetailPage": {
+    "metaRestrictedNotice": "Facebook, Instagram and Threads belong to Meta Platforms Inc., whose activity is banned in Russia.",
     "loading": "Loading brand information...",
     "notFound": "Brand not found",
     "back": "Back",
@@ -1900,7 +1944,7 @@
     "diameterLabel": "Diameter (mm)",
     "selectDiameter": "Select diameter",
     "densityLabel": "Density (g/cm³)",
-    "densityLockedHint": "Set from the material type",
+    "densityLockedHint": "Editable by an administrator or brand representative",
     "pricePerKg": "Per kg",
     "pricePerSpool": "Per spool",
     "spoolWeightLabel": "Spool weight (g)",
@@ -1962,12 +2006,12 @@
     "typoSubject": "A mistake in the material “{{name}}”",
     "requestCommonEdit": "Request a correction",
     "commonEditRequestTitle": "Request a shared-data change",
-    "commonEditRequestDescription": "The brand's global representative and FilamentHub administration will receive this request. Explain exactly what should change and why.",
+    "commonEditRequestDescription": "The responsible brand organization will receive this request. If none is available, it goes to a FilamentHub moderator. Explain exactly what should change and why.",
     "commonEditRequestPlaceholder": "For example: the manufacturer changed the recommended nozzle temperature to 205–225 °C. Source…",
     "commonEditRequestCancel": "Cancel",
     "commonEditRequestSend": "Send request",
     "commonEditRequestSending": "Sending…",
-    "commonEditRequestSent": "Request sent to the global representative and administration.",
+    "commonEditRequestSent": "The request was sent to the responsible recipient.",
     "commonEditRequestFailed": "Could not send the request.",
     "commonEditRequestNoRecipients": "There is nobody to receive this request right now. Contact support@filamenthub.ru.",
     "similarTitle": "Similar records already exist",
@@ -3083,10 +3127,8 @@
     "presetFilterSaved": "Saved",
     "presetFilterSynced": "Synced",
     "presetFilterDrafts": "Drafts",
-    "presetSyncFilterLabel": "OrcaSlicer",
-    "presetSyncFilterAll": "All",
-    "presetSyncFilterEnabled": "Enabled",
-    "presetSyncFilterDisabled": "Disabled",
+    "awaitingModeration": "In review",
+    "awaitingModerationTooltip": "The preset is ready and works for you. It reaches the public catalogue once reviewed.",
     "newPreset": "New preset",
     "add": "Add",
     "noPresets": "You don't have any presets yet",
@@ -5570,6 +5612,47 @@
     "kg": "kg",
     "spoolWeight": "Spool weight",
     "g": "g"
+  },
+  "filamentHandling": {
+    "title": "Preparation and safe handling",
+    "editorHint": "These recommendations apply to this exact filament, not to the whole material type.",
+    "lockedHint": "Editable by an administrator or brand representative.",
+    "dryingSection": "Drying",
+    "dryingQuestion": "Dry before printing",
+    "dryingRequired": "Drying required",
+    "dryingTemperature": "Temperature (°C)",
+    "dryingDuration": "Time (h)",
+    "dryingRequiredWithParameters": "Dry: {{temperature}} °C · {{duration}} h",
+    "enclosureQuestion": "Enclosure requirement",
+    "chamberTemperature": "Temperature (°C)",
+    "chamberTemperatureShort": "Temperature",
+    "activeEnclosureWithTemperature": "Actively heated chamber: {{temperature}} °C",
+    "enclosure": {
+      "none": "No enclosure required",
+      "passive": "Closed enclosure required",
+      "active": "Actively heated chamber required"
+    },
+    "enclosureOptions": {
+      "none": "Not required",
+      "passive": "Closed (passive)",
+      "active": "Actively heated"
+    },
+    "bedAdhesives": "Build plate adhesive",
+    "bedAdhesivesPlaceholder": "For example: glue stick, PEI; separate items with commas",
+    "listHint": "Separate items with commas, semicolons, or new lines.",
+    "chemicals": "Chemical post-processing",
+    "chemicalsHint": "Include the purpose and a separate safety note.",
+    "addChemical": "Add",
+    "chemicalName": "Substance or product",
+    "chemicalPurpose": "Purpose, for example smoothing",
+    "safetyNoteRequired": "A safety note is required",
+    "safetyNote": "Safety note",
+    "hazardous": "Hazardous substance",
+    "removeChemical": "Remove",
+    "chemicalSafetyNotice": "Read the supplier's safety data sheet (SDS) before use. Provide the specified ventilation and wear the recommended PPE. Do not mix chemicals without verified instructions.",
+    "chemicalSafetyReference": "UN GHS Rev. 11 — safety data sheets and hazard communication",
+    "densitySuggestion": "Typical value for {{materialType}}; it will be stored only on this filament.",
+    "requiredParametersError": "Enter a temperature and duration for drying, and a temperature for an actively heated chamber."
   },
   "shareMenu": {
     "share": "Share",

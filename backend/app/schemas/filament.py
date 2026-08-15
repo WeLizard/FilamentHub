@@ -124,6 +124,49 @@ class FilamentPropertyClaim(BaseModel):
     _normalize_claim_code = field_validator("code", mode="before")(_normalize_code)
 
 
+class FilamentChemicalGuidance(BaseModel):
+    """Product-specific chemical post-processing guidance with visible safety context."""
+
+    name: str = Field(..., min_length=1, max_length=100)
+    purpose: str | None = Field(None, min_length=1, max_length=200)
+    safety_note: str | None = Field(None, min_length=1, max_length=500)
+    hazardous: bool = False
+
+    @field_validator("name", "purpose", "safety_note", mode="before")
+    @classmethod
+    def _strip_guidance_text(cls, value: object) -> object:
+        if isinstance(value, str):
+            return value.strip()
+        return value
+
+    @model_validator(mode="after")
+    def _require_hazard_note(self) -> "FilamentChemicalGuidance":
+        if self.hazardous and not self.safety_note:
+            raise ValueError("safety_note is required for hazardous chemicals")
+        return self
+
+
+def normalize_bed_adhesives(value: object) -> object:
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        return value
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for item in value:
+        if not isinstance(item, str):
+            return value
+        label = item.strip()
+        key = label.casefold()
+        if not label or key in seen:
+            continue
+        if len(label) > 100:
+            raise ValueError("bed adhesive labels must not exceed 100 characters")
+        seen.add(key)
+        normalized.append(label)
+    return normalized
+
+
 class FilamentVisualSettings(BaseModel):
     """Schema for extended visual settings (только для сайта, не передается в OrcaSlicer)."""
 
@@ -203,6 +246,15 @@ class FilamentBase(BaseModel):
     property_claims: list[FilamentPropertyClaim] = Field(default_factory=list, max_length=24)
     diameter: float = Field(1.75, ge=1.0, le=3.5)
     density: float | None = Field(None, gt=0)
+    drying_required: bool | None = None
+    drying_temperature_c: float | None = Field(None, ge=0, le=200)
+    drying_duration_hours: float | None = Field(None, ge=0.25, le=336)
+    enclosure_requirement: Literal["none", "passive", "active"] | None = None
+    chamber_temperature_c: float | None = Field(None, ge=0, le=150)
+    bed_adhesives: list[str] = Field(default_factory=list, max_length=12)
+    post_processing_chemicals: list[FilamentChemicalGuidance] = Field(
+        default_factory=list, max_length=12
+    )
     price_per_kg: float | None = Field(None, ge=0)
     spool_weight: float | None = Field(None, gt=0)
     empty_spool_weight_g: float | None = Field(None, ge=0)
@@ -220,6 +272,9 @@ class FilamentBase(BaseModel):
     line_id: int | None = Field(None, gt=0)  # линейка (группировка вариантов-цвета)
 
     _normalize_ral_code = field_validator("ral_code", mode="before")(normalize_ral_code)
+    _normalize_bed_adhesives = field_validator("bed_adhesives", mode="before")(
+        normalize_bed_adhesives
+    )
 
 
 class FilamentCreate(FilamentBase):
@@ -230,6 +285,16 @@ class FilamentCreate(FilamentBase):
     # market data together.  The nested cell is optional so community and
     # global contributors keep the same open-catalog endpoint.
     country_cell: FilamentCountryCellCreate | None = None
+
+    @model_validator(mode="after")
+    def validate_handling_parameters(self) -> FilamentCreate:
+        if self.drying_required is True and (
+            self.drying_temperature_c is None or self.drying_duration_hours is None
+        ):
+            raise ValueError("drying temperature and duration are required")
+        if self.enclosure_requirement == "active" and self.chamber_temperature_c is None:
+            raise ValueError("chamber temperature is required for an actively heated chamber")
+        return self
 
 
 class FilamentUpdate(BaseModel):
@@ -247,6 +312,15 @@ class FilamentUpdate(BaseModel):
     property_claims: list[FilamentPropertyClaim] | None = Field(None, max_length=24)
     diameter: float | None = Field(None, ge=1.0, le=3.5)
     density: float | None = Field(None, gt=0)
+    drying_required: bool | None = None
+    drying_temperature_c: float | None = Field(None, ge=0, le=200)
+    drying_duration_hours: float | None = Field(None, ge=0.25, le=336)
+    enclosure_requirement: Literal["none", "passive", "active"] | None = None
+    chamber_temperature_c: float | None = Field(None, ge=0, le=150)
+    bed_adhesives: list[str] | None = Field(None, max_length=12)
+    post_processing_chemicals: list[FilamentChemicalGuidance] | None = Field(
+        None, max_length=12
+    )
     price_per_kg: float | None = Field(None, ge=0)
     spool_weight: float | None = Field(None, gt=0)
     empty_spool_weight_g: float | None = Field(None, ge=0)
@@ -262,6 +336,19 @@ class FilamentUpdate(BaseModel):
     line_id: int | None = Field(None, gt=0)  # null — снять с линейки
 
     _normalize_ral_code = field_validator("ral_code", mode="before")(normalize_ral_code)
+    _normalize_bed_adhesives = field_validator("bed_adhesives", mode="before")(
+        normalize_bed_adhesives
+    )
+
+    @model_validator(mode="after")
+    def validate_handling_parameters(self) -> FilamentUpdate:
+        if self.drying_required is True and (
+            self.drying_temperature_c is None or self.drying_duration_hours is None
+        ):
+            raise ValueError("drying temperature and duration are required")
+        if self.enclosure_requirement == "active" and self.chamber_temperature_c is None:
+            raise ValueError("chamber temperature is required for an actively heated chamber")
+        return self
 
 
 class FilamentPresetSummary(BaseModel):
@@ -334,7 +421,7 @@ class FilamentListResponse(BaseModel):
 
 
 class FilamentCommonEditRequest(BaseModel):
-    """A territorial representative asks the common-data owner for a correction."""
+    """A verified user asks the responsible brand organization for a correction."""
 
     message: str = Field(..., min_length=5, max_length=1000)
 
@@ -407,6 +494,15 @@ class FilamentPaletteCreate(BaseModel):
     property_claims: list[FilamentPropertyClaim] = Field(default_factory=list, max_length=24)
     diameter: float = Field(1.75, ge=1.0, le=3.5)
     density: float | None = Field(None, gt=0)
+    drying_required: bool | None = None
+    drying_temperature_c: float | None = Field(None, ge=0, le=200)
+    drying_duration_hours: float | None = Field(None, ge=0.25, le=336)
+    enclosure_requirement: Literal["none", "passive", "active"] | None = None
+    chamber_temperature_c: float | None = Field(None, ge=0, le=150)
+    bed_adhesives: list[str] = Field(default_factory=list, max_length=12)
+    post_processing_chemicals: list[FilamentChemicalGuidance] = Field(
+        default_factory=list, max_length=12
+    )
     price_per_kg: float | None = Field(None, ge=0)
     spool_weight: float | None = Field(None, gt=0)
     empty_spool_weight_g: float | None = Field(None, ge=0)
@@ -421,7 +517,22 @@ class FilamentPaletteCreate(BaseModel):
     )
     price_display_unit: Literal["per_kg", "per_spool"] = Field("per_kg")
     country_cell: FilamentCountryCellCreate | None = None
+
     variants: list[FilamentPaletteVariant] = Field(..., min_length=1, max_length=100)
+
+    _normalize_bed_adhesives = field_validator("bed_adhesives", mode="before")(
+        normalize_bed_adhesives
+    )
+
+    @model_validator(mode="after")
+    def validate_handling_parameters(self) -> FilamentPaletteCreate:
+        if self.drying_required is True and (
+            self.drying_temperature_c is None or self.drying_duration_hours is None
+        ):
+            raise ValueError("drying temperature and duration are required")
+        if self.enclosure_requirement == "active" and self.chamber_temperature_c is None:
+            raise ValueError("chamber temperature is required for an actively heated chamber")
+        return self
 
 
 class CompatiblePrinter(BaseModel):

@@ -47,6 +47,15 @@ import {
 } from '../utils/orcaPresetSettings';
 
 import { FilamentSummaryCard } from './FilamentSummaryCard';
+import { printerCatalogLabel } from '../utils/printerLabel';
+import {
+  FilamentHandlingEditor,
+  type FilamentHandlingFormValue,
+  isHandlingGuidanceComplete,
+  normalizeChemicalGuidance,
+  parseBedAdhesives,
+} from './FilamentHandlingEditor';
+import { DensityField } from './DensityField';
 import type { AxiosError } from 'axios';
 
 // Список стандартных типов материалов (FDM/FFF)
@@ -317,7 +326,15 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
   const colorPickerButtonRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const [filamentDiameter, setFilamentDiameter] = useState('1.75');
   const [filamentDensity, setFilamentDensity] = useState<number | ''>('');
-  const [canEditDensity, setCanEditDensity] = useState(false); // Можно ли редактировать плотность (только для неизвестных типов)
+  const [filamentHandling, setFilamentHandling] = useState<FilamentHandlingFormValue>({
+    dryingRequired: false,
+    dryingTemperatureC: '',
+    dryingDurationHours: '',
+    enclosureRequirement: 'none',
+    chamberTemperatureC: '',
+    bedAdhesivesText: '',
+    chemicals: [],
+  });
   const [filamentPricePerKg, setFilamentPricePerKg] = useState<number | ''>('');
   const [filamentSpoolWeight, setFilamentSpoolWeight] = useState<number | ''>('');
   const [filamentPriceUnit, setFilamentPriceUnit] = useState<'per_kg' | 'per_spool'>('per_kg');
@@ -357,6 +374,15 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
     queryFn: () => brandsAPI.myTerritories(user!.brand_id!),
     enabled: isOpen && !!user?.brand_id && !!user?.active_organization_id,
   });
+  const technicalFactsBrandId = brandId ?? selectedBrandId;
+  const { data: technicalFactsTerritories } = useQuery({
+    queryKey: ['brand-territories', technicalFactsBrandId, user?.active_organization_id],
+    queryFn: () => brandsAPI.myTerritories(technicalFactsBrandId!),
+    enabled: isOpen && !!technicalFactsBrandId,
+  });
+  const canManageTechnicalFacts = Boolean(
+    user?.role === 'admin' || (technicalFactsTerritories?.territories?.length ?? 0) > 0,
+  );
 
   // Любой пользователь может создать пресет. Эта проверка управляет только
   // отдельной отметкой «официальный» от имени верифицированного бренда.
@@ -974,6 +1000,17 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
       setFilamentRalCode('');
       setFilamentRecTemps(EMPTY_RECOMMENDED_TEMPS);
       setFilamentNozzleHrc(null);
+      setFilamentDiameter('1.75');
+      setFilamentDensity('');
+      setFilamentHandling({
+        dryingRequired: false,
+        dryingTemperatureC: '',
+        dryingDurationHours: '',
+        enclosureRequirement: 'none',
+        chamberTemperatureC: '',
+        bedAdhesivesText: '',
+        chemicals: [],
+      });
       // Сброс расширенных визуальных эффектов
       setFilamentVisualColorType('single');
       setFilamentVisualColors(['#FF0000']);
@@ -1185,6 +1222,13 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
       property_claims?: FilamentPropertyClaim[];
       diameter?: number;
       density?: number;
+      drying_required?: boolean | null;
+      drying_temperature_c?: number | null;
+      drying_duration_hours?: number | null;
+      enclosure_requirement?: import('../types/api').FilamentEnclosureRequirement | null;
+      chamber_temperature_c?: number | null;
+      bed_adhesives?: string[];
+      post_processing_chemicals?: import('../types/api').FilamentChemicalGuidance[];
       price_per_kg?: number;
       spool_weight?: number;
       recommended_nozzle_temp_min?: number;
@@ -1734,6 +1778,11 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
     // Если создаем новый филамент, сначала создаем его
     // ВАЖНО: это работает и при создании пресета, и при редактировании черновика
     if (showFilamentForm) {
+      if (canManageTechnicalFacts && !isHandlingGuidanceComplete(filamentHandling)) {
+        setError(t('filamentHandling.requiredParametersError'));
+        return;
+      }
+
       // Если передан brandId из пропсов - используем его (бренд создает материал для себя)
       let finalBrandId: number;
       
@@ -1796,12 +1845,10 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
         return;
       }
 
-      // Определяем плотность: если тип известный - берем из мапа, иначе из поля ввода
+      // Density is persisted on this exact catalogue filament. The material
+      // family map is only a suggestion for an authorized representative.
       let finalDensity: number | undefined = undefined;
-      const knownDensity = densityForMaterial(finalMaterialType);
-      if (knownDensity) {
-        finalDensity = knownDensity;
-      } else if (filamentDensity !== '') {
+      if (canManageTechnicalFacts && filamentDensity !== '') {
         finalDensity = Number(filamentDensity);
       }
 
@@ -1830,6 +1877,15 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
           property_claims: filamentPropertyClaims,
           diameter: Number(filamentDiameter),
           density: finalDensity,
+          ...(canManageTechnicalFacts ? {
+            drying_required: filamentHandling.dryingRequired,
+            drying_temperature_c: filamentHandling.dryingRequired && filamentHandling.dryingTemperatureC !== '' ? filamentHandling.dryingTemperatureC : null,
+            drying_duration_hours: filamentHandling.dryingRequired && filamentHandling.dryingDurationHours !== '' ? filamentHandling.dryingDurationHours : null,
+            enclosure_requirement: filamentHandling.enclosureRequirement,
+            chamber_temperature_c: filamentHandling.enclosureRequirement === 'active' && filamentHandling.chamberTemperatureC !== '' ? filamentHandling.chamberTemperatureC : null,
+            bed_adhesives: parseBedAdhesives(filamentHandling.bedAdhesivesText),
+            post_processing_chemicals: normalizeChemicalGuidance(filamentHandling.chemicals),
+          } : {}),
           price_per_kg: canCreateOfficial && filamentPricePerKg !== ''
             ? (filamentPriceUnit === 'per_spool' && Number(filamentSpoolWeight) > 0
                 ? (Number(filamentPricePerKg) * 1000) / Number(filamentSpoolWeight)
@@ -2216,13 +2272,12 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                         placeholder={t('presetModal.selectMaterialTypePlaceholder')}
                         onChange={(value) => {
                           setMaterialType(value);
-                          // Плотность по типу материала. Замок ролевой: производитель правит, обычный юзер — нет.
+                          // Type density is a suggestion only; the saved value
+                          // belongs to the concrete filament being created.
                           const density = densityForMaterial(value) ?? null;
                           if (density) {
                             setFilamentDensity(density);
-                            setCanEditDensity(canCreateOfficial);
                           } else {
-                            setCanEditDensity(true);
                             if (!filamentDensity) {
                               setFilamentDensity(1.24);
                             }
@@ -2640,7 +2695,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                   )}
 
                   {/* Физические характеристики */}
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                     <Dropdown
                       label={`${t('presetModal.diameter')} *`}
                       value={filamentDiameter}
@@ -2648,33 +2703,21 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                       onChange={(val) => setFilamentDiameter(String(val))}
                       placeholder={t('presetModal.selectDiameter')}
                     />
-                    <div>
-                      <label className="block text-gray-300 mb-2 text-sm font-medium">
-                        {t('presetModal.density')}
-                        {!canEditDensity && (
-                          <span className="ml-2 text-xs text-gray-500">({t('presetModal.auto')})</span>
-                        )}
-                      </label>
-                      <input
-                        type="number"
-                        value={filamentDensity}
-                        onChange={(e) => { setFilamentDensity(e.target.value === '' ? '' : Number(e.target.value)); }}
-                        placeholder={canEditDensity ? t('presetModal.densityPlaceholder') : t('presetModal.densityAuto')}
-                        disabled={!canEditDensity}
-                        min={0.5}
-                        max={3.0}
-                        step="0.01"
-                        className={`w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 placeholder:text-center focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all ${
-                          !canEditDensity ? 'opacity-50 cursor-not-allowed' : ''
-                        }`}
-                      />
-                      {!canEditDensity && filamentDensity && (
-                        <p className="mt-1 text-xs text-gray-500">
-                          {t('presetModal.densityFor')} {materialType}: {filamentDensity} g/cm³
-                        </p>
-                      )}
-                    </div>
+                    <DensityField
+                      value={filamentDensity === '' ? (densityForMaterial(materialType) ?? 1.24) : filamentDensity}
+                      onChange={setFilamentDensity}
+                      locked={!canManageTechnicalFacts}
+                      label={t('presetModal.density')}
+                    />
                   </div>
+
+                  {canManageTechnicalFacts && (
+                    <FilamentHandlingEditor
+                      value={filamentHandling}
+                      onChange={setFilamentHandling}
+                      compact
+                    />
+                  )}
 
                   {/* Ценовые характеристики - только для производителей */}
                   {canCreateOfficial && (
@@ -2771,7 +2814,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                 .filter((p) => !selectedPrinterIds.includes(p.id))
                 .map((printer: Printer) => ({
                   value: printer.id,
-                  label: `${printer.manufacturer} ${printer.model} (${printer.name})`,
+                  label: printerCatalogLabel(printer),
                 })) || []
             }
             onChange={(val) => {
