@@ -101,9 +101,13 @@ async def test_a_users_own_preset_arrives_as_a_draft(
         "values": [1, "two"],
     }
 
+    # The plugin writes this list into OrcaSlicer, and the draft came from there:
+    # its original file is already on that machine, so shipping a managed copy
+    # back would put two near-identical presets in the user's list. It becomes
+    # syncable once it is bound to a filament and activated.
     global_sync = await client.get("/api/v1/auth/my-presets", headers=headers)
     assert global_sync.status_code == 200
-    assert [item["id"] for item in global_sync.json()["items"]] == [draft.id]
+    assert [item["id"] for item in global_sync.json()["items"]] == []
 
     exported = await client.get(
         f"/api/v1/presets/{draft.id}/export/orcaslicer.json",
@@ -337,3 +341,32 @@ async def test_import_can_be_switched_off_per_account(
 
     assert response.status_code == 403
     assert response.json()["detail"]["code"] == "ERR_IMPORT_FILAMENT_DISABLED"
+
+
+@pytest.mark.asyncio
+async def test_plugin_header_counts_only_what_reaches_the_slicer(
+    client: AsyncClient, db_session: AsyncSession
+):
+    """The plugin shows "presets N (M synced)" from this endpoint.
+
+    A draft never leaves the site, so counting it as synchronised made the
+    plugin's header disagree with the same library on the website.
+    """
+    headers, person = await _signed_in(client, db_session, "orca-stats-draft")
+
+    imported = await _import(client, headers, _preset("Stats PLA"))
+    assert imported.status_code == 200
+
+    draft = await db_session.scalar(select(Preset).where(Preset.user_id == person.id))
+    assert draft is not None and draft.active is False
+
+    stats = await client.get("/api/v1/auth/me/presets-stats", headers=headers)
+    assert stats.status_code == 200
+    body = stats.json()
+    # The draft belongs to the library and is shown there, but it synchronises
+    # nowhere until it is bound to a filament.
+    assert body["total_presets"] == 1
+    assert body["synced_presets"] == 0
+
+    listed = await client.get("/api/v1/auth/my-presets", headers=headers)
+    assert [item["id"] for item in listed.json()["items"]] == []

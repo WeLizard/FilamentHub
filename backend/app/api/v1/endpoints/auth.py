@@ -18,7 +18,7 @@ from fastapi import (
     UploadFile,
     status,
 )
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -870,19 +870,26 @@ async def get_my_presets_stats(
     total_preset_ids = saved_preset_ids | direct_preset_ids
     total_presets = len(total_preset_ids)
 
+    # Counted as synchronised only what actually reaches OrcaSlicer: a draft has
+    # no material, never leaves the site, and inflating the number here made the
+    # plugin's own header disagree with the library on the site.
+    syncable = and_(Preset.active.is_(True), Preset.filament_id.isnot(None))
     synced_result = await db.execute(
         select(UserSavedPreset.preset_id)
         .join(Preset)
         .where(
             UserSavedPreset.user_id == current_user.id,
             UserSavedPreset.sync.is_(True),
-            eligible,
+            syncable,
         )
     )
     synced_ids = {row[0] for row in synced_result.all()}
     # Historical own presets without a saved relation remain syncable; all new
     # writers create that relation and therefore honour its explicit toggle.
-    synced_ids.update(direct_preset_ids - saved_preset_ids)
+    historical_result = await db.execute(
+        select(Preset.id).where(Preset.user_id == current_user.id, syncable)
+    )
+    synced_ids.update({row[0] for row in historical_result.all()} - saved_preset_ids)
     synced_presets = (
         len(synced_ids) if current_user.allow_filament_presets_export else 0
     )
@@ -922,10 +929,13 @@ async def get_my_presets(
     #    Это нужно для случаев, когда пресет был создан до добавления логики user_saved_presets
     #    или если по какой-то причине запись в user_saved_presets отсутствует
 
-    # Active saved catalog presets plus the owner's private drafts. A draft may
-    # not be linked to a Filament yet, but it is still a complete Orca profile
-    # and participates in the same global sync when its toggle is enabled.
-    eligible = or_(Preset.active.is_(True), Preset.user_id == current_user.id)
+    # This list is the plugin's desired state: it writes every item here into
+    # OrcaSlicer's FilamentHub bundle. A draft must not appear. It arrived from
+    # the user's own slicer, where its original file already sits untouched, so a
+    # managed copy beside it is a duplicate the user never asked for. A draft
+    # becomes syncable the moment it is bound to a filament and activated — the
+    # same condition that decides whether the sync toggle exists in the interface.
+    eligible = and_(Preset.active.is_(True), Preset.filament_id.isnot(None))
     saved_query = select(UserSavedPreset).where(
         UserSavedPreset.user_id == current_user.id,
         UserSavedPreset.sync.is_(True),

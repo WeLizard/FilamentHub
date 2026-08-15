@@ -3130,7 +3130,11 @@ async def _upsert_filament_preset(
             saved_preset = UserSavedPreset(
                 user_id=current_user.id,
                 preset_id=preset.id,
-                sync=True,  # По умолчанию включаем синхронизацию
+                # A draft came from the user's own slicer and must not be sent
+                # back: the original file is already there. Synchronisation turns
+                # on when the draft is bound to a filament and the user asks for
+                # it, not by the mere fact of import.
+                sync=bool(preset.active and preset.filament_id),
             )
             db.add(saved_preset)
             try:
@@ -3421,7 +3425,10 @@ async def _upsert_filament_preset(
         saved_preset = UserSavedPreset(
             user_id=current_user.id,
             preset_id=preset.id,
-            sync=True,  # По умолчанию синхронизация включена (пользователь явно экспортировал пресет)
+            # A finished preset the user exported keeps synchronising; a draft
+            # does not, because its original already lives in that slicer and a
+            # managed copy beside it is a duplicate nobody asked for.
+            sync=bool(preset.active and preset.filament_id),
         )
         db.add(saved_preset)
 

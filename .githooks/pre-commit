@@ -1,0 +1,80 @@
+#!/bin/sh
+# Runs the tests that the staged change can break, before it enters history.
+#
+# Lives in git rather than in one agent's settings so it works the same for every
+# agent and for a hand-made commit. It never runs the whole suite: that takes
+# minutes and a commit is not the place to wait. Backend tests are selected by
+# the names of the changed files, frontend tests by vitest's own dependency
+# graph, and the plugin suite runs whole because it takes seconds.
+#
+# Set FH_SKIP_TESTS=1 to skip deliberately. Do not reach for --no-verify: a
+# skipped run should be a visible decision, not a habit.
+
+if [ -n "$FH_SKIP_TESTS" ]; then
+    echo "pre-commit: тесты пропущены (FH_SKIP_TESTS)"
+    exit 0
+fi
+
+staged=$(git diff --cached --name-only --diff-filter=ACMR)
+[ -z "$staged" ] && exit 0
+
+repo_root=$(git rev-parse --show-toplevel)
+failed=""
+
+run_backend() {
+    files=$(echo "$staged" | grep -E '^backend/.*\.py$' || true)
+    [ -z "$files" ] && return 0
+    command -v python >/dev/null 2>&1 || {
+        echo "pre-commit: python недоступен, backend-тесты пропущены"
+        return 0
+    }
+
+    # A changed file's name is the cheapest usable link to its tests:
+    # app/services/orcaslicer_exporter.py -> orcaslicer_exporter_test.py.
+    keys=$(echo "$files" | sed 's#.*/##; s#\.py$##' | grep -v '^__init__$' | sort -u)
+    [ -z "$keys" ] && return 0
+    expr=$(echo "$keys" | paste -sd '|' - | sed 's/|/ or /g')
+
+    echo "pre-commit: backend-тесты по '$expr'"
+    ( cd "$repo_root/backend" && python -m pytest tests/ -q -p no:cacheprovider \
+        --no-cov -k "$expr" ) || failed="$failed backend"
+}
+
+run_frontend() {
+    files=$(echo "$staged" | grep -E '^frontend/src/.*\.(ts|tsx)$' || true)
+    [ -z "$files" ] && return 0
+    command -v npx >/dev/null 2>&1 || {
+        echo "pre-commit: npx недоступен, frontend-тесты пропущены"
+        return 0
+    }
+
+    # vitest resolves the import graph itself, so a changed component pulls in
+    # the tests that actually cover it.
+    paths=$(echo "$files" | sed "s#^frontend/##" | paste -sd ' ' -)
+    echo "pre-commit: frontend-тесты, связанные с изменёнными файлами"
+    ( cd "$repo_root/frontend" && npx vitest related --run --reporter=dot $paths ) \
+        || failed="$failed frontend"
+}
+
+run_plugin() {
+    files=$(echo "$staged" | grep -E '^orca-plugin/.*\.py$' || true)
+    [ -z "$files" ] && return 0
+    command -v python >/dev/null 2>&1 || return 0
+
+    echo "pre-commit: тесты плагина"
+    ( cd "$repo_root/orca-plugin" && python -m pytest tests/ -q -p no:cacheprovider ) \
+        || failed="$failed plugin"
+}
+
+run_backend
+run_frontend
+run_plugin
+
+if [ -n "$failed" ]; then
+    echo ""
+    echo "pre-commit: тесты упали ($failed). Коммит остановлен."
+    echo "Почини или, если это осознанно, повтори с FH_SKIP_TESTS=1."
+    exit 1
+fi
+
+exit 0
