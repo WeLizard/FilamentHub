@@ -14,8 +14,10 @@ from app.models.print_profile import PrintProfile
 from app.models.printer import Printer
 from app.models.printer_profile import PrinterProfile
 from app.services.orca_printer_identity import resolve_orca_printer_model
+from app.services.orca_transport import build_orca_transport_settings
 from app.services.profile_validator import (
     log_validation_result,
+    validate_orca_transport_shapes,
     validate_print_profile,
     validate_printer_profile,
 )
@@ -438,9 +440,15 @@ async def printer_profile_to_orca_json(
     settings["fhub_id"] = str(profile.id)
     settings["fhub_source"] = "filamenthub"
 
-    # Валидация профиля перед экспортом (мягкая - только логирование)
+    # Transport projection is the last step: everything above may write native
+    # Python values, and only a string / array-of-strings survives Orca's loader.
+    settings = build_orca_transport_settings(settings, "machine", profile.id)
+
+    # Advisory checks stay logged; a transport-shape violation is fatal, because
+    # Orca silently truncates the profile instead of reporting an error.
     validation_result = validate_printer_profile(settings)
     log_validation_result(validation_result, profile.name, "printer")
+    validate_orca_transport_shapes(settings, profile.name)
 
     return settings
 
@@ -596,9 +604,11 @@ async def print_profile_to_orca_json(
     settings["fhub_id"] = str(profile.id)
     settings["fhub_source"] = "filamenthub"
 
-    # Валидация профиля перед экспортом (мягкая - только логирование)
+    settings = build_orca_transport_settings(settings, "process", profile.id)
+
     validation_result = validate_print_profile(settings)
     log_validation_result(validation_result, profile.name, "print")
+    validate_orca_transport_shapes(settings, profile.name)
 
     return settings
 

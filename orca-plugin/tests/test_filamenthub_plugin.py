@@ -498,24 +498,29 @@ def test_desired_state_cleanup_quarantines_stale_orphan_and_invalid_managed_file
         json.dumps({"name": "Broken", "bundle_id": "filamenthub:not-an-id"}),
         encoding="utf-8",
     )
-    (live / "My local profile.json").write_text(
-        json.dumps({"name": "My local profile"}), encoding="utf-8"
+    # Written by an older plugin version: no ownership marker, but it sits inside
+    # the FilamentHub bundle folder, where only this plugin writes.
+    (live / "Legacy unmarked.json").write_text(
+        json.dumps({"name": "Legacy unmarked"}), encoding="utf-8"
     )
 
     removed, removed_ids = plugin_module.quarantine_unwanted_managed_preset_files(
         str(live), {10}
     )
 
-    assert removed == 4
+    # The FilamentHub tab must show only what is actually synchronised, so an
+    # unmarked leftover leaves the live bundle as well — into quarantine, not
+    # deletion. Files outside this folder are never touched.
+    assert removed == 5
     assert removed_ids == {10, 20, 30}
     assert sorted(path.name for path in live.iterdir()) == [
         "Current.info",
         "Current.json",
-        "My local profile.json",
     ]
     assert sorted(path.name for path in private.rglob("*.*")) == [
         "Broken current.info",
         "Broken.json",
+        "Legacy unmarked.json",
         "Orphan.info",
         "Stale.json",
     ]
@@ -1893,6 +1898,156 @@ def test_profile_payload_must_be_an_object(plugin_module):
         plugin_module.validate_filament_profile({"name": ""})
     profile = {"name": "PLA", "inherits": "Generic PLA"}
     assert plugin_module.validate_filament_profile(profile) is profile
+
+
+def test_profile_payload_must_survive_the_orca_config_loader(plugin_module):
+    # Observed on build PR14992/5e6895dd: a numeric array, a numeric scalar and
+    # the internal `enrichment` object each made Orca discard the whole preset
+    # ("invalid json array for ..." / "invalid json type for ...") while the file
+    # stayed on disk looking synced.
+    rejected = {
+        "name": "PETG",
+        "fan_max_speed": [100],
+        "filament_max_volumetric_speed": 10,
+        "enrichment": {"material_type": "PETG"},
+        "filament_notes": None,
+    }
+    assert plugin_module.orca_transport_violations(rejected) == [
+        "enrichment",
+        "fan_max_speed",
+        "filament_max_volumetric_speed",
+        "filament_notes",
+    ]
+    with pytest.raises(ValueError, match="fan_max_speed"):
+        plugin_module.validate_filament_profile(rejected)
+
+    accepted = {
+        "name": "PETG",
+        "fan_max_speed": ["100"],
+        "filament_max_volumetric_speed": ["10"],
+        "compatible_printers": [],
+        "inherits": "Generic PETG",
+    }
+    assert plugin_module.validate_filament_profile(accepted) is accepted
+
+
+def test_unloadable_server_profile_never_replaces_a_working_local_file(
+    plugin_module, monkeypatch, tmp_path
+):
+    good = {"name": "Managed PETG", "bundle_id": "filamenthub:7", "filament_type": ["PETG"]}
+    path = tmp_path / "Managed PETG.json"
+    path.write_text(json.dumps(good), encoding="utf-8")
+
+    monkeypatch.setattr(
+        plugin_module,
+        "http_get",
+        lambda path, token=None, **kwargs: (
+            200,
+            json.dumps({"name": "Managed PETG", "fan_max_speed": [100]}).encode("utf-8"),
+        ),
+    )
+
+    result = plugin_module.FilamentHubCatalog()._pull_one(
+        7, "token", set(), str(tmp_path), {"updated_at": "2026-08-15"}
+    )
+
+    assert result is None
+    assert json.loads(path.read_text(encoding="utf-8")) == good
+
+
+def test_locally_unloadable_managed_file_is_repaired_from_the_server(
+    plugin_module, monkeypatch, tmp_path
+):
+    # A file Orca refused is never stale by hash or timestamp, so without this
+    # branch the broken copy would survive every future sync — and pushing it
+    # would send the damage back to FilamentHub.
+    live = tmp_path / "live"
+    live.mkdir()
+    broken = {"name": "Broken", "bundle_id": "filamenthub:12", "fan_max_speed": [100]}
+    broken_path = live / "Broken.json"
+    broken_path.write_text(json.dumps(broken), encoding="utf-8")
+    repaired = {"name": "Broken", "fan_max_speed": ["100"], "filament_type": ["PETG"]}
+
+    monkeypatch.setattr(plugin_module, "user_filament_dir", lambda: str(live))
+    monkeypatch.setattr(plugin_module, "ensure_bundle_metadata", lambda: None)
+    monkeypatch.setattr(
+        plugin_module,
+        "load_sync_state",
+        lambda: {"12": {"updated_at": "2026-08-15", "hash": plugin_module.preset_content_hash(broken), "name": "Broken"}},
+    )
+    monkeypatch.setattr(plugin_module, "save_sync_state", lambda value: None)
+
+    def fake_http_get(path, token=None, **kwargs):
+        if path.endswith("orcaslicer.json"):
+            return 200, json.dumps(repaired).encode("utf-8")
+        return 200, json.dumps(
+            {"items": [{"id": 12, "name": "Broken", "updated_at": "2026-08-15"}]}
+        ).encode("utf-8")
+
+    monkeypatch.setattr(plugin_module, "http_get", fake_http_get)
+    monkeypatch.setattr(
+        plugin_module,
+        "_sync_preferences",
+        lambda token: {"auto_import_local_presets": False, "sync_printer_endpoints": False},
+    )
+    monkeypatch.setattr(plugin_module, "push_user_profiles", lambda *args, **kwargs: (0, 0))
+    monkeypatch.setattr(
+        plugin_module, "send_printer_observations", lambda *args, **kwargs: (None, {})
+    )
+    monkeypatch.setattr(plugin_module, "sync_happy_hare_topologies", lambda *args: None)
+    pushed = []
+    catalog = plugin_module.FilamentHubCatalog()
+    monkeypatch.setattr(catalog, "_push_one", lambda *args, **kwargs: pushed.append(args))
+
+    catalog._do_sync("token", set(), announce=False, source_instance_id="fixture")
+
+    assert pushed == []
+    written = json.loads(broken_path.read_text(encoding="utf-8"))
+    assert written["fan_max_speed"] == ["100"]
+    assert plugin_module.orca_transport_violations(written) == []
+
+
+def test_sync_reports_written_files_and_host_loaded_presets_separately(
+    plugin_module, monkeypatch, tmp_path
+):
+    # A file written during this session only reaches Orca after a restart, and
+    # one Orca refused never arrives. The log must not present the file count as
+    # the number of presets OrcaSlicer actually has.
+    live = tmp_path / "live"
+    live.mkdir()
+    for preset_id, name in ((10, "Loaded"), (11, "Pending")):
+        (live / f"{name}.json").write_text(
+            json.dumps({"name": name, "bundle_id": "filamenthub:%d" % preset_id}),
+            encoding="utf-8",
+        )
+
+    messages = []
+    monkeypatch.setattr(plugin_module, "fh_log", lambda msg: messages.append(msg))
+    monkeypatch.setattr(plugin_module, "user_filament_dir", lambda: str(live))
+
+    catalog = plugin_module.FilamentHubCatalog()
+    catalog._log_managed_preset_state(str(live), {10, 11}, {10}, [11])
+
+    assert any("sync failed presets: [11]" in msg for msg in messages)
+    assert any(
+        "desired=2 files=2 loaded=1 pending_restart=[11]" in msg for msg in messages
+    )
+
+    messages.clear()
+    catalog._log_managed_preset_state(str(live), {10, 11}, None, [])
+    assert any("desired=2 files=2 loaded=unknown" in msg for msg in messages)
+
+
+def test_loaded_managed_preset_ids_reports_unknown_without_a_host_bundle(
+    plugin_module, monkeypatch
+):
+    def unavailable():
+        raise RuntimeError("no host")
+
+    monkeypatch.setattr(plugin_module.orca, "host", SimpleNamespace(preset_bundle=unavailable))
+    monkeypatch.setattr(plugin_module, "fh_log", lambda msg: None)
+
+    assert plugin_module.loaded_managed_preset_ids() is None
 
 
 def test_atomic_json_write_replaces_complete_file(plugin_module, tmp_path):

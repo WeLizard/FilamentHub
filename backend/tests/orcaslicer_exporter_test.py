@@ -1,16 +1,24 @@
-"""Tests for the filament export scope guard.
+"""Tests for the OrcaSlicer filament export contract.
 
-A filament profile must not carry process-scope keys (OrcaSlicer
-`s_Preset_print_options`). The exporter's `orcaslicer_settings` passthrough
-drops them so a process setting that ends up in the blob (e.g. via reverse
-sync) never leaks into the exported filament JSON.
+Two guards live here. A filament profile must not carry process-scope keys
+(OrcaSlicer `s_Preset_print_options`). And every exported value must survive
+Orca's config loader, which accepts only a JSON string or an array of strings
+per option and drops the entire profile otherwise — the observed cause of
+managed presets silently missing from OrcaSlicer.
 """
+
+import json
+from copy import deepcopy
 
 import pytest
 
 from app.models.filament import Filament
 from app.models.preset import Preset
 from app.services.orcaslicer_exporter import generate_profile_info, preset_to_orcaslicer_json
+from app.services.profile_validator import (
+    orca_transport_violations,
+    validate_orca_transport_shapes,
+)
 
 
 def _filament() -> Filament:
@@ -68,12 +76,13 @@ async def test_filament_scope_keys_survive():
 
 
 @pytest.mark.asyncio
-async def test_unknown_filament_fields_keep_their_exact_json_shape():
+async def test_unknown_transportable_fields_keep_their_exact_json_shape():
+    # A field FilamentHub has not reviewed yet is shipped byte-identical: not
+    # renamed, not re-shaped, not wrapped into an array.
     untouched = {
-        "future_scalar": 7.25,
-        "future_vector": ["left", 2, False],
-        "future_object": {"mode": "adaptive", "levels": [1, 3]},
-        "future_nullable": None,
+        "future_scalar": "7.25",
+        "future_vector": ["left", "2", "0"],
+        "future_empty_vector": [],
     }
 
     profile = await preset_to_orcaslicer_json(
@@ -83,6 +92,126 @@ async def test_unknown_filament_fields_keep_their_exact_json_shape():
     for key, value in untouched.items():
         assert profile[key] == value
         assert type(profile[key]) is type(value)
+
+
+@pytest.mark.asyncio
+async def test_unknown_untransportable_fields_are_withheld_instead_of_guessed():
+    # Orca's loader aborts the whole file on a number, boolean, null or object,
+    # so an unreviewed field in one of those shapes cannot be shipped. It must
+    # be withheld rather than converted on a guess — the stored blob stays the
+    # round-trip authority.
+    preset = _preset({
+        "future_number": 7.25,
+        "future_bool": True,
+        "future_object": {"mode": "adaptive", "levels": [1, 3]},
+        "future_nullable": None,
+        "future_mixed_vector": ["left", 2],
+    })
+
+    profile = await preset_to_orcaslicer_json(preset, _filament(), db=None)
+
+    for key in (
+        "future_number",
+        "future_bool",
+        "future_object",
+        "future_nullable",
+        "future_mixed_vector",
+    ):
+        assert key not in profile
+        assert key in preset.orcaslicer_settings
+
+
+@pytest.mark.asyncio
+async def test_known_vector_fields_are_normalized_to_arrays_of_strings():
+    # The host Preset API hands the plugin native Python values, so a
+    # round-tripped blob carries numeric arrays and scalars. Orca rejected real
+    # managed presets over exactly these: "invalid json array for fan_max_speed",
+    # "invalid json array for filament_max_volumetric_speed", and a numeric
+    # scalar pressure_advance.
+    preset = _preset({
+        "fan_max_speed": [100],
+        "filament_max_volumetric_speed": 10,
+        "pressure_advance": 0.025,
+        "filament_diameter": [1.75],
+        "filament_soluble": [False],
+        "filament_retraction_length": [None],
+    })
+
+    profile = await preset_to_orcaslicer_json(preset, _filament(), db=None)
+
+    assert profile["fan_max_speed"] == ["100"]
+    assert profile["filament_max_volumetric_speed"] == ["10"]
+    assert profile["pressure_advance"] == ["0.025"]
+    assert profile["filament_diameter"] == ["1.75"]
+    assert profile["filament_soluble"] == ["0"]
+    # Orca's own sentinel for an unset entry of a nullable vector option.
+    assert profile["filament_retraction_length"] == ["nil"]
+
+
+@pytest.mark.asyncio
+async def test_enrichment_metadata_never_reaches_orcaslicer():
+    # `enrichment` is FilamentHub bookkeeping stored in the settings blob. Orca
+    # logged "invalid json type for enrichment" and dropped the whole preset.
+    preset = _preset({
+        "enrichment": {"material_type": "PETG", "confidence": 0.8},
+        "filament_max_volumetric_speed": ["18"],
+    })
+
+    profile = await preset_to_orcaslicer_json(preset, _filament(), db=None)
+
+    assert "enrichment" not in profile
+    assert preset.orcaslicer_settings["enrichment"] == {
+        "material_type": "PETG",
+        "confidence": 0.8,
+    }
+
+
+@pytest.mark.asyncio
+async def test_export_never_mutates_the_stored_settings_blob():
+    stored = {
+        "enrichment": {"material_type": "PETG"},
+        "fan_max_speed": [100],
+        "future_object": {"levels": [1, 3]},
+        "layer_height": ["0.2"],
+        "nozzle_temperature": [245],
+    }
+    preset = _preset(stored)
+    snapshot = deepcopy(stored)
+
+    await preset_to_orcaslicer_json(preset, _filament(), db=None)
+    await preset_to_orcaslicer_json(preset, _filament(), db=None)
+
+    assert preset.orcaslicer_settings == snapshot
+
+
+@pytest.mark.asyncio
+async def test_export_is_stable_across_a_full_orcaslicer_round_trip():
+    # FH -> export -> what the plugin writes and pushes back -> import -> export.
+    # The second export must be transportable and must still carry the unknown
+    # field the site has never reviewed.
+    preset = _preset({
+        "enrichment": {"material_type": "PETG"},
+        "fan_max_speed": [100],
+        "filament_max_volumetric_speed": 10,
+        "future_setting": ["keep me"],
+    })
+
+    exported = await preset_to_orcaslicer_json(preset, _filament(), db=None)
+    assert orca_transport_violations(exported) == []
+
+    # The plugin serializes the payload to disk and pushes the parsed file back.
+    reimported = json.loads(json.dumps(exported))
+    imported_preset = _preset(reimported)
+    reexported = await preset_to_orcaslicer_json(imported_preset, _filament(), db=None)
+
+    assert reexported == exported
+    assert reexported["future_setting"] == ["keep me"]
+    assert "enrichment" not in reexported
+
+
+def test_strict_transport_validation_rejects_a_profile_orcaslicer_would_drop():
+    with pytest.raises(ValueError, match="fan_max_speed"):
+        validate_orca_transport_shapes({"name": "X", "fan_max_speed": [100]})
 
 
 @pytest.mark.asyncio

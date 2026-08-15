@@ -2,7 +2,6 @@
 
 import json
 import logging
-from copy import deepcopy
 from typing import Any
 
 from sqlalchemy import select
@@ -18,6 +17,7 @@ from app.services.orca_printer_identity import (
     is_orca_system_printer,
     resolve_orca_printer_model,
 )
+from app.services.orca_transport import build_orca_transport_settings
 from app.services.orcaslicer_preset_contract import (
     format_orca_flow_ratio,
     format_orca_number,
@@ -25,6 +25,7 @@ from app.services.orcaslicer_preset_contract import (
 from app.services.profile_validator import (
     log_validation_result,
     validate_filament_profile,
+    validate_orca_transport_shapes,
 )
 
 logger = logging.getLogger(__name__)
@@ -61,6 +62,17 @@ PROCESS_SCOPE_KEYS = frozenset({
     "initial_layer_acceleration", "travel_acceleration", "post_process", "resolution",
     "skirt_loops", "skirt_distance",
 })
+
+
+def _filament_transport(settings, preset_id):
+    """Export-only copy of a preset's stored settings; storage is never mutated.
+
+    Identity/header fields are re-issued authoritatively by the callers below,
+    and process-scope keys do not belong to a filament at all.
+    """
+    return build_orca_transport_settings(
+        settings, "filament", preset_id, skip_keys=IDENTITY_KEYS | PROCESS_SCOPE_KEYS
+    )
 
 
 def preset_to_orcaslicer_info(preset: Preset) -> str:
@@ -127,15 +139,12 @@ def draft_preset_to_orcaslicer_json(preset: Preset) -> dict[str, Any]:
     site. This lets private drafts participate in the same global round trip as
     active presets without requiring a Filament row first.
     """
-    profile = (
-        deepcopy(preset.orcaslicer_settings)
-        if isinstance(preset.orcaslicer_settings, dict)
-        else {}
-    )
+    raw = preset.orcaslicer_settings if isinstance(preset.orcaslicer_settings, dict) else {}
+    profile = _filament_transport(raw, preset.id)
     name = preset.name or f"FilamentHub preset {preset.id}"
     profile.update(
         {
-            "version": str(profile.get("version") or "2.3.0.0"),
+            "version": str(raw.get("version") or "2.3.0.0"),
             "type": "filament",
             "name": name,
             "from": "user",
@@ -186,6 +195,8 @@ def draft_preset_to_orcaslicer_json(preset: Preset) -> dict[str, Any]:
         )
     if preset.flow_rate is not None:
         set_array("filament_flow_ratio", format_orca_flow_ratio(preset.flow_rate))
+
+    validate_orca_transport_shapes(profile, name)
     return profile
 
 
@@ -413,26 +424,10 @@ async def preset_to_orcaslicer_json(
     if preset.flow_rate is not None:
         profile["filament_flow_ratio"] = to_array(format_orca_flow_ratio(preset.flow_rate))
 
-    # Расширенные параметры из JSON поля orcaslicer_settings
-    # Эти параметры имеют приоритет над базовыми и добавляются в конец
-    # Полезно для специальных настроек, которых нет в базовых полях FilamentHub
-    if preset.orcaslicer_settings and isinstance(preset.orcaslicer_settings, dict) and len(preset.orcaslicer_settings) > 0:
-        for key, value in preset.orcaslicer_settings.items():
-            # Идентити/заголовочные поля уже выставлены авторитетно выше; не даём
-            # массивной конвертации ниже испортить скалярный `name` (см. IDENTITY_KEYS).
-            if key in IDENTITY_KEYS:
-                continue
-            # Process-scope ключи не место в filament-профиле — отбрасываем (см. PROCESS_SCOPE_KEYS)
-            if key in PROCESS_SCOPE_KEYS:
-                logger.debug(f"Dropping process-scope key '{key}' from filament export of preset {preset.id}")
-                continue
-            # The raw Orca object is the round-trip authority for settings that
-            # were not deliberately rewritten above. In particular, a field that
-            # arrived before FilamentHub learned its schema must retain its exact
-            # JSON representation (scalar/vector/object/null). The web editor
-            # already serialises fields it actually changes into Orca's expected
-            # representation, so a generic exporter must not guess and reshape it.
-            profile[key] = deepcopy(value)
+    # Расширенные параметры из JSON поля orcaslicer_settings.
+    # The stored blob is the round-trip authority for everything not rewritten
+    # above and is never mutated here — the export gets its own transport copy.
+    profile.update(_filament_transport(preset.orcaslicer_settings, preset.id))
 
     # Material identity from FilamentHub is authoritative over imported raw
     # metadata. Preset values remain represented in both structured columns and
@@ -499,9 +494,11 @@ async def preset_to_orcaslicer_json(
     # ВАЖНО: НЕ обновляем orcaslicer_settings в базе при экспорте!
     # Это вызывает изменение updated_at и бесконечный цикл экспорта.
 
-    # Валидация профиля перед экспортом (мягкая - только логирование)
+    # Advisory checks stay logged; a transport-shape violation is fatal, because
+    # Orca drops the whole profile instead of the offending option.
     validation_result = validate_filament_profile(profile)
     log_validation_result(validation_result, preset.name, "filament")
+    validate_orca_transport_shapes(profile, preset.name)
 
     return profile
 

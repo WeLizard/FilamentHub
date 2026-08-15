@@ -1045,6 +1045,20 @@ def _managed_info_claim(path):
     return False, None
 
 
+def preset_file_stems(folder):
+    """Preset names in a folder: a preset is a .json plus an optional .info."""
+    try:
+        names = os.listdir(folder)
+    except OSError:
+        return set()
+    return {
+        name[:-len(extension)]
+        for name in names
+        for extension in (".json", ".info")
+        if name.endswith(extension)
+    }
+
+
 def scan_managed_preset_artifacts(folder):
     """Inventory every strongly marked FilamentHub material artifact.
 
@@ -1052,16 +1066,7 @@ def scan_managed_preset_artifacts(folder):
     malformed managed JSON and conflicting markers. Those cannot be used as a
     sync source, but they are still safe to remove from Orca's live bundle.
     """
-    try:
-        names = os.listdir(folder)
-    except OSError:
-        return []
-    stems = {
-        name[:-len(extension)]
-        for name in names
-        for extension in (".json", ".info")
-        if name.endswith(extension)
-    }
+    stems = preset_file_stems(folder)
     artifacts = []
     for stem in sorted(stems, key=str.casefold):
         json_path = os.path.join(folder, stem + ".json")
@@ -1116,6 +1121,17 @@ def managed_preset_quarantine_dir():
     )
 
 
+def _artifact_stems(artifact):
+    return {
+        os.path.basename(path)[:-len(extension)]
+        for path, extension in (
+            (artifact.get("json_path"), ".json"),
+            (artifact.get("info_path"), ".info"),
+        )
+        if path
+    }
+
+
 def _quarantine_managed_preset_artifact(artifact, reason):
     paths = [
         path for path in (artifact.get("json_path"), artifact.get("info_path"))
@@ -1149,12 +1165,50 @@ def _quarantine_managed_preset_artifact(artifact, reason):
     return bool(moved)
 
 
+def is_orca_transportable_value(value):
+    """Whether ConfigBase::load_from_json can read this JSON value.
+
+    Upstream accepts a string, or an array whose elements are all strings or all
+    arrays (recursively) — parse_str_arr rejects a mixed-type array and any
+    element that is neither string nor array.
+    """
+    if isinstance(value, str):
+        return True
+    if not isinstance(value, list):
+        return False
+    kinds = set("list" if isinstance(item, list) else type(item).__name__ for item in value)
+    if len(kinds) > 1:
+        return False
+    return all(is_orca_transportable_value(item) for item in value)
+
+
+def orca_transport_violations(profile):
+    """Keys whose JSON value OrcaSlicer's config loader refuses.
+
+    Orca reads the object in sorted key order. A bad array logs "invalid json
+    array for <key>" and breaks the loop, silently dropping every
+    alphabetically later key — name and type included — while still reporting
+    success; a bad scalar type drops only that option. Either way the user sees
+    a missing or quietly wrong preset, so the payload is checked again here
+    before anything is written over a working file.
+    """
+    return sorted(
+        key
+        for key, value in profile.items()
+        if not is_orca_transportable_value(value)
+    )
+
+
 def validate_filament_profile(profile):
     if not isinstance(profile, dict):
         raise ValueError("Preset export must be a JSON object")
     name = profile.get("name")
     if name is not None and (not isinstance(name, str) or not name.strip()):
         raise ValueError("Preset name must be a non-empty string")
+    rejected = orca_transport_violations(profile)
+    if rejected:
+        raise ValueError(
+            "OrcaSlicer cannot load these values: %s" % ", ".join(rejected))
     return profile
 
 
@@ -1251,15 +1305,31 @@ def quarantine_unwanted_managed_preset_files(folder, remote_ids):
     wanted = {int(value) for value in remote_ids}
     removed = 0
     removed_ids = set()
+    kept_stems = set()
     for artifact in scan_managed_preset_artifacts(folder):
         preset_id = artifact.get("preset_id")
         if artifact.get("healthy") and preset_id in wanted:
+            kept_stems.update(_artifact_stems(artifact))
             continue
         reason = "invalid-managed" if preset_id is None else "not-in-profile-%d" % preset_id
         if _quarantine_managed_preset_artifact(artifact, reason):
             removed += 1
             if preset_id is not None:
                 removed_ids.add(preset_id)
+
+    # Everything left in this folder is ours too: Orca groups presets by bundle
+    # directory, the user's own presets live elsewhere, and only this plugin writes
+    # here. Older plugin versions wrote no ownership marker, so the scan above
+    # cannot see those files and they would stay in the FilamentHub tab forever.
+    for stem in preset_file_stems(folder) - kept_stems:
+        json_path = os.path.join(folder, stem + ".json")
+        info_path = os.path.join(folder, stem + ".info")
+        leftover = {
+            "json_path": json_path if os.path.isfile(json_path) else None,
+            "info_path": info_path if os.path.isfile(info_path) else None,
+        }
+        if _quarantine_managed_preset_artifact(leftover, "unmarked-bundle-file"):
+            removed += 1
     return removed, removed_ids
 
 
@@ -2777,6 +2847,30 @@ def scan_managed_host_filaments():
     except Exception as exc:
         fh_log("managed material host scan failed: %s" % type(exc).__name__)
     return resolved
+
+
+def loaded_managed_preset_ids():
+    """Managed preset ids OrcaSlicer has actually loaded into its collection.
+
+    A written JSON file is desired state, not evidence. Orca reads user presets
+    at startup and silently discards any file its config loader rejects, so file
+    count and loaded count are different facts. Returns None when the host
+    collection cannot be read, which is "unknown" rather than "none loaded".
+    Host reads must happen on the UI thread.
+    """
+    loaded = set()
+    try:
+        filaments = orca.host.preset_bundle().filaments
+        for index in range(filaments.size()):
+            preset_id = preset_id_from_bundle(
+                str(getattr(filaments.preset(index), "bundle_id", "") or "")
+            )
+            if preset_id is not None:
+                loaded.add(preset_id)
+    except Exception as exc:
+        fh_log("loaded managed preset scan unavailable: %s" % type(exc).__name__)
+        return None
+    return loaded
 
 
 def scan_active_user_filaments():
@@ -5672,6 +5766,7 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
         source_instance_id = plugin_source_instance_id()
         active_filaments = scan_active_user_filaments()  # UI thread: loaded account's user presets
         host_profiles = self._host_profiles()  # UI thread: machine/process presets
+        loaded_preset_ids = loaded_managed_preset_ids()  # UI thread: what Orca really loaded
         BACKGROUND_WORKER.submit(
             self._do_sync,
             token,
@@ -5682,6 +5777,7 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
             observations,
             source_instance_id,
             moonraker_connections,
+            loaded_preset_ids,
         )
 
     def execute(self):
@@ -6383,6 +6479,7 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
             observations = observe_printer_presets()  # UI thread: printer connection data
             moonraker_connections = observe_local_moonraker_connections(observations)
             source_instance_id = plugin_source_instance_id()
+            loaded_preset_ids = loaded_managed_preset_ids()  # UI thread: what Orca really loaded
             BACKGROUND_WORKER.submit(
                 self._do_sync,
                 token,
@@ -6393,6 +6490,7 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
                 observations,
                 source_instance_id,
                 moonraker_connections,
+                loaded_preset_ids,
             )
         elif msg_type in {
             "happy-hare-preview",
@@ -6656,9 +6754,11 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
             profile_path = preset_file_path(target_dir, name, preset_id)
             name = apply_managed_filename_identity(profile, profile_path)
             base = profile_path[:-len(".json")]
+            validate_filament_profile(profile)
             write_managed_info(base, preset_id, token)
             write_json_atomic(profile_path, profile)
             remove_stale_preset_files(target_dir, preset_id, profile_path)
+            fh_log("import %d written, pending restart: %s" % (preset_id, name))
 
             orca.host.ui.message(
                 ui_text("importedRestart", name=name),
@@ -6666,6 +6766,29 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
         except Exception as exc:
             orca.host.ui.message(
                 ui_text("importFailed", error=exc), title="FilamentHub", icon="error")
+
+    def _log_managed_preset_state(self, folder, remote_ids, loaded_preset_ids, failed_ids):
+        """Record desired, on-disk and host-loaded counts as three separate facts.
+
+        They routinely disagree: a profile written during this session only
+        reaches Orca after a restart, and one Orca refused to parse never
+        arrives at all. Reporting the file count as "synced" hides both.
+        """
+        on_disk = set(scan_local_fh_presets(folder))
+        if failed_ids:
+            fh_log("sync failed presets: %s" % sorted(set(failed_ids)))
+        if loaded_preset_ids is None:
+            fh_log(
+                "sync state: desired=%d files=%d loaded=unknown"
+                % (len(remote_ids), len(on_disk))
+            )
+            return
+        loaded = on_disk & loaded_preset_ids
+        pending_restart = sorted(on_disk - loaded_preset_ids)
+        fh_log(
+            "sync state: desired=%d files=%d loaded=%d pending_restart=%s"
+            % (len(remote_ids), len(on_disk), len(loaded), pending_restart)
+        )
 
     # --- two-way sync (plugin-side) ------------------------------------------ #
     def _pull_one(self, pid, token, known_presets, folder, remote):
@@ -6687,6 +6810,13 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
         profile_path = preset_file_path(folder, name, pid)
         name = apply_managed_filename_identity(profile, profile_path)
         base = profile_path[:-len(".json")]
+        # Re-check after the local adjustments: an already working file must never
+        # be replaced by a profile Orca would refuse to load.
+        try:
+            validate_filament_profile(profile)
+        except ValueError as exc:
+            fh_log("pull %d FAILED: profile Orca would reject: %r" % (pid, exc))
+            return None
         try:
             write_managed_info(base, pid, token)
             write_json_atomic(profile_path, profile)
@@ -6736,7 +6866,7 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
 
     def _do_sync(self, token, known_presets, announce=True, active_filaments=None,
                  host_profiles=None, observations=None, source_instance_id="",
-                 moonraker_connections=None):
+                 moonraker_connections=None, loaded_preset_ids=None):
         if not token:
             if announce:
                 orca.host.ui.message(ui_text("syncSignIn"),
@@ -6785,6 +6915,7 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
             )
         )
         pulled = updated = pushed = skipped = failed = renamed = 0
+        failed_ids = []
         for rp in remote_items:
             pid = rp.get("id")
             if not isinstance(pid, int):
@@ -6799,6 +6930,20 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
                     pulled += 1
                 else:
                     failed += 1
+                    failed_ids.append(pid)
+                continue
+            if orca_transport_violations(local_entry["profile"]):
+                # The file is on disk but Orca never loaded it, so its contents
+                # cannot be a local edit and must not be pushed. Neither hash nor
+                # timestamp would ever mark it stale — repair it from the server.
+                fh_log("preset %d: local file unloadable by Orca -> repull" % pid)
+                res = self._pull_one(pid, token, known_presets, folder, rp)
+                if res:
+                    state[str(pid)] = res
+                    updated += 1
+                else:
+                    failed += 1
+                    failed_ids.append(pid)
                 continue
             if not rec:
                 # No record for an existing local file: the state cache was lost
@@ -6816,6 +6961,7 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
                         pushed += 1
                     else:
                         failed += 1
+                        failed_ids.append(pid)
                     continue
                 rec = recovered
                 state[str(pid)] = rec
@@ -6830,6 +6976,7 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
                     pushed += 1
                 else:
                     failed += 1
+                    failed_ids.append(pid)
             elif remote_newer:
                 # Replace only the managed file. Stock OrcaSlicer discovers the
                 # new content on restart until an upstream reload API is available.
@@ -6839,6 +6986,7 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
                     updated += 1
                 else:
                     failed += 1
+                    failed_ids.append(pid)
             else:
                 # Content is up to date, but the file may still carry the legacy
                 # `__fh_<id>` stem (shown verbatim in the dropdown) — move it to
@@ -6947,6 +7095,7 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
         summary = ", ".join(parts) or ui_text("summaryNothing")
         fh_log("sync done: pull=%d upd=%d push=%d rm=%d ren=%d skip=%d fail=%d" %
                (pulled, updated, pushed, removed, renamed, skipped, failed))
+        self._log_managed_preset_state(folder, remote_ids, loaded_preset_ids, failed_ids)
         note = ""
         if pulled or updated or removed or renamed:
             note = ui_text("dropdownRestart")

@@ -65,6 +65,60 @@ VALID_FROM_VALUES = ["system", "user"]
 VERSION_PATTERN = r"^\d+\.\d+\.\d+(\.\d+)?$"
 
 
+def is_orca_transportable_value(value: Any) -> bool:
+    """Whether `ConfigBase::load_from_json` can read this JSON value.
+
+    Upstream accepts a string, or an array whose elements are all strings or
+    all arrays (recursively) — `parse_str_arr` rejects a mixed-type array and
+    any element that is neither string nor array. Numbers, booleans, nulls and
+    objects are not readable in any position.
+    """
+    if isinstance(value, str):
+        return True
+    if not isinstance(value, list):
+        return False
+    kinds = {"list" if isinstance(item, list) else type(item).__name__ for item in value}
+    if len(kinds) > 1:
+        return False
+    return all(is_orca_transportable_value(item) for item in value)
+
+
+def orca_transport_violations(profile: dict[str, Any]) -> list[str]:
+    """Keys whose JSON value OrcaSlicer's config loader refuses.
+
+    The damage is not limited to the offending option. Upstream reads the JSON
+    object in sorted key order and, on a bad *array*, logs `invalid json array
+    for <key>` and `break`s out of the loop — every alphabetically later key,
+    `name` and `type` included, is silently dropped, and the call still returns
+    success. A bad *scalar* type logs `invalid json type for <key>` and skips
+    only that option. Either way the user gets a wrong or missing preset with
+    no error surfaced in the UI.
+    """
+    return sorted(
+        key
+        for key, value in profile.items()
+        if not is_orca_transportable_value(value)
+    )
+
+
+def validate_orca_transport_shapes(
+    profile: dict[str, Any],
+    profile_name: str | None = None,
+) -> None:
+    """Fail the export when a value cannot survive OrcaSlicer's JSON loader."""
+    rejected = orca_transport_violations(profile)
+    if not rejected:
+        return
+    name = profile_name or profile.get("name") or "Unknown"
+    detail = ", ".join(
+        f"{key}={type(profile[key]).__name__}" for key in rejected
+    )
+    raise ValueError(
+        f"Profile '{name}' cannot be exported to OrcaSlicer: "
+        f"values must be a string or an array of strings ({detail})"
+    )
+
+
 def _check_filamenthub_marker(profile: dict[str, Any], result: ValidationResult) -> None:
     """Verify profile carries a FilamentHub identity marker.
 
@@ -150,6 +204,12 @@ def validate_filament_profile(profile: dict[str, Any]) -> ValidationResult:
 
     # 7. FilamentHub identity marker (bundle_id preferred, fhub_source fallback)
     _check_filamenthub_marker(profile, result)
+
+    for key in orca_transport_violations(profile):
+        result.add_error(
+            f"Поле '{key}' должно быть строкой или массивом строк, "
+            f"получено: {type(profile[key]).__name__}"
+        )
 
     # 8. Проверяем температуры (если есть)
     temp_fields = ["nozzle_temperature", "hot_plate_temp", "cool_plate_temp"]

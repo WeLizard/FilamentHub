@@ -1,0 +1,441 @@
+"""Transport projection between FilamentHub storage and OrcaSlicer JSON.
+
+FilamentHub stores whatever OrcaSlicer, the plugin or the web editor produced,
+unmodified — that blob is the round-trip authority. OrcaSlicer's config loader
+is far narrower than JSON, so the export gets its own copy shaped to what the
+target build can actually read.
+
+`ConfigBase::load_from_json` walks the JSON object in sorted key order and, per
+option, accepts a string or an array whose elements are uniformly strings or
+uniformly arrays. Everything else fails, and it fails destructively: a bad array
+logs `invalid json array for <key>` and breaks the loop, silently discarding
+every alphabetically later key — `name` and `type` among them — while the call
+still reports success. A bad scalar logs `invalid json type for <key>` and drops
+only that option. Neither reaches the user interface.
+
+The field tables below are the shape inventory of one concrete artifact,
+`ORCA_TRANSPORT_ARTIFACT`. OrcaSlicer 2.5.0 is unreleased and its option set is
+still moving, so this is deliberately not presented as the 2.5 schema. A field
+FilamentHub has not reviewed is never renamed, converted or guessed at: it ships
+byte-identical when the loader can carry it, and is withheld from transport
+otherwise, which leaves Orca on the inherited value — the same outcome the
+loader reaches by rejecting it, without the collateral damage to its siblings.
+"""
+
+from __future__ import annotations
+
+import logging
+from copy import deepcopy
+from decimal import Decimal
+from math import isfinite
+from typing import Any
+
+from app.services.orcaslicer_preset_contract import format_orca_number
+from app.services.profile_validator import is_orca_transportable_value
+
+logger = logging.getLogger(__name__)
+
+ORCA_TRANSPORT_ARTIFACT = "OrcaSlicer PR14992 5e6895dd"
+
+# Orca's sentinel for an unset entry inside a nullable vector option.
+ORCA_NIL = "nil"
+
+# Metadata FilamentHub keeps inside the stored settings blob for its own use.
+# `enrichment` records which material defaults were filled and how confident the
+# detection was. It is not an OrcaSlicer option, and as an object value it is
+# exactly the kind that truncates a profile on load.
+FILAMENTHUB_INTERNAL_KEYS = frozenset({"enrichment"})
+
+
+# Vector options: Orca serializes one entry per extruder or variant. Observed as
+# a JSON array in the artifact's profiles of the matching kind.
+ORCA_VECTOR_FIELDS: dict[str, frozenset[str]] = {
+    "filament": frozenset({
+    "activate_air_filtration", "activate_chamber_temp_control", "adaptive_pressure_advance",
+    "adaptive_pressure_advance_bridges", "adaptive_pressure_advance_model",
+    "adaptive_pressure_advance_overhangs", "additional_cooling_fan_speed",
+    "additional_cooling_fan_speed_unseal", "additional_fan_full_speed_layer", "bed_temperature",
+    "bed_temperature_difference", "bed_temperature_initial_layer", "bed_type",
+    "box_temperature", "box_temperature_range_high", "box_temperature_range_low",
+    "chamber_temperature", "chamber_temperatures", "circle_compensation_speed",
+    "close_additional_fan_first_x_layers", "close_fan_the_first_x_layers",
+    "compatible_printers", "compatible_prints", "complete_print_exhaust_fan_speed",
+    "cool_plate_temp", "cool_plate_temp_initial_layer", "counter_coef_1", "counter_coef_2",
+    "counter_coef_3", "counter_limit_max", "counter_limit_min", "default_filament_colour",
+    "diameter_limit", "disable_fan_first_layers", "dont_slow_down_outer_wall",
+    "during_print_exhaust_fan_speed", "enable_overhang_bridge_fan", "enable_pressure_advance",
+    "enable_volume_fan", "eng_plate_temp", "eng_plate_temp_initial_layer",
+    "external_perimeter_speed", "fan_cooling_layer_time", "fan_cooling_layer_time_BRASS",
+    "fan_cooling_layer_time_HS", "fan_max_speed", "fan_max_speed_BRASS", "fan_max_speed_HS",
+    "fan_min_speed", "fan_min_speed_BRASS", "fan_min_speed_HS", "fan_p2_after_x_layers",
+    "fan_p2_before_x_layers", "fan_p2_speed_before_x_layers", "fan_speed_after_x_layers",
+    "filament_adaptive_volumetric_speed", "filament_adhesiveness_category",
+    "filament_bridge_speed", "filament_change_length", "filament_change_length_nc",
+    "filament_color", "filament_colour", "filament_cooling_before_tower",
+    "filament_cooling_final_speed", "filament_cooling_initial_speed", "filament_cooling_moves",
+    "filament_cost", "filament_density", "filament_deretraction_speed",
+    "filament_dev_ams_drying_ams_limitations",
+    "filament_dev_ams_drying_heat_distortion_temperature",
+    "filament_dev_ams_drying_temperature", "filament_dev_ams_drying_time",
+    "filament_dev_chamber_drying_bed_temperature", "filament_dev_chamber_drying_time",
+    "filament_dev_drying_cooling_temperature", "filament_dev_drying_softening_temperature",
+    "filament_diameter", "filament_enable_overhang_speed", "filament_end_gcode",
+    "filament_extruder_compatibility", "filament_extruder_id", "filament_extruder_variant",
+    "filament_flow_ratio", "filament_flow_ratio_initial_layer", "filament_flush_temp",
+    "filament_flush_temp_fast", "filament_flush_volumetric_speed", "filament_ironing_flow",
+    "filament_ironing_inset", "filament_ironing_spacing", "filament_ironing_speed",
+    "filament_is_support", "filament_load_time", "filament_loading_speed",
+    "filament_loading_speed_start", "filament_long_retractions_when_cut",
+    "filament_long_retractions_when_ec", "filament_max_volumetric_speed",
+    "filament_minimal_purge_on_wipe_tower", "filament_multitool_ramming",
+    "filament_multitool_ramming_flow", "filament_multitool_ramming_volume", "filament_notes",
+    "filament_overhang_1_4_speed", "filament_overhang_2_4_speed", "filament_overhang_3_4_speed",
+    "filament_overhang_4_4_speed", "filament_overhang_totally_speed",
+    "filament_pre_cooling_temperature", "filament_pre_cooling_temperature_nc",
+    "filament_preheat_temperature_delta", "filament_prime_volume", "filament_prime_volume_nc",
+    "filament_printable", "filament_ramming_parameters", "filament_ramming_travel_time",
+    "filament_ramming_travel_time_nc", "filament_ramming_volumetric_speed",
+    "filament_ramming_volumetric_speed_nc", "filament_retract_before_wipe",
+    "filament_retract_layer_change", "filament_retract_length_nc",
+    "filament_retract_length_toolchange", "filament_retract_lift_above",
+    "filament_retract_lift_below", "filament_retract_lift_enforce",
+    "filament_retract_restart_extra", "filament_retract_when_changing_layer",
+    "filament_retraction_distances_when_cut", "filament_retraction_distances_when_ec",
+    "filament_retraction_length", "filament_retraction_minimum_travel",
+    "filament_retraction_speed", "filament_scarf_gap", "filament_scarf_height",
+    "filament_scarf_length", "filament_scarf_seam_type", "filament_settings_id",
+    "filament_shrink", "filament_shrinkage_compensation_z", "filament_soluble",
+    "filament_spool_weight", "filament_stamping_distance", "filament_stamping_loading_speed",
+    "filament_start_gcode", "filament_support_printable", "filament_toolchange_delay",
+    "filament_tower_interface_pre_extrusion_dist",
+    "filament_tower_interface_pre_extrusion_length", "filament_tower_interface_print_temp",
+    "filament_tower_interface_purge_volume", "filament_tower_ironing_area", "filament_type",
+    "filament_unload_time", "filament_unloading_speed", "filament_unloading_speed_start",
+    "filament_velocity_adaptation_factor", "filament_vendor", "filament_wipe",
+    "filament_wipe_distance", "filament_z_hop", "filament_z_hop_types",
+    "first_layer_temperature", "first_x_layer_fan_speed", "full_fan_speed_layer", "hole_coef_1",
+    "hole_coef_2", "hole_coef_3", "hole_limit_max", "hole_limit_min", "hot_plate_temp",
+    "hot_plate_temp_initial_layer", "idle_temperature", "idle_temperture", "impact_strength_z",
+    "internal_bridge_fan_speed", "ironing_fan_speed", "keep_fan_always_on",
+    "long_retractions_when_ec", "no_slow_down_for_cooling_on_outwalls", "nozzle_temperature",
+    "nozzle_temperature_BRASS", "nozzle_temperature_HS", "nozzle_temperature_initial_layer",
+    "nozzle_temperature_initial_layer_BRASS", "nozzle_temperature_initial_layer_HS",
+    "nozzle_temperature_range_high", "nozzle_temperature_range_low", "overhang_fan_speed",
+    "overhang_fan_threshold", "overhang_threshold_participating_cooling",
+    "override_process_overhang_speed", "pellet_flow_coefficient", "pre_start_fan_time",
+    "pressure_advance", "reduce_fan_stop_start_freq", "required_nozzle_HRC",
+    "retraction_distances_when_ec", "shrink_ratio", "slow_down_for_layer_cooling",
+    "slow_down_layer_time", "slow_down_layer_time_BRASS", "slow_down_layer_time_HS",
+    "slow_down_min_speed", "supertack_plate_temp", "supertack_plate_temp_initial_layer",
+    "support_material_interface_fan_speed", "temp_max", "temp_min", "temperature_vitrification",
+    "temperture_vitrification", "textured_cool_plate_temp",
+    "textured_cool_plate_temp_initial_layer", "textured_plate_temp",
+    "textured_plate_temp_initial_layer", "volumetric_speed_coefficients",
+    }),
+    "machine": frozenset({
+    "bed_exclude_area", "bed_mesh_max", "bed_mesh_min", "bed_mesh_probe_distance",
+    "bed_texture_area", "before_layer_change_gcode", "change_filament_gcode",
+    "cooling_tube_length", "cooling_tube_retraction", "default_filament_profile",
+    "default_nozzle_volume_type", "deretract_speed_extruder_change", "deretraction_speed",
+    "emit_machine_limits_to_gcode", "enable_filament_ramming",
+    "enable_long_retraction_when_cut", "extra_loading_move",
+    "extruder_clearance_height_to_lid", "extruder_clearance_height_to_rod",
+    "extruder_clearance_radius", "extruder_colour", "extruder_max_nozzle_count",
+    "extruder_offset", "extruder_printable_area", "extruder_printable_height", "extruder_type",
+    "extruder_variant_list", "extruders_count", "fan_speedup_overhangs", "fan_speedup_time",
+    "grab_length", "head_wrap_detect_zone", "high_current_on_filament_swap",
+    "hotend_cooling_rate", "hotend_heating_rate", "layer_change_gcode",
+    "long_retractions_when_cut", "machine_end_gcode", "machine_max_acceleration_e",
+    "machine_max_acceleration_extruding", "machine_max_acceleration_retracting",
+    "machine_max_acceleration_travel", "machine_max_acceleration_x",
+    "machine_max_acceleration_y", "machine_max_acceleration_z", "machine_max_jerk_e",
+    "machine_max_jerk_x", "machine_max_jerk_y", "machine_max_jerk_z",
+    "machine_max_junction_deviation", "machine_max_speed_e", "machine_max_speed_x",
+    "machine_max_speed_y", "machine_max_speed_z", "machine_min_extruding_rate",
+    "machine_min_travel_rate", "machine_start_gcode", "machine_tool_change_time",
+    "max_layer_height", "min_layer_height", "nozzle_diameter", "nozzle_flush_dataset",
+    "nozzle_type", "nozzle_volume", "parallel_printheads_bed_exclude_areas",
+    "parking_pos_retraction", "physical_extruder_map", "printable_area", "printer_extruder_id",
+    "printer_extruder_variant", "printer_notes", "retract_before_wipe",
+    "retract_length_toolchange", "retract_lift_above", "retract_lift_below",
+    "retract_lift_enforce", "retract_on_top_layer", "retract_restart_extra",
+    "retract_restart_extra_toolchange", "retract_when_changing_layer",
+    "retraction_distances_when_cut", "retraction_length", "retraction_minimum_travel",
+    "retraction_speed", "single_extruder_multi_material", "support_air_filtration",
+    "thumbnail_size", "thumbnails", "travel_slope", "upward_compatible_machine", "wipe",
+    "wipe_distance", "wrapping_exclude_area", "z_hop", "z_hop_types",
+    }),
+    "process": frozenset({
+    "bridge_acceleration", "bridge_speed", "compatible_printers", "default_acceleration",
+    "enable_height_slowdown", "enable_overhang_speed", "gap_infill_speed",
+    "initial_layer_acceleration", "initial_layer_infill_speed", "initial_layer_speed",
+    "initial_layer_travel_acceleration", "inner_wall_acceleration", "inner_wall_speed",
+    "internal_solid_infill_acceleration", "internal_solid_infill_speed", "notes",
+    "outer_wall_acceleration", "outer_wall_speed", "overhang_1_4_speed", "overhang_2_4_speed",
+    "overhang_3_4_speed", "overhang_4_4_speed", "overhang_totally_speed", "post_process",
+    "pre_start_fan_time", "print_extruder_id", "print_extruder_variant", "slowdown_end_acc",
+    "slowdown_end_height", "slowdown_end_speed", "slowdown_start_acc", "slowdown_start_height",
+    "slowdown_start_speed", "small_area_infill_flow_compensation_model",
+    "small_perimeter_speed", "small_perimeter_threshold", "sparse_infill_acceleration",
+    "sparse_infill_speed", "support_interface_speed", "support_speed",
+    "top_solid_infill_flow_ratio", "top_surface_acceleration", "top_surface_speed",
+    "travel_acceleration", "travel_short_distance_acceleration", "travel_speed",
+    "travel_speed_z", "vertical_shell_speed", "wiping_volumes_extruders",
+    }),
+}
+
+# Options the same artifact only ever serializes as a bare JSON string. Arity is
+# left alone here — Orca's deserializer reads either form — so a value already
+# stored as a one-element array keeps that array.
+ORCA_SCALAR_FIELDS: dict[str, frozenset[str]] = {
+    "filament": frozenset({
+    "activate_chamber_layer", "compatible_printers_condition", "compatible_prints_condition",
+    "cool_cds_fan_start_at_height", "cool_special_cds_fan_speed", "customized_plate_temp",
+    "customized_plate_temp_initial_layer", "description",
+    "enable_special_area_additional_cooling_fan", "epoxy_resin_plate_temp",
+    "epoxy_resin_plate_temp_initial_layer", "filament_toolchange_time", "inherits",
+    "material_flow_dependent_temperature", "material_flow_temp_graph",
+    "nozzle_temperature_intial_layer", "renamed_from",
+    }),
+    "machine": frozenset({
+    "_comment", "adaptive_bed_mesh_margin", "apply_top_surface_compensation",
+    "auto_disable_filter_on_overheat", "auto_toolchange_command", "auxiliary_fan",
+    "bbl_use_printhost", "bed_custom_model", "bed_custom_texture", "bed_model", "bed_shape",
+    "bed_temperature_formula", "bed_texture", "best_object_pos", "box_id",
+    "change_extrusion_role_gcode", "color_bed_exclude_area", "cooling_filter_enabled",
+    "creality_flush_time", "default_bed_type", "default_materials", "default_print_profile",
+    "description", "detraction_speed", "disable_m73", "enable_power_loss_recovery",
+    "enable_pre_heating", "extruder_clearance_dist_to_rod", "extruder_clearance_max_radius",
+    "extruder_height_gap", "family", "fan_direction", "fan_kickstart",
+    "farthest_point_timelapse", "file_start_gcode", "gcode_flavor", "group_algo_with_time",
+    "host_type", "inherits", "is_artillery", "is_support_3mf", "is_support_air_condition",
+    "is_support_mqtt", "is_support_multi_box", "is_support_polar_cooler",
+    "is_support_timelapse", "machine_LED_light_exist", "machine_bed_mass_Y",
+    "machine_hotend_change_time", "machine_load_filament_time", "machine_max_force_Y",
+    "machine_max_printed_mass", "machine_pause_gcode", "machine_platform_motion_enable",
+    "machine_prepare_compensation_time", "machine_ptc_exist", "machine_switch_extruder_time",
+    "machine_tech", "machine_unload_filament_time", "manual_filament_change",
+    "master_extruder_id", "max_resonance_avoidance_speed", "min_resonance_avoidance_speed",
+    "model", "model_id", "multicolor_method", "nozzle_height", "nozzle_hrc",
+    "parallel_printheads_count", "pause_gcode", "pellet_modded_printer",
+    "preferred_orientation", "prime_tower_position_type", "print_host", "print_host_webui",
+    "print_in_clockwise", "printable_height", "printer_agent", "printer_flush_multiplier",
+    "printer_model", "printer_settings_id", "printer_structure", "printer_technology",
+    "printer_variant", "printhost_apikey", "printhost_authorization_type", "printhost_cafile",
+    "printhost_password", "printhost_port", "printhost_ssl_ignore_revoke", "printhost_user",
+    "printing_by_object_gcode", "purge_in_prime_tower", "remaining_times", "renamed_from",
+    "resonance_avoidance", "scan_first_layer", "silent_mode", "support_box_temp_control",
+    "support_chamber_temp_control", "support_cooling_filter", "support_fast_purge_mode",
+    "support_multi_bed_types", "support_multi_filament", "support_object_skip_flush",
+    "support_parallel_printheads", "support_wan_network", "template_custom_gcode", "thumbnail",
+    "thumbnails_format", "thumbnails_internal", "thumbnails_internal_switch", "time_cost",
+    "time_lapse_gcode", "toolchange_gcode", "use_3mf", "use_firmware_retraction",
+    "use_relative_e_distances", "wait_for_temp_on_wipe_tower", "wipe_tower_type",
+    "wrapping_detection_gcode", "wrapping_detection_layers", "z_lift_type", "z_offset",
+    }),
+    "process": frozenset({
+    "accel_to_decel", "accel_to_decel_enable", "accel_to_decel_factor",
+    "acceleration_limit_mess", "acceleration_limit_mess_enable", "adaptive_layer_height",
+    "ai_infill", "align_infill_direction_to_model", "alternate_extra_wall",
+    "apply_top_surface_compensation", "avoid_crossing_wall_includes_support",
+    "bottom_color_penetration_layers", "bottom_shell_layers", "bottom_shell_thickness",
+    "bottom_solid_infill_flow_ratio", "bottom_surface_density", "bottom_surface_filament_id",
+    "bottom_surface_pattern", "bridge_angle", "bridge_density", "bridge_flow",
+    "bridge_infill_acceleration", "bridge_no_support", "brim_ears_detection_length",
+    "brim_ears_max_angle", "brim_object_gap", "brim_type", "brim_use_efc_outline",
+    "brim_width", "calib_flowrate_topinfill_special_order",
+    "circle_compensation_manual_offset", "compatible_printers_condition",
+    "counterbore_hole_bridging", "default_jerk", "default_junction_deviation", "description",
+    "detect_floating_vertical_shell", "detect_narrow_internal_solid_infill",
+    "detect_overhang_wall", "detect_thin_wall", "dont_filter_internal_bridges", "draft_shield",
+    "elefant_foot_compensation", "elefant_foot_compensation_layers",
+    "embedding_wall_into_infill", "enable_arc_fitting", "enable_circle_compensation",
+    "enable_extra_bridge_layer", "enable_prime_tower", "enable_support",
+    "enable_support_ironing", "enable_tower_interface_cooldown_during_tower",
+    "enable_tower_interface_features", "enable_wrapping_detection", "end_gcode",
+    "enforce_support_layers", "ensure_vertical_shell_thickness", "exclude_object",
+    "extra_perimeters_on_overhangs", "extra_solid_infills",
+    "extrusion_rate_smoothing_external_perimeter_only", "filename_format", "fill_multiline",
+    "filter_out_gap_fill", "first_layer_flow_ratio", "first_layer_jerk", "flush_into_infill",
+    "flush_into_objects", "flush_into_support", "fuzzy_skin", "fuzzy_skin_first_layer",
+    "fuzzy_skin_mode", "fuzzy_skin_noise_type", "fuzzy_skin_octaves", "fuzzy_skin_persistence",
+    "fuzzy_skin_point_distance", "fuzzy_skin_scale", "fuzzy_skin_thickness",
+    "gap_fill_enabled", "gap_fill_flow_ratio", "gap_fill_target", "gcode_add_line_number",
+    "gcode_comments", "gcode_label_objects", "hole_to_polyhole", "hole_to_polyhole_threshold",
+    "hole_to_polyhole_twisted", "independent_support_layer_height", "ineternal_bridge_speed",
+    "infill_anchor", "infill_anchor_max", "infill_combination",
+    "infill_combination_max_layer_height", "infill_direction",
+    "infill_instead_top_bottom_surfaces", "infill_jerk", "infill_layer_acceleration",
+    "infill_lock_depth", "infill_overhang_angle", "infill_rotate_step", "infill_shift_step",
+    "infill_wall_overlap", "inherits", "inital_layer_height", "inital_travel_speed",
+    "initial_layer_jerk", "initial_layer_line_width", "initial_layer_min_bead_width",
+    "initial_layer_print_height", "initial_layer_travel_speed",
+    "initial_solid_infill_acceleration", "initial_travel_speed", "inner_wall_filament_id",
+    "inner_wall_flow_ratio", "inner_wall_jerk", "inner_wall_line_width", "interface_shells",
+    "interlocking_beam", "interlocking_beam_layer_count", "interlocking_beam_width",
+    "interlocking_boundary_avoidance", "interlocking_depth", "interlocking_orientation",
+    "internal_bridge_angle", "internal_bridge_density", "internal_bridge_flow",
+    "internal_bridge_speed", "internal_bridge_support_thickness", "internal_solid_filament_id",
+    "internal_solid_infill_flow_ratio", "internal_solid_infill_line_width",
+    "internal_solid_infill_pattern", "ironing_angle", "ironing_angle_fixed", "ironing_flow",
+    "ironing_inset", "ironing_pattern", "ironing_spacing", "ironing_speed",
+    "ironing_support_layer", "ironing_type", "is_custom_defined", "is_infill_first",
+    "lateral_lattice_angle_1", "lateral_lattice_angle_2", "lattice_angle_1", "lattice_angle_2",
+    "layer_height", "layer_heigth", "layer_time_smoothing", "layer_time_smoothing_threshold",
+    "line_width", "locked_skeleton_infill_pattern", "locked_skin_infill_pattern",
+    "make_overhang_printable", "make_overhang_printable_angle",
+    "make_overhang_printable_hole_size", "material_flow_dependent_temperature",
+    "material_flow_temp_graph", "max_bridge_length", "max_travel_detour_distance",
+    "max_volumetric_extrusion_rate_slope",
+    "max_volumetric_extrusion_rate_slope_segment_length", "min_bead_width", "min_feature_size",
+    "min_length_factor", "min_skirt_length", "min_width_top_surface",
+    "minimum_sparse_infill_area", "minimum_sparse_infill_threshold", "minimum_support_area",
+    "mmu_segmented_region_interlocking_depth", "mmu_segmented_region_max_width",
+    "only_one_wall_first_layer", "only_one_wall_top", "ooze_prevention",
+    "outer_wall_filament_id", "outer_wall_flow_ratio", "outer_wall_jerk",
+    "outer_wall_line_width", "overhang_flow_ratio", "overhang_reverse",
+    "overhang_reverse_internal_only", "overhang_reverse_threshold", "overhang_speed_classic",
+    "override_filament_scarf_seam_setting", "percise_outer_wall", "percise_z_height",
+    "precise_outer_wall", "precise_z_height", "preheat_steps", "preheat_time",
+    "prime_tower_brim_width", "prime_tower_enable_framework", "prime_tower_enhance_type",
+    "prime_tower_extra_rib_length", "prime_tower_fillet_wall", "prime_tower_flat_ironing",
+    "prime_tower_infill_gap", "prime_tower_lift_height", "prime_tower_lift_speed",
+    "prime_tower_max_speed", "prime_tower_rib_wall", "prime_tower_rib_width",
+    "prime_tower_skip_points", "prime_tower_width", "prime_volume", "print_flow_ratio",
+    "print_order", "print_sequence", "print_settings_id", "raft_contact_distance",
+    "raft_expansion", "raft_first_layer_density", "raft_first_layer_expansion", "raft_layers",
+    "reduce_crossing_wall", "reduce_infill_retraction", "renamed_from", "resolution",
+    "role_based_wipe_speed", "rotate_solid_infill_direction", "scarf_angle_threshold",
+    "scarf_joint_flow_ratio", "scarf_joint_speed", "scarf_overhang_threshold", "seam_gap",
+    "seam_placement_away_from_overhangs", "seam_position", "seam_slope_conditional",
+    "seam_slope_entire_loop", "seam_slope_gap", "seam_slope_inner_walls",
+    "seam_slope_min_length", "seam_slope_start_height", "seam_slope_steps", "seam_slope_type",
+    "set_other_flow_ratios", "single_extruder_multi_material_priming",
+    "single_loop_draft_shield", "skeleton_infill_density", "skeleton_infill_line_width",
+    "skin_infill_density", "skin_infill_depth", "skin_infill_line_width", "skirt_distance",
+    "skirt_height", "skirt_loops", "skirt_speed", "skirt_start_angle", "skirt_type",
+    "slice_closing_radius", "slicing_mode", "slow_down_curled_perimeters", "slow_down_layers",
+    "slow_layers_count", "slowdown_for_curled_perimeters",
+    "small_area_infill_flow_compensation", "smooth_coefficient",
+    "smooth_speed_discontinuity_area", "solid_infill_direction", "solid_infill_filament",
+    "solid_infill_rotate_template", "sparse_infill_anchor", "sparse_infill_density",
+    "sparse_infill_filament", "sparse_infill_filament_id", "sparse_infill_flow_ratio",
+    "sparse_infill_lattice_angle_1", "sparse_infill_lattice_angle_2",
+    "sparse_infill_line_width", "sparse_infill_patter", "sparse_infill_pattern",
+    "sparse_infill_rotate_template", "speed_limit_to_height", "speed_limit_to_height_enable",
+    "spiral_finishing_flow_ratio", "spiral_mode", "spiral_mode_max_xy_smoothing",
+    "spiral_mode_smooth", "spiral_starting_flow_ratio", "staggered_inner_seams",
+    "standby_temperature_delta", "start_gcode", "support_angle", "support_base_pattern",
+    "support_base_pattern_spacing", "support_bottom_interface_spacing",
+    "support_bottom_z_distance", "support_critical_regions_only", "support_expansion",
+    "support_filament", "support_flow_ratio", "support_interface_bottom_layers",
+    "support_interface_bottom_spacing", "support_interface_filament",
+    "support_interface_flow_ratio", "support_interface_loop_pattern",
+    "support_interface_not_for_body", "support_interface_pattern", "support_interface_spacing",
+    "support_interface_top_layers", "support_ironing", "support_ironing_direction",
+    "support_ironing_flow", "support_ironing_inset", "support_ironing_pattern",
+    "support_ironing_spacing", "support_ironing_speed", "support_line_width",
+    "support_material_synchronize_layers", "support_object_first_layer_gap",
+    "support_object_xy_distance", "support_on_build_plate_only",
+    "support_remove_small_overhang", "support_style", "support_threshold_angle",
+    "support_threshold_overlap", "support_top_z_distance", "support_type",
+    "support_wall_loops", "support_xy_overrides_z", "symmetric_infill_y_axis", "thic_birdges",
+    "thick_bridges", "thick_internal_bridges", "timelapse_type",
+    "top_bottom_infill_wall_overlap", "top_color_penetration_layers", "top_shell_layers",
+    "top_shell_thickness", "top_surface_density", "top_surface_filament_id",
+    "top_surface_flow_ratio", "top_surface_jerk", "top_surface_line_width",
+    "top_surface_pattern", "travel_jerk", "tree_support_adaptive_layer_height",
+    "tree_support_angle_slow", "tree_support_auto_brim", "tree_support_bramch_diameter_angle",
+    "tree_support_branch_angle", "tree_support_branch_angle_organic",
+    "tree_support_branch_diameter", "tree_support_branch_diameter_angle",
+    "tree_support_branch_diameter_double_wall", "tree_support_branch_diameter_organic",
+    "tree_support_branch_distance", "tree_support_branch_distance_organic",
+    "tree_support_brim_width", "tree_support_tip_diameter", "tree_support_top_rate",
+    "tree_support_wall_count", "tree_support_with_infill", "wall_count", "wall_direction",
+    "wall_distribution_count", "wall_filament", "wall_generator", "wall_infill_order",
+    "wall_loop_direction", "wall_loops", "wall_sequence", "wall_transition_angle",
+    "wall_transition_filter_deviation", "wall_transition_length", "wipe_before_external_loop",
+    "wipe_on_loops", "wipe_speed", "wipe_tower_bridging", "wipe_tower_cone_angle",
+    "wipe_tower_extra_flow", "wipe_tower_extra_rib_length", "wipe_tower_extra_spacing",
+    "wipe_tower_extruder", "wipe_tower_filament", "wipe_tower_fillet_wall",
+    "wipe_tower_max_purge_speed", "wipe_tower_no_sparse_layers", "wipe_tower_rib_width",
+    "wipe_tower_rotation_angle", "wipe_tower_wall_type", "xy_contour_compensation",
+    "xy_hole_compensation", "z_direction_outwall_speed_continuous",
+    }),
+}
+
+
+def _orca_token(value: Any) -> str | None:
+    """Render one option value as the string Orca's JSON transport requires."""
+    if isinstance(value, bool):
+        return "1" if value else "0"
+    if isinstance(value, str):
+        return value
+    if isinstance(value, (int, Decimal)):
+        return format_orca_number(value)
+    if isinstance(value, float):
+        return format_orca_number(value) if isfinite(value) else None
+    return None
+
+
+def _orca_vector(value: Any) -> list[str] | None:
+    tokens: list[str] = []
+    for item in value if isinstance(value, (list, tuple)) else [value]:
+        if item is None:
+            tokens.append(ORCA_NIL)
+            continue
+        token = _orca_token(item)
+        if token is None:
+            return None
+        tokens.append(token)
+    return tokens
+
+
+def project_orca_setting(key: str, value: Any, kind: str) -> tuple[bool, Any]:
+    """Project one stored setting into the shape Orca's loader accepts.
+
+    Returns ``(False, None)`` when no faithful representation exists, which for
+    an unreviewed field means excluding it from transport rather than inventing
+    a conversion.
+    """
+    if key in ORCA_VECTOR_FIELDS.get(kind, frozenset()):
+        vector = _orca_vector(value)
+        return (True, vector) if vector is not None else (False, None)
+    if key in ORCA_SCALAR_FIELDS.get(kind, frozenset()):
+        if isinstance(value, (list, tuple)):
+            vector = _orca_vector(value)
+            return (True, vector) if vector is not None else (False, None)
+        token = _orca_token(value)
+        return (True, token) if token is not None else (False, None)
+    if is_orca_transportable_value(value):
+        return (True, deepcopy(value))
+    return (False, None)
+
+
+def build_orca_transport_settings(
+    settings: Any,
+    kind: str,
+    profile_id: Any = None,
+    skip_keys: frozenset[str] = frozenset(),
+) -> dict[str, Any]:
+    """Build the export-only copy of a profile's stored OrcaSlicer settings.
+
+    The stored object is never mutated: this returns a separate dict.
+    ``skip_keys`` lets a caller drop entries it re-issues authoritatively.
+    """
+    transport: dict[str, Any] = {}
+    if not isinstance(settings, dict):
+        return transport
+    for key, value in settings.items():
+        if key in skip_keys or key in FILAMENTHUB_INTERNAL_KEYS:
+            continue
+        accepted, projected = project_orca_setting(key, value, kind)
+        if not accepted:
+            logger.warning(
+                "%s profile %s: setting '%s' (%s) has no %s representation; "
+                "kept in storage, omitted from export",
+                kind, profile_id, key, type(value).__name__, ORCA_TRANSPORT_ARTIFACT,
+            )
+            continue
+        transport[key] = projected
+    return transport
