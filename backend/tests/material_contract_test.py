@@ -1335,6 +1335,111 @@ async def test_manual_system_spools_are_shelved_and_protected_like_legacy_ones(
 
 
 @pytest.mark.asyncio
+async def test_a_slot_the_printer_stops_reporting_survives_while_it_holds_a_spool(
+    auth_client: AsyncClient,
+    auth_user: User,
+    db_session: AsyncSession,
+) -> None:
+    created = await auth_client.post("/api/v1/physical-printers", json={"name": "LAN P2S"})
+    assert created.status_code == 201
+    printer_id = created.json()["id"]
+    system_id = (
+        await auth_client.post(
+            f"/api/v1/physical-printers/{printer_id}/material-systems",
+            json={
+                "name": "Bambu AMS",
+                "kind": "mmu",
+                "provider": "bambu",
+                "capabilities": ["read", "presence"],
+            },
+        )
+    ).json()["material_systems"][0]["id"]
+
+    pairing = await auth_client.post(
+        f"/api/v1/printer-bridge/connections/{printer_id}/{system_id}/pairing-code"
+    )
+    source_instance_id = "fixture-plugin-instance-0002"
+    paired = await auth_client.post(
+        "/api/v1/printer-bridge/pair",
+        json={
+            "pairing_code": pairing.json()["pairing_code"],
+            "provider": "bambu",
+            "transport": "orca_plugin_lan",
+            "source_instance_id": source_instance_id,
+            "plugin_version": "0.1.0-test",
+            "capabilities": ["read", "presence"],
+        },
+    )
+    bridge_headers = {"X-FilamentHub-Bridge-Token": paired.json()["bridge_token"]}
+
+    def snapshot(indices: list[int]) -> dict:
+        return {
+            "material_system_id": system_id,
+            "provider": "bambu",
+            "transport": "orca_plugin_lan",
+            "source_instance_id": source_instance_id,
+            "observed_at": datetime.now(timezone.utc).isoformat(),
+            "slots": [{"provider_index": index, "present": False} for index in indices],
+            "slot_topology_complete": True,
+        }
+
+    first = await auth_client.post(
+        "/api/v1/printer-bridge/snapshot", headers=bridge_headers, json=snapshot([0, 255])
+    )
+    assert first.status_code == 200
+
+    spool = UserSpool(
+        user_id=auth_user.id,
+        initial_weight_g=1000,
+        used_weight_g=0,
+        state=UserSpoolState.shelf,
+        source="manual",
+    )
+    db_session.add(spool)
+    await db_session.commit()
+    await db_session.refresh(spool)
+
+    slots = (
+        await auth_client.get(f"/api/v1/physical-printers/{printer_id}")
+    ).json()["material_systems"][0]["slots"]
+    external_slot_id = next(slot["id"] for slot in slots if slot["provider_index"] == 255)
+    assigned = await auth_client.patch(
+        f"/api/v1/physical-printers/{printer_id}/material-slots/{external_slot_id}",
+        json={"spool_id": spool.id},
+    )
+    assert assigned.status_code == 200
+
+    # The external spool holder drops out of the reported topology while the
+    # person's assignment still points at it.
+    dropped = await auth_client.post(
+        "/api/v1/printer-bridge/snapshot", headers=bridge_headers, json=snapshot([0])
+    )
+    assert dropped.status_code == 200
+
+    after = (
+        await auth_client.get(f"/api/v1/physical-printers/{printer_id}")
+    ).json()["material_systems"][0]["slots"]
+    external = next(slot for slot in after if slot["provider_index"] == 255)
+    assert external["active"] is True
+    assert external["assignment"]["spool_id"] == spool.id
+
+    # Emptying it hands the slot back to the printer's account of itself.
+    cleared = await auth_client.patch(
+        f"/api/v1/physical-printers/{printer_id}/material-slots/{external_slot_id}",
+        json={"preset_id": None, "spool_id": None},
+    )
+    assert cleared.status_code == 200
+    vanished = await auth_client.post(
+        "/api/v1/printer-bridge/snapshot", headers=bridge_headers, json=snapshot([0])
+    )
+    assert vanished.status_code == 200
+    final = (
+        await auth_client.get(f"/api/v1/physical-printers/{printer_id}")
+    ).json()["material_systems"][0]["slots"]
+    assert all(slot["provider_index"] != 255 or slot["active"] is False for slot in final)
+
+
+@pytest.mark.asyncio
 async def test_clearing_a_system_frees_every_slot_and_shelves_its_spools(
     auth_client: AsyncClient,
     auth_user: User,

@@ -307,15 +307,15 @@ async def create_material_system(
     return await require_physical_printer(db, user_id, physical_printer_id)
 
 
-async def _first_occupied_slot_index(db: AsyncSession, slots: list[MaterialSlot]) -> int | None:
-    """Lowest slot index holding a spool or a preset, by either assignment path.
+async def _occupied_slot_indices(db: AsyncSession, slots: list[MaterialSlot]) -> set[int]:
+    """Slot indices holding a spool or a preset, by either assignment path.
 
     Klipper systems keep the gate map and the slot assignment in step; systems of
     any other provider only ever get the assignment, so both have to be checked.
     """
     slot_ids = [slot.id for slot in slots]
     if not slot_ids:
-        return None
+        return set()
     index_by_slot = {slot.id: slot.provider_index for slot in slots}
 
     occupied: set[int] = set()
@@ -341,6 +341,11 @@ async def _first_occupied_slot_index(db: AsyncSession, slots: list[MaterialSlot]
     )
     occupied.update(index_by_slot[slot_id] for slot_id in assignment_rows.scalars().all())
 
+    return occupied
+
+
+async def _first_occupied_slot_index(db: AsyncSession, slots: list[MaterialSlot]) -> int | None:
+    occupied = await _occupied_slot_indices(db, slots)
     return min(occupied) if occupied else None
 
 
@@ -568,8 +573,17 @@ async def ingest_printer_bridge_snapshot(
     slots_by_index = {slot.provider_index: slot for slot in existing_slots}
     if payload.slot_topology_complete and snapshot_is_current:
         reported_indices = {item.provider_index for item in payload.slots}
+        # A slot the printer stopped reporting is hidden, but not when a person
+        # put something in it: hiding it would strand the spool in a slot nobody
+        # can see, still counted as loaded. Resizing by hand refuses the same
+        # case with ERR_MATERIAL_SLOT_IN_USE, and a provider report carries less
+        # authority than a person's own assignment, not more.
+        occupied_indices = await _occupied_slot_indices(db, existing_slots)
         for slot in existing_slots:
-            if slot.provider_index not in reported_indices:
+            if (
+                slot.provider_index not in reported_indices
+                and slot.provider_index not in occupied_indices
+            ):
                 slot.active = False
     for item in payload.slots:
         slot = slots_by_index.get(item.provider_index)
