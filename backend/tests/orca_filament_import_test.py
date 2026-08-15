@@ -78,6 +78,7 @@ async def test_a_users_own_preset_arrives_as_a_draft(
         "mode": "keep-shape",
         "values": [1, "two"],
     }
+    profile["orcaslicer_settings"]["future_orca_option"] = ["keep me"]
     response = await _import(client, headers, profile)
 
     assert response.status_code == 200
@@ -90,9 +91,15 @@ async def test_a_users_own_preset_arrives_as_a_draft(
     assert draft is not None
     assert draft.user_id == person.id
     assert draft.active is False
-    assert draft.moderation_status == PresetModerationStatus.PENDING
+    # A draft carries no material, so there is nothing to moderate until it is bound.
+    assert draft.moderation_status == PresetModerationStatus.NOT_REQUIRED
     assert draft.extruder_temp == 210
     assert draft.orcaslicer_settings["fhub_draft_id"] == f"draft_{person.id}_orca-shop-pla"
+    # Storage is the round-trip authority and keeps every unknown shape as sent.
+    assert draft.orcaslicer_settings["future_orca_field"] == {
+        "mode": "keep-shape",
+        "values": [1, "two"],
+    }
 
     global_sync = await client.get("/api/v1/auth/my-presets", headers=headers)
     assert global_sync.status_code == 200
@@ -108,10 +115,11 @@ async def test_a_users_own_preset_arrives_as_a_draft(
     assert exported_profile["setting_id"] == f"FHUB{draft.id:06d}"
     assert exported_profile["filament_settings_id"] == ["Shop PLA"]
     assert exported_profile["fhub_draft_id"] == f"draft_{person.id}_orca-shop-pla"
-    assert exported_profile["future_orca_field"] == {
-        "mode": "keep-shape",
-        "values": [1, "two"],
-    }
+    # An unreviewed option Orca can transport ships byte-identical; an object
+    # value cannot, and Orca discards the whole profile over it, so the export
+    # withholds it instead of guessing a conversion.
+    assert exported_profile["future_orca_option"] == ["keep me"]
+    assert "future_orca_field" not in exported_profile
 
     outsider_headers, _ = await _signed_in(
         client, db_session, "orca-import-draft-outsider"

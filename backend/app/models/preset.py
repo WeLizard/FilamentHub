@@ -25,6 +25,7 @@ class PresetModerationStatus(str, Enum):
     APPROVED = "approved"  # Одобрен
     REJECTED = "rejected"  # Отклонен
     AUTO_GENERATED = "auto_generated"  # Сгенерирован системой (weighted): виден, но не прошёл модерацию
+    NOT_REQUIRED = "not_required"  # Черновик без материала: модерировать нечего до привязки
 
 
 # Statuses under which a preset is publicly visible (catalog, matching, recommend,

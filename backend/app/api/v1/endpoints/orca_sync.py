@@ -155,7 +155,9 @@ async def _apply_orca_import_moderation(
 
     filament = await _resolve_preset_filament(preset, filament_hint, db)
     if filament is None:
-        preset.moderation_status = PresetModerationStatus.PENDING
+        # No material means no reference values, so there is nothing to moderate.
+        # Moderation runs when the draft is bound to a filament and becomes a preset.
+        preset.moderation_status = PresetModerationStatus.NOT_REQUIRED
         preset.moderation_reason = None
         return
 
