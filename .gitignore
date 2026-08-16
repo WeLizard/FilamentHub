@@ -109,6 +109,9 @@ backend/database_dumps/
 backend/data/geoip/*.mmdb
 # Загруженные бандлы — рабочие копии, не исходники
 backend/data/uploaded_bundles/
+# Снимок профилей OrcaSlicer: девять мегабайт чужих данных, которые едут на
+# сервер отдельным файлом. Собирается пунктом 12 консоли владельца.
+backend/data/catalog_sources/orca/bundle.zip
 backend/uploads/database_dumps/
 
 # Retired FilamentHub Edition artifacts may remain locally for recovery, but

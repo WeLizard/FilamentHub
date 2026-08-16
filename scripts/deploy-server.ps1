@@ -536,7 +536,13 @@ function Update-CatalogSource {
 
     Write-Host ''
     Write-Host "Готовый архив: $bundle" -ForegroundColor Green
-    Write-Host 'Дальше он заливается на сервер отдельным файлом, затем импорт в админке.'
+    Write-Host ''
+    Write-Host 'ПОЛОЖИ АРХИВ НА СЕРВЕР — сам он туда не поедет:' -ForegroundColor Yellow
+    Write-Host "  1) залей файл в $RemoteProjectDirectory/backend/data/catalog_sources/orca/bundle.zip"
+    Write-Host '  2) задеплой пунктом 3: архив попадает в образ только при пересборке'
+    Write-Host '  3) в админке нажми импорт источника каталога'
+    Write-Host ''
+    Write-Host 'Архив не версионируется, поэтому чистоту рабочего дерева на сервере он не ломает.'
 }
 
 function Show-Menu {
