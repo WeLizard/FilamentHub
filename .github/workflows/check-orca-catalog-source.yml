@@ -2,7 +2,9 @@ name: Orca catalog source freshness
 
 on:
   schedule:
-    - cron: "23 5 * * *"
+    # Weekly: upstream profile changes arrive in batches, and a daily red check
+    # stops being read as a signal.
+    - cron: "23 5 * * 1"
   workflow_dispatch:
 
 permissions:
