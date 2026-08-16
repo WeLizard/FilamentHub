@@ -26,6 +26,7 @@ import { isPluginEmbed, notifyProfileChanged } from '../utils/pluginBridge';
 import { Dropdown } from '../components/Dropdown';
 import { FilamentPreview } from '../components/FilamentPreview';
 import { NozzleRequirementBadge } from '../components/NozzleRequirementBadge';
+import { OffscreenSection } from '../components/OffscreenSection';
 import { useConfiguredNozzleHrc } from '../hooks/useConfiguredNozzleHrc';
 import { useDebounce } from '../hooks/useDebounce';
 import { SEOHead } from '../components/SEOHead';
@@ -361,7 +362,7 @@ export const CatalogPage: React.FC = () => {
         )}
 
       {/* Search Bar */}
-      <div className="bg-white/10 backdrop-blur-sm rounded-xl sm:rounded-2xl p-4 sm:p-6 border border-white/20 shadow-xl">
+      <div className="glass-panel rounded-xl sm:rounded-2xl p-4 sm:p-6 border border-white/20 shadow-xl">
         <div className="flex flex-col gap-3 sm:gap-4">
           {/* Search Input */}
           <div className="relative">
@@ -452,26 +453,34 @@ export const CatalogPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Material Grid */}
+      {/* Material Grid. One section per loaded page: a section far off screen
+          drops its cards and holds its measured height instead. */}
       <div
-        className={`grid grid-cols-1 lg:grid-cols-2 gap-6 transition-opacity ${
+        className={`space-y-6 transition-opacity ${
           isFetchingFilaments ? 'opacity-60' : 'opacity-100'
         }`}
         aria-busy={isFetchingFilaments}
       >
-        {filaments.map((filament) => (
-          <CatalogFilamentCard
-            key={filament.id}
-            filament={filament}
-            isSelected={selectedFilament === filament.id}
-            onSelect={handleSavePreset}
-            onShowQR={handleToggleQr}
-            showQR={showQR === filament.id}
-            onClick={handleOpenFilament}
-            savedPresetIds={savedPresetIds}
-            configuredNozzleHrc={configuredNozzleHrc}
-            fitsPrinter={printerMatchedIds.has(filament.id)}
-          />
+        {(filamentsData?.pages ?? []).map((catalogPage, pageIndex) => (
+          <OffscreenSection
+            key={catalogPage.items[0]?.id ?? pageIndex}
+            className="grid grid-cols-1 lg:grid-cols-2 gap-6"
+          >
+            {catalogPage.items.map((filament) => (
+              <CatalogFilamentCard
+                key={filament.id}
+                filament={filament}
+                isSelected={selectedFilament === filament.id}
+                onSelect={handleSavePreset}
+                onShowQR={handleToggleQr}
+                showQR={showQR === filament.id}
+                onClick={handleOpenFilament}
+                savedPresetIds={savedPresetIds}
+                configuredNozzleHrc={configuredNozzleHrc}
+                fitsPrinter={printerMatchedIds.has(filament.id)}
+              />
+            ))}
+          </OffscreenSection>
         ))}
       </div>
 
@@ -662,7 +671,7 @@ export const CatalogFilamentCard = memo(function CatalogFilamentCard({
     <div 
       onClick={handleCardClick}
       style={{ contentVisibility: 'auto', containIntrinsicSize: '620px' }}
-      className="bg-white/10 backdrop-blur-sm rounded-xl sm:rounded-2xl p-4 sm:p-6 border border-white/20 hover:bg-white/15 transition-all duration-300 group shadow-xl cursor-pointer"
+      className="bg-white/10 rounded-xl sm:rounded-2xl p-4 sm:p-6 border border-white/20 hover:bg-white/15 transition-all duration-300 group shadow-xl cursor-pointer"
     >
       {/* Header с названием, ценой и рейтингом */}
       <div className="flex items-start justify-between mb-3 sm:mb-4">
