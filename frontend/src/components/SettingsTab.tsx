@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Settings, Lock, Mail, Save, CheckCircle, XCircle, Loader2, User as UserIcon, Eye, EyeOff, AlertTriangle, Trash2, Globe, Pencil } from 'lucide-react';
 import { authAPI } from '../api/client';
-import { currencySymbol, CURRENCY_CODES } from '../utils/currency';
+import { currencySymbol, currencyCodes } from '../utils/currency';
 import { sortedCountries } from '../utils/countries';
 import { translateApiError } from '../utils/translateApiError';
 import type { User } from '../types/api';
@@ -31,13 +31,18 @@ type SyncSettingKey =
   | 'sync_printer_endpoints';
 
 // A printer is the machine, its configurations and their print processes, so one
-// switch covers all three. Sending them back to the slicer has no consumer yet:
-// the switch stays, off, so the place for it is already there when it does.
+// switch covers all three in each direction. A printer without its processes is
+// half a printer, so installing one into the slicer is never split in two.
 const SYNC_CONTOURS: {
   id: string;
   titleKey: string;
   hintKey: string;
-  directions: { labelKey: string; keys: SyncSettingKey[]; available: boolean }[];
+  directions: {
+    labelKey: string;
+    noteKey?: string;
+    keys: SyncSettingKey[];
+    available: boolean;
+  }[];
 }[] = [
   {
     id: 'filament',
@@ -46,12 +51,22 @@ const SYNC_CONTOURS: {
     directions: [
       {
         labelKey: 'settings.syncToHub',
+        noteKey: 'settings.syncFilamentToHubNote',
         keys: ['allow_filament_presets_import'],
         available: true,
       },
       {
         labelKey: 'settings.syncToSlicer',
+        noteKey: 'settings.syncFilamentToSlicerNote',
         keys: ['allow_filament_presets_export'],
+        available: true,
+      },
+      // Own presets are a separate consent: the two switches above move presets
+      // the site already knows about, this one hands over work it never saw.
+      {
+        labelKey: 'settings.autoImportLocal',
+        noteKey: 'settings.autoImportLocalHint',
+        keys: ['auto_import_local_presets'],
         available: true,
       },
     ],
@@ -63,13 +78,15 @@ const SYNC_CONTOURS: {
     directions: [
       {
         labelKey: 'settings.syncToHub',
+        noteKey: 'settings.syncPrinterToHubNote',
         keys: ['allow_printer_profiles_import', 'allow_print_profiles_import'],
         available: true,
       },
       {
         labelKey: 'settings.syncToSlicer',
+        noteKey: 'settings.syncPrinterToSlicerNote',
         keys: ['allow_printer_profiles_export', 'allow_print_profiles_export'],
-        available: false,
+        available: true,
       },
     ],
   },
@@ -378,7 +395,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
               disabled={updateCurrencyMutation.isPending}
               className="w-full px-4 py-2 bg-white/10 border border-white/20 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:opacity-50"
             >
-              {CURRENCY_CODES.map((c) => (
+              {currencyCodes().map((c: string) => (
                 <option key={c} value={c} className="bg-gray-900">{c} ({currencySymbol(c)})</option>
               ))}
             </select>
@@ -824,16 +841,23 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
                   return (
                     <label
                       key={direction.labelKey}
-                      className={`flex items-center justify-between gap-3 ${
+                      className={`flex items-start justify-between gap-3 ${
                         direction.available ? 'cursor-pointer' : 'cursor-default'
                       }`}
                       title={direction.available ? undefined : t('settings.syncNotYet')}
                     >
-                      <span className={`text-sm ${direction.available ? 'text-gray-300' : 'text-gray-500'}`}>
-                        {t(direction.labelKey)}
-                        {!direction.available && (
-                          <span className="ml-1.5 text-[11px] text-gray-500">
-                            {t('settings.syncNotYet')}
+                      <span className="min-w-0">
+                        <span className={`text-sm ${direction.available ? 'text-gray-300' : 'text-gray-500'}`}>
+                          {t(direction.labelKey)}
+                          {!direction.available && (
+                            <span className="ml-1.5 text-[11px] text-gray-500">
+                              {t('settings.syncNotYet')}
+                            </span>
+                          )}
+                        </span>
+                        {direction.noteKey && (
+                          <span className="block text-xs text-gray-500 mt-0.5">
+                            {t(direction.noteKey)}
                           </span>
                         )}
                       </span>
@@ -866,28 +890,6 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
             </div>
           ))}
         </div>
-
-        <label className="mt-4 flex items-start justify-between gap-4 bg-white/5 rounded-xl p-4 border border-white/10 cursor-pointer group">
-          <div className="min-w-0">
-            <div className="text-sm font-semibold text-white">{t('settings.autoImportLocal')}</div>
-            <p className="text-xs text-gray-400 mt-0.5">{t('settings.autoImportLocalHint')}</p>
-          </div>
-          <div className="relative flex-shrink-0 mt-0.5">
-            <input
-              type="checkbox"
-              checked={syncSettings.auto_import_local_presets}
-              onChange={(e) => handleSyncSettingsChange('auto_import_local_presets', e.target.checked)}
-              className="sr-only"
-            />
-            <div
-              className={`w-11 h-6 rounded-full transition-colors duration-200 flex items-center px-0.5 ${
-                syncSettings.auto_import_local_presets ? 'bg-purple-600 justify-end' : 'bg-gray-600 justify-start'
-              }`}
-            >
-              <div className="w-5 h-5 bg-white rounded-full shadow-md" />
-            </div>
-          </div>
-        </label>
 
         <label className="mt-4 flex items-start justify-between gap-4 bg-white/5 rounded-xl p-4 border border-white/10 cursor-pointer group">
           <div className="min-w-0">
