@@ -8,11 +8,15 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.app_setting import AppSetting
-from app.schemas.calculator import CalculatorProfileDefaults
+from app.schemas.calculator import (
+    CalculatorCountryDefaultsMap,
+    CalculatorProfileDefaults,
+)
 
 logger = logging.getLogger(__name__)
 
 SETTING_CALCULATOR_PROFILE_DEFAULTS = "calculator_profile_defaults_v1"
+SETTING_CALCULATOR_COUNTRY_DEFAULTS = "calculator_profile_defaults_by_country_v1"
 
 
 async def get_calculator_profile_defaults(
@@ -85,3 +89,69 @@ def calculator_profile_default_values(
         for field in MONETARY_DEFAULT_FIELDS:
             values.pop(field, None)
     return values
+
+
+async def get_calculator_country_defaults(
+    db: AsyncSession,
+) -> CalculatorCountryDefaultsMap:
+    """Return per-country overrides, falling back to an empty map if stored data is corrupt."""
+    row = await db.scalar(
+        select(AppSetting).where(AppSetting.key == SETTING_CALCULATOR_COUNTRY_DEFAULTS)
+    )
+    if row is None or not row.value:
+        return CalculatorCountryDefaultsMap()
+    try:
+        payload = json.loads(row.value)
+        return CalculatorCountryDefaultsMap.model_validate(payload)
+    except (json.JSONDecodeError, TypeError, ValidationError):
+        logger.exception("Invalid calculator country defaults; ignoring them")
+        return CalculatorCountryDefaultsMap()
+
+
+async def set_calculator_country_defaults(
+    db: AsyncSession,
+    defaults: CalculatorCountryDefaultsMap,
+) -> CalculatorCountryDefaultsMap:
+    """Persist the whole per-country table as one validated snapshot."""
+    normalized = CalculatorCountryDefaultsMap(
+        countries={
+            code.strip().upper(): value
+            for code, value in defaults.countries.items()
+            if code.strip()
+        }
+    )
+    value = json.dumps(normalized.model_dump(mode="json"), separators=(",", ":"))
+    row = await db.scalar(
+        select(AppSetting).where(AppSetting.key == SETTING_CALCULATOR_COUNTRY_DEFAULTS)
+    )
+    if row is None:
+        db.add(AppSetting(key=SETTING_CALCULATOR_COUNTRY_DEFAULTS, value=value))
+    else:
+        row.value = value
+    await db.commit()
+    return normalized
+
+
+def apply_country_defaults(
+    defaults: CalculatorProfileDefaults,
+    country_defaults: CalculatorCountryDefaultsMap,
+    country: str | None,
+) -> CalculatorProfileDefaults:
+    """Overlay what is known for one country on top of the global starting economics.
+
+    Only the fields an admin actually filled in for that country are applied; the rest
+    keeps the global value, so a half-filled row never blanks out working numbers.
+    """
+    if not country:
+        return defaults
+    entry = country_defaults.countries.get(country.strip().upper())
+    if entry is None:
+        return defaults
+    overrides = {
+        field: value
+        for field, value in entry.model_dump(mode="json").items()
+        if value is not None
+    }
+    if not overrides:
+        return defaults
+    return defaults.model_copy(update=overrides)

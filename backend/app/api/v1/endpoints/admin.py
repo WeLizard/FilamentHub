@@ -67,7 +67,10 @@ from app.schemas.brand_request import (
     BrandRequestResponse,
     BrandRequestUpdate,
 )
-from app.schemas.calculator import CalculatorProfileDefaults
+from app.schemas.calculator import (
+    CalculatorCountryDefaultsMap,
+    CalculatorProfileDefaults,
+)
 from app.schemas.database import (
     DatabaseExportRequest,
     DatabaseIntegrityResponse,
@@ -91,6 +94,8 @@ from app.schemas.user import AccountDeletionStats, UserListResponse, UserRespons
 from app.services.brand_slug_service import apply_brand_slug_rename, choose_brand_slug
 from app.services.calculator_defaults_service import (
     get_calculator_profile_defaults,
+    get_calculator_country_defaults,
+    set_calculator_country_defaults,
     set_calculator_profile_defaults,
 )
 from app.services.database_service import (
@@ -2154,6 +2159,38 @@ async def update_calculator_profile_defaults(
     await set_calculator_profile_defaults(db, profile_defaults)
     logger.info("Admin %s updated calculator profile defaults", admin.id)
     return await get_calculator_profile_defaults(db)
+
+
+@router.get(
+    "/calculator-country-defaults",
+    response_model=CalculatorCountryDefaultsMap,
+)
+async def read_calculator_country_defaults(
+    admin: Annotated[User, Depends(get_current_admin_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> CalculatorCountryDefaultsMap:
+    """Per-country overrides applied on top of the global starting economics."""
+    del admin
+    return await get_calculator_country_defaults(db)
+
+
+@router.put(
+    "/calculator-country-defaults",
+    response_model=CalculatorCountryDefaultsMap,
+)
+async def update_calculator_country_defaults(
+    country_defaults: CalculatorCountryDefaultsMap,
+    admin: Annotated[User, Depends(get_current_admin_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> CalculatorCountryDefaultsMap:
+    """Replace the whole per-country table in one go."""
+    saved = await set_calculator_country_defaults(db, country_defaults)
+    logger.info(
+        "Admin %s updated calculator country defaults for %d countries",
+        admin.id,
+        len(saved.countries),
+    )
+    return saved
 
 
 # ==================== Wiki Sync ====================

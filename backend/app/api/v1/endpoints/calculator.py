@@ -60,7 +60,9 @@ from app.schemas.calculator import (
 )
 from app.schemas.user import UserResponse
 from app.services.calculator_defaults_service import (
+    apply_country_defaults,
     calculator_profile_default_values,
+    get_calculator_country_defaults,
     get_calculator_profile_defaults,
 )
 from app.services.calculator_gcode_parser import (
@@ -951,6 +953,16 @@ def _profile_response(profile: UserCalculatorProfile) -> CalculatorProfileRespon
     )
 
 
+async def _starting_defaults_for(
+    db: AsyncSession,
+    user: User,
+) -> CalculatorProfileDefaults:
+    """Global starting economics with whatever is known for the person's country."""
+    defaults = await get_calculator_profile_defaults(db)
+    country_defaults = await get_calculator_country_defaults(db)
+    return apply_country_defaults(defaults, country_defaults, user.country)
+
+
 @router.get("/profile", response_model=CalculatorProfileResponse)
 async def get_calculator_profile(
     current_user: Annotated[User, Depends(require_calculator_access)],
@@ -963,7 +975,7 @@ async def get_calculator_profile(
     profile = result.scalar_one_or_none()
 
     if not profile:
-        defaults = await get_calculator_profile_defaults(db)
+        defaults = await _starting_defaults_for(db, current_user)
         profile = UserCalculatorProfile(
             user_id=current_user.id,
             **calculator_profile_default_values(defaults),
@@ -988,7 +1000,7 @@ async def update_calculator_profile(
     profile = result.scalar_one_or_none()
 
     if not profile:
-        defaults = await get_calculator_profile_defaults(db)
+        defaults = await _starting_defaults_for(db, current_user)
         profile = UserCalculatorProfile(
             user_id=current_user.id,
             **calculator_profile_default_values(defaults),
@@ -1016,7 +1028,7 @@ async def reset_calculator_profile_defaults(
     profile = await db.scalar(
         select(UserCalculatorProfile).where(UserCalculatorProfile.user_id == current_user.id)
     )
-    defaults: CalculatorProfileDefaults = await get_calculator_profile_defaults(db)
+    defaults: CalculatorProfileDefaults = await _starting_defaults_for(db, current_user)
     values = calculator_profile_default_values(
         defaults,
         profile_currency=profile.currency if profile is not None else None,

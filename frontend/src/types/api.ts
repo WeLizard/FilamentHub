@@ -1694,6 +1694,27 @@ export type CalculatorProfileDefaults = Omit<
   | 'updated_at'
 >;
 
+export interface CalculatorCountryDefaults {
+  currency?: string | null;
+  electricity_cost_per_kwh?: number | null;
+  printing_rate_per_hour?: number | null;
+  modeling_rate_per_hour?: number | null;
+  postprocessing_rate_per_hour?: number | null;
+  amortization_rate_per_hour?: number | null;
+  maintenance_cost_per_hour?: number | null;
+  bed_prep_cost_per_print?: number | null;
+  fixed_costs?: number | null;
+  min_order_price?: number | null;
+  overhead_percent?: number | null;
+  markup_percent?: number | null;
+  tax_rate_percent?: number | null;
+  round_to_nearest?: number | null;
+}
+
+export interface CalculatorCountryDefaultsMap {
+  countries: Record<string, CalculatorCountryDefaults>;
+}
+
 export interface SharedQuoteCreate {
   title?: string;
   html_content: string;

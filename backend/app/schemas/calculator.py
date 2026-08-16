@@ -899,6 +899,36 @@ class CalculatorProfileDefaults(BaseModel):
     power_electronics_w: float = Field(0.0, ge=0)
 
 
+class CalculatorCountryDefaults(BaseModel):
+    """What one country overrides in the platform starting economics.
+
+    Every field is optional on purpose: an admin fills in what is actually known for
+    that country — usually the electricity tariff and the currency — and everything
+    else keeps falling back to the global values.
+    """
+
+    currency: str | None = Field(None, min_length=3, max_length=4)
+    electricity_cost_per_kwh: float | None = Field(None, ge=0)
+    printing_rate_per_hour: float | None = Field(None, ge=0)
+    modeling_rate_per_hour: float | None = Field(None, ge=0)
+    postprocessing_rate_per_hour: float | None = Field(None, ge=0)
+    amortization_rate_per_hour: float | None = Field(None, ge=0)
+    maintenance_cost_per_hour: float | None = Field(None, ge=0)
+    bed_prep_cost_per_print: float | None = Field(None, ge=0)
+    fixed_costs: float | None = Field(None, ge=0)
+    min_order_price: float | None = Field(None, ge=0)
+    overhead_percent: float | None = Field(None, ge=0, le=100)
+    markup_percent: float | None = Field(None, ge=0, le=200)
+    tax_rate_percent: float | None = Field(None, ge=0, le=100)
+    round_to_nearest: int | None = Field(None, ge=0)
+
+
+class CalculatorCountryDefaultsMap(BaseModel):
+    """Per-country overrides keyed by two-letter country code."""
+
+    countries: dict[str, CalculatorCountryDefaults] = Field(default_factory=dict)
+
+
 # ── Shared quote (public link) ───────────────────────────────────────
 
 

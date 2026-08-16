@@ -24,6 +24,7 @@ const AdminMaintenance = lazy(() => import('../components/admin/AdminMaintenance
 const AdminWiki = lazy(() => import('../components/admin/AdminWiki').then((module) => ({ default: module.AdminWiki })));
 const AdminSubscriptions = lazy(() => import('../components/admin/AdminSubscriptions').then((module) => ({ default: module.AdminSubscriptions })));
 const AdminCalculatorDefaults = lazy(() => import('../components/admin/AdminCalculatorDefaults').then((module) => ({ default: module.AdminCalculatorDefaults })));
+const AdminCalculatorCountryDefaults = lazy(() => import('../components/admin/AdminCalculatorCountryDefaults').then((module) => ({ default: module.AdminCalculatorCountryDefaults })));
 const AdminOrcaSchemaObservations = lazy(() => import('../components/admin/AdminOrcaSchemaObservations').then((module) => ({ default: module.AdminOrcaSchemaObservations })));
 
 type AdminTab = 'requests' | 'brands' | 'materials' | 'presets' | 'users' | 'stats' | 'printers' | 'printer-requests' | 'communications' | 'database' | 'maintenance' | 'wiki' | 'subscriptions' | 'calculator' | 'orca-schema';
@@ -176,7 +177,12 @@ export function AdminPanel() {
             {activeTab === 'stats' && <AdminStats />}
             {activeTab === 'database' && <AdminDatabaseDiagnostics />}
             {activeTab === 'orca-schema' && <AdminOrcaSchemaObservations />}
-            {activeTab === 'calculator' && <AdminCalculatorDefaults />}
+            {activeTab === 'calculator' && (
+              <>
+                <AdminCalculatorDefaults />
+                <AdminCalculatorCountryDefaults />
+              </>
+            )}
             {activeTab === 'subscriptions' && <AdminSubscriptions />}
             {activeTab === 'maintenance' && <AdminMaintenance />}
           </Suspense>

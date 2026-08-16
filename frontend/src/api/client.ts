@@ -2112,6 +2112,24 @@ export const adminAPI = {
     return response.data;
   },
 
+  getCalculatorCountryDefaults: async (
+  ): Promise<import('../types/api').CalculatorCountryDefaultsMap> => {
+    const response = await api.get<import('../types/api').CalculatorCountryDefaultsMap>(
+      '/admin/calculator-country-defaults',
+    );
+    return response.data;
+  },
+
+  updateCalculatorCountryDefaults: async (
+    countryDefaults: import('../types/api').CalculatorCountryDefaultsMap,
+  ): Promise<import('../types/api').CalculatorCountryDefaultsMap> => {
+    const response = await api.put<import('../types/api').CalculatorCountryDefaultsMap>(
+      '/admin/calculator-country-defaults',
+      countryDefaults,
+    );
+    return response.data;
+  },
+
   // Notifications
   sendNotification: async (data: {
     user_ids: number[];
