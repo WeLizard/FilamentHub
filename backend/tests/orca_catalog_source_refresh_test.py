@@ -20,7 +20,13 @@ refresh = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(refresh)
 
 
-def _bundle(path: Path, *, tree: str, vendors: dict[str, list[str]]) -> Path:
+def _bundle(
+    path: Path,
+    *,
+    tree: str,
+    vendors: dict[str, list[str]],
+    machine_profiles: dict[str, dict[str, dict]] | None = None,
+) -> Path:
     with zipfile.ZipFile(path, "w") as archive:
         archive.writestr(
             refresh.MANIFEST_NAME,
@@ -46,6 +52,9 @@ def _bundle(path: Path, *, tree: str, vendors: dict[str, list[str]]) -> Path:
                     }
                 ),
             )
+        for vendor, profiles in (machine_profiles or {}).items():
+            for name, payload in profiles.items():
+                archive.writestr(f"{vendor}/machine/{name}.json", json.dumps(payload))
     return path
 
 
@@ -73,19 +82,30 @@ def test_report_names_added_and_retired_printer_models(
     assert "vendors gone (1): Prusa" in out
 
 
-def test_report_separates_content_only_changes_from_new_models(
+def test_report_shows_edited_printer_settings_when_no_model_is_added(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Upstream edits profile values far more often than it adds printers, and
-    those two cases lead to opposite decisions."""
-    current = _bundle(tmp_path / "current.zip", tree="old", vendors={"BBL": ["Bambu Lab A1"]})
-    fresh = _bundle(tmp_path / "fresh.zip", tree="new", vendors={"BBL": ["Bambu Lab A1"]})
+    """Nozzle, bed and speed values live inside the profiles, so an update is
+    worth importing even when the model list stays the same."""
+    current = _bundle(
+        tmp_path / "current.zip",
+        tree="old",
+        vendors={"BBL": ["Bambu Lab A1"]},
+        machine_profiles={"BBL": {"Bambu Lab A1 0.4 nozzle": {"speed": "100"}}},
+    )
+    fresh = _bundle(
+        tmp_path / "fresh.zip",
+        tree="new",
+        vendors={"BBL": ["Bambu Lab A1"]},
+        machine_profiles={"BBL": {"Bambu Lab A1 0.4 nozzle": {"speed": "120"}}},
+    )
 
     assert refresh._report(current, fresh) is True
 
     out = capsys.readouterr().out
-    assert "No printer models change" in out
-    assert "added" not in out
+    assert "printer models: no change" in out
+    assert "BBL · machine: 1 modified" in out
+    assert "Bambu Lab A1 0.4 nozzle" in out
 
 
 def test_report_reports_nothing_to_import_for_an_identical_tree(

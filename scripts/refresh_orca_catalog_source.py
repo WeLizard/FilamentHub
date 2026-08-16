@@ -13,6 +13,7 @@ built archive is left in a temporary directory.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import shutil
 import subprocess
@@ -99,16 +100,21 @@ def _build(profiles: Path, target: Path, args: argparse.Namespace) -> None:
     _run(command)
 
 
-def _read_bundle(path: Path) -> tuple[dict, dict[str, set[str]]]:
-    """Return the manifest and every printer model, grouped by vendor."""
+def _read_bundle(path: Path) -> tuple[dict, dict[str, set[str]], dict[str, str]]:
+    """Return the manifest, printer models per vendor, and a digest per file."""
     models: dict[str, set[str]] = {}
+    digests: dict[str, str] = {}
     with zipfile.ZipFile(path) as archive:
         manifest = json.loads(archive.read(MANIFEST_NAME))
         for name in archive.namelist():
-            if "/" in name or not name.endswith(".json") or name == MANIFEST_NAME:
+            if name == MANIFEST_NAME or name.endswith("/"):
+                continue
+            payload = archive.read(name)
+            digests[name] = hashlib.sha256(payload).hexdigest()
+            if "/" in name or not name.endswith(".json"):
                 continue
             try:
-                vendor = json.loads(archive.read(name))
+                vendor = json.loads(payload)
             except (UnicodeDecodeError, json.JSONDecodeError):
                 continue
             if not isinstance(vendor, dict) or not vendor.get("name"):
@@ -119,12 +125,50 @@ def _read_bundle(path: Path) -> tuple[dict, dict[str, set[str]]]:
                 for entry in entries
                 if isinstance(entry, dict) and entry.get("name")
             }
-    return manifest, models
+    return manifest, models, digests
+
+
+def _group(name: str) -> tuple[str, str]:
+    """Split an archive path into the vendor and the part of its profile set."""
+    parts = name.split("/")
+    if len(parts) == 1:
+        return parts[0].removesuffix(".json"), "vendor manifest"
+    scope = parts[1] if len(parts) > 2 else "other"
+    return parts[0], scope
+
+
+def _print_profile_changes(current: dict[str, str], fresh: dict[str, str]) -> None:
+    """Report edited profile contents: nozzle, bed, speeds and material settings
+    live here, and they matter even when the model list is untouched."""
+    added = sorted(set(fresh) - set(current))
+    removed = sorted(set(current) - set(fresh))
+    modified = sorted(
+        name for name in set(fresh) & set(current) if fresh[name] != current[name]
+    )
+    if not (added or removed or modified):
+        return
+
+    buckets: dict[tuple[str, str], dict[str, list[str]]] = {}
+    for kind, names in (("added", added), ("modified", modified), ("removed", removed)):
+        for name in names:
+            entry = buckets.setdefault(_group(name), {})
+            entry.setdefault(kind, []).append(Path(name).stem)
+
+    total = len(added) + len(modified) + len(removed)
+    print(f"profile files changed ({total}):")
+    for (vendor, scope), kinds in sorted(buckets.items()):
+        summary = ", ".join(f"{len(items)} {kind}" for kind, items in sorted(kinds.items()))
+        print(f"  {vendor} · {scope}: {summary}")
+        for kind, items in sorted(kinds.items()):
+            shown = ", ".join(items[:6])
+            if len(items) > 6:
+                shown += f", +{len(items) - 6} more"
+            print(f"      {kind}: {shown}")
 
 
 def _report(current: Path | None, fresh: Path) -> bool:
     """Print what an import of the fresh bundle would change. True when it differs."""
-    fresh_manifest, fresh_models = _read_bundle(fresh)
+    fresh_manifest, fresh_models, fresh_files = _read_bundle(fresh)
     print(f"upstream commit : {fresh_manifest['commit']} ({fresh_manifest['commit_date']})")
 
     if current is None or not current.exists():
@@ -133,7 +177,7 @@ def _report(current: Path | None, fresh: Path) -> bool:
               f"{len(fresh_models)} vendors and {total} printer models")
         return True
 
-    current_manifest, current_models = _read_bundle(current)
+    current_manifest, current_models, current_files = _read_bundle(current)
     print(f"current commit  : {current_manifest['commit']} ({current_manifest['commit_date']})")
 
     if current_manifest["profiles_tree"] == fresh_manifest["profiles_tree"]:
@@ -164,8 +208,10 @@ def _report(current: Path | None, fresh: Path) -> bool:
         for item in retired:
             print(f"  - {item}")
     if not (new_vendors or gone_vendors or added or retired):
-        print("No printer models change; upstream touched profile contents only.")
-        print("Importing would refresh presets and machine data, not the model list.")
+        print("printer models: no change")
+
+    print()
+    _print_profile_changes(current_files, fresh_files)
     return True
 
 
