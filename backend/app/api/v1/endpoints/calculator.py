@@ -143,6 +143,39 @@ def _calculate_tax(value: float, tax_rate_percent: float | None) -> float:
     return value * (tax_rate_percent / 100.0)
 
 
+def _machine_hours_by_rate(
+    data: CalculatorEstimateRequest,
+    time_hours_total: float,
+) -> list[tuple[float, float | None, float | None, float | None]]:
+    """Split machine time into stretches priced at their own machine's rates.
+
+    Returns (hours, printing rate, amortization rate, power) per stretch. Without
+    per-plate machines this is one stretch on the order-wide rates, so an order that
+    never names a printer keeps costing exactly what it used to.
+    """
+    if not data.print_jobs:
+        return [(
+            time_hours_total,
+            data.printing_rate_per_hour,
+            data.amortization_rate_per_hour,
+            data.printer_power_w,
+        )]
+
+    return [
+        (
+            (job.print_time_seconds * job.repeats) / 3600.0,
+            job.printing_rate_per_hour
+            if job.printing_rate_per_hour is not None
+            else data.printing_rate_per_hour,
+            job.amortization_rate_per_hour
+            if job.amortization_rate_per_hour is not None
+            else data.amortization_rate_per_hour,
+            job.printer_power_w if job.printer_power_w is not None else data.printer_power_w,
+        )
+        for job in data.print_jobs
+    ]
+
+
 def _resolve_print_execution(
     data: CalculatorEstimateRequest,
 ) -> tuple[int, int, float, float, dict[str, int]]:
@@ -529,10 +562,14 @@ async def _build_estimate(data: CalculatorEstimateRequest) -> CalculatorEstimate
         if waste_factor_percent > 0 and cost_material > 0:
             cost_waste = cost_material * (waste_factor_percent / 100.0)
 
+        machine_hours = _machine_hours_by_rate(data, time_hours_total)
+
         cost_electricity = 0.0
-        if data.electricity_cost_per_kwh and data.printer_power_w and time_hours_total > 0:
-            power_kw = data.printer_power_w / 1000.0
-            cost_electricity = power_kw * data.electricity_cost_per_kwh * time_hours_total
+        if data.electricity_cost_per_kwh:
+            for hours, _rate, _amortization, power_w in machine_hours:
+                if hours <= 0 or not power_w:
+                    continue
+                cost_electricity += (power_w / 1000.0) * data.electricity_cost_per_kwh * hours
 
         cost_modeling = 0.0
         if data.modeling_rate_per_hour:
@@ -540,8 +577,9 @@ async def _build_estimate(data: CalculatorEstimateRequest) -> CalculatorEstimate
             cost_modeling = modeling_time * data.modeling_rate_per_hour
 
         cost_printing = 0.0
-        if data.printing_rate_per_hour and time_hours_total > 0:
-            cost_printing = time_hours_total * data.printing_rate_per_hour
+        for hours, rate, _amortization, _power_w in machine_hours:
+            if hours > 0 and rate:
+                cost_printing += hours * rate
 
         cost_postprocessing = 0.0
         if data.postprocessing_rate_per_hour:
@@ -558,8 +596,9 @@ async def _build_estimate(data: CalculatorEstimateRequest) -> CalculatorEstimate
             cost_monitoring = monitoring_time_hours * data.printing_rate_per_hour
 
         cost_amortization = 0.0
-        if data.amortization_rate_per_hour and time_hours_total > 0:
-            cost_amortization = time_hours_total * data.amortization_rate_per_hour
+        for hours, _rate, amortization, _power_w in machine_hours:
+            if hours > 0 and amortization:
+                cost_amortization += hours * amortization
 
         cost_nozzle_wear = 0.0
         if data.nozzle_price and data.nozzle_life_cm3:

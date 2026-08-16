@@ -87,3 +87,24 @@ export function defaultCurrencyForCountry(
   const known = country ? CURRENCY_BY_COUNTRY.get(country.toUpperCase()) : undefined;
   return known || defaultCurrencyForLanguage(language);
 }
+
+/**
+ * Sensible "round the quote to" steps for a currency.
+ *
+ * Ten roubles is small change; ten dollars is a meaningful part of a small order.
+ * The steps follow the unit's magnitude instead of being fixed at rouble-sized numbers.
+ */
+export function roundingStepsForCurrency(code: string | null | undefined): number[] {
+  switch (normalizeCurrency(code)) {
+    case 'RUB':
+    case 'KZT':
+    case 'JPY':
+      return [10, 50, 100];
+    case 'UAH':
+    case 'CNY':
+    case 'PLN':
+      return [1, 5, 10];
+    default:
+      return [1, 5, 10];
+  }
+}

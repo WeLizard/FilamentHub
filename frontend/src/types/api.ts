@@ -1203,6 +1203,10 @@ export interface CalculatorPrintJobRequest {
   output_quantity_per_run: number;
   print_time_seconds: number;
   quote_mode: 'set' | 'groups';
+  physical_printer_id?: number | null;
+  printing_rate_per_hour?: number | null;
+  amortization_rate_per_hour?: number | null;
+  printer_power_w?: number | null;
 }
 
 export type CalculatorPreflightStatus =

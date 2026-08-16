@@ -115,6 +115,13 @@ class CalculatorPrintJobRequest(BaseModel):
     print_time_seconds: float = Field(..., ge=0, le=31_536_000)
     quote_mode: Literal["set", "groups"] = "set"
 
+    # Plates in one order can be sliced for different machines, and an hour on each of
+    # them costs its own money. Left empty, the plate is charged at the order-wide rate.
+    physical_printer_id: int | None = Field(None, ge=1)
+    printing_rate_per_hour: float | None = Field(None, ge=0)
+    amortization_rate_per_hour: float | None = Field(None, ge=0)
+    printer_power_w: float | None = Field(None, gt=0)
+
 
 CalculatorPreflightStatus = Literal[
     "ready",

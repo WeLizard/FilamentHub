@@ -64,7 +64,13 @@ import { useAuth } from '../contexts/AuthContext';
 import { useHeaderVisible } from '../hooks/useHeaderVisible';
 import { USER_PREFERENCES_QUERY_KEY } from '../hooks/useUserCurrency';
 import { translateApiError } from '../utils/translateApiError';
-import { currencySymbol, normalizeCurrency, CURRENCY_CODES, defaultCurrencyForCountry } from '../utils/currency';
+import {
+  currencySymbol,
+  normalizeCurrency,
+  roundingStepsForCurrency,
+  CURRENCY_CODES,
+  defaultCurrencyForCountry,
+} from '../utils/currency';
 import {
   findPrioritizedMaterialMatch,
   pickPrimaryParsedMaterial,
@@ -229,6 +235,8 @@ export interface CalculatorJobConfig {
   repeats: number;
   quoteMode: CalculatorQuoteMode;
   printTimeSeconds: number;
+  /** Empty means the plate is charged at the order-wide machine rates. */
+  physicalPrinterId: number | '';
 }
 
 const createDefaultJobConfig = (job: ParsedJobState): CalculatorJobConfig => ({
@@ -236,6 +244,7 @@ const createDefaultJobConfig = (job: ParsedJobState): CalculatorJobConfig => ({
   repeats: 1,
   quoteMode: (job.parsed.object_groups?.length ?? 0) === 1 ? 'groups' : 'set',
   printTimeSeconds: Math.max(0, job.parsed.print_time_seconds ?? 0),
+  physicalPrinterId: '',
 });
 
 interface CalculatorMaterialLineState extends CalculatorMaterialLineRequest {
@@ -470,6 +479,7 @@ export const buildEstimateRequest = (
   jobConfigs: CalculatorJobConfig[] = [],
   printerEconomics: PrinterEconomics | null = null,
   calculationCurrency: string | null = null,
+  jobPrinterEconomics: Map<number, PrinterEconomics> = new Map(),
 ): CalculatorEstimateRequest => {
   const requestData: CalculatorEstimateRequest = {
     pricing_method: 'combined',
@@ -526,12 +536,36 @@ export const buildEstimateRequest = (
         && !canSplitCalculatorObjectGroups(groups)
         ? 'set'
         : config.quoteMode;
+      const jobEconomics = config.physicalPrinterId === ''
+        ? null
+        : jobPrinterEconomics.get(config.physicalPrinterId) ?? null;
+      const jobEconomicsUsable = Boolean(
+        jobEconomics
+        && jobEconomics.configured
+        && (
+          !jobEconomics.economics_currency
+          || !calculationCurrency
+          || normalizeCurrency(jobEconomics.economics_currency) === normalizeCurrency(calculationCurrency)
+        ),
+      );
       return {
         job_key: job.key,
         repeats: Math.max(1, Math.floor(config.repeats)),
         output_quantity_per_run: calculatorOutputQuantityPerRun(groups, quoteMode),
         print_time_seconds: Math.max(0, config.printTimeSeconds),
         quote_mode: quoteMode,
+        ...(config.physicalPrinterId !== ''
+          ? { physical_printer_id: config.physicalPrinterId }
+          : {}),
+        ...(jobEconomicsUsable && jobEconomics
+          ? {
+              printing_rate_per_hour: jobEconomics.calculator_printing_rate_per_hour,
+              amortization_rate_per_hour: jobEconomics.calculator_amortization_rate_per_hour,
+              ...(jobEconomics.calculator_printer_power_w
+                ? { printer_power_w: jobEconomics.calculator_printer_power_w }
+                : {}),
+            }
+          : {}),
       };
     });
     requestData.quantity = requestData.print_jobs.reduce(
@@ -2136,6 +2170,33 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
     setPrinterPickedFrom(null);
   };
 
+  // Plates can name their own machines, and each one's hour has its own price.
+  const jobPrinterIds = useMemo(
+    () => Array.from(new Set(
+      jobConfigs
+        .map((config) => config.physicalPrinterId)
+        .filter((printerId): printerId is number => printerId !== ''),
+    )).sort((left, right) => left - right),
+    [jobConfigs],
+  );
+
+  const jobPrinterEconomicsQuery = useQuery({
+    queryKey: ['calculator', 'job-printer-economics', jobPrinterIds.join(',')],
+    queryFn: async () => {
+      const entries = await Promise.all(
+        jobPrinterIds.map(async (printerId) => [
+          printerId,
+          await physicalPrintersAPI.economics(printerId),
+        ] as const),
+      );
+      return new Map<number, PrinterEconomics>(entries);
+    },
+    enabled: jobPrinterIds.length > 0,
+    staleTime: 60_000,
+  });
+
+  const jobPrinterEconomics = jobPrinterEconomicsQuery.data ?? new Map<number, PrinterEconomics>();
+
   const handleSlicePick = (slice: OrcaSliceReport) => {
     if (!slice.source_key) {
       toast.error(t('slicedJobs.gone'));
@@ -2362,6 +2423,7 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
       jobConfigs,
       printerEconomics,
       quoteProfile.currency,
+      jobPrinterEconomics,
     );
     return buildPreflightRequest(
       estimateRequest,
@@ -2471,6 +2533,7 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
       jobConfigs,
       printerEconomics,
       quoteProfile.currency,
+      jobPrinterEconomics,
     );
     calculateMutation.mutate(estimateRequest);
     const preflightRequest = buildPreflightRequest(
@@ -2694,6 +2757,7 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
             repeats: saved.repeats,
             quoteMode: saved.quote_mode ?? createDefaultJobConfig(job).quoteMode,
             printTimeSeconds: saved.print_time_seconds,
+            physicalPrinterId: saved.physical_printer_id ?? '',
           }
         : {
             ...createDefaultJobConfig(job),
@@ -3985,6 +4049,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
     resolveQuoteMarket(quoteProfile.quoteMarket, quoteProfile.currency),
   );
 
+  const roundingSteps = roundingStepsForCurrency(quoteProfile.currency);
   const roundingModeLabel =
     form.roundingMode === 'down'
       ? t('profilePage.calc.roundingModeDown')
@@ -4616,9 +4681,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                     <QuickPicks
                       options={[
                         { label: tc('roundNone'), value: 0 },
-                        { label: '10', value: 10 },
-                        { label: '50', value: 50 },
-                        { label: '100', value: 100 },
+                        ...roundingSteps.map((step) => ({ label: String(step), value: step })),
                       ]}
                       value={form.roundToNearest}
                       onPick={(value) => onStaticChange('roundToNearest', value)}
@@ -5201,6 +5264,30 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                             </div>
                           </div>
 
+                          {/* The machine sits with the plate it prints: an hour on each one
+                              costs its own money, and plates in an order can differ. */}
+                          {displayJobs.length > 1 ? (
+                            <label className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-white/[0.07] px-4 py-2.5">
+                              <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                                {t('printerCost.rowLabel')}
+                              </span>
+                              <select
+                                className={`${inputClass} w-auto min-w-[12rem] py-1.5 text-xs`}
+                                value={config.physicalPrinterId === '' ? '' : String(config.physicalPrinterId)}
+                                onChange={(event) => onJobConfigChange(job.key, {
+                                  physicalPrinterId: event.target.value ? Number(event.target.value) : '',
+                                })}
+                              >
+                                <option value="">{tc('jobPrinterFromOrder')}</option>
+                                {printers.map((printer) => (
+                                  <option key={`job-printer-${job.key}-${printer.id}`} value={printer.id}>
+                                    {printer.name}
+                                  </option>
+                                ))}
+                              </select>
+                              <span className="text-[11px] text-slate-500">{tc('jobPrinterHint')}</span>
+                            </label>
+                          ) : null}
 
                           {objectCount > 1 ? (
                             <div className="border-t border-white/[0.07] p-4">

@@ -199,7 +199,7 @@ describe('buildQuoteLineItems', () => {
       null,
       jobs,
       [],
-      [{ jobKey: 'mixed', repeats: 2, quoteMode: 'set', printTimeSeconds: 7200 }],
+      [{ jobKey: 'mixed', repeats: 2, quoteMode: 'set', printTimeSeconds: 7200, physicalPrinterId: '' as const }],
     );
 
     expect(setItems).toHaveLength(1);
@@ -223,7 +223,7 @@ describe('buildQuoteLineItems', () => {
       null,
       [{ key: 'mixed', parsed: job }],
       [],
-      [{ jobKey: 'mixed', repeats: 2, quoteMode: 'groups', printTimeSeconds: 7200 }],
+      [{ jobKey: 'mixed', repeats: 2, quoteMode: 'groups', printTimeSeconds: 7200, physicalPrinterId: '' as const }],
     );
 
     expect(items.map((item) => [item.title, item.quantity])).toEqual([

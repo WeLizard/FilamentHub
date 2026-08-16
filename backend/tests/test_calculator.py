@@ -967,3 +967,63 @@ async def test_preflight_keeps_missing_machine_capabilities_unknown(
     compatibility = response.json()["printer_compatibility"]
     assert compatibility["status"] == "unknown"
     assert [item["status"] for item in compatibility["checks"]] == ["unknown", "unknown"]
+
+
+@pytest.mark.asyncio
+async def test_calculator_estimate_prices_each_plate_on_its_own_machine(
+    admin_client: AsyncClient,
+):
+    """Plates sliced for different machines are billed at each machine's own rates."""
+    response = await admin_client.post(
+        "/api/v1/calculator/estimate",
+        json={
+            "pricing_method": "combined",
+            "printing_rate_per_hour": 100,
+            "amortization_rate_per_hour": 10,
+            "printer_power_w": 100,
+            "electricity_cost_per_kwh": 10,
+            "material_lines": [
+                {
+                    "line_id": "cheap-plate:t0",
+                    "job_key": "cheap-plate",
+                    "weight_g": 10,
+                    "spool_price": 1000,
+                    "spool_weight_kg": 1,
+                    "price_source": "manual",
+                },
+                {
+                    "line_id": "costly-plate:t0",
+                    "job_key": "costly-plate",
+                    "weight_g": 10,
+                    "spool_price": 1000,
+                    "spool_weight_kg": 1,
+                    "price_source": "manual",
+                },
+            ],
+            "print_jobs": [
+                {
+                    "job_key": "cheap-plate",
+                    "repeats": 1,
+                    "output_quantity_per_run": 1,
+                    "print_time_seconds": 3600,
+                },
+                {
+                    "job_key": "costly-plate",
+                    "repeats": 1,
+                    "output_quantity_per_run": 1,
+                    "print_time_seconds": 3600,
+                    "printing_rate_per_hour": 300,
+                    "amortization_rate_per_hour": 40,
+                    "printer_power_w": 500,
+                },
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    # One hour on the order-wide machine plus one on the declared one, not two hours
+    # of whichever rate happened to be at the top of the request.
+    assert body["cost_printing"] == 400.0
+    assert body["cost_amortization"] == 50.0
+    assert body["cost_electricity"] == 6.0

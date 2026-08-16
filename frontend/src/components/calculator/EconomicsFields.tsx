@@ -133,16 +133,27 @@ export const EconomicsFields: React.FC<EconomicsFieldsProps> = ({
         </button>
         {detailsOpen ? (
           <div className="mt-2.5 space-y-1.5 border-t border-white/10 pt-2.5 text-xs text-slate-300">
+            {/* Each line names the fields above that produce it, so it is clear which
+                input to change when a number looks wrong. */}
             <div className="flex justify-between gap-4">
-              <span>{t('printerCost.wearLine')}</span>
+              <span>
+                {t('printerCost.wearLine')}
+                <span className="ml-1.5 text-slate-500">{t('printerCost.wearFrom')}</span>
+              </span>
               <span className="tabular-nums">{breakdown.depreciation.toFixed(2)} {symbol}</span>
             </div>
             <div className="flex justify-between gap-4">
-              <span>{t('printerCost.electricityLine')}</span>
+              <span>
+                {t('printerCost.electricityLine')}
+                <span className="ml-1.5 text-slate-500">{t('printerCost.electricityFrom')}</span>
+              </span>
               <span className="tabular-nums">{breakdown.electricity.toFixed(2)} {symbol}</span>
             </div>
             <div className="flex justify-between gap-4">
-              <span>{t('printerCost.maintenanceLine')}</span>
+              <span>
+                {t('printerCost.maintenanceLine')}
+                <span className="ml-1.5 text-slate-500">{t('printerCost.maintenanceFrom')}</span>
+              </span>
               <span className="tabular-nums">{breakdown.maintenance.toFixed(2)} {symbol}</span>
             </div>
           </div>
