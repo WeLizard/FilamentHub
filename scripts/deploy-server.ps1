@@ -12,7 +12,7 @@ Backup, миграции и переключение контейнеров вы
 [CmdletBinding()]
 param(
     [Parameter()]
-    [ValidateSet('Menu', 'Publish', 'Preflight', 'Deploy', 'Status', 'Backup', 'PruneBuildCache', 'ListReleases', 'DownloadRelease', 'CheckDownloadPage', 'PrepareRelease', 'PublishRelease')]
+    [ValidateSet('Menu', 'Publish', 'Preflight', 'Deploy', 'Status', 'Backup', 'PruneBuildCache', 'ListReleases', 'DownloadRelease', 'CheckDownloadPage', 'PrepareRelease', 'PublishRelease', 'UpdateCatalogSource')]
     [string]$Action = 'Menu',
 
     # Деплой всегда идёт на один и тот же VDS через алиас SSH config, поэтому
@@ -517,6 +517,28 @@ function Invoke-PluginReleasePreparation {
     }
 }
 
+function Update-CatalogSource {
+    Assert-Command python
+
+    $refresher = Join-Path $repositoryRoot 'scripts\refresh_orca_catalog_source.py'
+    $bundle = Join-Path $repositoryRoot 'backend\data\catalog_sources\orca\bundle.zip'
+
+    Write-Host ''
+    Write-Host 'Читаю профили OrcaSlicer и сравниваю с текущим источником...' -ForegroundColor Cyan
+    Invoke-Checked python @($refresher)
+
+    if (-not (Confirm-Action 'Обновить bundle.zip в рабочем дереве?')) {
+        Write-Host 'Источник каталога оставлен без изменений.' -ForegroundColor Yellow
+        return
+    }
+
+    Invoke-Checked python @($refresher, '--write')
+
+    Write-Host ''
+    Write-Host "Готовый архив: $bundle" -ForegroundColor Green
+    Write-Host 'Дальше он заливается на сервер отдельным файлом, затем импорт в админке.'
+}
+
 function Show-Menu {
     while ($true) {
         Write-Host ''
@@ -533,6 +555,7 @@ function Show-Menu {
         Write-Host '  9. Проверить релиз плагинов на странице Download'
         Write-Host ' 10. Выпустить GitHub bundle и Orca Cloud release из changelog'
         Write-Host ' 11. Опубликовать существующий draft релиза (аварийный путь)'
+        Write-Host ' 12. Обновить источник каталога принтеров (OrcaSlicer)'
         Write-Host '  0. Выход'
         $choice = Read-Host 'Выбери действие'
 
@@ -554,6 +577,7 @@ function Show-Menu {
                 }
                 '10' { $script:ReleaseTag = $null; Invoke-PluginReleasePreparation }
                 '11' { $script:ReleaseTag = $null; Invoke-PluginReleasePreparation -Publish }
+                '12' { Update-CatalogSource }
                 '0' { return }
                 default { Write-Host 'Неизвестный пункт меню.' -ForegroundColor Yellow }
             }
@@ -584,4 +608,5 @@ switch ($Action) {
     }
     'PrepareRelease' { Invoke-PluginReleasePreparation }
     'PublishRelease' { Invoke-PluginReleasePreparation -Publish }
+    'UpdateCatalogSource' { Update-CatalogSource }
 }
