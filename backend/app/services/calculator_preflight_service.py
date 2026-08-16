@@ -158,9 +158,13 @@ def _normalized_material_type(value: str) -> str:
 def _suggestion_relation(
     target: Filament,
     candidate: Filament,
-) -> Literal["same_filament", "same_line", "same_material_type"] | None:
+) -> Literal[
+    "same_filament", "same_line", "same_type_and_color", "same_material_type"
+] | None:
     if candidate.id == target.id:
         return "same_filament"
+    # A different diameter cannot go into the same printer at all: this is a cutoff,
+    # not a sign of similarity.
     if not isclose(candidate.diameter, target.diameter, abs_tol=0.01):
         return None
     if target.line_id is not None and candidate.line_id == target.line_id:
@@ -170,6 +174,10 @@ def _suggestion_relation(
         == _normalized_material_type(target.material_type)
         and candidate.required_nozzle_hrc == target.required_nozzle_hrc
     ):
+        # A part printed in another colour is a remake for anything the customer looks at,
+        # so the same colour group ranks above a bare type match.
+        if target.color_group is not None and candidate.color_group == target.color_group:
+            return "same_type_and_color"
         return "same_material_type"
     return None
 
@@ -295,7 +303,8 @@ def _spool_suggestions(
     relation_priority = {
         "same_filament": 0,
         "same_line": 1,
-        "same_material_type": 2,
+        "same_type_and_color": 2,
+        "same_material_type": 3,
     }
     remaining_priority = {"known": 0, "stale": 1, "unknown": 2}
     suggestions.sort(

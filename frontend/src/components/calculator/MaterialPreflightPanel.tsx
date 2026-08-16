@@ -5,7 +5,6 @@ import {
   PackageCheck,
   Plus,
   RefreshCw,
-  X,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
@@ -57,10 +56,6 @@ const formatWeight = (value: number, gramsUnit: string, kilogramsUnit: string): 
   if (value >= 1000) return `${(value / 1000).toFixed(2)} ${kilogramsUnit}`;
   return `${Math.round(value)} ${gramsUnit}`;
 };
-
-const formatLength = (value: number): string => (
-  value >= 1000 ? `${(value / 1000).toFixed(2)} m` : `${Math.round(value)} mm`
-);
 
 const formatPurchaseCost = (amounts: Record<string, number>): string => (
   Object.entries(amounts)
@@ -164,48 +159,39 @@ const ReadinessFacts = ({ line }: { line: CalculatorPreflightLineResponse }) => 
     t('profilePage.calculator.grams'),
     t('profilePage.calculator.kg'),
   );
-  const facts = [
-    [t('profilePage.calculator.preflightRequired'), weight(line.required_base_g)],
-    [t('profilePage.calculator.preflightBuffer'), weight(line.safety_buffer_g)],
-    [t('profilePage.calculator.preflightPlanned'), weight(line.required_planned_g)],
-    [t('profilePage.calculator.preflightSelectedRemaining'), weight(line.selected_remaining_g)],
-  ];
   return (
-    <div className="grid grid-cols-2 gap-2 xl:grid-cols-4">
-      {facts.map(([label, value]) => (
-        <div key={label} className="min-w-0 rounded-xl border border-white/[0.06] bg-black/15 px-3 py-2.5">
-          <p className="truncate text-[10px] text-slate-500">{label}</p>
-          <p className="mt-1 text-sm font-semibold tabular-nums text-slate-100">{value}</p>
-        </div>
-      ))}
+    <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-xs">
+      <span className="text-slate-400">
+        {t('profilePage.calculator.preflightPlanned')}:{' '}
+        <strong className="font-semibold tabular-nums text-slate-100">{weight(line.required_planned_g)}</strong>
+      </span>
+      {line.safety_buffer_g > 0 ? (
+        <span className="tabular-nums text-slate-500">
+          +{weight(line.safety_buffer_g)}
+        </span>
+      ) : null}
+      <span className="text-slate-400">
+        {t('profilePage.calculator.preflightSelectedRemaining')}:{' '}
+        <strong className="font-semibold tabular-nums text-slate-100">{weight(line.selected_remaining_g)}</strong>
+      </span>
     </div>
   );
 };
 
 export const MaterialPreflightPanel = ({
-  lines,
-  spools,
   result,
   safetyBufferPercent,
   isLoading,
   error,
   canRun,
-  formatSpoolLabel,
   onSafetyBufferChange,
-  onSpoolIdsChange,
   onRefresh,
 }: MaterialPreflightPanelProps) => {
   const { t } = useTranslation();
-  const weight = (value: number) => formatWeight(
-    value,
-    t('profilePage.calculator.grams'),
-    t('profilePage.calculator.kg'),
-  );
-  const resultByLine = new Map(result?.lines.map((line) => [line.line_id, line]) ?? []);
   const totalPurchaseCost = result ? formatPurchaseCost(result.purchase_cost_by_currency) : '';
 
   return (
-    <section className="mt-4 rounded-[1.15rem] border border-cyan-400/15 bg-cyan-400/[0.045] p-3.5 sm:p-4">
+    <section className="mt-4 rounded-2xl border border-white/20 bg-white/10 p-3.5 sm:p-4">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div className="flex min-w-0 items-start gap-3">
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-cyan-400/20 bg-cyan-400/10 text-cyan-200">
@@ -270,9 +256,35 @@ export const MaterialPreflightPanel = ({
         <PrinterCompatibilityCard compatibility={result.printer_compatibility} />
       ) : null}
 
-      <div className="mt-4 space-y-3">
-        {lines.map((line) => {
-          const readiness = resultByLine.get(line.lineId) ?? null;
+    </section>
+  );
+};
+
+interface MaterialReadinessDetailsProps {
+  line: MaterialPreflightUiLine;
+  readiness: CalculatorPreflightLineResponse | null;
+  spools: UserSpool[];
+  formatSpoolLabel: (spool: UserSpool) => string;
+  onSpoolIdsChange: (lineId: string, spoolIds: number[]) => void;
+  /** Print with a different filament instead of the sliced one, rather than topping up. */
+  onReplaceSpool: (lineId: string, spoolId: number) => void;
+}
+
+export const MaterialReadinessDetails = ({
+  line,
+  readiness,
+  spools,
+  formatSpoolLabel,
+  onSpoolIdsChange,
+  onReplaceSpool,
+}: MaterialReadinessDetailsProps) => {
+  const { t } = useTranslation();
+  const weight = (value: number) => formatWeight(
+    value,
+    t('profilePage.calculator.grams'),
+    t('profilePage.calculator.kg'),
+  );
+  {
           const suggestions = (readiness?.spool_suggestions ?? []).filter(
             (suggestion) => !line.selectedSpoolIds.includes(suggestion.spool_id),
           );
@@ -288,10 +300,18 @@ export const MaterialPreflightPanel = ({
           );
           const showReplacementSuggestions = replacementSuggestions.length > 0
             && (exactSuggestions.length === 0 || exactTrustedCoverage < exactCoverageTarget);
+          const replacementLeadSpool = replacementSuggestions.length > 0
+            ? spools.find((item) => item.id === replacementSuggestions[0].spool_id) ?? null
+            : null;
+          const replacementLeadName = replacementLeadSpool ? formatSpoolLabel(replacementLeadSpool) : '';
           const uncertainAllocations = readiness?.allocations.filter(
             (allocation) => allocation.remaining_status !== 'known',
           ) ?? [];
+          // A spool inside the consumption plan is removed right there; a chip below would
+          // repeat both the name and the control.
+          const plannedSpoolIds = new Set((readiness?.allocations ?? []).map((item) => item.spool_id));
           const selectedSpools = line.selectedSpoolIds
+            .filter((spoolId) => !plannedSpoolIds.has(spoolId))
             .map((spoolId) => spools.find((spool) => spool.id === spoolId))
             .filter((spool): spool is UserSpool => spool != null);
           const candidates = spools.filter(
@@ -306,44 +326,26 @@ export const MaterialPreflightPanel = ({
             && candidates.length === 0;
 
           return (
-            <article key={line.lineId} className="rounded-2xl border border-white/[0.07] bg-black/15 p-3">
-              <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-                <div className="min-w-0">
-                  <p className="truncate text-xs font-semibold text-slate-100">{line.label}</p>
-                  {line.toolIndex != null ? (
-                    <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">T{line.toolIndex}</p>
-                  ) : null}
-                </div>
-                {readiness ? <StatusBadge status={readiness.status} /> : null}
-              </div>
+            <div className="mt-3 border-t border-white/10 pt-3">
 
-              {readiness ? (
-                <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-slate-400">
-                  <span>{t(`profilePage.calculator.preflightEvidence.${readiness.evidence_source}`)}</span>
-                  <span aria-hidden="true" className="text-slate-600">·</span>
-                  <span>{t(`profilePage.calculator.preflightMapping.${readiness.mapping_source}`)}</span>
-                  {readiness.mapping_confidence ? (
-                    <>
-                      <span aria-hidden="true" className="text-slate-600">·</span>
-                      <span>{t(`profilePage.calculator.preflightConfidence.${readiness.mapping_confidence}`)}</span>
-                    </>
-                  ) : null}
-                  {readiness.required_length_mm != null && readiness.required_length_mm > 0 ? (
-                    <>
-                      <span aria-hidden="true" className="text-slate-600">·</span>
-                      <span>{t('profilePage.calculator.preflightLength', { value: formatLength(readiness.required_length_mm) })}</span>
-                    </>
-                  ) : null}
-                  {readiness.required_volume_cm3 != null && readiness.required_volume_cm3 > 0 ? (
-                    <>
-                      <span aria-hidden="true" className="text-slate-600">·</span>
-                      <span>{t('profilePage.calculator.preflightVolume', { value: readiness.required_volume_cm3.toFixed(2) })}</span>
-                    </>
-                  ) : null}
-                </div>
+              {/* Explain only what is not self-evident: an uncertain match or a weight the
+                  file did not provide. When both are solid the person needs no footnote. */}
+              {readiness && (readiness.evidence_source !== 'gcode' || readiness.mapping_confidence === 'low') ? (
+                <p className="mt-2 text-[10px] leading-4 text-amber-200/70">
+                  {[
+                    readiness.evidence_source !== 'gcode'
+                      ? t(`profilePage.calculator.preflightEvidence.${readiness.evidence_source}`)
+                      : null,
+                    readiness.mapping_confidence === 'low'
+                      ? t(`profilePage.calculator.preflightConfidence.${readiness.mapping_confidence}`)
+                      : null,
+                  ].filter(Boolean).join(' · ')}
+                </p>
               ) : null}
 
-              {readiness ? <div className="mt-3"><ReadinessFacts line={readiness} /></div> : null}
+              <div className="mt-3 grid gap-3 lg:grid-cols-2 lg:items-start">
+              <div className="min-w-0">
+              {readiness ? <ReadinessFacts line={readiness} /> : null}
 
               {readiness?.status === 'ready' || readiness?.status === 'ready_with_change' ? (
                 <p className="mt-2 text-xs text-emerald-200/80">
@@ -437,29 +439,36 @@ export const MaterialPreflightPanel = ({
 
               {showReplacementSuggestions ? (
                 <div className="mt-3 rounded-xl border border-amber-400/20 bg-amber-400/[0.055] p-2.5">
-                  <div className="flex items-start gap-2">
+                  <p className="flex items-start gap-2 text-[11px] leading-4 text-amber-100/90">
                     <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-300" />
-                    <div className="min-w-0">
-                      <p className="text-[11px] font-semibold text-amber-100">
-                        {t('profilePage.calculator.preflightReplacementSuggestions')}
-                      </p>
-                      <p className="mt-0.5 text-[10px] leading-4 text-amber-100/65">
-                        {t('profilePage.calculator.preflightReplacementWarning')}
-                      </p>
-                    </div>
-                  </div>
+                    <span>
+                      {t('profilePage.calculator.preflightReplacementLead', { name: replacementLeadName })}
+                    </span>
+                  </p>
+                  <p className="mt-1 pl-5 text-[10px] leading-4 text-amber-100/65">
+                    {t('profilePage.calculator.preflightReplacementWarning')}
+                  </p>
                   <div className="mt-2 grid gap-1.5 lg:grid-cols-2">
                     {replacementSuggestions.map((suggestion) => {
                       const spool = spools.find((item) => item.id === suggestion.spool_id);
                       if (!spool) return null;
                       return (
-                        <div
+                        <button
                           key={`${line.lineId}-replacement-${suggestion.spool_id}`}
-                          className="min-w-0 rounded-xl border border-amber-400/10 bg-black/15 px-2.5 py-2"
+                          type="button"
+                          onClick={() => onReplaceSpool(line.lineId, suggestion.spool_id)}
+                          title={t('profilePage.calculator.preflightReplacementPick')}
+                          className="min-w-0 rounded-xl border border-amber-400/10 bg-black/15 px-2.5 py-2 text-left transition hover:border-amber-300/30 hover:bg-amber-400/[0.08]"
                         >
-                          <div className="flex min-w-0 flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5">
-                            <p className="min-w-0 truncate text-[11px] font-medium text-slate-100" title={formatSpoolLabel(spool)}>
-                              {formatSpoolLabel(spool)}
+                          <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-2 gap-y-0.5">
+                            <p className="flex min-w-0 items-center gap-1.5 text-[11px] font-medium text-slate-100" title={formatSpoolLabel(spool)}>
+                              {spool.filament?.color_hex ? (
+                                <span
+                                  className="h-2.5 w-2.5 shrink-0 rounded-full border border-white/30"
+                                  style={{ backgroundColor: spool.filament.color_hex }}
+                                />
+                              ) : null}
+                              <span className="min-w-0 truncate">{formatSpoolLabel(spool)}</span>
                             </p>
                             <span className="shrink-0 text-[9px] font-semibold uppercase tracking-[0.08em] text-amber-300/75">
                               {t(`profilePage.calculator.preflightSuggestionRelation.${suggestion.relation}`)}
@@ -476,15 +485,19 @@ export const MaterialPreflightPanel = ({
                               ? ` · ${t('profilePage.calculator.preflightReservedElsewhere', { value: weight(suggestion.reserved_elsewhere_g) })}`
                               : ''}
                           </p>
-                        </div>
+                          <p className="mt-1 text-[10px] font-medium text-amber-200/80">
+                            {t('profilePage.calculator.preflightReplacementPick')}
+                          </p>
+                        </button>
                       );
                     })}
                   </div>
                 </div>
               ) : null}
 
-              {readiness && readiness.allocations.length > 0 ? (
-                <div className="mt-3 space-y-1.5">
+              </div>
+              {readiness && readiness.allocations.length > 1 ? (
+                <div className="min-w-0 space-y-1.5">
                   {readiness.allocations.map((allocation) => {
                     const spool = spools.find((item) => item.id === allocation.spool_id);
                     const remainingIsTrusted = allocation.remaining_status === 'known';
@@ -507,12 +520,14 @@ export const MaterialPreflightPanel = ({
                         }`}>
                           {remainingIsTrusted ? (allocation.sequence_index ?? '—') : <AlertTriangle className="h-3 w-3" />}
                         </span>
-                        <div className="min-w-0">
+                        <div className="min-w-0 flex-1">
                           <div className="flex min-w-0 flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
                             <p className="min-w-0 truncate text-[11px] font-medium text-slate-200" title={spool ? formatSpoolLabel(spool) : `#${allocation.spool_id}`}>
-                              {spool ? formatSpoolLabel(spool) : `#${allocation.spool_id}`}
+                              {(readiness?.allocations.length ?? 0) > 1
+                                ? (spool ? formatSpoolLabel(spool) : `#${allocation.spool_id}`)
+                                : t('profilePage.calculator.preflightPlanTitle')}
                             </p>
-                            <p className={`shrink-0 text-[10px] tabular-nums ${remainingIsTrusted ? 'text-slate-400' : 'text-amber-200'}`}>
+                            <span className={`shrink-0 text-[10px] tabular-nums ${remainingIsTrusted ? 'text-slate-400' : 'text-amber-200'}`}>
                               {remainingIsTrusted
                                 ? t('profilePage.calculator.preflightAllocation', {
                                     consume: weight(allocation.expected_consumption_g),
@@ -521,7 +536,7 @@ export const MaterialPreflightPanel = ({
                                 : t('profilePage.calculator.preflightUntrustedAllocation', {
                                     remaining: weight(allocation.remaining_before_g),
                                   })}
-                            </p>
+                            </span>
                           </div>
                           <p className={`mt-0.5 text-[10px] leading-4 ${remainingIsTrusted ? 'text-slate-500' : 'text-amber-100/65'}`}>
                             {t(`profilePage.calculator.preflightRemainingEvidence.${allocation.remaining_evidence}`)}
@@ -540,35 +555,29 @@ export const MaterialPreflightPanel = ({
                               ? ` · ${t('profilePage.calculator.preflightAllocationCost', { value: allocationCost })}`
                               : ''}
                           </p>
+                          {line.selectedSpoolIds.includes(allocation.spool_id) ? (
+                            <div className="mt-1 flex justify-end">
+                              <button
+                                type="button"
+                                onClick={() => onSpoolIdsChange(
+                                  line.lineId,
+                                  line.selectedSpoolIds.filter((id) => id !== allocation.spool_id),
+                                )}
+                                className="text-[10px] font-medium text-cyan-200 transition hover:text-white"
+                              >
+                                {t('profilePage.calculator.preflightRemoveSpool')}
+                              </button>
+                            </div>
+                          ) : null}
                         </div>
                       </div>
                     );
                   })}
                 </div>
               ) : null}
+              </div>
 
               <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
-                {selectedSpools.map((spool) => {
-                  return (
-                    <span
-                      key={`${line.lineId}-${spool.id}`}
-                      className="inline-flex min-w-0 items-center justify-between gap-2 rounded-xl border border-white/10 bg-white/[0.045] px-2.5 py-2 text-[11px] text-slate-200 sm:max-w-sm"
-                    >
-                      <span className="min-w-0 truncate" title={formatSpoolLabel(spool)}>
-                        {formatSpoolLabel(spool)}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => onSpoolIdsChange(line.lineId, line.selectedSpoolIds.filter((id) => id !== spool.id))}
-                        className="shrink-0 rounded-md p-0.5 text-slate-500 transition hover:bg-white/10 hover:text-white"
-                        aria-label={t('profilePage.calculator.preflightRemoveSpool')}
-                      >
-                        <X className="h-3.5 w-3.5" />
-                      </button>
-                    </span>
-                  );
-                })}
-
                 {candidates.length > 0 ? (
                   <label className="relative min-w-0 sm:max-w-sm sm:flex-1">
                     <Plus className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-cyan-300" />
@@ -611,10 +620,7 @@ export const MaterialPreflightPanel = ({
                   ) : null}
                 </div>
               ) : null}
-            </article>
+            </div>
           );
-        })}
-      </div>
-    </section>
-  );
+  }
 };

@@ -30,7 +30,7 @@ export const PrinterCostRow: React.FC<PrinterCostRowProps> = ({
   return (
     <div
       id="calculator-printer-row"
-      className="rounded-[1.35rem] border border-white/10 bg-white/[0.04] p-4"
+      className="rounded-2xl border border-white/20 bg-white/10 p-4"
     >
       <div className="flex flex-wrap items-center gap-3">
         <span className="flex items-center gap-2 text-sm font-medium text-slate-300">

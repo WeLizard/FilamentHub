@@ -4,6 +4,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -11,6 +12,7 @@ import {
   Calculator,
   BriefcaseBusiness,
   Boxes,
+  AlertTriangle,
   ChevronDown,
   CheckCircle2,
   Check,
@@ -36,6 +38,7 @@ import {
   crmAPI,
   filamentsAPI,
   physicalPrintersAPI,
+  printerProfilesAPI,
   spoolsAPI,
   type PhysicalPrinter,
   type PrinterEconomics,
@@ -50,6 +53,7 @@ import { LayeredPrinterIcon } from '../components/icons/LayeredPrinterIcon';
 import { Printer3DIcon } from '../components/icons/Printer3DIcon';
 import {
   MaterialPreflightPanel,
+  MaterialReadinessDetails,
   type MaterialPreflightUiLine,
 } from '../components/calculator/MaterialPreflightPanel';
 import { toast } from '../components/Toast';
@@ -2086,6 +2090,38 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
   });
   const printers = printersQuery.data ?? [];
 
+  const ownedPrinterProfilesQuery = useQuery({
+    queryKey: ['calculator', 'printer-profiles', user?.id],
+    queryFn: () => printerProfilesAPI.listAllOwned(user!.id),
+    enabled: Boolean(user?.id) && hasCalculatorAccess,
+    staleTime: 60_000,
+  });
+
+  // The file already names the machine preset it was sliced with. Asking again is asking
+  // the person to repeat what the slicer wrote down.
+  useEffect(() => {
+    if (selectedPrinterId !== '' || !parsedGcode || printers.length === 0) return;
+    const profiles = ownedPrinterProfilesQuery.data ?? [];
+    if (profiles.length === 0) return;
+    const settingId = parsedGcode.printer_settings_id?.trim();
+    const model = parsedGcode.printer_model?.trim();
+    // setting_id breaks the moment a preset is renamed; printer_model survives that.
+    const matchedProfiles = profiles.filter((profile) => {
+      if (settingId && profile.setting_id === settingId) return true;
+      return Boolean(model) && profile.name === model;
+    });
+    if (matchedProfiles.length === 0) return;
+    const matchedIds = new Set(matchedProfiles.map((profile) => profile.id));
+    const matchedPrinters = printers.filter(
+      (printer) => printer.printer_profile_ids.some((id) => matchedIds.has(id)),
+    );
+    // Two machines on one preset is a real setup; picking one of them would be a guess.
+    if (matchedPrinters.length !== 1) return;
+    setSelectedPrinterId(matchedPrinters[0].id);
+    setPrinterPickedFrom(tc('printerPickedFromGcode'));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [parsedGcode, printers, ownedPrinterProfilesQuery.data, selectedPrinterId]);
+
   const printerEconomicsQuery = useQuery({
     queryKey: ['printer-economics', selectedPrinterId],
     queryFn: () => physicalPrintersAPI.economics(selectedPrinterId as number),
@@ -2180,7 +2216,11 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
             mappingSource: 'explicit',
             confidence: null,
             requiresSpoolChoice: false,
-            priceResolved: currencyMatches && defaults.spoolPrice != null,
+            // The purchase price covers the whole spool, so without its weight the cost per
+            // gram is unknown. Assuming a kilogram would quietly undercharge a 750 g spool.
+            priceResolved: currencyMatches
+              && defaults.spoolPrice != null
+              && (spool.price == null || defaults.spoolWeightKg != null),
           };
         }
         if (selectionValue.startsWith('filament:')) {
@@ -2345,9 +2385,71 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
     if (payload) preflightMutation.mutate(payload);
   };
 
+  // Readiness is part of the answer, not an extra button. The key is the set of material
+  // lines, so editing a price or a spool does not fire another server round-trip.
+  const autoPreflightLinesKeyRef = useRef<string | null>(null);
+  const autoPreflightRunsRef = useRef(0);
+  useEffect(() => {
+    if (parsedJobs.length === 0 || materialLines.length === 0) return;
+    // A failed check must not retry in a loop, and a pending one is already on its way.
+    if (preflightMutation.isPending || preflightMutation.error) return;
+    const linesKey = materialLines
+      .map((line) => `${line.line_id}:${line.spool_id ?? ''}`)
+      .join('|');
+    // Other actions drop the whole result; without this the status vanishes from every
+    // row at once and the person is left guessing.
+    const staleResult = preflightMutation.data == null;
+    if (!staleResult && autoPreflightLinesKeyRef.current === linesKey) return;
+    if (autoPreflightLinesKeyRef.current === linesKey) {
+      // Same materials, result keeps disappearing: something else resets it. Re-running
+      // forever would put every open tab on the server, so stop after a few tries and
+      // leave the manual refresh.
+      if (autoPreflightRunsRef.current >= 3) return;
+      autoPreflightRunsRef.current += 1;
+    } else {
+      autoPreflightRunsRef.current = 1;
+    }
+    autoPreflightLinesKeyRef.current = linesKey;
+    runPreflight();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    materialLines,
+    parsedJobs,
+    preflightMutation.data,
+    preflightMutation.isPending,
+    preflightMutation.error,
+  ]);
+
   const handlePreflightSpoolIdsChange = (lineId: string, spoolIds: number[]) => {
     const next = { ...preflightSpoolIdsByLine, [lineId]: spoolIds };
     setPreflightSpoolIdsByLine(next);
+    // Dropping the spool the row was priced from would leave the picker naming a spool the
+    // print no longer uses. Move it to the one that stays instead of letting them diverge.
+    setMaterialLines((currentLines) =>
+      currentLines.map((line) => {
+        if (line.line_id !== lineId) return line;
+        if (line.spool_id == null || spoolIds.includes(line.spool_id)) return line;
+        const nextSpool = spoolIds
+          .map((spoolId) => availableSpools.find((item) => item.id === spoolId))
+          .find((spool): spool is UserSpool => spool != null);
+        if (!nextSpool) return line;
+        const defaults = deriveUserSpoolDefaults(nextSpool);
+        const priceCurrency = resolveUserSpoolPriceCurrency(nextSpool);
+        const currencyMatches = !priceCurrency || priceCurrency === calcCurrencyRef.current;
+        return {
+          ...line,
+          selectionValue: `spool:${nextSpool.id}`,
+          spool_id: nextSpool.id,
+          filament_id: nextSpool.filament_id,
+          spool_price: currencyMatches ? (defaults.spoolPrice ?? 0) : 0,
+          spool_weight_kg: defaults.spoolWeightKg ?? 1,
+          price_source: nextSpool.price != null ? 'spool' : 'filamenthub',
+          priceResolved: currencyMatches
+            && defaults.spoolPrice != null
+            && (nextSpool.price == null || defaults.spoolWeightKg != null),
+        };
+      }),
+    );
     runPreflight(next);
   };
 
@@ -2386,26 +2488,57 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
     if (preflightRequest) preflightMutation.mutate(preflightRequest);
   };
 
-  const applyParsedJobs = (jobs: ParsedJobState[], warning: string | null) => {
+  const applyParsedJobs = (
+    jobs: ParsedJobState[],
+    warning: string | null,
+    mode: 'replace' | 'append' = 'replace',
+  ) => {
     calculateMutation.reset();
     preflightMutation.reset();
-    setPreflightSpoolIdsByLine({});
     priceManuallyEditedRef.current = false;
     lastAutoMatchedGcodeKeyRef.current = null;
     lastBuiltMaterialJobsKeyRef.current = null;
-    setSelectedSpoolId('');
     setAutoMaterialMatch(null);
-    setMaterialPriceSource('unset');
     setMaterialLinesError(null);
+    setBatchParseWarning(warning);
+
+    if (mode === 'append' && parsedJobs.length > 0) {
+      // A second file joins the same order instead of throwing the first one away:
+      // work already done on the existing plates must survive.
+      const existingKeys = new Set(parsedJobs.map((job) => job.key));
+      const added = jobs.filter((job) => !existingKeys.has(job.key));
+      if (added.length === 0) return;
+      setParsedJobs([...parsedJobs, ...added]);
+      setJobConfigs((current) => [...current, ...added.map(createDefaultJobConfig)]);
+      return;
+    }
+
+    setPreflightSpoolIdsByLine({});
+    setSelectedSpoolId('');
+    setMaterialPriceSource('unset');
     setParsedJobs(jobs);
     setJobConfigs(jobs.map(createDefaultJobConfig));
     setParsedGcode(jobs[0]?.parsed ?? null);
-    setBatchParseWarning(warning);
     setForm((prev) => ({
       ...applyParsedJobsToForm(prev, jobs),
       selectedFilamentId: '',
       spoolPrice: 0,
     }));
+  };
+
+  const handleRemoveParsedJob = (jobKey: string) => {
+    const remaining = parsedJobs.filter((job) => job.key !== jobKey);
+    calculateMutation.reset();
+    preflightMutation.reset();
+    lastBuiltMaterialJobsKeyRef.current = null;
+    setParsedJobs(remaining);
+    setJobConfigs((current) => current.filter((config) => config.jobKey !== jobKey));
+    setMaterialLines((current) => current.filter((line) => line.job_key !== jobKey));
+    setParsedGcode(remaining[0]?.parsed ?? null);
+    if (remaining.length === 0) {
+      setBatchParseWarning(null);
+      setPreflightSpoolIdsByLine({});
+    }
   };
 
   const handleGcodeFiles = async (files: File[]) => {
@@ -2417,6 +2550,7 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
             .replace('{{failed}}', String(batch.failedFiles.length))
             .replace('{{skipped}}', String(batch.skippedCount))
         : null,
+      parsedJobs.length > 0 ? 'append' : 'replace',
     );
   };
 
@@ -3129,7 +3263,31 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
           const catalogFilament = catalogFilaments.find(
             (filament) => filament.id === candidate.filamentId,
           );
-          if (catalogFilament) {
+          // The filament is identified exactly, so a spool of that same filament is not a
+          // guess. One spool is bound outright; several mean the person picks which one
+          // the remaining weight comes off.
+          const ownSpools = availableSpools.filter(
+            (item) => item.filament_id === candidate.filamentId,
+          );
+          const ownSpool = ownSpools.length === 1 ? ownSpools[0] : null;
+          if (ownSpool) {
+            const defaults = deriveUserSpoolDefaults(ownSpool);
+            const priceCurrency = resolveUserSpoolPriceCurrency(ownSpool);
+            const currencyMatches = !priceCurrency || priceCurrency === calcCurrencyRef.current;
+            baseLine.selectionValue = `spool:${ownSpool.id}`;
+            baseLine.spool_id = ownSpool.id;
+            baseLine.spool_price = currencyMatches ? (defaults.spoolPrice ?? 0) : 0;
+            baseLine.spool_weight_kg = defaults.spoolWeightKg ?? 1;
+            baseLine.price_source = ownSpool.price != null ? 'spool' : 'filamenthub';
+            baseLine.priceResolved = currencyMatches
+              && defaults.spoolPrice != null
+              && (ownSpool.price == null || defaults.spoolWeightKg != null);
+          } else if (ownSpools.length > 1) {
+            baseLine.requiresSpoolChoice = true;
+            if (catalogFilament) {
+              baseLine.selectionValue = `filament:${catalogFilament.id}`;
+            }
+          } else if (catalogFilament) {
             const defaults = deriveCatalogFilamentDefaults(catalogFilament);
             const brandCurrency = catalogFilament.currency
               ? normalizeCurrency(catalogFilament.currency)
@@ -3485,6 +3643,7 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
           onEconomicsPrinterChange={setEconomicsPrinterId}
           insidePlugin={isPluginEmbed()}
           onJobSelect={handleJobSelect}
+          onJobRemove={handleRemoveParsedJob}
           onJobConfigChange={handleJobConfigChange}
           onMaterialLineSelection={handleMaterialLineSelection}
           onMaterialLinePriceChange={handleMaterialLinePriceChange}
@@ -3628,6 +3787,7 @@ interface CalculatorViewProps {
   /** The slice list needs the plugin's bridge to reach a file at all. */
   insidePlugin: boolean;
   onJobSelect: (jobKey: string) => void;
+  onJobRemove: (jobKey: string) => void;
   onJobConfigChange: (
     jobKey: string,
     patch: Partial<Omit<CalculatorJobConfig, 'jobKey'>>,
@@ -3708,6 +3868,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
   onEconomicsPrinterChange,
   insidePlugin,
   onJobSelect,
+  onJobRemove,
   onJobConfigChange,
   onMaterialLineSelection,
   onMaterialLinePriceChange,
@@ -3732,33 +3893,18 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
   const [postprocessChecked, setPostprocessChecked] = useState<Record<string, boolean>>({});
   const [customPresets, setCustomPresets] = useState<PricingPreset[]>(() => loadCustomPricingPresets());
   const [presetNameInput, setPresetNameInput] = useState('');
-  const [expandedMaterialLineIds, setExpandedMaterialLineIds] = useState<Set<string>>(new Set());
-  const [materialPickerLineIds, setMaterialPickerLineIds] = useState<Set<string>>(new Set());
+  const [openObjectJobKeys, setOpenObjectJobKeys] = useState<Set<string>>(new Set());
+  const [openMaterialRowIds, setOpenMaterialRowIds] = useState<Set<string>>(new Set());
   const [singleMaterialCostOpen, setSingleMaterialCostOpen] = useState(true);
   const resultsRef = useRef<HTMLDivElement | null>(null);
   const scrollToResultAfterEstimateRef = useRef(false);
 
+  // A row that still needs a price opens by itself so the missing input is reachable
+  // without hunting for it in a long list.
   useEffect(() => {
-    setExpandedMaterialLineIds((current) => {
+    setOpenMaterialRowIds((current) => {
       const availableIds = new Set(materialLines.map((line) => line.line_id));
-      const next = new Set([...current].filter((lineId) => availableIds.has(lineId)));
-      materialLines.forEach((line) => {
-        if (!line.priceResolved) next.add(line.line_id);
-      });
-      return next;
-    });
-  }, [materialLines]);
-
-  useEffect(() => {
-    setMaterialPickerLineIds((current) => {
-      const availableIds = new Set(materialLines.map((line) => line.line_id));
-      const next = new Set([...current].filter((lineId) => availableIds.has(lineId)));
-      materialLines.forEach((line) => {
-        if (!line.selectionValue || line.selectionValue === 'manual' || line.requiresSpoolChoice) {
-          next.add(line.line_id);
-        }
-      });
-      return next;
+      return new Set([...current].filter((lineId) => availableIds.has(lineId)));
     });
   }, [materialLines]);
 
@@ -3900,6 +4046,10 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
     : parsedGcode
       ? [{ key: 'single-job', parsed: parsedGcode }]
       : [];
+  const activeJobKey = activeParsedJobKey ?? displayJobs[0]?.key;
+  const visibleJobs = displayJobs.length > 1
+    ? displayJobs.filter((job) => job.key === activeJobKey)
+    : displayJobs;
   const hasParsedJobs = displayJobs.length > 0;
   const isBatchMode = displayJobs.length > 1;
   const hasManualCalculationData = !hasParsedJobs
@@ -3981,15 +4131,21 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
       selectedMaterialForLine?.color_hex,
     );
     const selectedMaterialColor = materialColors.primary;
+    const materialTypeInName = Boolean(
+      selectedMaterialForLine?.material_type
+      && materialName.toLowerCase().includes(selectedMaterialForLine.material_type.toLowerCase()),
+    );
     const selectedMaterialDetails = selectedMaterialForLine
       ? [
           selectedMaterialForLine.brand_name,
-          selectedMaterialForLine.material_type,
+          materialTypeInName ? null : selectedMaterialForLine.material_type,
           selectedMaterialForLine.color_name || selectedMaterialColor,
         ].filter(Boolean).join(' · ')
       : null;
     const technicalLabel = line.label && line.label !== materialName ? line.label : null;
-    const materialPickerOpen = materialPickerLineIds.has(line.line_id);
+    const rowOpen = openMaterialRowIds.has(line.line_id);
+    const preflightUiLine = preflightLines.find((item) => item.lineId === line.line_id) ?? null;
+    const lineReadiness = preflightResult?.lines.find((item) => item.line_id === line.line_id) ?? null;
     const identityResolution = parsedMaterial?.identity_resolution;
     const roleWeights = resolveMaterialRoleWeights(line);
     const roleWeightSource = line.role_weight_source ?? line.support_weight_source;
@@ -4022,11 +4178,40 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
     return (
     <div
       key={line.line_id}
-      className="min-w-0 rounded-[1.15rem] border border-white/[0.08] bg-black/15 p-3.5"
+      className="min-w-0 py-3"
       title={technicalLabel ?? undefined}
     >
-      <div className="mb-3 flex min-w-0 items-start justify-between gap-3">
-        <div className="min-w-0">
+      <button
+        type="button"
+        aria-expanded={rowOpen}
+        onClick={() => setOpenMaterialRowIds((current) => {
+          const next = new Set(current);
+          if (next.has(line.line_id)) next.delete(line.line_id);
+          else next.add(line.line_id);
+          return next;
+        })}
+        className="flex w-full min-w-0 items-start justify-between gap-3 text-left"
+      >
+        <div className="flex min-w-0 items-start gap-2">
+          {/* The slot keeps its width while the check is being recalculated, otherwise the
+              whole row shifts sideways every time a spool changes. */}
+          <span
+            title={lineReadiness ? t(`profilePage.calculator.preflightStatus.${lineReadiness.status}`) : undefined}
+            className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center ${
+              !lineReadiness
+                ? 'text-transparent'
+                : lineReadiness.status === 'ready' || lineReadiness.status === 'ready_with_change'
+                  ? 'text-emerald-300'
+                  : 'text-amber-300'
+            }`}
+          >
+            {lineReadiness && (lineReadiness.status === 'ready' || lineReadiness.status === 'ready_with_change')
+              ? <CheckCircle2 className="h-4 w-4" />
+              : lineReadiness
+                ? <AlertTriangle className="h-4 w-4" />
+                : null}
+          </span>
+          <div className="min-w-0">
           <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
             {selectedMaterialColor ? (
               <span className="relative mr-0.5 inline-flex h-4 w-4 shrink-0" title={
@@ -4054,6 +4239,21 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
             <p className="shrink-0 text-xs font-medium tabular-nums text-cyan-100">
               {line.weight_g.toFixed(2)} {tc('grams')}
             </p>
+            {roleWeightSource === 'gcode_extrusion_roles' ? (
+              <span className="shrink-0 text-[10px] leading-4 text-slate-500">
+                {[
+                  supportWeightG != null && supportWeightG > 0
+                    ? `${supportWeightLabel} ${supportWeightG.toFixed(2)}`
+                    : null,
+                  brimWeightG != null && brimWeightG > 0
+                    ? `${tc('materialBrimWeight')} ${brimWeightG.toFixed(2)}`
+                    : null,
+                  primeTowerWeightG != null && primeTowerWeightG > 0
+                    ? `${tc('materialPrimeTowerWeight')} ${primeTowerWeightG.toFixed(2)}`
+                    : null,
+                ].filter(Boolean).join(' · ')}
+              </span>
+            ) : null}
           </div>
           <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px]">
             {line.tool_index != null ? (
@@ -4072,60 +4272,34 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                 {identityBadge.label}
               </span>
             ) : null}
-            {supportWeightG != null && supportWeightG > 0 ? (
-              <span className="shrink-0 font-medium text-violet-200/85">
-                {supportWeightLabel}: {supportWeightG.toFixed(2)} {tc('grams')}
-              </span>
-            ) : null}
-            {brimWeightG != null && brimWeightG > 0 ? (
-              <span className="shrink-0 font-medium text-sky-200/85">
-                {tc('materialBrimWeight')}: {brimWeightG.toFixed(2)} {tc('grams')}
-              </span>
-            ) : null}
-            {primeTowerWeightG != null && primeTowerWeightG > 0 ? (
-              <span className="shrink-0 font-medium text-orange-200/85">
-                {tc('materialPrimeTowerWeight')}: {primeTowerWeightG.toFixed(2)} {tc('grams')}
-              </span>
-            ) : null}
+          </div>
           </div>
         </div>
-        <span className={`shrink-0 text-right text-[10px] font-medium leading-4 ${line.priceResolved ? 'text-emerald-300/75' : 'text-amber-300/80'}`}>
-          {line.priceResolved ? tc(`materialLineSource.${line.price_source}`) : tc('materialLineNeedsPrice')}
+        <span className="flex shrink-0 items-start gap-2">
+          <span className="text-right">
+            <span className={`block text-sm font-semibold tabular-nums ${line.priceResolved ? 'text-white' : 'text-amber-300/80'}`}>
+              {line.priceResolved && line.spool_weight_kg > 0
+                ? formatCurrency((line.weight_g / 1000) * (line.spool_price / line.spool_weight_kg))
+                : tc('materialLineNeedsPrice')}
+            </span>
+            {line.priceResolved ? (
+              <span className="mt-0.5 block text-[10px] leading-4 text-slate-500">
+                {formatCurrency(line.spool_price)} / {line.spool_weight_kg} {tc('kg')} · {tc(`materialLineSource.${line.price_source}`)}
+              </span>
+            ) : null}
+          </span>
+          <ChevronDown className={`mt-0.5 h-4 w-4 shrink-0 text-slate-500 transition-transform ${rowOpen ? 'rotate-180' : ''}`} />
         </span>
-      </div>
-      <div className="space-y-3">
-        <button
-          type="button"
-          className="inline-flex items-center gap-1.5 text-xs font-medium text-cyan-200 transition-colors hover:text-white"
-          onClick={() => setMaterialPickerLineIds((current) => {
-            const next = new Set(current);
-            if (next.has(line.line_id)) next.delete(line.line_id);
-            else next.add(line.line_id);
-            return next;
-          })}
-        >
-          {materialPickerOpen ? tc('hideMaterialPicker') : tc('changeMaterial')}
-          <ChevronDown className={`h-3.5 w-3.5 transition-transform ${materialPickerOpen ? 'rotate-180' : ''}`} />
-        </button>
-        {materialPickerOpen ? (
+      </button>
+      {rowOpen ? (
+      <div className="mt-3 space-y-3 rounded-xl border border-white/15 bg-black/25 p-3">
+        <div className="flex flex-wrap items-end gap-3">
         <select
-          className={`${inputClass} min-w-0 max-w-full py-2.5 text-sm`}
+          className={`${inputClass} min-w-0 py-1.5 text-xs sm:max-w-[24rem]`}
           value={line.selectionValue}
           onChange={(event) => {
             const selectionValue = event.target.value;
             onMaterialLineSelection(line.line_id, selectionValue);
-            setExpandedMaterialLineIds((current) => {
-              const next = new Set(current);
-              if (!selectionValue || selectionValue === 'manual') next.add(line.line_id);
-              else next.delete(line.line_id);
-              return next;
-            });
-            setMaterialPickerLineIds((current) => {
-              const next = new Set(current);
-              if (!selectionValue || selectionValue === 'manual') next.add(line.line_id);
-              else next.delete(line.line_id);
-              return next;
-            });
           }}
         >
           {line.requiresSpoolChoice ? <option value="">{tc('chooseExactSpool')}</option> : null}
@@ -4145,49 +4319,38 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
             ))}
           </optgroup>
         </select>
-        ) : null}
-        <div className="flex min-h-9 flex-wrap items-center justify-between gap-3 rounded-xl border border-white/[0.06] bg-white/[0.035] px-3 py-2">
-          <p className="text-xs text-slate-300">
-            {line.priceResolved
-              ? `${formatCurrency(line.spool_price)} · ${line.spool_weight_kg} ${tc('kg')}`
-              : tc('materialLineNeedsPrice')}
-          </p>
-          <button
-            type="button"
-            className="inline-flex items-center gap-1.5 text-xs font-medium text-cyan-200 transition-colors hover:text-white"
-            onClick={() => setExpandedMaterialLineIds((current) => {
-              const next = new Set(current);
-              if (next.has(line.line_id)) next.delete(line.line_id);
-              else next.add(line.line_id);
-              return next;
-            })}
-          >
-            {expandedMaterialLineIds.has(line.line_id) ? tc('hideMaterialCost') : tc('editMaterialCost')}
-            <ChevronDown className={`h-3.5 w-3.5 transition-transform ${expandedMaterialLineIds.has(line.line_id) ? 'rotate-180' : ''}`} />
-          </button>
+        <div className={`grid w-[21rem] grid-cols-2 gap-2 ${compactFieldsClass}`}>
+          <FieldBlock label={tc('spoolPrice')}>
+            <InputWithSuffix
+              value={line.spool_price}
+              onChange={(value) => onMaterialLinePriceChange(line.line_id, value)}
+              placeholder="1200"
+              suffix={currencySymbol(quoteProfile.currency)}
+            />
+          </FieldBlock>
+          <FieldBlock label={tc('spoolWeight')}>
+            <InputWithSuffix
+              value={Number((line.spool_weight_kg * 1000).toFixed(0))}
+              onChange={(value) => onMaterialLineSpoolWeightChange(line.line_id, value / 1000)}
+              placeholder="1000"
+              suffix={tc('grams')}
+              step="50"
+            />
+          </FieldBlock>
         </div>
-        {expandedMaterialLineIds.has(line.line_id) ? (
-          <div className="grid grid-cols-1 gap-3 border-t border-white/[0.06] pt-3 sm:grid-cols-2">
-            <FieldBlock label={tc('spoolPrice')}>
-              <InputWithSuffix
-                value={line.spool_price}
-                onChange={(value) => onMaterialLinePriceChange(line.line_id, value)}
-                placeholder="1200"
-                suffix={currencySymbol(quoteProfile.currency)}
-              />
-            </FieldBlock>
-            <FieldBlock label={tc('spoolWeight')}>
-              <InputWithSuffix
-                value={line.spool_weight_kg}
-                onChange={(value) => onMaterialLineSpoolWeightChange(line.line_id, value)}
-                placeholder="1"
-                suffix={tc('kg')}
-                step="0.1"
-              />
-            </FieldBlock>
-          </div>
+        </div>
+        {preflightUiLine ? (
+          <MaterialReadinessDetails
+            line={preflightUiLine}
+            readiness={lineReadiness}
+            spools={spools}
+            formatSpoolLabel={buildSpoolLabel}
+            onSpoolIdsChange={onPreflightSpoolIdsChange}
+            onReplaceSpool={(lineId, spoolId) => onMaterialLineSelection(lineId, `spool:${spoolId}`)}
+          />
         ) : null}
       </div>
+      ) : null}
     </div>
     );
   };
@@ -4774,21 +4937,21 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                     onDragStateChange(false);
                     await onFileSelect(event.dataTransfer.files);
                   }}
-                  className={`block min-h-[9.5rem] w-full cursor-pointer rounded-[1.5rem] border border-dashed p-7 text-left transition-all md:p-8 ${
+                  className={`block w-full cursor-pointer rounded-2xl border border-dashed p-4 text-left transition-all ${
                     dragActive
                       ? 'border-cyan-300/80 bg-cyan-400/12 shadow-[0_25px_50px_-35px_rgba(34,211,238,0.65)]'
                       : 'border-cyan-400/30 bg-[radial-gradient(circle_at_top,rgba(34,211,238,0.14),transparent_52%),linear-gradient(180deg,rgba(15,23,42,0.8),rgba(2,6,23,0.85))] hover:border-cyan-300/50'
                   }`}
                 >
-                  <div className="flex min-h-[5.5rem] items-center gap-5">
-                    <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-[1.2rem] border border-white/10 bg-white/5">
-                      {isParsingGcode ? <Loader2 className="h-6 w-6 animate-spin text-cyan-300" /> : <Upload className="h-6 w-6 text-cyan-300" />}
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/5">
+                      {isParsingGcode ? <Loader2 className="h-4 w-4 animate-spin text-cyan-300" /> : <Upload className="h-4 w-4 text-cyan-300" />}
                     </div>
-                    <div>
-                      <p className="text-base font-semibold text-white">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-white">
                         {isParsingGcode ? tc('uploadingGcode') : tc('gcodeDropTitle')}
                       </p>
-                      <p className="mt-2 text-xs uppercase tracking-[0.16em] text-slate-400">{tc('supportedFormats')}</p>
+                      <p className="mt-0.5 text-[10px] uppercase tracking-[0.14em] text-slate-500">{tc('supportedFormats')}</p>
                     </div>
                   </div>
                 </label>
@@ -4832,6 +4995,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                       </div>
                       <span className="text-xs text-slate-500">{tc('perPlateControlHint')}</span>
                     </div>
+                    {isBatchMode || batchSummary.printRunCount > 1 ? (
                     <div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-4">
                       <BatchMetric
                         icon={<Boxes className="h-4 w-4" />}
@@ -4856,6 +5020,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                         value={formatBatchWeight(batchSummary.partyWeightG)}
                       />
                     </div>
+                    ) : null}
                   </div>
                 </div>
               ) : null}
@@ -4872,13 +5037,81 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                 title={hasParsedJobs ? tc('orderCompositionTitle') : tc('workspaceMaterialTitle')}
               >
                 {hasParsedJobs ? (
-                  <div className={`grid min-w-0 grid-cols-1 gap-4 ${isBatchMode ? 'xl:grid-cols-2' : ''}`}>
+                  <div className="mb-4">
+                    <PrinterCostRow
+                      printers={printers}
+                      selectedPrinterId={selectedPrinterId}
+                      onSelect={onPrinterSelect}
+                      economics={printerEconomics}
+                      currency={quoteProfile.currency}
+                      pickedFromLabel={printerPickedFrom}
+                    />
+                  </div>
+                ) : null}
+                {/* Several plates stack into a wall of cards; one job at a time keeps the
+                    screen readable and gives each its own place for a printer later. */}
+                {hasParsedJobs && displayJobs.length > 1 ? (
+                  <div className="mb-4 flex flex-wrap gap-2">
                     {displayJobs.map((job, jobIndex) => {
+                      const isActive = job.key === activeJobKey;
+                      return (
+                        <button
+                          key={`job-tab-${job.key}`}
+                          type="button"
+                          aria-pressed={isActive}
+                          onClick={() => onJobSelect(job.key)}
+                          className={`min-w-0 rounded-xl border px-3 py-2 text-left transition ${
+                            isActive
+                              ? 'border-cyan-400/40 bg-cyan-400/10 text-white'
+                              : 'border-white/10 bg-white/[0.04] text-slate-300 hover:border-white/20 hover:text-white'
+                          }`}
+                        >
+                          <span className="block max-w-[14rem] truncate text-xs font-medium">
+                            {quoteTitleFromFileName(job.parsed.file_name, `${tc('jobFallbackTitle')} ${jobIndex + 1}`)}
+                          </span>
+                          <span className="mt-0.5 block text-[10px] text-slate-500">
+                            {formatHoursShort(
+                              (getJobConfig(job).printTimeSeconds) / 3600,
+                              t('profilePage.calc.h'),
+                              t('profilePage.calc.min'),
+                            )}
+                            {' · '}
+                            {formatBatchWeight(job.parsed.total_filament_weight_g ?? 0)}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : null}
+                {hasParsedJobs ? (
+                  <div className="grid min-w-0 grid-cols-1 gap-4">
+                    {visibleJobs.map((job, jobIndex) => {
                       const jobLines = materialLines.filter((line) => line.job_key === job.key);
+                      const jobLinesByWeight = [...jobLines].sort((a, b) => b.weight_g - a.weight_g);
+                      const jobRoleTotals = jobLines.reduce(
+                        (totals, line) => {
+                          if ((line.role_weight_source ?? line.support_weight_source) !== 'gcode_extrusion_roles') {
+                            return totals;
+                          }
+                          const roles = resolveMaterialRoleWeights(line);
+                          return {
+                            support: totals.support + (roles.support ?? 0),
+                            brim: totals.brim + (roles.brim ?? 0),
+                            primeTower: totals.primeTower + (roles.prime_tower ?? 0),
+                          };
+                        },
+                        { support: 0, brim: 0, primeTower: 0 },
+                      );
+                      const jobTotalWeightG = job.parsed.total_filament_weight_g ?? 0;
+                      const jobServiceWeightG = jobRoleTotals.support + jobRoleTotals.brim + jobRoleTotals.primeTower;
+                      const servicePercent = jobTotalWeightG > 0
+                        ? Math.round((jobServiceWeightG / jobTotalWeightG) * 100)
+                        : 0;
                       const objectCount = Math.max(1, job.parsed.object_count ?? 1);
                       const objectGroups = job.parsed.object_groups ?? [];
                       const config = getJobConfig(job);
                       const canSplitGroups = canSplitCalculatorObjectGroups(objectGroups);
+                      const objectsOpen = config.quoteMode === 'groups' || openObjectJobKeys.has(job.key);
                       const quoteMode = config.quoteMode === 'groups'
                         && objectGroups.length > 1
                         && !canSplitGroups
@@ -4901,6 +5134,13 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                               onClick={() => onJobSelect(job.key)}
                               className="flex min-w-0 items-start gap-3 text-left"
                             >
+                              {job.parsed.thumbnail_data_url ? (
+                                <img
+                                  src={job.parsed.thumbnail_data_url}
+                                  alt={tc('parsedPreviewAlt')}
+                                  className="h-20 w-20 shrink-0 rounded-xl border border-white/10 bg-slate-950/60 object-contain"
+                                />
+                              ) : null}
                               {isBatchMode ? (
                                 <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/[0.05] text-xs font-semibold text-slate-300">
                                   {jobIndex + 1}
@@ -4913,7 +5153,6 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                                 <span className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-400">
                                   <span>{formatHoursShort(config.printTimeSeconds / 3600, t('profilePage.calc.h'), t('profilePage.calc.min'))}</span>
                                   <span>{formatBatchWeight(job.parsed.total_filament_weight_g ?? 0)}</span>
-                                  <span>{tc('jobObjectCount').replace('{{count}}', String(objectCount))}</span>
                                   {job.parsed.plate_index != null ? (
                                     <span>{tc('parsedPlateOption').replace('{{index}}', String(job.parsed.plate_index))}</span>
                                   ) : null}
@@ -4921,7 +5160,16 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                               </span>
                             </button>
 
-                            <label className="flex shrink-0 items-center justify-between gap-3 rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 py-2 sm:w-[10.5rem]">
+                            <div className="ml-auto flex shrink-0 items-start gap-3">
+                            <label className="flex shrink-0 items-center gap-3 rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 py-2">
+                              <span className="border-r border-white/10 pr-3 text-right text-[11px] leading-4 text-slate-400">
+                                <span className="block tabular-nums">
+                                  {tc('plateObjectsTotal')}: <strong className="font-medium text-slate-200">{objectCount * config.repeats}</strong>
+                                </span>
+                                <span className="mt-0.5 block tabular-nums">
+                                  {tc('plateQuoteQuantity')}: <strong className="font-medium text-slate-200">{outputPerRun * config.repeats}</strong>
+                                </span>
+                              </span>
                               <span>
                                 <span className="block text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">{tc('plateRepeats')}</span>
                                 <span className="mt-0.5 block text-[11px] text-slate-400">{tc('plateRepeatsShort')}</span>
@@ -4937,13 +5185,18 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                                 })}
                               />
                             </label>
+                            {displayJobs.length > 1 ? (
+                              <button
+                                type="button"
+                                onClick={() => onJobRemove(job.key)}
+                                className="shrink-0 self-start rounded-lg border border-white/10 px-2.5 py-1.5 text-xs font-medium text-slate-400 transition hover:border-red-400/30 hover:text-red-200"
+                              >
+                                {tc('removeJob')}
+                              </button>
+                            ) : null}
+                            </div>
                           </div>
 
-                          <div className="grid grid-cols-3 border-t border-white/[0.07] bg-white/[0.02]">
-                            <JobFact label={tc('plateRunsTotal')} value={String(config.repeats)} />
-                            <JobFact label={tc('plateObjectsTotal')} value={String(objectCount * config.repeats)} />
-                            <JobFact label={tc('plateQuoteQuantity')} value={String(outputPerRun * config.repeats)} />
-                          </div>
 
                           {objectCount > 1 ? (
                             <div className="border-t border-white/[0.07] p-4">
@@ -4953,6 +5206,24 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                                   <p className="mt-1 text-xs leading-5 text-slate-400">
                                     {objectGroups.length > 1 ? tc('jobObjectsHint') : tc('jobObjectsSingleHint')}
                                   </p>
+                                  {quoteMode === 'set' && objectGroups.length > 0 ? (
+                                    <button
+                                      type="button"
+                                      aria-expanded={objectsOpen}
+                                      onClick={() => setOpenObjectJobKeys((current) => {
+                                        const next = new Set(current);
+                                        if (next.has(job.key)) next.delete(job.key);
+                                        else next.add(job.key);
+                                        return next;
+                                      })}
+                                      className="mt-1.5 inline-flex items-center gap-1.5 text-xs font-medium text-cyan-200 transition-colors hover:text-white"
+                                    >
+                                      {objectsOpen
+                                        ? tc('jobObjectsHide')
+                                        : tc('jobObjectsShow').replace('{{count}}', String(objectGroups.length))}
+                                      <ChevronDown className={`h-3.5 w-3.5 transition-transform ${objectsOpen ? 'rotate-180' : ''}`} />
+                                    </button>
+                                  ) : null}
                                 </div>
                                 {objectGroups.length > 1 ? (
                                   <div className="inline-flex rounded-xl border border-white/[0.08] bg-black/20 p-1">
@@ -4977,8 +5248,8 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                                 ) : null}
                               </div>
 
-                              {objectGroups.length > 0 ? (
-                                <div className={`mt-3 grid gap-2 ${objectGroups.length > 1 ? '2xl:grid-cols-2' : ''}`}>
+                              {objectsOpen && objectGroups.length > 0 ? (
+                                <div className="mt-3 grid min-w-0 gap-x-6 rounded-2xl border border-white/20 bg-white/10 px-3 py-1 lg:grid-cols-2 2xl:grid-cols-3">
                                   {objectGroups.map((group, groupIndex) => {
                                     const groupWeightG = (job.parsed.total_filament_weight_g ?? 0)
                                       * Math.max(0, group.extrusion_share ?? 0);
@@ -5019,12 +5290,27 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                                     return (
                                       <div
                                         key={`${job.key}-${group.name}-${groupIndex}`}
-                                        className="grid min-w-0 gap-3 rounded-xl border border-white/[0.07] bg-white/[0.035] px-3 py-2.5 sm:grid-cols-[minmax(0,1fr)_4.75rem_4.75rem] sm:items-center"
+                                        className="min-w-0 border-b border-white/10 py-2 last:border-b-0"
                                       >
-                                        <div className="min-w-0">
-                                          <p className="truncate text-sm font-medium text-slate-100">{group.name || tc('jobObjectFallback')}</p>
+                                        <div className="flex min-w-0 items-baseline gap-x-2">
+                                          <p className="min-w-0 truncate text-sm font-medium text-slate-100">{group.name || tc('jobObjectFallback')}</p>
+                                          <span className="shrink-0 text-xs tabular-nums text-slate-400">× {group.count}</span>
+                                          {config.repeats > 1 ? (
+                                            <span className="shrink-0 text-xs tabular-nums text-slate-500">
+                                              {tc('groupPartyLabel')}: {group.count * config.repeats}
+                                            </span>
+                                          ) : null}
                                           {groupMaterialUsages.length > 0 ? (
-                                            <div className="mt-1 flex flex-wrap gap-1.5">
+                                            <span className="ml-auto shrink-0 text-xs font-medium tabular-nums text-slate-300">
+                                              {groupMaterialUsages
+                                                .reduce((total, usage) => total + usage.weightG, 0)
+                                                .toFixed(2)} {tc('grams')}
+                                            </span>
+                                          ) : null}
+                                        </div>
+                                        <div className="mt-1 min-w-0">
+                                          {groupMaterialUsages.length > 0 ? (
+                                            <div className="flex flex-wrap gap-1.5">
                                               {groupMaterialUsages.map((usage) => (
                                                  <span
                                                    key={`${job.key}-${group.name}-t${usage.toolIndex}`}
@@ -5055,32 +5341,24 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                                               ))}
                                             </div>
                                           ) : groupWeightG > 0 ? (
-                                            <p className="mt-0.5 text-[11px] text-slate-500">
+                                            <p className="text-[11px] text-slate-500">
                                               {tc('groupModelMaterialEstimate').replace('{{weight}}', groupWeightG.toFixed(2))}
                                             </p>
                                           ) : null}
                                         </div>
-                                        <span className="text-center tabular-nums">
-                                          <strong className="block text-sm font-semibold text-slate-100">{group.count}</strong>
-                                          <span className="mt-0.5 block text-[10px] leading-3 text-slate-500">{tc('groupPerPlateLabel')}</span>
-                                        </span>
-                                        <span className="rounded-lg border border-white/[0.08] bg-black/20 px-2 py-1.5 text-center tabular-nums">
-                                          <strong className="block text-sm font-semibold text-white">{group.count * config.repeats}</strong>
-                                          <span className="mt-0.5 block text-[10px] leading-3 text-slate-500">{tc('groupPartyLabel')}</span>
-                                        </span>
                                       </div>
                                     );
                                   })}
                                 </div>
-                              ) : (
+                              ) : objectGroups.length === 0 ? (
                                 <p className="mt-3 text-xs leading-5 text-amber-200/80">
                                   {tc('objectGroupsUnavailable').replace('{{count}}', String(objectCount))}
                                 </p>
-                              )}
+                              ) : null}
 
                               {objectGroups.length > 1 && !canSplitGroups ? (
                                 <p className="mt-3 text-xs leading-5 text-amber-200/80">{tc('groupSplitUnavailable')}</p>
-                              ) : objectGroups.length > 1 ? (
+                              ) : objectsOpen && objectGroups.length > 1 ? (
                                 <p className="mt-3 text-xs leading-5 text-slate-500">
                                   {quoteMode === 'groups' ? tc('groupSplitActiveHint') : tc('groupSetActiveHint')}
                                 </p>
@@ -5089,8 +5367,10 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                           ) : null}
 
                           <details className="group/time border-t border-white/[0.07]">
-                            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 marker:hidden">
-                              <span className="text-xs text-slate-400">
+                            <summary className="flex cursor-pointer list-none items-center gap-3 px-4 py-2 marker:hidden">
+                              {/* Fixed width so the control keeps its place whether the run is
+                                  "2 ч 5 мин" or "14 ч 42 мин". */}
+                              <span className="w-[13rem] shrink-0 text-xs text-slate-400">
                                 {tc('plateTime')}: <strong className="font-medium text-slate-200">{formatHoursShort(config.printTimeSeconds / 3600, t('profilePage.calc.h'), t('profilePage.calc.min'))}</strong>
                               </span>
                               <span className="inline-flex items-center gap-1.5 text-xs font-medium text-cyan-200">
@@ -5098,7 +5378,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                                 <ChevronDown className="h-3.5 w-3.5 transition-transform group-open/time:rotate-180" />
                               </span>
                             </summary>
-                            <div className="grid grid-cols-3 gap-3 border-t border-white/[0.06] px-4 py-4">
+                            <div className={`grid w-[19rem] grid-cols-3 gap-2 border-t border-white/[0.06] px-4 py-3 ${compactFieldsClass}`}>
                               <FieldBlock label={t('profilePage.calc.hours')}>
                                 <NumberInput
                                   value={timeParts.hours}
@@ -5137,22 +5417,52 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                           <div className="border-t border-white/[0.07] p-4">
                             <p className="mb-3 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">{tc('jobMaterials')}</p>
                             {jobLines.length > 0 ? (
-                              <div
-                                className={`grid min-w-0 grid-cols-1 gap-3 ${
-                                  jobLines.length > 2
-                                    ? 'lg:grid-cols-2 2xl:grid-cols-3'
-                                    : jobLines.length > 1
-                                      ? 'lg:grid-cols-2'
-                                      : ''
-                                }`}
-                              >
-                                {jobLines.map(renderMaterialLine)}
+                              <div className="min-w-0 divide-y divide-white/10 rounded-2xl border border-white/20 bg-white/10 px-4">
+                                {jobLinesByWeight.map(renderMaterialLine)}
                               </div>
                             ) : (
                               <p className="text-xs leading-5 text-slate-400">
                                 {isFilamentsLoading || isSpoolsLoading ? tc('loadingMaterials') : tc('jobMaterialsUnavailable')}
                               </p>
                             )}
+
+                            {jobServiceWeightG > 0 && jobTotalWeightG > 0 ? (
+                              <div className="mt-3 rounded-2xl border border-white/20 bg-white/10 px-4 py-3">
+                                <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-xs">
+                                  <span className="font-medium text-slate-200">{tc('serviceUsageTitle')}</span>
+                                  <span className="font-medium tabular-nums text-amber-200">
+                                    {jobServiceWeightG.toFixed(0)} / {jobTotalWeightG.toFixed(0)} {tc('grams')} — {servicePercent}%
+                                  </span>
+                                </div>
+                                <div className="mt-2 flex h-1.5 overflow-hidden rounded-full bg-white/10">
+                                  <span className="bg-emerald-400" style={{ width: `${((jobTotalWeightG - jobServiceWeightG) / jobTotalWeightG) * 100}%` }} />
+                                  <span className="bg-orange-400" style={{ width: `${(jobRoleTotals.primeTower / jobTotalWeightG) * 100}%` }} />
+                                  <span className="bg-violet-400" style={{ width: `${(jobRoleTotals.support / jobTotalWeightG) * 100}%` }} />
+                                  <span className="bg-sky-400" style={{ width: `${(jobRoleTotals.brim / jobTotalWeightG) * 100}%` }} />
+                                </div>
+                                <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-500">
+                                  <span className="inline-flex items-center gap-1.5 font-medium text-emerald-200">
+                                    <span className="h-2 w-2 rounded-full bg-emerald-400" />
+                                    {tc('serviceUsageInPart')}: {(jobTotalWeightG - jobServiceWeightG).toFixed(0)} {tc('grams')}
+                                  </span>
+                                  <span className="inline-flex items-center gap-1.5">
+                                    <span className="h-2 w-2 rounded-full bg-orange-400" />
+                                    {tc('materialPrimeTowerWeight')}: {jobRoleTotals.primeTower.toFixed(0)} {tc('grams')}
+                                  </span>
+                                  <span className="inline-flex items-center gap-1.5">
+                                    <span className="h-2 w-2 rounded-full bg-violet-400" />
+                                    {tc('materialSupportWeight')}: {jobRoleTotals.support.toFixed(0)} {tc('grams')}
+                                  </span>
+                                  <span className="inline-flex items-center gap-1.5">
+                                    <span className="h-2 w-2 rounded-full bg-sky-400" />
+                                    {tc('materialBrimWeight')}: {jobRoleTotals.brim.toFixed(0)} {tc('grams')}
+                                  </span>
+                                </div>
+                                {jobServiceWeightG > jobTotalWeightG - jobServiceWeightG ? (
+                                  <p className="mt-2 text-[11px] leading-4 text-slate-500">{tc('serviceUsageResliceHint')}</p>
+                                ) : null}
+                              </div>
+                            ) : null}
                           </div>
                         </article>
                       );
@@ -5339,6 +5649,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                 ) : null}
               </WorkspacePanel>
 
+            {!hasParsedJobs ? (
             <WorkspacePanel
               step="3"
               title={tc('workspaceProductionTitle')}
@@ -5368,6 +5679,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                 pickedFromLabel={printerPickedFrom}
               />
             </WorkspacePanel>
+            ) : null}
             </div>
             </div>
 
@@ -5384,9 +5696,13 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                   <div className="rounded-[1.3rem] border border-white/10 bg-white/5 p-4">
                     <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                       <div className="min-w-0">
-                        <p className="text-sm font-semibold text-white">{parsedGcode.file_name}</p>
+                        {/* With one job the picker below already names the file; two copies of
+                            the same name is noise. */}
+                        {parsedJobs.length > 1 ? null : (
+                          <p className="text-sm font-semibold text-white">{parsedGcode.file_name}</p>
+                        )}
                         {parsedJobs.length > 1 ? (
-                          <label className="mt-3 flex max-w-xs items-center gap-3 text-xs text-slate-300">
+                          <label className="flex max-w-xs items-center gap-3 text-xs text-slate-300">
                             <span className="shrink-0">{tc('parsedJob')}</span>
                             <select
                               className={`${inputClass} py-2 text-sm`}
@@ -5426,19 +5742,10 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                         </div>
                       </div>
 
-                      {parsedGcode.thumbnail_data_url ? (
-                        <div className="w-full max-w-[12rem] overflow-hidden rounded-[1rem] border border-white/10 bg-slate-950/60">
-                          <img
-                            src={parsedGcode.thumbnail_data_url}
-                            alt={tc('parsedPreviewAlt')}
-                            className="block h-auto w-full object-contain"
-                          />
-                        </div>
-                      ) : null}
                     </div>
                   </div>
 
-                  <div className={`grid grid-cols-1 gap-4 ${showParsedMaterialsSection ? 'lg:grid-cols-3' : 'lg:grid-cols-2'}`}>
+                  <div className={`grid grid-cols-1 items-start gap-4 ${showParsedMaterialsSection ? 'lg:grid-cols-3' : 'lg:grid-cols-2'}`}>
                     <CompactSummarySection title={tc('parsedGroupPrint')}>
                       <CompactMetric
                         label={tc('parsedPrintTime')}
@@ -5495,7 +5802,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                         label={tc('parsedLength')}
                         value={
                           parsedGcode.total_filament_length_mm != null
-                            ? `${(parsedGcode.total_filament_length_mm / 1000).toFixed(2)} m`
+                            ? `${(parsedGcode.total_filament_length_mm / 1000).toFixed(2)} ${tc('unitMeters')}`
                             : '—'
                         }
                       />
@@ -5503,7 +5810,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                         label={tc('parsedVolume')}
                         value={
                           parsedGcode.total_filament_volume_cm3 != null
-                            ? `${parsedGcode.total_filament_volume_cm3.toFixed(2)} cm³`
+                            ? `${parsedGcode.total_filament_volume_cm3.toFixed(2)} ${tc('unitCm3')}`
                             : '—'
                         }
                       />
@@ -5532,7 +5839,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                       ) : null}
                       <CompactMetric
                         label={tc('parsedMaxHeight')}
-                        value={parsedGcode.max_z_height_mm != null ? `${parsedGcode.max_z_height_mm} mm` : '—'}
+                        value={parsedGcode.max_z_height_mm != null ? `${parsedGcode.max_z_height_mm} ${tc('unitMm')}` : '—'}
                       />
                     </CompactSummarySection>
 
@@ -5589,13 +5896,14 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                         />
 
                         {parsedGcode.materials.length > 1 ? (
-                          <div className="mt-4 flex flex-wrap gap-2">
+                          <div className="mt-3 flex flex-col gap-1.5">
                             {parsedGcode.materials.map((material, index) => {
                               const materialColor = normalizeFilamentColor(material.color);
                               return (
                               <div
                                 key={`${material.name ?? material.type ?? 'material'}-${index}`}
-                                className="inline-flex items-center gap-2 rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-2 text-xs text-cyan-100"
+                                title={buildParsedMaterialLabel(material, tc('unknownMaterial'))}
+                                className="flex w-full min-w-0 items-center gap-2 rounded-lg border border-cyan-400/20 bg-cyan-400/10 px-2 py-1 text-[10px] leading-4 text-cyan-100"
                                 style={materialColor ? {
                                   borderColor: filamentColorAlpha(materialColor, '66'),
                                   backgroundColor: filamentColorAlpha(materialColor, '1f'),
@@ -5603,15 +5911,19 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                               >
                                 {materialColor ? (
                                   <span
-                                    className="h-3 w-3 shrink-0 rounded-full border border-white/30"
+                                    className="h-2.5 w-2.5 shrink-0 rounded-full border border-white/30"
                                     style={{ backgroundColor: materialColor }}
                                     title={`${tc('colorFromGcode')}: ${materialColor}`}
                                   />
                                 ) : null}
-                                <span className="font-semibold text-white">
+                                <span className="min-w-0 flex-1 truncate font-medium text-white">
                                   {buildParsedMaterialLabel(material, tc('unknownMaterial'))}
                                 </span>
-                                {material.weight_g != null ? ` · ${material.weight_g.toFixed(2)} ${tc('grams')}` : ''}
+                                {material.weight_g != null ? (
+                                  <span className="shrink-0 whitespace-nowrap tabular-nums">
+                                    {material.weight_g.toFixed(2)} {tc('grams')}
+                                  </span>
+                                ) : null}
                               </div>
                               );
                             })}
@@ -5943,15 +6255,22 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                             ?? (roleCosts.length > 0 ? line.non_support_cost : null);
                           return (
                             <div key={line.line_id} className="text-xs">
-                              <div className="flex items-start justify-between gap-3">
-                                <span className="min-w-0 text-slate-400">
-                                  {line.job_key && jobTitleByKey.has(line.job_key) ? (
-                                    <span className="mr-1.5 text-slate-500">{jobTitleByKey.get(line.job_key)} ·</span>
-                                  ) : null}
-                                  <span className="text-slate-200">{line.label || (line.tool_index != null ? `T${line.tool_index}` : tc('unknownMaterial'))}</span>
-                                  <span className="ml-1.5 whitespace-nowrap">{line.weight_g.toFixed(2)} {tc('grams')}</span>
+                              <div className="flex min-w-0 items-baseline gap-2">
+                                {/* The job name only tells them apart when there are several;
+                                    on a single plate it just repeats before every material. */}
+                                {isBatchMode && line.job_key && jobTitleByKey.has(line.job_key) ? (
+                                  <span className="shrink-0 text-slate-500">{jobTitleByKey.get(line.job_key)}</span>
+                                ) : null}
+                                <span
+                                  className="min-w-0 flex-1 truncate text-slate-200"
+                                  title={line.label ?? undefined}
+                                >
+                                  {line.label || (line.tool_index != null ? `T${line.tool_index}` : tc('unknownMaterial'))}
                                 </span>
-                                <span className="shrink-0 font-medium text-white">{formatCurrency(line.cost)}</span>
+                                <span className="shrink-0 whitespace-nowrap tabular-nums text-slate-400">
+                                  {line.weight_g.toFixed(2)} {tc('grams')}
+                                </span>
+                                <span className="w-20 shrink-0 text-right font-medium tabular-nums text-white">{formatCurrency(line.cost)}</span>
                               </div>
                               {visibleRoleCosts.length > 0
                                 && otherWeightG != null
@@ -6080,8 +6399,10 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
       </div>
       ) : null}
 
-      {showCalculateAction ? (
-        <div className="fixed bottom-5 right-5 z-40 max-w-[calc(100vw-2.5rem)] lg:bottom-8 lg:right-8">
+      {/* Rendered outside <main>: it sits in its own stacking context, so a floating
+          button inside it always slides under the footer no matter how high its z-index. */}
+      {showCalculateAction ? createPortal(
+        <div className="fixed bottom-5 right-5 z-[70] max-w-[calc(100vw-2.5rem)] lg:bottom-8 lg:right-8">
           <button
             type="button"
             data-testid="calculator-floating-action"
@@ -6098,7 +6419,8 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                   : tc('completeMaterialsAction')}
             </span>
           </button>
-        </div>
+        </div>,
+        document.body,
       ) : null}
     </div>
   );
@@ -6800,13 +7122,6 @@ const BatchMetric: React.FC<{
       <span>{label}</span>
     </div>
     <p className={`mt-2 font-semibold tracking-tight text-white ${accent ? 'text-xl md:text-2xl' : 'text-lg'}`}>{value}</p>
-  </div>
-);
-
-const JobFact: React.FC<{ label: string; value: string }> = ({ label, value }) => (
-  <div className="border-r border-white/[0.07] px-3 py-2.5 last:border-r-0">
-    <p className="text-[9px] font-semibold uppercase tracking-[0.13em] text-slate-500">{label}</p>
-    <p className="mt-1 text-sm font-semibold text-slate-100">{value}</p>
   </div>
 );
 

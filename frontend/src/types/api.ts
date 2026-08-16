@@ -1283,7 +1283,7 @@ export interface CalculatorPreflightSpoolAllocation {
 export interface CalculatorPreflightSpoolSuggestion {
   spool_id: number;
   filament_id: number;
-  relation: 'same_filament' | 'same_line' | 'same_material_type';
+  relation: 'same_filament' | 'same_line' | 'same_type_and_color' | 'same_material_type';
   requires_reslice: boolean;
   remaining_g: number;
   reserved_elsewhere_g: number;

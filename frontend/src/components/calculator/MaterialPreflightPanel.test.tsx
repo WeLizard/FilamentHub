@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { UserSpool } from '../../api/client';
 import type { CalculatorPreflightResponse } from '../../types/api';
-import { MaterialPreflightPanel } from './MaterialPreflightPanel';
+import { MaterialPreflightPanel, MaterialReadinessDetails } from './MaterialPreflightPanel';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -120,36 +120,41 @@ const result: CalculatorPreflightResponse = {
 };
 
 describe('MaterialPreflightPanel alternatives', () => {
-  it('adds an exact spool but keeps a reslice candidate informational', () => {
+  it('adds an exact spool and lets a reslice candidate be picked with a warning', () => {
     const onSpoolIdsChange = vi.fn();
+    const onReplaceSpool = vi.fn();
     render(
-      <MaterialPreflightPanel
-        lines={[{
+      <MaterialReadinessDetails
+        line={{
           lineId: 'tool-0',
           label: 'ABS Black',
           toolIndex: 0,
           filamentId: 10,
           selectedSpoolIds: [1],
-        }]}
+        }}
+        readiness={result.lines[0]}
         spools={[spool(1, 10), spool(2, 10), spool(3, 11)]}
-        result={result}
-        safetyBufferPercent={10}
-        isLoading={false}
-        error={null}
-        canRun
         formatSpoolLabel={(item) => `Spool ${item.id}`}
-        onSafetyBufferChange={vi.fn()}
         onSpoolIdsChange={onSpoolIdsChange}
-        onRefresh={vi.fn()}
+        onReplaceSpool={onReplaceSpool}
       />,
     );
 
     fireEvent.click(screen.getByRole('button', { name: /Spool 2/ }));
     expect(onSpoolIdsChange).toHaveBeenCalledWith('tool-0', [1, 2]);
 
-    const replacement = screen.getByText('Spool 3');
-    expect(replacement.closest('button')).toBeNull();
+    // Picking a different filament is allowed, but the file was sliced for the old one,
+    // so the estimate must be flagged instead of silently reused.
     expect(screen.getByText('profilePage.calculator.preflightReplacementWarning')).toBeTruthy();
+    const replacement = screen.getByText('Spool 3').closest('button');
+    expect(replacement).not.toBeNull();
+    expect(replacement?.textContent).toContain('profilePage.calculator.preflightReplacementPick');
+
+    // Topping up adds a spool; a reslice candidate replaces the filament instead.
+    onSpoolIdsChange.mockClear();
+    fireEvent.click(replacement as HTMLElement);
+    expect(onSpoolIdsChange).not.toHaveBeenCalled();
+    expect(onReplaceSpool).toHaveBeenCalledWith('tool-0', 3);
   });
 
   it('shows an incompatible printer check as advisory evidence', () => {

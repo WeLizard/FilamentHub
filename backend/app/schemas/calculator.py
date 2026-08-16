@@ -244,7 +244,9 @@ class CalculatorPreflightSpoolSuggestion(BaseModel):
 
     spool_id: int
     filament_id: int
-    relation: Literal["same_filament", "same_line", "same_material_type"]
+    relation: Literal[
+        "same_filament", "same_line", "same_type_and_color", "same_material_type"
+    ]
     requires_reslice: bool
     remaining_g: float = Field(ge=0)
     reserved_elsewhere_g: float = Field(default=0, ge=0)
