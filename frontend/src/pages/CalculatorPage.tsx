@@ -3313,10 +3313,13 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
           baseLine.mappingSource = 'automatic';
           baseLine.priceResolved = currencyMatches && defaults.spoolPrice != null;
         } else if ((material.slicer_profile_price_per_kg ?? 0) > 0) {
+          // Slicer profiles carry whatever placeholder their author left there — 20 per
+          // kilogram is common. Offer it as a starting number, but never let it pass for a
+          // confirmed price: it goes straight into what the customer is charged.
           baseLine.spool_price = material.slicer_profile_price_per_kg!;
           baseLine.spool_weight_kg = 1;
           baseLine.price_source = 'slicer';
-          baseLine.priceResolved = true;
+          baseLine.priceResolved = false;
         }
         nextLines.push(baseLine);
       });
@@ -4278,13 +4281,14 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
         <span className="flex shrink-0 items-start gap-2">
           <span className="text-right">
             <span className={`block text-sm font-semibold tabular-nums ${line.priceResolved ? 'text-white' : 'text-amber-300/80'}`}>
-              {line.priceResolved && line.spool_weight_kg > 0
+              {line.spool_weight_kg > 0 && (line.priceResolved || line.spool_price > 0)
                 ? formatCurrency((line.weight_g / 1000) * (line.spool_price / line.spool_weight_kg))
                 : tc('materialLineNeedsPrice')}
             </span>
-            {line.priceResolved ? (
-              <span className="mt-0.5 block text-[10px] leading-4 text-slate-500">
+            {line.priceResolved || line.spool_price > 0 ? (
+              <span className={`mt-0.5 block text-[10px] leading-4 ${line.priceResolved ? 'text-slate-500' : 'text-amber-300/70'}`}>
                 {formatCurrency(line.spool_price)} / {line.spool_weight_kg} {tc('kg')} · {tc(`materialLineSource.${line.price_source}`)}
+                {line.priceResolved ? '' : ` · ${tc('materialLineConfirmPrice')}`}
               </span>
             ) : null}
           </span>

@@ -8,7 +8,9 @@ import { adminAPI } from '../../api/client';
 import type { CalculatorProfileDefaults } from '../../types/api';
 import { translateApiError } from '../../utils/translateApiError';
 
-type NumericDefaultKey = Exclude<keyof CalculatorProfileDefaults, 'rounding_mode'>;
+type NumericDefaultKey = Exclude<keyof CalculatorProfileDefaults, 'rounding_mode' | 'currency'>;
+
+const DEFAULTS_CURRENCIES = ['RUB', 'USD', 'EUR', 'CNY'] as const;
 
 const DEFAULT_FIELD_GROUPS: Array<{
   titleKey: string;
@@ -106,6 +108,30 @@ export function AdminCalculatorDefaults() {
       <div className="rounded-xl border border-white/10 bg-white/5 p-6">
         {profileDefaults ? (
           <div className="space-y-6">
+            <section>
+              <h3 className="mb-3 text-sm font-semibold text-cyan-100">
+                {t('adminCalculatorDefaults.currencyTitle')}
+              </h3>
+              <label className="block max-w-xs">
+                <span className="mb-1.5 block text-xs font-medium text-slate-400">
+                  {t('adminCalculatorDefaults.currencyLabel')}
+                </span>
+                <select
+                  value={profileDefaults.currency}
+                  onChange={(event) => setProfileDefaults((current) => current
+                    ? { ...current, currency: event.target.value }
+                    : current)}
+                  className="w-full rounded-lg border border-white/10 bg-slate-950/45 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                >
+                  {DEFAULTS_CURRENCIES.map((code) => (
+                    <option key={code} value={code}>{code}</option>
+                  ))}
+                </select>
+              </label>
+              <p className="mt-2 max-w-2xl text-xs leading-5 text-slate-400">
+                {t('adminCalculatorDefaults.currencyHint')}
+              </p>
+            </section>
             {DEFAULT_FIELD_GROUPS.map((group) => (
               <section key={group.titleKey}>
                 <h3 className="mb-3 text-sm font-semibold text-cyan-100">{t(group.titleKey)}</h3>

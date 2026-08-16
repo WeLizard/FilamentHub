@@ -2844,6 +2844,7 @@
       "serviceUsageTitle": "辅助耗材",
       "serviceUsageInPart": "进入制件",
       "serviceUsageResliceHint": "进入制件的耗材不足一半。调整摆放并重新切片可能减少辅助耗材。",
+      "materialLineConfirmPrice": "请确认价格",
       "printerPickedFromGcode": "根据文件中的预设匹配",
       "removeJob": "移除任务",
       "jobObjectsShow": "显示制件（{{count}}）",
@@ -5040,6 +5041,9 @@
   "adminCalculatorDefaults": {
     "title": "初始计算设置",
     "description": "用于新计算器配置的平台初始值。它们不会修改用户已保存的私有成本设置，也与订阅访问权限无关。",
+    "currencyTitle": "数值所用货币",
+    "currencyLabel": "金额所使用的货币",
+    "currencyHint": "只有当用户档案的货币与此一致时，金额才会写入档案。货币不同时仅沿用瓦特、百分比、小时与取整方式，金额由用户自行填写。",
     "rates": "费率与运行",
     "commercial": "商业参数",
     "machine": "设备与功耗",

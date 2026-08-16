@@ -49,8 +49,39 @@ async def set_calculator_profile_defaults(
     return defaults
 
 
+# Amounts of money. Everything else — watts, percentages, hours, rounding mode — means
+# the same thing in every country.
+MONETARY_DEFAULT_FIELDS: frozenset[str] = frozenset(
+    {
+        "electricity_cost_per_kwh",
+        "modeling_rate_per_hour",
+        "postprocessing_rate_per_hour",
+        "printing_rate_per_hour",
+        "amortization_rate_per_hour",
+        "fixed_costs",
+        "bed_prep_cost_per_print",
+        "min_order_price",
+        "round_to_nearest",
+        "printer_purchase_price",
+        "maintenance_cost_per_hour",
+    }
+)
+
+
 def calculator_profile_default_values(
     defaults: CalculatorProfileDefaults,
+    *,
+    profile_currency: str | None = None,
 ) -> dict[str, object]:
-    """Convert validated defaults into UserCalculatorProfile constructor values."""
-    return defaults.model_dump(mode="json")
+    """Convert validated defaults into UserCalculatorProfile constructor values.
+
+    Money is copied only into a profile kept in the same currency. Handing an hourly
+    rate priced in one currency to a shop billing in another does not give them a
+    starting point, it gives them a number that is wrong by the exchange rate.
+    """
+    values = defaults.model_dump(mode="json")
+    defaults_currency = str(values.pop("currency", "RUB")).upper()
+    if profile_currency is not None and profile_currency.upper() != defaults_currency:
+        for field in MONETARY_DEFAULT_FIELDS:
+            values.pop(field, None)
+    return values

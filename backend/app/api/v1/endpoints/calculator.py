@@ -978,7 +978,10 @@ async def reset_calculator_profile_defaults(
         select(UserCalculatorProfile).where(UserCalculatorProfile.user_id == current_user.id)
     )
     defaults: CalculatorProfileDefaults = await get_calculator_profile_defaults(db)
-    values = calculator_profile_default_values(defaults)
+    values = calculator_profile_default_values(
+        defaults,
+        profile_currency=profile.currency if profile is not None else None,
+    )
     if profile is None:
         profile = UserCalculatorProfile(user_id=current_user.id, **values)
         db.add(profile)

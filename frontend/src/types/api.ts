@@ -1686,7 +1686,6 @@ export type CalculatorProfileDefaults = Omit<
   | 'quote_market'
   | 'validity_days'
   | 'disclaimer_mode'
-  | 'currency'
   | 'quote_number_prefix'
   | 'updated_at'
 >;

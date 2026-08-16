@@ -2849,6 +2849,7 @@
       "serviceUsageTitle": "Service usage",
       "serviceUsageInPart": "into the part",
       "serviceUsageResliceHint": "Less than half of the filament ends up in the part. A different plate arrangement and another slice may cut the service usage.",
+      "materialLineConfirmPrice": "confirm the price",
       "printerPickedFromGcode": "matched by the preset in the file",
       "removeJob": "Remove job",
       "jobObjectsShow": "Show items ({{count}})",
@@ -5046,6 +5047,9 @@
   "adminCalculatorDefaults": {
     "title": "Starting calculation settings",
     "description": "Platform values for a new calculator profile. They never change a user's saved private economics and are independent from subscription access.",
+    "currencyTitle": "Currency of these values",
+    "currencyLabel": "Currency the amounts are entered in",
+    "currencyHint": "Monetary values reach a user profile only when its currency matches this one. Under a different currency only watts, percentages, hours and the rounding mode carry over — the amounts are filled in by the person.",
     "rates": "Rates and operation",
     "commercial": "Commercial settings",
     "machine": "Equipment and power",

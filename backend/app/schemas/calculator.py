@@ -866,6 +866,9 @@ class CalculatorProfileUpdate(BaseModel):
 class CalculatorProfileDefaults(BaseModel):
     """Platform starting economics, never an implicit overwrite of a user profile."""
 
+    # The money below is meaningless without the currency it was entered in: 170 rub/h
+    # handed to someone billing in euro is not a starting point, it is a wrong number.
+    currency: str = Field("RUB", min_length=3, max_length=4)
     electricity_cost_per_kwh: float = Field(6.0, ge=0)
     printer_power_w: float = Field(350.0, gt=0)
     modeling_rate_per_hour: float = Field(934.0, ge=0)
