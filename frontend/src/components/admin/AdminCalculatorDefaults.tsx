@@ -254,9 +254,12 @@ export function AdminCalculatorDefaults() {
 
   const handleScopeChange = (value: string | number) => {
     const next = String(value);
-    // The dropdown clears its selection when the filter is emptied; a scope always
-    // points at something.
-    if (!next) return;
+    // Clearing means "back to the base row" rather than nothing: a scope always points
+    // at something, and a cross that did nothing at all was worse than no cross.
+    if (!next) {
+      setScope('global');
+      return;
+    }
     if (next !== 'global' && !(next in countryDefaults.countries)) {
       setCountryDefaults((current) => ({
         countries: {
