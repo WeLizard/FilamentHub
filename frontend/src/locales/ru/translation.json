@@ -5023,7 +5023,7 @@
       "bundleReady": "готов ({{size}} MB)",
       "bundleMissing": "не найден",
       "bundleLegacy": "без сведений об источнике",
-      "bundleMissingHint": "Bundle не приехал с деплоем. Запустите scripts/build_catalog_source_orca.py локально и закоммитьте backend/data/catalog_sources/orca/bundle.zip.",
+      "bundleMissingHint": "Архив не приехал с деплоем. Соберите его пунктом 12 в scripts/deploy-server.ps1, залейте на сервер в backend/data/catalog_sources/orca/bundle.zip и задеплойте: в образ он попадает только при пересборке. В гит архив не кладётся намеренно.",
       "bundleVendors": "Вендоров в bundle",
       "systemPrinters": "Системных принтеров в БД",
       "upstreamRevision": "Версия Orca",

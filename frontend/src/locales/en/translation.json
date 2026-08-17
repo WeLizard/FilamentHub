@@ -4854,7 +4854,7 @@
       "bundleReady": "ready ({{size}} MB)",
       "bundleMissing": "not found",
       "bundleLegacy": "source metadata missing",
-      "bundleMissingHint": "Bundle was not shipped with deploy. Run scripts/build_catalog_source_orca.py locally and commit backend/data/catalog_sources/orca/bundle.zip.",
+      "bundleMissingHint": "The archive did not ship with the deploy. Build it with item 12 in scripts/deploy-server.ps1, upload it to the server at backend/data/catalog_sources/orca/bundle.zip and deploy: it only enters the image on a rebuild. The archive is deliberately kept out of git.",
       "bundleVendors": "Vendors in bundle",
       "systemPrinters": "System printers in DB",
       "upstreamRevision": "Orca revision",

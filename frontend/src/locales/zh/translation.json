@@ -4848,7 +4848,7 @@
       "bundleReady": "就绪 ({{size}} MB)",
       "bundleMissing": "未找到",
       "bundleLegacy": "缺少来源信息",
-      "bundleMissingHint": "预设包未随部署一起发送。本地运行 scripts/build_catalog_source_orca.py 并提交 backend/data/catalog_sources/orca/bundle.zip。",
+      "bundleMissingHint": "预设包未随部署一起发送。用 scripts/deploy-server.ps1 的第 12 项生成，上传到服务器的 backend/data/catalog_sources/orca/bundle.zip，然后部署——只有重新构建镜像才会包含它。该压缩包有意不纳入 git。",
       "bundleVendors": "预设包中的供应商",
       "systemPrinters": "数据库中的系统打印机",
       "upstreamRevision": "Orca 版本",

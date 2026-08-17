@@ -36,6 +36,14 @@ class Settings(BaseSettings):
 
     # Security
     SECRET_KEY: str
+    # Protected stored fields have their own key so that rotating the one that signs
+    # tokens does not make the data unreadable. Empty means "derive it from SECRET_KEY",
+    # which is what every existing database was encrypted with.
+    FIELD_ENCRYPTION_KEY: str = ""
+    # Keys that may still be used to read, newest first. A key stays here until the
+    # data written with it has been rewritten; without this list a rotation is a
+    # one-way trip.
+    FIELD_ENCRYPTION_PREVIOUS_KEYS: list[str] = []
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440  # 24 часа — не банк, удобство важнее
     REFRESH_TOKEN_EXPIRE_DAYS: int = 90  # 90 дней для refresh token
