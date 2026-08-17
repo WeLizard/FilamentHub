@@ -50,7 +50,6 @@ from app.schemas.calculator import (
     CalculatorMaterialRoleCost,
     CalculatorPreflightRequest,
     CalculatorPreflightResponse,
-    CalculatorProfileDefaults,
     CalculatorProfileResponse,
     CalculatorProfileUpdate,
     PricingMethod,
@@ -60,10 +59,8 @@ from app.schemas.calculator import (
 )
 from app.schemas.user import UserResponse
 from app.services.calculator_defaults_service import (
-    apply_country_defaults,
     calculator_profile_default_values,
-    get_calculator_country_defaults,
-    get_calculator_profile_defaults,
+    starting_defaults_for_user,
 )
 from app.services.calculator_gcode_parser import (
     SUPPORTED_GCODE_EXTENSIONS,
@@ -73,6 +70,7 @@ from app.services.calculator_gcode_parser import (
 from app.services.calculator_material_identity_service import (
     resolve_calculator_material_identities,
 )
+from app.services.calculator_power_service import average_power_w
 from app.services.calculator_preflight_service import calculate_material_preflight
 from app.services.subscription_service import (
     TrialAlreadyUsedError,
@@ -145,22 +143,42 @@ def _calculate_tax(value: float, tax_rate_percent: float | None) -> float:
     return value * (tax_rate_percent / 100.0)
 
 
+def _job_or_order(job_value: float | None, order_value: float | None) -> float | None:
+    """A plate's own figure, falling back to the one entered for the whole order."""
+    return job_value if job_value is not None else order_value
+
+
+def _order_average_power_w(data: CalculatorEstimateRequest) -> float | None:
+    """Average draw for an order with no per-plate machines."""
+    return average_power_w(
+        hotend_w=data.power_hotend_w,
+        bed_w=data.power_bed_w,
+        steppers_w=data.power_steppers_w,
+        electronics_w=data.power_electronics_w,
+        nozzle_temperature_c=data.nozzle_temperature_c,
+        bed_temperature_c=data.bed_temperature_c,
+        fallback_w=data.printer_power_w,
+    )
+
+
 def _machine_hours_by_rate(
     data: CalculatorEstimateRequest,
     time_hours_total: float,
 ) -> list[tuple[float, float | None, float | None, float | None]]:
     """Split machine time into stretches priced at their own machine's rates.
 
-    Returns (hours, printing rate, amortization rate, power) per stretch. Without
-    per-plate machines this is one stretch on the order-wide rates, so an order that
-    never names a printer keeps costing exactly what it used to.
+    Returns (hours, printing rate, amortization rate, average power) per stretch. The
+    power is what the machine averages on this particular plate, so a cool plate and a
+    hot one on the same printer do not cost the same electricity. Without per-plate
+    machines this is one stretch on the order-wide rates, so an order that never names a
+    printer keeps costing exactly what it used to.
     """
     if not data.print_jobs:
         return [(
             time_hours_total,
             data.printing_rate_per_hour,
             data.amortization_rate_per_hour,
-            data.printer_power_w,
+            _order_average_power_w(data),
         )]
 
     return [
@@ -172,7 +190,23 @@ def _machine_hours_by_rate(
             job.amortization_rate_per_hour
             if job.amortization_rate_per_hour is not None
             else data.amortization_rate_per_hour,
-            job.printer_power_w if job.printer_power_w is not None else data.printer_power_w,
+            average_power_w(
+                hotend_w=_job_or_order(job.power_hotend_w, data.power_hotend_w),
+                bed_w=_job_or_order(job.power_bed_w, data.power_bed_w),
+                steppers_w=_job_or_order(job.power_steppers_w, data.power_steppers_w),
+                electronics_w=_job_or_order(
+                    job.power_electronics_w, data.power_electronics_w
+                ),
+                nozzle_temperature_c=_job_or_order(
+                    job.nozzle_temperature_c, data.nozzle_temperature_c
+                ),
+                bed_temperature_c=_job_or_order(
+                    job.bed_temperature_c, data.bed_temperature_c
+                ),
+                fallback_w=job.printer_power_w
+                if job.printer_power_w is not None
+                else data.printer_power_w,
+            ),
         )
         for job in data.print_jobs
     ]
@@ -451,8 +485,9 @@ async def _build_estimate(data: CalculatorEstimateRequest) -> CalculatorEstimate
         cost_electricity = 0.0
         time_hours = time_hours_per_run if time_hours_total > 0 else None
         if time_hours_total > 0:
-            if data.electricity_cost_per_kwh and data.printer_power_w and time_hours_total > 0:
-                power_kw = data.printer_power_w / 1000.0
+            order_power_w = _order_average_power_w(data)
+            if data.electricity_cost_per_kwh and order_power_w and time_hours_total > 0:
+                power_kw = order_power_w / 1000.0
                 cost_electricity = time_hours_total * power_kw * data.electricity_cost_per_kwh
 
         cost_subtotal = cost_material + cost_electricity
@@ -494,8 +529,9 @@ async def _build_estimate(data: CalculatorEstimateRequest) -> CalculatorEstimate
         cost_printing = time_hours_total * data.price_per_hour
 
         cost_electricity = 0.0
-        if data.electricity_cost_per_kwh and data.printer_power_w and time_hours_total > 0:
-            power_kw = data.printer_power_w / 1000.0
+        order_power_w = _order_average_power_w(data)
+        if data.electricity_cost_per_kwh and order_power_w and time_hours_total > 0:
+            power_kw = order_power_w / 1000.0
             cost_electricity = time_hours_total * power_kw * data.electricity_cost_per_kwh
 
         cost_subtotal = cost_printing + cost_electricity
@@ -953,16 +989,6 @@ def _profile_response(profile: UserCalculatorProfile) -> CalculatorProfileRespon
     )
 
 
-async def _starting_defaults_for(
-    db: AsyncSession,
-    user: User,
-) -> CalculatorProfileDefaults:
-    """Global starting economics with whatever is known for the person's country."""
-    defaults = await get_calculator_profile_defaults(db)
-    country_defaults = await get_calculator_country_defaults(db)
-    return apply_country_defaults(defaults, country_defaults, user.country)
-
-
 @router.get("/profile", response_model=CalculatorProfileResponse)
 async def get_calculator_profile(
     current_user: Annotated[User, Depends(require_calculator_access)],
@@ -975,10 +1001,11 @@ async def get_calculator_profile(
     profile = result.scalar_one_or_none()
 
     if not profile:
-        defaults = await _starting_defaults_for(db, current_user)
+        defaults, currency = await starting_defaults_for_user(db, current_user)
         profile = UserCalculatorProfile(
             user_id=current_user.id,
-            **calculator_profile_default_values(defaults),
+            currency=currency,
+            **calculator_profile_default_values(defaults, profile_currency=currency),
         )
         db.add(profile)
         await db.commit()
@@ -1000,10 +1027,11 @@ async def update_calculator_profile(
     profile = result.scalar_one_or_none()
 
     if not profile:
-        defaults = await _starting_defaults_for(db, current_user)
+        defaults, currency = await starting_defaults_for_user(db, current_user)
         profile = UserCalculatorProfile(
             user_id=current_user.id,
-            **calculator_profile_default_values(defaults),
+            currency=currency,
+            **calculator_profile_default_values(defaults, profile_currency=currency),
         )
         db.add(profile)
     else:
@@ -1028,13 +1056,13 @@ async def reset_calculator_profile_defaults(
     profile = await db.scalar(
         select(UserCalculatorProfile).where(UserCalculatorProfile.user_id == current_user.id)
     )
-    defaults: CalculatorProfileDefaults = await _starting_defaults_for(db, current_user)
-    values = calculator_profile_default_values(
-        defaults,
-        profile_currency=profile.currency if profile is not None else None,
-    )
+    defaults, starting_currency = await starting_defaults_for_user(db, current_user)
+    # An existing profile keeps the currency its owner chose; a fresh one takes the
+    # currency of their country.
+    currency = profile.currency if profile is not None else starting_currency
+    values = calculator_profile_default_values(defaults, profile_currency=currency)
     if profile is None:
-        profile = UserCalculatorProfile(user_id=current_user.id, **values)
+        profile = UserCalculatorProfile(user_id=current_user.id, currency=currency, **values)
         db.add(profile)
     else:
         _profile_response(profile)

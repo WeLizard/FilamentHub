@@ -121,6 +121,15 @@ class CalculatorPrintJobRequest(BaseModel):
     printing_rate_per_hour: float | None = Field(None, ge=0)
     amortization_rate_per_hour: float | None = Field(None, ge=0)
     printer_power_w: float | None = Field(None, gt=0)
+    power_hotend_w: float | None = Field(None, ge=0)
+    power_bed_w: float | None = Field(None, ge=0)
+    power_steppers_w: float | None = Field(None, ge=0)
+    power_electronics_w: float | None = Field(None, ge=0)
+
+    # Heaters do not draw their rated power for the whole print; how hard they work
+    # follows the temperatures the file asks for.
+    bed_temperature_c: float | None = Field(None, ge=0, le=200)
+    nozzle_temperature_c: float | None = Field(None, ge=0, le=600)
 
 
 CalculatorPreflightStatus = Literal[
@@ -397,6 +406,14 @@ class CalculatorEstimateRequest(BaseModel):
     printer_power_w: float | None = Field(
         None, gt=0, description="Мощность принтера в ваттах"
     )
+    # Known parts replace the rated figure: heaters are charged for how hard the file
+    # makes them work, not for their nameplate.
+    power_hotend_w: float | None = Field(None, ge=0)
+    power_bed_w: float | None = Field(None, ge=0)
+    power_steppers_w: float | None = Field(None, ge=0)
+    power_electronics_w: float | None = Field(None, ge=0)
+    bed_temperature_c: float | None = Field(None, ge=0, le=200)
+    nozzle_temperature_c: float | None = Field(None, ge=0, le=600)
 
     # ========== Дополнительные услуги (почасовая оплата) ==========
     modeling_hours: float | None = Field(

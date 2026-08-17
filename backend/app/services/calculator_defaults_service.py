@@ -8,10 +8,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.app_setting import AppSetting
+from app.models.user import User
 from app.schemas.calculator import (
     CalculatorCountryDefaultsMap,
     CalculatorProfileDefaults,
 )
+from app.services.currency_service import currency_for_country
 
 logger = logging.getLogger(__name__)
 
@@ -79,13 +81,21 @@ def calculator_profile_default_values(
 ) -> dict[str, object]:
     """Convert validated defaults into UserCalculatorProfile constructor values.
 
-    Money is copied only into a profile kept in the same currency. Handing an hourly
-    rate priced in one currency to a shop billing in another does not give them a
-    starting point, it gives them a number that is wrong by the exchange rate.
+    A profile being created has no currency of its own yet, so it takes the one the
+    defaults were written in along with the money. A profile that already exists keeps
+    the currency its owner chose, and money crosses over only when the two agree:
+    an hourly rate priced in one currency is not a starting point in another, it is a
+    number wrong by the exchange rate.
     """
     values = defaults.model_dump(mode="json")
-    defaults_currency = str(values.pop("currency", "RUB")).upper()
-    if profile_currency is not None and profile_currency.upper() != defaults_currency:
+    defaults_currency = str(values.get("currency") or "RUB").upper()
+
+    if profile_currency is None:
+        values["currency"] = defaults_currency
+        return values
+
+    values.pop("currency", None)
+    if profile_currency.upper() != defaults_currency:
         for field in MONETARY_DEFAULT_FIELDS:
             values.pop(field, None)
     return values
@@ -155,3 +165,28 @@ def apply_country_defaults(
     if not overrides:
         return defaults
     return defaults.model_copy(update=overrides)
+
+
+async def starting_defaults_for_user(
+    db: AsyncSession,
+    user: User,
+) -> tuple[CalculatorProfileDefaults, str]:
+    """Starting economics for one person, and the currency their profile should use.
+
+    These are two separate answers on purpose. The amounts were entered in the currency
+    of the row they came from; the person bills in the currency of their country. When
+    those differ the amounts do not belong to them, and returning the pair lets the
+    caller drop the money instead of relabelling it.
+    """
+    defaults = await get_calculator_profile_defaults(db)
+    country_defaults = await get_calculator_country_defaults(db)
+    resolved = apply_country_defaults(defaults, country_defaults, user.country)
+
+    # An admin who wrote a row for the country stated its currency along with its
+    # amounts, and is the authority on both.
+    entry = country_defaults.countries.get((user.country or "").strip().upper())
+    if entry is not None and entry.currency:
+        return resolved, resolved.currency
+
+    country_currency = await currency_for_country(db, user.country)
+    return resolved, country_currency or resolved.currency

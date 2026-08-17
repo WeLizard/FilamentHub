@@ -1207,6 +1207,12 @@ export interface CalculatorPrintJobRequest {
   printing_rate_per_hour?: number | null;
   amortization_rate_per_hour?: number | null;
   printer_power_w?: number | null;
+  power_hotend_w?: number | null;
+  power_bed_w?: number | null;
+  power_steppers_w?: number | null;
+  power_electronics_w?: number | null;
+  bed_temperature_c?: number | null;
+  nozzle_temperature_c?: number | null;
 }
 
 export type CalculatorPreflightStatus =
@@ -1391,6 +1397,12 @@ export interface CalculatorEstimateRequest {
   // Электроэнергия
   electricity_cost_per_kwh?: number | null;
   printer_power_w?: number | null;
+  power_hotend_w?: number | null;
+  power_bed_w?: number | null;
+  power_steppers_w?: number | null;
+  power_electronics_w?: number | null;
+  bed_temperature_c?: number | null;
+  nozzle_temperature_c?: number | null;
   
   // Дополнительные услуги
   modeling_hours?: number | null;

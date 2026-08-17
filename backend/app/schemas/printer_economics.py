@@ -78,6 +78,10 @@ class PrinterEconomicsSuggestion(BaseModel):
     extruders: int
     usage: str
     average_power_watts: float
+    power_hotend_w: float
+    power_bed_w: float
+    power_steppers_w: float
+    power_electronics_w: float
     useful_life_hours: int
     maintenance_cost_per_hour: float
     orca_time_cost: float | None

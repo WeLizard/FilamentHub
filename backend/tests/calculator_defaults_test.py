@@ -2,6 +2,9 @@
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.user import User
 
 
 @pytest.mark.asyncio
@@ -114,3 +117,126 @@ async def test_reset_defaults_keeps_money_out_of_another_currency(
     assert body["printing_rate_per_hour"] == 25.0
     assert body["overhead_percent"] == 33.0
     assert body["printer_power_w"] == 420.0
+
+
+@pytest.mark.asyncio
+async def test_a_new_profile_abroad_is_priced_in_local_money_and_starts_empty(
+    admin_client: AsyncClient,
+    admin_user: User,
+    db_session: AsyncSession,
+) -> None:
+    """A first visit from another country must not inherit the platform's rates.
+
+    Without this, a shop in Germany opens the calculator and finds Russian hourly
+    rates sitting under a euro sign — numbers wrong by the exchange rate that read
+    as if the platform had recommended them.
+    """
+    configured = await admin_client.put(
+        "/api/v1/admin/calculator-profile-defaults",
+        json={
+            "currency": "RUB",
+            "printing_rate_per_hour": 170.0,
+            "modeling_rate_per_hour": 934.0,
+            "overhead_percent": 20.0,
+            "printer_power_w": 350.0,
+        },
+    )
+    assert configured.status_code == 200
+
+    admin_user.country = "DE"
+    await db_session.commit()
+
+    created = await admin_client.get("/api/v1/calculator/profile")
+    assert created.status_code == 200
+    body = created.json()
+
+    assert body["currency"] == "EUR"
+    assert body["printing_rate_per_hour"] == 0.0
+    assert body["modeling_rate_per_hour"] == 0.0
+    # Watts and percentages are not money and carry over untouched.
+    assert body["overhead_percent"] == 20.0
+    assert body["printer_power_w"] == 350.0
+
+
+@pytest.mark.asyncio
+async def test_country_row_currency_wins_over_the_country_default(
+    admin_client: AsyncClient,
+    admin_user: User,
+    db_session: AsyncSession,
+) -> None:
+    """An admin who states a country's currency and rates is the authority on both."""
+    configured = await admin_client.put(
+        "/api/v1/admin/calculator-country-defaults",
+        json={"countries": {"DE": {"currency": "EUR", "printing_rate_per_hour": 18.0}}},
+    )
+    assert configured.status_code == 200
+
+    admin_user.country = "DE"
+    await db_session.commit()
+
+    created = await admin_client.get("/api/v1/calculator/profile")
+    assert created.status_code == 200
+    assert created.json()["currency"] == "EUR"
+    assert created.json()["printing_rate_per_hour"] == 18.0
+
+
+@pytest.mark.asyncio
+async def test_choosing_a_currency_does_not_import_another_country_economics(
+    admin_client: AsyncClient,
+) -> None:
+    """Picking a currency in settings is the other way a profile first appears."""
+    configured = await admin_client.put(
+        "/api/v1/admin/calculator-profile-defaults",
+        json={
+            "currency": "RUB",
+            "printing_rate_per_hour": 170.0,
+            "modeling_rate_per_hour": 934.0,
+        },
+    )
+    assert configured.status_code == 200
+
+    switched = await admin_client.patch(
+        "/api/v1/auth/me/preferences",
+        json={"currency": "EUR"},
+    )
+    assert switched.status_code == 200
+
+    profile = await admin_client.get("/api/v1/calculator/profile")
+    assert profile.status_code == 200
+    body = profile.json()
+    assert body["currency"] == "EUR"
+    assert body["modeling_rate_per_hour"] == 0.0
+    assert body["printing_rate_per_hour"] == 0.0
+
+
+@pytest.mark.asyncio
+async def test_choosing_the_platform_currency_starts_from_platform_values(
+    admin_client: AsyncClient,
+) -> None:
+    """The same path must still hand over the platform's economics when it fits.
+
+    Creating the profile straight from the column defaults would look harmless here —
+    everything is filled in — while quietly ignoring what an admin configured.
+    """
+    configured = await admin_client.put(
+        "/api/v1/admin/calculator-profile-defaults",
+        json={
+            "currency": "RUB",
+            "printing_rate_per_hour": 170.0,
+            "modeling_rate_per_hour": 934.0,
+        },
+    )
+    assert configured.status_code == 200
+
+    switched = await admin_client.patch(
+        "/api/v1/auth/me/preferences",
+        json={"currency": "RUB"},
+    )
+    assert switched.status_code == 200
+
+    profile = await admin_client.get("/api/v1/calculator/profile")
+    assert profile.status_code == 200
+    body = profile.json()
+    assert body["currency"] == "RUB"
+    assert body["printing_rate_per_hour"] == 170.0
+    assert body["modeling_rate_per_hour"] == 934.0

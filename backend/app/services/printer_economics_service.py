@@ -20,6 +20,7 @@ from app.models.physical_printer_profile import UserPrinterProfileLink
 from app.models.printer import Printer
 from app.models.printer_profile import PrinterProfile
 from app.models.user_printer_device import UserPrinterDevice
+from app.services.calculator_power_service import average_power_w
 
 USAGE_LIFE_HOURS = {
     "occasional": 3000,
@@ -45,6 +46,19 @@ CLASS_POWER_W = {
     CLASS_RESIN: 80.0,
     CLASS_UNKNOWN: 350.0,
 }
+# The same wattage split into the parts that draw it: hotend, bed, motors, electronics.
+# A total alone cannot say how a print's temperatures change the bill, and asking every
+# shop to open its printer and measure four numbers is not a starting point.
+# Resin has neither hotend nor heated bed, so its draw stays with the electronics.
+CLASS_POWER_PARTS_W = {
+    CLASS_COMPACT: (40.0, 55.0, 15.0, 10.0),
+    CLASS_STANDARD: (50.0, 150.0, 30.0, 20.0),
+    CLASS_LARGE: (60.0, 220.0, 45.0, 25.0),
+    CLASS_LARGE_ENCLOSED: (70.0, 290.0, 55.0, 35.0),
+    CLASS_MULTI_TOOL: (100.0, 300.0, 60.0, 40.0),
+    CLASS_RESIN: (0.0, 0.0, 10.0, 70.0),
+    CLASS_UNKNOWN: (60.0, 220.0, 45.0, 25.0),
+}
 CLASS_MAINTENANCE_PER_HOUR = {
     CLASS_COMPACT: 2.0,
     CLASS_STANDARD: 3.0,
@@ -54,6 +68,20 @@ CLASS_MAINTENANCE_PER_HOUR = {
     CLASS_RESIN: 4.0,
     CLASS_UNKNOWN: 5.0,
 }
+# A heated bed draws roughly this per square centimetre. The relation is close to
+# linear because the bed is a resistive sheet: doubling its area doubles the heater.
+# Better than a per-class figure, which puts a 180×180 and a 350×350 in one bracket.
+#
+# The two figures are the two kinds of bed. Small machines carry a low-voltage PCB
+# heater; past roughly 300 mm the practical choice is a mains silicone mat, which runs
+# noticeably hotter per square centimetre. Size is what decides which one a machine has,
+# so it is also what decides the figure.
+BED_W_PER_CM2_PCB = 0.28
+BED_W_PER_CM2_SILICONE = 0.45
+BED_SILICONE_FROM_MM = 300.0
+BED_W_MIN = 40.0
+BED_W_MAX = 800.0
+
 CONFIDENCE_MODEL = "model"
 CONFIDENCE_CLASS = "class"
 CONFIDENCE_MODIFIED = "modified"
@@ -72,6 +100,7 @@ class MachineProfile:
     vendor: str | None = None
     model_name: str | None = None
     bed_max_mm: float | None = None
+    bed_area_cm2: float | None = None
     extruders: int = 1
     orca_time_cost: float | None = None
 
@@ -80,6 +109,10 @@ class MachineProfile:
 class EconomicsSuggestion:
     machine: MachineProfile
     average_power_watts: float
+    power_hotend_w: float
+    power_bed_w: float
+    power_steppers_w: float
+    power_electronics_w: float
     useful_life_hours: int
     maintenance_cost_per_hour: float
     usage: str
@@ -198,11 +231,15 @@ async def describe_machine(db: AsyncSession, printer: UserPrinterDevice) -> Mach
         nozzles = configuration.nozzle_diameters or settings.get("nozzle_diameter")
         if isinstance(nozzles, (list, tuple)) and len(nozzles) > profile.extruders:
             profile.extruders = len(nozzles)
-        area = configuration.printable_area or {}
-        for key in ("x", "width", "max_x"):
-            size = _positive(area.get(key)) if isinstance(area, dict) else None
-            if size and (profile.bed_max_mm is None or size > profile.bed_max_mm):
-                profile.bed_max_mm = size
+        dimensions = _bed_dimensions(configuration.printable_area)
+        if dimensions is not None:
+            width_mm, depth_mm = dimensions
+            longest = max(width_mm, depth_mm)
+            if profile.bed_max_mm is None or longest > profile.bed_max_mm:
+                profile.bed_max_mm = longest
+            area_cm2 = (width_mm * depth_mm) / 100.0
+            if profile.bed_area_cm2 is None or area_cm2 > profile.bed_area_cm2:
+                profile.bed_area_cm2 = area_cm2
         technology = technology or settings.get("printer_technology")
         profile.vendor = profile.vendor or configuration.vendor
 
@@ -213,15 +250,49 @@ async def describe_machine(db: AsyncSession, printer: UserPrinterDevice) -> Mach
     return profile
 
 
+def _bed_dimensions(area: object) -> tuple[float, float] | None:
+    """Bed width and depth in millimetres, from either shape Orca ships.
+
+    Most profiles carry ``x_min``/``x_max``; a minority carry plain ``x``/``y``.
+    Reading only one shape leaves the size unknown for almost the whole catalogue.
+    """
+    if not isinstance(area, dict):
+        return None
+
+    span_x = _positive(area.get("x")) or _positive(area.get("width"))
+    span_y = _positive(area.get("y")) or _positive(area.get("depth"))
+    if span_x is None and area.get("x_max") is not None:
+        span_x = _positive(float(area["x_max"]) - float(area.get("x_min") or 0.0))
+    if span_y is None and area.get("y_max") is not None:
+        span_y = _positive(float(area["y_max"]) - float(area.get("y_min") or 0.0))
+
+    if span_x is None or span_y is None:
+        return None
+    return span_x, span_y
+
+
 async def suggest_economics(
     db: AsyncSession, printer: UserPrinterDevice, usage: str = DEFAULT_USAGE
 ) -> EconomicsSuggestion:
     """Starting numbers for a machine nobody has measured."""
     machine = await describe_machine(db, printer)
     usage_key = usage if usage in USAGE_LIFE_HOURS else DEFAULT_USAGE
+    hotend_w, bed_w, steppers_w, electronics_w = CLASS_POWER_PARTS_W[machine.machine_class]
+    # A known bed size beats the class bracket: the heater scales with the sheet.
+    if bed_w > 0 and machine.bed_area_cm2:
+        per_cm2 = (
+            BED_W_PER_CM2_SILICONE
+            if (machine.bed_max_mm or 0) >= BED_SILICONE_FROM_MM
+            else BED_W_PER_CM2_PCB
+        )
+        bed_w = min(BED_W_MAX, max(BED_W_MIN, machine.bed_area_cm2 * per_cm2))
     return EconomicsSuggestion(
         machine=machine,
         average_power_watts=CLASS_POWER_W[machine.machine_class],
+        power_hotend_w=hotend_w,
+        power_bed_w=bed_w,
+        power_steppers_w=steppers_w,
+        power_electronics_w=electronics_w,
         useful_life_hours=USAGE_LIFE_HOURS[usage_key],
         maintenance_cost_per_hour=CLASS_MAINTENANCE_PER_HOUR[machine.machine_class],
         usage=usage_key,
@@ -247,12 +318,34 @@ async def resolve_economics(
     tariff = _positive(account.electricity_cost_per_kwh if account else None) or 0.0
     sources: dict[str, str] = {}
 
-    power = _positive(printer.average_power_watts)
-    if power is not None:
+    # Known parts win over the nameplate: an hour of printing is mostly heaters holding
+    # a temperature, not every component at full draw.
+    power = average_power_w(
+        hotend_w=printer.power_hotend_w,
+        bed_w=printer.power_bed_w,
+        steppers_w=printer.power_steppers_w,
+        electronics_w=printer.power_electronics_w,
+        fallback_w=_positive(printer.average_power_watts),
+    )
+    if power:
         sources["power"] = "printer"
     else:
         power = _positive(account.printer_power_w if account else None) or 0.0
         sources["power"] = "account" if power else "none"
+
+    if not power:
+        # Nothing anywhere. What we can work out about this machine beats charging the
+        # order as though the printer drew nothing at all.
+        suggestion = await suggest_economics(db, printer)
+        power = average_power_w(
+            hotend_w=suggestion.power_hotend_w,
+            bed_w=suggestion.power_bed_w,
+            steppers_w=suggestion.power_steppers_w,
+            electronics_w=suggestion.power_electronics_w,
+            fallback_w=suggestion.average_power_watts,
+        ) or 0.0
+        if power:
+            sources["power"] = "estimate"
 
     purchase = _positive(printer.purchase_cost)
     residual = max(0.0, float(printer.residual_value or 0.0))

@@ -5,6 +5,7 @@ import { ProtectedRoute } from './components/ProtectedRoute';
 import { Layout } from './components/Layout';
 import { CatalogPage } from './pages/CatalogPage';
 import { ToastContainer, toast } from './components/Toast';
+import { useCurrencyCatalogue } from './hooks/useCurrencyCatalogue';
 import { useOrcaSlicerNotifications } from './hooks/useOrcaSlicerNotifications';
 import { lazy, Suspense, useEffect, useState } from 'react';
 import { isPluginEmbed, subscribeToPluginNavigation, subscribeToPluginSyncResult, subscribeToPluginRecoverList, sendRecoverImport, type RecoverItem } from './utils/pluginBridge';
@@ -57,6 +58,7 @@ const LEGAL_PATHS = ['/user-agreement', '/privacy-policy', '/personal-data-conse
 function AppContent() {
   // Обработчик уведомлений от OrcaSlicer
   useOrcaSlicerNotifications();
+  useCurrencyCatalogue();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const location = useLocation();

@@ -22,19 +22,24 @@ class UserCalculatorProfile(Base):
         index=True,
     )
 
-    electricity_cost_per_kwh: Mapped[float] = mapped_column(Float, nullable=False, default=6.0)
+    # Amounts start empty. A profile reaches these only when the platform has no money
+    # for its currency, and an empty rate a person notices beats an inherited one from
+    # another country's economics that quietly prices their work wrong.
+    electricity_cost_per_kwh: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     printer_power_w: Mapped[float] = mapped_column(Float, nullable=False, default=350.0)
-    modeling_rate_per_hour: Mapped[float] = mapped_column(Float, nullable=False, default=934.0)
-    postprocessing_rate_per_hour: Mapped[float] = mapped_column(Float, nullable=False, default=100.0)
-    printing_rate_per_hour: Mapped[float] = mapped_column(Float, nullable=False, default=170.0)
-    amortization_rate_per_hour: Mapped[float] = mapped_column(Float, nullable=False, default=16.0)
+    modeling_rate_per_hour: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    postprocessing_rate_per_hour: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    printing_rate_per_hour: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    amortization_rate_per_hour: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     overhead_percent: Mapped[float] = mapped_column(Float, nullable=False, default=20.0)
     markup_percent: Mapped[float] = mapped_column(Float, nullable=False, default=30.0)
     tax_rate_percent: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     fixed_costs: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     bed_prep_cost_per_print: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     min_order_price: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
-    round_to_nearest: Mapped[int] = mapped_column(Integer, nullable=False, default=10)
+    # One whole unit, not ten: rounding to 10 is small change in roubles and a
+    # noticeable part of a small order in euros.
+    round_to_nearest: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     rounding_mode: Mapped[str] = mapped_column(String(16), nullable=False, default="up")
 
     printer_purchase_price: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)

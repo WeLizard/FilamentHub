@@ -44,7 +44,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { authAPI, brandsAPI, filamentsAPI, brandRequestsAPI, presetsAPI, proofFilesAPI, qrAPI } from '../api/client';
 import { translateApiError } from '../utils/translateApiError';
 import { PERSONAL_EMAIL_DOMAINS } from '../data/personalEmailDomains';
-import { currencySymbol, CURRENCY_CODES } from '../utils/currency';
+import { currencySymbol, currencyCodes } from '../utils/currency';
 import { filamentImportAPI, filamentLinesAPI } from '../api/client';
 import { ModalOverlay } from '../components/ModalOverlay';
 import { COUNTRY_CODES, countryName } from '../utils/countries';
@@ -1205,7 +1205,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({
               {displayedPresets.map((preset) => (
                 <div
                   key={preset.id}
-                  className={`bg-white/10 backdrop-blur-sm rounded-xl p-4 border border-white/20 transition-all ${canEditPreset(preset) ? 'cursor-pointer hover:bg-white/15' : ''}`}
+                  className={`glass-panel rounded-xl p-4 border border-white/20 transition-all ${canEditPreset(preset) ? 'cursor-pointer hover:bg-white/15' : ''}`}
                   onClick={() => { if (canEditPreset(preset)) handleEditPreset(preset); }}
                 >
                   <div className="flex items-start justify-between mb-3">
@@ -1271,7 +1271,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({
               ))}
             </div>
           ) : (
-            <div className="text-center py-12 bg-white/10 backdrop-blur-sm rounded-2xl border border-white/20">
+            <div className="text-center py-12 glass-panel rounded-2xl border border-white/20">
               <Settings className="w-16 h-16 text-gray-400 mx-auto mb-4" />
               <p className="text-gray-400 text-xl mb-2">{t('brandProfile.noPresets')}</p>
               <p className="text-gray-500 text-sm">
@@ -1301,7 +1301,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({
             )}
           </div>
 
-          <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 shadow-xl">
+          <div className="glass-panel rounded-2xl p-6 border border-white/20 shadow-xl">
             {filaments.filter(f => f.qr_code).length > 0 ? (
               <div className="space-y-3">
                 {filaments
@@ -1393,7 +1393,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({
           )}
 
           {/* Materials Statistics */}
-          <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 shadow-xl">
+          <div className="glass-panel rounded-2xl p-6 border border-white/20 shadow-xl">
             <h3 className="text-xl font-bold text-white mb-4">{t('brandProfile.materialStats')}</h3>
             {isLoadingAnalytics ? (
               <div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin text-purple-300" /></div>
@@ -1445,7 +1445,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({
             />
           </div>
 
-          <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 shadow-xl">
+          <div className="glass-panel rounded-2xl p-6 border border-white/20 shadow-xl">
             <h3 className="text-xl font-bold text-white mb-4">{t('brandProfile.popularPrinters')}</h3>
             {usageData && usageData.popular_printers.length > 0 ? (
               <div className="space-y-3">
@@ -1733,7 +1733,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({
                   onChange={(e) => setProfileCurrency(e.target.value)}
                   className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
                 >
-                  {CURRENCY_CODES.map((code) => (
+                  {currencyCodes().map((code: string) => (
                     <option key={code} value={code} className="bg-gray-900">{code} · {currencySymbol(code)}</option>
                   ))}
                 </select>
@@ -2376,7 +2376,7 @@ const BrandSelectionForm: React.FC<BrandSelectionFormProps> = ({ onClose, initia
   if (submittedRequest) {
     return (
       <div className="max-w-2xl mx-auto">
-        <div className="relative bg-white/10 backdrop-blur-sm rounded-2xl p-8 border border-white/20 shadow-xl">
+        <div className="relative glass-panel rounded-2xl p-8 border border-white/20 shadow-xl">
           {closeFlowButton}
           <div className="text-center mb-8">
             <div className="w-20 h-20 bg-gradient-to-r from-yellow-500 to-orange-500 rounded-xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-yellow-500/25">
@@ -2709,7 +2709,7 @@ const BrandSelectionForm: React.FC<BrandSelectionFormProps> = ({ onClose, initia
   if (isCreatingNew) {
     return (
       <div className="max-w-4xl mx-auto">
-        <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-8 border border-white/20 shadow-xl">
+        <div className="glass-panel rounded-2xl p-8 border border-white/20 shadow-xl">
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-2xl font-bold text-white flex items-center">
               <Factory className="w-6 h-6 mr-3 text-green-400" />
@@ -3119,7 +3119,7 @@ const BrandSelectionForm: React.FC<BrandSelectionFormProps> = ({ onClose, initia
 
   return (
     <div className="max-w-2xl mx-auto">
-      <div className="relative bg-white/10 backdrop-blur-sm rounded-2xl p-8 border border-white/20 shadow-xl">
+      <div className="relative glass-panel rounded-2xl p-8 border border-white/20 shadow-xl">
         {closeFlowButton}
         <div className="text-center mb-8">
           <div className="w-16 h-16 bg-gradient-to-r from-green-500 to-emerald-500 rounded-xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-green-500/25">
@@ -3157,7 +3157,7 @@ const BrandSelectionForm: React.FC<BrandSelectionFormProps> = ({ onClose, initia
               {myRequests.map((request) => (
                 <div
                   key={request.id}
-                  className={`bg-white/10 backdrop-blur-sm rounded-xl p-4 border border-white/20 shadow-md ${
+                  className={`glass-panel rounded-xl p-4 border border-white/20 shadow-md ${
                     request.status === 'pending' ? 'cursor-pointer hover:bg-white/15 transition-all' : ''
                   }`}
                   onClick={() => {

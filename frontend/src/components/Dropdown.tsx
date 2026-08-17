@@ -212,7 +212,10 @@ export const Dropdown: React.FC<DropdownProps> = ({
               onChange={(e) => handleInputChange(e.target.value)}
               onFocus={() => {
                 setIsOpen(true);
-                if (!filter && hasSelection && selectedOption) {
+                // Когда фильтром владеет родитель, подставлять сюда выбранное значение
+                // нельзя: список сразу сузится до одного пункта, а родитель об этом не
+                // узнает — его filterValue останется пустым.
+                if (!onFilterChange && !filter && hasSelection && selectedOption) {
                   setFilter(selectedOption.label);
                 }
               }}

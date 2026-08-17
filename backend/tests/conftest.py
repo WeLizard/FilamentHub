@@ -23,6 +23,7 @@ os.environ["REDIS_URL"] = "memory://"
 from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
+from app.services.currency_service import ensure_currency_reference
 
 # Use in-memory SQLite for tests - faster and isolated
 # Each test gets a fresh database
@@ -54,6 +55,9 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
     )
 
     async with async_session() as session:
+        # Reference data a migration seeds in real environments. Without it, anything
+        # that resolves a country's money silently behaves as if no currency existed.
+        await ensure_currency_reference(session)
         yield session
 
     # Drop all tables after test

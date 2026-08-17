@@ -23,7 +23,7 @@ import {
 import { deriveVisualEffectsFromAdditives, mergeVisualEffects } from '../data/filamentFeatures';
 import { translateApiError } from '../utils/translateApiError';
 import { normalizeRalCode } from '../utils/ralCode';
-import { CURRENCIES, currencySymbol, defaultCurrencyForCountry } from '../utils/currency';
+import { currencyCatalogue, currencySymbol, defaultCurrencyForCountry } from '../utils/currency';
 import { useAuth } from '../contexts/AuthContext';
 import type {
   CountryAvailability,
@@ -444,7 +444,7 @@ export function FilamentPaletteForm({
                 onChange={(event) => setMarketCurrency(event.target.value)}
                 className={inputClass}
               >
-                {CURRENCIES.map((currency) => (
+                {currencyCatalogue().map((currency) => (
                   <option key={currency.code} value={currency.code} className="bg-gray-900">
                     {currency.code} {currency.symbol}
                   </option>

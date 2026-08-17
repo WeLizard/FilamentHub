@@ -98,6 +98,7 @@ from app.services.calculator_defaults_service import (
     set_calculator_country_defaults,
     set_calculator_profile_defaults,
 )
+from app.services.currency_service import FALLBACK_CURRENCY, currency_for_country
 from app.services.database_service import (
     get_database_stats as get_database_stats_service,
 )
@@ -1215,6 +1216,7 @@ async def update_brand_request(
                 verified=True,  # Автоматически верифицируем после одобрения админом
                 name_correction_available=True,
                 active=True,
+                currency=await currency_for_country(db, request.country) or FALLBACK_CURRENCY,
             )
             db.add(new_brand)
             await db.flush()  # Получаем ID бренда

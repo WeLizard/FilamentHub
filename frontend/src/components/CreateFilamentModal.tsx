@@ -16,7 +16,7 @@ import type { CountryAvailability, FilamentAdditive, FilamentPropertyClaim, Fila
 import { Dropdown } from './Dropdown';
 import { sortMaterialTypes } from '../data/materialDefaults';
 import { countryName } from '../utils/countries';
-import { CURRENCIES, currencySymbol, defaultCurrencyForCountry } from '../utils/currency';
+import { currencyCatalogue, currencySymbol, defaultCurrencyForCountry } from '../utils/currency';
 import type { Filament, Brand, FilamentAvailability } from '../types/api';
 import { useAuth } from '../contexts/AuthContext';
 import { MaterialTypeSelect, FALLBACK_TYPES } from './MaterialTypeSelect';
@@ -1495,7 +1495,7 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
                   onChange={(event) => setMarketCurrency(event.target.value)}
                   className="w-full rounded-xl border border-white/20 bg-white/10 px-3 py-3 text-white outline-none focus:ring-2 focus:ring-purple-500"
                 >
-                  {CURRENCIES.map((currency) => (
+                  {currencyCatalogue().map((currency) => (
                     <option key={currency.code} value={currency.code} className="bg-gray-900">
                       {currency.code} {currency.symbol}
                     </option>

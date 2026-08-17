@@ -101,6 +101,7 @@ export function DownloadPage() {
   const [pluginsReleaseUrl, setPluginsReleaseUrl] = useState(FILAMENTHUB_RELEASES_URL);
   const [orcaPluginWheel, setOrcaPluginWheel] = useState<PluginReleaseAsset | null>(null);
   const [octoPrintBridgeWheel, setOctoPrintBridgeWheel] = useState<PluginReleaseAsset | null>(null);
+  const [printFarmWheel, setPrintFarmWheel] = useState<PluginReleaseAsset | null>(null);
 
   // Latest official OrcaSlicer release for the dynamic "get OrcaSlicer" link.
   // Best-effort: if GitHub is unreachable we fall back to the releases/latest URL.
@@ -136,11 +137,17 @@ export function DownloadPage() {
         if (data.release_url) setPluginsReleaseUrl(data.release_url);
         const orca = data.packages.find((item: PluginDownload) => item.plugin === 'orcaslicer');
         const octoPrint = data.packages.find((item: PluginDownload) => item.plugin === 'octoprint');
+        // Print Farm ships from its own repository, so the API is the only place
+        // that knows its current file; the GitHub fallback below cannot find it.
+        const printFarm = data.packages.find((item: PluginDownload) => item.plugin === 'print_farm');
         if (orca) setOrcaPluginWheel({ url: orca.download_url, name: orca.filename });
         if (octoPrint) {
           setOctoPrintBridgeWheel({ url: octoPrint.download_url, name: octoPrint.filename });
         }
-        return Boolean(orca || octoPrint);
+        if (printFarm) {
+          setPrintFarmWheel({ url: printFarm.download_url, name: printFarm.filename });
+        }
+        return Boolean(orca || octoPrint || printFarm);
       } catch {
         return false;
       }
@@ -212,17 +219,13 @@ export function DownloadPage() {
           </div>
           <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white text-center">{t('downloadPage.pluginTitle')}</h1>
         </div>
-        <p className="text-base md:text-xl text-gray-300 max-w-2xl mx-auto mb-4">
+        <p className="text-base md:text-xl text-gray-300 max-w-2xl mx-auto">
           {t('downloadPage.pluginSubtitle')}
         </p>
-        <div className="inline-flex items-center gap-2 px-3 py-1.5 md:px-4 md:py-2 bg-purple-600/20 border border-purple-500/30 rounded-lg text-purple-300 text-xs md:text-sm">
-          <Zap className="w-3.5 h-3.5 md:w-4 md:h-4" />
-          <span>{t('downloadPage.pluginBadge')}</span>
-        </div>
       </div>
 
       {/* Primary path — install the plugin in 3 steps */}
-      <div className="mb-12 bg-white/5 backdrop-blur-sm rounded-2xl p-6 md:p-8 border border-white/10">
+      <div className="mb-12 glass-panel-subtle rounded-2xl p-6 md:p-8 border border-white/10">
         <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-2">
           <Zap className="w-6 h-6 text-purple-400" />
           {t('downloadPage.stepsTitle')}
@@ -393,26 +396,38 @@ export function DownloadPage() {
               </li>
             </ol>
 
-            <a
-              href={octoPrintBridgeWheel?.url || pluginsReleaseUrl}
-              download={octoPrintBridgeWheel?.name}
-              target={octoPrintBridgeWheel ? undefined : '_blank'}
-              rel={octoPrintBridgeWheel ? undefined : 'noopener noreferrer'}
-              className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-cyan-500 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-400 focus:outline-none focus:ring-2 focus:ring-cyan-300/70"
-            >
-              <Download className="h-4 w-4" />
-              <span>
-                {octoPrintBridgeWheel
-                  ? t('downloadPage.octoDownload', {
+            {/* Two named ways instead of one button that silently changes where
+                it leads depending on whether the file was found. */}
+            {octoPrintBridgeWheel ? (
+              <a
+                href={octoPrintBridgeWheel.url}
+                download={octoPrintBridgeWheel.name}
+                className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-cyan-500 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-400 focus:outline-none focus:ring-2 focus:ring-cyan-300/70"
+              >
+                <Download className="h-4 w-4" />
+                <span>
+                  {t('downloadPage.octoDownload', {
                     version: wheelPackageVersion(octoPrintBridgeWheel.name),
-                  })
-                  : t('downloadPage.octoOpenReleases')}
-              </span>
-              {!octoPrintBridgeWheel && <ExternalLink className="h-3.5 w-3.5" />}
+                  })}
+                </span>
+              </a>
+            ) : null}
+            <a
+              href={pluginsReleaseUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={octoPrintBridgeWheel
+                ? 'mt-2 inline-flex items-center justify-center gap-1 text-xs text-cyan-300 transition-colors hover:text-cyan-200'
+                : 'inline-flex w-full items-center justify-center gap-2 rounded-xl bg-cyan-500 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-400 focus:outline-none focus:ring-2 focus:ring-cyan-300/70'}
+            >
+              <span>{t('downloadPage.octoOpenReleases')}</span>
+              <ExternalLink className="h-3.5 w-3.5" />
             </a>
-            <p className="mt-3 break-all text-center text-[11px] text-slate-500">
-              {octoPrintBridgeWheel?.name || t('downloadPage.octoReleasePending')}
-            </p>
+            {!octoPrintBridgeWheel && (
+              <p className="mt-3 text-center text-[11px] text-slate-500">
+                {t('downloadPage.octoReleasePending')}
+              </p>
+            )}
           </div>
         </div>
       </section>
@@ -454,12 +469,28 @@ export function DownloadPage() {
               <span>{t('downloadPage.printFarmCta')}</span>
               <ExternalLink className="h-3.5 w-3.5" />
             </a>
+            {printFarmWheel && (
+              <a
+                href={printFarmWheel.url}
+                download={printFarmWheel.name}
+                className="inline-flex items-center gap-1 text-xs text-emerald-300 transition-colors hover:text-emerald-200"
+              >
+                <Download className="h-3 w-3" />
+                <span>
+                  {wheelPackageVersion(printFarmWheel.name)
+                    ? t('downloadPage.printFarmWheelCta', {
+                      version: wheelPackageVersion(printFarmWheel.name),
+                    })
+                    : t('downloadPage.printFarmWheelCtaPlain')}
+                </span>
+              </a>
+            )}
           </div>
         </div>
       </section>
 
       {/* Screenshots Section */}
-      <div className="mb-12 bg-white/5 backdrop-blur-sm rounded-2xl p-8 border border-white/10">
+      <div className="mb-12 glass-panel-subtle rounded-2xl p-8 border border-white/10">
         <h2 className="text-2xl font-bold text-white mb-6 flex items-center gap-2">
           <ImageIcon className="w-6 h-6 text-purple-400" />
           {t('downloadPage.screenshotsTitle')}

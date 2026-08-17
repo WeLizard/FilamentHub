@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased, selectinload
 
 from app.core.errors import ERR_SPOOL_NOT_ACCESSIBLE, raise_error
+from app.models.calculator_profile import UserCalculatorProfile
 from app.models.filament import Filament
 from app.models.preset_usage_event import PresetUsageEvent, PresetUsageEventType
 from app.models.user_spool import UserSpool, UserSpoolState
@@ -144,11 +145,19 @@ def _rounded(value: float) -> float:
     return round(max(0.0, value), 3)
 
 
-def _purchase_currency(spool: UserSpool) -> str | None:
+def _purchase_currency(spool: UserSpool, owner_currency: str | None) -> str | None:
+    """Currency of what the spool cost, or ``None`` when it cannot be told.
+
+    A spool recorded without one is priced in the money its owner works in. Calling it
+    roubles instead adds a euro-priced spool to the rouble total and reports a number
+    nobody can spend.
+    """
     if spool.price is None:
         return None
     raw_currency = (spool.extra or {}).get("currency")
-    return raw_currency if isinstance(raw_currency, str) and raw_currency else "RUB"
+    if isinstance(raw_currency, str) and raw_currency:
+        return raw_currency
+    return owner_currency
 
 
 def _normalized_material_type(value: str) -> str:
@@ -329,6 +338,11 @@ async def calculate_material_preflight(
     payload: CalculatorPreflightRequest,
 ) -> CalculatorPreflightResponse:
     """Check selected user spools without reserving or consuming them."""
+    owner_currency = await db.scalar(
+        select(UserCalculatorProfile.currency).where(
+            UserCalculatorProfile.user_id == user_id
+        )
+    )
     requested_spool_ids = {spool_id for line in payload.lines for spool_id in line.spool_ids}
     requested_filament_ids = {
         line.filament_id for line in payload.lines if line.filament_id is not None
@@ -570,7 +584,7 @@ async def calculate_material_preflight(
             if expected_consumption > 0:
                 base_spools_used += 1
                 allocation.sequence_index = base_spools_used
-                purchase_currency = _purchase_currency(spool)
+                purchase_currency = _purchase_currency(spool, owner_currency)
                 if spool.price is None or spool.initial_weight_g <= 0 or purchase_currency is None:
                     purchase_cost_complete = False
                 else:

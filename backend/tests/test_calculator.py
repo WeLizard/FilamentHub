@@ -1027,3 +1027,107 @@ async def test_calculator_estimate_prices_each_plate_on_its_own_machine(
     assert body["cost_printing"] == 400.0
     assert body["cost_amortization"] == 50.0
     assert body["cost_electricity"] == 6.0
+
+
+@pytest.mark.asyncio
+async def test_electricity_follows_the_temperatures_the_plate_asks_for(
+    admin_client: AsyncClient,
+):
+    """A hot plate and a cool plate on the same machine are not the same bill.
+
+    The four wattage fields are collected in the admin panel, on the printer card and
+    in the profile. Charging every print at the rated total makes all of that data
+    decorative, which is worse than not asking for it.
+    """
+    base = {
+        "pricing_method": "by_weight",
+        "weight_g": 100.0,
+        "spool_price": 1000.0,
+        "spool_weight_kg": 1.0,
+        "time_sec": 36000.0,
+        "electricity_cost_per_kwh": 10.0,
+        "printer_power_w": 400.0,
+        "power_hotend_w": 60.0,
+        "power_bed_w": 300.0,
+        "power_steppers_w": 40.0,
+        "power_electronics_w": 25.0,
+    }
+
+    cool = await admin_client.post(
+        "/api/v1/calculator/estimate",
+        json={**base, "bed_temperature_c": 60.0, "nozzle_temperature_c": 210.0},
+    )
+    hot = await admin_client.post(
+        "/api/v1/calculator/estimate",
+        json={**base, "bed_temperature_c": 110.0, "nozzle_temperature_c": 270.0},
+    )
+    assert cool.status_code == 200
+    assert hot.status_code == 200
+    assert hot.json()["cost_electricity"] > cool.json()["cost_electricity"]
+
+    # Both stay under the rated figure: nothing holds every component at full draw.
+    rated = (400.0 / 1000.0) * 10.0 * 10.0
+    assert hot.json()["cost_electricity"] < rated
+
+
+@pytest.mark.asyncio
+async def test_a_machine_known_only_by_its_total_wattage_costs_what_it_did(
+    admin_client: AsyncClient,
+):
+    """Nobody is required to open their printer and measure four numbers."""
+    response = await admin_client.post(
+        "/api/v1/calculator/estimate",
+        json={
+            "pricing_method": "by_weight",
+            "weight_g": 200.0,
+            "spool_price": 800.0,
+            "spool_weight_kg": 1.0,
+            "time_sec": 3600.0,
+            "printer_power_w": 200.0,
+            "electricity_cost_per_kwh": 5.5,
+        },
+    )
+    assert response.status_code == 200
+    assert response.json()["cost_electricity"] == pytest.approx(1.1, rel=0.01)
+
+
+@pytest.mark.asyncio
+async def test_a_spool_without_a_currency_is_counted_in_the_owners_money(
+    admin_client: AsyncClient,
+    admin_user: User,
+    db_session: AsyncSession,
+):
+    """A price with no currency belongs to the money its owner works in.
+
+    Assuming roubles put a euro-priced spool into the rouble total, and the sum of two
+    currencies is a number nobody can spend.
+    """
+    switched = await admin_client.patch(
+        "/api/v1/auth/me/preferences",
+        json={"currency": "EUR"},
+    )
+    assert switched.status_code == 200
+
+    spool = UserSpool(
+        user_id=admin_user.id,
+        initial_weight_g=1000,
+        used_weight_g=0,
+        state=UserSpoolState.active,
+        price=25,
+        source="manual",
+        extra={},
+    )
+    db_session.add(spool)
+    await db_session.commit()
+    await db_session.refresh(spool)
+
+    response = await admin_client.post(
+        "/api/v1/calculator/preflight",
+        json={
+            "safety_buffer_percent": 0,
+            "lines": [{"line_id": "tool-0", "weight_g": 100, "spool_ids": [spool.id]}],
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["purchase_cost_by_currency"] == {"EUR": 2.5}

@@ -2555,7 +2555,7 @@
       "selectMaterialSource": "材料或具体线轴",
       "materialManualOption": "手动输入材料和价格",
       "chooseExactSpool": "请选择具体线轴",
-      "materialLinesIncomplete": "请为每种材料选择线轴，或手动输入线轴价格和重量。",
+      "materialLinesIncomplete": "每种材料都需要料盘价格和重量——没有价格就无法计算。",
       "materialLineNeedsPrice": "需要价格",
       "manualMaterialLine": "手动计算",
       "materialCostBasis": "材料成本依据",
@@ -3026,7 +3026,10 @@
       "cloudStorageTooltip": "经济参数保存在您的账户中，任何电脑都可使用。报价单信息默认留在本机 — 这两个按钮将其上传到账户或取回。服务器上以加密方式存储，即使数据库副本泄露也无法读取。",
       "quoteGroupSupplier": "供方",
       "quoteGroupDocument": "单据",
-      "quoteGroupMoney": "款项"
+      "quoteGroupMoney": "款项",
+      "resultApproximate": "估算值：材料价格未确认",
+      "resultNoAmortization": "未计入设备折旧——缺少购置价格或使用寿命",
+      "resultNoElectricity": "未计入电费——缺少电价"
     },
     "userProfile": "用户配置文件",
     "companyProfile": "公司配置文件",
@@ -5070,10 +5073,22 @@
     "importFailed": "无法解析该 CSV",
     "loadFailed": "无法加载取值",
     "saveFailed": "无法保存取值",
-    "addCountry": "添加国家",
     "removeCountry": "移除",
     "saveCountries": "保存按国家的取值",
-    "countryCodePlaceholder": "CN"
+    "csvLegendIntro": "提示：以 # 开头的行在导入时会被跳过。分隔符为分号。",
+    "csvLegendCountry": "两位国家代码，例如 CN",
+    "csvLegendCurrency": "该国金额所用货币，例如 CNY",
+    "csvLegendEmpty": "空单元格表示没有本地取值 — 将沿用全局值。",
+    "scopeGlobal": "基础值",
+    "scopeHint": "没有本国条目的用户使用基础值。国家条目只覆盖其中已填写的字段，其余保持基础值。",
+    "scopePlaceholder": "基础值或国家",
+    "groupConfigured": "已配置国家",
+    "groupAdd": "添加国家",
+    "countriesConfigured": "已配置国家数：{{count}}",
+    "unsavedChanges": "有未保存的更改",
+    "csvLegendAmounts": "所有金额均使用该行 currency 列的货币，不做汇率换算。",
+    "csvLegendDecimal": "小数点可用点或逗号；列之间用分号分隔。",
+    "csvUnitCurrency": "该行货币"
   },
   "subscription": {
     "title": "订阅",
@@ -7262,7 +7277,8 @@
     "upkeepLow": "简单",
     "upkeepMid": "常规",
     "upkeepHigh": "较重",
-    "upkeepHint": "简单 — 偶尔换喷嘴和润滑。较重 — 打印磨料、频繁更换喷嘴、定期保养。"
+    "upkeepHint": "简单 — 偶尔换喷嘴和润滑。较重 — 打印磨料、频繁更换喷嘴、定期保养。",
+    "applySuggested": "应用平台数值"
   },
   "quoteMarket": {
     "title": "单据格式",

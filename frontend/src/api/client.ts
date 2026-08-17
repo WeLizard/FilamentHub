@@ -635,6 +635,21 @@ export const brandsAPI = {
 };
 
 // Filaments API
+export interface CurrencyRef {
+  code: string;
+  symbol: string;
+  decimals: number;
+  rounding_step: number;
+  countries: string[];
+}
+
+export const currenciesAPI = {
+  list: async (): Promise<CurrencyRef[]> => {
+    const { data } = await api.get<CurrencyRef[]>('/currencies');
+    return data;
+  },
+};
+
 export const filamentsAPI = {
   countryCells: async (filamentId: number) => {
     const response = await api.get<FilamentCountryCell[]>(`/filaments/${filamentId}/country-cells`);
@@ -3593,6 +3608,10 @@ export interface PrinterEconomicsSuggestion {
   extruders: number;
   usage: string;
   average_power_watts: number;
+  power_hotend_w: number;
+  power_bed_w: number;
+  power_steppers_w: number;
+  power_electronics_w: number;
   useful_life_hours: number;
   maintenance_cost_per_hour: number;
   orca_time_cost: number | null;

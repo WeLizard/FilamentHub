@@ -68,7 +68,7 @@ import {
   currencySymbol,
   normalizeCurrency,
   roundingStepsForCurrency,
-  CURRENCY_CODES,
+  currencyCodes,
   defaultCurrencyForCountry,
 } from '../utils/currency';
 import {
@@ -363,7 +363,6 @@ const saveCustomPricingPresets = (presets: PricingPreset[]): void => {
 
 
 const QUOTE_PROFILE_STORAGE_KEY = 'filamenthub_calculator_quote_profile_v1';
-const CURRENCY_OPTIONS: CurrencyCode[] = CURRENCY_CODES;
 
 interface PostprocessOperation {
   id: string;
@@ -557,10 +556,17 @@ export const buildEstimateRequest = (
         ...(config.physicalPrinterId !== ''
           ? { physical_printer_id: config.physicalPrinterId }
           : {}),
+        // The plate's own temperatures decide how hard this machine's heaters worked.
+        bed_temperature_c: job.parsed.bed_temperature_other_layers_c ?? null,
+        nozzle_temperature_c: job.parsed.nozzle_temperature_other_layers_c ?? null,
         ...(jobEconomicsUsable && jobEconomics
           ? {
               printing_rate_per_hour: jobEconomics.calculator_printing_rate_per_hour,
               amortization_rate_per_hour: jobEconomics.calculator_amortization_rate_per_hour,
+              power_hotend_w: jobEconomics.power_hotend_w,
+              power_bed_w: jobEconomics.power_bed_w,
+              power_steppers_w: jobEconomics.power_steppers_w,
+              power_electronics_w: jobEconomics.power_electronics_w,
               ...(jobEconomics.calculator_printer_power_w
                 ? { printer_power_w: jobEconomics.calculator_printer_power_w }
                 : {}),
@@ -580,6 +586,11 @@ export const buildEstimateRequest = (
   if (form.electricityCostPerKwh && form.printerPowerW) {
     requestData.electricity_cost_per_kwh = form.electricityCostPerKwh;
     requestData.printer_power_w = form.printerPowerW;
+    // Parts of the order-wide machine, used when a plate names no printer of its own.
+    requestData.power_hotend_w = form.powerHotendW || null;
+    requestData.power_bed_w = form.powerBedW || null;
+    requestData.power_steppers_w = form.powerSteppersW || null;
+    requestData.power_electronics_w = form.powerElectronicsW || null;
   }
 
   if (form.modelingRatePerHour) {
@@ -1683,6 +1694,8 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
   const [materialLines, setMaterialLines] = useState<CalculatorMaterialLineState[]>([]);
   const [batchParseWarning, setBatchParseWarning] = useState<string | null>(null);
   const [materialLinesError, setMaterialLinesError] = useState<string | null>(null);
+  // Materials whose price nobody has confirmed, captured when the estimate was made.
+  const [approximatePriceLabels, setApproximatePriceLabels] = useState<string[]>([]);
   const [dragActive, setDragActive] = useState(false);
   const [historyFeedback, setHistoryFeedback] = useState<{ kind: 'success' | 'error'; message: string } | null>(null);
   const [deletingHistoryEntry, setDeletingHistoryEntry] = useState<CalculatorHistoryEntry | null>(null);
@@ -2521,11 +2534,19 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
   };
 
   const handleCalculate = () => {
-    if (materialLines.some((line) => !line.priceResolved || line.spool_weight_kg <= 0)) {
+    // A missing price cannot be calculated. An unconfirmed one can: it only stops the
+    // total from being presented as final. Refusing both would wall off everyone whose
+    // only price came out of the slicer.
+    if (materialLines.some((line) => line.spool_price <= 0 || line.spool_weight_kg <= 0)) {
       setMaterialLinesError(tc('materialLinesIncomplete'));
       return;
     }
     setMaterialLinesError(null);
+    setApproximatePriceLabels(
+      materialLines
+        .filter((line) => !line.priceResolved)
+        .map((line) => line.label?.trim() || line.line_id),
+    );
     const estimateRequest = buildEstimateRequest(
       form,
       materialLines,
@@ -2563,6 +2584,7 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
     lastBuiltMaterialJobsKeyRef.current = null;
     setAutoMaterialMatch(null);
     setMaterialLinesError(null);
+    setApproximatePriceLabels([]);
     setBatchParseWarning(warning);
 
     if (mode === 'append' && parsedJobs.length > 0) {
@@ -3678,6 +3700,7 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
           isPreflightLoading={preflightMutation.isPending}
           batchParseWarning={batchParseWarning}
           materialLinesError={materialLinesError}
+          approximatePriceLabels={approximatePriceLabels}
           dragActive={dragActive}
           filaments={catalogFilaments}
           isFilamentsLoading={catalogFilamentsPending}
@@ -3818,6 +3841,7 @@ interface CalculatorViewProps {
   isPreflightLoading: boolean;
   batchParseWarning: string | null;
   materialLinesError: string | null;
+  approximatePriceLabels: string[];
   dragActive: boolean;
   filaments: Filament[];
   isFilamentsLoading: boolean;
@@ -3900,6 +3924,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
   isPreflightLoading,
   batchParseWarning,
   materialLinesError,
+  approximatePriceLabels,
   dragActive,
   filaments,
   isFilamentsLoading,
@@ -4124,18 +4149,30 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
     && form.weightG > 0
     && toHours(form.timeHours, form.timeMinutes, form.timeSec) > 0;
   const showCalculateAction = hasParsedJobs || hasManualCalculationData;
+  // Enough to compute, which is not the same as enough to quote: an unconfirmed price
+  // still gives a number, and the total says so rather than the button refusing.
   const materialsReadyForCalculation = !hasParsedJobs || (
     materialLines.length > 0
     && materialLines.every((line) => (
       line.weight_g > 0
       && line.spool_weight_kg > 0
-      && line.priceResolved
+      && line.spool_price > 0
     ))
   );
   const calculateActionEnabled = showCalculateAction
     && materialsReadyForCalculation
     && !isParsingGcode
     && !isCalculating;
+  // A cost line that came out at zero is not a cheap order, it is an input nobody
+  // filled. Naming which one beats a total that looks authoritative.
+  const machineHours = result?.time_hours ?? 0;
+  const approximateNotes = result
+    ? [
+        ...approximatePriceLabels,
+        ...(machineHours > 0 && !result.cost_amortization ? [tc('resultNoAmortization')] : []),
+        ...(machineHours > 0 && !result.cost_electricity ? [tc('resultNoElectricity')] : []),
+      ]
+    : [];
   const handleCalculateAction = () => {
     if (!calculateActionEnabled) return;
     scrollToResultAfterEstimateRef.current = true;
@@ -4781,7 +4818,18 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                       <button
                         key={market}
                         type="button"
-                        onClick={() => onQuoteProfileChange('quoteMarket', market)}
+                        onClick={() => {
+                          onQuoteProfileChange('quoteMarket', market);
+                          // Picking a market is a deliberate act, so the currency may
+                          // follow it — but only when the current one does not belong
+                          // to that market anyway. A shop in Kazakhstan choosing
+                          // "Russia and CIS" keeps its tenge.
+                          const { currencies } = quoteMarketRules(market);
+                          const current = normalizeCurrency(quoteProfile.currency);
+                          if (currencies.length > 0 && !currencies.includes(current)) {
+                            onQuoteProfileChange('currency', currencies[0]);
+                          }
+                        }}
                         className={`rounded-full border px-3 py-1.5 text-xs transition ${
                           quoteProfile.quoteMarket === market
                             ? 'border-cyan-400/50 bg-cyan-500/15 text-cyan-200'
@@ -4850,7 +4898,9 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                     <TextInput
                       value={quoteProfile.sellerPhone}
                       onChange={(value) => onQuoteProfileChange('sellerPhone', value)}
-                      placeholder="+7 (999) 000-00-00"
+                      placeholder={quoteMarketRules(
+                        resolveQuoteMarket(quoteProfile.quoteMarket, quoteProfile.currency),
+                      ).phonePlaceholder}
                     />
                   </FieldBlock>
                   </div>
@@ -4898,7 +4948,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                         onQuoteProfileChange('currency', event.target.value as CurrencyCode)
                       }
                     >
-                      {CURRENCY_OPTIONS.map((c) => (
+                      {currencyCodes().map((c: CurrencyCode) => (
                         <option key={c} value={c}>{c} ({currencySymbol(c)})</option>
                       ))}
                     </select>
@@ -6282,6 +6332,15 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
               <div className="overflow-hidden rounded-[1.45rem] border border-cyan-400/20 bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.18),transparent_45%),linear-gradient(145deg,rgba(14,116,144,0.2),rgba(76,29,149,0.26))] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
                 <p className="text-xs uppercase tracking-[0.18em] text-slate-300">{tc('customerPriceTitle')}</p>
                 <p className="mt-3 text-4xl font-bold tracking-tight text-white">{formatCurrency(result.cost_final || result.cost_total)}</p>
+                {approximateNotes.length > 0 ? (
+                  <p className="mt-2 flex items-start gap-1.5 text-xs leading-4 text-amber-300/90">
+                    <AlertTriangle className="mt-px h-3.5 w-3.5 shrink-0" />
+                    <span>
+                      {tc('resultApproximate')}
+                      <span className="text-amber-200/70"> · {approximateNotes.join(', ')}</span>
+                    </span>
+                  </p>
+                ) : null}
                 <p className="mt-2 text-sm text-slate-300">
                   {hasParsedJobs ? (
                     <>
@@ -6778,7 +6837,9 @@ const QuoteModal: React.FC<QuoteModalProps> = ({
                     <TextInput
                       value={quoteParties.sellerPhone}
                       onChange={(value) => onPartyChange('sellerPhone', value)}
-                      placeholder="+7 (999) 000-00-00"
+                      placeholder={quoteMarketRules(
+                        resolveQuoteMarket(quoteParties.quoteMarket, quoteParties.currency),
+                      ).phonePlaceholder}
                     />
                   </FieldBlock>
                   <FieldBlock label={tc('quoteValidityDays')} hint={tc('quoteValidityDaysHint')}>

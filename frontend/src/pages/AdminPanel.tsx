@@ -24,7 +24,6 @@ const AdminMaintenance = lazy(() => import('../components/admin/AdminMaintenance
 const AdminWiki = lazy(() => import('../components/admin/AdminWiki').then((module) => ({ default: module.AdminWiki })));
 const AdminSubscriptions = lazy(() => import('../components/admin/AdminSubscriptions').then((module) => ({ default: module.AdminSubscriptions })));
 const AdminCalculatorDefaults = lazy(() => import('../components/admin/AdminCalculatorDefaults').then((module) => ({ default: module.AdminCalculatorDefaults })));
-const AdminCalculatorCountryDefaults = lazy(() => import('../components/admin/AdminCalculatorCountryDefaults').then((module) => ({ default: module.AdminCalculatorCountryDefaults })));
 const AdminOrcaSchemaObservations = lazy(() => import('../components/admin/AdminOrcaSchemaObservations').then((module) => ({ default: module.AdminOrcaSchemaObservations })));
 
 type AdminTab = 'requests' | 'brands' | 'materials' | 'presets' | 'users' | 'stats' | 'printers' | 'printer-requests' | 'communications' | 'database' | 'maintenance' | 'wiki' | 'subscriptions' | 'calculator' | 'orca-schema';
@@ -65,7 +64,7 @@ export function AdminPanel() {
   if (!user || user.role !== 'admin') {
     return (
       <PageBackground className="flex items-center justify-center p-4">
-        <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-8 border border-white/20 text-center max-w-md">
+        <div className="glass-panel rounded-2xl p-8 border border-white/20 text-center max-w-md">
           <Shield className="w-16 h-16 text-red-400 mx-auto mb-4" />
           <h1 className="text-2xl font-bold text-white mb-2">{t('adminPanel.accessDenied')}</h1>
           <p className="text-gray-300">{t('adminPanel.accessDeniedMessage')}</p>
@@ -130,7 +129,7 @@ export function AdminPanel() {
         </div>
 
         {/* Tabs */}
-        <div className="bg-white/10 backdrop-blur-sm rounded-lg md:rounded-xl border border-white/20 mb-4 md:mb-6 p-1.5 md:p-2 flex flex-wrap gap-1.5 md:gap-2">
+        <div className="glass-panel rounded-lg md:rounded-xl border border-white/20 mb-4 md:mb-6 p-1.5 md:p-2 flex flex-wrap gap-1.5 md:gap-2">
           {tabs.map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
@@ -163,7 +162,7 @@ export function AdminPanel() {
         </div>
 
         {/* Content */}
-        <div className="bg-white/10 backdrop-blur-sm rounded-lg md:rounded-xl border border-white/20 p-3 md:p-6">
+        <div className="glass-panel rounded-lg md:rounded-xl border border-white/20 p-3 md:p-6">
           <Suspense fallback={<div className="flex min-h-48 items-center justify-center"><Loader2 className="h-7 w-7 animate-spin text-purple-300" /></div>}>
             {activeTab === 'requests' && <AdminBrandRequests />}
             {activeTab === 'brands' && <AdminBrands />}
@@ -178,10 +177,7 @@ export function AdminPanel() {
             {activeTab === 'database' && <AdminDatabaseDiagnostics />}
             {activeTab === 'orca-schema' && <AdminOrcaSchemaObservations />}
             {activeTab === 'calculator' && (
-              <>
-                <AdminCalculatorDefaults />
-                <AdminCalculatorCountryDefaults />
-              </>
+<AdminCalculatorDefaults />
             )}
             {activeTab === 'subscriptions' && <AdminSubscriptions />}
             {activeTab === 'maintenance' && <AdminMaintenance />}

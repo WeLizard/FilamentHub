@@ -7,7 +7,7 @@ import { Loader2, Upload, X } from 'lucide-react';
 
 import { brandsAPI } from '../api/client';
 import { COUNTRY_CODES, countryName } from '../utils/countries';
-import { CURRENCY_CODES, currencySymbol, defaultCurrencyForCountry } from '../utils/currency';
+import { currencyCodes, currencySymbol, defaultCurrencyForCountry } from '../utils/currency';
 import { translateApiError } from '../utils/translateApiError';
 import { useAuth } from '../contexts/AuthContext';
 import { BrandLogoFrame } from './BrandLogoFrame';
@@ -406,7 +406,7 @@ export const BrandSettings: React.FC<BrandSettingsProps> = ({ brand }) => {
                   onChange={(event) => setMarketCurrency(event.target.value)}
                   className={`${FIELD} sm:max-w-xs`}
                 >
-                  {CURRENCY_CODES.map((code) => (
+                  {currencyCodes().map((code: string) => (
                     <option key={code} value={code} className="bg-gray-900">
                       {code} · {currencySymbol(code)}
                     </option>

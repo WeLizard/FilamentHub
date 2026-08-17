@@ -10,6 +10,13 @@ export interface QuoteMarketRules {
   disclaimerKeys: { binding: string; nonBinding: string };
   dateLocale: string;
   numberPrefix: string;
+  /** Как на этом рынке выглядит номер телефона. */
+  phonePlaceholder: string;
+  /**
+   * Валюты, в которых на этом рынке обычно выставляют счёт. Первая — основная.
+   * Пустой список означает «любая»: международный рынок не сводится к одной.
+   */
+  currencies: string[];
 }
 
 const RULES: Record<QuoteMarket, QuoteMarketRules> = {
@@ -26,6 +33,8 @@ const RULES: Record<QuoteMarket, QuoteMarketRules> = {
     },
     dateLocale: 'ru-RU',
     numberPrefix: 'КП',
+    phonePlaceholder: '+7 (999) 000-00-00',
+    currencies: ['RUB', 'BYN', 'KZT', 'UAH', 'AMD', 'AZN', 'GEL', 'KGS', 'MDL', 'UZS'],
   },
   intl: {
     market: 'intl',
@@ -40,6 +49,8 @@ const RULES: Record<QuoteMarket, QuoteMarketRules> = {
     },
     dateLocale: 'en-GB',
     numberPrefix: 'QUO',
+    phonePlaceholder: '+1 555 000 0000',
+    currencies: [],
   },
   cn: {
     market: 'cn',
@@ -54,6 +65,8 @@ const RULES: Record<QuoteMarket, QuoteMarketRules> = {
     },
     dateLocale: 'zh-CN',
     numberPrefix: 'BJ',
+    phonePlaceholder: '+86 138 0000 0000',
+    currencies: ['CNY'],
   },
 };
 

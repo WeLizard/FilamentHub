@@ -34,6 +34,7 @@ from app.models.crm import (
     CrmQuoteVersion,
     CrmReservationStatus,
 )
+from app.models.currency import Currency
 from app.models.email_communication import EmailMessage, EmailSendReservation, EmailThread
 from app.models.feedback import Feedback, FeedbackMessage, FeedbackStatus, FeedbackType
 from app.models.filament import Filament
@@ -110,6 +111,7 @@ from app.models.wiki_space import WikiSpace
 
 __all__ = [
     "BadWord",
+    "Currency",
     "Brand",
     "BrandCountryCell",
     "BrandTerritorialGrant",

@@ -2560,7 +2560,7 @@
       "selectMaterialSource": "Material or physical spool",
       "materialManualOption": "Enter material and price manually",
       "chooseExactSpool": "Choose the physical spool",
-      "materialLinesIncomplete": "Choose a spool for every material, or enter its spool price and weight manually.",
+      "materialLinesIncomplete": "Every material needs a spool price and weight — there is nothing to calculate without a price.",
       "materialLineNeedsPrice": "Price required",
       "manualMaterialLine": "Manual estimate",
       "materialCostBasis": "Material cost basis",
@@ -3031,7 +3031,10 @@
       "cloudStorageTooltip": "The economics live in your account and follow you to any computer. The quote details stay on this computer by default — these buttons send them to your account and bring them back. On the server they are stored encrypted, so a leaked copy of the database cannot be read.",
       "quoteGroupSupplier": "Supplier",
       "quoteGroupDocument": "Document",
-      "quoteGroupMoney": "Money"
+      "quoteGroupMoney": "Money",
+      "resultApproximate": "Approximate: a material price is unconfirmed",
+      "resultNoAmortization": "machine wear is not counted — no purchase price or service life",
+      "resultNoElectricity": "electricity is not counted — no tariff set"
     },
     "userProfile": "User Profile",
     "companyProfile": "Company Profile",
@@ -5076,10 +5079,22 @@
     "importFailed": "Could not parse the CSV",
     "loadFailed": "Could not load the values",
     "saveFailed": "Could not save the values",
-    "addCountry": "Add country",
     "removeCountry": "Remove",
     "saveCountries": "Save per-country values",
-    "countryCodePlaceholder": "US"
+    "csvLegendIntro": "Note: lines starting with # are skipped on import. The separator is a semicolon.",
+    "csvLegendCountry": "two-letter country code, for example US",
+    "csvLegendCurrency": "currency of this country's amounts, for example USD",
+    "csvLegendEmpty": "An empty cell means there is no local value — the global one is used.",
+    "scopeGlobal": "Base",
+    "scopeHint": "Base values go to everyone without a row for their country. A country row overrides only the fields filled in it; the rest stays base.",
+    "scopePlaceholder": "Base or a country",
+    "groupConfigured": "Configured countries",
+    "groupAdd": "Add a country",
+    "countriesConfigured": "Countries configured: {{count}}",
+    "unsavedChanges": "Unsaved changes",
+    "csvLegendAmounts": "Every amount is in its own row's currency, taken from the currency column. Nothing is converted.",
+    "csvLegendDecimal": "Decimals accept a dot or a comma; columns are separated by a semicolon.",
+    "csvUnitCurrency": "the row's currency"
   },
   "subscription": {
     "title": "Subscription",
@@ -7273,7 +7288,8 @@
     "upkeepLow": "Easy",
     "upkeepMid": "Usual",
     "upkeepHigh": "Demanding",
-    "upkeepHint": "Easy — the odd nozzle and some lubricant. Demanding — abrasives, frequent nozzle changes, regular servicing."
+    "upkeepHint": "Easy — the odd nozzle and some lubricant. Demanding — abrasives, frequent nozzle changes, regular servicing.",
+    "applySuggested": "Apply platform values"
   },
   "quoteMarket": {
     "title": "Document format",

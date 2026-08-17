@@ -91,6 +91,10 @@ from app.schemas.user import (
     UserUpdate,
     UserUsernameUpdate,
 )
+from app.services.calculator_defaults_service import (
+    calculator_profile_default_values,
+    starting_defaults_for_user,
+)
 from app.services.email_service import (
     send_email_change_email,
     send_email_verification_email,
@@ -117,6 +121,7 @@ from app.services.request_region_service import (
     AccessRegion,
     get_request_client_ip,
     resolve_access_region,
+    resolve_request_country_code,
 )
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -454,6 +459,9 @@ async def register(
         full_name=data.full_name if data.full_name else None,
         active=True,
         email_verified=False,
+        # A starting point for prices and local catalogue data, not a claim about
+        # where the person is: it is shown in settings and theirs to correct.
+        country=resolve_request_country_code(request),
         last_login=datetime.now(timezone.utc),
     )
 
@@ -1410,7 +1418,14 @@ async def update_user_preferences(
         )
     )
     if profile is None:
-        profile = UserCalculatorProfile(user_id=current_user.id)
+        # Picking a currency must not be the moment a profile appears out of the
+        # column defaults: those are one country's economics, and stamping another
+        # currency on them prices someone's work at foreign numbers.
+        defaults, _ = await starting_defaults_for_user(db, current_user)
+        profile = UserCalculatorProfile(
+            user_id=current_user.id,
+            **calculator_profile_default_values(defaults, profile_currency=data.currency),
+        )
         db.add(profile)
 
     profile.currency = data.currency
@@ -1753,6 +1768,7 @@ async def oauth_callback(
                 role=UserRole.USER,
                 active=True,
                 email_verified=oauth_info.email_verified,
+                country=resolve_request_country_code(request),
                 provisional_since=datetime.now(timezone.utc),
             )
             db.add(user)

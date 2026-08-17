@@ -48,6 +48,7 @@ from app.schemas.brand_request import (
     BrandRequestUpdate,
 )
 from app.services.brand_slug_service import choose_brand_slug
+from app.services.currency_service import FALLBACK_CURRENCY, currency_for_country
 from app.services.email_validator import is_email_requiring_documents, normalize_website_url
 from app.services.file_service import (
     delete_proof_files,
@@ -515,6 +516,9 @@ async def update_brand_request(
                 verified=True,  # Автоматически верифицируем после одобрения админом
                 name_correction_available=True,
                 active=True,
+                # The market the brand applied from decides its money. The column
+                # default is the platform's own currency and belongs to nobody.
+                currency=await currency_for_country(db, request.country) or FALLBACK_CURRENCY,
             )
             db.add(new_brand)
             await db.flush()  # Чтобы получить ID бренда

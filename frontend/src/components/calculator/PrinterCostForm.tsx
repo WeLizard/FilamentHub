@@ -85,11 +85,13 @@ export const PrinterCostForm: React.FC<PrinterCostFormProps> = ({
         ?? 0,
       rate: saved.machine_hour_rate ?? fallback.rate,
     });
+    // Offer what we worked out for this machine instead of four zeroes: the bed comes
+    // from its own size, and a person is free to write over any of it.
     setParts({
-      hotend: saved.power_hotend_w ?? 0,
-      bed: saved.power_bed_w ?? 0,
-      steppers: saved.power_steppers_w ?? 0,
-      electronics: saved.power_electronics_w ?? 0,
+      hotend: saved.power_hotend_w ?? suggestion?.power_hotend_w ?? 0,
+      bed: saved.power_bed_w ?? suggestion?.power_bed_w ?? 0,
+      steppers: saved.power_steppers_w ?? suggestion?.power_steppers_w ?? 0,
+      electronics: saved.power_electronics_w ?? suggestion?.power_electronics_w ?? 0,
     });
   }, [saved, suggestion, fallback]);
 
@@ -185,6 +187,32 @@ export const PrinterCostForm: React.FC<PrinterCostFormProps> = ({
     saveMutation.mutate({ next });
   };
 
+  /** Put the platform's numbers back over what is in the form.
+   *
+   * Empty fields already show them, but a value entered by hand and then regretted has
+   * no way back. The purchase price and the rate stay: those are the person's own and
+   * nothing here knows better.
+   */
+  const applySuggested = () => {
+    if (!suggestion) return;
+    const nextParts = {
+      hotend: suggestion.power_hotend_w,
+      bed: suggestion.power_bed_w,
+      steppers: suggestion.power_steppers_w,
+      electronics: suggestion.power_electronics_w,
+    };
+    const total = nextParts.hotend + nextParts.bed + nextParts.steppers + nextParts.electronics;
+    const next = {
+      ...values,
+      lifeHours: suggestion.useful_life_hours,
+      powerWatts: total > 0 ? total : suggestion.average_power_watts,
+      maintenance: suggestion.maintenance_cost_per_hour,
+    };
+    setParts(nextParts);
+    setValues(next);
+    saveMutation.mutate({ next, nextParts });
+  };
+
   if (economicsQuery.isLoading) {
     return (
       <div className="flex justify-center py-8">
@@ -248,11 +276,20 @@ export const PrinterCostForm: React.FC<PrinterCostFormProps> = ({
       }
       header={
         suggestion ? (
-          <p className="text-[11px] leading-4 text-slate-500">
-            {t(`printerCost.confidence.${suggestion.confidence}`, {
-              model: suggestion.model_name ?? printerName,
-            })}
-          </p>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="min-w-0 flex-1 text-[11px] leading-4 text-slate-400">
+              {t(`printerCost.confidence.${suggestion.confidence}`, {
+                model: suggestion.model_name ?? printerName,
+              })}
+            </p>
+            <button
+              type="button"
+              onClick={applySuggested}
+              className="shrink-0 rounded-full border border-white/10 bg-slate-950/40 px-3 py-1.5 text-xs text-slate-300 transition hover:border-white/20 hover:text-white"
+            >
+              {t('printerCost.applySuggested')}
+            </button>
+          </div>
         ) : null
       }
       usage={

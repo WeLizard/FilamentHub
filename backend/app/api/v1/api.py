@@ -15,6 +15,7 @@ from app.api.v1.endpoints import (
     catalog_urls,
     country_cells,
     crm,
+    currencies,
     devices,
     downloads,
     email_communications,
@@ -51,6 +52,7 @@ api_router = APIRouter()
 
 # Include all endpoint routers
 api_router.include_router(auth.router)
+api_router.include_router(currencies.router)
 api_router.include_router(catalog_urls.router)
 api_router.include_router(brands.router)
 api_router.include_router(brand_invites.router)
