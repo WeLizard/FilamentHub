@@ -9,6 +9,7 @@ from fastapi import FastAPI
 from app import main
 from app.db import session as session_module
 from app.services import (
+    field_key_guard,
     inbound_mail_service,
     provisional_account_service,
     subscription_service,
@@ -68,11 +69,19 @@ async def test_lifespan_warms_state_and_stops_background_tasks(monkeypatch) -> N
     )
     monkeypatch.setattr(inbound_mail_service, "run_inbound_mail_poller", fake_mail_poller)
     monkeypatch.setattr(main, "_warm_pdf_renderer", fake_pdf_warmup)
+    # Checked against a real database at startup; this test drives the lifespan with a
+    # stand-in session and is about which tasks start and stop.
+    monkeypatch.setattr(
+        field_key_guard,
+        "verify_field_encryption_key",
+        lambda db: record_warm_call("field-key", db),
+    )
 
     test_app = FastAPI(lifespan=main._lifespan)
     async with test_app.router.lifespan_context(test_app):
         await asyncio.wait_for(all_started.wait(), timeout=1)
         assert warm_calls == [
+            ("field-key", database_session),
             ("settings", database_session),
             ("provisional-accounts", database_session),
         ]

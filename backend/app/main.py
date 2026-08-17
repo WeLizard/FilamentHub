@@ -27,11 +27,22 @@ from app.services.request_region_service import geoip_database_health
 
 @asynccontextmanager
 async def _lifespan(application: FastAPI) -> AsyncIterator[None]:
+    # Deliberately outside the warm-up below, whose failures are logged and tolerated.
+    # A key that cannot read this database is not something to serve requests through.
+    await _verify_field_encryption_key()
     try:
         await _start_background_tasks(application)
         yield
     finally:
         await _stop_background_tasks(application)
+
+
+async def _verify_field_encryption_key() -> None:
+    from app.db.session import AsyncSessionLocal
+    from app.services.field_key_guard import verify_field_encryption_key
+
+    async with AsyncSessionLocal() as db:
+        await verify_field_encryption_key(db)
 
 
 # Create FastAPI app
