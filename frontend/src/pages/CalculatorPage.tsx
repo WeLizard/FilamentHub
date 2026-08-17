@@ -3987,7 +3987,6 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
   const [presetNameInput, setPresetNameInput] = useState('');
   const [openObjectJobKeys, setOpenObjectJobKeys] = useState<Set<string>>(new Set());
   const [openMaterialRowIds, setOpenMaterialRowIds] = useState<Set<string>>(new Set());
-  const [singleMaterialCostOpen, setSingleMaterialCostOpen] = useState(true);
   const resultsRef = useRef<HTMLDivElement | null>(null);
   const scrollToResultAfterEstimateRef = useRef(false);
 
@@ -5022,8 +5021,10 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
             />
 
             <div className="space-y-5">
+              {/* Without a file this panel is an offer, not a step: numbering it
+                  first would start the count on the thing the person skipped. */}
               <WorkspacePanel
-                step="1"
+                step={hasParsedJobs ? '1' : undefined}
                 title={tc('workspaceSourceTitle')}
               >
                 <div className={insidePlugin ? 'grid gap-4 lg:grid-cols-2' : ''}>
@@ -5150,7 +5151,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                 }
               >
               <WorkspacePanel
-                step="2"
+                step={hasParsedJobs ? '2' : '1'}
                 title={hasParsedJobs ? tc('orderCompositionTitle') : tc('workspaceMaterialTitle')}
               >
                 {hasParsedJobs ? (
@@ -5618,14 +5619,11 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                         const value = event.target.value;
                         if (value.startsWith('spool:')) {
                           onSpoolSelect(Number(value.slice('spool:'.length)));
-                          setSingleMaterialCostOpen(false);
                         } else if (value.startsWith('filament:')) {
                           onCatalogFilamentSelect(Number(value.slice('filament:'.length)));
-                          setSingleMaterialCostOpen(false);
                         } else {
                           onSpoolSelect('');
                           onCatalogFilamentSelect('');
-                          setSingleMaterialCostOpen(true);
                         }
                       }}
                     >
@@ -5719,27 +5717,12 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                       suffix={tc('grams')}
                     />
                   </FieldBlock>
+                  {/* Two fields do not need a disclosure with a summary of themselves:
+                      the summary said what the fields already show, and the toggle was
+                      a control whose only outcome was hiding a required price. */}
                   <div className="rounded-[1.25rem] border border-white/[0.08] bg-black/15 p-3">
-                    <div className="flex min-h-10 flex-wrap items-center justify-between gap-3">
-                      <div>
-                        <p className="text-xs font-medium text-slate-200">{tc('materialCostBasis')}</p>
-                        <p className="mt-1 text-xs text-slate-400">
-                          {form.spoolPrice > 0
-                            ? `${formatCurrency(form.spoolPrice)} · ${form.spoolWeightKg} ${tc('kg')}`
-                            : tc('materialLineNeedsPrice')}
-                        </p>
-                      </div>
-                      <button
-                        type="button"
-                        className="inline-flex items-center gap-1.5 text-xs font-medium text-cyan-200 transition-colors hover:text-white"
-                        onClick={() => setSingleMaterialCostOpen((current) => !current)}
-                      >
-                        {singleMaterialCostOpen ? tc('hideMaterialCost') : tc('editMaterialCost')}
-                        <ChevronDown className={`h-3.5 w-3.5 transition-transform ${singleMaterialCostOpen ? 'rotate-180' : ''}`} />
-                      </button>
-                    </div>
-                    {singleMaterialCostOpen ? (
-                      <div className="mt-3 grid grid-cols-1 gap-3 border-t border-white/[0.06] pt-3 sm:grid-cols-2">
+                    <p className="text-xs font-medium text-slate-200">{tc('materialCostBasis')}</p>
+                    <div className="mt-3 grid grid-cols-1 gap-3 border-t border-white/[0.06] pt-3 sm:grid-cols-2">
                         <FieldBlock label={t('profilePage.calc.spoolPrice')}>
                           <InputWithSuffix
                             value={form.spoolPrice}
@@ -5768,8 +5751,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                             step="0.1"
                           />
                         </FieldBlock>
-                      </div>
-                    ) : null}
+                    </div>
                   </div>
                 </div>
                 ) : null}
@@ -5792,11 +5774,14 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
 
             {!hasParsedJobs ? (
             <WorkspacePanel
-              step="3"
+              step={hasParsedJobs ? '3' : '2'}
               title={tc('workspaceProductionTitle')}
             >
+              {/* Seconds are not typed by hand: nobody estimates a batch to the second,
+                  and the field cost a stop on the way through the form. A sliced file
+                  still brings them, where they are measured. */}
               {!hasParsedJobs ? (
-                <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 xl:grid-cols-2 2xl:grid-cols-4">
+                <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
                   <FieldBlock label={t('profilePage.calc.quantity')}>
                     <NumberInput value={form.quantity} onChange={(value) => onChange('quantity', Math.max(1, value))} min="1" placeholder="1" />
                   </FieldBlock>
@@ -5805,9 +5790,6 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                   </FieldBlock>
                   <FieldBlock label={t('profilePage.calc.minutes')}>
                     <NumberInput value={form.timeMinutes} onChange={(value) => onChange('timeMinutes', value)} placeholder="0" />
-                  </FieldBlock>
-                  <FieldBlock label={t('profilePage.calc.seconds')}>
-                    <NumberInput value={form.timeSec} onChange={(value) => onChange('timeSec', value)} placeholder="0" />
                   </FieldBlock>
                 </div>
               ) : null}
@@ -6332,6 +6314,14 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
               <div className="overflow-hidden rounded-[1.45rem] border border-cyan-400/20 bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.18),transparent_45%),linear-gradient(145deg,rgba(14,116,144,0.2),rgba(76,29,149,0.26))] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
                 <p className="text-xs uppercase tracking-[0.18em] text-slate-300">{tc('customerPriceTitle')}</p>
                 <p className="mt-3 text-4xl font-bold tracking-tight text-white">{formatCurrency(result.cost_final || result.cost_total)}</p>
+                {/* Shown only once a number exists: the point is not to advertise a
+                    feature but to say what the number they are looking at is worth. */}
+                {!hasParsedJobs ? (
+                  <p className="mt-3 flex items-start gap-1.5 rounded-xl border border-cyan-400/20 bg-cyan-400/[0.07] px-3 py-2 text-xs leading-5 text-cyan-100/90">
+                    <Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0 text-cyan-300" />
+                    <span>{tc('manualEstimateHint')}</span>
+                  </p>
+                ) : null}
                 {approximateNotes.length > 0 ? (
                   <p className="mt-2 flex items-start gap-1.5 text-xs leading-4 text-amber-300/90">
                     <AlertTriangle className="mt-px h-3.5 w-3.5 shrink-0" />
@@ -7126,14 +7116,15 @@ const compactFieldsClass = [
 ].join(' ');
 
 const WorkspacePanel: React.FC<{
-  step: string;
+  /** Omitted for a panel that is an offer rather than a step to be taken. */
+  step?: string;
   title: string;
   description?: string;
   children: ReactNode;
 }> = ({ step, title, description, children }) => (
   <div className="rounded-[1.55rem] border border-white/10 bg-white/5 p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
     <div className="flex items-start gap-3">
-      <StepBadge step={step} />
+      {step ? <StepBadge step={step} /> : null}
       <div>
         <p className="text-base font-semibold text-white">{title}</p>
         {description ? <p className="mt-1 text-sm leading-6 text-slate-300">{description}</p> : null}

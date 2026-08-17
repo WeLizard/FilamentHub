@@ -3333,8 +3333,6 @@
       "materialPrimeTowerCost": "На башню очистки",
       "materialNonSupportCost": "Остальной расход",
       "supportBreakdownUnavailable": "Поддержки присутствуют, но G-code не позволяет надёжно распределить их вес по материалам. Общий расход уже учтён.",
-      "editMaterialCost": "Изменить стоимость",
-      "hideMaterialCost": "Скрыть стоимость",
       "changeMaterial": "Изменить материал",
       "hideMaterialPicker": "Скрыть выбор",
       "colorFromGcode": "Цвет из G-code",
@@ -3792,7 +3790,8 @@
       "quoteGroupMoney": "Деньги",
       "resultApproximate": "Ориентировочно: цена материала не подтверждена",
       "resultNoAmortization": "износ принтера не учтён — не задана цена машины или её ресурс",
-      "resultNoElectricity": "электричество не учтено — не задан тариф"
+      "resultNoElectricity": "электричество не учтено — не задан тариф",
+      "manualEstimateHint": "Это прикидка по средним. Загрузите нарезанный файл — и расчёт пойдёт по фактическому расходу, вашим катушкам со склада и времени из слайсера."
     },
     "profilesCount_one": "{{count}} конфигурация",
     "profilesCount_few": "{{count}} конфигурации",

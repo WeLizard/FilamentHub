@@ -2579,8 +2579,6 @@
       "materialPrimeTowerCost": "擦拭塔",
       "materialNonSupportCost": "其他耗材",
       "supportBreakdownUnavailable": "该任务包含支撑，但此 G-code 没有足够证据将支撑重量可靠地分配到各材料。总耗材已计入。",
-      "editMaterialCost": "修改成本",
-      "hideMaterialCost": "隐藏成本",
       "changeMaterial": "更换材料",
       "hideMaterialPicker": "收起选择",
       "colorFromGcode": "G-code 中的颜色",
@@ -3038,7 +3036,8 @@
       "quoteGroupMoney": "款项",
       "resultApproximate": "估算值：材料价格未确认",
       "resultNoAmortization": "未计入设备折旧——缺少购置价格或使用寿命",
-      "resultNoElectricity": "未计入电费——缺少电价"
+      "resultNoElectricity": "未计入电费——缺少电价",
+      "manualEstimateHint": "这是按平均值的估算。上传切片文件后，计算将基于实际用量、你的料盘库存和切片软件测得的时间。"
     },
     "userProfile": "用户配置文件",
     "companyProfile": "公司配置文件",
