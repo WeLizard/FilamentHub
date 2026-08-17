@@ -38,11 +38,27 @@ async def _lifespan(application: FastAPI) -> AsyncIterator[None]:
 
 
 async def _verify_field_encryption_key() -> None:
+    """Stop for a key that cannot read this database, but not for an unreachable one.
+
+    A database still starting up and a wrong key are different problems. Only the second
+    one is a reason to refuse service: the first resolves itself, and blocking startup
+    on it would turn an ordinary restart order into an outage.
+    """
+    import logging as _logging
+
+    from sqlalchemy.exc import SQLAlchemyError
+
     from app.db.session import AsyncSessionLocal
     from app.services.field_key_guard import verify_field_encryption_key
 
-    async with AsyncSessionLocal() as db:
-        await verify_field_encryption_key(db)
+    try:
+        async with AsyncSessionLocal() as db:
+            await verify_field_encryption_key(db)
+    except (SQLAlchemyError, OSError):
+        _logging.getLogger(__name__).warning(
+            "Could not verify the field encryption key; the database was unreachable",
+            exc_info=True,
+        )
 
 
 # Create FastAPI app

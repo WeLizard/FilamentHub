@@ -96,3 +96,77 @@ async def test_lifespan_warms_state_and_stops_background_tasks(monkeypatch) -> N
             "pdf_warmup_task",
         )
     )
+
+
+@pytest.mark.asyncio
+async def test_an_unreachable_database_does_not_block_startup(monkeypatch) -> None:
+    """A database still coming up is not a wrong key.
+
+    The encryption check refuses to serve requests under a key that cannot read the
+    data, and that has to stay strict. But treating a connection failure the same way
+    turns an ordinary restart order — application before database — into an outage.
+    """
+    from sqlalchemy.exc import OperationalError
+
+    started: set[str] = set()
+    all_started = asyncio.Event()
+
+    @asynccontextmanager
+    async def fake_session_factory():
+        yield object()
+
+    async def run_until_cancelled(name: str) -> None:
+        started.add(name)
+        if len(started) == 3:
+            all_started.set()
+        await asyncio.Future()
+
+    async def unreachable(db: object) -> None:
+        raise OperationalError("SELECT 1", {}, Exception("connection refused"))
+
+    monkeypatch.setattr(session_module, "AsyncSessionLocal", fake_session_factory)
+    monkeypatch.setattr(field_key_guard, "verify_field_encryption_key", unreachable)
+    monkeypatch.setattr(
+        subscription_service, "refresh_settings_cache", lambda db: asyncio.sleep(0)
+    )
+    monkeypatch.setattr(
+        provisional_account_service,
+        "sweep_abandoned_provisional_accounts",
+        lambda db: asyncio.sleep(0),
+    )
+    monkeypatch.setattr(
+        provisional_account_service,
+        "run_provisional_account_sweeper",
+        lambda factory: run_until_cancelled("sweeper"),
+    )
+    monkeypatch.setattr(
+        inbound_mail_service,
+        "run_inbound_mail_poller",
+        lambda factory: run_until_cancelled("mail"),
+    )
+    monkeypatch.setattr(main, "_warm_pdf_renderer", lambda: run_until_cancelled("pdf"))
+
+    test_app = FastAPI(lifespan=main._lifespan)
+    async with test_app.router.lifespan_context(test_app):
+        await asyncio.wait_for(all_started.wait(), timeout=1)
+
+
+@pytest.mark.asyncio
+async def test_a_key_mismatch_still_stops_startup(monkeypatch) -> None:
+    """The one failure that must not be tolerated."""
+    from app.services.field_key_guard import FieldKeyMismatchError
+
+    @asynccontextmanager
+    async def fake_session_factory():
+        yield object()
+
+    async def mismatched(db: object) -> None:
+        raise FieldKeyMismatchError("wrong key")
+
+    monkeypatch.setattr(session_module, "AsyncSessionLocal", fake_session_factory)
+    monkeypatch.setattr(field_key_guard, "verify_field_encryption_key", mismatched)
+
+    test_app = FastAPI(lifespan=main._lifespan)
+    with pytest.raises(FieldKeyMismatchError):
+        async with test_app.router.lifespan_context(test_app):
+            pass
