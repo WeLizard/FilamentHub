@@ -6,8 +6,6 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.models.bundle import BundleSource
-
 
 class BundleSummary(BaseModel):
     """Public-safe summary of a Bundle row."""
@@ -66,10 +64,3 @@ class BundleCreateResponse(BaseModel):
     bundle_id: int
     status: str
     validation_summary: dict[str, Any] | None = None
-
-
-def assert_valid_source(source: str) -> str:
-    """Validate `source` belongs to BundleSource enum."""
-    if source not in BundleSource.ALL:
-        raise ValueError(f"Unsupported bundle source: {source}")
-    return source

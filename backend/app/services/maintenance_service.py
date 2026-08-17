@@ -51,12 +51,6 @@ def set_maintenance_mode(enabled: bool, message: Optional[str] = None) -> None:
     _write_maintenance_file(enabled, message)
 
 
-def get_maintenance_message() -> Optional[str]:
-    """Получить сообщение о технических работах."""
-    _, message = _read_maintenance_file()
-    return message
-
-
 def get_maintenance_info() -> dict:
     """Получить полную информацию о режиме технических работ."""
     enabled, message = _read_maintenance_file()
@@ -64,4 +58,3 @@ def get_maintenance_info() -> dict:
         "enabled": enabled,
         "message": message or "maintenance_default_message",
     }
-

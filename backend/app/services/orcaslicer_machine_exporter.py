@@ -25,15 +25,6 @@ from app.services.profile_validator import (
 logger = logging.getLogger(__name__)
 
 
-def _coerce_list(value: Any) -> list[str] | None:
-    """Преобразовать значение в список строк (формат OrcaSlicer)."""
-    if value is None:
-        return None
-    if isinstance(value, list):
-        return [str(item) for item in value]
-    return [str(value)]
-
-
 def _merge_settings(base: Mapping[str, Any] | None) -> dict[str, Any]:
     """Скопировать словарь настроек, игнорируя None."""
     return dict(base or {})

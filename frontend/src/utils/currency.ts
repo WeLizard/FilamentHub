@@ -44,9 +44,6 @@ export function currencySymbol(code: string | null | undefined): string {
   return SYMBOL_BY_CODE.get(code.toUpperCase()) || code;
 }
 
-export function formatPrice(amount: number, code: string | null | undefined): string {
-  return `${Math.round(amount)} ${currencySymbol(code)}`;
-}
 
 // Старые данные хранили символ (₽/$/€); новые — код. Приводим к коду.
 export function normalizeCurrency(value: string | null | undefined): string {

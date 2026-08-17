@@ -10,7 +10,6 @@ import asyncio
 import logging
 import os
 import time
-import uuid
 from datetime import datetime, timedelta, timezone
 from email import message_from_bytes, policy
 from email.message import EmailMessage
@@ -556,7 +555,3 @@ async def run_inbound_mail_poller(session_factory) -> None:
         except Exception:
             logger.error("Inbound mail poller pass failed", exc_info=True)
         await asyncio.sleep(interval)
-
-
-def new_message_name() -> str:
-    return f"{uuid.uuid4().hex}.eml"

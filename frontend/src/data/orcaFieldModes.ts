@@ -98,7 +98,3 @@ export function isVisibleAtMode(fieldMode: SettingMode | undefined, current: Set
   return MODE_RANK[fieldMode ?? 'simple'] <= MODE_RANK[current];
 }
 
-/** Convenience: is a setting (by Orca key) visible at the current mode. */
-export function isKeyVisible(key: string, current: SettingMode): boolean {
-  return isVisibleAtMode(ORCA_FIELD_MODE[key], current);
-}

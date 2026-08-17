@@ -105,10 +105,6 @@ def _truncate(value: object, limit: int) -> str:
     return str(value or "").replace("\x00", "").strip()[:limit]
 
 
-def _header_value(value: object, limit: int) -> str:
-    return re.sub(r"[\x00-\x1f\x7f]+", " ", str(value or "")).strip()[:limit]
-
-
 def _plain_text(text: object, html: object) -> str:
     normalized = _truncate(text, _MAX_BODY_CHARS)
     if normalized:
