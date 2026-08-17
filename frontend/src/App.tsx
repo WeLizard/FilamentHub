@@ -7,6 +7,7 @@ import { CatalogPage } from './pages/CatalogPage';
 import { ToastContainer, toast } from './components/Toast';
 import { useCurrencyCatalogue } from './hooks/useCurrencyCatalogue';
 import { useOrcaSlicerNotifications } from './hooks/useOrcaSlicerNotifications';
+import { useTokenRefresh } from './hooks/useTokenRefresh';
 import { lazy, Suspense, useEffect, useState } from 'react';
 import { isPluginEmbed, subscribeToPluginNavigation, subscribeToPluginSyncResult, subscribeToPluginRecoverList, sendRecoverImport, type RecoverItem } from './utils/pluginBridge';
 import { useAuth } from './contexts/AuthContext';
@@ -63,6 +64,7 @@ function AppContent() {
   const queryClient = useQueryClient();
   const location = useLocation();
   const { user, isMaintenanceMode, maintenanceMessage, clearMaintenanceMode } = useAuth();
+  useTokenRefresh(Boolean(user));
   // The onboarding modal links to these pages; covering them makes the documents
   // a person is asked to accept unreadable.
   const onLegalPage = LEGAL_PATHS.includes(location.pathname);
