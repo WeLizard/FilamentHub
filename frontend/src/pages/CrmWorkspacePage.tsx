@@ -2,7 +2,7 @@
 
 import { useEffect, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { ModalOverlay } from '../components/ModalOverlay';
 import {
@@ -31,12 +31,14 @@ import {
 
 import { calculatorAPI, crmAPI, spoolsAPI, type UserSpool } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
+import { useUserCurrency } from '../hooks/useUserCurrency';
 import { formatMediumDate } from '../utils/formatDate';
 import { translateApiError } from '../utils/translateApiError';
 import type {
   CrmCustomer,
   CrmCustomerCreate,
   CrmOrder,
+  CrmOrderCreate,
   CrmOrderSpoolReservationCreate,
   CrmOrderStatus,
   CrmQuote,
@@ -107,6 +109,27 @@ const formatCurrencyBreakdown = (amounts: Record<string, number> | undefined): s
   return entries.map(([currency, value]) => makeCurrencyFormatter(currency).format(value)).join(' · ');
 };
 
+const CRM_PAGE_SIZE = 50;
+
+/** Next page number while the loaded rows have not caught up with the reported total. */
+function nextCrmPage<TItem>(
+  lastPage: { items: TItem[]; total: number },
+  allPages: { items: TItem[]; total: number }[],
+): number | undefined {
+  const loaded = allPages.reduce((count, page) => count + page.items.length, 0);
+  return loaded < lastPage.total ? allPages.length + 1 : undefined;
+}
+
+/** Wait until typing stops before asking the server. */
+function useDebouncedValue(value: string, delayMs: number): string {
+  const [settled, setSettled] = useState(value);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setSettled(value), delayMs);
+    return () => window.clearTimeout(timer);
+  }, [value, delayMs]);
+  return settled;
+}
+
 export const CrmWorkspacePage: React.FC<CrmWorkspacePageProps> = ({
   onNewCalculation,
   embedded = false,
@@ -123,6 +146,10 @@ export const CrmWorkspacePage: React.FC<CrmWorkspacePageProps> = ({
     onActiveTabChange?.(tab);
   };
   const [search, setSearch] = useState('');
+  // Every keystroke used to be a request. The search is cheap now, but not free.
+  const debouncedSearch = useDebouncedValue(search, 300);
+  const [includeArchived, setIncludeArchived] = useState(false);
+  const [orderDialogOpen, setOrderDialogOpen] = useState(false);
   const [feedback, setFeedback] = useState<Feedback>(null);
   const [customerDialog, setCustomerDialog] = useState<CrmCustomer | 'new' | null>(null);
   const [selectedQuoteId, setSelectedQuoteId] = useState<number | null>(null);
@@ -134,21 +161,48 @@ export const CrmWorkspacePage: React.FC<CrmWorkspacePageProps> = ({
     queryFn: crmAPI.getSummary,
     enabled: hasAccess,
   });
-  const customersQuery = useQuery({
-    queryKey: ['crm', 'customers', search],
-    queryFn: () => crmAPI.listCustomers({ search: search || undefined, size: 100 }),
+  // The tab counters show what the server has. Asking for one fixed page told a shop
+  // with three hundred customers that it had three hundred and then showed a hundred.
+  const customersQuery = useInfiniteQuery({
+    queryKey: ['crm', 'customers', debouncedSearch, includeArchived],
+    queryFn: ({ pageParam }) => crmAPI.listCustomers({
+      search: debouncedSearch || undefined,
+      include_archived: includeArchived || undefined,
+      page: pageParam,
+      size: CRM_PAGE_SIZE,
+    }),
+    initialPageParam: 1,
+    getNextPageParam: nextCrmPage,
     enabled: hasAccess,
   });
-  const quotesQuery = useQuery({
-    queryKey: ['crm', 'quotes', search],
-    queryFn: () => crmAPI.listQuotes({ search: search || undefined, size: 100 }),
+  const quotesQuery = useInfiniteQuery({
+    queryKey: ['crm', 'quotes', debouncedSearch],
+    queryFn: ({ pageParam }) => crmAPI.listQuotes({
+      search: debouncedSearch || undefined,
+      page: pageParam,
+      size: CRM_PAGE_SIZE,
+    }),
+    initialPageParam: 1,
+    getNextPageParam: nextCrmPage,
     enabled: hasAccess,
   });
-  const ordersQuery = useQuery({
-    queryKey: ['crm', 'orders', search],
-    queryFn: () => crmAPI.listOrders({ search: search || undefined, size: 100 }),
+  const ordersQuery = useInfiniteQuery({
+    queryKey: ['crm', 'orders', debouncedSearch],
+    queryFn: ({ pageParam }) => crmAPI.listOrders({
+      search: debouncedSearch || undefined,
+      page: pageParam,
+      size: CRM_PAGE_SIZE,
+    }),
+    initialPageParam: 1,
+    getNextPageParam: nextCrmPage,
     enabled: hasAccess,
   });
+  const customers = customersQuery.data?.pages.flatMap((page) => page.items) ?? [];
+  const quotes = quotesQuery.data?.pages.flatMap((page) => page.items) ?? [];
+  const orders = ordersQuery.data?.pages.flatMap((page) => page.items) ?? [];
+  const customersTotal = customersQuery.data?.pages[0]?.total;
+  const quotesTotal = quotesQuery.data?.pages[0]?.total;
+  const ordersTotal = ordersQuery.data?.pages[0]?.total;
   const quoteDetailQuery = useQuery({
     queryKey: ['crm', 'quote', selectedQuoteId],
     queryFn: () => crmAPI.getQuote(selectedQuoteId!),
@@ -242,8 +296,22 @@ export const CrmWorkspacePage: React.FC<CrmWorkspacePageProps> = ({
     }),
   });
 
+  const createOrderMutation = useMutation({
+    mutationFn: (payload: CrmOrderCreate) => crmAPI.createOrder(payload),
+    onSuccess: () => {
+      setOrderDialogOpen(false);
+      refreshWorkspace();
+    },
+    onError: (error) => setFeedback({
+      kind: 'error',
+      text: translateApiError(t, error, t('crmWorkspace.feedback.error')),
+    }),
+  });
+
   const archiveCustomerMutation = useMutation({
-    mutationFn: (customerId: number) => crmAPI.updateCustomer(customerId, { archived: true }),
+    // Archiving without a way back is how a customer disappears for good over a typo.
+    mutationFn: ({ customerId, archived }: { customerId: number; archived: boolean }) =>
+      crmAPI.updateCustomer(customerId, { archived }),
     onSuccess: refreshWorkspace,
     onError: (error) => setFeedback({
       kind: 'error',
@@ -348,15 +416,32 @@ export const CrmWorkspacePage: React.FC<CrmWorkspacePageProps> = ({
       <section className={`${surfaceClass} p-4 md:p-5`}>
         <div className={`flex flex-col gap-4 lg:flex-row lg:items-center ${embedded ? 'lg:justify-end' : 'lg:justify-between'}`}>
           {!embedded && <div className="flex flex-wrap gap-2">
-            <WorkspaceTabButton active={activeTab === 'quotes'} icon={<FileText />} label={t('crmWorkspace.tabs.quotes')} count={quotesQuery.data?.total} onClick={() => setActiveTab('quotes')} />
-            <WorkspaceTabButton active={activeTab === 'orders'} icon={<BriefcaseBusiness />} label={t('crmWorkspace.tabs.orders')} count={ordersQuery.data?.total} onClick={() => setActiveTab('orders')} />
-            <WorkspaceTabButton active={activeTab === 'customers'} icon={<UsersRound />} label={t('crmWorkspace.tabs.customers')} count={customersQuery.data?.total} onClick={() => setActiveTab('customers')} />
+            <WorkspaceTabButton active={activeTab === 'quotes'} icon={<FileText />} label={t('crmWorkspace.tabs.quotes')} count={quotesTotal} onClick={() => setActiveTab('quotes')} />
+            <WorkspaceTabButton active={activeTab === 'orders'} icon={<BriefcaseBusiness />} label={t('crmWorkspace.tabs.orders')} count={ordersTotal} onClick={() => setActiveTab('orders')} />
+            <WorkspaceTabButton active={activeTab === 'customers'} icon={<UsersRound />} label={t('crmWorkspace.tabs.customers')} count={customersTotal} onClick={() => setActiveTab('customers')} />
           </div>}
           <div className="flex w-full gap-2 lg:w-auto">
             <label className="relative min-w-0 flex-1 lg:w-72">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
               <input value={search} onChange={(event) => setSearch(event.target.value)} className={`${inputClass} pl-9`} placeholder={t('crmWorkspace.search')} />
             </label>
+            {activeTab === 'orders' && (
+              <button type="button" onClick={() => setOrderDialogOpen(true)} className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-cyan-500 px-4 py-2.5 text-sm font-semibold text-slate-950 transition hover:bg-cyan-300">
+                <Plus className="h-4 w-4" />
+                <span className="hidden sm:inline">{t('crmWorkspace.orders.add')}</span>
+              </button>
+            )}
+            {activeTab === 'customers' && (
+              <button
+                type="button"
+                onClick={() => setIncludeArchived((shown) => !shown)}
+                className={`inline-flex shrink-0 items-center gap-2 rounded-xl border px-3 py-2.5 text-sm transition ${includeArchived ? 'border-amber-300/40 bg-amber-400/10 text-amber-100' : 'border-white/10 bg-white/5 text-slate-300 hover:border-white/20'}`}
+                title={t('crmWorkspace.customers.showArchived')}
+              >
+                <Archive className="h-4 w-4" />
+                <span className="hidden sm:inline">{t('crmWorkspace.customers.showArchived')}</span>
+              </button>
+            )}
             {activeTab === 'customers' && (
               <button type="button" onClick={() => setCustomerDialog('new')} className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-cyan-500 px-4 py-2.5 text-sm font-semibold text-slate-950 transition hover:bg-cyan-300">
                 <Plus className="h-4 w-4" />
@@ -384,7 +469,7 @@ export const CrmWorkspacePage: React.FC<CrmWorkspacePageProps> = ({
             <div className="flex min-h-56 items-center justify-center"><Loader2 className="h-7 w-7 animate-spin text-cyan-300" /></div>
           ) : activeTab === 'quotes' ? (
             <QuotesList
-              quotes={quotesQuery.data?.items ?? []}
+              quotes={quotes}
               onOpen={setSelectedQuoteId}
               onStatus={(quoteId, status) => quoteStatusMutation.mutate({ quoteId, status })}
               onShare={(quoteId) => shareMutation.mutate(quoteId)}
@@ -393,21 +478,44 @@ export const CrmWorkspacePage: React.FC<CrmWorkspacePageProps> = ({
             />
           ) : activeTab === 'orders' ? (
             <OrdersList
-              orders={ordersQuery.data?.items ?? []}
+              orders={orders}
               onStatus={(orderId, status) => orderMutation.mutate({ orderId, status })}
               onReservations={setReservationOrder}
               busy={orderMutation.isPending}
             />
           ) : (
             <CustomersList
-              customers={customersQuery.data?.items ?? []}
+              customers={customers}
               onEdit={setCustomerDialog}
-              onArchive={(id) => archiveCustomerMutation.mutate(id)}
+              onArchive={(id, archived) => archiveCustomerMutation.mutate({ customerId: id, archived })}
               busy={archiveCustomerMutation.isPending}
             />
           )}
+          {currentQuery.hasNextPage && !currentQueryError ? (
+            <div className="mt-4 flex justify-center">
+              <button
+                type="button"
+                onClick={() => void currentQuery.fetchNextPage()}
+                disabled={currentQuery.isFetchingNextPage}
+                className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-slate-200 transition hover:border-white/20 hover:text-white disabled:opacity-50"
+              >
+                {currentQuery.isFetchingNextPage
+                  ? <Loader2 className="h-4 w-4 animate-spin" />
+                  : null}
+                {t('crmWorkspace.actions.loadMore')}
+              </button>
+            </div>
+          ) : null}
         </div>
       </section>
+
+      <OrderDialog
+        open={orderDialogOpen}
+        customers={customers}
+        isSaving={createOrderMutation.isPending}
+        onClose={() => setOrderDialogOpen(false)}
+        onSave={(payload) => createOrderMutation.mutate(payload)}
+      />
 
       <CustomerDialog
         customer={customerDialog}
@@ -451,7 +559,7 @@ export const CrmWorkspacePage: React.FC<CrmWorkspacePageProps> = ({
       ) : (
         <QuoteDetailDrawer
           quote={quoteDetailQuery.data ?? null}
-          customers={customersQuery.data?.items ?? []}
+          customers={customers}
           isLoading={quoteDetailQuery.isPending && selectedQuoteId !== null}
           onClose={() => setSelectedQuoteId(null)}
           onStatus={(status) => selectedQuoteId && quoteStatusMutation.mutate({ quoteId: selectedQuoteId, status })}
@@ -672,13 +780,22 @@ const OrderReservationsDialog: React.FC<{
   );
 };
 
-const CustomersList: React.FC<{ customers: CrmCustomer[]; onEdit: (customer: CrmCustomer) => void; onArchive: (id: number) => void; busy: boolean }> = ({ customers, onEdit, onArchive, busy }) => {
+const CustomersList: React.FC<{ customers: CrmCustomer[]; onEdit: (customer: CrmCustomer) => void; onArchive: (id: number, archived: boolean) => void; busy: boolean }> = ({ customers, onEdit, onArchive, busy }) => {
   const { t } = useTranslation();
   if (customers.length === 0) return <EmptyState icon={<UsersRound />} title={t('crmWorkspace.customers.emptyTitle')} text={t('crmWorkspace.customers.emptyText')} />;
   return <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{customers.map((customer) => (
     <article key={customer.id} className="rounded-2xl border border-white/10 bg-white/[0.035] p-5">
-      <div className="flex items-start justify-between gap-3"><div className="flex h-10 w-10 items-center justify-center rounded-xl border border-cyan-400/15 bg-cyan-400/10"><UserRound className="h-5 w-5 text-cyan-200" /></div><button type="button" onClick={() => onArchive(customer.id)} disabled={busy} className="rounded-lg p-2 text-slate-500 transition hover:bg-white/5 hover:text-amber-200" title={t('crmWorkspace.customers.archive')}><Archive className="h-4 w-4" /></button></div>
-      <button type="button" onClick={() => onEdit(customer)} className="mt-4 block w-full text-left"><h2 className="truncate text-base font-semibold text-white hover:text-cyan-100">{customer.name}</h2><p className="mt-1 truncate text-sm text-slate-400">{customer.contact_name || customer.email || customer.phone || t('crmWorkspace.customers.noContacts')}</p></button>
+      <div className="flex items-start justify-between gap-3"><div className="flex h-10 w-10 items-center justify-center rounded-xl border border-cyan-400/15 bg-cyan-400/10"><UserRound className="h-5 w-5 text-cyan-200" /></div><button type="button" onClick={() => onArchive(customer.id, !customer.archived)} disabled={busy} className={`rounded-lg p-2 transition hover:bg-white/5 ${customer.archived ? 'text-amber-200 hover:text-amber-100' : 'text-slate-500 hover:text-amber-200'}`} title={t(customer.archived ? 'crmWorkspace.customers.unarchive' : 'crmWorkspace.customers.archive')}><Archive className="h-4 w-4" /></button></div>
+      <button type="button" onClick={() => onEdit(customer)} className="mt-4 block w-full text-left">
+        <h2 className={`truncate text-base font-semibold ${customer.protected_data_unreadable ? 'text-amber-200' : 'text-white hover:text-cyan-100'}`}>
+          {customer.protected_data_unreadable ? t('crmWorkspace.customers.unreadableTitle') : customer.name}
+        </h2>
+        <p className="mt-1 truncate text-sm text-slate-400">
+          {customer.protected_data_unreadable
+            ? t('crmWorkspace.customers.unreadableHint')
+            : (customer.contact_name || customer.email || customer.phone || t('crmWorkspace.customers.noContacts'))}
+        </p>
+      </button>
       <div className="mt-4 space-y-1 text-xs text-slate-500">{customer.phone && <p>{customer.phone}</p>}{customer.email && <p className="truncate">{customer.email}</p>}{customer.inn && <p>{t('crmWorkspace.customers.inn')}: {customer.inn}</p>}</div>
     </article>
   ))}</div>;
@@ -715,6 +832,67 @@ const CustomerDialog: React.FC<{ customer: CrmCustomer | 'new' | null; isSaving:
   }, [customer]);
   if (!customer) return null;
   return <ModalOverlay onClose={onClose}><div className={`${surfaceClass} w-full max-w-2xl p-6 md:p-7`}><div className="flex items-start justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-[0.16em] text-cyan-300">{t('crmWorkspace.customers.cardLabel')}</p><h2 className="mt-2 text-2xl font-semibold text-white">{customer === 'new' ? t('crmWorkspace.customers.createTitle') : t('crmWorkspace.customers.editTitle')}</h2></div><button type="button" onClick={onClose} className="rounded-xl border border-white/10 bg-white/5 p-2.5 text-slate-300 hover:bg-white/10"><X className="h-5 w-5" /></button></div><div className="mt-6 grid gap-4 md:grid-cols-2"><DialogField label={t('crmWorkspace.customers.name')}><input className={inputClass} value={draft.name} onChange={(event) => setDraft((prev) => ({ ...prev, name: event.target.value }))} autoFocus /></DialogField><DialogField label={t('crmWorkspace.customers.contactName')}><input className={inputClass} value={draft.contact_name ?? ''} onChange={(event) => setDraft((prev) => ({ ...prev, contact_name: event.target.value }))} /></DialogField><DialogField label={t('crmWorkspace.customers.phone')}><input className={inputClass} value={draft.phone ?? ''} onChange={(event) => setDraft((prev) => ({ ...prev, phone: event.target.value }))} /></DialogField><DialogField label={t('crmWorkspace.customers.email')}><input type="email" className={inputClass} value={draft.email ?? ''} onChange={(event) => setDraft((prev) => ({ ...prev, email: event.target.value }))} /></DialogField><DialogField label={t('crmWorkspace.customers.inn')}><input className={inputClass} value={draft.inn ?? ''} onChange={(event) => setDraft((prev) => ({ ...prev, inn: event.target.value }))} /></DialogField><DialogField label={t('crmWorkspace.customers.address')}><input className={inputClass} value={draft.address ?? ''} onChange={(event) => setDraft((prev) => ({ ...prev, address: event.target.value }))} /></DialogField><div className="md:col-span-2"><DialogField label={t('crmWorkspace.customers.note')}><textarea className={`${inputClass} min-h-24 resize-y`} value={draft.note ?? ''} onChange={(event) => setDraft((prev) => ({ ...prev, note: event.target.value }))} /></DialogField></div></div><div className="mt-6 flex justify-end gap-3"><button type="button" onClick={onClose} className="rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-slate-200 hover:bg-white/10">{t('crmWorkspace.actions.cancel')}</button><button type="button" disabled={isSaving || !draft.name.trim()} onClick={() => onSave({ ...draft, name: draft.name.trim() })} className="inline-flex items-center gap-2 rounded-xl bg-cyan-500 px-4 py-2.5 text-sm font-semibold text-slate-950 transition hover:bg-cyan-300 disabled:opacity-50">{isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}{t('crmWorkspace.actions.save')}</button></div></div></ModalOverlay>;
+};
+
+const OrderDialog: React.FC<{
+  open: boolean;
+  customers: CrmCustomer[];
+  isSaving: boolean;
+  onClose: () => void;
+  onSave: (payload: CrmOrderCreate) => void;
+}> = ({ open, customers, isSaving, onClose, onSave }) => {
+  const { t } = useTranslation();
+  const { currency } = useUserCurrency();
+  const [draft, setDraft] = useState<CrmOrderCreate>({ title: '', currency, total: 0 });
+  useEffect(() => {
+    if (open) setDraft({ title: '', currency, total: 0 });
+  }, [open, currency]);
+  if (!open) return null;
+  return (
+    <ModalOverlay onClose={onClose}>
+      <div className={`${surfaceClass} w-full max-w-xl p-6 md:p-7`}>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-cyan-300">{t('crmWorkspace.tabs.orders')}</p>
+            <h2 className="mt-2 text-2xl font-semibold text-white">{t('crmWorkspace.orders.createTitle')}</h2>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-xl border border-white/10 bg-white/5 p-2.5 text-slate-300 hover:bg-white/10"><X className="h-5 w-5" /></button>
+        </div>
+        <p className="mt-3 text-sm leading-6 text-slate-400">{t('crmWorkspace.orders.createHint')}</p>
+        <div className="mt-5 grid gap-4 md:grid-cols-2">
+          <div className="md:col-span-2">
+            <DialogField label={t('crmWorkspace.orders.title')}>
+              <input className={inputClass} value={draft.title} onChange={(event) => setDraft((prev) => ({ ...prev, title: event.target.value }))} autoFocus />
+            </DialogField>
+          </div>
+          <DialogField label={t('crmWorkspace.quotes.customer')}>
+            <select className={inputClass} value={draft.customer_id ?? ''} onChange={(event) => setDraft((prev) => ({ ...prev, customer_id: event.target.value ? Number(event.target.value) : null }))}>
+              <option value="">{t('crmWorkspace.quotes.noCustomer')}</option>
+              {customers.map((customer) => (
+                <option key={customer.id} value={customer.id}>{customer.name}</option>
+              ))}
+            </select>
+          </DialogField>
+          <DialogField label={t('crmWorkspace.orders.amount')}>
+            <input type="number" min="0" step="0.01" className={inputClass} value={draft.total} onChange={(event) => setDraft((prev) => ({ ...prev, total: Number(event.target.value) || 0 }))} />
+          </DialogField>
+          <DialogField label={t('crmWorkspace.orders.dueDate')}>
+            <input type="date" className={inputClass} value={draft.due_date ?? ''} onChange={(event) => setDraft((prev) => ({ ...prev, due_date: event.target.value || null }))} />
+          </DialogField>
+          <DialogField label={t('crmWorkspace.customers.note')}>
+            <input className={inputClass} value={draft.note ?? ''} onChange={(event) => setDraft((prev) => ({ ...prev, note: event.target.value }))} />
+          </DialogField>
+        </div>
+        <div className="mt-6 flex justify-end gap-3">
+          <button type="button" onClick={onClose} className="rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-slate-200 hover:bg-white/10">{t('crmWorkspace.actions.cancel')}</button>
+          <button type="button" disabled={isSaving || !draft.title.trim()} onClick={() => onSave({ ...draft, title: draft.title.trim() })} className="inline-flex items-center gap-2 rounded-xl bg-cyan-500 px-4 py-2.5 text-sm font-semibold text-slate-950 transition hover:bg-cyan-300 disabled:opacity-50">
+            {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+            {t('crmWorkspace.actions.save')}
+          </button>
+        </div>
+      </div>
+    </ModalOverlay>
+  );
 };
 
 const DialogField: React.FC<{ label: string; children: ReactNode }> = ({ label, children }) => <label className="block"><span className="mb-1.5 block text-sm font-medium text-slate-300">{label}</span>{children}</label>;

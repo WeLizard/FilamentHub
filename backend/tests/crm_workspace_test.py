@@ -517,3 +517,137 @@ async def test_every_copy_of_the_document_is_sealed_at_rest(
 
     readable = await auth_client.get(f"/api/v1/crm/quotes/{quote_id}")
     assert readable.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_one_unreadable_customer_does_not_hide_the_rest(
+    admin_client,
+    db_session: AsyncSession,
+):
+    """A record written under another key must cost its own row, not the whole base.
+
+    The protected fields are deliberately unreadable rather than merely empty, so the
+    row is listed and marked; blanking it silently would invite someone to overwrite a
+    customer whose details are only unreadable.
+    """
+    readable = await admin_client.post(
+        "/api/v1/crm/customers",
+        json={"name": "Мастерская на Волге", "phone": "+7 999 111-22-33"},
+    )
+    assert readable.status_code == 201
+
+    damaged = await admin_client.post("/api/v1/crm/customers", json={"name": "Повреждённая"})
+    assert damaged.status_code == 201
+    damaged_id = damaged.json()["id"]
+
+    from app.models.crm import CrmCustomer
+
+    row = await db_session.get(CrmCustomer, damaged_id)
+    # Ciphertext this key cannot verify: exactly what another SECRET_KEY leaves behind.
+    row.name = "fh1:gAAAAABmZm9vYmFyYmF6cXV1eA=="
+    await db_session.commit()
+
+    listed = await admin_client.get("/api/v1/crm/customers?size=100")
+    assert listed.status_code == 200
+    items = {item["id"]: item for item in listed.json()["items"]}
+    assert items[damaged_id]["protected_data_unreadable"] is True
+    assert items[damaged_id]["name"] == ""
+    assert any(
+        item["name"] == "Мастерская на Волге" and not item["protected_data_unreadable"]
+        for item in items.values()
+    )
+
+    # And the row can be repaired: loading it for a write must not decrypt it first.
+    repaired = await admin_client.patch(
+        f"/api/v1/crm/customers/{damaged_id}",
+        json={"name": "Восстановленная"},
+    )
+    assert repaired.status_code == 200
+    assert repaired.json()["name"] == "Восстановленная"
+
+
+@pytest.mark.asyncio
+async def test_customers_are_found_without_reading_the_whole_base(admin_client):
+    """Search must survive growth, and must not answer with a stale name.
+
+    Matching used to decrypt every customer on every keystroke: the cost grew with the
+    base, one unreadable row broke it, and paging over a list filtered in Python only
+    looked like paging. The index has to follow a rename, or the old name keeps
+    answering long after nobody uses it.
+    """
+    created = await admin_client.post(
+        "/api/v1/crm/customers",
+        json={
+            "name": "Кофейня «Север»",
+            "email": "hello@sever.example",
+            "phone": "+7 999 123-45-67",
+        },
+    )
+    assert created.status_code == 201
+    customer_id = created.json()["id"]
+
+    async def search(term: str) -> list[str]:
+        response = await admin_client.get(f"/api/v1/crm/customers?size=100&search={term}")
+        assert response.status_code == 200
+        return [item["name"] for item in response.json()["items"]]
+
+    assert await search("кофе") == ["Кофейня «Север»"]
+    assert await search("Север") == ["Кофейня «Север»"]
+    # The tail of a phone number is how people look one up.
+    assert await search("4567") == ["Кофейня «Север»"]
+    assert await search("sever") == ["Кофейня «Север»"]
+
+    renamed = await admin_client.patch(
+        f"/api/v1/crm/customers/{customer_id}",
+        json={"name": "Пекарня «Юг»"},
+    )
+    assert renamed.status_code == 200
+
+    assert await search("Пекар") == ["Пекарня «Юг»"]
+    assert await search("кофе") == []
+
+
+@pytest.mark.asyncio
+async def test_an_order_can_be_booked_without_issuing_a_proposal(admin_client):
+    """A repeat job from a known customer should not require a document nobody wants.
+
+    Both doors go through one function, so the directly booked order must come out with
+    the same shape a quote-born one has: its own number, a status and a material demand
+    taken from the calculation it was based on.
+    """
+    customer = await admin_client.post(
+        "/api/v1/crm/customers",
+        json={"name": "Постоянный заказчик"},
+    )
+    assert customer.status_code == 201
+
+    booked = await admin_client.post(
+        "/api/v1/crm/orders",
+        json={
+            "title": "Повторная партия кронштейнов",
+            "currency": "RUB",
+            "total": 12500,
+            "customer_id": customer.json()["id"],
+            "calculation_snapshot": {
+                "operational_preflight": {
+                    "request": {
+                        "lines": [
+                            {"line_id": "tool-0", "label": "PETG", "weight_g": 420}
+                        ]
+                    },
+                    "result": None,
+                }
+            },
+        },
+    )
+    assert booked.status_code == 201, booked.text
+    order = booked.json()
+
+    assert order["quote_id"] is None
+    assert order["number"].startswith("ЗК-")
+    assert order["status"] == "new"
+    assert [line["required_base_g"] for line in order["material_requirements"]] == [420]
+
+    listed = await admin_client.get("/api/v1/crm/orders?size=50")
+    assert listed.status_code == 200
+    assert order["id"] in [item["id"] for item in listed.json()["items"]]

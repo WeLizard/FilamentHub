@@ -23,6 +23,7 @@ from app.models.calculator_history_entry import CalculatorHistoryEntry
 from app.models.calculator_profile import UserCalculatorProfile
 from app.models.crm import (
     CrmCustomer,
+    CrmCustomerSearchToken,
     CrmOrder,
     CrmOrderSpoolReservation,
     CrmOrderStatus,
@@ -131,6 +132,7 @@ __all__ = [
     "CalculatorHistoryEntry",
     "UserCalculatorProfile",
     "CrmCustomer",
+    "CrmCustomerSearchToken",
     "CrmOrder",
     "CrmOrderSpoolReservation",
     "CrmOrderStatus",

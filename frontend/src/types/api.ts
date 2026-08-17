@@ -1754,6 +1754,8 @@ export interface CrmCustomer {
   archived: boolean;
   created_at: string;
   updated_at: string;
+  /** Защищённые поля этой записи не читаются: показываем метку, а не пустоту. */
+  protected_data_unreadable?: boolean;
 }
 
 export interface CrmCustomerCreate {
@@ -1832,9 +1834,21 @@ export interface CrmQuoteEvent {
   created_at: string;
 }
 
+export interface CrmOrderCreate {
+  title: string;
+  currency: string;
+  total: number;
+  customer_id?: number | null;
+  source_history_id?: number | null;
+  calculation_snapshot?: Record<string, unknown> | null;
+  due_date?: string | null;
+  note?: string | null;
+}
+
 export interface CrmOrder {
   id: number;
-  quote_id: number;
+  /** Отсутствует у заказа, заведённого напрямую, без коммерческого предложения. */
+  quote_id: number | null;
   customer_id: number | null;
   number: string;
   title: string;

@@ -60,7 +60,11 @@
       "emptyText": "客户接受报价后，FilamentHub 会创建关联的生产订单。",
       "amount": "金额",
       "dueDate": "期限",
-      "fromQuote": "由已接受报价创建"
+      "fromQuote": "由已接受报价创建",
+      "add": "新建订单",
+      "createTitle": "无报价单的订单",
+      "createHint": "老客户的重复订单无需单据。材料需求来自计算——此处创建的订单没有，料盘预留需手动指定。",
+      "title": "工作名称"
     },
     "reservations": {
       "materialPlan": "生产材料",
@@ -96,7 +100,11 @@
       "phone": "电话",
       "email": "电子邮件",
       "address": "地址",
-      "note": "备注"
+      "note": "备注",
+      "unreadableTitle": "记录已损坏",
+      "unreadableHint": "受保护字段无法读取。请打开并重新填写。",
+      "showArchived": "已归档",
+      "unarchive": "从归档恢复"
     },
     "actions": {
       "save": "保存",
@@ -104,7 +112,8 @@
       "close": "关闭",
       "retry": "重试",
       "pdf": "下载 PDF",
-      "share": "复制链接"
+      "share": "复制链接",
+      "loadMore": "显示更多"
     },
     "status": {
       "quote": {

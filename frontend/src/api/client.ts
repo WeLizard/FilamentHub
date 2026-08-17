@@ -1745,6 +1745,10 @@ export const crmAPI = {
     return response.data;
   },
 
+  createOrder: async (data: import('../types/api').CrmOrderCreate) => {
+    const { data: response } = await api.post<import('../types/api').CrmOrder>('/crm/orders', data);
+    return response;
+  },
   listOrders: async (params?: { status?: import('../types/api').CrmOrderStatus; search?: string; page?: number; size?: number }) => {
     const response = await api.get<{ items: import('../types/api').CrmOrder[]; total: number }>('/crm/orders', { params });
     return response.data;

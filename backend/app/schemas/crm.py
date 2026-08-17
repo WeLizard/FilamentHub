@@ -46,6 +46,10 @@ class CrmCustomerResponse(BaseModel):
     archived: bool
     created_at: datetime
     updated_at: datetime
+    # Set when the protected fields of this row cannot be read. The row is still
+    # listed, because losing one record must not take away the rest of the list, and
+    # the blank fields are labelled rather than passed off as empty.
+    protected_data_unreadable: bool = False
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -138,7 +142,8 @@ class CrmQuoteEventResponse(BaseModel):
 
 class CrmOrderResponse(BaseModel):
     id: int
-    quote_id: int
+    # Absent for an order booked directly rather than out of an accepted proposal.
+    quote_id: int | None
     customer_id: int | None
     number: str
     title: str
@@ -191,6 +196,27 @@ class CrmQuoteUpdate(BaseModel):
 
 class CrmQuoteStatusUpdate(BaseModel):
     status: CrmQuoteStatus
+
+
+class CrmOrderCreate(BaseModel):
+    """Book work without issuing a proposal first.
+
+    ``calculation_snapshot`` is the same shape a quote version carries, and it is what
+    gives the order its material demand: the preflight lives in the calculator, not in
+    the stored history entry, so it travels with the request exactly as it does for a
+    proposal. ``source_history_id`` records which calculation it came from. Booked
+    without either, the order exists and has no material demand — the truth, rather
+    than a demand of zero.
+    """
+
+    title: str = Field(..., min_length=1, max_length=255)
+    currency: str = Field(..., pattern=r"^[A-Z]{3}$")
+    total: float = Field(..., ge=0)
+    customer_id: int | None = None
+    source_history_id: int | None = Field(None, ge=1)
+    calculation_snapshot: dict[str, Any] | None = None
+    due_date: date | None = None
+    note: str | None = Field(None, max_length=5000)
 
 
 class CrmOrderUpdate(BaseModel):

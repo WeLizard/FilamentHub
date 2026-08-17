@@ -60,7 +60,11 @@
       "emptyText": "When a customer accepts a proposal, FilamentHub creates a linked production order.",
       "amount": "Amount",
       "dueDate": "Due date",
-      "fromQuote": "Created from an accepted quote"
+      "fromQuote": "Created from an accepted quote",
+      "add": "New order",
+      "createTitle": "Order without a proposal",
+      "createHint": "A repeat job from a known customer needs no document. Material demand comes from a calculation — an order booked here has none, and spool reservations will have to be set by hand.",
+      "title": "What the work is"
     },
     "reservations": {
       "materialPlan": "Production materials",
@@ -96,7 +100,11 @@
       "phone": "Phone",
       "email": "Email",
       "address": "Address",
-      "note": "Note"
+      "note": "Note",
+      "unreadableTitle": "Damaged record",
+      "unreadableHint": "Protected fields cannot be read. Open it and enter the details again.",
+      "showArchived": "Archived",
+      "unarchive": "Restore from archive"
     },
     "actions": {
       "save": "Save",
@@ -104,7 +112,8 @@
       "close": "Close",
       "retry": "Try again",
       "pdf": "Download PDF",
-      "share": "Copy link"
+      "share": "Copy link",
+      "loadMore": "Show more"
     },
     "status": {
       "quote": {

@@ -254,7 +254,7 @@ class CrmQuoteEvent(Base):
 
 
 class CrmOrder(Base):
-    """A production order created from an accepted quote."""
+    """Work booked to be done: from an accepted quote, or directly."""
 
     __tablename__ = "crm_orders"
     __table_args__ = (
@@ -267,8 +267,10 @@ class CrmOrder(Base):
     user_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    quote_id: Mapped[int] = mapped_column(
-        ForeignKey("crm_quotes.id", ondelete="RESTRICT"), nullable=False, index=True
+    # Optional: an order may have come from a quote, or been booked directly for a
+    # repeat job. The unique constraint still means one quote yields one order.
+    quote_id: Mapped[int | None] = mapped_column(
+        ForeignKey("crm_quotes.id", ondelete="RESTRICT"), nullable=True, index=True
     )
     customer_id: Mapped[int | None] = mapped_column(
         ForeignKey("crm_customers.id", ondelete="SET NULL"), nullable=True, index=True
@@ -355,3 +357,29 @@ class CrmOrderSpoolReservation(Base):
 
     order: Mapped[CrmOrder] = relationship(back_populates="spool_reservations")
     spool: Mapped["UserSpool"] = relationship()
+
+
+class CrmCustomerSearchToken(Base):
+    """Keyed hashes that make encrypted customer details findable.
+
+    The database cannot match ciphertext, and decrypting every customer per keystroke
+    scales with the whole base. One row per customer and search term turns the search
+    back into an indexed lookup. See ``crm_customer_search_service`` for what the terms
+    are and what the construction gives away.
+    """
+
+    __tablename__ = "crm_customer_search_tokens"
+    __table_args__ = (
+        UniqueConstraint("customer_id", "token", name="uq_crm_customer_search_token"),
+        Index("ix_crm_cust_search_user_token", "user_id", "token"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    customer_id: Mapped[int] = mapped_column(
+        ForeignKey("crm_customers.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    # Denormalised so a search filters by owner without joining the customers table.
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    token: Mapped[str] = mapped_column(String(64), nullable=False)

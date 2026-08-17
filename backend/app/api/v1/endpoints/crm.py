@@ -1,6 +1,7 @@
 """CRM-lite endpoints: customers, versioned quotes, and production orders."""
 
 import json
+import logging
 import uuid as uuid_mod
 from datetime import datetime, timedelta, timezone
 from decimal import ROUND_HALF_UP, Decimal
@@ -25,7 +26,7 @@ from app.core.errors import (
     ERR_CRM_QUOTE_NUMBER_EXISTS,
     raise_error,
 )
-from app.core.field_encryption import decrypt_field, encrypt_field
+from app.core.field_encryption import FieldDecryptionError, decrypt_field, encrypt_field
 from app.db.session import get_db
 from app.models.calculator_history_entry import CalculatorHistoryEntry
 from app.models.calculator_profile import UserCalculatorProfile
@@ -50,6 +51,7 @@ from app.schemas.crm import (
     CrmCustomerListResponse,
     CrmCustomerResponse,
     CrmCustomerUpdate,
+    CrmOrderCreate,
     CrmOrderListResponse,
     CrmOrderResponse,
     CrmOrderSpoolReservationReplace,
@@ -68,12 +70,18 @@ from app.schemas.crm import (
     CrmShareQuoteResponse,
     CrmWorkspaceSummary,
 )
+from app.services.crm_customer_search_service import (
+    matching_customer_ids,
+    reindex_customer,
+)
+from app.services.crm_order_service import create_order
 from app.services.crm_spool_reservation_service import (
     release_order_reservations,
     replace_order_reservations,
 )
 
 router = APIRouter(prefix="/crm", tags=["crm"])
+logger = logging.getLogger(__name__)
 
 MONEY_STEP = Decimal("0.01")
 SHARED_QUOTE_LIFETIME_DAYS = 90
@@ -161,26 +169,44 @@ def _customer_response(customer: CrmCustomer) -> CrmCustomerResponse:
     return response.model_copy(update=_plain_customer(customer))
 
 
-async def _matching_customer_ids(
-    db: AsyncSession, user_id: int, search: str
-) -> list[int]:
-    """Find customers by a search term the database can no longer read."""
-    needle = search.strip().casefold()
-    rows = (
-        await db.execute(select(CrmCustomer).where(CrmCustomer.user_id == user_id))
-    ).scalars().all()
-    return [
-        row.id
-        for row in rows
-        if any(
-            needle in (value or "").casefold()
-            for value in _plain_customer(row).values()
+def _listed_customer_response(customer: CrmCustomer) -> CrmCustomerResponse:
+    """The same row for a list, where one unreadable record must not hide the others.
+
+    Opening the record still fails loudly: a blank name shown as real invites someone
+    to overwrite a customer whose details are merely unreadable. In a list the row is
+    marked instead, so the rest of the base stays reachable.
+    """
+    try:
+        return _customer_response(customer)
+    except FieldDecryptionError:
+        logger.warning("Customer %s has unreadable protected fields", customer.id)
+        blanked = {field_name: "" for field_name in ENCRYPTED_CUSTOMER_FIELDS}
+        return CrmCustomerResponse.model_validate(customer).model_copy(
+            update={**blanked, "protected_data_unreadable": True}
         )
-    ]
+
+
+async def _reindex(db: AsyncSession, customer: CrmCustomer) -> None:
+    """Refresh the search terms for a customer that has just been written.
+
+    A record whose details cannot be read keeps whatever terms it had: rebuilding them
+    from nothing would quietly make it unfindable on top of being unreadable.
+    """
+    try:
+        plain = _plain_customer(customer)
+    except FieldDecryptionError:
+        logger.warning("Customer %s not reindexed: fields unreadable", customer.id)
+        return
+    await reindex_customer(db, customer, plain)
 
 
 def _serialize_customer(customer: CrmCustomer | None) -> CrmCustomerResponse | None:
-    return _customer_response(customer) if customer is not None else None
+    """A customer embedded in an order or a quote.
+
+    Marked rather than fatal for the same reason as in a list: one damaged customer
+    must not hide every order and quote that ever referred to them.
+    """
+    return _listed_customer_response(customer) if customer is not None else None
 
 
 def _serialize_line(line: CrmQuoteLine):
@@ -309,61 +335,6 @@ def _serialize_spool_reservation(
     )
 
 
-def _order_material_requirements(calculation_snapshot: dict | None) -> list[dict]:
-    """Freeze the accepted preflight demand without creating reservations."""
-    if not isinstance(calculation_snapshot, dict):
-        return []
-    preflight = calculation_snapshot.get("operational_preflight")
-    if not isinstance(preflight, dict):
-        return []
-    request = preflight.get("request")
-    result = preflight.get("result")
-    if not isinstance(request, dict):
-        return []
-    result_lines = {
-        line.get("line_id"): line
-        for line in (result.get("lines", []) if isinstance(result, dict) else [])
-        if isinstance(line, dict) and isinstance(line.get("line_id"), str)
-    }
-    requirements: list[dict] = []
-    for line in request.get("lines", []):
-        if not isinstance(line, dict) or not isinstance(line.get("line_id"), str):
-            continue
-        resolved = result_lines.get(line["line_id"], {})
-        required_base = resolved.get("required_base_g", line.get("weight_g", 0))
-        required_planned = resolved.get("required_planned_g", required_base)
-        allocations = resolved.get("allocations", [])
-        suggested_spool_ids = [
-            item["spool_id"]
-            for item in allocations
-            if isinstance(item, dict)
-            and isinstance(item.get("spool_id"), int)
-            and float(item.get("planned_coverage_g") or 0) > 0
-        ]
-        suggested_allocations = [
-            {
-                "spool_id": item["spool_id"],
-                "weight_g": float(item.get("planned_coverage_g") or 0),
-            }
-            for item in allocations
-            if isinstance(item, dict)
-            and isinstance(item.get("spool_id"), int)
-            and float(item.get("planned_coverage_g") or 0) > 0
-        ]
-        requirements.append(
-            {
-                "line_id": line["line_id"],
-                "label": line.get("label"),
-                "filament_id": line.get("filament_id"),
-                "required_base_g": max(0.0, float(required_base or 0)),
-                "required_planned_g": max(0.0, float(required_planned or 0)),
-                "suggested_spool_ids": suggested_spool_ids[:16],
-                "suggested_allocations": suggested_allocations[:16],
-            }
-        )
-    return requirements
-
-
 def _validate_quote_protected_fields(quote: CrmQuote) -> None:
     for version in quote.versions:
         _open_snapshot(version.seller_snapshot)
@@ -390,7 +361,9 @@ async def _load_customer(db: AsyncSession, user_id: int, customer_id: int) -> Cr
     )
     if customer is None:
         raise_error(status.HTTP_404_NOT_FOUND, ERR_CRM_CUSTOMER_NOT_FOUND)
-    _plain_customer(customer)
+    # Deliberately not decrypting here. Failing on load would be the same check the
+    # response already makes, and it would make a record with unreadable fields
+    # impossible to repair: every write goes through this function first.
     return customer
 
 
@@ -579,7 +552,7 @@ async def list_customers(
     if not include_archived:
         filters.append(CrmCustomer.archived.is_(False))
     if search and search.strip():
-        matched = await _matching_customer_ids(db, current_user.id, search)
+        matched = await matching_customer_ids(db, user_id=current_user.id, search=search)
         filters.append(CrmCustomer.id.in_(matched) if matched else sa_false())
     total = await db.scalar(select(func.count()).select_from(CrmCustomer).where(*filters)) or 0
     customers = (
@@ -592,7 +565,7 @@ async def list_customers(
         )
     ).scalars().all()
     return CrmCustomerListResponse(
-        items=[_customer_response(customer) for customer in customers], total=total
+        items=[_listed_customer_response(customer) for customer in customers], total=total
     )
 
 
@@ -605,6 +578,8 @@ async def create_customer(
     customer = CrmCustomer(user_id=current_user.id)
     _apply_customer_fields(customer, payload.model_dump(mode="json"))
     db.add(customer)
+    await db.flush()
+    await _reindex(db, customer)
     await db.commit()
     await db.refresh(customer)
     return _customer_response(customer)
@@ -619,6 +594,7 @@ async def update_customer(
 ) -> CrmCustomerResponse:
     customer = await _load_customer(db, current_user.id, customer_id)
     _apply_customer_fields(customer, payload.model_dump(exclude_unset=True, mode="json"))
+    await _reindex(db, customer)
     await db.commit()
     await db.refresh(customer)
     return _customer_response(customer)
@@ -640,7 +616,7 @@ async def list_quotes(
     count_query = select(func.count(CrmQuote.id)).outerjoin(CrmCustomer).where(*filters)
     if search and search.strip():
         pattern = f"%{search.strip()}%"
-        matched = await _matching_customer_ids(db, current_user.id, search)
+        matched = await matching_customer_ids(db, user_id=current_user.id, search=search)
         search_filter = or_(
             CrmQuote.number.ilike(pattern),
             CrmQuote.title.ilike(pattern),
@@ -831,19 +807,16 @@ async def update_quote_status(
 
     if target == CrmQuoteStatus.ACCEPTED and quote.order is None:
         current = _current_version(quote)
-        order = CrmOrder(
+        await create_order(
+            db,
             user_id=current_user.id,
-            quote_id=quote.id,
-            customer_id=quote.customer_id,
-            number=f"pending-{uuid_mod.uuid4()}",
             title=quote.title,
             currency=quote.currency,
             total=current.grand_total,
-            material_requirements=_order_material_requirements(current.calculation_snapshot),
+            customer_id=quote.customer_id,
+            quote_id=quote.id,
+            calculation_snapshot=current.calculation_snapshot,
         )
-        db.add(order)
-        await db.flush()
-        order.number = f"ЗК-{now:%Y%m%d}-{order.id:05d}"
 
     await db.commit()
     return _serialize_quote_detail(await _load_quote(db, current_user.id, quote.id))
@@ -903,10 +876,12 @@ async def list_orders(
     count_query = select(func.count(CrmOrder.id)).outerjoin(CrmCustomer).where(*filters)
     if search and search.strip():
         pattern = f"%{search.strip()}%"
+        # The customer name is ciphertext, so ilike over it never matched anything.
+        matched = await matching_customer_ids(db, user_id=current_user.id, search=search)
         search_filter = or_(
             CrmOrder.number.ilike(pattern),
             CrmOrder.title.ilike(pattern),
-            CrmCustomer.name.ilike(pattern),
+            CrmOrder.customer_id.in_(matched) if matched else sa_false(),
         )
         query = query.where(search_filter)
         count_query = count_query.where(search_filter)
@@ -925,6 +900,37 @@ async def list_orders(
         )
     ).scalars().unique().all()
     return CrmOrderListResponse(items=[_serialize_order(order) for order in orders if order], total=total)
+
+
+@router.post("/orders", response_model=CrmOrderResponse, status_code=status.HTTP_201_CREATED)
+async def create_order_directly(
+    payload: CrmOrderCreate,
+    current_user: Annotated[User, Depends(require_calculator_access)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> CrmOrderResponse:
+    """Book work without issuing a proposal for it.
+
+    A repeat job from a known customer does not need a document, and the same function
+    fills the order either way. The calculation named here is what gives it a material
+    demand; booked without one, the order simply has none.
+    """
+    await _validate_source_history(db, current_user.id, payload.source_history_id)
+    if payload.customer_id is not None:
+        await _load_customer(db, current_user.id, payload.customer_id)
+
+    order = await create_order(
+        db,
+        user_id=current_user.id,
+        title=payload.title,
+        currency=payload.currency,
+        total=payload.total,
+        customer_id=payload.customer_id,
+        calculation_snapshot=payload.calculation_snapshot,
+    )
+    order.due_date = payload.due_date
+    order.note = payload.note
+    await db.commit()
+    return _serialize_order(await _load_order(db, current_user.id, order.id))
 
 
 @router.patch("/orders/{order_id}", response_model=CrmOrderResponse)
