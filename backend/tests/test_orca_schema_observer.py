@@ -20,15 +20,27 @@ from app.services.orca_schema_observer import (
 )
 
 
+# The archive is deliberately not versioned (see .gitignore), so it is absent on a
+# fresh checkout and in CI. These two tests pin the registry against it and are worth
+# keeping where it exists; where it does not, failing would say nothing about the code.
+BUNDLE_PATH = Path(__file__).resolve().parents[1] / "data/catalog_sources/orca/bundle.zip"
+requires_bundle = pytest.mark.skipif(
+    not BUNDLE_PATH.is_file(),
+    reason="Orca source archive is not versioned; fetch it with scripts/refresh_orca_catalog_source.py",
+)
+
+
+@requires_bundle
 def test_registry_version_matches_bundled_orca_catalog() -> None:
-    bundle_path = Path(__file__).resolve().parents[1] / "data/catalog_sources/orca/bundle.zip"
+    bundle_path = BUNDLE_PATH
     expected = f"bundle-sha256:{hashlib.sha256(bundle_path.read_bytes()).hexdigest()}"
 
     assert ORCA_FIELD_REGISTRY_VERSION == expected
 
 
+@requires_bundle
 def test_every_current_bundle_field_is_accepted_by_the_registry() -> None:
-    bundle_path = Path(__file__).resolve().parents[1] / "data/catalog_sources/orca/bundle.zip"
+    bundle_path = BUNDLE_PATH
     observed = {scope: set() for scope in ORCA_PRESET_FIELDS}
 
     with zipfile.ZipFile(bundle_path) as archive:
