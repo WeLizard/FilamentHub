@@ -215,7 +215,7 @@ export const BrandDetailPage: React.FC = () => {
       </button>
 
       {/* Карточка бренда */}
-      <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-8 border border-white/20 shadow-xl">
+      <div className="glass-panel rounded-2xl p-8 border border-white/20 shadow-xl">
         <div className="flex flex-col md:flex-row items-start md:items-center gap-6">
           {/* Логотип (если есть) */}
           <BrandLogoFrame
@@ -319,7 +319,7 @@ export const BrandDetailPage: React.FC = () => {
       </div>
 
       {/* Фильтры и поиск */}
-      <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4 border border-white/20">
+      <div className="glass-panel rounded-xl p-4 border border-white/20">
         <div className="flex flex-col md:flex-row gap-4">
           {/* Поиск */}
           <div className="flex-1 relative">

@@ -15,7 +15,7 @@ export const TermsModal: React.FC<TermsModalProps> = ({ isOpen, onClose }) => {
   return (
     <ModalOverlay onClose={onClose} className="!bg-black/75">
       {/* Modal */}
-      <div className="relative w-full max-w-4xl max-h-[90vh] bg-white/10 backdrop-blur-sm rounded-2xl border border-white/20 shadow-xl overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
+      <div className="relative w-full max-w-4xl max-h-[90vh] glass-panel rounded-2xl border border-white/20 shadow-xl overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-white/20">
           <h2 className="text-2xl font-bold text-white">Пользовательское соглашение</h2>

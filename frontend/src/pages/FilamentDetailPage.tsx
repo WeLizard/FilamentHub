@@ -572,7 +572,7 @@ export const FilamentDetailPage: React.FC = () => {
       </nav>
 
       {/* Заголовок */}
-      <div className="bg-white/10 backdrop-blur-sm rounded-xl md:rounded-2xl p-4 md:p-8 border border-white/20 shadow-xl">
+      <div className="glass-panel rounded-xl md:rounded-2xl p-4 md:p-8 border border-white/20 shadow-xl">
         <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4 mb-4 md:mb-6">
           <div className="flex-1">
             <div className="flex flex-wrap items-center gap-2 md:gap-3 mb-3 md:mb-4">
@@ -1015,7 +1015,7 @@ export const FilamentDetailPage: React.FC = () => {
       <div
         id="filament-detail-tabs"
         ref={detailTabsRef}
-        className="scroll-mt-24 bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 shadow-xl"
+        className="scroll-mt-24 glass-panel rounded-2xl p-6 border border-white/20 shadow-xl"
       >
         <div className="flex space-x-4 mb-6 border-b border-white/10">
           <button

@@ -33,6 +33,29 @@ body {
 }
 
 /*
+ * Стеклянная панель страницы. Рамка, радиус, отступы и тень остаются за местом
+ * вызова — они у панелей разные, а заливка одинакова везде.
+ *
+ * Без backdrop-filter намеренно. Эти панели лежат на ровном градиенте страницы:
+ * одна ступень 8-битного цвета занимает на нём около 38 px, поэтому размытие
+ * радиусом 8 px сдвигает картинку меньше чем на четверть ступени — то есть не
+ * рисует ничего. Зато каждая панель платит за выборку из корня наложения, и в
+ * Chromium частичная перерисовка при наведении оставляет видимые прямоугольные
+ * швы на границах перерисованной области.
+ *
+ * Оверлеи модалок, шапка и подвал размытие сохраняют: там за стеклом реальное
+ * содержимое страницы, и работа видна.
+ */
+@utility glass-panel {
+  background-color: rgb(255 255 255 / 0.1);
+}
+
+/* Вложенная поверхность внутри панели или секция потише — та же логика, тоньше заливка. */
+@utility glass-panel-subtle {
+  background-color: rgb(255 255 255 / 0.05);
+}
+
+/*
  * One scrollbar contract for the whole application.
  * Firefox uses the standard properties; Chromium/WebKit use the pseudo-elements.
  * A transparent track keeps scrollbars visually inside rounded surfaces.
@@ -229,3 +252,4 @@ input[type="range"].slider-thumb::-moz-range-track {
 .scrollbar-hide::-webkit-scrollbar {
   display: none;  /* Chrome, Safari, Opera */
 }
+

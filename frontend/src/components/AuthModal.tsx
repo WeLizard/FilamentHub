@@ -271,7 +271,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
   return (
     <ModalOverlay onClose={onClose} closeOnOverlayClick={!isLoading && !error} className="!bg-black/60">
       {/* Modal */}
-      <div className="relative w-full max-w-md max-h-[90vh] bg-white/10 backdrop-blur-sm rounded-xl sm:rounded-2xl border border-white/20 shadow-xl overflow-hidden flex flex-col mx-2 sm:mx-0" onClick={(e) => e.stopPropagation()}>
+      <div className="relative w-full max-w-md max-h-[90vh] glass-panel rounded-xl sm:rounded-2xl border border-white/20 shadow-xl overflow-hidden flex flex-col mx-2 sm:mx-0" onClick={(e) => e.stopPropagation()}>
         {/* Header */}
         <div className="relative p-4 sm:p-8 pb-0 flex-shrink-0">
           {/* Close Button */}

@@ -396,7 +396,7 @@ export function WikiArticlePage() {
             </div>
 
             {/* Article Content (Markdown) */}
-            <article className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-2xl p-6 md:p-8 mb-8 overflow-hidden">
+            <article className="glass-panel-subtle border border-white/10 rounded-2xl p-6 md:p-8 mb-8 overflow-hidden">
               <WikiContentRenderer
                 content={articleContent}
                 taskStorageKey={slug ? `wiki-checkboxes-${slug}` : undefined}
@@ -404,7 +404,7 @@ export function WikiArticlePage() {
             </article>
 
             {/* Article Footer - Feedback Section */}
-            <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-6 bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl mb-8">
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-6 glass-panel-subtle border border-white/10 rounded-xl mb-8">
               <div className="text-gray-400 text-sm font-medium">
                 {t('wikiArticlePage.wasHelpful')}
               </div>
@@ -452,7 +452,7 @@ export function WikiArticlePage() {
           {headings.length > 0 && (
             <aside className="hidden lg:block">
               <div className="sticky top-24">
-                <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl p-4 max-h-[calc(100vh-8rem)] overflow-y-auto scrollbar-thin scrollbar-track-transparent scrollbar-thumb-white/10">
+                <div className="glass-panel-subtle border border-white/10 rounded-xl p-4 max-h-[calc(100vh-8rem)] overflow-y-auto scrollbar-thin scrollbar-track-transparent scrollbar-thumb-white/10">
                   <TableOfContents
                     headings={headings}
                     activeId={activeId}

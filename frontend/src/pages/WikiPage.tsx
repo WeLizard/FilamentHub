@@ -296,7 +296,7 @@ export function WikiPage() {
                 <button
                   key={article.id}
                   onClick={() => navigate(`/wiki/articles/${article.slug}`)}
-                  className="group bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl p-5 hover:bg-white/15 transition-all text-left"
+                  className="group glass-panel border border-white/20 rounded-xl p-5 hover:bg-white/15 transition-all text-left"
                 >
                   <div className="mb-3 inline-flex items-center gap-1.5 rounded-full bg-white/[0.07] px-2.5 py-1 text-[11px] font-medium text-slate-400">
                     {article.space_key === 'guides' ? <Compass className="h-3 w-3 text-cyan-300" /> : <LibraryBig className="h-3 w-3 text-purple-300" />}
@@ -325,7 +325,7 @@ export function WikiPage() {
               ))}
             </div>
           ) : (
-            <div className="text-center py-8 bg-white/5 backdrop-blur-sm rounded-xl border border-white/10">
+            <div className="text-center py-8 glass-panel-subtle rounded-xl border border-white/10">
               <Search className="w-10 h-10 text-gray-500 mx-auto mb-3" />
               <p className="text-gray-400">{t('wikiPage.noResults')}</p>
             </div>
@@ -572,7 +572,7 @@ export function WikiPage() {
 
       {/* Empty State */}
       {categories.length === 0 && popularArticles.length === 0 && guideArticles.length === 0 && (
-        <div className="text-center py-12 bg-white/5 backdrop-blur-sm rounded-2xl border border-white/10">
+        <div className="text-center py-12 glass-panel-subtle rounded-2xl border border-white/10">
           <BookOpen className="w-16 h-16 text-gray-400 mx-auto mb-4" />
           <h3 className="text-xl font-semibold text-white mb-2">{t('wikiPage.emptyTitle')}</h3>
           <p className="text-gray-400">

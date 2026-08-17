@@ -71,7 +71,7 @@ export function BrandInvitePage() {
 
   return (
     <PageBackground className="flex items-center justify-center p-4">
-      <div className="w-full max-w-lg bg-white/10 backdrop-blur-sm rounded-2xl border border-white/20 shadow-xl p-8">
+      <div className="w-full max-w-lg glass-panel rounded-2xl border border-white/20 shadow-xl p-8">
         <img src="/logo.svg" alt="FilamentHub" className="w-14 h-14 object-contain mx-auto mb-4" />
 
         {loading ? (

@@ -28,7 +28,7 @@ export const ReviewCard: React.FC<ReviewCardProps> = ({
     formatLocalDate(dateString, { year: 'numeric', month: 'long', day: 'numeric' });
 
   return (
-    <div className="bg-white/10 backdrop-blur-sm rounded-xl p-6 border border-white/20 hover:border-white/30 transition-colors">
+    <div className="glass-panel rounded-xl p-6 border border-white/20 hover:border-white/30 transition-colors">
       {/* Заголовок */}
       <div className="flex items-start justify-between mb-4">
         <div className="flex-1">

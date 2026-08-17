@@ -86,7 +86,7 @@ export function WikiCategoryPage() {
       </button>
 
       {/* Category Header */}
-      <div className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-2xl p-6 md:p-8 mb-8">
+      <div className="glass-panel border border-white/20 rounded-2xl p-6 md:p-8 mb-8">
         <div className="flex flex-col md:flex-row items-start md:items-center gap-4 md:gap-6">
           <div className="w-16 h-16 md:w-20 md:h-20 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-xl md:rounded-2xl flex items-center justify-center shadow-lg shadow-blue-500/25 shrink-0">
             <WikiCategoryIcon name={category.icon} className="w-8 h-8 md:w-10 md:h-10 text-white" />
@@ -103,7 +103,7 @@ export function WikiCategoryPage() {
 
       {/* Articles List */}
       {articles.length === 0 ? (
-        <div className="text-center py-12 bg-white/5 backdrop-blur-sm rounded-2xl border border-white/10">
+        <div className="text-center py-12 glass-panel-subtle rounded-2xl border border-white/10">
           <BookOpen className="w-16 h-16 text-gray-400 mx-auto mb-4" />
           <h3 className="text-xl font-semibold text-white mb-2">{t('wikiCategoryPage.noArticlesTitle')}</h3>
           <p className="text-gray-400">{t('wikiCategoryPage.noArticlesDesc')}</p>
@@ -115,7 +115,7 @@ export function WikiCategoryPage() {
               <button
                 key={article.id}
                 onClick={() => navigate(`/wiki/articles/${article.slug}`)}
-                className="group bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl p-5 md:p-6 hover:bg-white/15 transition-all hover:scale-105 text-left"
+                className="group glass-panel border border-white/20 rounded-xl p-5 md:p-6 hover:bg-white/15 transition-all hover:scale-105 text-left"
               >
                 {/* Article Title */}
                 <h3 className="text-base md:text-lg font-semibold text-white mb-3 group-hover:text-blue-300 transition-colors line-clamp-2 min-h-[3rem]">

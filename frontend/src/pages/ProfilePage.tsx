@@ -1423,7 +1423,7 @@ export const ProfilePage: React.FC = () => {
               {printersWithProfiles.map((printer) => {
                 
                 return (
-                  <div key={printer.id} className="bg-white/10 backdrop-blur-sm border border-white/15 rounded-2xl p-6 shadow-xl">
+                  <div key={printer.id} className="glass-panel border border-white/15 rounded-2xl p-6 shadow-xl">
                     {/* Заголовок принтера */}
                     <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2 mb-4">
                       <div className="min-w-full sm:min-w-0 sm:flex-1">
@@ -1991,7 +1991,7 @@ interface RecentPresetsProps {
 const RecentPresets: React.FC<RecentPresetsProps> = ({ presets }) => {
   const { t } = useTranslation();
   return (
-  <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 shadow-xl">
+  <div className="glass-panel rounded-2xl p-6 border border-white/20 shadow-xl">
     <h3 className="text-xl font-bold text-white mb-4 flex items-center">
       <Settings className="w-5 h-5 mr-2" />
       {t('profilePage.recentPresets')}
@@ -2093,7 +2093,7 @@ const SpoolCard: React.FC<SpoolCardProps> = ({
     !spool.filament && Number.isInteger(importDraftId) && importDraftId > 0;
 
   return (
-    <div className="bg-white/10 backdrop-blur-sm border border-white/15 rounded-2xl p-4 shadow-xl flex gap-4 items-stretch">
+    <div className="glass-panel border border-white/15 rounded-2xl p-4 shadow-xl flex gap-4 items-stretch">
       {/* Spool icon — the visual centrepiece */}
       <div className="flex-shrink-0 self-stretch flex items-center justify-center w-[112px]">
         <SpoolIcon
@@ -2779,7 +2779,7 @@ const SpoolForm: React.FC<SpoolFormProps> = ({
   if (gateStep && createdSpool) {
     const selectedTarget = feedTargets.find((item) => item.key === selectedTargetKey);
     return (
-      <div className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-2xl p-4 md:p-5 space-y-4 max-w-2xl mx-auto">
+      <div className="glass-panel border border-white/20 rounded-2xl p-4 md:p-5 space-y-4 max-w-2xl mx-auto">
         <div className="flex items-center gap-2">
           <CheckCircle className="w-5 h-5 text-green-400 flex-shrink-0" />
           <h3 className="text-white font-semibold text-base">{t('profilePage.spoolGateStep.title')}</h3>
@@ -2873,7 +2873,7 @@ const SpoolForm: React.FC<SpoolFormProps> = ({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-2xl p-4 md:p-5 space-y-4 max-w-2xl mx-auto">
+    <form onSubmit={handleSubmit} className="glass-panel border border-white/20 rounded-2xl p-4 md:p-5 space-y-4 max-w-2xl mx-auto">
       <h3 className="text-white font-semibold text-base">
         {mode === 'edit' ? t('profilePage.spoolEditModal.title') : t('profilePage.spoolAddModal.title')}
       </h3>
@@ -3121,7 +3121,7 @@ const UseSpoolForm: React.FC<UseSpoolFormProps> = ({ spool, onSaved, onCancel })
   const labelCls = 'block text-xs text-gray-400 mb-1';
 
   return (
-    <form onSubmit={handleSubmit} className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-2xl p-4 md:p-5 space-y-4 max-w-xl mx-auto">
+    <form onSubmit={handleSubmit} className="glass-panel border border-white/20 rounded-2xl p-4 md:p-5 space-y-4 max-w-xl mx-auto">
       <h3 className="text-white font-semibold text-base">{t('profilePage.spoolUseModal.title')}</h3>
       <p className="text-xs text-gray-400">
         {spool.filament?.name ?? t('profilePage.spoolNoFilament')} · {t('profilePage.spoolRemaining')}: {spool.remaining_weight_g.toFixed(0)} г
@@ -3421,7 +3421,7 @@ const SpoolsTab: React.FC<SpoolsTabProps> = ({
 
         {spoolTab === 'active' ? (
           <div className="space-y-4 md:space-y-5">
-            <div className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-2xl p-4 md:p-5">
+            <div className="glass-panel border border-white/20 rounded-2xl p-4 md:p-5">
               <PresetSlotsPanel compact spools={spools} printerProfiles={printerProfiles} />
             </div>
 
@@ -3516,7 +3516,7 @@ interface RecentSpoolsProps {
 const RecentSpools: React.FC<RecentSpoolsProps> = ({ spools, onViewAll }) => {
   const { t } = useTranslation();
   return (
-    <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 shadow-xl">
+    <div className="glass-panel rounded-2xl p-6 border border-white/20 shadow-xl">
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-xl font-bold text-white flex items-center gap-2">
           <Package className="w-5 h-5" />
@@ -3739,7 +3739,7 @@ const PresetCard: React.FC<PresetCardProps> = ({ preset, onEdit, onView, onDelet
   };
 
   return (
-      <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 shadow-xl">
+      <div className="glass-panel rounded-2xl p-6 border border-white/20 shadow-xl">
         <div className="flex items-start justify-between mb-4 gap-4">
           <div className="flex-1 min-w-0">
             <div className="flex items-center flex-wrap gap-2 mb-1">
