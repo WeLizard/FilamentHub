@@ -201,6 +201,16 @@ def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("source", type=Path, help="Official OrcaSlicer resources/profiles directory")
     parser.add_argument("--output", type=Path, default=DEFAULT_TARGET)
+    parser.add_argument(
+        "--compare-with",
+        type=Path,
+        default=None,
+        help=(
+            "Bundle to compare preset fields against. Defaults to --output; pass the "
+            "installed bundle explicitly when building somewhere else, or the field "
+            "lifecycle check silently has nothing to compare."
+        ),
+    )
     parser.add_argument("--repository", default=None)
     parser.add_argument("--ref", default=None, help="Tracked upstream ref, normally main")
     parser.add_argument("--commit", default=None)
@@ -294,9 +304,10 @@ def main() -> int:
         print("ERROR: no Orca vendor manifests found at source root", file=sys.stderr)
         return 1
 
-    if output.is_file():
+    baseline = (args.compare_with or output).resolve()
+    if baseline.is_file():
         try:
-            previous_inventory = _field_inventory_from_bundle(output)
+            previous_inventory = _field_inventory_from_bundle(baseline)
         except (OSError, ValueError, zipfile.BadZipFile) as exc:
             print(f"ERROR: cannot read previous field inventory: {exc}", file=sys.stderr)
             return 1

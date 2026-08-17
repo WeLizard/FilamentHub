@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -25,6 +26,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 BUILDER = PROJECT_ROOT / "scripts" / "build_catalog_source_orca.py"
 DEFAULT_TARGET = PROJECT_ROOT / "backend" / "data" / "catalog_sources" / "orca" / "bundle.zip"
+FIELD_REGISTRY = PROJECT_ROOT / "backend" / "app" / "services" / "orca_field_registry.py"
 DEFAULT_REPOSITORY = "https://github.com/OrcaSlicer/OrcaSlicer"
 MANIFEST_NAME = "filamenthub-source.json"
 PROFILES_PATH = "resources/profiles"
@@ -90,6 +92,11 @@ def _build(profiles: Path, target: Path, args: argparse.Namespace) -> None:
         str(profiles),
         "--output",
         str(target),
+        # The build goes to a temporary file, so without this the builder has no
+        # previous bundle to compare against and its field-lifecycle check never
+        # fires — the one guard that notices Orca adding or dropping a setting.
+        "--compare-with",
+        str(args.output),
         "--repository",
         args.repository,
         "--ref",
@@ -166,6 +173,31 @@ def _print_profile_changes(current: dict[str, str], fresh: dict[str, str]) -> No
             print(f"      {kind}: {shown}")
 
 
+def _warn_if_registry_trails(bundle: Path) -> None:
+    """The Orca field registry is pinned to a bundle checksum.
+
+    Since the archive stopped being versioned, a mismatch shows up nowhere in
+    git — the only other signal is a failing test, found long after the fact.
+    """
+    try:
+        registry = FIELD_REGISTRY.read_text(encoding="utf-8")
+    except OSError:
+        return
+    pinned = re.search(r'"bundle-sha256:([0-9a-f]{64})"', registry)
+    if not pinned:
+        return
+    digest = hashlib.sha256(bundle.read_bytes()).hexdigest()
+    if digest == pinned.group(1):
+        return
+    print()
+    print("ВНИМАНИЕ: реестр полей OrcaSlicer отстал от этого архива.")
+    print(f"  реестр : bundle-sha256:{pinned.group(1)}")
+    print(f"  архив  : bundle-sha256:{digest}")
+    print("Пока реестр не обновлён, тест test_registry_version_matches_bundled_orca_catalog")
+    print("падает, а разбор новых полей Orca не сделан. Обновлять реестр вручную,")
+    print("разложив новые поля по редакторам, а не подменой контрольной суммы.")
+
+
 def _report(current: Path | None, fresh: Path) -> bool:
     """Print what an import of the fresh bundle would change. True when it differs."""
     fresh_manifest, fresh_models, fresh_files = _read_bundle(fresh)
@@ -231,6 +263,7 @@ def main() -> int:
             args.output.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(fresh, args.output)
             print(f"\nWritten to {args.output}")
+            _warn_if_registry_trails(args.output)
         elif differs:
             keep = True
             print(f"\nArchive kept at {fresh}")

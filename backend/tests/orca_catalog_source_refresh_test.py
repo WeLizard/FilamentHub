@@ -4,6 +4,7 @@ catalog, so it has to name models correctly or an update silently never happens.
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import json
 import zipfile
@@ -116,3 +117,41 @@ def test_report_reports_nothing_to_import_for_an_identical_tree(
 
     assert refresh._report(current, fresh) is False
     assert "nothing to import" in capsys.readouterr().out
+
+
+def test_registry_mismatch_is_reported_when_the_archive_is_replaced(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The field registry is pinned to a bundle checksum, and the bundle is no
+    longer versioned — without this warning a stale registry surfaces only as a
+    failing test, long after whoever refreshed the source has moved on."""
+    bundle = _bundle(tmp_path / "fresh.zip", tree="new", vendors={"BBL": ["Bambu Lab A1"]})
+    registry = tmp_path / "orca_field_registry.py"
+    registry.write_text(
+        'ORCA_FIELD_REGISTRY_VERSION = (\n    "bundle-sha256:' + "0" * 64 + '"\n)\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(refresh, "FIELD_REGISTRY", registry)
+
+    refresh._warn_if_registry_trails(bundle)
+
+    out = capsys.readouterr().out
+    assert "реестр полей OrcaSlicer отстал" in out
+    assert "test_registry_version_matches_bundled_orca_catalog" in out
+
+
+def test_registry_in_step_with_the_archive_stays_quiet(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bundle = _bundle(tmp_path / "fresh.zip", tree="new", vendors={"BBL": ["Bambu Lab A1"]})
+    digest = hashlib.sha256(bundle.read_bytes()).hexdigest()
+    registry = tmp_path / "orca_field_registry.py"
+    registry.write_text(
+        f'ORCA_FIELD_REGISTRY_VERSION = (\n    "bundle-sha256:{digest}"\n)\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(refresh, "FIELD_REGISTRY", registry)
+
+    refresh._warn_if_registry_trails(bundle)
+
+    assert capsys.readouterr().out == ""
