@@ -93,8 +93,8 @@ from app.schemas.printer_request import (
 from app.schemas.user import AccountDeletionStats, UserListResponse, UserResponse
 from app.services.brand_slug_service import apply_brand_slug_rename, choose_brand_slug
 from app.services.calculator_defaults_service import (
-    get_calculator_profile_defaults,
     get_calculator_country_defaults,
+    get_calculator_profile_defaults,
     set_calculator_country_defaults,
     set_calculator_profile_defaults,
 )

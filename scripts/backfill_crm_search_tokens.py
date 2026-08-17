@@ -14,7 +14,13 @@ import asyncio
 import sys
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+try:
+    PROJECT_ROOT = Path(__file__).resolve().parents[1]
+except NameError:
+    # Piped into the interpreter, which is how this is run on a server:
+    #   docker exec -i filamenthub_backend_prod python - < scripts/...
+    PROJECT_ROOT = Path.cwd()
+
 # Run either from a checkout, where the application lives under backend/, or from
 # inside the container, where that directory is already the working root.
 _BACKEND = PROJECT_ROOT / "backend"
