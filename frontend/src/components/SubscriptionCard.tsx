@@ -2,7 +2,11 @@ import { useTranslation } from 'react-i18next';
 import { Sparkles, Clock } from 'lucide-react';
 import type { User } from '../types/api';
 
-/** User-facing subscription status: plan, trial countdown, and (coming-soon) upgrade CTA. */
+/**
+ * Intentionally retained as reusable groundwork for the future subscription UI.
+ * It is not currently mounted: plan and trial status are shown in CalculatorPage,
+ * so the lack of imports is deliberate rather than accidental dead code.
+ */
 export function SubscriptionCard({ user }: { user: User }) {
   const { t } = useTranslation();
   const sub = user.subscription;

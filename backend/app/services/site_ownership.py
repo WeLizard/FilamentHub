@@ -55,11 +55,6 @@ async def _resolve_public_addresses(domain: str) -> set[str]:
     return addresses
 
 
-def verification_url(website: str | None) -> str | None:
-    domain = normalize_website_url(website or "")
-    return f"https://{domain}{VERIFICATION_PATH}" if domain else None
-
-
 async def confirm_site_ownership(website: str | None, token: str) -> tuple[bool, str | None]:
     """Read the token from the brand's domain. Returns (confirmed, domain)."""
     domain = normalize_website_url(website or "")

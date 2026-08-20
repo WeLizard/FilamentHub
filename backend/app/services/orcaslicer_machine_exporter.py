@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime
 from typing import Any, Mapping
 
 from sqlalchemy import select
@@ -456,20 +455,6 @@ async def export_printer_profile(
     )
 
 
-def printer_profile_info(profile: PrinterProfile) -> str:
-    """Сформировать .info-файл для профиля принтера."""
-    setting_id = profile.setting_id or f"FHUB_M_{profile.id}"
-    updated_at = profile.updated_at or profile.created_at or datetime.utcnow()
-    lines = [
-        "sync_info = ",
-        f"user_id = {profile.owner_user_id or ''}",
-        f"setting_id = {setting_id}",
-        f"base_id = {profile.extra_metadata.get('base_id', 'null') if profile.extra_metadata else 'null'}",
-        f"updated_time = {int(updated_at.timestamp())}",
-    ]
-    return "\n".join(lines)
-
-
 async def print_profile_to_orca_json(
     profile: PrintProfile,
     db: AsyncSession | None = None,
@@ -614,17 +599,3 @@ async def export_print_profile(
         indent=4,
         ensure_ascii=False,
     )
-
-
-def print_profile_info(profile: PrintProfile) -> str:
-    """Сформировать .info-файл для профиля печати."""
-    setting_id = profile.setting_id or f"FHUB_P_{profile.id}"
-    updated_at = profile.updated_at or profile.created_at or datetime.utcnow()
-    lines = [
-        "sync_info = ",
-        f"user_id = {profile.owner_user_id or ''}",
-        f"setting_id = {setting_id}",
-        f"base_id = {profile.extra_metadata.get('base_id', 'null') if profile.extra_metadata else 'null'}",
-        f"updated_time = {int(updated_at.timestamp())}",
-    ]
-    return "\n".join(lines)

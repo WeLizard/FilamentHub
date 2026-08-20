@@ -1,6 +1,5 @@
 """QR code generation service."""
 
-import base64
 from io import BytesIO
 from pathlib import Path
 
@@ -272,23 +271,6 @@ def generate_qr_code_svg(
     qr.make_image(image_factory=qrcode.image.svg.SvgPathImage).save(buffer)
     buffer.seek(0)
     return buffer
-
-
-def generate_qr_code_base64(
-    short_code: str,
-    size: int = 300,
-    error_correction: str = "M",
-) -> str:
-    """
-    Генерирует QR-код и возвращает в формате base64.
-
-    Returns:
-        Base64 строка для вставки в HTML (data:image/png;base64,...)
-    """
-    buffer = generate_qr_code_image(short_code, size, error_correction)
-    image_data = buffer.getvalue()
-    base64_str = base64.b64encode(image_data).decode("utf-8")
-    return f"data:image/png;base64,{base64_str}"
 
 
 def save_qr_code_image(

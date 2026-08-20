@@ -865,7 +865,7 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
   const [formError, setFormError] = useState<string | null>(null);
   const [showGcodeModals, setShowGcodeModals] = useState<Record<string, boolean>>({});
 
-  // ── TODO-12.2: префилл нового профиля из выбранной каталожной модели ──
+  // Prefill a new profile from the selected catalog model.
   // Спеки (вендор, область печати, высота, сопла) берём из каталожного принтера.
   // Только для СОЗДАНИЯ; edit/clone заполняются из самого профиля и не трогаются.
   const applyPrinterModelDefaults = useCallback((printerModel: Printer) => {
@@ -1560,7 +1560,7 @@ export const CreatePrinterProfileModal: React.FC<CreatePrinterProfileModalProps>
                   }
                   // Устанавливаем ID синхронно
                   setPrinterId(val);
-                  // TODO-12.2: при создании подставляем спеки выбранной модели каталога
+                  // Only a newly created profile inherits catalog model specifications.
                   if (selectedPrinter && !profile && !baseProfile) {
                     applyPrinterModelDefaults(selectedPrinter);
                   }

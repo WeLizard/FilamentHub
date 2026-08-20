@@ -1,8 +1,3 @@
-export const VISUAL_EFFECT_CODES = [
-  'wood', 'carbon', 'carbonaceous', 'glass', 'microspheres', 'particles',
-  'metallic', 'luminescent', 'glitter', 'fibers', 'stone',
-] as const;
-
 export const DECORATIVE_VISUAL_EFFECT_CODES = [
   'metallic', 'luminescent', 'glitter',
 ] as const;
