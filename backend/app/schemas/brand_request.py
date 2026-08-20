@@ -167,6 +167,9 @@ class BrandRequestListResponse(BaseModel):
 
     items: list[BrandRequestResponse]
     total: int
+    page: int
+    size: int
+    pages: int
 
 
 class BrandRequestUpdate(BaseModel):

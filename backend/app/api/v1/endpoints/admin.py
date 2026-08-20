@@ -1028,6 +1028,9 @@ async def list_brand_requests(
     return BrandRequestListResponse(
         items=items,
         total=total,
+        page=page,
+        size=size,
+        pages=(total + size - 1) // size,
     )
 
 
