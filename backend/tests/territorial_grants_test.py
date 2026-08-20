@@ -25,6 +25,7 @@ from app.models.organization import (
     OrganizationMemberRole,
     OrganizationMembership,
 )
+from app.models.preset import Preset, PresetModerationStatus
 from app.models.user import User, UserRole
 from app.services.email_service import EmailSendResult
 from app.services.legal_acceptance_service import (
@@ -155,6 +156,137 @@ async def test_community_preset_is_open_to_every_user_but_official_status_is_not
         json={**payload, "name": "Fake official profile", "is_official": True},
     )
     assert forbidden.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_official_preset_is_managed_by_the_contributing_organization(
+    client: AsyncClient, db_session: AsyncSession
+):
+    """A colleague edits the shared asset; a personal creator account is not the owner."""
+    brand, filament = await _brand_with_one_filament(db_session)
+    owner_headers = await _representative(
+        db_session,
+        brand,
+        "preset-org-owner",
+        "KZ",
+        owns_workspace=True,
+    )
+    owner = await db_session.scalar(
+        select(User).where(User.email == "preset-org-owner@example.com")
+    )
+    assert owner is not None and owner.active_organization_id is not None
+
+    colleague = User(
+        email="preset-org-colleague@example.com",
+        username="user_preset_org_colleague",
+        password_hash=get_password_hash("testpassword123"),
+        role=UserRole.USER,
+        active=True,
+        email_verified=True,
+        brand_id=brand.id,
+        active_organization_id=owner.active_organization_id,
+        terms_version_accepted=CURRENT_TERMS_VERSION,
+        personal_data_consent_version=CURRENT_PERSONAL_DATA_CONSENT_VERSION,
+    )
+    db_session.add(colleague)
+    await db_session.flush()
+    db_session.add(
+        OrganizationMembership(
+            organization_id=owner.active_organization_id,
+            user_id=colleague.id,
+            role=OrganizationMemberRole.EDITOR,
+            active=True,
+            all_brands=True,
+        )
+    )
+    await db_session.commit()
+    colleague_headers = {
+        "Authorization": f"Bearer {create_access_token({'sub': colleague.email})}"
+    }
+
+    created = await client.post(
+        "/api/v1/presets/",
+        headers=owner_headers,
+        json={
+            "filament_id": filament.id,
+            "name": "Official KZ profile",
+            "extruder_temp": 215,
+            "bed_temp": 60,
+            "is_official": True,
+        },
+    )
+    assert created.status_code == 201, created.text
+    preset_id = created.json()["id"]
+    assert created.json()["organization_id"] == owner.active_organization_id
+
+    edited = await client.patch(
+        f"/api/v1/presets/{preset_id}",
+        headers=colleague_headers,
+        json={"description": "Maintained by the organization team"},
+    )
+    assert edited.status_code == 200, edited.text
+    assert edited.json()["description"] == "Maintained by the organization team"
+    assert edited.json()["organization_id"] == owner.active_organization_id
+
+
+@pytest.mark.asyncio
+async def test_revoked_grant_cannot_activate_a_staged_official_draft(
+    client: AsyncClient, db_session: AsyncSession
+):
+    """Official provenance is not a cached capability after authority is revoked."""
+    brand, filament = await _brand_with_one_filament(db_session)
+    headers = await _representative(
+        db_session,
+        brand,
+        "revoked-official-draft",
+        "KZ",
+        owns_workspace=True,
+    )
+    _, outsider_headers = await _outsider(db_session, "revoked-official-outsider")
+    owner = await db_session.scalar(
+        select(User).where(User.email == "revoked-official-draft@example.com")
+    )
+    assert owner is not None and owner.active_organization_id is not None
+    draft = Preset(
+        user_id=owner.id,
+        organization_id=owner.active_organization_id,
+        name="Staged official profile",
+        extruder_temp=215,
+        bed_temp=60,
+        is_official=True,
+        active=False,
+        moderation_status=PresetModerationStatus.APPROVED,
+        orcaslicer_settings={"service_token": "private-staged-token"},
+    )
+    db_session.add(draft)
+    await db_session.flush()
+    grant = await db_session.scalar(
+        select(BrandTerritorialGrant).where(
+            BrandTerritorialGrant.brand_id == brand.id,
+            BrandTerritorialGrant.organization_id == owner.active_organization_id,
+        )
+    )
+    assert grant is not None
+    grant.status = GrantStatus.revoked
+    await db_session.commit()
+
+    activated = await client.post(
+        f"/api/v1/presets/{draft.id}/activate",
+        headers=headers,
+        json={"filament_id": filament.id},
+    )
+
+    assert activated.status_code == 403
+    await db_session.refresh(draft)
+    assert draft.active is False
+    assert draft.filament_id is None
+    assert draft.orcaslicer_settings["service_token"] == "private-staged-token"
+    assert (
+        await client.get(
+            f"/api/v1/presets/{draft.id}/versions",
+            headers=outsider_headers,
+        )
+    ).status_code == 403
 
 
 @pytest.mark.asyncio

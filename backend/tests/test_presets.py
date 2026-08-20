@@ -539,7 +539,11 @@ async def test_update_preset(client: AsyncClient, db_session: AsyncSession):
     assert data["flow_rate"] == 92.6
     assert data["fan_speed"] == 0
     assert data["retraction_length"] is None
-    assert data["orcaslicer_settings"] == raw_settings
+    assert data["orcaslicer_settings"] == {
+        **raw_settings,
+        "fhub_id": preset.id,
+        "fhub_source": "filamenthub",
+    }
 
     response = await client.patch(
         f"/api/v1/presets/{preset.id}",

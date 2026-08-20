@@ -589,8 +589,70 @@ export interface Preset {
   created_at: string;
   updated_at: string;
   user_id?: number | null;
+  organization_id?: number | null;
   printers?: Printer[]; // Список принтеров, для которых подходит этот пресет
   is_saved?: boolean; // Для UI: сохранен ли пресет пользователем (из available-presets эндпоинта)
+}
+
+export interface PresetDraftSuggestion {
+  value: string | number;
+  source: 'orca' | 'profile_name' | 'filamenthub_default' | string;
+  confidence: 'high' | 'medium' | 'suggested' | string;
+  direct: boolean;
+}
+
+export interface PresetDraftCatalogMatch {
+  id: number;
+  name: string;
+  brand_id?: number | null;
+  material_type?: string | null;
+  color_name?: string | null;
+  confidence: 'exact' | 'strong' | 'possible' | string;
+  reasons: string[];
+}
+
+export interface PresetDraftAnalysis {
+  preset_id: number;
+  evidence_kind: 'orca_capture' | 'stored_snapshot' | string;
+  suggestions: Record<string, PresetDraftSuggestion>;
+  brand_match: PresetDraftCatalogMatch | null;
+  filament_matches: PresetDraftCatalogMatch[];
+  confirmed_fields: string[];
+  suggested_fields: string[];
+  preset_readiness_percent: number;
+  catalog_readiness_percent: number;
+  technical_settings_count: number;
+  preset_decisions: string[];
+  catalog_decisions: string[];
+  review_state: 'ready' | 'almost_ready' | 'needs_decision' | 'ambiguous' | string;
+  generic_source: boolean;
+  similar_import_users: number;
+}
+
+export interface PresetDraftQueue {
+  items: PresetDraftAnalysis[];
+  total: number;
+  ready: number;
+  almost_ready: number;
+  needs_decision: number;
+  ambiguous: number;
+}
+
+export type AchievementCode =
+  | 'first_catalog_contribution'
+  | 'first_profile'
+  | 'preset_used_by_another';
+
+export interface UserAchievement {
+  code: AchievementCode | string;
+  earned_at: string;
+}
+
+export interface AchievementOverview {
+  achievements: UserAchievement[];
+  published_presets: number;
+  saved_by_other_users: number;
+  confirmed_uses_by_other_users: number;
 }
 
 export type PresetMatchReason =

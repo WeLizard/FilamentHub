@@ -1089,6 +1089,27 @@ export const presetsAPI = {
     return response.data;
   },
 
+  getDraftAnalysis: async (id: number) => {
+    const response = await api.get<import('../types/api').PresetDraftAnalysis>(
+      `/presets/${id}/draft-analysis`,
+    );
+    return response.data;
+  },
+
+  getDraftQueue: async (limit = 100) => {
+    const response = await api.get<import('../types/api').PresetDraftQueue>(
+      '/presets/draft-analyses',
+      { params: { limit } },
+    );
+    return response.data;
+  },
+
+  recordDraftEvent: async (
+    event_type: 'review_opened' | 'important_field_confirmed' | 'filament_matched_or_created' | 'duplicate_prevented',
+  ) => {
+    await api.post('/presets/draft-events', { event_type });
+  },
+
   getRecommended: async (filament_id: number) => {
     const response = await api.get<RecommendedPreset>(`/presets/recommended/${filament_id}`);
     return response.data;
@@ -1179,6 +1200,13 @@ export const presetsAPI = {
       data: response.data,
       contentDisposition: response.headers['content-disposition'] || response.headers['Content-Disposition'],
     };
+  },
+};
+
+export const achievementsAPI = {
+  getMine: async () => {
+    const response = await api.get<import('../types/api').AchievementOverview>('/achievements/me');
+    return response.data;
   },
 };
 

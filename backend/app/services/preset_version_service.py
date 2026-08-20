@@ -251,15 +251,27 @@ async def restore_version(
 
 
 def compute_diff(
-    from_version: PresetVersion, to_version: PresetVersion
+    from_version: PresetVersion,
+    to_version: PresetVersion,
+    *,
+    from_settings: dict | None = None,
+    to_settings: dict | None = None,
 ) -> dict:
     """Build a human-readable diff between two versions' orcaslicer_settings.
 
     Mapped keys land in ``changes`` with label/unit; unmapped keys land in
     ``unmapped_changes`` with raw key only.
     """
-    old = from_version.snapshot_orcaslicer_settings or {}
-    new = to_version.snapshot_orcaslicer_settings or {}
+    old = (
+        from_settings
+        if from_settings is not None
+        else from_version.snapshot_orcaslicer_settings or {}
+    )
+    new = (
+        to_settings
+        if to_settings is not None
+        else to_version.snapshot_orcaslicer_settings or {}
+    )
     keys = sorted(set(old) | set(new))
 
     changes: list[dict] = []

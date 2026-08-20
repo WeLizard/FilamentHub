@@ -2122,7 +2122,7 @@
       "selectFilament": "选择耗材",
       "finishOrCancelFilamentCreation": "完成耗材创建或点击「取消」"
     },
-    "titleDraft": "优化草稿",
+    "titleDraft": "审核 OrcaSlicer 配置",
     "titleEdit": "编辑预设",
     "titleCreate": "创建新预设",
     "filament": "耗材",
@@ -2371,6 +2371,41 @@
     "saving": "保存中...",
     "save": "保存",
     "create": "创建",
+    "draftPublished": "配置已添加到目录",
+    "draftPublishedBenefit": "材料和配置已添加到目录，现在更容易查找、安装到 Orca 并再次使用。",
+    "draftSentForReview": "配置已提交审核",
+    "draftNeedsFix": "配置未通过自动检查。请修正标记的数据后重试。",
+    "review": {
+      "title": "大部分信息已从 OrcaSlicer 填入",
+      "chooseCatalogMatch": "有多个相似材料，请选择正确的一项",
+      "similarImports": "已有 {{count}} 位用户导入了相似配置",
+      "description": "请核对材料和配置名称。确认后，配置会进入共享目录；详细设置已经保留。",
+      "brand": "品牌",
+      "material": "材料",
+      "diameter": "直径",
+      "color": "颜色",
+      "fromOrca": "直接读取自 OrcaSlicer 配置",
+      "fhSuggestions": "FilamentHub 建议：{{count}}",
+      "presetReadiness": "配置就绪度",
+      "catalogReadiness": "目录匹配度",
+      "technicalSettingsSaved": "已保留技术参数：{{count}}",
+      "decisionsRemaining": "剩余重要确认项：{{count}}",
+      "noDecisionsRemaining": "没有待确认的重要项目",
+      "importantDecisions": "请确认",
+      "decisions": {
+        "confirm_nozzle_temperature": "喷嘴温度",
+        "confirm_bed_temperature": "热床温度",
+        "identify_brand": "实体料盘的品牌",
+        "confirm_new_brand": "目录中是否已有该品牌",
+        "confirm_material_type": "材料类型",
+        "choose_catalog_filament": "实际使用的是哪个匹配材料",
+        "choose_or_create_filament": "选择现有材料或新建目录条目",
+        "confirm_color_structure": "材料是单色还是多色"
+      },
+      "evidencePreserved": "原始 OrcaSlicer 数据单独保存，不会被建议修改。",
+      "storedEvidence": "审核使用已保存的导入快照；原始设置不会被更改。",
+      "publish": "审核并添加到目录"
+    },
     "units": {
       "sec": "秒"
     },
@@ -2410,6 +2445,21 @@
     "supporter": {
       "label": "支持者",
       "title": "项目支持者"
+    }
+  },
+  "achievement": {
+    "earned": "获得新成就：{{names}}",
+    "firstCatalogContribution": {
+      "label": "首次贡献",
+      "title": "补充目录中缺失的数据并完成发布或审核。"
+    },
+    "firstProfile": {
+      "label": "首个配置",
+      "title": "发布第一个预设。"
+    },
+    "presetUsedByAnother": {
+      "label": "校准没有白费",
+      "title": "另一位用户首次导入了你发布的预设。"
     }
   },
   "deleteAccount": {
@@ -3053,6 +3103,11 @@
     "openAchievements": "查看徽章和成就",
     "achievementCount": "已获得 {{count}} 个",
     "achievementsDescription": "您当前在 FilamentHub 中的徽章和角色。此收藏将随着您的贡献和活动不断增加。",
+    "contributionStats": {
+      "publishedPresets": "已发布配置",
+      "savedByOthers": "被其他用户保存",
+      "confirmedUses": "已由成功打印确认"
+    },
     "role": {
       "brand": "品牌代表",
       "moderator": "版主",
@@ -3484,6 +3539,18 @@
     "enrichmentConfidenceLow": "低",
     "fieldsAutoFilled": "{{count}}个字段自动填充",
     "materialDetected": "检测到的类型：{{type}}",
+    "draftContributionReady": "设置已导入，还需确认 {{count}} 项重要信息",
+    "draftContributionHint": "确认几个清晰字段后，您的实际配置就能帮助目录中的其他用户。",
+    "draftContributionAmbiguous": "需要确认具体材料",
+    "draftContributionNeedsFix": "此配置需要少量修正",
+    "draftContributionNeedsFixHint": "打开审核即可查看未通过自动检查的具体内容。",
+    "reviewAndPublishDraft": "审核并添加",
+    "draftQueueTitle": "Orca 草稿：{{count}}",
+    "draftQueueSummary": "接近完成：{{ready}} · 需要确认：{{review}}",
+    "draftQueueHint": "优先显示最快可完成的条目",
+    "openDraftQueue": "打开草稿",
+    "draftPresetReadiness": "配置 {{value}}%",
+    "draftCatalogReadiness": "目录 {{value}}%",
     "generative": "生成式",
     "created": "创建于",
     "modified": "修改于",

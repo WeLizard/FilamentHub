@@ -878,6 +878,7 @@ def test_active_filaments_use_the_host_preset_api(plugin_module, monkeypatch):
 
     assert plugin_module.scan_active_user_filaments() == [{
         "name": "Local PETG",
+        "locator": "host:filament:Local PETG",
         "profile": {
             "filament_type": ["PETG"],
             "nozzle_temperature": ["245"],
@@ -2347,6 +2348,127 @@ def test_profile_registry_distinguishes_rename_from_save_as(
     assert saved
     assert other_account_id != account_id
     assert other_account_items[0]["local_profile_id"] != original_id
+
+
+def test_filament_draft_rename_keeps_identity_and_is_not_reimported(
+    plugin_module, monkeypatch, tmp_path
+):
+    _isolate_profile_identity(plugin_module, monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        plugin_module,
+        "IMPORTED_DRAFTS_FILE",
+        str(tmp_path / "imported_drafts.json"),
+    )
+    requests = []
+
+    def post(_path, _token, payload):
+        requests.append(payload)
+        return 200, json.dumps({
+            "results": [
+                {
+                    "status": "created",
+                    "external_id": item["external_id"],
+                    "review_state": "almost_ready",
+                    "important_decisions": 1,
+                }
+                for item in payload["profiles"]
+            ]
+        }).encode("utf-8")
+
+    monkeypatch.setattr(plugin_module, "http_post_json", post)
+    original = [{
+        "name": "Workshop PETG",
+        "locator": "file:filament/workshop-petg.json",
+        "profile": {"filament_type": ["PETG"], "name": "Workshop PETG"},
+    }]
+    sent = plugin_module.push_filament_drafts("tok", original)
+    assert len(sent) == 1
+    assert requests[0]["profiles"][0]["source_version"] == plugin_module.PLUGIN_VERSION
+    assert requests[0]["profiles"][0]["capture_mode"] == "resolved_runtime"
+    assert original[0]["_draft_review_state"] == "almost_ready"
+    assert original[0]["_draft_decisions"] == 1
+    plugin_module.save_imported_draft_ids({sent[0]: 1})
+
+    renamed = [{
+        "name": "Workshop PETG tuned",
+        "locator": "file:filament/workshop-petg-tuned.json",
+        "profile": {"filament_type": ["PETG"], "name": "Workshop PETG tuned"},
+    }]
+    assert plugin_module.push_filament_drafts("tok", renamed) == []
+    assert renamed[0]["_draft_sync_id"] == sent[0]
+    assert len(requests) == 1
+
+
+def test_filament_draft_batch_retries_only_item_level_errors(
+    plugin_module, monkeypatch, tmp_path
+):
+    _isolate_profile_identity(plugin_module, monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        plugin_module,
+        "IMPORTED_DRAFTS_FILE",
+        str(tmp_path / "imported_drafts.json"),
+    )
+    requests = []
+
+    def post(_path, _token, payload):
+        requests.append(payload)
+        statuses = ["created", "error"] if len(requests) == 1 else ["created"]
+        return 200, json.dumps({
+            "results": [{"status": status} for status in statuses]
+        }).encode("utf-8")
+
+    monkeypatch.setattr(plugin_module, "http_post_json", post)
+    candidates = [
+        {
+            "name": "PLA accepted",
+            "locator": "file:filament/pla-accepted.json",
+            "profile": {"filament_type": ["PLA"]},
+        },
+        {
+            "name": "PETG retry",
+            "locator": "file:filament/petg-retry.json",
+            "profile": {"filament_type": ["PETG"]},
+        },
+    ]
+    accepted = plugin_module.push_filament_drafts("tok", candidates)
+    assert accepted == [candidates[0]["_draft_sync_id"]]
+    plugin_module.save_imported_draft_ids({accepted[0]: 1})
+
+    retried = plugin_module.push_filament_drafts("tok", candidates)
+    assert retried == [candidates[1]["_draft_sync_id"]]
+    assert [item["name"] for item in requests[1]["profiles"]] == ["PETG retry"]
+
+
+def test_recovered_filament_records_raw_backup_provenance(
+    plugin_module, monkeypatch, tmp_path
+):
+    _isolate_profile_identity(plugin_module, monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        plugin_module,
+        "IMPORTED_DRAFTS_FILE",
+        str(tmp_path / "imported_drafts.json"),
+    )
+    sent_payloads = []
+
+    def post(_path, _token, payload):
+        sent_payloads.extend(payload["profiles"])
+        return 200, json.dumps({"results": [{"status": "created"}]}).encode("utf-8")
+
+    monkeypatch.setattr(plugin_module, "http_post_json", post)
+    recovered = [{
+        "name": "Recovered PLA",
+        "key": "filament:backup:Recovered PLA",
+        "source": "backup",
+        "profile": {"filament_type": ["PLA"]},
+    }]
+
+    accepted = plugin_module.push_filament_drafts(
+        "tok", recovered, authoritative=False
+    )
+
+    assert len(accepted) == 1
+    assert sent_payloads[0]["capture_mode"] == "recovered_backup_json"
+    assert sent_payloads[0]["source_version"] == plugin_module.PLUGIN_VERSION
 
 
 def test_authoritative_profile_sync_uses_start_batch_finalize(

@@ -2604,6 +2604,11 @@ async def _upsert_filament_preset(
     # endpoint handles one invalid item as an error without committing partial
     # changes made while processing that item.
     extracted = _extract_values_from_orcaslicer_settings(payload.orcaslicer_settings or {})
+    from app.services.preset_demand import preset_demand_signature
+    from app.services.preset_import_evidence import (
+        new_import_evidence,
+        refresh_import_evidence,
+    )
 
     # Логика определения типа пресета:
     # 1. [fh] или @fh в названии - наши пресеты (активные)
@@ -2977,11 +2982,18 @@ async def _upsert_filament_preset(
     if preset is None and not is_our_preset:
         derived_preset = None
 
-        # 5a. Проверяем по derived_from_external_id
+        # 5a. Новые публикации держат account-local identity в приватном
+        # import_evidence. Legacy public markers remain a read-only fallback so
+        # an old promoted draft does not resurrect after this privacy fix.
         if payload.external_id:
             result = await db.execute(
                 select(Preset).where(
-                    Preset.orcaslicer_settings['derived_from_external_id'].as_string() == payload.external_id,
+                    or_(
+                        Preset.import_evidence["promotion_identity"]["external_id"].as_string()
+                        == payload.external_id,
+                        Preset.orcaslicer_settings["derived_from_external_id"].as_string()
+                        == payload.external_id,
+                    ),
                     Preset.user_id == current_user.id,
                     Preset.active == True,
                 )
@@ -3001,7 +3013,12 @@ async def _upsert_filament_preset(
 
             result = await db.execute(
                 select(Preset).where(
-                    Preset.orcaslicer_settings['derived_from_draft_id'].as_string() == check_draft_id,
+                    or_(
+                        Preset.import_evidence["promotion_identity"]["draft_id"].as_string()
+                        == check_draft_id,
+                        Preset.orcaslicer_settings["derived_from_draft_id"].as_string()
+                        == check_draft_id,
+                    ),
                     Preset.user_id == current_user.id,
                     Preset.active == True,
                 )
@@ -3214,6 +3231,20 @@ async def _upsert_filament_preset(
                         logger.info(f"Added fhub_id and fhub_source to preset {preset.id} (found by cleaned name)")
 
                 preset.orcaslicer_settings = updated_settings
+            if not is_our_preset:
+                preset.import_evidence = refresh_import_evidence(
+                    preset.import_evidence,
+                    settings=payload.orcaslicer_settings,
+                    source=payload.source,
+                    external_id=payload.external_id,
+                    name=payload.name,
+                    source_version=payload.source_version,
+                    capture_mode=payload.capture_mode,
+                )
+                if not is_our_preset and not preset.demand_signature:
+                    preset.demand_signature = preset_demand_signature(
+                        payload.orcaslicer_settings, payload.name
+                    )
             # Примечание: Preset НЕ имеет поля notes, сохраняем в orcaslicer_settings если нужно
             if payload.notes is not None:
                 if preset.orcaslicer_settings is None:
@@ -3325,6 +3356,20 @@ async def _upsert_filament_preset(
                         updated_settings["fhub_source"] = existing_fhub_source
 
                 preset.orcaslicer_settings = updated_settings
+            if not is_our_preset:
+                preset.import_evidence = refresh_import_evidence(
+                    preset.import_evidence,
+                    settings=payload.orcaslicer_settings,
+                    source=payload.source,
+                    external_id=payload.external_id,
+                    name=payload.name,
+                    source_version=payload.source_version,
+                    capture_mode=payload.capture_mode,
+                )
+                if not is_our_preset and not preset.demand_signature:
+                    preset.demand_signature = preset_demand_signature(
+                        payload.orcaslicer_settings, payload.name
+                    )
             if payload.external_id:
                 preset.external_id = payload.external_id
             # КРИТИЧНО: НЕ меняем sync_enabled автоматически! Это исключительно пользовательский выбор.
@@ -3404,6 +3449,23 @@ async def _upsert_filament_preset(
                 else extracted.get("retraction_speed")
             ),
             orcaslicer_settings=preset_orcaslicer_settings,
+            import_evidence=(
+                None
+                if is_our_preset
+                else new_import_evidence(
+                    settings=payload.orcaslicer_settings,
+                    source=payload.source,
+                    external_id=payload.external_id,
+                    name=payload.name,
+                    source_version=payload.source_version,
+                    capture_mode=payload.capture_mode,
+                )
+            ),
+            demand_signature=(
+                None
+                if is_our_preset
+                else preset_demand_signature(payload.orcaslicer_settings, payload.name)
+            ),
             is_official=False,
             # ВАЖНО: Для пресетов с @FilamentHub всегда active=True (это наши пресеты из каталога)
             # Для остальных - active=False (черновики пользователя)
@@ -3442,13 +3504,10 @@ async def _upsert_filament_preset(
 
         await _apply_orca_import_moderation(preset, filament, db)
 
-        # Enrich draft presets with material defaults
         if not is_our_preset:
-            from app.services.preset_enrichment_service import enrich_preset
-            try:
-                enrich_preset(preset)
-            except Exception:
-                logger.exception(f"Failed to enrich preset id={preset.id}")
+            from app.services.preset_funnel_metrics import record_preset_funnel_event
+
+            record_preset_funnel_event(db, "imported")
 
         if filament:
             logger.info(
@@ -3483,8 +3542,9 @@ async def import_filament_presets(
 ) -> FilamentPresetSyncResponse:
     """Import or update filament presets submitted by OrcaSlicer.
 
-    Импортирует ТОЛЬКО пользовательские пресеты (с постфиксом @FilamentHub).
-    Системные пресеты OrcaSlicer пропускаются, черновики не создаются автоматически.
+    The plugin filters out system/vendor presets before this endpoint. Managed
+    FilamentHub profiles update their catalogue preset; other user profiles are
+    preserved as private drafts until the user reviews and publishes them.
     """
     try:
         logger.info(f"Import filament presets request: user_id={current_user.id}, profiles_count={len(payload.profiles)}")
@@ -3538,9 +3598,29 @@ async def import_filament_presets(
                                 source=PresetVersionSource.ORCA_SYNC,
                                 user_id=current_user.id,
                             )
+
+                            if not synced_preset.active:
+                                from app.services.preset_draft_analysis import (
+                                    analyze_preset_draft,
+                                )
+
+                                analysis = await analyze_preset_draft(db, synced_preset)
+                                if result.status == "created" and analysis.confirmed_fields:
+                                    from app.services.preset_funnel_metrics import (
+                                        record_preset_funnel_event,
+                                    )
+
+                                    record_preset_funnel_event(db, "recognized")
+                                result = result.model_copy(update={
+                                    "review_state": analysis.review_state,
+                                    "important_decisions": len(analysis.preset_decisions)
+                                    + len(analysis.catalog_decisions),
+                                    "preset_readiness_percent": analysis.preset_readiness_percent,
+                                    "catalog_readiness_percent": analysis.catalog_readiness_percent,
+                                })
                     except Exception:  # noqa: BLE001
                         logger.warning(
-                            f"Failed to record version for preset {result.fhub_id}",
+                            f"Failed to record version or draft review for preset {result.fhub_id}",
                             exc_info=True,
                         )
             except HTTPException as exc:
@@ -4133,8 +4213,16 @@ async def batch_export_presets(
             ))
             continue
 
-        # --- Access check: active presets are public; drafts only for owner/admin ---
-        if not preset.active and preset.user_id != current_user.id and current_user.role != UserRole.ADMIN:
+        # Batch export is a managed-profile path: a private draft never returns
+        # to Orca, and another user's non-public moderation state stays hidden.
+        is_owner_or_admin = (
+            preset.user_id == current_user.id or current_user.role == UserRole.ADMIN
+        )
+        if not preset.active or (
+            not is_owner_or_admin
+            and preset.moderation_status not in PUBLIC_PRESET_STATUSES
+            and not preset.is_official
+        ):
             items.append(BatchExportItem(
                 preset_id=preset_id,
                 status="error",
@@ -4153,7 +4241,17 @@ async def batch_export_presets(
 
         # --- Generate OrcaSlicer JSON + .info ---
         try:
-            config = await preset_to_orcaslicer_json(preset, preset.filament, db)
+            settings_override = None
+            if not is_owner_or_admin:
+                from app.services.preset_publication import public_orca_settings
+
+                settings_override = public_orca_settings(preset.orcaslicer_settings)
+            config = await preset_to_orcaslicer_json(
+                preset,
+                preset.filament,
+                db,
+                settings_override=settings_override,
+            )
             info = preset_to_orcaslicer_info(preset)
             items.append(BatchExportItem(
                 preset_id=preset_id,

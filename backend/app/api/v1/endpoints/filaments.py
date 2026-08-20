@@ -741,7 +741,7 @@ async def get_filament_presets(
     preset_items = []
     for preset in presets:
         try:
-            preset_dict = PresetResponse.model_validate(preset).model_dump()
+            preset_dict = PresetResponse.model_validate_public(preset).model_dump()
             preset_dict["printers"] = [
                 PrinterResponse.model_validate(link.printer).model_dump()
                 for link in preset.printer_links
@@ -969,6 +969,19 @@ async def create_filament(
     )
     db.add(filament)
     await db.flush()  # Получаем ID без коммита
+
+    from app.services.achievement_service import (
+        FIRST_CATALOG_CONTRIBUTION,
+        award_achievement,
+    )
+
+    await award_achievement(
+        db,
+        user_id=current_user.id,
+        code=FIRST_CATALOG_CONTRIBUTION,
+        evidence_type="filament",
+        evidence_id=filament.id,
+    )
 
     # For a territorial contributor the shared product and the first market
     # cell are one user action.  Persist them in the same transaction so a

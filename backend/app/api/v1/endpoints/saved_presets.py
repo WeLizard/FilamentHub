@@ -85,6 +85,10 @@ async def save_preset(
     )
     db.add(saved_preset)
     preset.usage_count += 1
+    if preset.user_id is not None and preset.user_id != current_user.id:
+        from app.services.preset_funnel_metrics import record_preset_funnel_event
+
+        record_preset_funnel_event(db, "installed_or_used")
     try:
         await db.commit()
     except IntegrityError:
@@ -219,4 +223,3 @@ async def update_saved_preset_scope(
     await db.commit()
     await db.refresh(saved_preset)
     return UserSavedPresetResponse.model_validate(saved_preset)
-

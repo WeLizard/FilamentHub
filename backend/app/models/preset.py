@@ -13,6 +13,7 @@ from app.db.base import Base
 
 if TYPE_CHECKING:
     from app.models.filament import Filament
+    from app.models.organization import Organization
     from app.models.preset_printer import PresetPrinter
     from app.models.user import User
     from app.models.user_saved_preset import UserSavedPreset
@@ -64,6 +65,15 @@ class Preset(Base):
     user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), index=True, nullable=True)
     # user_id=None - для старых пресетов или системных
 
+    # Responsible organization and provenance of a shared official asset.
+    # This does not own the Brand or Filament catalogue record. Community
+    # presets and legacy official presets may keep this NULL.
+    organization_id: Mapped[int | None] = mapped_column(
+        ForeignKey("organizations.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
     # Preset info
     name: Mapped[str] = mapped_column(String(200))
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -93,6 +103,18 @@ class Preset(Base):
     # orcaslicer_settings: JSON объект со всеми параметрами OrcaSlicer
     # Используется для хранения расширенных параметров, которых нет в базовых полях
     # Например: nozzle_temperature_range_low, filament_max_volumetric_speed, pressure_advance и т.д.
+
+    # Immutable source evidence is separate from the editable/managed settings
+    # above. It preserves what Orca actually supplied before FilamentHub adds
+    # identity markers or the user accepts any catalogue suggestions.
+    import_evidence: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+    # SHA-256 of normalized candidate traits. It lets the service count how
+    # many independent users saw a similar missing product without persisting
+    # or exposing their arbitrary local preset names as backlog data.
+    demand_signature: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, index=True
+    )
 
     # Hardware provenance (JSON) — расширяемый мешок железа, которым принтер юзера
     # отличается от заводского дефолта (nozzle_type/kinematics/plate/cooling/…).
@@ -144,6 +166,7 @@ class Preset(Base):
     # Relationships
     filament: Mapped["Filament | None"] = relationship("Filament", back_populates="presets")
     user: Mapped["User"] = relationship("User", back_populates="presets")
+    organization: Mapped["Organization | None"] = relationship("Organization")
     saved_by_users: Mapped[list["UserSavedPreset"]] = relationship(
         "UserSavedPreset", back_populates="preset", cascade="all, delete-orphan"
     )
@@ -155,4 +178,3 @@ class Preset(Base):
         """String representation."""
         official = " (official)" if self.is_official else ""
         return f"<Preset(id={self.id}, name='{self.name}'{official})>"
-

@@ -52,6 +52,9 @@ from app.models.user_printer_device import UserPrinterDevice
 from app.schemas.preset import (
     PresetActivateRequest,
     PresetCreate,
+    PresetDraftAnalysisResponse,
+    PresetDraftMetricRequest,
+    PresetDraftQueueResponse,
     PresetListResponse,
     PresetResponse,
     PresetUpdate,
@@ -88,9 +91,63 @@ def _serialize_moderation_reason(reason: Any) -> str | None:
     return str(reason)
 
 
+async def _can_update_preset(
+    db: AsyncSession,
+    current_user: User,
+    preset: Preset,
+    filament: Filament | None,
+) -> bool:
+    """Respect community authorship and the responsible organization boundary."""
+    if current_user.role == UserRole.ADMIN:
+        return True
+    if preset.organization_id is None:
+        return preset.user_id == current_user.id
+    if filament is None or current_user.active_organization_id is None:
+        return False
+
+    from app.services.territorial_access import active_grants_for
+
+    grants = await active_grants_for(db, current_user, filament.brand_id)
+    owns_asset = (
+        current_user.active_organization_id == preset.organization_id
+        and any(grant.organization_id == preset.organization_id for grant in grants)
+    )
+    has_global_authority = any(
+        grant.country is None and grant.edit_all_filaments_common for grant in grants
+    )
+    return owns_asset or has_global_authority
+
+
+async def _require_official_publication_authority(
+    db: AsyncSession,
+    current_user: User,
+    filament: Filament,
+) -> None:
+    """Revalidate the active Brand + Organization boundary at publication time."""
+    if current_user.role == UserRole.ADMIN:
+        return
+
+    from app.services.territorial_access import can_edit_filament_common
+
+    if not await can_edit_filament_common(
+        db,
+        current_user,
+        filament.brand_id,
+        filament.contributed_by_organization_id,
+    ):
+        raise_error(403, ERR_ONLY_OWN_BRAND_OFFICIAL)
+
+    from app.models.brand import Brand
+
+    brand = await db.get(Brand, filament.brand_id)
+    if brand is None or not brand.verified:
+        raise_error(403, ERR_OFFICIAL_VERIFIED_ONLY)
+
+
 @router.get("/", response_model=PresetListResponse)
 async def list_presets(
     db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User | None, Depends(get_current_active_user_optional)],
     page: int = Query(1, ge=1),
     size: int = Query(50, ge=1, le=100),
     active_only: bool = Query(True),
@@ -102,6 +159,19 @@ async def list_presets(
     ids: str | None = Query(None, description="Comma-separated preset IDs to fetch"),
 ) -> PresetListResponse:
     """Получить список пресетов."""
+    private_user_scope = bool(
+        user_id is not None
+        and current_user is not None
+        and (current_user.id == user_id or current_user.role == UserRole.ADMIN)
+    )
+    public_visibility = (
+        Preset.active.is_(True)
+        & or_(
+            Preset.moderation_status.in_(PUBLIC_PRESET_STATUSES),
+            Preset.is_official.is_(True),
+        )
+    )
+
     # Build query
     query = select(Preset).options(selectinload(Preset.printer_links).selectinload(PresetPrinter.printer))
 
@@ -111,22 +181,22 @@ async def list_presets(
         if id_list:
             query = query.where(Preset.id.in_(id_list))
             if active_only:
-                query = query.where(Preset.active == True)
-            # Always enforce moderation filter for batch fetch (no auth context)
-            query = query.where(
-                or_(
-                    Preset.moderation_status.in_(PUBLIC_PRESET_STATUSES),
-                    Preset.is_official == True,
-                )
-            )
+                query = query.where(Preset.active.is_(True))
             if user_id is not None:
                 query = query.where(Preset.user_id == user_id)
+            if not private_user_scope:
+                query = query.where(public_visibility)
             result = await db.execute(query.limit(len(id_list)))
             items = list(result.unique().scalars().all())
             total = len(items)
             responses = []
             for p in items:
-                d = PresetResponse.model_validate(p).model_dump()
+                response = (
+                    PresetResponse.model_validate(p)
+                    if private_user_scope
+                    else PresetResponse.model_validate_public(p)
+                )
+                d = response.model_dump()
                 d["printers"] = [
                     PrinterResponse.model_validate(link.printer).model_dump()
                     for link in p.printer_links
@@ -135,7 +205,7 @@ async def list_presets(
             return PresetListResponse(items=responses, total=total, page=1, size=len(id_list), pages=1)
 
     if active_only:
-        query = query.where(Preset.active == True)
+        query = query.where(Preset.active.is_(True))
     if filament_id:
         query = query.where(Preset.filament_id == filament_id)
     if printer_id:
@@ -144,23 +214,16 @@ async def list_presets(
     if is_official is not None:
         query = query.where(Preset.is_official == is_official)
     if user_id is not None:
-        # Если указан user_id, показываем ВСЕ пресеты пользователя (включая неодобренные)
         query = query.where(Preset.user_id == user_id)
-    else:
-        # Показываем только одобренные пресеты (официальные автоматически одобрены)
-        query = query.where(
-            or_(
-                Preset.moderation_status.in_(PUBLIC_PRESET_STATUSES),
-                Preset.is_official == True  # Официальные всегда видимы
-            )
-        )
+    if not private_user_scope:
+        query = query.where(public_visibility)
     if search:
         query = query.where(Preset.name.ilike(like_pattern(search), escape="\\"))
 
     # Count total
     count_query = select(func.count()).select_from(Preset)
     if active_only:
-        count_query = count_query.where(Preset.active == True)
+        count_query = count_query.where(Preset.active.is_(True))
     if filament_id:
         count_query = count_query.where(Preset.filament_id == filament_id)
     if printer_id:
@@ -169,13 +232,8 @@ async def list_presets(
         count_query = count_query.where(Preset.is_official == is_official)
     if user_id is not None:
         count_query = count_query.where(Preset.user_id == user_id)
-    else:
-        count_query = count_query.where(
-            or_(
-                Preset.moderation_status.in_(PUBLIC_PRESET_STATUSES),
-                Preset.is_official == True
-            )
-        )
+    if not private_user_scope:
+        count_query = count_query.where(public_visibility)
     if search:
         count_query = count_query.where(Preset.name.ilike(like_pattern(search), escape="\\"))
 
@@ -194,7 +252,12 @@ async def list_presets(
     # Преобразуем пресеты в ответ с принтерами
     preset_responses = []
     for preset in presets:
-        preset_dict = PresetResponse.model_validate(preset).model_dump()
+        response = (
+            PresetResponse.model_validate(preset)
+            if private_user_scope
+            else PresetResponse.model_validate_public(preset)
+        )
+        preset_dict = response.model_dump()
         preset_dict["printers"] = [
             PrinterResponse.model_validate(link.printer).model_dump()
             for link in preset.printer_links
@@ -214,7 +277,7 @@ def _build_recommended_items(scored: list[Any]) -> list[RecommendedPresetItem]:
     """Serialize scored presets into API items (shared by the recommendation routes)."""
     items: list[RecommendedPresetItem] = []
     for entry in scored:
-        preset_dict = PresetResponse.model_validate(entry.preset).model_dump()
+        preset_dict = PresetResponse.model_validate_public(entry.preset).model_dump()
         preset_dict["printers"] = [
             PrinterResponse.model_validate(link.printer).model_dump()
             for link in entry.preset.printer_links
@@ -228,6 +291,53 @@ def _build_recommended_items(scored: list[Any]) -> list[RecommendedPresetItem]:
             )
         )
     return items
+
+
+@router.get("/draft-analyses", response_model=PresetDraftQueueResponse)
+async def get_preset_draft_queue(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    limit: int = Query(100, ge=1, le=200),
+) -> PresetDraftQueueResponse:
+    """Return one compact, batch-computed review queue for the current user."""
+    drafts = list(await db.scalars(
+        select(Preset)
+        .where(
+            Preset.user_id == current_user.id,
+            Preset.active.is_(False),
+        )
+        .order_by(Preset.updated_at.desc(), Preset.id.desc())
+        .limit(limit)
+    ))
+    from app.services.preset_draft_analysis import analyze_preset_drafts
+
+    items = await analyze_preset_drafts(db, drafts)
+    counts = {
+        state: sum(item.review_state == state for item in items)
+        for state in ("ready", "almost_ready", "needs_decision", "ambiguous")
+    }
+    return PresetDraftQueueResponse(
+        items=items,
+        total=len(items),
+        ready=counts["ready"],
+        almost_ready=counts["almost_ready"],
+        needs_decision=counts["needs_decision"],
+        ambiguous=counts["ambiguous"],
+    )
+
+
+@router.post("/draft-events", status_code=204)
+async def record_draft_metric(
+    data: PresetDraftMetricRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _current_user: Annotated[User, Depends(get_current_active_user)],
+) -> Response:
+    """Record a category only: no draft, user or source payload is persisted."""
+    from app.services.preset_funnel_metrics import record_preset_funnel_event
+
+    record_preset_funnel_event(db, data.event_type)
+    await db.commit()
+    return Response(status_code=204)
 
 
 @router.get("/recommended-for-printer", response_model=RecommendedForPrinterResponse)
@@ -327,38 +437,56 @@ async def get_preset(
     if not preset:
         raise_error(404, ERR_PRESET_NOT_FOUND)
 
-    # Если пресет не активен и пользователь не является владельцем - не показываем
+    is_owner_or_admin = bool(
+        current_user
+        and (
+            preset.user_id == current_user.id
+            or current_user.role == UserRole.ADMIN
+        )
+    )
+
+    # An Orca draft is private evidence of one account. Merely having a stale
+    # saved-preset row must never expose it to another user.
     if not preset.active:
-        # Проверяем, является ли пользователь владельцем или сохраненным у него
-        can_access = False
-        if current_user:
-            # Владелец пресета
-            if preset.user_id == current_user.id:
-                can_access = True
-            # Или сохранен у пользователя
-            else:
-                from app.models.user_saved_preset import UserSavedPreset
-                saved_check = await db.execute(
-                    select(UserSavedPreset).where(
-                        UserSavedPreset.user_id == current_user.id,
-                        UserSavedPreset.preset_id == preset_id,
-                    )
-                )
-                if saved_check.scalar_one_or_none():
-                    can_access = True
-
-        if not can_access:
+        if not is_owner_or_admin:
             raise_error(404, ERR_PRESET_NOT_FOUND)
 
-    # Если пресет не одобрен и пользователь не является владельцем - не показываем
-    if preset.moderation_status != PresetModerationStatus.APPROVED and not preset.is_official:
-        if current_user and preset.user_id != current_user.id:
-            raise_error(404, ERR_PRESET_NOT_FOUND)
+    # Pending/rejected community publication is visible only to its author and
+    # admins. The unauthenticated case must not fall through accidentally.
+    if (
+        preset.moderation_status != PresetModerationStatus.APPROVED
+        and not preset.is_official
+        and not is_owner_or_admin
+    ):
+        raise_error(404, ERR_PRESET_NOT_FOUND)
 
     # Преобразуем пресет в ответ (без printers, так как таблица может не существовать)
-    preset_dict = PresetResponse.model_validate(preset).model_dump()
+    response = (
+        PresetResponse.model_validate(preset)
+        if is_owner_or_admin
+        else PresetResponse.model_validate_public(preset)
+    )
+    preset_dict = response.model_dump()
     preset_dict["printers"] = []  # Пустой массив, так как printer_links не загружаем
     return PresetResponse(**preset_dict)
+
+
+@router.get("/{preset_id}/draft-analysis", response_model=PresetDraftAnalysisResponse)
+async def get_preset_draft_analysis(
+    preset_id: int,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_active_user)],
+) -> PresetDraftAnalysisResponse:
+    """Return review suggestions without changing the imported preset."""
+    preset = await db.get(Preset, preset_id)
+    if preset is None:
+        raise_error(404, ERR_PRESET_NOT_FOUND)
+    if preset.user_id != current_user.id and current_user.role != UserRole.ADMIN:
+        raise_error(404, ERR_PRESET_NOT_FOUND)
+
+    from app.services.preset_draft_analysis import analyze_preset_draft
+
+    return await analyze_preset_draft(db, preset)
 
 
 @router.post("/", response_model=PresetResponse, status_code=201)
@@ -386,25 +514,16 @@ async def create_preset(
 
     # Проверка прав на создание официального пресета
     if data.is_official:
-        from app.services.territorial_access import can_edit_filament_common
-
-        if not await can_edit_filament_common(
-            db, current_user, filament.brand_id, filament.contributed_by_organization_id
-        ):
-            raise_error(403, ERR_ONLY_OWN_BRAND_OFFICIAL)
-        # Официальный пресет — только для верифицированного бренда (админ — исключение)
-        if current_user.role.value != "admin":
-            from app.models.brand import Brand
-            brand_result = await db.execute(
-                select(Brand).where(Brand.id == filament.brand_id)
-            )
-            brand = brand_result.scalar_one_or_none()
-            if not brand or not brand.verified:
-                raise_error(403, ERR_OFFICIAL_VERIFIED_ONLY)
+        await _require_official_publication_authority(db, current_user, filament)
 
     preset = Preset(
         filament_id=data.filament_id,
         user_id=current_user.id,
+        organization_id=(
+            current_user.active_organization_id
+            if data.is_official and current_user.role != UserRole.ADMIN
+            else None
+        ),
         name=data.name,
         description=data.description,
         extruder_temp=data.extruder_temp,
@@ -442,6 +561,10 @@ async def create_preset(
 
     db.add(preset)
     await db.flush()  # Получаем ID пресета
+
+    from app.services.preset_publication import apply_managed_orca_identity
+
+    apply_managed_orca_identity(preset)
 
     # Правило: один официальный пресет на филамент. При создании нового
     # официального снимаем флаг с прежних официальных этого филамента
@@ -537,7 +660,9 @@ async def update_preset(
     current_user: Annotated[User, Depends(get_current_active_user)],
 ) -> PresetResponse:
     """Обновить пресет."""
-    result = await db.execute(select(Preset).where(Preset.id == preset_id))
+    result = await db.execute(
+        select(Preset).where(Preset.id == preset_id).with_for_update()
+    )
     preset = result.scalar_one_or_none()
 
     if not preset:
@@ -546,10 +671,6 @@ async def update_preset(
     # Взвешенные пресеты нельзя редактировать (они автоматически обновляются системой)
     if preset.is_weighted:
         raise_error(403, ERR_WEIGHTED_PRESET_READONLY)
-
-    # Проверка прав: пользователь может редактировать только свои пресеты (или админ)
-    if preset.user_id != current_user.id and current_user.role.value != "admin":
-        raise_error(403, ERR_NO_PERMISSION_EDIT_PRESET)
 
     # Обновляем только переданные поля
     update_data = data.model_dump(exclude_unset=True)
@@ -604,58 +725,47 @@ async def update_preset(
         if not filament:
             raise_error(404, ERR_FILAMENT_NOT_FOUND)
 
-    # Поднять официальный статус можно только представителю верифицированного бренда
-    # (тот же гейт, что и при создании); админ — исключение.
-    if update_data.get("is_official") and current_user.role.value != "admin":
-        from app.services.territorial_access import can_edit_filament_common
+    if not await _can_update_preset(db, current_user, preset, filament):
+        raise_error(403, ERR_NO_PERMISSION_EDIT_PRESET)
 
-        if not filament or not await can_edit_filament_common(
-            db, current_user, filament.brand_id, filament.contributed_by_organization_id
-        ):
-            raise_error(403, ERR_ONLY_OWN_BRAND_OFFICIAL)
-        from app.models.brand import Brand
-        brand_result = await db.execute(select(Brand).where(Brand.id == filament.brand_id))
-        brand = brand_result.scalar_one_or_none()
-        if not brand or not brand.verified:
-            raise_error(403, ERR_OFFICIAL_VERIFIED_ONLY)
+    # Официальный статус и каждая его публикация проходят один и тот же свежий
+    # Brand + Organization gate. Сохранённый когда-то флаг не является правом.
+    promote_to_official = bool(update_data.get("is_official") and not preset.is_official)
+    target_is_official = update_data.get("is_official", preset.is_official)
+    if target_is_official and (update_data.get("is_official") or target_active):
+        if filament is None:
+            raise_error(400, ERR_PRESET_FILAMENT_REQUIRED)
+        await _require_official_publication_authority(db, current_user, filament)
 
     # Сохраняем старое состояние для проверки активации черновика.
     # sync больше управляется в user_saved_presets, поэтому здесь
     # учитываем только переход черновика в активный пресет.
     was_draft = not preset.active or not preset.filament_id
+    stored_draft_settings = (
+        dict(preset.orcaslicer_settings)
+        if was_draft and isinstance(preset.orcaslicer_settings, dict)
+        else {}
+    )
 
     for field, value in update_data.items():
         setattr(preset, field, value)
 
-    # Логика замены меток при активации черновика:
-    # если черновик стал активным и привязан к филаменту.
-    if was_draft and preset.active and preset.filament_id:
-        # Инициализируем orcaslicer_settings если его нет
-        if preset.orcaslicer_settings is None:
-            preset.orcaslicer_settings = {}
-        elif not isinstance(preset.orcaslicer_settings, dict):
-            preset.orcaslicer_settings = {}
+    if promote_to_official and current_user.role != UserRole.ADMIN:
+        preset.organization_id = current_user.active_organization_id
 
-        # Сохраняем derived-метки для предотвращения повторного создания черновиков:
-        # При следующей синхронизации OrcaSlicer пришлёт тот же шаблон,
-        # и мы должны распознать, что из него уже создан FH-пресет.
-        old_draft_id = preset.orcaslicer_settings.get("fhub_draft_id")
-        old_external_id = preset.external_id
-        if old_external_id:
-            preset.orcaslicer_settings["derived_from_external_id"] = old_external_id
-        if old_draft_id:
-            preset.orcaslicer_settings["derived_from_draft_id"] = old_draft_id
-
-        # Убираем метку черновика, добавляем метки "нашего" пресета
-        preset.orcaslicer_settings.pop("fhub_draft_id", None)
-        preset.orcaslicer_settings["fhub_id"] = preset.id
-        preset.orcaslicer_settings["fhub_source"] = "filamenthub"
-
-        logger.info(
-            f"Activated draft preset {preset.id}: removed fhub_draft_id={old_draft_id}, "
-            f"saved derived_from_external_id={old_external_id}, derived_from_draft_id={old_draft_id}, "
-            f"added fhub_id={preset.id} and fhub_source='filamenthub'"
-        )
+    if preset.is_official:
+        preset.moderation_status = PresetModerationStatus.APPROVED
+        preset.moderation_reason = None
+        if preset.active and preset.filament_id is not None:
+            await db.execute(
+                update(Preset)
+                .where(
+                    Preset.filament_id == preset.filament_id,
+                    Preset.id != preset.id,
+                    Preset.is_official.is_(True),
+                )
+                .values(is_official=False)
+            )
 
     if preset.filament_id is not None:
         from app.services.spoolmanager_import_service import (
@@ -682,16 +792,33 @@ async def update_preset(
         elif moderation_status == PresetModerationStatus.PENDING:
             preset.moderation_status = PresetModerationStatus.PENDING
             preset.moderation_reason = _serialize_moderation_reason(moderation_reason)
-            if not preset.active:
-                preset.active = True
         # Если пресет проходит проверку, а текущий статус не APPROVED
         # (например, PENDING после импорта из OrcaSlicer), переводим в APPROVED.
         elif moderation_status == PresetModerationStatus.APPROVED and preset.moderation_status != PresetModerationStatus.APPROVED:
             preset.moderation_status = moderation_status
             preset.moderation_reason = None
-            # Для ранее отклонённых возвращаем активность.
-            if not preset.active:
-                preset.active = True
+
+    published_now = bool(was_draft and preset.active and preset.filament_id)
+    if published_now:
+        from app.services.preset_publication import prepare_published_draft
+
+        await prepare_published_draft(
+            db,
+            preset=preset,
+            user_id=current_user.id,
+            stored_settings=stored_draft_settings,
+        )
+        logger.info("Published reviewed Orca draft preset %s", preset.id)
+    elif preset.active:
+        from app.services.preset_publication import apply_managed_orca_identity
+
+        apply_managed_orca_identity(preset)
+
+    if published_now:
+        from app.services.preset_funnel_metrics import record_preset_funnel_event
+
+        record_preset_funnel_event(db, "important_field_confirmed")
+        record_preset_funnel_event(db, "preset_published")
 
     # Обновляем связи с принтерами, если указаны
     if printer_ids is not None:
@@ -775,8 +902,8 @@ async def delete_preset(
     if preset.is_weighted:
         raise_error(403, ERR_WEIGHTED_PRESET_NO_DELETE)
 
-    # Проверка: пользователь может удалять только свои пресеты (или админ)
-    if preset.user_id != current_user.id and current_user.role.value != "admin":
+    filament = await db.get(Filament, preset.filament_id) if preset.filament_id else None
+    if not await _can_update_preset(db, current_user, preset, filament):
         raise_error(403, ERR_NO_PERMISSION_DELETE_PRESET)
 
     # Сохраняем данные перед удалением для уведомлений и обновления взвешенного пресета
@@ -814,14 +941,13 @@ async def activate_preset(
 ) -> PresetResponse:
     """Activate a draft preset by linking it to a filament."""
 
-    result = await db.execute(select(Preset).where(Preset.id == preset_id))
+    result = await db.execute(
+        select(Preset).where(Preset.id == preset_id).with_for_update()
+    )
     preset = result.scalar_one_or_none()
 
     if not preset:
         raise_error(404, ERR_PRESET_NOT_FOUND)
-
-    if preset.user_id != current_user.id and not current_user.is_admin:
-        raise_error(403, ERR_PRESET_NOT_OWNER)
 
     if preset.active:
         raise_error(400, ERR_PRESET_ALREADY_ACTIVE)
@@ -832,19 +958,77 @@ async def activate_preset(
     if not filament:
         raise_error(404, ERR_FILAMENT_NOT_FOUND)
 
-    preset.filament_id = body.filament_id
-    preset.active = True
+    if not await _can_update_preset(db, current_user, preset, filament):
+        raise_error(403, ERR_PRESET_NOT_OWNER)
+    if preset.is_official:
+        await _require_official_publication_authority(db, current_user, filament)
+        if preset.organization_id is None and current_user.role != UserRole.ADMIN:
+            preset.organization_id = current_user.active_organization_id
 
-    from app.services.spoolmanager_import_service import (
-        link_imported_spools_to_preset,
+    stored_draft_settings = (
+        dict(preset.orcaslicer_settings)
+        if isinstance(preset.orcaslicer_settings, dict)
+        else {}
     )
+    preset.filament_id = body.filament_id
+    if preset.is_official:
+        moderation_status = PresetModerationStatus.APPROVED
+        moderation_reason = None
+    else:
+        moderation_status, moderation_reason = await moderate_preset(
+            preset,
+            filament,
+            db,
+            is_official=False,
+            allow_manual_review=False,
+        )
+    preset.moderation_status = moderation_status
+    preset.moderation_reason = (
+        _serialize_moderation_reason(moderation_reason)
+        if moderation_status != PresetModerationStatus.APPROVED
+        else None
+    )
+    preset.active = moderation_status != PresetModerationStatus.REJECTED
+    if preset.active:
+        from app.services.preset_publication import prepare_published_draft
 
-    await link_imported_spools_to_preset(db, preset)
+        await prepare_published_draft(
+            db,
+            preset=preset,
+            user_id=current_user.id,
+            stored_settings=stored_draft_settings,
+        )
 
-    # Clean up orphaned metadata
-    if preset.orcaslicer_settings:
-        preset.orcaslicer_settings.pop("orphaned", None)
-        preset.orcaslicer_settings.pop("orphaned_reason", None)
+        from app.services.spoolmanager_import_service import (
+            link_imported_spools_to_preset,
+        )
+
+        await link_imported_spools_to_preset(db, preset)
+
+        if preset.is_official:
+            await db.execute(
+                update(Preset)
+                .where(
+                    Preset.filament_id == preset.filament_id,
+                    Preset.id != preset.id,
+                    Preset.is_official.is_(True),
+                )
+                .values(is_official=False)
+            )
+
+        from app.services.preset_funnel_metrics import record_preset_funnel_event
+
+        record_preset_funnel_event(db, "preset_published")
+
+    from app.models.preset_version import PresetVersionSource
+    from app.services import preset_version_service
+
+    await preset_version_service.record_version(
+        db,
+        preset,
+        source=PresetVersionSource.WEB_EDIT,
+        user_id=current_user.id,
+    )
 
     await db.commit()
     await db.refresh(preset)
@@ -869,9 +1053,9 @@ async def export_preset_json(
     Returns:
         JSONResponse: JSON файл профиля OrcaSlicer
     """
-    # Active catalog presets are public to authenticated readers. An inactive
-    # draft is private, but its owner must still be able to round-trip it through
-    # the Orca plugin before assigning it to a catalog Filament.
+    # A local Orca profile is captured once as a private review draft. It must
+    # not return to Orca as a second managed copy before the user binds it to a
+    # catalogue Filament and publishes it.
     result = await db.execute(
         select(Preset)
         .options(selectinload(Preset.filament).selectinload(Filament.brand))
@@ -882,26 +1066,8 @@ async def export_preset_json(
     if not preset:
         raise_error(404, ERR_PRESET_NOT_FOUND)
 
-    if (
-        not preset.active
-        and preset.user_id != current_user.id
-        and current_user.role != UserRole.ADMIN
-    ):
-        # Hide private draft existence from other accounts.
+    if not preset.active or not preset.filament:
         raise_error(404, ERR_PRESET_NOT_FOUND)
-
-    if not preset.filament:
-        from app.services.orcaslicer_exporter import draft_preset_to_orcaslicer_json
-
-        profile_dict = draft_preset_to_orcaslicer_json(preset)
-        filename = safe_download_stem(preset.name, "preset") + ".json"
-        return JSONResponse(
-            content=profile_dict,
-            media_type="application/json",
-            headers={
-                "Content-Disposition": attachment_content_disposition(filename),
-            },
-        )
 
     # EXPORT-6 fix: валидация обязательных полей перед экспортом → HTTP 422
     missing_fields = []
@@ -944,8 +1110,17 @@ async def export_preset_json(
 
     # Экспортируем в JSON
     try:
+        settings_override = None
+        if preset.user_id != current_user.id and current_user.role != UserRole.ADMIN:
+            from app.services.preset_publication import public_orca_settings
+
+            settings_override = public_orca_settings(preset.orcaslicer_settings)
         profile_dict = await preset_to_orcaslicer_json(
-            preset, preset.filament, db, target_profiles=target_profiles
+            preset,
+            preset.filament,
+            db,
+            target_profiles=target_profiles,
+            settings_override=settings_override,
         )
     except Exception as e:
         logger.error(f"Error exporting preset {preset_id}: {str(e)}", exc_info=True)

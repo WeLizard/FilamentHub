@@ -2127,7 +2127,7 @@
       "selectFilament": "Select a filament",
       "finishOrCancelFilamentCreation": "Finish creating the filament or click \"Cancel\""
     },
-    "titleDraft": "Refine draft",
+    "titleDraft": "Review OrcaSlicer profile",
     "titleEdit": "Edit preset",
     "titleCreate": "Create new preset",
     "filament": "Filament",
@@ -2376,6 +2376,41 @@
     "saving": "Saving...",
     "save": "Save",
     "create": "Create",
+    "draftPublished": "Profile added to the catalogue",
+    "draftPublishedBenefit": "The material and profile are now in the catalogue, ready to find, install in Orca, and reuse.",
+    "draftSentForReview": "Profile sent for review",
+    "draftNeedsFix": "The profile did not pass automatic checks. Correct the highlighted data and try again.",
+    "review": {
+      "title": "Most details are already filled from OrcaSlicer",
+      "chooseCatalogMatch": "Several catalogue materials look similar — choose the right one",
+      "similarImports": "A similar profile has already been imported by {{count}} users",
+      "description": "Check the material and profile name. Once confirmed, the profile will appear in the shared catalogue; its detailed settings are already preserved.",
+      "brand": "Brand",
+      "material": "Material",
+      "diameter": "Diameter",
+      "color": "Colour",
+      "fromOrca": "Read directly from the OrcaSlicer profile",
+      "fhSuggestions": "FilamentHub suggestions: {{count}}",
+      "presetReadiness": "Profile readiness",
+      "catalogReadiness": "Catalogue match",
+      "technicalSettingsSaved": "Technical settings preserved: {{count}}",
+      "decisionsRemaining": "Important decisions left: {{count}}",
+      "noDecisionsRemaining": "No important decisions left",
+      "importantDecisions": "Please confirm",
+      "decisions": {
+        "confirm_nozzle_temperature": "the nozzle temperature",
+        "confirm_bed_temperature": "the bed temperature",
+        "identify_brand": "the brand of the physical spool",
+        "confirm_new_brand": "whether this brand already exists in the catalogue",
+        "confirm_material_type": "the material type",
+        "choose_catalog_filament": "which matched filament was used",
+        "choose_or_create_filament": "an existing filament or a new catalogue entry",
+        "confirm_color_structure": "whether the material is single-colour or multicolour"
+      },
+      "evidencePreserved": "The original OrcaSlicer data is stored separately and is never changed by suggestions.",
+      "storedEvidence": "Review uses the saved import snapshot; the original settings are not changed.",
+      "publish": "Review and add to catalogue"
+    },
     "units": {
       "sec": "s"
     },
@@ -2415,6 +2450,21 @@
     "supporter": {
       "label": "Supporter",
       "title": "Project supporter"
+    }
+  },
+  "achievement": {
+    "earned": "Achievement unlocked: {{names}}",
+    "firstCatalogContribution": {
+      "label": "First contribution",
+      "title": "Add missing catalogue data and complete publication/moderation."
+    },
+    "firstProfile": {
+      "label": "First profile",
+      "title": "Publish your first preset."
+    },
+    "presetUsedByAnother": {
+      "label": "Calibration paid off",
+      "title": "Another user imported your published preset for the first time."
     }
   },
   "deleteAccount": {
@@ -3058,6 +3108,11 @@
     "openAchievements": "View badges and achievements",
     "achievementCount": "{{count}} earned",
     "achievementsDescription": "Your current FilamentHub badges and roles. This collection will grow with your contributions and activity.",
+    "contributionStats": {
+      "publishedPresets": "Profiles published",
+      "savedByOthers": "Saved by other users",
+      "confirmedUses": "Confirmed by a successful print"
+    },
     "role": {
       "brand": "Brand representative",
       "moderator": "Moderator",
@@ -3489,6 +3544,18 @@
     "enrichmentConfidenceLow": "Low",
     "fieldsAutoFilled": "{{count}} fields auto-filled",
     "materialDetected": "Detected type: {{type}}",
+    "draftContributionReady": "Settings imported — important decisions left: {{count}}",
+    "draftContributionHint": "Confirm a few clear fields and your working profile will help people using the catalogue.",
+    "draftContributionAmbiguous": "The material needs to be identified",
+    "draftContributionNeedsFix": "This profile needs a small correction",
+    "draftContributionNeedsFixHint": "Open the review to see exactly what did not pass the automatic checks.",
+    "reviewAndPublishDraft": "Review and add",
+    "draftQueueTitle": "Orca drafts: {{count}}",
+    "draftQueueSummary": "Almost ready: {{ready}} · need a decision: {{review}}",
+    "draftQueueHint": "The quickest contributions are shown first",
+    "openDraftQueue": "Open drafts",
+    "draftPresetReadiness": "Profile {{value}}%",
+    "draftCatalogReadiness": "Catalogue {{value}}%",
     "generative": "Generative",
     "created": "Created",
     "modified": "Modified",

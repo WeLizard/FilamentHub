@@ -12,6 +12,7 @@ import { lazy, Suspense, useEffect, useState } from 'react';
 import { isPluginEmbed, subscribeToPluginNavigation, subscribeToPluginSyncResult, subscribeToPluginRecoverList, sendRecoverImport, type RecoverItem } from './utils/pluginBridge';
 import { useAuth } from './contexts/AuthContext';
 import { useQueryClient } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 
 // Lazy-loaded pages (code splitting)
 const FilamentDetailPage = lazy(() => import('./pages/FilamentDetailPage').then(m => ({ default: m.FilamentDetailPage })));
@@ -62,6 +63,7 @@ function AppContent() {
   useCurrencyCatalogue();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { t } = useTranslation();
   const location = useLocation();
   const { user, isMaintenanceMode, maintenanceMessage, clearMaintenanceMode } = useAuth();
   useTokenRefresh(Boolean(user));
@@ -98,11 +100,24 @@ function AppContent() {
     if (!isPluginEmbed()) {
       return;
     }
-    return subscribeToPluginSyncResult((text) => {
-      toast.success(text, undefined, 'sync');
+    return subscribeToPluginSyncResult((result) => {
+      toast.success(
+        result.text,
+        result.draftCount > 0 ? 10_000 : undefined,
+        'sync',
+        result.draftCount > 0
+          ? {
+              label: t('profilePage.openDraftQueue'),
+              onClick: () => navigate('/profile?tab=presets&preset_filter=drafts'),
+            }
+          : undefined,
+      );
       void queryClient.invalidateQueries({ queryKey: ['physical-printers'] });
+      void queryClient.invalidateQueries({ queryKey: ['user-presets'] });
+      void queryClient.invalidateQueries({ queryKey: ['preset-draft-queue'] });
+      void queryClient.invalidateQueries({ queryKey: ['preset-stats'] });
     });
-  }, [queryClient]);
+  }, [navigate, queryClient, t]);
 
   const [recoverItems, setRecoverItems] = useState<RecoverItem[] | null>(null);
   useEffect(() => {

@@ -90,7 +90,7 @@ async def get_available_presets_for_review(
 
     available_presets = []
     for preset in presets:
-        preset_dict = PresetResponse.model_validate(preset).model_dump()
+        preset_dict = PresetResponse.model_validate_public(preset).model_dump()
         preset_dict["is_official"] = preset.is_official
         preset_dict["is_saved"] = preset.id in saved_ids
         available_presets.append(preset_dict)

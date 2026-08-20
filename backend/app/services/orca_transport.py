@@ -44,7 +44,16 @@ ORCA_NIL = "nil"
 # `enrichment` records which material defaults were filled and how confident the
 # detection was. It is not an OrcaSlicer option, and as an object value it is
 # exactly the kind that truncates a profile on load.
-FILAMENTHUB_INTERNAL_KEYS = frozenset({"enrichment"})
+FILAMENTHUB_INTERNAL_KEYS = frozenset(
+    {
+        "enrichment",
+        # Legacy anti-cycle markers used to live in the public Orca blob. New
+        # rows keep them in private import evidence, but old rows must never
+        # export account-local identifiers.
+        "derived_from_external_id",
+        "derived_from_draft_id",
+    }
+)
 
 
 # Vector options: Orca serializes one entry per extruder or variant. Observed as

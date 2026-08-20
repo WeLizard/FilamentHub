@@ -2294,7 +2294,7 @@
       "selectFilament": "Выберите материал",
       "finishOrCancelFilamentCreation": "Завершите создание материала или нажмите «Отмена»"
     },
-    "titleDraft": "Доработать заготовку",
+    "titleDraft": "Проверить профиль из OrcaSlicer",
     "titleEdit": "Редактировать пресет",
     "titleCreate": "Создать новый пресет",
     "filament": "Филамент",
@@ -2543,6 +2543,41 @@
     "saving": "Сохранение...",
     "save": "Сохранить",
     "create": "Создать",
+    "draftPublished": "Профиль добавлен в каталог",
+    "draftPublishedBenefit": "Материал и профиль добавлены в каталог. Теперь их проще найти, установить в Orca и использовать снова.",
+    "draftSentForReview": "Профиль отправлен на проверку",
+    "draftNeedsFix": "Профиль не прошёл автоматическую проверку. Исправьте отмеченные данные и попробуйте снова.",
+    "review": {
+      "title": "Большая часть уже заполнена из OrcaSlicer",
+      "chooseCatalogMatch": "Похоже на несколько материалов — выберите подходящий",
+      "similarImports": "Похожий профиль импортировали уже {{count}} пользователей",
+      "description": "Проверьте материал и название профиля. После подтверждения профиль появится в общем каталоге; подробные настройки уже сохранены.",
+      "brand": "Бренд",
+      "material": "Материал",
+      "diameter": "Диаметр",
+      "color": "Цвет",
+      "fromOrca": "Получено напрямую из профиля OrcaSlicer",
+      "fhSuggestions": "Подсказок FilamentHub: {{count}}",
+      "presetReadiness": "Готовность профиля",
+      "catalogReadiness": "Связь с каталогом",
+      "technicalSettingsSaved": "Технических параметров сохранено: {{count}}",
+      "decisionsRemaining": "Осталось важных решений: {{count}}",
+      "noDecisionsRemaining": "Важных решений не осталось",
+      "importantDecisions": "Нужно подтвердить",
+      "decisions": {
+        "confirm_nozzle_temperature": "температуру сопла",
+        "confirm_bed_temperature": "температуру стола",
+        "identify_brand": "какой бренд у реальной катушки",
+        "confirm_new_brand": "существует ли такой бренд в каталоге",
+        "confirm_material_type": "тип материала",
+        "choose_catalog_filament": "какой из найденных филаментов использован",
+        "choose_or_create_filament": "выбрать существующий или добавить новый филамент",
+        "confirm_color_structure": "одноцветный это материал или многоцветный"
+      },
+      "evidencePreserved": "Исходные данные OrcaSlicer сохранены отдельно и не изменяются подсказками.",
+      "storedEvidence": "Проверка использует сохранённый снимок импорта; исходные настройки не изменяются.",
+      "publish": "Проверить и добавить в каталог"
+    },
     "units": {
       "sec": "с"
     },
@@ -2582,6 +2617,21 @@
     "supporter": {
       "label": "Поддержал проект",
       "title": "Поддержал проект"
+    }
+  },
+  "achievement": {
+    "earned": "Новое достижение: {{names}}",
+    "firstCatalogContribution": {
+      "label": "Первый вклад",
+      "title": "Добавить недостающие данные в каталог и пройти публикацию/moderation."
+    },
+    "firstProfile": {
+      "label": "Первый профиль",
+      "title": "Опубликовать первый preset."
+    },
+    "presetUsedByAnother": {
+      "label": "Не зря калибровал",
+      "title": "Другой пользователь впервые импортировал опубликованный preset."
     }
   },
   "deleteAccount": {
@@ -2648,6 +2698,11 @@
     "openAchievements": "Посмотреть ачивки и достижения",
     "achievementCount": "Получено: {{count}}",
     "achievementsDescription": "Ваши текущие ачивки и роли в FilamentHub. Коллекция будет пополняться вместе с вашим вкладом и активностью.",
+    "contributionStats": {
+      "publishedPresets": "Опубликовано профилей",
+      "savedByOthers": "Сохранили другие пользователи",
+      "confirmedUses": "Подтверждено успешной печатью"
+    },
     "role": {
       "brand": "Представитель бренда",
       "moderator": "Модератор",
@@ -3080,6 +3135,18 @@
     "enrichmentConfidenceLow": "Низкая",
     "fieldsAutoFilled": "{{count}} полей заполнено автоматически",
     "materialDetected": "Определён тип: {{type}}",
+    "draftContributionReady": "Настройки импортированы — важных решений: {{count}}",
+    "draftContributionHint": "Подтвердите несколько понятных полей, и рабочий профиль станет полезным участникам каталога.",
+    "draftContributionAmbiguous": "Нужно уточнить, какой это материал",
+    "draftContributionNeedsFix": "Профилю нужны небольшие исправления",
+    "draftContributionNeedsFixHint": "Откройте проверку: FilamentHub покажет, что именно не прошло автоматическую модерацию.",
+    "reviewAndPublishDraft": "Проверить и добавить",
+    "draftQueueTitle": "Заготовки из Orca: {{count}}",
+    "draftQueueSummary": "Почти готовы: {{ready}} · требуют решения: {{review}}",
+    "draftQueueHint": "Сначала показаны те, которые проще завершить",
+    "openDraftQueue": "Открыть заготовки",
+    "draftPresetReadiness": "Профиль {{value}}%",
+    "draftCatalogReadiness": "Каталог {{value}}%",
     "generative": "Генеративный",
     "created": "Создан",
     "modified": "Изменён",

@@ -26,6 +26,17 @@ class OrcaSyncResult(BaseModel):
     )
     status: Literal["created", "updated", "skipped", "error"]
     message: str | None = Field(default=None, description="Дополнительные детали по элементу.")
+    review_state: str | None = Field(
+        default=None,
+        description="Состояние review для приватной заготовки после импорта.",
+    )
+    important_decisions: int | None = Field(
+        default=None,
+        ge=0,
+        description="Сколько действительно важных решений осталось пользователю.",
+    )
+    preset_readiness_percent: int | None = Field(default=None, ge=0, le=100)
+    catalog_readiness_percent: int | None = Field(default=None, ge=0, le=100)
 
 
 class OrcaPrinterProfilePayload(BaseModel):
@@ -259,6 +270,19 @@ class OrcaFilamentPresetPayload(BaseModel):
     # Метаданные
     source: str | None = Field(
         default=None, max_length=50, description="Источник пресета (orcaslicer, user, system, etc.)."
+    )
+    source_version: str | None = Field(
+        default=None,
+        max_length=50,
+        description="Версия интеграции, сформировавшей снимок.",
+    )
+    capture_mode: Literal[
+        "resolved_runtime",
+        "recovered_live_json",
+        "recovered_backup_json",
+    ] | None = Field(
+        default=None,
+        description="Как именно Orca-снимок был получен без раскрытия локального пути.",
     )
     active: bool | None = Field(
         default=False, description="Флаг активности. По умолчанию импортируется как черновик (False)."

@@ -1,6 +1,7 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { Shield, Star, CheckCircle, Zap, User } from 'lucide-react';
+import { Shield, Star, CheckCircle, Zap, User, SlidersHorizontal, Sparkles, Users } from 'lucide-react';
+import type { AchievementCode } from '../types/api';
 
 export type BadgeType = 'founder' | 'beta_tester' | 'contributor' | 'verified' | 'early_adopter' | 'supporter';
 
@@ -48,6 +49,42 @@ export const BADGE_CONFIG: Record<BadgeType, BadgeConfig> = {
     color: 'text-pink-500',
     titleKey: 'badge.supporter.title',
   },
+};
+
+export const ACHIEVEMENT_CONFIG: Record<AchievementCode, BadgeConfig> = {
+  first_catalog_contribution: {
+    icon: Sparkles,
+    labelKey: 'achievement.firstCatalogContribution.label',
+    color: 'text-cyan-300',
+    titleKey: 'achievement.firstCatalogContribution.title',
+  },
+  first_profile: {
+    icon: SlidersHorizontal,
+    labelKey: 'achievement.firstProfile.label',
+    color: 'text-purple-300',
+    titleKey: 'achievement.firstProfile.title',
+  },
+  preset_used_by_another: {
+    icon: Users,
+    labelKey: 'achievement.presetUsedByAnother.label',
+    color: 'text-emerald-300',
+    titleKey: 'achievement.presetUsedByAnother.title',
+  },
+};
+
+export const AchievementBadge: React.FC<{
+  code: AchievementCode;
+  size?: 'sm' | 'md' | 'lg';
+}> = ({ code, size = 'md' }) => {
+  const { t } = useTranslation();
+  const config = ACHIEVEMENT_CONFIG[code];
+  const Icon = config.icon;
+  const sizeClasses = { sm: 'h-4 w-4', md: 'h-5 w-5', lg: 'h-6 w-6' };
+  return (
+    <span className="inline-flex items-center" title={t(config.titleKey)}>
+      <Icon className={`${sizeClasses[size]} ${config.color}`} />
+    </span>
+  );
 };
 
 interface BadgeProps {

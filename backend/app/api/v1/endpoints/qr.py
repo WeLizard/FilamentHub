@@ -167,7 +167,7 @@ async def handle_qr_scan(
     return {
         'filament': filament_response,
         'preset_added': preset_added,
-        'preset': PresetResponse.model_validate(official_preset) if official_preset else None
+        'preset': PresetResponse.model_validate_public(official_preset) if official_preset else None
     }
 
 

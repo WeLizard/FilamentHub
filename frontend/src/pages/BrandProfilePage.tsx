@@ -626,7 +626,16 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({
   };
 
   const canEditPreset = (preset: Preset) => (
-    preset.user_id === user?.id || user?.role === 'admin'
+    preset.user_id === user?.id
+    || user?.role === 'admin'
+    || Boolean(
+      preset.is_official
+      && canEditCommon
+      && (
+        hasGlobalScope
+        || preset.organization_id === user?.active_organization_id
+      )
+    )
   );
 
   const handleClosePresetModal = () => {

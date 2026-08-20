@@ -139,6 +139,16 @@ async def record_spool_usage(
         meta=notes or None,
     )
     db.add(event)
+    if preset_id is not None and event_type == PresetUsageEventType.printer_report:
+        from app.models.preset import Preset
+
+        preset_author_id = await db.scalar(
+            select(Preset.user_id).where(Preset.id == preset_id)
+        )
+        if preset_author_id is not None and preset_author_id != spool.user_id:
+            from app.services.preset_funnel_metrics import record_preset_funnel_event
+
+            record_preset_funnel_event(db, "confirmed_after_print")
     return event
 
 

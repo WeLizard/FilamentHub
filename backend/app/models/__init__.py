@@ -63,6 +63,7 @@ from app.models.organization import (
 )
 from app.models.physical_printer_profile import UserPrinterProfileLink
 from app.models.preset import Preset, PresetModerationStatus
+from app.models.preset_funnel_event import PresetFunnelEvent
 from app.models.preset_gate_state import PresetGateState, PresetGateStateSource
 from app.models.preset_printer import PresetPrinter
 from app.models.preset_usage_event import PresetUsageEvent, PresetUsageEventType
@@ -88,6 +89,7 @@ from app.models.subscription import Subscription, SubscriptionStatus
 from app.models.sync_device import SyncDevice
 from app.models.sync_history import SyncHistory, SyncOperation, SyncPresetType, SyncStatus
 from app.models.user import User, UserRole
+from app.models.user_achievement import UserAchievement
 from app.models.user_legal_acceptance import UserLegalAcceptance
 from app.models.user_printer_device import UserPrinterDevice
 from app.models.user_saved_preset import UserSavedPreset, UserSavedPresetTarget
@@ -183,6 +185,7 @@ __all__ = [
     "OrganizationMembership",
     "OrganizationMemberRole",
     "Preset",
+    "PresetFunnelEvent",
     "PresetGateState",
     "PresetGateStateSource",
     "PresetUsageEvent",
@@ -217,6 +220,7 @@ __all__ = [
     "SyncPresetType",
     "SyncStatus",
     "User",
+    "UserAchievement",
     "UserLegalAcceptance",
     "UserPrinterDevice",
     "UserRole",

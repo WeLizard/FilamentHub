@@ -712,7 +712,7 @@ class ShellServer:
         self._oauth = None
         self._oauth_lock = threading.Lock()
         self._sync_lock = threading.Lock()
-        self._sync_result = ""
+        self._sync_result = {"text": "", "draftCount": 0}
         self._recover_lock = threading.Lock()
         self._recover_items = None
         self._slice_lock = threading.Lock()
@@ -737,15 +737,18 @@ class ShellServer:
     def slice_alive_path(self):
         return "/k/" + self._oauth_secret
 
-    def set_sync_result(self, text):
+    def set_sync_result(self, text, draft_count=0):
         with self._sync_lock:
-            self._sync_result = text or ""
+            self._sync_result = {
+                "text": text or "",
+                "draftCount": max(0, int(draft_count or 0)),
+            }
 
     def _sync_status(self):
         with self._sync_lock:
-            text = self._sync_result
-            self._sync_result = ""
-        return {"text": text}
+            result = dict(self._sync_result)
+            self._sync_result = {"text": "", "draftCount": 0}
+        return result
 
     def set_recover_items(self, items):
         with self._recover_lock:
@@ -2894,7 +2897,11 @@ def scan_active_user_filaments():
                 continue
             profile = preset_config_dict(preset, include_metadata=True)
             if profile:
-                candidates.append({"name": name, "profile": profile})
+                candidates.append({
+                    "name": name,
+                    "profile": profile,
+                    "locator": _local_profile_locator(preset, "filament", name),
+                })
     except Exception:
         pass
     return candidates
@@ -2959,28 +2966,111 @@ def save_imported_draft_ids(ids):
         pass
 
 
-def push_filament_drafts(token, candidates):
-    """Push candidate presets to FilamentHub as private drafts (batched ≤50). The
-    backend creates one draft per preset and dedups by a stable fhub_draft_id.
-    Returns the draft-ids accepted (HTTP 200)."""
+def push_filament_drafts(token, candidates, authoritative=True):
+    """Push private drafts with durable per-profile identity.
+
+    The display name is editable in Orca and therefore cannot be identity.  The
+    same private registry used by machine/process profiles distinguishes a rename
+    from Save As.  Only per-item acknowledgements count as success: an HTTP 200
+    may still contain rejected rows.
+    """
+    imported = load_imported_draft_ids()
+    identity_items = []
+    for candidate in candidates:
+        profile = candidate.get("profile") or {}
+        identity_items.append({
+            "name": candidate.get("name") or "",
+            "locator": candidate.get("locator") or (
+                "recovery:filament:%s" % (candidate.get("key") or candidate.get("name") or "")
+            ),
+            "settings": profile,
+            "candidate": candidate,
+        })
+    account_id, identity_items, registry_saved = reconcile_local_profile_identities(
+        "filament", identity_items, authoritative=authoritative
+    )
+    if not registry_saved:
+        return []
+
     sent_ids = []
     batch = []
     batch_ids = []
-    for c in candidates:
-        did = _draft_id(c["name"])
-        settings = dict(c["profile"])
-        settings["fhub_draft_id"] = did
-        batch.append({"name": c["name"][:200], "orcaslicer_settings": settings, "source": "orcaslicer"})
+    batch_candidates = []
+    imported_changed = False
+
+    def flush_batch():
+        accepted = []
+        if not batch:
+            return accepted
+        status, body = http_post_json(
+            "/orcaslicer/filaments/import", token, {"profiles": list(batch)}
+        )
+        if status != 200:
+            fh_log("filament draft push HTTP %s for %d profile(s)" % (status, len(batch)))
+            return accepted
+        try:
+            response = json.loads(body.decode("utf-8")) or {}
+        except (AttributeError, UnicodeDecodeError, ValueError):
+            response = {}
+        results = response.get("results")
+        if not isinstance(results, list):
+            fh_log("filament draft push returned no per-item results")
+            return accepted
+        for index, did in enumerate(batch_ids):
+            item_result = results[index] if index < len(results) else None
+            if (
+                isinstance(item_result, dict)
+                and item_result.get("status") in {"created", "updated", "skipped"}
+            ):
+                accepted.append(did)
+                candidate = batch_candidates[index]
+                review_state = item_result.get("review_state")
+                decisions = item_result.get("important_decisions")
+                if isinstance(review_state, str):
+                    candidate["_draft_review_state"] = review_state
+                if isinstance(decisions, int) and decisions >= 0:
+                    candidate["_draft_decisions"] = decisions
+            else:
+                fh_log("filament draft %s was not accepted" % did)
+        return accepted
+
+    for item in identity_items:
+        candidate = item["candidate"]
+        did = local_profile_external_id(account_id, item["local_profile_id"])
+        legacy_did = _draft_id(candidate["name"])
+        candidate["_draft_sync_id"] = did
+        if did in imported or legacy_did in imported:
+            if did not in imported:
+                imported[did] = imported[legacy_did]
+                imported_changed = True
+            continue
+        settings = dict(candidate["profile"])
+        if authoritative:
+            capture_mode = "resolved_runtime"
+        else:
+            recovered_source = candidate.get("source")
+            capture_mode = (
+                "recovered_backup_json"
+                if recovered_source == "backup"
+                else "recovered_live_json"
+            )
+        batch.append({
+            "name": candidate["name"][:200],
+            "external_id": did,
+            "orcaslicer_settings": settings,
+            "source": "orcaslicer",
+            "source_version": PLUGIN_VERSION,
+            "capture_mode": capture_mode,
+        })
         batch_ids.append(did)
+        batch_candidates.append(candidate)
         if len(batch) >= 50:
-            st, _ = http_post_json("/orcaslicer/filaments/import", token, {"profiles": batch})
-            if st == 200:
-                sent_ids.extend(batch_ids)
-            batch, batch_ids = [], []
+            sent_ids.extend(flush_batch())
+            batch, batch_ids, batch_candidates = [], [], []
     if batch:
-        st, _ = http_post_json("/orcaslicer/filaments/import", token, {"profiles": batch})
-        if st == 200:
-            sent_ids.extend(batch_ids)
+        sent_ids.extend(flush_batch())
+    if imported_changed:
+        save_imported_draft_ids(imported)
     return sent_ids
 
 
@@ -3055,7 +3145,7 @@ def load_profile_identity_registry():
     profiles = registry.get("profiles")
     if not isinstance(profiles, dict):
         profiles = {}
-    for kind in PROFILE_KINDS:
+    for kind in (*PROFILE_KINDS, "filament"):
         if not isinstance(profiles.get(kind), dict):
             profiles[kind] = {}
     return {
@@ -3207,6 +3297,7 @@ PROFILE_BOOKKEEPING_KEYS = frozenset({
     "setting_id",
     "printer_settings_id",
     "print_settings_id",
+    "filament_settings_id",
     "instantiation",
     "bundle_id",
     "fhub_id",
@@ -3317,7 +3408,14 @@ def _local_profile_locator(preset, kind, name):
 
 
 def _local_profile_signature(kind, item):
-    payload = {"settings": item.get("settings") or {}}
+    settings = item.get("settings") or item.get("profile") or {}
+    if kind == "filament":
+        settings = {
+            key: value
+            for key, value in settings.items()
+            if key not in PROFILE_BOOKKEEPING_KEYS
+        }
+    payload = {"settings": settings}
     if kind == "process":
         for key in (
             "compatible_printers",
@@ -4265,7 +4363,12 @@ function pollSyncOnce() {
         stopSyncPolling();
         try {
           frame.contentWindow.postMessage(
-            { source: 'filamenthub-plugin', type: 'sync-result', text: st.text }, SITE_ORIGIN);
+            {
+              source: 'filamenthub-plugin',
+              type: 'sync-result',
+              text: st.text,
+              draftCount: Number(st.draftCount) || 0
+            }, SITE_ORIGIN);
         } catch (e) { /* iframe not ready */ }
         return;
       }
@@ -4377,10 +4480,15 @@ function relaySliceResult(result) {
   } catch (e) { /* iframe not ready */ }
 }
 
-function relayNote(text) {
+function relayNote(text, draftCount) {
   try {
     frame.contentWindow.postMessage(
-      { source: 'filamenthub-plugin', type: 'sync-result', text: text }, SITE_ORIGIN);
+      {
+        source: 'filamenthub-plugin',
+        type: 'sync-result',
+        text: text,
+        draftCount: Number(draftCount) || 0
+      }, SITE_ORIGIN);
   } catch (e) { /* iframe not ready */ }
 }
 function copyDiagnostics(text) {
@@ -4403,7 +4511,7 @@ try {
     if (data.type === 'transport') return;
     if (data.type === 'sync-result') {
       stopSyncPolling();
-      relayNote(data.text || '');
+      relayNote(data.text || '', data.draftCount || 0);
     } else if (data.type === 'recover-list') {
       stopRecoverPolling();
       try {
@@ -5833,9 +5941,10 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
         payload.update(data)
         return post_window(self.win, payload)
 
-    def _deliver_sync_result(self, text):
-        if not self._deliver("sync-result", text=text):
-            SHELL_SERVER.set_sync_result(text)
+    def _deliver_sync_result(self, text, draft_count=0):
+        draft_count = max(0, int(draft_count or 0))
+        if not self._deliver("sync-result", text=text, draftCount=draft_count):
+            SHELL_SERVER.set_sync_result(text, draft_count)
 
     def _deliver_recovery(self, items):
         if not self._deliver("recover-list", items=items):
@@ -6607,9 +6716,11 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
         recovered_keys = set()
 
         filament_candidates = [c for c in candidates if c["kind"] == "filament"]
-        sent_filaments = set(push_filament_drafts(token, filament_candidates))
+        sent_filaments = set(
+            push_filament_drafts(token, filament_candidates, authoritative=False)
+        )
         for candidate in filament_candidates:
-            if _draft_id(candidate["name"]) in sent_filaments:
+            if candidate.get("_draft_sync_id") in sent_filaments:
                 recovered_keys.add(candidate["key"])
 
         observations = []
@@ -6657,6 +6768,10 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
 
         for key in recovered_keys:
             imported[_draft_id(key)] = 1
+        for candidate in filament_candidates:
+            stable_id = candidate.get("_draft_sync_id")
+            if stable_id in sent_filaments:
+                imported[stable_id] = 1
         if recovered_keys:
             save_imported_draft_ids(imported)
         self._deliver_sync_result(ui_text("recoveryDone", count=len(recovered_keys)))
@@ -7081,16 +7196,34 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
             parts.append(ui_text("summaryCurrent", count=skipped))
         if failed:
             parts.append(ui_text("summaryFailed", count=failed))
+        new_draft_count = 0
         if active_filaments and sync_preferences["auto_import_local_presets"]:
             imported = load_imported_draft_ids()
-            fresh = [c for c in active_filaments if _draft_id(c["name"]) not in imported]
-            sent_ids = push_filament_drafts(token, fresh) if fresh else []
-            fh_log("auto draft import: %d fresh of %d, %d sent" % (len(fresh), len(active_filaments), len(sent_ids)))
+            sent_ids = push_filament_drafts(token, active_filaments)
+            fh_log("auto draft import: %d scanned, %d sent" % (len(active_filaments), len(sent_ids)))
             if sent_ids:
+                new_draft_count = len(sent_ids)
                 for did in sent_ids:
                     imported[did] = 1
                 save_imported_draft_ids(imported)
                 parts.append(ui_text("summaryDrafts", count=len(sent_ids)))
+                sent_candidates = [
+                    candidate
+                    for candidate in active_filaments
+                    if candidate.get("_draft_sync_id") in sent_ids
+                ]
+                ready_count = sum(
+                    candidate.get("_draft_review_state") in {"ready", "almost_ready"}
+                    for candidate in sent_candidates
+                )
+                review_count = sum(
+                    candidate.get("_draft_review_state") in {"needs_decision", "ambiguous"}
+                    for candidate in sent_candidates
+                )
+                if ready_count:
+                    parts.append(ui_text("summaryDraftsReady", count=ready_count))
+                if review_count:
+                    parts.append(ui_text("summaryDraftsReview", count=review_count))
         parts.extend(profile_parts)
         summary = ", ".join(parts) or ui_text("summaryNothing")
         fh_log("sync done: pull=%d upd=%d push=%d rm=%d ren=%d skip=%d fail=%d" %
@@ -7100,7 +7233,10 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
         if pulled or updated or removed or renamed:
             note = ui_text("dropdownRestart")
         if announce:
-            self._deliver_sync_result(ui_text("syncComplete", summary=summary, note=note).strip())
+            self._deliver_sync_result(
+                ui_text("syncComplete", summary=summary, note=note).strip(),
+                new_draft_count,
+            )
 
 
 _PAGES = getattr(orca, "pages", None)

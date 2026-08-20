@@ -47,7 +47,7 @@ import { FilamentSpoolIcon } from '../components/icons/FilamentSpoolIcon';
 import { useAuth } from '../contexts/AuthContext';
 import { useHeaderVisible } from '../hooks/useHeaderVisible';
 import { useUserCurrency } from '../hooks/useUserCurrency';
-import { presetsAPI, filamentsAPI, brandsAPI, savedPresetsAPI, filamentReviewsAPI, printerProfilesAPI, printProfilesAPI, authAPI, spoolsAPI, qrAPI, calculatorAPI, crmAPI, physicalPrintersAPI } from '../api/client';
+import { presetsAPI, filamentsAPI, brandsAPI, savedPresetsAPI, filamentReviewsAPI, printerProfilesAPI, printProfilesAPI, authAPI, spoolsAPI, qrAPI, calculatorAPI, crmAPI, physicalPrintersAPI, achievementsAPI } from '../api/client';
 import { extractQrShortCode, createQrFrameDecoder } from '../utils/qrScanner';
 import type { UserSpool, SpoolState, PhysicalPrinter, MaterialSlot } from '../api/client';
 import { SpoolIcon } from '../components/icons/SpoolIcon';
@@ -88,10 +88,10 @@ const CreatePrinterProfileModal = lazy(() =>
 );
 import { CreatePrintProfileModal } from '../components/CreatePrintProfileModal';
 import { PresetSyncToggle } from '../components/PresetSyncToggle';
-import { Badge, BADGE_CONFIG, type BadgeType } from '../components/Badge';
+import { AchievementBadge, ACHIEVEMENT_CONFIG, Badge, BADGE_CONFIG, type BadgeType } from '../components/Badge';
 import { PresetSlotsPanel } from '../components/presetSlots/PresetSlotsPanel';
 import { SpoolUsageModal } from '../components/SpoolUsageModal';
-import type { Preset, PrinterProfile, PrintProfile, Filament } from '../types/api';
+import type { AchievementCode, Preset, PresetDraftAnalysis, PrinterProfile, PrintProfile, Filament, UserAchievement } from '../types/api';
 import { formatDate, formatDateTime as formatLocalDateTime } from '../utils/formatDate';
 
 const BrandProfilePage = lazy(() => import('./BrandProfilePage').then((module) => ({ default: module.BrandProfilePage })));
@@ -262,17 +262,22 @@ export const ProfilePage: React.FC = () => {
 
   useEffect(() => {
     const requestedTab = profileSearchParams.get('tab');
-    if (requestedTab === 'spools') {
-      setUserTab('spools');
+    if (PROFILE_TABS.includes(requestedTab as ProfileTab)) {
+      setUserTab(requestedTab as ProfileTab);
+    }
+    const requestedPresetFilter = profileSearchParams.get('preset_filter');
+    if (PRESET_FILTERS.includes(requestedPresetFilter as PresetFilter)) {
+      setPresetFilter(requestedPresetFilter as PresetFilter);
     }
     if (profileSearchParams.get('add_spool') === '1' && spoolIntakeFilamentId !== null) {
       setIsAddSpoolOpen(true);
     }
     // The deep link has done its job. Left in the address it would win over the
     // remembered tab on every reload and pin the person to one section.
-    if (requestedTab !== null) {
+    if (requestedTab !== null || requestedPresetFilter !== null) {
       const nextParams = new URLSearchParams(profileSearchParams);
       nextParams.delete('tab');
+      nextParams.delete('preset_filter');
       const nextSearch = nextParams.toString();
       navigate(`${location.pathname}${nextSearch ? `?${nextSearch}` : ''}`, { replace: true });
     }
@@ -335,7 +340,25 @@ export const ProfilePage: React.FC = () => {
       (left, right) => (priority.get(left) ?? Number.MAX_SAFE_INTEGER) - (priority.get(right) ?? Number.MAX_SAFE_INTEGER),
     );
   }, [profileBadges]);
-  const visibleProfileBadges = prioritizedProfileBadges.slice(0, PROFILE_BADGE_LIMIT);
+  const achievementOverviewQuery = useQuery({
+    queryKey: ['achievement-overview', user?.id],
+    queryFn: achievementsAPI.getMine,
+    enabled: !!user?.id,
+    staleTime: 60_000,
+  });
+  const earnedAchievements = useMemo(() => (
+    (achievementOverviewQuery.data?.achievements ?? []).filter(
+      (achievement): achievement is UserAchievement & { code: AchievementCode } => (
+        Object.prototype.hasOwnProperty.call(ACHIEVEMENT_CONFIG, achievement.code)
+      ),
+    )
+  ), [achievementOverviewQuery.data?.achievements]);
+  const visibleAchievements = earnedAchievements.slice(0, PROFILE_BADGE_LIMIT);
+  const visibleProfileBadges = prioritizedProfileBadges.slice(
+    0,
+    Math.max(0, PROFILE_BADGE_LIMIT - visibleAchievements.length),
+  );
+  const achievementCount = earnedAchievements.length + prioritizedProfileBadges.length;
 
   const renderAchievementsTray = () => (
     <button
@@ -346,6 +369,18 @@ export const ProfilePage: React.FC = () => {
       title={t('profilePage.openAchievements')}
     >
       <span className="pointer-events-none absolute inset-0 rounded-full bg-gradient-to-r from-purple-400/[0.055] via-pink-400/[0.035] to-cyan-300/[0.025] opacity-20 transition-opacity duration-200 group-hover:opacity-100" />
+      {visibleAchievements.map((achievement) => (
+        <span
+          key={achievement.code}
+          className="group/badge relative flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-white/[0.06] bg-white/[0.035] opacity-80 transition-opacity group-hover:opacity-100"
+          title={t(ACHIEVEMENT_CONFIG[achievement.code].titleKey)}
+        >
+          <AchievementBadge code={achievement.code} size="sm" />
+          <span className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 -translate-x-1/2 translate-y-1 scale-95 whitespace-nowrap rounded-lg border border-white/10 bg-slate-950/95 px-2 py-1 text-[11px] font-medium text-gray-200 opacity-0 shadow-lg shadow-black/30 transition-all duration-150 group-hover/badge:translate-y-0 group-hover/badge:scale-100 group-hover/badge:opacity-100">
+            {t(ACHIEVEMENT_CONFIG[achievement.code].labelKey)}
+          </span>
+        </span>
+      ))}
       {visibleProfileBadges.map((badge) => (
         <span
           key={badge}
@@ -359,7 +394,7 @@ export const ProfilePage: React.FC = () => {
         </span>
       ))}
       <span className="relative ml-0.5 flex min-w-0 items-center gap-0.5 border-l border-white/[0.06] pl-1.5 text-[11px] font-medium text-gray-500 transition-colors group-hover:text-gray-300">
-        <span>{prioritizedProfileBadges.length}</span>
+        <span>{achievementCount}</span>
         <ChevronRight className="h-3 w-3 shrink-0 transition-transform group-hover:translate-x-0.5" />
       </span>
     </button>
@@ -372,6 +407,18 @@ export const ProfilePage: React.FC = () => {
     enabled: !!user?.id && needsPresetData,
     staleTime: 60_000,
   });
+
+  const { data: draftQueue } = useQuery({
+    queryKey: ['preset-draft-queue', user?.id],
+    queryFn: () => presetsAPI.getDraftQueue(100),
+    enabled: !!user?.id && needsPresetData,
+    staleTime: 60_000,
+  });
+
+  const draftAnalysisById = useMemo(
+    () => new Map((draftQueue?.items ?? []).map((item) => [item.preset_id, item])),
+    [draftQueue?.items],
+  );
 
   // Загружаем сохранённые пресеты
   const { data: savedPresetsData } = useQuery({
@@ -469,11 +516,23 @@ export const ProfilePage: React.FC = () => {
       case 'synced':
         return allMyPresets.filter(p => syncedPresetIds.has(p.id));
       case 'drafts':
-        return allMyPresets.filter(p => p.source === 'own' && !p.active);
+        return allMyPresets
+          .filter(p => p.source === 'own' && !p.active)
+          .sort((left, right) => {
+            const priority: Record<string, number> = {
+              ready: 0,
+              almost_ready: 1,
+              needs_decision: 2,
+              ambiguous: 3,
+            };
+            const leftState = draftAnalysisById.get(left.id)?.review_state ?? 'ambiguous';
+            const rightState = draftAnalysisById.get(right.id)?.review_state ?? 'ambiguous';
+            return (priority[leftState] ?? 4) - (priority[rightState] ?? 4);
+          });
       default:
         return allMyPresets;
     }
-  }, [allMyPresets, presetFilter, syncedPresetIds]);
+  }, [allMyPresets, draftAnalysisById, presetFilter, syncedPresetIds]);
 
   const userPresets = filteredPresets;
 
@@ -1176,6 +1235,25 @@ export const ProfilePage: React.FC = () => {
             </div>
           )}
 
+          {presetFilter === 'drafts' && draftQueue && draftQueue.total > 0 && (
+            <div className="flex flex-col gap-2 rounded-xl border border-cyan-300/20 bg-cyan-400/[0.08] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-sm font-semibold text-white">
+                  {t('profilePage.draftQueueTitle', { count: draftQueue.total })}
+                </p>
+                <p className="mt-0.5 text-xs text-gray-300">
+                  {t('profilePage.draftQueueSummary', {
+                    ready: draftQueue.ready + draftQueue.almost_ready,
+                    review: draftQueue.needs_decision + draftQueue.ambiguous,
+                  })}
+                </p>
+              </div>
+              <span className="text-xs text-cyan-100">
+                {t('profilePage.draftQueueHint')}
+              </span>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
             {userPresets.map((preset) => (
               <PresetCard
@@ -1184,6 +1262,7 @@ export const ProfilePage: React.FC = () => {
                 onEdit={handleEditPreset}
                 onView={handleViewPreset}
                 onDelete={handleDeletePreset}
+                draftAnalysis={draftAnalysisById.get(preset.id)}
               />
             ))}
           </div>
@@ -1770,7 +1849,7 @@ export const ProfilePage: React.FC = () => {
                   <div className="mb-2 flex items-center gap-2">
                     <Star className="h-5 w-5 text-amber-300" />
                     <span className="rounded-full border border-white/10 bg-white/8 px-2.5 py-1 text-xs font-semibold text-purple-100">
-                      {t('profilePage.achievementCount', { count: prioritizedProfileBadges.length })}
+                      {t('profilePage.achievementCount', { count: achievementCount })}
                     </span>
                   </div>
                   <h2 className="text-xl font-bold text-white sm:text-2xl">{t('profilePage.achievements')}</h2>
@@ -1790,6 +1869,24 @@ export const ProfilePage: React.FC = () => {
             </div>
 
             <div className="grid gap-3 overflow-y-auto p-5 sm:grid-cols-2 sm:p-7">
+              {earnedAchievements.map((achievement) => {
+                const config = ACHIEVEMENT_CONFIG[achievement.code];
+                return (
+                  <div
+                    key={achievement.code}
+                    className="group flex min-w-0 items-center gap-4 rounded-2xl border border-cyan-300/15 bg-cyan-300/[0.055] p-4 transition-colors hover:border-cyan-200/30 hover:bg-cyan-300/[0.08]"
+                  >
+                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-black/25 shadow-[0_0_22px_rgba(34,211,238,0.13)]">
+                      <AchievementBadge code={achievement.code} size="lg" />
+                    </div>
+                    <div className="min-w-0">
+                      <h3 className="truncate font-semibold text-white">{t(config.labelKey)}</h3>
+                      <p className="mt-1 text-sm leading-5 text-gray-300">{t(config.titleKey)}</p>
+                      <p className="mt-1 text-xs text-gray-500">{formatDate(achievement.earned_at)}</p>
+                    </div>
+                  </div>
+                );
+              })}
               {prioritizedProfileBadges.map((badge) => {
                 const config = BADGE_CONFIG[badge];
                 return (
@@ -1807,6 +1904,22 @@ export const ProfilePage: React.FC = () => {
                   </div>
                 );
               })}
+              {achievementOverviewQuery.data && (
+                <div className="sm:col-span-2 grid grid-cols-1 gap-2 rounded-2xl border border-white/10 bg-black/15 p-4 sm:grid-cols-3">
+                  <div>
+                    <p className="text-xl font-bold text-white">{achievementOverviewQuery.data.published_presets}</p>
+                    <p className="text-xs text-gray-400">{t('profilePage.contributionStats.publishedPresets')}</p>
+                  </div>
+                  <div>
+                    <p className="text-xl font-bold text-white">{achievementOverviewQuery.data.saved_by_other_users}</p>
+                    <p className="text-xs text-gray-400">{t('profilePage.contributionStats.savedByOthers')}</p>
+                  </div>
+                  <div>
+                    <p className="text-xl font-bold text-white">{achievementOverviewQuery.data.confirmed_uses_by_other_users}</p>
+                    <p className="text-xs text-gray-400">{t('profilePage.contributionStats.confirmedUses')}</p>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </ModalOverlay>
@@ -3583,14 +3696,21 @@ interface PresetCardProps {
   onEdit?: (preset: Preset) => void;
   onView?: (preset: Preset) => void;
   onDelete?: (preset: Preset) => void;
+  draftAnalysis?: PresetDraftAnalysis;
 }
 
-const PresetCard: React.FC<PresetCardProps> = ({ preset, onEdit, onView, onDelete }) => {
+const PresetCard: React.FC<PresetCardProps> = ({ preset, onEdit, onView, onDelete, draftAnalysis }) => {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [isDownloading, setIsDownloading] = useState(false);
   const [_isImporting, setIsImporting] = useState(false);
   const [_isInOrcaSlicer, setIsInOrcaSlicer] = useState(false);
+  const isImportedDraft = Boolean(
+    preset.source === 'own'
+    && !preset.active
+    && !preset.name?.includes('@fh')
+    && (preset.external_id || preset.orcaslicer_settings?.fhub_draft_id),
+  );
 
   // Проверяем, запущен ли frontend внутри OrcaSlicer
   useEffect(() => {
@@ -3845,20 +3965,23 @@ const PresetCard: React.FC<PresetCardProps> = ({ preset, onEdit, onView, onDelet
           >
             <Eye className="w-4 h-4" />
           </button>
-          {/* Переключатель синхронизации - показываем для всех пресетов */}
-          <PresetSyncToggle preset={preset} size="sm" className="p-2 bg-white/10 hover:bg-white/20 rounded-lg" />
-          <button
-            onClick={handleDownload}
-            disabled={isDownloading}
-            className="p-2 bg-white/10 hover:bg-white/20 rounded-lg text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-            title={isDownloading ? t('profilePage.downloading') : t('profilePage.downloadOrcaSlicer')}
-          >
-            {isDownloading ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <Download className="w-4 h-4" />
-            )}
-          </button>
+          {preset.active && preset.filament_id && (
+            <>
+              <PresetSyncToggle preset={preset} size="sm" className="p-2 bg-white/10 hover:bg-white/20 rounded-lg" />
+              <button
+                onClick={handleDownload}
+                disabled={isDownloading}
+                className="p-2 bg-white/10 hover:bg-white/20 rounded-lg text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                title={isDownloading ? t('profilePage.downloading') : t('profilePage.downloadOrcaSlicer')}
+              >
+                {isDownloading ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Download className="w-4 h-4" />
+                )}
+              </button>
+            </>
+          )}
           <button
             onClick={() => onDelete?.(preset)}
             className="p-2 bg-white/10 hover:bg-red-500/20 rounded-lg text-white transition-all"
@@ -3868,6 +3991,50 @@ const PresetCard: React.FC<PresetCardProps> = ({ preset, onEdit, onView, onDelet
           </button>
         </div>
       </div>
+
+      {isImportedDraft && (
+        <div className={`mb-4 flex flex-col gap-3 rounded-xl border p-3 sm:flex-row sm:items-center sm:justify-between ${
+          preset.moderation_status === 'rejected'
+            ? 'border-rose-400/25 bg-rose-500/10'
+            : 'border-cyan-400/20 bg-cyan-500/10'
+        }`}>
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-white">
+              {preset.moderation_status === 'rejected'
+                ? t('profilePage.draftContributionNeedsFix')
+                : draftAnalysis?.review_state === 'ambiguous'
+                  ? t('profilePage.draftContributionAmbiguous')
+                  : t('profilePage.draftContributionReady', {
+                      count: (draftAnalysis?.preset_decisions.length ?? 0)
+                        + (draftAnalysis?.catalog_decisions.length ?? 0),
+                    })}
+            </p>
+            <p className="mt-0.5 text-xs leading-5 text-gray-300">
+              {preset.moderation_status === 'rejected'
+                ? t('profilePage.draftContributionNeedsFixHint')
+                : t('profilePage.draftContributionHint')}
+            </p>
+            {draftAnalysis && (
+              <div className="mt-2 flex flex-wrap gap-2 text-[11px]">
+                <span className="rounded-md border border-white/10 bg-black/10 px-2 py-1 text-gray-200">
+                  {t('profilePage.draftPresetReadiness', { value: draftAnalysis.preset_readiness_percent })}
+                </span>
+                <span className="rounded-md border border-white/10 bg-black/10 px-2 py-1 text-gray-200">
+                  {t('profilePage.draftCatalogReadiness', { value: draftAnalysis.catalog_readiness_percent })}
+                </span>
+              </div>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={() => onEdit?.(preset)}
+            className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg border border-cyan-300/25 bg-cyan-400/15 px-3 py-2 text-sm font-medium text-cyan-100 transition hover:bg-cyan-400/25"
+          >
+            <Zap className="h-4 w-4" />
+            {t('profilePage.reviewAndPublishDraft')}
+          </button>
+        </div>
+      )}
 
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 mb-4 text-sm">
         <div className="flex items-start space-x-2 min-w-0">
@@ -4214,4 +4381,3 @@ const PrintProfileModal: React.FC<PrintProfileModalProps> = ({ profile, onClose,
     </ModalOverlay>
   );
 };
-

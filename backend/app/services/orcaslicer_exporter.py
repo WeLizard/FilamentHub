@@ -130,76 +130,6 @@ updated_time = {updated_time}
 """
 
 
-def draft_preset_to_orcaslicer_json(preset: Preset) -> dict[str, Any]:
-    """Export an owner's unlinked draft without inventing catalog material data.
-
-    Orca is the authority for the raw settings captured in a draft. Keep every
-    known and unknown value in its original JSON shape, then refresh only the
-    managed identity and fill structured fields that may have been edited on the
-    site. This lets private drafts participate in the same global round trip as
-    active presets without requiring a Filament row first.
-    """
-    raw = preset.orcaslicer_settings if isinstance(preset.orcaslicer_settings, dict) else {}
-    profile = _filament_transport(raw, preset.id)
-    name = preset.name or f"FilamentHub preset {preset.id}"
-    profile.update(
-        {
-            "version": str(raw.get("version") or "2.3.0.0"),
-            "type": "filament",
-            "name": name,
-            "from": "user",
-            "instantiation": "true",
-            "filament_settings_id": [name],
-            "setting_id": f"FHUB{preset.id:06d}",
-            "fhub_id": str(preset.id),
-            "fhub_source": "filamenthub",
-        }
-    )
-
-    def set_array(key: str, value: Any) -> None:
-        if value is not None and key not in profile:
-            profile[key] = [str(value)]
-
-    if preset.extruder_temp is not None:
-        nozzle = format_orca_number(preset.extruder_temp)
-        set_array("nozzle_temperature", nozzle)
-        set_array("nozzle_temperature_initial_layer", nozzle)
-    if preset.bed_temp is not None:
-        bed = format_orca_number(preset.bed_temp)
-        for key in (
-            "hot_plate_temp",
-            "hot_plate_temp_initial_layer",
-            "cool_plate_temp",
-            "cool_plate_temp_initial_layer",
-            "eng_plate_temp",
-            "eng_plate_temp_initial_layer",
-            "textured_plate_temp",
-            "textured_plate_temp_initial_layer",
-            "supertack_plate_temp",
-            "supertack_plate_temp_initial_layer",
-            "textured_cool_plate_temp",
-            "textured_cool_plate_temp_initial_layer",
-        ):
-            set_array(key, bed)
-    if preset.fan_speed is not None:
-        set_array("fan_min_speed", max(0, min(100, preset.fan_speed)))
-    if preset.retraction_length is not None:
-        set_array(
-            "filament_retraction_length",
-            format_orca_number(preset.retraction_length),
-        )
-    if preset.retraction_speed is not None:
-        set_array(
-            "filament_retraction_speed",
-            format_orca_number(preset.retraction_speed),
-        )
-    if preset.flow_rate is not None:
-        set_array("filament_flow_ratio", format_orca_flow_ratio(preset.flow_rate))
-
-    validate_orca_transport_shapes(profile, name)
-    return profile
-
-
 def _escape_condition_value(value: str) -> str:
     """Escape double quotes for an Orca condition string literal."""
     return value.replace('"', '\\"')
@@ -274,6 +204,8 @@ async def preset_to_orcaslicer_json(
     filament: Filament,
     db: AsyncSession | None = None,
     target_profiles: "list[PrinterProfile] | None" = None,
+    *,
+    settings_override: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """
     Конвертировать Preset из FilamentHub в формат профиля OrcaSlicer.
@@ -427,7 +359,12 @@ async def preset_to_orcaslicer_json(
     # Расширенные параметры из JSON поля orcaslicer_settings.
     # The stored blob is the round-trip authority for everything not rewritten
     # above and is never mutated here — the export gets its own transport copy.
-    profile.update(_filament_transport(preset.orcaslicer_settings, preset.id))
+    source_settings = (
+        settings_override
+        if settings_override is not None
+        else preset.orcaslicer_settings
+    )
+    profile.update(_filament_transport(source_settings, preset.id))
 
     # Material identity from FilamentHub is authoritative over imported raw
     # metadata. Preset values remain represented in both structured columns and

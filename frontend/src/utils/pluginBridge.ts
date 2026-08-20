@@ -194,7 +194,14 @@ export function subscribeToPluginNavigation(onNavigate: (path: string) => void):
  * Подписка на сводку синка от шелла: Python пишет результат в loopback, шелл его
  * опрашивает и шлёт вниз sync-result — SPA показывает тост вместо хост-диалога.
  */
-export function subscribeToPluginSyncResult(onResult: (text: string) => void): () => void {
+export interface PluginSyncResult {
+  text: string;
+  draftCount: number;
+}
+
+export function subscribeToPluginSyncResult(
+  onResult: (result: PluginSyncResult) => void,
+): () => void {
   const handler = (event: MessageEvent) => {
     if (!isTrustedPluginParentEvent(event)) {
       return;
@@ -203,9 +210,16 @@ export function subscribeToPluginSyncResult(onResult: (text: string) => void): (
     if (!data || data.source !== PLUGIN_MESSAGE_SOURCE || data.type !== 'sync-result') {
       return;
     }
-    const text = (data as { text?: unknown }).text;
+    const payload = data as { text?: unknown; draftCount?: unknown };
+    const text = payload.text;
     if (typeof text === 'string' && text) {
-      onResult(text);
+      const rawDraftCount = Number(payload.draftCount);
+      onResult({
+        text,
+        draftCount: Number.isSafeInteger(rawDraftCount) && rawDraftCount > 0
+          ? rawDraftCount
+          : 0,
+      });
     }
   };
   window.addEventListener('message', handler);

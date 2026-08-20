@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -120,6 +120,7 @@ class PresetResponse(PresetBase):
     # КРИТИЧНО: для черновиков из OrcaSlicer filament_id может быть NULL
     filament_id: int | None
     user_id: int | None = None
+    organization_id: int | None = None
     active: bool
     moderation_status: str  # pending, approved, rejected
     # УДАЛЕНО: sync_enabled - теперь управляется через user_saved_presets.sync
@@ -132,7 +133,84 @@ class PresetResponse(PresetBase):
     updated_at: datetime
     printers: list[PrinterResponse] = Field(default_factory=list, description="Список принтеров, для которых подходит этот пресет")
 
+    @classmethod
+    def model_validate_public(cls, obj: Any) -> PresetResponse:
+        """Validate a catalog response and remove owner-only Orca evidence."""
+        response = cls.model_validate(obj)
+        if isinstance(response.orcaslicer_settings, dict):
+            from app.services.preset_publication import public_orca_settings
+
+            response.orcaslicer_settings = public_orca_settings(
+                response.orcaslicer_settings
+            )
+        return response
+
     model_config = ConfigDict(from_attributes=True)
+
+
+class PresetDraftSuggestion(BaseModel):
+    """One review value with honest provenance."""
+
+    value: str | float
+    source: str
+    confidence: str
+    direct: bool = False
+
+
+class PresetDraftCatalogMatch(BaseModel):
+    id: int
+    name: str
+    brand_id: int | None = None
+    material_type: str | None = None
+    color_name: str | None = None
+    confidence: str = "possible"
+    reasons: list[str] = Field(default_factory=list)
+
+
+class PresetDraftAnalysisResponse(BaseModel):
+    """Small review projection for an imported Orca draft."""
+
+    preset_id: int
+    evidence_kind: str
+    suggestions: dict[str, PresetDraftSuggestion] = Field(default_factory=dict)
+    brand_match: PresetDraftCatalogMatch | None = None
+    filament_matches: list[PresetDraftCatalogMatch] = Field(default_factory=list)
+    confirmed_fields: list[str] = Field(default_factory=list)
+    suggested_fields: list[str] = Field(default_factory=list)
+    preset_readiness_percent: int = Field(ge=0, le=100)
+    catalog_readiness_percent: int = Field(ge=0, le=100)
+    technical_settings_count: int = Field(ge=0)
+    preset_decisions: list[str] = Field(default_factory=list)
+    catalog_decisions: list[str] = Field(default_factory=list)
+    review_state: str
+    generic_source: bool = False
+    similar_import_users: int = Field(
+        default=0,
+        ge=0,
+        description="Independent private imports with the same anonymous candidate signature",
+    )
+
+
+class PresetDraftMetricRequest(BaseModel):
+    """One categorical UI funnel event; identifiers and arbitrary metadata are forbidden."""
+
+    event_type: Literal[
+        "review_opened",
+        "important_field_confirmed",
+        "filament_matched_or_created",
+        "duplicate_prevented",
+    ]
+
+
+class PresetDraftQueueResponse(BaseModel):
+    """Review state for the current user's visible draft queue."""
+
+    items: list[PresetDraftAnalysisResponse] = Field(default_factory=list)
+    total: int = Field(ge=0)
+    ready: int = Field(ge=0)
+    almost_ready: int = Field(ge=0)
+    needs_decision: int = Field(ge=0)
+    ambiguous: int = Field(ge=0)
 
 
 

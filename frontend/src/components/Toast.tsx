@@ -12,6 +12,10 @@ export interface Toast {
   type: ToastType;
   duration?: number;
   replaceKey?: string;
+  action?: {
+    label: string;
+    onClick: () => void;
+  };
 }
 
 interface ToastProps {
@@ -64,7 +68,21 @@ const ToastItem: React.FC<ToastProps> = ({ toast, onClose }) => {
       }}
     >
       <div className="flex-shrink-0 mt-0.5">{getIcon()}</div>
-      <div className="flex-1 text-xs text-white">{toast.message}</div>
+      <div className="flex-1 text-xs text-white">
+        <div>{toast.message}</div>
+        {toast.action && (
+          <button
+            type="button"
+            onClick={() => {
+              toast.action?.onClick();
+              onClose(toast.id);
+            }}
+            className="mt-2 rounded-md border border-white/25 bg-white/10 px-2.5 py-1 text-xs font-semibold text-white transition-colors hover:bg-white/20"
+          >
+            {toast.action.label}
+          </button>
+        )}
+      </div>
       <button
         onClick={() => onClose(toast.id)}
         className="flex-shrink-0 text-gray-400 hover:text-white transition-colors"
@@ -105,7 +123,13 @@ const notifyListeners = () => {
 };
 
 export const toast = {
-  show: (message: string, type: ToastType = 'info', duration?: number, replaceKey?: string) => {
+  show: (
+    message: string,
+    type: ToastType = 'info',
+    duration?: number,
+    replaceKey?: string,
+    action?: Toast['action'],
+  ) => {
     // A keyed toast replaces the previous one on the same channel and always
     // shows (no session dedup) — repeated actions like Sync must report each run.
     if (replaceKey) {
@@ -123,12 +147,14 @@ export const toast = {
     logToast('SHOW', message, type, `total unique: ${shownMessages.size}`);
 
     const id = `toast-${++toastIdCounter}`;
-    const toastItem: Toast = { id, message, type, duration, replaceKey };
+    const toastItem: Toast = { id, message, type, duration, replaceKey, action };
     toasts.push(toastItem);
     notifyListeners();
     return id;
   },
-  success: (message: string, duration?: number, replaceKey?: string) => toast.show(message, 'success', duration, replaceKey),
+  success: (message: string, duration?: number, replaceKey?: string, action?: Toast['action']) => (
+    toast.show(message, 'success', duration, replaceKey, action)
+  ),
   error: (message: string, duration?: number, replaceKey?: string) => toast.show(message, 'error', duration, replaceKey),
   warning: (message: string, duration?: number, replaceKey?: string) => toast.show(message, 'warning', duration, replaceKey),
   info: (message: string, duration?: number, replaceKey?: string) => toast.show(message, 'info', duration, replaceKey),

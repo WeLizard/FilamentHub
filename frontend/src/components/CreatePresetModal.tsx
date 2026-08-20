@@ -3,12 +3,21 @@
 import { useState, useEffect, FormEvent, useRef, useMemo } from 'react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { X, Save, Loader2, Check, Plus, CheckCircle } from 'lucide-react';
+import { X, Save, Loader2, Check, Plus, CheckCircle, Sparkles } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { presetsAPI, filamentsAPI, brandsAPI, printersAPI } from '../api/client';
+import { achievementsAPI, presetsAPI, filamentsAPI, brandsAPI, printersAPI } from '../api/client';
 import { translateApiError } from '../utils/translateApiError';
 import { useAuth } from '../contexts/AuthContext';
-import type { FilamentAdditive, FilamentPropertyClaim, Preset, Filament, Brand, Printer } from '../types/api';
+import type {
+  AchievementCode,
+  AchievementOverview,
+  FilamentAdditive,
+  FilamentPropertyClaim,
+  Preset,
+  Filament,
+  Brand,
+  Printer,
+} from '../types/api';
 import { applyMaterialDefaults, sortMaterialTypes } from '../data/materialDefaults';
 import { type SettingMode, isVisibleAtMode } from '../data/orcaFieldModes';
 import { safeStorage } from '../utils/storage';
@@ -56,6 +65,8 @@ import {
   parseBedAdhesives,
 } from './FilamentHandlingEditor';
 import { DensityField } from './DensityField';
+import { toast } from './Toast';
+import { ACHIEVEMENT_CONFIG } from './Badge';
 import type { AxiosError } from 'axios';
 
 // Список стандартных типов материалов (FDM/FFF)
@@ -135,6 +146,10 @@ const colorIdentityKey = (colorName?: string | null, colorHex?: string | null): 
 
   return 'none';
 };
+
+const isAchievementCode = (code: string): code is AchievementCode => (
+  Object.prototype.hasOwnProperty.call(ACHIEVEMENT_CONFIG, code)
+);
 
 export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
   isOpen,
@@ -310,6 +325,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
   const [filamentName, setFilamentName] = useState('');
   const [filamentColorName, setFilamentColorName] = useState('');
   const [filamentColorHex, setFilamentColorHex] = useState('#FF0000');
+  const [draftHasColorEvidence, setDraftHasColorEvidence] = useState(false);
   const [filamentRalCode, setFilamentRalCode] = useState('');
   // Расширенные характеристики цвета для нового филамента
   const [filamentVisualColorType, setFilamentVisualColorType] = useState<'single' | 'two' | 'three' | 'gradient' | 'transition' | 'thermochromic'>('single');
@@ -361,19 +377,45 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
   
   const filamentDropdownRef = useRef<HTMLDivElement>(null);
   const brandDropdownRef = useRef<HTMLDivElement>(null);
+  const draftSuggestionsAppliedRef = useRef<number | null>(null);
   const queryClient = useQueryClient();
+  const achievementQueryKey = ['achievement-overview', user?.id] as const;
+  const { data: achievementBaseline } = useQuery({
+    queryKey: achievementQueryKey,
+    queryFn: achievementsAPI.getMine,
+    enabled: isOpen && !!user?.id,
+    staleTime: 60_000,
+  });
 
-  // Бренд пользователя — нужен, чтобы официальный статус разрешать только верифицированному бренду
-  const { data: ownBrandData } = useQuery({
-    queryKey: ['brand', user?.brand_id],
-    queryFn: () => brandsAPI.get(user!.brand_id!),
-    enabled: isOpen && !!user?.brand_id,
-  });
-  const { data: ownTerritories } = useQuery({
-    queryKey: ['brand-territories', user?.brand_id, user?.active_organization_id],
-    queryFn: () => brandsAPI.myTerritories(user!.brand_id!),
-    enabled: isOpen && !!user?.brand_id && !!user?.active_organization_id,
-  });
+  const refreshAchievements = async () => {
+    if (!user?.id) return;
+    try {
+      const next = await achievementsAPI.getMine();
+      queryClient.setQueryData<AchievementOverview>(achievementQueryKey, next);
+      if (!achievementBaseline) return;
+
+      const previousCodes = new Set(
+        achievementBaseline.achievements.map((achievement) => achievement.code),
+      );
+      const newlyEarned = next.achievements.filter(
+        (achievement) => !previousCodes.has(achievement.code) && isAchievementCode(achievement.code),
+      );
+      if (newlyEarned.length > 0) {
+        toast.success(
+          t('achievement.earned', {
+            names: newlyEarned
+              .map((achievement) => t(ACHIEVEMENT_CONFIG[achievement.code as AchievementCode].labelKey))
+              .join(', '),
+          }),
+          9000,
+        );
+      }
+    } catch {
+      // Achievement feedback must never interrupt publication.
+      queryClient.invalidateQueries({ queryKey: ['achievement-overview'] });
+    }
+  };
+
   const technicalFactsBrandId = brandId ?? selectedBrandId;
   const { data: technicalFactsTerritories } = useQuery({
     queryKey: ['brand-territories', technicalFactsBrandId, user?.active_organization_id],
@@ -384,13 +426,6 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
     user?.role === 'admin' || (technicalFactsTerritories?.territories?.length ?? 0) > 0,
   );
 
-  // Любой пользователь может создать пресет. Эта проверка управляет только
-  // отдельной отметкой «официальный» от имени верифицированного бренда.
-  const canCreateOfficial = allowOfficial
-    ?? (
-      user?.role === 'admin'
-      || (ownBrandData?.verified === true && ownTerritories?.can_edit_common === true)
-    );
   const shouldLoadFilamentsForSelection = Boolean(
     isOpen && (!preset || isDraft) && !filamentId && !showFilamentForm
   );
@@ -402,6 +437,64 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
     queryFn: () => filamentsAPI.get(preselectFilamentId!),
     enabled: isOpen && !!preselectFilamentId,
   });
+  const { data: draftAnalysis, isLoading: draftAnalysisLoading } = useQuery({
+    queryKey: ['preset-draft-analysis', preset?.id],
+    queryFn: () => presetsAPI.getDraftAnalysis(preset!.id),
+    enabled: isOpen && isDraft && !!preset?.id,
+  });
+  const trackedReviewOpenRef = useRef(false);
+  useEffect(() => {
+    if (!isOpen) {
+      trackedReviewOpenRef.current = false;
+      return;
+    }
+    if (!isDraft || trackedReviewOpenRef.current) return;
+    trackedReviewOpenRef.current = true;
+    void presetsAPI.recordDraftEvent('review_opened').catch(() => {
+      // Product metrics must never interrupt review or publication.
+    });
+  }, [isDraft, isOpen]);
+  const officialTargetBrandId = brandId
+    ?? selectedFilament?.brand_id
+    ?? selectedBrandId
+    ?? draftAnalysis?.brand_match?.id
+    ?? null;
+  const { data: officialTargetBrand } = useQuery({
+    queryKey: ['brand', officialTargetBrandId],
+    queryFn: () => brandsAPI.get(officialTargetBrandId!),
+    enabled: isOpen && officialTargetBrandId != null,
+  });
+  const { data: officialTargetTerritories } = useQuery({
+    queryKey: [
+      'brand-territories',
+      officialTargetBrandId,
+      user?.active_organization_id,
+    ],
+    queryFn: () => brandsAPI.myTerritories(officialTargetBrandId!),
+    enabled: isOpen
+      && officialTargetBrandId != null
+      && !!user?.active_organization_id,
+  });
+  // Любой пользователь может создать пресет. Официальная публикация относится
+  // к выбранному целевому бренду и активной Organization, а не к legacy user.brand_id.
+  const canOfferOfficial = allowOfficial ?? Boolean(
+    user?.role === 'admin'
+    || (
+      officialTargetBrand?.verified === true
+      && officialTargetTerritories?.can_edit_filament_common === true
+    )
+  );
+
+  useEffect(() => {
+    if (isOfficial && !canOfferOfficial) {
+      setIsOfficial(false);
+    }
+  }, [canOfferOfficial, isOfficial]);
+
+  useEffect(() => {
+    draftSuggestionsAppliedRef.current = null;
+    setDraftHasColorEvidence(false);
+  }, [isOpen, preset?.id]);
 
   // Загружаем материалы для выбора (если не передан filamentId И не создаем новый)
   const { data: filamentsData, error: filamentsError } = useQuery({
@@ -445,7 +538,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
   const filamentPriceCurrency = currencySymbol(
     currentBrandData?.currency
     || brandsData?.items.find((brand: Brand) => brand.id === selectedBrandId)?.currency
-    || ownBrandData?.currency,
+    || officialTargetBrand?.currency,
   );
 
   const uniqueSimilarFilaments = useMemo(() => {
@@ -753,28 +846,10 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
         setCompatiblePrintsCondition(textSetting('compatible_prints_condition'));
 
         if (isDraft && !preset.filament_id) {
-          const nozzleMin = readOrcaNumber(rawSettings, 'nozzle_temperature_range_low');
-          const nozzleMax = readOrcaNumber(rawSettings, 'nozzle_temperature_range_high');
-          const bedKeys = [
-            'bed_temperature',
-            'hot_plate_temp',
-            'cool_plate_temp',
-            'eng_plate_temp',
-            'textured_plate_temp',
-            'supertack_plate_temp',
-            'textured_cool_plate_temp',
-            'customized_plate_temp',
-            'epoxy_resin_plate_temp',
-          ];
-          const bedValues = bedKeys
-            .map((key) => readOrcaNumber(rawSettings, key))
-            .filter((value): value is number => value != null && value > 0);
-          setFilamentRecTemps({
-            nozzleMin,
-            nozzleMax,
-            bedMin: bedValues.length > 0 ? Math.min(...bedValues) : null,
-            bedMax: bedValues.length > 0 ? Math.max(...bedValues) : null,
-          });
+          // A personal recipe is not vendor packaging evidence. Keep its
+          // temperatures in the preset, but do not publish them as catalogue
+          // "recommended by vendor" facts.
+          setFilamentRecTemps(EMPTY_RECOMMENDED_TEMPS);
         }
         
         // showAdvancedSettings - устаревшая переменная, больше не используется (используем вкладки)
@@ -1195,9 +1270,80 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
     setShowFilamentDropdown(false);
     setShowFilamentForm(false);
     setError(null);
-    applyDefaultsByMaterialType(filament.material_type);
-    applyRecommendedTempsFromFilament(fullFilament);
+    if (!isDraft) {
+      applyDefaultsByMaterialType(filament.material_type);
+      applyRecommendedTempsFromFilament(fullFilament);
+    }
   };
+
+  useEffect(() => {
+    if (
+      !isOpen
+      || !isDraft
+      || !preset
+      || !draftAnalysis
+      || draftSuggestionsAppliedRef.current === preset.id
+    ) {
+      return;
+    }
+    draftSuggestionsAppliedRef.current = preset.id;
+
+    const suggestion = (field: string) => draftAnalysis.suggestions[field]?.value;
+    const suggestedExtruder = suggestion('extruder_temp');
+    const suggestedBed = suggestion('bed_temp');
+    if (typeof suggestedExtruder === 'number') setExtruderTemp(suggestedExtruder);
+    if (typeof suggestedBed === 'number') setBedTemp(suggestedBed);
+
+    const applyNewFilamentSuggestions = () => {
+      setShowFilamentForm(true);
+      if (draftAnalysis.brand_match) {
+        setSelectedBrandId(draftAnalysis.brand_match.id);
+        setBrandSearch(draftAnalysis.brand_match.name);
+        setShowBrandForm(false);
+      } else if (typeof suggestion('brand_name') === 'string') {
+        setBrandSearch(String(suggestion('brand_name')));
+        setNewBrandName(String(suggestion('brand_name')));
+        setShowBrandForm(true);
+      }
+      if (typeof suggestion('filament_name') === 'string') {
+        setFilamentName(String(suggestion('filament_name')));
+      }
+      if (typeof suggestion('material_type') === 'string') {
+        setMaterialType(String(suggestion('material_type')));
+      }
+      if (typeof suggestion('color_hex') === 'string') {
+        const color = String(suggestion('color_hex'));
+        setFilamentColorHex(color);
+        setFilamentVisualColors([color]);
+        setDraftHasColorEvidence(true);
+      }
+      if (typeof suggestion('diameter') === 'number') {
+        setFilamentDiameter(String(suggestion('diameter')));
+      }
+      if (typeof suggestion('density') === 'number') {
+        setFilamentDensity(Number(suggestion('density')));
+      }
+    };
+
+    const strongMatches = draftAnalysis.filament_matches.filter(
+      (match) => match.confidence === 'exact' || match.confidence === 'strong',
+    );
+    if (strongMatches.length === 1) {
+      const match = strongMatches[0];
+      void filamentsAPI.get(match.id).then((filament) => {
+        if (draftSuggestionsAppliedRef.current === preset.id) {
+          selectExistingFilament(filament);
+        }
+      }).catch(() => {
+        if (draftSuggestionsAppliedRef.current === preset.id) {
+          applyNewFilamentSuggestions();
+        }
+      });
+      return;
+    }
+
+    applyNewFilamentSuggestions();
+  }, [draftAnalysis, isDraft, isOpen, preset]);
 
   // Мутация для создания бренда
   const createBrandMutation = useMutation({
@@ -1328,6 +1474,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
   });
 
   const useExistingFilamentFromSuggestion = (suggestion: DuplicateFilamentSuggestion) => {
+    void presetsAPI.recordDraftEvent('duplicate_prevented').catch(() => undefined);
     selectExistingFilament({
       id: suggestion.id,
       name: suggestion.name,
@@ -1362,6 +1509,9 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
         queryClient.invalidateQueries({ queryKey: ['filament-presets'] });
       }
       queryClient.invalidateQueries({ queryKey: ['user-presets'] });
+      queryClient.invalidateQueries({ queryKey: ['preset-draft-queue'] });
+      queryClient.invalidateQueries({ queryKey: ['preset-stats'] });
+      void refreshAchievements();
       // Инвалидируем кэш пресетов бренда (если создавался из профиля бренда)
       if (brandId) {
         queryClient.invalidateQueries({ queryKey: ['brand-presets'] });
@@ -1393,6 +1543,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
         printer_ids?: number[];
         filament_id?: number | null;
         active?: boolean;
+        is_official?: boolean;
       }>
     }) => presetsAPI.update(id, data),
     onSuccess: (updatedPreset) => {
@@ -1405,9 +1556,32 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
         queryClient.invalidateQueries({ queryKey: ['filament-presets'] });
       }
       queryClient.invalidateQueries({ queryKey: ['user-presets'] });
+      queryClient.invalidateQueries({ queryKey: ['preset-draft-queue'] });
+      queryClient.invalidateQueries({ queryKey: ['preset-stats'] });
+      void refreshAchievements();
       // Инвалидируем кэш пресетов бренда (если редактировался из профиля бренда)
       if (brandId) {
         queryClient.invalidateQueries({ queryKey: ['brand-presets'] });
+      }
+      if (isDraft && updatedPreset.moderation_status === 'rejected') {
+        let detail: unknown = updatedPreset.moderation_reason;
+        try {
+          detail = updatedPreset.moderation_reason
+            ? JSON.parse(updatedPreset.moderation_reason)
+            : detail;
+        } catch {
+          // A legacy plain-text reason is still useful to the user.
+        }
+        setError(translateApiError(t, detail, t('presetModal.draftNeedsFix')));
+        return;
+      }
+      if (isDraft) {
+        toast.success(
+          updatedPreset.moderation_status === 'pending'
+            ? t('presetModal.draftSentForReview')
+            : t('presetModal.draftPublishedBenefit'),
+          8000,
+        );
       }
       onClose();
     },
@@ -1865,12 +2039,15 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
             }
           : undefined;
 
+        const acceptedFilamentColor = !isDraft || draftHasColorEvidence
+          ? filamentColorHex
+          : undefined;
         const newFilament = await createFilamentMutation.mutateAsync({
           brand_id: finalBrandId,
           name: filamentName,
           material_type: finalMaterialType,
           color_name: filamentColorName || undefined,
-          color_hex: filamentColorHex,
+          color_hex: acceptedFilamentColor,
           ral_code: filamentRalCode || undefined,
           visual_settings: visualSettings,
           additives: filamentAdditives,
@@ -1886,18 +2063,18 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
             bed_adhesives: parseBedAdhesives(filamentHandling.bedAdhesivesText),
             post_processing_chemicals: normalizeChemicalGuidance(filamentHandling.chemicals),
           } : {}),
-          price_per_kg: canCreateOfficial && filamentPricePerKg !== ''
+          price_per_kg: canOfferOfficial && filamentPricePerKg !== ''
             ? (filamentPriceUnit === 'per_spool' && Number(filamentSpoolWeight) > 0
                 ? (Number(filamentPricePerKg) * 1000) / Number(filamentSpoolWeight)
                 : Number(filamentPricePerKg))
             : undefined,
-          spool_weight: canCreateOfficial && filamentSpoolWeight !== '' ? Number(filamentSpoolWeight) : undefined,
-          recommended_nozzle_temp_min: filamentRecTemps.nozzleMin ?? undefined,
-          recommended_nozzle_temp_max: filamentRecTemps.nozzleMax ?? undefined,
-          recommended_bed_temp_min: filamentRecTemps.bedMin ?? undefined,
-          recommended_bed_temp_max: filamentRecTemps.bedMax ?? undefined,
+          spool_weight: canOfferOfficial && filamentSpoolWeight !== '' ? Number(filamentSpoolWeight) : undefined,
+          recommended_nozzle_temp_min: isDraft ? undefined : filamentRecTemps.nozzleMin ?? undefined,
+          recommended_nozzle_temp_max: isDraft ? undefined : filamentRecTemps.nozzleMax ?? undefined,
+          recommended_bed_temp_min: isDraft ? undefined : filamentRecTemps.bedMin ?? undefined,
+          recommended_bed_temp_max: isDraft ? undefined : filamentRecTemps.bedMax ?? undefined,
           required_nozzle_hrc: filamentNozzleHrc ?? undefined,
-          price_display_unit: canCreateOfficial ? filamentPriceUnit : undefined,
+          price_display_unit: canOfferOfficial ? filamentPriceUnit : undefined,
           description: filamentDescription.trim() || undefined,
         });
         // Валидация обязательных полей пресета
@@ -1909,7 +2086,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
         // Используем созданный филамент для пресета
         // Формируем JSON расширенных параметров из UI полей
         // Передаём цвет филамента для синхронизации с default_filament_colour
-        const orcaslicerSettings = buildOrcaslicerSettings(filamentColorHex);
+        const orcaslicerSettings = buildOrcaslicerSettings(acceptedFilamentColor);
         
         try {
           if (preset) {
@@ -1928,6 +2105,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
               printer_ids: number[];
               filament_id: number;
               active?: boolean;
+              is_official?: boolean;
             } = {
               name,
               description: description || undefined,
@@ -1935,6 +2113,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
               printer_ids: selectedPrinterIds.length > 0 ? selectedPrinterIds : [],
               filament_id: newFilament.id,
               active: isDraft ? true : undefined,
+              is_official: isDraft ? isOfficial : undefined,
             };
             if (preset.extruder_temp !== extruderTemp) updateData.extruder_temp = extruderTemp;
             if (preset.bed_temp !== bedTemp) updateData.bed_temp = bedTemp;
@@ -2014,6 +2193,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
         printer_ids: number[];
         filament_id?: number;
         active?: boolean;
+        is_official?: boolean;
       } = {
         name,
         description: description || undefined,
@@ -2031,6 +2211,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
       if (isDraft && selectedFilamentId) {
         updateData.filament_id = selectedFilamentId;
         updateData.active = true;
+        updateData.is_official = isOfficial;
       }
       
       updateMutation.mutate({
@@ -2086,6 +2267,28 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
           ? t('presetModal.hints.selectFilamentToContinue')
           : null
     : null;
+  const draftReviewFacts = draftAnalysis
+    ? [
+        ['brand_name', t('presetModal.review.brand')],
+        ['material_type', t('presetModal.review.material')],
+        ['diameter', t('presetModal.review.diameter')],
+        ['color_hex', t('presetModal.review.color')],
+      ]
+        .map(([field, label]) => ({
+          field,
+          label,
+          suggestion: draftAnalysis.suggestions[field],
+        }))
+        .filter((item) => item.suggestion?.direct)
+        .slice(0, 4)
+    : [];
+  const draftSuggestionCount = draftAnalysis?.suggested_fields.length ?? 0;
+  const draftMatchChoices = draftAnalysis?.filament_matches
+    .filter((match) => match.confidence === 'exact' || match.confidence === 'strong')
+    .slice(0, 3) ?? [];
+  const draftDecisions = draftAnalysis
+    ? [...draftAnalysis.preset_decisions, ...draftAnalysis.catalog_decisions]
+    : [];
 
   if (!isOpen) return null;
 
@@ -2143,6 +2346,121 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
 
           {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-6">
+          {isDraft && (
+            <div className="rounded-xl border border-cyan-400/25 bg-cyan-500/10 p-4">
+              <div className="flex items-start gap-3">
+                {draftAnalysisLoading ? (
+                  <Loader2 className="mt-0.5 h-5 w-5 shrink-0 animate-spin text-cyan-300" />
+                ) : (
+                  <Sparkles className="mt-0.5 h-5 w-5 shrink-0 text-cyan-300" />
+                )}
+                <div className="min-w-0 flex-1">
+                  <p className="font-semibold text-white">{t('presetModal.review.title')}</p>
+                  <p className="mt-1 text-sm leading-5 text-gray-300">
+                    {t('presetModal.review.description')}
+                  </p>
+                  {draftAnalysis && (
+                    <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                      <div className="rounded-lg border border-white/10 bg-black/15 px-3 py-2">
+                        <div className="flex items-center justify-between gap-3 text-xs text-gray-300">
+                          <span>{t('presetModal.review.presetReadiness')}</span>
+                          <strong className="tabular-nums text-white">
+                            {draftAnalysis.preset_readiness_percent}%
+                          </strong>
+                        </div>
+                        <p className="mt-1 text-[11px] text-gray-400">
+                          {t('presetModal.review.technicalSettingsSaved', {
+                            count: draftAnalysis.technical_settings_count,
+                          })}
+                        </p>
+                      </div>
+                      <div className="rounded-lg border border-white/10 bg-black/15 px-3 py-2">
+                        <div className="flex items-center justify-between gap-3 text-xs text-gray-300">
+                          <span>{t('presetModal.review.catalogReadiness')}</span>
+                          <strong className="tabular-nums text-white">
+                            {draftAnalysis.catalog_readiness_percent}%
+                          </strong>
+                        </div>
+                        <p className="mt-1 text-[11px] text-gray-400">
+                          {draftDecisions.length > 0
+                            ? t('presetModal.review.decisionsRemaining', { count: draftDecisions.length })
+                            : t('presetModal.review.noDecisionsRemaining')}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                  {draftDecisions.length > 0 && (
+                    <div className="mt-3 rounded-lg border border-amber-300/15 bg-amber-400/[0.06] px-3 py-2">
+                      <p className="text-xs font-medium text-amber-100">
+                        {t('presetModal.review.importantDecisions')}
+                      </p>
+                      <ul className="mt-1 space-y-0.5 text-xs text-gray-300">
+                        {draftDecisions.slice(0, 3).map((decision) => (
+                          <li key={decision}>• {t(`presetModal.review.decisions.${decision}`)}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {(draftAnalysis?.similar_import_users ?? 0) >= 3 && (
+                    <p className="mt-3 text-xs text-cyan-100/80">
+                      {t('presetModal.review.similarImports', {
+                        count: draftAnalysis?.similar_import_users ?? 0,
+                      })}
+                    </p>
+                  )}
+                  {draftReviewFacts.length > 0 && (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {draftReviewFacts.map(({ field, label, suggestion }) => (
+                        <span
+                          key={field}
+                          className="rounded-lg border border-cyan-300/20 bg-black/15 px-2.5 py-1 text-xs text-cyan-100"
+                          title={t('presetModal.review.fromOrca')}
+                        >
+                          {label}: {String(suggestion.value)}
+                        </span>
+                      ))}
+                      {draftSuggestionCount > 0 && (
+                        <span className="rounded-lg border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-gray-300">
+                          {t('presetModal.review.fhSuggestions', { count: draftSuggestionCount })}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                  {draftMatchChoices.length > 1 && !selectedFilamentId && (
+                    <div className="mt-3">
+                      <p className="mb-2 text-xs font-medium text-gray-300">
+                        {t('presetModal.review.chooseCatalogMatch')}
+                      </p>
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        {draftMatchChoices.map((match) => (
+                          <button
+                            key={match.id}
+                            type="button"
+                            onClick={() => {
+                              void filamentsAPI.get(match.id).then(selectExistingFilament);
+                            }}
+                            className="rounded-lg border border-white/15 bg-black/15 px-3 py-2 text-left transition-colors hover:border-cyan-300/40 hover:bg-cyan-400/10"
+                          >
+                            <span className="block truncate text-sm font-medium text-white">
+                              {match.name}
+                            </span>
+                            <span className="mt-0.5 block truncate text-xs text-gray-400">
+                              {[match.material_type, match.color_name].filter(Boolean).join(' · ')}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  <p className="mt-2 text-xs text-gray-400">
+                    {draftAnalysis?.evidence_kind === 'stored_snapshot'
+                      ? t('presetModal.review.storedEvidence')
+                      : t('presetModal.review.evidencePreserved')}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
           {/* Отображение филамента при редактировании (только если не черновик) */}
           {preset && editingFilament && !isDraft && (
             <div>
@@ -2474,7 +2792,10 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                     colorName={filamentColorName}
                     onColorNameChange={setFilamentColorName}
                     colorHex={filamentColorHex}
-                    onColorHexChange={setFilamentColorHex}
+                    onColorHexChange={(value) => {
+                      setFilamentColorHex(value);
+                      setDraftHasColorEvidence(true);
+                    }}
                     ralCode={filamentRalCode}
                     onRalCodeChange={setFilamentRalCode}
                     visualSettings={
@@ -2611,6 +2932,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                                         if (idx === 0) {
                                           isInternalColorChangeRef.current = true; // Помечаем как внутреннее изменение
                                           setFilamentColorHex(hex);
+                                          setDraftHasColorEvidence(true);
                                         }
                                       }}
                                       onToggle={(isOpen) => {
@@ -2632,6 +2954,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                                       if (idx === 0) {
                                         isInternalColorChangeRef.current = true;
                                         setFilamentColorHex(hex);
+                                        setDraftHasColorEvidence(true);
                                       }
                                     }}
                                     placeholder="#FF0000"
@@ -2686,7 +3009,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                           onAdditivesChange={setFilamentAdditives}
                           propertyClaims={filamentPropertyClaims}
                           onPropertyClaimsChange={setFilamentPropertyClaims}
-                          allowCustom={canCreateOfficial}
+                          allowCustom={canOfferOfficial}
                           compact
                         />
                         </div>
@@ -2720,7 +3043,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                   )}
 
                   {/* Ценовые характеристики - только для производителей */}
-                  {canCreateOfficial && (
+                  {canOfferOfficial && (
                     <div className="grid grid-cols-2 gap-4">
                       <div>
                         <div className="flex items-center justify-between mb-2 gap-2">
@@ -2885,7 +3208,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
           </div>
 
           {/* Сам пресет доступен всем; официальный статус выбирается отдельно. */}
-          {!preset && canCreateOfficial && (
+          {(!preset || isDraft) && canOfferOfficial && (
             <div className="flex items-center space-x-2">
               <input
                 type="checkbox"
@@ -2901,7 +3224,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
           )}
           
           {/* Информация показывается только когда выбран официальный статус. */}
-          {!preset && brandId && isOfficial && (
+          {(!preset || isDraft) && isOfficial && (
             <div className="flex items-center space-x-2 p-3 bg-green-500/20 border border-green-500/30 rounded-xl">
               <CheckCircle className="w-5 h-5 text-green-400" />
               <span className="text-green-300 text-sm">
@@ -4938,8 +5261,14 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                   </>
                 ) : (
                   <>
-                    <Save className="w-4 h-4" />
-                    <span>{preset ? t('presetModal.save') : t('presetModal.create')}</span>
+                    {isDraft ? <Sparkles className="w-4 h-4" /> : <Save className="w-4 h-4" />}
+                    <span>
+                      {isDraft
+                        ? t('presetModal.review.publish')
+                        : preset
+                          ? t('presetModal.save')
+                          : t('presetModal.create')}
+                    </span>
                   </>
                 )}
               </button>
