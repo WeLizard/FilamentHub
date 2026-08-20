@@ -28,7 +28,6 @@ import {
   Cog,
   ChevronDown,
   ChevronUp,
-  ChevronRight,
   CheckCircle,
   HelpCircle,
   X,
@@ -88,10 +87,11 @@ const CreatePrinterProfileModal = lazy(() =>
 );
 import { CreatePrintProfileModal } from '../components/CreatePrintProfileModal';
 import { PresetSyncToggle } from '../components/PresetSyncToggle';
-import { AchievementBadge, ACHIEVEMENT_CONFIG, Badge, BADGE_CONFIG, type BadgeType } from '../components/Badge';
+import { BADGE_CONFIG, type BadgeType } from '../components/Badge';
+import { AchievementShowcase } from '../components/AchievementShowcase';
 import { PresetSlotsPanel } from '../components/presetSlots/PresetSlotsPanel';
 import { SpoolUsageModal } from '../components/SpoolUsageModal';
-import type { AchievementCode, Preset, PresetDraftAnalysis, PrinterProfile, PrintProfile, Filament, UserAchievement } from '../types/api';
+import type { Preset, PresetDraftAnalysis, PrinterProfile, PrintProfile, Filament } from '../types/api';
 import { formatDate, formatDateTime as formatLocalDateTime } from '../utils/formatDate';
 
 const BrandProfilePage = lazy(() => import('./BrandProfilePage').then((module) => ({ default: module.BrandProfilePage })));
@@ -117,7 +117,6 @@ const PROFILE_TABS = [
 ] as const;
 type ProfileTab = (typeof PROFILE_TABS)[number];
 
-const PROFILE_BADGE_LIMIT = 3;
 const PROFILE_BADGE_PRIORITY: BadgeType[] = [
   'verified',
   'founder',
@@ -233,7 +232,6 @@ export const ProfilePage: React.FC = () => {
     () => profileSearchParams.get('add_spool') === '1' && spoolIntakeFilamentId !== null,
   );
   const [showHelpModal, setShowHelpModal] = useState(false);
-  const [showAchievementsModal, setShowAchievementsModal] = useState(false);
   const [isCreatePresetModalOpen, setIsCreatePresetModalOpen] = useState(false);
   const [isViewPresetModalOpen, setIsViewPresetModalOpen] = useState(false);
   const [isCreatePrinterRequestModalOpen, setIsCreatePrinterRequestModalOpen] = useState(false);
@@ -342,63 +340,10 @@ export const ProfilePage: React.FC = () => {
   }, [profileBadges]);
   const achievementOverviewQuery = useQuery({
     queryKey: ['achievement-overview', user?.id],
-    queryFn: achievementsAPI.getMine,
+    queryFn: achievementsAPI.evaluateMine,
     enabled: !!user?.id,
     staleTime: 60_000,
   });
-  const earnedAchievements = useMemo(() => (
-    (achievementOverviewQuery.data?.achievements ?? []).filter(
-      (achievement): achievement is UserAchievement & { code: AchievementCode } => (
-        Object.prototype.hasOwnProperty.call(ACHIEVEMENT_CONFIG, achievement.code)
-      ),
-    )
-  ), [achievementOverviewQuery.data?.achievements]);
-  const visibleAchievements = earnedAchievements.slice(0, PROFILE_BADGE_LIMIT);
-  const visibleProfileBadges = prioritizedProfileBadges.slice(
-    0,
-    Math.max(0, PROFILE_BADGE_LIMIT - visibleAchievements.length),
-  );
-  const achievementCount = earnedAchievements.length + prioritizedProfileBadges.length;
-
-  const renderAchievementsTray = () => (
-    <button
-      type="button"
-      onClick={() => setShowAchievementsModal(true)}
-      className="group relative inline-flex max-w-full items-center gap-1 overflow-visible rounded-full border border-white/[0.07] bg-black/[0.14] px-1.5 py-1 text-left shadow-sm shadow-black/10 transition-all duration-200 hover:border-purple-300/20 hover:bg-purple-950/25 hover:shadow-[0_0_22px] hover:shadow-purple-500/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-400/50"
-      aria-label={t('profilePage.openAchievements')}
-      title={t('profilePage.openAchievements')}
-    >
-      <span className="pointer-events-none absolute inset-0 rounded-full bg-gradient-to-r from-purple-400/[0.055] via-pink-400/[0.035] to-cyan-300/[0.025] opacity-20 transition-opacity duration-200 group-hover:opacity-100" />
-      {visibleAchievements.map((achievement) => (
-        <span
-          key={achievement.code}
-          className="group/badge relative flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-white/[0.06] bg-white/[0.035] opacity-80 transition-opacity group-hover:opacity-100"
-          title={t(ACHIEVEMENT_CONFIG[achievement.code].titleKey)}
-        >
-          <AchievementBadge code={achievement.code} size="sm" />
-          <span className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 -translate-x-1/2 translate-y-1 scale-95 whitespace-nowrap rounded-lg border border-white/10 bg-slate-950/95 px-2 py-1 text-[11px] font-medium text-gray-200 opacity-0 shadow-lg shadow-black/30 transition-all duration-150 group-hover/badge:translate-y-0 group-hover/badge:scale-100 group-hover/badge:opacity-100">
-            {t(ACHIEVEMENT_CONFIG[achievement.code].labelKey)}
-          </span>
-        </span>
-      ))}
-      {visibleProfileBadges.map((badge) => (
-        <span
-          key={badge}
-          className="group/badge relative flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-white/[0.06] bg-white/[0.035] opacity-70 transition-opacity group-hover:opacity-95"
-          title={t(BADGE_CONFIG[badge].titleKey)}
-        >
-          <Badge type={badge} size="sm" />
-          <span className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 -translate-x-1/2 translate-y-1 scale-95 whitespace-nowrap rounded-lg border border-white/10 bg-slate-950/95 px-2 py-1 text-[11px] font-medium text-gray-200 opacity-0 shadow-lg shadow-black/30 transition-all duration-150 group-hover/badge:translate-y-0 group-hover/badge:scale-100 group-hover/badge:opacity-100">
-            {t(BADGE_CONFIG[badge].labelKey)}
-          </span>
-        </span>
-      ))}
-      <span className="relative ml-0.5 flex min-w-0 items-center gap-0.5 border-l border-white/[0.06] pl-1.5 text-[11px] font-medium text-gray-500 transition-colors group-hover:text-gray-300">
-        <span>{achievementCount}</span>
-        <ChevronRight className="h-3 w-3 shrink-0 transition-transform group-hover:translate-x-0.5" />
-      </span>
-    </button>
-  );
 
   // Загружаем все пресеты пользователя (активные + черновики)
   const { data: userPresetsData } = useQuery({
@@ -1039,18 +984,22 @@ export const ProfilePage: React.FC = () => {
                 {identityLine && (
                   <p className="text-xs md:text-sm text-gray-400 truncate">{identityLine}</p>
                 )}
-                {profileBadges.length > 0 && (
-                  <div className="mt-2 hidden max-w-full sm:block">
-                    {renderAchievementsTray()}
-                  </div>
-                )}
+                <div className="mt-2 hidden max-w-full sm:block">
+                  <AchievementShowcase
+                    overview={achievementOverviewQuery.data}
+                    profileBadges={prioritizedProfileBadges}
+                    isHeaderVisible={isHeaderVisible}
+                  />
+                </div>
               </div>
             </div>
-            {profileBadges.length > 0 && (
-              <div className="mt-3 w-full sm:hidden">
-                {renderAchievementsTray()}
-              </div>
-            )}
+            <div className="mt-3 w-full sm:hidden">
+              <AchievementShowcase
+                overview={achievementOverviewQuery.data}
+                profileBadges={prioritizedProfileBadges}
+                isHeaderVisible={isHeaderVisible}
+              />
+            </div>
           </div>
         </div>
 
@@ -1834,96 +1783,6 @@ export const ProfilePage: React.FC = () => {
         profile={editingPrintProfile}
         printerProfileContext={createPrintProfileContext}
       />
-
-      {showAchievementsModal && (
-        <ModalOverlay onClose={() => setShowAchievementsModal(false)}>
-          <div
-            className={`mx-4 flex w-full max-w-2xl flex-col overflow-hidden rounded-3xl border border-white/15 bg-gradient-to-br from-slate-950 via-purple-950/95 to-slate-950 shadow-[0_28px_100px_rgba(76,29,149,0.38)] ${
-              isHeaderVisible ? 'max-h-[calc(100vh-100px)]' : 'max-h-[90vh]'
-            }`}
-          >
-            <div className="relative overflow-hidden border-b border-white/10 px-5 py-5 sm:px-7">
-              <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(168,85,247,0.28),transparent_42%),radial-gradient(circle_at_top_right,rgba(236,72,153,0.18),transparent_38%)]" />
-              <div className="relative flex items-start justify-between gap-4">
-                <div>
-                  <div className="mb-2 flex items-center gap-2">
-                    <Star className="h-5 w-5 text-amber-300" />
-                    <span className="rounded-full border border-white/10 bg-white/8 px-2.5 py-1 text-xs font-semibold text-purple-100">
-                      {t('profilePage.achievementCount', { count: achievementCount })}
-                    </span>
-                  </div>
-                  <h2 className="text-xl font-bold text-white sm:text-2xl">{t('profilePage.achievements')}</h2>
-                  <p className="mt-1 max-w-xl text-sm leading-6 text-gray-300">
-                    {t('profilePage.achievementsDescription')}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setShowAchievementsModal(false)}
-                  className="shrink-0 rounded-xl p-2 text-gray-400 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-400/70"
-                  aria-label={t('common.close')}
-                >
-                  <X className="h-5 w-5" />
-                </button>
-              </div>
-            </div>
-
-            <div className="grid gap-3 overflow-y-auto p-5 sm:grid-cols-2 sm:p-7">
-              {earnedAchievements.map((achievement) => {
-                const config = ACHIEVEMENT_CONFIG[achievement.code];
-                return (
-                  <div
-                    key={achievement.code}
-                    className="group flex min-w-0 items-center gap-4 rounded-2xl border border-cyan-300/15 bg-cyan-300/[0.055] p-4 transition-colors hover:border-cyan-200/30 hover:bg-cyan-300/[0.08]"
-                  >
-                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-black/25 shadow-[0_0_22px_rgba(34,211,238,0.13)]">
-                      <AchievementBadge code={achievement.code} size="lg" />
-                    </div>
-                    <div className="min-w-0">
-                      <h3 className="truncate font-semibold text-white">{t(config.labelKey)}</h3>
-                      <p className="mt-1 text-sm leading-5 text-gray-300">{t(config.titleKey)}</p>
-                      <p className="mt-1 text-xs text-gray-500">{formatDate(achievement.earned_at)}</p>
-                    </div>
-                  </div>
-                );
-              })}
-              {prioritizedProfileBadges.map((badge) => {
-                const config = BADGE_CONFIG[badge];
-                return (
-                  <div
-                    key={badge}
-                    className="group flex min-w-0 items-center gap-4 rounded-2xl border border-white/10 bg-white/5 p-4 transition-colors hover:border-purple-300/25 hover:bg-white/8"
-                  >
-                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-black/25 shadow-[0_0_22px_rgba(168,85,247,0.13)]">
-                      <Badge type={badge} size="lg" />
-                    </div>
-                    <div className="min-w-0">
-                      <h3 className="truncate font-semibold text-white">{t(config.labelKey)}</h3>
-                      <p className="mt-1 text-sm leading-5 text-gray-400">{t(config.titleKey)}</p>
-                    </div>
-                  </div>
-                );
-              })}
-              {achievementOverviewQuery.data && (
-                <div className="sm:col-span-2 grid grid-cols-1 gap-2 rounded-2xl border border-white/10 bg-black/15 p-4 sm:grid-cols-3">
-                  <div>
-                    <p className="text-xl font-bold text-white">{achievementOverviewQuery.data.published_presets}</p>
-                    <p className="text-xs text-gray-400">{t('profilePage.contributionStats.publishedPresets')}</p>
-                  </div>
-                  <div>
-                    <p className="text-xl font-bold text-white">{achievementOverviewQuery.data.saved_by_other_users}</p>
-                    <p className="text-xs text-gray-400">{t('profilePage.contributionStats.savedByOthers')}</p>
-                  </div>
-                  <div>
-                    <p className="text-xl font-bold text-white">{achievementOverviewQuery.data.confirmed_uses_by_other_users}</p>
-                    <p className="text-xs text-gray-400">{t('profilePage.contributionStats.confirmedUses')}</p>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </ModalOverlay>
-      )}
 
       {/* Help Modal */}
       {showHelpModal && (

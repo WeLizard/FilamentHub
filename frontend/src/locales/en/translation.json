@@ -2464,7 +2464,35 @@
     },
     "presetUsedByAnother": {
       "label": "Calibration paid off",
-      "title": "Another user imported your published preset for the first time."
+      "title": "Another user confirmed a print with your published preset for the first time."
+    },
+    "firstHundred": {
+      "label": "First hundred",
+      "title": "Be among the first 100 registered users."
+    },
+    "presetPublisher5": {
+      "label": "Tuner",
+      "title": "Publish 5 fully completed presets."
+    },
+    "presetsUsedBy10": {
+      "label": "Helped makers print",
+      "title": "Have your presets confirmed in use by 10 other users."
+    },
+    "spoolCollector20": {
+      "label": "The cobbler has shoes",
+      "title": "Add 20 physical spools. FilamentHub is finally being used as intended."
+    },
+    "spoolCollector100": {
+      "label": "Definitely the last spool",
+      "title": "Add 100 physical spools to your collection."
+    },
+    "happyHareConnected": {
+      "label": "Hare found",
+      "title": "Connect Happy Hare."
+    },
+    "firstWikiArticle": {
+      "label": "Chronicler",
+      "title": "Publish your first Wiki article."
     }
   },
   "deleteAccount": {
@@ -3107,7 +3135,27 @@
     "achievements": "Achievements",
     "openAchievements": "View badges and achievements",
     "achievementCount": "{{count}} earned",
-    "achievementsDescription": "Your current FilamentHub badges and roles. This collection will grow with your contributions and activity.",
+    "newAchievementCount": "{{count}} new",
+    "achievementsDescription": "Not points for clicks, but a history of useful contributions and real FilamentHub use.",
+    "nextAchievements": "Next goals",
+    "earnedAchievements": "Earned achievements",
+    "noAchievementsYet": "Your first achievement will appear here once FilamentHub can confirm a useful result.",
+    "profileBadges": "Profile badges",
+    "profileBadgesDescription": "Separate roles and marks granted by the project team. They do not replace automatically verified achievements.",
+    "contributorRoles": {
+      "catalog_contributor": "Catalog contributor",
+      "preset_author": "Preset author",
+      "hardware_integrator": "Hardware integrator",
+      "wiki_contributor": "Wiki contributor",
+      "collector": "Collector"
+    },
+    "achievementRarity": {
+      "common": "Common",
+      "uncommon": "Uncommon",
+      "rare": "Rare",
+      "historic": "Historic",
+      "secret": "Secret"
+    },
     "contributionStats": {
       "publishedPresets": "Profiles published",
       "savedByOthers": "Saved by other users",

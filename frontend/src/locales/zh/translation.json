@@ -2459,7 +2459,35 @@
     },
     "presetUsedByAnother": {
       "label": "校准没有白费",
-      "title": "另一位用户首次导入了你发布的预设。"
+      "title": "另一位用户首次确认使用你发布的预设完成打印。"
+    },
+    "firstHundred": {
+      "label": "最初一百人",
+      "title": "成为最早注册的 100 位用户之一。"
+    },
+    "presetPublisher5": {
+      "label": "调校师",
+      "title": "发布 5 个完整填写的预设。"
+    },
+    "presetsUsedBy10": {
+      "label": "帮助大家打印",
+      "title": "让 10 位其他用户确认使用了你的预设。"
+    },
+    "spoolCollector20": {
+      "label": "鞋匠终于有鞋了",
+      "title": "添加 20 卷实体耗材。FilamentHub 终于被用在了正确的地方。"
+    },
+    "spoolCollector100": {
+      "label": "这绝对是最后一卷",
+      "title": "在收藏中添加 100 卷实体耗材。"
+    },
+    "happyHareConnected": {
+      "label": "找到兔子了",
+      "title": "连接 Happy Hare。"
+    },
+    "firstWikiArticle": {
+      "label": "编年史家",
+      "title": "发布第一篇 Wiki 文章。"
     }
   },
   "deleteAccount": {
@@ -3102,7 +3130,27 @@
     "achievements": "成就",
     "openAchievements": "查看徽章和成就",
     "achievementCount": "已获得 {{count}} 个",
-    "achievementsDescription": "您当前在 FilamentHub 中的徽章和角色。此收藏将随着您的贡献和活动不断增加。",
+    "newAchievementCount": "新获得 {{count}} 个",
+    "achievementsDescription": "这里记录的不是点击积分，而是有用贡献和真实使用 FilamentHub 的历史。",
+    "nextAchievements": "下一个目标",
+    "earnedAchievements": "已获得的成就",
+    "noAchievementsYet": "当 FilamentHub 能确认一个有用结果后，你的第一个成就会出现在这里。",
+    "profileBadges": "个人资料徽章",
+    "profileBadgesDescription": "这些是项目团队授予的独立角色和标记，不会替代自动验证的成就。",
+    "contributorRoles": {
+      "catalog_contributor": "目录贡献者",
+      "preset_author": "预设作者",
+      "hardware_integrator": "硬件集成者",
+      "wiki_contributor": "Wiki 贡献者",
+      "collector": "收藏者"
+    },
+    "achievementRarity": {
+      "common": "普通",
+      "uncommon": "优秀",
+      "rare": "稀有",
+      "historic": "历史限定",
+      "secret": "隐藏"
+    },
     "contributionStats": {
       "publishedPresets": "已发布配置",
       "savedByOthers": "被其他用户保存",

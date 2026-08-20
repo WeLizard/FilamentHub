@@ -1208,6 +1208,10 @@ export const achievementsAPI = {
     const response = await api.get<import('../types/api').AchievementOverview>('/achievements/me');
     return response.data;
   },
+  evaluateMine: async () => {
+    const response = await api.post<import('../types/api').AchievementOverview>('/achievements/me/evaluate');
+    return response.data;
+  },
 };
 
 // Saved Presets API

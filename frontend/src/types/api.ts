@@ -640,16 +640,55 @@ export interface PresetDraftQueue {
 
 export type AchievementCode =
   | 'first_catalog_contribution'
+  | 'first_hundred'
   | 'first_profile'
-  | 'preset_used_by_another';
+  | 'preset_publisher_5'
+  | 'preset_used_by_another'
+  | 'presets_used_by_10'
+  | 'spool_collector_20'
+  | 'spool_collector_100'
+  | 'happy_hare_connected'
+  | 'first_wiki_article';
+
+export type AchievementCategory =
+  | 'history'
+  | 'catalog'
+  | 'presets'
+  | 'inventory'
+  | 'integrations'
+  | 'wiki'
+  | 'legacy';
+
+export type AchievementRarity = 'common' | 'uncommon' | 'rare' | 'historic' | 'secret';
+
+export type ContributorRole =
+  | 'catalog_contributor'
+  | 'preset_author'
+  | 'hardware_integrator'
+  | 'wiki_contributor'
+  | 'collector';
 
 export interface UserAchievement {
   code: AchievementCode | string;
   earned_at: string;
+  category: AchievementCategory | string;
+  rarity: AchievementRarity | string;
+  hidden: boolean;
+}
+
+export interface AchievementProgress {
+  code: AchievementCode | string;
+  category: AchievementCategory | string;
+  rarity: AchievementRarity | string;
+  current: number;
+  target: number;
 }
 
 export interface AchievementOverview {
   achievements: UserAchievement[];
+  next_achievements: AchievementProgress[];
+  newly_earned: string[];
+  contributor_roles: ContributorRole[];
   published_presets: number;
   saved_by_other_users: number;
   confirmed_uses_by_other_users: number;

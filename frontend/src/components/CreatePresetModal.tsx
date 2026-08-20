@@ -380,7 +380,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
   const draftSuggestionsAppliedRef = useRef<number | null>(null);
   const queryClient = useQueryClient();
   const achievementQueryKey = ['achievement-overview', user?.id] as const;
-  const { data: achievementBaseline } = useQuery({
+  useQuery({
     queryKey: achievementQueryKey,
     queryFn: achievementsAPI.getMine,
     enabled: isOpen && !!user?.id,
@@ -390,21 +390,17 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
   const refreshAchievements = async () => {
     if (!user?.id) return;
     try {
-      const next = await achievementsAPI.getMine();
-      queryClient.setQueryData<AchievementOverview>(achievementQueryKey, next);
-      if (!achievementBaseline) return;
-
-      const previousCodes = new Set(
-        achievementBaseline.achievements.map((achievement) => achievement.code),
-      );
-      const newlyEarned = next.achievements.filter(
-        (achievement) => !previousCodes.has(achievement.code) && isAchievementCode(achievement.code),
-      );
+      const next = await achievementsAPI.evaluateMine();
+      queryClient.setQueryData<AchievementOverview>(achievementQueryKey, {
+        ...next,
+        newly_earned: [],
+      });
+      const newlyEarned = next.newly_earned.filter(isAchievementCode);
       if (newlyEarned.length > 0) {
         toast.success(
           t('achievement.earned', {
             names: newlyEarned
-              .map((achievement) => t(ACHIEVEMENT_CONFIG[achievement.code as AchievementCode].labelKey))
+              .map((code) => t(ACHIEVEMENT_CONFIG[code].labelKey))
               .join(', '),
           }),
           9000,

@@ -2631,7 +2631,35 @@
     },
     "presetUsedByAnother": {
       "label": "Не зря калибровал",
-      "title": "Другой пользователь впервые импортировал опубликованный preset."
+      "title": "Другой пользователь впервые подтвердил печать с опубликованным preset."
+    },
+    "firstHundred": {
+      "label": "Первые сто",
+      "title": "Войти в первые 100 зарегистрированных пользователей."
+    },
+    "presetPublisher5": {
+      "label": "Настройщик",
+      "title": "Опубликовать 5 полноценно заполненных presets."
+    },
+    "presetsUsedBy10": {
+      "label": "Помог печатникам",
+      "title": "Presets автора подтверждённо использовали 10 других пользователей."
+    },
+    "spoolCollector20": {
+      "label": "Сапожник с сапогами",
+      "title": "Добавить 20 физических катушек. FilamentHub наконец-то используется по назначению."
+    },
+    "spoolCollector100": {
+      "label": "Это точно последняя катушка",
+      "title": "Добавить 100 физических катушек в свою коллекцию."
+    },
+    "happyHareConnected": {
+      "label": "Заяц найден",
+      "title": "Подключить Happy Hare."
+    },
+    "firstWikiArticle": {
+      "label": "Летописец",
+      "title": "Опубликовать первую Wiki-статью."
     }
   },
   "deleteAccount": {
@@ -2697,7 +2725,27 @@
     "achievements": "Достижения",
     "openAchievements": "Посмотреть ачивки и достижения",
     "achievementCount": "Получено: {{count}}",
-    "achievementsDescription": "Ваши текущие ачивки и роли в FilamentHub. Коллекция будет пополняться вместе с вашим вкладом и активностью.",
+    "newAchievementCount": "Новых: {{count}}",
+    "achievementsDescription": "Не очки за клики, а история полезного вклада и реального использования FilamentHub.",
+    "nextAchievements": "Ближайшие цели",
+    "earnedAchievements": "Полученные достижения",
+    "noAchievementsYet": "Первое достижение появится здесь, когда FilamentHub сможет подтвердить полезный результат.",
+    "profileBadges": "Знаки профиля",
+    "profileBadgesDescription": "Отдельные роли и знаки, выданные командой проекта. Они не заменяют автоматически подтверждённые достижения.",
+    "contributorRoles": {
+      "catalog_contributor": "Участник каталога",
+      "preset_author": "Автор presets",
+      "hardware_integrator": "Интегратор оборудования",
+      "wiki_contributor": "Автор Wiki",
+      "collector": "Коллекционер"
+    },
+    "achievementRarity": {
+      "common": "Обычное",
+      "uncommon": "Необычное",
+      "rare": "Редкое",
+      "historic": "Историческое",
+      "secret": "Секретное"
+    },
     "contributionStats": {
       "publishedPresets": "Опубликовано профилей",
       "savedByOthers": "Сохранили другие пользователи",
