@@ -58,6 +58,12 @@ describe('AchievementShowcase', () => {
     expect(screen.getAllByText('achievement.firstProfile.label')).toHaveLength(2);
     expect(screen.getByText('profilePage.profileBadges')).toBeTruthy();
     expect(screen.getAllByText('badge.verified.label')).toHaveLength(2);
-    expect(screen.getByText('profilePage.contributorRoles.preset_author')).toBeTruthy();
+    expect(screen.queryByText('profilePage.contributorRoles.preset_author')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'common.close' }));
+    expect(screen.queryByText('+1')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'profilePage.openAchievements' }));
+    expect(screen.queryByText('profilePage.newAchievementCount:1')).toBeNull();
   });
 });

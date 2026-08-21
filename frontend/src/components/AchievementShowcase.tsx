@@ -72,6 +72,12 @@ export function AchievementShowcase({
 }: AchievementShowcaseProps) {
   const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
+  const [viewedAchievementCodes, setViewedAchievementCodes] = useState<Set<AchievementCode>>(
+    () => new Set(),
+  );
+  const [openedNewAchievementCodes, setOpenedNewAchievementCodes] = useState<Set<AchievementCode>>(
+    () => new Set(),
+  );
   const achievements = useMemo(
     () => (overview?.achievements ?? []).filter(knownAchievement),
     [overview?.achievements],
@@ -84,18 +90,27 @@ export function AchievementShowcase({
     () => new Set((overview?.newly_earned ?? []).filter(isAchievementCode)),
     [overview?.newly_earned],
   );
+  const unseenAchievementCodes = useMemo(
+    () => new Set([...newlyEarned].filter((code) => !viewedAchievementCodes.has(code))),
+    [newlyEarned, viewedAchievementCodes],
+  );
   const previewAchievements = achievements.slice(0, PREVIEW_LIMIT);
   const previewBadges = profileBadges.slice(
     0,
     Math.max(0, PREVIEW_LIMIT - previewAchievements.length),
   );
   const totalMarks = achievements.length + profileBadges.length;
+  const openShowcase = () => {
+    setOpenedNewAchievementCodes(unseenAchievementCodes);
+    setViewedAchievementCodes((current) => new Set([...current, ...unseenAchievementCodes]));
+    setIsOpen(true);
+  };
 
   return (
     <>
       <button
         type="button"
-        onClick={() => setIsOpen(true)}
+        onClick={openShowcase}
         className="group relative inline-flex max-w-full items-center gap-1 overflow-visible rounded-full border border-white/[0.07] bg-black/[0.14] px-1.5 py-1 text-left shadow-sm shadow-black/10 transition-all duration-200 hover:border-purple-300/20 hover:bg-purple-950/25 hover:shadow-[0_0_22px] hover:shadow-purple-500/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-400/50"
         aria-label={t('profilePage.openAchievements')}
         title={t('profilePage.openAchievements')}
@@ -129,9 +144,9 @@ export function AchievementShowcase({
           <span>{totalMarks}</span>
           <ChevronRight className="h-3 w-3 shrink-0 transition-transform group-hover:translate-x-0.5" />
         </span>
-        {newlyEarned.size > 0 && (
+        {unseenAchievementCodes.size > 0 && (
           <span className="absolute -right-2 -top-2 rounded-full border border-cyan-200/30 bg-cyan-500 px-1.5 py-0.5 text-[10px] font-bold leading-none text-slate-950 shadow-[0_0_14px_rgba(34,211,238,0.55)]">
-            +{newlyEarned.size}
+            +{unseenAchievementCodes.size}
           </span>
         )}
       </button>
@@ -152,19 +167,11 @@ export function AchievementShowcase({
                     <span className="rounded-full border border-white/10 bg-white/8 px-2.5 py-1 text-xs font-semibold text-purple-100">
                       {t('profilePage.achievementCount', { count: achievements.length })}
                     </span>
-                    {newlyEarned.size > 0 && (
+                    {openedNewAchievementCodes.size > 0 && (
                       <span className="rounded-full border border-cyan-200/20 bg-cyan-300/10 px-2.5 py-1 text-xs font-semibold text-cyan-100">
-                        {t('profilePage.newAchievementCount', { count: newlyEarned.size })}
+                        {t('profilePage.newAchievementCount', { count: openedNewAchievementCodes.size })}
                       </span>
                     )}
-                    {(overview?.contributor_roles ?? []).map((role) => (
-                      <span
-                        key={role}
-                        className="rounded-full border border-cyan-300/15 bg-cyan-300/[0.07] px-2.5 py-1 text-xs font-medium text-cyan-100"
-                      >
-                        {t(`profilePage.contributorRoles.${role}`)}
-                      </span>
-                    ))}
                   </div>
                   <h2 className="text-xl font-bold text-white sm:text-2xl">
                     {t('profilePage.achievements')}
@@ -244,7 +251,7 @@ export function AchievementShowcase({
                         <article
                           key={achievement.code}
                           className={`group flex min-w-0 items-center gap-4 rounded-2xl border p-4 ${rarity.card} ${
-                            newlyEarned.has(achievement.code)
+                            openedNewAchievementCodes.has(achievement.code)
                               ? 'ring-1 ring-cyan-300/45 shadow-[0_0_24px_rgba(34,211,238,0.12)]'
                               : ''
                           }`}

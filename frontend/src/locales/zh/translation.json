@@ -3131,7 +3131,7 @@
     "openAchievements": "查看徽章和成就",
     "achievementCount": "已获得 {{count}} 个",
     "newAchievementCount": "新获得 {{count}} 个",
-    "achievementsDescription": "这里记录的不是点击积分，而是有用贡献和真实使用 FilamentHub 的历史。",
+    "achievementsDescription": "记录经验证的贡献与 FilamentHub 的实际使用。",
     "nextAchievements": "下一个目标",
     "earnedAchievements": "已获得的成就",
     "noAchievementsYet": "当 FilamentHub 能确认一个有用结果后，你的第一个成就会出现在这里。",
