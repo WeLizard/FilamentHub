@@ -176,6 +176,48 @@ export function AchievementShowcase({
             </div>
 
             <div className="space-y-6 overflow-y-auto p-5 sm:p-7">
+              <section>
+                <h3 className="mb-3 font-semibold text-white">
+                  {t('profilePage.earnedAchievements')}
+                </h3>
+                {achievements.length > 0 ? (
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {achievements.map((achievement) => {
+                      const config = ACHIEVEMENT_CONFIG[achievement.code];
+                      const rarity = RARITY_STYLES[achievement.rarity] ?? RARITY_STYLES.common;
+                      return (
+                        <article
+                          key={achievement.code}
+                          className={`group flex min-w-0 items-center gap-4 rounded-2xl border p-4 ${rarity.card} ${
+                            openedNewAchievementCodes.has(achievement.code)
+                              ? 'ring-1 ring-cyan-300/45 shadow-[0_0_24px_rgba(34,211,238,0.12)]'
+                              : ''
+                          }`}
+                        >
+                          <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-black/25 shadow-[0_0_24px_rgba(34,211,238,0.12)]">
+                            <AchievementBadge code={achievement.code} size="lg" showArtwork />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <h4 className="font-semibold text-white">{t(config.labelKey)}</h4>
+                              <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${rarity.chip}`}>
+                                {t(`profilePage.achievementRarity.${achievement.rarity}`)}
+                              </span>
+                            </div>
+                            <p className="mt-1 text-sm leading-5 text-gray-300">{t(config.titleKey)}</p>
+                            <p className="mt-1 text-xs text-gray-500">{formatDate(achievement.earned_at)}</p>
+                          </div>
+                        </article>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="rounded-2xl border border-white/10 bg-black/15 p-4 text-sm text-gray-400">
+                    {t('profilePage.noAchievementsYet')}
+                  </p>
+                )}
+              </section>
+
               {nextAchievements.length > 0 && (
                 <section>
                   <div className="mb-3 flex items-center gap-2">
@@ -221,48 +263,6 @@ export function AchievementShowcase({
                   </div>
                 </section>
               )}
-
-              <section>
-                <h3 className="mb-3 font-semibold text-white">
-                  {t('profilePage.earnedAchievements')}
-                </h3>
-                {achievements.length > 0 ? (
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    {achievements.map((achievement) => {
-                      const config = ACHIEVEMENT_CONFIG[achievement.code];
-                      const rarity = RARITY_STYLES[achievement.rarity] ?? RARITY_STYLES.common;
-                      return (
-                        <article
-                          key={achievement.code}
-                          className={`group flex min-w-0 items-center gap-4 rounded-2xl border p-4 ${rarity.card} ${
-                            openedNewAchievementCodes.has(achievement.code)
-                              ? 'ring-1 ring-cyan-300/45 shadow-[0_0_24px_rgba(34,211,238,0.12)]'
-                              : ''
-                          }`}
-                        >
-                          <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-black/25 shadow-[0_0_24px_rgba(34,211,238,0.12)]">
-                            <AchievementBadge code={achievement.code} size="lg" />
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <h4 className="font-semibold text-white">{t(config.labelKey)}</h4>
-                              <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${rarity.chip}`}>
-                                {t(`profilePage.achievementRarity.${achievement.rarity}`)}
-                              </span>
-                            </div>
-                            <p className="mt-1 text-sm leading-5 text-gray-300">{t(config.titleKey)}</p>
-                            <p className="mt-1 text-xs text-gray-500">{formatDate(achievement.earned_at)}</p>
-                          </div>
-                        </article>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <p className="rounded-2xl border border-white/10 bg-black/15 p-4 text-sm text-gray-400">
-                    {t('profilePage.noAchievementsYet')}
-                  </p>
-                )}
-              </section>
 
               {overview && (
                 <section className="grid grid-cols-1 gap-2 rounded-2xl border border-white/10 bg-black/15 p-4 sm:grid-cols-3">

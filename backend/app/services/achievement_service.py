@@ -59,6 +59,8 @@ SPOOL_COLLECTOR_100 = "spool_collector_100"
 MATERIAL_SYSTEM_CONNECTED = "material_system_connected"
 HAPPY_HARE_CONNECTED = "happy_hare_connected"
 PRINTER_INTEGRATION_CONNECTED = "printer_integration_connected"
+OCTOPRINT_CONNECTED = "octoprint_connected"
+BAMBU_CONNECTED = "bambu_connected"
 AUTOMATIC_SPOOL_ASSIGNMENT = "automatic_spool_assignment"
 FULL_MATERIAL_SYSTEM = "full_material_system"
 SPOOL_DEPLETED_BY_PRINT = "spool_depleted_by_print"
@@ -75,6 +77,8 @@ AchievementMetric = Literal[
     "material_systems",
     "happy_hare",
     "connectors",
+    "octoprint_connectors",
+    "bambu_connectors",
     "automatic_assignments",
     "full_material_systems",
     "depleted_spools",
@@ -111,6 +115,8 @@ class AchievementMetrics:
     material_systems: int
     happy_hare: int
     connectors: int
+    octoprint_connectors: int
+    bambu_connectors: int
     automatic_assignments: int
     full_material_systems: int
     depleted_spools: int
@@ -252,13 +258,35 @@ ACHIEVEMENT_DEFINITIONS = (
         72,
     ),
     AchievementDefinition(
+        OCTOPRINT_CONNECTED,
+        "integrations",
+        "secret",
+        "octoprint_connector",
+        "octoprint_connectors",
+        1,
+        73,
+        hidden=True,
+        show_progress=False,
+    ),
+    AchievementDefinition(
+        BAMBU_CONNECTED,
+        "integrations",
+        "secret",
+        "bambu_connector",
+        "bambu_connectors",
+        1,
+        74,
+        hidden=True,
+        show_progress=False,
+    ),
+    AchievementDefinition(
         AUTOMATIC_SPOOL_ASSIGNMENT,
         "integrations",
         "uncommon",
         "automatic_assignment",
         "automatic_assignments",
         1,
-        73,
+        75,
     ),
     AchievementDefinition(
         FULL_MATERIAL_SYSTEM,
@@ -267,7 +295,7 @@ ACHIEVEMENT_DEFINITIONS = (
         "full_material_system",
         "full_material_systems",
         1,
-        74,
+        76,
         hidden=True,
         show_progress=False,
     ),
@@ -278,7 +306,7 @@ ACHIEVEMENT_DEFINITIONS = (
         "spool_depletion",
         "depleted_spools",
         1,
-        75,
+        77,
         hidden=True,
         show_progress=False,
     ),
@@ -445,6 +473,26 @@ async def _achievement_metrics(db: AsyncSession, user_id: int) -> AchievementMet
         )
         .scalar_subquery()
     )
+    octoprint_connectors = (
+        select(func.count(PhysicalPrinterConnector.id))
+        .where(
+            PhysicalPrinterConnector.user_id == user_id,
+            PhysicalPrinterConnector.provider == "octoprint",
+            PhysicalPrinterConnector.active.is_(True),
+            PhysicalPrinterConnector.last_seen_at.is_not(None),
+        )
+        .scalar_subquery()
+    )
+    bambu_connectors = (
+        select(func.count(PhysicalPrinterConnector.id))
+        .where(
+            PhysicalPrinterConnector.user_id == user_id,
+            PhysicalPrinterConnector.provider == "bambu",
+            PhysicalPrinterConnector.active.is_(True),
+            PhysicalPrinterConnector.last_seen_at.is_not(None),
+        )
+        .scalar_subquery()
+    )
     automatic_assignments = (
         select(func.count(MaterialSlotAssignment.id))
         .where(
@@ -522,6 +570,8 @@ async def _achievement_metrics(db: AsyncSession, user_id: int) -> AchievementMet
                 material_systems,
                 happy_hare,
                 connectors,
+                octoprint_connectors,
+                bambu_connectors,
                 automatic_assignments,
                 full_material_systems,
                 depleted_spools,
@@ -671,17 +721,22 @@ async def _threshold_evidence(
             )
         ).first()
         return ("material_system", int(row[0]), row[1]) if row else (None, None, None)
-    if definition.metric == "connectors":
+    if definition.metric in {"connectors", "octoprint_connectors", "bambu_connectors"}:
+        conditions = [
+            PhysicalPrinterConnector.user_id == user_id,
+            PhysicalPrinterConnector.active.is_(True),
+            PhysicalPrinterConnector.last_seen_at.is_not(None),
+        ]
+        if definition.metric == "octoprint_connectors":
+            conditions.append(PhysicalPrinterConnector.provider == "octoprint")
+        if definition.metric == "bambu_connectors":
+            conditions.append(PhysicalPrinterConnector.provider == "bambu")
         row = (
             await db.execute(
-                select(PhysicalPrinterConnector.id, PhysicalPrinterConnector.created_at)
-                .where(
-                    PhysicalPrinterConnector.user_id == user_id,
-                    PhysicalPrinterConnector.active.is_(True),
-                    PhysicalPrinterConnector.last_seen_at.is_not(None),
-                )
+                select(PhysicalPrinterConnector.id, PhysicalPrinterConnector.last_seen_at)
+                .where(*conditions)
                 .order_by(
-                    PhysicalPrinterConnector.created_at.asc(), PhysicalPrinterConnector.id.asc()
+                    PhysicalPrinterConnector.last_seen_at.asc(), PhysicalPrinterConnector.id.asc()
                 )
                 .limit(1)
             )

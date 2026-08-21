@@ -661,6 +661,8 @@ export type AchievementCode =
   | 'material_system_connected'
   | 'happy_hare_connected'
   | 'printer_integration_connected'
+  | 'octoprint_connected'
+  | 'bambu_connected'
   | 'automatic_spool_assignment'
   | 'full_material_system'
   | 'spool_depleted_by_print'

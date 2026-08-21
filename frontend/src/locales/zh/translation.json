@@ -2511,6 +2511,14 @@
       "label": "保持在线",
       "title": "将可用的打印机适配器连接到 FilamentHub。"
     },
+    "octoprintConnected": {
+      "label": "触手出动",
+      "title": "将正常工作的 OctoPrint Bridge 连接到 FilamentHub。"
+    },
+    "bambuConnected": {
+      "label": "熊猫上云",
+      "title": "通过 FilamentHub 本地适配器接收真实的 Bambu 数据。"
+    },
     "automaticSpoolAssignment": {
       "label": "自动上料",
       "title": "首次从已连接系统接收自动料盘分配。"

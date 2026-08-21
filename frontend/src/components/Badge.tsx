@@ -2,10 +2,12 @@ import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   BookOpen,
+  Cable,
   CheckCircle,
   HeartHandshake,
   Medal,
   PackageOpen,
+  PawPrint,
   Rabbit,
   Shield,
   SlidersHorizontal,
@@ -160,6 +162,18 @@ export const ACHIEVEMENT_CONFIG: Record<AchievementCode, BadgeConfig> = {
     color: 'text-teal-300',
     titleKey: 'achievement.printerIntegrationConnected.title',
   },
+  octoprint_connected: {
+    icon: Cable,
+    labelKey: 'achievement.octoprintConnected.label',
+    color: 'text-fuchsia-300',
+    titleKey: 'achievement.octoprintConnected.title',
+  },
+  bambu_connected: {
+    icon: PawPrint,
+    labelKey: 'achievement.bambuConnected.label',
+    color: 'text-emerald-300',
+    titleKey: 'achievement.bambuConnected.title',
+  },
   automatic_spool_assignment: {
     icon: Wrench,
     labelKey: 'achievement.automaticSpoolAssignment.label',
@@ -201,7 +215,8 @@ export const ACHIEVEMENT_CONFIG: Record<AchievementCode, BadgeConfig> = {
 export const AchievementBadge: React.FC<{
   code: AchievementCode;
   size?: 'sm' | 'md' | 'lg';
-}> = ({ code, size = 'md' }) => {
+  showArtwork?: boolean;
+}> = ({ code, size = 'md', showArtwork = false }) => {
   const { t } = useTranslation();
   const [artworkFailed, setArtworkFailed] = useState(false);
   const config = ACHIEVEMENT_CONFIG[code];
@@ -209,11 +224,11 @@ export const AchievementBadge: React.FC<{
   const sizeClasses = { sm: 'h-4 w-4', md: 'h-5 w-5', lg: 'h-6 w-6' };
   return (
     <span className="inline-flex items-center" title={t(config.titleKey)}>
-      {config.artworkSrc && !artworkFailed ? (
+      {showArtwork && config.artworkSrc && !artworkFailed ? (
         <img
           src={config.artworkSrc}
           alt=""
-          className={`${sizeClasses[size]} rounded-sm object-cover`}
+          className="h-full w-full rounded-xl object-cover"
           onError={() => setArtworkFailed(true)}
         />
       ) : (

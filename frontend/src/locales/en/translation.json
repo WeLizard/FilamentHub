@@ -2516,6 +2516,14 @@
       "label": "On the Wire",
       "title": "Connect a working printer adapter to FilamentHub."
     },
+    "octoprintConnected": {
+      "label": "Tentacles Deployed",
+      "title": "Connect a working OctoPrint Bridge to FilamentHub."
+    },
+    "bambuConnected": {
+      "label": "Panda in the Cloud",
+      "title": "Receive real Bambu data through a local FilamentHub adapter."
+    },
     "automaticSpoolAssignment": {
       "label": "Hands-free Handling",
       "title": "Receive the first automatic spool assignment from a connected system."

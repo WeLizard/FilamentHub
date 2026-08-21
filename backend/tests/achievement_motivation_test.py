@@ -24,12 +24,14 @@ from app.models.wiki_category import WikiCategory
 from app.models.wiki_space import WikiSpace
 from app.services.achievement_service import (
     AUTOMATIC_SPOOL_ASSIGNMENT,
+    BAMBU_CONNECTED,
     FIRST_HUNDRED,
     FIRST_PROFILE,
     FIRST_WIKI_ARTICLE,
     FULL_MATERIAL_SYSTEM,
     HAPPY_HARE_CONNECTED,
     MATERIAL_SYSTEM_CONNECTED,
+    OCTOPRINT_CONNECTED,
     PRESET_CONFIRMED_BY_AUTHOR,
     PRESET_PUBLISHER_5,
     PRESET_USED_BY_ANOTHER,
@@ -296,8 +298,10 @@ async def test_achievement_get_is_read_only_and_evaluate_reports_only_new_awards
     assert read_only.status_code == 200
     assert read_only.json()["achievements"] == []
     hidden_codes = {
+        BAMBU_CONNECTED,
         HAPPY_HARE_CONNECTED,
         FULL_MATERIAL_SYSTEM,
+        OCTOPRINT_CONNECTED,
         SPOOL_COLLECTOR_100,
         SPOOL_DEPLETED_BY_PRINT,
     }
@@ -358,6 +362,28 @@ async def test_connected_material_workflow_awards_only_confirmed_hardware_facts(
     )
     db_session.add_all(
         [
+            PhysicalPrinterConnector(
+                user_id=auth_user.id,
+                physical_printer_id=printer.id,
+                material_system_id=system.id,
+                provider="octoprint",
+                transport="native_bridge",
+                active=True,
+                last_seen_at=observed_at,
+            ),
+            PhysicalPrinterConnector(
+                user_id=auth_user.id,
+                physical_printer_id=printer.id,
+                material_system_id=system.id,
+                provider="bambu",
+                transport="orca_plugin",
+                active=True,
+                last_seen_at=observed_at,
+            ),
+        ]
+    )
+    db_session.add_all(
+        [
             MaterialSlotAssignment(
                 user_id=auth_user.id,
                 material_slot_id=slot.id,
@@ -384,6 +410,8 @@ async def test_connected_material_workflow_awards_only_confirmed_hardware_facts(
     assert {
         MATERIAL_SYSTEM_CONNECTED,
         PRINTER_INTEGRATION_CONNECTED,
+        OCTOPRINT_CONNECTED,
+        BAMBU_CONNECTED,
         AUTOMATIC_SPOOL_ASSIGNMENT,
         FULL_MATERIAL_SYSTEM,
         SPOOL_DEPLETED_BY_PRINT,

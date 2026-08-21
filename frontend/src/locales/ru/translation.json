@@ -2683,8 +2683,16 @@
       "label": "На проводе",
       "title": "Подключить к FilamentHub работающий адаптер принтера."
     },
+    "octoprintConnected": {
+      "label": "Щупальца запущены",
+      "title": "Подключить работающий OctoPrint Bridge к FilamentHub."
+    },
+    "bambuConnected": {
+      "label": "Панда в облаках",
+      "title": "Получить реальные данные Bambu через локальный адаптер FilamentHub."
+    },
     "automaticSpoolAssignment": {
-      "label": "Сапожная автоматика",
+      "label": "Всё по местам",
       "title": "Получить первое автоматическое назначение катушки от подключённой системы."
     },
     "fullMaterialSystem": {

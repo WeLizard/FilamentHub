@@ -54,6 +54,10 @@ describe('AchievementShowcase', () => {
     expect(screen.getByText('achievement.presetPublisher5.label')).toBeTruthy();
     expect(screen.getByText('3/5')).toBeTruthy();
     expect(screen.getByText('profilePage.earnedAchievements')).toBeTruthy();
+    const earnedHeading = screen.getByText('profilePage.earnedAchievements');
+    const nextHeading = screen.getByText('profilePage.nextAchievements');
+    expect(earnedHeading.compareDocumentPosition(nextHeading) & Node.DOCUMENT_POSITION_FOLLOWING)
+      .toBeTruthy();
     expect(screen.getByText('profilePage.newAchievementCount:1')).toBeTruthy();
     expect(screen.getAllByText('achievement.firstProfile.label')).toHaveLength(2);
     expect(screen.queryByText('profilePage.contributorRoles.preset_author')).toBeNull();
