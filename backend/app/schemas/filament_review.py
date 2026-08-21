@@ -65,7 +65,6 @@ class FilamentReviewResponse(FilamentReviewBase):
     preset_id: int | None = Field(None, description="ID пресета, к которому относится отзыв")
     preset_name: str | None = Field(None, description="Название пресета")
     username: str | None = Field(None, description="Имя пользователя")
-    user_badges: list[str] | None = Field(None, description="Бейджи пользователя")
     active: bool
     created_at: datetime
     updated_at: datetime
@@ -89,7 +88,6 @@ class FilamentRatingStats(BaseModel):
     rating_distribution: dict[int, int] = Field(
         default_factory=dict, description="Распределение рейтингов: {1: count, 2: count, ...}"
     )
-
 
 
 

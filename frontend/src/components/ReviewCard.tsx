@@ -6,8 +6,6 @@ import { CheckCircle, XCircle, Calendar, Edit, Trash2, Settings } from 'lucide-r
 import { Printer3DIcon } from './icons/Printer3DIcon';
 import { FilamentReview } from '../types/api';
 import { StarRating } from './StarRating';
-import { BadgeList } from './Badge';
-import type { BadgeType } from './Badge';
 import { formatDate as formatLocalDate } from '../utils/formatDate';
 
 interface ReviewCardProps {
@@ -36,9 +34,6 @@ export const ReviewCard: React.FC<ReviewCardProps> = ({
             <h3 className="text-white font-semibold text-lg">
               {review.username || t('reviewCard.anonymousUser')}
             </h3>
-            {review.user_badges && review.user_badges.length > 0 && (
-              <BadgeList badges={review.user_badges as BadgeType[]} size="sm" />
-            )}
             {isOwn && (
               <span className="px-2 py-1 bg-blue-500/20 text-blue-300 text-xs rounded-full border border-blue-500/30">
                 {t('reviewCard.yourReview')}
@@ -115,6 +110,5 @@ export const ReviewCard: React.FC<ReviewCardProps> = ({
     </div>
   );
 };
-
 
 

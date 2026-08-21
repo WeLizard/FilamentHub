@@ -26,11 +26,14 @@ import { adminAPI, brandsAPI } from '../../api/client';
 import { translateApiError } from '../../utils/translateApiError';
 import { Dropdown } from '../Dropdown';
 import { ConfirmModal } from '../ConfirmModal';
-import { BadgeList, BADGE_CONFIG, type BadgeType } from '../Badge';
+import { ACHIEVEMENT_CONFIG, AchievementBadge } from '../Badge';
 import { toast } from '../Toast';
-import type { Brand } from '../../types/api';
+import type { AchievementCode, Brand } from '../../types/api';
 import type { AxiosError } from 'axios';
 import { useDebounce } from '../../hooks/useDebounce';
+
+const isAchievementCode = (code: string): code is AchievementCode =>
+  Object.prototype.hasOwnProperty.call(ACHIEVEMENT_CONFIG, code);
 
 export function AdminUsers() {
   const { t, i18n } = useTranslation();
@@ -40,6 +43,13 @@ export function AdminUsers() {
   const [roleFilter, setRoleFilter] = useState<string | undefined>(undefined);
   const [showOnlyWithBrand, setShowOnlyWithBrand] = useState(false);
   const [search, setSearch] = useState('');
+  const [selectedAchievementUser, setSelectedAchievementUser] = useState<{
+    id: number;
+    username: string;
+  } | null>(null);
+  const [selectedAchievementCode, setSelectedAchievementCode] = useState<AchievementCode | ''>('');
+  const [achievementReason, setAchievementReason] = useState('');
+  const [revokeAchievementCode, setRevokeAchievementCode] = useState<AchievementCode | null>(null);
   const debouncedSearch = useDebounce(search.trim(), 300);
 
   useEffect(() => {
@@ -191,19 +201,36 @@ export function AdminUsers() {
       showActionError(error, 'adminUsers.feedback.brandUnlinkError'),
   });
 
-  // Обновление бейджей
-  const updateBadgesMutation = useMutation({
-    mutationFn: ({ userId, badges }: { userId: number; badges: string[] }) => {
-      return adminAPI.updateUserBadges(userId, badges);
-    },
-    onSuccess: (updatedUser) => {
-      queryClient.invalidateQueries({ queryKey: ['admin-users'] });
-      setSelectedUserIdForBadges(null);
-      setSelectedUserBadges([]);
-      showActionSuccess(t('adminUsers.feedback.badgesSuccess', { username: updatedUser.username }));
+  const achievementOverviewQuery = useQuery({
+    queryKey: ['admin-user-achievements', selectedAchievementUser?.id],
+    queryFn: () => adminAPI.getUserAchievements(selectedAchievementUser!.id),
+    enabled: selectedAchievementUser !== null,
+  });
+
+  const grantAchievementMutation = useMutation({
+    mutationFn: ({ userId, code, reason }: { userId: number; code: string; reason: string }) =>
+      adminAPI.grantUserAchievement(userId, code, reason),
+    onSuccess: (overview, variables) => {
+      queryClient.setQueryData(['admin-user-achievements', variables.userId], overview);
+      setSelectedAchievementCode('');
+      setAchievementReason('');
+      showActionSuccess(t('adminUsers.feedback.achievementGrantSuccess'));
     },
     onError: (error: AxiosError<{ detail: unknown }>) =>
-      showActionError(error, 'adminUsers.feedback.badgesError'),
+      showActionError(error, 'adminUsers.feedback.achievementGrantError'),
+  });
+
+  const revokeAchievementMutation = useMutation({
+    mutationFn: ({ userId, code, reason }: { userId: number; code: string; reason: string }) =>
+      adminAPI.revokeUserAchievement(userId, code, reason),
+    onSuccess: (overview, variables) => {
+      queryClient.setQueryData(['admin-user-achievements', variables.userId], overview);
+      setRevokeAchievementCode(null);
+      setAchievementReason('');
+      showActionSuccess(t('adminUsers.feedback.achievementRevokeSuccess'));
+    },
+    onError: (error: AxiosError<{ detail: unknown }>) =>
+      showActionError(error, 'adminUsers.feedback.achievementRevokeError'),
   });
 
   // Загрузка брендов для выбора
@@ -227,8 +254,6 @@ export function AdminUsers() {
   const [confirmPromote, setConfirmPromote] = useState<{ userId: number; username: string } | null>(null);
   const [confirmDemote, setConfirmDemote] = useState<{ userId: number; username: string } | null>(null);
   const [confirmUnlink, setConfirmUnlink] = useState<{ userId: number; username: string; brandName: string } | null>(null);
-  const [selectedUserIdForBadges, setSelectedUserIdForBadges] = useState<number | null>(null);
-  const [selectedUserBadges, setSelectedUserBadges] = useState<BadgeType[]>([]);
 
   const usersList = usersPage?.items ?? [];
   const total = usersPage?.total ?? 0;
@@ -408,9 +433,6 @@ export function AdminUsers() {
                         <span className="truncate">{user.brand_name || `#${user.brand_id}`}</span>
                       </span>
                     )}
-                    {user.badges && user.badges.length > 0 && (
-                      <BadgeList badges={user.badges as BadgeType[]} size="sm" className="shrink-0" />
-                    )}
                     {isComplimentaryPro && (
                       <span className="rounded-md border border-cyan-400/15 bg-cyan-400/[0.08] px-1.5 py-1 text-[10px] font-medium text-cyan-200">
                         {t('adminUsers.proOn')}
@@ -456,12 +478,14 @@ export function AdminUsers() {
                     <button
                       type="button"
                       onClick={() => {
-                        setSelectedUserIdForBadges(user.id);
-                        setSelectedUserBadges((user.badges as BadgeType[]) || []);
+                        setSelectedAchievementUser({ id: user.id, username: user.username });
+                        setSelectedAchievementCode('');
+                        setAchievementReason('');
+                        setRevokeAchievementCode(null);
                       }}
                       className={actionButtonClass}
-                      title={t('adminUsers.manageBadgesTitle')}
-                      aria-label={t('adminUsers.manageBadgesTitle')}
+                      title={t('adminUsers.manageAchievementsTitle')}
+                      aria-label={t('adminUsers.manageAchievementsTitle')}
                     >
                       <Award className="h-4 w-4" />
                     </button>
@@ -713,88 +737,173 @@ export function AdminUsers() {
         icon={<Unlink className="w-5 h-5" />}
       />
 
-      {/* Модальное окно для управления бейджами */}
-      {selectedUserIdForBadges && (
-        <ModalOverlay onClose={() => { setSelectedUserIdForBadges(null); setSelectedUserBadges([]); }}>
+      {selectedAchievementUser && (
+        <ModalOverlay onClose={() => setSelectedAchievementUser(null)}>
           <div
-            className="bg-gray-800 rounded-xl p-6 max-w-md w-full border border-white/10 shadow-xl"
+            className="max-h-[88vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-white/10 bg-gray-900 p-6 shadow-xl"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="text-xl font-bold text-white mb-4">{t('adminUsers.manageBadgesTitle')}</h3>
-            <p className="text-gray-400 mb-4">{t('adminUsers.manageBadgesDescription')}</p>
-            
-            <div className="space-y-2 mb-4 max-h-96 overflow-y-auto">
-              {(Object.keys(BADGE_CONFIG) as BadgeType[]).map((badgeType) => {
-                const config = BADGE_CONFIG[badgeType];
-                const Icon = config.icon;
-                const isSelected = selectedUserBadges.includes(badgeType);
-                
-                // Подробные описания для каждого бейджа
-                const descriptions: Record<BadgeType, string> = {
-                  founder: t('adminUsers.badgeDesc.founder'),
-                  beta_tester: t('adminUsers.badgeDesc.beta_tester'),
-                  contributor: t('adminUsers.badgeDesc.contributor'),
-                  verified: t('adminUsers.badgeDesc.verified'),
-                  early_adopter: t('adminUsers.badgeDesc.early_adopter'),
-                  supporter: t('adminUsers.badgeDesc.supporter'),
-                };
-                
-                return (
-                  <label
-                    key={badgeType}
-                    className={`flex items-start space-x-3 p-3 rounded-lg cursor-pointer transition-all ${
-                      isSelected 
-                        ? 'bg-purple-500/20 border border-purple-500/50' 
-                        : 'bg-white/5 border border-white/10 hover:bg-white/10'
-                    }`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={isSelected}
-                      onChange={(e) => {
-                        if (e.target.checked) {
-                          setSelectedUserBadges([...selectedUserBadges, badgeType]);
-                        } else {
-                          setSelectedUserBadges(selectedUserBadges.filter(b => b !== badgeType));
-                        }
-                      }}
-                      className="w-4 h-4 text-purple-600 bg-gray-700 border-gray-600 rounded focus:ring-purple-500 mt-0.5"
-                    />
-                    <Icon className={`w-5 h-5 ${config.color} flex-shrink-0 mt-0.5`} />
-                    <div className="flex-1 min-w-0">
-                      <div className="text-white font-medium mb-1">{t(config.labelKey)}</div>
-                      <div className="text-xs text-gray-300 leading-relaxed">{descriptions[badgeType]}</div>
-                    </div>
-                  </label>
-                );
+            <h3 className="text-xl font-bold text-white">
+              {t('adminUsers.manageAchievementsTitle')}
+            </h3>
+            <p className="mt-1 text-sm text-gray-400">
+              {t('adminUsers.manageAchievementsDescription', {
+                username: selectedAchievementUser.username,
               })}
-            </div>
+            </p>
 
-            <div className="flex gap-2 justify-end">
+            <section className="mt-5">
+              <h4 className="text-sm font-semibold text-white">
+                {t('adminUsers.earnedAchievements')}
+              </h4>
+              {achievementOverviewQuery.isLoading ? (
+                <p className="mt-3 text-sm text-gray-400">{t('common.loading')}</p>
+              ) : (
+                <div className="mt-3 space-y-2">
+                  {(achievementOverviewQuery.data?.achievements ?? [])
+                    .filter((achievement) => achievement.revoked_at === null)
+                    .map((achievement) => {
+                      const code = achievement.code;
+                      const knownCode = isAchievementCode(code) ? code : null;
+                      return (
+                        <div
+                          key={code}
+                          className="flex items-start gap-3 rounded-xl border border-white/10 bg-white/[0.04] p-3"
+                        >
+                          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-black/20">
+                            {knownCode ? <AchievementBadge code={knownCode} /> : <Award className="h-5 w-5" />}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="font-medium text-white">
+                              {knownCode ? t(ACHIEVEMENT_CONFIG[knownCode].labelKey) : code}
+                            </p>
+                            <p className="text-xs text-gray-400">
+                              {t(`adminUsers.achievementSource.${achievement.source}`)}
+                            </p>
+                            {achievement.award_reason && (
+                              <p className="mt-1 text-xs text-gray-300">{achievement.award_reason}</p>
+                            )}
+                          </div>
+                          {(achievement.source === 'manual' || achievement.source === 'migration') && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setRevokeAchievementCode(knownCode);
+                                setAchievementReason('');
+                              }}
+                              disabled={!knownCode}
+                              className="rounded-lg border border-rose-400/20 px-2.5 py-1.5 text-xs text-rose-300 hover:bg-rose-400/10 disabled:opacity-40"
+                            >
+                              {t('adminUsers.revokeAchievement')}
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  {(achievementOverviewQuery.data?.achievements ?? []).every(
+                    (achievement) => achievement.revoked_at !== null,
+                  ) && (
+                    <p className="rounded-xl border border-white/10 p-3 text-sm text-gray-400">
+                      {t('adminUsers.noAchievements')}
+                    </p>
+                  )}
+                </div>
+              )}
+            </section>
+
+            <section className="mt-6 border-t border-white/10 pt-5">
+              {revokeAchievementCode ? (
+                <>
+                  <h4 className="text-sm font-semibold text-rose-200">
+                    {t('adminUsers.revokeAchievementTitle', {
+                      achievement: t(ACHIEVEMENT_CONFIG[revokeAchievementCode].labelKey),
+                    })}
+                  </h4>
+                  <p className="mt-1 text-xs leading-5 text-gray-400">
+                    {t('adminUsers.revokeAchievementDescription')}
+                  </p>
+                </>
+              ) : (
+                <>
+                  <h4 className="text-sm font-semibold text-white">
+                    {t('adminUsers.grantAchievementTitle')}
+                  </h4>
+                  <p className="mt-1 text-xs leading-5 text-gray-400">
+                    {t('adminUsers.grantAchievementDescription')}
+                  </p>
+                  <select
+                    value={selectedAchievementCode}
+                    onChange={(event) => setSelectedAchievementCode(event.target.value as AchievementCode | '')}
+                    className="mt-3 w-full rounded-lg border border-white/10 bg-gray-800 px-3 py-2 text-sm text-white"
+                  >
+                    <option value="">{t('adminUsers.selectAchievement')}</option>
+                    {(achievementOverviewQuery.data?.manual_awardable_codes ?? [])
+                      .filter((code) => isAchievementCode(code))
+                      .filter((code) => !(achievementOverviewQuery.data?.achievements ?? []).some(
+                        (achievement) => achievement.code === code,
+                      ))
+                      .map((code) => (
+                        <option key={code} value={code}>
+                          {t(ACHIEVEMENT_CONFIG[code].labelKey)}
+                        </option>
+                      ))}
+                  </select>
+                </>
+              )}
+              <textarea
+                value={achievementReason}
+                onChange={(event) => setAchievementReason(event.target.value)}
+                placeholder={t('adminUsers.achievementReasonPlaceholder')}
+                maxLength={1000}
+                className="mt-3 min-h-24 w-full rounded-lg border border-white/10 bg-gray-800 px-3 py-2 text-sm text-white placeholder:text-gray-500"
+              />
+            </section>
+
+            <div className="mt-5 flex justify-end gap-2">
               <button
                 onClick={() => {
-                  setSelectedUserIdForBadges(null);
-                  setSelectedUserBadges([]);
+                  if (revokeAchievementCode) {
+                    setRevokeAchievementCode(null);
+                    setAchievementReason('');
+                  } else {
+                    setSelectedAchievementUser(null);
+                  }
                 }}
-                disabled={updateBadgesMutation.isPending}
-                className="px-4 py-2 bg-white/5 hover:bg-white/10 text-white rounded-lg transition-all disabled:opacity-50"
+                className="rounded-lg bg-white/5 px-4 py-2 text-white transition-all hover:bg-white/10"
               >
                 {t('adminUsers.cancel')}
               </button>
               <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (selectedUserIdForBadges) {
-                    updateBadgesMutation.mutate({
-                      userId: selectedUserIdForBadges,
-                      badges: selectedUserBadges,
+                onClick={() => {
+                  if (revokeAchievementCode) {
+                    revokeAchievementMutation.mutate({
+                      userId: selectedAchievementUser.id,
+                      code: revokeAchievementCode,
+                      reason: achievementReason.trim(),
+                    });
+                  } else if (selectedAchievementCode) {
+                    grantAchievementMutation.mutate({
+                      userId: selectedAchievementUser.id,
+                      code: selectedAchievementCode,
+                      reason: achievementReason.trim(),
                     });
                   }
                 }}
-                disabled={updateBadgesMutation.isPending}
-                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-all disabled:opacity-50"
+                disabled={
+                  achievementReason.trim().length < 3
+                  || (!revokeAchievementCode && !selectedAchievementCode)
+                  || grantAchievementMutation.isPending
+                  || revokeAchievementMutation.isPending
+                }
+                className={`rounded-lg px-4 py-2 text-white transition-all disabled:opacity-40 ${
+                  revokeAchievementCode
+                    ? 'bg-rose-600 hover:bg-rose-700'
+                    : 'bg-purple-600 hover:bg-purple-700'
+                }`}
               >
-                {updateBadgesMutation.isPending ? t('adminUsers.saving') : t('adminUsers.save')}
+                {revokeAchievementCode
+                  ? t('adminUsers.revokeAchievement')
+                  : t('adminUsers.grantAchievement')}
               </button>
             </div>
           </div>

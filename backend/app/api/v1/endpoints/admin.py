@@ -29,7 +29,6 @@ from app.core.errors import (
     ERR_DATABASE_EXPORT_FAILED,
     ERR_FILE_EXT_NOT_ALLOWED,
     ERR_FILE_SIZE_EXCEEDED,
-    ERR_INVALID_BADGES,
     ERR_INVALID_FILE_PATH,
     ERR_NOTIFICATION_PREVIEW_REQUIRED,
     ERR_ORCA_SCHEMA_OBSERVATION_NOT_FOUND,
@@ -60,6 +59,11 @@ from app.models.printer import Printer
 from app.models.printer_request import PrinterRequest, PrinterRequestStatus
 from app.models.subscription import Subscription, SubscriptionStatus
 from app.models.user import User, UserRole
+from app.schemas.achievement import (
+    AdminAchievementOverviewResponse,
+    ManualAchievementGrantRequest,
+    ManualAchievementRevokeRequest,
+)
 from app.schemas.bad_word import BadWordCreate, BadWordListResponse, BadWordResponse, BadWordUpdate
 from app.schemas.brand import BrandListResponse, BrandResponse, BrandSlugRename, BrandUpdate
 from app.schemas.brand_request import (
@@ -91,6 +95,12 @@ from app.schemas.printer_request import (
     PrinterRequestUpdate,
 )
 from app.schemas.user import AccountDeletionStats, UserListResponse, UserResponse
+from app.services.achievement_service import (
+    ManualAchievementError,
+    grant_manual_achievement,
+    read_admin_achievement_overview,
+    revoke_manual_achievement,
+)
 from app.services.brand_slug_service import apply_brand_slug_rename, choose_brand_slug
 from app.services.calculator_defaults_service import (
     get_calculator_country_defaults,
@@ -156,9 +166,7 @@ async def list_orca_schema_observations(
     db: Annotated[AsyncSession, Depends(get_db)],
     page: int = Query(1, ge=1),
     size: int = Query(25, ge=1, le=100),
-    observation_status: Literal["new", "reviewed"] | None = Query(
-        None, alias="status"
-    ),
+    observation_status: Literal["new", "reviewed"] | None = Query(None, alias="status"),
     scope: Literal["filament", "process", "machine"] | None = Query(None),
     search: str | None = Query(None, max_length=200),
 ) -> OrcaSchemaObservationListResponse:
@@ -318,9 +326,7 @@ async def verify_brand(
 
     # Создаем уведомления для всех пользователей, связанных с этим брендом
     try:
-        users_result = await db.execute(
-            select(User).where(User.brand_id == brand.id)
-        )
+        users_result = await db.execute(select(User).where(User.brand_id == brand.id))
         users = users_result.scalars().all()
 
         for user in users:
@@ -332,7 +338,9 @@ async def verify_brand(
                     db=db,
                 )
             except Exception as e:
-                logger.error(f"Failed to create notification for user {user.id} (brand {brand.id}): {e}")
+                logger.error(
+                    f"Failed to create notification for user {user.id} (brand {brand.id}): {e}"
+                )
     except Exception as e:
         logger.error(f"Failed to create notifications for brand {brand.id} verification: {e}")
 
@@ -375,6 +383,7 @@ async def update_brand_admin(
 
     # Проверка текстовых полей на плохие слова
     from app.services.preset_moderation import validate_text_field
+
     update_data = data.model_dump(exclude_unset=True)
 
     requested_slug = update_data.get("slug")
@@ -388,7 +397,9 @@ async def update_brand_admin(
             raise HTTPException(status_code=400, detail=error_msg)
 
     if "description" in update_data and update_data["description"]:
-        is_valid, error_msg = await validate_text_field(update_data["description"], db, "brand_description")
+        is_valid, error_msg = await validate_text_field(
+            update_data["description"], db, "brand_description"
+        )
         if not is_valid:
             raise HTTPException(status_code=400, detail=error_msg)
 
@@ -411,9 +422,7 @@ async def rename_brand_slug_admin(
 ) -> BrandResponse:
     """Rename a published brand URL and preserve the previous slug as an alias."""
     del admin
-    brand = await db.scalar(
-        select(Brand).where(Brand.id == brand_id).with_for_update()
-    )
+    brand = await db.scalar(select(Brand).where(Brand.id == brand_id).with_for_update())
     if brand is None:
         raise_error(status.HTTP_404_NOT_FOUND, ERR_BRAND_NOT_FOUND)
     if data.expected_current_slug != brand.slug:
@@ -472,7 +481,7 @@ async def upload_brand_logo(
         raise_error(
             status.HTTP_400_BAD_REQUEST,
             ERR_FILE_SIZE_EXCEEDED,
-            {"size_mb": f"{len(content) / (1024*1024):.2f}", "max_mb": "2"},
+            {"size_mb": f"{len(content) / (1024 * 1024):.2f}", "max_mb": "2"},
         )
     content, stored_ext = normalize_brand_logo_upload(content, file_ext)
 
@@ -514,9 +523,7 @@ async def count_unread_communications(
         )
     )
     feedback = await db.scalar(
-        select(func.count())
-        .select_from(Feedback)
-        .where(Feedback.status == FeedbackStatus.OPEN)
+        select(func.count()).select_from(Feedback).where(Feedback.status == FeedbackStatus.OPEN)
     )
     return {"unread_emails": int(emails or 0), "new_feedback": int(feedback or 0)}
 
@@ -636,7 +643,10 @@ async def list_users(
     size: int = Query(50, ge=1, le=100),
     role: UserRole | None = Query(None, description="Фильтр по роли (user/admin)"),
     active_only: bool = Query(True),
-    with_brand: bool | None = Query(None, description="Фильтр по привязке к бренду (True=только с брендом, False=только без бренда)"),
+    with_brand: bool | None = Query(
+        None,
+        description="Фильтр по привязке к бренду (True=только с брендом, False=только без бренда)",
+    ),
     search: str | None = Query(None, max_length=200),
 ) -> UserListResponse:
     """Получить отфильтрованный список пользователей с пагинацией."""
@@ -662,9 +672,7 @@ async def list_users(
         else:
             filters.append(User.brand_id.is_(None))
 
-    total_result = await db.execute(
-        select(func.count()).select_from(User).where(*filters)
-    )
+    total_result = await db.execute(select(func.count()).select_from(User).where(*filters))
     total = total_result.scalar_one()
 
     offset = (page - 1) * size
@@ -809,6 +817,7 @@ async def link_user_to_brand(
 
     # Загружаем пользователя с брендом для корректной сериализации
     from sqlalchemy.orm import selectinload
+
     result = await db.execute(
         select(User).where(User.id == user_id).options(selectinload(User.brand))
     )
@@ -844,6 +853,7 @@ async def unlink_user_from_brand(
 
     # Загружаем пользователя с брендом для корректной сериализации
     from sqlalchemy.orm import selectinload
+
     result = await db.execute(
         select(User).where(User.id == user_id).options(selectinload(User.brand))
     )
@@ -877,6 +887,7 @@ async def _get_redis():
     import redis.asyncio as aioredis
 
     from app.core.config import settings as cfg
+
     return aioredis.from_url(cfg.REDIS_URL, decode_responses=True)
 
 
@@ -922,7 +933,10 @@ async def get_docker_stats(
 
     try:
         proc = await asyncio.create_subprocess_exec(
-            "docker", "stats", "--no-stream", "--format",
+            "docker",
+            "stats",
+            "--no-stream",
+            "--format",
             '{"name":"{{.Name}}","cpu":"{{.CPUPerc}}","mem_usage":"{{.MemUsage}}","mem_perc":"{{.MemPerc}}","net_io":"{{.NetIO}}","block_io":"{{.BlockIO}}","pids":"{{.PIDs}}"}',
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
@@ -945,8 +959,10 @@ async def get_docker_stats(
         for c in containers:
             try:
                 insp = await asyncio.create_subprocess_exec(
-                    "docker", "inspect", "--format",
-                    '{{.RestartCount}} {{.State.Status}}',
+                    "docker",
+                    "inspect",
+                    "--format",
+                    "{{.RestartCount}} {{.State.Status}}",
                     c["name"],
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
@@ -986,8 +1002,7 @@ async def list_brand_requests(
     from sqlalchemy.orm import selectinload
 
     query = select(BrandRequest).options(
-        selectinload(BrandRequest.user),
-        selectinload(BrandRequest.brand)
+        selectinload(BrandRequest.user), selectinload(BrandRequest.brand)
     )
     if status:
         query = query.where(BrandRequest.status == status)
@@ -1019,6 +1034,7 @@ async def list_brand_requests(
         # Файлы уже парсятся через валидатор в схеме, конвертация выполняется автоматически
         if req.social_media_urls and not response.social_media_urls:
             import json
+
             try:
                 response.social_media_urls = json.loads(req.social_media_urls)
             except (json.JSONDecodeError, TypeError):
@@ -1047,10 +1063,7 @@ async def get_brand_request(
     result = await db.execute(
         select(BrandRequest)
         .where(BrandRequest.id == id)
-        .options(
-            selectinload(BrandRequest.user),
-            selectinload(BrandRequest.brand)
-        )
+        .options(selectinload(BrandRequest.user), selectinload(BrandRequest.brand))
     )
     request = result.scalar_one_or_none()
 
@@ -1067,9 +1080,11 @@ async def get_brand_request(
     # Убедимся, что файлы и соцсети правильно распарсены
     if request.proof_files and not response.proof_files:
         from app.services.file_service import parse_proof_files
+
         response.proof_files = parse_proof_files(request.proof_files)
     if request.social_media_urls and not response.social_media_urls:
         import json
+
         try:
             response.social_media_urls = json.loads(request.social_media_urls)
         except (json.JSONDecodeError, TypeError):
@@ -1125,8 +1140,7 @@ async def update_brand_request(
         ):
             # Для JOIN: привязываем пользователя к существующему бренду
             if not request.brand_id:
-                raise_error(status.HTTP_400_BAD_REQUEST, ERR_BRAND_ID_REQUIRED_JOIN
-                )
+                raise_error(status.HTTP_400_BAD_REQUEST, ERR_BRAND_ID_REQUIRED_JOIN)
             brand = request.brand or await db.get(Brand, request.brand_id)
             if not brand:
                 raise_error(status.HTTP_404_NOT_FOUND, ERR_BRAND_NOT_FOUND)
@@ -1273,7 +1287,9 @@ async def update_brand_request(
                         if created_brand:
                             brand_id_for_notification = created_brand.id
 
-                brand_name = request.brand.name if request.brand else (request.new_brand_name or "brand")
+                brand_name = (
+                    request.brand.name if request.brand else (request.new_brand_name or "brand")
+                )
                 if brand_id_for_notification:
                     await notify_brand_request_approved(
                         user_id=request.user_id,
@@ -1282,7 +1298,9 @@ async def update_brand_request(
                         db=db,
                     )
             elif data.status == BrandRequestStatus.REJECTED:
-                brand_name = request.brand.name if request.brand else (request.new_brand_name or "brand")
+                brand_name = (
+                    request.brand.name if request.brand else (request.new_brand_name or "brand")
+                )
                 await notify_brand_request_rejected(
                     user_id=request.user_id,
                     brand_name=brand_name,
@@ -1299,9 +1317,11 @@ async def update_brand_request(
     # Убедимся, что файлы и соцсети правильно распарсены
     if request.proof_files and not response.proof_files:
         from app.services.file_service import parse_proof_files
+
         response.proof_files = parse_proof_files(request.proof_files)
     if request.social_media_urls and not response.social_media_urls:
         import json
+
         try:
             response.social_media_urls = json.loads(request.social_media_urls)
         except (json.JSONDecodeError, TypeError):
@@ -1322,9 +1342,7 @@ async def delete_brand_request(
     from app.services.file_service import delete_proof_files
 
     result = await db.execute(
-        select(BrandRequest)
-        .where(BrandRequest.id == id)
-        .options(selectinload(BrandRequest.user))
+        select(BrandRequest).where(BrandRequest.id == id).options(selectinload(BrandRequest.user))
     )
     request = result.scalar_one_or_none()
 
@@ -1463,6 +1481,7 @@ async def list_printer_requests_admin(
             # Парсим файлы если они есть
             if req.proof_files:
                 from app.services.file_service import parse_proof_files
+
                 response.proof_files = parse_proof_files(req.proof_files)
             else:
                 # Убеждаемся, что proof_files установлен в None или пустой список
@@ -1471,6 +1490,7 @@ async def list_printer_requests_admin(
         except Exception as e:
             # Логируем ошибку валидации для отладки
             import logging
+
             logger = logging.getLogger(__name__)
             logger.error(f"Error validating PrinterRequest {req.id}: {e}")
             # Пропускаем проблемную запись или возвращаем базовые данные
@@ -1507,6 +1527,7 @@ async def get_printer_request_admin(
         response.user_email = printer_request.user.email
     if printer_request.proof_files:
         from app.services.file_service import parse_proof_files
+
         response.proof_files = parse_proof_files(printer_request.proof_files)
     return response
 
@@ -1575,6 +1596,7 @@ async def update_printer_request_admin(
         response.user_email = request.user.email
     if request.proof_files:
         from app.services.file_service import parse_proof_files
+
         response.proof_files = parse_proof_files(request.proof_files)
     return response
 
@@ -1767,7 +1789,11 @@ async def create_bad_word(
     existing = result.scalar_one_or_none()
 
     if existing:
-        raise_error(status.HTTP_400_BAD_REQUEST, ERR_BANNED_WORD_EXISTS, {"word": data.word, "language": data.language})
+        raise_error(
+            status.HTTP_400_BAD_REQUEST,
+            ERR_BANNED_WORD_EXISTS,
+            {"word": data.word, "language": data.language},
+        )
 
     bad_word = BadWord(word=data.word.lower(), language=data.language)
     db.add(bad_word)
@@ -1776,6 +1802,7 @@ async def create_bad_word(
 
     # Сбрасываем кэш в сервисе модерации
     from app.services.preset_moderation import _BAD_WORDS_CACHE
+
     _BAD_WORDS_CACHE.clear()
 
     return BadWordResponse.model_validate(bad_word)
@@ -1789,6 +1816,7 @@ async def get_bad_word(
 ) -> BadWordResponse:
     # Ленивый импорт, чтобы не падать при отсутствии таблицы
     from app.models.bad_word import BadWord
+
     """Получить информацию о запрещенном слове."""
     result = await db.execute(select(BadWord).where(BadWord.id == word_id))
     word = result.scalar_one_or_none()
@@ -1834,7 +1862,11 @@ async def update_bad_word(
         existing = check_result.scalar_one_or_none()
 
         if existing:
-            raise_error(status.HTTP_400_BAD_REQUEST, ERR_BANNED_WORD_EXISTS, {"word": new_word, "language": new_language})
+            raise_error(
+                status.HTTP_400_BAD_REQUEST,
+                ERR_BANNED_WORD_EXISTS,
+                {"word": new_word, "language": new_language},
+            )
 
     # Обновляем поля
     for field, value in update_data.items():
@@ -1848,6 +1880,7 @@ async def update_bad_word(
 
     # Сбрасываем кэш в сервисе модерации
     from app.services.preset_moderation import _BAD_WORDS_CACHE
+
     _BAD_WORDS_CACHE.clear()
 
     return BadWordResponse.model_validate(word)
@@ -1874,6 +1907,7 @@ async def delete_bad_word(
 
     # Сбрасываем кэш в сервисе модерации
     from app.services.preset_moderation import _BAD_WORDS_CACHE
+
     _BAD_WORDS_CACHE.clear()
 
 
@@ -1898,67 +1932,85 @@ async def send_notification_to_users(
     raise_error(status.HTTP_409_CONFLICT, ERR_NOTIFICATION_PREVIEW_REQUIRED)
 
 
-@router.patch(
-    "/users/{user_id}/badges",
-    response_model=dict,
-    summary="Управление бейджами пользователя",
-    description="Добавить или удалить бейджи пользователя. Доступные бейджи: founder, beta_tester, contributor, verified, early_adopter, supporter",
-)
-async def manage_user_badges(
-    user_id: int,
-    badges: list[str] = Body(..., description="Список бейджей пользователя"),
-    admin: User = Depends(get_current_admin_user),
-    db: AsyncSession = Depends(get_db),
-) -> dict:
-    """
-    Управление бейджами пользователя (только для администраторов).
-
-    Доступные бейджи:
-    - founder: Основатель (первые пользователи)
-    - beta_tester: Бета-тестер
-    - contributor: Контрибьютор (помог с разработкой)
-    - verified: Верифицированный (производитель)
-    - early_adopter: Ранний последователь
-    - supporter: Поддержал проект
-    """
-    # Валидация бейджей
-    valid_badges = {"founder", "beta_tester", "contributor", "verified", "early_adopter", "supporter"}
-    invalid_badges = [b for b in badges if b not in valid_badges]
-
-    if invalid_badges:
-        raise_error(status.HTTP_400_BAD_REQUEST, ERR_INVALID_BADGES, {"invalid": ", ".join(invalid_badges), "valid": ", ".join(valid_badges)})
-
-    # Получаем пользователя
-    result = await db.execute(
-        select(User).where(User.id == user_id)
-    )
-    user = result.scalar_one_or_none()
-
-    if not user:
+async def _require_achievement_user(db: AsyncSession, user_id: int) -> None:
+    if await db.scalar(select(User.id).where(User.id == user_id)) is None:
         raise_error(status.HTTP_404_NOT_FOUND, ERR_USER_NOT_FOUND)
 
-    # Обновляем бейджи
-    old_badges = user.badges or []
-    user.badges = badges if badges else None
+
+@router.get(
+    "/users/{user_id}/achievements",
+    response_model=AdminAchievementOverviewResponse,
+)
+async def get_user_achievements(
+    user_id: int,
+    admin: Annotated[User, Depends(get_current_admin_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> AdminAchievementOverviewResponse:
+    """Show factual awards and the small registry of admin-grantable distinctions."""
+    del admin
+    await _require_achievement_user(db, user_id)
+    return await read_admin_achievement_overview(db, user_id=user_id)
+
+
+@router.post(
+    "/users/{user_id}/achievements",
+    response_model=AdminAchievementOverviewResponse,
+)
+async def grant_user_achievement(
+    user_id: int,
+    payload: ManualAchievementGrantRequest,
+    admin: Annotated[User, Depends(get_current_admin_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> AdminAchievementOverviewResponse:
+    """Grant one rare manual distinction with mandatory provenance."""
+    await _require_achievement_user(db, user_id)
+    try:
+        await grant_manual_achievement(
+            db,
+            user_id=user_id,
+            code=payload.code,
+            admin_user_id=admin.id,
+            reason=payload.reason,
+        )
+    except ManualAchievementError as exc:
+        raise_error(status.HTTP_409_CONFLICT, exc.error_code)
     await db.commit()
-    await db.refresh(user)
+    logger.info("Admin %s granted achievement %s to user %s", admin.id, payload.code, user_id)
+    return await read_admin_achievement_overview(db, user_id=user_id)
 
-    logger.info(
-        f"Admin {admin.id} updated badges for user {user_id} "
-        f"(from {old_badges} to {badges})"
-    )
 
-    return {
-        "success": True,
-        "message": "badges_updated",
-        "user_id": user_id,
-        "badges": user.badges,
-    }
+@router.post(
+    "/users/{user_id}/achievements/{code}/revoke",
+    response_model=AdminAchievementOverviewResponse,
+)
+async def revoke_user_achievement(
+    user_id: int,
+    code: str,
+    payload: ManualAchievementRevokeRequest,
+    admin: Annotated[User, Depends(get_current_admin_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> AdminAchievementOverviewResponse:
+    """Revoke a manual or migrated distinction while preserving its audit trail."""
+    await _require_achievement_user(db, user_id)
+    try:
+        await revoke_manual_achievement(
+            db,
+            user_id=user_id,
+            code=code,
+            admin_user_id=admin.id,
+            reason=payload.reason,
+        )
+    except ManualAchievementError as exc:
+        raise_error(status.HTTP_409_CONFLICT, exc.error_code)
+    await db.commit()
+    logger.info("Admin %s revoked achievement %s from user %s", admin.id, code, user_id)
+    return await read_admin_achievement_overview(db, user_id=user_id)
 
 
 # ============================================================================
 # Maintenance Mode (Технические работы)
 # ============================================================================
+
 
 @router.get("/maintenance", response_model=dict)
 async def get_maintenance_status(
@@ -2002,6 +2054,7 @@ async def set_maintenance_status(
 # ============================================================================
 # Calculator Pro / subscriptions
 # ============================================================================
+
 
 @router.get("/users/{user_id}/deletion-preview", response_model=AccountDeletionStats)
 async def preview_user_deletion(
@@ -2070,7 +2123,9 @@ async def set_user_pro_access(
     user_id: int,
     admin: Annotated[User, Depends(get_current_admin_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
-    grant: bool = Body(..., embed=True, description="Выдать (true) / отозвать (false) комплиментарный Pro"),
+    grant: bool = Body(
+        ..., embed=True, description="Выдать (true) / отозвать (false) комплиментарный Pro"
+    ),
 ) -> UserResponse:
     """Выдать/отозвать комплиментарный (ручной, без оплаты) Pro-доступ к калькулятору."""
     from sqlalchemy.orm import selectinload
@@ -2107,7 +2162,9 @@ async def get_calculator_settings(
 ) -> dict:
     """Настройки калькулятора: платный доступ, длина триала (дней; null = бессрочно) + счётчики подписок."""
     trialing = await db.scalar(
-        select(func.count(Subscription.id)).where(Subscription.status == SubscriptionStatus.TRIALING)
+        select(func.count(Subscription.id)).where(
+            Subscription.status == SubscriptionStatus.TRIALING
+        )
     )
     active = await db.scalar(
         select(func.count(Subscription.id)).where(Subscription.status == SubscriptionStatus.ACTIVE)
@@ -2115,9 +2172,7 @@ async def get_calculator_settings(
     return {
         "paywall_enforced": paywall_enforced(),
         "trial_days": trial_days(),
-        "profile_defaults": (
-            await get_calculator_profile_defaults(db)
-        ).model_dump(mode="json"),
+        "profile_defaults": (await get_calculator_profile_defaults(db)).model_dump(mode="json"),
         "counts": {"trialing": trialing or 0, "active": active or 0},
     }
 
@@ -2254,8 +2309,7 @@ async def export_wiki_to_files(
     result = await export_articles_to_markdown(db)
 
     logger.info(
-        f"Admin {admin.id} exported wiki: {result['exported']} files, "
-        f"{result['errors']} errors"
+        f"Admin {admin.id} exported wiki: {result['exported']} files, {result['errors']} errors"
     )
 
     return result
@@ -2278,9 +2332,7 @@ async def export_wiki_article(
         raise_error(status.HTTP_404_NOT_FOUND, ERR_ARTICLE_NOT_FOUND)
 
     # Write to temp file for FileResponse
-    tmp = tempfile.NamedTemporaryFile(
-        mode="w", suffix=".md", delete=False, encoding="utf-8"
-    )
+    tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False, encoding="utf-8")
     tmp.write(content)
     tmp.close()
 
@@ -2332,14 +2384,11 @@ async def get_catalog_source_orca_info(
     if bundle_exists:
         bundle_size_mb = round(_ORCA_BUNDLE_PATH.stat().st_size / 1024 / 1024, 2)
         import zipfile as _zip
+
         with _zip.ZipFile(_ORCA_BUNDLE_PATH) as zf:
             bundle_vendor_count = 0
             for name in zf.namelist():
-                if (
-                    not name.endswith(".json")
-                    or "/" in name
-                    or name == "filamenthub-source.json"
-                ):
+                if not name.endswith(".json") or "/" in name or name == "filamenthub-source.json":
                     continue
                 try:
                     value = json.loads(zf.read(name))
@@ -2413,9 +2462,7 @@ async def import_catalog_source_orca(
             # Make sure validation_summary is fresh for the preview UI.
             await service.revalidate(bundle.id)
 
-        audit = await service.import_bundle(
-            bundle_id=bundle.id, triggered_by_user_id=admin.id
-        )
+        audit = await service.import_bundle(bundle_id=bundle.id, triggered_by_user_id=admin.id)
         await db.commit()
         summary = audit.summary or {}
     except BundleServiceError as exc:

@@ -153,7 +153,6 @@ async def get_my_reviews(
                 preset_id=review.preset_id,
                 preset_name=preset_name,
                 username=review.user.username if review.user else None,
-                user_badges=review.user.badges if review.user else None,
                 success=review.success,
                 rating=review.rating,
                 comment=review.comment,
@@ -240,7 +239,6 @@ async def list_filament_reviews(
                 preset_id=review.preset_id,
                 preset_name=preset_name,
                 username=review.user.username if review.user else None,
-                user_badges=review.user.badges if review.user else None,
                 success=review.success,
                 rating=review.rating,
                 comment=review.comment,
@@ -352,7 +350,6 @@ async def get_review(
         preset_id=review.preset_id,
         preset_name=preset_name,
         username=review.user.username if review.user else None,
-        user_badges=review.user.badges if review.user else None,
         success=review.success,
         rating=review.rating,
         comment=review.comment,
@@ -496,7 +493,6 @@ async def create_review(
         preset_id=review.preset_id,
         preset_name=preset_name,
         username=review.user.username if review.user else None,
-        user_badges=review.user.badges if review.user else None,
         success=review.success,
         rating=review.rating,
         comment=review.comment,
@@ -579,7 +575,6 @@ async def update_review(
         preset_id=review.preset_id,
         preset_name=preset_name,
         username=review.user.username if review.user else None,
-        user_badges=review.user.badges if review.user else None,
         success=review.success,
         rating=review.rating,
         comment=review.comment,
@@ -619,4 +614,3 @@ async def delete_review(
     # Обновляем рейтинги пресета после деактивации отзыва
     if preset_id:
         await update_preset_ratings(preset_id, db)
-

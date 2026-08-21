@@ -3,6 +3,7 @@
 import axios from 'axios';
 import type { InternalAxiosRequestConfig } from 'axios';
 import type { BrandAnalytics } from '../types/api';
+import type { AdminAchievementOverview } from '../types/api';
 import type { AccessibleBrand, AdminUserListResponse, AuthMethods, Brand, BrandUsage, BrandCountryCell, BrandRepresentative, BrandRepresentativeInvite, BrandRequest, BrandRequestStatus, BrandTeamInvite, BrandTeamRole, BrandTeamWorkspace, Filament, FilamentAdditive, FilamentPropertyClaim, FilamentLine, FilamentImportResult, FilamentListResponse, FilamentPalettePayload, BrandInvitePublic, BrandInviteAdmin, BrandInviteAcceptResult, BrandInviteBatchPreview, BrandInviteBatchSendResult, FilamentAvailability, CountryAvailability, FilamentCountryCell, FilamentVisualSettings, FilamentReview, FilamentRatingStats, Notification, NotificationListResponse, Preset, RecommendedPreset, RecommendedForPrinterResponse, Printer, PrinterProfile, PrintProfile, PrinterRequest, User, Token, RefreshTokenRequest, RefreshTokenResponse, ListResponse, AccountDeletionStats, UserSavedPreset, CalculatorEstimateRequest, CalculatorEstimateResponse, CalculatorProfileResponse, CalculatorProfileUpdate, Feedback, FeedbackDetail, FeedbackListResponse, FeedbackType, CompatiblePrinter, CompatibleFilament, PluginDownloadsResponse, WikiCategory, WikiCategoryListResponse, WikiArticle, WikiArticleListResponse, WikiArticleTranslation, WikiFeedbackStats, WikiFeedbackCreate, WikiFeedback, WikiGuideProgressResponse, WikiLanguage, WikiMediaAsset, WikiReviewVerdict, WikiRevision, WikiRevisionListResponse, WikiPublicRevisionListResponse, WikiRevisionStatus, WikiSpace, WikiSpaceKey, EmailThreadDetail, EmailThreadListResponse, EmailThreadStatus, EmailMessage, EmailSenderProfile, EmailLanguage, NotificationCampaignAudience, NotificationCampaignHistoryResponse, NotificationCampaignPreview, NotificationCampaignSendResult, LegalAcceptancePayload, LegalDocument, LegalDocumentType, LegalPack, LegalRequirements, RegistrationPayload, SpoolUsageEvent, OrcaSliceReport, OrcaPresetScope, OrcaSchemaObservation, OrcaSchemaObservationListResponse, OrcaSchemaObservationStatus, UnreadCommunicationsCount } from '../types/api';
 import { getCsrfToken, getRefreshToken, getToken, isCookieAuthMode, isJwtAuthMode, isOrcaEmbedded, removeToken, setToken, shouldPersistTokensLocally } from '../utils/auth';
 import { isPluginEmbed, reportPluginSessionToPlugin } from '../utils/pluginBridge';
@@ -2123,8 +2124,32 @@ export const adminAPI = {
     return response.data;
   },
 
-  updateUserBadges: async (userId: number, badges: string[]): Promise<User> => {
-    const response = await api.patch<User>(`/admin/users/${userId}/badges`, badges);
+  getUserAchievements: async (userId: number): Promise<AdminAchievementOverview> => {
+    const response = await api.get<AdminAchievementOverview>(`/admin/users/${userId}/achievements`);
+    return response.data;
+  },
+
+  grantUserAchievement: async (
+    userId: number,
+    code: string,
+    reason: string,
+  ): Promise<AdminAchievementOverview> => {
+    const response = await api.post<AdminAchievementOverview>(
+      `/admin/users/${userId}/achievements`,
+      { code, reason },
+    );
+    return response.data;
+  },
+
+  revokeUserAchievement: async (
+    userId: number,
+    code: string,
+    reason: string,
+  ): Promise<AdminAchievementOverview> => {
+    const response = await api.post<AdminAchievementOverview>(
+      `/admin/users/${userId}/achievements/${code}/revoke`,
+      { reason },
+    );
     return response.data;
   },
 

@@ -142,7 +142,6 @@ class UserResponse(UserBase):
     printer_id: int | None = None  # ID выбранного принтера из каталога
     recommend_physical_printer_id: int | None = None
     recommend_printer_profile_id: int | None = None
-    badges: list[str] | None = None  # Бейджи пользователя
     # Sync settings
     allow_filament_presets_import: bool = True
     allow_filament_presets_export: bool = True

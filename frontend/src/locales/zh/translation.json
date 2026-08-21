@@ -2421,34 +2421,28 @@
     "emptyMessage": "未找到选项",
     "clearSelection": "清除选择"
   },
-  "badge": {
-    "founder": {
-      "label": "创始人",
-      "title": "项目创始人"
-    },
-    "betaTester": {
-      "label": "公测者",
-      "title": "公测参与者"
-    },
-    "contributor": {
-      "label": "贡献者",
-      "title": "贡献者"
-    },
-    "verified": {
-      "label": "已认证",
-      "title": "已认证制造商"
-    },
-    "earlyAdopter": {
-      "label": "早期使用者",
-      "title": "早期使用者"
-    },
-    "supporter": {
-      "label": "支持者",
-      "title": "项目支持者"
-    }
-  },
   "achievement": {
     "earned": "获得新成就：{{names}}",
+    "projectFounder": {
+      "label": "从这里开始",
+      "title": "创立 FilamentHub，并为项目确定方向。"
+    },
+    "betaTester": {
+      "label": "试层先锋",
+      "title": "在正式发布前帮助测试 FilamentHub 的新功能。"
+    },
+    "projectContributor": {
+      "label": "共建者",
+      "title": "在代码、文档、翻译、设计或基础设施方面为 FilamentHub 作出重要贡献。"
+    },
+    "projectSupporter": {
+      "label": "持续开机",
+      "title": "以资源或长期投入支持 FilamentHub 的发展。"
+    },
+    "earlyAdopter": {
+      "label": "先人一步",
+      "title": "在 FilamentHub 早期开发阶段加入。"
+    },
     "firstCatalogContribution": {
       "label": "首次贡献",
       "title": "补充目录中缺失的数据并完成发布或审核。"
@@ -2469,25 +2463,77 @@
       "label": "调校师",
       "title": "发布 5 个完整填写的预设。"
     },
+    "presetPublisher20": {
+      "label": "配置工匠",
+      "title": "发布 20 个完整填写的预设。"
+    },
+    "presetPublisher50": {
+      "label": "预设馆员",
+      "title": "发布 50 个完整填写的预设。"
+    },
+    "presetsUsedBy3": {
+      "label": "值得分享",
+      "title": "让 3 位其他用户确认使用了你的预设。"
+    },
     "presetsUsedBy10": {
       "label": "帮助大家打印",
       "title": "让 10 位其他用户确认使用了你的预设。"
     },
+    "presetConfirmedByAuthor": {
+      "label": "实打印证",
+      "title": "确认使用自己发布的预设完成了一次真实打印。"
+    },
+    "presetMaterialTypes5": {
+      "label": "材料通",
+      "title": "为至少 5 种不同材料类型发布预设。"
+    },
+    "spoolCollector1": {
+      "label": "第一卷入库",
+      "title": "添加第一卷实体耗材。"
+    },
     "spoolCollector20": {
-      "label": "鞋匠终于有鞋了",
-      "title": "添加 20 卷实体耗材。FilamentHub 终于被用在了正确的地方。"
+      "label": "库存充足",
+      "title": "在库存中添加 20 卷实体耗材。"
     },
     "spoolCollector100": {
       "label": "这绝对是最后一卷",
       "title": "在收藏中添加 100 卷实体耗材。"
     },
+    "materialSystemConnected": {
+      "label": "多路启程",
+      "title": "为打印机连接一套材料供给系统。"
+    },
     "happyHareConnected": {
       "label": "找到兔子了",
       "title": "连接 Happy Hare。"
     },
+    "printerIntegrationConnected": {
+      "label": "保持在线",
+      "title": "将可用的打印机适配器连接到 FilamentHub。"
+    },
+    "automaticSpoolAssignment": {
+      "label": "自动上料",
+      "title": "首次从已连接系统接收自动料盘分配。"
+    },
+    "fullMaterialSystem": {
+      "label": "满槽待命",
+      "title": "填满一个至少有 4 个位置的材料系统。"
+    },
+    "spoolDepletedByPrint": {
+      "label": "一克不剩",
+      "title": "通过已确认的打印将一卷耗材用至零。"
+    },
     "firstWikiArticle": {
       "label": "编年史家",
       "title": "发布第一篇 Wiki 文章。"
+    },
+    "firstWikiRevision": {
+      "label": "修好了互联网",
+      "title": "首次发布对现有 Wiki 文章的已接受修订。"
+    },
+    "wikiEditor5": {
+      "label": "Wiki 编辑",
+      "title": "发布 5 次已接受的 Wiki 修订。"
     }
   },
   "deleteAccount": {
@@ -3135,8 +3181,6 @@
     "nextAchievements": "下一个目标",
     "earnedAchievements": "已获得的成就",
     "noAchievementsYet": "当 FilamentHub 能确认一个有用结果后，你的第一个成就会出现在这里。",
-    "profileBadges": "个人资料徽章",
-    "profileBadgesDescription": "这些是项目团队授予的独立角色和标记，不会替代自动验证的成就。",
     "contributorRoles": {
       "catalog_contributor": "目录贡献者",
       "preset_author": "预设作者",
@@ -3148,7 +3192,9 @@
       "common": "普通",
       "uncommon": "优秀",
       "rare": "稀有",
+      "epic": "史诗",
       "historic": "历史限定",
+      "honor": "特别荣誉",
       "secret": "隐藏"
     },
     "contributionStats": {
@@ -5107,9 +5153,23 @@
     "demoteTitle": "撤销管理员权限",
     "demoteConfirm": "撤销",
     "confirmDemote": "确定要撤销用户\"{{username}}\"的管理员权限吗？",
-    "badges": "徽章",
-    "manageBadgesTitle": "管理徽章",
-    "manageBadgesDescription": "为用户选择徽章。徽章将在配置文件、评价和评论中显示。",
+    "manageAchievementsTitle": "用户成就",
+    "manageAchievementsDescription": "“{{username}}”的自动成就仅供查看。只有少数特别荣誉可以由管理员手动授予，并且必须填写原因。",
+    "earnedAchievements": "已获得的成就",
+    "noAchievements": "暂时没有成就。",
+    "grantAchievementTitle": "授予特别荣誉",
+    "grantAchievementDescription": "请选择荣誉并记录具体原因。自动成就不能在此授予。",
+    "selectAchievement": "选择特别荣誉",
+    "achievementReasonPlaceholder": "授予或撤销原因（必填）",
+    "grantAchievement": "授予",
+    "revokeAchievement": "撤销",
+    "revokeAchievementTitle": "撤销“{{achievement}}”？",
+    "revokeAchievementDescription": "该荣誉会从个人资料中隐藏，但授予与撤销记录会保留，且不能从界面再次授予。",
+    "achievementSource": {
+      "automatic": "系统验证",
+      "manual": "管理员授予",
+      "migration": "从历史数据迁移"
+    },
     "brand": "品牌",
     "linkBrandTitle": "关联品牌",
     "selectBrand": "选择要关联的品牌：",
@@ -5142,18 +5202,12 @@
       "brandLinkError": "无法关联品牌",
       "brandUnlinkSuccess": "用户“{{username}}”已取消品牌关联",
       "brandUnlinkError": "无法取消品牌关联",
-      "badgesSuccess": "已保存“{{username}}”的徽章",
-      "badgesError": "无法保存徽章",
+      "achievementGrantSuccess": "已授予特别荣誉",
+      "achievementGrantError": "无法授予该荣誉",
+      "achievementRevokeSuccess": "已撤销特别荣誉",
+      "achievementRevokeError": "无法撤销该荣誉",
       "eraseSuccess": "账户已删除",
       "eraseError": "删除账户失败"
-    },
-    "badgeDesc": {
-      "founder": "项目创始人。授予在 FilamentHub 早期开发阶段加入的首批用户。",
-      "beta_tester": "测试员。积极测试新功能，通过报告错误和建议改进来帮助改进平台的用户。",
-      "contributor": "贡献者。对项目做出重大贡献的用户：代码、文档、翻译、设计或其他有用资源。",
-      "verified": "已认证制造商。确认了与公司关联的 3D 打印材料品牌的官方代表。",
-      "early_adopter": "早期采用者。在 FilamentHub 推出后的头几个月开始使用并积极参与社区的用户。",
-      "supporter": "项目支持者。在财务上或以其他方式支持 FilamentHub 开发的用户。"
     },
     "eraseTitle": "删除账户",
     "erase": "永久删除",
@@ -6619,7 +6673,10 @@
     "ERR_INVALID_FEEDBACK_STATUS": "无效的反馈状态",
     "ERR_WIKI_USE_FEEDBACK": "对于知识库文章反馈，请使用反馈部分",
     "ERR_BANNED_WORD_EXISTS": "被禁用词 \"{{word}}\" ({{language}}) 已存在",
-    "ERR_INVALID_BADGES": "无效的徽章：{{invalid}}。有效的：{{valid}}",
+    "ERR_ACHIEVEMENT_NOT_MANUAL": "该成就由系统验证，不能手动授予",
+    "ERR_ACHIEVEMENT_ALREADY_AWARDED": "该用户已经拥有此荣誉",
+    "ERR_ACHIEVEMENT_NOT_AWARDED": "未找到有效的荣誉",
+    "ERR_ACHIEVEMENT_REGRANT_FORBIDDEN": "已撤销的荣誉不能从界面再次授予，以保持历史记录清晰",
     "ERR_INVALID_FILE_EXT": "无效的文件扩展名：{{ext}}。预期：{{expected}}",
     "ERR_FILE_TOO_LARGE": "文件过大。最大值：{{max_size}}",
     "ERR_UNSUPPORTED_PRICING_METHOD": "不支持的定价方法：{{method}}",

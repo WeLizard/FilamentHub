@@ -1,4 +1,4 @@
-"""Automatic achievements and factual contributor summary."""
+"""Unified achievements, hidden milestones, and factual contributor summary."""
 
 from typing import Annotated
 

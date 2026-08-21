@@ -20,6 +20,7 @@ const overview: AchievementOverview = {
       category: 'presets',
       rarity: 'common',
       hidden: false,
+      source: 'automatic',
     },
   ],
   next_achievements: [
@@ -39,11 +40,10 @@ const overview: AchievementOverview = {
 };
 
 describe('AchievementShowcase', () => {
-  it('separates verified achievements, progress, and manual profile badges', () => {
+  it('shows earned achievements, progress, and acknowledges new awards', () => {
     render(
       <AchievementShowcase
         overview={overview}
-        profileBadges={['verified']}
         isHeaderVisible
       />,
     );
@@ -56,8 +56,6 @@ describe('AchievementShowcase', () => {
     expect(screen.getByText('profilePage.earnedAchievements')).toBeTruthy();
     expect(screen.getByText('profilePage.newAchievementCount:1')).toBeTruthy();
     expect(screen.getAllByText('achievement.firstProfile.label')).toHaveLength(2);
-    expect(screen.getByText('profilePage.profileBadges')).toBeTruthy();
-    expect(screen.getAllByText('badge.verified.label')).toHaveLength(2);
     expect(screen.queryByText('profilePage.contributorRoles.preset_author')).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: 'common.close' }));

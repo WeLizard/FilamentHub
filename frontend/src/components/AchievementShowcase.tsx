@@ -9,13 +9,7 @@ import type {
   UserAchievement,
 } from '../types/api';
 import { formatDate } from '../utils/formatDate';
-import {
-  ACHIEVEMENT_CONFIG,
-  AchievementBadge,
-  BADGE_CONFIG,
-  Badge,
-  type BadgeType,
-} from './Badge';
+import { ACHIEVEMENT_CONFIG, AchievementBadge } from './Badge';
 import { ModalOverlay } from './ModalOverlay';
 
 const PREVIEW_LIMIT = 3;
@@ -33,9 +27,17 @@ const RARITY_STYLES: Record<string, { card: string; chip: string }> = {
     card: 'border-violet-300/20 bg-violet-300/[0.07]',
     chip: 'border-violet-300/25 bg-violet-300/10 text-violet-200',
   },
+  epic: {
+    card: 'border-fuchsia-300/25 bg-fuchsia-300/[0.075]',
+    chip: 'border-fuchsia-300/30 bg-fuchsia-300/10 text-fuchsia-200',
+  },
   historic: {
     card: 'border-amber-300/20 bg-amber-300/[0.065]',
     chip: 'border-amber-300/25 bg-amber-300/10 text-amber-200',
+  },
+  honor: {
+    card: 'border-amber-200/25 bg-amber-200/[0.07]',
+    chip: 'border-amber-200/30 bg-amber-200/10 text-amber-100',
   },
   secret: {
     card: 'border-fuchsia-300/20 bg-fuchsia-300/[0.065]',
@@ -61,13 +63,11 @@ const knownProgress = (
 
 interface AchievementShowcaseProps {
   overview?: AchievementOverview;
-  profileBadges: BadgeType[];
   isHeaderVisible: boolean;
 }
 
 export function AchievementShowcase({
   overview,
-  profileBadges,
   isHeaderVisible,
 }: AchievementShowcaseProps) {
   const { t } = useTranslation();
@@ -95,11 +95,7 @@ export function AchievementShowcase({
     [newlyEarned, viewedAchievementCodes],
   );
   const previewAchievements = achievements.slice(0, PREVIEW_LIMIT);
-  const previewBadges = profileBadges.slice(
-    0,
-    Math.max(0, PREVIEW_LIMIT - previewAchievements.length),
-  );
-  const totalMarks = achievements.length + profileBadges.length;
+  const totalMarks = achievements.length;
   const openShowcase = () => {
     setOpenedNewAchievementCodes(unseenAchievementCodes);
     setViewedAchievementCodes((current) => new Set([...current, ...unseenAchievementCodes]));
@@ -125,18 +121,6 @@ export function AchievementShowcase({
             <AchievementBadge code={achievement.code} size="sm" />
             <span className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 -translate-x-1/2 translate-y-1 scale-95 whitespace-nowrap rounded-lg border border-white/10 bg-slate-950/95 px-2 py-1 text-[11px] font-medium text-gray-200 opacity-0 shadow-lg shadow-black/30 transition-all duration-150 group-hover/badge:translate-y-0 group-hover/badge:scale-100 group-hover/badge:opacity-100">
               {t(ACHIEVEMENT_CONFIG[achievement.code].labelKey)}
-            </span>
-          </span>
-        ))}
-        {previewBadges.map((badge) => (
-          <span
-            key={badge}
-            className="group/badge relative flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-white/[0.06] bg-white/[0.035] opacity-70 transition-opacity group-hover:opacity-95"
-            title={t(BADGE_CONFIG[badge].titleKey)}
-          >
-            <Badge type={badge} size="sm" />
-            <span className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 -translate-x-1/2 translate-y-1 scale-95 whitespace-nowrap rounded-lg border border-white/10 bg-slate-950/95 px-2 py-1 text-[11px] font-medium text-gray-200 opacity-0 shadow-lg shadow-black/30 transition-all duration-150 group-hover/badge:translate-y-0 group-hover/badge:scale-100 group-hover/badge:opacity-100">
-              {t(BADGE_CONFIG[badge].labelKey)}
             </span>
           </span>
         ))}
@@ -279,34 +263,6 @@ export function AchievementShowcase({
                   </p>
                 )}
               </section>
-
-              {profileBadges.length > 0 && (
-                <section className="border-t border-white/10 pt-5">
-                  <h3 className="mb-1 font-semibold text-white">{t('profilePage.profileBadges')}</h3>
-                  <p className="mb-3 text-xs leading-5 text-gray-400">
-                    {t('profilePage.profileBadgesDescription')}
-                  </p>
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    {profileBadges.map((badge) => {
-                      const config = BADGE_CONFIG[badge];
-                      return (
-                        <div
-                          key={badge}
-                          className="flex min-w-0 items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.035] p-3"
-                        >
-                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-black/20">
-                            <Badge type={badge} size="lg" />
-                          </div>
-                          <div className="min-w-0">
-                            <p className="font-medium text-white">{t(config.labelKey)}</p>
-                            <p className="mt-0.5 text-xs leading-4 text-gray-400">{t(config.titleKey)}</p>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </section>
-              )}
 
               {overview && (
                 <section className="grid grid-cols-1 gap-2 rounded-2xl border border-white/10 bg-black/15 p-4 sm:grid-cols-3">

@@ -641,14 +641,32 @@ export interface PresetDraftQueue {
 export type AchievementCode =
   | 'first_catalog_contribution'
   | 'first_hundred'
+  | 'project_founder'
+  | 'beta_tester'
+  | 'project_contributor'
+  | 'project_supporter'
+  | 'early_adopter'
   | 'first_profile'
   | 'preset_publisher_5'
+  | 'preset_publisher_20'
+  | 'preset_publisher_50'
   | 'preset_used_by_another'
+  | 'presets_used_by_3'
   | 'presets_used_by_10'
+  | 'preset_confirmed_by_author'
+  | 'preset_material_types_5'
+  | 'spool_collector_1'
   | 'spool_collector_20'
   | 'spool_collector_100'
+  | 'material_system_connected'
   | 'happy_hare_connected'
-  | 'first_wiki_article';
+  | 'printer_integration_connected'
+  | 'automatic_spool_assignment'
+  | 'full_material_system'
+  | 'spool_depleted_by_print'
+  | 'first_wiki_article'
+  | 'first_wiki_revision'
+  | 'wiki_editor_5';
 
 export type AchievementCategory =
   | 'history'
@@ -657,9 +675,17 @@ export type AchievementCategory =
   | 'inventory'
   | 'integrations'
   | 'wiki'
+  | 'community'
   | 'legacy';
 
-export type AchievementRarity = 'common' | 'uncommon' | 'rare' | 'historic' | 'secret';
+export type AchievementRarity =
+  | 'common'
+  | 'uncommon'
+  | 'rare'
+  | 'epic'
+  | 'historic'
+  | 'honor'
+  | 'secret';
 
 export type ContributorRole =
   | 'catalog_contributor'
@@ -674,6 +700,7 @@ export interface UserAchievement {
   category: AchievementCategory | string;
   rarity: AchievementRarity | string;
   hidden: boolean;
+  source: 'automatic' | 'manual' | 'migration' | string;
 }
 
 export interface AchievementProgress {
@@ -692,6 +719,24 @@ export interface AchievementOverview {
   published_presets: number;
   saved_by_other_users: number;
   confirmed_uses_by_other_users: number;
+}
+
+export interface AdminAchievement {
+  code: AchievementCode | string;
+  category: AchievementCategory | string;
+  rarity: AchievementRarity | string;
+  source: 'automatic' | 'manual' | 'migration' | string;
+  earned_at: string;
+  awarded_by_user_id: number | null;
+  award_reason: string | null;
+  revoked_at: string | null;
+  revoked_by_user_id: number | null;
+  revoke_reason: string | null;
+}
+
+export interface AdminAchievementOverview {
+  achievements: AdminAchievement[];
+  manual_awardable_codes: AchievementCode[];
 }
 
 export type PresetMatchReason =
@@ -751,7 +796,6 @@ export interface User {
   printer_id: number | null; // ID выбранного принтера из каталога
   recommend_physical_printer_id: number | null; // Выбор для рекомендаций каталога (следует за аккаунтом между устройствами)
   recommend_printer_profile_id: number | null;
-  badges: string[] | null; // Бейджи пользователя (founder, beta_tester, contributor, verified, early_adopter, supporter)
   // Calculator Pro entitlement. New users activate a one-time trial explicitly.
   has_calculator_access?: boolean;
   subscription?: {
@@ -1059,7 +1103,6 @@ export interface FilamentReview {
   preset_id: number | null;
   preset_name: string | null;
   username: string | null;
-  user_badges: string[] | null; // Бейджи пользователя
   success: boolean;
   rating: number; // 1.0 - 5.0
   comment: string | null;

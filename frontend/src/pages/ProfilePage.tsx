@@ -87,7 +87,6 @@ const CreatePrinterProfileModal = lazy(() =>
 );
 import { CreatePrintProfileModal } from '../components/CreatePrintProfileModal';
 import { PresetSyncToggle } from '../components/PresetSyncToggle';
-import { BADGE_CONFIG, type BadgeType } from '../components/Badge';
 import { AchievementShowcase } from '../components/AchievementShowcase';
 import { PresetSlotsPanel } from '../components/presetSlots/PresetSlotsPanel';
 import { SpoolUsageModal } from '../components/SpoolUsageModal';
@@ -116,15 +115,6 @@ const PROFILE_TABS = [
   'printer-profiles',
 ] as const;
 type ProfileTab = (typeof PROFILE_TABS)[number];
-
-const PROFILE_BADGE_PRIORITY: BadgeType[] = [
-  'verified',
-  'founder',
-  'contributor',
-  'beta_tester',
-  'early_adopter',
-  'supporter',
-];
 
 /** Мягкое напоминание: аккаунт работает, но адрес ещё не подтверждён. */
 function UnverifiedEmailNotice() {
@@ -328,16 +318,6 @@ export const ProfilePage: React.FC = () => {
     return parts.join(' · ');
   }, [user, t]);
 
-  const profileBadges = useMemo(() => {
-    const validBadgeTypes = new Set<BadgeType>(Object.keys(BADGE_CONFIG) as BadgeType[]);
-    return (user?.badges ?? []).filter((badge): badge is BadgeType => validBadgeTypes.has(badge as BadgeType));
-  }, [user?.badges]);
-  const prioritizedProfileBadges = useMemo(() => {
-    const priority = new Map(PROFILE_BADGE_PRIORITY.map((badge, index) => [badge, index]));
-    return [...profileBadges].sort(
-      (left, right) => (priority.get(left) ?? Number.MAX_SAFE_INTEGER) - (priority.get(right) ?? Number.MAX_SAFE_INTEGER),
-    );
-  }, [profileBadges]);
   const achievementOverviewQuery = useQuery({
     queryKey: ['achievement-overview', user?.id],
     queryFn: achievementsAPI.evaluateMine,
@@ -987,7 +967,6 @@ export const ProfilePage: React.FC = () => {
                 <div className="mt-2 hidden max-w-full sm:block">
                   <AchievementShowcase
                     overview={achievementOverviewQuery.data}
-                    profileBadges={prioritizedProfileBadges}
                     isHeaderVisible={isHeaderVisible}
                   />
                 </div>
@@ -996,7 +975,6 @@ export const ProfilePage: React.FC = () => {
             <div className="mt-3 w-full sm:hidden">
               <AchievementShowcase
                 overview={achievementOverviewQuery.data}
-                profileBadges={prioritizedProfileBadges}
                 isHeaderVisible={isHeaderVisible}
               />
             </div>
