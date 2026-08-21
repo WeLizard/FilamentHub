@@ -16,6 +16,14 @@ class Settings(BaseSettings):
     API_V1_PREFIX: str = "/api/v1"
     DEBUG: bool = False
     BASE_URL: str = "https://filamenthub.ru"  # Базовый URL для QR-кодов
+    # Public browser entry points. This trust list is intentionally independent
+    # from CORS_ORIGINS, which operators may override for cross-origin clients.
+    PUBLIC_ORIGINS: list[str] = [
+        "https://filamenthub.ru",
+        "https://www.filamenthub.ru",
+        "https://filamenthub.club",
+        "https://www.filamenthub.club",
+    ]
 
     # Database
     # Если DATABASE_URL задан напрямую - используем его, иначе формируем из отдельных переменных
@@ -105,6 +113,8 @@ class Settings(BaseSettings):
         "http://localhost:8080",
         "https://filamenthub.ru",
         "https://www.filamenthub.ru",
+        "https://filamenthub.club",
+        "https://www.filamenthub.club",
     ]
 
     # Pagination
@@ -176,8 +186,8 @@ class Settings(BaseSettings):
         case_sensitive=True,
     )
 
-    @model_validator(mode='after')
-    def build_database_url(self) -> 'Settings':
+    @model_validator(mode="after")
+    def build_database_url(self) -> "Settings":
         """Формируем DATABASE_URL из отдельных переменных с правильным экранированием пароля."""
         # ВСЕГДА формируем DATABASE_URL из отдельных переменных
         # с правильным URL-encoding пароля (для поддержки паролей с @, #, и т.д.)

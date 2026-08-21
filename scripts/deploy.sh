@@ -20,6 +20,9 @@ else
     PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 fi
 SITE_HOST="${SITE_HOST:-filamenthub.ru}"
+PUBLIC_HEALTH_HOSTS="${PUBLIC_HEALTH_HOSTS:-filamenthub.ru filamenthub.club}"
+CERTBOT_LIVE_DIR="${CERTBOT_LIVE_DIR:-$PROJECT_DIR/certbot/conf/live}"
+REQUIRED_CERTIFICATE_HOSTS="${REQUIRED_CERTIFICATE_HOSTS:-filamenthub.ru filamenthub.club}"
 BACKUP_DIR="${BACKUP_DIR:-$PROJECT_DIR/backups}"
 BACKUP_KEY="${BACKUP_PUBLIC_KEY:-$PROJECT_DIR/backup-key.pub.asc}"
 REVISION="origin/main"
@@ -60,6 +63,55 @@ EOF
 
 require_command() {
     command -v "$1" >/dev/null 2>&1 || fail "Required command is missing: $1"
+}
+
+check_required_certificates() {
+    local host cert_path key_path covered_name host_failed
+    local failed=false
+
+    require_command openssl
+
+    info "Checking TLS certificates required by the frontend configuration..."
+    for host in $REQUIRED_CERTIFICATE_HOSTS; do
+        [[ "$host" =~ ^[a-z0-9.-]+$ ]] \
+            || fail "Invalid host in REQUIRED_CERTIFICATE_HOSTS: $host"
+
+        cert_path="$CERTBOT_LIVE_DIR/$host/fullchain.pem"
+        key_path="$CERTBOT_LIVE_DIR/$host/privkey.pem"
+
+        if [[ ! -s "$cert_path" || ! -s "$key_path" ]]; then
+            warn "  $host: missing fullchain.pem or privkey.pem in $CERTBOT_LIVE_DIR/$host"
+            failed=true
+            continue
+        fi
+
+        # nginx serves www.<host> from this same lineage and only redirects it
+        # afterwards, so a certificate without the www name fails the handshake
+        # before the visitor ever reaches the redirect.
+        host_failed=false
+        for covered_name in "$host" "www.$host"; do
+            if ! openssl x509 -in "$cert_path" -noout -checkhost "$covered_name" >/dev/null 2>&1; then
+                warn "  $host: certificate does not cover $covered_name"
+                host_failed=true
+            fi
+        done
+
+        if [[ "$host_failed" == true ]]; then
+            failed=true
+            continue
+        fi
+
+        if ! openssl x509 -in "$cert_path" -noout -checkend 86400 >/dev/null 2>&1; then
+            warn "  $host: certificate is expired or expires within 24 hours"
+            failed=true
+            continue
+        fi
+
+        success "  $host: certificate and private key are present; hostnames and validity are acceptable"
+    done
+
+    [[ "$failed" == false ]] \
+        || fail "Required TLS certificates are not ready. No backup, build, migration or service switch was started."
 }
 
 container_state() {
@@ -338,10 +390,11 @@ wait_for_container() {
 }
 
 deploy() {
-    local migration_heads head_count
+    local migration_heads head_count public_host
     local failed=false
 
     resolve_target
+    check_required_certificates
     if [[ "$DRY_RUN" == true ]]; then
         success "Dry run complete. No backup, Git update, build, migration or restart was performed."
         return 0
@@ -400,12 +453,19 @@ deploy() {
     else
         success "Public static asset check passed."
     fi
-    if ! curl -fsS --max-time 15 "https://$SITE_HOST/health" >/dev/null; then
-        warn "External HTTPS health check failed (DNS/TLS/public route)."
-        failed=true
-    else
-        success "External HTTPS health check passed."
-    fi
+    for public_host in $PUBLIC_HEALTH_HOSTS; do
+        if [[ ! "$public_host" =~ ^[a-z0-9.-]+$ ]]; then
+            warn "Invalid host in PUBLIC_HEALTH_HOSTS: $public_host"
+            failed=true
+            continue
+        fi
+        if ! curl -fsS --max-time 15 "https://$public_host/health" >/dev/null; then
+            warn "External HTTPS health check failed for $public_host (DNS/TLS/public route)."
+            failed=true
+        else
+            success "External HTTPS health check passed for $public_host."
+        fi
+    done
 
     if [[ "$failed" == true ]]; then
         printf '\n' >&2

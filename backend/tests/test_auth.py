@@ -56,6 +56,47 @@ def test_google_oauth_requests_only_basic_identity_without_offline_access(
 
 
 @pytest.mark.asyncio
+async def test_oauth_uses_the_same_configured_public_host_for_callback(
+    client: AsyncClient,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(settings, "AUTH_REGION_MODE", "static_intl")
+    monkeypatch.setattr(settings, "YANDEX_CLIENT_ID", "yandex-id")
+    monkeypatch.setattr(settings, "YANDEX_CLIENT_SECRET", "yandex-secret")
+
+    response = await client.get(
+        "/api/v1/auth/oauth/yandex/url",
+        headers={"Host": "filamenthub.club"},
+    )
+
+    assert response.status_code == 200
+    query = parse_qs(urlparse(response.json()["url"]).query)
+    assert query["redirect_uri"] == ["https://filamenthub.club/oauth/callback/yandex"]
+
+
+@pytest.mark.asyncio
+async def test_oauth_ignores_client_supplied_forwarded_host(
+    client: AsyncClient,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(settings, "AUTH_REGION_MODE", "static_intl")
+    monkeypatch.setattr(settings, "YANDEX_CLIENT_ID", "yandex-id")
+    monkeypatch.setattr(settings, "YANDEX_CLIENT_SECRET", "yandex-secret")
+
+    response = await client.get(
+        "/api/v1/auth/oauth/yandex/url",
+        headers={
+            "Host": "filamenthub.club",
+            "X-Forwarded-Host": "attacker.example",
+        },
+    )
+
+    assert response.status_code == 200
+    query = parse_qs(urlparse(response.json()["url"]).query)
+    assert query["redirect_uri"] == ["https://filamenthub.club/oauth/callback/yandex"]
+
+
+@pytest.mark.asyncio
 async def test_auth_methods_are_server_authoritative(
     client: AsyncClient,
     monkeypatch,
@@ -127,9 +168,7 @@ async def test_oauth_provider_policy_is_enforced_on_direct_api_calls(
         json={"code": "unused", "state": "unused"},
     )
     assert blocked_google_callback.status_code == 403
-    assert blocked_google_callback.json()["detail"]["code"] == (
-        "ERR_OAUTH_PROVIDER_NOT_AVAILABLE"
-    )
+    assert blocked_google_callback.json()["detail"]["code"] == ("ERR_OAUTH_PROVIDER_NOT_AVAILABLE")
 
     monkeypatch.setattr(settings, "AUTH_REGION_MODE", "static_intl")
     allowed_yandex = await client.get("/api/v1/auth/oauth/yandex/url")
@@ -171,9 +210,7 @@ async def test_intl_google_services_flag_disables_google_and_recaptcha(
         json={"code": "unused", "state": "unused"},
     )
     assert blocked_google_callback.status_code == 403
-    assert blocked_google_callback.json()["detail"]["code"] == (
-        "ERR_OAUTH_PROVIDER_NOT_AVAILABLE"
-    )
+    assert blocked_google_callback.json()["detail"]["code"] == ("ERR_OAUTH_PROVIDER_NOT_AVAILABLE")
 
 
 @pytest.mark.asyncio
@@ -259,12 +296,8 @@ async def test_legal_requirements_are_public_and_versioned(
         "personal_data_consent_version": CURRENT_PERSONAL_DATA_CONSENT_VERSION,
         "privacy_policy_version": CURRENT_PRIVACY_POLICY_VERSION,
         "terms_url": "/user-agreement?pack=intl&edition=global-2026-08-01",
-        "personal_data_consent_url": (
-            "/personal-data-consent?pack=intl&edition=global-2026-08-01"
-        ),
-        "privacy_policy_url": (
-            "/privacy-policy?pack=intl&edition=global-2026-08-01"
-        ),
+        "personal_data_consent_url": ("/personal-data-consent?pack=intl&edition=global-2026-08-01"),
+        "privacy_policy_url": ("/privacy-policy?pack=intl&edition=global-2026-08-01"),
         "legal_update_effective_date": LEGAL_UPDATE_EFFECTIVE_DATE.isoformat(),
         "legal_update_note": LEGAL_UPDATE_NOTE,
     }
@@ -327,10 +360,7 @@ async def test_registration_requires_separate_current_legal_acceptance(
         },
     )
     assert stale_privacy.status_code == 409
-    assert (
-        stale_privacy.json()["detail"]["code"]
-        == "ERR_LEGAL_DOCUMENT_VERSION_MISMATCH"
-    )
+    assert stale_privacy.json()["detail"]["code"] == "ERR_LEGAL_DOCUMENT_VERSION_MISMATCH"
 
 
 @pytest.mark.asyncio
@@ -352,26 +382,26 @@ async def test_registration_records_separate_legal_evidence(
     assert response.status_code == 201
     assert response.json()["legal_onboarding_required"] is False
     user = (
-        await db_session.execute(
-            select(User).where(User.email == "legal-evidence@example.com")
-        )
+        await db_session.execute(select(User).where(User.email == "legal-evidence@example.com"))
     ).scalar_one()
     rows = (
-        await db_session.execute(
-            select(UserLegalAcceptance)
-            .where(UserLegalAcceptance.user_id == user.id)
-            .order_by(UserLegalAcceptance.document_type)
+        (
+            await db_session.execute(
+                select(UserLegalAcceptance)
+                .where(UserLegalAcceptance.user_id == user.id)
+                .order_by(UserLegalAcceptance.document_type)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert [row.document_type for row in rows] == [
         "personal_data_consent",
         "terms",
     ]
     assert {row.acceptance_source for row in rows} == {"registration"}
     assert {row.language for row in rows} == {"en"}
-    assert {row.related_privacy_policy_version for row in rows} == {
-        CURRENT_PRIVACY_POLICY_VERSION
-    }
+    assert {row.related_privacy_policy_version for row in rows} == {CURRENT_PRIVACY_POLICY_VERSION}
     assert user.privacy_policy_version_presented == CURRENT_PRIVACY_POLICY_VERSION
 
 
@@ -413,10 +443,7 @@ async def test_existing_or_oauth_user_must_accept_before_private_features(
         headers=headers,
     )
     assert legacy_dependency_blocked.status_code == 403
-    assert (
-        legacy_dependency_blocked.json()["detail"]["code"]
-        == "ERR_LEGAL_ACCEPTANCE_REQUIRED"
-    )
+    assert legacy_dependency_blocked.json()["detail"]["code"] == "ERR_LEGAL_ACCEPTANCE_REQUIRED"
 
     stale = await client.post(
         "/api/v1/auth/legal-acceptance",
@@ -443,12 +470,14 @@ async def test_existing_or_oauth_user_must_accept_before_private_features(
     )
     assert repeated.status_code == 200
     rows = (
-        await db_session.execute(
-            select(UserLegalAcceptance).where(
-                UserLegalAcceptance.user_id == user.id
+        (
+            await db_session.execute(
+                select(UserLegalAcceptance).where(UserLegalAcceptance.user_id == user.id)
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert len(rows) == 2
 
     unlocked = await client.post(
@@ -503,9 +532,7 @@ async def test_reacceptance_only_requires_the_changed_document(
     db_session.add(user)
     await db_session.flush()
     existing_version = (
-        CURRENT_TERMS_VERSION
-        if existing_type == "terms"
-        else CURRENT_PERSONAL_DATA_CONSENT_VERSION
+        CURRENT_TERMS_VERSION if existing_type == "terms" else CURRENT_PERSONAL_DATA_CONSENT_VERSION
     )
     db_session.add(
         UserLegalAcceptance(
@@ -551,10 +578,14 @@ async def test_reacceptance_only_requires_the_changed_document(
     assert accepted.json()["required_legal_acceptances"] == []
 
     rows = (
-        await db_session.execute(
-            select(UserLegalAcceptance).where(UserLegalAcceptance.user_id == user.id)
+        (
+            await db_session.execute(
+                select(UserLegalAcceptance).where(UserLegalAcceptance.user_id == user.id)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert {row.document_type for row in rows} == {
         "terms",
         "personal_data_consent",
@@ -830,8 +861,7 @@ async def test_active_brand_requires_membership_and_lists_granted_brands(
     brands_response = await auth_client.get("/api/v1/auth/me/brands")
     assert brands_response.status_code == 200
     workspaces = {
-        (item["brand_id"], item["organization_id"]): item
-        for item in brands_response.json()
+        (item["brand_id"], item["organization_id"]): item for item in brands_response.json()
     }
     assert set(workspaces) == {
         (allowed.id, allowed_organization.id),
@@ -1202,10 +1232,12 @@ async def test_oauth_callback_validates_state(client: AsyncClient, monkeypatch):
     monkeypatch.setattr(
         auth_module,
         "get_google_auth_url",
-        lambda state: f"https://accounts.google.com/o/oauth2/auth?state={state}",
+        lambda state, _public_origin=None: (
+            f"https://accounts.google.com/o/oauth2/auth?state={state}"
+        ),
     )
 
-    async def fake_exchange(code: str) -> OAuthUserInfo:
+    async def fake_exchange(code: str, _public_origin: str | None = None) -> OAuthUserInfo:
         return OAuthUserInfo(
             provider="google",
             provider_id="g-123",
@@ -1268,7 +1300,9 @@ async def test_an_unverified_provider_address_never_opens_an_existing_account(
     monkeypatch.setattr(
         auth_module,
         "get_google_auth_url",
-        lambda state: f"https://accounts.google.com/o/oauth2/auth?state={state}",
+        lambda state, _public_origin=None: (
+            f"https://accounts.google.com/o/oauth2/auth?state={state}"
+        ),
     )
 
     victim_email = "victim@example.com"
@@ -1283,7 +1317,10 @@ async def test_an_unverified_provider_address_never_opens_an_existing_account(
     assert registered.status_code == 201
 
     def exchange_returning(verified: bool):
-        async def fake_exchange(code: str) -> OAuthUserInfo:
+        async def fake_exchange(
+            code: str,
+            _public_origin: str | None = None,
+        ) -> OAuthUserInfo:
             return OAuthUserInfo(
                 provider="google",
                 provider_id="g-attacker",
@@ -1401,9 +1438,7 @@ async def test_password_reset_finds_the_account_whatever_case_was_typed(
     )
     assert registration.status_code == 201
 
-    stored = await db_session.scalar(
-        select(User).where(User.username == "mixed_case_user")
-    )
+    stored = await db_session.scalar(select(User).where(User.username == "mixed_case_user"))
     assert stored is not None
     # The validator lowercases the domain, the local part is kept as typed;
     # only matching ignores case.
@@ -1519,9 +1554,7 @@ async def test_registration_sends_a_confirmation_the_owner_can_also_disown(
     token = sent["url"].rsplit("token=", 1)[1]
     disown = await client.post(f"/api/v1/auth/reject-registration?token={token}")
     assert disown.status_code == 200
-    assert await db_session.scalar(
-        select(User).where(User.username == "stranger_account")
-    ) is None
+    assert await db_session.scalar(select(User).where(User.username == "stranger_account")) is None
     assert await db_session.scalar(select(Preset).where(Preset.id == draft_id)) is None
     assert await db_session.scalar(select(EmailThread).where(EmailThread.id == thread_id)) is None
     assert not raw_message.exists()
@@ -1559,6 +1592,4 @@ async def test_a_confirmed_account_cannot_be_removed_by_the_same_link(
 
     disown = await client.post(f"/api/v1/auth/reject-registration?token={token}")
     assert disown.status_code == 400
-    assert await db_session.scalar(
-        select(User).where(User.username == "real_owner")
-    ) is not None
+    assert await db_session.scalar(select(User).where(User.username == "real_owner")) is not None

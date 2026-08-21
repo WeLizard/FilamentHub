@@ -26,7 +26,8 @@ export function extractQrShortCode(rawValue: string): string | null {
 
 /**
  * Возвращает наш short-code, только если QR действительно наш:
- * — URL на filamenthub.ru с сегментом `/qr/<code>` (или `/f/<code>`);
+ * — URL на одном из доменов FilamentHub с сегментом `/qr/<code>`
+ *   (или `/f/<code>`);
  * — либо «голый» код целиком (бэкенд валидирует его при scan).
  * Для чужих QR (например, ссылка на Ozon) возвращает null — чтобы не дёргать API
  * и показать пользователю подсказку.
@@ -39,7 +40,11 @@ export function ownQrShortCode(rawValue: string): string | null {
     try {
       const url = new URL(v);
       const host = url.hostname.toLowerCase();
-      const ours = host === 'filamenthub.ru' || host.endsWith('.filamenthub.ru') || host === 'localhost';
+      const ours = host === 'filamenthub.ru'
+        || host.endsWith('.filamenthub.ru')
+        || host === 'filamenthub.club'
+        || host.endsWith('.filamenthub.club')
+        || host === 'localhost';
       if (!ours) return null;
       const segments = url.pathname.split('/').filter(Boolean);
       const idx = segments.findIndex((s) => s.toLowerCase() === 'qr' || s.toLowerCase() === 'f');

@@ -31,6 +31,7 @@ HTTP_TIMEOUT = 10.0
 
 # ── Data classes ─────────────────────────────────────────────────────
 
+
 class OAuthUserInfo:
     """Normalized user info from OAuth provider."""
 
@@ -53,26 +54,29 @@ class OAuthUserInfo:
 
 # ── State management ─────────────────────────────────────────────────
 
+
 def generate_oauth_state() -> str:
     """Generate a cryptographic state parameter for CSRF protection."""
     return secrets.token_urlsafe(32)
 
 
-def _build_redirect_uri(provider: str) -> str:
+def _build_redirect_uri(provider: str, public_origin: str | None = None) -> str:
     """Build the OAuth callback redirect URI for the given provider."""
-    return f"{settings.BASE_URL}{OAUTH_CALLBACK_BASE_PATH}/{provider}"
+    origin = (public_origin or settings.BASE_URL).rstrip("/")
+    return f"{origin}{OAUTH_CALLBACK_BASE_PATH}/{provider}"
 
 
 # ── Auth URL builders ────────────────────────────────────────────────
 
-def get_google_auth_url(state: str) -> str | None:
+
+def get_google_auth_url(state: str, public_origin: str | None = None) -> str | None:
     """Build Google OAuth authorization URL. Returns None if not configured."""
     if not settings.INTL_GOOGLE_SERVICES_ENABLED or not settings.GOOGLE_CLIENT_ID:
         return None
 
     params = {
         "client_id": settings.GOOGLE_CLIENT_ID,
-        "redirect_uri": _build_redirect_uri("google"),
+        "redirect_uri": _build_redirect_uri("google", public_origin),
         "response_type": "code",
         "scope": GOOGLE_SCOPES,
         "state": state,
@@ -81,14 +85,14 @@ def get_google_auth_url(state: str) -> str | None:
     return f"{GOOGLE_AUTH_URL}?{urlencode(params)}"
 
 
-def get_yandex_auth_url(state: str) -> str | None:
+def get_yandex_auth_url(state: str, public_origin: str | None = None) -> str | None:
     """Build Yandex OAuth authorization URL. Returns None if not configured."""
     if not settings.YANDEX_CLIENT_ID:
         return None
 
     params = {
         "client_id": settings.YANDEX_CLIENT_ID,
-        "redirect_uri": _build_redirect_uri("yandex"),
+        "redirect_uri": _build_redirect_uri("yandex", public_origin),
         "response_type": "code",
         "state": state,
         "force_confirm": "yes",
@@ -98,7 +102,11 @@ def get_yandex_auth_url(state: str) -> str | None:
 
 # ── Token exchange ───────────────────────────────────────────────────
 
-async def exchange_google_code(code: str) -> OAuthUserInfo:
+
+async def exchange_google_code(
+    code: str,
+    public_origin: str | None = None,
+) -> OAuthUserInfo:
     """Exchange Google authorization code for user info."""
     async with httpx.AsyncClient(timeout=HTTP_TIMEOUT) as client:
         # Exchange code for tokens
@@ -108,7 +116,7 @@ async def exchange_google_code(code: str) -> OAuthUserInfo:
                 "code": code,
                 "client_id": settings.GOOGLE_CLIENT_ID,
                 "client_secret": settings.GOOGLE_CLIENT_SECRET,
-                "redirect_uri": _build_redirect_uri("google"),
+                "redirect_uri": _build_redirect_uri("google", public_origin),
                 "grant_type": "authorization_code",
             },
         )
@@ -136,7 +144,10 @@ async def exchange_google_code(code: str) -> OAuthUserInfo:
     )
 
 
-async def exchange_yandex_code(code: str) -> OAuthUserInfo:
+async def exchange_yandex_code(
+    code: str,
+    public_origin: str | None = None,
+) -> OAuthUserInfo:
     """Exchange Yandex authorization code for user info."""
     async with httpx.AsyncClient(timeout=HTTP_TIMEOUT) as client:
         # Exchange code for tokens
@@ -146,7 +157,7 @@ async def exchange_yandex_code(code: str) -> OAuthUserInfo:
                 "code": code,
                 "client_id": settings.YANDEX_CLIENT_ID,
                 "client_secret": settings.YANDEX_CLIENT_SECRET,
-                "redirect_uri": _build_redirect_uri("yandex"),
+                "redirect_uri": _build_redirect_uri("yandex", public_origin),
                 "grant_type": "authorization_code",
             },
         )
@@ -182,6 +193,7 @@ async def exchange_yandex_code(code: str) -> OAuthUserInfo:
 
 
 # ── Helpers ──────────────────────────────────────────────────────────
+
 
 def generate_username_from_email(email: str) -> str:
     """Generate a username candidate from email address."""

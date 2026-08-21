@@ -26,9 +26,9 @@ def _format_size(size_bytes: int) -> str:
 
 @lru_cache(maxsize=1)
 def _allowed_download_hosts() -> frozenset[str]:
-    """Trusted download hosts derived from CORS_ORIGINS and BASE_URL."""
+    """Trusted download hosts derived from PUBLIC_ORIGINS and BASE_URL."""
     hosts: set[str] = set()
-    for origin in settings.CORS_ORIGINS:
+    for origin in settings.PUBLIC_ORIGINS:
         parsed = urlparse(origin)
         if parsed.hostname:
             hosts.add(parsed.hostname.lower())
@@ -41,15 +41,31 @@ def _allowed_download_hosts() -> frozenset[str]:
 def _safe_base_url(request: Request) -> str:
     """Build a public URL without trusting an arbitrary Host header."""
     forwarded_proto = request.headers.get("X-Forwarded-Proto", "https")
-    candidate = request.headers.get("X-Forwarded-Host") or request.headers.get("Host") or ""
+    # Cloudflare preserves Host. X-Forwarded-Host is deliberately ignored:
+    # unlike Host, it is not overwritten by every proxy in our chain and may
+    # therefore be supplied by the client.
+    candidate = request.headers.get("Host") or ""
     hostname = candidate.split(":", 1)[0].strip().lower()
 
     if hostname and hostname in _allowed_download_hosts():
-        proto = "https" if "filamenthub.ru" in hostname else forwarded_proto
-        return f"{proto}://{candidate}".rstrip("/")
+        configured_https_hosts = {
+            urlparse(origin).hostname
+            for origin in settings.PUBLIC_ORIGINS
+            if urlparse(origin).scheme == "https"
+        }
+        proto = "https" if hostname in configured_https_hosts else forwarded_proto
+        # Public download links never need a client-supplied port. Returning
+        # the normalized allowlisted hostname keeps even direct ASGI callers
+        # from turning an accepted host into an odd :port link.
+        return f"{proto}://{hostname}"
 
     base_url = settings.BASE_URL.rstrip("/")
-    if base_url.startswith("http://") and "filamenthub.ru" in base_url:
+    if base_url.startswith("http://") and urlparse(base_url).hostname in {
+        "filamenthub.ru",
+        "www.filamenthub.ru",
+        "filamenthub.club",
+        "www.filamenthub.club",
+    }:
         base_url = base_url.replace("http://", "https://")
     return base_url
 
@@ -110,7 +126,9 @@ async def download_plugin_package(filename: str) -> FileResponse:
 
     path: Path | None = await plugin_release_service.ensure_local_copy(package)
     if path is None:
-        raise_error(status.HTTP_503_SERVICE_UNAVAILABLE, ERR_DOWNLOAD_UNAVAILABLE, {"file": filename})
+        raise_error(
+            status.HTTP_503_SERVICE_UNAVAILABLE, ERR_DOWNLOAD_UNAVAILABLE, {"file": filename}
+        )
 
     return FileResponse(
         path,

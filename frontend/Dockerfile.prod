@@ -29,7 +29,7 @@ ENV VITE_AUTH_CSRF_COOKIE_NAME=${VITE_AUTH_CSRF_COOKIE_NAME}
 RUN npm run build
 
 # Production stage
-FROM nginx:alpine
+FROM nginx:1.31.2-alpine@sha256:54f2a904c251d5a34adf545a72d32515a15e08418dae0266e23be2e18c66fefa
 
 # Copy built files from builder
 COPY --from=builder /app/dist /usr/share/nginx/html
@@ -42,6 +42,7 @@ RUN chmod -R a+rX /usr/share/nginx/html
 
 # Copy nginx configuration
 COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY cloudflare-real-ip.conf /etc/nginx/snippets/cloudflare-real-ip.conf
 
 # Expose port 80
 EXPOSE 80

@@ -73,11 +73,15 @@ class _Transport(httpx.AsyncBaseTransport):
     def __init__(self, releases, *, print_farm_releases=None, files=None):
         self.releases = releases
         self.print_farm_releases = print_farm_releases or []
-        self.files = files if files is not None else {
-            ORCA_WHEEL: ORCA_BYTES,
-            BRIDGE_WHEEL: BRIDGE_BYTES,
-            PRINT_FARM_WHEEL: PRINT_FARM_BYTES,
-        }
+        self.files = (
+            files
+            if files is not None
+            else {
+                ORCA_WHEEL: ORCA_BYTES,
+                BRIDGE_WHEEL: BRIDGE_BYTES,
+                PRINT_FARM_WHEEL: PRINT_FARM_BYTES,
+            }
+        )
         self.file_requests: list[str] = []
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
@@ -216,6 +220,38 @@ async def test_the_listing_points_at_our_own_server(client, monkeypatch):
         assert "api.github.com" not in item["download_url"]
         assert item["download_url"].endswith(f"/api/v1/downloads/plugins/{item['filename']}")
     assert body["release_url"].startswith("https://github.com/")
+
+
+@pytest.mark.asyncio
+async def test_the_listing_uses_the_trusted_club_origin(client, monkeypatch):
+    _install(monkeypatch, _Transport([_release()]))
+
+    response = await client.get(
+        "/api/v1/downloads/plugins",
+        headers={"Host": "filamenthub.club"},
+    )
+
+    assert response.status_code == 200
+    for item in response.json()["packages"]:
+        assert item["download_url"].startswith("https://filamenthub.club/")
+
+
+@pytest.mark.asyncio
+async def test_the_listing_ignores_forged_forwarded_host(client, monkeypatch):
+    _install(monkeypatch, _Transport([_release()]))
+
+    response = await client.get(
+        "/api/v1/downloads/plugins",
+        headers={
+            "Host": "filamenthub.club",
+            "X-Forwarded-Host": "attacker.example",
+        },
+    )
+
+    assert response.status_code == 200
+    for item in response.json()["packages"]:
+        assert item["download_url"].startswith("https://filamenthub.club/")
+        assert "attacker.example" not in item["download_url"]
 
 
 @pytest.mark.asyncio

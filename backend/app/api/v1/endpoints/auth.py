@@ -4,6 +4,7 @@ import logging
 import secrets
 from datetime import datetime, timezone
 from typing import Annotated, Literal
+from urllib.parse import urlparse
 
 from fastapi import (
     APIRouter,
@@ -173,8 +174,7 @@ def _validate_legal_document_versions(
     requirements = current_legal_requirements(legal_pack)
     if (
         terms_version != requirements["terms_version"]
-        or personal_data_consent_version
-        != requirements["personal_data_consent_version"]
+        or personal_data_consent_version != requirements["personal_data_consent_version"]
         or privacy_policy_version != requirements["privacy_policy_version"]
     ):
         raise_error(
@@ -211,9 +211,7 @@ async def _revoke_token_if_valid(
         return
 
     fingerprint = token_fingerprint(token)
-    existing = await db.execute(
-        select(RevokedToken.id).where(RevokedToken.jti == fingerprint)
-    )
+    existing = await db.execute(select(RevokedToken.id).where(RevokedToken.jti == fingerprint))
     if existing.scalar_one_or_none():
         return
 
@@ -340,10 +338,7 @@ async def accept_legal_documents(
         privacy_policy_version=data.privacy_policy_version,
     )
     required_documents = set(required_current_legal_acceptances(current_user))
-    if (
-        LegalDocumentType.TERMS in required_documents
-        and data.terms_accepted is not True
-    ) or (
+    if (LegalDocumentType.TERMS in required_documents and data.terms_accepted is not True) or (
         LegalDocumentType.PERSONAL_DATA_CONSENT in required_documents
         and data.personal_data_consent is not True
     ):
@@ -378,6 +373,7 @@ async def register(
     """
 
     import logging
+
     logger = logging.getLogger(__name__)
 
     legal_pack = resolve_legal_pack(request)
@@ -400,6 +396,7 @@ async def register(
 
     # reCAPTCHA v3 verification (international requests only in Phase 1).
     from app.core.utils import verify_recaptcha
+
     access_region = resolve_access_region(request)
     client_ip = get_request_client_ip(request)
     remote_ip = str(client_ip) if client_ip is not None else None
@@ -410,9 +407,7 @@ async def register(
 
     # Проверка существования email
     normalized_email = normalize_email(data.email)
-    result = await db.execute(
-        select(User).where(func.lower(User.email) == normalized_email)
-    )
+    result = await db.execute(select(User).where(func.lower(User.email) == normalized_email))
     existing_user = result.scalar_one_or_none()
     if existing_user:
         raise_error(status.HTTP_400_BAD_REQUEST, ERR_EMAIL_EXISTS)
@@ -427,6 +422,7 @@ async def register(
 
     # Проверка текстовых полей на плохие слова
     from app.services.preset_moderation import validate_text_field
+
     is_valid, error_msg = await validate_text_field(data.username, db, "username")
     if not is_valid:
         raise HTTPException(status_code=400, detail=error_msg)
@@ -578,7 +574,9 @@ async def reject_registration(
         raise_error(status.HTTP_400_BAD_REQUEST, ERR_INVALID_VERIFICATION_TOKEN)
 
     user = await db.scalar(select(User).where(User.id == int(payload.get("user_id", 0))))
-    if user is None or normalize_email(user.email) != normalize_email(str(payload.get("email", ""))):
+    if user is None or normalize_email(user.email) != normalize_email(
+        str(payload.get("email", ""))
+    ):
         raise_error(status.HTTP_400_BAD_REQUEST, ERR_INVALID_VERIFICATION_TOKEN)
     if user.email_verified:
         raise_error(status.HTTP_400_BAD_REQUEST, ERR_INVALID_VERIFICATION_TOKEN)
@@ -611,15 +609,11 @@ async def login(
 
     # Email takes precedence over username so the two identifier namespaces
     # cannot make one login value ambiguous. Both lookups ignore letter case.
-    result = await db.execute(
-        select(User).where(func.lower(User.email) == login_value)
-    )
+    result = await db.execute(select(User).where(func.lower(User.email) == login_value))
     user = result.scalar_one_or_none()
     if user is None:
         username_result = await db.execute(
-            select(User)
-            .where(func.lower(User.username) == login_value)
-            .limit(2)
+            select(User).where(func.lower(User.username) == login_value).limit(2)
         )
         username_matches = username_result.scalars().all()
         if len(username_matches) == 1:
@@ -636,7 +630,9 @@ async def login(
         data.password, user.password_hash
     )
     if not password_matches:
-        raise_error(status.HTTP_401_UNAUTHORIZED, ERR_WRONG_PASSWORD, headers={"WWW-Authenticate": "Bearer"})
+        raise_error(
+            status.HTTP_401_UNAUTHORIZED, ERR_WRONG_PASSWORD, headers={"WWW-Authenticate": "Bearer"}
+        )
 
     if not user.active:
         raise_error(status.HTTP_403_FORBIDDEN, ERR_ACCOUNT_INACTIVE)
@@ -684,7 +680,11 @@ async def refresh_token(
         using_cookie_refresh = bool(refresh_token_value)
 
     if not refresh_token_value:
-        raise_error(status.HTTP_401_UNAUTHORIZED, ERR_INVALID_REFRESH_TOKEN, headers={"WWW-Authenticate": "Bearer"})
+        raise_error(
+            status.HTTP_401_UNAUTHORIZED,
+            ERR_INVALID_REFRESH_TOKEN,
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
     # Для cookie-based refresh требуем CSRF header/cookie match.
     if using_cookie_refresh:
@@ -694,27 +694,39 @@ async def refresh_token(
             raise_error(status.HTTP_403_FORBIDDEN, ERR_ACCESS_DENIED)
 
     if await is_token_revoked(refresh_token_value, db):
-        raise_error(status.HTTP_401_UNAUTHORIZED, ERR_INVALID_REFRESH_TOKEN, headers={"WWW-Authenticate": "Bearer"})
+        raise_error(
+            status.HTTP_401_UNAUTHORIZED,
+            ERR_INVALID_REFRESH_TOKEN,
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
     # Декодируем refresh token
     payload = decode_refresh_token(refresh_token_value)
 
     if payload is None:
-        raise_error(status.HTTP_401_UNAUTHORIZED, ERR_INVALID_REFRESH_TOKEN, headers={"WWW-Authenticate": "Bearer"})
+        raise_error(
+            status.HTTP_401_UNAUTHORIZED,
+            ERR_INVALID_REFRESH_TOKEN,
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
     # Получаем email из payload
     email: str | None = payload.get("sub")
     if email is None:
-        raise_error(status.HTTP_401_UNAUTHORIZED, ERR_INVALID_REFRESH_TOKEN, headers={"WWW-Authenticate": "Bearer"})
+        raise_error(
+            status.HTTP_401_UNAUTHORIZED,
+            ERR_INVALID_REFRESH_TOKEN,
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
     # Проверяем существование пользователя
-    result = await db.execute(
-        select(User).where(func.lower(User.email) == normalize_email(email))
-    )
+    result = await db.execute(select(User).where(func.lower(User.email) == normalize_email(email)))
     user = result.scalar_one_or_none()
 
     if user is None:
-        raise_error(status.HTTP_401_UNAUTHORIZED, ERR_USER_NOT_FOUND, headers={"WWW-Authenticate": "Bearer"})
+        raise_error(
+            status.HTTP_401_UNAUTHORIZED, ERR_USER_NOT_FOUND, headers={"WWW-Authenticate": "Bearer"}
+        )
 
     if not user.active:
         raise_error(status.HTTP_403_FORBIDDEN, ERR_ACCOUNT_INACTIVE)
@@ -761,11 +773,19 @@ async def logout(
 
         refresh_payload = decode_refresh_token(refresh_token)
         if refresh_payload is None:
-            raise_error(status.HTTP_401_UNAUTHORIZED, ERR_INVALID_REFRESH_TOKEN, headers={"WWW-Authenticate": "Bearer"})
+            raise_error(
+                status.HTTP_401_UNAUTHORIZED,
+                ERR_INVALID_REFRESH_TOKEN,
+                headers={"WWW-Authenticate": "Bearer"},
+            )
 
         refresh_email: str | None = refresh_payload.get("sub")
         if refresh_email != current_user.email:
-            raise_error(status.HTTP_401_UNAUTHORIZED, ERR_INVALID_REFRESH_TOKEN, headers={"WWW-Authenticate": "Bearer"})
+            raise_error(
+                status.HTTP_401_UNAUTHORIZED,
+                ERR_INVALID_REFRESH_TOKEN,
+                headers={"WWW-Authenticate": "Bearer"},
+            )
 
         await _revoke_token_if_valid(refresh_token, refresh_payload, db)
 
@@ -898,9 +918,7 @@ async def get_my_presets_stats(
         select(Preset.id).where(Preset.user_id == current_user.id, syncable)
     )
     synced_ids.update({row[0] for row in historical_result.all()} - saved_preset_ids)
-    synced_presets = (
-        len(synced_ids) if current_user.allow_filament_presets_export else 0
-    )
+    synced_presets = len(synced_ids) if current_user.allow_filament_presets_export else 0
 
     return {
         "total_presets": total_presets,
@@ -1039,9 +1057,7 @@ async def update_current_user(
 
     if "username" in update_data and update_data["username"]:
         result = await db.execute(
-            select(User).where(
-                func.lower(User.username) == update_data["username"].lower()
-            )
+            select(User).where(func.lower(User.username) == update_data["username"].lower())
         )
         existing_user = result.scalar_one_or_none()
         if existing_user and existing_user.id != current_user.id:
@@ -1049,6 +1065,7 @@ async def update_current_user(
 
     # Проверка текстовых полей на плохие слова
     from app.services.preset_moderation import validate_text_field
+
     if "username" in update_data:
         is_valid, error_msg = await validate_text_field(update_data["username"], db, "username")
         if not is_valid:
@@ -1063,6 +1080,7 @@ async def update_current_user(
     # (None допустим — это сброс выбранного принтера)
     if "printer_id" in update_data and update_data["printer_id"] is not None:
         from app.models.printer import Printer
+
         result = await db.execute(select(Printer).where(Printer.id == update_data["printer_id"]))
         printer = result.scalar_one_or_none()
         if not printer:
@@ -1071,6 +1089,7 @@ async def update_current_user(
     # Catalog recommendation selection must reference the user's own printer/config.
     if update_data.get("recommend_physical_printer_id") is not None:
         from app.models.user_printer_device import UserPrinterDevice
+
         owned_device = await db.execute(
             select(UserPrinterDevice.id).where(
                 UserPrinterDevice.id == update_data["recommend_physical_printer_id"],
@@ -1081,6 +1100,7 @@ async def update_current_user(
             raise_error(status.HTTP_404_NOT_FOUND, ERR_DEVICE_NOT_FOUND)
     if update_data.get("recommend_printer_profile_id") is not None:
         from app.models.printer_profile import PrinterProfile
+
         owned_profile = await db.execute(
             select(PrinterProfile.id).where(
                 PrinterProfile.id == update_data["recommend_printer_profile_id"],
@@ -1204,6 +1224,7 @@ async def verify_email(
     если домен email совпадает с доменом сайта существующего верифицированного бренда.
     """
     import logging
+
     logger = logging.getLogger(__name__)
 
     # Декодируем токен верификации
@@ -1268,8 +1289,7 @@ async def delete_account(
         user=current_user,
         delete_reviews=data.delete_reviews,
         release_brand_representation=(
-            data.release_brand_representation
-            or bool(data.delete_brand_if_sole_representative)
+            data.release_brand_representation or bool(data.delete_brand_if_sole_representative)
         ),
         db=db,
     )
@@ -1289,6 +1309,7 @@ async def forgot_password(
     Для безопасности всегда возвращает успешный ответ, даже если email не найден.
     """
     import logging
+
     logger = logging.getLogger(__name__)
 
     # Ищем пользователя по email
@@ -1325,6 +1346,7 @@ async def reset_password(
     Токен должен быть получен через /forgot-password и действителен (не истёк).
     """
     import logging
+
     logger = logging.getLogger(__name__)
 
     # Декодируем токен восстановления
@@ -1413,9 +1435,7 @@ async def update_user_preferences(
 ) -> UserPreferencesResponse:
     """Persist account-wide preferences independently of calculator access."""
     profile = await db.scalar(
-        select(UserCalculatorProfile).where(
-            UserCalculatorProfile.user_id == current_user.id
-        )
+        select(UserCalculatorProfile).where(UserCalculatorProfile.user_id == current_user.id)
     )
     if profile is None:
         # Picking a currency must not be the moment a profile appears out of the
@@ -1455,6 +1475,7 @@ async def update_user_password(
         raise
     except Exception as e:
         import logging
+
         logger = logging.getLogger(__name__)
         logger.error(f"Error hashing password: {str(e)}", exc_info=True)
         raise_error(status.HTTP_500_INTERNAL_SERVER_ERROR, ERR_PASSWORD_HASH_ERROR)
@@ -1504,15 +1525,14 @@ async def update_user_email(
 ) -> EmailChangeResponse:
     """Request email change. Sends confirmation link to the new address; email is NOT changed yet."""
     import logging
+
     logger = logging.getLogger(__name__)
 
     requested_email = normalize_email(data.new_email)
     if requested_email == normalize_email(current_user.email):
         raise_error(status.HTTP_400_BAD_REQUEST, ERR_EMAIL_EXISTS)
 
-    result = await db.execute(
-        select(User).where(func.lower(User.email) == requested_email)
-    )
+    result = await db.execute(select(User).where(func.lower(User.email) == requested_email))
     existing_user = result.scalar_one_or_none()
     if existing_user:
         raise_error(status.HTTP_400_BAD_REQUEST, ERR_EMAIL_EXISTS)
@@ -1537,6 +1557,7 @@ async def confirm_email_change(
 ) -> ConfirmEmailChangeResponse:
     """Confirm email change via token from the confirmation email."""
     import logging
+
     logger = logging.getLogger(__name__)
 
     payload = decode_email_change_token(token)
@@ -1596,6 +1617,25 @@ _OAUTH_STATE_COOKIE = "fh_oauth_state"
 _OAUTH_STATE_MAX_AGE = 600  # seconds
 
 
+def _oauth_public_origin(request: Request) -> str:
+    """Return a configured public origin without trusting an arbitrary Host.
+
+    OAuth state cookies are host-only.  The provider must therefore return to
+    the same accepted FilamentHub hostname that initiated the flow; otherwise
+    a login started on the Cloudflare domain would lose its state cookie when
+    the canonical .ru callback is opened.
+    """
+    # nginx and Cloudflare preserve the public Host and the backend is not
+    # exposed directly. Do not accept X-Forwarded-Host here: a browser can
+    # supply it itself unless every proxy in the chain overwrites it.
+    request_host = (request.url.hostname or "").lower()
+    for configured_origin in settings.PUBLIC_ORIGINS:
+        parsed = urlparse(configured_origin)
+        if parsed.scheme == "https" and (parsed.hostname or "").lower() == request_host:
+            return configured_origin.rstrip("/")
+    return settings.BASE_URL.rstrip("/")
+
+
 @router.get("/methods", response_model=AuthMethodsResponse)
 async def get_auth_methods(request: Request, response: Response) -> AuthMethodsResponse:
     """Return server-authoritative methods for the current request region."""
@@ -1625,22 +1665,33 @@ async def get_oauth_url(
 ) -> OAuthUrlResponse:
     """Get OAuth authorization URL for the specified provider."""
     if provider not in _VALID_PROVIDERS:
-        raise_error(status.HTTP_400_BAD_REQUEST, ERR_OAUTH_INVALID_PROVIDER, params={"provider": provider})
+        raise_error(
+            status.HTTP_400_BAD_REQUEST, ERR_OAUTH_INVALID_PROVIDER, params={"provider": provider}
+        )
 
     _require_provider_allowed(provider, resolve_access_region(request))
 
     if not is_provider_configured(provider):
-        raise_error(status.HTTP_400_BAD_REQUEST, ERR_OAUTH_PROVIDER_NOT_CONFIGURED, params={"provider": provider})
+        raise_error(
+            status.HTTP_400_BAD_REQUEST,
+            ERR_OAUTH_PROVIDER_NOT_CONFIGURED,
+            params={"provider": provider},
+        )
 
     state = generate_oauth_state()
+    public_origin = _oauth_public_origin(request)
 
     if provider == "google":
-        url = get_google_auth_url(state)
+        url = get_google_auth_url(state, public_origin)
     else:
-        url = get_yandex_auth_url(state)
+        url = get_yandex_auth_url(state, public_origin)
 
     if not url:
-        raise_error(status.HTTP_400_BAD_REQUEST, ERR_OAUTH_PROVIDER_NOT_CONFIGURED, params={"provider": provider})
+        raise_error(
+            status.HTTP_400_BAD_REQUEST,
+            ERR_OAUTH_PROVIDER_NOT_CONFIGURED,
+            params={"provider": provider},
+        )
 
     response.set_cookie(
         key=_OAUTH_STATE_COOKIE,
@@ -1672,12 +1723,18 @@ async def oauth_callback(
     5. If not found — create new user
     """
     if provider not in _VALID_PROVIDERS:
-        raise_error(status.HTTP_400_BAD_REQUEST, ERR_OAUTH_INVALID_PROVIDER, params={"provider": provider})
+        raise_error(
+            status.HTTP_400_BAD_REQUEST, ERR_OAUTH_INVALID_PROVIDER, params={"provider": provider}
+        )
 
     _require_provider_allowed(provider, resolve_access_region(request))
 
     if not is_provider_configured(provider):
-        raise_error(status.HTTP_400_BAD_REQUEST, ERR_OAUTH_PROVIDER_NOT_CONFIGURED, params={"provider": provider})
+        raise_error(
+            status.HTTP_400_BAD_REQUEST,
+            ERR_OAUTH_PROVIDER_NOT_CONFIGURED,
+            params={"provider": provider},
+        )
 
     # CSRF check: state must match the one issued to this browser in get_oauth_url
     expected_state = request.cookies.get(_OAUTH_STATE_COOKIE)
@@ -1687,16 +1744,21 @@ async def oauth_callback(
     response.delete_cookie(_OAUTH_STATE_COOKIE, **_cookie_common_kwargs())
 
     # Exchange authorization code for user info
+    public_origin = _oauth_public_origin(request)
     try:
         if provider == "google":
-            oauth_info = await exchange_google_code(data.code)
+            oauth_info = await exchange_google_code(data.code, public_origin)
         else:
-            oauth_info = await exchange_yandex_code(data.code)
+            oauth_info = await exchange_yandex_code(data.code, public_origin)
     except ValueError as e:
         _oauth_logger.warning("OAuth email missing: provider=%s, error=%s", provider, str(e))
-        raise_error(status.HTTP_400_BAD_REQUEST, ERR_OAUTH_EMAIL_MISSING, params={"provider": provider})
+        raise_error(
+            status.HTTP_400_BAD_REQUEST, ERR_OAUTH_EMAIL_MISSING, params={"provider": provider}
+        )
     except Exception as e:
-        _oauth_logger.error("OAuth exchange failed: provider=%s, error=%s", provider, str(e), exc_info=True)
+        _oauth_logger.error(
+            "OAuth exchange failed: provider=%s, error=%s", provider, str(e), exc_info=True
+        )
         raise_error(status.HTTP_401_UNAUTHORIZED, ERR_OAUTH_FAILED, params={"provider": provider})
 
     # 1. Try to find by OAuth provider + provider_id
