@@ -4,7 +4,7 @@ _Last updated: August 1, 2026_
 
 ## 1. General Provisions
 
-1.1. This Privacy Policy (hereinafter referred to as the Policy) defines the procedure for processing and protecting personal data of users of the FilamentHub service (hereinafter referred to as the Service), available at filamenthub.ru.
+1.1. This Privacy Policy (hereinafter referred to as the Policy) defines the procedure for processing and protecting personal data of users of the FilamentHub service (hereinafter referred to as the Service), available at filamenthub.ru and filamenthub.club.
 
 1.2. The personal data operator is Kuzmin I.I., an individual applying the special tax regime “Tax on Professional Income” (NPD taxpayer). Contact email address: support@filamenthub.ru.
 
@@ -79,18 +79,19 @@ _Last updated: August 1, 2026_
 - Google reCAPTCHA v3 (Google Ireland Limited / Google LLC, Ireland / USA) - protection against automated requests during standard registration in regions where this service is available. The script is not loaded during ordinary viewing of public pages. Technical data is transmitted for verification. Google Privacy Policy: https://policies.google.com/privacy
 - Yandex Cloud Postbox (Yandex.Cloud LLC, Russia) - delivery of service messages and outgoing addressed correspondence. Delivery requires sender and recipient addresses, an optional display name, subject, content, attachments, and technical delivery data. Yandex Cloud data privacy: https://yandex.cloud/en/security/data-privacy
 - Selectel infrastructure (Russia) - hosting of the Service, the primary Account database, backups, and local receipt of incoming correspondence within the Russian data perimeter. Selectel documents: https://selectel.ru/about/documents/
+- Cloudflare, Inc. (USA) - content delivery and connection protection for the additional domain filamenthub.club. Requests to that domain pass through Cloudflare nodes, where the connection is decrypted, so this service has access to the visitor’s IP address, technical connection data, and the content of requests and responses on that domain. The primary domain filamenthub.ru is served directly, without Cloudflare. The primary Account database is not hosted with Cloudflare. Purpose: availability of the Service for visitors outside the Russian Federation and reduced load on our hardware by keeping copies of static files. Cloudflare Privacy Policy: https://www.cloudflare.com/privacypolicy/
 
 5.2. These services process data under the applicable agreements and their published documents. They do not receive data beyond what is necessary for the relevant function. Incoming correspondence is received by the Service’s mail server and stored in the Russian data perimeter.
 
 ## 6. Cross-Border Data Transfer
 
-6.1. Cross-border transfer may occur to Ireland and the USA when the User selects Google sign-in or Google reCAPTCHA is used under clauses 4.3–4.4. It may also occur when addressed correspondence is delivered to a recipient using a mail system outside the Russian Federation and delivery requires transfer to the country of the recipient or its mail provider. In the latter case, the data is limited to addresses, an optional display name, subject, content, attachments, and technical data needed to deliver that message.
+6.1. Cross-border transfer may occur to Ireland and the USA when the User selects Google sign-in or Google reCAPTCHA is used under clauses 4.3–4.4. It also occurs to the USA when the additional domain filamenthub.club is used, because requests to that domain pass through the Cloudflare network; the data is limited to the visitor’s IP address, technical connection data, and the content of requests and responses on that domain. It may also occur when addressed correspondence is delivered to a recipient using a mail system outside the Russian Federation and delivery requires transfer to the country of the recipient or its mail provider. In the latter case, the data is limited to addresses, an optional display name, subject, content, attachments, and technical data needed to deliver that message.
 
 6.2. Cross-border transfer is performed only as required for the selected function and in accordance with applicable law.
 
 6.3. The transfer is not used to host a foreign copy of the primary Account database.
 
-6.4. Google sign-in is optional; local or Yandex sign-in can be used instead. Addressed correspondence is sent abroad only for a specific request or business contact when the destination uses a foreign mail system. Merely visiting public Service pages does not start these operations or constitute consent to a cross-border transfer.
+6.4. Google sign-in is optional; local or Yandex sign-in can be used instead. Addressed correspondence is sent abroad only for a specific request or business contact when the destination uses a foreign mail system. Using the additional domain filamenthub.club is also optional: the primary domain filamenthub.ru is served directly, without Cloudflare. Merely visiting public Service pages does not start these operations or constitute consent to a cross-border transfer.
 
 ## 7. Data Retention and Deletion
 
