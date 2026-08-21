@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Header, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_active_user
-from app.core.limiter import limiter
+from app.core.limiter import adapter_token_key, client_key, limiter
 from app.db.session import get_db
 from app.models.user import User
 from app.schemas.octoprint_bridge import (
@@ -97,7 +97,10 @@ async def pair(
 
 
 @router.post("/heartbeat", response_model=OctoPrintBridgeStatusResponse)
+@limiter.limit("600/minute", key_func=client_key)
+@limiter.limit("30/minute", key_func=adapter_token_key)
 async def heartbeat(
+    request: Request,
     payload: OctoPrintBridgeHeartbeatRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
     bridge_token: Annotated[
@@ -110,7 +113,10 @@ async def heartbeat(
 
 
 @router.get("/snapshot", response_model=None)
+@limiter.limit("600/minute", key_func=client_key)
+@limiter.limit("30/minute", key_func=adapter_token_key)
 async def snapshot(
+    request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
     bridge_token: Annotated[
         str | None,
@@ -131,7 +137,10 @@ async def snapshot(
 
 
 @router.post("/usage", response_model=OctoPrintBridgeUsageResponse)
+@limiter.limit("600/minute", key_func=client_key)
+@limiter.limit("120/minute", key_func=adapter_token_key)
 async def usage(
+    request: Request,
     payload: OctoPrintBridgeUsageRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
     bridge_token: Annotated[

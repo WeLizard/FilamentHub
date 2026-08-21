@@ -92,6 +92,26 @@ async def test_bambu_bridge_keeps_credentials_local_and_observations_separate(
         },
     )
     assert replayed_pairing.status_code == 401
+    heartbeat_started_at = datetime.now(timezone.utc)
+    heartbeat = await auth_client.post(
+        "/api/v1/printer-bridge/heartbeat",
+        headers=bridge_headers,
+        json={
+            "material_system_id": system_id,
+            "provider": "bambu",
+            "transport": "orca_plugin_lan",
+            "source_instance_id": source_instance_id,
+            # A broken workstation clock must not make a request received now
+            # look stale to the rest of the product.
+            "observed_at": "2001-01-01T00:00:00+00:00",
+        },
+    )
+    assert heartbeat.status_code == 200
+    assert heartbeat.json()["accepted"] is True
+    heartbeat_seen_at = datetime.fromisoformat(heartbeat.json()["last_seen_at"])
+    assert heartbeat_seen_at >= heartbeat_started_at
+    assert await db_session.scalar(select(PhysicalPrinterStatusObservation)) is None
+    assert await db_session.scalar(select(MaterialSlotObservation)) is None
     observed_at = datetime.now(timezone.utc)
     snapshot = {
         "material_system_id": system_id,

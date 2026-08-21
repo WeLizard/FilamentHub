@@ -3440,7 +3440,7 @@ def test_bambu_runtime_removes_local_secrets_after_server_rejects_binding(
     monkeypatch.setattr(
         plugin_module,
         "http_post_bridge_json",
-        lambda _path, _token, _payload: (401, b""),
+        lambda _path, _token, _payload: (401, b"", None),
     )
 
     runtime = plugin_module.BambuBridgeRuntime()
@@ -3448,6 +3448,63 @@ def test_bambu_runtime_removes_local_secrets_after_server_rejects_binding(
     runtime._run()
 
     assert plugin_module.load_bambu_config()["printers"] == []
+
+
+def test_bambu_runtime_deduplicates_stable_snapshots_and_uses_heartbeat(
+    plugin_module, monkeypatch
+):
+    binding = {
+        "physical_printer_id": 3,
+        "material_system_id": 5,
+        "bridge_token": "fhpb_live",
+    }
+    active = {"source_instance_id": "fixture-instance-0001", "printers": [binding]}
+    configs = iter([active, active, active, {"source_instance_id": "x", "printers": []}])
+    times = iter([1000.0, 1030.0, 1121.0])
+    posts = []
+
+    monkeypatch.setattr(plugin_module, "load_bambu_config", lambda: next(configs))
+    monkeypatch.setattr(
+        plugin_module,
+        "read_bambu_lan_snapshot",
+        lambda _config: ("SERIAL-2", _bambu_report()),
+    )
+    monkeypatch.setattr(plugin_module.time, "monotonic", lambda: next(times))
+    monkeypatch.setattr(
+        plugin_module,
+        "http_post_bridge_json",
+        lambda path, _token, _payload: posts.append(path) or (200, b"", None),
+    )
+    monkeypatch.setattr(plugin_module, "_persist_discovered_bambu_serial", lambda *_: None)
+
+    runtime = plugin_module.BambuBridgeRuntime()
+    monkeypatch.setattr(runtime._wake, "wait", lambda _timeout: False)
+    runtime._run()
+
+    assert posts == ["/printer-bridge/snapshot", "/printer-bridge/heartbeat"]
+
+
+def test_bambu_runtime_spreads_automatic_startup_but_wake_interrupts_it(
+    plugin_module, monkeypatch
+):
+    waits = []
+    runtime = plugin_module.BambuBridgeRuntime()
+
+    def wait(timeout):
+        waits.append(timeout)
+        return True
+
+    monkeypatch.setattr(runtime._wake, "wait", wait)
+    monkeypatch.setattr(
+        plugin_module,
+        "load_bambu_config",
+        lambda: {"source_instance_id": "fixture", "printers": []},
+    )
+    monkeypatch.setattr(plugin_module.random, "uniform", lambda lower, upper: upper)
+
+    runtime._run()
+
+    assert waits == [plugin_module.BAMBU_STARTUP_JITTER_SECONDS]
 
 
 def test_bambu_pair_is_revoked_when_local_binding_cannot_be_persisted(
@@ -3521,7 +3578,7 @@ def test_fresh_bambu_pair_and_first_snapshot_share_one_source_identity(
 
     def snapshot(_path, _token, payload):
         captured["snapshot_source"] = payload["source_instance_id"]
-        return 200, b"{}"
+        return 200, b"{}", None
 
     monkeypatch.setattr(plugin_module, "http_post_json", pair)
     monkeypatch.setattr(plugin_module, "http_post_bridge_json", snapshot)

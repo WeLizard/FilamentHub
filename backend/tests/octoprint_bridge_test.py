@@ -78,6 +78,7 @@ async def test_bridge_pair_snapshot_usage_replay_and_revoke(
     assert status_response.status_code == 200
     assert status_response.json()["paired"] is True
     assert status_response.json()["instance_id"] == "octoprint-test-instance"
+    paired_last_seen_at = status_response.json()["last_seen_at"]
 
     brand = Brand(name="Bridge Brand", slug="bridge-brand")
     db_session.add(brand)
@@ -138,6 +139,11 @@ async def test_bridge_pair_snapshot_usage_replay_and_revoke(
         headers={**bridge_headers, "If-None-Match": snapshot_response.headers["etag"]},
     )
     assert unchanged.status_code == 304
+    status_after_snapshot = await auth_client.get(
+        f"/api/v1/octoprint-bridge/connections/{printer_id}/{system_id}"
+    )
+    assert status_after_snapshot.status_code == 200
+    assert status_after_snapshot.json()["last_seen_at"] == paired_last_seen_at
 
     heartbeat_response = await auth_client.post(
         "/api/v1/octoprint-bridge/heartbeat",

@@ -21,6 +21,8 @@ from app.core.errors import (
 from app.models.material_system import MaterialSystem, PhysicalPrinterConnector
 from app.models.printer_bridge_credential import PrinterBridgeCredential
 from app.schemas.printer_bridge import (
+    PrinterBridgeHeartbeatRequest,
+    PrinterBridgeHeartbeatResponse,
     PrinterBridgePairingCodeResponse,
     PrinterBridgePairRequest,
     PrinterBridgePairResponse,
@@ -308,3 +310,34 @@ def require_configured_system_id(context: PrinterBridgeContext) -> int:
     if material_system_id is None:
         raise_error(409, ERR_PRINTER_BRIDGE_NOT_CONFIGURED)
     return material_system_id
+
+
+async def record_printer_bridge_heartbeat(
+    db: AsyncSession,
+    context: PrinterBridgeContext,
+    payload: PrinterBridgeHeartbeatRequest,
+) -> PrinterBridgeHeartbeatResponse:
+    """Record connector liveness without inventing a printer observation."""
+    validate_snapshot_context(
+        context,
+        material_system_id=payload.material_system_id,
+        source_instance_id=payload.source_instance_id,
+    )
+    received_at = _now()
+    printer = await require_physical_printer(
+        db,
+        context.connector.user_id,
+        context.connector.physical_printer_id,
+    )
+    # Liveness means that this server has just received an authenticated
+    # request. A workstation clock may be wrong by hours or years, so the
+    # client-supplied observed_at must not make a live adapter look stale.
+    context.connector.last_seen_at = received_at
+    context.connector.active = True
+    printer.last_seen_at = received_at
+    printer.reports_feed = True
+    await db.commit()
+    return PrinterBridgeHeartbeatResponse(
+        accepted=True,
+        last_seen_at=received_at,
+    )

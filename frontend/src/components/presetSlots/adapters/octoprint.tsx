@@ -95,12 +95,19 @@ function BridgeSetup({ printer, system }: AdapterViewContext) {
     queryFn: () => octoprintBridgeAPI.status(printer.id, system.id),
     staleTime: 10_000,
     refetchOnWindowFocus: true,
-    // Fast only while the user is visibly pairing. A settled Bridge is checked
-    // at its own bounded cadence instead of making every open tab hammer FH.
+    // Fast only while the user is visibly pairing. Once paired, focus/manual
+    // invalidation is enough; an idle open tab must not poll forever.
     refetchInterval: (query) => {
       const status = query.state.data;
-      if (pairingCode && !status?.paired) return 5_000;
-      return status?.paired ? 120_000 : false;
+      const expiresAtMs = pairingExpiresAt ? Date.parse(pairingExpiresAt) : Number.NaN;
+      if (
+        pairingCode
+        && !status?.paired
+        && (Number.isNaN(expiresAtMs) || Date.now() < expiresAtMs)
+      ) {
+        return 5_000;
+      }
+      return false;
     },
   });
   const status = statusQuery.data;

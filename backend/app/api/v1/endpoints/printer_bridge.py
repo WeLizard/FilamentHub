@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Header, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_active_user
-from app.core.limiter import limiter
+from app.core.limiter import adapter_token_key, client_key, limiter
 from app.db.session import get_db
 from app.models.user import User
 from app.schemas.material_contract import (
@@ -14,6 +14,8 @@ from app.schemas.material_contract import (
     PrinterBridgeSnapshotResponse,
 )
 from app.schemas.printer_bridge import (
+    PrinterBridgeHeartbeatRequest,
+    PrinterBridgeHeartbeatResponse,
     PrinterBridgePairingCodeResponse,
     PrinterBridgePairRequest,
     PrinterBridgePairResponse,
@@ -24,6 +26,7 @@ from app.services.printer_bridge_service import (
     get_printer_bridge_status,
     issue_printer_bridge_pairing_code,
     pair_printer_bridge,
+    record_printer_bridge_heartbeat,
     require_printer_bridge_token,
     revoke_printer_bridge,
     validate_snapshot_context,
@@ -79,7 +82,10 @@ async def pair(
 
 
 @router.post("/snapshot", response_model=PrinterBridgeSnapshotResponse)
+@limiter.limit("600/minute", key_func=client_key)
+@limiter.limit("30/minute", key_func=adapter_token_key)
 async def snapshot(
+    request: Request,
     payload: PrinterBridgeSnapshotRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
     bridge_token: Annotated[
@@ -99,6 +105,22 @@ async def snapshot(
         physical_printer_id=context.connector.physical_printer_id,
         payload=payload,
     )
+
+
+@router.post("/heartbeat", response_model=PrinterBridgeHeartbeatResponse)
+@limiter.limit("600/minute", key_func=client_key)
+@limiter.limit("30/minute", key_func=adapter_token_key)
+async def heartbeat(
+    request: Request,
+    payload: PrinterBridgeHeartbeatRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    bridge_token: Annotated[
+        str | None,
+        Header(alias="X-FilamentHub-Bridge-Token"),
+    ] = None,
+) -> PrinterBridgeHeartbeatResponse:
+    context = await require_printer_bridge_token(db, bridge_token)
+    return await record_printer_bridge_heartbeat(db, context, payload)
 
 
 @router.delete("/connection", status_code=status.HTTP_204_NO_CONTENT)

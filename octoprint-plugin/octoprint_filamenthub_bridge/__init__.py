@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json
+import random
 import threading
 import time
 import uuid
 from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
@@ -20,8 +22,49 @@ from .tracker import ExtrusionTracker
 
 PLUGIN_VERSION = "0.1.0"
 CAPABILITIES = ["read", "write", "presence", "spool_identity", "consumption"]
-HEARTBEAT_INTERVAL_SECONDS = 45
+HEARTBEAT_INTERVAL_SECONDS = 120
 SNAPSHOT_INTERVAL_SECONDS = 120
+RETRY_INITIAL_SECONDS = 5
+RETRY_MAX_SECONDS = 300
+INTERVAL_JITTER_RATIO = 0.2
+STARTUP_JITTER_MAX_SECONDS = 120
+
+
+class BridgeRequestError(RuntimeError):
+    def __init__(self, message: str, *, retry_after_seconds: Optional[float] = None):
+        super().__init__(message)
+        self.retry_after_seconds = retry_after_seconds
+
+
+def _retry_after_seconds(headers) -> Optional[float]:
+    raw_value = headers.get("Retry-After") if headers is not None else None
+    if not raw_value:
+        return None
+    try:
+        return max(0.0, min(float(raw_value), RETRY_MAX_SECONDS))
+    except (TypeError, ValueError):
+        try:
+            retry_at = parsedate_to_datetime(str(raw_value))
+            if retry_at.tzinfo is None:
+                retry_at = retry_at.replace(tzinfo=timezone.utc)
+            delay = (retry_at - datetime.now(timezone.utc)).total_seconds()
+            return max(0.0, min(delay, RETRY_MAX_SECONDS))
+        except (TypeError, ValueError, OverflowError):
+            return None
+
+
+def _jittered_delay(base_seconds: float) -> float:
+    spread = base_seconds * INTERVAL_JITTER_RATIO
+    return random.uniform(max(0.0, base_seconds - spread), base_seconds + spread)
+
+
+def _retry_delay(failure_count: int, retry_after_seconds: Optional[float]) -> float:
+    exponent = max(failure_count - 1, 0)
+    base = min(RETRY_INITIAL_SECONDS * (2**exponent), RETRY_MAX_SECONDS)
+    return min(
+        max(_jittered_delay(base), retry_after_seconds or 0.0),
+        RETRY_MAX_SECONDS,
+    )
 
 
 class FilamentHubBridgePlugin(
@@ -45,6 +88,7 @@ class FilamentHubBridgePlugin(
         self._job_file: Optional[str] = None
         self._job_started_at: Optional[str] = None
         self._job_spools: Dict[int, int] = {}
+        self._last_retry_after_seconds: Optional[float] = None
 
     def get_settings_defaults(self):
         return {
@@ -87,13 +131,13 @@ class FilamentHubBridgePlugin(
 
     def on_after_startup(self):
         self._stop_worker.clear()
+        self._wake_worker.clear()
         self._worker = threading.Thread(
             target=self._worker_loop,
             name="filamenthub-bridge",
             daemon=True,
         )
         self._worker.start()
-        self._wake_worker.set()
         self._logger.info("FilamentHub Bridge %s started", PLUGIN_VERSION)
 
     def on_shutdown(self):
@@ -283,11 +327,12 @@ class FilamentHubBridgePlugin(
             if exc.code == 304:
                 return 304, exc.headers, None
             content = exc.read().decode("utf-8", errors="replace")
-            raise RuntimeError(
-                f"FilamentHub returned HTTP {exc.code}: {content[:300]}"
+            raise BridgeRequestError(
+                f"FilamentHub returned HTTP {exc.code}: {content[:300]}",
+                retry_after_seconds=_retry_after_seconds(exc.headers),
             ) from exc
         except URLError as exc:
-            raise RuntimeError(f"Cannot reach FilamentHub: {exc.reason}") from exc
+            raise BridgeRequestError(f"Cannot reach FilamentHub: {exc.reason}") from exc
 
     def _pair(self, server_url: str, pairing_code: str) -> None:
         normalized_server_url = self._normalize_server_url(server_url)
@@ -461,10 +506,11 @@ class FilamentHubBridgePlugin(
                         self._settings.save()
                         break
 
-    def _sync_once(self, *, force_snapshot: bool = False) -> None:
+    def _sync_once(self, *, force_snapshot: bool = False) -> bool:
         if not self._settings.get(["bridge_token"]):
-            return
+            return True
         try:
+            self._last_retry_after_seconds = None
             now_monotonic = time.monotonic()
             if (
                 force_snapshot
@@ -481,18 +527,34 @@ class FilamentHubBridgePlugin(
             self._plugin_manager.send_plugin_message(
                 self._identifier, self._public_state()
             )
+            return True
         except Exception as exc:
+            self._last_retry_after_seconds = getattr(exc, "retry_after_seconds", None)
             self._settings.set(["last_error"], str(exc))
             self._settings.save()
             self._logger.warning("FilamentHub synchronization failed", exc_info=True)
+            return False
 
     def _worker_loop(self) -> None:
+        # A host update can restart many OctoPrint instances at once. Spread
+        # their first automatic contact over two minutes; explicit actions
+        # still call _sync_once directly or wake the worker immediately.
+        delay_seconds = random.uniform(0.0, STARTUP_JITTER_MAX_SECONDS)
+        failure_count = 0
         while not self._stop_worker.is_set():
-            self._wake_worker.wait(timeout=HEARTBEAT_INTERVAL_SECONDS)
+            self._wake_worker.wait(timeout=delay_seconds)
             self._wake_worker.clear()
             if self._stop_worker.is_set():
                 return
-            self._sync_once()
+            if self._sync_once():
+                failure_count = 0
+                delay_seconds = _jittered_delay(HEARTBEAT_INTERVAL_SECONDS)
+            else:
+                failure_count += 1
+                delay_seconds = _retry_delay(
+                    failure_count,
+                    self._last_retry_after_seconds,
+                )
 
 
 __plugin_name__ = "FilamentHub Bridge"

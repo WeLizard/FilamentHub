@@ -354,7 +354,12 @@ describe('PresetSlotsPanel', () => {
   });
 
   it('shows a manual physical printer and resolves exact linked profile ids', async () => {
-    const { PresetSlotsPanel, shouldPollForAdapterContact } = await import(
+    const {
+      adapterContactPollIntervalMs,
+      PresetSlotsPanel,
+      shouldContinueAdapterContactPolling,
+      shouldPollForAdapterContact,
+    } = await import(
       '../components/presetSlots/PresetSlotsPanel'
     );
 
@@ -372,6 +377,23 @@ describe('PresetSlotsPanel', () => {
         reports_feed: true,
       },
     ])).toBe(false);
+    expect(shouldContinueAdapterContactPolling([
+      {
+        ...physicalPrinter,
+        has_api_key: true,
+        reports_feed: false,
+      },
+    ], 70_000, 20_000)).toBe(true);
+    expect(shouldContinueAdapterContactPolling([
+      {
+        ...physicalPrinter,
+        has_api_key: true,
+        reports_feed: false,
+      },
+    ], 70_000, 70_000)).toBe(false);
+    expect(adapterContactPollIntervalMs(0)).toBe(15_000);
+    expect(adapterContactPollIntervalMs(0.5)).toBe(20_000);
+    expect(adapterContactPollIntervalMs(1)).toBe(25_000);
 
     render(
       <PresetSlotsPanel

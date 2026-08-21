@@ -500,9 +500,6 @@ async def build_snapshot(
             ensure_ascii=False,
         ).encode("utf-8")
     ).hexdigest()
-    context.connector.last_seen_at = _now()
-    context.connection.observed_at = context.connector.last_seen_at
-    await db.commit()
     return OctoPrintBridgeSnapshotResponse(revision=revision, **revision_payload)
 
 

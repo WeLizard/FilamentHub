@@ -2,7 +2,12 @@ import logging
 
 from octoprint.events import Events
 
-from octoprint_filamenthub_bridge import FilamentHubBridgePlugin
+from octoprint_filamenthub_bridge import (
+    FilamentHubBridgePlugin,
+    RETRY_MAX_SECONDS,
+    STARTUP_JITTER_MAX_SECONDS,
+    _retry_delay,
+)
 
 
 class FakeSettings:
@@ -154,3 +159,38 @@ def test_successful_pairing_replaces_connection_atomically():
     assert plugin._settings.get(["server_url"]) == "https://new.example"
     assert plugin._settings.get(["bridge_token"]) == "replacement-token"
     assert plugin._settings.get(["instance_id"]) == "existing-instance"
+
+
+def test_retry_delay_grows_but_stays_bounded(monkeypatch):
+    monkeypatch.setattr(
+        "octoprint_filamenthub_bridge.random.uniform",
+        lambda low, high: high,
+    )
+
+    assert _retry_delay(1, None) == 6.0
+    assert _retry_delay(2, 30.0) == 30.0
+    assert _retry_delay(20, 600.0) == RETRY_MAX_SECONDS
+
+
+def test_worker_spreads_first_automatic_contact(monkeypatch):
+    plugin = FilamentHubBridgePlugin()
+    waits = []
+
+    class WakeEvent:
+        def wait(self, timeout):
+            waits.append(timeout)
+            plugin._stop_worker.set()
+            return False
+
+        def clear(self):
+            return None
+
+    plugin._wake_worker = WakeEvent()
+    monkeypatch.setattr(
+        "octoprint_filamenthub_bridge.random.uniform",
+        lambda low, high: high,
+    )
+
+    plugin._worker_loop()
+
+    assert waits == [STARTUP_JITTER_MAX_SECONDS]

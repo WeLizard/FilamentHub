@@ -1,5 +1,7 @@
 """Rate limiting setup with Redis backend."""
 
+import hashlib
+
 from fastapi import Request
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -22,6 +24,15 @@ def client_key(request: Request) -> str:
 
     client_ip = get_request_client_ip(request)
     return str(client_ip) if client_ip is not None else get_remote_address(request)
+
+
+def adapter_token_key(request: Request) -> str:
+    """Rate-limit one bridge credential without storing or logging its secret."""
+    token = request.headers.get("X-FilamentHub-Bridge-Token")
+    if token:
+        digest = hashlib.sha256(token.encode("utf-8")).hexdigest()
+        return f"bridge:{digest}"
+    return client_key(request)
 
 
 limiter = Limiter(

@@ -189,6 +189,10 @@ log_iotc.txt
 orca-plugin/slices/
 orca-plugin/.fh_*
 
+# Run from the repository, the plugin resolves OrcaSlicer's data_dir to the
+# project root and writes its preset folders here instead of the real one.
+user/
+
 # Database dumps and the public backup key live next to the project, never in it
 backups/
 backup-key.pub.asc

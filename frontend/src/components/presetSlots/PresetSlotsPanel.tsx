@@ -754,6 +754,24 @@ export function shouldPollForAdapterContact(printers: PhysicalPrinter[]): boolea
   );
 }
 
+const ADAPTER_CONTACT_POLL_WINDOW_MS = 60_000;
+const ADAPTER_CONTACT_POLL_INTERVAL_MIN_MS = 15_000;
+const ADAPTER_CONTACT_POLL_INTERVAL_RANGE_MS = 10_000;
+
+export function adapterContactPollIntervalMs(randomValue = Math.random()): number {
+  const boundedRandomValue = Math.min(Math.max(randomValue, 0), 1);
+  return ADAPTER_CONTACT_POLL_INTERVAL_MIN_MS
+    + Math.floor(boundedRandomValue * ADAPTER_CONTACT_POLL_INTERVAL_RANGE_MS);
+}
+
+export function shouldContinueAdapterContactPolling(
+  printers: PhysicalPrinter[],
+  pollingUntilMs: number,
+  nowMs = Date.now(),
+): boolean {
+  return nowMs < pollingUntilMs && shouldPollForAdapterContact(printers);
+}
+
 export function PresetSlotsPanel({
   compact = false,
   spools: externalSpools,
@@ -771,6 +789,12 @@ export function PresetSlotsPanel({
     system: MaterialSystem | null;
   }>({ open: false, gate: null, slot: null, printer: null, system: null });
   const [addingSystem, setAddingSystem] = useState(false);
+  const [adapterContactPollingUntil, setAdapterContactPollingUntil] = useState(
+    () => Date.now() + ADAPTER_CONTACT_POLL_WINDOW_MS,
+  );
+  const [adapterContactPollInterval] = useState(
+    () => adapterContactPollIntervalMs(),
+  );
 
   const { data: physicalPrinters = [], isLoading: loadingPrinters } = useQuery({
     queryKey: ['physical-printers'],
@@ -781,7 +805,10 @@ export function PresetSlotsPanel({
     // they have no reason to guess that the page needs reloading.
     refetchInterval: (query) => {
       const printers = query.state.data ?? [];
-      return shouldPollForAdapterContact(printers) ? 10_000 : false;
+      return shouldContinueAdapterContactPolling(
+        printers,
+        adapterContactPollingUntil,
+      ) ? adapterContactPollInterval : false;
     },
   });
 
@@ -865,6 +892,7 @@ export function PresetSlotsPanel({
 
   const handleSystemAdded = () => {
     setAddingSystem(false);
+    setAdapterContactPollingUntil(Date.now() + ADAPTER_CONTACT_POLL_WINDOW_MS);
     void queryClient.invalidateQueries({ queryKey: ['physical-printers'] });
     void queryClient.invalidateQueries({ queryKey: ['devices'] });
   };

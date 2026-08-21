@@ -34,3 +34,18 @@ class PrinterBridgeStatusResponse(BaseModel):
     pairing_expires_at: datetime | None
     last_seen_at: datetime | None
     source_instance_id: str | None
+
+
+class PrinterBridgeHeartbeatRequest(BaseModel):
+    material_system_id: int = Field(gt=0)
+    provider: Literal["bambu"]
+    transport: Literal["orca_plugin_lan"]
+    source_instance_id: str = Field(min_length=16, max_length=100)
+    observed_at: datetime
+
+    model_config = {"str_strip_whitespace": True, "extra": "forbid"}
+
+
+class PrinterBridgeHeartbeatResponse(BaseModel):
+    accepted: bool
+    last_seen_at: datetime

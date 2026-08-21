@@ -69,6 +69,7 @@ import ipaddress
 import json
 import os
 import queue
+import random
 import re
 import secrets
 import shutil
@@ -1753,6 +1754,20 @@ def http_post_json(path, token, payload):
         return 0, str(exc).encode("utf-8", errors="replace")
 
 
+def _bridge_retry_after_seconds(headers):
+    """Read how long the server asked this adapter to wait, in seconds.
+
+    FilamentHub answers a throttled bridge with a numeric Retry-After, so the
+    HTTP-date form is not parsed: an unreadable value simply leaves the caller
+    on its own backoff.
+    """
+    raw_value = headers.get("Retry-After") if headers is not None else None
+    try:
+        return max(0.0, float(raw_value))
+    except (TypeError, ValueError):
+        return None
+
+
 def http_post_bridge_json(path, bridge_token, payload):
     data = json.dumps(payload).encode("utf-8")
     headers = {
@@ -1764,11 +1779,11 @@ def http_post_bridge_json(path, bridge_token, payload):
     req = urllib.request.Request(API_BASE + path, data=data, headers=headers, method="POST")
     try:
         with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT, context=_SSL_CTX) as resp:
-            return resp.getcode(), _read_response_limited(resp)
+            return resp.getcode(), _read_response_limited(resp), None
     except urllib.error.HTTPError as exc:
-        return exc.code, exc.read(MAX_RESPONSE_BYTES)
+        return exc.code, exc.read(MAX_RESPONSE_BYTES), _bridge_retry_after_seconds(exc.headers)
     except (OSError, ValueError, urllib.error.URLError):
-        return 0, b""
+        return 0, b"", None
 
 
 def http_delete_bridge(path, bridge_token):
@@ -4797,6 +4812,12 @@ _BAMBU_STATES = {
 BAMBU_MQTT_PORT = 8883
 BAMBU_POLL_SECONDS = 30.0
 BAMBU_MQTT_TIMEOUT = 12.0
+BAMBU_SNAPSHOT_MIN_SECONDS = 60.0
+BAMBU_HEARTBEAT_SECONDS = 120.0
+BAMBU_STARTUP_JITTER_SECONDS = 120.0
+BAMBU_RETRY_INITIAL_SECONDS = 5.0
+BAMBU_RETRY_MAX_SECONDS = 300.0
+BAMBU_INTERVAL_JITTER_RATIO = 0.2
 
 
 def _mqtt_len(length):
@@ -5398,6 +5419,11 @@ class BambuBridgeRuntime:
         self._lock = threading.Lock()
         self._thread = None
         self._wake = threading.Event()
+        self._last_snapshot_digest = {}
+        self._last_snapshot_at = {}
+        self._last_heartbeat_at = {}
+        self._failure_count = {}
+        self._retry_at = {}
 
     def start(self):
         with self._lock:
@@ -5415,6 +5441,12 @@ class BambuBridgeRuntime:
         self._wake.set()
 
     def _run(self):
+        # A slicer update or workstation power recovery can start many plugin
+        # instances at once. Spread their first automatic LAN read/upload over
+        # two minutes so a fleet restart cannot become an origin request wave.
+        # An explicit user action calls wake() and interrupts this delay.
+        self._wake.wait(random.uniform(0.0, BAMBU_STARTUP_JITTER_SECONDS))
+        self._wake.clear()
         while True:
             local = load_bambu_config()
             active = [item for item in local["printers"] if item.get("bridge_token")]
@@ -5423,16 +5455,69 @@ class BambuBridgeRuntime:
                     self._thread = None
                 return
             for config in active:
+                binding_key = (
+                    config.get("physical_printer_id"),
+                    config.get("material_system_id"),
+                )
+                now_monotonic = time.monotonic()
+                if now_monotonic < self._retry_at.get(binding_key, 0.0):
+                    continue
                 try:
                     serial, report = read_bambu_lan_snapshot(config)
                     snapshot = build_bambu_bridge_snapshot(
                         config, local["source_instance_id"], report
                     )
-                    status, _ = http_post_bridge_json(
-                        "/printer-bridge/snapshot",
-                        config["bridge_token"],
-                        snapshot,
+                    digest_payload = dict(snapshot)
+                    digest_payload.pop("observed_at", None)
+                    snapshot_digest = hashlib.sha256(
+                        json.dumps(
+                            digest_payload,
+                            sort_keys=True,
+                            separators=(",", ":"),
+                        ).encode("utf-8")
+                    ).hexdigest()
+                    snapshot_changed = (
+                        self._last_snapshot_digest.get(binding_key) != snapshot_digest
                     )
+                    last_snapshot_at = self._last_snapshot_at.get(binding_key)
+                    last_heartbeat_at = self._last_heartbeat_at.get(binding_key)
+                    snapshot_due = (
+                        last_snapshot_at is None
+                        or now_monotonic - last_snapshot_at >= BAMBU_SNAPSHOT_MIN_SECONDS
+                    )
+                    heartbeat_due = (
+                        last_heartbeat_at is None
+                        or now_monotonic - last_heartbeat_at >= BAMBU_HEARTBEAT_SECONDS
+                    )
+                    if snapshot_changed and snapshot_due:
+                        status, _, retry_after = http_post_bridge_json(
+                            "/printer-bridge/snapshot",
+                            config["bridge_token"],
+                            snapshot,
+                        )
+                        if status == 200:
+                            self._last_snapshot_digest[binding_key] = snapshot_digest
+                            self._last_snapshot_at[binding_key] = now_monotonic
+                            self._last_heartbeat_at[binding_key] = now_monotonic
+                    elif heartbeat_due:
+                        status, _, retry_after = http_post_bridge_json(
+                            "/printer-bridge/heartbeat",
+                            config["bridge_token"],
+                            {
+                                "material_system_id": config["material_system_id"],
+                                "provider": "bambu",
+                                "transport": "orca_plugin_lan",
+                                "source_instance_id": local["source_instance_id"],
+                                "observed_at": datetime.datetime.now(
+                                    datetime.timezone.utc
+                                ).isoformat(),
+                            },
+                        )
+                        if status == 200:
+                            self._last_heartbeat_at[binding_key] = now_monotonic
+                    else:
+                        status = 200
+                        retry_after = None
                     if status == 401:
                         # The owner may have removed the system from the site or
                         # replaced this binding elsewhere. The rejected token is
@@ -5441,16 +5526,50 @@ class BambuBridgeRuntime:
                         remove_bambu_bridge(config["physical_printer_id"])
                         continue
                     if status == 200:
+                        self._failure_count.pop(binding_key, None)
+                        self._retry_at.pop(binding_key, None)
                         _persist_discovered_bambu_serial(
                             config["physical_printer_id"], serial
                         )
                     else:
+                        failures = self._failure_count.get(binding_key, 0) + 1
+                        self._failure_count[binding_key] = failures
+                        base_delay = min(
+                            BAMBU_RETRY_INITIAL_SECONDS * (2 ** (failures - 1)),
+                            BAMBU_RETRY_MAX_SECONDS,
+                        )
+                        spread = base_delay * BAMBU_INTERVAL_JITTER_RATIO
+                        delay = random.uniform(
+                            max(0.0, base_delay - spread),
+                            min(BAMBU_RETRY_MAX_SECONDS, base_delay + spread),
+                        )
+                        # A throttled server knows better than this backoff how
+                        # long the credential has to stay quiet.
+                        self._retry_at[binding_key] = now_monotonic + min(
+                            max(delay, retry_after or 0.0),
+                            BAMBU_RETRY_MAX_SECONDS,
+                        )
                         fh_log("Bambu bridge upload failed: HTTP %s" % status)
                 except Exception as exc:
                     # Never stringify network exceptions: addresses are local
                     # configuration and do not belong in a support log.
+                    failures = self._failure_count.get(binding_key, 0) + 1
+                    self._failure_count[binding_key] = failures
+                    base_delay = min(
+                        BAMBU_RETRY_INITIAL_SECONDS * (2 ** (failures - 1)),
+                        BAMBU_RETRY_MAX_SECONDS,
+                    )
+                    spread = base_delay * BAMBU_INTERVAL_JITTER_RATIO
+                    self._retry_at[binding_key] = now_monotonic + random.uniform(
+                        max(0.0, base_delay - spread),
+                        min(BAMBU_RETRY_MAX_SECONDS, base_delay + spread),
+                    )
                     fh_log("Bambu bridge poll failed: %s" % type(exc).__name__)
-            self._wake.wait(BAMBU_POLL_SECONDS)
+            spread = BAMBU_POLL_SECONDS * BAMBU_INTERVAL_JITTER_RATIO
+            self._wake.wait(random.uniform(
+                BAMBU_POLL_SECONDS - spread,
+                BAMBU_POLL_SECONDS + spread,
+            ))
             self._wake.clear()
 
 
@@ -6044,7 +6163,7 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
                 configured["source_instance_id"],
                 report,
             )
-            snapshot_status, _ = http_post_bridge_json(
+            snapshot_status, _, _ = http_post_bridge_json(
                 "/printer-bridge/snapshot", bridge_token, snapshot
             )
             if snapshot_status == 401:
@@ -6182,7 +6301,7 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
                 local["source_instance_id"],
                 final_report,
             )
-            status, _ = http_post_bridge_json(
+            status, _, _ = http_post_bridge_json(
                 "/printer-bridge/snapshot", binding["bridge_token"], snapshot
             )
             if status == 401:
