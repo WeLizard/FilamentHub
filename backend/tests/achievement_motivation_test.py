@@ -5,6 +5,17 @@ from datetime import datetime, timezone
 from sqlalchemy import func, select
 
 from app.models.brand import Brand
+from app.models.calculator_history_entry import CalculatorHistoryEntry
+from app.models.crm import (
+    CrmCustomer,
+    CrmOrder,
+    CrmOrderStatus,
+    CrmQuote,
+    CrmQuoteEvent,
+    CrmQuoteEventType,
+    CrmQuoteStatus,
+    CrmQuoteVersion,
+)
 from app.models.filament import Filament
 from app.models.material_slot_assignment import MaterialSlotAssignment
 from app.models.material_system import (
@@ -14,6 +25,7 @@ from app.models.material_system import (
 )
 from app.models.preset import Preset, PresetModerationStatus
 from app.models.preset_usage_event import PresetUsageEvent, PresetUsageEventType
+from app.models.print_job import PrintJob, PrintJobEvent, PrintJobMaterial, PrintJobStatus
 from app.models.user import User
 from app.models.user_achievement import UserAchievement
 from app.models.user_printer_device import UserPrinterDevice
@@ -26,11 +38,18 @@ from app.services.achievement_service import (
     AUTOMATIC_SPOOL_ASSIGNMENT,
     BAMBU_CONNECTED,
     FIRST_HUNDRED,
+    FIRST_ORDER_COMPLETED,
     FIRST_PROFILE,
+    FIRST_QUOTE_ACCEPTED,
+    FIRST_QUOTE_SENT,
+    FIRST_SAVED_CALCULATION,
     FIRST_WIKI_ARTICLE,
+    FULL_BUSINESS_CYCLE,
     FULL_MATERIAL_SYSTEM,
+    GCODE_CALCULATION,
     HAPPY_HARE_CONNECTED,
     MATERIAL_SYSTEM_CONNECTED,
+    MATERIAL_TO_PRINT,
     OCTOPRINT_CONNECTED,
     PRESET_CONFIRMED_BY_AUTHOR,
     PRESET_PUBLISHER_5,
@@ -38,6 +57,7 @@ from app.services.achievement_service import (
     PRESETS_USED_BY_3,
     PRESETS_USED_BY_10,
     PRINTER_INTEGRATION_CONNECTED,
+    RETURNING_CUSTOMER,
     SPOOL_COLLECTOR_1,
     SPOOL_COLLECTOR_20,
     SPOOL_COLLECTOR_100,
@@ -418,3 +438,196 @@ async def test_connected_material_workflow_awards_only_confirmed_hardware_facts(
     }.issubset(earned)
     assert earned[FULL_MATERIAL_SYSTEM].hidden is True
     assert earned[SPOOL_DEPLETED_BY_PRINT].hidden is True
+
+
+async def test_production_achievements_follow_saved_and_linked_business_facts(
+    db_session,
+    auth_user,
+):
+    calculation = CalculatorHistoryEntry(
+        user_id=auth_user.id,
+        title="Saved estimate",
+        pricing_method="cost_plus",
+        request_data={"quantity": 1},
+        result_data={"total": 1200},
+    )
+    customer = CrmCustomer(user_id=auth_user.id, name="Returning customer")
+    quote = CrmQuote(
+        user_id=auth_user.id,
+        number="Q-ACH-1",
+        title="Achievement quote",
+        status=CrmQuoteStatus.SENT,
+        currency="RUB",
+    )
+    db_session.add_all([calculation, customer, quote])
+    await db_session.commit()
+
+    first = await achievement_overview(db_session, user_id=auth_user.id)
+    first_codes = {item.code for item in first.achievements}
+    assert FIRST_SAVED_CALCULATION in first_codes
+    assert GCODE_CALCULATION not in first_codes
+    assert FIRST_QUOTE_SENT not in first_codes
+
+    parsed_calculation = CalculatorHistoryEntry(
+        user_id=auth_user.id,
+        title="Parsed G-code estimate",
+        pricing_method="cost_plus",
+        request_data={"quantity": 1},
+        result_data={"total": 1400},
+        parsed_gcode={"print_time_seconds": 3600, "filament_used_g": 42},
+    )
+    quote.status = CrmQuoteStatus.ACCEPTED
+    now = datetime.now(timezone.utc)
+    quote.sent_at = now
+    quote.accepted_at = now
+    db_session.add_all(
+        [
+            parsed_calculation,
+            CrmQuoteEvent(
+                quote_id=quote.id,
+                actor_user_id=auth_user.id,
+                event_type=CrmQuoteEventType.STATUS_CHANGED,
+                from_status=CrmQuoteStatus.DRAFT.value,
+                to_status=CrmQuoteStatus.SENT.value,
+            ),
+            CrmQuoteEvent(
+                quote_id=quote.id,
+                actor_user_id=auth_user.id,
+                event_type=CrmQuoteEventType.STATUS_CHANGED,
+                from_status=CrmQuoteStatus.SENT.value,
+                to_status=CrmQuoteStatus.ACCEPTED.value,
+            ),
+            CrmQuoteVersion(
+                quote_id=quote.id,
+                version_number=1,
+                source_history_id=calculation.id,
+                seller_snapshot={},
+                customer_snapshot={},
+                calculation_snapshot={"history_id": calculation.id},
+                subtotal=1200,
+                tax_total=0,
+                grand_total=1200,
+            ),
+        ]
+    )
+    await db_session.flush()
+    db_session.add_all(
+        [
+            CrmOrder(
+                user_id=auth_user.id,
+                quote_id=quote.id,
+                customer_id=customer.id,
+                number="O-ACH-1",
+                title="Linked order",
+                status=CrmOrderStatus.COMPLETED,
+                currency="RUB",
+                total=1200,
+                material_requirements=[],
+                completed_at=now,
+            ),
+            CrmOrder(
+                user_id=auth_user.id,
+                customer_id=customer.id,
+                number="O-ACH-2",
+                title="Returning order",
+                status=CrmOrderStatus.COMPLETED,
+                currency="RUB",
+                total=900,
+                material_requirements=[],
+                completed_at=now,
+            ),
+        ]
+    )
+    await db_session.commit()
+
+    completed = await achievement_overview(db_session, user_id=auth_user.id)
+    completed_codes = {item.code for item in completed.achievements}
+    assert {
+        FIRST_SAVED_CALCULATION,
+        GCODE_CALCULATION,
+        FIRST_QUOTE_SENT,
+        FIRST_QUOTE_ACCEPTED,
+        FIRST_ORDER_COMPLETED,
+        RETURNING_CUSTOMER,
+        FULL_BUSINESS_CYCLE,
+    }.issubset(completed_codes)
+
+
+async def test_material_to_print_requires_one_provider_confirmed_consumption_chain(
+    db_session,
+    auth_user,
+):
+    calculation = CalculatorHistoryEntry(
+        user_id=auth_user.id,
+        title="Production calculation",
+        pricing_method="cost_plus",
+        request_data={"quantity": 1},
+        result_data={"total": 600},
+        parsed_gcode={"print_time_seconds": 1800},
+    )
+    printer = UserPrinterDevice(user_id=auth_user.id, name="Production printer")
+    spool = UserSpool(user_id=auth_user.id, initial_weight_g=1000, used_weight_g=50)
+    db_session.add_all([calculation, printer, spool])
+    await db_session.flush()
+    now = datetime.now(timezone.utc)
+    job = PrintJob(
+        user_id=auth_user.id,
+        physical_printer_id=printer.id,
+        calculator_history_id=calculation.id,
+        title="Linked production job",
+        status=PrintJobStatus.completed,
+        source="manual",
+        source_ref="achievement-material-to-print",
+        source_payload_hash="a" * 64,
+        finished_at=now,
+    )
+    db_session.add(job)
+    await db_session.flush()
+    db_session.add_all(
+        [
+            PrintJobMaterial(
+                print_job_id=job.id,
+                spool_id=spool.id,
+                planned_weight_g=50,
+                spool_snapshot={"spool_name": "Achievement spool"},
+            ),
+            PrintJobEvent(
+                print_job_id=job.id,
+                user_id=auth_user.id,
+                status=PrintJobStatus.completed,
+                source="user",
+                event_key="user:completed",
+                payload_hash="b" * 64,
+                occurred_at=now,
+            ),
+            PresetUsageEvent(
+                user_id=auth_user.id,
+                device_id=printer.id,
+                spool_id=spool.id,
+                print_job_id=job.id,
+                event_type=PresetUsageEventType.printer_report,
+                delta_weight_g=50,
+                remaining_weight_g=950,
+            ),
+        ]
+    )
+    await db_session.commit()
+
+    manual_only = await achievement_overview(db_session, user_id=auth_user.id)
+    assert MATERIAL_TO_PRINT not in {item.code for item in manual_only.achievements}
+
+    db_session.add(
+        PrintJobEvent(
+            print_job_id=job.id,
+            user_id=auth_user.id,
+            status=PrintJobStatus.completed,
+            source="octoprint",
+            event_key="octoprint:completed",
+            payload_hash="c" * 64,
+            occurred_at=now,
+        )
+    )
+    await db_session.commit()
+
+    provider_confirmed = await achievement_overview(db_session, user_id=auth_user.id)
+    assert MATERIAL_TO_PRINT in {item.code for item in provider_confirmed.achievements}

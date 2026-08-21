@@ -14,11 +14,22 @@ from app.core.errors import (
     ERR_ACHIEVEMENT_NOT_MANUAL,
     ERR_ACHIEVEMENT_REGRANT_FORBIDDEN,
 )
+from app.models.calculator_history_entry import CalculatorHistoryEntry
+from app.models.crm import (
+    CrmOrder,
+    CrmOrderStatus,
+    CrmQuote,
+    CrmQuoteEvent,
+    CrmQuoteEventType,
+    CrmQuoteStatus,
+    CrmQuoteVersion,
+)
 from app.models.filament import Filament
 from app.models.material_slot_assignment import MaterialSlotAssignment
 from app.models.material_system import MaterialSlot, MaterialSystem, PhysicalPrinterConnector
 from app.models.preset import Preset, PresetModerationStatus
 from app.models.preset_usage_event import PresetUsageEvent, PresetUsageEventType
+from app.models.print_job import PrintJob, PrintJobEvent, PrintJobMaterial, PrintJobStatus
 from app.models.user import User
 from app.models.user_achievement import UserAchievement
 from app.models.user_saved_preset import UserSavedPreset
@@ -67,6 +78,14 @@ SPOOL_DEPLETED_BY_PRINT = "spool_depleted_by_print"
 FIRST_WIKI_ARTICLE = "first_wiki_article"
 FIRST_WIKI_REVISION = "first_wiki_revision"
 WIKI_EDITOR_5 = "wiki_editor_5"
+FIRST_SAVED_CALCULATION = "first_saved_calculation"
+GCODE_CALCULATION = "gcode_calculation"
+FIRST_QUOTE_SENT = "first_quote_sent"
+FIRST_QUOTE_ACCEPTED = "first_quote_accepted"
+FIRST_ORDER_COMPLETED = "first_order_completed"
+RETURNING_CUSTOMER = "returning_customer"
+FULL_BUSINESS_CYCLE = "full_business_cycle"
+MATERIAL_TO_PRINT = "material_to_print"
 
 AchievementMetric = Literal[
     "published_presets",
@@ -84,6 +103,14 @@ AchievementMetric = Literal[
     "depleted_spools",
     "wiki_articles",
     "wiki_revisions",
+    "saved_calculations",
+    "gcode_calculations",
+    "quotes_sent",
+    "quotes_accepted",
+    "orders_completed",
+    "returning_customers",
+    "full_business_cycles",
+    "material_to_print_jobs",
     "first_hundred",
 ]
 AchievementAwardMode = Literal["automatic", "manual", "migration"]
@@ -122,6 +149,14 @@ class AchievementMetrics:
     depleted_spools: int
     wiki_articles: int
     wiki_revisions: int
+    saved_calculations: int
+    gcode_calculations: int
+    quotes_sent: int
+    quotes_accepted: int
+    orders_completed: int
+    returning_customers: int
+    full_business_cycles: int
+    material_to_print_jobs: int
     first_hundred: int
 
 
@@ -319,6 +354,78 @@ ACHIEVEMENT_DEFINITIONS = (
     AchievementDefinition(
         WIKI_EDITOR_5, "wiki", "uncommon", "wiki_revision", "wiki_revisions", 5, 82
     ),
+    AchievementDefinition(
+        FIRST_SAVED_CALCULATION,
+        "production",
+        "common",
+        "saved_calculation",
+        "saved_calculations",
+        1,
+        90,
+    ),
+    AchievementDefinition(
+        GCODE_CALCULATION,
+        "production",
+        "uncommon",
+        "gcode_calculation",
+        "gcode_calculations",
+        1,
+        91,
+    ),
+    AchievementDefinition(
+        FIRST_QUOTE_SENT,
+        "production",
+        "common",
+        "quote_sent",
+        "quotes_sent",
+        1,
+        92,
+    ),
+    AchievementDefinition(
+        FIRST_QUOTE_ACCEPTED,
+        "production",
+        "uncommon",
+        "quote_accepted",
+        "quotes_accepted",
+        1,
+        93,
+    ),
+    AchievementDefinition(
+        FIRST_ORDER_COMPLETED,
+        "production",
+        "uncommon",
+        "order_completed",
+        "orders_completed",
+        1,
+        94,
+    ),
+    AchievementDefinition(
+        RETURNING_CUSTOMER,
+        "production",
+        "rare",
+        "returning_customer",
+        "returning_customers",
+        1,
+        95,
+    ),
+    AchievementDefinition(
+        FULL_BUSINESS_CYCLE,
+        "production",
+        "rare",
+        "full_business_cycle",
+        "full_business_cycles",
+        1,
+        96,
+    ),
+    AchievementDefinition(
+        MATERIAL_TO_PRINT,
+        "production",
+        "epic",
+        "material_to_print",
+        "material_to_print_jobs",
+        1,
+        97,
+    ),
 )
 
 _DEFINITIONS_BY_CODE = {item.code: item for item in ACHIEVEMENT_DEFINITIONS}
@@ -390,6 +497,74 @@ def _published_preset_filter(user_id: int) -> tuple[object, ...]:
         Preset.filament_id.is_not(None),
         Preset.moderation_status == PresetModerationStatus.APPROVED,
         Preset.is_weighted.is_(False),
+    )
+
+
+def _quote_status_event_exists(
+    status: CrmQuoteStatus, *, from_status: CrmQuoteStatus | None = None
+) -> object:
+    conditions = [
+        CrmQuoteEvent.quote_id == CrmQuote.id,
+        CrmQuoteEvent.event_type == CrmQuoteEventType.STATUS_CHANGED,
+        CrmQuoteEvent.to_status == status.value,
+    ]
+    if from_status is not None:
+        conditions.append(CrmQuoteEvent.from_status == from_status.value)
+    return select(CrmQuoteEvent.id).where(*conditions).correlate(CrmQuote).exists()
+
+
+def _quote_has_calculation() -> object:
+    return (
+        select(CrmQuoteVersion.id)
+        .where(
+            CrmQuoteVersion.quote_id == CrmQuote.id,
+            (
+                CrmQuoteVersion.source_history_id.is_not(None)
+                | CrmQuoteVersion.calculation_snapshot.is_not(None)
+            ),
+        )
+        .correlate(CrmQuote)
+        .exists()
+    )
+
+
+def _material_to_print_conditions(user_id: int) -> tuple[object, ...]:
+    provider_completed = (
+        select(PrintJobEvent.id)
+        .where(
+            PrintJobEvent.print_job_id == PrintJob.id,
+            PrintJobEvent.status == PrintJobStatus.completed,
+            PrintJobEvent.source.notin_(("user", "manual")),
+        )
+        .correlate(PrintJob)
+        .exists()
+    )
+    selected_spool_consumed = (
+        select(PresetUsageEvent.id)
+        .where(
+            PresetUsageEvent.print_job_id == PrintJob.id,
+            PresetUsageEvent.user_id == user_id,
+            PresetUsageEvent.event_type == PresetUsageEventType.printer_report,
+            PresetUsageEvent.spool_id.is_not(None),
+            PresetUsageEvent.delta_weight_g > 0,
+            select(PrintJobMaterial.id)
+            .where(
+                PrintJobMaterial.print_job_id == PrintJob.id,
+                PrintJobMaterial.spool_id == PresetUsageEvent.spool_id,
+            )
+            .correlate(PrintJob, PresetUsageEvent)
+            .exists(),
+        )
+        .correlate(PrintJob)
+        .exists()
+    )
+    return (
+        PrintJob.user_id == user_id,
+        PrintJob.status == PrintJobStatus.completed,
+        PrintJob.physical_printer_id.is_not(None),
+        PrintJob.calculator_history_id.is_not(None),
+        provider_completed,
+        selected_spool_consumed,
     )
 
 
@@ -554,6 +729,77 @@ async def _achievement_metrics(db: AsyncSession, user_id: int) -> AchievementMet
         )
         .scalar_subquery()
     )
+    saved_calculations = (
+        select(func.count(CalculatorHistoryEntry.id))
+        .where(CalculatorHistoryEntry.user_id == user_id)
+        .scalar_subquery()
+    )
+    gcode_calculations = (
+        select(func.count(CalculatorHistoryEntry.id))
+        .where(
+            CalculatorHistoryEntry.user_id == user_id,
+            CalculatorHistoryEntry.parsed_gcode.is_not(None),
+        )
+        .scalar_subquery()
+    )
+    quotes_sent = (
+        select(func.count(distinct(CrmQuoteEvent.quote_id)))
+        .join(CrmQuote, CrmQuote.id == CrmQuoteEvent.quote_id)
+        .where(
+            CrmQuote.user_id == user_id,
+            CrmQuoteEvent.event_type == CrmQuoteEventType.STATUS_CHANGED,
+            CrmQuoteEvent.from_status == CrmQuoteStatus.DRAFT.value,
+            CrmQuoteEvent.to_status == CrmQuoteStatus.SENT.value,
+        )
+        .scalar_subquery()
+    )
+    quotes_accepted = (
+        select(func.count(distinct(CrmQuoteEvent.quote_id)))
+        .join(CrmQuote, CrmQuote.id == CrmQuoteEvent.quote_id)
+        .where(
+            CrmQuote.user_id == user_id,
+            CrmQuoteEvent.event_type == CrmQuoteEventType.STATUS_CHANGED,
+            CrmQuoteEvent.to_status == CrmQuoteStatus.ACCEPTED.value,
+        )
+        .scalar_subquery()
+    )
+    orders_completed = (
+        select(func.count(CrmOrder.id))
+        .where(CrmOrder.user_id == user_id, CrmOrder.status == CrmOrderStatus.COMPLETED)
+        .scalar_subquery()
+    )
+    completed_orders_per_customer = (
+        select(CrmOrder.customer_id.label("customer_id"))
+        .where(
+            CrmOrder.user_id == user_id,
+            CrmOrder.status == CrmOrderStatus.COMPLETED,
+            CrmOrder.customer_id.is_not(None),
+        )
+        .group_by(CrmOrder.customer_id)
+        .having(func.count(CrmOrder.id) >= 2)
+        .subquery()
+    )
+    returning_customers = (
+        select(func.count())
+        .select_from(completed_orders_per_customer)
+        .scalar_subquery()
+    )
+    full_business_cycles = (
+        select(func.count(CrmOrder.id))
+        .join(CrmQuote, CrmQuote.id == CrmOrder.quote_id)
+        .where(
+            CrmOrder.user_id == user_id,
+            CrmOrder.status == CrmOrderStatus.COMPLETED,
+            _quote_status_event_exists(CrmQuoteStatus.ACCEPTED),
+            _quote_has_calculation(),
+        )
+        .scalar_subquery()
+    )
+    material_to_print_jobs = (
+        select(func.count(PrintJob.id))
+        .where(*_material_to_print_conditions(user_id))
+        .scalar_subquery()
+    )
     first_hundred = (
         select(func.count(User.id)).where(User.id == user_id, User.id <= 100).scalar_subquery()
     )
@@ -577,6 +823,14 @@ async def _achievement_metrics(db: AsyncSession, user_id: int) -> AchievementMet
                 depleted_spools,
                 wiki_articles,
                 wiki_revisions,
+                saved_calculations,
+                gcode_calculations,
+                quotes_sent,
+                quotes_accepted,
+                orders_completed,
+                returning_customers,
+                full_business_cycles,
+                material_to_print_jobs,
                 first_hundred,
             )
         )
@@ -803,6 +1057,120 @@ async def _threshold_evidence(
             )
         ).first()
         return ("wiki_revision", int(row[0]), row[1]) if row else (None, None, None)
+    if definition.metric in {"saved_calculations", "gcode_calculations"}:
+        conditions = [CalculatorHistoryEntry.user_id == user_id]
+        if definition.metric == "gcode_calculations":
+            conditions.append(CalculatorHistoryEntry.parsed_gcode.is_not(None))
+        row = (
+            await db.execute(
+                select(CalculatorHistoryEntry.id, CalculatorHistoryEntry.created_at)
+                .where(*conditions)
+                .order_by(CalculatorHistoryEntry.created_at.asc(), CalculatorHistoryEntry.id.asc())
+                .limit(1)
+            )
+        ).first()
+        return ("calculator_history", int(row[0]), row[1]) if row else (None, None, None)
+    if definition.metric in {"quotes_sent", "quotes_accepted"}:
+        conditions = [
+            CrmQuote.user_id == user_id,
+            CrmQuoteEvent.event_type == CrmQuoteEventType.STATUS_CHANGED,
+        ]
+        if definition.metric == "quotes_sent":
+            conditions.extend(
+                (
+                    CrmQuoteEvent.from_status == CrmQuoteStatus.DRAFT.value,
+                    CrmQuoteEvent.to_status == CrmQuoteStatus.SENT.value,
+                )
+            )
+        else:
+            conditions.append(CrmQuoteEvent.to_status == CrmQuoteStatus.ACCEPTED.value)
+        row = (
+            await db.execute(
+                select(CrmQuoteEvent.id, CrmQuoteEvent.created_at)
+                .join(CrmQuote, CrmQuote.id == CrmQuoteEvent.quote_id)
+                .where(*conditions)
+                .order_by(CrmQuoteEvent.created_at.asc(), CrmQuoteEvent.id.asc())
+                .limit(1)
+            )
+        ).first()
+        return ("crm_quote_event", int(row[0]), row[1]) if row else (None, None, None)
+    if definition.metric == "orders_completed":
+        occurred_at = func.coalesce(CrmOrder.completed_at, CrmOrder.updated_at)
+        row = (
+            await db.execute(
+                select(CrmOrder.id, occurred_at)
+                .where(
+                    CrmOrder.user_id == user_id,
+                    CrmOrder.status == CrmOrderStatus.COMPLETED,
+                )
+                .order_by(occurred_at.asc(), CrmOrder.id.asc())
+                .limit(1)
+            )
+        ).first()
+        return ("crm_order", int(row[0]), row[1]) if row else (None, None, None)
+    if definition.metric == "returning_customers":
+        occurred_at = func.coalesce(CrmOrder.completed_at, CrmOrder.updated_at)
+        rows = (
+            await db.execute(
+                select(CrmOrder.id, CrmOrder.customer_id, occurred_at)
+                .where(
+                    CrmOrder.user_id == user_id,
+                    CrmOrder.status == CrmOrderStatus.COMPLETED,
+                    CrmOrder.customer_id.is_not(None),
+                )
+                .order_by(occurred_at.asc(), CrmOrder.id.asc())
+            )
+        ).all()
+        completed_by_customer: dict[int, int] = {}
+        for order_id, customer_id, reached_at in rows:
+            completed_by_customer[customer_id] = completed_by_customer.get(customer_id, 0) + 1
+            if completed_by_customer[customer_id] == 2:
+                return "crm_order", int(order_id), reached_at
+        return None, None, None
+    if definition.metric == "full_business_cycles":
+        occurred_at = func.coalesce(CrmOrder.completed_at, CrmOrder.updated_at)
+        row = (
+            await db.execute(
+                select(CrmOrder.id, occurred_at)
+                .join(CrmQuote, CrmQuote.id == CrmOrder.quote_id)
+                .where(
+                    CrmOrder.user_id == user_id,
+                    CrmOrder.status == CrmOrderStatus.COMPLETED,
+                    _quote_status_event_exists(CrmQuoteStatus.ACCEPTED),
+                    _quote_has_calculation(),
+                )
+                .order_by(occurred_at.asc(), CrmOrder.id.asc())
+                .limit(1)
+            )
+        ).first()
+        return ("crm_order", int(row[0]), row[1]) if row else (None, None, None)
+    if definition.metric == "material_to_print_jobs":
+        selected_material = (
+            select(PrintJobMaterial.id)
+            .where(
+                PrintJobMaterial.print_job_id == PrintJob.id,
+                PrintJobMaterial.spool_id == PresetUsageEvent.spool_id,
+            )
+            .correlate(PrintJob, PresetUsageEvent)
+            .exists()
+        )
+        row = (
+            await db.execute(
+                select(PresetUsageEvent.id, PresetUsageEvent.created_at)
+                .join(PrintJob, PrintJob.id == PresetUsageEvent.print_job_id)
+                .where(
+                    *_material_to_print_conditions(user_id),
+                    PresetUsageEvent.user_id == user_id,
+                    PresetUsageEvent.event_type == PresetUsageEventType.printer_report,
+                    PresetUsageEvent.spool_id.is_not(None),
+                    PresetUsageEvent.delta_weight_g > 0,
+                    selected_material,
+                )
+                .order_by(PresetUsageEvent.created_at.asc(), PresetUsageEvent.id.asc())
+                .limit(1)
+            )
+        ).first()
+        return ("preset_usage", int(row[0]), row[1]) if row else (None, None, None)
     if definition.metric == "first_hundred":
         user = await db.scalar(select(User).where(User.id == user_id))
         if user is not None and user.id <= 100:

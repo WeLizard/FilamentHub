@@ -2547,6 +2547,38 @@
     "wikiEditor5": {
       "label": "Wiki Editor",
       "title": "Publish 5 accepted Wiki revisions."
+    },
+    "firstSavedCalculation": {
+      "label": "Costed Out",
+      "title": "Intentionally save your first cost calculation."
+    },
+    "gcodeCalculation": {
+      "label": "Layer by Layer",
+      "title": "Save your first calculation based on actually parsed G-code."
+    },
+    "firstQuoteSent": {
+      "label": "Quote Sent",
+      "title": "Send your first real commercial quote."
+    },
+    "firstQuoteAccepted": {
+      "label": "Deal!",
+      "title": "Have your first commercial quote accepted."
+    },
+    "firstOrderCompleted": {
+      "label": "Order Complete",
+      "title": "Bring your first real order to completion."
+    },
+    "returningCustomer": {
+      "label": "Back for More",
+      "title": "Complete at least two orders for the same customer."
+    },
+    "fullBusinessCycle": {
+      "label": "Full Cycle",
+      "title": "Take one linked job from calculation and accepted quote through to a completed order."
+    },
+    "materialToPrint": {
+      "label": "From Spool to Part",
+      "title": "Link a calculation, a physical spool, a printer-confirmed successful print, and recorded material consumption."
     }
   },
   "deleteAccount": {

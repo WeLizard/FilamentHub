@@ -1859,7 +1859,10 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
   const saveHistoryMutation = useMutation({
     mutationFn: (payload: CalculatorHistoryEntryCreate) => calculatorAPI.saveHistory(payload),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['calculator-pro', 'history'] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['calculator-pro', 'history'] }),
+        queryClient.invalidateQueries({ queryKey: ['achievement-overview'] }),
+      ]);
     },
   });
 

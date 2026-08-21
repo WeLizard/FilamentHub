@@ -668,7 +668,15 @@ export type AchievementCode =
   | 'spool_depleted_by_print'
   | 'first_wiki_article'
   | 'first_wiki_revision'
-  | 'wiki_editor_5';
+  | 'wiki_editor_5'
+  | 'first_saved_calculation'
+  | 'gcode_calculation'
+  | 'first_quote_sent'
+  | 'first_quote_accepted'
+  | 'first_order_completed'
+  | 'returning_customer'
+  | 'full_business_cycle'
+  | 'material_to_print';
 
 export type AchievementCategory =
   | 'history'
@@ -677,6 +685,7 @@ export type AchievementCategory =
   | 'inventory'
   | 'integrations'
   | 'wiki'
+  | 'production'
   | 'community'
   | 'legacy';
 

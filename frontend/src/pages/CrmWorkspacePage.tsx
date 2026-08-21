@@ -221,6 +221,7 @@ export const CrmWorkspacePage: React.FC<CrmWorkspacePageProps> = ({
       queryClient.invalidateQueries({ queryKey: ['crm', 'quotes'] }),
       queryClient.invalidateQueries({ queryKey: ['crm', 'orders'] }),
       queryClient.invalidateQueries({ queryKey: ['crm', 'quote'] }),
+      queryClient.invalidateQueries({ queryKey: ['achievement-overview'] }),
     ]);
   };
 

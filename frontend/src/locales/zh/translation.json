@@ -2542,6 +2542,38 @@
     "wikiEditor5": {
       "label": "Wiki 编辑",
       "title": "发布 5 次已接受的 Wiki 修订。"
+    },
+    "firstSavedCalculation": {
+      "label": "算清这笔账",
+      "title": "首次主动保存成本计算。"
+    },
+    "gcodeCalculation": {
+      "label": "层层拆解",
+      "title": "首次保存基于实际解析 G-code 的计算。"
+    },
+    "firstQuoteSent": {
+      "label": "报价已发",
+      "title": "首次发送真实的商业报价。"
+    },
+    "firstQuoteAccepted": {
+      "label": "成交",
+      "title": "首次获得客户接受的商业报价。"
+    },
+    "firstOrderCompleted": {
+      "label": "订单完成",
+      "title": "首次将真实订单推进至完成。"
+    },
+    "returningCustomer": {
+      "label": "再次光临",
+      "title": "为同一客户完成至少两个订单。"
+    },
+    "fullBusinessCycle": {
+      "label": "完整闭环",
+      "title": "将同一项工作从计算、报价接受一直推进到订单完成。"
+    },
+    "materialToPrint": {
+      "label": "从料卷到成品",
+      "title": "将计算、实体料卷、打印机确认的成功打印和实际材料消耗关联起来。"
     }
   },
   "deleteAccount": {
