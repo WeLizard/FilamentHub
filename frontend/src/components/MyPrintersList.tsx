@@ -28,6 +28,7 @@ import { translateApiError } from '../utils/translateApiError';
 import { LayeredPrinterIcon } from './icons/LayeredPrinterIcon';
 import { PrintJobHistoryModal } from './PrintJobHistoryModal';
 import { visiblePrinterConnections } from '../utils/printerConnections';
+import { GuidedEmptyState } from './GuidedEmptyState';
 
 interface MyPrintersListProps {
   /** The user's Orca machine profiles, shown under the printer they belong to. */
@@ -35,6 +36,7 @@ interface MyPrintersListProps {
   /** Process profiles assigned to each machine configuration. */
   printProfilesByConfiguration?: Map<number, ConfigurationPrintProfile[]>;
   currentUserId?: number | null;
+  showNewcomerGuide?: boolean;
   /** Open the configuration (PrinterProfile) editor. */
   onEditConfiguration?: (profile: PrinterProfile) => void;
   /** Open the read-only configuration view. */
@@ -57,6 +59,7 @@ export function MyPrintersList({
   printerProfiles,
   printProfilesByConfiguration,
   currentUserId,
+  showNewcomerGuide = false,
   onEditConfiguration,
   onViewConfiguration,
   onViewPrintProfile,
@@ -249,11 +252,24 @@ export function MyPrintersList({
       ) : isError ? (
         <p className="text-sm text-amber-300/80">{t('myPrinters.loadError')}</p>
       ) : list.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-white/15 p-6 text-center">
-          <LayeredPrinterIcon className="w-7 h-7 text-gray-500 mx-auto mb-2" />
-          <p className="text-sm text-gray-400">{t('myPrinters.empty')}</p>
-          <p className="mt-1 text-xs text-gray-500">{t('myPrinters.emptyHint')}</p>
-        </div>
+        showNewcomerGuide ? (
+          <GuidedEmptyState
+            icon={<LayeredPrinterIcon className="h-5 w-5" />}
+            eyebrow={t('profilePage.newcomer.printers.eyebrow')}
+            title={t('profilePage.newcomer.printers.title')}
+            description={t('profilePage.newcomer.printers.description')}
+            actionLabel={t('addPrinter.title')}
+            onAction={() => setShowAdd(true)}
+            guideLabel={t('profilePage.newcomer.howTo')}
+            guideTo="/wiki/articles/printer-feed-guide?start=1&journey=user%3Aprinter&returnTo=%2Fprofile%3Ftab%3Dprinter-profiles"
+          />
+        ) : (
+          <div className="rounded-xl border border-dashed border-white/15 p-6 text-center">
+            <LayeredPrinterIcon className="w-7 h-7 text-gray-500 mx-auto mb-2" />
+            <p className="text-sm text-gray-400">{t('myPrinters.empty')}</p>
+            <p className="mt-1 text-xs text-gray-500">{t('myPrinters.emptyHint')}</p>
+          </div>
+        )
       ) : (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {list.map((printer) => {

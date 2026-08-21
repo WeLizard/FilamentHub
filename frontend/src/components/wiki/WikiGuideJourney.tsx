@@ -12,6 +12,7 @@ import {
   Compass,
   Play,
   Route,
+  UserRound,
 } from 'lucide-react';
 
 import type { WikiArticle } from '../../types/api';
@@ -167,6 +168,12 @@ export function WikiGuideJourney({ article, content, onBack, accountBackedProgre
               </button>
             </div>
           </div>
+          {!accountBackedProgress && (
+            <div className="relative mt-5 flex items-start gap-2.5 rounded-xl border border-white/10 bg-black/15 px-3.5 py-3 text-xs leading-5 text-slate-400">
+              <UserRound className="mt-0.5 h-4 w-4 shrink-0 text-cyan-300" />
+              <span>{t('wikiGuide.accountNote')}</span>
+            </div>
+          )}
         </header>
       ) : (
         <>

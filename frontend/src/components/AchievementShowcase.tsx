@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { ChevronRight, Sparkles, Star, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { Link } from 'react-router-dom';
 
 import type {
   AchievementCode,
@@ -13,6 +14,18 @@ import { ACHIEVEMENT_CONFIG, AchievementBadge } from './Badge';
 import { ModalOverlay } from './ModalOverlay';
 
 const PREVIEW_LIMIT = 3;
+
+const NEWCOMER_GOAL_PRIORITY: AchievementCode[] = [
+  'spool_collector_1',
+  'first_profile',
+  'printer_integration_connected',
+];
+
+const ACHIEVEMENT_GUIDES: Partial<Record<AchievementCode, string>> = {
+  spool_collector_1: '/wiki/articles/spool-on-shelf?start=1&journey=user%3Ashelf&returnTo=%2Fprofile%3Ftab%3Dspools',
+  first_profile: '/wiki/articles/orca-preset-guide?start=1&journey=user%3Aslicer&returnTo=%2Fprofile%3Ftab%3Dpresets',
+  printer_integration_connected: '/wiki/articles/printer-feed-guide?start=1&journey=user%3Aprinter&returnTo=%2Fprofile%3Ftab%3Dprinter-profiles',
+};
 
 const RARITY_STYLES: Record<string, { card: string; chip: string }> = {
   common: {
@@ -64,13 +77,16 @@ const knownProgress = (
 interface AchievementShowcaseProps {
   overview?: AchievementOverview;
   isHeaderVisible: boolean;
+  onAcknowledgeNew?: (codes: AchievementCode[]) => void;
 }
 
 export function AchievementShowcase({
   overview,
   isHeaderVisible,
+  onAcknowledgeNew,
 }: AchievementShowcaseProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const language = (i18n.resolvedLanguage || i18n.language).split('-')[0];
   const [isOpen, setIsOpen] = useState(false);
   const [viewedAchievementCodes, setViewedAchievementCodes] = useState<Set<AchievementCode>>(
     () => new Set(),
@@ -82,10 +98,18 @@ export function AchievementShowcase({
     () => (overview?.achievements ?? []).filter(knownAchievement),
     [overview?.achievements],
   );
-  const nextAchievements = useMemo(
-    () => (overview?.next_achievements ?? []).filter(knownProgress),
-    [overview?.next_achievements],
-  );
+  const nextAchievements = useMemo(() => {
+    const priority = new Map(NEWCOMER_GOAL_PRIORITY.map((code, index) => [code, index]));
+    return (overview?.next_achievements ?? [])
+      .filter(knownProgress)
+      .map((progress, sourceIndex) => ({ progress, sourceIndex }))
+      .sort((left, right) => {
+        const leftRank = priority.get(left.progress.code) ?? Number.MAX_SAFE_INTEGER;
+        const rightRank = priority.get(right.progress.code) ?? Number.MAX_SAFE_INTEGER;
+        return leftRank - rightRank || left.sourceIndex - right.sourceIndex;
+      })
+      .map(({ progress }) => progress);
+  }, [overview?.next_achievements]);
   const newlyEarned = useMemo(
     () => new Set((overview?.newly_earned ?? []).filter(isAchievementCode)),
     [overview?.newly_earned],
@@ -99,6 +123,9 @@ export function AchievementShowcase({
   const openShowcase = () => {
     setOpenedNewAchievementCodes(unseenAchievementCodes);
     setViewedAchievementCodes((current) => new Set([...current, ...unseenAchievementCodes]));
+    if (unseenAchievementCodes.size > 0) {
+      onAcknowledgeNew?.([...unseenAchievementCodes]);
+    }
     setIsOpen(true);
   };
 
@@ -194,7 +221,7 @@ export function AchievementShowcase({
                               : ''
                           }`}
                         >
-                          <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-black/25 shadow-[0_0_24px_rgba(34,211,238,0.12)]">
+                          <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-black/25 shadow-[0_0_24px_rgba(34,211,238,0.12)]">
                             <AchievementBadge code={achievement.code} size="lg" showArtwork />
                           </div>
                           <div className="min-w-0 flex-1">
@@ -229,6 +256,11 @@ export function AchievementShowcase({
                   <div className="grid gap-2 sm:grid-cols-2">
                     {nextAchievements.map((progress) => {
                       const config = ACHIEVEMENT_CONFIG[progress.code];
+                      const guideTo = ACHIEVEMENT_GUIDES[progress.code]
+                        ? language === 'ru'
+                          ? ACHIEVEMENT_GUIDES[progress.code]
+                          : '/wiki'
+                        : undefined;
                       const ratio = Math.min(100, Math.round((progress.current / progress.target) * 100));
                       return (
                         <div
@@ -250,6 +282,15 @@ export function AchievementShowcase({
                             <p className="mt-0.5 line-clamp-2 text-xs leading-4 text-gray-400">
                               {t(config.titleKey)}
                             </p>
+                            {guideTo && (
+                              <Link
+                                to={guideTo}
+                                className="mt-1 inline-flex items-center gap-1 text-[11px] font-medium text-cyan-300 transition hover:text-cyan-200"
+                              >
+                                {t('profilePage.newcomer.howTo')}
+                                <ChevronRight className="h-3 w-3" />
+                              </Link>
+                            )}
                             <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/8">
                               <div
                                 className="h-full rounded-full bg-gradient-to-r from-cyan-400 to-violet-400 transition-[width]"

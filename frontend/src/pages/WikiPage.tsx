@@ -62,10 +62,10 @@ export function WikiPage() {
   const languageCode = i18n.resolvedLanguage?.split('-')[0];
   const currentLanguage: WikiLanguage = languageCode === 'ru' || languageCode === 'zh' ? languageCode : 'en';
   const guideJourneySteps = [
-    { key: 'shelf', icon: Store, contentKey: 'spool-on-shelf', progressId: 'user:shelf' },
     { key: 'catalog', icon: PackageOpen, contentKey: 'catalog-material', progressId: 'user:catalog' },
-    { key: 'spools', icon: Boxes, contentKey: 'my-filaments-guide', progressId: 'user:spools' },
     { key: 'slicer', icon: SlidersHorizontal, contentKey: 'orca-preset-guide', progressId: 'user:slicer' },
+    { key: 'shelf', icon: Store, contentKey: 'spool-on-shelf', progressId: 'user:shelf' },
+    { key: 'spools', icon: Boxes, contentKey: 'my-filaments-guide', progressId: 'user:spools' },
     { key: 'printer', icon: Printer3DIcon, contentKey: 'printer-feed-guide', progressId: 'user:printer' },
     { key: 'production', icon: Calculator, contentKey: 'production-calculation-guide', progressId: 'user:production' },
   ];
@@ -596,5 +596,4 @@ export function WikiPage() {
     </>
   );
 }
-
 

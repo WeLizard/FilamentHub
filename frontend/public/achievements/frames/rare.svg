@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" fill="none">
+  <defs>
+    <linearGradient id="rare-rim" x1="70" y1="70" x2="952" y2="950" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F1EEFF"/>
+      <stop offset="0.22" stop-color="#A486FF"/>
+      <stop offset="0.56" stop-color="#7547E8"/>
+      <stop offset=".82" stop-color="#C760FF"/>
+      <stop offset="1" stop-color="#DCD8FF"/>
+    </linearGradient>
+    <filter id="rare-glow" x="-11%" y="-11%" width="122%" height="122%">
+      <feDropShadow dx="0" dy="0" stdDeviation="14" flood-color="#8B5CF6" flood-opacity=".58"/>
+      <feDropShadow dx="0" dy="13" stdDeviation="15" flood-color="#150733" flood-opacity=".78"/>
+    </filter>
+  </defs>
+  <rect x="34" y="34" width="956" height="956" rx="150" stroke="#27104B" stroke-width="62"/>
+  <rect x="47" y="47" width="930" height="930" rx="137" stroke="url(#rare-rim)" stroke-width="34" filter="url(#rare-glow)"/>
+  <rect x="76" y="76" width="872" height="872" rx="109" stroke="#ECE8FF" stroke-opacity=".74" stroke-width="8"/>
+</svg>

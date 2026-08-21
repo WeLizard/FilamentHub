@@ -1491,10 +1491,10 @@
     "subtitle": "关于材料、技术和 3D 打印问题排解的知识库",
     "officialGuides": "官方指南",
     "guidesTitle": "FilamentHub 使用指南",
-    "guidesDescription": "经过验证的产品流程：从第一个线轴和预设，到连接打印机、跟踪用量与规划生产。",
+    "guidesDescription": "找到准确的材料，并将可用设置带入 OrcaSlicer。之后可继续管理线轴、连接打印机和进行生产估算。",
     "startHere": "从这里开始",
     "chooseTask": "用户流程",
-    "chooseTaskHint": "您可以完成整个流程，也可以直接打开所需阶段。",
+    "chooseTaskHint": "不确定从哪里开始？先查看材料目录，再将配置带入 OrcaSlicer。",
     "openExactStep": "打开对应阶段",
     "fullJourney": "新手完整流程",
     "openGuide": "打开指南",
@@ -1578,7 +1578,10 @@
     "wasHelpful": "这篇文章是否有帮助？",
     "marked": "已标记",
     "helpful": "有帮助",
-    "leaveFeedback": "留下反馈"
+    "leaveFeedback": "留下反馈",
+    "productGuideBridgeTitle": "在 FilamentHub 中应用这些知识",
+    "productGuideBridgeDescription": "官方指南将说明如何查找材料、将配置带入 OrcaSlicer、添加线轴并连接打印机。",
+    "productGuideBridgeAction": "打开指南"
   },
   "wikiGuide": {
     "progress": "进度",
@@ -1597,7 +1600,8 @@
     "zoomIn": "放大",
     "zoomOut": "缩小",
     "resetZoom": "重置缩放",
-    "closeImage": "关闭图片"
+    "closeImage": "关闭图片",
+    "accountNote": "无需账号即可阅读本指南。添加线轴、配置或打印机前请先登录，以便将进度保存到 FilamentHub。"
   },
   "filamentDetailPage": {
     "loginRequired": "需要登录以保存预设",
@@ -3221,6 +3225,24 @@
     "nextAchievements": "下一个目标",
     "earnedAchievements": "已获得的成就",
     "noAchievementsYet": "当 FilamentHub 能确认一个有用结果后，你的第一个成就会出现在这里。",
+    "newcomer": {
+      "howTo": "查看操作方法",
+      "spools": {
+        "eyebrow": "我的耗材 · 第一步",
+        "title": "你的线轴会显示在这里",
+        "description": "扫描包装盒上的二维码或在目录中查找材料，系统会自动计算剩余重量和成本。"
+      },
+      "presets": {
+        "eyebrow": "耗材配置 · 第一步",
+        "title": "添加可用配置",
+        "description": "从 OrcaSlicer 同步设置，或在此创建配置，并在发布前完成检查。"
+      },
+      "printers": {
+        "eyebrow": "打印机 · 第一步",
+        "title": "连接第一台打印机",
+        "description": "插件会在你使用 OrcaSlicer 时发现打印机。你也可以手动添加设备并配置合适的适配器。"
+      }
+    },
     "contributorRoles": {
       "catalog_contributor": "目录贡献者",
       "preset_author": "预设作者",

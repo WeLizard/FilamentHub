@@ -1492,10 +1492,10 @@
     "subtitle": "Knowledge base about materials, technologies, and 3D printing troubleshooting",
     "officialGuides": "Official guide",
     "guidesTitle": "FilamentHub Guide",
-    "guidesDescription": "Verified product journeys from the first spool and preset to printer connectivity, usage tracking, and production planning.",
+    "guidesDescription": "Find the exact material and get working settings into OrcaSlicer. Spool tracking, printer connectivity, and production estimates follow from there.",
     "startHere": "Start here",
     "chooseTask": "User journey",
-    "chooseTaskHint": "Follow the complete journey or open the exact stage you need.",
+    "chooseTaskHint": "Not sure where to begin? Start with the catalog, then bring the profile into OrcaSlicer.",
     "openExactStep": "Opens the matching stage",
     "fullJourney": "Complete journey for newcomers",
     "openGuide": "Open guide",
@@ -1579,7 +1579,10 @@
     "wasHelpful": "Was this article helpful?",
     "marked": "Marked",
     "helpful": "Helpful",
-    "leaveFeedback": "Leave Feedback"
+    "leaveFeedback": "Leave Feedback",
+    "productGuideBridgeTitle": "Put this knowledge to work in FilamentHub",
+    "productGuideBridgeDescription": "Official guides show how to find a material, get its profile into OrcaSlicer, add a spool, and connect a printer.",
+    "productGuideBridgeAction": "Open guides"
   },
   "wikiGuide": {
     "progress": "Progress",
@@ -1598,7 +1601,8 @@
     "zoomIn": "Zoom in",
     "zoomOut": "Zoom out",
     "resetZoom": "Reset zoom",
-    "closeImage": "Close image"
+    "closeImage": "Close image",
+    "accountNote": "You can read this guide without an account. Sign in before adding spools, profiles, or a printer so your progress is saved in FilamentHub."
   },
   "filamentDetailPage": {
     "loginRequired": "Login required to save presets",
@@ -3226,6 +3230,24 @@
     "nextAchievements": "Next goals",
     "earnedAchievements": "Earned achievements",
     "noAchievementsYet": "Your first achievement will appear here once FilamentHub can confirm a useful result.",
+    "newcomer": {
+      "howTo": "How it works",
+      "spools": {
+        "eyebrow": "My Filaments · first step",
+        "title": "Your spools will appear here",
+        "description": "Scan the QR code on the box or find the material in the catalog — remaining weight and cost will be calculated automatically."
+      },
+      "presets": {
+        "eyebrow": "Filament profiles · first step",
+        "title": "Add a working profile",
+        "description": "Sync your settings from OrcaSlicer or create a profile here, then review it before publishing."
+      },
+      "printers": {
+        "eyebrow": "Printers · first step",
+        "title": "Connect your first printer",
+        "description": "The plugin discovers the printer while you work in OrcaSlicer. You can also add a machine manually and configure a suitable adapter."
+      }
+    },
     "contributorRoles": {
       "catalog_contributor": "Catalog contributor",
       "preset_author": "Preset author",

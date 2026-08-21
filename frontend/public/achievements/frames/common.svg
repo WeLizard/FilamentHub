@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" fill="none">
+  <defs>
+    <linearGradient id="common-rim" x1="88" y1="72" x2="934" y2="952" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#9CA3FF"/>
+      <stop offset="0.5" stop-color="#7546D8"/>
+      <stop offset="1" stop-color="#56C9E8"/>
+    </linearGradient>
+    <filter id="common-shadow" x="-8%" y="-8%" width="116%" height="116%">
+      <feDropShadow dx="0" dy="12" stdDeviation="14" flood-color="#120A2F" flood-opacity=".7"/>
+    </filter>
+  </defs>
+  <rect x="36" y="36" width="952" height="952" rx="148" stroke="#241044" stroke-width="58" filter="url(#common-shadow)"/>
+  <rect x="47" y="47" width="930" height="930" rx="137" stroke="url(#common-rim)" stroke-width="30"/>
+  <rect x="75" y="75" width="874" height="874" rx="110" stroke="#D7D8FF" stroke-opacity=".36" stroke-width="5"/>
+</svg>

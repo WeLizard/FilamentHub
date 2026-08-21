@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" fill="none">
+  <defs>
+    <linearGradient id="historic-rim" x1="70" y1="52" x2="958" y2="970" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFF1A8"/>
+      <stop offset=".18" stop-color="#F9C83E"/>
+      <stop offset=".48" stop-color="#C47714"/>
+      <stop offset=".72" stop-color="#FFE47A"/>
+      <stop offset="1" stop-color="#D98E1B"/>
+    </linearGradient>
+    <radialGradient id="historic-star" cx="0" cy="0" r="1" gradientTransform="translate(512 79) rotate(90) scale(70)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFCE1"/>
+      <stop offset=".48" stop-color="#FFD95A"/>
+      <stop offset="1" stop-color="#B86608"/>
+    </radialGradient>
+    <filter id="historic-glow" x="-16%" y="-16%" width="132%" height="132%">
+      <feDropShadow dx="0" dy="0" stdDeviation="12" flood-color="#F9C83E" flood-opacity=".7"/>
+      <feDropShadow dx="0" dy="14" stdDeviation="16" flood-color="#251006" flood-opacity=".82"/>
+    </filter>
+  </defs>
+  <rect x="30" y="30" width="964" height="964" rx="154" stroke="#5C2C08" stroke-width="68"/>
+  <rect x="45" y="45" width="934" height="934" rx="140" stroke="url(#historic-rim)" stroke-width="42" filter="url(#historic-glow)"/>
+  <rect x="79" y="79" width="866" height="866" rx="106" stroke="#FFF0A0" stroke-opacity=".76" stroke-width="10"/>
+  <path d="M512 8L533 57L584 79L533 101L512 151L490 101L440 79L490 57L512 8Z" fill="url(#historic-star)" stroke="#5C2C08" stroke-width="12"/>
+  <path d="M512 873L533 923L584 945L533 967L512 1016L490 967L440 945L490 923L512 873Z" fill="url(#historic-star)" stroke="#5C2C08" stroke-width="12"/>
+</svg>

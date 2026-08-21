@@ -9,6 +9,7 @@ vi.mock('react-i18next', () => ({
     t: (key: string, options?: { count?: number }) => (
       options?.count === undefined ? key : `${key}:${options.count}`
     ),
+    i18n: { resolvedLanguage: 'ru', language: 'ru' },
   }),
 }));
 
@@ -41,14 +42,17 @@ const overview: AchievementOverview = {
 
 describe('AchievementShowcase', () => {
   it('shows earned achievements, progress, and acknowledges new awards', () => {
+    const onAcknowledgeNew = vi.fn();
     render(
       <AchievementShowcase
         overview={overview}
         isHeaderVisible
+        onAcknowledgeNew={onAcknowledgeNew}
       />,
     );
 
     fireEvent.click(screen.getByRole('button', { name: 'profilePage.openAchievements' }));
+    expect(onAcknowledgeNew).toHaveBeenCalledWith(['first_profile']);
 
     expect(screen.getByText('profilePage.nextAchievements')).toBeTruthy();
     expect(screen.getByText('achievement.presetPublisher5.label')).toBeTruthy();

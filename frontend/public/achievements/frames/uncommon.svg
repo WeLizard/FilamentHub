@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" fill="none">
+  <defs>
+    <linearGradient id="uncommon-rim" x1="86" y1="54" x2="942" y2="970" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#B3FFF6"/>
+      <stop offset="0.28" stop-color="#24D6C5"/>
+      <stop offset="0.72" stop-color="#2D9DD7"/>
+      <stop offset="1" stop-color="#7B5BE7"/>
+    </linearGradient>
+    <filter id="uncommon-glow" x="-10%" y="-10%" width="120%" height="120%">
+      <feGaussianBlur stdDeviation="10" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="uncommon-shadow" x="-8%" y="-8%" width="116%" height="116%">
+      <feDropShadow dx="0" dy="12" stdDeviation="14" flood-color="#081F33" flood-opacity=".72"/>
+    </filter>
+  </defs>
+  <rect x="35" y="35" width="954" height="954" rx="149" stroke="#102F49" stroke-width="60" filter="url(#uncommon-shadow)"/>
+  <rect x="47" y="47" width="930" height="930" rx="137" stroke="url(#uncommon-rim)" stroke-width="32"/>
+  <rect x="75" y="75" width="874" height="874" rx="110" stroke="#69F7E9" stroke-opacity=".75" stroke-width="7" filter="url(#uncommon-glow)"/>
+</svg>

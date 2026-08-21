@@ -18,6 +18,8 @@ import {
   Check,
   FilePenLine,
   LibraryBig,
+  Compass,
+  ArrowRight,
 } from 'lucide-react';
 import { wikiAPI } from '../api/client';
 import type { WikiArticle, WikiFeedbackStats } from '../types/api';
@@ -402,6 +404,24 @@ export function WikiArticlePage() {
                 taskStorageKey={slug ? `wiki-checkboxes-${slug}` : undefined}
               />
             </article>
+
+            <button
+              type="button"
+              onClick={() => navigate('/wiki')}
+              className="group mb-8 flex w-full items-center gap-4 rounded-2xl border border-cyan-300/15 bg-cyan-400/[0.055] p-4 text-left transition hover:border-cyan-300/30 hover:bg-cyan-400/[0.085] sm:p-5"
+            >
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-cyan-300/10 text-cyan-200 ring-1 ring-cyan-300/15">
+                <Compass className="h-5 w-5" />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-semibold text-white">{t('wikiArticlePage.productGuideBridgeTitle')}</span>
+                <span className="mt-1 block text-xs leading-5 text-slate-400">{t('wikiArticlePage.productGuideBridgeDescription')}</span>
+              </span>
+              <span className="hidden shrink-0 items-center gap-1.5 text-sm font-medium text-cyan-300 group-hover:text-cyan-200 sm:inline-flex">
+                {t('wikiArticlePage.productGuideBridgeAction')}
+                <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+              </span>
+            </button>
 
             {/* Article Footer - Feedback Section */}
             <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-6 glass-panel-subtle border border-white/10 rounded-xl mb-8">

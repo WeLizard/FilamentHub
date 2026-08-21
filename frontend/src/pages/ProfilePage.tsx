@@ -88,9 +88,18 @@ const CreatePrinterProfileModal = lazy(() =>
 import { CreatePrintProfileModal } from '../components/CreatePrintProfileModal';
 import { PresetSyncToggle } from '../components/PresetSyncToggle';
 import { AchievementShowcase } from '../components/AchievementShowcase';
+import { GuidedEmptyState } from '../components/GuidedEmptyState';
 import { PresetSlotsPanel } from '../components/presetSlots/PresetSlotsPanel';
 import { SpoolUsageModal } from '../components/SpoolUsageModal';
-import type { Preset, PresetDraftAnalysis, PrinterProfile, PrintProfile, Filament } from '../types/api';
+import type {
+  AchievementCode,
+  AchievementOverview,
+  Preset,
+  PresetDraftAnalysis,
+  PrinterProfile,
+  PrintProfile,
+  Filament,
+} from '../types/api';
 import { formatDate, formatDateTime as formatLocalDateTime } from '../utils/formatDate';
 
 const BrandProfilePage = lazy(() => import('./BrandProfilePage').then((module) => ({ default: module.BrandProfilePage })));
@@ -324,6 +333,29 @@ export const ProfilePage: React.FC = () => {
     enabled: !!user?.id,
     staleTime: 60_000,
   });
+  const earnedAchievementCodes = useMemo(
+    () => new Set((achievementOverviewQuery.data?.achievements ?? []).map(({ code }) => code)),
+    [achievementOverviewQuery.data?.achievements],
+  );
+  const achievementHistoryReady = achievementOverviewQuery.isSuccess;
+  const showFirstSpoolGuide = achievementHistoryReady
+    && !earnedAchievementCodes.has('spool_collector_1');
+  const showFirstProfileGuide = achievementHistoryReady
+    && !earnedAchievementCodes.has('first_profile');
+  const showFirstPrinterGuide = achievementHistoryReady
+    && !earnedAchievementCodes.has('printer_integration_connected');
+  const acknowledgeNewAchievements = (codes: AchievementCode[]) => {
+    const acknowledged = new Set(codes);
+    queryClient.setQueryData<AchievementOverview>(
+      ['achievement-overview', user?.id],
+      (current) => current
+        ? {
+            ...current,
+            newly_earned: current.newly_earned.filter((code) => !acknowledged.has(code as AchievementCode)),
+          }
+        : current,
+    );
+  };
 
   // Загружаем все пресеты пользователя (активные + черновики)
   const { data: userPresetsData } = useQuery({
@@ -968,6 +1000,7 @@ export const ProfilePage: React.FC = () => {
                   <AchievementShowcase
                     overview={achievementOverviewQuery.data}
                     isHeaderVisible={isHeaderVisible}
+                    onAcknowledgeNew={acknowledgeNewAchievements}
                   />
                 </div>
               </div>
@@ -976,6 +1009,7 @@ export const ProfilePage: React.FC = () => {
               <AchievementShowcase
                 overview={achievementOverviewQuery.data}
                 isHeaderVisible={isHeaderVisible}
+                onAcknowledgeNew={acknowledgeNewAchievements}
               />
             </div>
           </div>
@@ -1195,13 +1229,26 @@ export const ProfilePage: React.FC = () => {
           </div>
 
           {userPresets.length === 0 && (
-            <div className="text-center py-8 md:py-12">
-              <Settings className="w-12 h-12 md:w-16 md:h-16 text-gray-400 mx-auto mb-3 md:mb-4" />
-              <p className="text-gray-400 text-base md:text-xl">
-                <span className="md:hidden">{t('profilePage.noPresetsShort')}</span>
-                <span className="hidden md:inline">{t('profilePage.noPresetsLong')}</span>
-              </p>
-            </div>
+            showFirstProfileGuide && allMyPresets.length === 0 ? (
+              <GuidedEmptyState
+                icon={<Settings className="h-5 w-5" />}
+                eyebrow={t('profilePage.newcomer.presets.eyebrow')}
+                title={t('profilePage.newcomer.presets.title')}
+                description={t('profilePage.newcomer.presets.description')}
+                actionLabel={t('profilePage.newPreset')}
+                onAction={handleCreatePreset}
+                guideLabel={t('profilePage.newcomer.howTo')}
+                guideTo="/wiki/articles/orca-preset-guide?start=1&journey=user%3Aslicer&returnTo=%2Fprofile%3Ftab%3Dpresets"
+              />
+            ) : (
+              <div className="text-center py-8 md:py-12">
+                <Settings className="w-12 h-12 md:w-16 md:h-16 text-gray-400 mx-auto mb-3 md:mb-4" />
+                <p className="text-gray-400 text-base md:text-xl">
+                  <span className="md:hidden">{t('profilePage.noPresetsShort')}</span>
+                  <span className="hidden md:inline">{t('profilePage.noPresetsLong')}</span>
+                </p>
+              </div>
+            )
           )}
         </div>
       )}
@@ -1212,6 +1259,7 @@ export const ProfilePage: React.FC = () => {
           spools={spoolsData}
           printerProfiles={myPrinterProfiles.map((profile) => ({ id: profile.id, name: profile.name }))}
           onRefetch={refetchSpools}
+          showNewcomerGuide={showFirstSpoolGuide}
           isAddOpen={isAddSpoolOpen}
           setIsAddOpen={setAddSpoolOpen}
           initialFilamentId={spoolIntakeFilamentId}
@@ -1372,6 +1420,7 @@ export const ProfilePage: React.FC = () => {
             printerProfiles={myPrinterProfiles}
             printProfilesByConfiguration={printProfilesByConfiguration}
             currentUserId={user?.id ?? null}
+            showNewcomerGuide={showFirstPrinterGuide}
             onEditConfiguration={(profile) => {
               setEditingPrinterProfile(profile);
               setIsCreatePrinterProfileModalOpen(true);
@@ -3112,6 +3161,7 @@ interface SpoolsTabProps {
   spools: UserSpool[];
   printerProfiles: Array<{ id: number; name: string }>;
   onRefetch: () => void;
+  showNewcomerGuide: boolean;
   isAddOpen: boolean;
   setIsAddOpen: (v: boolean) => void;
   initialFilamentId?: number | null;
@@ -3123,6 +3173,7 @@ const SpoolsTab: React.FC<SpoolsTabProps> = ({
   spools,
   printerProfiles,
   onRefetch,
+  showNewcomerGuide,
   isAddOpen,
   setIsAddOpen,
   initialFilamentId = null,
@@ -3306,6 +3357,7 @@ const SpoolsTab: React.FC<SpoolsTabProps> = ({
                 onSaved={() => {
                   setIsAddOpen(false);
                   onRefetch();
+                  queryClient.invalidateQueries({ queryKey: ['achievement-overview'] });
                 }}
                 onCancel={() => setIsAddOpen(false)}
               />
@@ -3378,10 +3430,23 @@ const SpoolsTab: React.FC<SpoolsTabProps> = ({
             <div className="space-y-3">
               <h4 className="text-base md:text-lg font-semibold text-white">{t('profilePage.spoolTabs.active')}</h4>
               {filteredSpools.length === 0 ? (
-                <div className="text-center py-10 border border-white/10 rounded-2xl bg-white/5">
-                  <Package className="w-10 h-10 text-gray-500 mx-auto mb-3" />
-                  <p className="text-gray-400 text-sm md:text-base">{t('profilePage.spoolsActiveEmpty')}</p>
-                </div>
+                spools.length === 0 && showNewcomerGuide ? (
+                  <GuidedEmptyState
+                    icon={<Package className="h-5 w-5" />}
+                    eyebrow={t('profilePage.newcomer.spools.eyebrow')}
+                    title={t('profilePage.newcomer.spools.title')}
+                    description={t('profilePage.newcomer.spools.description')}
+                    actionLabel={t('profilePage.spoolsAdd')}
+                    onAction={() => setIsAddOpen(true)}
+                    guideLabel={t('profilePage.newcomer.howTo')}
+                    guideTo="/wiki/articles/spool-on-shelf?start=1&journey=user%3Ashelf&returnTo=%2Fprofile%3Ftab%3Dspools"
+                  />
+                ) : (
+                  <div className="text-center py-10 border border-white/10 rounded-2xl bg-white/5">
+                    <Package className="w-10 h-10 text-gray-500 mx-auto mb-3" />
+                    <p className="text-gray-400 text-sm md:text-base">{t('profilePage.spoolsActiveEmpty')}</p>
+                  </div>
+                )
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {filteredSpools.map((spool) => (
@@ -3408,10 +3473,23 @@ const SpoolsTab: React.FC<SpoolsTabProps> = ({
             </div>
           </div>
         ) : spools.length === 0 ? (
-          <div className="text-center py-12 md:py-16">
-            <Package className="w-14 h-14 md:w-20 md:h-20 text-gray-500 mx-auto mb-4" />
-            <p className="text-gray-400 text-base md:text-lg">{t('profilePage.spoolsEmpty')}</p>
-          </div>
+          showNewcomerGuide ? (
+            <GuidedEmptyState
+              icon={<Package className="h-5 w-5" />}
+              eyebrow={t('profilePage.newcomer.spools.eyebrow')}
+              title={t('profilePage.newcomer.spools.title')}
+              description={t('profilePage.newcomer.spools.description')}
+              actionLabel={t('profilePage.spoolsAdd')}
+              onAction={() => setIsAddOpen(true)}
+              guideLabel={t('profilePage.newcomer.howTo')}
+              guideTo="/wiki/articles/spool-on-shelf?start=1&journey=user%3Ashelf&returnTo=%2Fprofile%3Ftab%3Dspools"
+            />
+          ) : (
+            <div className="text-center py-12 md:py-16">
+              <Package className="w-14 h-14 md:w-20 md:h-20 text-gray-500 mx-auto mb-4" />
+              <p className="text-gray-400 text-base md:text-lg">{t('profilePage.spoolsEmpty')}</p>
+            </div>
+          )
         ) : filteredSpools.length === 0 ? (
           <div className="text-center py-10 border border-white/10 rounded-2xl bg-white/5">
             <Package className="w-10 h-10 text-gray-500 mx-auto mb-3" />

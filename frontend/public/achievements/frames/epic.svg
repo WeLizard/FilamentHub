@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" fill="none">
+  <defs>
+    <linearGradient id="epic-rim" x1="62" y1="58" x2="958" y2="966" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFD1FB"/>
+      <stop offset=".2" stop-color="#F13CD6"/>
+      <stop offset=".54" stop-color="#9B43FF"/>
+      <stop offset=".82" stop-color="#F04BCF"/>
+      <stop offset="1" stop-color="#A8F4FF"/>
+    </linearGradient>
+    <filter id="epic-glow" x="-15%" y="-15%" width="130%" height="130%">
+      <feDropShadow dx="0" dy="0" stdDeviation="18" flood-color="#E93CD5" flood-opacity=".72"/>
+      <feDropShadow dx="0" dy="0" stdDeviation="7" flood-color="#71E7FF" flood-opacity=".48"/>
+      <feDropShadow dx="0" dy="14" stdDeviation="16" flood-color="#160624" flood-opacity=".8"/>
+    </filter>
+  </defs>
+  <rect x="32" y="32" width="960" height="960" rx="152" stroke="#330C4B" stroke-width="64"/>
+  <rect x="46" y="46" width="932" height="932" rx="139" stroke="url(#epic-rim)" stroke-width="38" filter="url(#epic-glow)"/>
+  <rect x="77" y="77" width="870" height="870" rx="108" stroke="#FFB8F3" stroke-opacity=".72" stroke-width="9"/>
+</svg>
