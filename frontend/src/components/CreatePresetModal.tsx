@@ -611,6 +611,54 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
   // Инициализация формы при редактировании
   useEffect(() => {
     if (!isOpen) return; // Не выполняем инициализацию если модалка закрыта
+
+    const resetCatalogForm = () => {
+      setSelectedFilamentId(null);
+      setSelectedFilament(null);
+      setShowFilamentForm(false);
+      setFilamentSearch('');
+      setShowFilamentDropdown(false);
+      setMaterialType('');
+      setBrandSearch('');
+      setSelectedBrandId(brandId || null);
+      setFilamentName('');
+      setFilamentColorName('');
+      setFilamentColorHex('#FF0000');
+      setDraftHasColorEvidence(false);
+      setFilamentRalCode('');
+      setFilamentVisualColorType('single');
+      setFilamentVisualColors(['#FF0000']);
+      setFilamentVisualFinish('matte');
+      setFilamentVisualEffects([]);
+      setFilamentAdditives([]);
+      setFilamentPropertyClaims([]);
+      setFilamentVisualTransparency(false);
+      setShowFilamentAdvancedVisual(false);
+      setOpenColorPickers([]);
+      setFilamentDiameter('1.75');
+      setFilamentDensity('');
+      setFilamentHandling({
+        dryingRequired: false,
+        dryingTemperatureC: '',
+        dryingDurationHours: '',
+        enclosureRequirement: 'none',
+        chamberTemperatureC: '',
+        bedAdhesivesText: '',
+        chemicals: [],
+      });
+      setFilamentPricePerKg('');
+      setFilamentSpoolWeight('');
+      setFilamentPriceUnit('per_kg');
+      setFilamentRecTemps(EMPTY_RECOMMENDED_TEMPS);
+      setFilamentNozzleHrc(null);
+      setFilamentDescription('');
+      setShowBrandDropdown(false);
+      setShowBrandForm(false);
+      setNewBrandName('');
+      setNewBrandWebsite('');
+    };
+
+    resetCatalogForm();
     
     if (preset) {
       setName(preset.name);
@@ -1059,43 +1107,6 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
       setSelectedFilamentId(filamentId || null);
       // Сброс выбранных принтеров
       setSelectedPrinterIds([]);
-      // Сброс полей создания нового материала
-      setShowFilamentForm(false);
-      setMaterialType('');
-      setBrandSearch('');
-      // Если передан brandId - автоматически выбираем его при создании нового материала
-      setSelectedBrandId(brandId || null);
-      setFilamentName('');
-      setFilamentColorName('');
-      setFilamentColorHex('#FF0000');
-      setFilamentRalCode('');
-      setFilamentRecTemps(EMPTY_RECOMMENDED_TEMPS);
-      setFilamentNozzleHrc(null);
-      setFilamentDiameter('1.75');
-      setFilamentDensity('');
-      setFilamentHandling({
-        dryingRequired: false,
-        dryingTemperatureC: '',
-        dryingDurationHours: '',
-        enclosureRequirement: 'none',
-        chamberTemperatureC: '',
-        bedAdhesivesText: '',
-        chemicals: [],
-      });
-      // Сброс расширенных визуальных эффектов
-      setFilamentVisualColorType('single');
-      setFilamentVisualColors(['#FF0000']);
-      setFilamentVisualFinish('matte');
-      setFilamentVisualEffects([]);
-      setFilamentAdditives([]);
-      setFilamentPropertyClaims([]);
-      setFilamentVisualTransparency(false);
-      setShowFilamentAdvancedVisual(false);
-      setFilamentSearch('');
-      setSelectedFilament(null);
-      setShowBrandForm(false);
-      setNewBrandName('');
-      setNewBrandWebsite('');
     }
     setError(null);
     setDuplicateFilamentSuggestion(null);
@@ -1285,6 +1296,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
     draftSuggestionsAppliedRef.current = preset.id;
 
     const suggestion = (field: string) => draftAnalysis.suggestions[field]?.value;
+    const canTrustCatalogIdentity = draftAnalysis.evidence_kind === 'orca_capture';
     const suggestedExtruder = suggestion('extruder_temp');
     const suggestedBed = suggestion('bed_temp');
     if (typeof suggestedExtruder === 'number') setExtruderTemp(suggestedExtruder);
@@ -1292,6 +1304,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
 
     const applyNewFilamentSuggestions = () => {
       setShowFilamentForm(true);
+      if (!canTrustCatalogIdentity) return;
       if (draftAnalysis.brand_match) {
         setSelectedBrandId(draftAnalysis.brand_match.id);
         setBrandSearch(draftAnalysis.brand_match.name);
@@ -1324,7 +1337,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
     const strongMatches = draftAnalysis.filament_matches.filter(
       (match) => match.confidence === 'exact' || match.confidence === 'strong',
     );
-    if (strongMatches.length === 1) {
+    if (canTrustCatalogIdentity && strongMatches.length === 1) {
       const match = strongMatches[0];
       void filamentsAPI.get(match.id).then((filament) => {
         if (draftSuggestionsAppliedRef.current === preset.id) {
@@ -2275,7 +2288,13 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
           label,
           suggestion: draftAnalysis.suggestions[field],
         }))
-        .filter((item) => item.suggestion?.direct)
+        .filter((item) => (
+          item.suggestion
+          && (
+            item.suggestion.direct
+            || draftAnalysis.evidence_kind === 'stored_snapshot'
+          )
+        ))
         .slice(0, 4)
     : [];
   const draftSuggestionCount = draftAnalysis?.suggested_fields.length ?? 0;
@@ -2409,8 +2428,14 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                       {draftReviewFacts.map(({ field, label, suggestion }) => (
                         <span
                           key={field}
-                          className="rounded-lg border border-cyan-300/20 bg-black/15 px-2.5 py-1 text-xs text-cyan-100"
-                          title={t('presetModal.review.fromOrca')}
+                          className={`rounded-lg border bg-black/15 px-2.5 py-1 text-xs ${
+                            suggestion.direct
+                              ? 'border-cyan-300/20 text-cyan-100'
+                              : 'border-amber-300/25 text-amber-100'
+                          }`}
+                          title={suggestion.direct
+                            ? t('presetModal.review.fromOrca')
+                            : t('presetModal.review.storedEvidence')}
                         >
                           {label}: {String(suggestion.value)}
                         </span>
@@ -2422,7 +2447,12 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                       )}
                     </div>
                   )}
-                  {draftMatchChoices.length > 1 && !selectedFilamentId && (
+                  {draftMatchChoices.length > 0
+                    && !selectedFilamentId
+                    && (
+                      draftAnalysis?.evidence_kind === 'stored_snapshot'
+                      || draftMatchChoices.length > 1
+                    ) && (
                     <div className="mt-3">
                       <p className="mb-2 text-xs font-medium text-gray-300">
                         {t('presetModal.review.chooseCatalogMatch')}

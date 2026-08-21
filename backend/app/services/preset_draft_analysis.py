@@ -418,6 +418,9 @@ async def analyze_preset_draft(
         preset.import_evidence,
         preset.orcaslicer_settings,
     )
+    trusted_catalog_identity = evidence_kind == "orca_capture"
+    identity_source = "orca" if trusted_catalog_identity else "stored_snapshot"
+    identity_confidence = "high" if trusted_catalog_identity else "suggested"
     signature = preset.demand_signature or preset_demand_signature(settings, preset.name)
     if demand_count is None and signature:
         demand_count = (await demand_counts(db, {signature})).get(signature, 0)
@@ -440,31 +443,46 @@ async def analyze_preset_draft(
     color = raw_color[:7].upper() if raw_color and _HEX_RE.fullmatch(raw_color) else None
 
     if not generic_source:
-        _add(suggestions, "brand_name", vendor, source="orca", confidence="high", direct=True)
+        _add(
+            suggestions,
+            "brand_name",
+            vendor,
+            source=identity_source,
+            confidence=identity_confidence,
+            direct=trusted_catalog_identity,
+        )
+    material_type_from_settings = bool(_text(settings, "filament_type"))
     _add(
         suggestions,
         "material_type",
         material_type,
-        source="orca" if _text(settings, "filament_type") else "profile_name",
-        confidence="high" if _text(settings, "filament_type") else "medium",
-        direct=bool(_text(settings, "filament_type")),
+        source=identity_source if material_type_from_settings else "profile_name",
+        confidence=identity_confidence if material_type_from_settings else "medium",
+        direct=trusted_catalog_identity and material_type_from_settings,
     )
-    _add(suggestions, "color_hex", color, source="orca", confidence="high", direct=True)
+    _add(
+        suggestions,
+        "color_hex",
+        color,
+        source=identity_source,
+        confidence=identity_confidence,
+        direct=trusted_catalog_identity,
+    )
     _add(
         suggestions,
         "diameter",
         _number(settings, "filament_diameter"),
-        source="orca",
-        confidence="high",
-        direct=True,
+        source=identity_source,
+        confidence=identity_confidence,
+        direct=trusted_catalog_identity,
     )
     _add(
         suggestions,
         "density",
         _number(settings, "filament_density"),
-        source="orca",
-        confidence="high",
-        direct=True,
+        source=identity_source,
+        confidence=identity_confidence,
+        direct=trusted_catalog_identity,
     )
     _add(
         suggestions,
@@ -570,18 +588,21 @@ async def analyze_preset_draft(
         preset_decisions.append("confirm_bed_temperature")
 
     catalog_decisions: list[str] = []
+    brand_suggestion = suggestions.get("brand_name")
     if generic_source or not vendor:
         catalog_decisions.append("identify_brand")
     elif brand_match is None:
+        catalog_decisions.append("confirm_new_brand")
+    elif brand_suggestion is None or not brand_suggestion.direct:
         catalog_decisions.append("confirm_new_brand")
     if "material_type" not in confirmed:
         catalog_decisions.append("confirm_material_type")
     strong_matches = [
         item for item in filament_matches if item.confidence in {"exact", "strong"}
     ]
-    if len(strong_matches) == 1:
+    if len(strong_matches) == 1 and trusted_catalog_identity:
         pass
-    elif len(strong_matches) > 1:
+    elif strong_matches:
         catalog_decisions.append("choose_catalog_filament")
     else:
         catalog_decisions.append("choose_or_create_filament")
@@ -601,7 +622,7 @@ async def analyze_preset_draft(
         preset_readiness += 10
 
     catalog_readiness = 0
-    if brand_match is not None:
+    if brand_match is not None and brand_suggestion is not None and brand_suggestion.direct:
         catalog_readiness += 30
     elif vendor and not generic_source:
         catalog_readiness += 15
@@ -609,9 +630,9 @@ async def analyze_preset_draft(
         catalog_readiness += 25
     elif "material_type" in suggestions:
         catalog_readiness += 15
-    if len(strong_matches) == 1:
+    if len(strong_matches) == 1 and trusted_catalog_identity:
         catalog_readiness += 35
-    elif suggested_name is not None:
+    elif strong_matches or suggested_name is not None:
         catalog_readiness += 15
     if "color_hex" in confirmed:
         catalog_readiness += 10

@@ -602,6 +602,9 @@ async def test_old_draft_without_evidence_uses_its_stored_snapshot(
         orcaslicer_settings={
             "filament_vendor": ["Old Vendor"],
             "filament_type": ["PETG"],
+            "filament_colour": ["#8000FF"],
+            "filament_diameter": ["1.75"],
+            "filament_density": ["1.27"],
             "future_setting": ["preserve me"],
         },
     )
@@ -616,8 +619,77 @@ async def test_old_draft_without_evidence_uses_its_stored_snapshot(
     assert analysis.status_code == 200
     review = analysis.json()
     assert review["evidence_kind"] == "stored_snapshot"
-    assert review["suggestions"]["brand_name"]["value"] == "Old Vendor"
-    assert review["technical_settings_count"] == 3
+    for field, value in {
+        "brand_name": "Old Vendor",
+        "material_type": "PETG",
+        "color_hex": "#8000FF",
+        "diameter": 1.75,
+        "density": 1.27,
+    }.items():
+        assert review["suggestions"][field] == {
+            "value": value,
+            "source": "stored_snapshot",
+            "confidence": "suggested",
+            "direct": False,
+        }
+    assert review["confirmed_fields"] == []
+    assert review["catalog_decisions"] == [
+        "confirm_new_brand",
+        "confirm_material_type",
+        "choose_or_create_filament",
+    ]
+    assert review["technical_settings_count"] == 6
+
+
+@pytest.mark.asyncio
+async def test_old_snapshot_match_requires_an_explicit_catalog_choice(
+    client: AsyncClient, db_session: AsyncSession
+):
+    brand = Brand(name="Legacy Vendor", slug="legacy-vendor", verified=True, active=True)
+    db_session.add(brand)
+    await db_session.flush()
+    filament = Filament(
+        brand_id=brand.id,
+        name="PETG Violet",
+        slug="petg-violet",
+        material_type="PETG",
+        color_name="Violet",
+        color_hex="#8000FF",
+        diameter=1.75,
+        active=True,
+    )
+    db_session.add(filament)
+    await db_session.flush()
+    headers, person = await _signed_in(client, db_session, "orca-old-match")
+    draft = Preset(
+        user_id=person.id,
+        name="Legacy Vendor PETG Violet",
+        extruder_temp=235,
+        bed_temp=75,
+        active=False,
+        moderation_status=PresetModerationStatus.NOT_REQUIRED,
+        orcaslicer_settings={
+            "filament_vendor": ["Legacy Vendor"],
+            "filament_type": ["PETG"],
+            "filament_colour": ["#8000FF"],
+            "filament_diameter": ["1.75"],
+        },
+    )
+    db_session.add(draft)
+    await db_session.flush()
+
+    analysis = await client.get(
+        f"/api/v1/presets/{draft.id}/draft-analysis",
+        headers=headers,
+    )
+
+    assert analysis.status_code == 200
+    review = analysis.json()
+    assert review["evidence_kind"] == "stored_snapshot"
+    assert review["filament_matches"][0]["id"] == filament.id
+    assert review["filament_matches"][0]["confidence"] in {"exact", "strong"}
+    assert "choose_catalog_filament" in review["catalog_decisions"]
+    assert review["review_state"] != "ready"
 
 
 @pytest.mark.asyncio
@@ -665,6 +737,10 @@ async def test_exact_catalog_product_is_proposed_without_creating_a_duplicate(
     assert analysis.status_code == 200
     review = analysis.json()
     assert review["brand_match"]["id"] == brand.id
+    for field in ("brand_name", "material_type", "color_hex", "diameter"):
+        assert review["suggestions"][field]["source"] == "orca"
+        assert review["suggestions"][field]["confidence"] == "high"
+        assert review["suggestions"][field]["direct"] is True
     assert review["filament_matches"] == [{
         "id": filament.id,
         "name": filament.name,

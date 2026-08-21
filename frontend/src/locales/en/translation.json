@@ -2408,7 +2408,7 @@
         "confirm_color_structure": "whether the material is single-colour or multicolour"
       },
       "evidencePreserved": "The original OrcaSlicer data is stored separately and is never changed by suggestions.",
-      "storedEvidence": "Review uses the saved import snapshot; the original settings are not changed.",
+      "storedEvidence": "This is an older saved import snapshot. It may contain inaccurate data: review the material and confirm the choice manually; the original settings are not changed.",
       "publish": "Review and add to catalogue"
     },
     "units": {

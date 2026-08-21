@@ -2403,7 +2403,7 @@
         "confirm_color_structure": "材料是单色还是多色"
       },
       "evidencePreserved": "原始 OrcaSlicer 数据单独保存，不会被建议修改。",
-      "storedEvidence": "审核使用已保存的导入快照；原始设置不会被更改。",
+      "storedEvidence": "这是较早保存的导入快照，可能包含不准确的数据。请检查材料并手动确认选择；原始设置不会被更改。",
       "publish": "审核并添加到目录"
     },
     "units": {
