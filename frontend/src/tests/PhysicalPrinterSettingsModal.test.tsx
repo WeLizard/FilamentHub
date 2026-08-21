@@ -126,6 +126,40 @@ describe('PhysicalPrinterSettingsModal', () => {
     ).toBeInTheDocument();
   });
 
+  it('shows a disclosed endpoint once instead of duplicate local-only bindings', async () => {
+    await renderModal({}, [
+      {
+        physical_printer_id: 5,
+        connection_ref: 'octoprint-local-a',
+        provider: 'octoprint',
+        display_endpoint: null,
+        endpoint_shared: false,
+        last_seen_at: '2026-08-13T20:02:00Z',
+      },
+      {
+        physical_printer_id: 5,
+        connection_ref: 'octoprint-local-b',
+        provider: 'octoprint',
+        display_endpoint: null,
+        endpoint_shared: false,
+        last_seen_at: '2026-08-13T20:01:00Z',
+      },
+      {
+        physical_printer_id: 5,
+        connection_ref: null,
+        provider: 'octoprint',
+        display_endpoint: '192.168.31.200:5000',
+        endpoint_shared: true,
+        last_seen_at: '2026-08-08T20:00:00Z',
+      },
+    ]);
+
+    expect(
+      screen.getAllByText('presetSlots.connectionProvider.octoprint · 192.168.31.200:5000'),
+    ).toHaveLength(1);
+    expect(screen.queryByText(/myPrinters\.localConnection/)).toBeNull();
+  });
+
   it('saves name and catalog model without touching configurations when unchanged', async () => {
     await renderModal();
     fireEvent.change(screen.getByDisplayValue('My Voron'), { target: { value: 'Big Red' } });

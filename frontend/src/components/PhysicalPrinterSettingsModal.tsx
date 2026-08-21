@@ -20,6 +20,7 @@ import { Dropdown } from './Dropdown';
 import { configLabel } from '../utils/printerConfig';
 import { formatLastSeen } from '../utils/deviceLink';
 import { translateApiError } from '../utils/translateApiError';
+import { visiblePrinterConnections } from '../utils/printerConnections';
 
 interface PhysicalPrinterSettingsModalProps {
   isOpen: boolean;
@@ -50,6 +51,10 @@ export const PhysicalPrinterSettingsModal: React.FC<PhysicalPrinterSettingsModal
   const [costModalOpen, setCostModalOpen] = useState(false);
   const pendingActionRef = useRef<(() => void) | null>(null);
   const debouncedSearch = useDebounce(printerSearch, 250);
+  const visibleBindings = useMemo(
+    () => visiblePrinterConnections(bindings),
+    [bindings],
+  );
 
   const { data: catalogList } = useQuery({
     queryKey: ['printers', 'settings-picker', debouncedSearch],
@@ -352,9 +357,9 @@ export const PhysicalPrinterSettingsModal: React.FC<PhysicalPrinterSettingsModal
               <h3 className="text-xs uppercase tracking-wide text-gray-500">
                 {t('printerSettings.connection')}
               </h3>
-              {bindings.length > 0 ? (
+              {visibleBindings.length > 0 ? (
                 <div className="space-y-1.5">
-                  {bindings.map((binding, index) => (
+                  {visibleBindings.map((binding, index) => (
                     <div
                       key={`${binding.connection_ref ?? binding.display_endpoint ?? 'binding'}-${index}`}
                       className="flex items-center gap-2 text-sm text-gray-300"

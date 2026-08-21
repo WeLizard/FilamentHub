@@ -27,6 +27,7 @@ import { downloadBlob, safeDownloadStem } from '../utils/download';
 import { translateApiError } from '../utils/translateApiError';
 import { LayeredPrinterIcon } from './icons/LayeredPrinterIcon';
 import { PrintJobHistoryModal } from './PrintJobHistoryModal';
+import { visiblePrinterConnections } from '../utils/printerConnections';
 
 interface MyPrintersListProps {
   /** The user's Orca machine profiles, shown under the printer they belong to. */
@@ -176,9 +177,9 @@ export function MyPrintersList({
       current.push(binding);
       map.set(binding.physical_printer_id, current);
     });
-    map.forEach((items) => items.sort((left, right) =>
-      right.last_seen_at.localeCompare(left.last_seen_at),
-    ));
+    map.forEach((items, printerId) => {
+      map.set(printerId, visiblePrinterConnections(items));
+    });
     return map;
   }, [bindings]);
 
