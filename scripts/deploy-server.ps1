@@ -34,6 +34,10 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+# Ожидание — это не отказ. Сообщения с этой пометкой печатаются жёлтым, чтобы
+# «CI ещё идёт» не выглядело как упавший деплой.
+$script:WaitingPrefix = 'ОЖИДАНИЕ:'
+
 function Assert-Command {
     param([Parameter(Mandatory)][string]$Name)
 
@@ -101,8 +105,11 @@ function Get-VerifiedPublishedMain {
     if (-not $run) {
         throw "Для точного коммита $remoteHead не найден CI, запущенный после push."
     }
-    if ($run.status -ne 'completed' -or $run.conclusion -ne 'success') {
-        throw "CI для $remoteHead не зелёный (статус=$($run.status), результат=$($run.conclusion)): $($run.url)"
+    if ($run.status -ne 'completed') {
+        throw "$script:WaitingPrefix CI для $remoteHead ещё выполняется (статус=$($run.status)): $($run.url)"
+    }
+    if ($run.conclusion -ne 'success') {
+        throw "CI для $remoteHead не зелёный (результат=$($run.conclusion)): $($run.url)"
     }
 
     return [pscustomobject]@{
@@ -588,7 +595,9 @@ function Show-Menu {
                 default { Write-Host 'Неизвестный пункт меню.' -ForegroundColor Yellow }
             }
         } catch {
-            Write-Host $_.Exception.Message -ForegroundColor Red
+            $message = $_.Exception.Message
+            $colour = if ($message.StartsWith($script:WaitingPrefix)) { 'Yellow' } else { 'Red' }
+            Write-Host $message -ForegroundColor $colour
         }
     }
 }

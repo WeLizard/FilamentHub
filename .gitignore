@@ -207,6 +207,7 @@ backup-key.pub.asc
 # container replacement but are never source code and must not block deploys.
 inbound-mail/
 backend/distributions/plugins/
+.last-deploy-state
 
 # Plugin Hub gallery renders: render_gallery.py rebuilds them from source/,
 # and the chosen ones already live in final/.

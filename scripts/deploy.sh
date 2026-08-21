@@ -23,6 +23,8 @@ SITE_HOST="${SITE_HOST:-filamenthub.ru}"
 PUBLIC_HEALTH_HOSTS="${PUBLIC_HEALTH_HOSTS:-filamenthub.ru filamenthub.club}"
 CERTBOT_LIVE_DIR="${CERTBOT_LIVE_DIR:-$PROJECT_DIR/certbot/conf/live}"
 REQUIRED_CERTIFICATE_HOSTS="${REQUIRED_CERTIFICATE_HOSTS:-filamenthub.ru filamenthub.club}"
+PREVIOUS_IMAGE_TAG="previous"
+DEPLOY_STATE_FILE="${DEPLOY_STATE_FILE:-$PROJECT_DIR/.last-deploy-state}"
 BACKUP_DIR="${BACKUP_DIR:-$PROJECT_DIR/backups}"
 BACKUP_KEY="${BACKUP_PUBLIC_KEY:-$PROJECT_DIR/backup-key.pub.asc}"
 REVISION="origin/main"
@@ -42,6 +44,7 @@ usage() {
     cat <<'EOF'
 Usage:
   bash scripts/deploy.sh [--revision <commit>] [--yes] [--dry-run]
+  bash scripts/deploy.sh --rollback [--yes]
   bash scripts/deploy.sh --status
   bash scripts/deploy.sh --backup-only
   bash scripts/deploy.sh --prune-build-cache [--yes]
@@ -52,6 +55,8 @@ Options:
   --yes             Skip the server-side confirmation. Use only after an
                     owner-side preflight and exact-SHA confirmation.
   --dry-run         Fetch and validate the target without changing anything.
+  --rollback        Put the images kept before the last release back in service.
+                    Code only: a migration that already ran stays applied.
   --status          Show container, migration and public health status.
   --backup-only     Create and verify an encrypted database backup, then exit.
   --prune-build-cache
@@ -370,6 +375,35 @@ confirm_deploy() {
     [[ "$answer" == "DEPLOY $short" ]] || fail "Deployment cancelled."
 }
 
+tag_release_images() {
+    local service container image
+
+    info "Keeping the running images so a failed release can be undone..."
+    for service in backend frontend; do
+        container="filamenthub_${service}_prod"
+        image="$(docker inspect --format '{{.Image}}' "$container" 2>/dev/null || true)"
+        if [[ -z "$image" ]]; then
+            warn "  $container is not running; nothing kept for $service"
+            continue
+        fi
+        if docker tag "$image" "filamenthub-${service}:${PREVIOUS_IMAGE_TAG}"; then
+            success "  $service kept as filamenthub-${service}:${PREVIOUS_IMAGE_TAG}"
+        else
+            warn "  could not keep the running $service image"
+        fi
+    done
+}
+
+schema_revision() {
+    docker compose run --rm --no-deps --entrypoint alembic backend current 2>/dev/null \
+        | tr -d '[:space:]'
+}
+
+record_deploy_state() {
+    printf 'previous_revision=%s\ntarget_revision=%s\nmigrations_applied=%s\n' \
+        "$PREVIOUS_REVISION" "$TARGET_REVISION" "$1" > "$DEPLOY_STATE_FILE"
+}
+
 wait_for_container() {
     local container="$1"
     local attempts="${2:-24}"
@@ -389,38 +423,9 @@ wait_for_container() {
     return 1
 }
 
-deploy() {
-    local migration_heads head_count public_host
+verify_release() {
+    local container public_host
     local failed=false
-
-    resolve_target
-    check_required_certificates
-    if [[ "$DRY_RUN" == true ]]; then
-        success "Dry run complete. No backup, Git update, build, migration or restart was performed."
-        return 0
-    fi
-    confirm_deploy
-
-    create_backup
-
-    info "Fast-forwarding the production worktree..."
-    git merge --ff-only "$TARGET_REVISION"
-
-    info "Building new application images while the current containers keep serving traffic..."
-    COMPOSE_BAKE=false docker compose build backend frontend
-
-    info "Checking the migration graph in the newly built backend image..."
-    migration_heads="$(docker compose run --rm --no-deps --entrypoint alembic backend heads)"
-    printf '%s\n' "$migration_heads" | sed 's/^/  /'
-    head_count="$(printf '%s\n' "$migration_heads" | grep -c '(head)' || true)"
-    [[ "$head_count" == "1" ]] \
-        || fail "Expected exactly one Alembic head, found $head_count. The current app is still running."
-
-    info "Applying migrations with the newly built image before switching the API..."
-    docker compose run --rm --no-deps --entrypoint alembic backend upgrade head
-
-    info "Switching services to the new images..."
-    COMPOSE_BAKE=false docker compose up -d --no-build --remove-orphans
 
     info "Waiting for production services..."
     for container in \
@@ -467,11 +472,96 @@ deploy() {
         fi
     done
 
-    if [[ "$failed" == true ]]; then
+    [[ "$failed" == false ]]
+}
+
+rollback_release() {
+    local service answer
+    local missing=false
+
+    for service in backend frontend; do
+        docker image inspect "filamenthub-${service}:${PREVIOUS_IMAGE_TAG}" >/dev/null 2>&1 && continue
+        warn "No kept image for $service (filamenthub-${service}:${PREVIOUS_IMAGE_TAG})"
+        missing=true
+    done
+    [[ "$missing" == false ]] \
+        || fail "Nothing to put back. Deploy a fixed revision the normal way instead."
+
+    if grep -qx 'migrations_applied=true' "$DEPLOY_STATE_FILE" 2>/dev/null; then
+        warn "The last deployment applied migrations, and they stay applied."
+        warn "The previous code will meet a newer schema than it was built against."
+        if [[ "$ASSUME_YES" != true ]]; then
+            printf 'Type ROLLBACK to continue: '
+            read -r answer
+            [[ "$answer" == "ROLLBACK" ]] || fail "Rollback cancelled."
+        fi
+    fi
+
+    info "Putting the kept images back in service..."
+    for service in backend frontend; do
+        docker tag "filamenthub-${service}:${PREVIOUS_IMAGE_TAG}" "filamenthub-${service}:latest"
+    done
+    COMPOSE_BAKE=false docker compose up -d --no-build --remove-orphans
+
+    if ! verify_release; then
+        printf '\n' >&2
+        fail "The restored release did not pass verification either. Inspect: docker compose logs --tail=200 backend frontend"
+    fi
+
+    printf '\n'
+    success "The images from before the last release are serving again."
+    warn "The worktree still points at $(git rev-parse --short HEAD); deploy a fixed revision to line them up."
+    docker compose ps
+}
+
+deploy() {
+    local migration_heads head_count schema_before schema_after
+    local failed=false
+
+    resolve_target
+    check_required_certificates
+    if [[ "$DRY_RUN" == true ]]; then
+        success "Dry run complete. No backup, Git update, build, migration or restart was performed."
+        return 0
+    fi
+    confirm_deploy
+
+    create_backup
+
+    info "Fast-forwarding the production worktree..."
+    git merge --ff-only "$TARGET_REVISION"
+
+    tag_release_images
+
+    info "Building new application images while the current containers keep serving traffic..."
+    COMPOSE_BAKE=false docker compose build backend frontend
+
+    info "Checking the migration graph in the newly built backend image..."
+    migration_heads="$(docker compose run --rm --no-deps --entrypoint alembic backend heads)"
+    printf '%s\n' "$migration_heads" | sed 's/^/  /'
+    head_count="$(printf '%s\n' "$migration_heads" | grep -c '(head)' || true)"
+    [[ "$head_count" == "1" ]] \
+        || fail "Expected exactly one Alembic head, found $head_count. The current app is still running."
+
+    schema_before="$(schema_revision)"
+    info "Applying migrations with the newly built image before switching the API..."
+    docker compose run --rm --no-deps --entrypoint alembic backend upgrade head
+    schema_after="$(schema_revision)"
+    if [[ "$schema_before" == "$schema_after" ]]; then
+        record_deploy_state false
+    else
+        record_deploy_state true
+    fi
+
+    info "Switching services to the new images..."
+    COMPOSE_BAKE=false docker compose up -d --no-build --remove-orphans
+
+    if ! verify_release; then
         printf '\n' >&2
         warn "Deployment verification failed. Automatic schema rollback is intentionally disabled."
         warn "Previous revision: $PREVIOUS_REVISION"
         warn "Pre-deploy backup: $LATEST_BACKUP"
+        warn "Put the previous code back: bash scripts/deploy.sh --rollback"
         warn "Inspect immediately: docker compose ps && docker compose logs --tail=200 backend frontend"
         exit 1
     fi
@@ -495,6 +585,10 @@ while (( $# > 0 )); do
             ;;
         --dry-run)
             DRY_RUN=true
+            shift
+            ;;
+        --rollback)
+            ACTION="rollback"
             shift
             ;;
         --status)
@@ -522,6 +616,7 @@ done
 cd "$PROJECT_DIR"
 case "$ACTION" in
     deploy) deploy ;;
+    rollback) rollback_release ;;
     status) show_status ;;
     backup) create_backup ;;
     prune) prune_build_cache ;;
