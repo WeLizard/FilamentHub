@@ -193,6 +193,12 @@ orca-plugin/.fh_*
 # project root and writes its preset folders here instead of the real one.
 user/
 
+# Left behind by uv. Dependencies are declared in pyproject.toml and installed
+# with pip in CI and in the images, so a lock file here would be a second,
+# silently drifting source of truth.
+uv.lock
+.uv-cache/
+
 # Database dumps and the public backup key live next to the project, never in it
 backups/
 backup-key.pub.asc
