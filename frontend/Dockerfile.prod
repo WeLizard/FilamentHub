@@ -43,6 +43,7 @@ RUN chmod -R a+rX /usr/share/nginx/html
 # Copy nginx configuration
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY cloudflare-real-ip.conf /etc/nginx/snippets/cloudflare-real-ip.conf
+COPY site-common.conf /etc/nginx/snippets/filamenthub-site.conf
 
 # Expose port 80
 EXPOSE 80
