@@ -6839,6 +6839,7 @@
     "ERR_PRINTER_BRIDGE_UNAUTHORIZED": "The local bridge key is invalid or has been revoked",
     "ERR_OCTOPRINT_BRIDGE_UNAUTHORIZED": "The OctoPrint Bridge connection is no longer authorized",
     "ERR_OCTOPRINT_BRIDGE_EVENT_CONFLICT": "OctoPrint Bridge already sent a different event with this identifier",
+    "ERR_OCTOPRINT_BRIDGE_ROUTING_CONFLICT": "Tool routing changed elsewhere. Refresh it before saving your changes",
     "ERR_PRINT_JOB_NOT_FOUND": "Print record was not found",
     "ERR_PRINT_JOB_REFERENCE_INVALID": "The selected calculation or file does not belong to this print",
     "ERR_PRINT_JOB_INVALID_TRANSITION": "This action is unavailable in the current state",
@@ -7290,7 +7291,28 @@
       "checking": "Checking the Bridge connection…",
       "disconnect": "Disconnect",
       "disconnected": "OctoPrint Bridge disconnected",
-      "activeSlot": "Selected slot: {{count}}"
+      "activeSlot": "Selected slot: {{count}}",
+      "routingTitle": "Tool to slot routing",
+      "routingDescription": "Keep OctoPrint's logical Tn tools and FilamentHub slot assignments in sync.",
+      "routingMode": {
+        "manual": "Manual slot selection",
+        "tools": "Route by OctoPrint tool"
+      },
+      "manualRoutingHint": "OctoPrint keeps the currently selected slot. Tool changes do not select another slot automatically.",
+      "routingSummary": "Tools: {{count}}",
+      "routingPending": "waiting for Bridge",
+      "routingSaved": "Tool routing saved",
+      "routingRevision": "Revision {{count}}",
+      "routingRefresh": "Refresh",
+      "toolIndex": "OctoPrint tool number",
+      "targetSlot": "FilamentHub material slot",
+      "slotLabel": "Slot {{count}}",
+      "missingSlot": "Missing slot {{count}}",
+      "addTool": "Add tool mapping",
+      "removeTool": "Remove tool mapping",
+      "duplicateTool": "Each Tn tool can appear only once.",
+      "noSlots": "This material system has no active slots to route tools to.",
+      "routingTopologyNote": "Tool routing does not create, remove or resize physical material slots. Several tools may point to the same slot."
     }
   },
   "confirmEmailChange": {

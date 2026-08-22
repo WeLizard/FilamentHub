@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import JSON, DateTime, Float, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
 
@@ -31,6 +31,16 @@ class OctoPrintBridgeConnection(Base):
     plugin_version: Mapped[str | None] = mapped_column(String(50), nullable=True)
     octoprint_version: Mapped[str | None] = mapped_column(String(50), nullable=True)
     active_slot_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    desired_routing_mode: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="manual", server_default="manual"
+    )
+    desired_tool_slot_map: Mapped[list[dict]] = mapped_column(
+        JSON, nullable=False, default=list, server_default="[]"
+    )
+    routing_revision: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    applied_routing_revision: Mapped[int | None] = mapped_column(Integer, nullable=True)
     observed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

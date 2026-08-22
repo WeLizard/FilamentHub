@@ -25,6 +25,7 @@ from app.core.errors import (
     ERR_OCTOPRINT_BRIDGE_EVENT_CONFLICT,
     ERR_OCTOPRINT_BRIDGE_NOT_CONFIGURED,
     ERR_OCTOPRINT_BRIDGE_PAIRING_INVALID,
+    ERR_OCTOPRINT_BRIDGE_ROUTING_CONFLICT,
     ERR_OCTOPRINT_BRIDGE_UNAUTHORIZED,
     ERR_OCTOPRINT_BRIDGE_WRONG_PROVIDER,
     raise_error,
@@ -42,6 +43,8 @@ from app.schemas.octoprint_bridge import (
     OctoPrintBridgePairRequest,
     OctoPrintBridgePairResponse,
     OctoPrintBridgePresetSnapshot,
+    OctoPrintBridgeRoutingState,
+    OctoPrintBridgeRoutingUpdateRequest,
     OctoPrintBridgeSlotSnapshot,
     OctoPrintBridgeSnapshotResponse,
     OctoPrintBridgeSpoolSnapshot,
@@ -110,6 +113,86 @@ def _new_bridge_token() -> str:
 
 def _safe_capabilities(values: list[str]) -> list[str]:
     return sorted(set(values).intersection(BRIDGE_CAPABILITIES))
+
+
+def _normalized_tool_slot_map(values: list | None) -> list[dict[str, int]]:
+    normalized: dict[int, int] = {}
+    for value in values or []:
+        if hasattr(value, "tool_index") and hasattr(value, "slot_index"):
+            tool_index = int(value.tool_index)
+            slot_index = int(value.slot_index)
+        elif isinstance(value, dict):
+            try:
+                tool_index = int(value["tool_index"])
+                slot_index = int(value["slot_index"])
+            except (KeyError, TypeError, ValueError):
+                continue
+        else:
+            continue
+        if 0 <= tool_index <= 1023 and 0 <= slot_index <= 1023:
+            normalized[tool_index] = slot_index
+    return [
+        {"tool_index": tool_index, "slot_index": normalized[tool_index]}
+        for tool_index in sorted(normalized)
+    ]
+
+
+def _routing_state(connection: OctoPrintBridgeConnection) -> OctoPrintBridgeRoutingState:
+    mode = connection.desired_routing_mode
+    return OctoPrintBridgeRoutingState(
+        mode=mode if mode in {"manual", "tools"} else "manual",
+        tool_slot_map=_normalized_tool_slot_map(connection.desired_tool_slot_map),
+        revision=max(int(connection.routing_revision or 0), 0),
+        applied_revision=connection.applied_routing_revision,
+    )
+
+
+def _routing_matches(
+    connection: OctoPrintBridgeConnection,
+    *,
+    mode: str,
+    mapping: list,
+) -> bool:
+    state = _routing_state(connection)
+    return state.mode == mode and [item.model_dump() for item in state.tool_slot_map] == (
+        _normalized_tool_slot_map(mapping)
+    )
+
+
+async def _missing_routing_slots(
+    db: AsyncSession,
+    *,
+    material_system_id: int,
+    mapping: list,
+) -> set[int]:
+    requested = {item["slot_index"] for item in _normalized_tool_slot_map(mapping)}
+    if not requested:
+        return set()
+    existing = set(
+        (
+            await db.scalars(
+                select(MaterialSlot.provider_index).where(
+                    MaterialSlot.material_system_id == material_system_id,
+                    MaterialSlot.provider_index.in_(requested),
+                )
+            )
+        ).all()
+    )
+    return requested - existing
+
+
+async def _validate_routing_slots(
+    db: AsyncSession,
+    *,
+    material_system_id: int,
+    mapping: list,
+) -> None:
+    if await _missing_routing_slots(
+        db,
+        material_system_id=material_system_id,
+        mapping=mapping,
+    ):
+        raise_error(404, ERR_MATERIAL_SLOT_NOT_FOUND)
 
 
 async def _require_octoprint_system(
@@ -249,6 +332,12 @@ async def get_bridge_status(
             instance_id=None,
             plugin_version=None,
             octoprint_version=None,
+            routing=OctoPrintBridgeRoutingState(
+                mode="manual",
+                tool_slot_map=[],
+                revision=0,
+                applied_revision=None,
+            ),
         )
     connection = await db.scalar(
         select(OctoPrintBridgeConnection).where(
@@ -265,6 +354,12 @@ async def get_bridge_status(
             instance_id=None,
             plugin_version=None,
             octoprint_version=None,
+            routing=OctoPrintBridgeRoutingState(
+                mode="manual",
+                tool_slot_map=[],
+                revision=0,
+                applied_revision=None,
+            ),
         )
     return OctoPrintBridgeStatusResponse(
         configured=True,
@@ -275,6 +370,98 @@ async def get_bridge_status(
         instance_id=connection.instance_id,
         plugin_version=connection.plugin_version,
         octoprint_version=connection.octoprint_version,
+        routing=_routing_state(connection),
+    )
+
+
+async def _update_routing_configuration(
+    db: AsyncSession,
+    *,
+    connection_id: int,
+    material_system_id: int,
+    payload: OctoPrintBridgeRoutingUpdateRequest,
+) -> OctoPrintBridgeRoutingState:
+    connection = await db.scalar(
+        select(OctoPrintBridgeConnection)
+        .where(OctoPrintBridgeConnection.id == connection_id)
+        .with_for_update()
+    )
+    if connection is None:
+        raise_error(404, ERR_OCTOPRINT_BRIDGE_NOT_CONFIGURED)
+
+    mapping = _normalized_tool_slot_map(payload.tool_slot_map)
+    if _routing_matches(connection, mode=payload.mode, mapping=mapping):
+        return _routing_state(connection)
+    if connection.routing_revision != payload.expected_revision:
+        raise_error(
+            409,
+            ERR_OCTOPRINT_BRIDGE_ROUTING_CONFLICT,
+            params={"current_revision": connection.routing_revision},
+        )
+
+    await _validate_routing_slots(
+        db,
+        material_system_id=material_system_id,
+        mapping=mapping,
+    )
+    connection.desired_routing_mode = payload.mode
+    connection.desired_tool_slot_map = mapping
+    connection.routing_revision += 1
+    await db.commit()
+    return _routing_state(connection)
+
+
+async def update_user_routing_configuration(
+    db: AsyncSession,
+    *,
+    user_id: int,
+    physical_printer_id: int,
+    material_system_id: int,
+    payload: OctoPrintBridgeRoutingUpdateRequest,
+) -> OctoPrintBridgeRoutingState:
+    await _require_octoprint_system(
+        db,
+        user_id=user_id,
+        physical_printer_id=physical_printer_id,
+        material_system_id=material_system_id,
+    )
+    connector = await _find_connector(
+        db,
+        user_id=user_id,
+        physical_printer_id=physical_printer_id,
+        material_system_id=material_system_id,
+    )
+    if connector is None:
+        raise_error(404, ERR_OCTOPRINT_BRIDGE_NOT_CONFIGURED)
+    connection = await db.scalar(
+        select(OctoPrintBridgeConnection).where(
+            OctoPrintBridgeConnection.connector_id == connector.id
+        )
+    )
+    if connection is None:
+        raise_error(404, ERR_OCTOPRINT_BRIDGE_NOT_CONFIGURED)
+    return await _update_routing_configuration(
+        db,
+        connection_id=connection.id,
+        material_system_id=material_system_id,
+        payload=payload,
+    )
+
+
+async def update_bridge_routing_configuration(
+    db: AsyncSession,
+    *,
+    context: OctoPrintBridgeContext,
+    payload: OctoPrintBridgeRoutingUpdateRequest,
+) -> OctoPrintBridgeRoutingState:
+    material_system_id = context.connector.material_system_id
+    if material_system_id is None:
+        raise_error(409, ERR_OCTOPRINT_BRIDGE_NOT_CONFIGURED)
+    return await _update_routing_configuration(
+        db,
+        connection_id=context.connection.id,
+        material_system_id=material_system_id,
+        payload=payload,
     )
 
 
@@ -395,7 +582,13 @@ async def record_heartbeat(
     payload: OctoPrintBridgeHeartbeatRequest,
 ) -> OctoPrintBridgeStatusResponse:
     connector = context.connector
-    connection = context.connection
+    connection = await db.scalar(
+        select(OctoPrintBridgeConnection)
+        .where(OctoPrintBridgeConnection.id == context.connection.id)
+        .with_for_update()
+    )
+    if connection is None:
+        raise_error(401, ERR_OCTOPRINT_BRIDGE_UNAUTHORIZED)
     if connector.material_system_id is None:
         raise_error(409, ERR_OCTOPRINT_BRIDGE_NOT_CONFIGURED)
     if payload.active_slot_index is not None:
@@ -407,6 +600,43 @@ async def record_heartbeat(
         )
         if slot_exists is None:
             raise_error(404, ERR_MATERIAL_SLOT_NOT_FOUND)
+
+    if payload.routing_mode is not None and payload.tool_slot_map is not None:
+        reported_mapping = _normalized_tool_slot_map(payload.tool_slot_map)
+        initialized_from_bridge = False
+        if connection.routing_revision == 0:
+            if await _missing_routing_slots(
+                db,
+                material_system_id=connector.material_system_id,
+                mapping=reported_mapping,
+            ):
+                # A pre-contract local mapping can refer to a slot that no longer
+                # exists. Do not let that stale upgrade state break all future
+                # heartbeats; initialize a safe manual configuration instead.
+                connection.desired_routing_mode = "manual"
+                connection.desired_tool_slot_map = []
+            else:
+                connection.desired_routing_mode = payload.routing_mode
+                connection.desired_tool_slot_map = reported_mapping
+            connection.routing_revision = 1
+            initialized_from_bridge = True
+
+        reported_revision = int(payload.routing_revision or 0)
+        if (
+            (initialized_from_bridge or reported_revision == connection.routing_revision)
+            and _routing_matches(
+                connection,
+                mode=payload.routing_mode,
+                mapping=reported_mapping,
+            )
+        ):
+            connection.applied_routing_revision = (
+                connection.routing_revision if initialized_from_bridge else reported_revision
+            )
+        elif reported_revision < connection.routing_revision:
+            connection.applied_routing_revision = reported_revision
+        else:
+            connection.applied_routing_revision = None
 
     now = _now()
     connection.instance_id = payload.instance_id
@@ -427,6 +657,7 @@ async def record_heartbeat(
         instance_id=connection.instance_id,
         plugin_version=connection.plugin_version,
         octoprint_version=connection.octoprint_version,
+        routing=_routing_state(connection),
     )
 
 

@@ -3602,6 +3602,18 @@ export interface PhysicalPrinter {
   updated_at: string;
 }
 
+export interface OctoPrintToolSlotMapping {
+  tool_index: number;
+  slot_index: number;
+}
+
+export interface OctoPrintBridgeRoutingState {
+  mode: 'manual' | 'tools';
+  tool_slot_map: OctoPrintToolSlotMapping[];
+  revision: number;
+  applied_revision: number | null;
+}
+
 export interface OctoPrintBridgeStatus {
   configured: boolean;
   paired: boolean;
@@ -3611,6 +3623,7 @@ export interface OctoPrintBridgeStatus {
   instance_id: string | null;
   plugin_version: string | null;
   octoprint_version: string | null;
+  routing: OctoPrintBridgeRoutingState;
 }
 
 export interface OctoPrintPairingCode {
@@ -3950,6 +3963,22 @@ export const octoprintBridgeAPI = {
   ): Promise<OctoPrintPairingCode> => {
     const response = await api.post<OctoPrintPairingCode>(
       `/octoprint-bridge/connections/${physicalPrinterId}/${materialSystemId}/pairing-code`,
+    );
+    return response.data;
+  },
+
+  updateRouting: async (
+    physicalPrinterId: number,
+    materialSystemId: number,
+    payload: {
+      mode: 'manual' | 'tools';
+      tool_slot_map: OctoPrintToolSlotMapping[];
+      expected_revision: number;
+    },
+  ): Promise<OctoPrintBridgeRoutingState> => {
+    const response = await api.put<OctoPrintBridgeRoutingState>(
+      `/octoprint-bridge/connections/${physicalPrinterId}/${materialSystemId}/routing`,
+      payload,
     );
     return response.data;
   },

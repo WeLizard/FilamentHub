@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import {
   AlertTriangle,
+  ArrowRight,
   Check,
   Copy,
   Download,
@@ -10,20 +11,294 @@ import {
   Link2,
   Loader2,
   Package,
+  Plus,
+  RefreshCw,
+  Route,
+  Trash2,
   Unplug,
   X,
 } from 'lucide-react';
 
-import { downloadsAPI, octoprintBridgeAPI } from '../../../api/client';
+import {
+  downloadsAPI,
+  octoprintBridgeAPI,
+  type OctoPrintBridgeStatus,
+  type OctoPrintToolSlotMapping,
+} from '../../../api/client';
 import { ModalOverlay } from '../../ModalOverlay';
 import { toast } from '../../Toast';
 import { translateApiError } from '../../../utils/translateApiError';
 import type { AdapterViewContext, FeedAdapter } from './types';
 
+interface RoutingEditorProps {
+  printer: AdapterViewContext['printer'];
+  system: AdapterViewContext['system'];
+  status: OctoPrintBridgeStatus;
+  onClose: () => void;
+  onRefresh: () => Promise<unknown>;
+}
+
+function RoutingEditor({ printer, system, status, onClose, onRefresh }: RoutingEditorProps) {
+  const { t } = useTranslation();
+  const [mode, setMode] = useState<'manual' | 'tools'>(status.routing.mode);
+  const [mapping, setMapping] = useState<OctoPrintToolSlotMapping[]>(
+    status.routing.tool_slot_map,
+  );
+  const [saving, setSaving] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+
+  useEffect(() => {
+    setMode(status.routing.mode);
+    setMapping(status.routing.tool_slot_map);
+  }, [status.routing]);
+
+  const slots = [...system.slots]
+    .filter((slot) => slot.active)
+    .sort((left, right) => left.provider_index - right.provider_index);
+  const mappedTools = new Set(mapping.map((item) => item.tool_index));
+  const hasDuplicateTool = mappedTools.size !== mapping.length;
+  const canSave = mode === 'manual' || (mapping.length > 0 && !hasDuplicateTool);
+
+  const addMapping = () => {
+    const slot = slots[0];
+    if (!slot) return;
+    let toolIndex = 0;
+    while (mappedTools.has(toolIndex)) toolIndex += 1;
+    setMapping((current) => [
+      ...current,
+      { tool_index: toolIndex, slot_index: slot.provider_index },
+    ]);
+  };
+
+  const updateMapping = (
+    index: number,
+    field: keyof OctoPrintToolSlotMapping,
+    value: number,
+  ) => {
+    setMapping((current) => current.map((item, itemIndex) => (
+      itemIndex === index ? { ...item, [field]: value } : item
+    )));
+  };
+
+  const refresh = async () => {
+    setRefreshing(true);
+    try {
+      await onRefresh();
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  const save = async () => {
+    if (!canSave) return;
+    setSaving(true);
+    try {
+      await octoprintBridgeAPI.updateRouting(printer.id, system.id, {
+        mode,
+        tool_slot_map: mode === 'tools' ? mapping : [],
+        expected_revision: status.routing.revision,
+      });
+      await onRefresh();
+      toast.success(t('presetSlots.octoprint.routingSaved'));
+      onClose();
+    } catch (err: any) {
+      toast.error(translateApiError(t, err?.response?.data?.detail, t('common.error')));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <ModalOverlay onClose={onClose}>
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="octoprint-routing-title"
+        className="w-full max-w-xl overflow-hidden rounded-2xl border border-cyan-300/20 bg-[#161527] text-left shadow-2xl"
+      >
+        <header className="flex items-center gap-3 border-b border-white/10 px-5 py-4">
+          <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-cyan-400/10 text-cyan-300">
+            <Route className="h-5 w-5" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <h2 id="octoprint-routing-title" className="font-semibold text-white">
+              {t('presetSlots.octoprint.routingTitle')}
+            </h2>
+            <p className="mt-0.5 text-xs leading-4 text-gray-400">
+              {t('presetSlots.octoprint.routingDescription')}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            title={t('common.close')}
+            aria-label={t('common.close')}
+            className="rounded-lg p-1.5 text-gray-500 transition hover:bg-white/10 hover:text-white"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </header>
+
+        <div className="space-y-4 p-5">
+          <div className="grid grid-cols-2 gap-2 rounded-xl border border-white/10 bg-black/15 p-1">
+            {(['manual', 'tools'] as const).map((value) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setMode(value)}
+                className={`rounded-lg px-3 py-2 text-xs font-medium transition ${
+                  mode === value
+                    ? 'bg-cyan-400/15 text-cyan-100'
+                    : 'text-gray-400 hover:bg-white/5 hover:text-gray-200'
+                }`}
+              >
+                {t(`presetSlots.octoprint.routingMode.${value}`)}
+              </button>
+            ))}
+          </div>
+
+          {mode === 'manual' ? (
+            <div className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 text-xs leading-5 text-gray-400">
+              {t('presetSlots.octoprint.manualRoutingHint')}
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {mapping.map((item, index) => {
+                const slotExists = slots.some(
+                  (slot) => slot.provider_index === item.slot_index,
+                );
+                return (
+                  <div
+                    key={`${item.tool_index}-${index}`}
+                    className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1.5fr)_auto] items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] p-2"
+                  >
+                    <label className="flex min-w-0 items-center gap-1.5 text-xs text-gray-400">
+                      <span>T</span>
+                      <input
+                        type="number"
+                        min={0}
+                        max={1023}
+                        value={item.tool_index}
+                        onChange={(event) => updateMapping(
+                          index,
+                          'tool_index',
+                          Math.max(0, Number.parseInt(event.target.value || '0', 10)),
+                        )}
+                        className="min-w-0 flex-1 rounded-lg border border-white/10 bg-black/25 px-2 py-1.5 text-sm text-white outline-none focus:border-cyan-400/50"
+                        aria-label={t('presetSlots.octoprint.toolIndex')}
+                      />
+                    </label>
+                    <ArrowRight className="h-3.5 w-3.5 text-gray-600" />
+                    <select
+                      value={item.slot_index}
+                      onChange={(event) => updateMapping(
+                        index,
+                        'slot_index',
+                        Number.parseInt(event.target.value, 10),
+                      )}
+                      className="min-w-0 rounded-lg border border-white/10 bg-[#111020] px-2 py-1.5 text-xs text-white outline-none focus:border-cyan-400/50"
+                      aria-label={t('presetSlots.octoprint.targetSlot')}
+                    >
+                      {!slotExists && (
+                        <option value={item.slot_index}>
+                          {t('presetSlots.octoprint.missingSlot', { count: item.slot_index + 1 })}
+                        </option>
+                      )}
+                      {slots.map((slot) => (
+                        <option key={slot.id} value={slot.provider_index}>
+                          {slot.label || t('presetSlots.octoprint.slotLabel', {
+                            count: slot.provider_index + 1,
+                          })}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => setMapping((current) => current.filter(
+                        (_, itemIndex) => itemIndex !== index,
+                      ))}
+                      title={t('presetSlots.octoprint.removeTool')}
+                      aria-label={t('presetSlots.octoprint.removeTool')}
+                      className="rounded-lg p-1.5 text-gray-500 transition hover:bg-red-400/10 hover:text-red-300"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                );
+              })}
+
+              <button
+                type="button"
+                onClick={addMapping}
+                disabled={!slots.length || mapping.length >= 256}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-dashed border-cyan-300/25 px-3 py-2 text-xs text-cyan-200 transition hover:bg-cyan-400/10 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                {t('presetSlots.octoprint.addTool')}
+              </button>
+
+              {hasDuplicateTool && (
+                <p className="text-xs text-amber-300">
+                  {t('presetSlots.octoprint.duplicateTool')}
+                </p>
+              )}
+              {!slots.length && (
+                <p className="text-xs text-amber-300">
+                  {t('presetSlots.octoprint.noSlots')}
+                </p>
+              )}
+            </div>
+          )}
+
+          <p className="text-[11px] leading-4 text-gray-500">
+            {t('presetSlots.octoprint.routingTopologyNote')}
+          </p>
+        </div>
+
+        <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-white/10 px-5 py-4">
+          <div className="flex items-center gap-2 text-[11px] text-gray-500">
+            <button
+              type="button"
+              onClick={refresh}
+              disabled={refreshing}
+              className="inline-flex items-center gap-1 rounded-lg px-2 py-1.5 transition hover:bg-white/5 hover:text-gray-300 disabled:opacity-40"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin' : ''}`} />
+              {t('presetSlots.octoprint.routingRefresh')}
+            </button>
+            <span>{t('presetSlots.octoprint.routingRevision', {
+              count: status.routing.revision,
+            })}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-lg px-3 py-2 text-xs text-gray-400 transition hover:bg-white/5 hover:text-white"
+            >
+              {t('common.cancel')}
+            </button>
+            <button
+              type="button"
+              onClick={save}
+              disabled={saving || !canSave}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-cyan-500 px-4 py-2 text-xs font-semibold text-slate-950 transition hover:bg-cyan-400 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              {t('common.save')}
+            </button>
+          </div>
+        </footer>
+      </section>
+    </ModalOverlay>
+  );
+}
+
 function BridgeConnectionStatus({ printer, system }: AdapterViewContext) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [revoking, setRevoking] = useState(false);
+  const [routingOpen, setRoutingOpen] = useState(false);
 
   const statusQuery = useQuery({
     queryKey: ['octoprint-bridge-status', printer.id, system.id],
@@ -71,6 +346,24 @@ function BridgeConnectionStatus({ printer, system }: AdapterViewContext) {
       )}
       <button
         type="button"
+        onClick={() => setRoutingOpen(true)}
+        title={t('presetSlots.octoprint.routingTitle')}
+        className="inline-flex items-center gap-1 rounded px-1.5 py-1 text-cyan-200/75 transition hover:bg-white/10 hover:text-cyan-100"
+      >
+        <Route className="h-3 w-3" />
+        {status.routing.mode === 'tools'
+          ? t('presetSlots.octoprint.routingSummary', {
+            count: status.routing.tool_slot_map.length,
+          })
+          : t('presetSlots.octoprint.routingMode.manual')}
+        {status.routing.applied_revision !== status.routing.revision && (
+          <span className="rounded bg-amber-300/10 px-1 py-0.5 text-[9px] text-amber-200">
+            {t('presetSlots.octoprint.routingPending')}
+          </span>
+        )}
+      </button>
+      <button
+        type="button"
         onClick={revoke}
         disabled={revoking}
         title={t('presetSlots.octoprint.disconnect')}
@@ -79,6 +372,15 @@ function BridgeConnectionStatus({ printer, system }: AdapterViewContext) {
       >
         {revoking ? <Loader2 className="h-3 w-3 animate-spin" /> : <Unplug className="h-3 w-3" />}
       </button>
+      {routingOpen && (
+        <RoutingEditor
+          printer={printer}
+          system={system}
+          status={status}
+          onClose={() => setRoutingOpen(false)}
+          onRefresh={() => statusQuery.refetch()}
+        />
+      )}
     </div>
   );
 }

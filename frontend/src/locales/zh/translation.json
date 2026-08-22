@@ -6833,6 +6833,7 @@
     "ERR_PRINTER_BRIDGE_UNAUTHORIZED": "本地桥接密钥无效或已被撤销",
     "ERR_OCTOPRINT_BRIDGE_UNAUTHORIZED": "OctoPrint Bridge 连接已不再获得授权",
     "ERR_OCTOPRINT_BRIDGE_EVENT_CONFLICT": "OctoPrint Bridge 已使用此标识符发送了不同的事件",
+    "ERR_OCTOPRINT_BRIDGE_ROUTING_CONFLICT": "工具路由已在其他位置更改。请刷新后再保存",
     "ERR_PRINT_JOB_NOT_FOUND": "未找到打印记录",
     "ERR_PRINT_JOB_REFERENCE_INVALID": "所选计算或文件不属于此打印任务",
     "ERR_PRINT_JOB_INVALID_TRANSITION": "当前状态下无法执行此操作",
@@ -7279,7 +7280,28 @@
       "checking": "正在检查 Bridge 连接…",
       "disconnect": "断开连接",
       "disconnected": "OctoPrint Bridge 已断开",
-      "activeSlot": "已选槽位：{{count}}"
+      "activeSlot": "已选槽位：{{count}}",
+      "routingTitle": "工具到槽位路由",
+      "routingDescription": "同步 OctoPrint 的逻辑 Tn 工具与 FilamentHub 槽位分配。",
+      "routingMode": {
+        "manual": "手动选择槽位",
+        "tools": "按 OctoPrint 工具路由"
+      },
+      "manualRoutingHint": "OctoPrint 会保留当前所选槽位。切换工具不会自动选择其他槽位。",
+      "routingSummary": "工具：{{count}}",
+      "routingPending": "等待 Bridge 应用",
+      "routingSaved": "工具路由已保存",
+      "routingRevision": "修订 {{count}}",
+      "routingRefresh": "刷新",
+      "toolIndex": "OctoPrint 工具编号",
+      "targetSlot": "FilamentHub 材料槽位",
+      "slotLabel": "槽位 {{count}}",
+      "missingSlot": "缺失槽位 {{count}}",
+      "addTool": "添加工具映射",
+      "removeTool": "删除工具映射",
+      "duplicateTool": "每个 Tn 工具只能出现一次。",
+      "noSlots": "此供料系统没有可用于工具路由的活动槽位。",
+      "routingTopologyNote": "工具路由不会创建、删除或调整实际材料槽位数量。多个工具可以指向同一槽位。"
     }
   },
   "confirmEmailChange": {

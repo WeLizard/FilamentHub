@@ -166,10 +166,19 @@ async def test_bridge_pair_snapshot_usage_replay_and_revoke(
             "octoprint_version": "1.11.8",
             "capabilities": ["read", "write", "presence", "consumption"],
             "active_slot_index": 0,
+            "routing_mode": "manual",
+            "tool_slot_map": [],
+            "routing_revision": 0,
         },
     )
     assert heartbeat_response.status_code == 200
     assert heartbeat_response.json()["active_slot_index"] == 0
+    assert heartbeat_response.json()["routing"] == {
+        "mode": "manual",
+        "tool_slot_map": [],
+        "revision": 1,
+        "applied_revision": 1,
+    }
 
     usage_payload = {
         "event_id": "print-job-1-terminal",
@@ -315,3 +324,149 @@ async def test_issuing_a_new_pairing_code_keeps_the_live_bridge_connected(
     )
 
     assert still_connected.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_bridge_routing_round_trips_between_octoprint_and_site(
+    auth_client: AsyncClient,
+) -> None:
+    printer_id, system_id = await _create_octoprint_system(auth_client)
+    token = await _pair(auth_client, printer_id, system_id)
+    bridge_headers = {"X-FilamentHub-Bridge-Token": token}
+
+    seeded = await auth_client.post(
+        "/api/v1/octoprint-bridge/heartbeat",
+        headers=bridge_headers,
+        json={
+            "instance_id": "octoprint-test-instance",
+            "plugin_version": "0.1.0",
+            "octoprint_version": "1.11.8",
+            "capabilities": ["read", "write", "presence", "consumption"],
+            "active_slot_index": None,
+            "routing_mode": "tools",
+            "tool_slot_map": [
+                {"tool_index": 0, "slot_index": 0},
+                {"tool_index": 7, "slot_index": 0},
+            ],
+            "routing_revision": 0,
+        },
+    )
+    assert seeded.status_code == 200
+    assert seeded.json()["routing"] == {
+        "mode": "tools",
+        "tool_slot_map": [
+            {"tool_index": 0, "slot_index": 0},
+            {"tool_index": 7, "slot_index": 0},
+        ],
+        "revision": 1,
+        "applied_revision": 1,
+    }
+
+    site_update = await auth_client.put(
+        f"/api/v1/octoprint-bridge/connections/{printer_id}/{system_id}/routing",
+        json={
+            "mode": "tools",
+            "tool_slot_map": [
+                {"tool_index": 0, "slot_index": 0},
+                {"tool_index": 1, "slot_index": 1},
+            ],
+            "expected_revision": 1,
+        },
+    )
+    assert site_update.status_code == 200
+    assert site_update.json()["revision"] == 2
+    assert site_update.json()["applied_revision"] == 1
+
+    old_bridge_state = await auth_client.post(
+        "/api/v1/octoprint-bridge/heartbeat",
+        headers=bridge_headers,
+        json={
+            "instance_id": "octoprint-test-instance",
+            "plugin_version": "0.1.0",
+            "octoprint_version": "1.11.8",
+            "capabilities": ["read", "write", "presence", "consumption"],
+            "active_slot_index": None,
+            "routing_mode": "tools",
+            "tool_slot_map": [
+                {"tool_index": 0, "slot_index": 0},
+                {"tool_index": 7, "slot_index": 0},
+            ],
+            "routing_revision": 1,
+        },
+    )
+    assert old_bridge_state.status_code == 200
+    assert old_bridge_state.json()["routing"]["revision"] == 2
+    assert old_bridge_state.json()["routing"]["applied_revision"] == 1
+
+    applied = await auth_client.post(
+        "/api/v1/octoprint-bridge/heartbeat",
+        headers=bridge_headers,
+        json={
+            "instance_id": "octoprint-test-instance",
+            "plugin_version": "0.1.0",
+            "octoprint_version": "1.11.8",
+            "capabilities": ["read", "write", "presence", "consumption"],
+            "active_slot_index": None,
+            "routing_mode": "tools",
+            "tool_slot_map": [
+                {"tool_index": 0, "slot_index": 0},
+                {"tool_index": 1, "slot_index": 1},
+            ],
+            "routing_revision": 2,
+        },
+    )
+    assert applied.status_code == 200
+    assert applied.json()["routing"]["applied_revision"] == 2
+
+    bridge_update = await auth_client.put(
+        "/api/v1/octoprint-bridge/routing",
+        headers=bridge_headers,
+        json={"mode": "manual", "tool_slot_map": [], "expected_revision": 2},
+    )
+    assert bridge_update.status_code == 200
+    assert bridge_update.json()["revision"] == 3
+
+    site_status = await auth_client.get(
+        f"/api/v1/octoprint-bridge/connections/{printer_id}/{system_id}"
+    )
+    assert site_status.status_code == 200
+    assert site_status.json()["routing"]["mode"] == "manual"
+    assert site_status.json()["routing"]["revision"] == 3
+
+    stale_update = await auth_client.put(
+        f"/api/v1/octoprint-bridge/connections/{printer_id}/{system_id}/routing",
+        json={
+            "mode": "tools",
+            "tool_slot_map": [{"tool_index": 0, "slot_index": 0}],
+            "expected_revision": 2,
+        },
+    )
+    assert stale_update.status_code == 409
+    assert stale_update.json()["detail"] == {
+        "code": "ERR_OCTOPRINT_BRIDGE_ROUTING_CONFLICT",
+        "params": {"current_revision": 3},
+    }
+
+    invalid_slot = await auth_client.put(
+        f"/api/v1/octoprint-bridge/connections/{printer_id}/{system_id}/routing",
+        json={
+            "mode": "tools",
+            "tool_slot_map": [{"tool_index": 0, "slot_index": 99}],
+            "expected_revision": 3,
+        },
+    )
+    assert invalid_slot.status_code == 404
+    assert invalid_slot.json()["detail"]["code"] == "ERR_MATERIAL_SLOT_NOT_FOUND"
+
+    duplicate_tool = await auth_client.put(
+        f"/api/v1/octoprint-bridge/connections/{printer_id}/{system_id}/routing",
+        json={
+            "mode": "tools",
+            "tool_slot_map": [
+                {"tool_index": 0, "slot_index": 0},
+                {"tool_index": 0, "slot_index": 1},
+            ],
+            "expected_revision": 3,
+        },
+    )
+    assert duplicate_tool.status_code == 422

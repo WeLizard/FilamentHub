@@ -13,6 +13,8 @@ from app.schemas.octoprint_bridge import (
     OctoPrintBridgeHeartbeatRequest,
     OctoPrintBridgePairRequest,
     OctoPrintBridgePairResponse,
+    OctoPrintBridgeRoutingState,
+    OctoPrintBridgeRoutingUpdateRequest,
     OctoPrintBridgeStatusResponse,
     OctoPrintBridgeUsageRequest,
     OctoPrintBridgeUsageResponse,
@@ -28,6 +30,8 @@ from app.services.octoprint_bridge_service import (
     require_bridge_token,
     revoke_bridge,
     revoke_bridge_context,
+    update_bridge_routing_configuration,
+    update_user_routing_configuration,
 )
 
 router = APIRouter(prefix="/octoprint-bridge", tags=["octoprint-bridge"])
@@ -66,6 +70,26 @@ async def connection_status(
         user_id=current_user.id,
         physical_printer_id=physical_printer_id,
         material_system_id=material_system_id,
+    )
+
+
+@router.put(
+    "/connections/{physical_printer_id}/{material_system_id}/routing",
+    response_model=OctoPrintBridgeRoutingState,
+)
+async def update_connection_routing(
+    physical_printer_id: int,
+    material_system_id: int,
+    payload: OctoPrintBridgeRoutingUpdateRequest,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> OctoPrintBridgeRoutingState:
+    return await update_user_routing_configuration(
+        db,
+        user_id=current_user.id,
+        physical_printer_id=physical_printer_id,
+        material_system_id=material_system_id,
+        payload=payload,
     )
 
 
@@ -125,6 +149,26 @@ async def heartbeat(
 ) -> OctoPrintBridgeStatusResponse:
     context = await require_bridge_token(db, bridge_token)
     return await record_heartbeat(db, context, payload)
+
+
+@router.put("/routing", response_model=OctoPrintBridgeRoutingState)
+@limiter.limit("600/minute", key_func=client_key)
+@limiter.limit("30/minute", key_func=adapter_token_key)
+async def update_current_routing(
+    request: Request,
+    payload: OctoPrintBridgeRoutingUpdateRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    bridge_token: Annotated[
+        str | None,
+        Header(alias="X-FilamentHub-Bridge-Token"),
+    ] = None,
+) -> OctoPrintBridgeRoutingState:
+    context = await require_bridge_token(db, bridge_token)
+    return await update_bridge_routing_configuration(
+        db,
+        context=context,
+        payload=payload,
+    )
 
 
 @router.get("/snapshot", response_model=None)

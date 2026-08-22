@@ -9,10 +9,10 @@ import time
 import uuid
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
+from typing import Dict, Optional, Set
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
-from typing import Dict, Optional, Set
 
 import flask
 import octoprint.plugin
@@ -20,7 +20,7 @@ from octoprint.events import Events
 
 from .tracker import ExtrusionTracker
 
-PLUGIN_VERSION = "0.1.0"
+PLUGIN_VERSION = "0.1.1"
 CAPABILITIES = ["read", "write", "presence", "spool_identity", "consumption"]
 HEARTBEAT_INTERVAL_SECONDS = 120
 SNAPSHOT_INTERVAL_SECONDS = 120
@@ -101,6 +101,7 @@ class FilamentHubBridgePlugin(
             "active_slot": None,
             "map_tools_to_slots": False,
             "tool_slot_map": {},
+            "routing_revision": 0,
             "outbox": [],
             "last_sync_at": None,
             "last_error": None,
@@ -287,6 +288,7 @@ class FilamentHubBridgePlugin(
                 {"tool_index": tool, "slot_index": slot}
                 for tool, slot in sorted(self._tool_slot_map().items())
             ],
+            "routing_revision": int(self._settings.get(["routing_revision"]) or 0),
             "current_tool": (
                 self._tracker.active_tool
                 if self._printing and self._settings.get_boolean(["map_tools_to_slots"])
@@ -406,6 +408,7 @@ class FilamentHubBridgePlugin(
         self._settings.set(["active_slot"], None)
         self._settings.set(["map_tools_to_slots"], False)
         self._settings.set(["tool_slot_map"], {})
+        self._settings.set(["routing_revision"], 0)
         self._settings.set(["last_sync_at"], None)
         self._settings.set(["last_error"], None)
         self._settings.save()
@@ -489,6 +492,24 @@ class FilamentHubBridgePlugin(
             raise ValueError(
                 "Map at least one G-code tool before enabling tool routing."
             )
+        if self._settings.get(["bridge_token"]):
+            _, _, response = self._request(
+                "PUT",
+                "/routing",
+                {
+                    "mode": "tools" if enabled else "manual",
+                    "tool_slot_map": [
+                        {"tool_index": tool, "slot_index": slot}
+                        for tool, slot in sorted(mapping.items())
+                    ],
+                    "expected_revision": int(
+                        self._settings.get(["routing_revision"]) or 0
+                    ),
+                },
+            )
+            self._apply_server_routing(response)
+            self._wake_worker.set()
+            return
         self._settings.set_boolean(["map_tools_to_slots"], enabled)
         self._settings.set(
             ["tool_slot_map"],
@@ -496,6 +517,33 @@ class FilamentHubBridgePlugin(
         )
         self._settings.save()
         self._wake_worker.set()
+
+    def _apply_server_routing(self, routing) -> None:
+        if not isinstance(routing, dict):
+            return
+        mode = str(routing.get("mode") or "").strip().lower()
+        if mode not in {"manual", "tools"}:
+            raise ValueError("FilamentHub returned an invalid routing mode.")
+        mapping = self._parse_tool_slot_map(routing.get("tool_slot_map"))
+        if mode == "tools" and not mapping:
+            raise ValueError("FilamentHub returned an empty tool routing map.")
+        revision = int(routing.get("revision", 0))
+        if revision < 0:
+            raise ValueError("FilamentHub returned an invalid routing revision.")
+        enabled = mode == "tools"
+        if (
+            self._settings.get_boolean(["map_tools_to_slots"]) == enabled
+            and self._tool_slot_map() == mapping
+            and int(self._settings.get(["routing_revision"]) or 0) == revision
+        ):
+            return
+        self._settings.set_boolean(["map_tools_to_slots"], enabled)
+        self._settings.set(
+            ["tool_slot_map"],
+            {str(tool): slot for tool, slot in sorted(mapping.items())},
+        )
+        self._settings.set(["routing_revision"], revision)
+        self._settings.save()
 
     def _snapshot_spools(self) -> Dict[int, int]:
         snapshot = self._settings.get(["snapshot"]) or {}
@@ -602,7 +650,7 @@ class FilamentHubBridgePlugin(
                 self._settings.set(["active_slot"], fallback)
 
     def _send_heartbeat(self) -> None:
-        self._request(
+        _, _, response = self._request(
             "POST",
             "/heartbeat",
             {
@@ -611,8 +659,20 @@ class FilamentHubBridgePlugin(
                 "octoprint_version": self._octoprint_version(),
                 "capabilities": CAPABILITIES,
                 "active_slot_index": self._active_slot(),
+                "routing_mode": (
+                    "tools"
+                    if self._settings.get_boolean(["map_tools_to_slots"])
+                    else "manual"
+                ),
+                "tool_slot_map": [
+                    {"tool_index": tool, "slot_index": slot}
+                    for tool, slot in sorted(self._tool_slot_map().items())
+                ],
+                "routing_revision": int(self._settings.get(["routing_revision"]) or 0),
             },
         )
+        if isinstance(response, dict):
+            self._apply_server_routing(response.get("routing"))
 
     def _flush_outbox(self) -> None:
         while True:

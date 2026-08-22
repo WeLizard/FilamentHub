@@ -7008,6 +7008,7 @@
     "ERR_PRINTER_BRIDGE_UNAUTHORIZED": "Ключ локального моста недействителен или отозван",
     "ERR_OCTOPRINT_BRIDGE_UNAUTHORIZED": "Подключение OctoPrint Bridge больше не авторизовано",
     "ERR_OCTOPRINT_BRIDGE_EVENT_CONFLICT": "OctoPrint Bridge уже отправил другое событие с таким идентификатором",
+    "ERR_OCTOPRINT_BRIDGE_ROUTING_CONFLICT": "Маршрутизация инструментов уже изменена в другом месте. Обновите данные перед сохранением",
     "ERR_PRINT_JOB_NOT_FOUND": "Запись печати не найдена",
     "ERR_PRINT_JOB_REFERENCE_INVALID": "Выбранный расчёт или файл не относится к этой печати",
     "ERR_PRINT_JOB_INVALID_TRANSITION": "Для текущего состояния это действие недоступно",
@@ -7465,7 +7466,28 @@
       "checking": "Проверяем соединение Bridge…",
       "disconnect": "Отключить",
       "disconnected": "OctoPrint Bridge отключён",
-      "activeSlot": "Выбран слот: {{count}}"
+      "activeSlot": "Выбран слот: {{count}}",
+      "routingTitle": "Маршрутизация инструментов по слотам",
+      "routingDescription": "Согласуйте логические инструменты Tn в OctoPrint с назначениями слотов FilamentHub.",
+      "routingMode": {
+        "manual": "Ручной выбор слота",
+        "tools": "Маршрутизация по инструменту OctoPrint"
+      },
+      "manualRoutingHint": "OctoPrint сохраняет выбранный сейчас слот. Смена инструмента не выбирает другой слот автоматически.",
+      "routingSummary": "Инструменты: {{count}}",
+      "routingPending": "ожидает Bridge",
+      "routingSaved": "Маршрутизация инструментов сохранена",
+      "routingRevision": "Ревизия {{count}}",
+      "routingRefresh": "Обновить",
+      "toolIndex": "Номер инструмента OctoPrint",
+      "targetSlot": "Слот материала FilamentHub",
+      "slotLabel": "Слот {{count}}",
+      "missingSlot": "Отсутствующий слот {{count}}",
+      "addTool": "Добавить инструмент",
+      "removeTool": "Удалить инструмент",
+      "duplicateTool": "Каждый инструмент Tn можно указать только один раз.",
+      "noSlots": "В этой системе подачи нет активных слотов для маршрутизации.",
+      "routingTopologyNote": "Маршрутизация tools не создаёт, не удаляет и не меняет число физических слотов. Несколько инструментов могут указывать на один слот."
     }
   },
   "confirmEmailChange": {

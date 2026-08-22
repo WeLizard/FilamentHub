@@ -2,13 +2,16 @@
 
 Newest first. The top entry is used for GitHub release notes.
 
-## Unreleased
+## 0.1.1
 - Shows the Bridge's live FilamentHub slot and spool snapshot in the OctoPrint sidebar, including the active slot, material colour and remaining weight.
 - Lets users choose `filamenthub.ru` or `filamenthub.club` while pairing and shows pairing failures directly in the connection form.
 - Revokes the server-side Bridge credential before removing the local connection.
 - Adds explicit manual and G-code tool routing modes, including arbitrary
   `Tn -> slot` mappings for virtual tools, MMU workflows, multiple extruders,
   IDEX and physical toolchanger printers.
+- Keeps tool routing synchronized in both directions between OctoPrint and
+  FilamentHub without changing the physical slot count, and rejects stale
+  edits instead of silently overwriting a newer configuration.
 - Preserves each tool's own absolute extrusion position and carries a standard
   tool selection made before a print into that print's usage accounting.
 - Uses the intuitive `T0 -> slot #1`, `T1 -> slot #2` order by default and keeps

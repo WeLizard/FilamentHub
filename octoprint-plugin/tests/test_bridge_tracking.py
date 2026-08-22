@@ -1,17 +1,17 @@
 import logging
 
 from octoprint.events import Events
-
 from octoprint_filamenthub_bridge import (
-    FilamentHubBridgePlugin,
     RETRY_MAX_SECONDS,
     STARTUP_JITTER_MAX_SECONDS,
+    FilamentHubBridgePlugin,
     _retry_delay,
 )
 
 
 class FakeSettings:
     def __init__(self):
+        self.save_count = 0
         self.values = {
             "server_url": "https://filamenthub.ru",
             "bridge_token": "existing-token",
@@ -27,6 +27,7 @@ class FakeSettings:
             "active_slot": 0,
             "map_tools_to_slots": False,
             "tool_slot_map": {},
+            "routing_revision": 0,
             "outbox": [],
         }
 
@@ -43,7 +44,7 @@ class FakeSettings:
         self.set(path, bool(value))
 
     def save(self):
-        return None
+        self.save_count += 1
 
 
 class FakePrinter:
@@ -224,6 +225,7 @@ def test_unpair_revokes_remote_connection_before_clearing_local_credentials():
     assert plugin._settings.get(["active_slot"]) is None
     assert plugin._settings.get(["map_tools_to_slots"]) is False
     assert plugin._settings.get(["tool_slot_map"]) == {}
+    assert plugin._settings.get(["routing_revision"]) == 0
 
 
 def test_failed_remote_revocation_preserves_local_connection():
@@ -305,12 +307,118 @@ def test_plugin_registers_shared_tab_and_sidebar_view_model_surfaces():
 def test_explicit_tool_routing_accepts_virtual_tools_independent_of_slot_number():
     plugin = FilamentHubBridgePlugin()
     plugin._settings = FakeSettings()
+    calls = []
+
+    def update_routing(method, path, payload):
+        calls.append((method, path, payload))
+        return (
+            200,
+            {},
+            {
+                "mode": "tools",
+                "tool_slot_map": [{"tool_index": 3, "slot_index": 0}],
+                "revision": 1,
+                "applied_revision": 0,
+            },
+        )
+
+    plugin._request = update_routing
 
     plugin._save_routing(enabled=True, mapping={3: 0})
 
+    assert calls == [
+        (
+            "PUT",
+            "/routing",
+            {
+                "mode": "tools",
+                "tool_slot_map": [{"tool_index": 3, "slot_index": 0}],
+                "expected_revision": 0,
+            },
+        )
+    ]
     assert plugin._settings.get(["map_tools_to_slots"]) is True
     assert plugin._settings.get(["tool_slot_map"]) == {"3": 0}
+    assert plugin._settings.get(["routing_revision"]) == 1
     assert plugin._tool_slot_map() == {3: 0}
+
+
+def test_heartbeat_applies_routing_changed_on_filamenthub():
+    plugin = FilamentHubBridgePlugin()
+    plugin._settings = FakeSettings()
+    sent = []
+
+    def heartbeat(method, path, payload):
+        sent.append((method, path, payload))
+        return (
+            200,
+            {},
+            {
+                "routing": {
+                    "mode": "tools",
+                    "tool_slot_map": [
+                        {"tool_index": 0, "slot_index": 0},
+                        {"tool_index": 7, "slot_index": 0},
+                    ],
+                    "revision": 4,
+                    "applied_revision": 0,
+                }
+            },
+        )
+
+    plugin._request = heartbeat
+    plugin._send_heartbeat()
+
+    assert sent[0][2]["routing_mode"] == "manual"
+    assert sent[0][2]["tool_slot_map"] == []
+    assert sent[0][2]["routing_revision"] == 0
+    assert plugin._settings.get(["map_tools_to_slots"]) is True
+    assert plugin._settings.get(["tool_slot_map"]) == {"0": 0, "7": 0}
+    assert plugin._settings.get(["routing_revision"]) == 4
+
+
+def test_heartbeat_does_not_rewrite_unchanged_routing_settings():
+    plugin = FilamentHubBridgePlugin()
+    plugin._settings = FakeSettings()
+    plugin._settings.set_boolean(["map_tools_to_slots"], True)
+    plugin._settings.set(["tool_slot_map"], {"0": 0, "7": 0})
+    plugin._settings.set(["routing_revision"], 4)
+
+    plugin._apply_server_routing(
+        {
+            "mode": "tools",
+            "tool_slot_map": [
+                {"tool_index": 0, "slot_index": 0},
+                {"tool_index": 7, "slot_index": 0},
+            ],
+            "revision": 4,
+            "applied_revision": 4,
+        }
+    )
+
+    assert plugin._settings.save_count == 0
+
+
+def test_failed_server_routing_update_preserves_applied_local_configuration():
+    plugin = FilamentHubBridgePlugin()
+    plugin._settings = FakeSettings()
+    plugin._settings.set(["routing_revision"], 3)
+
+    def conflict(*args, **kwargs):
+        raise RuntimeError("routing revision conflict")
+
+    plugin._request = conflict
+
+    try:
+        plugin._save_routing(enabled=True, mapping={0: 0})
+    except RuntimeError as exc:
+        assert str(exc) == "routing revision conflict"
+    else:
+        raise AssertionError("A stale local edit must not overwrite shared routing")
+
+    assert plugin._settings.get(["map_tools_to_slots"]) is False
+    assert plugin._settings.get(["tool_slot_map"]) == {}
+    assert plugin._settings.get(["routing_revision"]) == 3
 
 
 def test_tool_routing_rejects_a_slot_missing_from_the_snapshot():
