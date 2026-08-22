@@ -71,7 +71,7 @@ export function WikiGuideImageCanvas({
 
   return (
     <div
-      className={`relative overflow-hidden rounded-2xl border border-white/10 bg-black/20 shadow-2xl shadow-black/30 ${onOpen ? 'cursor-zoom-in' : ''}`}
+      className={`group/image relative overflow-hidden rounded-2xl border border-white/10 bg-black/20 shadow-2xl shadow-black/30 ${onOpen ? 'cursor-zoom-in' : ''}`}
       onClick={onOpen}
     >
       <img
@@ -115,7 +115,7 @@ export function WikiGuideImageCanvas({
             event.stopPropagation();
             onOpen();
           }}
-          className="absolute right-3 top-3 inline-flex items-center gap-2 rounded-xl border border-white/15 bg-slate-950/80 px-3 py-2 text-xs font-semibold text-white shadow-lg backdrop-blur-md transition hover:bg-slate-900"
+          className="pointer-events-none absolute right-3 top-3 inline-flex translate-y-1 items-center gap-2 rounded-xl border border-white/15 bg-slate-950/80 px-3 py-2 text-xs font-semibold text-white opacity-0 shadow-lg backdrop-blur-md transition hover:bg-slate-900 focus-visible:translate-y-0 focus-visible:opacity-100 group-hover/image:pointer-events-auto group-hover/image:translate-y-0 group-hover/image:opacity-100 group-focus-within/image:pointer-events-auto group-focus-within/image:translate-y-0 group-focus-within/image:opacity-100"
         >
           <Maximize2 className="h-4 w-4" />
           <span className="hidden sm:inline">{t('wikiGuide.openImage')}</span>
