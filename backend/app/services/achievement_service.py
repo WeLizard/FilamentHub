@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Literal
 
-from sqlalchemy import distinct, func, select
+from sqlalchemy import case, distinct, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -34,7 +34,7 @@ from app.models.user import User
 from app.models.user_achievement import UserAchievement
 from app.models.user_saved_preset import UserSavedPreset
 from app.models.user_spool import UserSpool
-from app.models.wiki_article import WikiArticle, WikiArticleStatus
+from app.models.wiki_article import WikiArticle, WikiArticleStatus, WikiGuideProgress
 from app.models.wiki_revision import (
     WikiRevision,
     WikiRevisionAuthorship,
@@ -78,6 +78,8 @@ SPOOL_DEPLETED_BY_PRINT = "spool_depleted_by_print"
 FIRST_WIKI_ARTICLE = "first_wiki_article"
 FIRST_WIKI_REVISION = "first_wiki_revision"
 WIKI_EDITOR_5 = "wiki_editor_5"
+PRINTER_LEARNING_PATH = "printer_learning_path"
+MANUFACTURER_LEARNING_PATH = "manufacturer_learning_path"
 FIRST_SAVED_CALCULATION = "first_saved_calculation"
 GCODE_CALCULATION = "gcode_calculation"
 FIRST_QUOTE_SENT = "first_quote_sent"
@@ -103,6 +105,8 @@ AchievementMetric = Literal[
     "depleted_spools",
     "wiki_articles",
     "wiki_revisions",
+    "printer_learning_steps",
+    "manufacturer_learning_steps",
     "saved_calculations",
     "gcode_calculations",
     "quotes_sent",
@@ -149,6 +153,8 @@ class AchievementMetrics:
     depleted_spools: int
     wiki_articles: int
     wiki_revisions: int
+    printer_learning_steps: int
+    manufacturer_learning_steps: int
     saved_calculations: int
     gcode_calculations: int
     quotes_sent: int
@@ -158,6 +164,24 @@ class AchievementMetrics:
     full_business_cycles: int
     material_to_print_jobs: int
     first_hundred: int
+
+
+PRINTER_LEARNING_STEPS = (
+    ("user:catalog", "article:catalog-material"),
+    ("user:slicer", "article:orca-preset-guide"),
+    ("user:shelf", "article:spool-on-shelf"),
+    ("user:spools", "article:my-filaments-guide"),
+    ("user:printer", "article:printer-feed-guide"),
+    ("user:production", "article:production-calculation-guide"),
+)
+MANUFACTURER_LEARNING_STEPS = (
+    ("brand:representation", "article:brand-representation-guide"),
+    ("brand:profile", "article:brand-profile-guide"),
+    ("brand:materials", "article:brand-materials-guide"),
+    ("brand:presets", "article:brand-official-presets-guide"),
+    ("brand:qr", "article:brand-qr-guide"),
+    ("brand:insights", "article:brand-insights-guide"),
+)
 
 
 def _manual_definition(
@@ -353,6 +377,24 @@ ACHIEVEMENT_DEFINITIONS = (
     ),
     AchievementDefinition(
         WIKI_EDITOR_5, "wiki", "uncommon", "wiki_revision", "wiki_revisions", 5, 82
+    ),
+    AchievementDefinition(
+        PRINTER_LEARNING_PATH,
+        "wiki",
+        "uncommon",
+        "printer_learning_path",
+        "printer_learning_steps",
+        6,
+        83,
+    ),
+    AchievementDefinition(
+        MANUFACTURER_LEARNING_PATH,
+        "wiki",
+        "uncommon",
+        "manufacturer_learning_path",
+        "manufacturer_learning_steps",
+        6,
+        84,
     ),
     AchievementDefinition(
         FIRST_SAVED_CALCULATION,
@@ -568,6 +610,24 @@ def _material_to_print_conditions(user_id: int) -> tuple[object, ...]:
     )
 
 
+def _completed_guide_steps(
+    user_id: int, steps: tuple[tuple[str, str], ...]
+) -> object:
+    """Count semantic route steps, accepting either stable ID used by the UI."""
+    normalized_step = case(
+        *(
+            (WikiGuideProgress.guide_id.in_(aliases), aliases[0])
+            for aliases in steps
+        ),
+        else_=None,
+    )
+    return (
+        select(func.count(distinct(normalized_step)))
+        .where(WikiGuideProgress.user_id == user_id)
+        .scalar_subquery()
+    )
+
+
 async def _achievement_metrics(db: AsyncSession, user_id: int) -> AchievementMetrics:
     published_presets = (
         select(func.count(Preset.id)).where(*_published_preset_filter(user_id)).scalar_subquery()
@@ -729,6 +789,10 @@ async def _achievement_metrics(db: AsyncSession, user_id: int) -> AchievementMet
         )
         .scalar_subquery()
     )
+    printer_learning_steps = _completed_guide_steps(user_id, PRINTER_LEARNING_STEPS)
+    manufacturer_learning_steps = _completed_guide_steps(
+        user_id, MANUFACTURER_LEARNING_STEPS
+    )
     saved_calculations = (
         select(func.count(CalculatorHistoryEntry.id))
         .where(CalculatorHistoryEntry.user_id == user_id)
@@ -823,6 +887,8 @@ async def _achievement_metrics(db: AsyncSession, user_id: int) -> AchievementMet
                 depleted_spools,
                 wiki_articles,
                 wiki_revisions,
+                printer_learning_steps,
+                manufacturer_learning_steps,
                 saved_calculations,
                 gcode_calculations,
                 quotes_sent,
@@ -842,6 +908,43 @@ def _metric_value(definition: AchievementDefinition, metrics: AchievementMetrics
     if definition.metric is None:
         return 0
     return int(getattr(metrics, definition.metric))
+
+
+async def _guide_route_evidence(
+    db: AsyncSession,
+    *,
+    user_id: int,
+    steps: tuple[tuple[str, str], ...],
+    target: int,
+) -> tuple[str | None, int | None, datetime | None]:
+    step_by_guide_id = {
+        guide_id: aliases[0]
+        for aliases in steps
+        for guide_id in aliases
+    }
+    rows = (
+        await db.execute(
+            select(
+                WikiGuideProgress.id,
+                WikiGuideProgress.guide_id,
+                WikiGuideProgress.completed_at,
+            )
+            .where(
+                WikiGuideProgress.user_id == user_id,
+                WikiGuideProgress.guide_id.in_(tuple(step_by_guide_id)),
+            )
+            .order_by(
+                WikiGuideProgress.completed_at.asc(),
+                WikiGuideProgress.id.asc(),
+            )
+        )
+    ).all()
+    completed_steps: set[str] = set()
+    for progress_id, guide_id, completed_at in rows:
+        completed_steps.add(step_by_guide_id[guide_id])
+        if len(completed_steps) >= target:
+            return "wiki_guide_progress", int(progress_id), completed_at
+    return None, None, None
 
 
 async def _threshold_evidence(
@@ -1026,6 +1129,20 @@ async def _threshold_evidence(
             )
         ).first()
         return ("preset_usage", int(row[0]), row[1]) if row else (None, None, None)
+    if definition.metric == "printer_learning_steps":
+        return await _guide_route_evidence(
+            db,
+            user_id=user_id,
+            steps=PRINTER_LEARNING_STEPS,
+            target=definition.target,
+        )
+    if definition.metric == "manufacturer_learning_steps":
+        return await _guide_route_evidence(
+            db,
+            user_id=user_id,
+            steps=MANUFACTURER_LEARNING_STEPS,
+            target=definition.target,
+        )
     if definition.metric == "wiki_articles":
         row = (
             await db.execute(

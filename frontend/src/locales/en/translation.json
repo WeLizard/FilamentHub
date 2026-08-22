@@ -2552,6 +2552,14 @@
       "label": "Wiki Editor",
       "title": "Publish 5 accepted Wiki revisions."
     },
+    "printerLearningPath": {
+      "label": "Printer's Path",
+      "title": "Complete all 6 steps of the printer journey."
+    },
+    "manufacturerLearningPath": {
+      "label": "Manufacturer's Path",
+      "title": "Complete all 6 steps of the manufacturer journey."
+    },
     "firstSavedCalculation": {
       "label": "Costed Out",
       "title": "Intentionally save your first cost calculation."

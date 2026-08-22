@@ -2547,6 +2547,14 @@
       "label": "Wiki 编辑",
       "title": "发布 5 次已接受的 Wiki 修订。"
     },
+    "printerLearningPath": {
+      "label": "打印者之路",
+      "title": "完成打印者路线的全部 6 个步骤。"
+    },
+    "manufacturerLearningPath": {
+      "label": "制造商之路",
+      "title": "完成制造商路线的全部 6 个步骤。"
+    },
     "firstSavedCalculation": {
       "label": "算清这笔账",
       "title": "首次主动保存成本计算。"

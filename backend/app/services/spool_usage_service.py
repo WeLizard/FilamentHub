@@ -15,6 +15,8 @@ from app.core.errors import (
     ERR_USAGE_EVENT_NOT_REVERTIBLE,
     raise_error,
 )
+from app.models.material_slot_assignment import MaterialSlotAssignment
+from app.models.material_system import MaterialSlot, MaterialSystem
 from app.models.preset_usage_event import PresetUsageEvent, PresetUsageEventType
 from app.models.user_spool import UserSpool, UserSpoolState
 from app.schemas.spool import SpoolUsageEventResponse
@@ -98,6 +100,51 @@ def mark_printer_report_replay(event: PresetUsageEvent, *, reason: str) -> None:
     notes["last_suppressed_replay_at"] = datetime.now(timezone.utc).isoformat()
     notes["replay_protection"] = reason
     event.meta = notes
+
+
+async def resolve_assigned_preset_id(
+    db: AsyncSession,
+    *,
+    user_id: int,
+    spool_id: int,
+    physical_printer_id: int,
+    material_system_id: int | None = None,
+    slot_index: int | None = None,
+) -> int | None:
+    """Return only one exact current preset assignment for a printer report."""
+    conditions = [
+        MaterialSlotAssignment.user_id == user_id,
+        MaterialSlotAssignment.spool_id == spool_id,
+        MaterialSlotAssignment.preset_id.is_not(None),
+        MaterialSlotAssignment.active.is_(True),
+        MaterialSlot.user_id == user_id,
+        MaterialSlot.active.is_(True),
+        MaterialSystem.user_id == user_id,
+        MaterialSystem.physical_printer_id == physical_printer_id,
+        MaterialSystem.active.is_(True),
+    ]
+    if material_system_id is not None:
+        conditions.append(MaterialSystem.id == material_system_id)
+    if slot_index is not None:
+        conditions.append(MaterialSlot.provider_index == slot_index)
+
+    preset_ids = list(
+        await db.scalars(
+            select(MaterialSlotAssignment.preset_id)
+            .join(
+                MaterialSlot,
+                MaterialSlot.id == MaterialSlotAssignment.material_slot_id,
+            )
+            .join(
+                MaterialSystem,
+                MaterialSystem.id == MaterialSlot.material_system_id,
+            )
+            .where(*conditions)
+            .order_by(MaterialSlotAssignment.id)
+            .limit(2)
+        )
+    )
+    return int(preset_ids[0]) if len(preset_ids) == 1 else None
 
 
 async def record_spool_usage(

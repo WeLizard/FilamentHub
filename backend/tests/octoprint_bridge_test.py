@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.brand import Brand
 from app.models.filament import Filament
 from app.models.octoprint_bridge import OctoPrintBridgeEvent
+from app.models.preset import Preset, PresetModerationStatus
 from app.models.preset_usage_event import PresetUsageEvent
 from app.models.print_job import PrintJob
 from app.models.user_spool import UserSpool, UserSpoolState
@@ -95,6 +96,17 @@ async def test_bridge_pair_snapshot_usage_replay_and_revoke(
     )
     db_session.add(filament)
     await db_session.flush()
+    preset = Preset(
+        filament_id=filament.id,
+        user_id=auth_user.id,
+        name="Bridge PLA profile",
+        extruder_temp=210,
+        bed_temp=60,
+        active=True,
+        is_official=False,
+        is_weighted=False,
+        moderation_status=PresetModerationStatus.APPROVED,
+    )
     spool = UserSpool(
         user_id=auth_user.id,
         filament_id=filament.id,
@@ -102,7 +114,7 @@ async def test_bridge_pair_snapshot_usage_replay_and_revoke(
         used_weight_g=0.0,
         state=UserSpoolState.shelf,
     )
-    db_session.add(spool)
+    db_session.add_all([preset, spool])
     await db_session.commit()
     await db_session.refresh(spool)
 
@@ -110,7 +122,7 @@ async def test_bridge_pair_snapshot_usage_replay_and_revoke(
     slot_id = printer_response.json()["material_systems"][0]["slots"][0]["id"]
     assignment_response = await auth_client.patch(
         f"/api/v1/physical-printers/{printer_id}/material-slots/{slot_id}",
-        json={"spool_id": spool.id},
+        json={"spool_id": spool.id, "preset_id": preset.id},
     )
     assert assignment_response.status_code == 200
 
@@ -212,6 +224,7 @@ async def test_bridge_pair_snapshot_usage_replay_and_revoke(
     usage_events = list((await db_session.execute(select(PresetUsageEvent))).scalars())
     assert len(usage_events) == 1
     assert usage_events[0].print_job_id == print_jobs[0].id
+    assert usage_events[0].preset_id == preset.id
 
     # A provider may retry the same physical job under a new transport event id.
     # Job identity, not only the request id, must prevent a second consumption.

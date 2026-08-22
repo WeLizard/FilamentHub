@@ -17,7 +17,8 @@ from app.api.v1.endpoints.spool_compat import (
 from app.core.config import settings
 from app.models.brand import Brand
 from app.models.filament import Filament
-from app.models.material_system import MaterialSystem
+from app.models.material_slot_assignment import MaterialSlotAssignment
+from app.models.material_system import MaterialSlot, MaterialSystem
 from app.models.preset import Preset, PresetModerationStatus
 from app.models.preset_gate_state import PresetGateState, PresetGateStateSource
 from app.models.preset_usage_event import PresetUsageEvent
@@ -265,6 +266,67 @@ async def test_spool_compat_v1_list_get_use_spool(client: AsyncClient, db_sessio
     assert use_response.status_code == 200
     used_weight = use_response.json()["used_weight"]
     assert used_weight == pytest.approx(150.0, rel=1e-6)
+
+
+@pytest.mark.asyncio
+async def test_spool_usage_keeps_exact_assigned_preset_evidence(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    user, spool, device = await _seed_spool_context(db_session)
+    preset = Preset(
+        user_id=user.id,
+        filament_id=spool.filament_id,
+        name="Assigned printer profile",
+        extruder_temp=210,
+        bed_temp=60,
+        active=True,
+        is_official=False,
+        is_weighted=False,
+        moderation_status=PresetModerationStatus.APPROVED,
+    )
+    material_system = MaterialSystem(
+        user_id=user.id,
+        physical_printer_id=device.id,
+        name="Exact assignment system",
+        kind="direct_feed",
+        provider="spoolman",
+        capabilities=[],
+    )
+    db_session.add_all([preset, material_system])
+    await db_session.flush()
+    slot = MaterialSlot(
+        user_id=user.id,
+        material_system_id=material_system.id,
+        provider_index=0,
+        active=True,
+    )
+    db_session.add(slot)
+    await db_session.flush()
+    db_session.add(
+        MaterialSlotAssignment(
+            user_id=user.id,
+            material_slot_id=slot.id,
+            preset_id=preset.id,
+            spool_id=spool.id,
+            source="web_manual",
+            source_ts=datetime.now(timezone.utc),
+            active=True,
+        )
+    )
+    await db_session.commit()
+
+    response = await client.put(
+        f"/api/v1/spool_compat/{device.api_key}/v1/spool/{spool.id}/use",
+        json={"use_weight": 25},
+    )
+
+    assert response.status_code == 200
+    event = await db_session.scalar(
+        select(PresetUsageEvent).where(PresetUsageEvent.spool_id == spool.id)
+    )
+    assert event is not None
+    assert event.preset_id == preset.id
 
 
 @pytest.mark.asyncio

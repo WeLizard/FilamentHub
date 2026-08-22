@@ -31,7 +31,7 @@ from app.models.user_achievement import UserAchievement
 from app.models.user_printer_device import UserPrinterDevice
 from app.models.user_saved_preset import UserSavedPreset
 from app.models.user_spool import UserSpool
-from app.models.wiki_article import WikiArticle, WikiArticleStatus
+from app.models.wiki_article import WikiArticle, WikiArticleStatus, WikiGuideProgress
 from app.models.wiki_category import WikiCategory
 from app.models.wiki_space import WikiSpace
 from app.services.achievement_service import (
@@ -48,6 +48,7 @@ from app.services.achievement_service import (
     FULL_MATERIAL_SYSTEM,
     GCODE_CALCULATION,
     HAPPY_HARE_CONNECTED,
+    MANUFACTURER_LEARNING_PATH,
     MATERIAL_SYSTEM_CONNECTED,
     MATERIAL_TO_PRINT,
     OCTOPRINT_CONNECTED,
@@ -57,6 +58,7 @@ from app.services.achievement_service import (
     PRESETS_USED_BY_3,
     PRESETS_USED_BY_10,
     PRINTER_INTEGRATION_CONNECTED,
+    PRINTER_LEARNING_PATH,
     RETURNING_CUSTOMER,
     SPOOL_COLLECTOR_1,
     SPOOL_COLLECTOR_20,
@@ -64,6 +66,78 @@ from app.services.achievement_service import (
     SPOOL_DEPLETED_BY_PRINT,
     achievement_overview,
 )
+
+
+async def test_learning_paths_count_semantic_steps_and_accept_article_aliases(
+    db_session,
+    auth_user,
+):
+    printer_progress = [
+        "user:catalog",
+        "article:catalog-material",
+        "article:orca-preset-guide",
+        "user:shelf",
+        "article:my-filaments-guide",
+        "user:printer",
+    ]
+    db_session.add_all(
+        [
+            WikiGuideProgress(user_id=auth_user.id, guide_id=guide_id)
+            for guide_id in printer_progress
+        ]
+    )
+    await db_session.commit()
+
+    incomplete = await achievement_overview(db_session, user_id=auth_user.id)
+    incomplete_codes = {item.code for item in incomplete.achievements}
+    assert PRINTER_LEARNING_PATH not in incomplete_codes
+    printer_next = next(
+        item
+        for item in incomplete.next_achievements
+        if item.code == PRINTER_LEARNING_PATH
+    )
+    assert (printer_next.current, printer_next.target) == (5, 6)
+
+    remaining_progress = [
+        "article:production-calculation-guide",
+        "article:brand-representation-guide",
+        "brand:profile",
+        "article:brand-materials-guide",
+        "brand:presets",
+        "article:brand-qr-guide",
+        "brand:insights",
+    ]
+    db_session.add_all(
+        [
+            WikiGuideProgress(user_id=auth_user.id, guide_id=guide_id)
+            for guide_id in remaining_progress
+        ]
+    )
+    await db_session.commit()
+
+    completed = await achievement_overview(db_session, user_id=auth_user.id)
+    repeated = await achievement_overview(db_session, user_id=auth_user.id)
+    completed_codes = {item.code for item in completed.achievements}
+    assert {PRINTER_LEARNING_PATH, MANUFACTURER_LEARNING_PATH} <= completed_codes
+    assert completed.newly_earned == [
+        PRINTER_LEARNING_PATH,
+        MANUFACTURER_LEARNING_PATH,
+    ]
+    assert repeated.newly_earned == []
+    route_awards = list(
+        await db_session.scalars(
+            select(UserAchievement).where(
+                UserAchievement.user_id == auth_user.id,
+                UserAchievement.code.in_(
+                    (PRINTER_LEARNING_PATH, MANUFACTURER_LEARNING_PATH)
+                ),
+            )
+        )
+    )
+    assert len(route_awards) == 2
+    assert {item.evidence_type for item in route_awards} == {
+        "wiki_guide_progress"
+    }
 
 
 async def test_usefulness_achievements_ignore_self_and_are_idempotent(

@@ -15,6 +15,7 @@ import {
   PawPrint,
   Rabbit,
   Repeat2,
+  Route,
   Send,
   Shield,
   SlidersHorizontal,
@@ -255,6 +256,20 @@ export const ACHIEVEMENT_CONFIG: Record<AchievementCode, BadgeConfig> = {
     color: 'text-indigo-300',
     titleKey: 'achievement.wikiEditor5.title',
     ...achievementArtwork('wiki_editor_5', 'uncommon'),
+  },
+  printer_learning_path: {
+    icon: Route,
+    labelKey: 'achievement.printerLearningPath.label',
+    color: 'text-cyan-300',
+    titleKey: 'achievement.printerLearningPath.title',
+    ...achievementArtwork('printer_learning_path', 'uncommon'),
+  },
+  manufacturer_learning_path: {
+    icon: Factory,
+    labelKey: 'achievement.manufacturerLearningPath.label',
+    color: 'text-violet-300',
+    titleKey: 'achievement.manufacturerLearningPath.title',
+    ...achievementArtwork('manufacturer_learning_path', 'uncommon'),
   },
   first_saved_calculation: {
     icon: Calculator,

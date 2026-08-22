@@ -56,7 +56,10 @@ from app.services.print_job_service import (
     ensure_provider_terminal_job,
 )
 from app.services.spool_service import clear_spool_gate_assignments, clear_spool_location_projection
-from app.services.spool_usage_service import record_spool_usage
+from app.services.spool_usage_service import (
+    record_spool_usage,
+    resolve_assigned_preset_id,
+)
 
 OCTOPRINT_PROVIDER = "octoprint"
 OCTOPRINT_TRANSPORT = "bridge_https"
@@ -655,12 +658,21 @@ async def record_usage_event(
         spool.last_used_at = now
         if spool.first_used_at is None:
             spool.first_used_at = now
+        preset_id = await resolve_assigned_preset_id(
+            db,
+            user_id=spool.user_id,
+            spool_id=spool.id,
+            physical_printer_id=connector.physical_printer_id,
+            material_system_id=connector.material_system_id,
+            slot_index=item.slot_index,
+        )
         await record_spool_usage(
             db,
             spool=spool,
             event_type=PresetUsageEventType.printer_report,
             delta_weight_g=consumed,
             device_id=connector.physical_printer_id,
+            preset_id=preset_id,
             print_job_id=print_job.id,
             job_ref=f"octoprint_bridge:{payload.event_id}:{spool.id}",
             reported_weight_g=reported_weight,

@@ -57,6 +57,7 @@ from app.services.spool_usage_service import (
     mark_printer_report_replay,
     octoprint_job_ref,
     record_spool_usage,
+    resolve_assigned_preset_id,
 )
 
 from . import spool_compat_fields
@@ -1284,12 +1285,23 @@ async def _use_spool_impl(
     now = datetime.now(timezone.utc)
     before_used = spool.used_weight_g
     spool.used_weight_g = float(min(spool.initial_weight_g, spool.used_weight_g + delta_weight))
+    preset_id = (
+        await resolve_assigned_preset_id(
+            db,
+            user_id=user.id,
+            spool_id=spool.id,
+            physical_printer_id=_device.id,
+        )
+        if _device is not None
+        else None
+    )
     await record_spool_usage(
         db,
         spool=spool,
         event_type=PresetUsageEventType.printer_report,
         delta_weight_g=spool.used_weight_g - before_used,
         device_id=_device.id if _device is not None else None,
+        preset_id=preset_id,
         job_ref=(
             octoprint_job_ref(normalized_idempotency_key)
             if normalized_idempotency_key is not None

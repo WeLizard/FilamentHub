@@ -678,6 +678,8 @@ export type AchievementCode =
   | 'first_wiki_article'
   | 'first_wiki_revision'
   | 'wiki_editor_5'
+  | 'printer_learning_path'
+  | 'manufacturer_learning_path'
   | 'first_saved_calculation'
   | 'gcode_calculation'
   | 'first_quote_sent'
