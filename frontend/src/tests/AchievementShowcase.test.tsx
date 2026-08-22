@@ -66,6 +66,10 @@ describe('AchievementShowcase', () => {
     expect(screen.getAllByText('achievement.firstProfile.label')).toHaveLength(2);
     expect(screen.queryByText('profilePage.contributorRoles.preset_author')).toBeNull();
 
+    fireEvent.click(screen.getByRole('button', { name: 'profilePage.openAchievementArtwork' }));
+    expect(screen.getByRole('dialog', { name: 'achievement.firstProfile.label' })).toBeTruthy();
+    fireEvent.click(screen.getAllByRole('button', { name: 'common.close' }).at(-1)!);
+
     fireEvent.click(screen.getByRole('button', { name: 'common.close' }));
     expect(screen.queryByText('+1')).toBeNull();
 

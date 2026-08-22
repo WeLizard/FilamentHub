@@ -94,7 +94,7 @@ export function AchievementShowcase({
   const [openedNewAchievementCodes, setOpenedNewAchievementCodes] = useState<Set<AchievementCode>>(
     () => new Set(),
   );
-  const [expandedArtworkCode, setExpandedArtworkCode] = useState<AchievementCode | null>(null);
+  const [previewArtworkCode, setPreviewArtworkCode] = useState<AchievementCode | null>(null);
   const achievements = useMemo(
     () => (overview?.achievements ?? []).filter(knownAchievement),
     [overview?.achievements],
@@ -120,6 +120,7 @@ export function AchievementShowcase({
     [newlyEarned, viewedAchievementCodes],
   );
   const previewAchievements = achievements.slice(0, PREVIEW_LIMIT);
+  const previewedAchievement = achievements.find(({ code }) => code === previewArtworkCode);
   const totalMarks = achievements.length;
   const openShowcase = () => {
     setOpenedNewAchievementCodes(unseenAchievementCodes);
@@ -164,13 +165,19 @@ export function AchievementShowcase({
       </button>
 
       {isOpen && (
-        <ModalOverlay onClose={() => setIsOpen(false)}>
+        <ModalOverlay
+          onClose={() => {
+            setPreviewArtworkCode(null);
+            setIsOpen(false);
+          }}
+          closeOnEscape={!previewedAchievement}
+        >
           <div
             className={`mx-4 flex w-full max-w-3xl flex-col overflow-hidden rounded-3xl border border-white/15 bg-gradient-to-br from-slate-950 via-purple-950/95 to-slate-950 shadow-[0_28px_100px_rgba(76,29,149,0.38)] ${
               isHeaderVisible ? 'max-h-[calc(100vh-100px)]' : 'max-h-[90vh]'
             }`}
           >
-            <div className="relative overflow-hidden border-b border-white/10 px-5 py-5 sm:px-7">
+            <div className="relative shrink-0 overflow-hidden border-b border-white/10 px-5 py-5 sm:px-7">
               <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(168,85,247,0.28),transparent_42%),radial-gradient(circle_at_top_right,rgba(34,211,238,0.16),transparent_38%)]" />
               <div className="relative flex items-start justify-between gap-4">
                 <div className="min-w-0">
@@ -203,7 +210,7 @@ export function AchievementShowcase({
               </div>
             </div>
 
-            <div className="space-y-6 overflow-y-auto p-5 sm:p-7">
+            <div className="min-h-0 flex-1 space-y-6 overflow-y-auto p-5 sm:p-7">
               <section>
                 <h3 className="mb-3 font-semibold text-white">
                   {t('profilePage.earnedAchievements')}
@@ -224,19 +231,12 @@ export function AchievementShowcase({
                         >
                           <button
                             type="button"
-                            aria-pressed={expandedArtworkCode === achievement.code}
-                            aria-label={t(
-                              expandedArtworkCode === achievement.code
-                                ? 'profilePage.shrinkAchievementArtwork'
-                                : 'profilePage.expandAchievementArtwork',
-                              { name: t(config.labelKey) },
-                            )}
-                            onClick={() => setExpandedArtworkCode((current) => (
-                              current === achievement.code ? null : achievement.code
-                            ))}
-                            className={`flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-black/25 shadow-[0_0_24px_rgba(34,211,238,0.12)] transition-transform duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/60 group-hover:scale-110 ${
-                              expandedArtworkCode === achievement.code ? 'scale-110' : ''
-                            }`}
+                            aria-haspopup="dialog"
+                            aria-label={t('profilePage.openAchievementArtwork', {
+                              name: t(config.labelKey),
+                            })}
+                            onClick={() => setPreviewArtworkCode(achievement.code)}
+                            className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-black/25 shadow-[0_0_24px_rgba(34,211,238,0.12)] transition-transform duration-200 ease-out hover:scale-110 focus-visible:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/60 group-hover:scale-105"
                           >
                             <AchievementBadge code={achievement.code} size="lg" showArtwork />
                           </button>
@@ -337,6 +337,53 @@ export function AchievementShowcase({
                   </div>
                 </section>
               )}
+            </div>
+          </div>
+        </ModalOverlay>
+      )}
+
+      {previewedAchievement && (
+        <ModalOverlay
+          onClose={() => setPreviewArtworkCode(null)}
+          className="!z-[10000] bg-black/75"
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={`achievement-artwork-title-${previewedAchievement.code}`}
+            className="relative mx-4 w-full max-w-md rounded-3xl border border-white/15 bg-gradient-to-br from-slate-950 via-purple-950 to-slate-950 p-5 shadow-[0_28px_100px_rgba(76,29,149,0.5)] sm:p-7"
+          >
+            <button
+              type="button"
+              onClick={() => setPreviewArtworkCode(null)}
+              className="absolute right-3 top-3 z-10 rounded-xl bg-black/35 p-2 text-gray-300 backdrop-blur transition hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-400/70"
+              aria-label={t('common.close')}
+            >
+              <X className="h-5 w-5" />
+            </button>
+            <div className="mx-auto aspect-square w-[72vw] max-w-80 overflow-hidden rounded-3xl shadow-[0_0_42px_rgba(168,85,247,0.2)]">
+              <AchievementBadge code={previewedAchievement.code} size="lg" showArtwork />
+            </div>
+            <div className="mt-5 text-center">
+              <div className="flex flex-wrap items-center justify-center gap-2">
+                <h3
+                  id={`achievement-artwork-title-${previewedAchievement.code}`}
+                  className="text-lg font-bold text-white sm:text-xl"
+                >
+                  {t(ACHIEVEMENT_CONFIG[previewedAchievement.code].labelKey)}
+                </h3>
+                <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+                  (RARITY_STYLES[previewedAchievement.rarity] ?? RARITY_STYLES.common).chip
+                }`}>
+                  {t(`profilePage.achievementRarity.${previewedAchievement.rarity}`)}
+                </span>
+              </div>
+              <p className="mt-2 text-sm leading-6 text-gray-300">
+                {t(ACHIEVEMENT_CONFIG[previewedAchievement.code].titleKey)}
+              </p>
+              <p className="mt-1 text-xs text-gray-500">
+                {formatDate(previewedAchievement.earned_at)}
+              </p>
             </div>
           </div>
         </ModalOverlay>

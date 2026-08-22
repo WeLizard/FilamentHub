@@ -3225,8 +3225,7 @@
     "nextAchievements": "下一个目标",
     "earnedAchievements": "已获得的成就",
     "noAchievementsYet": "当 FilamentHub 能确认一个有用结果后，你的第一个成就会出现在这里。",
-    "expandAchievementArtwork": "放大“{{name}}”成就图片",
-    "shrinkAchievementArtwork": "恢复“{{name}}”成就图片大小",
+    "openAchievementArtwork": "查看“{{name}}”成就图片",
     "newcomer": {
       "howTo": "查看操作方法",
       "spools": {
