@@ -1594,7 +1594,7 @@
     "previous": "上一步",
     "next": "下一步",
     "finish": "返回知识库",
-    "openImage": "点击放大",
+    "openImage": "放大",
     "imageViewer": "放大的指南截图",
     "imageViewerHint": "鼠标：滚轮上下移动，Shift + 滚轮左右移动，Alt + 滚轮缩放，拖拽平移；触控：双指缩放，单指拖动平移",
     "zoomIn": "放大",

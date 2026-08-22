@@ -1595,7 +1595,7 @@
     "previous": "Back",
     "next": "Next step",
     "finish": "Back to Wiki",
-    "openImage": "click to enlarge",
+    "openImage": "Enlarge",
     "imageViewer": "Enlarged guide screenshot",
     "imageViewerHint": "mouse: wheel to move vertically, Shift + wheel horizontally, Alt + wheel to zoom, drag to pan; touch: pinch to zoom, drag with one finger to pan",
     "zoomIn": "Zoom in",
