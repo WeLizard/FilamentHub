@@ -223,7 +223,7 @@ export function AchievementShowcase({
                       return (
                         <article
                           key={achievement.code}
-                          className={`group flex min-w-0 items-center gap-4 rounded-2xl border p-4 ${rarity.card} ${
+                          className={`group flex min-w-0 cursor-default select-none items-center gap-4 rounded-2xl border p-4 ${rarity.card} ${
                             openedNewAchievementCodes.has(achievement.code)
                               ? 'ring-1 ring-cyan-300/45 shadow-[0_0_24px_rgba(34,211,238,0.12)]'
                               : ''
@@ -236,7 +236,7 @@ export function AchievementShowcase({
                               name: t(config.labelKey),
                             })}
                             onClick={() => setPreviewArtworkCode(achievement.code)}
-                            className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-black/25 shadow-[0_0_24px_rgba(34,211,238,0.12)] transition-transform duration-200 ease-out hover:scale-110 focus-visible:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/60 group-hover:scale-105"
+                            className="flex h-16 w-16 shrink-0 cursor-zoom-in items-center justify-center rounded-2xl border border-white/10 bg-black/25 shadow-[0_0_24px_rgba(34,211,238,0.12)] transition-transform duration-200 ease-out hover:scale-110 focus-visible:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/60 group-hover:scale-105"
                           >
                             <AchievementBadge code={achievement.code} size="lg" showArtwork />
                           </button>
@@ -281,7 +281,7 @@ export function AchievementShowcase({
                       return (
                         <div
                           key={progress.code}
-                          className="flex min-w-0 items-center gap-3 rounded-2xl border border-white/10 bg-black/15 p-3"
+                            className="flex min-w-0 cursor-default select-none items-center gap-3 rounded-2xl border border-white/10 bg-black/15 p-3"
                         >
                           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] grayscale opacity-70">
                             <AchievementBadge code={progress.code} size="md" />
@@ -351,7 +351,7 @@ export function AchievementShowcase({
             role="dialog"
             aria-modal="true"
             aria-labelledby={`achievement-artwork-title-${previewedAchievement.code}`}
-            className="relative mx-4 w-full max-w-md rounded-3xl border border-white/15 bg-gradient-to-br from-slate-950 via-purple-950 to-slate-950 p-5 shadow-[0_28px_100px_rgba(76,29,149,0.5)] sm:p-7"
+            className="relative mx-4 w-full max-w-md cursor-default select-none rounded-3xl border border-white/15 bg-gradient-to-br from-slate-950 via-purple-950 to-slate-950 p-5 shadow-[0_28px_100px_rgba(76,29,149,0.5)] sm:p-7"
           >
             <button
               type="button"
@@ -361,7 +361,7 @@ export function AchievementShowcase({
             >
               <X className="h-5 w-5" />
             </button>
-            <div className="mx-auto aspect-square w-[72vw] max-w-80 overflow-hidden rounded-3xl shadow-[0_0_42px_rgba(168,85,247,0.2)]">
+            <div className="mx-auto aspect-square w-[72vw] max-w-80 rounded-3xl shadow-[0_0_42px_rgba(168,85,247,0.2)]">
               <AchievementBadge code={previewedAchievement.code} size="lg" showArtwork />
             </div>
             <div className="mt-5 text-center">

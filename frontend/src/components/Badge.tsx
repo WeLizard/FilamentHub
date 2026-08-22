@@ -328,11 +328,12 @@ export const AchievementBadge: React.FC<{
       title={t(config.titleKey)}
     >
       {showArtwork && config.artworkSrc && !artworkFailed ? (
-        <span className="relative block h-full w-full overflow-hidden rounded-xl">
+        <span className="relative block h-full w-full">
           <img
             src={config.artworkSrc}
             alt=""
             className="absolute inset-0 h-full w-full object-cover"
+            style={{ clipPath: 'inset(5.75% round 12%)' }}
             onError={() => setArtworkFailed(true)}
           />
           {config.artworkFrameSrc && (
