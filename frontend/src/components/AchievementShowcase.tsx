@@ -342,7 +342,7 @@ export function AchievementShowcase({
             <div className="mx-auto aspect-square w-[72vw] max-w-80 rounded-3xl shadow-[0_0_42px_rgba(168,85,247,0.2)]">
               <AchievementBadge code={previewedAchievement.code} size="lg" showArtwork />
             </div>
-            <div className="mt-5 text-center">
+            <div className="mt-1 text-center">
               <div className="flex flex-wrap items-center justify-center gap-2">
                 <h3
                   id={`achievement-artwork-title-${previewedAchievement.code}`}
