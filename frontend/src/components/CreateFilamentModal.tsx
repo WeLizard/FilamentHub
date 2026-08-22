@@ -44,6 +44,7 @@ import {
 } from '../utils/filamentColorGroups';
 import type { AxiosError } from 'axios';
 import type { FilamentColorGroup, FilamentColorGroupSource, SimilarFilamentCandidate } from '../types/api';
+import { hasNonStandardDiameter } from '../utils/filamentFacts';
 
 interface CreateFilamentModalProps {
   isOpen: boolean;
@@ -924,7 +925,9 @@ export const CreateFilamentModal: React.FC<CreateFilamentModalProps> = ({
                     <span className="text-amber-100/60">
                       {' · '}{candidate.material_type}
                       {candidate.color_name ? ` · ${candidate.color_name}` : ''}
-                      {` · ${candidate.diameter} ${t('createFilament.mm')}`}
+                      {hasNonStandardDiameter(candidate.diameter)
+                        ? ` · ${candidate.diameter} ${t('createFilament.mm')}`
+                        : ''}
                     </span>
                   </li>
                 ))}

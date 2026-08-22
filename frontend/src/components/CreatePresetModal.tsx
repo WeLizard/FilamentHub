@@ -40,6 +40,8 @@ import { FloatingHSLColorPicker } from './FloatingHSLColorPicker';
 import { FilamentFeaturesEditor } from './FilamentFeaturesEditor';
 import { mergeVisualEffects } from '../data/filamentFeatures';
 import { currencySymbol } from '../utils/currency';
+import { normalizeFilamentColor } from '../utils/calculatorMaterialColors';
+import { hasNonStandardDiameter } from '../utils/filamentFacts';
 import {
   applyOrcaBooleanFromUi,
   applyOrcaLinesFromUi,
@@ -663,7 +665,9 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
     if (preset) {
       setName(preset.name);
       setDescription(preset.description || '');
-      setIsOfficial(preset.is_official);
+      // Imported drafts are reviewed as a user contribution first. Brand access
+      // only makes the explicit "official" option available; it must not select it.
+      setIsOfficial(isDraft ? false : preset.is_official);
       setExtruderTemp(preset.extruder_temp);
       setBedTemp(preset.bed_temp);
       setFlowRate(preset.flow_rate ?? 100);
@@ -1110,7 +1114,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
     }
     setError(null);
     setDuplicateFilamentSuggestion(null);
-  }, [preset, filamentId, brandId, isOpen]);
+  }, [preset, filamentId, brandId, isDraft, isOpen]);
 
   // Когда загрузился филамент (редактирование или предвыбор filamentId) — показываем его имя
   useEffect(() => {
@@ -1304,15 +1308,18 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
 
     const applyNewFilamentSuggestions = () => {
       setShowFilamentForm(true);
-      if (!canTrustCatalogIdentity) return;
       if (draftAnalysis.brand_match) {
         setSelectedBrandId(draftAnalysis.brand_match.id);
         setBrandSearch(draftAnalysis.brand_match.name);
         setShowBrandForm(false);
       } else if (typeof suggestion('brand_name') === 'string') {
-        setBrandSearch(String(suggestion('brand_name')));
-        setNewBrandName(String(suggestion('brand_name')));
-        setShowBrandForm(true);
+        const suggestedBrandName = String(suggestion('brand_name'));
+        setSelectedBrandId(null);
+        setBrandSearch(suggestedBrandName);
+        setNewBrandName(suggestedBrandName);
+        // Keep the searchable field visible so the user can confirm an existing
+        // brand before deciding to create a new one.
+        setShowBrandForm(false);
       }
       if (typeof suggestion('filament_name') === 'string') {
         setFilamentName(String(suggestion('filament_name')));
@@ -1321,10 +1328,12 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
         setMaterialType(String(suggestion('material_type')));
       }
       if (typeof suggestion('color_hex') === 'string') {
-        const color = String(suggestion('color_hex'));
-        setFilamentColorHex(color);
-        setFilamentVisualColors([color]);
-        setDraftHasColorEvidence(true);
+        const color = normalizeFilamentColor(String(suggestion('color_hex')));
+        if (color) {
+          setFilamentColorHex(color);
+          setFilamentVisualColors([color]);
+          setDraftHasColorEvidence(true);
+        }
       }
       if (typeof suggestion('diameter') === 'number') {
         setFilamentDiameter(String(suggestion('diameter')));
@@ -2294,6 +2303,10 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
             item.suggestion.direct
             || draftAnalysis.evidence_kind === 'stored_snapshot'
           )
+          && (
+            item.field !== 'diameter'
+            || hasNonStandardDiameter(Number(item.suggestion.value))
+          )
         ))
         .slice(0, 4)
     : [];
@@ -2425,21 +2438,35 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
                   )}
                   {draftReviewFacts.length > 0 && (
                     <div className="mt-3 flex flex-wrap gap-2">
-                      {draftReviewFacts.map(({ field, label, suggestion }) => (
-                        <span
-                          key={field}
-                          className={`rounded-lg border bg-black/15 px-2.5 py-1 text-xs ${
-                            suggestion.direct
-                              ? 'border-cyan-300/20 text-cyan-100'
-                              : 'border-amber-300/25 text-amber-100'
-                          }`}
-                          title={suggestion.direct
-                            ? t('presetModal.review.fromOrca')
-                            : t('presetModal.review.storedEvidence')}
-                        >
-                          {label}: {String(suggestion.value)}
-                        </span>
-                      ))}
+                      {draftReviewFacts.map(({ field, label, suggestion }) => {
+                        const evidenceColor = field === 'color_hex' && typeof suggestion.value === 'string'
+                          ? normalizeFilamentColor(suggestion.value)
+                          : null;
+
+                        return (
+                          <span
+                            key={field}
+                            className={`inline-flex items-center gap-1.5 rounded-lg border bg-black/15 px-2.5 py-1 text-xs ${
+                              suggestion.direct
+                                ? 'border-cyan-300/20 text-cyan-100'
+                                : 'border-amber-300/25 text-amber-100'
+                            }`}
+                            title={suggestion.direct
+                              ? t('presetModal.review.fromOrca')
+                              : t('presetModal.review.storedEvidence')}
+                          >
+                            {evidenceColor && (
+                              <span
+                                aria-hidden="true"
+                                data-testid="draft-color-swatch"
+                                className="h-3.5 w-3.5 shrink-0 rounded-full border border-white/35 shadow-sm"
+                                style={{ backgroundColor: evidenceColor }}
+                              />
+                            )}
+                            <span>{label}: {String(suggestion.value)}</span>
+                          </span>
+                        );
+                      })}
                       {draftSuggestionCount > 0 && (
                         <span className="rounded-lg border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-gray-300">
                           {t('presetModal.review.fhSuggestions', { count: draftSuggestionCount })}

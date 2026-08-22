@@ -4,6 +4,7 @@ import { FilamentPreview } from './FilamentPreview';
 import { NozzleRequirementBadge } from './NozzleRequirementBadge';
 import { currencySymbol } from '../utils/currency';
 import { FilamentHandlingBadges } from './FilamentHandlingBadges';
+import { hasNonStandardDiameter } from '../utils/filamentFacts';
 
 interface FilamentSummaryCardProps {
   filament: Filament;
@@ -39,7 +40,7 @@ export const FilamentSummaryCard: React.FC<FilamentSummaryCardProps> = ({
   } = filament;
 
   const detailItems: DetailItem[] = [
-    { label: t('filamentSummary.diameter'), value: diameter !== null && diameter !== undefined ? `${diameter} ${t('filamentSummary.mm')}` : null },
+    { label: t('filamentSummary.diameter'), value: hasNonStandardDiameter(diameter) ? `${diameter} ${t('filamentSummary.mm')}` : null },
     { label: t('filamentSummary.density'), value: density !== null && density !== undefined ? `${density} ${t('filamentSummary.g')}/${t('filamentSummary.cm3')}` : null },
     { label: t('filamentSummary.cost'), value: price_per_kg !== null && price_per_kg !== undefined ? `${price_per_kg} ${currencySymbol(currency)}/${t('filamentSummary.kg')}` : null },
     { label: t('filamentSummary.spoolWeight'), value: spool_weight !== null && spool_weight !== undefined ? `${spool_weight} ${t('filamentSummary.g')}` : null },

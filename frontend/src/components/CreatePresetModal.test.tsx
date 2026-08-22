@@ -144,6 +144,12 @@ const analysis = (
       confidence: direct ? 'high' : 'suggested',
       direct,
     },
+    diameter: {
+      value: 1.75,
+      source: evidenceKind === 'orca_capture' ? 'orca' : 'stored_snapshot',
+      confidence: direct ? 'high' : 'suggested',
+      direct,
+    },
   },
   brand_match: null,
   filament_matches: evidenceKind === 'stored_snapshot'
@@ -184,7 +190,7 @@ describe('CreatePresetModal imported draft review', () => {
     ));
   });
 
-  it('resets catalog fields and never auto-applies legacy snapshot identity', async () => {
+  it('prefills review fields from source evidence without auto-linking a legacy filament', async () => {
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false } },
     });
@@ -207,9 +213,35 @@ describe('CreatePresetModal imported draft review', () => {
 
     await waitFor(() => {
       expect(screen.getByText(/Legacy Vendor/)).toBeInTheDocument();
-      expect(screen.getByLabelText('material-type')).toHaveValue('');
-      expect(screen.getByTestId('material-color')).toHaveTextContent('#FF0000');
+      expect(screen.getByDisplayValue('Legacy Vendor')).toBeInTheDocument();
+      expect(screen.getByDisplayValue('Legacy material')).toBeInTheDocument();
+      expect(screen.getByLabelText('material-type')).toHaveValue('PETG');
+      expect(screen.getByTestId('material-color')).toHaveTextContent('#00FF00');
+      expect(screen.getByTestId('draft-color-swatch')).toHaveStyle({ backgroundColor: '#00FF00' });
+      expect(screen.queryByText(/presetModal\.review\.diameter/)).not.toBeInTheDocument();
     });
     expect(getFilamentMock).not.toHaveBeenCalled();
+  });
+
+  it('does not mark an imported draft as official by default', async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const officialDraft = { ...preset(1, 'Brand draft'), is_official: true };
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <CreatePresetModal
+          isOpen
+          onClose={vi.fn()}
+          preset={officialDraft}
+          allowOfficial
+        />
+      </QueryClientProvider>,
+    );
+
+    const checkbox = await screen.findByRole('checkbox', { name: 'presetModal.officialPreset' });
+    expect(checkbox).not.toBeChecked();
+    expect(screen.queryByText('presetModal.officialPresetInfo')).not.toBeInTheDocument();
   });
 });
