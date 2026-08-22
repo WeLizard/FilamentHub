@@ -7,8 +7,17 @@
       <stop offset=".82" stop-color="#F04BCF"/>
       <stop offset="1" stop-color="#A8F4FF"/>
     </linearGradient>
+    <filter id="epic-glow" x="-14%" y="-14%" width="128%" height="128%">
+      <feGaussianBlur stdDeviation="12"/>
+    </filter>
+    <clipPath id="epic-frame-clip">
+      <rect x="21" y="21" width="982" height="982" rx="164"/>
+    </clipPath>
   </defs>
   <rect x="46" y="46" width="932" height="932" rx="139" stroke="#330C4B" stroke-width="50"/>
+  <g clip-path="url(#epic-frame-clip)">
+    <rect x="46" y="46" width="932" height="932" rx="139" stroke="url(#epic-rim)" stroke-opacity=".56" stroke-width="52" filter="url(#epic-glow)"/>
+  </g>
   <rect x="46" y="46" width="932" height="932" rx="139" stroke="url(#epic-rim)" stroke-width="38"/>
   <rect x="77" y="77" width="870" height="870" rx="108" stroke="#FFB8F3" stroke-opacity=".72" stroke-width="9"/>
 </svg>

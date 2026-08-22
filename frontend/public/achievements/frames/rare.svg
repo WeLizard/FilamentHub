@@ -7,8 +7,17 @@
       <stop offset=".82" stop-color="#C760FF"/>
       <stop offset="1" stop-color="#DCD8FF"/>
     </linearGradient>
+    <filter id="rare-glow" x="-12%" y="-12%" width="124%" height="124%">
+      <feGaussianBlur stdDeviation="10"/>
+    </filter>
+    <clipPath id="rare-frame-clip">
+      <rect x="24" y="24" width="976" height="976" rx="160"/>
+    </clipPath>
   </defs>
   <rect x="47" y="47" width="930" height="930" rx="137" stroke="#27104B" stroke-width="46"/>
+  <g clip-path="url(#rare-frame-clip)">
+    <rect x="47" y="47" width="930" height="930" rx="137" stroke="url(#rare-rim)" stroke-opacity=".52" stroke-width="46" filter="url(#rare-glow)"/>
+  </g>
   <rect x="47" y="47" width="930" height="930" rx="137" stroke="url(#rare-rim)" stroke-width="34"/>
   <rect x="76" y="76" width="872" height="872" rx="109" stroke="#ECE8FF" stroke-opacity=".74" stroke-width="8"/>
 </svg>

@@ -12,8 +12,17 @@
       <stop offset=".48" stop-color="#FFD95A"/>
       <stop offset="1" stop-color="#B86608"/>
     </radialGradient>
+    <filter id="historic-glow" x="-12%" y="-12%" width="124%" height="124%">
+      <feGaussianBlur stdDeviation="9"/>
+    </filter>
+    <clipPath id="historic-frame-clip">
+      <rect x="18" y="18" width="988" height="988" rx="167"/>
+    </clipPath>
   </defs>
   <rect x="45" y="45" width="934" height="934" rx="140" stroke="#5C2C08" stroke-width="54"/>
+  <g clip-path="url(#historic-frame-clip)">
+    <rect x="45" y="45" width="934" height="934" rx="140" stroke="url(#historic-rim)" stroke-opacity=".5" stroke-width="54" filter="url(#historic-glow)"/>
+  </g>
   <rect x="45" y="45" width="934" height="934" rx="140" stroke="url(#historic-rim)" stroke-width="42"/>
   <rect x="79" y="79" width="866" height="866" rx="106" stroke="#FFF0A0" stroke-opacity=".76" stroke-width="10"/>
   <path d="M512 8L533 57L584 79L533 101L512 151L490 101L440 79L490 57L512 8Z" fill="url(#historic-star)" stroke="#5C2C08" stroke-width="12"/>

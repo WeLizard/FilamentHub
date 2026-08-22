@@ -10,8 +10,17 @@
       <feGaussianBlur stdDeviation="10" result="blur"/>
       <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
     </filter>
+    <filter id="uncommon-rim-glow" x="-10%" y="-10%" width="120%" height="120%">
+      <feGaussianBlur stdDeviation="8"/>
+    </filter>
+    <clipPath id="uncommon-frame-clip">
+      <rect x="25" y="25" width="974" height="974" rx="159"/>
+    </clipPath>
   </defs>
   <rect x="47" y="47" width="930" height="930" rx="137" stroke="#102F49" stroke-width="44"/>
+  <g clip-path="url(#uncommon-frame-clip)">
+    <rect x="47" y="47" width="930" height="930" rx="137" stroke="url(#uncommon-rim)" stroke-opacity=".48" stroke-width="44" filter="url(#uncommon-rim-glow)"/>
+  </g>
   <rect x="47" y="47" width="930" height="930" rx="137" stroke="url(#uncommon-rim)" stroke-width="32"/>
   <rect x="75" y="75" width="874" height="874" rx="110" stroke="#69F7E9" stroke-opacity=".75" stroke-width="7" filter="url(#uncommon-glow)"/>
 </svg>

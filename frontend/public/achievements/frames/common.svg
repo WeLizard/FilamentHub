@@ -5,8 +5,17 @@
       <stop offset="0.5" stop-color="#7546D8"/>
       <stop offset="1" stop-color="#56C9E8"/>
     </linearGradient>
+    <filter id="common-glow" x="-10%" y="-10%" width="120%" height="120%">
+      <feGaussianBlur stdDeviation="7"/>
+    </filter>
+    <clipPath id="common-frame-clip">
+      <rect x="26" y="26" width="972" height="972" rx="158"/>
+    </clipPath>
   </defs>
   <rect x="47" y="47" width="930" height="930" rx="137" stroke="#241044" stroke-width="42"/>
+  <g clip-path="url(#common-frame-clip)">
+    <rect x="47" y="47" width="930" height="930" rx="137" stroke="url(#common-rim)" stroke-opacity=".42" stroke-width="40" filter="url(#common-glow)"/>
+  </g>
   <rect x="47" y="47" width="930" height="930" rx="137" stroke="url(#common-rim)" stroke-width="30"/>
   <rect x="75" y="75" width="874" height="874" rx="110" stroke="#D7D8FF" stroke-opacity=".36" stroke-width="5"/>
 </svg>
