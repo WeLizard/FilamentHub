@@ -94,6 +94,7 @@ export function AchievementShowcase({
   const [openedNewAchievementCodes, setOpenedNewAchievementCodes] = useState<Set<AchievementCode>>(
     () => new Set(),
   );
+  const [expandedArtworkCode, setExpandedArtworkCode] = useState<AchievementCode | null>(null);
   const achievements = useMemo(
     () => (overview?.achievements ?? []).filter(knownAchievement),
     [overview?.achievements],
@@ -173,8 +174,11 @@ export function AchievementShowcase({
               <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(168,85,247,0.28),transparent_42%),radial-gradient(circle_at_top_right,rgba(34,211,238,0.16),transparent_38%)]" />
               <div className="relative flex items-start justify-between gap-4">
                 <div className="min-w-0">
-                  <div className="mb-2 flex flex-wrap items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <Star className="h-5 w-5 text-amber-300" />
+                    <h2 className="text-lg font-bold text-white sm:text-xl">
+                      {t('profilePage.achievements')}
+                    </h2>
                     <span className="rounded-full border border-white/10 bg-white/8 px-2.5 py-1 text-xs font-semibold text-purple-100">
                       {t('profilePage.achievementCount', { count: achievements.length })}
                     </span>
@@ -184,10 +188,7 @@ export function AchievementShowcase({
                       </span>
                     )}
                   </div>
-                  <h2 className="text-xl font-bold text-white sm:text-2xl">
-                    {t('profilePage.achievements')}
-                  </h2>
-                  <p className="mt-1 max-w-2xl text-sm leading-6 text-gray-300">
+                  <p className="mt-2 max-w-2xl text-sm leading-5 text-gray-300">
                     {t('profilePage.achievementsDescription')}
                   </p>
                 </div>
@@ -221,9 +222,24 @@ export function AchievementShowcase({
                               : ''
                           }`}
                         >
-                          <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-black/25 shadow-[0_0_24px_rgba(34,211,238,0.12)]">
+                          <button
+                            type="button"
+                            aria-pressed={expandedArtworkCode === achievement.code}
+                            aria-label={t(
+                              expandedArtworkCode === achievement.code
+                                ? 'profilePage.shrinkAchievementArtwork'
+                                : 'profilePage.expandAchievementArtwork',
+                              { name: t(config.labelKey) },
+                            )}
+                            onClick={() => setExpandedArtworkCode((current) => (
+                              current === achievement.code ? null : achievement.code
+                            ))}
+                            className={`flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-black/25 shadow-[0_0_24px_rgba(34,211,238,0.12)] transition-transform duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/60 group-hover:scale-110 ${
+                              expandedArtworkCode === achievement.code ? 'scale-110' : ''
+                            }`}
+                          >
                             <AchievementBadge code={achievement.code} size="lg" showArtwork />
-                          </div>
+                          </button>
                           <div className="min-w-0 flex-1">
                             <div className="flex flex-wrap items-center gap-2">
                               <h4 className="font-semibold text-white">{t(config.labelKey)}</h4>

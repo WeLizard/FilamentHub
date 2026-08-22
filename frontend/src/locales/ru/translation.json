@@ -2820,6 +2820,8 @@
     "nextAchievements": "Ближайшие цели",
     "earnedAchievements": "Полученные достижения",
     "noAchievementsYet": "Первое достижение появится здесь, когда FilamentHub сможет подтвердить полезный результат.",
+    "expandAchievementArtwork": "Увеличить изображение достижения «{{name}}»",
+    "shrinkAchievementArtwork": "Вернуть размер изображения достижения «{{name}}»",
     "newcomer": {
       "howTo": "Как это делается",
       "spools": {

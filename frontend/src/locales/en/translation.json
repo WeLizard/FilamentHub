@@ -3230,6 +3230,8 @@
     "nextAchievements": "Next goals",
     "earnedAchievements": "Earned achievements",
     "noAchievementsYet": "Your first achievement will appear here once FilamentHub can confirm a useful result.",
+    "expandAchievementArtwork": "Enlarge the {{name}} achievement artwork",
+    "shrinkAchievementArtwork": "Restore the {{name}} achievement artwork size",
     "newcomer": {
       "howTo": "How it works",
       "spools": {
