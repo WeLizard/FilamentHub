@@ -2,6 +2,14 @@
 
 Newest first. The top entry is the text pasted into the Plugin Hub on release.
 
+## 0.1.3
+- Local filament presets imported from OrcaSlicer now keep the same FilamentHub identity after a rename, while **Save As** remains a separate profile.
+- Sync handles every imported preset independently: rejected items remain available for retry, and profiles that need your review are reported instead of being silently treated as complete.
+- Print-profile compatibility fields from current OrcaSlicer nightlies are normalized before upload, preventing an entire profile batch from being reported as failed.
+- The catalog-wide **Sync** action now reports filament presets, printer configurations and print profiles separately, follows the user's sync permissions for each direction, and keeps printer-bundle restore as an explicit action on the selected printer.
+- Interrupted profile scans no longer finalize a partial snapshot, and a single rejected profile no longer prevents valid profiles in the same batch from synchronizing.
+- Bambu LAN status now sends changes plus a lightweight heartbeat and respects server backoff, reducing repeated traffic without losing the live connection state.
+
 ## 0.1.2
 - Presets that OrcaSlicer silently refused now load. A single value in a shape the slicer cannot read used to cost the whole preset while the file sat on disk looking synchronised; values are now sent in a shape it accepts, and settings the plugin does not recognise travel through untouched.
 - The same fix applies to printer and print profiles.

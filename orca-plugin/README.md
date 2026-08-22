@@ -42,15 +42,21 @@ Python on_message  ──GET /api/v1/presets/{id}/export/orcaslicer.json (Bearer
 
 ```js
 { source: 'filamenthub-plugin', type: 'profile-changed' }
+{ source: 'filamenthub-plugin', type: 'profile-sync', scope: 'all' | 'filament' | 'machine' | 'process', requestId }
 ```
 
 - `source` namespaces our messages so the shell relay ignores anything else.
 - Authentication is a short-lived OrcaSlicer plugin capability (`aud=orcaslicer-plugin`,
   `presets:read`/`presets:write`, 30-minute expiry). Browser access and refresh
   credentials never cross the iframe boundary.
-- Python → iframe is **not used** for the MVP; confirmation is a native host
-  dialog, which keeps us clear of the existing `useOrcaSlicerNotifications`
-  message listener.
+- Python returns operation results through the shell with the matching
+  `requestId`, so unrelated background notices cannot complete a manual sync or
+  printer-bundle request.
+- A full sync reports filament presets, printer configurations and print
+  profiles as separate rows. Each direction is gated by the corresponding
+  account preference. Incomplete local scans never finalize a remote snapshot,
+  and one rejected profile does not prevent valid profiles in the same batch
+  from synchronizing.
 
 **shell → iframe** (toolbar navigation, session restore and operation results):
 the shell renders an
@@ -149,7 +155,7 @@ written into Bambu firmware.
 # name = "FilamentHub"
 # description = "Browse and sync community-rated filament profiles from FilamentHub, with spool inventory and print-cost tools."
 # author = "FilamentHub"
-# version = "0.1.1"
+# version = "0.1.3"
 # network = ["filamenthub.ru", "*.filamenthub.ru"]   # proposed; ignored by current host
 # ///
 ```
@@ -198,14 +204,14 @@ python -m pytest orca-plugin/tests -q
 Output:
 
 ```text
-orca-plugin/dist/filamenthub-0.1.1/
+orca-plugin/dist/filamenthub-0.1.3/
   filamenthub_plugin.py       # install this file
   package-metadata.json       # build provenance
   SHA256SUMS                  # integrity check
-orca-plugin/dist/filamenthub-0.1.1-dev/
+orca-plugin/dist/filamenthub-0.1.3-dev/
   filamenthub_plugin.py       # localhost development copy
 orca-plugin/dist/wheels/
-  filamenthub-0.1.1-py3-none-any.whl
+  filamenthub-0.1.3-py3-none-any.whl
 ```
 
 The legacy `--dev-source` flag remains a compatibility alias. It still stages
@@ -216,7 +222,7 @@ source. Add `--no-wheel` when only the two single-file artifacts are needed:
 python orca-plugin/build_package.py --dev-source --no-wheel
 ```
 
-Install `orca-plugin/dist/filamenthub-0.1.1-dev/filamenthub_plugin.py` in the
+Install `orca-plugin/dist/filamenthub-0.1.3-dev/filamenthub_plugin.py` in the
 isolated OrcaSlicer data directory. It keeps the localhost default and embeds
 the same locale catalogs as the release package.
 

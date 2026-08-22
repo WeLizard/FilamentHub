@@ -89,6 +89,7 @@ describe('MyPrintersList Orca bundle action', () => {
     vi.clearAllMocks();
     mocks.capabilityListener = null;
     mocks.downloadBundle.mockResolvedValue(new Blob(['bundle']));
+    mocks.installBundle.mockResolvedValue({ message: 'installed' });
     mocks.listPrintProfiles.mockResolvedValue([]);
     mocks.listPrinters.mockResolvedValue([
       {
@@ -123,9 +124,35 @@ describe('MyPrintersList Orca bundle action', () => {
     });
     expect(actions).toHaveLength(2);
 
-    fireEvent.click(actions[0]);
+    await act(async () => {
+      fireEvent.click(actions[0]);
+      await Promise.resolve();
+    });
     expect(mocks.installBundle).toHaveBeenCalledWith(1);
     expect(mocks.downloadBundle).not.toHaveBeenCalled();
+  });
+
+  it('keeps only the matching printer busy until the plugin confirms installation', async () => {
+    mocks.isPluginEmbed.mockReturnValue(true);
+    let resolveInstall: ((result: { message: string }) => void) | undefined;
+    mocks.installBundle.mockReturnValue(new Promise((resolve) => {
+      resolveInstall = resolve;
+    }));
+    renderList();
+    await screen.findByText('Printer One');
+    act(() => {
+      mocks.capabilityListener?.(new Set(['printer-bundle-install']));
+    });
+    const actions = screen.getAllByRole('button', {
+      name: 'myPrinters.installBundleInOrca',
+    });
+
+    fireEvent.click(actions[0]);
+    await waitFor(() => expect(actions[0]).toBeDisabled());
+    expect(actions[1]).toBeEnabled();
+
+    act(() => resolveInstall?.({ message: 'installed' }));
+    await waitFor(() => expect(actions[0]).toBeEnabled());
   });
 
   it('keeps install actions hidden in an embed without the capability', async () => {

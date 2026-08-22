@@ -3664,6 +3664,24 @@ async def get_sync_prefs(
     return {
         "auto_import_local_presets": bool(current_user.auto_import_local_presets),
         "sync_printer_endpoints": bool(current_user.sync_printer_endpoints),
+        "allow_filament_presets_import": bool(
+            current_user.allow_filament_presets_import
+        ),
+        "allow_filament_presets_export": bool(
+            current_user.allow_filament_presets_export
+        ),
+        "allow_printer_profiles_import": bool(
+            current_user.allow_printer_profiles_import
+        ),
+        "allow_printer_profiles_export": bool(
+            current_user.allow_printer_profiles_export
+        ),
+        "allow_print_profiles_import": bool(
+            current_user.allow_print_profiles_import
+        ),
+        "allow_print_profiles_export": bool(
+            current_user.allow_print_profiles_export
+        ),
     }
 
 

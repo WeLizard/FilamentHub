@@ -9,7 +9,7 @@ interface ExportPrintProfilesButtonProps {
 
 export const ExportPrintProfilesButton: React.FC<ExportPrintProfilesButtonProps> = ({ onExportComplete }) => {
   const { user } = useAuth();
-  const isExportDisabled = user?.allow_print_profiles_export === false;
+  const isExportDisabled = user?.allow_print_profiles_import === false;
 
   return (
     <OrcaExportButton

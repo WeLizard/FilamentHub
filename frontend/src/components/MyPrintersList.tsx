@@ -211,8 +211,8 @@ export function MyPrintersList({
     });
     try {
       if (pluginEmbed) {
-        installPrinterBundleInPlugin(printer.id);
-        toast.info(t('myPrinters.bundleRequestSent'));
+        const result = await installPrinterBundleInPlugin(printer.id);
+        toast.success(result.message || t('myPrinters.bundleRequestSent'));
       } else {
         const bundle = await physicalPrintersAPI.downloadOrcaBundle(printer.id);
         downloadBlob(

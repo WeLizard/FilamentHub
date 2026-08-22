@@ -26,6 +26,12 @@ interface OrcaExportButtonProps {
 
 type ExportStatus = 'idle' | 'success' | 'error';
 
+const pluginSyncScope: Record<OrcaBridgeCapability, 'filament' | 'machine' | 'process'> = {
+  exportFilamentPresets: 'filament',
+  exportPrinterProfiles: 'machine',
+  exportPrintProfiles: 'process',
+};
+
 const compactClasses = {
   wrapper: 'flex flex-col gap-1',
   button: 'px-3 py-1.5 rounded-lg border text-xs font-medium transition-all',
@@ -106,7 +112,7 @@ export function OrcaExportButton({
     try {
       const result = legacyExporter
         ? await legacyExporter()
-        : await requestPluginProfileSync();
+        : await requestPluginProfileSync(pluginSyncScope[capability]);
       if (!mountedRef.current) return;
       setStatus('success');
       onExportComplete?.({ success: true, message: result.message });

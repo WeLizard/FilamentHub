@@ -9,7 +9,15 @@ import { useCurrencyCatalogue } from './hooks/useCurrencyCatalogue';
 import { useOrcaSlicerNotifications } from './hooks/useOrcaSlicerNotifications';
 import { useTokenRefresh } from './hooks/useTokenRefresh';
 import { lazy, Suspense, useEffect, useState } from 'react';
-import { isPluginEmbed, subscribeToPluginNavigation, subscribeToPluginSyncResult, subscribeToPluginRecoverList, sendRecoverImport, type RecoverItem } from './utils/pluginBridge';
+import {
+  isPluginEmbed,
+  subscribeToPluginNavigation,
+  subscribeToPluginNotice,
+  subscribeToPluginSyncResult,
+  subscribeToPluginRecoverList,
+  sendRecoverImport,
+  type RecoverItem,
+} from './utils/pluginBridge';
 import { useAuth } from './contexts/AuthContext';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
@@ -101,8 +109,13 @@ function AppContent() {
       return;
     }
     return subscribeToPluginSyncResult((result) => {
-      toast.success(
+      toast.show(
         result.text,
+        result.status === 'error'
+          ? 'error'
+          : result.status === 'warning'
+            ? 'warning'
+            : 'success',
         result.draftCount > 0 ? 10_000 : undefined,
         'sync',
         result.draftCount > 0
@@ -112,12 +125,24 @@ function AppContent() {
             }
           : undefined,
       );
-      void queryClient.invalidateQueries({ queryKey: ['physical-printers'] });
-      void queryClient.invalidateQueries({ queryKey: ['user-presets'] });
-      void queryClient.invalidateQueries({ queryKey: ['preset-draft-queue'] });
-      void queryClient.invalidateQueries({ queryKey: ['preset-stats'] });
+      const kinds = new Set(result.contours.map((item) => item.kind));
+      if (kinds.has('machine') || kinds.has('process')) {
+        void queryClient.invalidateQueries({ queryKey: ['physical-printers'] });
+      }
+      if (kinds.has('filament') || result.contours.length === 0) {
+        void queryClient.invalidateQueries({ queryKey: ['user-presets'] });
+        void queryClient.invalidateQueries({ queryKey: ['preset-draft-queue'] });
+        void queryClient.invalidateQueries({ queryKey: ['preset-stats'] });
+      }
     });
   }, [navigate, queryClient, t]);
+
+  useEffect(() => {
+    if (!isPluginEmbed()) return;
+    return subscribeToPluginNotice(({ text, status }) => {
+      toast.show(text, status, undefined, 'plugin-notice');
+    });
+  }, []);
 
   const [recoverItems, setRecoverItems] = useState<RecoverItem[] | null>(null);
   useEffect(() => {

@@ -1,9 +1,12 @@
+from types import SimpleNamespace
+
 import pytest
 from pydantic import ValidationError
 
 from app.api.v1.endpoints.orca_sync import (
     _extract_values_from_orcaslicer_settings,
     _preset_id_from_sync_info,
+    get_sync_prefs,
 )
 from app.schemas.orca_sync import OrcaFilamentPresetPayload
 from app.schemas.preset import PresetCreate, PresetUpdate
@@ -15,6 +18,31 @@ from app.services.orcaslicer_preset_contract import (
     is_valid_orca_preset_name,
     validate_orca_filament_settings,
 )
+
+
+@pytest.mark.asyncio
+async def test_plugin_sync_preferences_expose_every_direction():
+    user = SimpleNamespace(
+        auto_import_local_presets=True,
+        sync_printer_endpoints=False,
+        allow_filament_presets_import=True,
+        allow_filament_presets_export=False,
+        allow_printer_profiles_import=False,
+        allow_printer_profiles_export=True,
+        allow_print_profiles_import=True,
+        allow_print_profiles_export=False,
+    )
+
+    assert await get_sync_prefs(user) == {
+        "auto_import_local_presets": True,
+        "sync_printer_endpoints": False,
+        "allow_filament_presets_import": True,
+        "allow_filament_presets_export": False,
+        "allow_printer_profiles_import": False,
+        "allow_printer_profiles_export": True,
+        "allow_print_profiles_import": True,
+        "allow_print_profiles_export": False,
+    }
 
 
 def test_orca_preset_name_matches_native_restrictions():

@@ -87,7 +87,9 @@ describe('OrcaExportButton', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'exportPrinterProfiles.button' }));
 
-    await waitFor(() => expect(bridgeState.requestPluginProfileSync).toHaveBeenCalledTimes(1));
+    await waitFor(() => {
+      expect(bridgeState.requestPluginProfileSync).toHaveBeenCalledWith('machine');
+    });
     await waitFor(() => {
       expect(screen.getByRole('button', { name: 'exportPrinterProfiles.done' })).toBeEnabled();
     });

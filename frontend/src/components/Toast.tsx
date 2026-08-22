@@ -69,7 +69,7 @@ const ToastItem: React.FC<ToastProps> = ({ toast, onClose }) => {
     >
       <div className="flex-shrink-0 mt-0.5">{getIcon()}</div>
       <div className="flex-1 text-xs text-white">
-        <div>{toast.message}</div>
+        <div className="whitespace-pre-line">{toast.message}</div>
         {toast.action && (
           <button
             type="button"

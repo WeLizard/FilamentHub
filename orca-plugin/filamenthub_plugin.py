@@ -7,7 +7,7 @@
 # name = "FilamentHub"
 # description = "Browse and sync community-rated filament profiles from FilamentHub, with spool inventory and print-cost tools."
 # author = "FilamentHub"
-# version = "0.1.2"
+# version = "0.1.3"
 #
 # # Proposed forward-looking key (see README gap). The current
 # # host reads only name/description/author/version/dependencies and ignores unknown
@@ -155,7 +155,7 @@ def post_window(window, payload):
 # --------------------------------------------------------------------------- #
 # Configuration
 # --------------------------------------------------------------------------- #
-PLUGIN_VERSION = "0.1.2"
+PLUGIN_VERSION = "0.1.3"
 PROD_SITE_URL = "https://filamenthub.ru"
 SITE_URL = os.environ.get("FILAMENTHUB_SITE_URL", "http://localhost:3000").rstrip("/")
 DEV_CONTOUR = SITE_URL != PROD_SITE_URL
@@ -713,7 +713,7 @@ class ShellServer:
         self._oauth = None
         self._oauth_lock = threading.Lock()
         self._sync_lock = threading.Lock()
-        self._sync_result = {"text": "", "draftCount": 0}
+        self._sync_result = {"text": ""}
         self._recover_lock = threading.Lock()
         self._recover_items = None
         self._slice_lock = threading.Lock()
@@ -738,17 +738,14 @@ class ShellServer:
     def slice_alive_path(self):
         return "/k/" + self._oauth_secret
 
-    def set_sync_result(self, text, draft_count=0):
+    def set_sync_result(self, payload):
         with self._sync_lock:
-            self._sync_result = {
-                "text": text or "",
-                "draftCount": max(0, int(draft_count or 0)),
-            }
+            self._sync_result = dict(payload)
 
     def _sync_status(self):
         with self._sync_lock:
             result = dict(self._sync_result)
-            self._sync_result = {"text": "", "draftCount": 0}
+            self._sync_result = {"text": ""}
         return result
 
     def set_recover_items(self, items):
@@ -1844,6 +1841,60 @@ def _preset_scalar(value):
     return str(value or "").strip()
 
 
+def _compatibility_strings(value):
+    """Project Orca compatibility options onto the backend list contract."""
+    if isinstance(value, str):
+        values = [value]
+    elif isinstance(value, (list, tuple)):
+        values = value
+    else:
+        return None
+    normalized = []
+    for item in values:
+        if not isinstance(item, str):
+            continue
+        item = item.strip()
+        if item and item not in normalized:
+            normalized.append(item)
+    return normalized or None
+
+
+def _compatibility_condition(value):
+    """Project Orca's scalar/vector host representations onto one condition."""
+    if isinstance(value, str):
+        return value.strip() or None
+    if isinstance(value, (list, tuple)):
+        for item in value:
+            if isinstance(item, str) and item.strip():
+                return item.strip()
+    return None
+
+
+def _http_error_shape(body):
+    """Return validation locations/types without logging rejected profile data."""
+    try:
+        payload = json.loads(body.decode("utf-8"))
+    except (AttributeError, UnicodeDecodeError, ValueError):
+        return ""
+    detail = payload.get("detail") if isinstance(payload, dict) else None
+    if isinstance(detail, dict):
+        code = detail.get("code")
+        return str(code)[:100] if isinstance(code, str) else ""
+    if not isinstance(detail, list):
+        return ""
+    summaries = []
+    for item in detail[:5]:
+        if not isinstance(item, dict):
+            continue
+        location = item.get("loc")
+        error_type = item.get("type")
+        if not isinstance(location, (list, tuple)) or not isinstance(error_type, str):
+            continue
+        path = ".".join(str(part) for part in location)
+        summaries.append("%s:%s" % (path[:160], error_type[:80]))
+    return ", ".join(summaries)
+
+
 def _preset_config_value(preset, key):
     try:
         return preset.config_value(key)
@@ -2924,24 +2975,48 @@ def scan_active_user_filaments():
 
 def _sync_preferences(token):
     """Read account sync preferences through the plugin-scoped endpoint."""
+    defaults = {
+        "available": False,
+        "auto_import_local_presets": False,
+        "sync_printer_endpoints": False,
+        "allow_filament_presets_import": False,
+        "allow_filament_presets_export": False,
+        "allow_printer_profiles_import": False,
+        "allow_printer_profiles_export": False,
+        "allow_print_profiles_import": False,
+        "allow_print_profiles_export": False,
+    }
     status, body = http_get("/orcaslicer/sync-prefs", token=token)
     if status != 200:
         fh_log("sync-prefs HTTP %s -> privacy-safe defaults" % status)
-        return {
-            "auto_import_local_presets": False,
-            "sync_printer_endpoints": False,
-        }
+        return defaults
     try:
         raw = json.loads(body.decode("utf-8")) or {}
-        return {
+        return dict(defaults, **{
+            "available": True,
             "auto_import_local_presets": bool(raw.get("auto_import_local_presets")),
             "sync_printer_endpoints": bool(raw.get("sync_printer_endpoints")),
-        }
+            "allow_filament_presets_import": bool(
+                raw.get("allow_filament_presets_import")
+            ),
+            "allow_filament_presets_export": bool(
+                raw.get("allow_filament_presets_export")
+            ),
+            "allow_printer_profiles_import": bool(
+                raw.get("allow_printer_profiles_import")
+            ),
+            "allow_printer_profiles_export": bool(
+                raw.get("allow_printer_profiles_export")
+            ),
+            "allow_print_profiles_import": bool(
+                raw.get("allow_print_profiles_import")
+            ),
+            "allow_print_profiles_export": bool(
+                raw.get("allow_print_profiles_export")
+            ),
+        })
     except ValueError:
-        return {
-            "auto_import_local_presets": False,
-            "sync_printer_endpoints": False,
-        }
+        return defaults
 
 
 def _observations_for_sync(observations, share_endpoints=False):
@@ -3282,6 +3357,12 @@ PROFILE_KINDS = {
     },
 }
 
+SYNC_SCOPES = frozenset({"all", "filament", "machine", "process"})
+
+
+def sync_scope_includes(scope, kind):
+    return scope == "all" or scope == kind
+
 # Connection fields describe one mutable physical-printer binding, not slicing
 # behaviour.  Keep all of them out of PrinterProfile payloads.  Credentials and
 # local certificate paths never leave the machine; safe endpoint facts travel
@@ -3388,10 +3469,14 @@ def analyze_user_profile(collection, preset, kind):
     }
     if kind == "process":
         analysis.update({
-            "compatible_printers": resolved.get("compatible_printers"),
-            "compatible_filaments": resolved.get("compatible_filaments"),
-            "compatible_printers_condition": resolved.get(
-                "compatible_printers_condition"
+            "compatible_printers": _compatibility_strings(
+                resolved.get("compatible_printers")
+            ),
+            "compatible_filaments": _compatibility_strings(
+                resolved.get("compatible_filaments")
+            ),
+            "compatible_printers_condition": _compatibility_condition(
+                resolved.get("compatible_printers_condition")
             ),
         })
     return analysis
@@ -3508,7 +3593,7 @@ def local_profile_external_id(account_id, local_profile_id):
     return "orca-local-v1:%s:%s" % (account_id, local_profile_id)
 
 
-def scan_user_profiles(kind):
+def scan_user_profiles_checked(kind):
     """Saved user profiles only; system presets travel as observations.
 
     Importing a selected stock profile would turn the global read-only
@@ -3566,7 +3651,13 @@ def scan_user_profiles(kind):
             seen_names.add(name)
     except Exception as exc:
         fh_log("%s profile scan failed: %s" % (kind, exc))
-    return out
+        return out, False
+    return out, True
+
+
+def scan_user_profiles(kind):
+    """Compatibility wrapper for callers that do not need completeness."""
+    return scan_user_profiles_checked(kind)[0]
 
 
 def push_user_profiles(kind, token, items, state, authoritative=True):
@@ -3664,12 +3755,17 @@ def push_user_profiles(kind, token, items, state, authoritative=True):
                 "compatible_printers_condition",
             ):
                 value = item.get(compatibility_key)
+                if compatibility_key == "compatible_printers_condition":
+                    value = _compatibility_condition(value)
+                else:
+                    value = _compatibility_strings(value)
                 if value not in (None, "", []):
                     payload[compatibility_key] = value
         changed.append((key, digest, payload))
     sent = failed = 0
-    for batch_start in range(0, len(changed), 25):
-        batch = changed[batch_start:batch_start + 25]
+
+    def send_batch(batch):
+        nonlocal sent, failed
         request_payload = {"profiles": [entry[2] for entry in batch]}
         if snapshot_id is not None:
             request_payload.update({
@@ -3707,9 +3803,22 @@ def push_user_profiles(kind, token, items, state, authoritative=True):
                     for key, digest, _payload in batch:
                         state[key] = digest
                     sent += len(batch)
-        else:
-            fh_log("%s push HTTP %s for %d profile(s)" % (kind, status, len(batch)))
-            failed += len(batch)
+            return
+        if status == 422 and len(batch) > 1:
+            midpoint = len(batch) // 2
+            send_batch(batch[:midpoint])
+            send_batch(batch[midpoint:])
+            return
+        error_shape = _http_error_shape(body)
+        suffix = " (%s)" % error_shape if error_shape else ""
+        fh_log(
+            "%s push HTTP %s for %d profile(s)%s"
+            % (kind, status, len(batch), suffix)
+        )
+        failed += len(batch)
+
+    for batch_start in range(0, len(changed), 25):
+        send_batch(changed[batch_start:batch_start + 25])
 
     if snapshot_id is not None and failed == 0:
         finalize_status, finalize_body = http_post_json(
@@ -4068,7 +4177,8 @@ function sendPluginCapabilities() {
     frame.contentWindow.postMessage(
       { source: 'filamenthub-plugin', type: 'plugin-capabilities',
         pluginVersion: '__PLUGIN_VERSION__',
-        capabilities: ['printer-bundle-install', 'bambu-lan-bridge', 'profile-sync',
+        capabilities: ['printer-bundle-install', 'printer-bundle-result-v1',
+                       'bambu-lan-bridge', 'profile-sync', 'profile-sync-scopes-v1',
                        'bambu-material-write', 'happy-hare-moonraker', 'open-external'] },
       SITE_ORIGIN);
   } catch (e) { /* iframe not ready */ }
@@ -4123,9 +4233,12 @@ window.addEventListener('message', function (event) {
     showBambuOverlay(data);
     return;
   }
-  if (data.type === 'sync' || data.type === 'profile-changed' || data.type === 'recover-import' ||
-      data.type === 'install-printer-bundle' || data.type === 'remove-bambu-local') {
-    startSyncPolling();
+  if (data.type === 'sync' || data.type === 'profile-changed' ||
+      data.type === 'install-printer-bundle') {
+    startSyncPolling(
+      typeof data.operationId === 'string' ? data.operationId :
+      typeof data.requestId === 'string' ? data.requestId : ''
+    );
   }
   try { orca.postMessage(data); } catch (e) { /* bridge not ready */ }
 });
@@ -4360,12 +4473,14 @@ document.getElementById('brand').addEventListener('click', function () {
 // Python writes the sync summary to loopback; poll it and relay a toast to the embed.
 var syncPollTimer = null;
 var syncDeadline = 0;
+var syncExpectedOperationId = '';
 function stopSyncPolling() {
   if (syncPollTimer) { clearTimeout(syncPollTimer); syncPollTimer = null; }
 }
-function startSyncPolling() {
+function startSyncPolling(operationId) {
   if (hostPush) return;
   stopSyncPolling();
+  syncExpectedOperationId = operationId || '';
   syncDeadline = Date.now() + 30 * 1000;
   pollSyncOnce();
 }
@@ -4375,15 +4490,16 @@ function pollSyncOnce() {
     .then(function (r) { return r.json(); })
     .then(function (st) {
       if (st.text) {
+        var resultId = st.operationId || st.requestId || '';
+        if (syncExpectedOperationId && resultId !== syncExpectedOperationId) {
+          syncPollTimer = setTimeout(pollSyncOnce, 500);
+          return;
+        }
         stopSyncPolling();
         try {
-          frame.contentWindow.postMessage(
-            {
-              source: 'filamenthub-plugin',
-              type: 'sync-result',
-              text: st.text,
-              draftCount: Number(st.draftCount) || 0
-            }, SITE_ORIGIN);
+          st.source = 'filamenthub-plugin';
+          st.type = st.resultType || 'sync-result';
+          frame.contentWindow.postMessage(st, SITE_ORIGIN);
         } catch (e) { /* iframe not ready */ }
         return;
       }
@@ -4392,8 +4508,10 @@ function pollSyncOnce() {
     .catch(function () { syncPollTimer = setTimeout(pollSyncOnce, 1500); });
 }
 document.getElementById('sync').addEventListener('click', function () {
-  try { orca.postMessage({ source: 'filamenthub-plugin', type: 'sync' }); } catch (e) { /* bridge not ready */ }
-  startSyncPolling();
+  var operationId = 'sync-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
+  try { orca.postMessage({ source: 'filamenthub-plugin', type: 'sync',
+    scope: 'all', operationId: operationId }); } catch (e) { /* bridge not ready */ }
+  startSyncPolling(operationId);
 });
 
 // Recover: Python scans local presets and writes the list to loopback; poll it and
@@ -4495,15 +4613,26 @@ function relaySliceResult(result) {
   } catch (e) { /* iframe not ready */ }
 }
 
-function relayNote(text, draftCount) {
+function relaySyncResult(data) {
   try {
     frame.contentWindow.postMessage(
       {
         source: 'filamenthub-plugin',
         type: 'sync-result',
-        text: text,
-        draftCount: Number(draftCount) || 0
+        text: data.text || '',
+        draftCount: Number(data.draftCount) || 0,
+        operationId: data.operationId || '',
+        scope: data.scope || 'all',
+        status: data.status || 'success',
+        contours: Array.isArray(data.contours) ? data.contours : []
       }, SITE_ORIGIN);
+  } catch (e) { /* iframe not ready */ }
+}
+function relayNote(text, status) {
+  try {
+    frame.contentWindow.postMessage(
+      { source: 'filamenthub-plugin', type: 'plugin-notice',
+        text: text || '', status: status || 'info' }, SITE_ORIGIN);
   } catch (e) { /* iframe not ready */ }
 }
 function copyDiagnostics(text) {
@@ -4526,7 +4655,16 @@ try {
     if (data.type === 'transport') return;
     if (data.type === 'sync-result') {
       stopSyncPolling();
-      relayNote(data.text || '', data.draftCount || 0);
+      relaySyncResult(data);
+    } else if (data.type === 'plugin-notice') {
+      relayNote(data.text || '', data.status || 'info');
+    } else if (data.type === 'printer-bundle-result') {
+      try {
+        frame.contentWindow.postMessage(
+          { source: 'filamenthub-plugin', type: 'printer-bundle-result',
+            requestId: data.requestId || '', text: data.text || '',
+            status: data.status || 'success' }, SITE_ORIGIN);
+      } catch (e) { /* iframe not ready */ }
     } else if (data.type === 'recover-list') {
       stopRecoverPolling();
       try {
@@ -5977,23 +6115,40 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
         )
         return True
 
-    def _auto_sync(self, announce=False):
-        # Reconcile presets automatically when the tab opens (and after sign-in),
-        # so the user doesn't have to press Sync. Startup/auth refresh stays
-        # silent; a user-initiated profile change reports its result immediately
-        # so a following manual Sync cannot hide the preceding new/removed count.
+    def _host_profiles(self, scope):
+        profiles = {}
+        for kind in PROFILE_KINDS:
+            if sync_scope_includes(scope, kind):
+                items, complete = scan_user_profiles_checked(kind)
+                profiles[kind] = {"items": items, "complete": complete}
+        return profiles
+
+    def _start_sync(self, scope="all", announce=True, operation_id="", trigger="manual"):
+        if scope not in SYNC_SCOPES:
+            return False
         saved = load_saved_auth() or {}
         token = saved.get("accessToken") or ""
         if not token:
-            return
-        known = self._known_filament_preset_names()  # host read on the UI thread
-        refresh_user_preset_folder()
-        observations = observe_printer_presets()  # UI thread: read printer connection data
+            if announce or operation_id:
+                self._deliver_sync_result(
+                    ui_text("syncSignIn"),
+                    operation_id=operation_id,
+                    scope=scope,
+                    status="error",
+                )
+            return False
+        operation_id = operation_id or ("sync-" + secrets.token_hex(8))
+        include_filaments = sync_scope_includes(scope, "filament")
+        include_printers = sync_scope_includes(scope, "machine")
+        known = self._known_filament_preset_names() if include_filaments else set()
+        if include_filaments:
+            refresh_user_preset_folder()
+        observations = observe_printer_presets() if include_printers else []
         moonraker_connections = observe_local_moonraker_connections(observations)
         source_instance_id = plugin_source_instance_id()
-        active_filaments = scan_active_user_filaments()  # UI thread: loaded account's user presets
-        host_profiles = self._host_profiles()  # UI thread: machine/process presets
-        loaded_preset_ids = loaded_managed_preset_ids()  # UI thread: what Orca really loaded
+        active_filaments = scan_active_user_filaments() if include_filaments else []
+        loaded_preset_ids = loaded_managed_preset_ids() if include_filaments else None
+        host_profiles = self._host_profiles(scope)
         BACKGROUND_WORKER.submit(
             self._do_sync,
             token,
@@ -6005,6 +6160,17 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
             source_instance_id,
             moonraker_connections,
             loaded_preset_ids,
+            scope,
+            operation_id,
+            trigger,
+        )
+        return True
+
+    def _auto_sync(self, announce=False, scope="all", trigger="auto"):
+        return self._start_sync(
+            scope=scope,
+            announce=announce,
+            trigger=trigger,
         )
 
     def execute(self):
@@ -6050,20 +6216,42 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
             "preset": str(name or "")[:120],
         }
 
-    def _host_profiles(self):
-        # Machine/process presets of the loaded account, read on the UI thread and
-        # handed to the worker that reports them to FilamentHub.
-        return {kind: scan_user_profiles(kind) for kind in PROFILE_KINDS}
-
     def _deliver(self, message_type, **data):
         payload = {"source": "filamenthub-host", "type": message_type}
         payload.update(data)
         return post_window(self.win, payload)
 
-    def _deliver_sync_result(self, text, draft_count=0):
+    def _deliver_sync_result(self, text, draft_count=0, operation_id="", scope="all",
+                             status="success", contours=None):
         draft_count = max(0, int(draft_count or 0))
-        if not self._deliver("sync-result", text=text, draftCount=draft_count):
-            SHELL_SERVER.set_sync_result(text, draft_count)
+        payload = {
+            "text": text,
+            "draftCount": draft_count,
+            "operationId": operation_id,
+            "scope": scope,
+            "status": status,
+            "contours": list(contours or []),
+        }
+        if not self._deliver("sync-result", **payload):
+            SHELL_SERVER.set_sync_result(payload)
+
+    def _deliver_notice(self, text, status="info"):
+        payload = {"text": text, "status": status}
+        if not self._deliver("plugin-notice", **payload):
+            SHELL_SERVER.set_sync_result(
+                dict(payload, resultType="plugin-notice")
+            )
+
+    def _deliver_printer_bundle_result(self, request_id, text, status="success"):
+        payload = {
+            "requestId": request_id,
+            "text": text,
+            "status": status,
+        }
+        if not self._deliver("printer-bundle-result", **payload):
+            SHELL_SERVER.set_sync_result(
+                dict(payload, resultType="printer-bundle-result")
+            )
 
     def _deliver_recovery(self, items):
         if not self._deliver("recover-list", items=items):
@@ -6132,12 +6320,12 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
                 },
             )
             if pair_status != 200:
-                self._deliver_sync_result(ui_text("bambuPairingFailed"))
+                self._deliver_notice(ui_text("bambuPairingFailed"), "error")
                 return
             paired = json.loads(pair_body.decode("utf-8"))
             bridge_token = paired.get("bridge_token") if isinstance(paired, dict) else ""
             if not isinstance(bridge_token, str) or not bridge_token.startswith("fhpb_"):
-                self._deliver_sync_result(ui_text("bambuPairingFailed"))
+                self._deliver_notice(ui_text("bambuPairingFailed"), "error")
                 return
             configure_bambu_bridge(
                 physical_printer_id,
@@ -6168,7 +6356,7 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
             )
             if snapshot_status == 401:
                 remove_bambu_bridge(physical_printer_id)
-                self._deliver_sync_result(ui_text("bambuPairingFailed"))
+                self._deliver_notice(ui_text("bambuPairingFailed"), "error")
                 return
             if snapshot_status != 200:
                 # The durable local binding is valid and the background
@@ -6185,10 +6373,10 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
                 except (OSError, TypeError, ValueError):
                     pass
                 remove_bambu_bridge(physical_printer_id)
-            self._deliver_sync_result(ui_text("bambuInvalid"))
+            self._deliver_notice(ui_text("bambuInvalid"), "error")
             return
         BAMBU_BRIDGE_RUNTIME.wake()
-        self._deliver_sync_result(ui_text("bambuSaved"))
+        self._deliver_notice(ui_text("bambuSaved"), "success")
 
     def _do_remove_bambu(self, physical_printer_id):
         local = load_bambu_config()
@@ -6204,11 +6392,11 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
         if bridge_token:
             revoke_status = http_delete_bridge("/printer-bridge/connection", bridge_token)
             if revoke_status not in {204, 401}:
-                self._deliver_sync_result(ui_text("bambuRemoveFailed"))
+                self._deliver_notice(ui_text("bambuRemoveFailed"), "error")
                 return
         remove_bambu_bridge(physical_printer_id)
         BAMBU_BRIDGE_RUNTIME.wake()
-        self._deliver_sync_result(ui_text("bambuRemoved"))
+        self._deliver_notice(ui_text("bambuRemoved"), "success")
 
     def _do_bambu_material_action(
         self,
@@ -6562,8 +6750,11 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
         if msg_type == "host-ready":
             self._deliver("transport", push=True)
             if not getattr(self, "_session_sync_started", False):
-                self._session_sync_started = True
-                self._auto_sync()
+                self._session_sync_started = self._auto_sync(
+                    announce=True,
+                    scope="all",
+                    trigger="session-start",
+                )
         elif msg_type == "read-diagnostics":
             BACKGROUND_WORKER.submit(
                 lambda: self._deliver("diagnostics", text=read_sync_log())
@@ -6582,8 +6773,14 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
             refresh_user_preset_folder()
             BACKGROUND_WORKER.submit(self._do_import, preset_id, token, known)
         elif msg_type == "install-printer-bundle":
+            request_id = msg.get("requestId")
             physical_printer_id = msg.get("physicalPrinterId")
-            if not isinstance(physical_printer_id, int) or physical_printer_id <= 0:
+            if not (
+                isinstance(request_id, str)
+                and 0 < len(request_id) <= 100
+                and isinstance(physical_printer_id, int)
+                and physical_printer_id > 0
+            ):
                 return
             token = msg.get("token") or ""
             if not isinstance(token, str) or len(token) > MAX_TOKEN_LENGTH:
@@ -6593,6 +6790,7 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
             refresh_user_preset_folder()
             BACKGROUND_WORKER.submit(
                 self._do_install_printer_bundle,
+                request_id,
                 physical_printer_id,
                 token,
             )
@@ -6698,27 +6896,19 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
             token = (load_saved_auth() or {}).get("accessToken") or ""
             BACKGROUND_WORKER.submit(self._do_parse_slice, key, token, shown)
         elif msg_type == "sync":
-            saved = load_saved_auth() or {}
-            token = saved.get("accessToken") or ""
-            known = self._known_filament_preset_names()  # host read on the UI thread
-            refresh_user_preset_folder()
-            active_filaments = scan_active_user_filaments()  # UI thread: loaded account's user presets
-            host_profiles = self._host_profiles()  # UI thread: machine/process presets
-            observations = observe_printer_presets()  # UI thread: printer connection data
-            moonraker_connections = observe_local_moonraker_connections(observations)
-            source_instance_id = plugin_source_instance_id()
-            loaded_preset_ids = loaded_managed_preset_ids()  # UI thread: what Orca really loaded
-            BACKGROUND_WORKER.submit(
-                self._do_sync,
-                token,
-                known,
-                True,
-                active_filaments,
-                host_profiles,
-                observations,
-                source_instance_id,
-                moonraker_connections,
-                loaded_preset_ids,
+            scope = msg.get("scope") or "all"
+            operation_id = msg.get("operationId") or ""
+            if not (
+                scope in SYNC_SCOPES
+                and isinstance(operation_id, str)
+                and len(operation_id) <= 100
+            ):
+                return
+            self._start_sync(
+                scope=scope,
+                announce=True,
+                operation_id=operation_id,
+                trigger="manual",
             )
         elif msg_type in {
             "happy-hare-preview",
@@ -6771,17 +6961,26 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
                 expected_desired,
             )
         elif msg_type == "auth-token":
-            # Login / token refresh in the catalog — persist for session restore,
-            # then reconcile presets automatically (silently).
+            # Login starts one visible session reconciliation. Token refreshes
+            # update the credential but do not enqueue the same work again.
             access = msg.get("accessToken") or ""
             if isinstance(access, str) and 0 < len(access) <= MAX_TOKEN_LENGTH:
                 save_auth(access)
                 BAMBU_BRIDGE_RUNTIME.wake()
-                self._auto_sync()
+                if not getattr(self, "_session_sync_started", False):
+                    self._session_sync_started = self._auto_sync(
+                        announce=True,
+                        scope="all",
+                        trigger="session-auth",
+                    )
         elif msg_type == "profile-changed":
-            # The catalog saved/removed a preset in the user's profile — reconcile
-            # into the slicer automatically and report this user-initiated delta.
-            self._auto_sync(announce=True)
+            # This event belongs to the filament library. Printer and process
+            # profiles have their own explicit entry points.
+            self._auto_sync(
+                announce=True,
+                scope="filament",
+                trigger="profile-change",
+            )
         elif msg_type == "open-oauth":
             self._start_external_oauth(msg.get("provider"))
         elif msg_type == "open-external":
@@ -6825,7 +7024,7 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
         # files reuse the normal delta contract. A connection-only machine is
         # recovered as physical-printer evidence rather than a duplicate profile.
         if not token or not isinstance(keys, list) or not keys:
-            self._deliver_sync_result(ui_text("recoveryNone"))
+            self._deliver_notice(ui_text("recoveryNone"), "warning")
             return
         wanted = {str(key) for key in keys}
         candidates = disambiguate_recovery_candidates(
@@ -6893,11 +7092,15 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
                 imported[stable_id] = 1
         if recovered_keys:
             save_imported_draft_ids(imported)
-        self._deliver_sync_result(ui_text("recoveryDone", count=len(recovered_keys)))
+        self._deliver_notice(
+            ui_text("recoveryDone", count=len(recovered_keys)), "success"
+        )
 
-    def _do_install_printer_bundle(self, physical_printer_id, token):
+    def _do_install_printer_bundle(self, request_id, physical_printer_id, token):
         if not token:
-            self._deliver_sync_result(ui_text("importSignIn"))
+            self._deliver_printer_bundle_result(
+                request_id, ui_text("importSignIn"), "error"
+            )
             return
         status, body = http_get(
             "/physical-printers/%d/orcaslicer-bundle" % int(physical_printer_id),
@@ -6905,19 +7108,28 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
         )
         if status == 401:
             clear_auth()
-            self._deliver_sync_result(ui_text("sessionExpired"))
+            self._deliver_printer_bundle_result(
+                request_id, ui_text("sessionExpired"), "error"
+            )
             return
         if status != 200:
-            self._deliver_sync_result(ui_text("printerBundleFailed", status=status))
+            self._deliver_printer_bundle_result(
+                request_id,
+                ui_text("printerBundleFailed", status=status),
+                "error",
+            )
             return
         try:
             bundle = json.loads(body.decode("utf-8"))
             counts = install_printer_bundle(bundle)
         except (OSError, UnicodeDecodeError, ValueError) as exc:
             fh_log("printer bundle install failed: %s" % exc)
-            self._deliver_sync_result(ui_text("printerBundleInvalid"))
+            self._deliver_printer_bundle_result(
+                request_id, ui_text("printerBundleInvalid"), "error"
+            )
             return
-        self._deliver_sync_result(
+        self._deliver_printer_bundle_result(
+            request_id,
             ui_text(
                 "printerBundleInstalled",
                 machines=counts["machine"],
@@ -7100,261 +7312,339 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
 
     def _do_sync(self, token, known_presets, announce=True, active_filaments=None,
                  host_profiles=None, observations=None, source_instance_id="",
-                 moonraker_connections=None, loaded_preset_ids=None):
-        if not token:
-            if announce:
-                orca.host.ui.message(ui_text("syncSignIn"),
-                                     title="FilamentHub", icon="warning")
+                 moonraker_connections=None, loaded_preset_ids=None, scope="all",
+                 operation_id="", trigger="manual"):
+        if not token or scope not in SYNC_SCOPES:
+            if announce or operation_id:
+                self._deliver_sync_result(
+                    ui_text("syncSignIn"), operation_id=operation_id,
+                    scope=scope, status="error",
+                )
             return
-        ensure_bundle_metadata()
-        folder = user_filament_dir()
-        try:
-            os.makedirs(folder, exist_ok=True)
-        except OSError:
-            pass
-        status, body = http_get("/auth/my-presets", token=token)
-        if status == 401:
-            clear_auth()
-            if announce:
-                orca.host.ui.message(ui_text("sessionExpired"),
-                                     title="FilamentHub", icon="warning")
-            return
-        if status != 200:
-            if announce:
-                orca.host.ui.message(
-                    ui_text("syncFailed", status=status), title="FilamentHub", icon="error")
-            return
-        try:
-            remote_items = (json.loads(body.decode("utf-8")) or {}).get("items") or []
-        except ValueError:
-            if announce:
-                orca.host.ui.message(
-                    ui_text("syncUnexpected"), title="FilamentHub", icon="error")
-            return
-        sync_preferences = _sync_preferences(token)
 
-        local = scan_local_fh_presets(folder)
-        state = load_sync_state()
-        fh_log(
-            "sync start: plugin %s, %d remote, %d local, machine=%d, process=%d, "
-            "printer_obs=%d, folder=%s"
-            % (
-                PLUGIN_VERSION,
-                len(remote_items),
-                len(local),
-                len((host_profiles or {}).get("machine") or []),
-                len((host_profiles or {}).get("process") or []),
-                len(observations or []),
-                folder,
+        preferences = _sync_preferences(token)
+        if not preferences["available"]:
+            contours = [
+                {
+                    "kind": kind,
+                    "status": "error",
+                    "summary": ui_text("summaryPreferencesUnavailable"),
+                }
+                for kind in ("filament", "machine", "process")
+                if sync_scope_includes(scope, kind)
+            ]
+            text = ui_text("syncCompleteTitle") + "\n" + "\n".join(
+                "%s: %s" % (
+                    ui_text(
+                        "profileFilament" if item["kind"] == "filament"
+                        else "profileMachine" if item["kind"] == "machine"
+                        else "profileProcess"
+                    ),
+                    item["summary"],
+                )
+                for item in contours
             )
-        )
-        pulled = updated = pushed = skipped = failed = renamed = 0
-        failed_ids = []
-        for rp in remote_items:
-            pid = rp.get("id")
-            if not isinstance(pid, int):
-                continue
-            rec = state.get(str(pid)) or {}
-            local_entry = local.get(pid)
-            remote_updated = rp.get("updated_at") or ""
-            if local_entry is None:
-                res = self._pull_one(pid, token, known_presets, folder, rp)
-                if res:
-                    state[str(pid)] = res
-                    pulled += 1
-                else:
-                    failed += 1
-                    failed_ids.append(pid)
-                continue
-            if orca_transport_violations(local_entry["profile"]):
-                # The file is on disk but Orca never loaded it, so its contents
-                # cannot be a local edit and must not be pushed. Neither hash nor
-                # timestamp would ever mark it stale — repair it from the server.
-                fh_log("preset %d: local file unloadable by Orca -> repull" % pid)
-                res = self._pull_one(pid, token, known_presets, folder, rp)
-                if res:
-                    state[str(pid)] = res
-                    updated += 1
-                else:
-                    failed += 1
-                    failed_ids.append(pid)
-                continue
-            if not rec:
-                # No record for an existing local file: the state cache was lost
-                # (plugin update wipes the dir). Rebuild by content — never assume
-                # "remote is newer" here, that path deletes the local copy.
-                recovered = recover_sync_record(pid, token, known_presets, local_entry, remote_updated)
-                if recovered is None:
-                    skipped += 1
-                    continue
-                if recovered is False:
-                    res = self._push_one(pid, token, local_entry, rp)
-                    if res:
-                        state[str(pid)] = res
-                        remove_stale_preset_files(folder, pid, local_entry["path"])
-                        pushed += 1
-                    else:
-                        failed += 1
-                        failed_ids.append(pid)
-                    continue
-                rec = recovered
-                state[str(pid)] = rec
-            local_changed = local_entry["hash"] != (rec.get("hash") or "")
-            remote_newer = remote_updated > (rec.get("updated_at") or "")
-            if local_changed:
-                fh_log("preset %d: local hash %s != stored %s -> push" % (pid, (local_entry["hash"] or "")[:8], (rec.get("hash") or "")[:8]))
-                res = self._push_one(pid, token, local_entry, rp)
-                if res:
-                    state[str(pid)] = res
-                    remove_stale_preset_files(folder, pid, local_entry["path"])
-                    pushed += 1
-                else:
-                    failed += 1
-                    failed_ids.append(pid)
-            elif remote_newer:
-                # Replace only the managed file. Stock OrcaSlicer discovers the
-                # new content on restart until an upstream reload API is available.
-                res = self._pull_one(pid, token, known_presets, folder, rp)
-                if res:
-                    state[str(pid)] = res
-                    updated += 1
-                else:
-                    failed += 1
-                    failed_ids.append(pid)
-            else:
-                # Content is up to date, but the file may still carry the legacy
-                # `__fh_<id>` stem (shown verbatim in the dropdown) — move it to
-                # the clean name; the host entry under the old name is dropped and
-                # the reload below picks up the renamed file.
-                name = local_entry["profile"].get("name") or ("FilamentHub preset %d" % pid)
-                canonical = preset_file_path(folder, name, pid)
-                if os.path.normcase(os.path.abspath(canonical)) != os.path.normcase(os.path.abspath(local_entry["path"])):
-                    try:
-                        os.replace(local_entry["path"], canonical)
-                    except OSError:
-                        pass
-                    else:
-                        local_entry["path"] = canonical
-                        try:
-                            write_bytes_atomic(
-                                canonical[:-len(".json")] + ".info",
-                                managed_info_bytes(pid),
-                            )
-                        except OSError:
-                            pass
-                        renamed += 1
-                remove_stale_preset_files(folder, pid, local_entry["path"])
-                skipped += 1
-
-        # Desired-state cleanup: every durable FilamentHub marker belongs to this
-        # managed bundle. State-cache loss must not make unsubscribed, duplicate,
-        # orphaned or malformed managed artifacts immortal. Move them out of the
-        # live Orca bundle while preserving them in a private quarantine.
-        remote_ids = {rp.get("id") for rp in remote_items if isinstance(rp.get("id"), int)}
-        removed, _removed_ids = quarantine_unwanted_managed_preset_files(
-            folder, remote_ids
-        )
-        for key in list(state):
-            if key.isdigit() and int(key) not in remote_ids:
-                state.pop(key, None)
-
-        profile_parts = []
-        for kind in PROFILE_KINDS:
-            kind_sent, kind_failed = push_user_profiles(
-                kind, token, (host_profiles or {}).get(kind) or [], state)
-            bits = []
-            if kind_sent:
-                bits.append(ui_text("summarySent", count=kind_sent))
-            if kind_failed:
-                bits.append(ui_text("summaryFailed", count=kind_failed))
-            if bits:
-                label_key = "profileMachine" if kind == "machine" else "profileProcess"
-                profile_parts.append("%s: %s" % (ui_text(label_key), ", ".join(bits)))
-        save_sync_state(state)
-        # After the profiles, never before: FilamentHub ties an observed printer to
-        # its profile by the Orca preset id, so the profile has to exist first or
-        # the printer stays unlinked until the next sync.
-        observation_status, observation_result = send_printer_observations(
-            token,
-            _observations_for_sync(
-                observations,
-                share_endpoints=sync_preferences["sync_printer_endpoints"],
-            ),
-            source_instance_id,
-        )
-        if observation_status == 200 and int(observation_result.get("created") or 0):
-            profile_parts.append(
-                "%s: %s"
-                % (
-                    ui_text("profileMachine"),
-                    ui_text("summaryNew", count=int(observation_result["created"])),
-                )
-            )
-        elif observation_status not in (None, 200):
-            profile_parts.append(
-                "%s: %s"
-                % (
-                    ui_text("profileMachine"),
-                    ui_text("summaryFailed", count=len(observations or [])),
-                )
-            )
-        sync_happy_hare_topologies(token, moonraker_connections)
-
-        parts = []
-        if pulled:
-            parts.append(ui_text("summaryNew", count=pulled))
-        if updated:
-            parts.append(ui_text("summaryUpdated", count=updated))
-        if pushed:
-            parts.append(ui_text("summarySent", count=pushed))
-        if removed:
-            parts.append(ui_text("summaryRemoved", count=removed))
-        if renamed:
-            parts.append(ui_text("summaryRenamed", count=renamed))
-        if skipped:
-            parts.append(ui_text("summaryCurrent", count=skipped))
-        if failed:
-            parts.append(ui_text("summaryFailed", count=failed))
-        new_draft_count = 0
-        if active_filaments and sync_preferences["auto_import_local_presets"]:
-            imported = load_imported_draft_ids()
-            sent_ids = push_filament_drafts(token, active_filaments)
-            fh_log("auto draft import: %d scanned, %d sent" % (len(active_filaments), len(sent_ids)))
-            if sent_ids:
-                new_draft_count = len(sent_ids)
-                for did in sent_ids:
-                    imported[did] = 1
-                save_imported_draft_ids(imported)
-                parts.append(ui_text("summaryDrafts", count=len(sent_ids)))
-                sent_candidates = [
-                    candidate
-                    for candidate in active_filaments
-                    if candidate.get("_draft_sync_id") in sent_ids
-                ]
-                ready_count = sum(
-                    candidate.get("_draft_review_state") in {"ready", "almost_ready"}
-                    for candidate in sent_candidates
-                )
-                review_count = sum(
-                    candidate.get("_draft_review_state") in {"needs_decision", "ambiguous"}
-                    for candidate in sent_candidates
-                )
-                if ready_count:
-                    parts.append(ui_text("summaryDraftsReady", count=ready_count))
-                if review_count:
-                    parts.append(ui_text("summaryDraftsReview", count=review_count))
-        parts.extend(profile_parts)
-        summary = ", ".join(parts) or ui_text("summaryNothing")
-        fh_log("sync done: pull=%d upd=%d push=%d rm=%d ren=%d skip=%d fail=%d" %
-               (pulled, updated, pushed, removed, renamed, skipped, failed))
-        self._log_managed_preset_state(folder, remote_ids, loaded_preset_ids, failed_ids)
-        note = ""
-        if pulled or updated or removed or renamed:
-            note = ui_text("dropdownRestart")
-        if announce:
             self._deliver_sync_result(
-                ui_text("syncComplete", summary=summary, note=note).strip(),
+                text, operation_id=operation_id, scope=scope,
+                status="error", contours=contours,
+            )
+            return
+
+        state = load_sync_state()
+        contours = []
+        overall_status = "success"
+        new_draft_count = 0
+        restart_required = False
+
+        def add_contour(kind, parts, status="success"):
+            nonlocal overall_status
+            summary = ", ".join(parts) if parts else ui_text("summaryNothing")
+            contours.append({"kind": kind, "status": status, "summary": summary})
+            if status == "error":
+                overall_status = "error"
+            elif status == "warning" and overall_status == "success":
+                overall_status = "warning"
+
+        if sync_scope_includes(scope, "filament"):
+            filament_parts = []
+            filament_status = "success"
+            pulled = updated = pushed = skipped = failed = renamed = removed = 0
+            failed_ids = []
+            remote_ids = set()
+            folder = user_filament_dir()
+            allow_pull = preferences["allow_filament_presets_export"]
+            allow_push = preferences["allow_filament_presets_import"]
+            if allow_pull:
+                ensure_bundle_metadata()
+                try:
+                    os.makedirs(folder, exist_ok=True)
+                except OSError:
+                    pass
+                remote_status, remote_body = http_get("/auth/my-presets", token=token)
+                if remote_status == 401:
+                    clear_auth()
+                    filament_parts.append(ui_text("sessionExpired"))
+                    filament_status = "error"
+                    remote_items = None
+                elif remote_status != 200:
+                    filament_parts.append(ui_text("syncFailed", status=remote_status))
+                    filament_status = "error"
+                    remote_items = None
+                else:
+                    try:
+                        remote_items = (
+                            json.loads(remote_body.decode("utf-8")) or {}
+                        ).get("items") or []
+                    except (AttributeError, UnicodeDecodeError, ValueError):
+                        remote_items = None
+                        filament_parts.append(ui_text("syncUnexpected"))
+                        filament_status = "error"
+
+                if remote_items is not None:
+                    local = scan_local_fh_presets(folder)
+                    fh_log(
+                        "sync start: plugin %s scope=%s trigger=%s remote=%d local=%d"
+                        % (PLUGIN_VERSION, scope, trigger, len(remote_items), len(local))
+                    )
+                    for remote in remote_items:
+                        preset_id = remote.get("id")
+                        if not isinstance(preset_id, int):
+                            continue
+                        remote_ids.add(preset_id)
+                        record = state.get(str(preset_id)) or {}
+                        local_entry = local.get(preset_id)
+                        remote_updated = remote.get("updated_at") or ""
+                        if local_entry is None:
+                            result = self._pull_one(
+                                preset_id, token, known_presets, folder, remote
+                            )
+                            if result:
+                                state[str(preset_id)] = result
+                                pulled += 1
+                            else:
+                                failed += 1
+                                failed_ids.append(preset_id)
+                            continue
+                        if orca_transport_violations(local_entry["profile"]):
+                            result = self._pull_one(
+                                preset_id, token, known_presets, folder, remote
+                            )
+                            if result:
+                                state[str(preset_id)] = result
+                                updated += 1
+                            else:
+                                failed += 1
+                                failed_ids.append(preset_id)
+                            continue
+                        if not record:
+                            recovered = recover_sync_record(
+                                preset_id, token, known_presets, local_entry,
+                                remote_updated,
+                            )
+                            if recovered is None:
+                                skipped += 1
+                                continue
+                            if recovered is False:
+                                if not allow_push:
+                                    skipped += 1
+                                    filament_status = "warning"
+                                    continue
+                                result = self._push_one(
+                                    preset_id, token, local_entry, remote
+                                )
+                                if result:
+                                    state[str(preset_id)] = result
+                                    remove_stale_preset_files(
+                                        folder, preset_id, local_entry["path"]
+                                    )
+                                    pushed += 1
+                                else:
+                                    failed += 1
+                                    failed_ids.append(preset_id)
+                                continue
+                            record = recovered
+                            state[str(preset_id)] = record
+                        local_changed = local_entry["hash"] != (
+                            record.get("hash") or ""
+                        )
+                        remote_newer = remote_updated > (
+                            record.get("updated_at") or ""
+                        )
+                        if local_changed:
+                            if not allow_push:
+                                skipped += 1
+                                filament_status = "warning"
+                                continue
+                            result = self._push_one(
+                                preset_id, token, local_entry, remote
+                            )
+                            if result:
+                                state[str(preset_id)] = result
+                                remove_stale_preset_files(
+                                    folder, preset_id, local_entry["path"]
+                                )
+                                pushed += 1
+                            else:
+                                failed += 1
+                                failed_ids.append(preset_id)
+                        elif remote_newer:
+                            result = self._pull_one(
+                                preset_id, token, known_presets, folder, remote
+                            )
+                            if result:
+                                state[str(preset_id)] = result
+                                updated += 1
+                            else:
+                                failed += 1
+                                failed_ids.append(preset_id)
+                        else:
+                            name = local_entry["profile"].get("name") or (
+                                "FilamentHub preset %d" % preset_id
+                            )
+                            canonical = preset_file_path(folder, name, preset_id)
+                            if os.path.normcase(os.path.abspath(canonical)) != os.path.normcase(
+                                os.path.abspath(local_entry["path"])
+                            ):
+                                try:
+                                    os.replace(local_entry["path"], canonical)
+                                except OSError:
+                                    pass
+                                else:
+                                    local_entry["path"] = canonical
+                                    try:
+                                        write_bytes_atomic(
+                                            canonical[:-len(".json")] + ".info",
+                                            managed_info_bytes(preset_id),
+                                        )
+                                    except OSError:
+                                        pass
+                                    renamed += 1
+                            remove_stale_preset_files(
+                                folder, preset_id, local_entry["path"]
+                            )
+                            skipped += 1
+
+                    removed, _removed_ids = quarantine_unwanted_managed_preset_files(
+                        folder, remote_ids
+                    )
+                    for key in list(state):
+                        if key.isdigit() and int(key) not in remote_ids:
+                            state.pop(key, None)
+                    self._log_managed_preset_state(
+                        folder, remote_ids, loaded_preset_ids, failed_ids
+                    )
+                    restart_required = bool(pulled or updated or removed or renamed)
+            elif not allow_push:
+                filament_parts.append(ui_text("summaryDisabled"))
+                filament_status = "warning"
+
+            if (
+                active_filaments
+                and allow_push
+                and preferences["auto_import_local_presets"]
+            ):
+                imported = load_imported_draft_ids()
+                sent_ids = push_filament_drafts(token, active_filaments)
+                if sent_ids:
+                    new_draft_count = len(sent_ids)
+                    for draft_id in sent_ids:
+                        imported[draft_id] = 1
+                    save_imported_draft_ids(imported)
+                    filament_parts.append(
+                        ui_text("summaryDrafts", count=len(sent_ids))
+                    )
+            if pulled:
+                filament_parts.append(ui_text("summaryNew", count=pulled))
+            if updated:
+                filament_parts.append(ui_text("summaryUpdated", count=updated))
+            if pushed:
+                filament_parts.append(ui_text("summarySent", count=pushed))
+            if removed:
+                filament_parts.append(ui_text("summaryRemoved", count=removed))
+            if renamed:
+                filament_parts.append(ui_text("summaryRenamed", count=renamed))
+            if skipped:
+                filament_parts.append(ui_text("summaryCurrent", count=skipped))
+            if failed:
+                filament_parts.append(ui_text("summaryFailed", count=failed))
+                filament_status = "error"
+            add_contour("filament", filament_parts, filament_status)
+
+        for kind in ("machine", "process"):
+            if not sync_scope_includes(scope, kind):
+                continue
+            permission_key = (
+                "allow_printer_profiles_import"
+                if kind == "machine"
+                else "allow_print_profiles_import"
+            )
+            if not preferences[permission_key]:
+                add_contour(kind, [ui_text("summaryDisabled")], "warning")
+                continue
+            scan = (host_profiles or {}).get(kind) or {}
+            items = scan.get("items") or []
+            complete = bool(scan.get("complete"))
+            sent, failed = push_user_profiles(
+                kind, token, items, state, authoritative=complete
+            )
+            parts = []
+            if sent:
+                parts.append(ui_text("summarySent", count=sent))
+            if failed:
+                parts.append(ui_text("summaryFailed", count=failed))
+            status = "error" if failed else "success"
+            if not complete:
+                parts.append(ui_text("summaryScanIncomplete"))
+                status = "error"
+            add_contour(kind, parts, status)
+
+        if sync_scope_includes(scope, "machine") and preferences[
+            "allow_printer_profiles_import"
+        ]:
+            observation_status, _observation_result = send_printer_observations(
+                token,
+                _observations_for_sync(
+                    observations,
+                    share_endpoints=preferences["sync_printer_endpoints"],
+                ),
+                source_instance_id,
+            )
+            if observation_status not in (None, 200):
+                overall_status = "error"
+                for item in contours:
+                    if item["kind"] == "machine":
+                        item["status"] = "error"
+                        item["summary"] = "%s, %s" % (
+                            item["summary"],
+                            ui_text("summaryObservationFailed"),
+                        )
+                        break
+            sync_happy_hare_topologies(token, moonraker_connections)
+
+        save_sync_state(state)
+        labels = {
+            "filament": ui_text("profileFilament"),
+            "machine": ui_text("profileMachine"),
+            "process": ui_text("profileProcess"),
+        }
+        text = ui_text("syncCompleteTitle") + "\n" + "\n".join(
+            "%s: %s" % (labels[item["kind"]], item["summary"])
+            for item in contours
+        )
+        if restart_required:
+            text += "\n" + ui_text("dropdownRestart")
+        fh_log(
+            "sync done: scope=%s trigger=%s status=%s"
+            % (scope, trigger, overall_status)
+        )
+        if announce or operation_id:
+            self._deliver_sync_result(
+                text,
                 new_draft_count,
+                operation_id=operation_id,
+                scope=scope,
+                status=overall_status,
+                contours=contours,
             )
 
 
@@ -7363,7 +7653,7 @@ _PAGE_CAPABILITY_BASE = getattr(_PAGES, "PagesPluginCapabilityBase", None)
 
 
 class _PageWindowProxy:
-    """Adapt the draft Pages push API to the window helper contract."""
+    """Adapt the host Pages push API to the window helper contract."""
 
     def __init__(self, page):
         self._page = page

@@ -247,22 +247,211 @@ def test_native_plugin_messages_follow_orca_ui_language(plugin_module, monkeypat
         lambda: "ru_RU",
         raising=False,
     )
-    monkeypatch.setattr(
-        plugin_module.orca.host.ui,
-        "message",
-        lambda text, **kwargs: messages.append((text, kwargs)),
-        raising=False,
-    )
     plugin_module.refresh_ui_language()
+    catalog = plugin_module.FilamentHubCatalog()
+    monkeypatch.setattr(
+        catalog,
+        "_deliver_sync_result",
+        lambda text, **kwargs: messages.append((text, kwargs)),
+    )
 
-    plugin_module.FilamentHubCatalog()._do_sync("", set(), announce=True)
+    catalog._do_sync("", set(), announce=True)
 
     assert messages == [(
         "Войдите в FilamentHub в окне плагина и повторите синхронизацию.",
-        {"title": "FilamentHub", "icon": "warning"},
+        {"operation_id": "", "scope": "all", "status": "error"},
     )]
 
 
+def test_catalog_sync_collects_every_profile_contour_in_dependency_order(
+    plugin_module, monkeypatch
+):
+    jobs = []
+
+    class CapturingWorker:
+        def submit(self, function, *args):
+            jobs.append((function, args))
+
+    monkeypatch.setattr(plugin_module, "BACKGROUND_WORKER", CapturingWorker())
+    monkeypatch.setattr(plugin_module, "load_saved_auth", lambda: {"accessToken": "token"})
+    monkeypatch.setattr(plugin_module, "refresh_user_preset_folder", lambda: None)
+    monkeypatch.setattr(plugin_module, "scan_active_user_filaments", lambda: ["filament"])
+    monkeypatch.setattr(plugin_module, "observe_printer_presets", lambda: ["observation"])
+    monkeypatch.setattr(
+        plugin_module,
+        "observe_local_moonraker_connections",
+        lambda observations: ["moonraker"],
+    )
+    monkeypatch.setattr(plugin_module, "plugin_source_instance_id", lambda: "source")
+    monkeypatch.setattr(plugin_module, "loaded_managed_preset_ids", lambda: {10})
+    scans = []
+    monkeypatch.setattr(
+        plugin_module,
+        "scan_user_profiles_checked",
+        lambda kind: (scans.append(kind) or ([kind], True)),
+    )
+    catalog = plugin_module.FilamentHubCatalog()
+    monkeypatch.setattr(catalog, "_known_filament_preset_names", lambda: {"Known"})
+
+    catalog.on_message({
+        "source": "filamenthub-plugin",
+        "type": "sync",
+        "scope": "all",
+        "operationId": "sync-1",
+    })
+
+    assert len(jobs) == 1
+    function, args = jobs[0]
+    assert function == catalog._do_sync
+    assert scans == ["machine", "process"]
+    assert args == (
+        "token",
+        {"Known"},
+        True,
+        ["filament"],
+        {
+            "machine": {"items": ["machine"], "complete": True},
+            "process": {"items": ["process"], "complete": True},
+        },
+        ["observation"],
+        "source",
+        ["moonraker"],
+        {10},
+        "all",
+        "sync-1",
+        "manual",
+    )
+
+
+def test_disabled_filament_directions_never_remove_managed_files(
+    plugin_module, monkeypatch, tmp_path
+):
+    live = tmp_path / "filament"
+    live.mkdir()
+    managed = live / "Keep.json"
+    managed.write_text(
+        json.dumps({"name": "Keep", "bundle_id": "filamenthub:10"}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(plugin_module, "user_filament_dir", lambda: str(live))
+    monkeypatch.setattr(plugin_module, "load_sync_state", lambda: {})
+    monkeypatch.setattr(plugin_module, "save_sync_state", lambda _state: None)
+    monkeypatch.setattr(
+        plugin_module,
+        "_sync_preferences",
+        lambda _token: {
+            "available": True,
+            "auto_import_local_presets": True,
+            "sync_printer_endpoints": False,
+            "allow_filament_presets_import": False,
+            "allow_filament_presets_export": False,
+            "allow_printer_profiles_import": False,
+            "allow_printer_profiles_export": False,
+            "allow_print_profiles_import": False,
+            "allow_print_profiles_export": False,
+        },
+    )
+    monkeypatch.setattr(
+        plugin_module,
+        "http_get",
+        lambda *_args, **_kwargs: pytest.fail("disabled sync must not read desired state"),
+    )
+    monkeypatch.setattr(
+        plugin_module,
+        "quarantine_unwanted_managed_preset_files",
+        lambda *_args, **_kwargs: pytest.fail("disabled sync must not quarantine files"),
+    )
+    monkeypatch.setattr(
+        plugin_module,
+        "push_filament_drafts",
+        lambda *_args, **_kwargs: pytest.fail("disabled sync must not upload drafts"),
+    )
+    delivered = []
+    catalog = plugin_module.FilamentHubCatalog()
+    monkeypatch.setattr(
+        catalog,
+        "_deliver_sync_result",
+        lambda text, draft_count=0, **kwargs: delivered.append(
+            (text, draft_count, kwargs)
+        ),
+    )
+
+    catalog._do_sync(
+        "token",
+        set(),
+        announce=True,
+        active_filaments=[{"name": "Unmanaged"}],
+        scope="filament",
+        operation_id="sync-disabled",
+    )
+
+    assert managed.exists()
+    assert delivered[0][2]["status"] == "warning"
+    assert delivered[0][2]["contours"] == [{
+        "kind": "filament",
+        "status": "warning",
+        "summary": plugin_module.ui_text("summaryDisabled"),
+    }]
+
+
+def test_incomplete_host_scan_is_uploaded_non_authoritatively(
+    plugin_module, monkeypatch
+):
+    monkeypatch.setattr(plugin_module, "load_sync_state", lambda: {})
+    monkeypatch.setattr(plugin_module, "save_sync_state", lambda _state: None)
+    monkeypatch.setattr(
+        plugin_module,
+        "_sync_preferences",
+        lambda _token: {
+            "available": True,
+            "auto_import_local_presets": False,
+            "sync_printer_endpoints": False,
+            "allow_filament_presets_import": False,
+            "allow_filament_presets_export": False,
+            "allow_printer_profiles_import": True,
+            "allow_printer_profiles_export": True,
+            "allow_print_profiles_import": False,
+            "allow_print_profiles_export": False,
+        },
+    )
+    calls = []
+    monkeypatch.setattr(
+        plugin_module,
+        "push_user_profiles",
+        lambda kind, token, items, state, authoritative=True: (
+            calls.append((kind, items, authoritative)) or (len(items), 0)
+        ),
+    )
+    monkeypatch.setattr(
+        plugin_module,
+        "send_printer_observations",
+        lambda *_args, **_kwargs: (None, {}),
+    )
+    monkeypatch.setattr(plugin_module, "sync_happy_hare_topologies", lambda *_args: None)
+    delivered = []
+    catalog = plugin_module.FilamentHubCatalog()
+    monkeypatch.setattr(
+        catalog,
+        "_deliver_sync_result",
+        lambda text, draft_count=0, **kwargs: delivered.append(kwargs),
+    )
+
+    catalog._do_sync(
+        "token",
+        set(),
+        announce=True,
+        host_profiles={
+            "machine": {"items": [{"name": "Recovered"}], "complete": False},
+        },
+        scope="machine",
+        operation_id="sync-partial",
+    )
+
+    assert calls == [("machine", [{"name": "Recovered"}], False)]
+    assert delivered[0]["status"] == "error"
+    assert plugin_module.ui_text("summaryScanIncomplete") in delivered[0]["contours"][0][
+        "summary"
+    ]
 def test_every_orca_locale_is_preserved_and_missing_catalogs_fall_back_per_key(
     plugin_module, tmp_path, monkeypatch
 ):
@@ -575,8 +764,15 @@ def test_sync_cleanup_does_not_require_a_surviving_state_record(
         plugin_module,
         "_sync_preferences",
         lambda token: {
+            "available": True,
             "auto_import_local_presets": False,
             "sync_printer_endpoints": False,
+            "allow_filament_presets_import": True,
+            "allow_filament_presets_export": True,
+            "allow_printer_profiles_import": True,
+            "allow_printer_profiles_export": True,
+            "allow_print_profiles_import": True,
+            "allow_print_profiles_export": True,
         },
     )
     monkeypatch.setattr(plugin_module, "push_user_profiles", lambda *args, **kwargs: (0, 0))
@@ -633,8 +829,15 @@ def test_failed_remote_update_keeps_last_valid_local_profile(
         plugin_module,
         "_sync_preferences",
         lambda token: {
+            "available": True,
             "auto_import_local_presets": False,
             "sync_printer_endpoints": False,
+            "allow_filament_presets_import": True,
+            "allow_filament_presets_export": True,
+            "allow_printer_profiles_import": True,
+            "allow_printer_profiles_export": True,
+            "allow_print_profiles_import": True,
+            "allow_print_profiles_export": True,
         },
     )
     monkeypatch.setattr(plugin_module, "push_user_profiles", lambda *args, **kwargs: (0, 0))
@@ -768,6 +971,7 @@ def test_printer_bundle_message_is_explicit_and_uses_saved_session(
     plugin_module.FilamentHubCatalog().on_message({
         "source": "filamenthub-plugin",
         "type": "install-printer-bundle",
+        "requestId": "bundle-1",
         "physicalPrinterId": 12,
         "token": "",
     })
@@ -775,7 +979,7 @@ def test_printer_bundle_message_is_explicit_and_uses_saved_session(
     assert refreshed == [True]
     assert len(submitted) == 1
     assert submitted[0][0].__name__ == "_do_install_printer_bundle"
-    assert submitted[0][1:] == (12, "saved-token")
+    assert submitted[0][1:] == ("bundle-1", 12, "saved-token")
 
 
 def test_happy_hare_mutation_message_rejects_boolean_ids(plugin_module, monkeypatch):
@@ -807,14 +1011,18 @@ def test_happy_hare_mutation_message_rejects_boolean_ids(plugin_module, monkeypa
 def test_profile_change_reports_automatic_sync_result(plugin_module):
     capability = plugin_module.FilamentHubCatalog()
     calls = []
-    capability._auto_sync = lambda announce=False: calls.append(announce)
+    capability._auto_sync = lambda **kwargs: calls.append(kwargs) or True
 
     capability.on_message({
         "source": "filamenthub-plugin",
         "type": "profile-changed",
     })
 
-    assert calls == [True]
+    assert calls == [{
+        "announce": True,
+        "scope": "filament",
+        "trigger": "profile-change",
+    }]
 
 
 def test_plugin_load_never_opens_a_window_automatically(plugin_module):
@@ -824,7 +1032,7 @@ def test_plugin_load_never_opens_a_window_automatically(plugin_module):
 def test_host_ready_starts_sync_once(plugin_module):
     capability = plugin_module.FilamentHubCatalog()
     calls = []
-    capability._auto_sync = lambda announce=False: calls.append(announce)
+    capability._auto_sync = lambda **kwargs: calls.append(kwargs) or True
 
     capability.on_message({
         "source": "filamenthub-plugin",
@@ -834,7 +1042,38 @@ def test_host_ready_starts_sync_once(plugin_module):
         "source": "filamenthub-plugin",
         "type": "host-ready",
     })
-    assert calls == [False]
+    assert calls == [{
+        "announce": True,
+        "scope": "all",
+        "trigger": "session-start",
+    }]
+
+
+def test_token_refresh_does_not_start_a_second_session_sync(plugin_module, monkeypatch):
+    capability = plugin_module.FilamentHubCatalog()
+    calls = []
+    saved = []
+    monkeypatch.setattr(plugin_module, "save_auth", saved.append)
+    monkeypatch.setattr(plugin_module.BAMBU_BRIDGE_RUNTIME, "wake", lambda: None)
+    capability._auto_sync = lambda **kwargs: calls.append(kwargs) or True
+
+    capability.on_message({
+        "source": "filamenthub-plugin",
+        "type": "auth-token",
+        "accessToken": "first-token",
+    })
+    capability.on_message({
+        "source": "filamenthub-plugin",
+        "type": "auth-token",
+        "accessToken": "refreshed-token",
+    })
+
+    assert saved == ["first-token", "refreshed-token"]
+    assert calls == [{
+        "announce": True,
+        "scope": "all",
+        "trigger": "session-auth",
+    }]
 
 
 def test_active_filaments_use_the_host_preset_api(plugin_module, monkeypatch):
@@ -1989,7 +2228,17 @@ def test_locally_unloadable_managed_file_is_repaired_from_the_server(
     monkeypatch.setattr(
         plugin_module,
         "_sync_preferences",
-        lambda token: {"auto_import_local_presets": False, "sync_printer_endpoints": False},
+        lambda token: {
+            "available": True,
+            "auto_import_local_presets": False,
+            "sync_printer_endpoints": False,
+            "allow_filament_presets_import": True,
+            "allow_filament_presets_export": True,
+            "allow_printer_profiles_import": True,
+            "allow_printer_profiles_export": True,
+            "allow_print_profiles_import": True,
+            "allow_print_profiles_export": True,
+        },
     )
     monkeypatch.setattr(plugin_module, "push_user_profiles", lambda *args, **kwargs: (0, 0))
     monkeypatch.setattr(
@@ -2164,6 +2413,9 @@ def test_build_packages_locale_catalogs_and_checksums(plugin_module, tmp_path):
         )
     assert b"\r" not in wheel_source
     assert b"_EMBEDDED_UI_COPY = {}" not in wheel_source
+    assert b'os.environ.get("FILAMENTHUB_SITE_URL", "https://filamenthub.ru")' in wheel_source
+    assert b"http://localhost:3000" not in wheel_source
+    assert b"filamenthub.club" not in wheel_source
     assert top_level == b"filamenthub_plugin\n"
     assert not any(name.startswith("filamenthub_locales/") for name in names)
 
@@ -2255,6 +2507,51 @@ def test_printer_profiles_never_leave_with_host_credentials(
     assert settings["nozzle_diameter"] == ["0.4"]
     assert payload["profiles"][0]["setting_id"] == "voron-350"
     assert payload["profiles"][0]["external_id"].startswith("orca-local-v1:")
+
+
+def test_process_compatibility_values_are_normalized_for_backend_contract(
+    plugin_module, monkeypatch, tmp_path
+):
+    _isolate_profile_identity(plugin_module, monkeypatch, tmp_path)
+    sent = []
+    monkeypatch.setattr(
+        plugin_module,
+        "http_post_json",
+        lambda _path, _token, payload: (sent.append(payload), (200, b"{}"))[1],
+    )
+    items = [{
+        "name": "0.20mm Standard",
+        "settings": {"layer_height": "0.2"},
+        "compatible_printers": [" Voron 2.4 ", "Voron 2.4", None, 42],
+        "compatible_filaments": " PETG ",
+        "compatible_printers_condition": ["", 'printer_model=="Voron 2.4"'],
+    }]
+
+    assert plugin_module.push_user_profiles(
+        "process", "tok", items, {}, authoritative=False
+    ) == (1, 0)
+
+    profile = sent[0]["profiles"][0]
+    assert profile["compatible_printers"] == ["Voron 2.4"]
+    assert profile["compatible_filaments"] == ["PETG"]
+    assert profile["compatible_printers_condition"] == 'printer_model=="Voron 2.4"'
+
+
+def test_validation_error_log_shape_never_contains_rejected_input(plugin_module):
+    body = json.dumps({
+        "detail": [{
+            "loc": ["body", "profiles", 0, "compatible_printers_condition"],
+            "type": "string_type",
+            "input": "private-profile-value",
+        }]
+    }).encode("utf-8")
+
+    summary = plugin_module._http_error_shape(body)
+
+    assert summary == (
+        "body.profiles.0.compatible_printers_condition:string_type"
+    )
+    assert "private-profile-value" not in summary
 
 
 def test_sibling_printer_profiles_with_shared_orca_id_keep_distinct_sync_ids(
@@ -2628,6 +2925,53 @@ def test_item_level_import_error_is_not_recorded_as_synced(
     ]
 
 
+def test_validation_failure_isolated_without_finalizing_partial_snapshot(
+    plugin_module, monkeypatch, tmp_path
+):
+    _isolate_profile_identity(plugin_module, monkeypatch, tmp_path)
+    snapshot_id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    import_batches = []
+    finalized = []
+
+    def post(path, _token, payload):
+        if path.endswith("/start"):
+            return 200, json.dumps({
+                "snapshot_id": snapshot_id,
+                "bound_local_profile_ids": [],
+            }).encode("utf-8")
+        if path.endswith("/finalize"):
+            finalized.append(payload)
+            return 200, json.dumps({"status": "finalized"}).encode("utf-8")
+        names = [profile["name"] for profile in payload["profiles"]]
+        import_batches.append(names)
+        if len(names) > 1 or names == ["Broken"]:
+            return 422, json.dumps({"detail": [{"type": "value_error"}]}).encode(
+                "utf-8"
+            )
+        return 200, json.dumps({"results": [{"status": "created"}]}).encode(
+            "utf-8"
+        )
+
+    monkeypatch.setattr(plugin_module, "http_post_json", post)
+    items = [
+        {"name": "Valid A", "settings": {"nozzle_diameter": ["0.4"]}},
+        {"name": "Broken", "settings": {"nozzle_diameter": ["invalid"]}},
+        {"name": "Valid B", "settings": {"nozzle_diameter": ["0.6"]}},
+    ]
+    state = {}
+
+    assert plugin_module.push_user_profiles("machine", "tok", items, state) == (2, 1)
+    assert import_batches == [
+        ["Valid A", "Broken", "Valid B"],
+        ["Valid A"],
+        ["Broken", "Valid B"],
+        ["Broken"],
+        ["Valid B"],
+    ]
+    assert finalized == []
+    assert len([key for key in state if key.startswith("machine:")]) == 2
+
+
 def test_automatic_machine_and_process_sync_remains_outbound_only(plugin_module):
     # The normal sync registry contains only outbound import endpoints. Restoring
     # a managed machine/process set is a separate explicit message and is never
@@ -2669,13 +3013,20 @@ def _module_with_slicing():
 
 def _module_with_pages():
     """The plugin as it loads on the PR #14992 Pages artifact."""
+    class PagesCapabilityBase:
+        def __init__(self):
+            self.posted_messages = []
+
+        def post_message(self, message):
+            self.posted_messages.append(message)
+
     fake_orca = ModuleType("orca")
     fake_orca.base = object
     fake_orca.plugin = lambda cls: cls
     registered: list = []
     fake_orca.register_capability = registered.append
     fake_orca.script = SimpleNamespace(ScriptPluginCapabilityBase=object)
-    fake_orca.pages = SimpleNamespace(PagesPluginCapabilityBase=object)
+    fake_orca.pages = SimpleNamespace(PagesPluginCapabilityBase=PagesCapabilityBase)
     fake_orca.host = SimpleNamespace(ui=SimpleNamespace())
     fake_orca.ExecutionResult = SimpleNamespace(success=lambda message: message)
     previous = sys.modules.get("orca")
@@ -2850,6 +3201,43 @@ def test_pages_host_registers_a_tab_instead_of_the_window_action():
     module.FilamentHubPlugin().register_capabilities()
     assert module.FilamentHubPage in registered
     assert module.FilamentHubCatalog not in registered
+
+
+def test_pages_host_delivers_plugin_messages_through_post_message():
+    module, _ = _module_with_pages()
+    page = module.FilamentHubPage()
+
+    page._catalog._deliver_sync_result("Synced", 2)
+
+    assert page.posted_messages == [{
+        "source": "filamenthub-host",
+        "type": "sync-result",
+        "text": "Synced",
+        "draftCount": 2,
+        "operationId": "",
+        "scope": "all",
+        "status": "success",
+        "contours": [],
+    }]
+
+
+def test_notice_uses_typed_loopback_fallback_without_a_push_transport(
+    plugin_module, monkeypatch
+):
+    captured = []
+    monkeypatch.setattr(
+        plugin_module.SHELL_SERVER,
+        "set_sync_result",
+        lambda payload: captured.append(payload),
+    )
+
+    plugin_module.FilamentHubCatalog()._deliver_notice("Saved", "success")
+
+    assert captured == [{
+        "text": "Saved",
+        "status": "success",
+        "resultType": "plugin-notice",
+    }]
 
 
 def test_page_icon_materializes_for_a_single_file_install(
@@ -3550,13 +3938,17 @@ def test_bambu_pair_is_revoked_when_local_binding_cannot_be_persisted(
     monkeypatch.setattr(plugin_module, "ui_text", lambda key: key)
     delivered = []
     catalog = plugin_module.FilamentHubCatalog()
-    monkeypatch.setattr(catalog, "_deliver_sync_result", delivered.append)
+    monkeypatch.setattr(
+        catalog,
+        "_deliver_notice",
+        lambda text, status="info": delivered.append((text, status)),
+    )
 
     catalog._do_configure_bambu(3, 5, "printer.local", "secret", "", "pair-code")
 
     assert revoked == [("/printer-bridge/connection", "fhpb_fresh-token")]
     assert removed == [3]
-    assert delivered == ["bambuInvalid"]
+    assert delivered == [("bambuInvalid", "error")]
 
 
 def test_fresh_bambu_pair_and_first_snapshot_share_one_source_identity(
@@ -3586,7 +3978,11 @@ def test_fresh_bambu_pair_and_first_snapshot_share_one_source_identity(
     monkeypatch.setattr(plugin_module, "ui_text", lambda key: key)
     delivered = []
     catalog = plugin_module.FilamentHubCatalog()
-    monkeypatch.setattr(catalog, "_deliver_sync_result", delivered.append)
+    monkeypatch.setattr(
+        catalog,
+        "_deliver_notice",
+        lambda text, status="info": delivered.append((text, status)),
+    )
 
     catalog._do_configure_bambu(3, 5, "printer.local", "secret", "", "pair-code")
 
@@ -3594,7 +3990,7 @@ def test_fresh_bambu_pair_and_first_snapshot_share_one_source_identity(
     stored = plugin_module.load_bambu_config()
     assert stored["source_instance_id"] == captured["pair_source"]
     assert len(stored["printers"]) == 1
-    assert delivered == ["bambuSaved"]
+    assert delivered == [("bambuSaved", "success")]
 
 
 def test_bambu_address_must_resolve_to_the_lan(plugin_module, monkeypatch):

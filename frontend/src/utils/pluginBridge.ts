@@ -197,6 +197,23 @@ export function subscribeToPluginNavigation(onNavigate: (path: string) => void):
 export interface PluginSyncResult {
   text: string;
   draftCount: number;
+  operationId: string;
+  scope: PluginSyncScope;
+  status: 'success' | 'warning' | 'error';
+  contours: Array<{
+    kind: 'filament' | 'machine' | 'process';
+    status: 'success' | 'warning' | 'error';
+    summary: string;
+  }>;
+}
+
+export type PluginSyncScope = 'all' | 'filament' | 'machine' | 'process';
+
+function pluginRequestId(prefix: string): string {
+  const random = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID()
+    : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+  return `${prefix}-${random}`;
 }
 
 export function subscribeToPluginSyncResult(
@@ -210,7 +227,14 @@ export function subscribeToPluginSyncResult(
     if (!data || data.source !== PLUGIN_MESSAGE_SOURCE || data.type !== 'sync-result') {
       return;
     }
-    const payload = data as { text?: unknown; draftCount?: unknown };
+    const payload = data as {
+      text?: unknown;
+      draftCount?: unknown;
+      operationId?: unknown;
+      scope?: unknown;
+      status?: unknown;
+      contours?: unknown;
+    };
     const text = payload.text;
     if (typeof text === 'string' && text) {
       const rawDraftCount = Number(payload.draftCount);
@@ -219,6 +243,29 @@ export function subscribeToPluginSyncResult(
         draftCount: Number.isSafeInteger(rawDraftCount) && rawDraftCount > 0
           ? rawDraftCount
           : 0,
+        operationId: typeof payload.operationId === 'string' ? payload.operationId : '',
+        scope: ['all', 'filament', 'machine', 'process'].includes(String(payload.scope))
+          ? payload.scope as PluginSyncScope
+          : 'all',
+        status: ['success', 'warning', 'error'].includes(String(payload.status))
+          ? payload.status as PluginSyncResult['status']
+          : 'success',
+        contours: Array.isArray(payload.contours)
+          ? payload.contours.flatMap((item): PluginSyncResult['contours'] => {
+              if (!item || typeof item !== 'object') return [];
+              const contour = item as Record<string, unknown>;
+              if (
+                !['filament', 'machine', 'process'].includes(String(contour.kind))
+                || !['success', 'warning', 'error'].includes(String(contour.status))
+                || typeof contour.summary !== 'string'
+              ) return [];
+              return [{
+                kind: contour.kind as PluginSyncResult['contours'][number]['kind'],
+                status: contour.status as PluginSyncResult['contours'][number]['status'],
+                summary: contour.summary,
+              }];
+            })
+          : [],
       });
     }
   };
@@ -233,6 +280,24 @@ export interface RecoverItem {
   account?: string;
   source: 'live' | 'backup';
   imported: boolean;
+}
+
+export function subscribeToPluginNotice(
+  onNotice: (notice: { text: string; status: 'success' | 'warning' | 'error' | 'info' }) => void,
+): () => void {
+  const handler = (event: MessageEvent) => {
+    if (!isTrustedPluginParentEvent(event)) return;
+    const data = event.data as Partial<PluginMessage> | undefined;
+    if (!data || data.source !== PLUGIN_MESSAGE_SOURCE || data.type !== 'plugin-notice') return;
+    const payload = data as { text?: unknown; status?: unknown };
+    if (typeof payload.text !== 'string' || !payload.text) return;
+    const status = ['success', 'warning', 'error', 'info'].includes(String(payload.status))
+      ? payload.status as 'success' | 'warning' | 'error' | 'info'
+      : 'info';
+    onNotice({ text: payload.text, status });
+  };
+  window.addEventListener('message', handler);
+  return () => window.removeEventListener('message', handler);
 }
 
 /**
@@ -339,11 +404,14 @@ export function notifyProfileChanged(): void {
  * Machine, process and filament profiles are reconciled together by Python;
  * the page waits for the real result before refreshing its server data.
  */
-export function requestPluginProfileSync(): Promise<{ message?: string }> {
+export function requestPluginProfileSync(
+  scope: PluginSyncScope = 'all',
+): Promise<{ message?: string }> {
   if (!isPluginEmbed()) {
     return Promise.reject(new Error());
   }
 
+  const operationId = pluginRequestId('sync');
   return new Promise((resolve, reject) => {
     let timeoutId: number | null = null;
     const cleanup = () => {
@@ -358,9 +426,18 @@ export function requestPluginProfileSync(): Promise<{ message?: string }> {
       if (!data || data.source !== PLUGIN_MESSAGE_SOURCE || data.type !== 'sync-result') {
         return;
       }
-      const text = (data as { text?: unknown }).text;
+      const result = data as { text?: unknown; operationId?: unknown; status?: unknown };
+      if (
+        result.operationId !== operationId
+        && (result.operationId || activePluginCapabilities.has('profile-sync-scopes-v1'))
+      ) return;
+      const text = result.text;
       cleanup();
-      resolve({ message: typeof text === 'string' ? text : undefined });
+      if (result.status === 'error') {
+        reject(new Error(typeof text === 'string' ? text : undefined));
+      } else {
+        resolve({ message: typeof text === 'string' ? text : undefined });
+      }
     };
 
     window.addEventListener('message', onMessage);
@@ -368,7 +445,12 @@ export function requestPluginProfileSync(): Promise<{ message?: string }> {
       cleanup();
       reject(new Error());
     }, 120_000);
-    postToPlugin({ source: PLUGIN_MESSAGE_SOURCE, type: 'sync' });
+    postToPlugin({
+      source: PLUGIN_MESSAGE_SOURCE,
+      type: 'sync',
+      scope,
+      operationId,
+    });
   });
 }
 
@@ -449,12 +531,48 @@ export function subscribeToPluginCapabilities(
  * физического принтера. Автоматическая синхронизация machine/process-профилей
  * остаётся только исходящей; этот pull запускается исключительно пользователем.
  */
-export function installPrinterBundleInPlugin(physicalPrinterId: number): void {
-  postToPlugin({
-    source: PLUGIN_MESSAGE_SOURCE,
-    type: 'install-printer-bundle',
-    physicalPrinterId,
-    token: activePluginToken ?? '',
+export function installPrinterBundleInPlugin(
+  physicalPrinterId: number,
+): Promise<{ message?: string }> {
+  const requestId = pluginRequestId('printer-bundle');
+  return new Promise((resolve, reject) => {
+    let timeoutId: number | null = null;
+    const cleanup = () => {
+      window.removeEventListener('message', onMessage);
+      if (timeoutId !== null) window.clearTimeout(timeoutId);
+    };
+    const onMessage = (event: MessageEvent) => {
+      if (!isTrustedPluginParentEvent(event)) return;
+      const data = event.data as Partial<PluginMessage> | undefined;
+      const dedicatedResult = activePluginCapabilities.has('printer-bundle-result-v1');
+      if (
+        !data
+        || data.source !== PLUGIN_MESSAGE_SOURCE
+        || (dedicatedResult
+          ? data.type !== 'printer-bundle-result'
+          : data.type !== 'sync-result')
+      ) {
+        return;
+      }
+      const payload = data as { requestId?: unknown; text?: unknown; status?: unknown };
+      if (dedicatedResult && payload.requestId !== requestId) return;
+      cleanup();
+      const message = typeof payload.text === 'string' ? payload.text : undefined;
+      if (payload.status === 'error') reject(new Error(message));
+      else resolve({ message });
+    };
+    window.addEventListener('message', onMessage);
+    timeoutId = window.setTimeout(() => {
+      cleanup();
+      reject(new Error());
+    }, 120_000);
+    postToPlugin({
+      source: PLUGIN_MESSAGE_SOURCE,
+      type: 'install-printer-bundle',
+      requestId,
+      physicalPrinterId,
+      token: activePluginToken ?? '',
+    });
   });
 }
 

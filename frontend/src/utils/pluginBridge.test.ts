@@ -7,6 +7,7 @@ import {
   reportPluginSessionToPlugin,
   requestBambuMaterialAction,
   requestHappyHareAction,
+  requestPluginProfileSync,
   requestPluginCapabilities,
   subscribeToPluginCapabilities,
   subscribeToPluginNavigation,
@@ -44,7 +45,7 @@ describe('pluginBridge inbound messages', () => {
     unsubscribe();
   });
 
-  it('sends only the scoped plugin capability across the iframe boundary', () => {
+  it('sends only the scoped plugin capability across the iframe boundary', async () => {
     const originalParent = window.parent;
     const postMessage = vi.fn();
     Object.defineProperty(window, 'parent', {
@@ -56,7 +57,7 @@ describe('pluginBridge inbound messages', () => {
     try {
       reportPluginSessionToPlugin('scoped-plugin-token');
       importPresetToPlugin(42);
-      installPrinterBundleInPlugin(7);
+      const bundlePending = installPrinterBundleInPlugin(7);
       requestPluginCapabilities();
 
       expect(postMessage).toHaveBeenNthCalledWith(
@@ -84,11 +85,22 @@ describe('pluginBridge inbound messages', () => {
         {
           source: PLUGIN_MESSAGE_SOURCE,
           type: 'install-printer-bundle',
+          requestId: expect.any(String),
           physicalPrinterId: 7,
           token: 'scoped-plugin-token',
         },
         '*',
       );
+      window.dispatchEvent(new MessageEvent('message', {
+        data: {
+          source: PLUGIN_MESSAGE_SOURCE,
+          type: 'sync-result',
+          text: 'installed',
+        },
+        origin: window.location.origin,
+        source: window.parent,
+      }));
+      await expect(bundlePending).resolves.toEqual({ message: 'installed' });
       expect(postMessage).toHaveBeenNthCalledWith(
         4,
         {
@@ -98,6 +110,95 @@ describe('pluginBridge inbound messages', () => {
         '*',
       );
     } finally {
+      Object.defineProperty(window, 'parent', {
+        configurable: true,
+        value: originalParent,
+      });
+      window.history.pushState({}, '', '/');
+    }
+  });
+
+  it('waits for the matching sync and printer-bundle result', async () => {
+    const originalParent = window.parent;
+    const postMessage = vi.fn();
+    const parent = { postMessage };
+    Object.defineProperty(window, 'parent', { configurable: true, value: parent });
+    window.history.pushState({}, '', '/embed/profile');
+    const unsubscribe = subscribeToPluginCapabilities(() => undefined);
+
+    try {
+      window.dispatchEvent(new MessageEvent('message', {
+        data: {
+          source: PLUGIN_MESSAGE_SOURCE,
+          type: 'plugin-capabilities',
+          capabilities: ['profile-sync-scopes-v1', 'printer-bundle-result-v1'],
+        },
+        origin: window.location.origin,
+        source: parent as unknown as Window,
+      }));
+
+      const syncing = requestPluginProfileSync('machine');
+      const syncRequest = postMessage.mock.calls.at(-1)?.[0];
+      expect(syncRequest).toMatchObject({ type: 'sync', scope: 'machine' });
+      let syncSettled = false;
+      void syncing.finally(() => { syncSettled = true; });
+      window.dispatchEvent(new MessageEvent('message', {
+        data: {
+          source: PLUGIN_MESSAGE_SOURCE,
+          type: 'sync-result',
+          operationId: 'another-operation',
+          status: 'success',
+          text: 'unrelated',
+        },
+        origin: window.location.origin,
+        source: parent as unknown as Window,
+      }));
+      await Promise.resolve();
+      expect(syncSettled).toBe(false);
+      window.dispatchEvent(new MessageEvent('message', {
+        data: {
+          source: PLUGIN_MESSAGE_SOURCE,
+          type: 'sync-result',
+          operationId: syncRequest.operationId,
+          status: 'success',
+          text: 'machine synced',
+        },
+        origin: window.location.origin,
+        source: parent as unknown as Window,
+      }));
+      await expect(syncing).resolves.toEqual({ message: 'machine synced' });
+
+      const installing = installPrinterBundleInPlugin(7);
+      const bundleRequest = postMessage.mock.calls.at(-1)?.[0];
+      let bundleSettled = false;
+      void installing.finally(() => { bundleSettled = true; });
+      window.dispatchEvent(new MessageEvent('message', {
+        data: {
+          source: PLUGIN_MESSAGE_SOURCE,
+          type: 'printer-bundle-result',
+          requestId: 'another-request',
+          status: 'success',
+          text: 'unrelated',
+        },
+        origin: window.location.origin,
+        source: parent as unknown as Window,
+      }));
+      await Promise.resolve();
+      expect(bundleSettled).toBe(false);
+      window.dispatchEvent(new MessageEvent('message', {
+        data: {
+          source: PLUGIN_MESSAGE_SOURCE,
+          type: 'printer-bundle-result',
+          requestId: bundleRequest.requestId,
+          status: 'success',
+          text: 'bundle installed',
+        },
+        origin: window.location.origin,
+        source: parent as unknown as Window,
+      }));
+      await expect(installing).resolves.toEqual({ message: 'bundle installed' });
+    } finally {
+      unsubscribe();
       Object.defineProperty(window, 'parent', {
         configurable: true,
         value: originalParent,
