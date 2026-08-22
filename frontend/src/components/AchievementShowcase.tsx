@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react';
 import { ChevronRight, Sparkles, Star, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { Link } from 'react-router-dom';
 
 import type {
   AchievementCode,
@@ -20,12 +19,6 @@ const NEWCOMER_GOAL_PRIORITY: AchievementCode[] = [
   'first_profile',
   'printer_integration_connected',
 ];
-
-const ACHIEVEMENT_GUIDES: Partial<Record<AchievementCode, string>> = {
-  spool_collector_1: '/wiki/articles/spool-on-shelf?start=1&journey=user%3Ashelf&returnTo=%2Fprofile%3Ftab%3Dspools',
-  first_profile: '/wiki/articles/orca-preset-guide?start=1&journey=user%3Aslicer&returnTo=%2Fprofile%3Ftab%3Dpresets',
-  printer_integration_connected: '/wiki/articles/printer-feed-guide?start=1&journey=user%3Aprinter&returnTo=%2Fprofile%3Ftab%3Dprinter-profiles',
-};
 
 const RARITY_STYLES: Record<string, { card: string; chip: string }> = {
   common: {
@@ -85,8 +78,7 @@ export function AchievementShowcase({
   isHeaderVisible,
   onAcknowledgeNew,
 }: AchievementShowcaseProps) {
-  const { t, i18n } = useTranslation();
-  const language = (i18n.resolvedLanguage || i18n.language).split('-')[0];
+  const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
   const [viewedAchievementCodes, setViewedAchievementCodes] = useState<Set<AchievementCode>>(
     () => new Set(),
@@ -272,11 +264,6 @@ export function AchievementShowcase({
                   <div className="grid gap-2 sm:grid-cols-2">
                     {nextAchievements.map((progress) => {
                       const config = ACHIEVEMENT_CONFIG[progress.code];
-                      const guideTo = ACHIEVEMENT_GUIDES[progress.code]
-                        ? language === 'ru'
-                          ? ACHIEVEMENT_GUIDES[progress.code]
-                          : '/wiki'
-                        : undefined;
                       const ratio = Math.min(100, Math.round((progress.current / progress.target) * 100));
                       return (
                         <div
@@ -298,15 +285,6 @@ export function AchievementShowcase({
                             <p className="mt-0.5 line-clamp-2 text-xs leading-4 text-gray-400">
                               {t(config.titleKey)}
                             </p>
-                            {guideTo && (
-                              <Link
-                                to={guideTo}
-                                className="mt-1 inline-flex items-center gap-1 text-[11px] font-medium text-cyan-300 transition hover:text-cyan-200"
-                              >
-                                {t('profilePage.newcomer.howTo')}
-                                <ChevronRight className="h-3 w-3" />
-                              </Link>
-                            )}
                             <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/8">
                               <div
                                 className="h-full rounded-full bg-gradient-to-r from-cyan-400 to-violet-400 transition-[width]"
