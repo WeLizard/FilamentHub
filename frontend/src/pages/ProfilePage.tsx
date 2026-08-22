@@ -876,8 +876,6 @@ export const ProfilePage: React.FC = () => {
     }
   };
 
-  const combinationsDraftCount = 0;
-
   if (!user) {
     return null; // ProtectedRoute должен это обработать
   }
@@ -1901,37 +1899,12 @@ export const ProfilePage: React.FC = () => {
         </ModalOverlay>
       )}
 
-      {/* Combined Profiles Section (только на dashboard) */}
-      {userTab === 'dashboard' && (
-        <section className="mt-12 space-y-5">
-          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <div>
-              <h2 className="text-2xl font-bold text-white">{t('profilePage.combos.title')}</h2>
-              <p className="text-sm text-gray-400">
-                {t('profilePage.combos.description')}
-              </p>
-            </div>
-            <StatusBadge label={t('profilePage.combos.inDevelopment')} variant="muted" />
-          </div>
-
-          <div className="bg-white/5 border border-dashed border-white/20 rounded-2xl p-6 text-gray-200">
-            <p className="text-lg text-white font-semibold mb-2">{t('profilePage.combos.comingSoon')}</p>
-            <p className="text-sm text-gray-300">
-              {t('profilePage.combos.comingSoonDesc')}
-            </p>
-
-            <div className="mt-4 grid gap-4 md:grid-cols-3">
-              <InfoSummary label={t('profilePage.combos.printerProfileDrafts')} value={myPrinterProfiles.length} />
-              <InfoSummary label={t('profilePage.combos.printProfileDrafts')} value={myPrintProfiles.length} />
-              <InfoSummary label={t('profilePage.combos.availablePresets')} value={userPresets.length} />
-            </div>
-
-            <p className="mt-4 text-xs text-gray-400 uppercase tracking-wide">
-              {t('profilePage.combos.combinationsCount')}: {combinationsDraftCount}
-            </p>
-          </div>
-        </section>
-      )}
+      {/*
+        Reserved for future verified print recipes built from profiles that were
+        actually used for slicing or printing. This is intentional product
+        groundwork, not abandoned dashboard UI: do not restore a placeholder
+        until FilamentHub can capture and reuse the real OrcaSlicer selection.
+      */}
 
 
       {selectedPrinterProfile && (
@@ -4084,18 +4057,6 @@ const EmptyState: React.FC<EmptyStateProps> = ({ icon: Icon, title, description,
         {actionLabel}
       </button>
     )}
-  </div>
-);
-
-interface InfoSummaryProps {
-  label: string;
-  value: number | string;
-}
-
-const InfoSummary: React.FC<InfoSummaryProps> = ({ label, value }) => (
-  <div className="bg-white/5 border border-white/10 rounded-xl p-4">
-    <p className="text-xs uppercase tracking-wide text-gray-400">{label}</p>
-    <p className="text-lg font-semibold text-white mt-1">{value}</p>
   </div>
 );
 
