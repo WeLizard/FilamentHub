@@ -57,6 +57,7 @@ describe('AchievementShowcase', () => {
     expect(screen.getByText('profilePage.nextAchievements')).toBeTruthy();
     expect(screen.getByText('achievement.presetPublisher5.label')).toBeTruthy();
     expect(screen.getByText('3/5')).toBeTruthy();
+    expect(screen.getAllByTestId('upcoming-achievement-placeholder')).toHaveLength(1);
     expect(screen.getByText('profilePage.earnedAchievements')).toBeTruthy();
     const earnedHeading = screen.getByText('profilePage.earnedAchievements');
     const nextHeading = screen.getByText('profilePage.nextAchievements');

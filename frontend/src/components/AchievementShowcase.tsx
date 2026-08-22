@@ -304,8 +304,12 @@ export function AchievementShowcase({
                           key={progress.code}
                             className="flex min-w-0 cursor-default select-none items-center gap-3 rounded-2xl border border-white/10 bg-black/15 p-3"
                         >
-                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] grayscale opacity-70">
-                            <AchievementBadge code={progress.code} size="md" />
+                          <div
+                            aria-hidden="true"
+                            data-testid="upcoming-achievement-placeholder"
+                            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-gray-500/35 bg-gray-500/[0.06] text-base font-semibold text-gray-500"
+                          >
+                            ?
                           </div>
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center justify-between gap-2">
