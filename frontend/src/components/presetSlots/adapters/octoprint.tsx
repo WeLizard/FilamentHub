@@ -606,6 +606,7 @@ export const octoprintAdapter: FeedAdapter = {
   id: 'octoprint',
   labelKey: 'presetSlots.feedSystem.octoprint',
   fixedSlots: null,
+  alwaysCollapsible: true,
   capabilities: ['read', 'write', 'presence', 'spool_identity', 'consumption'],
   contactMode: 'periodic',
   slotCountLabelKey: 'presetSlots.octoprint.slotCount',

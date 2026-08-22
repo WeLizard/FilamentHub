@@ -328,7 +328,8 @@ function MaterialSystemSection({ printer, system, presetsSeedMap, spools, spoolC
   const [deleting, setDeleting] = useState(false);
   const [issuedKey, setIssuedKey] = useState<string | null>(null);
   const [issuingKey, setIssuingKey] = useState(false);
-  const canCollapse = system.kind === 'mmu'
+  const canCollapse = adapter.alwaysCollapsible === true
+    || system.kind === 'mmu'
     || adapter.topologyFromProvider === true
     || system.slots.filter((slot) => slot.active).length > 1;
   const collapseStorageKey = `filamenthub:material-system:collapsed:${user?.id ?? 'anonymous'}:${system.id}`;

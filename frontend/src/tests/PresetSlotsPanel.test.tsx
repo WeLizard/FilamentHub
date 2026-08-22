@@ -547,6 +547,32 @@ describe('PresetSlotsPanel', () => {
     expect(screen.getByTestId('gate-map')).toBeInTheDocument();
   });
 
+  it('keeps a one-slot OctoPrint system collapsible through the shared persisted state', async () => {
+    physicalPrintersForQuery = [{
+      ...physicalPrinter,
+      material_systems: [{
+        ...physicalPrinter.material_systems[0],
+        name: 'OctoPrint tools',
+        kind: 'direct_feed',
+        provider: 'octoprint',
+      }],
+    }];
+    const { PresetSlotsPanel } = await import(
+      '../components/presetSlots/PresetSlotsPanel'
+    );
+
+    const first = render(<PresetSlotsPanel spools={[]} printerProfiles={[]} />);
+    fireEvent.click(screen.getByTitle('presetSlots.collapseSystem'));
+    expect(screen.queryByTestId('gate-map')).not.toBeInTheDocument();
+    expect(window.localStorage.getItem('filamenthub:material-system:collapsed:1:21')).toBe('1');
+    first.unmount();
+
+    render(<PresetSlotsPanel spools={[]} printerProfiles={[]} />);
+    expect(screen.queryByTestId('gate-map')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTitle('presetSlots.expandSystem'));
+    expect(screen.getByTestId('gate-map')).toBeInTheDocument();
+  });
+
   it('makes same-named physical printers distinguishable before adding a material system', async () => {
     physicalPrintersForQuery = [
       {

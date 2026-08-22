@@ -41,6 +41,8 @@ export interface FeedAdapter {
   fixedSlots: number | null;
   /** Dynamic providers create no guessed slots; the first snapshot supplies them. */
   topologyFromProvider?: boolean;
+  /** Provider UI remains useful to collapse even when the system has one slot. */
+  alwaysCollapsible?: boolean;
   /** Capabilities provided by this integration path, not hoped-for future features. */
   capabilities: FeedAdapterCapability[];
   /** Whether silence between provider requests is expected. */
