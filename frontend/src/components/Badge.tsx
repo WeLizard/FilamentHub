@@ -38,9 +38,11 @@ export interface BadgeConfig {
   artworkFrameSrc?: string;
 }
 
+const ACHIEVEMENT_FRAME_VERSION = '20260822-glow-1';
+
 const achievementArtwork = (code: string, rarity: string) => ({
   artworkSrc: `/achievements/artwork/${code}.webp`,
-  artworkFrameSrc: `/achievements/frames/${rarity}.svg`,
+  artworkFrameSrc: `/achievements/frames/${rarity}.svg?v=${ACHIEVEMENT_FRAME_VERSION}`,
 });
 
 export const ACHIEVEMENT_CONFIG: Record<AchievementCode, BadgeConfig> = {
