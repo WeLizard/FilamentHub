@@ -30,6 +30,13 @@ import { PrintJobHistoryModal } from './PrintJobHistoryModal';
 import { visiblePrinterConnections } from '../utils/printerConnections';
 import { GuidedEmptyState } from './GuidedEmptyState';
 
+const COLLAPSED_CONFIGURATION_LIMIT = 4;
+
+function primaryNozzle(profile: PrinterProfile): number | null {
+  const nozzle = profile.nozzle_diameters?.[0];
+  return typeof nozzle === 'number' && Number.isFinite(nozzle) ? nozzle : null;
+}
+
 interface MyPrintersListProps {
   /** The user's Orca machine profiles, shown under the printer they belong to. */
   printerProfiles: PrinterProfile[];
@@ -76,6 +83,8 @@ export function MyPrintersList({
   const [bundleActionPrinterIds, setBundleActionPrinterIds] = useState<Set<number>>(
     () => new Set(),
   );
+  const [expandedConfigurationPrinterIds, setExpandedConfigurationPrinterIds] =
+    useState<Set<number>>(() => new Set());
 
   useEffect(() => {
     if (!pluginEmbed) {
@@ -279,6 +288,49 @@ export function MyPrintersList({
             );
             const live = liveConnector?.status_observation ?? null;
             const bundleAvailable = hasRestorableBundle(printer);
+            const printerConfigurations = printer.printer_profile_ids
+              .map((id) => {
+                const profile = profileById.get(id);
+                return profile ? { id, profile } : null;
+              })
+              .filter(
+                (entry): entry is { id: number; profile: PrinterProfile } =>
+                  entry != null,
+              )
+              .sort((left, right) => {
+                const leftNozzle = primaryNozzle(left.profile);
+                const rightNozzle = primaryNozzle(right.profile);
+                if (leftNozzle != null && rightNozzle != null && leftNozzle !== rightNozzle) {
+                  return leftNozzle - rightNozzle;
+                }
+                if (leftNozzle != null && rightNozzle == null) return -1;
+                if (leftNozzle == null && rightNozzle != null) return 1;
+                return left.profile.name.localeCompare(right.profile.name, i18n.language);
+              });
+            const configurationListExpanded =
+              expandedConfigurationPrinterIds.has(printer.id);
+            const visibleConfigurations = configurationListExpanded
+              ? printerConfigurations
+              : printerConfigurations.slice(0, COLLAPSED_CONFIGURATION_LIMIT);
+            const hiddenConfigurationCount =
+              printerConfigurations.length - visibleConfigurations.length;
+            const nozzleValues = Array.from(
+              new Set(
+                printerConfigurations.flatMap(({ profile }) =>
+                  (profile.nozzle_diameters ?? []).filter(
+                    (value) => typeof value === 'number' && Number.isFinite(value),
+                  ),
+                ),
+              ),
+            ).sort((left, right) => left - right);
+            const formatNozzle = (value: number) =>
+              value.toLocaleString(i18n.language, { maximumFractionDigits: 2 });
+            const nozzleRange =
+              nozzleValues.length === 0
+                ? null
+                : nozzleValues.length === 1
+                  ? formatNozzle(nozzleValues[0])
+                  : `${formatNozzle(nozzleValues[0])}–${formatNozzle(nozzleValues.at(-1)!)}`;
             return (
               <div key={printer.id} className="bg-white/5 rounded-xl border border-white/10 p-4 flex flex-col gap-3">
                 <div className="flex items-center gap-2 min-w-0">
@@ -395,14 +447,24 @@ export function MyPrintersList({
                   <p className="text-[11px] uppercase tracking-wide text-gray-500 mb-1">
                     {t('myPrinters.configurations')}
                   </p>
-                  {printer.printer_profile_ids.length > 0 ? (
+                  {printerConfigurations.length > 0 ? (
                     <div className="space-y-1.5">
-                      {printer.printer_profile_ids.map((id) => {
-                        const profile = profileById.get(id);
-                        return profile ? (
+                      <p className="px-0.5 text-[11px] text-gray-400">
+                        {t('profilePage.profilesCount', {
+                          count: printerConfigurations.length,
+                        })}
+                        {nozzleRange && (
+                          <>
+                            {' · '}
+                            {t('profilePage.nozzles')}: {nozzleRange} {t('profilePage.mm')}
+                          </>
+                        )}
+                      </p>
+                      {visibleConfigurations.map(({ id, profile }) => (
                           <PrinterConfigurationRow
                             key={id}
                             profile={profile}
+                            physicalPrinterName={printer.name}
                             printProfiles={printProfilesForConfiguration(id, profile)}
                             currentUserId={currentUserId}
                             onEdit={onEditConfiguration}
@@ -412,8 +474,26 @@ export function MyPrintersList({
                             onCreatePrintProfile={onCreatePrintProfile}
                             onDownloadPrintProfile={onDownloadPrintProfile}
                           />
-                        ) : null;
-                      })}
+                      ))}
+                      {printerConfigurations.length > COLLAPSED_CONFIGURATION_LIMIT && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setExpandedConfigurationPrinterIds((current) => {
+                              const next = new Set(current);
+                              if (next.has(printer.id)) next.delete(printer.id);
+                              else next.add(printer.id);
+                              return next;
+                            })
+                          }
+                          className="flex w-full items-center justify-center rounded-lg border border-dashed border-white/10 px-2.5 py-1.5 text-[11px] text-purple-200 transition-colors hover:border-white/20 hover:bg-white/5 hover:text-white"
+                          aria-expanded={configurationListExpanded}
+                        >
+                          {configurationListExpanded
+                            ? t('profilePage.hideDetails')
+                            : `${t('filamentDetailPage.showMorePresets')} +${hiddenConfigurationCount}`}
+                        </button>
+                      )}
                     </div>
                   ) : (
                     <p className="text-xs text-gray-500">{t('myPrinters.noConfigurations')}</p>

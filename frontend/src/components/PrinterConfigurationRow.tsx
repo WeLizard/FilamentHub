@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ChevronDown, ChevronUp, Download, Edit, Eye, Plus, Settings } from 'lucide-react';
 import type { PrinterProfile, PrintProfile } from '../types/api';
+import { printerConfigurationCardLabel } from '../utils/printerConfig';
 
 export interface ConfigurationPrintProfile {
   profile: PrintProfile;
@@ -12,6 +13,7 @@ export interface ConfigurationPrintProfile {
  *  a printer card and in the tray of configurations not attached to a printer. */
 export function PrinterConfigurationRow({
   profile,
+  physicalPrinterName,
   printProfiles,
   currentUserId,
   onEdit,
@@ -22,6 +24,7 @@ export function PrinterConfigurationRow({
   onDownloadPrintProfile,
 }: {
   profile: PrinterProfile;
+  physicalPrinterName?: string | null;
   printProfiles: ConfigurationPrintProfile[];
   currentUserId?: number | null;
   onEdit?: (profile: PrinterProfile) => void;
@@ -37,6 +40,12 @@ export function PrinterConfigurationRow({
   const { t } = useTranslation();
   const [printProfilesOpen, setPrintProfilesOpen] = useState(false);
   const nozzles = profile.nozzle_diameters ?? [];
+  const displayName = printerConfigurationCardLabel(
+    profile,
+    physicalPrinterName,
+    t,
+  );
+  const nameAlreadyDescribesNozzles = displayName !== profile.name;
   const canEditConfiguration = Boolean(
     onEdit &&
     !profile.is_official &&
@@ -51,13 +60,20 @@ export function PrinterConfigurationRow({
       <div className="flex items-start gap-2 px-2.5 py-2">
         <Settings className="mt-0.5 h-4 w-4 flex-shrink-0 text-blue-400" />
         <div className="min-w-0 flex-1">
-          <p className="truncate text-xs font-medium text-white">{profile.name}</p>
+          <p
+            className="truncate text-xs font-medium text-white"
+            title={displayName === profile.name ? undefined : profile.name}
+          >
+            {displayName}
+          </p>
           <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px] text-gray-400">
-            <span>
-              {nozzles.length > 0
-                ? `${t('profilePage.nozzles')}: ${nozzles.join(', ')} ${t('profilePage.mm')}`
-                : t('myPrinters.noNozzles')}
-            </span>
+            {!nameAlreadyDescribesNozzles && (
+              <span>
+                {nozzles.length > 0
+                  ? `${t('profilePage.nozzles')}: ${nozzles.join(', ')} ${t('profilePage.mm')}`
+                  : t('myPrinters.noNozzles')}
+              </span>
+            )}
             {canOpenPrintProfiles && (
               <button
                 type="button"

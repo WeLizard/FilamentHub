@@ -11,11 +11,16 @@ const mocks = vi.hoisted(() => ({
   requestCapabilities: vi.fn(),
   listPrinters: vi.fn(),
   getPrinterProfile: vi.fn(),
+  listPrintProfiles: vi.fn(),
   capabilityListener: null as ((capabilities: ReadonlySet<string>) => void) | null,
 }));
 
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({
+    t: (key: string, values?: { count?: number }) =>
+      values?.count == null ? key : `${key}:${values.count}`,
+    i18n: { language: 'en' },
+  }),
 }));
 
 vi.mock('../api/client', () => ({
@@ -26,6 +31,9 @@ vi.mock('../api/client', () => ({
   },
   printerProfilesAPI: {
     get: (...args: unknown[]) => mocks.getPrinterProfile(...args),
+  },
+  printProfilesAPI: {
+    listAllForConfigurations: (...args: unknown[]) => mocks.listPrintProfiles(...args),
   },
 }));
 
@@ -53,20 +61,24 @@ vi.mock('./Toast', () => ({
 vi.mock('./AddPhysicalPrinterModal', () => ({ AddPhysicalPrinterModal: () => null }));
 vi.mock('./PhysicalPrinterSettingsModal', () => ({ PhysicalPrinterSettingsModal: () => null }));
 vi.mock('./PrinterConfigurationRow', () => ({
-  PrinterConfigurationRow: ({ profile }: { profile: { name: string } }) => <span>{profile.name}</span>,
+  PrinterConfigurationRow: ({ profile }: { profile: { name: string } }) => (
+    <span data-testid="printer-configuration">{profile.name}</span>
+  ),
 }));
 
-function renderList() {
+function renderList(
+  printerProfiles = [
+    { id: 11, name: 'Config One' },
+    { id: 22, name: 'Config Two' },
+  ],
+) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
   return render(
     <QueryClientProvider client={queryClient}>
       <MyPrintersList
-        printerProfiles={[
-          { id: 11, name: 'Config One' },
-          { id: 22, name: 'Config Two' },
-        ] as never}
+        printerProfiles={printerProfiles as never}
       />
     </QueryClientProvider>,
   );
@@ -77,6 +89,7 @@ describe('MyPrintersList Orca bundle action', () => {
     vi.clearAllMocks();
     mocks.capabilityListener = null;
     mocks.downloadBundle.mockResolvedValue(new Blob(['bundle']));
+    mocks.listPrintProfiles.mockResolvedValue([]);
     mocks.listPrinters.mockResolvedValue([
       {
         id: 1,
@@ -183,5 +196,59 @@ describe('MyPrintersList Orca bundle action', () => {
 
     expect(await screen.findByText('Official machine configuration')).toBeInTheDocument();
     expect(mocks.getPrinterProfile).toHaveBeenCalledWith(33);
+  });
+
+  it('orders configurations by nozzle and collapses a long list without hiding it permanently', async () => {
+    mocks.isPluginEmbed.mockReturnValue(false);
+    mocks.listPrinters.mockResolvedValue([
+      {
+        id: 7,
+        name: 'Voron 2.4 350',
+        printer_profile_ids: [11, 12, 13, 14, 15, 16],
+        material_systems: [],
+      },
+    ]);
+    const profiles = [
+      { id: 11, name: 'Nozzle 0.8', nozzle_diameters: [0.8] },
+      { id: 12, name: 'Nozzle 0.15', nozzle_diameters: [0.15] },
+      { id: 13, name: 'Nozzle 0.6', nozzle_diameters: [0.6] },
+      { id: 14, name: 'Nozzle 0.25', nozzle_diameters: [0.25] },
+      { id: 15, name: 'Nozzle 0.4', nozzle_diameters: [0.4] },
+      { id: 16, name: 'Nozzle 1.0', nozzle_diameters: [1.0] },
+    ];
+
+    renderList(profiles);
+
+    await screen.findByText('Voron 2.4 350');
+    expect(screen.getAllByTestId('printer-configuration').map((row) => row.textContent)).toEqual([
+      'Nozzle 0.15',
+      'Nozzle 0.25',
+      'Nozzle 0.4',
+      'Nozzle 0.6',
+    ]);
+    expect(
+      screen.getByText(
+        (content, element) =>
+          element?.tagName === 'P' && content.includes('profilePage.profilesCount:6'),
+      ),
+    ).toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'filamentDetailPage.showMorePresets +2',
+      }),
+    );
+
+    expect(screen.getAllByTestId('printer-configuration').map((row) => row.textContent)).toEqual([
+      'Nozzle 0.15',
+      'Nozzle 0.25',
+      'Nozzle 0.4',
+      'Nozzle 0.6',
+      'Nozzle 0.8',
+      'Nozzle 1.0',
+    ]);
+    expect(
+      screen.getByRole('button', { name: 'profilePage.hideDetails' }),
+    ).toHaveAttribute('aria-expanded', 'true');
   });
 });

@@ -53,4 +53,38 @@ describe('PrinterConfigurationRow process profiles', () => {
     );
     expect(onCreatePrintProfile).toHaveBeenCalledWith(configuration);
   });
+
+  it('compacts only a redundant machine name and keeps configuration actions', () => {
+    const configuration = {
+      id: 33,
+      name: 'Voron 2.4 350 0.4 nozzle',
+      nozzle_diameters: [0.4],
+      owner_user_id: 7,
+      is_official: false,
+    } as PrinterProfile;
+    const onView = vi.fn();
+    const onEdit = vi.fn();
+
+    render(
+      <PrinterConfigurationRow
+        profile={configuration}
+        physicalPrinterName="Voron 2.4 350"
+        printProfiles={[]}
+        currentUserId={7}
+        onView={onView}
+        onEdit={onEdit}
+      />,
+    );
+
+    expect(screen.getByText('profilePage.nozzles: 0.4 profilePage.mm')).toHaveAttribute(
+      'title',
+      configuration.name,
+    );
+    expect(screen.queryByText(configuration.name)).toBeNull();
+
+    fireEvent.click(screen.getByTitle('profilePage.view'));
+    fireEvent.click(screen.getByTitle('profilePage.edit'));
+    expect(onView).toHaveBeenCalledWith(configuration);
+    expect(onEdit).toHaveBeenCalledWith(configuration);
+  });
 });
