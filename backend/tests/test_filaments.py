@@ -277,6 +277,7 @@ async def test_filament_import_csv(admin_client: AsyncClient, db_session: AsyncS
     db_session.add(brand)
     await db_session.commit()
     await db_session.refresh(brand)
+    brand_id = brand.id
 
     csv_content = (
         "name,material_type,color_name,color_hex,price_per_kg,spool_weight,line,availability\n"
@@ -284,18 +285,29 @@ async def test_filament_import_csv(admin_client: AsyncClient, db_session: AsyncS
         "Imp Blue,PETG,Blue,#0000FF,1800,1000,Imp Line,available\n"
         ",PLA,Bad,,,,,\n"
     )
-    files = {"file": ("import.csv", csv_content.encode("utf-8"), "text/csv")}
-    resp = await admin_client.post(f"/api/v1/filament-import?brand_id={brand.id}", files=files)
+
+    def files():
+        return {"file": ("import.csv", csv_content.encode("utf-8"), "text/csv")}
+
+    preview = await admin_client.post(
+        f"/api/v1/filament-import/preview?brand_id={brand_id}", files=files()
+    )
+    assert preview.status_code == 200
+    resp = await admin_client.post(
+        f"/api/v1/filament-import?brand_id={brand_id}",
+        files=files(),
+        data={"confirmation_token": preview.json()["confirmation_token"]},
+    )
     assert resp.status_code == 200
     data = resp.json()
     assert data["created"] == 2
     assert data["errors"] == 1
 
-    lines = await admin_client.get(f"/api/v1/filament-lines?brand_id={brand.id}")
+    lines = await admin_client.get(f"/api/v1/filament-lines?brand_id={brand_id}")
     assert len(lines.json()) == 1
     assert lines.json()[0]["filaments_count"] == 2
 
-    imported = await admin_client.get(f"/api/v1/filaments/?brand_id={brand.id}")
+    imported = await admin_client.get(f"/api/v1/filaments/?brand_id={brand_id}")
     imported_groups = {
         item["name"]: (item["color_group"], item["color_group_source"])
         for item in imported.json()["items"]
@@ -305,7 +317,14 @@ async def test_filament_import_csv(admin_client: AsyncClient, db_session: AsyncS
         "Imp Blue": ("blue", "auto"),
     }
 
-    again = await admin_client.post(f"/api/v1/filament-import?brand_id={brand.id}", files=files)
+    again_preview = await admin_client.post(
+        f"/api/v1/filament-import/preview?brand_id={brand_id}", files=files()
+    )
+    again = await admin_client.post(
+        f"/api/v1/filament-import?brand_id={brand_id}",
+        files=files(),
+        data={"confirmation_token": again_preview.json()["confirmation_token"]},
+    )
     assert again.json()["skipped"] == 2
     assert again.json()["created"] == 0
 

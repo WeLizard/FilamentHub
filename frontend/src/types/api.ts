@@ -181,6 +181,8 @@ export interface FilamentImportRowResult {
   row: number;
   status: 'created' | 'updated' | 'skipped' | 'error';
   name: string | null;
+  material_type: string | null;
+  color_name: string | null;
   filament_id: number | null;
   message: string | null;
 }
@@ -191,6 +193,13 @@ export interface FilamentImportResult {
   skipped: number;
   errors: number;
   rows: FilamentImportRowResult[];
+}
+
+export interface FilamentImportPreviewResult extends FilamentImportResult {
+  file_name: string;
+  source_rows: Array<Record<string, string>>;
+  confirmation_token: string;
+  confirmation_expires_at: string;
 }
 
 export interface FilamentPaletteVariant {

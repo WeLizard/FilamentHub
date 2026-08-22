@@ -278,3 +278,35 @@ describe('SpoolManager CSV uploads', () => {
     expect((importPayload as FormData).get('mapping')).toBe(JSON.stringify(mapping));
   });
 });
+
+describe('brand material CSV uploads', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    vi.clearAllMocks();
+  });
+
+  it('previews first and sends the signed confirmation only on apply', async () => {
+    const { filamentImportAPI } = await loadClientModule();
+    axiosState.apiInstance.post.mockResolvedValue({ data: {} });
+    const file = new File(['csv'], 'materials.csv', { type: 'text/csv' });
+
+    await filamentImportAPI.previewCsv(42, file, 'DE');
+    await filamentImportAPI.importCsv(42, file, 'signed-plan', 'DE');
+
+    const [previewUrl, previewPayload, previewConfig] =
+      axiosState.apiInstance.post.mock.calls[0];
+    expect(previewUrl).toBe('/filament-import/preview');
+    expect(previewPayload).toBeInstanceOf(FormData);
+    expect((previewPayload as FormData).get('file')).toBe(file);
+    expect((previewPayload as FormData).get('confirmation_token')).toBeNull();
+    expect(previewConfig.params).toEqual({ brand_id: 42, country: 'DE' });
+
+    const [importUrl, importPayload, importConfig] =
+      axiosState.apiInstance.post.mock.calls[1];
+    expect(importUrl).toBe('/filament-import');
+    expect(importPayload).toBeInstanceOf(FormData);
+    expect((importPayload as FormData).get('file')).toBe(file);
+    expect((importPayload as FormData).get('confirmation_token')).toBe('signed-plan');
+    expect(importConfig.params).toEqual({ brand_id: 42, country: 'DE' });
+  });
+});

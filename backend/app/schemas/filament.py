@@ -318,9 +318,7 @@ class FilamentUpdate(BaseModel):
     enclosure_requirement: Literal["none", "passive", "active"] | None = None
     chamber_temperature_c: float | None = Field(None, ge=0, le=150)
     bed_adhesives: list[str] | None = Field(None, max_length=12)
-    post_processing_chemicals: list[FilamentChemicalGuidance] | None = Field(
-        None, max_length=12
-    )
+    post_processing_chemicals: list[FilamentChemicalGuidance] | None = Field(None, max_length=12)
     price_per_kg: float | None = Field(None, ge=0)
     spool_weight: float | None = Field(None, gt=0)
     empty_spool_weight_g: float | None = Field(None, ge=0)
@@ -460,6 +458,8 @@ class FilamentImportRowResult(BaseModel):
     row: int  # номер строки в файле (1-based, без заголовка)
     status: Literal["created", "updated", "skipped", "error"]
     name: str | None = None
+    material_type: str | None = None
+    color_name: str | None = None
     filament_id: int | None = None
     message: str | None = None  # код ошибки / причина пропуска
 
@@ -472,6 +472,15 @@ class FilamentImportResult(BaseModel):
     skipped: int = 0
     errors: int = 0
     rows: list[FilamentImportRowResult] = Field(default_factory=list)
+
+
+class FilamentImportPreviewResult(FilamentImportResult):
+    """Non-persistent CSV plan that may be corrected before confirmation."""
+
+    file_name: str
+    source_rows: list[dict[str, str]] = Field(default_factory=list)
+    confirmation_token: str
+    confirmation_expires_at: datetime
 
 
 class FilamentPaletteVariant(BaseModel):

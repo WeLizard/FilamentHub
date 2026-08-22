@@ -50,7 +50,7 @@ import { ModalOverlay } from '../components/ModalOverlay';
 import { COUNTRY_CODES, countryName } from '../utils/countries';
 import { HSLColorPicker } from '../components/HSLColorPicker';
 import { SocialIcon } from '../components/socialIcons';
-import type { FilamentImportResult } from '../types/api';
+import type { FilamentImportPreviewResult, FilamentImportResult } from '../types/api';
 import { CreateFilamentModal } from '../components/CreateFilamentModal';
 import { FilamentPaletteForm } from '../components/FilamentPaletteForm';
 const CreatePresetModal = lazy(() =>
@@ -190,6 +190,32 @@ interface BrandProfilePageProps {
   initialClaimBrandName?: string;
 }
 
+const IMPORT_CSV_COLUMNS = [
+  'name',
+  'material_type',
+  'color_name',
+  'market_color_name',
+  'color_hex',
+  'ral_code',
+  'price_per_kg',
+  'currency',
+  'spool_weight',
+  'line',
+  'availability',
+  'product_url',
+  'market_note',
+] as const;
+
+type ImportCsvColumn = typeof IMPORT_CSV_COLUMNS[number];
+type ImportDraftRow = Record<ImportCsvColumn, string>;
+
+function createImportDraftFile(rows: ImportDraftRow[], fileName: string): File {
+  const escapeCell = (value: string) => `"${value.replace(/"/g, '""')}"`;
+  const csvRows = rows.map((row) => IMPORT_CSV_COLUMNS.map((column) => escapeCell(row[column] || '')).join(','));
+  const content = `\uFEFFsep=,\r\n${IMPORT_CSV_COLUMNS.join(',')}\r\n${csvRows.join('\r\n')}\r\n`;
+  return new File([content], fileName || 'filament_import.csv', { type: 'text/csv;charset=utf-8' });
+}
+
 export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({
   onBack,
   initialEditing,
@@ -231,7 +257,13 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({
   const [profileError, setProfileError] = useState<string | null>(null);
   const [isUploadingLogo, setIsUploadingLogo] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importPreview, setImportPreview] = useState<FilamentImportPreviewResult | null>(null);
+  const [importDraftRows, setImportDraftRows] = useState<ImportDraftRow[]>([]);
+  const [expandedImportRow, setExpandedImportRow] = useState<number | null>(null);
+  const [importPreviewNeedsReview, setImportPreviewNeedsReview] = useState(false);
   const [importResult, setImportResult] = useState<FilamentImportResult | null>(null);
+  const [importModalError, setImportModalError] = useState<string | null>(null);
   const [isBrandLogoVisible, setIsBrandLogoVisible] = useState(false);
   const [isBrandSwitcherOpen, setIsBrandSwitcherOpen] = useState(false);
   const [workspaceCountry, setWorkspaceCountry] = useState<string | null>(null);
@@ -563,17 +595,87 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({
     const file = e.target.files?.[0];
     if (!file || !brandData?.id) return;
     setIsImporting(true);
+    setImportModalError(null);
+    setImportResult(null);
     try {
-      const res = await filamentImportAPI.importCsv(brandData.id, file, scopeCountry);
-      setImportResult(res);
-      queryClient.invalidateQueries({ queryKey: ['brand-filaments'] });
-      queryClient.invalidateQueries({ queryKey: ['filament-lines', brandData.id] });
+      const preview = await filamentImportAPI.previewCsv(brandData.id, file, scopeCountry);
+      setImportFile(file);
+      setImportPreview(preview);
+      setImportDraftRows(preview.source_rows as ImportDraftRow[]);
+      setExpandedImportRow(null);
+      setImportPreviewNeedsReview(false);
     } catch (err: unknown) {
       const detail = (err as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
       setProfileError(translateApiError(t, detail, t('brandProfile.importError')));
     } finally {
       setIsImporting(false);
       e.target.value = '';
+    }
+  };
+
+  const closeImportPreview = () => {
+    if (isImporting) return;
+    setImportPreview(null);
+    setImportFile(null);
+    setImportDraftRows([]);
+    setExpandedImportRow(null);
+    setImportPreviewNeedsReview(false);
+    setImportModalError(null);
+  };
+
+  const updateImportDraftCell = (rowIndex: number, column: ImportCsvColumn, value: string) => {
+    setImportDraftRows((current) => current.map((row, index) => (
+      index === rowIndex ? { ...row, [column]: value } : row
+    )));
+    setImportPreviewNeedsReview(true);
+    setImportModalError(null);
+  };
+
+  const revalidateImportDraft = async () => {
+    if (!brandData?.id || !importPreview || importDraftRows.length === 0) return;
+    const correctedFile = createImportDraftFile(importDraftRows, importPreview.file_name);
+    setIsImporting(true);
+    setImportModalError(null);
+    try {
+      const preview = await filamentImportAPI.previewCsv(brandData.id, correctedFile, scopeCountry);
+      setImportFile(correctedFile);
+      setImportPreview(preview);
+      setImportDraftRows(preview.source_rows as ImportDraftRow[]);
+      setImportPreviewNeedsReview(false);
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
+      setImportModalError(translateApiError(t, detail, t('brandProfile.importError')));
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
+  const confirmImportCsv = async () => {
+    if (!brandData?.id || !importFile || !importPreview || importPreviewNeedsReview) return;
+    setIsImporting(true);
+    setImportModalError(null);
+    try {
+      const result = await filamentImportAPI.importCsv(
+        brandData.id,
+        importFile,
+        importPreview.confirmation_token,
+        scopeCountry,
+      );
+      setImportPreview(null);
+      setImportFile(null);
+      setImportDraftRows([]);
+      setExpandedImportRow(null);
+      setImportPreviewNeedsReview(false);
+      setImportResult(result);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['brand-filaments'] }),
+        queryClient.invalidateQueries({ queryKey: ['filament-lines', brandData.id] }),
+      ]);
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
+      setImportModalError(translateApiError(t, detail, t('brandProfile.importError')));
+    } finally {
+      setIsImporting(false);
     }
   };
 
@@ -1501,6 +1603,193 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({
         brandId={user.brand_id || undefined}
         initialCountry={scopeCountry}
       />
+
+      {/* CSV preview: no catalogue write happens before this confirmation. */}
+      {importPreview && (
+        <ModalOverlay
+          onClose={closeImportPreview}
+          closeOnOverlayClick={!isImporting}
+          closeOnEscape={!isImporting}
+        >
+          <div className="flex max-h-[82vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-white/20 bg-gray-900 shadow-2xl">
+            <div className="flex items-start justify-between gap-4 border-b border-white/10 px-6 py-5">
+              <div className="flex min-w-0 items-start gap-3">
+                <div className="rounded-xl border border-cyan-400/20 bg-cyan-400/10 p-2 text-cyan-300">
+                  <FileText className="h-5 w-5" />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="text-lg font-bold text-white">{t('brandProfile.importPreviewTitle')}</h3>
+                  <p className="mt-1 text-sm leading-5 text-gray-400">{t('brandProfile.importPreviewIntro')}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={closeImportPreview}
+                disabled={isImporting}
+                className="rounded-lg p-2 text-gray-400 transition hover:bg-white/10 hover:text-white disabled:opacity-40"
+                aria-label={t('brandProfile.importClose')}
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="scrollbar-contained min-h-0 flex-1 overflow-y-auto px-6 py-5">
+              <div className="mb-4 flex flex-wrap items-center gap-x-5 gap-y-2 rounded-xl border border-cyan-400/20 bg-cyan-400/10 px-4 py-3 text-sm">
+                <span className="min-w-0 truncate text-cyan-100">{importPreview.file_name}</span>
+                <span className="text-cyan-200/70">
+                  {scopeCountry
+                    ? t('brandProfile.importPreviewCountry', { country: countryName(scopeCountry, i18n.language) })
+                    : t('brandProfile.importPreviewCommon')}
+                </span>
+                <span className="ml-auto text-cyan-200">{t('brandProfile.importPreviewNoWrites')}</span>
+              </div>
+
+              <div className="mb-5 grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
+                <div className="rounded-xl border border-green-400/20 bg-green-400/10 p-3 text-green-300">
+                  <span className="block text-xl font-semibold">{importPreview.created}</span>
+                  {t('brandProfile.importWillCreate')}
+                </div>
+                <div className="rounded-xl border border-cyan-400/20 bg-cyan-400/10 p-3 text-cyan-300">
+                  <span className="block text-xl font-semibold">{importPreview.updated}</span>
+                  {t('brandProfile.importWillUpdate')}
+                </div>
+                <div className="rounded-xl border border-white/10 bg-white/5 p-3 text-gray-300">
+                  <span className="block text-xl font-semibold">{importPreview.skipped}</span>
+                  {t('brandProfile.importWillSkip')}
+                </div>
+                <div className="rounded-xl border border-red-400/20 bg-red-400/10 p-3 text-red-300">
+                  <span className="block text-xl font-semibold">{importPreview.errors}</span>
+                  {t('brandProfile.importHasErrors')}
+                </div>
+              </div>
+
+              <div className="overflow-hidden rounded-xl border border-white/10">
+                <div className="border-b border-white/10 bg-white/5 px-4 py-3 text-sm font-medium text-white">
+                  {t('brandProfile.importPreviewRows')}
+                </div>
+                <div className="divide-y divide-white/10">
+                  {importPreview.rows.map((row) => {
+                    const draftRow = importDraftRows[row.row - 1];
+                    const statusClass = row.status === 'created'
+                      ? 'text-green-300 bg-green-400/10 border-green-400/20'
+                      : row.status === 'updated'
+                        ? 'text-cyan-300 bg-cyan-400/10 border-cyan-400/20'
+                        : row.status === 'error'
+                          ? 'text-red-300 bg-red-400/10 border-red-400/20'
+                          : 'text-gray-300 bg-white/5 border-white/10';
+                    return (
+                      <div key={row.row} className="px-4 py-3">
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                          <span className="w-16 shrink-0 text-xs text-gray-500">
+                            {t('brandProfile.importRow')} {row.row}
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm font-medium text-white">{draftRow?.name || '—'}</p>
+                            <p className="mt-0.5 truncate text-xs text-gray-400">
+                              {[draftRow?.material_type, draftRow?.color_name].filter(Boolean).join(' · ') || '—'}
+                            </p>
+                            {!importPreviewNeedsReview && row.message && (
+                              <p className="mt-1 text-xs text-red-300">
+                                {translateApiError(t, { code: row.message }, row.message)}
+                              </p>
+                            )}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setExpandedImportRow((current) => current === row.row ? null : row.row)}
+                            className="inline-flex w-fit shrink-0 items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-gray-200 transition hover:border-cyan-400/30 hover:bg-cyan-400/10 hover:text-cyan-200"
+                            aria-expanded={expandedImportRow === row.row}
+                          >
+                            <Edit className="h-3.5 w-3.5" />
+                            {t('brandProfile.importEditRow')}
+                          </button>
+                          <span className={`w-fit shrink-0 rounded-lg border px-2.5 py-1 text-xs ${importPreviewNeedsReview ? 'border-amber-400/20 bg-amber-400/10 text-amber-200' : statusClass}`}>
+                            {importPreviewNeedsReview
+                              ? t('brandProfile.importNeedsReview')
+                              : t(`brandProfile.importPreviewStatus.${row.status}`)}
+                          </span>
+                        </div>
+
+                        {expandedImportRow === row.row && draftRow && (
+                          <div className="mt-4 grid gap-3 rounded-xl border border-white/10 bg-black/15 p-4 sm:grid-cols-2">
+                            {IMPORT_CSV_COLUMNS.map((column) => (
+                              <label
+                                key={column}
+                                className={`block text-xs text-gray-400 ${column === 'market_note' ? 'sm:col-span-2' : ''}`}
+                              >
+                                <span className="mb-1.5 block">{t(`brandProfile.importFields.${column}`)}</span>
+                                {column === 'market_note' ? (
+                                  <textarea
+                                    value={draftRow[column]}
+                                    onChange={(event) => updateImportDraftCell(row.row - 1, column, event.target.value)}
+                                    rows={2}
+                                    className="w-full resize-y rounded-lg border border-white/15 bg-gray-950/60 px-3 py-2 text-sm text-white outline-none transition focus:border-cyan-400/50"
+                                  />
+                                ) : (
+                                  <input
+                                    value={draftRow[column]}
+                                    onChange={(event) => updateImportDraftCell(row.row - 1, column, event.target.value)}
+                                    className="w-full rounded-lg border border-white/15 bg-gray-950/60 px-3 py-2 text-sm text-white outline-none transition focus:border-cyan-400/50"
+                                  />
+                                )}
+                              </label>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {importPreviewNeedsReview && (
+                <div className="mt-4 flex items-start gap-3 rounded-xl border border-cyan-400/25 bg-cyan-400/10 p-4 text-sm leading-5 text-cyan-100">
+                  <Info className="mt-0.5 h-4 w-4 shrink-0 text-cyan-300" />
+                  {t('brandProfile.importRecheckRequired')}
+                </div>
+              )}
+
+              {importPreview.errors > 0 && (
+                <div className="mt-4 flex items-start gap-3 rounded-xl border border-amber-400/25 bg-amber-400/10 p-4 text-sm leading-5 text-amber-100">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
+                  {t('brandProfile.importPreviewPartialWarning')}
+                </div>
+              )}
+              {importModalError && (
+                <div className="mt-4 rounded-xl border border-red-400/25 bg-red-400/10 p-4 text-sm text-red-200">
+                  {importModalError}
+                </div>
+              )}
+            </div>
+
+            <div className="flex flex-col-reverse gap-3 border-t border-white/10 px-6 py-4 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={closeImportPreview}
+                disabled={isImporting}
+                className="rounded-xl border border-white/15 bg-white/5 px-4 py-2.5 text-sm text-gray-200 transition hover:bg-white/10 disabled:opacity-40"
+              >
+                {t('brandProfile.importPreviewCancel')}
+              </button>
+              <button
+                type="button"
+                onClick={importPreviewNeedsReview ? revalidateImportDraft : confirmImportCsv}
+                disabled={isImporting || (!importPreviewNeedsReview && importPreview.created + importPreview.updated === 0)}
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-cyan-500 to-purple-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-cyan-500/15 transition hover:from-cyan-400 hover:to-purple-500 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {isImporting
+                  ? <Loader2 className="h-4 w-4 animate-spin" />
+                  : importPreviewNeedsReview
+                    ? <FileText className="h-4 w-4" />
+                    : <Check className="h-4 w-4" />}
+                {isImporting
+                  ? t(importPreviewNeedsReview ? 'brandProfile.importRechecking' : 'brandProfile.importApplying')
+                  : t(importPreviewNeedsReview ? 'brandProfile.importRecheck' : 'brandProfile.importPreviewConfirm')}
+              </button>
+            </div>
+          </div>
+        </ModalOverlay>
+      )}
 
       {/* Результат CSV-импорта */}
       {importResult && (
