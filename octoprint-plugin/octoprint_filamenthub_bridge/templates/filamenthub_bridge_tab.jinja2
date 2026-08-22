@@ -3,9 +3,8 @@
     <div class="fhb-heading">
       <div>
         <h3>FilamentHub Bridge</h3>
-        <p>Spool assignments and measured usage, connected directly to FilamentHub.</p>
+        <p>Track the spools actually used by this OctoPrint instance.</p>
       </div>
-      <span class="fhb-status" data-bind="text: statusText, css: statusClass"></span>
     </div>
 
     <div class="fhb-card" data-bind="visible: !paired()">
@@ -22,31 +21,94 @@
     </div>
 
     <div data-bind="visible: paired">
-      <div class="fhb-toolbar">
-        <label class="checkbox">
-          <input type="checkbox" data-bind="checked: mapToolsToSlots, event: { change: saveMappingMode }">
-          Map OctoPrint tools T0, T1… to slots with the same number
-        </label>
-        <button class="btn" data-bind="click: sync, disable: busy">Sync now</button>
-      </div>
+      <section class="fhb-connection">
+        <div class="fhb-connection-copy">
+          <span class="fhb-status" data-bind="text: statusText, css: statusClass"></span>
+          <strong data-bind="text: systemName() || 'FilamentHub material system'"></strong>
+          <small data-bind="text: lastSyncText"></small>
+          <small data-bind="visible: outboxSize">Pending usage reports: <b data-bind="text: outboxSize"></b></small>
+        </div>
+        <div class="fhb-connection-actions">
+          <button class="btn" data-bind="click: sync, disable: busy">Sync now</button>
+          <button class="btn btn-link fhb-unpair" data-bind="click: unpair, disable: busy">Disconnect</button>
+        </div>
+      </section>
 
-      <div class="fhb-grid" data-bind="foreach: slots">
-        <button class="fhb-slot" data-bind="click: $parent.selectSlot, css: { active: index === $parent.activeSlot() }">
-          <span class="fhb-swatch" data-bind="style: { backgroundColor: spool && spool.color_hex ? spool.color_hex : '#64748b' }"></span>
-          <span class="fhb-slot-copy">
-            <strong data-bind="text: label || ('Slot ' + (index + 1))"></strong>
-            <small data-bind="text: spool ? ([spool.brand, spool.name].filter(Boolean).join(' · ')) : 'No spool assigned'"></small>
-          </span>
-          <span class="fhb-weight" data-bind="text: spool ? (Math.round(spool.remaining_weight_g) + ' g') : ''"></span>
-        </button>
-      </div>
-
-      <div class="fhb-meta">
-        <span data-bind="text: lastSyncText"></span>
-        <span data-bind="visible: outboxSize">Pending events: <b data-bind="text: outboxSize"></b></span>
-      </div>
       <div class="alert alert-error" data-bind="visible: lastError, text: lastError"></div>
-      <button class="btn btn-link fhb-unpair" data-bind="click: unpair, disable: busy">Disconnect Bridge</button>
+
+      <section class="fhb-section">
+        <div class="fhb-section-heading">
+          <div>
+            <h4>Material routing</h4>
+            <p>Choose how G-code extrusion is attributed to FilamentHub slots.</p>
+          </div>
+          <button class="btn btn-primary" data-bind="click: saveRouting, disable: busy">Save routing</button>
+        </div>
+
+        <div class="fhb-routing-modes">
+          <label class="fhb-routing-option" data-bind="css: { selected: isManualRouting }">
+            <input type="radio" name="fhb-routing-mode" value="manual" data-bind="checked: routingMode">
+            <span>
+              <strong>Manual spool switching</strong>
+              <small>For one tool or when you change filament yourself. Select the loaded slot below or from the sidebar.</small>
+            </span>
+          </label>
+          <label class="fhb-routing-option" data-bind="css: { selected: isToolRouting }">
+            <input type="radio" name="fhb-routing-mode" value="tools" data-bind="checked: routingMode">
+            <span>
+              <strong>Follow G-code tools</strong>
+              <small>For virtual tools, MMU workflows, multiple extruders, IDEX and physical toolchangers. Each standard T command uses its configured slot.</small>
+            </span>
+          </label>
+        </div>
+
+        <div class="fhb-tool-routing" data-bind="visible: isToolRouting">
+          <div class="fhb-tool-heading">
+            <strong>Tool to slot mapping</strong>
+            <span data-bind="visible: currentToolText, text: currentToolText"></span>
+          </div>
+          <div class="fhb-tool-rows" data-bind="foreach: toolMappings">
+            <div class="fhb-tool-row">
+              <label>T</label>
+              <input type="number" min="0" max="1023" step="1" data-bind="textInput: toolIndex, disable: $parent.busy">
+              <span class="fhb-arrow">→</span>
+              <select data-bind="options: $parent.slots, optionsText: $parent.slotOptionText, optionsValue: 'index', value: slotIndex, disable: $parent.busy"></select>
+              <button class="btn btn-link" title="Remove mapping" data-bind="click: $parent.removeToolMapping, disable: $parent.busy">Remove</button>
+            </div>
+          </div>
+          <button class="btn" data-bind="click: addToolMapping, disable: busy">Add tool</button>
+          <div class="alert alert-warning fhb-routing-warning" data-bind="visible: unmappedToolsText, text: unmappedToolsText"></div>
+        </div>
+      </section>
+
+      <section class="fhb-section">
+        <div class="fhb-section-heading fhb-spools-heading">
+          <div>
+            <h4>Spools</h4>
+            <p data-bind="visible: isManualRouting">Select the spool currently loaded into the printer.</p>
+            <p data-bind="visible: isToolRouting">Mappings are shown on each slot. Empty slots remain visible here but not in the sidebar.</p>
+          </div>
+        </div>
+
+        <div class="fhb-grid" data-bind="foreach: slots">
+          <button class="fhb-slot" data-bind="
+              click: $parent.selectSlot,
+              enable: $parent.isManualRouting,
+              css: { active: index === $parent.activeSlot(), readonly: $parent.isToolRouting() }">
+            <span class="fhb-swatch" data-bind="style: { backgroundColor: spool && spool.color_hex ? spool.color_hex : '#64748b' }, css: { empty: !spool }"></span>
+            <span class="fhb-slot-copy">
+              <span class="fhb-slot-title">
+                <strong data-bind="text: $parent.slotIdentity($data)"></strong>
+                <em data-bind="visible: index === $parent.activeSlot()">Active</em>
+                <em data-bind="visible: $parent.isToolRouting() && $parent.mappedToolsForSlot($data), text: $parent.mappedToolsForSlot($data)"></em>
+              </span>
+              <small data-bind="text: $parent.spoolTitle($data) || 'No spool assigned'"></small>
+              <small data-bind="visible: spool && spool.material_type, text: $parent.spoolMaterial($data)"></small>
+            </span>
+            <span class="fhb-weight" data-bind="text: $parent.spoolRemaining($data)"></span>
+          </button>
+        </div>
+      </section>
     </div>
   </div>
 </div>

@@ -1,14 +1,26 @@
-<div class="fhb-sidebar-spools" data-bind="foreach: slots">
-  <div class="fhb-sidebar-slot" data-bind="css: { active: index === $parent.activeSlot() }, attr: { 'aria-current': index === $parent.activeSlot() ? 'true' : null }">
-    <span class="fhb-sidebar-swatch" data-bind="css: { empty: !spool }, style: { backgroundColor: spool && spool.color_hex ? spool.color_hex : '#64748b' }"></span>
+<div class="fhb-sidebar-summary">
+  <span data-bind="text: isManualRouting() ? 'Manual selection' : 'G-code tool routing'"></span>
+  <span data-bind="visible: currentToolText, text: currentToolText"></span>
+</div>
+<div class="fhb-sidebar-empty-state" data-bind="visible: assignedSlots().length === 0">
+  No spools are assigned in FilamentHub.
+</div>
+<div class="fhb-sidebar-spools" data-bind="foreach: assignedSlots">
+  <button type="button" class="fhb-sidebar-slot" data-bind="
+      click: $parent.selectSlot,
+      enable: $parent.isManualRouting,
+      css: { active: index === $parent.activeSlot(), readonly: $parent.isToolRouting() },
+      attr: { 'aria-current': index === $parent.activeSlot() ? 'true' : null }">
+    <span class="fhb-sidebar-swatch" data-bind="style: { backgroundColor: spool.color_hex || '#64748b' }"></span>
     <span class="fhb-sidebar-copy">
       <strong data-bind="text: $parent.slotIdentity($data)"></strong>
-      <span data-bind="visible: spool, text: $parent.spoolTitle($data)"></span>
-      <span class="fhb-sidebar-empty" data-bind="visible: !spool">—</span>
+      <span data-bind="text: $parent.spoolTitle($data)"></span>
     </span>
-    <span class="fhb-sidebar-meta" data-bind="visible: spool">
+    <span class="fhb-sidebar-meta">
+      <strong data-bind="visible: $parent.mappedToolsForSlot($data), text: $parent.mappedToolsForSlot($data)"></strong>
       <span data-bind="text: $parent.spoolMaterial($data)"></span>
       <span data-bind="text: $parent.spoolRemaining($data)"></span>
     </span>
-  </div>
+  </button>
 </div>
+<div class="alert alert-warning fhb-sidebar-warning" data-bind="visible: unmappedToolsText, text: unmappedToolsText"></div>

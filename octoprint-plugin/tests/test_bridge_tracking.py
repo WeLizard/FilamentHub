@@ -26,6 +26,7 @@ class FakeSettings:
             },
             "active_slot": 0,
             "map_tools_to_slots": False,
+            "tool_slot_map": {},
             "outbox": [],
         }
 
@@ -37,6 +38,9 @@ class FakeSettings:
 
     def set(self, path, value):
         self.values[path[0]] = value
+
+    def set_boolean(self, path, value):
+        self.set(path, bool(value))
 
     def save(self):
         return None
@@ -50,6 +54,29 @@ class FakePrinter:
 class PrintingComm:
     def isPrinting(self):
         return True
+
+
+class IdleComm:
+    def isPrinting(self):
+        return False
+
+
+def test_tool_selected_before_print_seeds_physical_tool_tracking():
+    plugin = FilamentHubBridgePlugin()
+    plugin._settings = FakeSettings()
+    plugin._settings.set_boolean(["map_tools_to_slots"], True)
+    plugin._settings.set(["tool_slot_map"], {"1": 0})
+    plugin._printer = FakePrinter()
+    plugin._logger = logging.getLogger("filamenthub-bridge-test")
+
+    plugin.on_gcode_sent(IdleComm(), "sent", "T1", None, "T")
+    plugin._begin_print({"name": "physical-tool.gcode"})
+    plugin.on_gcode_sent(PrintingComm(), "sent", "M83", None, "M83")
+    plugin.on_gcode_sent(PrintingComm(), "sent", "G1 E7", None, "G1")
+
+    assert plugin._selected_tool == 1
+    assert plugin._tracker.active_tool == 1
+    assert plugin._tracker.used_length_by_slot == {0: 7.0}
 
 
 def test_sent_gcode_starts_tracking_before_delayed_print_started_event():
@@ -193,8 +220,10 @@ def test_unpair_revokes_remote_connection_before_clearing_local_credentials():
 
     assert calls == [("DELETE", "/connection")]
     assert plugin._settings.get(["bridge_token"]) is None
-    assert plugin._settings.get(["snapshot"]) is None
+    assert plugin._settings.get(["snapshot"]) == {}
     assert plugin._settings.get(["active_slot"]) is None
+    assert plugin._settings.get(["map_tools_to_slots"]) is False
+    assert plugin._settings.get(["tool_slot_map"]) == {}
 
 
 def test_failed_remote_revocation_preserves_local_connection():
@@ -271,6 +300,38 @@ def test_plugin_registers_shared_tab_and_sidebar_view_model_surfaces():
             "data_bind": "visible: paired",
         },
     ]
+
+
+def test_explicit_tool_routing_accepts_virtual_tools_independent_of_slot_number():
+    plugin = FilamentHubBridgePlugin()
+    plugin._settings = FakeSettings()
+
+    plugin._save_routing(enabled=True, mapping={3: 0})
+
+    assert plugin._settings.get(["map_tools_to_slots"]) is True
+    assert plugin._settings.get(["tool_slot_map"]) == {"3": 0}
+    assert plugin._tool_slot_map() == {3: 0}
+
+
+def test_tool_routing_rejects_a_slot_missing_from_the_snapshot():
+    plugin = FilamentHubBridgePlugin()
+    plugin._settings = FakeSettings()
+
+    try:
+        plugin._save_routing(enabled=True, mapping={0: 6})
+    except ValueError as exc:
+        assert str(exc) == "Unknown FilamentHub slot(s): 7."
+    else:
+        raise AssertionError("A missing slot must not be accepted")
+
+
+def test_legacy_identity_mapping_is_preserved_after_upgrade():
+    plugin = FilamentHubBridgePlugin()
+    plugin._settings = FakeSettings()
+    plugin._settings.set(["map_tools_to_slots"], True)
+    plugin._settings.set(["tool_slot_map"], {})
+
+    assert plugin._tool_slot_map() == {0: 0}
 
 
 def test_sensitive_settings_are_never_exposed_by_settings_api():

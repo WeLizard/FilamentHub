@@ -89,16 +89,18 @@ class FilamentHubBridgePlugin(
         self._job_started_at: Optional[str] = None
         self._job_spools: Dict[int, int] = {}
         self._last_retry_after_seconds: Optional[float] = None
+        self._selected_tool: Optional[int] = None
 
     def get_settings_defaults(self):
         return {
             "server_url": "https://filamenthub.ru",
             "bridge_token": None,
             "instance_id": str(uuid.uuid4()),
-            "snapshot": None,
+            "snapshot": {},
             "snapshot_etag": None,
             "active_slot": None,
             "map_tools_to_slots": False,
+            "tool_slot_map": {},
             "outbox": [],
             "last_sync_at": None,
             "last_error": None,
@@ -161,6 +163,7 @@ class FilamentHubBridgePlugin(
             "sync": [],
             "select_slot": ["slot_index"],
             "set_mapping_mode": ["map_tools_to_slots"],
+            "set_routing": ["mode", "tool_slot_map"],
             "unpair": [],
         }
 
@@ -183,11 +186,19 @@ class FilamentHubBridgePlugin(
             elif command == "select_slot":
                 self._select_slot(int(data["slot_index"]))
             elif command == "set_mapping_mode":
-                self._settings.set_boolean(
-                    ["map_tools_to_slots"], bool(data["map_tools_to_slots"])
+                enabled = bool(data["map_tools_to_slots"])
+                mapping = self._tool_slot_map()
+                if enabled and not mapping:
+                    mapping = {slot: slot for slot in self._available_slots()}
+                self._save_routing(enabled=enabled, mapping=mapping)
+            elif command == "set_routing":
+                mode = str(data["mode"] or "").strip().lower()
+                if mode not in {"manual", "tools"}:
+                    raise ValueError("Routing mode must be manual or tools.")
+                self._save_routing(
+                    enabled=mode == "tools",
+                    mapping=self._parse_tool_slot_map(data["tool_slot_map"]),
                 )
-                self._settings.save()
-                self._wake_worker.set()
             elif command == "unpair":
                 self._unpair()
             return flask.jsonify(self._public_state())
@@ -220,6 +231,12 @@ class FilamentHubBridgePlugin(
         if not cmd:
             return None
         with self._lock:
+            sent_tool = self._tracker.tool_index(cmd, gcode)
+            if sent_tool is not None:
+                # This is the last standard Tn command OctoPrint wrote to the
+                # printer. It seeds a subsequent print, but is not presented as
+                # firmware-confirmed hardware state.
+                self._selected_tool = sent_tool
             if not self._printing:
                 try:
                     is_printing = bool(comm_instance.isPrinting())
@@ -236,16 +253,14 @@ class FilamentHubBridgePlugin(
                     }
                 )
             available = self._available_slots()
-            active_slot = self._active_slot()
             selected, consumed = self._tracker.process(
                 command=cmd,
                 gcode=gcode,
-                active_slot=active_slot,
+                active_slot=self._manual_slot(),
                 map_tools_to_slots=self._settings.get_boolean(["map_tools_to_slots"]),
                 available_slots=available,
+                tool_slot_map=self._tool_slot_map(),
             )
-            if selected != active_slot and selected in available:
-                self._settings.set(["active_slot"], selected)
             if consumed > 0:
                 self._logger.debug(
                     "Tracked %.3f mm of extrusion in FilamentHub slot %s",
@@ -261,7 +276,26 @@ class FilamentHubBridgePlugin(
             "server_url": self._settings.get(["server_url"]),
             "snapshot": snapshot,
             "active_slot": self._active_slot(),
+            "manual_slot": self._manual_slot(),
             "map_tools_to_slots": self._settings.get_boolean(["map_tools_to_slots"]),
+            "routing_mode": (
+                "tools"
+                if self._settings.get_boolean(["map_tools_to_slots"])
+                else "manual"
+            ),
+            "tool_slot_map": [
+                {"tool_index": tool, "slot_index": slot}
+                for tool, slot in sorted(self._tool_slot_map().items())
+            ],
+            "current_tool": (
+                self._tracker.active_tool
+                if self._printing and self._settings.get_boolean(["map_tools_to_slots"])
+                else None
+            ),
+            "unmapped_tools": (
+                sorted(self._tracker.unmapped_tools) if self._printing else []
+            ),
+            "printing": self._printing,
             "outbox_size": len(self._settings.get(["outbox"]) or []),
             "last_sync_at": self._settings.get(["last_sync_at"]),
             "last_error": self._settings.get(["last_error"]),
@@ -367,9 +401,11 @@ class FilamentHubBridgePlugin(
     def _unpair(self) -> None:
         self._request("DELETE", "/connection")
         self._settings.set(["bridge_token"], None)
-        self._settings.set(["snapshot"], None)
+        self._settings.set(["snapshot"], {})
         self._settings.set(["snapshot_etag"], None)
         self._settings.set(["active_slot"], None)
+        self._settings.set(["map_tools_to_slots"], False)
+        self._settings.set(["tool_slot_map"], {})
         self._settings.set(["last_sync_at"], None)
         self._settings.set(["last_error"], None)
         self._settings.save()
@@ -378,16 +414,86 @@ class FilamentHubBridgePlugin(
         snapshot = self._settings.get(["snapshot"]) or {}
         return {int(slot["index"]) for slot in snapshot.get("slots", [])}
 
-    def _active_slot(self) -> Optional[int]:
+    def _manual_slot(self) -> Optional[int]:
         value = self._settings.get(["active_slot"])
         return int(value) if value is not None else None
 
+    def _active_slot(self) -> Optional[int]:
+        if self._settings.get_boolean(["map_tools_to_slots"]):
+            if not self._printing:
+                return None
+            mapped = self._tool_slot_map().get(self._tracker.active_tool)
+            return mapped if mapped in self._available_slots() else None
+        return self._manual_slot()
+
     def _select_slot(self, slot_index: int) -> None:
+        if self._settings.get_boolean(["map_tools_to_slots"]):
+            raise ValueError(
+                "Manual slot selection is unavailable while G-code tool routing is enabled."
+            )
         if slot_index not in self._available_slots():
             raise ValueError(
                 "The selected slot is not present in the FilamentHub snapshot."
             )
         self._settings.set(["active_slot"], slot_index)
+        self._settings.save()
+        self._wake_worker.set()
+
+    @staticmethod
+    def _parse_tool_slot_map(value) -> Dict[int, int]:
+        if not isinstance(value, list):
+            raise ValueError("Tool mappings must be a list.")
+        mapping: Dict[int, int] = {}
+        for item in value:
+            if not isinstance(item, dict):
+                raise ValueError("Each tool mapping must contain a tool and a slot.")
+            try:
+                tool_index = int(item["tool_index"])
+                slot_index = int(item["slot_index"])
+            except (KeyError, TypeError, ValueError) as exc:
+                raise ValueError(
+                    "Tool and slot indices must be whole numbers."
+                ) from exc
+            if not 0 <= tool_index <= 1023 or not 0 <= slot_index <= 1023:
+                raise ValueError("Tool and slot indices must be between 0 and 1023.")
+            if tool_index in mapping:
+                raise ValueError(f"T{tool_index} is mapped more than once.")
+            mapping[tool_index] = slot_index
+        return mapping
+
+    def _tool_slot_map(self) -> Dict[int, int]:
+        raw = self._settings.get(["tool_slot_map"]) or {}
+        if not raw and self._settings.get_boolean(["map_tools_to_slots"]):
+            # Versions before explicit routing stored only the boolean identity
+            # mode. Preserve that configuration during an in-place upgrade.
+            return {slot: slot for slot in self._available_slots()}
+        if not isinstance(raw, dict):
+            return {}
+        mapping: Dict[int, int] = {}
+        for raw_tool, raw_slot in raw.items():
+            try:
+                tool_index = int(raw_tool)
+                slot_index = int(raw_slot)
+            except (TypeError, ValueError):
+                continue
+            if 0 <= tool_index <= 1023 and 0 <= slot_index <= 1023:
+                mapping[tool_index] = slot_index
+        return mapping
+
+    def _save_routing(self, *, enabled: bool, mapping: Dict[int, int]) -> None:
+        missing_slots = sorted(set(mapping.values()) - self._available_slots())
+        if missing_slots:
+            labels = ", ".join(str(index + 1) for index in missing_slots)
+            raise ValueError(f"Unknown FilamentHub slot(s): {labels}.")
+        if enabled and not mapping:
+            raise ValueError(
+                "Map at least one G-code tool before enabling tool routing."
+            )
+        self._settings.set_boolean(["map_tools_to_slots"], enabled)
+        self._settings.set(
+            ["tool_slot_map"],
+            {str(tool): slot for tool, slot in sorted(mapping.items())},
+        )
         self._settings.save()
         self._wake_worker.set()
 
@@ -408,14 +514,19 @@ class FilamentHubBridgePlugin(
             if self._printing:
                 return
             self._tracker.reset()
+            if self._selected_tool is not None:
+                self._tracker.active_tool = self._selected_tool
             self._printing = True
             self._job_id = str(uuid.uuid4())
             self._job_file = payload.get("name") or payload.get("path")
             self._job_started_at = datetime.now(timezone.utc).isoformat()
             self._job_spools = self._snapshot_spools()
             available = self._available_slots()
-            active = self._active_slot()
-            if active not in available:
+            manual_slot = self._manual_slot()
+            if (
+                not self._settings.get_boolean(["map_tools_to_slots"])
+                and manual_slot not in available
+            ):
                 assigned = sorted(self._job_spools)
                 if assigned:
                     self._settings.set(["active_slot"], assigned[0])
@@ -482,8 +593,8 @@ class FilamentHubBridgePlugin(
             self._settings.set(["snapshot"], payload)
             self._settings.set(["snapshot_etag"], response_headers.get("ETag"))
             available = self._available_slots()
-            active = self._active_slot()
-            if active not in available:
+            manual_slot = self._manual_slot()
+            if manual_slot not in available:
                 assigned = sorted(self._snapshot_spools())
                 fallback = (
                     assigned[0] if assigned else (min(available) if available else None)
