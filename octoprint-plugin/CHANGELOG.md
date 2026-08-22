@@ -11,6 +11,8 @@ Newest first. The top entry is used for GitHub release notes.
   IDEX and physical toolchanger printers.
 - Preserves each tool's own absolute extrusion position and carries a standard
   tool selection made before a print into that print's usage accounting.
+- Uses the intuitive `T0 -> slot #1`, `T1 -> slot #2` order by default and keeps
+  arbitrary mappings behind an optional advanced control.
 - Refuses to attribute an unmapped G-code tool to a fallback spool and surfaces
   the missing mapping in OctoPrint while the print is running.
 - Moves connection controls into a connected-device summary and keeps empty

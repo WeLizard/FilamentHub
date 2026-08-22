@@ -25,7 +25,9 @@ Spoolman or SpoolManager and does not copy their local databases.
    - **Follow G-code tools** uses an explicit `Tn -> FilamentHub slot` table. It
      supports virtual tools, MMU workflows, multiple physical extruders, IDEX
      and toolchanger printers without assuming that a tool number equals a slot
-     number. Extrusion position is tracked separately for every tool.
+     number. By default, tools follow the visible slot order (`T0 -> #1`,
+     `T1 -> #2`, ...); an optional custom table handles non-standard layouts.
+     Extrusion position is tracked separately for every tool.
 
 If a print selects an unmapped `Tn`, the Bridge leaves that extrusion
 unassigned and displays a warning instead of charging it to an unrelated spool.

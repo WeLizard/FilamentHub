@@ -64,19 +64,29 @@
 
         <div class="fhb-tool-routing" data-bind="visible: isToolRouting">
           <div class="fhb-tool-heading">
-            <strong>Tool to slot mapping</strong>
+            <div>
+              <strong>Automatic tool routing</strong>
+              <small data-bind="text: automaticMappingText"></small>
+            </div>
             <span data-bind="visible: currentToolText, text: currentToolText"></span>
           </div>
-          <div class="fhb-tool-rows" data-bind="foreach: toolMappings">
-            <div class="fhb-tool-row">
-              <label>T</label>
-              <input type="number" min="0" max="1023" step="1" data-bind="textInput: toolIndex, disable: $parent.busy">
-              <span class="fhb-arrow">→</span>
-              <select data-bind="options: $parent.slots, optionsText: $parent.slotOptionText, optionsValue: 'index', value: slotIndex, disable: $parent.busy"></select>
-              <button class="btn btn-link" title="Remove mapping" data-bind="click: $parent.removeToolMapping, disable: $parent.busy">Remove</button>
+          <label class="checkbox fhb-custom-toggle">
+            <input type="checkbox" data-bind="checked: useCustomToolMapping, disable: busy">
+            Use a custom tool-to-slot mapping
+            <small>Only needed when tool numbers do not follow the FilamentHub slot order.</small>
+          </label>
+          <div class="fhb-custom-mapping" data-bind="visible: useCustomToolMapping">
+            <div class="fhb-tool-rows" data-bind="foreach: toolMappings">
+              <div class="fhb-tool-row">
+                <label>T</label>
+                <input type="number" min="0" max="1023" step="1" data-bind="textInput: toolIndex, disable: $parent.busy">
+                <span class="fhb-arrow">→</span>
+                <select data-bind="options: $parent.slots, optionsText: $parent.slotOptionText, optionsValue: 'index', value: slotIndex, disable: $parent.busy"></select>
+                <button class="btn btn-link" title="Remove mapping" data-bind="click: $parent.removeToolMapping, disable: $parent.busy">Remove</button>
+              </div>
             </div>
+            <button class="btn" data-bind="click: addToolMapping, disable: busy">Add mapping</button>
           </div>
-          <button class="btn" data-bind="click: addToolMapping, disable: busy">Add tool</button>
           <div class="alert alert-warning fhb-routing-warning" data-bind="visible: unmappedToolsText, text: unmappedToolsText"></div>
         </div>
       </section>

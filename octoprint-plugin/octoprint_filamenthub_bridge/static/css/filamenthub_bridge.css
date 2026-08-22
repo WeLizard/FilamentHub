@@ -33,7 +33,13 @@
 .fhb-routing-option small { margin-top: 3px; color: #6b7280; font-weight: 400; line-height: 1.35; }
 .fhb-tool-routing { margin-top: 12px; padding: 12px; border: 1px solid rgba(127,127,127,.22); border-radius: 9px; }
 .fhb-tool-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+.fhb-tool-heading > div { display: flex; min-width: 0; flex-direction: column; }
+.fhb-tool-heading small { margin-top: 2px; color: #6b7280; font-weight: 400; }
 .fhb-tool-heading span { color: #047857; font-size: 12px; font-weight: 600; }
+.fhb-custom-toggle { display: flex; align-items: flex-start; gap: 7px; margin: 10px 0 0; }
+.fhb-custom-toggle input { margin-top: 2px; }
+.fhb-custom-toggle small { display: block; color: #6b7280; font-weight: 400; }
+.fhb-custom-mapping { margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(127,127,127,.2); }
 .fhb-tool-rows { display: flex; flex-direction: column; gap: 7px; margin-bottom: 8px; }
 .fhb-tool-row { display: grid; grid-template-columns: auto 72px auto minmax(180px, 1fr) auto; align-items: center; gap: 8px; }
 .fhb-tool-row label { margin: 0; font-weight: 700; }

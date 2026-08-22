@@ -12,6 +12,7 @@ $(function () {
     self.manualSlot = ko.observable(null);
     self.routingMode = ko.observable("manual");
     self.toolMappings = ko.observableArray([]);
+    self.useCustomToolMapping = ko.observable(false);
     self.currentTool = ko.observable(null);
     self.unmappedTools = ko.observableArray([]);
     self.printing = ko.observable(false);
@@ -25,6 +26,24 @@ $(function () {
         toolIndex: ko.observable(String(toolIndex)),
         slotIndex: ko.observable(Number(slotIndex))
       };
+    };
+    self.automaticMappings = function () {
+      return self.slots()
+        .slice()
+        .sort(function (left, right) { return Number(left.index) - Number(right.index); })
+        .map(function (slot, toolIndex) {
+          return self.mappingRow(toolIndex, slot.index);
+        });
+    };
+    self.isAutomaticMapping = function (mappings) {
+      var automatic = self.automaticMappings();
+      if (mappings.length !== automatic.length) return false;
+      return automatic.every(function (expected) {
+        return mappings.some(function (actual) {
+          return Number(ko.unwrap(actual.toolIndex)) === Number(ko.unwrap(expected.toolIndex)) &&
+            Number(ko.unwrap(actual.slotIndex)) === Number(ko.unwrap(expected.slotIndex));
+        });
+      });
     };
     self.slotIdentity = function (slot) {
       if (slot && slot.label) return slot.label;
@@ -57,7 +76,7 @@ $(function () {
     };
     self.mappedToolsForSlot = function (slot) {
       var slotIndex = Number(slot.index);
-      return self.toolMappings()
+      return self.effectiveToolMappings()
         .filter(function (mapping) {
           return Number(ko.unwrap(mapping.slotIndex)) === slotIndex;
         })
@@ -73,6 +92,28 @@ $(function () {
     });
     self.isToolRouting = ko.pureComputed(function () {
       return self.routingMode() === "tools";
+    });
+    self.effectiveToolMappings = ko.pureComputed(function () {
+      return self.useCustomToolMapping()
+        ? self.toolMappings()
+        : self.automaticMappings();
+    });
+    self.automaticMappingText = ko.pureComputed(function () {
+      var mappings = self.automaticMappings();
+      if (!mappings.length) return "No FilamentHub slots are available.";
+      var labels = mappings.map(function (mapping) {
+        var slot = self.slots().find(function (candidate) {
+          return Number(candidate.index) === Number(ko.unwrap(mapping.slotIndex));
+        });
+        return "T" + ko.unwrap(mapping.toolIndex) + " → " + self.slotIdentity(slot);
+      });
+      if (labels.length <= 4) return labels.join(", ");
+      return labels.slice(0, 3).join(", ") + ", …, " + labels[labels.length - 1];
+    });
+    self.useCustomToolMapping.subscribe(function (enabled) {
+      if (enabled && self.toolMappings().length === 0) {
+        self.toolMappings(self.automaticMappings());
+      }
     });
     self.statusText = ko.pureComputed(function () {
       if (!self.paired()) return "Not connected";
@@ -110,9 +151,11 @@ $(function () {
       self.activeSlot(state.active_slot === undefined ? null : state.active_slot);
       self.manualSlot(state.manual_slot === undefined ? null : state.manual_slot);
       self.routingMode(state.routing_mode === "tools" ? "tools" : "manual");
-      self.toolMappings((state.tool_slot_map || []).map(function (mapping) {
+      var mappings = (state.tool_slot_map || []).map(function (mapping) {
         return self.mappingRow(mapping.tool_index, mapping.slot_index);
-      }));
+      });
+      self.toolMappings(mappings);
+      self.useCustomToolMapping(mappings.length > 0 && !self.isAutomaticMapping(mappings));
       self.currentTool(state.current_tool === undefined ? null : state.current_tool);
       self.unmappedTools(Array.isArray(state.unmapped_tools) ? state.unmapped_tools : []);
       self.printing(Boolean(state.printing));
@@ -163,7 +206,10 @@ $(function () {
     self.saveRouting = function () {
       var seen = {};
       var invalid = false;
-      var mappings = self.toolMappings().map(function (mapping) {
+      var sourceMappings = self.useCustomToolMapping()
+        ? self.toolMappings()
+        : self.automaticMappings();
+      var mappings = sourceMappings.map(function (mapping) {
         var toolIndex = Number(ko.unwrap(mapping.toolIndex));
         var slotIndex = Number(ko.unwrap(mapping.slotIndex));
         if (!Number.isInteger(toolIndex) || toolIndex < 0 || toolIndex > 1023 ||
