@@ -20,6 +20,7 @@
 .fhb-weight { color: #6b7280; font-size: 12px; white-space: nowrap; }
 .fhb-meta { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; margin-top: 12px; color: #6b7280; font-size: 12px; }
 .fhb-unpair { margin-top: 8px; color: #b91c1c; }
+.fhb-pair-error { margin-top: 10px; margin-bottom: 0; }
 .fhb-sidebar-spools { display: flex; flex-direction: column; gap: 6px; }
 .fhb-sidebar-slot { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; align-items: center; gap: 8px; min-width: 0; padding: 7px 8px; border: 1px solid rgba(127,127,127,.24); border-radius: 7px; background: rgba(127,127,127,.06); }
 .fhb-sidebar-slot.active { border-color: rgba(124,58,237,.65); box-shadow: inset 3px 0 0 #7c3aed; }

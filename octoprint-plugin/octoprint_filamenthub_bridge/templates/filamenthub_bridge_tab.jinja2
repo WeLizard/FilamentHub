@@ -10,11 +10,15 @@
 
     <div class="fhb-card" data-bind="visible: !paired()">
       <h4>Connect this OctoPrint</h4>
-      <label>FilamentHub address</label>
-      <input type="url" class="input-block-level" data-bind="value: serverUrl" placeholder="https://filamenthub.ru">
+      <label>FilamentHub service</label>
+      <select class="input-block-level" data-bind="value: serverUrl, disable: busy">
+        <option value="https://filamenthub.ru">filamenthub.ru</option>
+        <option value="https://filamenthub.club">filamenthub.club</option>
+      </select>
       <label>Pairing code</label>
-      <input type="text" class="input-block-level fhb-code" data-bind="value: pairingCode" placeholder="FH-ABCDE-12345">
-      <button class="btn btn-primary" data-bind="click: pair, disable: busy">Connect</button>
+      <input type="text" class="input-block-level fhb-code" data-bind="textInput: pairingCode, disable: busy" placeholder="FH-ABCDE-12345">
+      <button class="btn btn-primary" data-bind="click: pair, disable: busy() || !pairingCode().trim()">Connect</button>
+      <div class="alert alert-error fhb-pair-error" data-bind="visible: lastError, text: lastError"></div>
     </div>
 
     <div data-bind="visible: paired">

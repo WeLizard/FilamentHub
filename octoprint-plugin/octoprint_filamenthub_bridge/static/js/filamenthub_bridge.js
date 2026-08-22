@@ -79,10 +79,11 @@ $(function () {
     };
 
     self.pair = function () {
+      self.lastError(null);
       self.command({
         command: "pair",
         server_url: self.serverUrl(),
-        pairing_code: self.pairingCode()
+        pairing_code: self.pairingCode().trim().toUpperCase()
       }).done(function () { self.pairingCode(""); });
     };
     self.sync = function () { self.command({ command: "sync" }); };

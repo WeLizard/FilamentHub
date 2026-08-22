@@ -4,6 +4,7 @@ Newest first. The top entry is used for GitHub release notes.
 
 ## Unreleased
 - Shows the Bridge's live FilamentHub slot and spool snapshot in the OctoPrint sidebar, including the active slot, material colour and remaining weight.
+- Lets users choose `filamenthub.ru` or `filamenthub.club` while pairing and shows pairing failures directly in the connection form.
 
 ## 0.1.0
 - Connects OctoPrint to a FilamentHub material system without exposing OctoPrint to the public internet.

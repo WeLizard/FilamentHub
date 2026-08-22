@@ -15,8 +15,8 @@ Spoolman or SpoolManager and does not copy their local databases.
 
 1. Add an OctoPrint material system to an existing printer in FilamentHub.
 2. Ask FilamentHub for a short-lived pairing code.
-3. Open the **FilamentHub** tab in OctoPrint, enter the FilamentHub address and
-   the pairing code, then select **Connect**.
+3. Open the **FilamentHub** tab in OctoPrint, select `filamenthub.ru` or
+   `filamenthub.club`, enter the pairing code, then select **Connect**.
 4. The assigned slots appear in OctoPrint. For a single-tool machine, slot 1 is
    selected automatically. Multi-slot systems use explicit manual selection by
    default; tool-to-slot mapping can be enabled when tools really are slots.

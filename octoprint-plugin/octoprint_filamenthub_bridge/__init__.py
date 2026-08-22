@@ -105,11 +105,13 @@ class FilamentHubBridgePlugin(
         }
 
     def get_settings_restricted_paths(self):
-        return [
-            ["bridge_token"],
-            ["snapshot"],
-            ["outbox"],
-        ]
+        return {
+            "never": [
+                ["bridge_token"],
+                ["snapshot"],
+                ["outbox"],
+            ]
+        }
 
     def get_assets(self):
         return {
@@ -343,12 +345,15 @@ class FilamentHubBridgePlugin(
 
     def _pair(self, server_url: str, pairing_code: str) -> None:
         normalized_server_url = self._normalize_server_url(server_url)
+        normalized_pairing_code = str(pairing_code or "").strip().upper()
+        if not normalized_pairing_code:
+            raise ValueError("Enter the FilamentHub pairing code.")
         instance_id = self._settings.get(["instance_id"]) or str(uuid.uuid4())
         _, _, response = self._request(
             "POST",
             "/pair",
             {
-                "pairing_code": pairing_code,
+                "pairing_code": normalized_pairing_code,
                 "instance_id": instance_id,
                 "plugin_version": PLUGIN_VERSION,
                 "octoprint_version": self._octoprint_version(),

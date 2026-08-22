@@ -150,8 +150,9 @@ def test_successful_pairing_replaces_connection_atomically():
         return 200, {}, {"bridge_token": "replacement-token"}
 
     plugin._request = successful_request
-    plugin._pair("https://new.example/", "FH-SUCCESS")
+    plugin._pair("https://new.example/", "  fh-success  ")
 
+    assert calls[0][2]["pairing_code"] == "FH-SUCCESS"
     assert calls[0][3] == {
         "server_url": "https://new.example",
         "include_token": False,
@@ -159,6 +160,22 @@ def test_successful_pairing_replaces_connection_atomically():
     assert plugin._settings.get(["server_url"]) == "https://new.example"
     assert plugin._settings.get(["bridge_token"]) == "replacement-token"
     assert plugin._settings.get(["instance_id"]) == "existing-instance"
+
+
+def test_empty_pairing_code_is_rejected_before_network_request():
+    plugin = FilamentHubBridgePlugin()
+    plugin._settings = FakeSettings()
+    plugin._logger = logging.getLogger("filamenthub-bridge-test")
+    plugin._request = lambda *args, **kwargs: (_ for _ in ()).throw(
+        AssertionError("Empty pairing code must not reach the network")
+    )
+
+    try:
+        plugin._pair("https://filamenthub.ru", "   ")
+    except ValueError as exc:
+        assert str(exc) == "Enter the FilamentHub pairing code."
+    else:
+        raise AssertionError("Empty pairing code must be rejected")
 
 
 def test_retry_delay_grows_but_stays_bounded(monkeypatch):
@@ -215,3 +232,15 @@ def test_plugin_registers_shared_tab_and_sidebar_view_model_surfaces():
             "data_bind": "visible: paired",
         },
     ]
+
+
+def test_sensitive_settings_are_never_exposed_by_settings_api():
+    plugin = FilamentHubBridgePlugin()
+
+    assert plugin.get_settings_restricted_paths() == {
+        "never": [
+            ["bridge_token"],
+            ["snapshot"],
+            ["outbox"],
+        ]
+    }
