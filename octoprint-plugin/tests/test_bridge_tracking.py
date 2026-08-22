@@ -194,3 +194,24 @@ def test_worker_spreads_first_automatic_contact(monkeypatch):
     plugin._worker_loop()
 
     assert waits == [STARTUP_JITTER_MAX_SECONDS]
+
+
+def test_plugin_registers_shared_tab_and_sidebar_view_model_surfaces():
+    plugin = FilamentHubBridgePlugin()
+
+    configs = plugin.get_template_configs()
+
+    assert configs == [
+        {
+            "type": "tab",
+            "name": "FilamentHub",
+            "custom_bindings": True,
+        },
+        {
+            "type": "sidebar",
+            "name": "FilamentHub",
+            "icon": "fas fa-layer-group",
+            "custom_bindings": True,
+            "data_bind": "visible: paired",
+        },
+    ]

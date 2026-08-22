@@ -123,7 +123,14 @@ class FilamentHubBridgePlugin(
                 "type": "tab",
                 "name": "FilamentHub",
                 "custom_bindings": True,
-            }
+            },
+            {
+                "type": "sidebar",
+                "name": "FilamentHub",
+                "icon": "fas fa-layer-group",
+                "custom_bindings": True,
+                "data_bind": "visible: paired",
+            },
         ]
 
     def is_template_autoescaped(self):

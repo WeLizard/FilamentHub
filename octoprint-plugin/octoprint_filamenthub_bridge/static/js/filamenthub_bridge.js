@@ -13,6 +13,31 @@ $(function () {
     self.lastError = ko.observable(null);
     self.busy = ko.observable(false);
 
+    self.slotIdentity = function (slot) {
+      if (slot && slot.label) return slot.label;
+      var index = slot && Number.isFinite(Number(slot.index)) ? Number(slot.index) : 0;
+      return self.mapToolsToSlots() ? ("T" + index) : ("#" + (index + 1));
+    };
+    self.spoolTitle = function (slot) {
+      var spool = slot && slot.spool;
+      if (!spool) return "";
+      var title = [spool.brand, spool.name].filter(Boolean).join(" · ");
+      return title || (spool.id ? ("#" + spool.id) : "—");
+    };
+    self.spoolMaterial = function (slot) {
+      return slot && slot.spool && slot.spool.material_type
+        ? slot.spool.material_type
+        : "";
+    };
+    self.spoolRemaining = function (slot) {
+      var remaining = slot && slot.spool
+        ? Number(slot.spool.remaining_weight_g)
+        : NaN;
+      return Number.isFinite(remaining) && remaining >= 0
+        ? (Math.round(remaining) + " g")
+        : "";
+    };
+
     self.statusText = ko.pureComputed(function () {
       if (!self.paired()) return "Not connected";
       if (self.lastError()) return "Needs attention";
@@ -31,7 +56,10 @@ $(function () {
       state = state || {};
       self.paired(Boolean(state.paired));
       self.serverUrl(state.server_url || self.serverUrl());
-      self.slots((state.snapshot && state.snapshot.slots) || []);
+      var slots = state.snapshot && Array.isArray(state.snapshot.slots)
+        ? state.snapshot.slots
+        : [];
+      self.slots(slots);
       self.activeSlot(state.active_slot === undefined ? null : state.active_slot);
       self.mapToolsToSlots(Boolean(state.map_tools_to_slots));
       self.outboxSize(state.outbox_size || 0);
@@ -84,6 +112,9 @@ $(function () {
   OCTOPRINT_VIEWMODELS.push({
     construct: FilamentHubBridgeViewModel,
     dependencies: ["loginStateViewModel"],
-    elements: ["#tab_plugin_filamenthub_bridge"]
+    elements: [
+      "#tab_plugin_filamenthub_bridge",
+      "#sidebar_plugin_filamenthub_bridge"
+    ]
   });
 });

@@ -4,7 +4,8 @@ FilamentHub Bridge is the native outbound connector between a local OctoPrint
 instance and a FilamentHub material system. It synchronizes the slots and spool
 assignments the user selected in FilamentHub, reports the locally selected slot,
 and sends measured extrusion after a terminal print event with durable retry
-identifiers.
+identifiers. The same synchronized snapshot is shown as a compact, read-only
+spool list in OctoPrint's sidebar, with the currently selected slot highlighted.
 
 The Bridge does not expose OctoPrint to the public internet. It initiates HTTPS
 requests to the FilamentHub instance configured by the user. It does not require

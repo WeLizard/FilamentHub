@@ -20,3 +20,15 @@
 .fhb-weight { color: #6b7280; font-size: 12px; white-space: nowrap; }
 .fhb-meta { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; margin-top: 12px; color: #6b7280; font-size: 12px; }
 .fhb-unpair { margin-top: 8px; color: #b91c1c; }
+.fhb-sidebar-spools { display: flex; flex-direction: column; gap: 6px; }
+.fhb-sidebar-slot { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; align-items: center; gap: 8px; min-width: 0; padding: 7px 8px; border: 1px solid rgba(127,127,127,.24); border-radius: 7px; background: rgba(127,127,127,.06); }
+.fhb-sidebar-slot.active { border-color: rgba(124,58,237,.65); box-shadow: inset 3px 0 0 #7c3aed; }
+.fhb-sidebar-swatch { width: 10px; height: 28px; border: 1px solid rgba(127,127,127,.4); border-radius: 4px; }
+.fhb-sidebar-swatch.empty { background: transparent !important; border-style: dashed; opacity: .55; }
+.fhb-sidebar-copy { display: flex; min-width: 0; flex-direction: column; line-height: 1.25; }
+.fhb-sidebar-copy strong,
+.fhb-sidebar-copy span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fhb-sidebar-copy span { opacity: .72; font-size: 11px; }
+.fhb-sidebar-empty { opacity: .52 !important; }
+.fhb-sidebar-meta { display: flex; min-width: 0; flex-direction: column; align-items: flex-end; line-height: 1.25; white-space: nowrap; }
+.fhb-sidebar-meta span { opacity: .72; font-size: 11px; }

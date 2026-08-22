@@ -1,0 +1,14 @@
+<div class="fhb-sidebar-spools" data-bind="foreach: slots">
+  <div class="fhb-sidebar-slot" data-bind="css: { active: index === $parent.activeSlot() }, attr: { 'aria-current': index === $parent.activeSlot() ? 'true' : null }">
+    <span class="fhb-sidebar-swatch" data-bind="css: { empty: !spool }, style: { backgroundColor: spool && spool.color_hex ? spool.color_hex : '#64748b' }"></span>
+    <span class="fhb-sidebar-copy">
+      <strong data-bind="text: $parent.slotIdentity($data)"></strong>
+      <span data-bind="visible: spool, text: $parent.spoolTitle($data)"></span>
+      <span class="fhb-sidebar-empty" data-bind="visible: !spool">—</span>
+    </span>
+    <span class="fhb-sidebar-meta" data-bind="visible: spool">
+      <span data-bind="text: $parent.spoolMaterial($data)"></span>
+      <span data-bind="text: $parent.spoolRemaining($data)"></span>
+    </span>
+  </div>
+</div>
