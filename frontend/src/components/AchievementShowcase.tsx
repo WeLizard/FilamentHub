@@ -339,7 +339,7 @@ export function AchievementShowcase({
             >
               <X className="h-5 w-5" />
             </button>
-            <div className="mx-auto aspect-square w-[72vw] max-w-80 rounded-3xl shadow-[0_0_42px_rgba(168,85,247,0.2)]">
+            <div className="mx-auto aspect-square w-[72vw] max-w-80 rounded-[15%] shadow-[0_0_42px_rgba(168,85,247,0.2)]">
               <AchievementBadge code={previewedAchievement.code} size="lg" showArtwork />
             </div>
             <div className="mt-1 text-center">
