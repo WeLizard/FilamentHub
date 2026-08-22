@@ -10,11 +10,8 @@
       <feGaussianBlur stdDeviation="10" result="blur"/>
       <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
     </filter>
-    <filter id="uncommon-shadow" x="-8%" y="-8%" width="116%" height="116%">
-      <feDropShadow dx="0" dy="12" stdDeviation="14" flood-color="#081F33" flood-opacity=".72"/>
-    </filter>
   </defs>
-  <rect x="35" y="35" width="954" height="954" rx="149" stroke="#102F49" stroke-width="60" filter="url(#uncommon-shadow)"/>
+  <rect x="47" y="47" width="930" height="930" rx="137" stroke="#102F49" stroke-width="44"/>
   <rect x="47" y="47" width="930" height="930" rx="137" stroke="url(#uncommon-rim)" stroke-width="32"/>
   <rect x="75" y="75" width="874" height="874" rx="110" stroke="#69F7E9" stroke-opacity=".75" stroke-width="7" filter="url(#uncommon-glow)"/>
 </svg>

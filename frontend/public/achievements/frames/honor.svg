@@ -7,12 +7,8 @@
       <stop offset=".72" stop-color="#D8F8FF"/>
       <stop offset="1" stop-color="#6BD5ED"/>
     </linearGradient>
-    <filter id="honor-glow" x="-12%" y="-12%" width="124%" height="124%">
-      <feDropShadow dx="0" dy="0" stdDeviation="11" flood-color="#7DEBFF" flood-opacity=".52"/>
-      <feDropShadow dx="0" dy="13" stdDeviation="15" flood-color="#08172C" flood-opacity=".78"/>
-    </filter>
   </defs>
-  <rect x="34" y="34" width="956" height="956" rx="150" stroke="#172B48" stroke-width="62"/>
-  <rect x="47" y="47" width="930" height="930" rx="137" stroke="url(#honor-rim)" stroke-width="36" filter="url(#honor-glow)"/>
+  <rect x="47" y="47" width="930" height="930" rx="137" stroke="#172B48" stroke-width="48"/>
+  <rect x="47" y="47" width="930" height="930" rx="137" stroke="url(#honor-rim)" stroke-width="36"/>
   <rect x="77" y="77" width="870" height="870" rx="108" stroke="#E8FCFF" stroke-opacity=".82" stroke-width="9"/>
 </svg>
