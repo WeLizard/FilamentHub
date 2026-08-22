@@ -51,6 +51,37 @@ const RARITY_STYLES: Record<string, { card: string; chip: string }> = {
   },
 };
 
+const RARITY_PREVIEW_STYLES: Record<string, { aura: string; card: string }> = {
+  common: {
+    aura: 'bg-[radial-gradient(circle_at_50%_24%,rgba(99,102,241,0.2),transparent_60%)]',
+    card: 'border-indigo-300/20 shadow-[0_28px_100px_rgba(79,70,229,0.32)]',
+  },
+  uncommon: {
+    aura: 'bg-[radial-gradient(circle_at_50%_24%,rgba(34,211,238,0.22),transparent_60%)]',
+    card: 'border-cyan-300/25 shadow-[0_28px_100px_rgba(6,182,212,0.32)]',
+  },
+  rare: {
+    aura: 'bg-[radial-gradient(circle_at_50%_24%,rgba(139,92,246,0.25),transparent_60%)]',
+    card: 'border-violet-300/25 shadow-[0_28px_105px_rgba(124,58,237,0.36)]',
+  },
+  epic: {
+    aura: 'bg-[radial-gradient(circle_at_50%_24%,rgba(232,121,249,0.28),transparent_61%)]',
+    card: 'border-fuchsia-300/30 shadow-[0_28px_110px_rgba(217,70,239,0.4)]',
+  },
+  historic: {
+    aura: 'bg-[radial-gradient(circle_at_50%_24%,rgba(251,191,36,0.24),transparent_61%)]',
+    card: 'border-amber-300/30 shadow-[0_28px_105px_rgba(245,158,11,0.34)]',
+  },
+  honor: {
+    aura: 'bg-[radial-gradient(circle_at_50%_24%,rgba(186,230,253,0.22),transparent_60%)]',
+    card: 'border-sky-200/30 shadow-[0_28px_105px_rgba(56,189,248,0.3)]',
+  },
+  secret: {
+    aura: 'bg-[radial-gradient(circle_at_50%_24%,rgba(236,72,153,0.3),transparent_62%)]',
+    card: 'border-fuchsia-300/30 shadow-[0_28px_110px_rgba(217,70,239,0.42)]',
+  },
+};
+
 const isAchievementCode = (code: string): code is AchievementCode => (
   Object.prototype.hasOwnProperty.call(ACHIEVEMENT_CONFIG, code)
 );
@@ -113,6 +144,9 @@ export function AchievementShowcase({
   );
   const previewAchievements = achievements.slice(0, PREVIEW_LIMIT);
   const previewedAchievement = achievements.find(({ code }) => code === previewArtworkCode);
+  const previewRarity = previewedAchievement
+    ? RARITY_PREVIEW_STYLES[previewedAchievement.rarity] ?? RARITY_PREVIEW_STYLES.common
+    : RARITY_PREVIEW_STYLES.common;
   const totalMarks = achievements.length;
   const openShowcase = () => {
     setOpenedNewAchievementCodes(unseenAchievementCodes);
@@ -329,8 +363,12 @@ export function AchievementShowcase({
             role="dialog"
             aria-modal="true"
             aria-labelledby={`achievement-artwork-title-${previewedAchievement.code}`}
-            className="relative mx-4 w-full max-w-md cursor-default select-none rounded-3xl border border-white/15 bg-gradient-to-br from-slate-950 via-purple-950 to-slate-950 p-5 shadow-[0_28px_100px_rgba(76,29,149,0.5)] sm:p-7"
+            className={`relative mx-4 w-full max-w-md cursor-default select-none overflow-hidden rounded-3xl border bg-gradient-to-br from-slate-950 via-purple-950 to-slate-950 p-5 sm:p-7 ${previewRarity.card}`}
           >
+            <div
+              className={`pointer-events-none absolute inset-0 ${previewRarity.aura}`}
+              aria-hidden="true"
+            />
             <button
               type="button"
               onClick={() => setPreviewArtworkCode(null)}
@@ -339,10 +377,10 @@ export function AchievementShowcase({
             >
               <X className="h-5 w-5" />
             </button>
-            <div className="mx-auto aspect-square w-[72vw] max-w-80 rounded-[15%]">
+            <div className="relative mx-auto aspect-square w-[72vw] max-w-80 rounded-[15%]">
               <AchievementBadge code={previewedAchievement.code} size="lg" showArtwork />
             </div>
-            <div className="mt-1 text-center">
+            <div className="relative mt-1 text-center">
               <div className="flex flex-wrap items-center justify-center gap-2">
                 <h3
                   id={`achievement-artwork-title-${previewedAchievement.code}`}
