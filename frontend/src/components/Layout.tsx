@@ -13,6 +13,10 @@ import { EmbedDebugOverlay } from './EmbedDebugOverlay';
 import { useTranslation } from 'react-i18next';
 import { filamentPublicPath } from '../utils/catalogUrls';
 import { PageBackground } from './PageBackground';
+import { SUPPORT_URL } from '../utils/support';
+import { GitHubIcon } from './serviceIcons';
+
+const GITHUB_PROJECT_URL = 'https://github.com/WeLizard/FilamentHub';
 
 const AuthModal = lazy(() => import('./AuthModal').then((module) => ({ default: module.AuthModal })));
 const FeedbackModal = lazy(() => import('./FeedbackModal').then((module) => ({ default: module.FeedbackModal })));
@@ -451,14 +455,35 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
       {/* Footer - hidden in OrcaSlicer / plugin iframe */}
       {!hideChrome && (
         <footer className="relative z-10 border-t border-white/10 bg-black/20 backdrop-blur-sm mt-8">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex flex-col sm:flex-row items-center justify-between gap-1.5 text-[11px] sm:text-xs text-gray-500">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex flex-col sm:flex-row items-center justify-between gap-2 text-[11px] sm:text-xs text-gray-500">
             <span>{t('layout.footer_copyright', { year: new Date().getFullYear() })}</span>
-            <div className="flex items-center gap-3 sm:gap-4">
+            <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1.5 sm:justify-end sm:gap-x-4">
               <Link to="/about" className="hover:text-gray-300 transition-colors">{t('layout.footer_about')}</Link>
               <Link to="/user-agreement" className="hover:text-gray-300 transition-colors">{t('layout.footer_terms')}</Link>
               <Link to="/privacy-policy" className="hover:text-gray-300 transition-colors">{t('layout.footer_privacy')}</Link>
               <Link to="/personal-data-consent" className="hover:text-gray-300 transition-colors">{t('layout.footer_consent')}</Link>
               <a href="https://db-ip.com" target="_blank" rel="noreferrer" className="hover:text-gray-300 transition-colors">{t('layout.footer_geoip_attribution')}</a>
+              <a
+                href={GITHUB_PROJECT_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="FilamentHub on GitHub"
+                title="GitHub"
+                className="inline-flex h-6 w-6 items-center justify-center rounded-md text-gray-500 transition-colors hover:bg-white/5 hover:text-gray-200"
+              >
+                <GitHubIcon className="h-4 w-4" />
+              </a>
+              <a
+                href={SUPPORT_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label={`${t('aboutPage.support.title')} — Boosty`}
+                title={`${t('aboutPage.support.title')} — Boosty`}
+                className="inline-flex items-center gap-1.5 rounded-full border border-[#F15F2C]/25 bg-[#F15F2C]/10 px-2 py-1 text-gray-400 transition-colors hover:border-[#F15F2C]/50 hover:text-gray-200"
+              >
+                <img src="/brand/boosty-mark.svg" alt="" className="h-3.5 w-3.5" />
+                <span>{t('aboutPage.support.action')}</span>
+              </a>
             </div>
           </div>
         </footer>

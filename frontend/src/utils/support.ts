@@ -1,5 +1,2 @@
-/**
- * Where "support the project" leads. Empty until a donation service is chosen —
- * the block on /about stays hidden rather than showing a link to nowhere.
- */
-export const SUPPORT_URL = '';
+/** Where "support the project" leads in the footer and on /about. */
+export const SUPPORT_URL = 'https://boosty.to/welizard/donate';

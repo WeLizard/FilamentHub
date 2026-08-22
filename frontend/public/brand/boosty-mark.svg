@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 235.6 292.2" role="img">
+  <defs>
+    <linearGradient id="boosty-mark-gradient" x1="145.0777" y1="76.148" x2="80.5868" y2="296.0785" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#EF7829"/>
+      <stop offset="0.05189538" stop-color="#F07529"/>
+      <stop offset="0.3551" stop-color="#F0672B"/>
+      <stop offset="0.6673" stop-color="#F15E2C"/>
+      <stop offset="1" stop-color="#F15A2C"/>
+    </linearGradient>
+  </defs>
+  <path fill="url(#boosty-mark-gradient)" d="M44.3,164.5L76.9,51.6H127l-10.1,35c-0.1,0.2-0.2,0.4-0.3,0.6L90,179.6h24.8c-10.4,25.9-18.5,46.2-24.3,60.9c-45.8-0.5-58.6-33.3-47.4-72.1 M90.7,240.6l60.4-86.9h-25.6l22.3-55.7c38.2,4,56.2,34.1,45.6,70.5c-11.3,39.1-57.1,72.1-101.7,72.1C91.3,240.6,91,240.6,90.7,240.6z"/>
+</svg>
