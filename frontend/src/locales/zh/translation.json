@@ -2418,7 +2418,7 @@
       "exampleWeight": "例如：1000"
     },
     "defaultMinusOne": "-1 = 默认",
-    "printersHint": "这是推荐而非限制：该预设同样可用于其他打印机。"
+    "printersHint": "这是推荐：该预设同样可用于其他打印机。"
   },
   "dropdown": {
     "placeholder": "请选择...",
@@ -3341,7 +3341,9 @@
       "fan": "风扇",
       "retract": "回抽",
       "retractSpeed": "回抽速度",
-      "usageCount": "使用次数"
+      "usageCount": "使用次数",
+      "updatedAt": "更新于 {{date}}",
+      "createdAt": "创建于 {{date}}"
     },
     "combos": {
       "title": "配置文件组合",
@@ -4916,7 +4918,12 @@
     "siteCheckRetry": "检查网站",
     "siteCheckDone": "已验证 {{domain}}",
     "siteCheckNotFound": "尚未在网站上找到该代码。上传文件后请再次检查。",
-    "siteCheckFailed": "无法检查该网站"
+    "siteCheckFailed": "无法检查该网站",
+    "materialsSearchPlaceholder": "按名称、颜色或成分搜索…",
+    "materialsSearchClear": "清除搜索",
+    "materialsSearchEmpty": "未找到任何内容",
+    "materialsSearchEmptyHint": "请修改搜索词或清除搜索。",
+    "loadMoreMaterials": "显示更多"
   },
   "viewPreset": {
     "yes": "是",
@@ -5884,7 +5891,9 @@
     "select": "选择...",
     "cancel": "取消",
     "loading": "加载中…",
-    "error": "出了问题"
+    "error": "出了问题",
+    "gridView": "网格",
+    "listView": "列表"
   },
   "presetVersions": {
     "title": "版本历史",

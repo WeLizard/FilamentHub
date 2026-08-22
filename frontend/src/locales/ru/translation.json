@@ -2590,7 +2590,7 @@
       "exampleWeight": "Например: 1000"
     },
     "defaultMinusOne": "-1 = по умолчанию",
-    "printersHint": "Рекомендация, а не ограничение: на других принтерах пресет тоже можно использовать."
+    "printersHint": "Это рекомендация: на других принтерах пресет тоже можно использовать."
   },
   "dropdown": {
     "placeholder": "Выберите...",
@@ -2936,7 +2936,9 @@
       "fan": "Обдув",
       "retract": "Ретракт",
       "retractSpeed": "Ск. ретракт",
-      "usageCount": "Использований"
+      "usageCount": "Использований",
+      "updatedAt": "обновлён {{date}}",
+      "createdAt": "создан {{date}}"
     },
     "combos": {
       "title": "Комбинации профилей",
@@ -5091,7 +5093,12 @@
     "siteCheckRetry": "Проверить сайт",
     "siteCheckDone": "Сайт {{domain}} подтверждён",
     "siteCheckNotFound": "Код на сайте пока не найден. Разместите файл и проверьте ещё раз.",
-    "siteCheckFailed": "Не удалось проверить сайт"
+    "siteCheckFailed": "Не удалось проверить сайт",
+    "materialsSearchPlaceholder": "Поиск по названию, цвету или составу…",
+    "materialsSearchClear": "Очистить поиск",
+    "materialsSearchEmpty": "Ничего не найдено",
+    "materialsSearchEmptyHint": "Измените запрос или очистите поиск.",
+    "loadMoreMaterials": "Показать ещё"
   },
   "viewPreset": {
     "yes": "Да",
@@ -6059,7 +6066,9 @@
     "select": "Выберите...",
     "cancel": "Отмена",
     "loading": "Загрузка…",
-    "error": "Что-то пошло не так"
+    "error": "Что-то пошло не так",
+    "gridView": "Сетка",
+    "listView": "Список"
   },
   "presetVersions": {
     "title": "История версий",

@@ -2423,7 +2423,7 @@
       "exampleWeight": "E.g.: 1000"
     },
     "defaultMinusOne": "-1 = default",
-    "printersHint": "A recommendation, not a restriction: the preset still works on other printers."
+    "printersHint": "This is a recommendation: the preset still works on other printers."
   },
   "dropdown": {
     "placeholder": "Select...",
@@ -3346,7 +3346,9 @@
       "fan": "Fan",
       "retract": "Retract",
       "retractSpeed": "Retract speed",
-      "usageCount": "Usage count"
+      "usageCount": "Usage count",
+      "updatedAt": "updated {{date}}",
+      "createdAt": "created {{date}}"
     },
     "combos": {
       "title": "Profile combinations",
@@ -4922,7 +4924,12 @@
     "siteCheckRetry": "Check the site",
     "siteCheckDone": "{{domain}} confirmed",
     "siteCheckNotFound": "The code is not on the site yet. Upload the file and check again.",
-    "siteCheckFailed": "Could not check the site"
+    "siteCheckFailed": "Could not check the site",
+    "materialsSearchPlaceholder": "Search by name, colour or composition…",
+    "materialsSearchClear": "Clear search",
+    "materialsSearchEmpty": "Nothing found",
+    "materialsSearchEmptyHint": "Change the query or clear the search.",
+    "loadMoreMaterials": "Show more"
   },
   "viewPreset": {
     "yes": "Yes",
@@ -5890,7 +5897,9 @@
     "select": "Select...",
     "cancel": "Cancel",
     "loading": "Loading…",
-    "error": "Something went wrong"
+    "error": "Something went wrong",
+    "gridView": "Grid",
+    "listView": "List"
   },
   "presetVersions": {
     "title": "Version history",

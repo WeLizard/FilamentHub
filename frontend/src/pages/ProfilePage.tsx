@@ -90,6 +90,8 @@ import { PresetSyncToggle } from '../components/PresetSyncToggle';
 import { AchievementShowcase } from '../components/AchievementShowcase';
 import { GuidedEmptyState } from '../components/GuidedEmptyState';
 import { PresetSlotsPanel } from '../components/presetSlots/PresetSlotsPanel';
+import { ViewModeToggle } from '../components/ViewModeToggle';
+import type { ViewMode } from '../components/ViewModeToggle';
 import { SpoolUsageModal } from '../components/SpoolUsageModal';
 import type {
   AchievementCode,
@@ -250,6 +252,7 @@ export const ProfilePage: React.FC = () => {
     () => readUiChoice(uiScopeForUser(user?.id), 'presetFilter', PRESET_FILTERS, 'all'),
   );
   const [isScanning, setIsScanning] = useState(false);
+  const [presetsViewMode, setPresetsViewMode] = useState<ViewMode>('grid');
   const needsPresetData = !showBrandCabinet && (userTab === 'dashboard' || userTab === 'presets');
   const needsPrinterProfileData = !showBrandCabinet && (
     userTab === 'dashboard' || userTab === 'printer-profiles' || userTab === 'spools'
@@ -1127,6 +1130,7 @@ export const ProfilePage: React.FC = () => {
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <h3 className="text-lg md:text-2xl font-bold text-white">{t('profilePage.filamentProfiles')}</h3>
             <div className="flex items-center gap-2 md:gap-3">
+              <ViewModeToggle value={presetsViewMode} onChange={setPresetsViewMode} />
               {typeof window !== 'undefined' && window.filamenthub?.exportFilamentPresets && (
                 <ExportFromOrcaSlicerButton />
               )}
@@ -1213,10 +1217,11 @@ export const ProfilePage: React.FC = () => {
             </div>
           )}
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
+          <div className={presetsViewMode === 'grid' ? 'grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6' : 'space-y-2'}>
             {userPresets.map((preset) => (
               <PresetCard
                 key={preset.id}
+                viewMode={presetsViewMode}
                 preset={preset}
                 onEdit={handleEditPreset}
                 onView={handleViewPreset}
@@ -2026,6 +2031,7 @@ interface SpoolCardProps {
   onDelete?: () => void;
   onStateChange?: (state: SpoolState) => void;
   onResolveImport?: (draftId: number) => void;
+  viewMode?: ViewMode;
 }
 
 const SpoolCard: React.FC<SpoolCardProps> = ({
@@ -2036,6 +2042,7 @@ const SpoolCard: React.FC<SpoolCardProps> = ({
   onDelete,
   onStateChange,
   onResolveImport,
+  viewMode = 'grid',
 }) => {
   const { t } = useTranslation();
   const { currency: userCurrency } = useUserCurrency();
@@ -2063,6 +2070,101 @@ const SpoolCard: React.FC<SpoolCardProps> = ({
   const importDraftId = Number(spool.extra?.import_draft_id);
   const canResolveImport =
     !spool.filament && Number.isInteger(importDraftId) && importDraftId > 0;
+
+  const currentLocation = getSpoolCurrentLocation(spool.extra);
+
+  if (viewMode === 'list') {
+    return (
+      <div className="glass-panel flex flex-wrap items-center gap-3 rounded-xl border border-white/15 px-3 py-2 shadow-lg sm:flex-nowrap">
+        <SpoolIcon pct={pct} color={iconColor} size={44} viewBox="8 12 78 72" />
+
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <p className="truncate text-sm font-semibold text-white">{displayName}</p>
+            <span className={`flex-shrink-0 rounded-full border px-2 py-0.5 text-[10px] ${SPOOL_STATE_COLORS[spool.state] ?? ''}`}>
+              {t(stateKey)}
+            </span>
+            {currentLocation && (
+              <span className="hidden flex-shrink-0 items-center gap-1 rounded bg-purple-500/20 px-1.5 py-0.5 text-[10px] text-purple-300 sm:inline-flex">
+                <span className="text-purple-400">{currentLocation.printer}</span>
+                <span>#{currentLocation.gate}</span>
+              </span>
+            )}
+          </div>
+          <p className="truncate text-xs text-gray-400">
+            {spool.filament
+              ? `${spool.filament.brand_name ? `${spool.filament.brand_name} · ` : ''}${spool.filament.material_type}`
+              : importedDetails}
+          </p>
+        </div>
+
+        <div className="w-32 flex-shrink-0">
+          <div className="flex items-baseline gap-1 text-xs">
+            <span className={`font-medium ${pctToneClass}`}>{spool.remaining_weight_g.toFixed(0)} г</span>
+            <span className="text-gray-500">({pct.toFixed(0)}%)</span>
+          </div>
+          <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+            <div
+              className="h-full rounded-full transition-all duration-500"
+              style={{ width: `${pct}%`, backgroundColor: iconColor }}
+            />
+          </div>
+        </div>
+
+        <div className="flex flex-shrink-0 items-center gap-1">
+          {spool.used_weight_g > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowUsage(true)}
+              title={t('spoolUsage.open')}
+              className="rounded-lg p-1.5 text-gray-400 transition hover:bg-white/10 hover:text-white"
+            >
+              <History className="h-4 w-4" />
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onEdit}
+            disabled={!onEdit || isBusy}
+            title={t('profilePage.spoolActions.edit')}
+            className="rounded-lg p-1.5 text-gray-300 transition hover:bg-white/10 hover:text-white disabled:opacity-50"
+          >
+            <Edit className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={onUse}
+            disabled={!onUse || isBusy || spool.remaining_weight_g <= 0}
+            title={t('profilePage.spoolActions.use')}
+            className="rounded-lg p-1.5 text-gray-300 transition hover:bg-white/10 hover:text-white disabled:opacity-50"
+          >
+            <Gauge className="h-4 w-4" />
+          </button>
+          <select
+            value={spool.state}
+            onChange={(e) => onStateChange?.(e.target.value as SpoolState)}
+            disabled={!onStateChange || isBusy}
+            className="rounded-lg border border-white/20 bg-white/5 px-2 py-1 text-[11px] text-gray-200 focus:border-purple-500 focus:outline-none disabled:opacity-50"
+          >
+            {(['shelf', 'active', 'archived', 'empty'] as const).map(state => (
+              <option key={state} value={state}>{t(`profilePage.spoolState.${state}`)}</option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={onDelete}
+            disabled={!onDelete || isBusy}
+            title={t('profilePage.spoolActions.delete')}
+            className="rounded-lg p-1.5 text-red-300 transition hover:bg-red-500/20 disabled:opacity-50"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+        </div>
+
+        <SpoolUsageModal spool={spool} isOpen={showUsage} onClose={() => setShowUsage(false)} />
+      </div>
+    );
+  }
 
   return (
     <div className="glass-panel border border-white/15 rounded-2xl p-4 shadow-xl flex gap-4 items-stretch">
@@ -3169,6 +3271,7 @@ const SpoolsTab: React.FC<SpoolsTabProps> = ({
   const [busySpoolId, setBusySpoolId] = useState<number | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
+  const [spoolsViewMode, setSpoolsViewMode] = useState<ViewMode>('grid');
   const [deletingSpoolId, setDeletingSpoolId] = useState<number | null>(null);
 
   // the machines themselves live on the Printers tab.
@@ -3256,6 +3359,7 @@ const SpoolsTab: React.FC<SpoolsTabProps> = ({
           </button>
         </div>
         <div className="flex items-center gap-2">
+          <ViewModeToggle value={spoolsViewMode} onChange={setSpoolsViewMode} />
           <SpoolImportButton
             onImported={() => {
               queryClient.invalidateQueries({ queryKey: ['user-spools'] });
@@ -3421,10 +3525,11 @@ const SpoolsTab: React.FC<SpoolsTabProps> = ({
                   </div>
                 )
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className={spoolsViewMode === 'grid' ? 'grid grid-cols-1 md:grid-cols-2 gap-4' : 'space-y-2'}>
                   {filteredSpools.map((spool) => (
                     <SpoolCard
                       key={spool.id}
+                      viewMode={spoolsViewMode}
                       spool={spool}
                       isBusy={busySpoolId === spool.id}
                       onEdit={() => {
@@ -3471,10 +3576,11 @@ const SpoolsTab: React.FC<SpoolsTabProps> = ({
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className={spoolsViewMode === 'grid' ? 'grid grid-cols-1 md:grid-cols-2 gap-4' : 'space-y-2'}>
             {filteredSpools.map(spool => (
               <SpoolCard
                 key={spool.id}
+                viewMode={spoolsViewMode}
                 spool={spool}
                 isBusy={busySpoolId === spool.id}
                 onEdit={() => {
@@ -3585,9 +3691,10 @@ interface PresetCardProps {
   onView?: (preset: Preset) => void;
   onDelete?: (preset: Preset) => void;
   draftAnalysis?: PresetDraftAnalysis;
+  viewMode?: ViewMode;
 }
 
-const PresetCard: React.FC<PresetCardProps> = ({ preset, onEdit, onView, onDelete, draftAnalysis }) => {
+const PresetCard: React.FC<PresetCardProps> = ({ preset, onEdit, onView, onDelete, draftAnalysis, viewMode = 'grid' }) => {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [isDownloading, setIsDownloading] = useState(false);
@@ -3746,11 +3853,141 @@ const PresetCard: React.FC<PresetCardProps> = ({ preset, onEdit, onView, onDelet
     }
   };
 
+  const actionButtons = (
+    <div className="flex space-x-2">
+      {/* Edit only for own presets */}
+      {preset.source === 'own' && (
+        <button
+      onClick={() => onEdit?.(preset)}
+      className="p-2 bg-white/10 hover:bg-white/20 rounded-lg text-white transition-all"
+      title={t('profilePage.edit')}
+        >
+      <Edit className="w-4 h-4" />
+        </button>
+      )}
+      {/* View (details + version history) for all presets */}
+      <button
+        onClick={() => onView?.(preset)}
+        className="p-2 bg-white/10 hover:bg-white/20 rounded-lg text-white transition-all"
+        title={t('profilePage.viewPreset')}
+      >
+        <Eye className="w-4 h-4" />
+      </button>
+      {preset.active && preset.filament_id && (
+        <>
+      <PresetSyncToggle preset={preset} size="sm" className="p-2 bg-white/10 hover:bg-white/20 rounded-lg" />
+      <button
+        onClick={handleDownload}
+        disabled={isDownloading}
+        className="p-2 bg-white/10 hover:bg-white/20 rounded-lg text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+        title={isDownloading ? t('profilePage.downloading') : t('profilePage.downloadOrcaSlicer')}
+      >
+        {isDownloading ? (
+          <Loader2 className="w-4 h-4 animate-spin" />
+        ) : (
+          <Download className="w-4 h-4" />
+        )}
+      </button>
+        </>
+      )}
+      <button
+        onClick={() => onDelete?.(preset)}
+        className="p-2 bg-white/10 hover:bg-red-500/20 rounded-lg text-white transition-all"
+        title={preset.source === 'saved' ? t('profilePage.removeFromProfile') : t('profilePage.delete')}
+      >
+        <Trash2 className="w-4 h-4" />
+      </button>
+    </div>
+  );
+
+  if (viewMode === 'list') {
+    return (
+      <div className="glass-panel flex flex-wrap items-center gap-3 rounded-xl border border-white/20 px-3 py-2 shadow-lg sm:flex-nowrap">
+        <span
+          className="h-7 w-7 flex-shrink-0 rounded-full border border-white/25"
+          style={{ backgroundColor: filament?.color_hex ? `#${filament.color_hex.replace('#', '')}` : 'transparent' }}
+          title={filament?.color_name ?? undefined}
+        />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <p className="truncate text-sm font-semibold text-white">{preset.name}</p>
+            {preset.source === 'saved' && (
+              <span className="flex-shrink-0 rounded bg-blue-600/30 px-1.5 py-0.5 text-[10px] font-medium text-blue-300">
+                {t('profilePage.fromCatalog')}
+              </span>
+            )}
+            {!preset.active && preset.source === 'own' && !preset.name?.includes('@fh') && (
+              <span className="flex-shrink-0 rounded bg-orange-600/30 px-1.5 py-0.5 text-[10px] font-medium text-orange-300">
+                {t('profilePage.draft')}
+              </span>
+            )}
+            {preset.active && preset.source === 'own' && preset.moderation_status === 'pending' && (
+              <span className="flex-shrink-0 rounded bg-amber-500/20 px-1.5 py-0.5 text-[10px] font-medium text-amber-300">
+                {t('profilePage.awaitingModeration')}
+              </span>
+            )}
+            {preset.is_weighted && (
+              <span className="flex-shrink-0 rounded bg-green-600/30 px-1.5 py-0.5 text-[10px] font-medium text-green-300">
+                {t('profilePage.generative')}
+              </span>
+            )}
+          </div>
+          {filament && (
+            <button
+              type="button"
+              onClick={() => navigate(filamentPublicPath(filament), { state: { from: 'profile' } })}
+              className="block max-w-full truncate text-left text-xs text-gray-400 transition hover:text-gray-200"
+            >
+              {brand && <span className={brand.verified ? 'text-green-400' : ''}>{brand.name} · </span>}
+              {filament.name}
+              {filament.color_name && ` · ${filament.color_name}`}
+            </button>
+          )}
+        </div>
+
+        <div className="flex flex-shrink-0 items-center gap-3 text-xs text-gray-300">
+          <span className="whitespace-nowrap">
+            {t('profilePage.preset.nozzle')}:{' '}
+            {formatImportedPresetTemperature(preset.orcaslicer_settings, 'extruder_temp', preset.extruder_temp)}
+          </span>
+          <span className="whitespace-nowrap">
+            {t('profilePage.preset.bed')}:{' '}
+            {formatImportedPresetTemperature(preset.orcaslicer_settings, 'bed_temp', preset.bed_temp)}
+          </span>
+          <span
+            className="hidden whitespace-nowrap text-gray-500 lg:inline"
+            title={t('profilePage.preset.createdAt', { date: new Date(preset.created_at).toLocaleDateString() })}
+          >
+            {t('profilePage.preset.updatedAt', { date: new Date(preset.updated_at).toLocaleDateString() })}
+          </span>
+        </div>
+
+        {isImportedDraft && (
+          <button
+            type="button"
+            onClick={() => onEdit?.(preset)}
+            title={t('profilePage.reviewAndPublishDraft')}
+            className="flex-shrink-0 rounded-lg border border-cyan-300/25 bg-cyan-400/15 p-2 text-cyan-100 transition hover:bg-cyan-400/25"
+          >
+            <Zap className="h-4 w-4" />
+          </button>
+        )}
+
+        {actionButtons}
+      </div>
+    );
+  }
+
   return (
       <div className="glass-panel rounded-2xl p-6 border border-white/20 shadow-xl">
         <div className="flex items-start justify-between mb-4 gap-4">
           <div className="flex-1 min-w-0">
             <div className="flex items-center flex-wrap gap-2 mb-1">
+              <span
+                className="h-5 w-5 flex-shrink-0 rounded-full border border-white/25"
+                style={{ backgroundColor: filament?.color_hex ? `#${filament.color_hex.replace('#', '')}` : 'transparent' }}
+                title={filament?.color_name ?? undefined}
+              />
               <h4 className="text-xl font-bold text-white break-words">{preset.name}</h4>
               {preset.printers && preset.printers.length > 0 && (
                 <div className="flex items-center gap-1.5 flex-wrap">
@@ -3834,50 +4071,7 @@ const PresetCard: React.FC<PresetCardProps> = ({ preset, onEdit, onView, onDelet
             </div>
           )}
         </div>
-        <div className="flex space-x-2">
-          {/* Edit only for own presets */}
-          {preset.source === 'own' && (
-            <button
-              onClick={() => onEdit?.(preset)}
-              className="p-2 bg-white/10 hover:bg-white/20 rounded-lg text-white transition-all"
-              title={t('profilePage.edit')}
-            >
-              <Edit className="w-4 h-4" />
-            </button>
-          )}
-          {/* View (details + version history) for all presets */}
-          <button
-            onClick={() => onView?.(preset)}
-            className="p-2 bg-white/10 hover:bg-white/20 rounded-lg text-white transition-all"
-            title={t('profilePage.viewPreset')}
-          >
-            <Eye className="w-4 h-4" />
-          </button>
-          {preset.active && preset.filament_id && (
-            <>
-              <PresetSyncToggle preset={preset} size="sm" className="p-2 bg-white/10 hover:bg-white/20 rounded-lg" />
-              <button
-                onClick={handleDownload}
-                disabled={isDownloading}
-                className="p-2 bg-white/10 hover:bg-white/20 rounded-lg text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                title={isDownloading ? t('profilePage.downloading') : t('profilePage.downloadOrcaSlicer')}
-              >
-                {isDownloading ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Download className="w-4 h-4" />
-                )}
-              </button>
-            </>
-          )}
-          <button
-            onClick={() => onDelete?.(preset)}
-            className="p-2 bg-white/10 hover:bg-red-500/20 rounded-lg text-white transition-all"
-            title={preset.source === 'saved' ? t('profilePage.removeFromProfile') : t('profilePage.delete')}
-          >
-            <Trash2 className="w-4 h-4" />
-          </button>
-        </div>
+        {actionButtons}
       </div>
 
       {isImportedDraft && (

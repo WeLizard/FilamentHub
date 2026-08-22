@@ -1,8 +1,8 @@
 /** Личный кабинет производителя */
 
-import { lazy, Suspense, useState, useEffect, useRef } from 'react';
+import { lazy, Suspense, useState, useEffect, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import {
   Factory,
@@ -32,14 +32,15 @@ import {
   FileText,
   Fan,
   AlertTriangle,
-  Grid3x3,
-  List,
   Upload,
   Info,
   ChevronDown,
   Users,
   SlidersHorizontal,
+  Search,
 } from 'lucide-react';
+import { ViewModeToggle } from '../components/ViewModeToggle';
+import type { ViewMode } from '../components/ViewModeToggle';
 import { useAuth } from '../contexts/AuthContext';
 import { authAPI, brandsAPI, filamentsAPI, brandRequestsAPI, presetsAPI, proofFilesAPI, qrAPI } from '../api/client';
 import { translateApiError } from '../utils/translateApiError';
@@ -190,6 +191,8 @@ interface BrandProfilePageProps {
   initialClaimBrandName?: string;
 }
 
+const BRAND_MATERIALS_PAGE_SIZE = 24;
+
 const IMPORT_CSV_COLUMNS = [
   'name',
   'material_type',
@@ -228,7 +231,8 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [brandTab, setBrandTab] = useState<'materials' | 'presets' | 'qr' | 'analytics' | 'usage' | 'team' | 'settings'>('materials');
-  const [materialsViewMode, setMaterialsViewMode] = useState<'grid' | 'list'>('grid');
+  const [materialsViewMode, setMaterialsViewMode] = useState<ViewMode>('grid');
+  const [presetsViewMode, setPresetsViewMode] = useState<ViewMode>('grid');
   const [isCreateFilamentModalOpen, setIsCreateFilamentModalOpen] = useState(false);
   const [isCreatePresetModalOpen, setIsCreatePresetModalOpen] = useState(false);
   const [editingFilament, setEditingFilament] = useState<Filament | null>(null);
@@ -343,6 +347,9 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({
   }, [hasGlobalScope, territoriesQuery.data, user?.active_organization_id]);
   const scopeCountry = workspaceCountry;
 
+  const [materialsSearch, setMaterialsSearch] = useState('');
+  const debouncedMaterialsSearch = useDebounce(materialsSearch.trim(), 350);
+
   const canOpenEditor =
     canEditCommon || (territoriesQuery.data?.territories ?? []).length > 0;
 
@@ -353,25 +360,42 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({
   });
 
   // Загружаем материалы производителя
-  const { 
-    data: filamentsData, 
+  const {
+    data: filamentsData,
     isLoading: isLoadingFilaments,
-    error: filamentsError 
-  } = useQuery({
-    queryKey: ['brand-filaments', user?.brand_id, user?.active_organization_id, scopeCountry],
-    queryFn: () => filamentsAPI.list({
+    error: filamentsError,
+    fetchNextPage: fetchNextMaterialsPage,
+    hasNextPage: hasMoreMaterials,
+    isFetchingNextPage: isFetchingMoreMaterials,
+  } = useInfiniteQuery({
+    queryKey: [
+      'brand-filaments',
+      user?.brand_id,
+      user?.active_organization_id,
+      scopeCountry,
+      debouncedMaterialsSearch,
+    ],
+    queryFn: ({ pageParam }) => filamentsAPI.list({
       active_only: false,
       brand_id: user?.brand_id ?? undefined,
-      page: 1,
-      size: 100,
+      search: debouncedMaterialsSearch || undefined,
+      page: pageParam,
+      size: BRAND_MATERIALS_PAGE_SIZE,
       // Заполненность карточки зависит от области: подставленная ячейка страны
       // означает, что по ней данные уже есть.
       country: scopeCountry ?? undefined,
     }),
+    initialPageParam: 1,
+    getNextPageParam: (lastPage) =>
+      lastPage.page < lastPage.pages ? lastPage.page + 1 : undefined,
+    placeholderData: (previousData) => previousData,
     enabled: !!user?.brand_id,
   });
 
-  const filaments = filamentsData?.items || [];
+  const filaments = useMemo(
+    () => filamentsData?.pages.flatMap((materialsPage) => materialsPage.items) ?? [],
+    [filamentsData],
+  );
 
   // Линейки бренда (в т.ч. пустые) — чтобы их можно было удалить даже без материалов.
   const { data: brandLines = [] } = useQuery({
@@ -394,9 +418,11 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({
         ungrouped.push(f);
       }
     }
-    for (const line of brandLines) {
-      const key = String(line.id);
-      if (!byLine.has(key)) byLine.set(key, { lineName: line.name, items: [] });
+    if (!debouncedMaterialsSearch) {
+      for (const line of brandLines) {
+        const key = String(line.id);
+        if (!byLine.has(key)) byLine.set(key, { lineName: line.name, items: [] });
+      }
     }
     const groups: { key: string; lineName: string | null; items: typeof filaments }[] =
       Array.from(byLine.entries()).map(([key, v]) => ({ key, lineName: v.lineName, items: v.items }));
@@ -440,6 +466,11 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({
     (total, filament) => total + (filament.community_presets_count ?? 0),
     0,
   );
+  const presetFilamentColor = (id: number | null | undefined) => {
+    const hex = filaments.find((f) => f.id === id)?.color_hex;
+    return hex ? `#${hex.replace('#', '')}` : null;
+  };
+
   const filamentNameById = (id: number | null | undefined) =>
     filaments.find((f) => f.id === id)?.name ?? null;
 
@@ -966,31 +997,11 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <h3 className="text-xl font-bold text-white sm:text-2xl">{t('brandProfile.myMaterials')}</h3>
             <div className="grid w-full grid-cols-[auto_minmax(0,1fr)_auto] gap-2 sm:flex sm:w-auto sm:items-center sm:gap-3">
-              {/* View Mode Toggle */}
-              <div className="order-1 flex items-center rounded-lg border border-white/20 bg-white/10 p-1 sm:order-none">
-                <button
-                  onClick={() => setMaterialsViewMode('grid')}
-                  className={`p-2 rounded transition-all ${
-                    materialsViewMode === 'grid'
-                      ? 'bg-purple-600 text-white'
-                      : 'text-gray-400 hover:text-white'
-                  }`}
-                  title={t('brandProfile.gridView')}
-                >
-                  <Grid3x3 className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={() => setMaterialsViewMode('list')}
-                  className={`p-2 rounded transition-all ${
-                    materialsViewMode === 'list'
-                      ? 'bg-purple-600 text-white'
-                      : 'text-gray-400 hover:text-white'
-                  }`}
-                  title={t('brandProfile.listView')}
-                >
-                  <List className="w-4 h-4" />
-                </button>
-              </div>
+              <ViewModeToggle
+                value={materialsViewMode}
+                onChange={setMaterialsViewMode}
+                className="order-1 sm:order-none"
+              />
             <a
               href={filamentImportAPI.templateUrl(scopeCountry)}
               download
@@ -1021,6 +1032,27 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({
               <span>{t('brandProfile.newMaterial')}</span>
             </button>
             </div>
+          </div>
+
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" />
+            <input
+              type="text"
+              value={materialsSearch}
+              onChange={(event) => setMaterialsSearch(event.target.value)}
+              placeholder={t('brandProfile.materialsSearchPlaceholder')}
+              className="w-full rounded-xl border border-white/20 bg-white/10 py-2.5 pl-10 pr-10 text-white placeholder-gray-500 transition-all focus:border-purple-400/50 focus:outline-none"
+            />
+            {materialsSearch && (
+              <button
+                type="button"
+                onClick={() => setMaterialsSearch('')}
+                title={t('brandProfile.materialsSearchClear')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 transition-colors hover:text-white"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
           </div>
 
           {showCsvHelp && (
@@ -1073,7 +1105,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({
           {/* Materials Grid/List */}
           {!isLoadingFilaments && !filamentsError && (
             <>
-              {filaments.length > 0 || brandLines.length > 0 ? (
+              {filaments.length > 0 || (!debouncedMaterialsSearch && brandLines.length > 0) ? (
                 <div className="space-y-6">
                   {materialLineGroups.map((group) => (
                     <div key={group.key}>
@@ -1131,6 +1163,26 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({
                       )}
                     </div>
                   ))}
+
+                  {hasMoreMaterials && (
+                    <div className="flex justify-center pt-2">
+                      <button
+                        type="button"
+                        onClick={() => fetchNextMaterialsPage()}
+                        disabled={isFetchingMoreMaterials}
+                        className="flex items-center gap-2 rounded-xl border border-white/20 bg-white/10 px-5 py-2.5 text-gray-300 transition-all hover:bg-white/20 hover:text-white disabled:opacity-50"
+                      >
+                        {isFetchingMoreMaterials && <Loader2 className="h-4 w-4 animate-spin" />}
+                        <span>{t('brandProfile.loadMoreMaterials')}</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ) : debouncedMaterialsSearch ? (
+                <div className="text-center py-12">
+                  <Search className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+                  <p className="text-gray-400 text-xl mb-2">{t('brandProfile.materialsSearchEmpty')}</p>
+                  <p className="text-gray-500 text-sm">{t('brandProfile.materialsSearchEmptyHint')}</p>
                 </div>
               ) : (
                 <div className="text-center py-12">
@@ -1253,6 +1305,8 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({
                 {t('brandProfile.presetLibraryDescription')}
               </p>
             </div>
+            <div className="flex shrink-0 items-center gap-3">
+            <ViewModeToggle value={presetsViewMode} onChange={setPresetsViewMode} />
             <button
               onClick={handleCreatePreset}
               disabled={isLoadingPresets || filaments.length === 0}
@@ -1262,6 +1316,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({
               <Plus className="w-4 h-4" />
               <span>{t('brandProfile.newPreset')}</span>
             </button>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -1312,8 +1367,56 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({
               <Loader2 className="w-8 h-8 animate-spin text-gray-400" />
             </div>
           ) : displayedPresets.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className={presetsViewMode === 'grid' ? 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4' : 'space-y-2'}>
               {displayedPresets.map((preset) => (
+                presetsViewMode === 'list' ? (
+                <div
+                  key={preset.id}
+                  className={`glass-panel flex flex-wrap items-center gap-3 rounded-xl border border-white/20 px-3 py-2 transition-all sm:flex-nowrap ${canEditPreset(preset) ? 'cursor-pointer hover:bg-white/15' : ''}`}
+                  onClick={() => { if (canEditPreset(preset)) handleEditPreset(preset); }}
+                >
+                  <span
+                    className="h-7 w-7 flex-shrink-0 rounded-full border border-white/25"
+                    style={{ backgroundColor: presetFilamentColor(preset.filament_id) ?? 'transparent' }}
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <p className="truncate text-sm font-semibold text-white">{preset.name}</p>
+                      {preset.is_official && <Shield className="h-4 w-4 flex-shrink-0 text-green-400" />}
+                    </div>
+                    {filamentNameById(preset.filament_id) && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const f = filaments.find((x) => x.id === preset.filament_id);
+                          if (f) handleShowMaterialPresets(f);
+                        }}
+                        className="block max-w-full truncate text-left text-xs text-purple-300 transition hover:text-white"
+                      >
+                        {filamentNameById(preset.filament_id)}
+                      </button>
+                    )}
+                  </div>
+                  <div className="flex flex-shrink-0 items-center gap-3 text-xs text-gray-300">
+                    <span className="whitespace-nowrap">{t('brandProfile.nozzle')}: {preset.extruder_temp}°C</span>
+                    <span className="whitespace-nowrap">{t('brandProfile.bed')}: {preset.bed_temp}°C</span>
+                    <span className="hidden whitespace-nowrap text-gray-500 lg:inline">{formatDate(preset.created_at)}</span>
+                  </div>
+                  <div className="flex flex-shrink-0 items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                    <PresetSyncToggle preset={preset} size="sm" className="p-1" />
+                    {canEditPreset(preset) && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleEditPreset(preset); }}
+                        className="rounded p-1 transition-all hover:bg-white/10"
+                        title={t('brandProfile.edit')}
+                      >
+                        <Edit className="h-4 w-4" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+                ) : (
                 <div
                   key={preset.id}
                   className={`glass-panel rounded-xl p-4 border border-white/20 transition-all ${canEditPreset(preset) ? 'cursor-pointer hover:bg-white/15' : ''}`}
@@ -1321,7 +1424,13 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({
                 >
                   <div className="flex items-start justify-between mb-3">
                     <div className="flex-1">
-                      <h4 className="text-lg font-bold text-white mb-1">{preset.name}</h4>
+                      <div className="mb-1 flex items-center gap-2">
+                        <span
+                          className="h-5 w-5 flex-shrink-0 rounded-full border border-white/25"
+                          style={{ backgroundColor: presetFilamentColor(preset.filament_id) ?? 'transparent' }}
+                        />
+                        <h4 className="text-lg font-bold text-white">{preset.name}</h4>
+                      </div>
                       {preset.description && (
                         <p className="text-gray-400 text-sm line-clamp-2">{preset.description}</p>
                       )}
@@ -1379,6 +1488,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({
                     </div>
                   </div>
                 </div>
+                )
               ))}
             </div>
           ) : (
