@@ -273,6 +273,32 @@ async def test_pairing_code_is_single_use(
 
 
 @pytest.mark.asyncio
+async def test_bridge_credential_can_revoke_its_own_connection(
+    auth_client: AsyncClient,
+) -> None:
+    printer_id, system_id = await _create_octoprint_system(auth_client)
+    token = await _pair(auth_client, printer_id, system_id)
+    bridge_headers = {"X-FilamentHub-Bridge-Token": token}
+
+    revoke_response = await auth_client.delete(
+        "/api/v1/octoprint-bridge/connection",
+        headers=bridge_headers,
+    )
+
+    assert revoke_response.status_code == 204
+    rejected = await auth_client.get(
+        "/api/v1/octoprint-bridge/snapshot",
+        headers=bridge_headers,
+    )
+    assert rejected.status_code == 401
+    status_response = await auth_client.get(
+        f"/api/v1/octoprint-bridge/connections/{printer_id}/{system_id}"
+    )
+    assert status_response.status_code == 200
+    assert status_response.json()["paired"] is False
+
+
+@pytest.mark.asyncio
 async def test_issuing_a_new_pairing_code_keeps_the_live_bridge_connected(
     auth_client: AsyncClient,
 ) -> None:

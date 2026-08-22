@@ -189,11 +189,7 @@ class FilamentHubBridgePlugin(
                 self._settings.save()
                 self._wake_worker.set()
             elif command == "unpair":
-                self._settings.set(["bridge_token"], None)
-                self._settings.set(["snapshot"], None)
-                self._settings.set(["snapshot_etag"], None)
-                self._settings.set(["last_error"], None)
-                self._settings.save()
+                self._unpair()
             return flask.jsonify(self._public_state())
         except Exception as exc:
             self._logger.warning("Bridge API command failed", exc_info=True)
@@ -365,6 +361,16 @@ class FilamentHubBridgePlugin(
         self._settings.set(["server_url"], normalized_server_url)
         self._settings.set(["instance_id"], instance_id)
         self._settings.set(["bridge_token"], response["bridge_token"])
+        self._settings.set(["last_error"], None)
+        self._settings.save()
+
+    def _unpair(self) -> None:
+        self._request("DELETE", "/connection")
+        self._settings.set(["bridge_token"], None)
+        self._settings.set(["snapshot"], None)
+        self._settings.set(["snapshot_etag"], None)
+        self._settings.set(["active_slot"], None)
+        self._settings.set(["last_sync_at"], None)
         self._settings.set(["last_error"], None)
         self._settings.save()
 

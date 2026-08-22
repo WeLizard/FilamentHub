@@ -306,6 +306,18 @@ async def revoke_bridge(
     )
     if connection is None:
         raise_error(404, ERR_OCTOPRINT_BRIDGE_NOT_CONFIGURED)
+    await revoke_bridge_context(
+        db,
+        OctoPrintBridgeContext(connection=connection, connector=connector),
+    )
+
+
+async def revoke_bridge_context(
+    db: AsyncSession,
+    context: OctoPrintBridgeContext,
+) -> None:
+    connection = context.connection
+    connector = context.connector
     connection.token_hash = None
     connection.pairing_code_hash = None
     connection.pairing_expires_at = None

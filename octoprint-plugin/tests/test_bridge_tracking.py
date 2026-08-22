@@ -178,6 +178,45 @@ def test_empty_pairing_code_is_rejected_before_network_request():
         raise AssertionError("Empty pairing code must be rejected")
 
 
+def test_unpair_revokes_remote_connection_before_clearing_local_credentials():
+    plugin = FilamentHubBridgePlugin()
+    plugin._settings = FakeSettings()
+    plugin._logger = logging.getLogger("filamenthub-bridge-test")
+    calls = []
+
+    def successful_request(method, path):
+        calls.append((method, path))
+        return 204, {}, None
+
+    plugin._request = successful_request
+    plugin._unpair()
+
+    assert calls == [("DELETE", "/connection")]
+    assert plugin._settings.get(["bridge_token"]) is None
+    assert plugin._settings.get(["snapshot"]) is None
+    assert plugin._settings.get(["active_slot"]) is None
+
+
+def test_failed_remote_revocation_preserves_local_connection():
+    plugin = FilamentHubBridgePlugin()
+    plugin._settings = FakeSettings()
+    plugin._logger = logging.getLogger("filamenthub-bridge-test")
+    plugin._request = lambda *args, **kwargs: (_ for _ in ()).throw(
+        RuntimeError("server unavailable")
+    )
+
+    try:
+        plugin._unpair()
+    except RuntimeError as exc:
+        assert str(exc) == "server unavailable"
+    else:
+        raise AssertionError("A failed remote revocation must fail the command")
+
+    assert plugin._settings.get(["bridge_token"]) == "existing-token"
+    assert plugin._settings.get(["snapshot"]) is not None
+    assert plugin._settings.get(["active_slot"]) == 0
+
+
 def test_retry_delay_grows_but_stays_bounded(monkeypatch):
     monkeypatch.setattr(
         "octoprint_filamenthub_bridge.random.uniform",

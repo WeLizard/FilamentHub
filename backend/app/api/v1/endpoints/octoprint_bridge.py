@@ -27,6 +27,7 @@ from app.services.octoprint_bridge_service import (
     record_usage_event,
     require_bridge_token,
     revoke_bridge,
+    revoke_bridge_context,
 )
 
 router = APIRouter(prefix="/octoprint-bridge", tags=["octoprint-bridge"])
@@ -84,6 +85,20 @@ async def revoke_connection(
         physical_printer_id=physical_printer_id,
         material_system_id=material_system_id,
     )
+
+
+@router.delete("/connection", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit("10/minute", key_func=adapter_token_key)
+async def revoke_current_connection(
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    bridge_token: Annotated[
+        str | None,
+        Header(alias="X-FilamentHub-Bridge-Token"),
+    ] = None,
+) -> None:
+    context = await require_bridge_token(db, bridge_token)
+    await revoke_bridge_context(db, context)
 
 
 @router.post("/pair", response_model=OctoPrintBridgePairResponse)
