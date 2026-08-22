@@ -5,19 +5,20 @@ import {
   AlertTriangle,
   Check,
   Copy,
-  ExternalLink,
+  Download,
   Info,
   Link2,
   Loader2,
+  Package,
   Unplug,
+  X,
 } from 'lucide-react';
 
-import { octoprintBridgeAPI } from '../../../api/client';
+import { downloadsAPI, octoprintBridgeAPI } from '../../../api/client';
+import { ModalOverlay } from '../../ModalOverlay';
 import { toast } from '../../Toast';
 import { translateApiError } from '../../../utils/translateApiError';
 import type { AdapterViewContext, FeedAdapter } from './types';
-
-const BRIDGE_DOCS = 'https://github.com/WeLizard/FilamentHub/tree/main/octoprint-plugin';
 
 function BridgeConnectionStatus({ printer, system }: AdapterViewContext) {
   const { t } = useTranslation();
@@ -89,6 +90,7 @@ function BridgeSetup({ printer, system }: AdapterViewContext) {
   const [pairingExpiresAt, setPairingExpiresAt] = useState<string | null>(null);
   const [issuing, setIssuing] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [guideOpen, setGuideOpen] = useState(false);
 
   const statusQuery = useQuery({
     queryKey: ['octoprint-bridge-status', printer.id, system.id],
@@ -111,6 +113,16 @@ function BridgeSetup({ printer, system }: AdapterViewContext) {
     },
   });
   const status = statusQuery.data;
+
+  const downloadsQuery = useQuery({
+    queryKey: ['plugin-downloads'],
+    queryFn: () => downloadsAPI.getPluginDownloads(),
+    enabled: guideOpen,
+    staleTime: 5 * 60_000,
+  });
+  const bridgeWheel = downloadsQuery.data?.packages.find(
+    (item) => item.plugin === 'octoprint',
+  );
 
   useEffect(() => {
     if (!status?.paired) return;
@@ -165,15 +177,14 @@ function BridgeSetup({ printer, system }: AdapterViewContext) {
         <span className="text-xs font-medium text-amber-100">
           {t('presetSlots.octoprint.setupTitle')}
         </span>
-        <a
-          href={BRIDGE_DOCS}
-          target="_blank"
-          rel="noreferrer"
+        <button
+          type="button"
+          onClick={() => setGuideOpen(true)}
           className="inline-flex items-center gap-1 rounded px-1 py-0.5 text-[11px] text-amber-200 transition hover:bg-white/10 hover:text-amber-100"
         >
-          <ExternalLink className="h-3.5 w-3.5" />
+          <Info className="h-3.5 w-3.5" />
           {t('presetSlots.octoprint.bridgeDocs')}
-        </a>
+        </button>
       </div>
       <p className="mt-1 text-[11px] leading-4 text-amber-100/70">
         {t('presetSlots.octoprint.setupDescription')}
@@ -213,6 +224,64 @@ function BridgeSetup({ printer, system }: AdapterViewContext) {
           {issuing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Link2 className="h-3.5 w-3.5" />}
           {t('presetSlots.octoprint.issueCode')}
         </button>
+      )}
+
+      {guideOpen && (
+        <ModalOverlay onClose={() => setGuideOpen(false)}>
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="octoprint-bridge-guide-title"
+            className="w-full max-w-lg overflow-hidden rounded-2xl border border-cyan-300/20 bg-[#161527] text-left shadow-2xl"
+          >
+            <header className="flex items-center gap-3 border-b border-white/10 px-5 py-4">
+              <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-cyan-400/10 text-cyan-300">
+                <Package className="h-5 w-5" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <h2 id="octoprint-bridge-guide-title" className="font-semibold text-white">
+                  {t('downloadPage.octoInstallTitle')}
+                </h2>
+                <p className="mt-0.5 text-xs leading-4 text-gray-400">
+                  {t('presetSlots.octoprint.setupDescription')}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setGuideOpen(false)}
+                title={t('common.close')}
+                aria-label={t('common.close')}
+                className="rounded-lg p-1.5 text-gray-500 transition hover:bg-white/10 hover:text-white"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </header>
+
+            <div className="p-5">
+              <ol className="space-y-3 text-sm text-gray-300">
+                {(['octoInstall1', 'octoInstall2', 'octoInstall3'] as const).map((key, index) => (
+                  <li key={key} className="flex gap-3">
+                    <span className="font-mono text-xs text-cyan-300">
+                      {String(index + 1).padStart(2, '0')}
+                    </span>
+                    <span>{t(`downloadPage.${key}`)}</span>
+                  </li>
+                ))}
+              </ol>
+
+              {bridgeWheel && (
+                <a
+                  href={bridgeWheel.download_url}
+                  download={bridgeWheel.filename}
+                  className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-cyan-500 px-4 py-2.5 text-sm font-semibold text-slate-950 transition hover:bg-cyan-400"
+                >
+                  <Download className="h-4 w-4" />
+                  {t('downloadPage.octoDownload', { version: bridgeWheel.version })}
+                </a>
+              )}
+            </div>
+          </section>
+        </ModalOverlay>
       )}
     </div>
   );

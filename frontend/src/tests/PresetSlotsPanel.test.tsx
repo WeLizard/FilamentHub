@@ -52,6 +52,7 @@ let printerBridgeStatusForQuery: PrinterBridgeStatus = {
   last_seen_at: null,
   source_instance_id: null,
 };
+let octoprintBridgePairedForQuery = true;
 const createSystem = vi.fn();
 const regenerateKey = vi.fn();
 
@@ -82,13 +83,30 @@ vi.mock('@tanstack/react-query', () => ({
     if (queryKey[0] === 'octoprint-bridge-status') {
       return {
         data: {
-          paired: true,
+          paired: octoprintBridgePairedForQuery,
           octoprint_version: '1.11.8',
           plugin_version: '0.1.0',
           active_slot_index: 0,
         },
         isLoading: false,
         refetch: vi.fn(),
+      };
+    }
+    if (queryKey[0] === 'plugin-downloads') {
+      return {
+        data: {
+          packages: [{
+            plugin: 'octoprint',
+            filename: 'octoprint_filamenthub_bridge-0.1.0-py3-none-any.whl',
+            version: '0.1.0',
+            file_size: '32 KB',
+            checksum: null,
+            download_url: '/api/v1/downloads/plugins/octoprint_filamenthub_bridge-0.1.0-py3-none-any.whl',
+            github_url: null,
+          }],
+          release_url: null,
+        },
+        isLoading: false,
       };
     }
     if (queryKey[0] === 'printer-bridge-status') {
@@ -106,6 +124,7 @@ vi.mock('../api/client', () => ({
   devicesAPI: { regenerateKey },
   physicalPrintersAPI: { list: vi.fn(), clearSystem: vi.fn(), createSystem },
   octoprintBridgeAPI: { status: vi.fn(), issuePairingCode: vi.fn(), revoke: vi.fn() },
+  downloadsAPI: { getPluginDownloads: vi.fn() },
   printerBridgeAPI: { status: vi.fn(), issuePairingCode: vi.fn() },
   presetsAPI: { list: vi.fn(), get: vi.fn() },
   spoolsAPI: { list: vi.fn() },
@@ -138,6 +157,7 @@ describe('PresetSlotsPanel', () => {
       last_seen_at: null,
       source_instance_id: null,
     };
+    octoprintBridgePairedForQuery = true;
     createSystem.mockReset();
     createSystem.mockResolvedValue({});
     regenerateKey.mockReset();
@@ -228,6 +248,40 @@ describe('PresetSlotsPanel', () => {
     expect(screen.getByText('FilamentHub Bridge')).toBeInTheDocument();
     expect(screen.getByText('OctoPrint 1.11.8')).toBeInTheDocument();
     expect(screen.getByText('Bridge 0.1.0')).toBeInTheDocument();
+  });
+
+  it('shows OctoPrint Bridge installation instructions without external navigation', async () => {
+    octoprintBridgePairedForQuery = false;
+    const { feedAdapterFor } = await import('../components/presetSlots/adapters');
+    const octoprintSystem = {
+      ...physicalPrinter.material_systems[0],
+      provider: 'octoprint',
+    };
+
+    render(<>{feedAdapterFor('octoprint').renderSetup?.({
+      printer: { ...physicalPrinter, material_systems: [octoprintSystem] },
+      system: octoprintSystem,
+      gates: [],
+      spools: [],
+      linkConfirmed: false,
+    })}</>);
+
+    fireEvent.click(screen.getByRole('button', {
+      name: 'presetSlots.octoprint.bridgeDocs',
+    }));
+
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(screen.getByText('downloadPage.octoInstall1')).toBeInTheDocument();
+    expect(screen.getByText('downloadPage.octoInstall2')).toBeInTheDocument();
+    expect(screen.getByText('downloadPage.octoInstall3')).toBeInTheDocument();
+    const download = screen.getByRole('link', {
+      name: 'downloadPage.octoDownload',
+    });
+    expect(download).toHaveAttribute(
+      'download',
+      'octoprint_filamenthub_bridge-0.1.0-py3-none-any.whl',
+    );
+    expect(download).not.toHaveAttribute('target');
   });
 
   it('does not present a paired Bambu bridge as live before its first snapshot', async () => {
