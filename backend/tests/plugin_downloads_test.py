@@ -52,6 +52,48 @@ def _release(*, draft: bool = False, tag: str = "plugins-v0.1.0") -> dict:
     }
 
 
+def _component_release(plugin: str, *, draft: bool = False) -> dict:
+    if plugin == service.ORCASLICER_PLUGIN:
+        tag = "v0.0.8"
+        assets = [
+            {
+                "name": ORCA_WHEEL,
+                "size": len(ORCA_BYTES),
+                "browser_download_url": f"https://example.invalid/{ORCA_WHEEL}",
+            }
+        ]
+    elif plugin == service.OCTOPRINT_BRIDGE:
+        tag = "octoprint-v0.1.0"
+        assets = [
+            {
+                "name": BRIDGE_WHEEL,
+                "size": len(BRIDGE_BYTES),
+                "browser_download_url": f"https://example.invalid/{BRIDGE_WHEEL}",
+            },
+            {
+                "name": "octoprint_filamenthubbridge-0.1.0.tar.gz",
+                "size": 11942,
+                "browser_download_url": "https://example.invalid/sdist.tar.gz",
+            },
+        ]
+    else:
+        raise ValueError(f"Unsupported plugin {plugin}")
+
+    assets.append(
+        {
+            "name": "SHA256SUMS",
+            "size": 331,
+            "browser_download_url": f"https://example.invalid/{tag}/SHA256SUMS",
+        }
+    )
+    return {
+        "tag_name": tag,
+        "draft": draft,
+        "html_url": f"https://github.com/WeLizard/FilamentHub/releases/tag/{tag}",
+        "assets": assets,
+    }
+
+
 def _print_farm_release(*, draft: bool = False) -> dict:
     return {
         "tag_name": "printers-v0.0.4",
@@ -128,7 +170,17 @@ def _install(monkeypatch, transport):
 
 @pytest.mark.asyncio
 async def test_published_releases_yield_all_plugin_packages(monkeypatch):
-    _install(monkeypatch, _Transport([_release()], print_farm_releases=[_print_farm_release()]))
+    _install(
+        monkeypatch,
+        _Transport(
+            [
+                _component_release(service.ORCASLICER_PLUGIN),
+                _component_release(service.OCTOPRINT_BRIDGE),
+                _release(),
+            ],
+            print_farm_releases=[_print_farm_release()],
+        ),
+    )
 
     packages = await service.get_packages()
 
@@ -141,6 +193,10 @@ async def test_published_releases_yield_all_plugin_packages(monkeypatch):
     assert by_plugin[service.ORCASLICER_PLUGIN].version == "0.0.8"
     assert by_plugin[service.OCTOPRINT_BRIDGE].version == "0.1.0"
     assert by_plugin[service.PRINT_FARM_PLUGIN].version == "0.0.4"
+    assert by_plugin[service.ORCASLICER_PLUGIN].release_url.endswith("/tag/v0.0.8")
+    assert by_plugin[service.OCTOPRINT_BRIDGE].release_url.endswith(
+        "/tag/octoprint-v0.1.0"
+    )
     # The checksum file and the source archive are not offered as downloads.
     assert {package.filename for package in packages} == {
         ORCA_WHEEL,
@@ -152,16 +208,36 @@ async def test_published_releases_yield_all_plugin_packages(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_a_draft_release_is_never_offered(monkeypatch):
-    _install(monkeypatch, _Transport([_release(draft=True)]))
+    _install(
+        monkeypatch,
+        _Transport(
+            [
+                _component_release(service.ORCASLICER_PLUGIN, draft=True),
+                _component_release(service.OCTOPRINT_BRIDGE, draft=True),
+            ]
+        ),
+    )
 
     assert await service.get_packages() == []
 
 
 @pytest.mark.asyncio
 async def test_an_unrelated_release_is_ignored(monkeypatch):
-    _install(monkeypatch, _Transport([_release(tag="v2.0.0")]))
+    _install(monkeypatch, _Transport([_release(tag="docs-v2.0.0")]))
 
     assert await service.get_packages() == []
+
+
+@pytest.mark.asyncio
+async def test_legacy_bundle_remains_a_fallback(monkeypatch):
+    _install(monkeypatch, _Transport([_release()]))
+
+    packages = await service.get_packages()
+
+    assert {package.plugin for package in packages} == {
+        service.ORCASLICER_PLUGIN,
+        service.OCTOPRINT_BRIDGE,
+    }
 
 
 @pytest.mark.asyncio
@@ -205,7 +281,16 @@ async def test_a_github_outage_keeps_the_previous_answer(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_the_listing_points_at_our_own_server(client, monkeypatch):
-    _install(monkeypatch, _Transport([_release()], print_farm_releases=[_print_farm_release()]))
+    _install(
+        monkeypatch,
+        _Transport(
+            [
+                _component_release(service.ORCASLICER_PLUGIN),
+                _component_release(service.OCTOPRINT_BRIDGE),
+            ],
+            print_farm_releases=[_print_farm_release()],
+        ),
+    )
 
     response = await client.get("/api/v1/downloads/plugins")
 

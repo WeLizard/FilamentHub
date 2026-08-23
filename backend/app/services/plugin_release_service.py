@@ -24,7 +24,9 @@ logger = logging.getLogger(__name__)
 
 GITHUB_RELEASES_URL = "https://api.github.com/repos/WeLizard/FilamentHub/releases"
 PRINT_FARM_RELEASES_URL = "https://api.github.com/repos/WeLizard/orca-plugins/releases"
-RELEASE_TAG_PREFIX = "plugins-v"
+ORCA_RELEASE_TAG_PREFIX = "v"
+OCTOPRINT_RELEASE_TAG_PREFIX = "octoprint-v"
+LEGACY_RELEASE_TAG_PREFIX = "plugins-v"
 CHECKSUM_ASSET = "SHA256SUMS"
 METADATA_TTL = timedelta(minutes=15)
 HTTP_TIMEOUT = 10.0
@@ -90,13 +92,8 @@ def _parse_checksums(text: str) -> dict[str, str]:
     return sums
 
 
-async def _fetch_release(
-    releases_url: str,
-    *,
-    tag_prefix: str | None = None,
-    required_asset: re.Pattern[str] | None = None,
-) -> dict | None:
-    """The newest published plugin release, or None when GitHub cannot answer.
+async def _fetch_releases(releases_url: str) -> list[dict] | None:
+    """Published releases in GitHub order, or None when GitHub cannot answer.
 
     Drafts are invisible to an unauthenticated caller, which is exactly what we
     want: an unpublished release must never reach the download page.
@@ -116,8 +113,19 @@ async def _fetch_release(
 
     if not isinstance(releases, list):
         return None
+    return [release for release in releases if isinstance(release, dict)]
+
+
+def _select_release(
+    releases: list[dict],
+    *,
+    tag_prefix: str | None = None,
+    required_asset: re.Pattern[str] | None = None,
+) -> dict | None:
+    """Select the newest published release matching one component."""
+
     for release in releases:
-        if not isinstance(release, dict) or release.get("draft"):
+        if release.get("draft"):
             continue
         if tag_prefix and not str(release.get("tag_name") or "").startswith(tag_prefix):
             continue
@@ -180,14 +188,14 @@ async def _packages_from_release(
 
 
 async def _load_source(
-    releases_url: str,
+    releases: list[dict],
     allowed_plugins: frozenset[str],
     *,
     tag_prefix: str | None = None,
     required_asset: re.Pattern[str] | None = None,
 ) -> list[PluginPackage] | None:
-    release = await _fetch_release(
-        releases_url,
+    release = _select_release(
+        releases,
         tag_prefix=tag_prefix,
         required_asset=required_asset,
     )
@@ -212,26 +220,56 @@ async def get_packages(*, force_refresh: bool = False) -> list[PluginPackage]:
         if fresh and not force_refresh:
             return _cached_packages
 
-        source_results = await asyncio.gather(
-            _load_source(
-                GITHUB_RELEASES_URL,
-                frozenset({ORCASLICER_PLUGIN, OCTOPRINT_BRIDGE}),
-                tag_prefix=RELEASE_TAG_PREFIX,
-            ),
-            _load_source(
-                PRINT_FARM_RELEASES_URL,
-                frozenset({PRINT_FARM_PLUGIN}),
-                required_asset=_PRINT_FARM_WHEEL,
-            ),
+        main_releases, print_farm_releases = await asyncio.gather(
+            _fetch_releases(GITHUB_RELEASES_URL),
+            _fetch_releases(PRINT_FARM_RELEASES_URL),
         )
 
-        packages_by_plugin = {package.plugin: package for package in _cached_packages}
-        source_plugins = (
-            frozenset({ORCASLICER_PLUGIN, OCTOPRINT_BRIDGE}),
-            frozenset({PRINT_FARM_PLUGIN}),
+        source_results: list[tuple[list[PluginPackage] | None, frozenset[str]]] = []
+        if main_releases is not None:
+            for plugin, tag_prefix, asset_pattern in (
+                (ORCASLICER_PLUGIN, ORCA_RELEASE_TAG_PREFIX, _ORCA_WHEEL),
+                (OCTOPRINT_BRIDGE, OCTOPRINT_RELEASE_TAG_PREFIX, _OCTOPRINT_WHEEL),
+            ):
+                release = _select_release(
+                    main_releases,
+                    tag_prefix=tag_prefix,
+                    required_asset=asset_pattern,
+                )
+                if release is None:
+                    release = _select_release(
+                        main_releases,
+                        tag_prefix=LEGACY_RELEASE_TAG_PREFIX,
+                        required_asset=asset_pattern,
+                    )
+                packages = (
+                    await _packages_from_release(release, frozenset({plugin}))
+                    if release is not None
+                    else []
+                )
+                source_results.append((packages, frozenset({plugin})))
+        else:
+            source_results.extend(
+                (
+                    (None, frozenset({ORCASLICER_PLUGIN})),
+                    (None, frozenset({OCTOPRINT_BRIDGE})),
+                )
+            )
+
+        print_farm_packages = (
+            await _load_source(
+                print_farm_releases,
+                frozenset({PRINT_FARM_PLUGIN}),
+                required_asset=_PRINT_FARM_WHEEL,
+            )
+            if print_farm_releases is not None
+            else None
         )
+        source_results.append((print_farm_packages, frozenset({PRINT_FARM_PLUGIN})))
+
+        packages_by_plugin = {package.plugin: package for package in _cached_packages}
         refreshed = False
-        for packages, owned_plugins in zip(source_results, source_plugins, strict=True):
+        for packages, owned_plugins in source_results:
             if packages is None:
                 continue
             refreshed = True

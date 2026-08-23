@@ -356,85 +356,61 @@ function Show-PluginReleases {
         'release', 'list', '--repo', $repository, '--limit', '30',
         '--json', 'tagName,name,isDraft,isPrerelease,publishedAt'
     ) -Capture
-    $releases = @($json | ConvertFrom-Json | Where-Object { $_.tagName -like 'plugins-v*' })
+    $releases = @($json | ConvertFrom-Json | Where-Object {
+        $_.tagName -match '^(v|octoprint-v)\d+\.\d+\.\d+$'
+    })
     if ($releases.Count -eq 0) {
         Write-Host 'GitHub Releases не найдены.' -ForegroundColor Yellow
-        return
+    } else {
+        Write-Host 'WeLizard/FilamentHub' -ForegroundColor Cyan
+        $releases |
+            Select-Object tagName, name, isDraft, isPrerelease, publishedAt, @{
+                Name = 'url'
+                Expression = { "https://github.com/$repository/releases/tag/$($_.tagName)" }
+            } |
+            Format-Table -AutoSize
     }
-    $releases |
+
+    $printFarmRepository = 'WeLizard/orca-plugins'
+    $printFarmJson = Invoke-Checked gh @(
+        'release', 'list', '--repo', $printFarmRepository, '--limit', '20',
+        '--json', 'tagName,name,isDraft,isPrerelease,publishedAt'
+    ) -Capture
+    Write-Host 'WeLizard/orca-plugins (Print Farm)' -ForegroundColor Cyan
+    @($printFarmJson | ConvertFrom-Json) |
         Select-Object tagName, name, isDraft, isPrerelease, publishedAt, @{
             Name = 'url'
-            Expression = { "https://github.com/$repository/releases/tag/$($_.tagName)" }
+            Expression = { "https://github.com/$printFarmRepository/releases/tag/$($_.tagName)" }
         } |
         Format-Table -AutoSize
 }
 
-function Get-PluginSourceVersion {
-    # The plugin source is the single source of truth for the version; the build
-    # validator checks the rest against it. Typing the tag by hand only adds a
-    # way to publish under the wrong number.
-    $pluginPath = Join-Path $repositoryRoot 'orca-plugin\filamenthub_plugin.py'
-    if (-not (Test-Path -LiteralPath $pluginPath -PathType Leaf)) {
-        throw "Не найден исходник плагина: $pluginPath"
-    }
-    $content = Get-Content -LiteralPath $pluginPath -Raw
-    if ($content -notmatch '(?m)^PLUGIN_VERSION\s*=\s*"(?<version>[^"]+)"\s*$') {
-        throw "Не удалось прочитать PLUGIN_VERSION из '$pluginPath'."
-    }
-    return $Matches.version
-}
-
-function Read-ReleaseTag {
-    if ([string]::IsNullOrWhiteSpace($script:ReleaseTag)) {
-        $suggested = "plugins-v$(Get-PluginSourceVersion)"
-        Write-Host "Тег релиза из версии плагина: $suggested" -ForegroundColor Cyan
-        $answer = Read-Host 'Enter — принять, либо введи другой тег'
-        $script:ReleaseTag = if ([string]::IsNullOrWhiteSpace($answer)) { $suggested } else { $answer.Trim() }
-    }
-    if ($script:ReleaseTag -notmatch '^plugins-v\d+\.\d+\.\d+$') {
-        throw "Неподдерживаемый тег релиза плагинов: $script:ReleaseTag"
-    }
-    return $script:ReleaseTag
-}
-
 function Get-PluginReleaseAssets {
-    Assert-Command gh
-    $repository = Get-RepositoryName
-    $tag = Read-ReleaseTag
+    $endpoint = "$($PublicBaseUrl.TrimEnd('/'))/api/v1/downloads/plugins"
+    $response = Invoke-RestMethod -Uri $endpoint -Method Get -TimeoutSec 20
+    $packages = @($response.packages)
+    if ($packages.Count -eq 0) {
+        throw "Публичный API не вернул пакеты: $endpoint"
+    }
     $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-    $destination = Join-Path ([IO.Path]::GetTempPath()) "FilamentHub\releases\$tag-$timestamp"
+    $destination = Join-Path ([IO.Path]::GetTempPath()) "FilamentHub\releases\$timestamp"
     New-Item -ItemType Directory -Path $destination -Force | Out-Null
 
-    Invoke-Checked gh @('release', 'download', $tag, '--repo', $repository, '--dir', $destination)
-    $checksumsPath = Join-Path $destination 'SHA256SUMS'
-    if (-not (Test-Path -LiteralPath $checksumsPath -PathType Leaf)) {
-        throw "В релизе '$tag' нет SHA256SUMS. Скачанные файлы оставлены в $destination"
-    }
-
-    $verified = 0
-    foreach ($line in Get-Content -LiteralPath $checksumsPath) {
-        if ($line -notmatch '^(?<hash>[0-9a-fA-F]{64})\s+\*?(?<name>.+)$') {
-            throw "Некорректная строка SHA256SUMS: $line"
+    foreach ($package in $packages) {
+        if ([string]$package.checksum -notmatch '^[0-9a-fA-F]{64}$') {
+            throw "У $($package.plugin) отсутствует корректный SHA-256."
         }
-        $assetPath = Join-Path $destination $Matches.name
-        if (-not (Test-Path -LiteralPath $assetPath -PathType Leaf)) {
-            throw "В SHA256SUMS указан отсутствующий файл: $($Matches.name)"
+        $target = Join-Path $destination ([string]$package.filename)
+        Invoke-WebRequest -Uri ([string]$package.download_url) -OutFile $target -TimeoutSec 60
+        $actual = (Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash
+        if ($actual -ne [string]$package.checksum) {
+            throw "Не совпала контрольная сумма файла $($package.filename)."
         }
-        $actual = (Get-FileHash -LiteralPath $assetPath -Algorithm SHA256).Hash
-        if ($actual -ne $Matches.hash) {
-            throw "Не совпала контрольная сумма файла $($Matches.name)"
-        }
-        $verified++
     }
-
-    if ($verified -eq 0) {
-        throw 'В SHA256SUMS не найдено ни одного файла.'
-    }
-    Write-Host "Проверено файлов релиза: $verified. Папка: $destination" -ForegroundColor Green
+    Write-Host "Проверено пакетов: $($packages.Count). Папка: $destination" -ForegroundColor Green
 }
 
 function Test-DownloadPageRelease {
-    $tag = Read-ReleaseTag
     $endpoint = "$($PublicBaseUrl.TrimEnd('/'))/api/v1/downloads/plugins"
     try {
         $response = Invoke-RestMethod -Uri $endpoint -Method Get -TimeoutSec 20
@@ -442,21 +418,12 @@ function Test-DownloadPageRelease {
         throw "Не удалось прочитать публичный API плагинов $endpoint`: $($_.Exception.Message)"
     }
 
-    if (-not $response.release_url -or $response.release_url -notmatch "/releases/tag/$([regex]::Escape($tag))$") {
-        Write-Host "Страница Download пока не выбрала $tag." -ForegroundColor Yellow
-        Write-Host 'Опубликованный релиз подхватится автоматически; метаданные могут кешироваться до 15 минут.' -ForegroundColor Yellow
-        if ($response.release_url) {
-            Write-Host "Текущий релиз: $($response.release_url)"
-        }
-        return $false
-    }
-
     $packages = @($response.packages)
-    $expectedPlugins = @('orcaslicer', 'octoprint')
+    $expectedPlugins = @('orcaslicer', 'octoprint', 'print_farm')
     foreach ($plugin in $expectedPlugins) {
         $matches = @($packages | Where-Object { $_.plugin -eq $plugin })
         if ($matches.Count -ne 1) {
-            Write-Host "Релиз $tag не готов: пакет '$plugin' должен присутствовать ровно один раз." -ForegroundColor Yellow
+            Write-Host "Страница Download не готова: пакет '$plugin' должен присутствовать ровно один раз." -ForegroundColor Yellow
             return $false
         }
 
@@ -464,7 +431,7 @@ function Test-DownloadPageRelease {
         if ([string]::IsNullOrWhiteSpace([string]$package.filename) -or
             [string]$package.checksum -notmatch '^[0-9a-fA-F]{64}$' -or
             [string]::IsNullOrWhiteSpace([string]$package.download_url)) {
-            Write-Host "Релиз $tag не готов: у пакета '$plugin' неполные метаданные или некорректный SHA-256." -ForegroundColor Yellow
+            Write-Host "Страница Download не готова: у '$plugin' неполные метаданные или некорректный SHA-256." -ForegroundColor Yellow
             return $false
         }
 
@@ -472,7 +439,7 @@ function Test-DownloadPageRelease {
             $downloadUri = [Uri][string]$package.download_url
             $publicUri = [Uri]$PublicBaseUrl
             if ($downloadUri.Scheme -ne $publicUri.Scheme -or $downloadUri.Authority -ne $publicUri.Authority) {
-                Write-Host "Релиз $tag не готов: пакет '$plugin' ссылается не на наш публичный сервер." -ForegroundColor Yellow
+                Write-Host "Страница Download не готова: '$plugin' ссылается не на наш публичный сервер." -ForegroundColor Yellow
                 return $false
             }
 
@@ -481,46 +448,50 @@ function Test-DownloadPageRelease {
             # уменьшает трафик, если HTTP-слой его поддерживает.
             $downloadResponse = Invoke-WebRequest -Uri $downloadUri -Method Get -Headers @{ Range = 'bytes=0-0' } -TimeoutSec 60
             if ([int]$downloadResponse.StatusCode -notin @(200, 206)) {
-                Write-Host "Релиз $tag не готов: файл '$($package.filename)' вернул HTTP $($downloadResponse.StatusCode)." -ForegroundColor Yellow
+                Write-Host "Страница Download не готова: '$($package.filename)' вернул HTTP $($downloadResponse.StatusCode)." -ForegroundColor Yellow
                 return $false
             }
         } catch {
-            Write-Host "Релиз $tag не готов: файл '$($package.filename)' не скачивается через FilamentHub: $($_.Exception.Message)" -ForegroundColor Yellow
+            Write-Host "Страница Download не готова: '$($package.filename)' не скачивается через FilamentHub: $($_.Exception.Message)" -ForegroundColor Yellow
             return $false
         }
     }
 
     $filenames = @($packages | Where-Object { $_.plugin -in $expectedPlugins } | ForEach-Object { $_.filename })
-    Write-Host "Страница Download использует и раздаёт $tag ($($filenames -join ', '))." -ForegroundColor Green
+    Write-Host "Страница Download раздаёт все три пакета ($($filenames -join ', '))." -ForegroundColor Green
     return $true
 }
 
 function Invoke-PluginReleasePreparation {
-    param([switch]$Publish)
+    param([switch]$ChooseComponent)
 
-    $tag = Read-ReleaseTag
-    $scriptPath = Join-Path $PSScriptRoot 'publish-plugin-release.ps1'
-    & $scriptPath -Tag $tag -DryRun
-    if (-not $?) {
-        throw 'Предварительная проверка релиза плагинов завершилась с ошибкой.'
+    $components = @('all')
+    if ($ChooseComponent) {
+        Write-Host '  1. FilamentHub for OrcaSlicer'
+        Write-Host '  2. FilamentHub Bridge for OctoPrint'
+        Write-Host '  3. Print Farm'
+        $components = switch ((Read-Host 'Выбери компонент').Trim()) {
+            '1' { @('orcaslicer') }
+            '2' { @('octoprint') }
+            '3' { @('print-farm') }
+            default { throw 'Неизвестный компонент.' }
+        }
     }
-    # The dry run above already printed the versions, the tag and the release
-    # notes, so the decision is made with everything visible. Retyping the tag
-    # protected against nothing: it was the same string, just entered twice.
-    # ${tag}: PowerShell allows '?' in variable names, so "$tag?" reads as a
-    # variable called tag? and throws before the prompt is ever shown.
-    $answer = Read-Host "Публикуем ${tag}? (y/n)"
-    if ($answer -notmatch '^(y|yes|д|да)$') {
+    $scriptPath = Join-Path $PSScriptRoot 'publish-plugin-releases.ps1'
+    & $scriptPath -Component $components -DryRun
+    if (-not $?) {
+        throw 'Предварительная проверка независимых релизов завершилась с ошибкой.'
+    }
+    if (-not (Confirm-Action 'Опубликовать перечисленные независимые релизы?')) {
         throw 'Публикация релиза отменена.'
     }
 
-    & $scriptPath -Tag $tag -Publish:$Publish -HideReleaseNotes
+    & $scriptPath -Component $components -HideReleaseNotes
     if (-not $?) {
         throw 'Скрипт публикации плагинов завершился с ошибкой.'
     }
-    $script:ReleaseTag = $tag
     if (-not (Test-DownloadPageRelease)) {
-        throw "Релиз $tag опубликован, но ещё не прошёл проверку публичной страницы Download. Повтори пункт 9 после обновления кеша."
+        Write-Host 'GitHub Releases готовы, но Download ещё не обновился. Повтори пункт 9 после деплоя backend или истечения 15-минутного кеша.' -ForegroundColor Yellow
     }
 }
 
@@ -563,11 +534,11 @@ function Show-Menu {
         Write-Host '  4. Проверить состояние production'
         Write-Host '  5. Создать зашифрованный backup production-базы'
         Write-Host '  6. Очистить устаревший Docker build-cache на VDS'
-        Write-Host '  7. Показать GitHub Releases плагинов'
-        Write-Host '  8. Скачать и проверить файлы релиза плагинов'
-        Write-Host '  9. Проверить релиз плагинов на странице Download'
-        Write-Host ' 10. Выпустить GitHub bundle и Orca Cloud release из changelog'
-        Write-Host ' 11. Опубликовать существующий draft релиза (аварийный путь)'
+        Write-Host '  7. Показать независимые GitHub Releases плагинов'
+        Write-Host '  8. Скачать с сайта и проверить все три пакета'
+        Write-Host '  9. Проверить все три плагина на странице Download'
+        Write-Host ' 10. Выпустить все изменившиеся плагины отдельными releases'
+        Write-Host ' 11. Выпустить один выбранный плагин отдельным release'
         Write-Host ' 12. Обновить источник каталога принтеров (OrcaSlicer)'
         Write-Host '  0. Выход'
         $choice = Read-Host 'Выбери действие'
@@ -581,15 +552,14 @@ function Show-Menu {
                 '5' { Start-ProductionBackup }
                 '6' { Start-BuildCacheCleanup }
                 '7' { Show-PluginReleases }
-                '8' { $script:ReleaseTag = $null; Get-PluginReleaseAssets }
+                '8' { Get-PluginReleaseAssets }
                 '9' {
-                    $script:ReleaseTag = $null
                     if (-not (Test-DownloadPageRelease)) {
                         throw 'Публичная страница Download пока не прошла проверку.'
                     }
                 }
-                '10' { $script:ReleaseTag = $null; Invoke-PluginReleasePreparation }
-                '11' { $script:ReleaseTag = $null; Invoke-PluginReleasePreparation -Publish }
+                '10' { Invoke-PluginReleasePreparation }
+                '11' { Invoke-PluginReleasePreparation -ChooseComponent }
                 '12' { Update-CatalogSource }
                 '0' { return }
                 default { Write-Host 'Неизвестный пункт меню.' -ForegroundColor Yellow }
@@ -622,6 +592,6 @@ switch ($Action) {
         }
     }
     'PrepareRelease' { Invoke-PluginReleasePreparation }
-    'PublishRelease' { Invoke-PluginReleasePreparation -Publish }
+    'PublishRelease' { Invoke-PluginReleasePreparation }
     'UpdateCatalogSource' { Update-CatalogSource }
 }

@@ -24,7 +24,8 @@ jobs:
           $failed = $false
           foreach ($path in @(
             'scripts/deploy-server.ps1',
-            'scripts/publish-plugin-release.ps1'
+            'scripts/publish-plugin-release.ps1',
+            'scripts/publish-plugin-releases.ps1'
           )) {
             $tokens = $null
             $errors = $null

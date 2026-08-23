@@ -26,6 +26,8 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+throw "Смешанные plugins-v* releases отключены. Используй scripts/publish-plugin-releases.ps1: каждый плагин публикуется отдельным GitHub release."
+
 function Assert-Command {
     param([Parameter(Mandatory)][string]$Name)
 
