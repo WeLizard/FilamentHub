@@ -88,6 +88,7 @@ async def sitemap_xml(
     # Статические страницы
     static_pages = [
         ("/", "1.0", "daily"),
+        ("/features", "0.9", "monthly"),
         ("/wiki", "0.9", "weekly"),
         ("/download", "0.8", "monthly"),
     ]

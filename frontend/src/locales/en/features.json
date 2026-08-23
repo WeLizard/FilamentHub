@@ -1,0 +1,78 @@
+{
+  "featuresPage": {
+    "seoTitle": "Features",
+    "seoDescription": "Explore FilamentHub features: filament catalog, OrcaSlicer presets, spool inventory, printer integrations, calculations, and orders.",
+    "navLabel": "Features",
+    "eyebrow": "FilamentHub features",
+    "title": "From a spool on the shelf to a finished print",
+    "subtitle": "FilamentHub connects material records, working presets, physical spools, OrcaSlicer, printers, and calculations. This page is a concise product map; the guides explain each workflow step by step.",
+    "primaryAction": "Open catalog",
+    "secondaryAction": "Browse guides",
+    "principleTitle": "One material, one connected workflow",
+    "principleText": "You do not have to re-enter the same context in disconnected tables: a material record leads to a preset, the preset prepares the print, and your physical spool confirms the available stock.",
+    "cardsTitle": "What you can do today",
+    "cardsSubtitle": "The areas work together, while each remains useful on its own.",
+    "cards": [
+      {
+        "icon": "catalog",
+        "title": "Find materials",
+        "text": "Search product variants by manufacturer, material type, color, composition, properties, and available print data.",
+        "action": "Open catalog",
+        "to": "/"
+      },
+      {
+        "icon": "preset",
+        "title": "Work with presets",
+        "text": "Choose ready presets, create your own, import drafts, and move settings between FilamentHub and OrcaSlicer.",
+        "action": "Install the plugin",
+        "to": "/download"
+      },
+      {
+        "icon": "spool",
+        "title": "Track physical spools",
+        "text": "Keep physical spools separate, follow remaining stock, and link them to materials and presets without losing data provenance.",
+        "action": "Open the workflow",
+        "to": "/wiki"
+      },
+      {
+        "icon": "integration",
+        "title": "Connect equipment",
+        "text": "Map spools to feed-system slots and receive available observed data through supported adapters.",
+        "action": "Read the guide",
+        "to": "/wiki"
+      },
+      {
+        "icon": "calculation",
+        "title": "Calculate jobs and orders",
+        "text": "Analyze G-code, estimate material, time, and cost, prepare quotes, and preserve the working history.",
+        "action": "See how calculations work",
+        "to": "/wiki"
+      },
+      {
+        "icon": "brand",
+        "title": "Represent a brand",
+        "text": "Maintain a verified brand page, official materials and presets, regional data, and FilamentHub QR codes.",
+        "action": "Manufacturer journey",
+        "to": "/wiki"
+      }
+    ],
+    "flowsTitle": "Who FilamentHub is for",
+    "flows": [
+      {
+        "title": "3D printing users",
+        "text": "Find the right material and preset faster, track real spools, and keep the print context intact."
+      },
+      {
+        "title": "Workshops",
+        "text": "Connect calculations, clients, quotes, orders, material stock, and equipment in one workflow."
+      },
+      {
+        "title": "Manufacturers",
+        "text": "Give users verified material data and a short path from the package to the correct preset."
+      }
+    ],
+    "guideTitle": "Need a clear first step rather than a feature list?",
+    "guideText": "The guides demonstrate real actions step by step, from finding or scanning a spool to a preset, printer, and calculation.",
+    "guideAction": "Start with the guides"
+  }
+}

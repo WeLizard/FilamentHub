@@ -1,0 +1,78 @@
+{
+  "featuresPage": {
+    "seoTitle": "功能",
+    "seoDescription": "了解 FilamentHub 的功能：耗材目录、OrcaSlicer 预设、线轴库存、打印机集成、成本计算与订单。",
+    "navLabel": "功能",
+    "eyebrow": "FilamentHub 功能",
+    "title": "从货架上的线轴到完成打印",
+    "subtitle": "FilamentHub 将材料记录、工作预设、实体线轴、OrcaSlicer、打印机和计算连接起来。本页是简明的产品地图；指南会逐步说明实际操作。",
+    "primaryAction": "打开目录",
+    "secondaryAction": "查看指南",
+    "principleTitle": "一种材料，一条连贯工作流",
+    "principleText": "无需在彼此分离的表格中重复录入信息：材料记录帮助找到预设，预设用于准备打印，实体线轴用于确认实际库存。",
+    "cardsTitle": "现在可以完成的工作",
+    "cardsSubtitle": "各部分可以协同工作，也可以单独使用。",
+    "cards": [
+      {
+        "icon": "catalog",
+        "title": "查找材料",
+        "text": "按制造商、材料类型、颜色、成分、属性和可用打印数据搜索商品型号。",
+        "action": "打开目录",
+        "to": "/"
+      },
+      {
+        "icon": "preset",
+        "title": "使用预设",
+        "text": "选择现有预设、创建自己的预设、导入草稿，并在 FilamentHub 与 OrcaSlicer 之间传递设置。",
+        "action": "安装插件",
+        "to": "/download"
+      },
+      {
+        "icon": "spool",
+        "title": "管理实体线轴",
+        "text": "分别记录每个实体线轴、查看余量，并将其关联到材料和预设，同时保留数据来源。",
+        "action": "打开操作流程",
+        "to": "/wiki"
+      },
+      {
+        "icon": "integration",
+        "title": "连接设备",
+        "text": "将线轴映射到供料系统槽位，并通过支持的适配器接收可用的实际状态数据。",
+        "action": "阅读指南",
+        "to": "/wiki"
+      },
+      {
+        "icon": "calculation",
+        "title": "计算任务与订单",
+        "text": "分析 G-code，估算材料、时间和成本，制作报价并保留工作历史。",
+        "action": "了解计算流程",
+        "to": "/wiki"
+      },
+      {
+        "icon": "brand",
+        "title": "代表品牌",
+        "text": "维护已验证的品牌页面、官方材料与预设、区域数据以及 FilamentHub 二维码。",
+        "action": "制造商流程",
+        "to": "/wiki"
+      }
+    ],
+    "flowsTitle": "FilamentHub 面向谁",
+    "flows": [
+      {
+        "title": "3D 打印用户",
+        "text": "更快找到合适的材料和预设，管理真实线轴，并保留完整的打印上下文。"
+      },
+      {
+        "title": "工作室",
+        "text": "在一个流程中连接计算、客户、报价、订单、材料库存和设备。"
+      },
+      {
+        "title": "制造商",
+        "text": "向用户提供经过验证的材料数据，并缩短从包装到正确预设的路径。"
+      }
+    ],
+    "guideTitle": "需要明确的第一步，而不只是功能清单？",
+    "guideText": "指南会逐步展示真实操作：从查找或扫描线轴，到选择预设、连接打印机并完成计算。",
+    "guideAction": "从指南开始"
+  }
+}

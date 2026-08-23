@@ -6,9 +6,27 @@ import { getPathLocale } from './utils/siteLocale';
 type SupportedLocale = 'en' | 'ru' | 'zh';
 
 const localeLoaders: Record<SupportedLocale, () => Promise<{ default: Record<string, unknown> }>> = {
-  en: () => import('./locales/en/translation.json'),
-  ru: () => import('./locales/ru/translation.json'),
-  zh: () => import('./locales/zh/translation.json'),
+  en: async () => {
+    const [translation, features] = await Promise.all([
+      import('./locales/en/translation.json'),
+      import('./locales/en/features.json'),
+    ]);
+    return { default: { ...translation.default, ...features.default } };
+  },
+  ru: async () => {
+    const [translation, features] = await Promise.all([
+      import('./locales/ru/translation.json'),
+      import('./locales/ru/features.json'),
+    ]);
+    return { default: { ...translation.default, ...features.default } };
+  },
+  zh: async () => {
+    const [translation, features] = await Promise.all([
+      import('./locales/zh/translation.json'),
+      import('./locales/zh/features.json'),
+    ]);
+    return { default: { ...translation.default, ...features.default } };
+  },
 };
 
 const normalizeLocale = (language: string): SupportedLocale => {
