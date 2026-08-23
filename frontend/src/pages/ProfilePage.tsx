@@ -2100,7 +2100,7 @@ const SpoolCard: React.FC<SpoolCardProps> = ({
 
         <div className="w-32 flex-shrink-0">
           <div className="flex items-baseline gap-1 text-xs">
-            <span className={`font-medium ${pctToneClass}`}>{spool.remaining_weight_g.toFixed(0)} г</span>
+            <span className={`font-medium ${pctToneClass}`}>{spool.remaining_weight_g.toFixed(0)} {t('common.unitGram')}</span>
             <span className="text-gray-500">({pct.toFixed(0)}%)</span>
           </div>
           <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
@@ -2209,13 +2209,13 @@ const SpoolCard: React.FC<SpoolCardProps> = ({
         {/* Weight stats */}
         <div className="flex items-center gap-3 text-xs mt-0.5">
           <span className={`font-medium ${pctToneClass}`}>
-            {spool.remaining_weight_g.toFixed(0)} г
+            {spool.remaining_weight_g.toFixed(0)} {t('common.unitGram')}
             <span className="text-gray-400 font-normal ml-1">({pct.toFixed(0)}%)</span>
           </span>
           <span className="text-gray-500">
-            {t('profilePage.spoolUsed')}: {spool.used_weight_g.toFixed(0)} г
+            {t('profilePage.spoolUsed')}: {spool.used_weight_g.toFixed(0)} {t('common.unitGram')}
             {' / '}
-            {spool.initial_weight_g.toFixed(0)} г
+            {spool.initial_weight_g.toFixed(0)} {t('common.unitGram')}
           </span>
           {spool.used_weight_g > 0 && (
             <button
@@ -2248,7 +2248,7 @@ const SpoolCard: React.FC<SpoolCardProps> = ({
             </span>
             {spool.price == null && spool.filament?.price_per_kg != null && (
               <span className="text-gray-600 ml-1">
-                ({spool.filament.price_per_kg.toFixed(0)} {catalogCurrency}/кг, рек.)
+                ({spool.filament.price_per_kg.toFixed(0)} {catalogCurrency}/{t('common.unitKilogram')}, {t('profilePage.spoolPriceRecommended')})
               </span>
             )}
           </p>
@@ -3198,7 +3198,7 @@ const UseSpoolForm: React.FC<UseSpoolFormProps> = ({ spool, onSaved, onCancel })
     <form onSubmit={handleSubmit} className="glass-panel border border-white/20 rounded-2xl p-4 md:p-5 space-y-4 max-w-xl mx-auto">
       <h3 className="text-white font-semibold text-base">{t('profilePage.spoolUseModal.title')}</h3>
       <p className="text-xs text-gray-400">
-        {spool.filament?.name ?? t('profilePage.spoolNoFilament')} · {t('profilePage.spoolRemaining')}: {spool.remaining_weight_g.toFixed(0)} г
+        {spool.filament?.name ?? t('profilePage.spoolNoFilament')} · {t('profilePage.spoolRemaining')}: {spool.remaining_weight_g.toFixed(0)} {t('common.unitGram')}
       </p>
       <div>
         <label className={labelCls}>{t('profilePage.spoolUseModal.deltaLabel')}</label>

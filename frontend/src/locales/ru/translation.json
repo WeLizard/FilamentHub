@@ -4036,7 +4036,8 @@
     "emailNotVerified": "Адрес почты не подтверждён. Подтверждение нужно, чтобы вы могли восстановить доступ, если забудете пароль.",
     "emailNotVerifiedResend": "Выслать письмо ещё раз",
     "emailNotVerifiedSent": "Письмо отправлено",
-    "emailNotVerifiedResendError": "Не удалось отправить письмо. Попробуйте позже."
+    "emailNotVerifiedResendError": "Не удалось отправить письмо. Попробуйте позже.",
+    "spoolPriceRecommended": "рек."
   },
   "printerProfile": {
     "titleCreate": "Создать профиль принтера",
@@ -6068,7 +6069,9 @@
     "loading": "Загрузка…",
     "error": "Что-то пошло не так",
     "gridView": "Сетка",
-    "listView": "Список"
+    "listView": "Список",
+    "unitGram": "г",
+    "unitKilogram": "кг"
   },
   "presetVersions": {
     "title": "История версий",

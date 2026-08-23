@@ -3863,7 +3863,8 @@
     "emailNotVerified": "邮箱尚未确认。确认后，忘记密码时才能找回账户。",
     "emailNotVerifiedResend": "重新发送邮件",
     "emailNotVerifiedSent": "邮件已发送",
-    "emailNotVerifiedResendError": "邮件发送失败，请稍后再试。"
+    "emailNotVerifiedResendError": "邮件发送失败，请稍后再试。",
+    "spoolPriceRecommended": "建议"
   },
   "printerProfile": {
     "titleCreate": "创建打印机配置",
@@ -5893,7 +5894,9 @@
     "loading": "加载中…",
     "error": "出了问题",
     "gridView": "网格",
-    "listView": "列表"
+    "listView": "列表",
+    "unitGram": "克",
+    "unitKilogram": "千克"
   },
   "presetVersions": {
     "title": "版本历史",

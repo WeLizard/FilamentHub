@@ -3868,7 +3868,8 @@
     "emailNotVerified": "Your address is not confirmed. Confirming it is what lets you regain access if you forget your password.",
     "emailNotVerifiedResend": "Send the letter again",
     "emailNotVerifiedSent": "Letter sent",
-    "emailNotVerifiedResendError": "Could not send the letter. Try again later."
+    "emailNotVerifiedResendError": "Could not send the letter. Try again later.",
+    "spoolPriceRecommended": "rec."
   },
   "printerProfile": {
     "titleCreate": "Create printer profile",
@@ -5899,7 +5900,9 @@
     "loading": "Loading…",
     "error": "Something went wrong",
     "gridView": "Grid",
-    "listView": "List"
+    "listView": "List",
+    "unitGram": "g",
+    "unitKilogram": "kg"
   },
   "presetVersions": {
     "title": "Version history",

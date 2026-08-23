@@ -617,8 +617,8 @@ const ImportRow: React.FC<{
       <div className="col-start-2 text-xs text-gray-300 md:col-start-auto md:text-right">
         {row.remaining_weight_g != null && row.initial_weight_g != null ? (
           <>
-            <div className="font-medium text-white">{row.remaining_weight_g.toFixed(0)} г</div>
-            <div className="text-[11px] text-gray-500">/ {row.initial_weight_g.toFixed(0)} г</div>
+            <div className="font-medium text-white">{row.remaining_weight_g.toFixed(0)} {t('common.unitGram')}</div>
+            <div className="text-[11px] text-gray-500">/ {row.initial_weight_g.toFixed(0)} {t('common.unitGram')}</div>
           </>
         ) : (
           <CheckCircle2 className="h-4 w-4 text-gray-500" />
