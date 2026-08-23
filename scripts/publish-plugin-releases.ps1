@@ -48,17 +48,16 @@ function Invoke-Checked {
         if ($WorkingDirectory) {
             Set-Location -LiteralPath $WorkingDirectory
         }
+        $output = & $FilePath @Arguments 2>&1
+        $exitCode = $LASTEXITCODE
+        if ($exitCode -ne 0) {
+            throw "Команда завершилась с ошибкой (${exitCode}): $FilePath $($Arguments -join ' ')`n$($output -join "`n")"
+        }
         if ($Capture) {
-            $output = & $FilePath @Arguments 2>&1
-            if ($LASTEXITCODE -ne 0) {
-                throw "Команда завершилась с ошибкой ($LASTEXITCODE): $FilePath $($Arguments -join ' ')`n$($output -join "`n")"
-            }
             return ($output -join "`n").Trim()
         }
-
-        & $FilePath @Arguments
-        if ($LASTEXITCODE -ne 0) {
-            throw "Команда завершилась с ошибкой ($LASTEXITCODE): $FilePath $($Arguments -join ' ')"
+        foreach ($line in $output) {
+            Write-Host $line
         }
     } finally {
         Set-Location -LiteralPath $previous
