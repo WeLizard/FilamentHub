@@ -1,10 +1,10 @@
 <#
 .SYNOPSIS
-Скрипт для управления Docker-контейнерами приложения FilamentHub.
+Скрипт для управления локальным dev-окружением FilamentHub.
 
 .DESCRIPTION
-Этот скрипт упрощает запуск, остановку и управление всем стеком приложения FilamentHub,
-используя Docker Compose. Он предоставляет простые команды для общих операций.
+Все команды явно используют docker-compose.dev.yml и не затрагивают
+production-compose.
 
 .PARAMETER Command
 Команда для выполнения. Допустимые значения:
@@ -36,8 +36,7 @@ param(
 # Проверяем, существует ли docker
 $dockerPath = Get-Command docker -ErrorAction SilentlyContinue
 if (-not $dockerPath) {
-    Write-Error "Команда 'docker' не найдена. Убедитесь, что Docker Desktop установлен и запущен."
-    exit 1
+    throw "Команда 'docker' не найдена. Убедитесь, что Docker Desktop установлен и запущен."
 }
 
 # Функция для вывода сообщений
@@ -49,53 +48,55 @@ function Write-Log {
     Write-Host "[$([datetime]::now.ToString('HH:mm:ss'))] $Message" -ForegroundColor $Color
 }
 
-# Переходим в директорию, где находится скрипт
-Push-Location (Split-Path -Path $MyInvocation.MyCommand.Definition -Parent)
+$projectRoot = Split-Path -Path $PSScriptRoot -Parent
+$composeArguments = @('compose', '-f', 'docker-compose.dev.yml')
+
+function Invoke-DevCompose {
+    param([Parameter(Mandatory)][string[]]$Arguments)
+
+    & docker @composeArguments @Arguments
+    if ($LASTEXITCODE -ne 0) {
+        throw "Docker Compose завершился с ошибкой ($LASTEXITCODE)."
+    }
+}
+
+Push-Location $projectRoot
 
 try {
     switch ($Command) {
         "up" {
-            Write-Log "Проверяем наличие файла .env..." -Color "Cyan"
-            if (-not (Test-Path ".env")) {
-                Write-Log "Файл .env не найден. Копирую .env.template в .env..." -Color "Yellow"
-                Copy-Item -Path ".env.template" -Destination ".env"
-                Write-Log "Файл .env успешно создан. Пожалуйста, проверьте его и при необходимости измените, особенно SECRET_KEY." -Color "Green"
-            } else {
-                Write-Log "Файл .env найден." -Color "Green"
-            }
-
-            Write-Log "Запуск сборки и подъема всех сервисов в фоновом режиме..." -Color "Cyan"
-            docker compose up --build -d
-            Write-Log "Приложение запущено. Веб-интерфейс должен быть доступен по адресу http://localhost" -Color "Green"
+            Write-Log "Сборка и запуск local dev в фоновом режиме..." -Color "Cyan"
+            Invoke-DevCompose @('up', '--build', '-d')
+            Write-Log "Local dev запущен: frontend http://127.0.0.1:3000, backend http://127.0.0.1:8001" -Color "Green"
         }
         "down" {
-            Write-Log "Остановка всех сервисов..." -Color "Cyan"
-            docker compose down
-            Write-Log "Все сервисы остановлены." -Color "Green"
+            Write-Log "Остановка local dev..." -Color "Cyan"
+            Invoke-DevCompose @('down')
+            Write-Log "Local dev остановлен." -Color "Green"
         }
         "clean" {
             Write-Log "ВНИМАНИЕ! Эта команда остановит все сервисы и удалит ВСЕ ДАННЫЕ, включая базу данных." -Color "Yellow"
             $confirmation = Read-Host "Вы уверены, что хотите продолжить? (y/n)"
             if ($confirmation -eq 'y') {
                 Write-Log "Остановка сервисов и удаление томов данных..." -Color "Red"
-                docker compose down -v
-                Write-Log "Все сервисы и данные были удалены." -Color "Green"
+                Invoke-DevCompose @('down', '-v')
+                Write-Log "Local dev и его Docker volumes удалены." -Color "Green"
             } else {
                 Write-Log "Операция отменена." -Color "Yellow"
             }
         }
         "logs" {
-            Write-Log "Вывод логов всех сервисов. Нажмите Ctrl+C для выхода." -Color "Cyan"
-            docker compose logs -f
+            Write-Log "Логи local dev. Нажмите Ctrl+C для выхода." -Color "Cyan"
+            Invoke-DevCompose @('logs', '-f')
         }
         "ps" {
-            Write-Log "Статус запущенных контейнеров:" -Color "Cyan"
-            docker compose ps
+            Write-Log "Статус local dev контейнеров:" -Color "Cyan"
+            Invoke-DevCompose @('ps')
         }
     }
 }
 catch {
-    Write-Error "Произошла ошибка при выполнении команды '$Command': $_"
+    throw "Ошибка local dev команды '$Command': $($_.Exception.Message)"
 }
 finally {
     Pop-Location

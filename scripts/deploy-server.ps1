@@ -1,12 +1,11 @@
 <#
 .SYNOPSIS
-Интерактивная консоль владельца для деплоя FilamentHub и релизов плагинов.
+Главная интерактивная консоль владельца FilamentHub.
 
 .DESCRIPTION
-Backup, миграции и переключение контейнеров выполняются только на VDS. Эта
-консоль проверяет точный SHA origin/main и соответствующий запуск GitHub CI,
-просит владельца подтвердить SHA и запускает серверный worker по SSH. Она
-никогда не добавляет файлы в Git, не создаёт коммиты и не отправляет код.
+Консоль объединяет local dev, проверку инструментов OrcaSlicer, GitHub,
+независимые релизы плагинов и owner-run production-операции. Backup,
+миграции и переключение production-контейнеров выполняются только на VDS.
 #>
 
 [CmdletBinding()]
@@ -71,6 +70,42 @@ function Invoke-Checked {
     if ($LASTEXITCODE -ne 0) {
         throw "Команда завершилась с ошибкой ($LASTEXITCODE): $FilePath $($Arguments -join ' ')"
     }
+}
+
+function Invoke-OwnerScript {
+    param(
+        [Parameter(Mandatory)][string]$Name,
+        [string[]]$Arguments = @()
+    )
+
+    $path = Join-Path $PSScriptRoot $Name
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+        throw "Не найден скрипт: $path"
+    }
+
+    & $path @Arguments
+    if (-not $?) {
+        throw "Скрипт '$Name' завершился с ошибкой."
+    }
+}
+
+function Write-OperationError {
+    param([Parameter(Mandatory)][System.Management.Automation.ErrorRecord]$ErrorRecord)
+
+    $message = $ErrorRecord.Exception.Message
+    $colour = if ($message.StartsWith($script:WaitingPrefix)) { 'Yellow' } else { 'Red' }
+    Write-Host $message -ForegroundColor $colour
+}
+
+function Write-MenuOption {
+    param(
+        [Parameter(Mandatory)][string]$Key,
+        [Parameter(Mandatory)][string]$Title,
+        [Parameter(Mandatory)][string]$Description
+    )
+
+    Write-Host (" {0,2}. {1}" -f $Key, $Title)
+    Write-Host ("     {0}" -f $Description) -ForegroundColor DarkGray
 }
 
 function Get-RepositoryName {
@@ -523,51 +558,130 @@ function Update-CatalogSource {
     Write-Host 'Архив не версионируется, поэтому чистоту рабочего дерева на сервере он не ломает.'
 }
 
-function Show-Menu {
+function Invoke-LocalDevelopmentCommand {
+    param([Parameter(Mandatory)][ValidateSet('up', 'down', 'logs', 'ps')][string]$Command)
+
+    if ($Command -eq 'down' -and
+        -not (Confirm-Action 'Остановить все контейнеры local dev?')) {
+        Write-Host 'Остановка local dev отменена.' -ForegroundColor Yellow
+        return
+    }
+
+    Invoke-OwnerScript -Name 'start.ps1' -Arguments @($Command)
+}
+
+function Show-LocalDevelopmentMenu {
     while ($true) {
         Write-Host ''
-        Write-Host 'Консоль владельца FilamentHub' -ForegroundColor Cyan
-        Write-Host "  Сервер: $script:Server"
-        Write-Host '  1. Выборочно опубликовать коммиты на GitHub'
-        Write-Host '  2. Проверить готовность к деплою (точный SHA + GitHub CI)'
-        Write-Host '  3. Задеплоить production'
-        Write-Host '  4. Проверить состояние production'
-        Write-Host '  5. Создать зашифрованный backup production-базы'
-        Write-Host '  6. Очистить устаревший Docker build-cache на VDS'
-        Write-Host '  7. Показать независимые GitHub Releases плагинов'
-        Write-Host '  8. Скачать с сайта и проверить все три пакета'
-        Write-Host '  9. Проверить все три плагина на странице Download'
-        Write-Host ' 10. Выпустить все изменившиеся плагины отдельными releases'
-        Write-Host ' 11. Выпустить один выбранный плагин отдельным release'
-        Write-Host ' 12. Обновить источник каталога принтеров (OrcaSlicer)'
-        Write-Host '  0. Выход'
-        $choice = Read-Host 'Выбери действие'
+        Write-Host 'Local dev (Docker)' -ForegroundColor Cyan
+        Write-Host '  Работает только с docker-compose.dev.yml; production не затрагивается.' -ForegroundColor DarkGray
+        Write-MenuOption '1' 'Показать состояние' 'Какие dev-контейнеры запущены и какие порты они используют.'
+        Write-MenuOption '2' 'Собрать и запустить' 'Поднимает frontend, backend, PostgreSQL и Redis в фоне.'
+        Write-MenuOption '3' 'Показать живые логи' 'Показывает вывод всех dev-сервисов; Ctrl+C останавливает просмотр.'
+        Write-MenuOption '4' 'Остановить' 'Останавливает dev-контейнеры, но сохраняет базу и Docker volumes.'
+        Write-Host '  0. Назад'
 
         try {
-            switch ($choice) {
-                '1' { Publish-Commits }
-                '2' { Show-Preflight | Out-Null }
-                '3' { Start-ProductionDeploy }
-                '4' { Show-ProductionStatus }
-                '5' { Start-ProductionBackup }
-                '6' { Start-BuildCacheCleanup }
-                '7' { Show-PluginReleases }
-                '8' { Get-PluginReleaseAssets }
-                '9' {
-                    if (-not (Test-DownloadPageRelease)) {
-                        throw 'Публичная страница Download пока не прошла проверку.'
-                    }
-                }
-                '10' { Invoke-PluginReleasePreparation }
-                '11' { Invoke-PluginReleasePreparation -ChooseComponent }
-                '12' { Update-CatalogSource }
+            switch ((Read-Host 'Выбери действие').Trim()) {
+                '1' { Invoke-LocalDevelopmentCommand -Command 'ps' }
+                '2' { Invoke-LocalDevelopmentCommand -Command 'up' }
+                '3' { Invoke-LocalDevelopmentCommand -Command 'logs' }
+                '4' { Invoke-LocalDevelopmentCommand -Command 'down' }
                 '0' { return }
                 default { Write-Host 'Неизвестный пункт меню.' -ForegroundColor Yellow }
             }
         } catch {
-            $message = $_.Exception.Message
-            $colour = if ($message.StartsWith($script:WaitingPrefix)) { 'Yellow' } else { 'Red' }
-            Write-Host $message -ForegroundColor $colour
+            Write-OperationError $_
+        }
+    }
+}
+
+function Show-ProductionMenu {
+    while ($true) {
+        Write-Host ''
+        Write-Host 'Production (VDS)' -ForegroundColor Cyan
+        Write-Host "  SSH target: $script:Server" -ForegroundColor DarkGray
+        Write-MenuOption '1' 'Проверить готовность' 'Сверяет точный origin/main SHA и зелёный GitHub CI; ничего не меняет.'
+        Write-MenuOption '2' 'Задеплоить production' 'Повторяет preflight, требует явное подтверждение и запускает owner-run deploy.'
+        Write-MenuOption '3' 'Проверить состояние' 'Показывает контейнеры, Alembic revision и HTTPS health.'
+        Write-MenuOption '4' 'Создать backup базы' 'Создаёт и проверяет зашифрованную production-копию.'
+        Write-MenuOption '5' 'Очистить старый build-cache' 'Удаляет только Docker build-cache старше 14 дней после подтверждения.'
+        Write-Host '  0. Назад'
+
+        try {
+            switch ((Read-Host 'Выбери действие').Trim()) {
+                '1' { Show-Preflight | Out-Null }
+                '2' { Start-ProductionDeploy }
+                '3' { Show-ProductionStatus }
+                '4' { Start-ProductionBackup }
+                '5' { Start-BuildCacheCleanup }
+                '0' { return }
+                default { Write-Host 'Неизвестный пункт меню.' -ForegroundColor Yellow }
+            }
+        } catch {
+            Write-OperationError $_
+        }
+    }
+}
+
+function Show-PluginMenu {
+    while ($true) {
+        Write-Host ''
+        Write-Host 'Плагины и их релизы' -ForegroundColor Cyan
+        Write-Host '  FilamentHub, OctoPrint Bridge и Print Farm выпускаются независимо.' -ForegroundColor DarkGray
+        Write-MenuOption '1' 'Показать GitHub Releases' 'Показывает релизы из WeLizard/FilamentHub и WeLizard/orca-plugins.'
+        Write-MenuOption '2' 'Скачать и проверить пакеты' 'Скачивает три текущих пакета с FilamentHub и сверяет SHA-256.'
+        Write-MenuOption '3' 'Проверить страницу Download' 'Проверяет, что сайт видит и отдаёт все три актуальных пакета.'
+        Write-MenuOption '4' 'Выпустить все изменившиеся плагины' 'Сначала делает dry-run, затем после подтверждения запускает отдельные releases.'
+        Write-MenuOption '5' 'Выпустить один выбранный плагин' 'Выбор: FilamentHub for OrcaSlicer, OctoPrint Bridge или Print Farm.'
+        Write-Host '  0. Назад'
+
+        try {
+            switch ((Read-Host 'Выбери действие').Trim()) {
+                '1' { Show-PluginReleases }
+                '2' { Get-PluginReleaseAssets }
+                '3' {
+                    if (-not (Test-DownloadPageRelease)) {
+                        throw 'Публичная страница Download пока не прошла проверку.'
+                    }
+                }
+                '4' { Invoke-PluginReleasePreparation }
+                '5' { Invoke-PluginReleasePreparation -ChooseComponent }
+                '0' { return }
+                default { Write-Host 'Неизвестный пункт меню.' -ForegroundColor Yellow }
+            }
+        } catch {
+            Write-OperationError $_
+        }
+    }
+}
+
+function Show-Menu {
+    while ($true) {
+        Write-Host ''
+        Write-Host 'Консоль владельца FilamentHub' -ForegroundColor Cyan
+        Write-MenuOption '1' 'Local dev (Docker)' 'Запуск, статус, логи и остановка локального dev-стека.'
+        Write-MenuOption '2' 'Проверить инструменты OrcaSlicer' 'Проверка CMake, Git/LFS, Visual Studio, Perl и порядка PATH.'
+        Write-MenuOption '3' 'Опубликовать коммиты' 'Выбор точного коммита main для push; консоль покажет все попадающие предки.'
+        Write-MenuOption '4' 'Production (VDS)' 'Preflight, deploy, health, зашифрованный backup и очистка build-cache.'
+        Write-MenuOption '5' 'Плагины и их релизы' 'Независимые releases, проверка wheels и страницы Download.'
+        Write-MenuOption '6' 'Обновить источник каталога OrcaSlicer' 'Сравнивает профили и по подтверждению обновляет локальный bundle.zip.'
+        Write-Host '  0. Выход'
+        $choice = (Read-Host 'Выбери раздел').Trim()
+
+        try {
+            switch ($choice) {
+                '1' { Show-LocalDevelopmentMenu }
+                '2' { Invoke-OwnerScript -Name 'check_tools.ps1' }
+                '3' { Publish-Commits }
+                '4' { Show-ProductionMenu }
+                '5' { Show-PluginMenu }
+                '6' { Update-CatalogSource }
+                '0' { return }
+                default { Write-Host 'Неизвестный пункт меню.' -ForegroundColor Yellow }
+            }
+        } catch {
+            Write-OperationError $_
         }
     }
 }
