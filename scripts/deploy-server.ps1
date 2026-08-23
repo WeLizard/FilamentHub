@@ -596,16 +596,36 @@ function Show-LocalDevelopmentMenu {
     }
 }
 
+function Show-GitHubMenu {
+    while ($true) {
+        Write-Host ''
+        Write-Host 'GitHub' -ForegroundColor Cyan
+        Write-Host '  1. Выборочно опубликовать коммиты на GitHub'
+        Write-Host '     Покажет все неопубликованные коммиты и предков выбранного SHA.' -ForegroundColor DarkGray
+        Write-Host '  0. Назад'
+
+        try {
+            switch ((Read-Host 'Выбери действие').Trim()) {
+                '1' { Publish-Commits }
+                '0' { return }
+                default { Write-Host 'Неизвестный пункт меню.' -ForegroundColor Yellow }
+            }
+        } catch {
+            Write-OperationError $_
+        }
+    }
+}
+
 function Show-ProductionMenu {
     while ($true) {
         Write-Host ''
         Write-Host 'Production (VDS)' -ForegroundColor Cyan
-        Write-Host "  SSH target: $script:Server" -ForegroundColor DarkGray
-        Write-MenuOption '1' 'Проверить готовность' 'Сверяет точный origin/main SHA и зелёный GitHub CI; ничего не меняет.'
-        Write-MenuOption '2' 'Задеплоить production' 'Повторяет preflight, требует явное подтверждение и запускает owner-run deploy.'
-        Write-MenuOption '3' 'Проверить состояние' 'Показывает контейнеры, Alembic revision и HTTPS health.'
-        Write-MenuOption '4' 'Создать backup базы' 'Создаёт и проверяет зашифрованную production-копию.'
-        Write-MenuOption '5' 'Очистить старый build-cache' 'Удаляет только Docker build-cache старше 14 дней после подтверждения.'
+        Write-Host "  Сервер: $script:Server" -ForegroundColor DarkGray
+        Write-Host '  1. Проверить готовность к деплою (точный SHA + GitHub CI)'
+        Write-Host '  2. Задеплоить production'
+        Write-Host '  3. Проверить состояние production'
+        Write-Host '  4. Создать зашифрованный backup production-базы'
+        Write-Host '  5. Очистить устаревший Docker build-cache на VDS'
         Write-Host '  0. Назад'
 
         try {
@@ -629,11 +649,11 @@ function Show-PluginMenu {
         Write-Host ''
         Write-Host 'Плагины и их релизы' -ForegroundColor Cyan
         Write-Host '  FilamentHub, OctoPrint Bridge и Print Farm выпускаются независимо.' -ForegroundColor DarkGray
-        Write-MenuOption '1' 'Показать GitHub Releases' 'Показывает релизы из WeLizard/FilamentHub и WeLizard/orca-plugins.'
-        Write-MenuOption '2' 'Скачать и проверить пакеты' 'Скачивает три текущих пакета с FilamentHub и сверяет SHA-256.'
-        Write-MenuOption '3' 'Проверить страницу Download' 'Проверяет, что сайт видит и отдаёт все три актуальных пакета.'
-        Write-MenuOption '4' 'Выпустить все изменившиеся плагины' 'Сначала делает dry-run, затем после подтверждения запускает отдельные releases.'
-        Write-MenuOption '5' 'Выпустить один выбранный плагин' 'Выбор: FilamentHub for OrcaSlicer, OctoPrint Bridge или Print Farm.'
+        Write-Host '  1. Показать независимые GitHub Releases плагинов'
+        Write-Host '  2. Скачать с сайта и проверить все три пакета'
+        Write-Host '  3. Проверить все три плагина на странице Download'
+        Write-Host '  4. Выпустить все изменившиеся плагины отдельными releases'
+        Write-Host '  5. Выпустить один выбранный плагин отдельным release'
         Write-Host '  0. Назад'
 
         try {
@@ -656,27 +676,45 @@ function Show-PluginMenu {
     }
 }
 
+function Show-OrcaToolsMenu {
+    while ($true) {
+        Write-Host ''
+        Write-Host 'OrcaSlicer' -ForegroundColor Cyan
+        Write-Host '  1. Обновить источник каталога принтеров'
+        Write-Host '  2. Проверить инструменты для сборки OrcaSlicer'
+        Write-Host '  0. Назад'
+
+        try {
+            switch ((Read-Host 'Выбери действие').Trim()) {
+                '1' { Update-CatalogSource }
+                '2' { Invoke-OwnerScript -Name 'check_tools.ps1' }
+                '0' { return }
+                default { Write-Host 'Неизвестный пункт меню.' -ForegroundColor Yellow }
+            }
+        } catch {
+            Write-OperationError $_
+        }
+    }
+}
+
 function Show-Menu {
     while ($true) {
         Write-Host ''
         Write-Host 'Консоль владельца FilamentHub' -ForegroundColor Cyan
-        Write-MenuOption '1' 'Local dev (Docker)' 'Запуск, статус, логи и остановка локального dev-стека.'
-        Write-MenuOption '2' 'Проверить инструменты OrcaSlicer' 'Проверка CMake, Git/LFS, Visual Studio, Perl и порядка PATH.'
-        Write-MenuOption '3' 'Опубликовать коммиты' 'Выбор точного коммита main для push; консоль покажет все попадающие предки.'
-        Write-MenuOption '4' 'Production (VDS)' 'Preflight, deploy, health, зашифрованный backup и очистка build-cache.'
-        Write-MenuOption '5' 'Плагины и их релизы' 'Независимые releases, проверка wheels и страницы Download.'
-        Write-MenuOption '6' 'Обновить источник каталога OrcaSlicer' 'Сравнивает профили и по подтверждению обновляет локальный bundle.zip.'
+        Write-MenuOption '1' 'Local dev (Docker)' 'Статус, запуск, логи и остановка dev-стека.'
+        Write-MenuOption '2' 'GitHub' 'Выборочная публикация коммитов main.'
+        Write-MenuOption '3' 'Production (VDS)' 'Preflight, deploy, status, backup и очистка build-cache.'
+        Write-MenuOption '4' 'Плагины и их релизы' 'GitHub Releases, wheels, Download и выпуск каждого плагина.'
+        Write-MenuOption '5' 'OrcaSlicer' 'Источник каталога и проверка инструментов сборки.'
         Write-Host '  0. Выход'
-        $choice = (Read-Host 'Выбери раздел').Trim()
 
         try {
-            switch ($choice) {
+            switch ((Read-Host 'Выбери раздел').Trim()) {
                 '1' { Show-LocalDevelopmentMenu }
-                '2' { Invoke-OwnerScript -Name 'check_tools.ps1' }
-                '3' { Publish-Commits }
-                '4' { Show-ProductionMenu }
-                '5' { Show-PluginMenu }
-                '6' { Update-CatalogSource }
+                '2' { Show-GitHubMenu }
+                '3' { Show-ProductionMenu }
+                '4' { Show-PluginMenu }
+                '5' { Show-OrcaToolsMenu }
                 '0' { return }
                 default { Write-Host 'Неизвестный пункт меню.' -ForegroundColor Yellow }
             }
