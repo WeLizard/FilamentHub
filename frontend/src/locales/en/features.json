@@ -2,7 +2,6 @@
   "featuresPage": {
     "seoTitle": "Features",
     "seoDescription": "Explore FilamentHub features: filament catalog, OrcaSlicer presets, spool inventory, printer integrations, calculations, and orders.",
-    "navLabel": "Features",
     "eyebrow": "FilamentHub features",
     "title": "From a spool on the shelf to a finished print",
     "subtitle": "FilamentHub connects material records, working presets, physical spools, OrcaSlicer, printers, and calculations. This page is a concise product map; the guides explain each workflow step by step.",

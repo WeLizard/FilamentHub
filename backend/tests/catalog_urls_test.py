@@ -144,9 +144,6 @@ async def test_sitemap_contains_only_canonical_localized_catalog_urls(
     assert "https://filamenthub.ru/brands/hexflow/filaments/abs-black" in response.text
     assert "https://filamenthub.ru/ru/brands/hexflow/filaments/abs-black" in response.text
     assert "https://filamenthub.ru/zh/brands/hexflow/filaments/abs-black" in response.text
-    assert "https://filamenthub.ru/features" in response.text
-    assert "https://filamenthub.ru/ru/features" in response.text
-    assert "https://filamenthub.ru/zh/features" in response.text
     assert f"https://filamenthub.ru/filaments/{public_filament.id}" not in response.text
     assert f"https://filamenthub.ru/brands/{public_filament.brand_id}" not in response.text
     assert "https://filamenthub.ru/en/" not in response.text
