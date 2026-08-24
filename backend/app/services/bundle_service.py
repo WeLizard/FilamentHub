@@ -45,6 +45,20 @@ ORCA_SOURCE_MANIFEST = "filamenthub-source.json"
 ORCA_SOURCE_FORMAT = "filamenthub.catalog-source"
 
 
+def _orca_archive_content_sha256(
+    archive: zipfile.ZipFile, payload_names: list[str]
+) -> str:
+    digest = hashlib.sha256()
+    for name in payload_names:
+        encoded_name = name.encode("utf-8")
+        payload = archive.read(name)
+        digest.update(len(encoded_name).to_bytes(4, "big"))
+        digest.update(encoded_name)
+        digest.update(len(payload).to_bytes(8, "big"))
+        digest.update(payload)
+    return digest.hexdigest()
+
+
 class BundleServiceError(Exception):
     """Domain error raised by BundleService."""
 
@@ -157,17 +171,34 @@ class BundleService:
                 source_manifest = None
                 if bundle.source == BundleSource.ORCA:
                     source_manifest = json.loads(zf.read(ORCA_SOURCE_MANIFEST))
+                    payload_names = sorted(
+                        name
+                        for name in names
+                        if name != ORCA_SOURCE_MANIFEST and not name.endswith("/")
+                    )
                     if (
                         not isinstance(source_manifest, dict)
                         or source_manifest.get("format") != ORCA_SOURCE_FORMAT
                         or source_manifest.get("source") != BundleSource.ORCA
                         or not source_manifest.get("commit")
                         or not source_manifest.get("profiles_tree")
-                        or source_manifest.get("dirty") is True
+                        or source_manifest.get("dirty") is not False
+                        or not source_manifest.get("content_sha256")
                     ):
                         raise ValueError("invalid Orca source manifest")
+                    if any(not name.endswith(".json") for name in payload_names):
+                        raise ValueError("archive contains an unexpected non-JSON payload")
+                    if source_manifest.get("file_count") != len(payload_names):
+                        raise ValueError("archive file_count does not match source manifest")
                     if vendor_count == 0:
                         raise ValueError("archive contains no Orca vendor manifests")
+                    if source_manifest.get("vendor_count") != vendor_count:
+                        raise ValueError("archive vendor_count does not match source manifest")
+                    if (
+                        _orca_archive_content_sha256(zf, payload_names)
+                        != source_manifest["content_sha256"]
+                    ):
+                        raise ValueError("archive content digest does not match source manifest")
         except (KeyError, ValueError, zipfile.BadZipFile, json.JSONDecodeError) as exc:
             bundle.status = BundleStatus.FAILED
             bundle.rejection_reason = f"Invalid zip: {exc}"

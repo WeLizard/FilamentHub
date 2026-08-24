@@ -11,7 +11,7 @@
 [CmdletBinding()]
 param(
     [Parameter()]
-    [ValidateSet('Menu', 'Publish', 'Preflight', 'Deploy', 'Status', 'Backup', 'PruneBuildCache', 'ListReleases', 'DownloadRelease', 'CheckDownloadPage', 'PrepareRelease', 'PublishRelease', 'UpdateCatalogSource')]
+    [ValidateSet('Menu', 'Publish', 'Preflight', 'Deploy', 'Status', 'Backup', 'PruneBuildCache', 'ListReleases', 'DownloadRelease', 'CheckDownloadPage', 'PrepareRelease', 'PublishRelease', 'UpdateCatalogSource', 'PublishCatalogSource')]
     [string]$Action = 'Menu',
 
     # Деплой всегда идёт на один и тот же VDS через алиас SSH config, поэтому
@@ -728,25 +728,93 @@ function Update-CatalogSource {
 
     Write-Host ''
     Write-Host 'Читаю профили OrcaSlicer и сравниваю с текущим источником...' -ForegroundColor Cyan
-    Invoke-Checked python @($refresher)
+    & python $refresher
+    $refreshStatus = $LASTEXITCODE
+    $acceptFieldDelta = $false
+    if ($refreshStatus -eq 2) {
+        Write-Host ''
+        Write-Host 'Orca изменила набор или форму полей пресетов.' -ForegroundColor Yellow
+        Write-Host 'Это не обычное обновление каталога: сначала нужно разложить дельту по редакторам и passthrough-контракту.'
+        if (-not (Confirm-Action 'Дельта полей уже проверена, а версия реестра обновлена?')) {
+            Write-Host 'Источник не принят. Рабочее дерево не изменено.' -ForegroundColor Yellow
+            return
+        }
+        $acceptFieldDelta = $true
+        Invoke-Checked python @($refresher, '--accept-field-delta')
+    } elseif ($refreshStatus -ne 0) {
+        throw "Проверка источника Orca завершилась с ошибкой ($refreshStatus)."
+    }
 
-    if (-not (Confirm-Action 'Обновить bundle.zip в рабочем дереве?')) {
+    if (-not (Confirm-Action 'Принять показанную версию источника и обновить локальный bundle.zip?')) {
         Write-Host 'Источник каталога оставлен без изменений.' -ForegroundColor Yellow
         return
     }
 
-    Invoke-Checked python @($refresher, '--write')
+    $writeArguments = @($refresher, '--write')
+    if ($acceptFieldDelta) {
+        $writeArguments += '--accept-field-delta'
+    }
+    Invoke-Checked python $writeArguments
 
     Write-Host ''
     Write-Host "Готовый архив: $bundle" -ForegroundColor Green
     Write-Host "Метаданные источника для Git: $sourceLock" -ForegroundColor Green
     Write-Host ''
-    Write-Host 'ПОЛОЖИ АРХИВ НА СЕРВЕР — сам он туда не поедет:' -ForegroundColor Yellow
-    Write-Host "  1) залей файл в $RemoteProjectDirectory/backend/data/catalog_sources/orca/bundle.zip"
-    Write-Host '  2) задеплой пунктом 3: архив попадает в образ только при пересборке'
-    Write-Host '  3) в админке нажми импорт источника каталога'
+    Write-Host 'Дальше:' -ForegroundColor Cyan
+    Write-Host '  1) закоммить source-lock.json и отправь коммит в main'
+    Write-Host '  2) дождись зелёного CI'
+    Write-Host '  3) выбери отдельный пункт «Опубликовать принятый источник на VDS»'
+    Write-Host '  4) в админке запусти импорт источника каталога'
+    Write-Host 'Обычный deploy для обновления каталога не нужен.' -ForegroundColor Green
+}
+
+function Publish-CatalogSource {
+    Assert-Command git
+    Assert-Command gh
+    Assert-Command python
+    Assert-Command ssh
+    Assert-Command scp
+
+    $bundle = Join-Path $repositoryRoot 'backend\data\catalog_sources\orca\bundle.zip'
+    $sourceLock = Join-Path $repositoryRoot 'backend\data\catalog_sources\orca\source-lock.json'
+    $sourceLockRelative = 'backend/data/catalog_sources/orca/source-lock.json'
+    $verifier = Join-Path $repositoryRoot 'scripts\verify_orca_catalog_source.py'
+    if (-not (Test-Path -LiteralPath $bundle -PathType Leaf)) {
+        throw "Не найден принятый архив: $bundle"
+    }
+
+    Invoke-Checked python @($verifier, '--bundle', $bundle, '--source-lock', $sourceLock)
+    $published = Get-VerifiedPublishedMain
+    $localLockBlob = Invoke-Checked git @('hash-object', '--', $sourceLock) -Capture
+    $publishedLockSpec = "$($published.Sha):$sourceLockRelative"
+    $publishedLockBlob = Invoke-Checked git @('rev-parse', $publishedLockSpec) -Capture
+    if ($localLockBlob -ne $publishedLockBlob) {
+        throw 'Локальный source-lock.json ещё не опубликован в зелёном origin/main.'
+    }
+
+    $lock = Get-Content -LiteralPath $sourceLock -Raw -Encoding UTF8 | ConvertFrom-Json
+    $expectedSha = "$($lock.bundle_sha256)"
+    if ($expectedSha -notmatch '^[0-9a-f]{64}$') {
+        throw 'source-lock.json содержит некорректный bundle_sha256.'
+    }
+    if (-not (Confirm-Action "Опубликовать Orca bundle $($lock.commit) на production VDS?")) {
+        Write-Host 'Публикация источника отменена.' -ForegroundColor Yellow
+        return
+    }
+
+    $target = Get-ServerTarget
+    $remoteDirectory = "$RemoteProjectDirectory/backend/data/catalog_sources/orca"
+    $remoteTemporary = "$remoteDirectory/.bundle.zip.upload-$PID"
+    $mountCheck = "docker inspect filamenthub_backend_prod --format '{{range .Mounts}}{{println .Destination}}{{end}}' | grep -Fx '/app/data/catalog_sources/orca' >/dev/null"
+    Invoke-Checked ssh @($target, $mountCheck)
+    Invoke-Checked ssh @($target, "mkdir -p '$remoteDirectory'")
+    Invoke-Checked scp @($bundle, "${target}:$remoteTemporary")
+    $installCommand = "set -e && echo '$expectedSha  $remoteTemporary' | sha256sum -c - && mv -f '$remoteTemporary' '$remoteDirectory/bundle.zip' && echo '$expectedSha  $remoteDirectory/bundle.zip' | sha256sum -c -"
+    Invoke-Checked ssh @($target, $installCommand)
+
     Write-Host ''
-    Write-Host 'Архив не версионируется. source-lock.json нужно закоммитить вместе с обновлением источника.'
+    Write-Host 'Принятый источник Orca опубликован на VDS без пересборки приложения.' -ForegroundColor Green
+    Write-Host 'Теперь открой админку и запусти импорт источника каталога.'
 }
 
 function Invoke-LocalDevelopmentCommand {
@@ -871,14 +939,16 @@ function Show-OrcaToolsMenu {
     while ($true) {
         Write-Host ''
         Write-Host 'OrcaSlicer' -ForegroundColor Cyan
-        Write-Host '  1. Обновить источник каталога принтеров'
-        Write-Host '  2. Проверить инструменты для сборки OrcaSlicer'
+        Write-Host '  1. Проверить и принять источник каталога принтеров'
+        Write-Host '  2. Опубликовать принятый источник на VDS'
+        Write-Host '  3. Проверить инструменты для сборки OrcaSlicer'
         Write-Host '  0. Назад'
 
         try {
             switch ((Read-Host 'Выбери действие').Trim()) {
                 '1' { Update-CatalogSource }
-                '2' { Invoke-OwnerScript -Name 'check_tools.ps1' }
+                '2' { Publish-CatalogSource }
+                '3' { Invoke-OwnerScript -Name 'check_tools.ps1' }
                 '0' { return }
                 default { Write-Host 'Неизвестный пункт меню.' -ForegroundColor Yellow }
             }
@@ -937,4 +1007,5 @@ switch ($Action) {
     'PrepareRelease' { Invoke-PluginReleasePreparation }
     'PublishRelease' { Invoke-PluginReleasePreparation }
     'UpdateCatalogSource' { Update-CatalogSource }
+    'PublishCatalogSource' { Publish-CatalogSource }
 }

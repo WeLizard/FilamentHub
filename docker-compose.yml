@@ -85,6 +85,8 @@ services:
       - ./backend/legal_content:/app/legal_content:ro
       # DB-IP Country Lite MMDB (binary is local and not committed).
       - ./backend/data/geoip:/app/data/geoip:ro
+      # Accepted Orca catalog source is published independently from code deploys.
+      - ./backend/data/catalog_sources/orca:/app/data/catalog_sources/orca:ro
       # Письма, доставленные почтовым сервером хоста: он пишет сюда, бэкенд читает.
       - ./inbound-mail:/app/inbound_mail
       # Дампы из админки — в ту же папку, куда пишет бэкап деплоя.

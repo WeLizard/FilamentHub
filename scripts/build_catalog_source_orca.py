@@ -21,6 +21,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_TARGET = PROJECT_ROOT / "backend" / "data" / "catalog_sources" / "orca" / "bundle.zip"
 MANIFEST_NAME = "filamenthub-source.json"
 MANIFEST_FORMAT = "filamenthub.catalog-source"
+SOURCE_LOCK_FORMAT = "filamenthub.catalog-source-lock"
 DEFAULT_REPOSITORY = "https://github.com/OrcaSlicer/OrcaSlicer"
 PRESET_SCOPES = ("filament", "process", "machine")
 
@@ -162,6 +163,35 @@ def _field_inventory_from_bundle(bundle: Path) -> dict[str, dict[str, list[str]]
     return _finalize_inventory(inventory)
 
 
+def _field_inventory_from_source_lock(
+    source_lock: Path,
+) -> dict[str, dict[str, list[str]]]:
+    value = json.loads(source_lock.read_text(encoding="utf-8"))
+    if not isinstance(value, dict) or value.get("format") != SOURCE_LOCK_FORMAT:
+        raise ValueError("invalid Orca catalog source lock format")
+    recorded = value.get("preset_field_inventory")
+    if not isinstance(recorded, dict):
+        raise ValueError("source lock has no preset_field_inventory baseline")
+    try:
+        return {
+            scope: {
+                str(field_name): sorted({str(shape) for shape in shapes})
+                for field_name, shapes in sorted((recorded.get(scope) or {}).items())
+            }
+            for scope in PRESET_SCOPES
+        }
+    except (AttributeError, TypeError) as exc:
+        raise ValueError("invalid preset_field_inventory in source lock") from exc
+
+
+def _field_inventory_from_reference(
+    reference: Path,
+) -> dict[str, dict[str, list[str]]]:
+    if zipfile.is_zipfile(reference):
+        return _field_inventory_from_bundle(reference)
+    return _field_inventory_from_source_lock(reference)
+
+
 def _field_delta(
     previous: dict[str, dict[str, list[str]]],
     current: dict[str, dict[str, list[str]]],
@@ -206,9 +236,9 @@ def _parse_args() -> argparse.Namespace:
         type=Path,
         default=None,
         help=(
-            "Bundle to compare preset fields against. Defaults to --output; pass the "
-            "installed bundle explicitly when building somewhere else, or the field "
-            "lifecycle check silently has nothing to compare."
+            "Accepted bundle or source-lock.json to compare preset fields against. "
+            "Defaults to --output. Production refreshes pass the tracked source lock "
+            "so the lifecycle gate also works in a clean clone without bundle.zip."
         ),
     )
     parser.add_argument("--repository", default=None)
@@ -307,7 +337,7 @@ def main() -> int:
     baseline = (args.compare_with or output).resolve()
     if baseline.is_file():
         try:
-            previous_inventory = _field_inventory_from_bundle(baseline)
+            previous_inventory = _field_inventory_from_reference(baseline)
         except (OSError, ValueError, zipfile.BadZipFile) as exc:
             print(f"ERROR: cannot read previous field inventory: {exc}", file=sys.stderr)
             return 1

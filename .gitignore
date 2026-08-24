@@ -74,6 +74,7 @@ backend/static/uploads/*
 
 # Docker
 *.dockerignore
+!backend/.dockerignore
 
 # Temporary files
 *.tmp

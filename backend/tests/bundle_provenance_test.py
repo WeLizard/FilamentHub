@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import io
 import json
 import zipfile
@@ -31,13 +32,31 @@ async def _validate(db_session, tmp_path: Path, payload: bytes) -> Bundle:
     return bundle
 
 
-def _archive(*, manifest: dict | None, vendor: dict | None, extra_name: str | None = None) -> bytes:
+def _archive(
+    *,
+    manifest: dict | None,
+    vendor: dict | None,
+    extra_name: str | None = None,
+    corrupt_digest: bool = False,
+) -> bytes:
     payload = io.BytesIO()
+    vendor_payload = json.dumps(vendor).encode() if vendor is not None else None
+    if manifest is not None:
+        digest = hashlib.sha256()
+        if vendor_payload is not None:
+            name = b"Vendor.json"
+            digest.update(len(name).to_bytes(4, "big"))
+            digest.update(name)
+            digest.update(len(vendor_payload).to_bytes(8, "big"))
+            digest.update(vendor_payload)
+        manifest["content_sha256"] = "0" * 64 if corrupt_digest else digest.hexdigest()
+        manifest["file_count"] = 1 if vendor_payload is not None else 0
+        manifest["vendor_count"] = 1 if vendor_payload is not None else 0
     with zipfile.ZipFile(payload, "w") as archive:
         if manifest is not None:
             archive.writestr("filamenthub-source.json", json.dumps(manifest))
-        if vendor is not None:
-            archive.writestr("Vendor.json", json.dumps(vendor))
+        if vendor_payload is not None:
+            archive.writestr("Vendor.json", vendor_payload)
         if extra_name is not None:
             archive.writestr(extra_name, "unsafe")
     return payload.getvalue()
@@ -99,3 +118,21 @@ async def test_orca_bundle_records_verified_source_manifest(db_session, tmp_path
         "vendor_count": 1,
         "source_manifest": manifest,
     }
+
+
+@pytest.mark.asyncio
+async def test_orca_bundle_rejects_content_that_does_not_match_manifest(
+    db_session, tmp_path
+):
+    bundle = await _validate(
+        db_session,
+        tmp_path,
+        _archive(
+            manifest=_manifest(),
+            vendor={"name": "Vendor", "version": "1"},
+            corrupt_digest=True,
+        ),
+    )
+
+    assert bundle.status == BundleStatus.FAILED
+    assert "content digest" in (bundle.rejection_reason or "")

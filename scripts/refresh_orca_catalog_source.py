@@ -22,6 +22,7 @@ import sys
 import tempfile
 import zipfile
 from pathlib import Path
+from typing import Any
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 BUILDER = PROJECT_ROOT / "scripts" / "build_catalog_source_orca.py"
@@ -36,6 +37,12 @@ MANIFEST_NAME = "filamenthub-source.json"
 SOURCE_LOCK_NAME = "source-lock.json"
 SOURCE_LOCK_FORMAT = "filamenthub.catalog-source-lock"
 PROFILES_PATH = "resources/profiles"
+
+
+class CommandFailed(RuntimeError):
+    def __init__(self, command: list[str], returncode: int) -> None:
+        super().__init__(f"command failed ({returncode}): {' '.join(command)}")
+        self.returncode = returncode
 
 
 def _parse_args() -> argparse.Namespace:
@@ -70,7 +77,7 @@ def _parse_args() -> argparse.Namespace:
 def _run(command: list[str], *, cwd: Path | None = None) -> None:
     result = subprocess.run(command, cwd=cwd, check=False)
     if result.returncode != 0:
-        raise SystemExit(f"command failed ({result.returncode}): {' '.join(command)}")
+        raise CommandFailed(command, result.returncode)
 
 
 def _checkout_profiles(repository: str, ref: str, work_dir: Path) -> Path:
@@ -97,18 +104,22 @@ def _checkout_profiles(repository: str, ref: str, work_dir: Path) -> Path:
     return profiles
 
 
-def _build(profiles: Path, target: Path, args: argparse.Namespace) -> None:
+def _build(
+    profiles: Path,
+    target: Path,
+    args: argparse.Namespace,
+    source_lock: Path,
+) -> None:
     command = [
         sys.executable,
         str(BUILDER),
         str(profiles),
         "--output",
         str(target),
-        # The build goes to a temporary file, so without this the builder has no
-        # previous bundle to compare against and its field-lifecycle check never
-        # fires — the one guard that notices Orca adding or dropping a setting.
+        # The tracked lock is the accepted schema baseline and remains available
+        # in a clean clone, unlike the deliberately unversioned bundle.zip.
         "--compare-with",
-        str(args.output),
+        str(source_lock),
         "--repository",
         args.repository,
         "--ref",
@@ -147,6 +158,33 @@ def _read_bundle(path: Path) -> tuple[dict, dict[str, set[str]], dict[str, str]]
     return manifest, models, digests
 
 
+def _normalise_field_inventory(value: Any) -> dict[str, dict[str, list[str]]]:
+    if not isinstance(value, dict):
+        raise ValueError("bundle manifest is missing preset_field_inventory")
+    try:
+        return {
+            scope: {
+                str(field_name): sorted({str(shape) for shape in shapes})
+                for field_name, shapes in sorted((value.get(scope) or {}).items())
+            }
+            for scope in ("filament", "process", "machine")
+        }
+    except (AttributeError, TypeError) as exc:
+        raise ValueError("bundle manifest has invalid preset_field_inventory") from exc
+
+
+def _field_inventory_sha256(
+    inventory: dict[str, dict[str, list[str]]],
+) -> str:
+    payload = json.dumps(
+        inventory,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
 def _source_lock_from_bundle(bundle: Path) -> dict[str, object]:
     with zipfile.ZipFile(bundle) as archive:
         manifest = json.loads(archive.read(MANIFEST_NAME))
@@ -165,6 +203,7 @@ def _source_lock_from_bundle(bundle: Path) -> dict[str, object]:
     missing = [field for field in required if field not in manifest]
     if missing:
         raise ValueError(f"bundle manifest is missing: {', '.join(missing)}")
+    inventory = _normalise_field_inventory(manifest.get("preset_field_inventory"))
     return {
         "format": SOURCE_LOCK_FORMAT,
         "source": manifest["source"],
@@ -178,6 +217,8 @@ def _source_lock_from_bundle(bundle: Path) -> dict[str, object]:
         "file_count": manifest["file_count"],
         "vendor_count": manifest["vendor_count"],
         "bundle_manifest_version": manifest["version"],
+        "preset_field_inventory": inventory,
+        "field_inventory_sha256": _field_inventory_sha256(inventory),
     }
 
 
@@ -232,31 +273,49 @@ def _print_profile_changes(current: dict[str, str], fresh: dict[str, str]) -> No
             print(f"      {kind}: {shown}")
 
 
-def _warn_if_registry_trails(bundle: Path) -> None:
-    """The Orca field registry is pinned to a bundle checksum.
-
-    Since the archive stopped being versioned, a mismatch shows up nowhere in
-    git — the only other signal is a failing test, found long after the fact.
-    """
+def _check_registry_alignment(
+    source_lock: dict[str, object], *, required: bool
+) -> bool:
+    """Keep schema review tied to field shape, not unrelated profile bytes."""
     try:
         registry = FIELD_REGISTRY.read_text(encoding="utf-8")
-    except OSError:
-        return
-    pinned = re.search(r'"bundle-sha256:([0-9a-f]{64})"', registry)
+    except OSError as exc:
+        if required:
+            raise ValueError(f"cannot read Orca field registry: {exc}") from exc
+        return False
+    pinned = re.search(r'"field-inventory-sha256:([0-9a-f]{64})"', registry)
     if not pinned:
-        return
-    digest = hashlib.sha256(bundle.read_bytes()).hexdigest()
+        message = "Orca field registry has no field-inventory-sha256 version"
+        if required:
+            raise ValueError(message)
+        print(f"\nВНИМАНИЕ: {message}.")
+        return False
+    digest = str(source_lock["field_inventory_sha256"])
     if digest == pinned.group(1):
-        return
+        return True
     print()
-    print("ВНИМАНИЕ: реестр полей OrcaSlicer отстал от этого архива.")
-    print(f"  реестр : bundle-sha256:{pinned.group(1)}")
-    print(f"  архив  : bundle-sha256:{digest}")
-    print(
-        "Пока реестр не обновлён, тест test_registry_version_matches_bundled_orca_catalog"
+    print("ВНИМАНИЕ: реестр полей OrcaSlicer отстал от этого источника.")
+    print(f"  реестр   : field-inventory-sha256:{pinned.group(1)}")
+    print(f"  источник: field-inventory-sha256:{digest}")
+    print("Сначала разберите изменившиеся поля по редакторам и passthrough-контракту,")
+    print("затем обновите registry version. Одна подмена контрольной суммы не является ревью.")
+    if required:
+        raise ValueError("Orca field registry is not aligned with the accepted source")
+    return False
+
+
+def _bundle_matches_source_lock(bundle: Path, source_lock: Path) -> bool:
+    if not bundle.is_file() or not source_lock.is_file():
+        return False
+    try:
+        lock = json.loads(source_lock.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    expected = lock.get("bundle_sha256") if isinstance(lock, dict) else None
+    return (
+        isinstance(expected, str)
+        and hashlib.sha256(bundle.read_bytes()).hexdigest() == expected
     )
-    print("падает, а разбор новых полей Orca не сделан. Обновлять реестр вручную,")
-    print("разложив новые поля по редакторам, а не подменой контрольной суммы.")
 
 
 def _report(current: Path | None, fresh: Path) -> bool:
@@ -316,24 +375,43 @@ def _report(current: Path | None, fresh: Path) -> bool:
 
 def main() -> int:
     args = _parse_args()
+    source_lock = (args.source_lock or args.output.with_name(SOURCE_LOCK_NAME)).resolve()
     work_dir = Path(tempfile.mkdtemp(prefix="orca-catalog-"))
     keep = args.keep_work_dir
     try:
-        profiles = _checkout_profiles(args.repository, args.ref, work_dir)
-        fresh = work_dir / "bundle.zip"
-        _build(profiles, fresh, args)
+        try:
+            profiles = _checkout_profiles(args.repository, args.ref, work_dir)
+            fresh = work_dir / "bundle.zip"
+            _build(profiles, fresh, args, source_lock)
+        except CommandFailed as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return exc.returncode
+
+        fresh_lock = _source_lock_from_bundle(fresh)
+        try:
+            _check_registry_alignment(fresh_lock, required=args.write)
+        except ValueError as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            keep = True
+            return 2
 
         print()
-        differs = _report(args.output, fresh)
+        current = args.output if _bundle_matches_source_lock(args.output, source_lock) else None
+        if args.output.exists() and current is None:
+            print(
+                "WARNING: local bundle.zip does not match the tracked source lock; "
+                "it is not used as the accepted comparison baseline."
+            )
+        differs = _report(current, fresh)
 
         if args.write:
             args.output.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(fresh, args.output)
+            temporary_bundle = args.output.with_name(f".{args.output.name}.tmp")
+            shutil.copy2(fresh, temporary_bundle)
+            temporary_bundle.replace(args.output)
             print(f"\nWritten to {args.output}")
-            source_lock = args.source_lock or args.output.with_name(SOURCE_LOCK_NAME)
             _write_source_lock(args.output, source_lock)
             print(f"Source lock written to {source_lock}")
-            _warn_if_registry_trails(args.output)
         elif differs:
             keep = True
             print(f"\nArchive kept at {fresh}")

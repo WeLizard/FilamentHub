@@ -2360,9 +2360,10 @@ async def enrich_all_draft_presets(
 #
 # The FilamentHub printer catalog can be populated from multiple external
 # sources (OrcaSlicer profiles today; PrusaSlicer / Cura / Bambu Studio in
-# the future). Each source ships a pre-packed bundle inside the backend
-# container under backend/data/catalog_sources/<source>/bundle.zip and an
-# admin endpoint that unpacks + imports it idempotently.
+# the future). Each accepted source is published as a pre-packed runtime
+# bundle under backend/data/catalog_sources/<source>/bundle.zip and exposed to
+# the backend through a read-only mount. An admin endpoint then unpacks and
+# imports it idempotently; ordinary application deploys do not refresh it.
 
 # From .../backend/app/api/v1/endpoints/admin.py:
 #   parents[3] = backend/app  (WRONG — that's where I was looking before)

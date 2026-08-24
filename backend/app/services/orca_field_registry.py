@@ -1,13 +1,13 @@
-"""Versioned OrcaSlicer preset field registry based on the bundled catalog.
+"""Versioned OrcaSlicer preset field registry based on the accepted source.
 
 Values are deliberately absent: the observer compares top-level field names only.
 The sets also include reviewed forward-compatible fields already supported by the
-editors. Regenerate the bundled snapshot when bundle.zip changes, then retain
-those reviewed additions until the bundle itself contains them.
+editors. The version pins the canonical field inventory, not the ZIP bytes, so
+ordinary value/profile changes do not pretend to be schema changes.
 """
 
 ORCA_FIELD_REGISTRY_VERSION = (
-    "bundle-sha256:4675124b5f41accee8eaa2b2c27ac8a7476dab69d54c51c0717ac642929817f6"
+    "field-inventory-sha256:2995922c6408c3968d123a2410083ffb55538acd81db28c9b5a55a00a2dabc7f"
 )
 
 ORCA_PRESET_FIELDS: dict[str, frozenset[str]] = {

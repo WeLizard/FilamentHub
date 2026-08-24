@@ -1,0 +1,4 @@
+# The accepted Orca source is a runtime artifact published separately from code.
+# Production mounts it read-only from the host, so ordinary image builds must not
+# accidentally bake a stale workstation copy into the backend image.
+data/catalog_sources/orca/bundle.zip

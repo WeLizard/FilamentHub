@@ -71,6 +71,29 @@ def test_v1_bundle_inventory_is_derived_before_lifecycle_comparison(
     }
 
 
+def test_tracked_source_lock_is_a_clean_clone_schema_baseline(tmp_path: Path) -> None:
+    source_lock = tmp_path / "source-lock.json"
+    source_lock.write_text(
+        json.dumps(
+            {
+                "format": builder.SOURCE_LOCK_FORMAT,
+                "preset_field_inventory": {
+                    "filament": {"legacy_field": ["array:string"]},
+                    "process": {},
+                    "machine": {},
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert builder._field_inventory_from_reference(source_lock) == {
+        "filament": {"legacy_field": ["array:string"]},
+        "process": {},
+        "machine": {},
+    }
+
+
 def test_shape_changes_are_reported_without_treating_fields_as_invalid() -> None:
     previous = {
         "filament": {"flexible_field": ["array:string"]},

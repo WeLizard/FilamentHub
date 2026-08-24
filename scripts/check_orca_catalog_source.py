@@ -30,7 +30,16 @@ def _read_source_lock(path: Path) -> dict[str, Any]:
     value = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(value, dict) or value.get("format") != SOURCE_LOCK_FORMAT:
         raise ValueError("invalid Orca catalog source lock format")
-    for field in ("repository", "ref", "commit", "profiles_tree"):
+    for field in (
+        "repository",
+        "ref",
+        "commit",
+        "profiles_tree",
+        "content_sha256",
+        "bundle_sha256",
+        "field_inventory_sha256",
+        "preset_field_inventory",
+    ):
         if not value.get(field):
             raise ValueError(f"Orca catalog source lock is missing {field}")
     return value
