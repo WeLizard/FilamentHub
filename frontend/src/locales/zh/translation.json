@@ -1265,6 +1265,7 @@
     "step1Cta": "官方 OrcaSlicer",
     "step1Release": "GitHub 最新版本：{{tag}}",
     "step1ReleaseFallback": "GitHub 最新版本",
+    "step1Nightly": "最新 Nightly 构建（实验版）",
     "step1ShotAlt": "截图：OrcaSlicer 官方下载页面",
     "step2Title": "安装插件",
     "step2Desc": "在 Plugin Hub 订阅 FilamentHub 插件——之后它会出现在 OrcaSlicer 的 Plugins 对话框中供安装。",

@@ -12,6 +12,7 @@ import { SEOHead } from '../components/SEOHead';
 // link resolves to whatever is current so we never hardcode a version.
 const ORCA_OFFICIAL_DOWNLOAD_URL = 'https://www.orcaslicer.com/download/';
 const ORCA_RELEASES_LATEST_URL = 'https://github.com/OrcaSlicer/OrcaSlicer/releases/latest';
+const ORCA_NIGHTLY_RELEASE_URL = 'https://github.com/OrcaSlicer/OrcaSlicer/releases/tag/nightly-builds';
 const FILAMENTHUB_PLUGIN_HUB_URL = 'https://cloud.orcaslicer.com/app/plugins/plugin-hub/34c1321c-7d46-4c5a-a8e9-f6c78fa9898e';
 const PRINT_FARM_PLUGIN_HUB_URL = 'https://cloud.orcaslicer.com/app/plugins/plugin-hub/3d30ee0c-24ba-435e-ae23-6bbc76d8e949';
 const FILAMENTHUB_PLUGIN_REPO = 'WeLizard/FilamentHub';
@@ -98,7 +99,7 @@ export function DownloadPage() {
   const { t } = useTranslation();
   const [previewImage, setPreviewImage] = useState<{ src: string; alt: string } | null>(null);
   const [orcaRelease, setOrcaRelease] = useState<{ tag: string; url: string } | null>(null);
-  const [pluginsReleaseUrl, setPluginsReleaseUrl] = useState(FILAMENTHUB_RELEASES_URL);
+  const [octoPrintReleaseUrl, setOctoPrintReleaseUrl] = useState(FILAMENTHUB_RELEASES_URL);
   const [orcaPluginWheel, setOrcaPluginWheel] = useState<PluginReleaseAsset | null>(null);
   const [octoPrintBridgeWheel, setOctoPrintBridgeWheel] = useState<PluginReleaseAsset | null>(null);
   const [printFarmWheel, setPrintFarmWheel] = useState<PluginReleaseAsset | null>(null);
@@ -133,8 +134,9 @@ export function DownloadPage() {
     const fromFilamentHub = async () => {
       try {
         const data = await downloadsAPI.getPluginDownloads(controller.signal);
-        if (cancelled || !data.packages.length) return false;
-        if (data.release_url) setPluginsReleaseUrl(data.release_url);
+        if (cancelled || !data.packages.length) {
+          return { orca: false, octoPrint: false, printFarm: false };
+        }
         const orca = data.packages.find((item: PluginDownload) => item.plugin === 'orcaslicer');
         const octoPrint = data.packages.find((item: PluginDownload) => item.plugin === 'octoprint');
         // Print Farm ships from its own repository, so the API is the only place
@@ -143,19 +145,24 @@ export function DownloadPage() {
         if (orca) setOrcaPluginWheel({ url: orca.download_url, name: orca.filename });
         if (octoPrint) {
           setOctoPrintBridgeWheel({ url: octoPrint.download_url, name: octoPrint.filename });
+          setOctoPrintReleaseUrl(octoPrint.github_url || FILAMENTHUB_RELEASES_URL);
         }
         if (printFarm) {
           setPrintFarmWheel({ url: printFarm.download_url, name: printFarm.filename });
         }
-        return Boolean(orca || octoPrint || printFarm);
+        return {
+          orca: Boolean(orca),
+          octoPrint: Boolean(octoPrint),
+          printFarm: Boolean(printFarm),
+        };
       } catch {
-        return false;
+        return { orca: false, octoPrint: false, printFarm: false };
       }
     };
 
     // Search recent releases instead of /latest so an unrelated application
     // release cannot hide the plugins.
-    const fromGitHub = async () => {
+    const fromGitHub = async (missing: { orca: boolean; octoPrint: boolean }) => {
       try {
         const response = await fetch(
           `https://api.github.com/repos/${FILAMENTHUB_PLUGIN_REPO}/releases?per_page=20`,
@@ -164,27 +171,30 @@ export function DownloadPage() {
         if (!response.ok) return;
         const data = await response.json();
         if (cancelled || !Array.isArray(data)) return;
-        const release = data.find((candidate: { assets?: GitHubReleaseAsset[] }) =>
-          (candidate.assets || []).some(
-            (asset) => isOrcaPluginWheel(asset) || isOctoPrintBridgeWheel(asset),
-          ),
-        );
-        if (!release) return;
-        setPluginsReleaseUrl(release.html_url || FILAMENTHUB_RELEASES_URL);
-        const assets = (release.assets || []) as GitHubReleaseAsset[];
-        const orcaAsset = assets.find(isOrcaPluginWheel);
-        const octoPrintAsset = assets.find(isOctoPrintBridgeWheel);
-        if (orcaAsset?.browser_download_url && orcaAsset.name) {
+        const orcaRelease = missing.orca
+          ? data.find((candidate: { assets?: GitHubReleaseAsset[] }) =>
+            (candidate.assets || []).some(isOrcaPluginWheel))
+          : null;
+        const octoPrintRelease = missing.octoPrint
+          ? data.find((candidate: { assets?: GitHubReleaseAsset[] }) =>
+            (candidate.assets || []).some(isOctoPrintBridgeWheel))
+          : null;
+        const orcaAsset = ((orcaRelease?.assets || []) as GitHubReleaseAsset[])
+          .find(isOrcaPluginWheel);
+        const octoPrintAsset = ((octoPrintRelease?.assets || []) as GitHubReleaseAsset[])
+          .find(isOctoPrintBridgeWheel);
+        if (missing.orca && orcaAsset?.browser_download_url && orcaAsset.name) {
           setOrcaPluginWheel({
             url: orcaAsset.browser_download_url,
             name: orcaAsset.name,
           });
         }
-        if (octoPrintAsset?.browser_download_url && octoPrintAsset.name) {
+        if (missing.octoPrint && octoPrintAsset?.browser_download_url && octoPrintAsset.name) {
           setOctoPrintBridgeWheel({
             url: octoPrintAsset.browser_download_url,
             name: octoPrintAsset.name,
           });
+          setOctoPrintReleaseUrl(octoPrintRelease.html_url || FILAMENTHUB_RELEASES_URL);
         }
       } catch {
         // Both ways failed; the releases link stays as the way out.
@@ -193,7 +203,9 @@ export function DownloadPage() {
 
     void (async () => {
       const served = await fromFilamentHub();
-      if (!served && !cancelled) await fromGitHub();
+      if ((!served.orca || !served.octoPrint) && !cancelled) {
+        await fromGitHub({ orca: !served.orca, octoPrint: !served.octoPrint });
+      }
     })();
 
     return () => {
@@ -267,6 +279,15 @@ export function DownloadPage() {
                     ? t('downloadPage.step1Release', { tag: orcaRelease.tag })
                     : t('downloadPage.step1ReleaseFallback')}
                 </span>
+                <ExternalLink className="w-3 h-3" />
+              </a>
+              <a
+                href={ORCA_NIGHTLY_RELEASE_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-xs text-cyan-300 hover:text-cyan-200 transition-colors"
+              >
+                <span>{t('downloadPage.step1Nightly')}</span>
                 <ExternalLink className="w-3 h-3" />
               </a>
             </div>
@@ -413,7 +434,7 @@ export function DownloadPage() {
               </a>
             ) : null}
             <a
-              href={pluginsReleaseUrl}
+              href={octoPrintReleaseUrl}
               target="_blank"
               rel="noopener noreferrer"
               className={octoPrintBridgeWheel

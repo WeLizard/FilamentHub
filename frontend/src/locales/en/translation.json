@@ -1265,6 +1265,7 @@
     "step1Cta": "Official OrcaSlicer",
     "step1Release": "Latest GitHub release: {{tag}}",
     "step1ReleaseFallback": "Latest GitHub release",
+    "step1Nightly": "Latest Nightly build (experimental)",
     "step1ShotAlt": "Screenshot: official OrcaSlicer download page",
     "step2Title": "Install the plugin",
     "step2Desc": "Subscribe to the FilamentHub plugin in the Plugin Hub — it then shows up in OrcaSlicer's Plugins dialog to install.",

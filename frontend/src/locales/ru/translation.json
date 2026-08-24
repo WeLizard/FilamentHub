@@ -1426,6 +1426,7 @@
     "step1Cta": "Официальный OrcaSlicer",
     "step1Release": "Последний релиз на GitHub: {{tag}}",
     "step1ReleaseFallback": "Последний релиз на GitHub",
+    "step1Nightly": "Последняя Nightly-сборка (экспериментальная)",
     "step1ShotAlt": "Скриншот: официальная страница загрузки OrcaSlicer",
     "step2Title": "Установите плагин",
     "step2Desc": "Подпишитесь на плагин FilamentHub в Plugin Hub — после этого он появится в OrcaSlicer в диалоге Plugins для установки.",
