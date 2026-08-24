@@ -26,6 +26,7 @@ import socket
 import ssl
 import subprocess
 import sys
+import tempfile
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -43,6 +44,9 @@ TIMEOUT = 20
 # with. Left unset, the two checks that need to look inside are skipped.
 SERVER = os.environ.get("WATCHDOG_SERVER", "")
 SERVER_KEY = os.environ.get("WATCHDOG_SERVER_KEY", "")
+SERVER_PROBE_COMMAND = os.environ.get(
+    "WATCHDOG_SERVER_PROBE_COMMAND", "filamenthub-watchdog-probe"
+)
 # Hashing a password claims 64 MiB for as long as it runs, and four workers can
 # be doing that at once, so the floor has to leave room for a crowd.
 MEMORY_WARN_MIB = 600
@@ -123,48 +127,95 @@ def _ask_server(command: str) -> str | None:
     return result.stdout.strip() if result.returncode == 0 else None
 
 
-def check_memory() -> str | None:
+def read_server_probe() -> dict[str, object] | None:
     if not SERVER:
         return None
-
-    answer = _ask_server("free -m | awk '/^Mem:/ {print $7}'")
+    answer = _ask_server(SERVER_PROBE_COMMAND)
     if answer is None:
-        return "не удалось спросить сервер"
+        return None
     try:
-        available = int(answer)
-    except ValueError:
-        return "сервер ответил непонятно"
+        payload = json.loads(answer)
+    except (json.JSONDecodeError, TypeError):
+        return None
+    if not isinstance(payload, dict) or payload.get("version") != 1:
+        return None
+    return payload
 
+
+def check_memory(probe: dict[str, object]) -> str | None:
+    available = probe.get("memory_available_mib")
+    if not isinstance(available, int):
+        return "сервер ответил непонятно"
     if available < MEMORY_WARN_MIB:
         return f"свободно всего {available} МБ"
     return None
 
 
-def check_disk() -> str | None:
-    if not SERVER:
-        return None
-
-    answer = _ask_server("df --output=pcent / | tail -1")
-    if answer is None:
-        return "не удалось спросить сервер"
-    try:
-        used = int(answer.strip().rstrip("%"))
-    except ValueError:
+def check_disk(probe: dict[str, object]) -> str | None:
+    used = probe.get("disk_used_percent")
+    if not isinstance(used, int):
         return "сервер ответил непонятно"
-
     if used >= DISK_WARN_PERCENT:
         return f"занято {used}%"
     return None
 
 
-CHECKS = {
+def check_ssh_policy(probe: dict[str, object]) -> str | None:
+    policy = probe.get("ssh_policy")
+    if not isinstance(policy, dict):
+        return "не удалось проверить эффективные настройки"
+
+    problems = []
+    if policy.get("passwordauthentication") != "no":
+        problems.append("разрешён вход по паролю")
+    if policy.get("permitrootlogin") != "no":
+        problems.append("разрешён вход root")
+    if policy.get("pubkeyauthentication") != "yes":
+        problems.append("отключены SSH-ключи")
+    return "; ".join(problems) or None
+
+
+BASE_CHECKS = {
     "сайт": check_site,
     "API": check_api,
     "сертификат": check_certificate,
     "резервные копии": check_backup,
-    "память": check_memory,
-    "диск": check_disk,
 }
+
+
+def collect_checks(probe: dict[str, object] | None) -> dict[str, str | None]:
+    checks = {name: check() for name, check in BASE_CHECKS.items()}
+    if not SERVER:
+        return checks
+    if probe is None:
+        checks["серверный probe"] = "не удалось получить безопасный снимок"
+        return checks
+    checks["серверный probe"] = None
+    checks["память"] = check_memory(probe)
+    checks["диск"] = check_disk(probe)
+    checks["SSH-политика"] = check_ssh_policy(probe)
+    if probe.get("reboot_required") is True:
+        checks["перезагрузка ОС"] = "установлено новое ядро, требуется перезагрузка"
+    else:
+        checks["перезагрузка ОС"] = None
+    return checks
+
+
+def security_events(probe: dict[str, object] | None) -> list[dict[str, str]]:
+    if probe is None:
+        return []
+    raw_events = probe.get("ssh_security_events")
+    if not isinstance(raw_events, list):
+        return []
+    events = []
+    for item in raw_events:
+        if not isinstance(item, dict):
+            continue
+        event_id = item.get("id")
+        description = item.get("description")
+        if isinstance(event_id, str) and isinstance(description, str):
+            events.append({"id": event_id, "description": description})
+    return events
 
 
 def notify(text: str) -> None:
@@ -210,14 +261,31 @@ def load_state() -> dict:
         return {}
 
 
+def save_state(state: dict[str, object]) -> None:
+    STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary_name = tempfile.mkstemp(
+        dir=STATE_FILE.parent,
+        prefix=f".{STATE_FILE.name}.",
+        text=True,
+    )
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            json.dump(state, handle, ensure_ascii=False)
+        os.chmod(temporary, 0o600)
+        os.replace(temporary, STATE_FILE)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
 def main() -> int:
     previous = load_state()
     today = datetime.now(timezone.utc).date().isoformat()
-    state: dict[str, str] = {}
+    state: dict[str, object] = {}
     failing = []
+    probe = read_server_probe()
 
-    for name, check in CHECKS.items():
-        problem = check()
+    for name, problem in collect_checks(probe).items():
         state[name] = problem or "ok"
         was = previous.get(name, "ok")
         if problem:
@@ -228,9 +296,20 @@ def main() -> int:
         elif was != "ok":
             notify(f"FilamentHub — {name}: снова в порядке")
 
+    previous_event_ids = previous.get("_ssh_security_event_ids", [])
+    if not isinstance(previous_event_ids, list):
+        previous_event_ids = []
+    known_event_ids = {event_id for event_id in previous_event_ids if isinstance(event_id, str)}
+    current_events = security_events(probe)
+    for event in current_events:
+        if event["id"] not in known_event_ids:
+            notify(f"FilamentHub — опасный SSH-вход: {event['description']}")
+    state["_ssh_security_event_ids"] = list(
+        dict.fromkeys([*previous_event_ids, *(event["id"] for event in current_events)])
+    )[-512:]
+
     state["_day"] = today
-    STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
-    STATE_FILE.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+    save_state(state)
 
     print("; ".join(failing) if failing else "всё в порядке")
     return 1 if failing else 0

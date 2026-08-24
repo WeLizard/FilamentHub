@@ -17,6 +17,9 @@ jobs:
         run: |
           bash -n scripts/deploy.sh
           bash -n scripts/run-deploy-job.sh
+          bash -n scripts/server-security/install-watchdog-access.sh
+          bash -n scripts/server-security/apply-ssh-hardening.sh
+          bash -n scripts/server-security/install-fail2ban.sh
           bash -n backend/docker-entrypoint.sh
 
       - name: Check operations contracts
@@ -25,7 +28,9 @@ jobs:
             scripts.tests.test_check_duplication \
             scripts.tests.test_deploy_resilience_contract \
             scripts.tests.test_orca_catalog_source_contract \
-            scripts.tests.test_telegram_publish
+            scripts.tests.test_server_security_contract \
+            scripts.tests.test_telegram_publish \
+            scripts.tests.test_watchdog
           bash scripts/tests/test_run_deploy_job.sh
 
       - name: Check PowerShell owner scripts
