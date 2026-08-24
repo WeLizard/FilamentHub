@@ -1,4 +1,7 @@
+import json
 from pathlib import Path
+import subprocess
+import tempfile
 import unittest
 
 
@@ -50,6 +53,57 @@ class ServerSecurityContractTest(unittest.TestCase):
         self.assertIn("for _ in {1..20}", script)
         self.assertIn("sleep 0.25", script)
         self.assertNotIn("enable --now", script)
+
+    def test_public_frontend_cannot_share_data_or_docker_api_networks(self) -> None:
+        source = (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
+        with tempfile.TemporaryDirectory() as temp:
+            temp_root = Path(temp)
+            compose_file = temp_root / "docker-compose.yml"
+            env_file = temp_root / ".env"
+            compose_file.write_text(source, encoding="utf-8")
+            env_file.write_text(
+                "POSTGRES_PASSWORD=contract-only\nREDIS_PASSWORD=contract-only\n",
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                [
+                    "docker",
+                    "compose",
+                    "--file",
+                    str(compose_file),
+                    "--env-file",
+                    str(env_file),
+                    "config",
+                    "--format",
+                    "json",
+                ],
+                cwd=temp_root,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        compose = json.loads(result.stdout)
+        services = compose["services"]
+
+        self.assertEqual(set(services["frontend"]["networks"]), {"filamenthub_network"})
+        self.assertEqual(set(services["postgres"]["networks"]), {"filamenthub_data"})
+        self.assertEqual(set(services["redis"]["networks"]), {"filamenthub_data"})
+        self.assertEqual(
+            set(services["docker-socket-proxy"]["networks"]),
+            {"filamenthub_metrics"},
+        )
+        self.assertEqual(
+            set(services["backend"]["networks"]),
+            {"filamenthub_network", "filamenthub_data", "filamenthub_metrics"},
+        )
+        self.assertEqual(
+            services["backend"]["networks"]["filamenthub_network"]["gw_priority"],
+            1,
+        )
+        self.assertTrue(compose["networks"]["filamenthub_data"]["internal"])
+        self.assertTrue(compose["networks"]["filamenthub_metrics"]["internal"])
 
 
 if __name__ == "__main__":

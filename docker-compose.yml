@@ -20,7 +20,7 @@ services:
       retries: 5
     restart: unless-stopped
     networks:
-      - filamenthub_network
+      - filamenthub_data
 
   redis:
     image: redis:7-alpine
@@ -35,7 +35,7 @@ services:
       retries: 5
     restart: unless-stopped
     networks:
-      - filamenthub_network
+      - filamenthub_data
 
   # Ограниченный доступ к Docker API для admin-stats: наружу отдаются только
   # GET-эндпоинты /containers (list/inspect/stats); POST/exec/create запрещены.
@@ -50,7 +50,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     restart: unless-stopped
     networks:
-      - filamenthub_network
+      - filamenthub_metrics
 
   backend:
     build:
@@ -120,7 +120,13 @@ services:
       - .env
     restart: unless-stopped
     networks:
-      - filamenthub_network
+      # Keep outbound traffic and nginx communication on the existing edge
+      # network. The explicit gateway prevents an internal-only network from
+      # becoming the default route when Docker attaches multiple networks.
+      filamenthub_network:
+        gw_priority: 1
+      filamenthub_data: {}
+      filamenthub_metrics: {}
 
   frontend:
     build:
@@ -154,8 +160,20 @@ volumes:
   uploads_data:  # Загруженные файлы (proof files для brand requests) + database_dumps + QR-коды
 
 networks:
+  # Public application edge: only nginx and the backend share this network.
+  # Its existing subnet and fixed nginx address are preserved because the
+  # backend trusts that exact proxy address for forwarded client identity.
   filamenthub_network:
     driver: bridge
     ipam:
       config:
         - subnet: ${FILAMENTHUB_NETWORK_SUBNET:-172.30.0.0/24}
+  # Datastores are reachable from the backend, never from the public nginx
+  # container, and do not receive an external route of their own.
+  filamenthub_data:
+    driver: bridge
+    internal: true
+  # Docker API metadata is isolated independently from both nginx and data.
+  filamenthub_metrics:
+    driver: bridge
+    internal: true
