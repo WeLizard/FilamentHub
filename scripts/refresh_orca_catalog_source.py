@@ -25,16 +25,28 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 BUILDER = PROJECT_ROOT / "scripts" / "build_catalog_source_orca.py"
-DEFAULT_TARGET = PROJECT_ROOT / "backend" / "data" / "catalog_sources" / "orca" / "bundle.zip"
-FIELD_REGISTRY = PROJECT_ROOT / "backend" / "app" / "services" / "orca_field_registry.py"
+DEFAULT_TARGET = (
+    PROJECT_ROOT / "backend" / "data" / "catalog_sources" / "orca" / "bundle.zip"
+)
+FIELD_REGISTRY = (
+    PROJECT_ROOT / "backend" / "app" / "services" / "orca_field_registry.py"
+)
 DEFAULT_REPOSITORY = "https://github.com/OrcaSlicer/OrcaSlicer"
 MANIFEST_NAME = "filamenthub-source.json"
+SOURCE_LOCK_NAME = "source-lock.json"
+SOURCE_LOCK_FORMAT = "filamenthub.catalog-source-lock"
 PROFILES_PATH = "resources/profiles"
 
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, default=DEFAULT_TARGET)
+    parser.add_argument(
+        "--source-lock",
+        type=Path,
+        default=None,
+        help="Tracked metadata file; defaults to source-lock.json beside --output.",
+    )
     parser.add_argument(
         "--write",
         action="store_true",
@@ -135,6 +147,51 @@ def _read_bundle(path: Path) -> tuple[dict, dict[str, set[str]], dict[str, str]]
     return manifest, models, digests
 
 
+def _source_lock_from_bundle(bundle: Path) -> dict[str, object]:
+    with zipfile.ZipFile(bundle) as archive:
+        manifest = json.loads(archive.read(MANIFEST_NAME))
+    required = (
+        "source",
+        "repository",
+        "ref",
+        "commit",
+        "commit_date",
+        "profiles_tree",
+        "content_sha256",
+        "file_count",
+        "vendor_count",
+        "version",
+    )
+    missing = [field for field in required if field not in manifest]
+    if missing:
+        raise ValueError(f"bundle manifest is missing: {', '.join(missing)}")
+    return {
+        "format": SOURCE_LOCK_FORMAT,
+        "source": manifest["source"],
+        "repository": manifest["repository"],
+        "ref": manifest["ref"],
+        "commit": manifest["commit"],
+        "commit_date": manifest["commit_date"],
+        "profiles_tree": manifest["profiles_tree"],
+        "content_sha256": manifest["content_sha256"],
+        "bundle_sha256": hashlib.sha256(bundle.read_bytes()).hexdigest(),
+        "file_count": manifest["file_count"],
+        "vendor_count": manifest["vendor_count"],
+        "bundle_manifest_version": manifest["version"],
+    }
+
+
+def _write_source_lock(bundle: Path, target: Path) -> None:
+    payload = _source_lock_from_bundle(bundle)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temporary = target.with_name(f".{target.name}.tmp")
+    temporary.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    temporary.replace(target)
+
+
 def _group(name: str) -> tuple[str, str]:
     """Split an archive path into the vendor and the part of its profile set."""
     parts = name.split("/")
@@ -164,7 +221,9 @@ def _print_profile_changes(current: dict[str, str], fresh: dict[str, str]) -> No
     total = len(added) + len(modified) + len(removed)
     print(f"profile files changed ({total}):")
     for (vendor, scope), kinds in sorted(buckets.items()):
-        summary = ", ".join(f"{len(items)} {kind}" for kind, items in sorted(kinds.items()))
+        summary = ", ".join(
+            f"{len(items)} {kind}" for kind, items in sorted(kinds.items())
+        )
         print(f"  {vendor} · {scope}: {summary}")
         for kind, items in sorted(kinds.items()):
             shown = ", ".join(items[:6])
@@ -193,7 +252,9 @@ def _warn_if_registry_trails(bundle: Path) -> None:
     print("ВНИМАНИЕ: реестр полей OrcaSlicer отстал от этого архива.")
     print(f"  реестр : bundle-sha256:{pinned.group(1)}")
     print(f"  архив  : bundle-sha256:{digest}")
-    print("Пока реестр не обновлён, тест test_registry_version_matches_bundled_orca_catalog")
+    print(
+        "Пока реестр не обновлён, тест test_registry_version_matches_bundled_orca_catalog"
+    )
     print("падает, а разбор новых полей Orca не сделан. Обновлять реестр вручную,")
     print("разложив новые поля по редакторам, а не подменой контрольной суммы.")
 
@@ -201,16 +262,22 @@ def _warn_if_registry_trails(bundle: Path) -> None:
 def _report(current: Path | None, fresh: Path) -> bool:
     """Print what an import of the fresh bundle would change. True when it differs."""
     fresh_manifest, fresh_models, fresh_files = _read_bundle(fresh)
-    print(f"upstream commit : {fresh_manifest['commit']} ({fresh_manifest['commit_date']})")
+    print(
+        f"upstream commit : {fresh_manifest['commit']} ({fresh_manifest['commit_date']})"
+    )
 
     if current is None or not current.exists():
         total = sum(len(names) for names in fresh_models.values())
-        print(f"no current bundle at {current}; the archive brings "
-              f"{len(fresh_models)} vendors and {total} printer models")
+        print(
+            f"no current bundle at {current}; the archive brings "
+            f"{len(fresh_models)} vendors and {total} printer models"
+        )
         return True
 
     current_manifest, current_models, current_files = _read_bundle(current)
-    print(f"current commit  : {current_manifest['commit']} ({current_manifest['commit_date']})")
+    print(
+        f"current commit  : {current_manifest['commit']} ({current_manifest['commit_date']})"
+    )
 
     if current_manifest["profiles_tree"] == fresh_manifest["profiles_tree"]:
         print("\nProfiles are identical — nothing to import.")
@@ -263,11 +330,16 @@ def main() -> int:
             args.output.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(fresh, args.output)
             print(f"\nWritten to {args.output}")
+            source_lock = args.source_lock or args.output.with_name(SOURCE_LOCK_NAME)
+            _write_source_lock(args.output, source_lock)
+            print(f"Source lock written to {source_lock}")
             _warn_if_registry_trails(args.output)
         elif differs:
             keep = True
             print(f"\nArchive kept at {fresh}")
-            print("Re-run with --write to replace the tracked bundle.")
+            print(
+                "Re-run with --write to replace the local bundle and its tracked source lock."
+            )
         return 0
     finally:
         if keep:

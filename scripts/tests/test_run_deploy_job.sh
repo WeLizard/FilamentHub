@@ -63,3 +63,36 @@ grep -q "FH_DEPLOY_JOB_STATUS_V1|$RUN_ID|succeeded|0|" <<< "$reattach_output"
 
 LOG_FILE="$STATE_HOME/filamenthub/deploys/$RUN_ID/output.log"
 [[ "$(grep -c '^fixture deploy started$' "$LOG_FILE")" -eq 1 ]]
+
+# A failure after taking the start lock must not poison this revision forever.
+cat > "$REPOSITORY/scripts/deploy.sh" <<'EOF'
+#!/usr/bin/env bash
+# FILAMENTHUB_DEPLOY_PROTOCOL=999
+exit 0
+EOF
+git -C "$REPOSITORY" add scripts/deploy.sh
+git -C "$REPOSITORY" commit -qm incompatible-worker
+BAD_REVISION="$(git -C "$REPOSITORY" rev-parse HEAD)"
+git -C "$REPOSITORY" update-ref refs/remotes/origin/main "$BAD_REVISION"
+BAD_RUN_ID="deploy-$BAD_REVISION"
+
+set +e
+failure_output="$(
+    PROJECT_DIR="$REPOSITORY" XDG_STATE_HOME="$STATE_HOME" \
+        bash "$ROOT/scripts/run-deploy-job.sh" \
+        --start --run-id "$BAD_RUN_ID" --worker-revision "$BAD_REVISION" \
+        -- --revision "$BAD_REVISION" --yes 2>&1
+)"
+failure_code=$?
+set -e
+
+[[ "$failure_code" -ne 0 ]]
+grep -q "incompatible deploy protocol" <<< "$failure_output"
+[[ ! -d "$STATE_HOME/filamenthub/deploys/.${BAD_RUN_ID}.lock" ]]
+
+stale_output="$(
+    PROJECT_DIR="$REPOSITORY" XDG_STATE_HOME="$STATE_HOME" \
+        bash "$ROOT/scripts/run-deploy-job.sh" \
+        --status --run-id "$BAD_RUN_ID"
+)"
+grep -q "FH_DEPLOY_JOB_STATUS_V1|$BAD_RUN_ID|stale|255|" <<< "$stale_output"

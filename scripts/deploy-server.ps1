@@ -282,17 +282,17 @@ function Invoke-DurableProductionDeploy {
     $target = Get-ServerTarget
     $runId = "deploy-$Revision"
     $startCommand = "set -o pipefail && cd '$RemoteProjectDirectory' && git fetch --no-recurse-submodules origin main && git cat-file -e '$($Revision)^{commit}' && git merge-base --is-ancestor '$Revision' origin/main"
-    Invoke-Checked ssh @(
-        '-o', 'ConnectTimeout=15',
-        '-o', 'ServerAliveInterval=15',
-        '-o', 'ServerAliveCountMax=4',
-        $target, $startCommand
-    )
 
     $response = $null
     $startDeadline = (Get-Date).AddSeconds($script:DeployReconnectGraceSeconds)
     do {
         try {
+            Invoke-Checked ssh @(
+                '-o', 'ConnectTimeout=15',
+                '-o', 'ServerAliveInterval=15',
+                '-o', 'ServerAliveCountMax=4',
+                $target, $startCommand
+            )
             $response = Invoke-DurableDeployCommand `
                 -Target $target -Revision $Revision `
                 -RunnerArguments @(
@@ -303,7 +303,7 @@ function Invoke-DurableProductionDeploy {
             if ((Get-Date) -ge $startDeadline) {
                 throw "Не удалось запустить или обнаружить durable deploy за $script:DeployReconnectGraceSeconds секунд. Повторный запуск безопасно проверит ту же задачу. Последняя ошибка: $($_.Exception.Message)"
             }
-            Write-Host 'SSH оборвался во время запуска; проверяю, успела ли задача стартовать на VDS...' -ForegroundColor Yellow
+            Write-Host 'SSH оборвался во время подготовки или запуска; безопасно повторяю проверку VDS...' -ForegroundColor Yellow
             Start-Sleep -Seconds $script:DeployPollIntervalSeconds
         }
     } while (-not $response)
@@ -724,6 +724,7 @@ function Update-CatalogSource {
 
     $refresher = Join-Path $repositoryRoot 'scripts\refresh_orca_catalog_source.py'
     $bundle = Join-Path $repositoryRoot 'backend\data\catalog_sources\orca\bundle.zip'
+    $sourceLock = Join-Path $repositoryRoot 'backend\data\catalog_sources\orca\source-lock.json'
 
     Write-Host ''
     Write-Host 'Читаю профили OrcaSlicer и сравниваю с текущим источником...' -ForegroundColor Cyan
@@ -738,13 +739,14 @@ function Update-CatalogSource {
 
     Write-Host ''
     Write-Host "Готовый архив: $bundle" -ForegroundColor Green
+    Write-Host "Метаданные источника для Git: $sourceLock" -ForegroundColor Green
     Write-Host ''
     Write-Host 'ПОЛОЖИ АРХИВ НА СЕРВЕР — сам он туда не поедет:' -ForegroundColor Yellow
     Write-Host "  1) залей файл в $RemoteProjectDirectory/backend/data/catalog_sources/orca/bundle.zip"
     Write-Host '  2) задеплой пунктом 3: архив попадает в образ только при пересборке'
     Write-Host '  3) в админке нажми импорт источника каталога'
     Write-Host ''
-    Write-Host 'Архив не версионируется, поэтому чистоту рабочего дерева на сервере он не ломает.'
+    Write-Host 'Архив не версионируется. source-lock.json нужно закоммитить вместе с обновлением источника.'
 }
 
 function Invoke-LocalDevelopmentCommand {

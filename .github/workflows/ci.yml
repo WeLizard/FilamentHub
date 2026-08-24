@@ -19,9 +19,13 @@ jobs:
           bash -n scripts/run-deploy-job.sh
           bash -n backend/docker-entrypoint.sh
 
-      - name: Check deployment resilience contract
+      - name: Check operations contracts
         run: |
-          python -m pytest scripts/tests/test_deploy_resilience_contract.py
+          python -m unittest \
+            scripts.tests.test_check_duplication \
+            scripts.tests.test_deploy_resilience_contract \
+            scripts.tests.test_orca_catalog_source_contract \
+            scripts.tests.test_telegram_publish
           bash scripts/tests/test_run_deploy_job.sh
 
       - name: Check PowerShell owner scripts
@@ -76,6 +80,9 @@ jobs:
 
       - name: Lint (ruff)
         run: ruff check app
+
+      - name: Check Alembic revision graph
+        run: python ../scripts/tests/test_migration_graph.py
 
       - name: Run tests (pytest, in-memory SQLite)
         run: pytest --no-cov-on-fail

@@ -12,10 +12,19 @@ WORKER_REVISION=""
 FROM_LINE=0
 RESTART_FAILED=false
 WORKER_ARGS=()
+START_LOCK_DIR=""
 
 fail() {
     printf 'ERROR: %s\n' "$*" >&2
     exit 1
+}
+
+cleanup_start_lock() {
+    trap - RETURN EXIT
+    if [[ -n "$START_LOCK_DIR" ]]; then
+        rmdir "$START_LOCK_DIR" 2>/dev/null || true
+        START_LOCK_DIR=""
+    fi
 }
 
 usage() {
@@ -100,7 +109,10 @@ start_job() {
         emit_status
         return
     fi
-    trap 'rmdir "$lock_dir" 2>/dev/null || true' RETURN
+    START_LOCK_DIR="$lock_dir"
+    # RETURN handles normal reattach paths; EXIT also releases the lock when a
+    # validation or filesystem error calls fail() after the lock was acquired.
+    trap cleanup_start_lock RETURN EXIT
 
     existing_status="$(run_status "$run_dir")"
     existing_status="${existing_status%%|*}"

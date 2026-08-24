@@ -1,0 +1,14 @@
+{
+  "bundle_manifest_version": 2,
+  "bundle_sha256": "0a7dbfb8295aebada305932af90e34129ece9f6f41d80929194306fecb37ceed",
+  "commit": "ba22a87a0b873c09260c771e29a31b6059fc879c",
+  "commit_date": "2026-08-18T00:42:03+08:00",
+  "content_sha256": "966ed2f5a03554fa7f9c9eb580af7b215310fdc1e15bad6cc8498a877404f8e9",
+  "file_count": 12723,
+  "format": "filamenthub.catalog-source-lock",
+  "profiles_tree": "213a32f4f09712178a6719c3b74ed7fb66629158",
+  "ref": "main",
+  "repository": "https://github.com/OrcaSlicer/OrcaSlicer",
+  "source": "orca",
+  "vendor_count": 65
+}
