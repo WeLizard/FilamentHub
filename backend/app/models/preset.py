@@ -61,15 +61,30 @@ class Preset(Base):
     # КРИТИЧНО: nullable=True для черновиков из OrcaSlicer (еще не привязаны к филаменту)
     filament_id: Mapped[int | None] = mapped_column(ForeignKey("filaments.id"), index=True, nullable=True)
 
-    # User relationship (кто создал пресет)
+    # Personal owner. Official organization assets deliberately keep this NULL.
     user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), index=True, nullable=True)
-    # user_id=None - для старых пресетов или системных
+
+    # Actor provenance is separate from ownership: an employee may leave the
+    # company without taking an official preset with them.
+    created_by_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
 
     # Responsible organization and provenance of a shared official asset.
     # This does not own the Brand or Filament catalogue record. Community
     # presets and legacy official presets may keep this NULL.
     organization_id: Mapped[int | None] = mapped_column(
         ForeignKey("organizations.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
+    # A brand can use a community preset as a starting point without mutating
+    # or taking ownership of the source row.
+    derived_from_preset_id: Mapped[int | None] = mapped_column(
+        ForeignKey("presets.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )
@@ -165,8 +180,16 @@ class Preset(Base):
 
     # Relationships
     filament: Mapped["Filament | None"] = relationship("Filament", back_populates="presets")
-    user: Mapped["User"] = relationship("User", back_populates="presets")
+    user: Mapped["User | None"] = relationship(
+        "User", foreign_keys=[user_id], back_populates="presets"
+    )
+    created_by_user: Mapped["User | None"] = relationship(
+        "User", foreign_keys=[created_by_user_id]
+    )
     organization: Mapped["Organization | None"] = relationship("Organization")
+    derived_from_preset: Mapped["Preset | None"] = relationship(
+        "Preset", remote_side=[id], foreign_keys=[derived_from_preset_id]
+    )
     saved_by_users: Mapped[list["UserSavedPreset"]] = relationship(
         "UserSavedPreset", back_populates="preset", cascade="all, delete-orphan"
     )

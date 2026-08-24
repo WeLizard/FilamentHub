@@ -2588,6 +2588,46 @@ def _extract_values_from_orcaslicer_settings(settings: dict) -> dict:
     return extract_structured_filament_values(settings)
 
 
+_PRESET_IDENTITY_KEYS = frozenset(
+    {
+        "bundle_id",
+        "fhub_draft_id",
+        "fhub_id",
+        "fhub_source",
+        "filament_settings_id",
+        "setting_id",
+        "updated_at",
+    }
+)
+
+
+def _normalized_preset_settings(settings: dict | None) -> str:
+    cleaned = {
+        key: value
+        for key, value in (settings or {}).items()
+        if value is not None and key not in _PRESET_IDENTITY_KEYS
+    }
+    return json.dumps(cleaned, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+
+
+def _payload_matches_shared_preset(preset: Preset, payload) -> bool:
+    """Return True only when an Organization preset came back unchanged."""
+    from app.services.preset_publication import public_orca_settings
+
+    settings_match = _normalized_preset_settings(
+        public_orca_settings(payload.orcaslicer_settings)
+    ) == _normalized_preset_settings(public_orca_settings(preset.orcaslicer_settings))
+    clean_name = payload.name or ""
+    for suffix in (" [fh]", " @fh", "[fh]", "@fh", " @FilamentHub", "@FilamentHub"):
+        clean_name = clean_name.replace(suffix, "")
+    basic_match = (
+        clean_name.strip() == preset.name
+        and (payload.extruder_temp is None or payload.extruder_temp == preset.extruder_temp)
+        and (payload.bed_temp is None or payload.bed_temp == preset.bed_temp)
+    )
+    return settings_match and basic_match
+
+
 async def _upsert_filament_preset(
     *,
     payload,
@@ -2668,6 +2708,7 @@ async def _upsert_filament_preset(
     # 1. НАЙТИ ПРЕСЕТ (ПЕРЕД филаментом — чтобы переиспользовать filament_id)
     # =====================================================================
     preset: Preset | None = None
+    shared_source_preset: Preset | None = None
 
     # Читаем .info файл (если есть в payload) — САМЫЙ ПРИОРИТЕТНЫЙ источник
     fhub_id_from_info = None
@@ -2693,7 +2734,10 @@ async def _upsert_filament_preset(
     if fhub_id_from_info:
         preset = await db.get(Preset, fhub_id_from_info)
         if preset:
-            if (
+            if preset.is_official:
+                shared_source_preset = preset
+                preset = None
+            elif (
                 preset.user_id != current_user.id
                 and current_user.role != UserRole.ADMIN
             ):
@@ -2709,7 +2753,10 @@ async def _upsert_filament_preset(
     if not preset and payload.fhub_id:
         preset = await db.get(Preset, payload.fhub_id)
         if preset:
-            if (
+            if preset.is_official:
+                shared_source_preset = preset
+                preset = None
+            elif (
                 preset.user_id != current_user.id
                 and current_user.role != UserRole.ADMIN
             ):
@@ -2733,7 +2780,10 @@ async def _upsert_filament_preset(
                     fhub_id_int = int(fhub_id_str)
                 preset = await db.get(Preset, fhub_id_int)
                 if preset:
-                    if (
+                    if preset.is_official:
+                        shared_source_preset = preset
+                        preset = None
+                    elif (
                         preset.user_id != current_user.id
                         and current_user.role != UserRole.ADMIN
                     ):
@@ -2837,7 +2887,13 @@ async def _upsert_filament_preset(
     # =====================================================================
     if not is_allowed_orca_preset_name(
         payload.name,
-        preset.name if preset is not None else None,
+        (
+            preset.name
+            if preset is not None
+            else shared_source_preset.name
+            if shared_source_preset is not None
+            else None
+        ),
     ):
         return OrcaSyncResult(
             external_id=payload.external_id,
@@ -2848,9 +2904,10 @@ async def _upsert_filament_preset(
 
     filament: Filament | None = None
 
-    if preset and preset.filament_id:
+    source_preset = preset or shared_source_preset
+    if source_preset and source_preset.filament_id:
         # Пресет найден и привязан к филаменту — проверяем что филамент ещё жив
-        filament = await db.get(Filament, preset.filament_id)
+        filament = await db.get(Filament, source_preset.filament_id)
         if filament:
             logger.info(
                 f"Reusing existing filament from preset (filament_id={filament.id}, "
@@ -2858,7 +2915,8 @@ async def _upsert_filament_preset(
             )
         else:
             logger.warning(
-                f"Preset {preset.id} had filament_id={preset.filament_id} but filament was deleted. "
+                f"Preset {source_preset.id} had "
+                f"filament_id={source_preset.filament_id} but filament was deleted. "
                 f"Will search for a replacement."
             )
 
@@ -3036,6 +3094,20 @@ async def _upsert_filament_preset(
                 status="skipped",
                 message="Template already promoted to FilamentHub preset",
             )
+
+    if shared_source_preset is not None and _payload_matches_shared_preset(
+        shared_source_preset, payload
+    ):
+        logger.debug(
+            "Official preset %s returned unchanged; keeping the Organization asset immutable",
+            shared_source_preset.id,
+        )
+        return OrcaSyncResult(
+            external_id=payload.external_id,
+            fhub_id=shared_source_preset.id,
+            status="skipped",
+            message="Official preset unchanged",
+        )
 
     if preset:
         # Обновляем существующий пресет
@@ -3434,6 +3506,10 @@ async def _upsert_filament_preset(
             description=payload.description,
             filament_id=filament.id if filament else None,  # КРИТИЧНО: Для черновиков filament_id=None
             user_id=current_user.id,
+            created_by_user_id=current_user.id,
+            derived_from_preset_id=(
+                shared_source_preset.id if shared_source_preset is not None else None
+            ),
             extruder_temp=extruder_temp,
             bed_temp=bed_temp,
             flow_rate=payload.flow_rate if payload.flow_rate is not None else extracted.get("flow_rate"),

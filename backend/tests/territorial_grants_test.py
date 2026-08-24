@@ -150,6 +150,13 @@ async def test_community_preset_is_open_to_every_user_but_official_status_is_not
     assert created.status_code == 201, created.text
     assert created.json()["is_official"] is False
 
+    promoted = await client.patch(
+        f"/api/v1/presets/{created.json()['id']}",
+        headers=ordinary_user,
+        json={"is_official": True},
+    )
+    assert promoted.status_code == 409
+
     forbidden = await client.post(
         "/api/v1/presets/",
         headers=ordinary_user,
@@ -204,11 +211,25 @@ async def test_official_preset_is_managed_by_the_contributing_organization(
         "Authorization": f"Bearer {create_access_token({'sub': colleague.email})}"
     }
 
-    created = await client.post(
+    community = await client.post(
         "/api/v1/presets/",
         headers=owner_headers,
         json={
             "filament_id": filament.id,
+            "name": "Community KZ profile",
+            "extruder_temp": 215,
+            "bed_temp": 60,
+            "is_official": False,
+        },
+    )
+    assert community.status_code == 201, community.text
+
+    created = await client.post(
+        "/api/v1/presets/official",
+        headers=owner_headers,
+        json={
+            "filament_id": filament.id,
+            "source_preset_id": community.json()["id"],
             "name": "Official KZ profile",
             "extruder_temp": 215,
             "bed_temp": 60,
@@ -218,6 +239,29 @@ async def test_official_preset_is_managed_by_the_contributing_organization(
     assert created.status_code == 201, created.text
     preset_id = created.json()["id"]
     assert created.json()["organization_id"] == owner.active_organization_id
+    assert created.json()["user_id"] is None
+    assert created.json()["created_by_user_id"] == owner.id
+    assert created.json()["derived_from_preset_id"] == community.json()["id"]
+
+    second_official = await client.post(
+        "/api/v1/presets/official",
+        headers=owner_headers,
+        json={
+            "filament_id": filament.id,
+            "name": "Official KZ quality profile",
+            "extruder_temp": 220,
+            "bed_temp": 65,
+            "is_official": True,
+        },
+    )
+    assert second_official.status_code == 201, second_official.text
+
+    community_preset = await db_session.get(Preset, community.json()["id"])
+    first_official = await db_session.get(Preset, preset_id)
+    assert community_preset is not None and community_preset.is_official is False
+    assert community_preset.user_id == owner.id
+    assert first_official is not None and first_official.is_official is True
+    assert second_official.json()["is_official"] is True
 
     edited = await client.patch(
         f"/api/v1/presets/{preset_id}",
@@ -240,8 +284,8 @@ async def test_revoked_grant_cannot_activate_a_staged_official_draft(
         brand,
         "revoked-official-draft",
         "KZ",
-        owns_workspace=True,
     )
+    brand.verified = True
     _, outsider_headers = await _outsider(db_session, "revoked-official-outsider")
     owner = await db_session.scalar(
         select(User).where(User.email == "revoked-official-draft@example.com")

@@ -1199,6 +1199,25 @@ export const presetsAPI = {
     return response.data;
   },
 
+  createOfficial: async (data: {
+    filament_id: number;
+    source_preset_id?: number | null;
+    name: string;
+    description?: string;
+    is_official: true;
+    extruder_temp: number;
+    bed_temp: number;
+    flow_rate?: number;
+    fan_speed?: number;
+    retraction_length?: number;
+    retraction_speed?: number;
+    orcaslicer_settings?: Record<string, any> | null;
+    printer_ids?: number[];
+  }) => {
+    const response = await api.post<Preset>('/presets/official', data);
+    return response.data;
+  },
+
   delete: async (id: number) => {
     await api.delete(`/presets/${id}`);
   },

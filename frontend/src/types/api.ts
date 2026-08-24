@@ -599,6 +599,8 @@ export interface Preset {
   updated_at: string;
   user_id?: number | null;
   organization_id?: number | null;
+  created_by_user_id?: number | null;
+  derived_from_preset_id?: number | null;
   printers?: Printer[]; // Список принтеров, для которых подходит этот пресет
   is_saved?: boolean; // Для UI: сохранен ли пресет пользователем (из available-presets эндпоинта)
 }

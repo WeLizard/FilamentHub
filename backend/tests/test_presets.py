@@ -144,10 +144,15 @@ async def test_create_official_preset(client: AsyncClient, db_session: AsyncSess
         "bed_temp": 60.0,
         "print_speed": 50.0,
     }
-    response = await client.post("/api/v1/presets/", json=preset_data, headers=headers)
+    response = await client.post(
+        "/api/v1/presets/official", json=preset_data, headers=headers
+    )
     assert response.status_code == 201
     data = response.json()
     assert data["is_official"] is True
+    assert data["organization_id"] == organization.id
+    assert data["user_id"] is None
+    assert data["created_by_user_id"] == user.id
     # Official presets should be auto-approved
     assert data["moderation_status"] == "approved"
 
@@ -197,7 +202,9 @@ async def test_create_official_preset_requires_verified_brand(client: AsyncClien
         "bed_temp": 60.0,
         "print_speed": 50.0,
     }
-    response = await client.post("/api/v1/presets/", json=preset_data, headers=headers)
+    response = await client.post(
+        "/api/v1/presets/official", json=preset_data, headers=headers
+    )
     assert response.status_code == 403
     assert response.json()["detail"]["code"] == "ERR_OFFICIAL_VERIFIED_ONLY"
 

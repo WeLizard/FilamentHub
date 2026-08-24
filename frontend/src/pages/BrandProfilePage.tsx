@@ -237,6 +237,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({
   const [isCreatePresetModalOpen, setIsCreatePresetModalOpen] = useState(false);
   const [editingFilament, setEditingFilament] = useState<Filament | null>(null);
   const [editingPreset, setEditingPreset] = useState<Preset | null>(null);
+  const [sourcePreset, setSourcePreset] = useState<Preset | null>(null);
   const [deletingFilamentId, setDeletingFilamentId] = useState<number | null>(null);
   const [deletingLine, setDeletingLine] = useState<{ id: number; name: string } | null>(null);
   const [showQRFilament, setShowQRFilament] = useState<Filament | null>(null);
@@ -741,6 +742,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({
 
   const handleCreatePreset = () => {
     setEditingPreset(null);
+    setSourcePreset(null);
     setIsCreatePresetModalOpen(true);
   };
 
@@ -753,27 +755,48 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({
     setAddColorsFilament(filament);
   };
 
-  const handleEditPreset = (preset: Preset) => {
-    setEditingPreset(preset);
+  const handleEditPreset = async (preset: Preset) => {
+    if (!preset.is_official) return;
+    try {
+      const editablePreset = await presetsAPI.get(preset.id);
+      setEditingPreset(editablePreset);
+      setSourcePreset(null);
+      setIsCreatePresetModalOpen(true);
+    } catch (error) {
+      const apiError = error as AxiosError<{ detail: unknown }>;
+      toast.error(translateApiError(
+        t,
+        apiError.response?.data?.detail,
+        t('presetModal.errors.updatePreset'),
+      ));
+    }
+  };
+
+  const handleCreateOfficialFromPreset = (preset: Preset) => {
+    setEditingPreset(null);
+    setSourcePreset(preset);
     setIsCreatePresetModalOpen(true);
   };
 
+  const canCreateOfficialPreset = Boolean(
+    canEditCommon
+    && brandData?.verified === true
+    && (user?.role === 'admin' || user?.active_organization_id)
+  );
+
   const canEditPreset = (preset: Preset) => (
-    preset.user_id === user?.id
-    || user?.role === 'admin'
+    user?.role === 'admin'
     || Boolean(
       preset.is_official
       && canEditCommon
-      && (
-        hasGlobalScope
-        || preset.organization_id === user?.active_organization_id
-      )
+      && preset.organization_id === user?.active_organization_id
     )
   );
 
   const handleClosePresetModal = () => {
     setIsCreatePresetModalOpen(false);
     setEditingPreset(null);
+    setSourcePreset(null);
   };
 
   const handleOpenAddBrandFlow = () => {
@@ -1309,7 +1332,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({
             <ViewModeToggle value={presetsViewMode} onChange={setPresetsViewMode} />
             <button
               onClick={handleCreatePreset}
-              disabled={isLoadingPresets || filaments.length === 0}
+              disabled={isLoadingPresets || filaments.length === 0 || !canCreateOfficialPreset}
               className="flex shrink-0 items-center justify-center space-x-2 rounded-xl bg-gradient-to-r from-green-600 to-emerald-600 px-4 py-2 text-white shadow-lg shadow-green-500/25 transition-all hover:from-green-700 hover:to-emerald-700 hover:shadow-green-500/40 disabled:cursor-not-allowed disabled:opacity-50"
               title={filaments.length === 0 ? t('brandProfile.createMaterialFirst') : ''}
             >
@@ -1414,6 +1437,18 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({
                         <Edit className="h-4 w-4" />
                       </button>
                     )}
+                    {!preset.is_official && canCreateOfficialPreset && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleCreateOfficialFromPreset(preset);
+                        }}
+                        className="rounded p-1 transition-all hover:bg-white/10"
+                        title={t('brandProfile.createOfficialFromPreset')}
+                      >
+                        <Copy className="h-4 w-4" />
+                      </button>
+                    )}
                   </div>
                 </div>
                 ) : (
@@ -1484,6 +1519,18 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({
                           >
                             <Edit className="w-4 h-4" />
                           </button>
+                      )}
+                      {!preset.is_official && canCreateOfficialPreset && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleCreateOfficialFromPreset(preset);
+                          }}
+                          className="rounded p-1 transition-all hover:bg-white/10"
+                          title={t('brandProfile.createOfficialFromPreset')}
+                        >
+                          <Copy className="h-4 w-4" />
+                        </button>
                       )}
                     </div>
                   </div>
@@ -1936,10 +1983,11 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({
         <CreatePresetModal
           isOpen={isCreatePresetModalOpen}
           onClose={handleClosePresetModal}
-          preset={editingPreset}
-          filamentId={!editingPreset ? presetFilterFilament?.id : undefined}
-          brandId={user.brand_id || undefined}
-          allowOfficial={canEditCommon && (user.role === 'admin' || brandData?.verified === true)}
+          preset={editingPreset ?? sourcePreset}
+          filamentId={!editingPreset && !sourcePreset ? presetFilterFilament?.id : undefined}
+          brandId={brandData.id}
+          officialContext
+          createFromPreset={sourcePreset != null}
         />
       </Suspense>
 

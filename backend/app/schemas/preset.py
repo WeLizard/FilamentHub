@@ -60,6 +60,17 @@ class PresetCreate(PresetBase):
     printer_ids: list[int] = Field(default_factory=list, description="Список ID принтеров, для которых подходит этот пресет")
 
 
+class OfficialPresetCreate(PresetCreate):
+    """Create a distinct Organization-owned official preset."""
+
+    is_official: Literal[True] = True
+    source_preset_id: int | None = Field(
+        None,
+        gt=0,
+        description="Optional personal/community preset used only as source provenance",
+    )
+
+
 class PresetUpdate(BaseModel):
     """Schema for updating Preset."""
 
@@ -121,6 +132,8 @@ class PresetResponse(PresetBase):
     filament_id: int | None
     user_id: int | None = None
     organization_id: int | None = None
+    created_by_user_id: int | None = None
+    derived_from_preset_id: int | None = None
     active: bool
     moderation_status: str  # pending, approved, rejected
     # УДАЛЕНО: sync_enabled - теперь управляется через user_saved_presets.sync

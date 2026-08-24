@@ -161,7 +161,9 @@ class User(Base):
 
     # Relationships
     brand: Mapped["Brand | None"] = relationship("Brand", foreign_keys=[brand_id])
-    presets: Mapped[list["Preset"]] = relationship("Preset", back_populates="user")
+    presets: Mapped[list["Preset"]] = relationship(
+        "Preset", foreign_keys="Preset.user_id", back_populates="user"
+    )
     filament_reviews: Mapped[list["FilamentReview"]] = relationship(
         "FilamentReview", back_populates="user"
     )

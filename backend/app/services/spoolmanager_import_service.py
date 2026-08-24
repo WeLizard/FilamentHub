@@ -182,6 +182,7 @@ async def _create_import_draft(
     preset = Preset(
         filament_id=filament_id,
         user_id=user.id,
+        created_by_user_id=user.id,
         name=row.spool_name,
         description=None,
         is_official=False,

@@ -864,6 +864,97 @@ async def test_stable_plugin_identity_turns_a_rename_into_an_update(
 
 
 @pytest.mark.asyncio
+async def test_official_round_trip_is_immutable_and_a_change_becomes_a_personal_fork(
+    client: AsyncClient, db_session: AsyncSession
+):
+    """Orca may return an Organization asset, but it never transfers ownership."""
+    brand = Brand(name="Round Trip Vendor", slug="round-trip-vendor", active=True)
+    db_session.add(brand)
+    await db_session.flush()
+    filament = Filament(
+        brand_id=brand.id,
+        name="Round Trip PLA",
+        slug="round-trip-pla",
+        material_type="PLA",
+        diameter=1.75,
+        active=True,
+    )
+    db_session.add(filament)
+    await db_session.flush()
+    official = Preset(
+        filament_id=filament.id,
+        organization_id=None,
+        user_id=None,
+        name="Round Trip Quality",
+        extruder_temp=215,
+        bed_temp=60,
+        active=True,
+        is_official=True,
+        moderation_status=PresetModerationStatus.APPROVED,
+        orcaslicer_settings={
+            "filament_type": ["PLA"],
+            "nozzle_temperature": ["215"],
+        },
+    )
+    db_session.add(official)
+    await db_session.flush()
+    from app.services.preset_publication import apply_managed_orca_identity
+
+    apply_managed_orca_identity(official)
+    await db_session.commit()
+
+    headers, person = await _signed_in(client, db_session, "orca-official-fork")
+    unchanged_payload = _preset(
+        "Round Trip Quality @fh",
+        external_id="orca-official-round-trip",
+        fhub_id=official.id,
+        filament_id=filament.id,
+        extruder_temp=215,
+        bed_temp=60,
+        orcaslicer_settings={
+            "filament_type": ["PLA"],
+            "nozzle_temperature": ["215"],
+            "fhub_id": official.id,
+            "fhub_source": "filamenthub",
+        },
+    )
+    unchanged = await _import(client, headers, unchanged_payload)
+    assert unchanged.status_code == 200, unchanged.text
+    assert unchanged.json()["results"][0]["status"] == "skipped", unchanged.text
+    assert unchanged.json()["results"][0]["fhub_id"] == official.id
+    assert await db_session.scalar(
+        select(func.count()).select_from(Preset).where(Preset.user_id == person.id)
+    ) == 0
+
+    changed_payload = {
+        **unchanged_payload,
+        "extruder_temp": 225,
+        "orcaslicer_settings": {
+            **unchanged_payload["orcaslicer_settings"],
+            "nozzle_temperature": ["225"],
+        },
+    }
+    changed = await _import(client, headers, changed_payload)
+    assert changed.status_code == 200, changed.text
+    assert changed.json()["results"][0]["status"] == "created"
+
+    fork = await db_session.scalar(
+        select(Preset).where(
+            Preset.user_id == person.id,
+            Preset.derived_from_preset_id == official.id,
+        )
+    )
+    assert fork is not None
+    assert fork.is_official is False
+    assert fork.organization_id is None
+    assert fork.extruder_temp == 225
+    await db_session.refresh(official)
+    assert official.user_id is None
+    assert official.is_official is True
+    assert official.extruder_temp == 215
+
+
+@pytest.mark.asyncio
 async def test_a_draft_is_recognised_by_its_marker_after_orca_renumbers_it(
     client: AsyncClient, db_session: AsyncSession
 ):

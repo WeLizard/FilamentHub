@@ -363,7 +363,13 @@ export const ProfilePage: React.FC = () => {
   // Загружаем все пресеты пользователя (активные + черновики)
   const { data: userPresetsData } = useQuery({
     queryKey: ['user-presets', user?.id],
-    queryFn: () => presetsAPI.list({ active_only: false, page: 1, size: 100, user_id: user?.id }),
+    queryFn: () => presetsAPI.list({
+      active_only: false,
+      page: 1,
+      size: 100,
+      user_id: user?.id,
+      is_official: false,
+    }),
     enabled: !!user?.id && needsPresetData,
     staleTime: 60_000,
   });
@@ -1765,6 +1771,7 @@ export const ProfilePage: React.FC = () => {
           isOpen={isCreatePresetModalOpen}
           onClose={handleClosePresetModal}
           preset={editingPreset}
+          officialContext={false}
         />
       </Suspense>
 

@@ -11,7 +11,11 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.brand_territorial_grant import BrandTerritorialGrant, GrantStatus
-from app.models.organization import Organization, OrganizationMembership
+from app.models.organization import (
+    Organization,
+    OrganizationBrandAccess,
+    OrganizationMembership,
+)
 from app.models.user import User, UserRole
 
 
@@ -34,6 +38,10 @@ async def active_grants_for(
             OrganizationMembership,
             OrganizationMembership.organization_id == BrandTerritorialGrant.organization_id,
         )
+        .outerjoin(
+            OrganizationBrandAccess,
+            OrganizationBrandAccess.membership_id == OrganizationMembership.id,
+        )
         .where(
             BrandTerritorialGrant.brand_id == brand_id,
             BrandTerritorialGrant.status == GrantStatus.active,
@@ -41,6 +49,10 @@ async def active_grants_for(
             Organization.active.is_(True),
             OrganizationMembership.user_id == user.id,
             OrganizationMembership.active.is_(True),
+            or_(
+                OrganizationMembership.all_brands.is_(True),
+                OrganizationBrandAccess.brand_id == brand_id,
+            ),
         )
     )
     if user.active_organization_id is None:

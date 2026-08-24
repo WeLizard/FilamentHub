@@ -24,7 +24,7 @@ from app.core.errors import (
 from app.db.session import get_db
 from app.models.preset import PUBLIC_PRESET_STATUSES, Preset
 from app.models.preset_version import PresetVersion
-from app.models.user import User, UserRole
+from app.models.user import User
 from app.schemas.preset_version import (
     PresetVersionDetail,
     PresetVersionDiffResponse,
@@ -48,11 +48,19 @@ def _is_preset_public(preset: Preset) -> bool:
     )
 
 
-def _can_view_private_history(preset: Preset, user: User | None) -> bool:
-    return bool(
-        user
-        and (preset.user_id == user.id or user.role == UserRole.ADMIN)
-    )
+async def _can_view_private_history(
+    db: AsyncSession, preset: Preset, user: User | None
+) -> bool:
+    if user is None:
+        return False
+    from app.services.preset_access import can_manage_preset
+
+    filament = None
+    if preset.filament_id is not None:
+        from app.models.filament import Filament
+
+        filament = await db.get(Filament, preset.filament_id)
+    return await can_manage_preset(db, user, preset, filament)
 
 
 def _is_public_version(version: PresetVersion, preset: Preset) -> bool:
@@ -76,9 +84,7 @@ async def _load_preset_for_view(
 
     if _is_preset_public(preset):
         return preset
-    if user is not None and (
-        preset.user_id == user.id or user.role == UserRole.ADMIN
-    ):
+    if await _can_view_private_history(db, preset, user):
         return preset
     raise_error(status.HTTP_403_FORBIDDEN, ERR_PRESET_VERSION_FORBIDDEN, params={"preset_id": preset_id})
 
@@ -90,7 +96,7 @@ async def _load_preset_for_mutate(
     preset = await db.get(Preset, preset_id)
     if preset is None:
         raise_error(status.HTTP_404_NOT_FOUND, ERR_PRESET_NOT_FOUND, params={"preset_id": preset_id})
-    if preset.user_id != user.id and user.role != UserRole.ADMIN:
+    if not await _can_view_private_history(db, preset, user):
         raise_error(status.HTTP_403_FORBIDDEN, ERR_PRESET_VERSION_FORBIDDEN, params={"preset_id": preset_id})
     return preset
 
@@ -125,6 +131,7 @@ async def list_preset_versions(
 ) -> PresetVersionListResponse:
     """List versions of a preset, newest first."""
     preset = await _load_preset_for_view(db, preset_id, current_user)
+    can_view_private = await _can_view_private_history(db, preset, current_user)
 
     # Re-query with author eager-loaded for display.
     base = (
@@ -135,7 +142,7 @@ async def list_preset_versions(
     if labeled_only:
         base = base.where(PresetVersion.label != "")
 
-    if _can_view_private_history(preset, current_user):
+    if can_view_private:
         from sqlalchemy import func as sa_func
 
         total = (
@@ -171,6 +178,7 @@ async def get_preset_version(
 ) -> PresetVersionDetail:
     """Fetch a single version with its full snapshot."""
     preset = await _load_preset_for_view(db, preset_id, current_user)
+    can_view_private = await _can_view_private_history(db, preset, current_user)
 
     result = await db.execute(
         select(PresetVersion)
@@ -180,7 +188,7 @@ async def get_preset_version(
     v = result.scalar_one_or_none()
     if v is None:
         raise_error(status.HTTP_404_NOT_FOUND, ERR_PRESET_VERSION_NOT_FOUND, params={"version_id": version_id})
-    if not _can_view_private_history(preset, current_user) and not _is_public_version(v, preset):
+    if not can_view_private and not _is_public_version(v, preset):
         raise_error(
             status.HTTP_404_NOT_FOUND,
             ERR_PRESET_VERSION_NOT_FOUND,
@@ -189,7 +197,7 @@ async def get_preset_version(
 
     item = _to_list_item(v)
     snapshot_settings = v.snapshot_orcaslicer_settings
-    if not _can_view_private_history(preset, current_user):
+    if not can_view_private:
         from app.services.preset_publication import public_orca_settings
 
         snapshot_settings = public_orca_settings(snapshot_settings)
@@ -213,6 +221,7 @@ async def diff_preset_versions(
 ) -> PresetVersionDiffResponse:
     """Human-readable diff from version a_id to version b_id."""
     preset = await _load_preset_for_view(db, preset_id, current_user)
+    can_view_private = await _can_view_private_history(db, preset, current_user)
 
     version_a = await preset_version_service.get_version(db, preset_id, a_id)
     version_b = await preset_version_service.get_version(db, preset_id, b_id)
@@ -220,7 +229,7 @@ async def diff_preset_versions(
         raise_error(status.HTTP_404_NOT_FOUND, ERR_PRESET_VERSION_NOT_FOUND, params={"version_id": a_id})
     if version_b is None:
         raise_error(status.HTTP_404_NOT_FOUND, ERR_PRESET_VERSION_NOT_FOUND, params={"version_id": b_id})
-    if not _can_view_private_history(preset, current_user) and (
+    if not can_view_private and (
         not _is_public_version(version_a, preset)
         or not _is_public_version(version_b, preset)
     ):
@@ -229,7 +238,7 @@ async def diff_preset_versions(
             ERR_PRESET_VERSION_NOT_FOUND,
         )
 
-    if _can_view_private_history(preset, current_user):
+    if can_view_private:
         diff = preset_version_service.compute_diff(version_a, version_b)
     else:
         from app.services.preset_publication import public_orca_settings

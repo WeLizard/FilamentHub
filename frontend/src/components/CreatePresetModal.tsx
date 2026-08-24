@@ -97,7 +97,8 @@ interface CreatePresetModalProps {
   preset?: Preset | null; // Если передан, то редактирование, иначе создание
   filamentId?: number; // ID материала (если создание нового пресета)
   brandId?: number; // ID бренда для фильтрации материалов в контексте кабинета
-  allowOfficial?: boolean; // Официальный статус — отдельное право, не право на создание пресета
+  officialContext?: boolean;
+  createFromPreset?: boolean;
 }
 
 interface DuplicateFilamentSuggestion {
@@ -159,15 +160,19 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
   preset,
   filamentId,
   brandId,
-  allowOfficial,
+  officialContext = false,
+  createFromPreset = false,
 }) => {
   const { user } = useAuth();
   const { t } = useTranslation();
 
   // Определяем, является ли пресет черновиком (заготовкой)
   // Черновик = пресет без привязки к филаменту ИЛИ неактивный пресет без @fh в имени
+  const isEditingPreset = Boolean(preset && !createFromPreset);
   const isDraft = Boolean(
-    preset && (!preset.filament_id || (!preset.active && !preset.name?.includes('@fh')))
+    isEditingPreset
+    && preset
+    && (!preset.filament_id || (!preset.active && !preset.name?.includes('@fh')))
   );
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -462,32 +467,13 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
     queryFn: () => brandsAPI.get(officialTargetBrandId!),
     enabled: isOpen && officialTargetBrandId != null,
   });
-  const { data: officialTargetTerritories } = useQuery({
-    queryKey: [
-      'brand-territories',
-      officialTargetBrandId,
-      user?.active_organization_id,
-    ],
-    queryFn: () => brandsAPI.myTerritories(officialTargetBrandId!),
-    enabled: isOpen
-      && officialTargetBrandId != null
-      && !!user?.active_organization_id,
-  });
-  // Любой пользователь может создать пресет. Официальная публикация относится
-  // к выбранному целевому бренду и активной Organization, а не к legacy user.brand_id.
-  const canOfferOfficial = allowOfficial ?? Boolean(
-    user?.role === 'admin'
-    || (
-      officialTargetBrand?.verified === true
-      && officialTargetTerritories?.can_edit_filament_common === true
-    )
-  );
+  const canOfferOfficial = officialContext;
 
   useEffect(() => {
-    if (isOfficial && !canOfferOfficial) {
-      setIsOfficial(false);
+    if (isOfficial && !canOfferOfficial && !preset?.is_official) {
+      setIsOfficial(officialContext);
     }
-  }, [canOfferOfficial, isOfficial]);
+  }, [canOfferOfficial, isOfficial, preset?.is_official]);
 
   useEffect(() => {
     draftSuggestionsAppliedRef.current = null;
@@ -667,7 +653,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
       setDescription(preset.description || '');
       // Imported drafts are reviewed as a user contribution first. Brand access
       // only makes the explicit "official" option available; it must not select it.
-      setIsOfficial(isDraft ? false : preset.is_official);
+      setIsOfficial(officialContext || (!isDraft && preset.is_official));
       setExtruderTemp(preset.extruder_temp);
       setBedTemp(preset.bed_temp);
       setFlowRate(preset.flow_rate ?? 100);
@@ -1002,7 +988,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
       // Сброс формы при создании нового
       setName('');
       setDescription('');
-      setIsOfficial(false);
+      setIsOfficial(officialContext);
       setExtruderTemp(200);
       setBedTemp(60);
       setFlowRate(100);
@@ -1114,7 +1100,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
     }
     setError(null);
     setDuplicateFilamentSuggestion(null);
-  }, [preset, filamentId, brandId, isDraft, isOpen]);
+  }, [preset, filamentId, brandId, isDraft, isOpen, officialContext]);
 
   // Когда загрузился филамент (редактирование или предвыбор filamentId) — показываем его имя
   useEffect(() => {
@@ -1518,7 +1504,13 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
       retraction_speed?: number;
       orcaslicer_settings?: Record<string, any> | null;
       printer_ids?: number[];
-    }) => presetsAPI.create(data),
+    }) => officialContext
+      ? presetsAPI.createOfficial({
+          ...data,
+          is_official: true,
+          source_preset_id: createFromPreset ? preset?.id : undefined,
+        })
+      : presetsAPI.create(data),
     onSuccess: (createdPreset) => {
       queryClient.invalidateQueries({ queryKey: ['presets'] });
       if (createdPreset?.filament_id) {
@@ -2107,7 +2099,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
         const orcaslicerSettings = buildOrcaslicerSettings(acceptedFilamentColor);
         
         try {
-          if (preset) {
+          if (isEditingPreset && preset) {
             // Редактирование заготовки: привязываем только что созданный материал
             // и активируем пресет
             const updateData: {
@@ -2131,7 +2123,6 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
               printer_ids: selectedPrinterIds.length > 0 ? selectedPrinterIds : [],
               filament_id: newFilament.id,
               active: isDraft ? true : undefined,
-              is_official: isDraft ? isOfficial : undefined,
             };
             if (preset.extruder_temp !== extruderTemp) updateData.extruder_temp = extruderTemp;
             if (preset.bed_temp !== bedTemp) updateData.bed_temp = bedTemp;
@@ -2195,7 +2186,7 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
       : null;
     const orcaslicerSettings = buildOrcaslicerSettings(filamentColor);
 
-    if (preset) {
+    if (isEditingPreset && preset) {
       // Обновление существующего пресета
       // Для черновиков (заготовок) также передаём filament_id и активируем пресет
       const updateData: {
@@ -2211,7 +2202,6 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
         printer_ids: number[];
         filament_id?: number;
         active?: boolean;
-        is_official?: boolean;
       } = {
         name,
         description: description || undefined,
@@ -2229,7 +2219,6 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
       if (isDraft && selectedFilamentId) {
         updateData.filament_id = selectedFilamentId;
         updateData.active = true;
-        updateData.is_official = isOfficial;
       }
       
       updateMutation.mutate({
@@ -2331,7 +2320,9 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-white/10">
           <h2 className="text-2xl font-bold text-white">
-            {preset
+            {officialContext
+              ? (isEditingPreset ? t('presetModal.titleOfficialEdit') : t('presetModal.titleOfficialCreate'))
+              : preset
               ? (isDraft ? t('presetModal.titleDraft') : t('presetModal.titleEdit'))
               : t('presetModal.titleCreate')
             }
@@ -3260,28 +3251,13 @@ export const CreatePresetModal: React.FC<CreatePresetModalProps> = ({
             />
           </div>
 
-          {/* Сам пресет доступен всем; официальный статус выбирается отдельно. */}
-          {(!preset || isDraft) && canOfferOfficial && (
-            <div className="flex items-center space-x-2">
-              <input
-                type="checkbox"
-                id="isOfficial"
-                checked={isOfficial}
-                onChange={(e) => { setIsOfficial(e.target.checked); }}
-                className="w-4 h-4 rounded border-white/20 bg-white/10 text-purple-500 focus:ring-purple-500"
-              />
-              <label htmlFor="isOfficial" className="text-gray-300 text-sm">
-                {t('presetModal.officialPreset')}
-              </label>
-            </div>
-          )}
-          
-          {/* Информация показывается только когда выбран официальный статус. */}
-          {(!preset || isDraft) && isOfficial && (
+          {officialContext && (
             <div className="flex items-center space-x-2 p-3 bg-green-500/20 border border-green-500/30 rounded-xl">
               <CheckCircle className="w-5 h-5 text-green-400" />
               <span className="text-green-300 text-sm">
-                {t('presetModal.officialPresetInfo')}
+                {createFromPreset
+                  ? t('presetModal.officialPresetCopyInfo')
+                  : t('presetModal.officialPresetInfo')}
               </span>
             </div>
           )}

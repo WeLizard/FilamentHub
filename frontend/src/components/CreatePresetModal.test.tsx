@@ -223,7 +223,7 @@ describe('CreatePresetModal imported draft review', () => {
     expect(getFilamentMock).not.toHaveBeenCalled();
   });
 
-  it('does not mark an imported draft as official by default', async () => {
+  it('does not expose official publication in personal draft review', async () => {
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false } },
     });
@@ -235,13 +235,12 @@ describe('CreatePresetModal imported draft review', () => {
           isOpen
           onClose={vi.fn()}
           preset={officialDraft}
-          allowOfficial
         />
       </QueryClientProvider>,
     );
 
-    const checkbox = await screen.findByRole('checkbox', { name: 'presetModal.officialPreset' });
-    expect(checkbox).not.toBeChecked();
+    await waitFor(() => expect(getDraftAnalysisMock).toHaveBeenCalled());
+    expect(screen.queryByRole('checkbox', { name: 'presetModal.officialPreset' })).not.toBeInTheDocument();
     expect(screen.queryByText('presetModal.officialPresetInfo')).not.toBeInTheDocument();
   });
 });
