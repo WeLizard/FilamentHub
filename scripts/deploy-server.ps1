@@ -378,11 +378,38 @@ function Start-ProductionBackup {
 }
 
 function Start-BuildCacheCleanup {
-    if (-not (Confirm-Action 'Удалить build-cache Docker старше 14 дней?')) {
+    $retentionHours = $null
+    while ($null -eq $retentionHours) {
+        Write-Host ''
+        Write-Host 'Какой build-cache удалить?' -ForegroundColor Cyan
+        Write-Host '  1. Старше 7 дней  — освободит больше места'
+        Write-Host '  2. Старше 14 дней — рекомендуется после обычного деплоя'
+        Write-Host '  0. Отмена'
+
+        $retentionHours = switch ((Read-Host 'Выбери срок').Trim()) {
+            '1' { 168 }
+            '2' { 336 }
+            '0' {
+                Write-Host 'Очистка build-cache отменена.' -ForegroundColor Yellow
+                return
+            }
+            default {
+                Write-Host 'Неизвестный срок.' -ForegroundColor Yellow
+                $null
+            }
+        }
+    }
+
+    $retentionDays = [int]($retentionHours / 24)
+    if (-not (Confirm-Action "Удалить build-cache Docker старше $retentionDays дней?")) {
         Write-Host 'Очистка build-cache отменена.' -ForegroundColor Yellow
         return
     }
-    Invoke-RemoteWorker -Arguments @('--prune-build-cache', '--yes') -UseDeployedRevision
+    Invoke-RemoteWorker -Arguments @(
+        '--prune-build-cache',
+        '--build-cache-retention', "${retentionHours}h",
+        '--yes'
+    ) -UseDeployedRevision
 }
 
 function Show-PluginReleases {

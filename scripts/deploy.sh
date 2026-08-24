@@ -34,6 +34,7 @@ ACTION="deploy"
 LATEST_BACKUP=""
 PREVIOUS_REVISION=""
 TARGET_REVISION=""
+BUILD_CACHE_RETENTION_OVERRIDE=""
 
 info() { printf "%b\n" "${BLUE}$*${NC}"; }
 success() { printf "%b\n" "${GREEN}$*${NC}"; }
@@ -47,7 +48,7 @@ Usage:
   bash scripts/deploy.sh --rollback [--yes]
   bash scripts/deploy.sh --status
   bash scripts/deploy.sh --backup-only
-  bash scripts/deploy.sh --prune-build-cache [--yes]
+  bash scripts/deploy.sh --prune-build-cache [--build-cache-retention <duration>] [--yes]
 
 Options:
   --revision <ref>  Commit to deploy. It must be a fast-forward commit already
@@ -62,6 +63,9 @@ Options:
   --prune-build-cache
                     Remove Docker build cache older than BUILD_CACHE_RETENTION
                     (default: 336h). Application images are not pruned.
+  --build-cache-retention <duration>
+                    Override build-cache retention for this cleanup. The value
+                    must be a positive Docker duration such as 168h or 336h.
   --help            Show this help.
 EOF
 }
@@ -252,7 +256,7 @@ show_status() {
 }
 
 prune_build_cache() {
-    local retention="${BUILD_CACHE_RETENTION:-336h}"
+    local retention="${BUILD_CACHE_RETENTION_OVERRIDE:-${BUILD_CACHE_RETENTION:-336h}}"
     local answer
 
     require_command docker
@@ -603,6 +607,11 @@ while (( $# > 0 )); do
             ACTION="prune"
             shift
             ;;
+        --build-cache-retention)
+            [[ $# -ge 2 ]] || fail "--build-cache-retention requires a value"
+            BUILD_CACHE_RETENTION_OVERRIDE="$2"
+            shift 2
+            ;;
         --help|-h)
             usage
             exit 0
@@ -612,6 +621,10 @@ while (( $# > 0 )); do
             ;;
     esac
 done
+
+if [[ -n "$BUILD_CACHE_RETENTION_OVERRIDE" && "$ACTION" != "prune" ]]; then
+    fail "--build-cache-retention can only be used with --prune-build-cache"
+fi
 
 cd "$PROJECT_DIR"
 case "$ACTION" in
