@@ -45,11 +45,18 @@ install -d -o root -g root -m 0755 /etc/fail2ban/jail.d
 install -o root -g root -m 0644 "$temporary" "$CONFIG_TARGET"
 
 fail2ban-client -t
-systemctl enable --now fail2ban
+systemctl enable fail2ban
 systemctl restart fail2ban
-systemctl is-active --quiet fail2ban || fail "fail2ban.service is not active."
-fail2ban-client status sshd | grep -q 'Jail list\|Currently failed\|File list' \
-    || fail "The sshd jail did not return a valid status."
+
+status_output=""
+for _ in {1..20}; do
+    if systemctl is-active --quiet fail2ban && \
+        status_output="$(fail2ban-client status sshd 2>/dev/null)"; then
+        break
+    fi
+    sleep 0.25
+done
+[[ -n "$status_output" ]] || fail "The sshd jail did not become ready."
 
 echo "Fail2ban sshd jail is active with bounded incremental bans."
-fail2ban-client status sshd
+printf '%s\n' "$status_output"

@@ -7,7 +7,7 @@ readonly WATCHDOG_KEYS="/var/lib/filamenthub-watchdog/.ssh/authorized_keys"
 usage() {
     cat >&2 <<'EOF'
 Usage:
-  sudo bash scripts/server-security/apply-ssh-hardening.sh \
+  sudo --preserve-env=SSH_CONNECTION bash scripts/server-security/apply-ssh-hardening.sh \
     --confirmed-lizard-key-session \
     --confirmed-watchdog-key-session
 
@@ -104,7 +104,11 @@ grep -qx 'pubkeyauthentication yes' <<< "$effective" || {
     rollback_config
     fail "Public-key authentication is not effectively enabled."
 }
-grep -qx 'allowusers lizard filamenthub-watchdog' <<< "$effective" || {
+effective_users="$(
+    awk '$1 == "allowusers" { for (i = 2; i <= NF; i++) print $i }' <<< "$effective" |
+        LC_ALL=C sort -u
+)"
+[[ "$effective_users" == $'filamenthub-watchdog\nlizard' ]] || {
     rollback_config
     fail "AllowUsers does not match the intended accounts."
 }

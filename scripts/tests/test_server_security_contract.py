@@ -14,9 +14,13 @@ class ServerSecurityContractTest(unittest.TestCase):
         self.assertIn("00-filamenthub-hardening.conf", script)
         self.assertIn("--confirmed-lizard-key-session", script)
         self.assertIn("--confirmed-watchdog-key-session", script)
+        self.assertIn("sudo --preserve-env=SSH_CONNECTION", script)
         self.assertIn("PasswordAuthentication no", script)
         self.assertIn("PermitRootLogin no", script)
         self.assertIn("PubkeyAuthentication yes", script)
+        self.assertIn("effective_users=", script)
+        self.assertIn("LC_ALL=C sort -u", script)
+        self.assertIn("filamenthub-watchdog\\nlizard", script)
         self.assertLess(script.index("sshd -t"), script.index("systemctl reload ssh"))
 
     def test_watchdog_key_is_restricted_to_one_root_owned_probe(self) -> None:
@@ -28,6 +32,9 @@ class ServerSecurityContractTest(unittest.TestCase):
         self.assertIn("/usr/bin/sudo -n $PROBE_TARGET", script)
         self.assertIn("NOPASSWD: %s", script)
         self.assertNotIn("NOPASSWD: ALL", script)
+        self.assertIn('-g "$WATCHDOG_USER" -m 0750', script)
+        self.assertIn('-m 0640', script)
+        self.assertIn('sudo -u "$WATCHDOG_USER" test -r', script)
 
     def test_fail2ban_is_secondary_and_uses_bounded_incremental_bans(self) -> None:
         script = (ROOT / "scripts/server-security/install-fail2ban.sh").read_text(
@@ -40,6 +47,9 @@ class ServerSecurityContractTest(unittest.TestCase):
         self.assertIn("bantime.increment = true", script)
         self.assertIn("bantime.maxtime = 7d", script)
         self.assertIn("banaction = nftables-multiport", script)
+        self.assertIn("for _ in {1..20}", script)
+        self.assertIn("sleep 0.25", script)
+        self.assertNotIn("enable --now", script)
 
 
 if __name__ == "__main__":

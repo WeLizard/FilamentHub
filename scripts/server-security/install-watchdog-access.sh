@@ -63,13 +63,20 @@ passwd --lock "$WATCHDOG_USER" >/dev/null
 install -o root -g root -m 0755 "$probe_source" "$PROBE_TARGET"
 
 install -d -o root -g root -m 0755 "$WATCHDOG_HOME"
-install -d -o root -g root -m 0700 "$WATCHDOG_HOME/.ssh"
+install -d -o root -g "$WATCHDOG_USER" -m 0750 "$WATCHDOG_HOME/.ssh"
 authorized_key="restrict,command=\"/usr/bin/sudo -n $PROBE_TARGET\" $public_key"
 authorized_keys_temp="$(mktemp)"
 sudoers_temp="$(mktemp)"
 trap 'rm -f -- "$authorized_keys_temp" "$sudoers_temp"' EXIT
 printf '%s\n' "$authorized_key" > "$authorized_keys_temp"
-install -o root -g root -m 0600 "$authorized_keys_temp" "$WATCHDOG_HOME/.ssh/authorized_keys"
+install \
+    -o root \
+    -g "$WATCHDOG_USER" \
+    -m 0640 \
+    "$authorized_keys_temp" \
+    "$WATCHDOG_HOME/.ssh/authorized_keys"
+sudo -u "$WATCHDOG_USER" test -r "$WATCHDOG_HOME/.ssh/authorized_keys" || \
+    fail "sshd target user cannot read the installed authorized_keys file."
 
 printf '%s ALL=(root) NOPASSWD: %s\n' "$WATCHDOG_USER" "$PROBE_TARGET" > "$sudoers_temp"
 visudo -cf "$sudoers_temp" >/dev/null
