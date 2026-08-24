@@ -537,8 +537,10 @@ deploy() {
 
     tag_release_images
 
-    info "Building new application images while the current containers keep serving traffic..."
-    COMPOSE_BAKE=false docker compose build backend frontend
+    info "Building the backend image while the current containers keep serving traffic..."
+    COMPOSE_BAKE=false docker compose build backend
+    info "Building the frontend image after the backend to keep peak VDS memory bounded..."
+    COMPOSE_BAKE=false docker compose build frontend
 
     info "Checking the migration graph in the newly built backend image..."
     migration_heads="$(docker compose run --rm --no-deps --entrypoint alembic backend heads)"

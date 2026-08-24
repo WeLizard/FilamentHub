@@ -16,7 +16,13 @@ jobs:
       - name: Check Bash deployment worker
         run: |
           bash -n scripts/deploy.sh
+          bash -n scripts/run-deploy-job.sh
           bash -n backend/docker-entrypoint.sh
+
+      - name: Check deployment resilience contract
+        run: |
+          python -m pytest scripts/tests/test_deploy_resilience_contract.py
+          bash scripts/tests/test_run_deploy_job.sh
 
       - name: Check PowerShell owner scripts
         shell: pwsh

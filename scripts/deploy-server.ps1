@@ -36,6 +36,9 @@ $ErrorActionPreference = 'Stop'
 # Ожидание — это не отказ. Сообщения с этой пометкой печатаются жёлтым, чтобы
 # «CI ещё идёт» не выглядело как упавший деплой.
 $script:WaitingPrefix = 'ОЖИДАНИЕ:'
+$script:DeployPollIntervalSeconds = 5
+$script:DeployReconnectGraceSeconds = 300
+$script:DeployJobTimeoutSeconds = 7200
 
 function Assert-Command {
     param([Parameter(Mandatory)][string]$Name)
@@ -208,6 +211,165 @@ function Invoke-RemoteWorker {
     Invoke-Checked ssh @($target, $remoteCommand)
 }
 
+function ConvertFrom-DurableDeployResponse {
+    param([Parameter(Mandatory)][string]$Output)
+
+    $lines = @($Output -split "`r?`n")
+    $metadataIndex = -1
+    for ($index = 0; $index -lt $lines.Count; $index++) {
+        if ($lines[$index].StartsWith('FH_DEPLOY_JOB_STATUS_V1|')) {
+            $metadataIndex = $index
+            break
+        }
+    }
+    if ($metadataIndex -lt 0) {
+        throw "Удалённый deploy runner вернул ответ без status marker:`n$Output"
+    }
+
+    $parts = $lines[$metadataIndex] -split '\|', 6
+    if ($parts.Count -ne 6 -or $parts[3] -notmatch '^(?:-|[0-9]+)$' -or
+        $parts[4] -notmatch '^[0-9]+$') {
+        throw "Удалённый deploy runner вернул повреждённый status marker: $($lines[$metadataIndex])"
+    }
+    if ($metadataIndex -gt 0) {
+        $lines[0..($metadataIndex - 1)] | ForEach-Object { Write-Host $_ -ForegroundColor DarkGray }
+    }
+    $logLines = if ($metadataIndex + 1 -lt $lines.Count) {
+        @($lines[($metadataIndex + 1)..($lines.Count - 1)])
+    } else {
+        @()
+    }
+
+    [pscustomobject]@{
+        RunId = $parts[1]
+        Status = $parts[2]
+        ExitCode = $parts[3]
+        LineCount = [int]$parts[4]
+        LogPath = $parts[5]
+        LogLines = $logLines
+    }
+}
+
+function Invoke-DurableDeployCommand {
+    param(
+        [Parameter(Mandatory)][string]$Target,
+        [Parameter(Mandatory)][string]$Revision,
+        [Parameter(Mandatory)][string[]]$RunnerArguments
+    )
+
+    $quotedArguments = @($RunnerArguments | ForEach-Object {
+        if ($_ -notmatch '^[A-Za-z0-9_./:\-]+$') {
+            throw "Недопустимый аргумент durable deploy: $_"
+        }
+        "'$_'"
+    })
+    $remoteCommand = "set -o pipefail && cd '$RemoteProjectDirectory' && git cat-file -e '$($Revision)^{commit}' && git show '$($Revision):scripts/run-deploy-job.sh' | awk 'NR == 2 { compatible = (`$0 == `"# FILAMENTHUB_DEPLOY_JOB_PROTOCOL=1`") } END { exit !compatible }' && git show '$($Revision):scripts/run-deploy-job.sh' | PROJECT_DIR=`"`$PWD`" bash -s -- $($quotedArguments -join ' ')"
+    $output = & ssh `
+        -o 'ConnectTimeout=15' `
+        -o 'ServerAliveInterval=15' `
+        -o 'ServerAliveCountMax=4' `
+        $Target $remoteCommand 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        throw "SSH временно недоступен (код $LASTEXITCODE):`n$($output -join "`n")"
+    }
+    return ConvertFrom-DurableDeployResponse -Output ($output -join "`n")
+}
+
+function Invoke-DurableProductionDeploy {
+    param([Parameter(Mandatory)][string]$Revision)
+
+    Assert-Command ssh
+    $target = Get-ServerTarget
+    $runId = "deploy-$Revision"
+    $startCommand = "set -o pipefail && cd '$RemoteProjectDirectory' && git fetch --no-recurse-submodules origin main && git cat-file -e '$($Revision)^{commit}' && git merge-base --is-ancestor '$Revision' origin/main"
+    Invoke-Checked ssh @(
+        '-o', 'ConnectTimeout=15',
+        '-o', 'ServerAliveInterval=15',
+        '-o', 'ServerAliveCountMax=4',
+        $target, $startCommand
+    )
+
+    $response = $null
+    $startDeadline = (Get-Date).AddSeconds($script:DeployReconnectGraceSeconds)
+    do {
+        try {
+            $response = Invoke-DurableDeployCommand `
+                -Target $target -Revision $Revision `
+                -RunnerArguments @(
+                    '--start', '--run-id', $runId, '--worker-revision', $Revision,
+                    '--', '--revision', $Revision, '--yes'
+                )
+        } catch {
+            if ((Get-Date) -ge $startDeadline) {
+                throw "Не удалось запустить или обнаружить durable deploy за $script:DeployReconnectGraceSeconds секунд. Повторный запуск безопасно проверит ту же задачу. Последняя ошибка: $($_.Exception.Message)"
+            }
+            Write-Host 'SSH оборвался во время запуска; проверяю, успела ли задача стартовать на VDS...' -ForegroundColor Yellow
+            Start-Sleep -Seconds $script:DeployPollIntervalSeconds
+        }
+    } while (-not $response)
+    if ($response.Status -in @('failed', 'stale')) {
+        if (-not (Confirm-Action "Предыдущая попытка $($Revision.Substring(0, 8)) завершилась неуспешно. Запустить заново?")) {
+            throw "Повторный деплой отменён. Журнал на VDS: $($response.LogPath)"
+        }
+        $response = Invoke-DurableDeployCommand `
+            -Target $target -Revision $Revision `
+            -RunnerArguments @(
+                '--start', '--run-id', $runId, '--worker-revision', $Revision,
+                '--restart-failed', '--', '--revision', $Revision, '--yes'
+            )
+    }
+
+    $fromLine = 0
+    $startedAt = Get-Date
+    $lastSuccessfulContact = Get-Date
+    while ($true) {
+        foreach ($line in @($response.LogLines)) {
+            if (-not [string]::IsNullOrEmpty($line)) {
+                Write-Host $line
+            }
+        }
+        $fromLine = $response.LineCount
+
+        switch ($response.Status) {
+            'succeeded' {
+                Write-Host "Production deployment завершён. Журнал: $($response.LogPath)" -ForegroundColor Green
+                return
+            }
+            'failed' {
+                throw "Production deployment завершился с кодом $($response.ExitCode). Журнал: $($response.LogPath)"
+            }
+            'stale' {
+                throw "Production deployment потерял worker-процесс. Журнал: $($response.LogPath)"
+            }
+            'missing' {
+                throw "Production deployment не создал durable job '$runId'."
+            }
+            'running' { }
+            default { throw "Неизвестный статус durable deploy: $($response.Status)" }
+        }
+
+        if (((Get-Date) - $startedAt).TotalSeconds -ge $script:DeployJobTimeoutSeconds) {
+            throw "Деплой всё ещё выполняется после $script:DeployJobTimeoutSeconds секунд. Повторный запуск консоли подключится к той же задаче. Журнал: $($response.LogPath)"
+        }
+
+        Start-Sleep -Seconds $script:DeployPollIntervalSeconds
+        try {
+            $response = Invoke-DurableDeployCommand `
+                -Target $target -Revision $Revision `
+                -RunnerArguments @('--status', '--run-id', $runId, '--from-line', "$fromLine")
+            $lastSuccessfulContact = Get-Date
+        } catch {
+            $disconnectedFor = ((Get-Date) - $lastSuccessfulContact).TotalSeconds
+            if ($disconnectedFor -ge $script:DeployReconnectGraceSeconds) {
+                throw "SSH недоступен уже $([int]$disconnectedFor) секунд. Удалённая задача не остановлена; повторный запуск консоли подключится к ней. Последняя ошибка: $($_.Exception.Message)"
+            }
+            $response.LogLines = @()
+            Write-Host "SSH-связь прервалась, задача на VDS продолжает работу; повторяю подключение..." -ForegroundColor Yellow
+            Start-Sleep -Seconds $script:DeployPollIntervalSeconds
+        }
+    }
+}
+
 function Get-DeploymentCandidate {
     Assert-Command git
 
@@ -362,7 +524,7 @@ function Start-ProductionDeploy {
         return
     }
 
-    Invoke-RemoteWorker -Arguments @('--revision', $Candidate.Sha, '--yes') -WorkerRevision $Candidate.Sha
+    Invoke-DurableProductionDeploy -Revision $Candidate.Sha
 }
 
 function Show-ProductionStatus {
