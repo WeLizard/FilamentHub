@@ -127,7 +127,11 @@ jobs:
           PYTHONPATH: octoprint-plugin
 
       - name: Test OrcaSlicer plugin
-        run: python -m pytest orca-plugin/tests
+        run: >-
+          python -m pytest
+          scripts/tests/test_release_workflow_contract.py
+          scripts/tests/test_render_plugin_release_notes.py
+          orca-plugin/tests
         env:
           PYTHONPATH: orca-plugin
 

@@ -13,7 +13,6 @@ on:
 
 permissions:
   contents: write
-  actions: write
 
 concurrency:
   group: release-filamenthub-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
@@ -71,7 +70,11 @@ jobs:
           PY
 
       - name: Test FilamentHub plugin
-        run: python -m pytest scripts/tests/test_render_plugin_release_notes.py orca-plugin/tests
+        run: >-
+          python -m pytest
+          scripts/tests/test_release_workflow_contract.py
+          scripts/tests/test_render_plugin_release_notes.py
+          orca-plugin/tests
         env:
           PYTHONPATH: orca-plugin
 
@@ -117,19 +120,3 @@ jobs:
           gh release upload "$RELEASE_TAG" "$RUNNER_TEMP"/release/assets/* \
             --repo "$GITHUB_REPOSITORY" \
             --clobber
-
-      - name: Publish tag-triggered release
-        if: github.event_name == 'push'
-        shell: bash
-        run: |
-          gh release edit "$RELEASE_TAG" \
-            --repo "$GITHUB_REPOSITORY" \
-            --draft=false
-
-      - name: Start OrcaCloud trusted publishing
-        if: github.event_name == 'push'
-        run: >-
-          gh workflow run publish-orcacloud.yml
-          --repo "$GITHUB_REPOSITORY"
-          --ref main
-          -f tag="$RELEASE_TAG"

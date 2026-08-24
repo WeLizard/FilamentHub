@@ -79,7 +79,7 @@ function Get-Release {
     )
 
     $json = & gh release view $Tag --repo $Repository `
-        --json tagName,isDraft,isPrerelease,url,assets 2>$null
+        --json tagName,isDraft,isPrerelease,publishedAt,url,assets 2>$null
     if ($LASTEXITCODE -ne 0) {
         return $null
     }
@@ -295,11 +295,13 @@ function Wait-ForRelease {
         [Parameter(Mandatory)][string]$Repository,
         [Parameter(Mandatory)][string]$Workflow,
         [Parameter(Mandatory)][string]$TagCommit,
-        [Parameter(Mandatory)][string]$Tag
+        [Parameter(Mandatory)][string]$Tag,
+        [switch]$AllowDraft,
+        [switch]$RequireWorkflow
     )
 
     $release = Get-Release -Repository $Repository -Tag $Tag
-    if ($release -and -not $release.isDraft) {
+    if ($release -and (-not $release.isDraft -or $AllowDraft) -and -not $RequireWorkflow) {
         return $release
     }
     $deadline = (Get-Date).AddSeconds($RunDiscoveryTimeoutSeconds)
@@ -325,10 +327,47 @@ function Wait-ForRelease {
     Write-Host "Ожидаю workflow: $($run.url)"
     Invoke-Checked gh @('run', 'watch', [string]$run.databaseId, '--repo', $Repository, '--exit-status')
     $release = Get-Release -Repository $Repository -Tag $Tag
-    if (-not $release -or $release.isDraft) {
-        throw "Workflow завершился, но опубликованный релиз '$Tag' не найден."
+    if (-not $release -or ($release.isDraft -and -not $AllowDraft)) {
+        throw "Workflow завершился, но готовый релиз '$Tag' не найден."
     }
     return $release
+}
+
+function Wait-ForWorkflowRun {
+    param(
+        [Parameter(Mandatory)][string]$Repository,
+        [Parameter(Mandatory)][string]$Workflow,
+        [Parameter(Mandatory)][string]$Event,
+        [Parameter(Mandatory)][string]$TagCommit,
+        [Parameter(Mandatory)][string]$Tag,
+        [Parameter(Mandatory)][datetime]$NotBefore
+    )
+
+    $deadline = (Get-Date).AddSeconds($RunDiscoveryTimeoutSeconds)
+    $run = $null
+    do {
+        $json = Invoke-Checked gh @(
+            'run', 'list', '--repo', $Repository, '--workflow', $Workflow,
+            '--event', $Event, '--limit', '20',
+            '--json', 'databaseId,headSha,createdAt,url'
+        ) -Capture
+        $run = @($json | ConvertFrom-Json) |
+            Where-Object {
+                $_.headSha -eq $TagCommit -and
+                [datetime]$_.createdAt -ge $NotBefore
+            } |
+            Sort-Object { [datetime]$_.createdAt } |
+            Select-Object -First 1
+        if (-not $run) {
+            Start-Sleep -Seconds 2
+        }
+    } while (-not $run -and (Get-Date) -lt $deadline)
+
+    if (-not $run) {
+        throw "Workflow $Workflow для '$Tag' не появился за $RunDiscoveryTimeoutSeconds секунд."
+    }
+    Write-Host "Ожидаю trusted publishing: $($run.url)"
+    Invoke-Checked gh @('run', 'watch', [string]$run.databaseId, '--repo', $Repository, '--exit-status')
 }
 
 function Assert-ReleaseAssets {
@@ -359,7 +398,9 @@ function Publish-Component {
         [Parameter(Mandatory)][string]$Tag,
         [Parameter(Mandatory)][string]$Workflow,
         [Parameter(Mandatory)][string[]]$RequiredPatterns,
-        [Parameter(Mandatory)][string[]]$ForbiddenPatterns
+        [Parameter(Mandatory)][string[]]$ForbiddenPatterns,
+        [switch]$OwnerPublishesDraft,
+        [string]$TrustedPublishWorkflow
     )
 
     $head = Invoke-Checked git @('-C', $RepositoryPath, 'rev-parse', 'HEAD') -Capture
@@ -378,14 +419,33 @@ function Publish-Component {
     } else {
         Invoke-Checked git @('-C', $RepositoryPath, 'tag', '-a', $Tag, '-m', "$Name $Tag")
     }
-    if (-not $remoteTagCommit) {
+    $tagWasPushed = -not $remoteTagCommit
+    if ($tagWasPushed) {
         Invoke-Checked git @('-C', $RepositoryPath, 'push', $Remote, "refs/tags/$Tag")
     }
     $tagCommit = Invoke-Checked git @('-C', $RepositoryPath, 'rev-list', '-n', '1', $Tag) -Capture
     $release = Wait-ForRelease `
-        -Repository $Repository -Workflow $Workflow -TagCommit $tagCommit -Tag $Tag
+        -Repository $Repository -Workflow $Workflow -TagCommit $tagCommit -Tag $Tag `
+        -AllowDraft:$OwnerPublishesDraft -RequireWorkflow:$tagWasPushed
     Assert-ReleaseAssets `
         -Release $release -RequiredPatterns $RequiredPatterns -ForbiddenPatterns $ForbiddenPatterns
+    if ($OwnerPublishesDraft -and $release.isDraft) {
+        Write-Host "Файлы проверены. Публикую GitHub Release через авторизованную сессию владельца."
+        Invoke-Checked gh @('release', 'edit', $Tag, '--repo', $Repository, '--draft=false')
+        $release = Get-Release -Repository $Repository -Tag $Tag
+        if (-not $release -or $release.isDraft -or $release.isPrerelease) {
+            throw "Релиз '$Tag' не перешёл из draft в опубликованное состояние."
+        }
+    }
+    if ($TrustedPublishWorkflow) {
+        if (-not $release.publishedAt) {
+            throw "У релиза '$Tag' отсутствует время публикации; trusted publishing не запущен."
+        }
+        Wait-ForWorkflowRun `
+            -Repository $Repository -Workflow $TrustedPublishWorkflow -Event 'release' `
+            -TagCommit $tagCommit -Tag $Tag `
+            -NotBefore ([datetime]$release.publishedAt).AddSeconds(-5)
+    }
     Write-Host "$Name опубликован: $($release.url)" -ForegroundColor Green
 }
 
@@ -553,6 +613,8 @@ foreach ($plan in @($plans | Where-Object Needed)) {
                 ForbiddenPatterns = @(
                     '^octoprint[-_]filamenthubbridge-', '^printers-'
                 )
+                OwnerPublishesDraft = $true
+                TrustedPublishWorkflow = 'publish-orcacloud.yml'
             }
             Publish-Component @publish
         }
