@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_active_user
-from app.core.security import generate_api_key
+from app.core.security import device_api_key_verifier, generate_api_key
 from app.db.session import get_db
 from app.models.user import User
 from app.models.user_printer_device import UserPrinterDevice
@@ -96,7 +96,7 @@ async def create_device_with_key(
         user_id=current_user.id,
         name=payload.name.strip(),
         device_fingerprint=fingerprint,
-        api_key=new_key,
+        api_key=device_api_key_verifier(new_key),
         supports_hh=True,
         printer_id=payload.printer_id,
         gate_count=payload.gate_count,
@@ -120,7 +120,7 @@ async def regenerate_device_key(
     """Regenerate the API key for a device. The old key stops working immediately."""
     device = await require_device(db, current_user.id, device_id)
     new_key = generate_api_key()
-    device.api_key = new_key
+    device.api_key = device_api_key_verifier(new_key)
     # The old key dies with this call, so whatever used to report through it is
     # silent again until someone pastes the new one.
     device.reports_feed = False

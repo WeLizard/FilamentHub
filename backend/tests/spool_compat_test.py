@@ -249,6 +249,67 @@ async def test_spool_compat_accepts_tagged_device_key_without_exposing_a_bearer_
 
 
 @pytest.mark.asyncio
+async def test_device_key_is_returned_once_but_stored_as_a_verifier(
+    auth_client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    created = await auth_client.post(
+        "/api/v1/devices/create-with-key",
+        json={"name": "Verifier writer"},
+    )
+    assert created.status_code == 200
+    raw_key = created.json()["api_key"]
+    device_id = created.json()["device"]["id"]
+
+    device = await db_session.get(UserPrinterDevice, device_id)
+    assert device is not None
+    assert device.api_key == device_api_key_verifier(raw_key)
+    assert device.api_key != raw_key
+
+    accepted = await auth_client.get(f"/api/v1/spool_compat/{raw_key}/v1/spool")
+    refused = await auth_client.get(
+        f"/api/v1/spool_compat/{device.api_key}/v1/spool"
+    )
+    assert accepted.status_code == 200
+    assert refused.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_regenerated_device_key_replaces_the_verifier_and_revokes_the_old_key(
+    auth_client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    created = await auth_client.post(
+        "/api/v1/devices/create-with-key",
+        json={"name": "Verifier rotation"},
+    )
+    assert created.status_code == 200
+    device_id = created.json()["device"]["id"]
+    old_raw_key = created.json()["api_key"]
+
+    regenerated = await auth_client.post(
+        f"/api/v1/devices/{device_id}/regenerate-key"
+    )
+    assert regenerated.status_code == 200
+    new_raw_key = regenerated.json()["api_key"]
+    assert new_raw_key != old_raw_key
+
+    device = await db_session.get(UserPrinterDevice, device_id)
+    assert device is not None
+    await db_session.refresh(device)
+    assert device.api_key == device_api_key_verifier(new_raw_key)
+
+    old_key_response = await auth_client.get(
+        f"/api/v1/spool_compat/{old_raw_key}/v1/spool"
+    )
+    new_key_response = await auth_client.get(
+        f"/api/v1/spool_compat/{new_raw_key}/v1/spool"
+    )
+    assert old_key_response.status_code == 401
+    assert new_key_response.status_code == 200
+
+
+@pytest.mark.asyncio
 async def test_reported_usage_does_not_turn_the_printer_into_happy_hare(
     client: AsyncClient,
     db_session: AsyncSession,
