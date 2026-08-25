@@ -2,6 +2,10 @@
 
 Newest first. The top entry is the text pasted into the Plugin Hub on release.
 
+## 0.1.4
+- The native FilamentHub plugin interface is now fully localized for all 23 languages available in OrcaSlicer, including navigation, synchronization, recovery, connection status, Bambu LAN controls and error messages.
+- The embedded FilamentHub site now receives a supported language explicitly: Russian and Chinese follow OrcaSlicer, while other OrcaSlicer languages open the English site instead of showing a maintenance page.
+
 ## 0.1.3
 - Local filament presets imported from OrcaSlicer now keep the same FilamentHub identity after a rename, while **Save As** remains a separate profile.
 - Sync handles every imported preset independently: rejected items remain available for retry, and profiles that need your review are reported instead of being silently treated as complete.

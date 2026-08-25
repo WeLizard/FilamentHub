@@ -155,7 +155,7 @@ written into Bambu firmware.
 # name = "FilamentHub"
 # description = "Browse and sync community-rated filament profiles from FilamentHub, with spool inventory and print-cost tools."
 # author = "FilamentHub"
-# version = "0.1.3"
+# version = "0.1.4"
 # network = ["filamenthub.ru", "*.filamenthub.ru"]   # proposed; ignored by current host
 # ///
 ```
@@ -204,14 +204,14 @@ python -m pytest orca-plugin/tests -q
 Output:
 
 ```text
-orca-plugin/dist/filamenthub-0.1.3/
+orca-plugin/dist/filamenthub-0.1.4/
   filamenthub_plugin.py       # install this file
   package-metadata.json       # build provenance
   SHA256SUMS                  # integrity check
-orca-plugin/dist/filamenthub-0.1.3-dev/
+orca-plugin/dist/filamenthub-0.1.4-dev/
   filamenthub_plugin.py       # localhost development copy
 orca-plugin/dist/wheels/
-  filamenthub-0.1.3-py3-none-any.whl
+  filamenthub-0.1.4-py3-none-any.whl
 ```
 
 The legacy `--dev-source` flag remains a compatibility alias. It still stages
@@ -222,7 +222,7 @@ source. Add `--no-wheel` when only the two single-file artifacts are needed:
 python orca-plugin/build_package.py --dev-source --no-wheel
 ```
 
-Install `orca-plugin/dist/filamenthub-0.1.3-dev/filamenthub_plugin.py` in the
+Install `orca-plugin/dist/filamenthub-0.1.4-dev/filamenthub_plugin.py` in the
 isolated OrcaSlicer data directory. It keeps the localhost default and embeds
 the same locale catalogs as the release package.
 
