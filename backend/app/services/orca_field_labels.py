@@ -102,6 +102,10 @@ ORCA_FIELD_LABELS: dict[str, FieldLabel] = {
     "filament_end_gcode": {"label": "End G-code", "unit": None},
 
     # Process: quality / strength / speed / multimaterial
+    "enable_mixed_color_sublayer": {
+        "label": "Mixed color sublayer",
+        "unit": None,
+    },
     "zaa_enabled": {"label": "Z contouring enabled", "unit": None},
     "zaa_minimize_perimeter_height": {
         "label": "Minimize wall height angle",

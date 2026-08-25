@@ -93,21 +93,36 @@ async def test_machine_and_process_exports_withhold_shapes_orca_cannot_read():
 
 
 @pytest.mark.asyncio
-async def test_known_vector_fields_are_normalized_for_both_profile_kinds():
+async def test_known_fields_are_normalized_for_both_profile_kinds():
     # The host Preset API returns native numbers, so a reverse-synced blob
     # carries them straight into the export unless the projection reshapes them.
     process_result = await print_profile_to_orca_json(
-        _profile({"outer_wall_speed": [200], "travel_speed": 300.5})
+        _profile(
+            {
+                "outer_wall_speed": [200],
+                "travel_speed": 300.5,
+                "enable_mixed_color_sublayer": True,
+            }
+        )
     )
     machine_result = await printer_profile_to_orca_json(
-        _machine({"nozzle_diameter": [0.4], "retraction_length": 0.8, "wipe": [True]})
+        _machine(
+            {
+                "nozzle_diameter": [0.4],
+                "retraction_length": 0.8,
+                "wipe": [True],
+                "is_custom_defined": False,
+            }
+        )
     )
 
     assert process_result["outer_wall_speed"] == ["200"]
     assert process_result["travel_speed"] == ["300.5"]
+    assert process_result["enable_mixed_color_sublayer"] == "1"
     assert machine_result["nozzle_diameter"] == ["0.4"]
     assert machine_result["retraction_length"] == ["0.8"]
     assert machine_result["wipe"] == ["1"]
+    assert machine_result["is_custom_defined"] == "0"
 
 
 @pytest.mark.asyncio

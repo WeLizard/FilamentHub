@@ -357,6 +357,7 @@ ORCA_PRESET_FIELDS: dict[str, frozenset[str]] = {
             "enable_circle_compensation",
             "enable_extra_bridge_layer",
             "enable_height_slowdown",
+            "enable_mixed_color_sublayer",
             "enable_overhang_speed",
             "enable_prime_tower",
             "enable_support",
@@ -767,6 +768,7 @@ ORCA_PRESET_FIELDS: dict[str, frozenset[str]] = {
             # Reviewed Orca settings plus forward-compatible vendor fields.
             # Connection data is stripped by the storage boundary even when a
             # field name is accepted here for queue pruning.
+            "is_custom_defined",
             "belt_frame_tilt_angle",
             "belt_frame_tilt_decouple",
             "belt_preslice_global",

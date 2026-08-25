@@ -17,6 +17,7 @@ from app.services.orca_field_registry import (
     ORCA_FIELD_REGISTRY_VERSION,
     ORCA_PRESET_FIELDS,
 )
+from app.services.orca_transport import FILAMENTHUB_INTERNAL_KEYS
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +46,14 @@ class UnknownOrcaField:
     value_shape: str
 
 
+def _known_fields(scope: str) -> frozenset[str]:
+    return (
+        ORCA_PRESET_FIELDS.get(scope, frozenset())
+        | _KNOWN_RUNTIME_FIELDS
+        | FILAMENTHUB_INTERNAL_KEYS
+    )
+
+
 def _value_shape(value: Any) -> str:
     if value is None:
         return "null"
@@ -69,7 +78,7 @@ def detect_unknown_orca_fields(
 ) -> list[UnknownOrcaField]:
     """Return bounded top-level metadata only; values are never retained."""
 
-    known_fields = ORCA_PRESET_FIELDS[scope] | _KNOWN_RUNTIME_FIELDS
+    known_fields = _known_fields(scope)
     unknown: list[UnknownOrcaField] = []
     field_names = sorted(name for name in settings if isinstance(name, str))
     for field_name in field_names:
@@ -101,7 +110,7 @@ async def prune_known_orca_schema_observations(db: AsyncSession) -> int:
     known_ids = [
         observation_id
         for observation_id, scope, field_name in result
-        if field_name in (ORCA_PRESET_FIELDS.get(scope, frozenset()) | _KNOWN_RUNTIME_FIELDS)
+        if field_name in _known_fields(scope)
     ]
     if not known_ids:
         return 0

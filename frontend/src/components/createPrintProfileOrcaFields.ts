@@ -76,6 +76,7 @@ export const ORCA_STRUCTURED_SECTION_ORDER: Record<OrcaStructuredFieldTab, strin
 };
 
 export const ORCA_ADVANCED_FIELD_DEFS: OrcaStructuredFieldDef[] = [
+  { key: 'enable_mixed_color_sublayer', kind: 'boolean', tab: 'quality', section: 'layerHeight' },
   { key: 'elefant_foot_layers_density', kind: 'percent', tab: 'quality', section: 'precision', min: 50, max: 100, step: 1, placeholder: '100' },
   { key: 'hole_to_polyhole_max_edges', kind: 'integer', tab: 'quality', section: 'precision', min: 3, step: 1, placeholder: '50' },
   { key: 'bridge_line_width', kind: 'floatOrPercent', tab: 'quality', section: 'bridging', min: 0, max: 100, placeholder: '100%' },
@@ -1219,6 +1220,7 @@ export const ORCA_ADVANCED_FIELD_LABELS: Record<string, { en: string; ru: string
   center_of_surface_pattern: { en: 'Center surface pattern on', ru: 'Центрировать рисунок поверхности по' },
   combine_brims: { en: 'Combine brims', ru: 'Объединять близкие каймы' },
   elefant_foot_layers_density: { en: 'Elephant foot layers density', ru: 'Плотность слоёв компенсации слоновьей ноги' },
+  enable_mixed_color_sublayer: { en: 'Mixed color sublayer', ru: 'Подслои смешивания цветов' },
   fuzzy_skin_layers_between_ripple_offset: { en: 'Layers between ripple offset', ru: 'Слоёв между смещениями ряби' },
   fuzzy_skin_ripple_offset: { en: 'Ripple offset', ru: 'Смещение ряби' },
   fuzzy_skin_ripples_per_layer: { en: 'Ripples per layer', ru: 'Волн на слой' },

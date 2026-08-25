@@ -6411,6 +6411,7 @@
     },
     "fieldLabels": {
       "brim_ears_outer_only": "仅在外角生成裙边耳",
+      "enable_mixed_color_sublayer": "混色子层",
       "separated_infills": "分离填充",
       "small_support_perimeter_speed": "小型支撑周长（mm/s 或 %）",
       "small_support_perimeter_threshold": "小型支撑周长阈值（mm）",
@@ -6430,6 +6431,7 @@
     },
     "fieldHints": {
       "brim_ears_outer_only": "仅在外角生成鼠耳，而不是在每个检测到的角上生成。",
+      "enable_mixed_color_sublayer": "将使用混色耗材的层拆分为子层以实现混色。启用可变层高时，OrcaSlicer 可能会显示警告。",
       "separated_infills": "对装配体中的每个独立零件分别居中支持的填充图案。",
       "small_support_perimeter_speed": "小型树状支撑周长的速度。百分比相对于支撑速度；0 使用自动行为。",
       "small_support_perimeter_threshold": "低于此周长时使用小型支撑的独立速度；0 表示禁用阈值。",

@@ -6417,6 +6417,7 @@
     },
     "fieldLabels": {
       "brim_ears_outer_only": "Brim ears on outer corners only",
+      "enable_mixed_color_sublayer": "Mixed color sublayer",
       "separated_infills": "Separated infills",
       "small_support_perimeter_speed": "Small support perimeters (mm/s or %)",
       "small_support_perimeter_threshold": "Small support perimeters threshold (mm)",
@@ -6436,6 +6437,7 @@
     },
     "fieldHints": {
       "brim_ears_outer_only": "Places mouse ears only on outside corners instead of every detected corner.",
+      "enable_mixed_color_sublayer": "Splits layers that use mixed-color filaments into sublayers for color mixing. OrcaSlicer may warn when variable layer height is also enabled.",
       "separated_infills": "Centers supported infill patterns independently for each separate part in an assembly.",
       "small_support_perimeter_speed": "Speed for small tree-support perimeters. A percentage is relative to the support speed; 0 uses automatic behavior.",
       "small_support_perimeter_threshold": "Perimeter length below which the separate small-support speed is used. 0 disables the threshold.",

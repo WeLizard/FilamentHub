@@ -15,7 +15,6 @@ from app.services.orca_schema_observer import (
     observe_orca_schema_fields,
 )
 
-
 # The archive is deliberately not versioned (see .gitignore), so it is absent on a
 # fresh checkout and in CI. The coverage check is worth keeping where the archive
 # exists; where it does not, failing would say nothing about the code.
@@ -84,6 +83,7 @@ def test_detector_accepts_reviewed_orca_fields_exposed_by_the_editors() -> None:
         key: "fixture"
         for key in {
             "sparse_infill_smooth_factor",
+            "enable_mixed_color_sublayer",
             "brim_ears_outer_only",
             "zaa_minimize_perimeter_height",
             "zaa_min_z",
@@ -140,6 +140,7 @@ def test_detector_accepts_reviewed_orca_fields_exposed_by_the_editors() -> None:
             "staggered_perimeters",
         },
         "machine": {
+            "is_custom_defined",
             "belt_frame_tilt_angle",
             "belt_frame_tilt_decouple",
             "belt_preslice_global",
@@ -198,6 +199,9 @@ def test_detector_is_bounded_and_ignores_filamenthub_private_fields() -> None:
             "bundle_id": "filamenthub:12",
             "slicing_pipeline_plugin": "FilamentHub",
             "slicing_pipeline_plugin_config_overrides": {"opaque": True},
+            "derived_from_external_id": "legacy-external-id",
+            "derived_from_draft_id": "legacy-draft-id",
+            "enrichment": {"material_type": "PLA"},
         }
     )
 
@@ -207,6 +211,8 @@ def test_detector_is_bounded_and_ignores_filamenthub_private_fields() -> None:
     assert all(not item.field_name.startswith("fhub_") for item in detected)
     assert all(item.field_name != "bundle_id" for item in detected)
     assert all("slicing_pipeline_plugin" not in item.field_name for item in detected)
+    assert all(not item.field_name.startswith("derived_from_") for item in detected)
+    assert all(item.field_name != "enrichment" for item in detected)
 
 
 @pytest.mark.asyncio
@@ -372,6 +378,38 @@ async def test_admin_list_prunes_fields_now_covered_by_registry(
             OrcaSchemaObservation(
                 scope="filament",
                 field_name="future_filament_field",
+                value_shape="string",
+                registry_version="old-registry",
+                first_source="test",
+                last_source="test",
+            ),
+            OrcaSchemaObservation(
+                scope="filament",
+                field_name="derived_from_external_id",
+                value_shape="string",
+                registry_version="old-registry",
+                first_source="test",
+                last_source="test",
+            ),
+            OrcaSchemaObservation(
+                scope="filament",
+                field_name="derived_from_draft_id",
+                value_shape="string",
+                registry_version="old-registry",
+                first_source="test",
+                last_source="test",
+            ),
+            OrcaSchemaObservation(
+                scope="process",
+                field_name="enable_mixed_color_sublayer",
+                value_shape="string",
+                registry_version="old-registry",
+                first_source="test",
+                last_source="test",
+            ),
+            OrcaSchemaObservation(
+                scope="machine",
+                field_name="is_custom_defined",
                 value_shape="string",
                 registry_version="old-registry",
                 first_source="test",
