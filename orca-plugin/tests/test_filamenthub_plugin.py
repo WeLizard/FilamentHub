@@ -169,17 +169,17 @@ def test_shell_replaces_webview_errors_with_maintenance_status(plugin_module):
 
 
 @pytest.mark.parametrize(
-    ("host_language", "expected", "catalog_label"),
+    ("host_language", "expected", "site_language", "catalog_label"),
     [
-        ("ru_RU", "ru", "Каталог"),
-        ("zh_CN", "zh_CN", "目录"),
-        ("zh-TW", "zh_TW", "目錄"),
-        ("en_US", "en", "Catalog"),
-        ("de_DE", "de", "Catalog"),
+        ("ru_RU", "ru", "ru", "Каталог"),
+        ("zh_CN", "zh_CN", "zh", "目录"),
+        ("zh-TW", "zh_TW", "zh", "目錄"),
+        ("en_US", "en", "en", "Catalog"),
+        ("de_DE", "de", "en", "Katalog"),
     ],
 )
 def test_shell_uses_orca_ui_language(
-    plugin_module, monkeypatch, host_language, expected, catalog_label
+    plugin_module, monkeypatch, host_language, expected, site_language, catalog_label
 ):
     monkeypatch.setattr(
         plugin_module.orca.host,
@@ -191,7 +191,7 @@ def test_shell_uses_orca_ui_language(
     rendered = plugin_module.render_page()
 
     assert f"var hostLanguage = '{expected}';" in rendered
-    assert f"?lng={expected}" in rendered
+    assert f"?lng={site_language}" in rendered
     assert json.dumps(catalog_label, ensure_ascii=False) in rendered
     assert "__HOST_UI_LANGUAGE__" not in rendered
     assert "__EMBED_URL__" not in rendered
@@ -457,6 +457,24 @@ def test_every_orca_locale_is_preserved_and_missing_catalogs_fall_back_per_key(
 ):
     for locale in plugin_module.ORCA_UI_LOCALES:
         assert plugin_module.normalize_ui_language(locale) == locale
+        monkeypatch.setattr(
+            plugin_module.orca.host,
+            "app_language",
+            lambda current=locale: current,
+            raising=False,
+        )
+        rendered = plugin_module.render_page()
+        site_language = (
+            "ru" if locale == "ru"
+            else "zh" if locale in {"zh_CN", "zh_TW"}
+            else "en"
+        )
+        assert f"var hostLanguage = '{locale}';" in rendered
+        assert f"?lng={site_language}" in rendered
+        assert json.dumps(
+            plugin_module.resolved_ui_catalog(locale)["catalog"],
+            ensure_ascii=False,
+        ) in rendered
 
     (tmp_path / "en.json").write_text(
         json.dumps({"shared": "English", "englishOnly": "Fallback"}),
@@ -479,6 +497,28 @@ def test_every_orca_locale_is_preserved_and_missing_catalogs_fall_back_per_key(
     }
 
 
+@pytest.mark.parametrize(
+    ("host_language", "site_language"),
+    [
+        ("ru", "ru"),
+        ("ru_RU", "ru"),
+        ("zh", "zh"),
+        ("zh_CN", "zh"),
+        ("zh-TW", "zh"),
+        ("en", "en"),
+        ("de", "en"),
+        ("ja_JP", "en"),
+        ("unsupported", "en"),
+    ],
+)
+def test_embedded_site_is_limited_to_supported_languages(
+    plugin_module, host_language, site_language
+):
+    assert plugin_module.localized_embed_url(host_language).endswith(
+        f"?lng={site_language}"
+    )
+
+
 def test_invalid_optional_catalog_cannot_break_plugin_startup(plugin_module, tmp_path):
     (tmp_path / "en.json").write_text('{"ready":"Ready"}', encoding="utf-8")
     (tmp_path / "ru.json").write_text("not-json", encoding="utf-8")
@@ -490,6 +530,9 @@ def test_invalid_optional_catalog_cannot_break_plugin_startup(plugin_module, tmp
 def test_bundled_locale_catalogs_are_valid():
     validator = _load_module(LOCALE_VALIDATOR_PATH, "filamenthub_locale_validator_test")
     assert validator.validate_catalogs() == []
+    assert {
+        path.stem for path in (PLUGIN_ROOT / "filamenthub_locales").glob("*.json")
+    } == validator.ORCA_UI_LOCALES
 
 
 def test_safe_filename_handles_windows_names_and_bounds(plugin_module):
@@ -2393,10 +2436,11 @@ def test_build_packages_locale_catalogs_and_checksums(plugin_module, tmp_path):
     assert metadata["version"] == plugin_module.PLUGIN_VERSION
     assert metadata["network"] == ["filamenthub.ru", "*.filamenthub.ru"]
     assert metadata["sha256"] == digest
-    assert metadata["locales"] == ["en", "ru", "zh_CN", "zh_TW"]
+    expected_locales = sorted(plugin_module.ORCA_UI_LOCALES)
+    assert metadata["locales"] == expected_locales
     locale_dir = package_dir / "filamenthub_locales"
     assert {path.name for path in locale_dir.glob("*.json")} == {
-        "en.json", "ru.json", "zh_CN.json", "zh_TW.json"
+        f"{locale}.json" for locale in expected_locales
     }
     checksums = (package_dir / "SHA256SUMS").read_text(encoding="utf-8")
     assert f"{digest}  filamenthub_plugin.py\n" in checksums
@@ -2422,8 +2466,9 @@ def test_build_packages_locale_catalogs_and_checksums(plugin_module, tmp_path):
     standalone = tmp_path / "standalone_filamenthub_plugin.py"
     standalone.write_bytes(package.read_bytes())
     standalone_module = _load_module(standalone, "filamenthub_standalone_smoke")
-    assert set(standalone_module.UI_COPY) == {"en", "ru", "zh_CN", "zh_TW"}
+    assert set(standalone_module.UI_COPY) == set(expected_locales)
     assert standalone_module.UI_COPY["ru"]["catalog"] == "Каталог"
+    assert standalone_module.UI_COPY["de"]["catalog"] == "Katalog"
 
 
 def test_dev_build_is_single_file_with_localhost_and_embedded_locales(plugin_module, tmp_path):

@@ -294,8 +294,15 @@ def localized_embed_url(language=None):
     language = host_ui_language() if language is None else language
     if not language:
         return EMBED_URL
+    locale = normalize_ui_language(language)
+    if locale == "ru":
+        site_language = "ru"
+    elif locale in {"zh_CN", "zh_TW"}:
+        site_language = "zh"
+    else:
+        site_language = "en"
     separator = "&" if "?" in EMBED_URL else "?"
-    return EMBED_URL + separator + urllib.parse.urlencode({"lng": language})
+    return EMBED_URL + separator + urllib.parse.urlencode({"lng": site_language})
 
 
 def open_in_system_browser(url):
