@@ -28,6 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
 
 from app.core.config import settings
+from app.core.security import device_api_key_lookup_candidates
 from app.db.session import AsyncSessionLocal, get_db
 from app.models.brand import Brand
 from app.models.filament import Filament
@@ -313,10 +314,14 @@ async def _resolve_user_and_device(
     """Resolve user and device by per-device API key."""
     if not api_key:
         return None, None
+    lookup_candidates = device_api_key_lookup_candidates(api_key)
     row = await db.execute(
         select(UserPrinterDevice, User)
         .join(User, UserPrinterDevice.user_id == User.id)
-        .where(UserPrinterDevice.api_key == api_key, User.active.is_(True))
+        .where(
+            UserPrinterDevice.api_key.in_(lookup_candidates),
+            User.active.is_(True),
+        )
     )
     result = row.first()
     if result is None:

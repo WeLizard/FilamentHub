@@ -15,6 +15,7 @@ from app.api.v1.endpoints.spool_compat import (
     _to_spool_payload,
 )
 from app.core.config import settings
+from app.core.security import device_api_key_verifier
 from app.models.brand import Brand
 from app.models.filament import Filament
 from app.models.material_slot_assignment import MaterialSlotAssignment
@@ -217,6 +218,34 @@ async def test_spool_compat_v1_requires_api_key(client: AsyncClient):
     response = await client.get("/api/v1/spool_compat/invalid/v1/spool")
     assert response.status_code == 401
     assert "message" in response.json()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "mount",
+    [
+        "/api/v1/spool_compat",
+        "/spool_compat",
+    ],
+)
+async def test_spool_compat_accepts_tagged_device_key_without_exposing_a_bearer_verifier(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    mount: str,
+) -> None:
+    """A DB-only verifier keeps installed URLs working but is not a usable key."""
+    _user, _spool, device = await _seed_spool_context(db_session)
+    raw_key = device.api_key
+    assert raw_key is not None
+    stored_verifier = device_api_key_verifier(raw_key)
+    device.api_key = stored_verifier
+    await db_session.commit()
+
+    accepted = await client.get(f"{mount}/{raw_key}/v1/spool")
+    refused = await client.get(f"{mount}/{stored_verifier}/v1/spool")
+
+    assert accepted.status_code == 200
+    assert refused.status_code == 401
 
 
 @pytest.mark.asyncio

@@ -1,5 +1,6 @@
 """Security utilities (JWT, password hashing)."""
 
+import base64
 import calendar
 import hashlib
 import logging
@@ -30,6 +31,8 @@ _argon2 = argon2.PasswordHasher(
 )
 
 _ARGON2_PREFIX = "$argon2"
+
+DEVICE_API_KEY_VERIFIER_PREFIX = "fhk1:"
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -82,6 +85,25 @@ def password_hash_is_outdated(hashed_password: str) -> bool:
 def token_fingerprint(token: str) -> str:
     """Create deterministic token fingerprint for server-side revocation list."""
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def device_api_key_verifier(api_key: str) -> str:
+    """Return the indexed verifier stored for a high-entropy device API key."""
+    digest = hashlib.sha256(api_key.encode("utf-8")).digest()
+    encoded = base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
+    return f"{DEVICE_API_KEY_VERIFIER_PREFIX}{encoded}"
+
+
+def device_api_key_lookup_candidates(api_key: str) -> tuple[str, ...]:
+    """Build safe lookup values during the plaintext-to-verifier rollout.
+
+    A stored verifier is never accepted as a bearer credential. Generated raw
+    keys cannot contain ``:``, so the version prefix is reserved for storage.
+    """
+    verifier = device_api_key_verifier(api_key)
+    if api_key.startswith(DEVICE_API_KEY_VERIFIER_PREFIX):
+        return (verifier,)
+    return verifier, api_key
 
 
 def create_access_token(data: dict[str, Any], expires_delta: timedelta | None = None) -> str:
