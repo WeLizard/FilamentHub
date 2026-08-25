@@ -32,13 +32,11 @@ CACHEABLE_ROUTES = frozenset(
         "/api/v1/filaments/material-types",
         "/api/v1/filaments/{filament_id}",
         "/api/v1/filaments/{filament_id}/presets",
-        "/api/v1/filaments/{filament_id}/compatible-printers",
         "/api/v1/filament-lines",
         "/api/v1/brands/",
         "/api/v1/brands/{identifier}",
         "/api/v1/printers/",
         "/api/v1/printers/{printer_id}",
-        "/api/v1/printers/{printer_id}/compatible-filaments",
     }
 )
 

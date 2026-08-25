@@ -455,25 +455,6 @@ export interface Printer {
   updated_at: string;
 }
 
-export interface CompatiblePrinter {
-  id: number;
-  slug: string;
-  name: string;
-  manufacturer: string | null;
-  relation_source: string; // 'via_preset', 'via_print_profile', etc.
-  confidence_score: number; // 0.0-1.0
-}
-
-export interface CompatibleFilament {
-  id: number;
-  slug: string;
-  name: string;
-  material_type: string;
-  brand_name: string | null;
-  relation_source: string; // 'via_preset', 'via_print_profile', etc.
-  confidence_score: number; // 0.0-1.0
-}
-
 export interface PrinterProfile {
   id: number;
   printer_id: number | null;

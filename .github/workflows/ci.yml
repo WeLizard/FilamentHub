@@ -89,6 +89,9 @@ jobs:
       - name: Check Alembic revision graph
         run: python ../scripts/tests/test_migration_graph.py
 
+      - name: Check PostgreSQL 15 runtime contract
+        run: python ../scripts/check_postgres_runtime.py
+
       - name: Run tests (pytest, in-memory SQLite)
         run: pytest --no-cov-on-fail
         env:

@@ -158,6 +158,13 @@ pytest --cov=app --cov-report=html
 pytest tests/test_brands.py
 ```
 
+Проверка полной цепочки Alembic и ключевых API на одноразовой PostgreSQL 15
+(не использует и не меняет локальную dev-БД):
+
+```bash
+uv run --isolated --python 3.11 --frozen python ../scripts/check_postgres_runtime.py
+```
+
 ### Линтинг и форматирование
 
 ```bash
@@ -246,4 +253,3 @@ pip install -e .
 ---
 
 **Статус:** 🟢 База проекта готова, начинаем разработку!
-
