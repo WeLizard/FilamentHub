@@ -12,6 +12,7 @@ from app.services import (
     field_key_guard,
     inbound_mail_service,
     provisional_account_service,
+    refresh_session_service,
     subscription_service,
 )
 
@@ -33,7 +34,7 @@ async def test_lifespan_warms_state_and_stops_background_tasks(monkeypatch) -> N
 
     async def run_until_cancelled(name: str) -> None:
         started.add(name)
-        if len(started) == 3:
+        if len(started) == 4:
             all_started.set()
         try:
             await asyncio.Future()
@@ -47,6 +48,10 @@ async def test_lifespan_warms_state_and_stops_background_tasks(monkeypatch) -> N
     async def fake_mail_poller(session_factory) -> None:
         assert session_factory is fake_session_factory
         await run_until_cancelled("mail")
+
+    async def fake_auth_sweeper(session_factory) -> None:
+        assert session_factory is fake_session_factory
+        await run_until_cancelled("auth")
 
     async def fake_pdf_warmup() -> None:
         await run_until_cancelled("pdf")
@@ -68,6 +73,7 @@ async def test_lifespan_warms_state_and_stops_background_tasks(monkeypatch) -> N
         fake_sweeper,
     )
     monkeypatch.setattr(inbound_mail_service, "run_inbound_mail_poller", fake_mail_poller)
+    monkeypatch.setattr(refresh_session_service, "run_auth_state_sweeper", fake_auth_sweeper)
     monkeypatch.setattr(main, "_warm_pdf_renderer", fake_pdf_warmup)
     # Checked against a real database at startup; this test drives the lifespan with a
     # stand-in session and is about which tasks start and stop.
@@ -85,13 +91,14 @@ async def test_lifespan_warms_state_and_stops_background_tasks(monkeypatch) -> N
             ("settings", database_session),
             ("provisional-accounts", database_session),
         ]
-        assert started == {"sweeper", "mail", "pdf"}
+        assert started == {"sweeper", "auth", "mail", "pdf"}
 
-    assert stopped == {"sweeper", "mail", "pdf"}
+    assert stopped == {"sweeper", "auth", "mail", "pdf"}
     assert all(
         getattr(test_app.state, task_name).done()
         for task_name in (
             "provisional_account_sweeper_task",
+            "auth_state_sweeper_task",
             "inbound_mail_task",
             "pdf_warmup_task",
         )
@@ -117,7 +124,7 @@ async def test_an_unreachable_database_does_not_block_startup(monkeypatch) -> No
 
     async def run_until_cancelled(name: str) -> None:
         started.add(name)
-        if len(started) == 3:
+        if len(started) == 4:
             all_started.set()
         await asyncio.Future()
 
@@ -143,6 +150,11 @@ async def test_an_unreachable_database_does_not_block_startup(monkeypatch) -> No
         inbound_mail_service,
         "run_inbound_mail_poller",
         lambda factory: run_until_cancelled("mail"),
+    )
+    monkeypatch.setattr(
+        refresh_session_service,
+        "run_auth_state_sweeper",
+        lambda factory: run_until_cancelled("auth"),
     )
     monkeypatch.setattr(main, "_warm_pdf_renderer", lambda: run_until_cancelled("pdf"))
 

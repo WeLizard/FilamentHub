@@ -15,6 +15,9 @@ const authMocks = vi.hoisted(() => ({
   setToken: vi.fn((token: string) => {
     localStorage.setItem('access_token', token);
   }),
+  setRefreshToken: vi.fn((token: string) => {
+    localStorage.setItem('refresh_token', token);
+  }),
   shouldPersistTokensLocally: vi.fn(() => true),
 }));
 
@@ -134,7 +137,7 @@ describe('api/client interceptors', () => {
     await loadClientModule();
 
     axiosState.post.mockResolvedValueOnce({
-      data: { access_token: 'new-token' },
+      data: { access_token: 'new-token', refresh_token: 'rotated-refresh-token' },
     });
     axiosState.apiInstance.mockResolvedValueOnce({ data: { retried: true } });
 
@@ -151,9 +154,108 @@ describe('api/client interceptors', () => {
     });
 
     expect(localStorage.getItem('access_token')).toBe('new-token');
+    expect(localStorage.getItem('refresh_token')).toBe('rotated-refresh-token');
+    expect(authMocks.setRefreshToken).toHaveBeenCalledWith('rotated-refresh-token');
     expect(originalRequest.headers.Authorization).toBe('Bearer new-token');
     expect(axiosState.apiInstance).toHaveBeenCalledWith(originalRequest);
     expect(result).toEqual({ data: { retried: true } });
+  });
+
+  it('shares one refresh request between proactive and interceptor callers', async () => {
+    authMocks.getRefreshToken.mockReturnValue('refresh-token');
+    const { refreshAuthSession } = await loadClientModule();
+    let resolveRefresh!: (value: unknown) => void;
+    axiosState.post.mockReturnValueOnce(new Promise((resolve) => {
+      resolveRefresh = resolve;
+    }));
+
+    const first = refreshAuthSession('refresh-token');
+    const second = refreshAuthSession('refresh-token');
+    await vi.waitFor(() => expect(axiosState.post).toHaveBeenCalledTimes(1));
+
+    resolveRefresh({
+      data: {
+        access_token: 'shared-access',
+        refresh_token: 'shared-refresh',
+        token_type: 'bearer',
+      },
+    });
+    await expect(Promise.all([first, second])).resolves.toEqual([
+      expect.objectContaining({ access_token: 'shared-access' }),
+      expect.objectContaining({ access_token: 'shared-access' }),
+    ]);
+  });
+
+  it('does not overwrite a newer refresh generation with a delayed response', async () => {
+    authMocks.getRefreshToken
+      .mockReturnValueOnce('old-refresh')
+      .mockReturnValue('newer-refresh');
+    const { refreshAuthSession } = await loadClientModule();
+    axiosState.post.mockResolvedValueOnce({
+      data: {
+        access_token: 'stale-access',
+        refresh_token: 'old-successor',
+        token_type: 'bearer',
+      },
+    });
+
+    await expect(refreshAuthSession('old-refresh')).rejects.toMatchObject({
+      name: 'StaleRefreshResponseError',
+    });
+
+    expect(authMocks.setRefreshToken).not.toHaveBeenCalled();
+    expect(authMocks.setToken).not.toHaveBeenCalled();
+  });
+
+  it('does not retry a protected request with a stale refresh response', async () => {
+    authMocks.getRefreshToken
+      .mockReturnValueOnce('old-refresh')
+      .mockReturnValueOnce('old-refresh')
+      .mockReturnValue('newer-refresh');
+    await loadClientModule();
+    axiosState.post.mockResolvedValueOnce({
+      data: {
+        access_token: 'stale-access',
+        refresh_token: 'old-successor',
+        token_type: 'bearer',
+      },
+    });
+
+    await expect(axiosState.responseRejected!({
+      response: { status: 401 },
+      config: { url: '/protected', method: 'get', headers: {} },
+    })).rejects.toMatchObject({ name: 'StaleRefreshResponseError' });
+
+    expect(axiosState.apiInstance).not.toHaveBeenCalled();
+    expect(authMocks.removeToken).not.toHaveBeenCalled();
+  });
+
+  it('keeps logout and refresh in one local session-operation queue', async () => {
+    authMocks.getRefreshToken.mockReturnValue('refresh-token');
+    authMocks.getToken.mockReturnValue('access-token');
+    const { authAPI, refreshAuthSession } = await loadClientModule();
+    let resolveRefresh!: (value: unknown) => void;
+    axiosState.post.mockReturnValueOnce(new Promise((resolve) => {
+      resolveRefresh = resolve;
+    }));
+
+    const refresh = refreshAuthSession('refresh-token');
+    const logout = authAPI.logout('refresh-token');
+    await vi.waitFor(() => expect(axiosState.post).toHaveBeenCalledTimes(1));
+
+    resolveRefresh({
+      data: {
+        access_token: 'new-access',
+        refresh_token: 'new-refresh',
+        token_type: 'bearer',
+      },
+    });
+    await refresh;
+    await logout;
+
+    expect(axiosState.post).toHaveBeenCalledTimes(2);
+    expect(axiosState.post.mock.calls[1][0]).toBe('/api/v1/auth/logout');
+    expect(authMocks.removeToken).toHaveBeenCalled();
   });
 
   it('calls logout logic when refresh fails', async () => {

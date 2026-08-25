@@ -26,6 +26,10 @@ ALLOWED_IDENTITY_COLUMNS = {
     # blind indexes over opt-in encrypted endpoints, never raw network data.
     ("orca_printer_connection_observations", "endpoint_fingerprint"),
     ("printer_connection_bindings", "endpoint_fingerprint"),
+    # SHA-256 bearer-token digests used by refresh-session rotation. These do
+    # not identify hardware or reveal the token they were derived from.
+    ("refresh_sessions", "current_token_fingerprint"),
+    ("refresh_sessions", "previous_token_fingerprint"),
 }
 
 SUSPICIOUS = re.compile(

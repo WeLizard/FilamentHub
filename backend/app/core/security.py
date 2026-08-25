@@ -121,13 +121,29 @@ def create_access_token(data: dict[str, Any], expires_delta: timedelta | None = 
     return encoded_jwt
 
 
-def create_refresh_token(data: dict[str, Any]) -> str:
-    """Create a JWT refresh token."""
+def create_refresh_token(
+    data: dict[str, Any],
+    *,
+    expires_at: datetime | None = None,
+    session_id: str | None = None,
+    token_id: str | None = None,
+) -> str:
+    """Create a unique refresh token, optionally within an existing family."""
     to_encode = data.copy()
-    expire = datetime.now(timezone.utc) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
+    expire = expires_at or (
+        datetime.now(timezone.utc) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
+    )
 
     expire_timestamp = calendar.timegm(expire.utctimetuple())
-    to_encode.update({"exp": expire_timestamp, "type": "refresh"})
+    to_encode.update(
+        {
+            "exp": expire_timestamp,
+            "jti": token_id or secrets.token_urlsafe(24),
+            "type": "refresh",
+        }
+    )
+    if session_id is not None:
+        to_encode["sid"] = session_id
     encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
@@ -187,10 +203,19 @@ def decode_access_token(token: str) -> dict[str, Any] | None:
         return None
 
 
-def decode_refresh_token(token: str) -> dict[str, Any] | None:
+def decode_refresh_token(
+    token: str,
+    *,
+    verify_expiry: bool = True,
+) -> dict[str, Any] | None:
     """Decode a JWT refresh token."""
     try:
-        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[ALGORITHM])
+        payload = jwt.decode(
+            token,
+            settings.SECRET_KEY,
+            algorithms=[ALGORITHM],
+            options={"verify_exp": verify_expiry},
+        )
         if payload.get("type") != "refresh":
             logger.warning("JWT refresh token type mismatch: expected 'refresh', got '%s'", payload.get("type"))
             return None

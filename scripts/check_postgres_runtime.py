@@ -13,7 +13,6 @@ import time
 import uuid
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 BACKEND = ROOT / "backend"
 POSTGRES_IMAGE = "postgres:15-alpine"
@@ -128,6 +127,8 @@ async def _verify_application_contract(expected_head: str) -> None:
     from app.models.brand import Brand
     from app.models.filament import Filament
     from app.models.printer import Printer
+    from app.models.user import User, UserRole
+    from app.services.refresh_session_service import issue_refresh_session
 
     try:
         async with engine.begin() as connection:
@@ -185,6 +186,26 @@ async def _verify_application_contract(expected_head: str) -> None:
             filament_id = filament.id
             printer_id = printer.id
 
+            auth_user = User(
+                email="postgres-refresh-contract@example.com",
+                username="postgres_refresh_contract",
+                password_hash=None,
+                role=UserRole.USER,
+                active=True,
+            )
+            session.add(auth_user)
+            await session.flush()
+            refresh_token = await issue_refresh_session(
+                session,
+                user_id=auth_user.id,
+                token_data={
+                    "sub": auth_user.email,
+                    "user_id": auth_user.id,
+                    "role": auth_user.role.value,
+                },
+            )
+            await session.commit()
+
         transport = ASGITransport(app=app)
         async with AsyncClient(
             transport=transport, base_url="http://contract"
@@ -199,6 +220,16 @@ async def _verify_application_contract(expected_head: str) -> None:
             )
             removed_printer_route = await client.get(
                 f"/api/v1/printers/{printer_id}/compatible-filaments"
+            )
+            concurrent_refreshes = await asyncio.gather(
+                client.post(
+                    "/api/v1/auth/refresh",
+                    json={"refresh_token": refresh_token},
+                ),
+                client.post(
+                    "/api/v1/auth/refresh",
+                    json={"refresh_token": refresh_token},
+                ),
             )
 
         expected_statuses = {
@@ -221,6 +252,21 @@ async def _verify_application_contract(expected_head: str) -> None:
         ]
         if failures:
             raise RuntimeError("PostgreSQL API smoke failed: " + "; ".join(failures))
+        if [response.status_code for response in concurrent_refreshes] != [200, 200]:
+            raise RuntimeError(
+                "Concurrent refresh rotation failed: "
+                + ", ".join(
+                    f"{response.status_code} {response.text}"
+                    for response in concurrent_refreshes
+                )
+            )
+        successors = {
+            response.json().get("refresh_token") for response in concurrent_refreshes
+        }
+        if len(successors) != 1 or None in successors:
+            raise RuntimeError(
+                "Concurrent refresh rotation did not return one idempotent successor"
+            )
     finally:
         await engine.dispose()
 

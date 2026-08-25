@@ -13,7 +13,8 @@ class RevokedToken(Base):
     """
     Отозванные JWT токены (blacklist).
 
-    При logout access и refresh токены добавляются сюда.
+    Legacy refresh tokens and access tokens are added here on logout. Rotating
+    refresh-token families use ``RefreshSession`` instead.
     При каждом запросе проверяется: если jti найден — токен отклоняется (401).
     Записи с истёкшим expires_at можно периодически удалять.
     """

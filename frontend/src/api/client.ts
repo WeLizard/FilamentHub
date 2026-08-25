@@ -5,7 +5,7 @@ import type { InternalAxiosRequestConfig } from 'axios';
 import type { BrandAnalytics } from '../types/api';
 import type { AdminAchievementOverview } from '../types/api';
 import type { AccessibleBrand, AdminUserListResponse, AuthMethods, Brand, BrandUsage, BrandCountryCell, BrandRepresentative, BrandRepresentativeInvite, BrandRequest, BrandRequestStatus, BrandTeamInvite, BrandTeamRole, BrandTeamWorkspace, Filament, FilamentAdditive, FilamentPropertyClaim, FilamentLine, FilamentImportPreviewResult, FilamentImportResult, FilamentListResponse, FilamentPalettePayload, BrandInvitePublic, BrandInviteAdmin, BrandInviteAcceptResult, BrandInviteBatchPreview, BrandInviteBatchSendResult, FilamentAvailability, CountryAvailability, FilamentCountryCell, FilamentVisualSettings, FilamentReview, FilamentRatingStats, Notification, NotificationListResponse, Preset, RecommendedPreset, RecommendedForPrinterResponse, Printer, PrinterProfile, PrintProfile, PrinterRequest, User, Token, RefreshTokenRequest, RefreshTokenResponse, ListResponse, AccountDeletionStats, UserSavedPreset, CalculatorEstimateRequest, CalculatorEstimateResponse, CalculatorProfileResponse, CalculatorProfileUpdate, Feedback, FeedbackDetail, FeedbackListResponse, FeedbackType, PluginDownloadsResponse, WikiCategory, WikiCategoryListResponse, WikiArticle, WikiArticleListResponse, WikiArticleTranslation, WikiFeedbackStats, WikiFeedbackCreate, WikiFeedback, WikiGuideProgressResponse, WikiLanguage, WikiMediaAsset, WikiReviewVerdict, WikiRevision, WikiRevisionListResponse, WikiPublicRevisionListResponse, WikiRevisionStatus, WikiSpace, WikiSpaceKey, EmailThreadDetail, EmailThreadListResponse, EmailThreadStatus, EmailMessage, EmailSenderProfile, EmailLanguage, NotificationCampaignAudience, NotificationCampaignHistoryResponse, NotificationCampaignPreview, NotificationCampaignSendResult, LegalAcceptancePayload, LegalDocument, LegalDocumentType, LegalPack, LegalRequirements, RegistrationPayload, SpoolUsageEvent, OrcaSliceReport, OrcaPresetScope, OrcaSchemaObservation, OrcaSchemaObservationListResponse, OrcaSchemaObservationStatus, UnreadCommunicationsCount } from '../types/api';
-import { getCsrfToken, getRefreshToken, getToken, isCookieAuthMode, isJwtAuthMode, isOrcaEmbedded, removeToken, setToken, shouldPersistTokensLocally } from '../utils/auth';
+import { getCsrfToken, getRefreshToken, getToken, isCookieAuthMode, isJwtAuthMode, isOrcaEmbedded, removeToken, setRefreshToken, setToken, shouldPersistTokensLocally } from '../utils/auth';
 import { isPluginEmbed, reportPluginSessionToPlugin } from '../utils/pluginBridge';
 import { downloadBlob } from '../utils/download';
 import { currentRequestLanguage } from '../utils/requestLanguage';
@@ -81,6 +81,110 @@ const processQueue = (error: unknown, token: string | null = null) => {
   failedQueue = [];
 };
 
+const AUTH_REFRESH_LOCK_NAME = 'filamenthub-auth-refresh';
+let refreshRequestPromise: Promise<RefreshTokenResponse> | null = null;
+let localAuthOperationTail: Promise<void> = Promise.resolve();
+
+export class StaleRefreshResponseError extends Error {
+  constructor() {
+    super('Refresh response belongs to a replaced local session');
+    this.name = 'StaleRefreshResponseError';
+  }
+}
+
+async function withCrossTabRefreshLock<T>(operation: () => Promise<T>): Promise<T> {
+  if (typeof navigator === 'undefined' || !navigator.locks?.request) {
+    return operation();
+  }
+  return navigator.locks.request(AUTH_REFRESH_LOCK_NAME, operation);
+}
+
+function withAuthSessionLock<T>(operation: () => Promise<T>): Promise<T> {
+  const result = localAuthOperationTail.then(
+    () => withCrossTabRefreshLock(operation),
+    () => withCrossTabRefreshLock(operation),
+  );
+  localAuthOperationTail = result.then(
+    () => undefined,
+    () => undefined,
+  );
+  return result;
+}
+
+async function performSessionRefresh(
+  requestedRefreshToken?: string | null,
+): Promise<RefreshTokenResponse> {
+  const cookieSessionAvailable = canUseCookieSession();
+  const persistedRefreshToken = getRefreshToken();
+  // Re-read storage only after acquiring the cross-tab lock.  Another tab may
+  // have rotated the family while this caller was waiting.
+  const refreshToken = persistedRefreshToken || requestedRefreshToken || null;
+  if (!refreshToken && !cookieSessionAvailable) {
+    throw new Error('No refresh token available');
+  }
+
+  const refreshPayload = refreshToken
+    ? ({ refresh_token: refreshToken } as RefreshTokenRequest)
+    : undefined;
+  const response = await axios.post<RefreshTokenResponse>(
+    `${API_BASE_URL}/auth/refresh`,
+    refreshPayload,
+    {
+      baseURL: '',
+      withCredentials: cookieSessionAvailable,
+      headers: cookieSessionAvailable
+        ? (() => {
+            const csrfToken = getCsrfToken();
+            return csrfToken ? { [CSRF_HEADER_NAME]: csrfToken } : {};
+          })()
+        : undefined,
+    },
+  );
+
+  const { access_token, refresh_token: rotatedRefreshToken } = response.data;
+  if (!access_token) {
+    throw new Error('No access token received from refresh endpoint');
+  }
+
+  if (JWT_AUTH_MODE && shouldPersistTokensLocally()) {
+    const currentRefreshToken = getRefreshToken();
+    const responseStillCurrent =
+      currentRefreshToken === refreshToken ||
+      (Boolean(rotatedRefreshToken) && currentRefreshToken === rotatedRefreshToken);
+
+    // Compare-and-swap prevents a delayed response from overwriting a newer
+    // generation written by another tab.  It also avoids restoring tokens
+    // after logout removed the local session while this request was in flight.
+    if (!responseStillCurrent) {
+      throw new StaleRefreshResponseError();
+    }
+    if (rotatedRefreshToken && currentRefreshToken !== rotatedRefreshToken) {
+      setRefreshToken(rotatedRefreshToken);
+    }
+    setToken(access_token);
+  }
+
+  return response.data;
+}
+
+/** One refresh request per page and, where supported, one at a time per browser profile. */
+export async function refreshAuthSession(
+  requestedRefreshToken?: string | null,
+): Promise<RefreshTokenResponse> {
+  if (refreshRequestPromise) {
+    return refreshRequestPromise;
+  }
+
+  refreshRequestPromise = withAuthSessionLock(() =>
+    performSessionRefresh(requestedRefreshToken),
+  );
+  try {
+    return await refreshRequestPromise;
+  } finally {
+    refreshRequestPromise = null;
+  }
+}
+
 // Обработка ошибок ответа
 api.interceptors.response.use(
   (response) => response,
@@ -119,6 +223,7 @@ api.interceptors.response.use(
     const isAuthEndpoint = originalRequest?.url?.includes('/auth/login') ||
                             originalRequest?.url?.includes('/auth/register') ||
                             originalRequest?.url?.includes('/auth/refresh') ||
+                            originalRequest?.url?.includes('/auth/logout') ||
                             originalRequest?.url?.includes('/auth/oauth/');
     
     // Для /auth/me: если токена нет, это нормально (пользователь не авторизован)
@@ -164,34 +269,13 @@ api.interceptors.response.use(
       }
 
       try {
-        // Пытаемся обновить токен
-        const refreshPayload = refreshToken
-          ? ({ refresh_token: refreshToken } as RefreshTokenRequest)
-          : undefined;
-
-        const response = await axios.post<RefreshTokenResponse>(
-          `${API_BASE_URL}/auth/refresh`,
-          refreshPayload,
-          {
-            baseURL: '', // Используем полный URL
-            withCredentials: cookieSessionAvailable,
-            headers: cookieSessionAvailable
-              ? (() => {
-                  const csrfToken = getCsrfToken();
-                  return csrfToken ? { [CSRF_HEADER_NAME]: csrfToken } : {};
-                })()
-              : undefined,
-          }
-        );
-        
-        const { access_token } = response.data;
+        const { access_token } = await refreshAuthSession(refreshToken);
         
         if (!access_token) {
           throw new Error('No access token received from refresh endpoint');
         }
 
         if (JWT_AUTH_MODE && shouldPersistTokensLocally()) {
-          setToken(access_token);
           // Обновляем заголовок оригинального запроса
           originalRequest.headers.Authorization = `Bearer ${access_token}`;
           if (isPluginEmbed()) {
@@ -220,7 +304,29 @@ api.interceptors.response.use(
         // Повторяем оригинальный запрос
         return api(originalRequest);
       } catch (refreshError: unknown) {
-        // Refresh token невалидный, удаляем токены
+        if (refreshError instanceof StaleRefreshResponseError) {
+          processQueue(refreshError, null);
+          isRefreshing = false;
+          return Promise.reject(refreshError);
+        }
+        const currentRefreshToken = getRefreshToken();
+        const newerLocalSession = Boolean(
+          JWT_AUTH_MODE &&
+          shouldPersistTokensLocally() &&
+          refreshToken &&
+          currentRefreshToken &&
+          currentRefreshToken !== refreshToken,
+        );
+        if (newerLocalSession && getToken()) {
+          const currentAccessToken = getToken();
+          originalRequest.headers.Authorization = `Bearer ${currentAccessToken}`;
+          processQueue(null, currentAccessToken);
+          isRefreshing = false;
+          return api(originalRequest);
+        }
+
+        // Refresh token невалидный, удаляем только ту локальную сессию,
+        // которая действительно делала этот запрос.
         removeToken();
         // Уведомляем C++ о logout (refresh failed)
         notifyCppLogout();
@@ -259,15 +365,37 @@ export const authAPI = {
   },
 
   refresh: async (refreshToken?: string | null) => {
-    const payload = refreshToken
-      ? ({ refresh_token: refreshToken } as RefreshTokenRequest)
-      : undefined;
-    const response = await api.post<RefreshTokenResponse>('/auth/refresh', payload);
-    return response.data;
+    return refreshAuthSession(refreshToken);
   },
 
   logout: async (refreshToken?: string | null) => {
-    await api.post('/auth/logout', refreshToken ? { refresh_token: refreshToken } : undefined);
+    await withAuthSessionLock(async () => {
+      const cookieSessionAvailable = canUseCookieSession();
+      const currentRefreshToken = getRefreshToken() || refreshToken || null;
+      const accessToken = getToken();
+      const headers: Record<string, string> = {};
+      if (accessToken && JWT_AUTH_MODE) {
+        headers.Authorization = `Bearer ${accessToken}`;
+      } else if (cookieSessionAvailable) {
+        const csrfToken = getCsrfToken();
+        if (csrfToken) headers[CSRF_HEADER_NAME] = csrfToken;
+      }
+      try {
+        await axios.post(
+          `${API_BASE_URL}/auth/logout`,
+          currentRefreshToken ? { refresh_token: currentRefreshToken } : undefined,
+          {
+            baseURL: '',
+            withCredentials: cookieSessionAvailable,
+            headers,
+          },
+        );
+      } finally {
+        // Keep local removal inside the same lock so another tab cannot begin
+        // a refresh between the server response and the logout UI update.
+        removeToken();
+      }
+    });
   },
 
   getAuthMethods: async (): Promise<AuthMethods> => {

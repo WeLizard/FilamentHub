@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 
 import { authAPI } from '../api/client';
-import { getRefreshToken, getToken, isJwtAuthMode, setToken } from '../utils/auth';
+import { getRefreshToken, getToken, isJwtAuthMode } from '../utils/auth';
 
 /** Renew the access token shortly before it expires. */
 const RENEW_BEFORE_EXPIRY_MS = 2 * 60 * 1000;
@@ -57,7 +57,6 @@ export function useTokenRefresh(isAuthenticated: boolean): void {
         try {
           const { access_token } = await authAPI.refresh(getRefreshToken());
           if (cancelled || !access_token) return;
-          setToken(access_token);
           schedule();
         } catch {
           // The interceptor still refreshes on the next 401, which is exactly the

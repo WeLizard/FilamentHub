@@ -120,6 +120,13 @@ async def _start_background_tasks(application: FastAPI) -> None:
         name="provisional-account-sweeper",
     )
 
+    from app.services.refresh_session_service import run_auth_state_sweeper
+
+    application.state.auth_state_sweeper_task = asyncio.create_task(
+        run_auth_state_sweeper(AsyncSessionLocal),
+        name="auth-state-sweeper",
+    )
+
     from app.services.inbound_mail_service import run_inbound_mail_poller
 
     application.state.inbound_mail_task = asyncio.create_task(
@@ -174,6 +181,7 @@ async def _repair_verified_qr_codes(session_factory) -> None:
 async def _stop_background_tasks(application: FastAPI) -> None:
     for name in (
         "provisional_account_sweeper_task",
+        "auth_state_sweeper_task",
         "inbound_mail_task",
         "pdf_warmup_task",
         "qr_repair_task",

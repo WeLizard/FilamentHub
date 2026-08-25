@@ -1021,6 +1021,7 @@ export interface RefreshTokenRequest {
 
 export interface RefreshTokenResponse {
   access_token: string;
+  refresh_token?: string | null;
   token_type: string;
 }
 

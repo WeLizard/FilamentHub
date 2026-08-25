@@ -83,6 +83,7 @@ from app.models.printer_bridge_observation import (
 from app.models.printer_connection_binding import PrinterConnectionBinding
 from app.models.printer_profile import PrinterProfile
 from app.models.printer_request import PrinterRequest, PrinterRequestStatus
+from app.models.refresh_session import RefreshSession
 from app.models.revoked_token import RevokedToken
 from app.models.shared_quote import SharedQuote
 from app.models.subscription import Subscription, SubscriptionStatus
@@ -192,6 +193,7 @@ __all__ = [
     "PresetUsageEventType",
     "PresetVersion",
     "PresetVersionSource",
+    "RefreshSession",
     "RevokedToken",
     "PresetModerationStatus",
     "PresetPrinter",

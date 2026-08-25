@@ -1,6 +1,7 @@
 """Authentication endpoints."""
 
 import logging
+import math
 import secrets
 from datetime import datetime, timezone
 from typing import Annotated, Literal
@@ -36,7 +37,6 @@ from app.core.password_hashing import check_password, hash_password
 from app.core.security import (
     create_access_token,
     create_plugin_token,
-    create_refresh_token,
     decode_access_token,
     decode_email_change_token,
     decode_email_verification_token,
@@ -118,6 +118,12 @@ from app.services.legal_document_service import (
 )
 from app.services.organization_access import can_select_active_workspace, list_accessible_brands
 from app.services.provisional_account_service import sweep_abandoned_provisional_accounts
+from app.services.refresh_session_service import (
+    InvalidRefreshSessionError,
+    issue_refresh_session,
+    revoke_refresh_session,
+    rotate_refresh_session,
+)
 from app.services.request_region_service import (
     AccessRegion,
     get_request_client_ip,
@@ -233,6 +239,18 @@ def _cookie_common_kwargs() -> dict:
 
 def _set_auth_cookies(response: Response, access_token: str, refresh_token: str) -> None:
     common = _cookie_common_kwargs()
+    # The endpoint already validated this server-issued token. Decode its
+    # signed expiry without re-rejecting it if the last second elapsed during
+    # the database rotation; in that case Max-Age=0 is the correct cookie.
+    refresh_expires_at = _extract_expiry(
+        decode_refresh_token(refresh_token, verify_expiry=False)
+    )
+    if refresh_expires_at is None:
+        raise ValueError("Cannot set an invalid refresh-token cookie")
+    refresh_max_age = max(
+        0,
+        math.ceil((refresh_expires_at - datetime.now(timezone.utc)).total_seconds()),
+    )
     response.set_cookie(
         key=settings.AUTH_ACCESS_COOKIE_NAME,
         value=access_token,
@@ -244,14 +262,14 @@ def _set_auth_cookies(response: Response, access_token: str, refresh_token: str)
         key=settings.AUTH_REFRESH_COOKIE_NAME,
         value=refresh_token,
         httponly=True,
-        max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
+        max_age=refresh_max_age,
         **common,
     )
     response.set_cookie(
         key=settings.AUTH_CSRF_COOKIE_NAME,
         value=secrets.token_urlsafe(32),
         httponly=False,
-        max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
+        max_age=refresh_max_age,
         **common,
     )
 
@@ -498,7 +516,11 @@ async def register(
     try:
         token_data = {"sub": user.email, "user_id": user.id, "role": user.role.value}
         access_token = create_access_token(data=token_data)
-        refresh_token = create_refresh_token(data=token_data)
+        refresh_token = await issue_refresh_session(
+            db,
+            user_id=user.id,
+            token_data=token_data,
+        )
 
         if _cookie_auth_enabled():
             _set_auth_cookies(response, access_token, refresh_token)
@@ -653,7 +675,11 @@ async def login(
     # Create tokens
     token_data = {"sub": user.email, "user_id": user.id, "role": user.role.value}
     access_token = create_access_token(data=token_data)
-    refresh_token = create_refresh_token(data=token_data)
+    refresh_token = await issue_refresh_session(
+        db,
+        user_id=user.id,
+        token_data=token_data,
+    )
 
     if _cookie_auth_enabled():
         _set_auth_cookies(response, access_token, refresh_token)
@@ -693,14 +719,8 @@ async def refresh_token(
         if not csrf_cookie or not csrf_header or csrf_cookie != csrf_header:
             raise_error(status.HTTP_403_FORBIDDEN, ERR_ACCESS_DENIED)
 
-    if await is_token_revoked(refresh_token_value, db):
-        raise_error(
-            status.HTTP_401_UNAUTHORIZED,
-            ERR_INVALID_REFRESH_TOKEN,
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    # Декодируем refresh token
+    # Validate the signature before any database lookup.  Arbitrary input must
+    # not be able to grow or probe server-side auth state.
     payload = decode_refresh_token(refresh_token_value)
 
     if payload is None:
@@ -710,17 +730,30 @@ async def refresh_token(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    # Получаем email из payload
-    email: str | None = payload.get("sub")
-    if email is None:
+    if await is_token_revoked(refresh_token_value, db):
         raise_error(
             status.HTTP_401_UNAUTHORIZED,
             ERR_INVALID_REFRESH_TOKEN,
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    # Проверяем существование пользователя
-    result = await db.execute(select(User).where(func.lower(User.email) == normalize_email(email)))
+    # Legacy tokens are identified by email.  Rotating tokens also carry the
+    # stable user id so an email change does not silently destroy the session.
+    email: str | None = payload.get("sub")
+    payload_user_id = payload.get("user_id")
+    if email is None and not isinstance(payload_user_id, int):
+        raise_error(
+            status.HTTP_401_UNAUTHORIZED,
+            ERR_INVALID_REFRESH_TOKEN,
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    if isinstance(payload_user_id, int):
+        result = await db.execute(select(User).where(User.id == payload_user_id))
+    else:
+        result = await db.execute(
+            select(User).where(func.lower(User.email) == normalize_email(email or ""))
+        )
     user = result.scalar_one_or_none()
 
     if user is None:
@@ -731,14 +764,30 @@ async def refresh_token(
     if not user.active:
         raise_error(status.HTTP_403_FORBIDDEN, ERR_ACCOUNT_INACTIVE)
 
-    # Создаём новый access token
+    try:
+        rotated_refresh_token = await rotate_refresh_session(
+            db,
+            refresh_token=refresh_token_value,
+            payload=payload,
+            user_id=user.id,
+        )
+    except InvalidRefreshSessionError:
+        raise_error(
+            status.HTTP_401_UNAUTHORIZED,
+            ERR_INVALID_REFRESH_TOKEN,
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
     token_data = {"sub": user.email, "user_id": user.id, "role": user.role.value}
     access_token = create_access_token(data=token_data)
 
     if _cookie_auth_enabled():
-        _set_auth_cookies(response, access_token, refresh_token_value)
+        _set_auth_cookies(response, access_token, rotated_refresh_token)
 
-    return RefreshTokenResponse(access_token=access_token)
+    return RefreshTokenResponse(
+        access_token=access_token,
+        refresh_token=rotated_refresh_token if not using_cookie_refresh else None,
+    )
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
@@ -766,11 +815,6 @@ async def logout(
         refresh_token = request.cookies.get(settings.AUTH_REFRESH_COOKIE_NAME)
 
     if refresh_token:
-        if await is_token_revoked(refresh_token, db):
-            if _cookie_auth_enabled():
-                _clear_auth_cookies(response)
-            return
-
         refresh_payload = decode_refresh_token(refresh_token)
         if refresh_payload is None:
             raise_error(
@@ -780,14 +824,34 @@ async def logout(
             )
 
         refresh_email: str | None = refresh_payload.get("sub")
-        if refresh_email != current_user.email:
+        refresh_user_id = refresh_payload.get("user_id")
+        identity_matches = (
+            refresh_user_id == current_user.id
+            if isinstance(refresh_user_id, int)
+            else refresh_email == current_user.email
+        )
+        if not identity_matches:
             raise_error(
                 status.HTTP_401_UNAUTHORIZED,
                 ERR_INVALID_REFRESH_TOKEN,
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
-        await _revoke_token_if_valid(refresh_token, refresh_payload, db)
+        try:
+            session_revoked = await revoke_refresh_session(
+                db,
+                refresh_token=refresh_token,
+                payload=refresh_payload,
+                user_id=current_user.id,
+            )
+        except InvalidRefreshSessionError:
+            raise_error(
+                status.HTTP_401_UNAUTHORIZED,
+                ERR_INVALID_REFRESH_TOKEN,
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        if not session_revoked:
+            await _revoke_token_if_valid(refresh_token, refresh_payload, db)
 
     if _cookie_auth_enabled():
         _clear_auth_cookies(response)
@@ -1851,7 +1915,11 @@ async def oauth_callback(
     # Create JWT tokens
     token_data = {"sub": user.email, "user_id": user.id, "role": user.role.value}
     access_token = create_access_token(data=token_data)
-    refresh_token = create_refresh_token(data=token_data)
+    refresh_token = await issue_refresh_session(
+        db,
+        user_id=user.id,
+        token_data=token_data,
+    )
 
     if _cookie_auth_enabled():
         _set_auth_cookies(response, access_token, refresh_token)
