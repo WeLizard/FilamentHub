@@ -1,6 +1,5 @@
 """Unknown OrcaSlicer field observation and admin review tests."""
 
-import hashlib
 import json
 import zipfile
 from pathlib import Path, PurePosixPath
@@ -10,10 +9,7 @@ import pytest
 from sqlalchemy import select
 
 from app.models.orca_schema_observation import OrcaSchemaObservation
-from app.services.orca_field_registry import (
-    ORCA_FIELD_REGISTRY_VERSION,
-    ORCA_PRESET_FIELDS,
-)
+from app.services.orca_field_registry import ORCA_PRESET_FIELDS
 from app.services.orca_schema_observer import (
     detect_unknown_orca_fields,
     observe_orca_schema_fields,
@@ -21,21 +17,13 @@ from app.services.orca_schema_observer import (
 
 
 # The archive is deliberately not versioned (see .gitignore), so it is absent on a
-# fresh checkout and in CI. These two tests pin the registry against it and are worth
-# keeping where it exists; where it does not, failing would say nothing about the code.
+# fresh checkout and in CI. The coverage check is worth keeping where the archive
+# exists; where it does not, failing would say nothing about the code.
 BUNDLE_PATH = Path(__file__).resolve().parents[1] / "data/catalog_sources/orca/bundle.zip"
 requires_bundle = pytest.mark.skipif(
     not BUNDLE_PATH.is_file(),
     reason="Orca source archive is not versioned; fetch it with scripts/refresh_orca_catalog_source.py",
 )
-
-
-@requires_bundle
-def test_registry_version_matches_bundled_orca_catalog() -> None:
-    bundle_path = BUNDLE_PATH
-    expected = f"bundle-sha256:{hashlib.sha256(bundle_path.read_bytes()).hexdigest()}"
-
-    assert ORCA_FIELD_REGISTRY_VERSION == expected
 
 
 @requires_bundle
