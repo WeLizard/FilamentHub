@@ -146,6 +146,13 @@ class HHGateItem(BaseModel):
         return v.lstrip("#").upper() if v else ""
 
 
+class HHBypassObservation(BaseModel):
+    """Provider fact for the optional direct path around Happy Hare gates."""
+
+    selected: bool
+    present: bool | None = None
+
+
 class HHSnapshotRequest(BaseModel):
     """HH snapshot payload from OrcaSlicer."""
 
@@ -154,6 +161,8 @@ class HHSnapshotRequest(BaseModel):
     gate_count: int = Field(..., ge=1, le=256)
     snapshot_ts: datetime
     gates: list[HHGateItem]
+    has_bypass: bool | None = None
+    bypass: HHBypassObservation | None = None
 
     @field_validator("gates")
     @classmethod
@@ -175,6 +184,8 @@ class HHSnapshotRequest(BaseModel):
                 raise ValueError(
                     f"Gate index {gate_item.gate} is out of range for gate_count={self.gate_count}"
                 )
+        if self.has_bypass is False and self.bypass is not None:
+            raise ValueError("bypass observation requires has_bypass=true")
         return self
 
 

@@ -15,11 +15,18 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.material_slot_assignment import MaterialSlotAssignment
 from app.models.material_system import MaterialSlot, MaterialSystem
 from app.models.preset_gate_state import PresetGateState, PresetGateStateSource
+from app.models.printer_bridge_observation import MaterialSlotObservation
 from app.models.user import User
 from app.models.user_printer_device import UserPrinterDevice
-from app.schemas.preset_slot_sync import HHGateItem, HHSnapshotRequest
+from app.schemas.preset_slot_sync import (
+    HHBypassObservation,
+    HHGateItem,
+    HHSnapshotRequest,
+)
+from app.services.material_contract_service import HAPPY_HARE_BYPASS_PROVIDER_INDEX
 from app.services.preset_slot_sync_service import handle_hh_snapshot
 
 FINGERPRINT = "device-hh-snapshot-regression"
@@ -337,3 +344,159 @@ async def test_snapshot_normalizes_legacy_happy_hare_system_to_mmu(
     await db_session.refresh(system)
     assert system.kind == "mmu"
     assert system.declared_slot_count == 8
+
+
+@pytest.mark.asyncio
+async def test_snapshot_creates_one_stable_bypass_route_and_only_updates_observation(
+    db_session: AsyncSession,
+):
+    user, device = await _seed_user_device(db_session)
+    first_ts = datetime.now(timezone.utc)
+    payload = HHSnapshotRequest(
+        physical_printer_id=device.id,
+        gate_count=4,
+        snapshot_ts=first_ts,
+        gates=[],
+        has_bypass=True,
+        bypass=HHBypassObservation(selected=True, present=True),
+    )
+
+    await handle_hh_snapshot(db_session, user, payload)
+    await handle_hh_snapshot(db_session, user, payload)
+
+    system = await db_session.scalar(
+        select(MaterialSystem).where(MaterialSystem.physical_printer_id == device.id)
+    )
+    assert system is not None
+    routes = list(
+        (
+            await db_session.execute(
+                select(MaterialSlot)
+                .where(MaterialSlot.material_system_id == system.id)
+                .order_by(MaterialSlot.provider_index)
+            )
+        ).scalars()
+    )
+    assert [slot.provider_index for slot in routes] == [
+        0,
+        1,
+        2,
+        3,
+        HAPPY_HARE_BYPASS_PROVIDER_INDEX,
+    ]
+    bypass = routes[-1]
+    assert bypass.kind == "bypass"
+    assert bypass.active is True
+    assert bypass.assignment_revision == 0
+    assert await db_session.scalar(
+        select(MaterialSlotAssignment.id).where(
+            MaterialSlotAssignment.material_slot_id == bypass.id
+        )
+    ) is None
+
+    observations = list(
+        (
+            await db_session.execute(
+                select(MaterialSlotObservation).where(
+                    MaterialSlotObservation.material_slot_id == bypass.id
+                )
+            )
+        ).scalars()
+    )
+    assert len(observations) == 1
+    assert observations[0].source == "happy_hare_moonraker"
+    assert observations[0].active_feed is True
+    assert observations[0].present is True
+
+    await handle_hh_snapshot(
+        db_session,
+        user,
+        payload.model_copy(
+            update={
+                "snapshot_ts": first_ts - timedelta(seconds=1),
+                "bypass": HHBypassObservation(selected=False, present=None),
+            }
+        ),
+    )
+    await db_session.refresh(observations[0])
+    assert observations[0].active_feed is True
+    assert observations[0].present is True
+
+    await handle_hh_snapshot(
+        db_session,
+        user,
+        payload.model_copy(
+            update={
+                "snapshot_ts": first_ts + timedelta(seconds=1),
+                "bypass": HHBypassObservation(selected=False, present=None),
+            }
+        ),
+    )
+    await db_session.refresh(bypass)
+    await db_session.refresh(observations[0])
+    assert bypass.assignment_revision == 0
+    assert await db_session.scalar(
+        select(MaterialSlotAssignment.id).where(
+            MaterialSlotAssignment.material_slot_id == bypass.id
+        )
+    ) is None
+    assert observations[0].active_feed is False
+    assert observations[0].present is None
+
+
+@pytest.mark.asyncio
+async def test_snapshot_preserves_bypass_for_legacy_adapter_then_retires_explicit_absence(
+    db_session: AsyncSession,
+):
+    user, device = await _seed_user_device(db_session)
+    first_ts = datetime.now(timezone.utc)
+    await handle_hh_snapshot(
+        db_session,
+        user,
+        HHSnapshotRequest(
+            physical_printer_id=device.id,
+            gate_count=4,
+            snapshot_ts=first_ts,
+            gates=[],
+            has_bypass=True,
+            bypass=HHBypassObservation(selected=False, present=None),
+        ),
+    )
+    system = await db_session.scalar(
+        select(MaterialSystem).where(MaterialSystem.physical_printer_id == device.id)
+    )
+    assert system is not None
+    bypass = await db_session.scalar(
+        select(MaterialSlot).where(
+            MaterialSlot.material_system_id == system.id,
+            MaterialSlot.provider_index == HAPPY_HARE_BYPASS_PROVIDER_INDEX,
+        )
+    )
+    assert bypass is not None
+
+    await handle_hh_snapshot(
+        db_session,
+        user,
+        HHSnapshotRequest(
+            physical_printer_id=device.id,
+            gate_count=4,
+            snapshot_ts=first_ts + timedelta(seconds=1),
+            gates=[],
+        ),
+    )
+    await db_session.refresh(bypass)
+    assert bypass.active is True
+
+    await handle_hh_snapshot(
+        db_session,
+        user,
+        HHSnapshotRequest(
+            physical_printer_id=device.id,
+            gate_count=4,
+            snapshot_ts=first_ts + timedelta(seconds=2),
+            gates=[],
+            has_bypass=False,
+        ),
+    )
+    await db_session.refresh(bypass)
+    assert bypass.active is False

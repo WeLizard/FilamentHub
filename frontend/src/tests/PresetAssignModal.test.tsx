@@ -214,4 +214,72 @@ describe('PresetAssignModal', () => {
       });
     });
   });
+
+  it('assigns a bypass through its canonical slot id and revision', async () => {
+    const { PresetAssignModal } = await import('../components/presetSlots/PresetAssignModal');
+    const bypassSpool = {
+      id: 31,
+      user_id: 1,
+      filament_id: null,
+      initial_weight_g: 1000,
+      used_weight_g: 0,
+      remaining_weight_g: 1000,
+      remaining_pct: 100,
+      state: 'shelf' as const,
+      source: 'manual',
+      price: null,
+      currency: null,
+      lot_nr: null,
+      comment: null,
+      extra: null,
+      filament: null,
+      created_at: '2026-08-26T00:00:00Z',
+      updated_at: '2026-08-26T00:00:00Z',
+      last_used_at: null,
+    };
+
+    render(
+      <PresetAssignModal
+        isOpen
+        gateIndex={1023}
+        gate={null}
+        slotKind="bypass"
+        slotObservation={{
+          source: 'happy_hare_moonraker',
+          observed_at: '2026-08-26T00:00:00Z',
+          received_at: '2026-08-26T00:00:01Z',
+          present: true,
+          active_feed: true,
+          material: null,
+          color_hex: null,
+          remaining_percent: null,
+          remaining_grams: null,
+        }}
+        physicalPrinterId={1}
+        materialSlotId={99}
+        assignmentRevision={5}
+        expectedSpoolId={null}
+        deviceName="Device"
+        systemName="Happy Hare"
+        provider="happy_hare"
+        spools={[bypassSpool]}
+        onClose={vi.fn()}
+        onAssigned={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText('presetSlots.route.bypass')).toBeInTheDocument();
+    expect(screen.queryByText('1023')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText('profilePage.spoolNoFilament'));
+    fireEvent.click(screen.getByText('presetSlots.modal.assign'));
+
+    await waitFor(() => {
+      expect(assignSlotMock).toHaveBeenCalledWith(1, 99, {
+        expected_revision: 5,
+        expected_spool_id: null,
+        preset_id: null,
+        spool_id: 31,
+      });
+    });
+  });
 });

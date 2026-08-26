@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Search, X, Loader2, CheckCircle2, Trash2, Package, Copy, Check, AlertTriangle } from 'lucide-react';
 import { physicalPrintersAPI, presetsAPI, savedPresetsAPI } from '../../api/client';
-import type { GateState, UserSpool } from '../../api/client';
+import type { GateState, MaterialSlotObservation, UserSpool } from '../../api/client';
 import { useAuth } from '../../contexts/AuthContext';
 import { toast } from '../Toast';
 import { translateApiError } from '../../utils/translateApiError';
@@ -16,6 +16,9 @@ interface PresetAssignModalProps {
   isOpen: boolean;
   gateIndex: number;
   gate: GateState | null;
+  slotKind?: string;
+  slotLabel?: string | null;
+  slotObservation?: MaterialSlotObservation | null;
   physicalPrinterId: number;
   materialSlotId: number;
   assignmentRevision: number;
@@ -33,6 +36,9 @@ export function PresetAssignModal({
   isOpen,
   gateIndex,
   gate,
+  slotKind = 'slot',
+  slotLabel = null,
+  slotObservation = null,
   physicalPrinterId,
   materialSlotId,
   assignmentRevision,
@@ -47,6 +53,9 @@ export function PresetAssignModal({
   const { t } = useTranslation();
   const { user } = useAuth();
   const queryClient = useQueryClient();
+  const slotDisplayLabel = slotKind === 'bypass'
+    ? t('presetSlots.route.bypass')
+    : slotLabel ?? String(gateIndex);
 
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebounce(search, 300);
@@ -142,7 +151,7 @@ export function PresetAssignModal({
         queryClient.invalidateQueries({ queryKey: ['spools'] }),
         queryClient.invalidateQueries({ queryKey: ['user-spools'] }),
       ]);
-      toast.success(t('presetSlots.modal.assigned', { gate: gateIndex }));
+      toast.success(t('presetSlots.modal.assigned', { gate: slotDisplayLabel }));
       onAssigned();
     } catch (err: any) {
       if (err?.response?.status === 409) {
@@ -173,7 +182,7 @@ export function PresetAssignModal({
         queryClient.invalidateQueries({ queryKey: ['spools'] }),
         queryClient.invalidateQueries({ queryKey: ['user-spools'] }),
       ]);
-      toast.success(t('presetSlots.modal.assigned', { gate: gateIndex }));
+      toast.success(t('presetSlots.modal.assigned', { gate: slotDisplayLabel }));
       onAssigned();
     } catch (err: any) {
       if (err?.response?.status === 409) {
@@ -219,15 +228,27 @@ export function PresetAssignModal({
 
   const colorHex = gate?.hh_color_hex ? `#${gate.hh_color_hex.replace(/^#/, '')}` : null;
   const providerLabel = t(`presetSlots.provider.${provider}`, { defaultValue: provider });
+  const bypassStatus = slotKind !== 'bypass' || slotObservation == null
+    ? null
+    : slotObservation.active_feed
+      ? slotObservation.present === true
+        ? t('presetSlots.route.bypassSelectedLoaded')
+        : slotObservation.present === false
+          ? t('presetSlots.route.bypassSelectedEmpty')
+          : t('presetSlots.route.bypassSelected')
+      : t('presetSlots.route.bypassIdle');
   const observedStatus = gate?.hh_status === 0
     ? t('presetSlots.hhStatus.empty')
     : gate?.hh_status === 1 || gate?.hh_status === 2
       ? t('presetSlots.hhStatus.loaded')
         : t('presetSlots.hhStatus.unknown');
-  const observedDescription = gate?.hh_status === 1 || gate?.hh_status === 2
+  const observedDescription = bypassStatus ?? (gate?.hh_status === 1 || gate?.hh_status === 2
     ? gate?.hh_material ?? observedStatus
-    : [gate?.hh_material, observedStatus].filter(Boolean).join(' · ');
-  const hasProviderObservation = gate?.hh_status != null || gate?.hh_material != null || colorHex != null;
+    : [gate?.hh_material, observedStatus].filter(Boolean).join(' · '));
+  const hasProviderObservation = slotObservation != null
+    || gate?.hh_status != null
+    || gate?.hh_material != null
+    || colorHex != null;
   const hasExistingAssignment = !!(gate?.preset_id || gate?.spool_id);
   const currentSpool = expectedSpoolId == null
     ? null
@@ -249,12 +270,12 @@ export function PresetAssignModal({
         {/* Header */}
         <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
           <div className="flex items-center gap-3">
-            <span className="flex h-7 w-7 items-center justify-center rounded-full bg-purple-500/20 text-sm font-bold text-purple-300">
-              {gateIndex}
+            <span className="flex h-7 min-w-7 items-center justify-center rounded-full bg-purple-500/20 px-2 text-sm font-bold text-purple-300">
+              {slotDisplayLabel}
             </span>
             <div>
               <h2 className="text-sm font-semibold text-white">
-                {t('presetSlots.modal.title', { gate: gateIndex })}
+                {t('presetSlots.modal.title', { gate: slotDisplayLabel })}
               </h2>
               <p className="text-xs text-gray-500">{deviceName} · {systemName}</p>
             </div>

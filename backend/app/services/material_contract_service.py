@@ -60,6 +60,11 @@ HAPPY_HARE_CAPABILITIES = [
     "consumption",
 ]
 
+# Happy Hare gates occupy 0..255. The provider-neutral material contract allows
+# indices through 1023, so the last value is a stable local identity for the
+# optional direct bypass route and can never collide with a real HH gate.
+HAPPY_HARE_BYPASS_PROVIDER_INDEX = 1023
+
 
 def _printer_load_options():
     return (
@@ -647,6 +652,7 @@ async def ensure_material_topology(
     provider: str | None = None,
     gate_indices: set[int] | None = None,
     exact_gate_count: int | None = None,
+    reported_routes: list[MaterialSlotCreate] | None = None,
     sync_legacy_assignments: bool = True,
 ) -> None:
     """Write what a provider reports about a printer's feed into the contract.
@@ -667,6 +673,10 @@ async def ensure_material_topology(
         # A reported gate proves every lower gate exists, so the panel shows a
         # contiguous system instead of a hole where no spool has been seen yet.
         indices = set(range(min(max(indices), MAX_GATE_INDEX) + 1))
+    routes_by_index = {
+        route.provider_index: route for route in (reported_routes or [])
+    }
+    indices.update(routes_by_index)
 
     await db.flush()
     system = await db.scalar(
@@ -732,24 +742,57 @@ async def ensure_material_topology(
     )
     slots_by_index = {slot.provider_index: slot for slot in existing_slots_result.scalars().all()}
     for provider_index in sorted(indices):
+        route = routes_by_index.get(provider_index)
         if provider_index not in slots_by_index:
             slot = MaterialSlot(
                 user_id=device.user_id,
                 material_system_id=system.id,
                 provider_index=provider_index,
-                kind="slot",
+                label=route.label if route is not None else None,
+                kind=route.kind if route is not None else "slot",
             )
             db.add(slot)
             await db.flush()
             slots_by_index[provider_index] = slot
+        elif route is not None:
+            slot = slots_by_index[provider_index]
+            slot.kind = route.kind
+            if route.label is not None:
+                slot.label = route.label
+            slot.active = True
 
     if exact_gate_count is not None:
         # A complete provider snapshot is stronger evidence than the highest
         # occupied gate. Keep rows outside a shrunken topology recoverable, but
         # do not present them as current hardware slots.
         system.declared_slot_count = exact_gate_count
+        occupied_route_indices: set[int] = set()
+        if reported_routes is not None:
+            occupied_route_indices = set(
+                (
+                    await db.execute(
+                        select(MaterialSlot.provider_index)
+                        .join(
+                            MaterialSlotAssignment,
+                            MaterialSlotAssignment.material_slot_id == MaterialSlot.id,
+                        )
+                        .where(
+                            MaterialSlot.material_system_id == system.id,
+                            MaterialSlotAssignment.active.is_(True),
+                        )
+                    )
+                ).scalars()
+            )
         for provider_index, slot in slots_by_index.items():
-            slot.active = provider_index < exact_gate_count
+            if slot.kind == "slot":
+                slot.active = provider_index < exact_gate_count
+            elif reported_routes is not None:
+                # A complete route report can retire a removed bypass, but an
+                # assigned spool must stay visible until the person moves it.
+                slot.active = (
+                    provider_index in routes_by_index
+                    or provider_index in occupied_route_indices
+                )
 
     if (
         exact_gate_count is None

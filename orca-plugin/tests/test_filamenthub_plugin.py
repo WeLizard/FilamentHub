@@ -1490,6 +1490,107 @@ def test_happy_hare_v3_can_report_exact_count_before_gate_arrays(
     assert snapshot["actual_spool_ids"] == [None] * 8
     assert snapshot["spool_ids_known"] is False
     assert snapshot["spoolman_support"] == "off"
+    assert snapshot["has_bypass"] is None
+    assert snapshot["bypass"] is None
+
+
+def test_happy_hare_snapshot_reports_selected_bypass_without_a_fake_gate(
+    plugin_module, monkeypatch
+):
+    requested_mmu_fields = []
+
+    def moonraker(_connection, path, payload=None):
+        if path == "/printer/info":
+            return 200, {"result": {"hostname": "voron"}}, ""
+        requested_mmu_fields.extend(payload["objects"]["mmu"])
+        return 200, {
+            "result": {
+                "status": {
+                    "mmu": {
+                        "num_gates": 2,
+                        "gate_status": [1, 0],
+                        "gate_spool_id": [41, -1],
+                        "spoolman_support": "pull",
+                        "has_bypass": True,
+                        "tool": -2,
+                        "filament_pos": 10,
+                    },
+                    "print_stats": {"state": "standby"},
+                }
+            }
+        }, ""
+
+    monkeypatch.setattr(plugin_module, "_moonraker_json", moonraker)
+
+    snapshot = plugin_module.read_happy_hare_snapshot(
+        {"print_host": "voron:7125"}
+    )
+
+    assert {"has_bypass", "tool", "filament_pos"} <= set(requested_mmu_fields)
+    assert snapshot["gate_count"] == 2
+    assert [item["gate"] for item in snapshot["gates"]] == [0, 1]
+    assert snapshot["actual_spool_ids"] == [41, None]
+    assert snapshot["has_bypass"] is True
+    assert snapshot["bypass"] == {"selected": True, "present": True}
+
+
+def test_happy_hare_snapshot_keeps_unselected_bypass_presence_unknown(
+    plugin_module, monkeypatch
+):
+    def moonraker(_connection, path, payload=None):
+        if path == "/printer/info":
+            return 200, {"result": {"hostname": "voron"}}, ""
+        return 200, {
+            "result": {
+                "status": {
+                    "mmu": {
+                        "num_gates": 1,
+                        "has_bypass": True,
+                        "tool": 0,
+                        "filament_pos": 0,
+                    },
+                    "print_stats": {"state": "standby"},
+                }
+            }
+        }, ""
+
+    monkeypatch.setattr(plugin_module, "_moonraker_json", moonraker)
+
+    snapshot = plugin_module.read_happy_hare_snapshot(
+        {"print_host": "voron:7125"}
+    )
+
+    assert snapshot["bypass"] == {"selected": False, "present": None}
+
+
+def test_happy_hare_upload_includes_bypass_as_separate_route_observation(
+    plugin_module, monkeypatch
+):
+    sent = {}
+
+    def post(path, token, payload):
+        sent.update({"path": path, "token": token, "payload": payload})
+        return 200, b"{}"
+
+    monkeypatch.setattr(plugin_module, "http_post_json", post)
+
+    status, _ = plugin_module.upload_happy_hare_snapshot(
+        "plugin-token",
+        17,
+        {
+            "gate_count": 1,
+            "gates": [{"gate": 0, "status": 1}],
+            "has_bypass": True,
+            "bypass": {"selected": True, "present": False},
+        },
+    )
+
+    assert status == 200
+    assert sent["path"] == "/orcaslicer/preset-slot-sync/hh/snapshot"
+    assert sent["payload"]["physical_printer_id"] == 17
+    assert sent["payload"]["gates"] == [{"gate": 0, "status": 1}]
+    assert sent["payload"]["has_bypass"] is True
+    assert sent["payload"]["bypass"] == {"selected": True, "present": False}
 
 
 def test_happy_hare_preview_allows_server_validated_import_without_pull(

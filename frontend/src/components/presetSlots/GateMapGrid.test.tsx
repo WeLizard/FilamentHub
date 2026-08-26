@@ -86,6 +86,47 @@ function observedSlot(
 }
 
 describe('GateMapGrid material slots', () => {
+  it('shows Happy Hare bypass as a named observed route instead of gate 1023', () => {
+    const onGateClick = vi.fn();
+    const bypass: MaterialSlot = {
+      id: 99,
+      provider_index: 1023,
+      label: null,
+      kind: 'bypass',
+      active: true,
+      assignment_revision: 0,
+      assignment: null,
+      observation: {
+        source: 'happy_hare_moonraker',
+        observed_at: FRESH_SOURCE_TS,
+        received_at: FRESH_SOURCE_TS,
+        present: true,
+        active_feed: true,
+        material: null,
+        color_hex: null,
+        remaining_percent: null,
+        remaining_grams: null,
+      },
+      legacy_projection: null,
+    };
+
+    render(
+      <GateMapGrid
+        slots={[bypass]}
+        gates={[]}
+        presets={{}}
+        spools={[]}
+        onGateClick={onGateClick}
+      />,
+    );
+
+    expect(screen.getByText('presetSlots.route.bypass')).toBeInTheDocument();
+    expect(screen.getByText('presetSlots.route.bypassSelectedLoaded')).toBeInTheDocument();
+    expect(screen.queryByText('1023')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText('presetSlots.route.bypass'));
+    expect(onGateClick).toHaveBeenCalledWith(null, bypass);
+  });
+
   it('keeps the assigned spool visible when Happy Hare has no separate snapshot', () => {
     const onGateClick = vi.fn();
     const slot: MaterialSlot = {

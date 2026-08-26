@@ -7297,6 +7297,14 @@
       "empty": "Свободно",
       "unknownSpool": "Катушка неизвестна"
     },
+    "route": {
+      "bypass": "Байпас",
+      "bypassSelected": "Выбран",
+      "bypassSelectedLoaded": "Выбран · филамент обнаружен",
+      "bypassSelectedEmpty": "Выбран · филамент не обнаружен",
+      "bypassIdle": "Не выбран",
+      "bypassTooltip": "Happy Hare сообщает байпас как отдельный путь подачи и не меняет назначенную в FilamentHub катушку."
+    },
     "observation": {
       "noData": "Нет данных",
       "conflict": {

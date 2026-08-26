@@ -7124,6 +7124,14 @@
       "empty": "Empty",
       "unknownSpool": "Unknown spool"
     },
+    "route": {
+      "bypass": "Bypass",
+      "bypassSelected": "Selected",
+      "bypassSelectedLoaded": "Selected · filament detected",
+      "bypassSelectedEmpty": "Selected · no filament detected",
+      "bypassIdle": "Not selected",
+      "bypassTooltip": "Happy Hare reports bypass as a separate feed path and does not change the spool assigned in FilamentHub."
+    },
     "observation": {
       "noData": "No data",
       "conflict": {

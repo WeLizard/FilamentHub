@@ -22,14 +22,20 @@ from app.core.errors import (
 )
 from app.models.filament import Filament
 from app.models.material_slot_assignment import MaterialSlotAssignment
-from app.models.material_system import MaterialSlot, MaterialSystem
+from app.models.material_system import (
+    MaterialSlot,
+    MaterialSystem,
+    PhysicalPrinterConnector,
+)
 from app.models.preset import Preset
 from app.models.preset_gate_state import PresetGateState, PresetGateStateSource
 from app.models.preset_usage_event import PresetUsageEvent, PresetUsageEventType
+from app.models.printer_bridge_observation import MaterialSlotObservation
 from app.models.printer_connection_binding import PrinterConnectionBinding
 from app.models.user import User
 from app.models.user_printer_device import UserPrinterDevice
 from app.models.user_spool import UserSpool, UserSpoolState
+from app.schemas.material_contract import MaterialSlotCreate
 from app.schemas.preset_slot_sync import (
     DeviceRegisterRequest,
     DeviceUpdateRequest,
@@ -52,6 +58,7 @@ from app.services.material_assignment_service import (
     require_accessible_spool,
 )
 from app.services.material_contract_service import (
+    HAPPY_HARE_BYPASS_PROVIDER_INDEX,
     ensure_material_topology,
     list_physical_printers,
     require_physical_printer,
@@ -249,6 +256,96 @@ async def _lock_material_gate_slots(
         .order_by(MaterialSlot.id)
         .with_for_update()
     )
+
+
+def _hh_reported_routes(
+    payload: HHSnapshotRequest,
+) -> list[MaterialSlotCreate] | None:
+    """Translate HH capability into provider-neutral feed routes.
+
+    ``None`` means an older adapter did not report route topology and existing
+    non-gate routes must be preserved. An empty list is an explicit report that
+    this machine has no bypass.
+    """
+    if payload.has_bypass is None and payload.bypass is None:
+        return None
+    if payload.has_bypass is True or payload.bypass is not None:
+        return [
+            MaterialSlotCreate(
+                provider_index=HAPPY_HARE_BYPASS_PROVIDER_INDEX,
+                kind="bypass",
+            )
+        ]
+    return []
+
+
+async def _record_hh_bypass_observation(
+    db: AsyncSession,
+    *,
+    device: UserPrinterDevice,
+    payload: HHSnapshotRequest,
+) -> None:
+    """Store selected/present as observation without touching assignment."""
+    if payload.bypass is None:
+        return
+    system = await db.scalar(
+        select(MaterialSystem).where(
+            MaterialSystem.physical_printer_id == device.id,
+            MaterialSystem.user_id == device.user_id,
+            MaterialSystem.provider == "happy_hare",
+        )
+    )
+    if system is None:
+        return
+    slot = await db.scalar(
+        select(MaterialSlot).where(
+            MaterialSlot.material_system_id == system.id,
+            MaterialSlot.provider_index == HAPPY_HARE_BYPASS_PROVIDER_INDEX,
+        )
+    )
+    connector = await db.scalar(
+        select(PhysicalPrinterConnector)
+        .where(
+            PhysicalPrinterConnector.physical_printer_id == device.id,
+            PhysicalPrinterConnector.user_id == device.user_id,
+            PhysicalPrinterConnector.material_system_id == system.id,
+            PhysicalPrinterConnector.active.is_(True),
+        )
+        .order_by(PhysicalPrinterConnector.id)
+    )
+    if slot is None or connector is None:
+        return
+
+    observed_at = _normalize_utc(payload.snapshot_ts)
+    observation = await db.scalar(
+        select(MaterialSlotObservation).where(
+            MaterialSlotObservation.connector_id == connector.id,
+            MaterialSlotObservation.material_slot_id == slot.id,
+        )
+    )
+    if (
+        observation is not None
+        and observed_at <= _normalize_utc(observation.observed_at)
+    ):
+        return
+    if observation is None:
+        observation = MaterialSlotObservation(
+            user_id=device.user_id,
+            connector_id=connector.id,
+            material_slot_id=slot.id,
+            source="happy_hare_moonraker",
+            observed_at=observed_at,
+        )
+        db.add(observation)
+    observation.source = "happy_hare_moonraker"
+    observation.observed_at = observed_at
+    observation.received_at = datetime.now(timezone.utc)
+    observation.present = payload.bypass.present
+    observation.active_feed = payload.bypass.selected
+    observation.material = None
+    observation.color_hex = None
+    observation.remaining_percent = None
+    observation.remaining_grams = None
 
 
 async def _upsert_gate_state(
@@ -490,18 +587,25 @@ async def handle_hh_snapshot(
     # gate row.  Establish and lock the complete topology first so an HH
     # observation cannot deadlock with a concurrent user assignment while it
     # updates the observation fields on that same legacy row.
+    reported_routes = _hh_reported_routes(payload)
     await ensure_material_topology(
         db,
         device,
         gate_indices={item.gate for item in payload.gates},
         exact_gate_count=payload.gate_count,
+        reported_routes=reported_routes,
     )
+    await db.flush()
+    locked_indices = set(range(payload.gate_count))
+    if reported_routes is not None:
+        locked_indices.add(HAPPY_HARE_BYPASS_PROVIDER_INDEX)
     await _lock_material_gate_slots(
         db,
         user_id=user.id,
         physical_printer_id=device.id,
-        gate_indices=set(range(payload.gate_count)),
+        gate_indices=locked_indices,
     )
+    await _record_hh_bypass_observation(db, device=device, payload=payload)
 
     snapshot_ts = _normalize_utc(payload.snapshot_ts)
     current_states = await get_gate_states(db, device.id)
@@ -595,6 +699,7 @@ async def handle_hh_snapshot(
         gate_indices={state.gate_index for _, state in gate_state_updates}
         | set(state_by_gate),
         exact_gate_count=payload.gate_count,
+        reported_routes=reported_routes,
     )
     await db.commit()
     await db.refresh(device)

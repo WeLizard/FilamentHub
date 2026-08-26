@@ -340,6 +340,27 @@ async def test_happy_hare_bypass_route_is_not_forced_into_legacy_gate_map(
     assert assigned_route["kind"] == "bypass"
     assert assigned_route["assignment_revision"] == 1
     assert assigned_route["assignment"]["spool_id"] == spool.id
+
+    observed = await auth_client.post(
+        "/api/v1/orcaslicer/preset-slot-sync/hh/snapshot",
+        json={
+            "physical_printer_id": printer_id,
+            "gate_count": 1,
+            "snapshot_ts": "2026-08-26T12:00:00Z",
+            "gates": [],
+            "has_bypass": True,
+            "bypass": {"selected": True, "present": True},
+        },
+    )
+    assert observed.status_code == 200
+    refreshed = await auth_client.get("/api/v1/physical-printers")
+    refreshed_route = _slot(refreshed.json()[0], route["id"])
+    assert refreshed_route["kind"] == "bypass"
+    assert refreshed_route["assignment_revision"] == 1
+    assert refreshed_route["assignment"]["spool_id"] == spool.id
+    assert refreshed_route["observation"]["source"] == "happy_hare_moonraker"
+    assert refreshed_route["observation"]["active_feed"] is True
+    assert refreshed_route["observation"]["present"] is True
     assert await db_session.scalar(
         select(func.count(PresetGateState.id)).where(
             PresetGateState.device_id == printer_id

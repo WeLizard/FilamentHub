@@ -1014,6 +1014,9 @@ export function PresetSlotsPanel({
           isOpen={modalState.open}
           gateIndex={modalState.slot.provider_index}
           gate={modalState.gate}
+          slotKind={modalState.slot.kind}
+          slotLabel={modalState.slot.label}
+          slotObservation={modalState.slot.observation}
           physicalPrinterId={modalState.printer.id}
           materialSlotId={modalState.slot.id}
           assignmentRevision={modalState.slot.assignment_revision}

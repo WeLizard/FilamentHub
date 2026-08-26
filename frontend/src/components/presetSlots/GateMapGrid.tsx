@@ -89,10 +89,21 @@ function SpoolIcon({
 }
 
 function observationLabel(
+  slot: MaterialSlot,
   state: ReturnType<typeof compareMaterialSlot>['observationState'],
   material: string | null,
   t: (key: string) => string,
 ): string {
+  if (slot.kind === 'bypass') {
+    if (slot.observation?.active_feed === true) {
+      if (state === 'loaded') return t('presetSlots.route.bypassSelectedLoaded');
+      if (state === 'empty') return t('presetSlots.route.bypassSelectedEmpty');
+      return t('presetSlots.route.bypassSelected');
+    }
+    if (slot.observation?.active_feed === false) {
+      return t('presetSlots.route.bypassIdle');
+    }
+  }
   if (state === 'empty') return t('presetSlots.hhStatus.empty');
   if (state === 'buffer' || state === 'loaded') {
     return material ?? t('presetSlots.hhStatus.loaded');
@@ -102,9 +113,11 @@ function observationLabel(
 }
 
 function observationTooltip(
+  slot: MaterialSlot,
   state: ReturnType<typeof compareMaterialSlot>['observationState'],
   t: (key: string) => string,
 ): string {
+  if (slot.kind === 'bypass') return t('presetSlots.route.bypassTooltip');
   if (state === 'empty') return t('presetSlots.hhStatus.emptyTooltip');
   if (state === 'buffer') return t('presetSlots.hhStatus.bufferTooltip');
   if (state === 'loaded') return t('presetSlots.hhStatus.spoolTooltip');
@@ -136,6 +149,9 @@ export function GateMapGrid({
       sortedSlots.length > 4 ? 'xl:grid-cols-8' : '',
     ].join(' ')}>
       {sortedSlots.map((slot) => {
+        const slotLabel = slot.kind === 'bypass'
+          ? t('presetSlots.route.bypass')
+          : slot.label ?? String(slot.provider_index);
         const gate = gateMap.get(slot.provider_index) ?? null;
         const desiredSpoolId = slot.assignment?.spool_id ?? gate?.spool_id ?? null;
         const spool = desiredSpoolId != null ? spoolMap.get(desiredSpoolId) ?? null : null;
@@ -173,7 +189,7 @@ export function GateMapGrid({
             key={slot.id}
             type="button"
             onClick={() => onGateClick(gate, slot)}
-            title={slot.label ?? undefined}
+            title={slotLabel}
             className={[
               'group relative flex h-full flex-col items-center gap-1 rounded-xl border px-2 py-2 text-center transition',
               'hover:border-purple-500/50 hover:bg-purple-500/8 focus:outline-none focus:ring-2 focus:ring-purple-500/40',
@@ -189,7 +205,7 @@ export function GateMapGrid({
                   hasContent ? 'bg-purple-500/20 text-purple-300' : 'bg-white/8 text-gray-400',
                 ].join(' ')}
               >
-                {slot.provider_index}
+                {slotLabel}
               </span>
               {hasObservation ? (
                 <span
@@ -197,7 +213,7 @@ export function GateMapGrid({
                     hasConflict
                       ? t(`presetSlots.observation.conflict.${comparison.conflict}`)
                       : null,
-                    observationTooltip(comparison.observationState, t),
+                    observationTooltip(slot, comparison.observationState, t),
                   ].filter(Boolean).join(' ')}
                   className={[
                     'inline-flex min-w-0 max-w-[7rem] items-center gap-1 rounded-full px-1.5 py-0.5 text-[9px]',
@@ -217,6 +233,7 @@ export function GateMapGrid({
                   )}
                   <span className="truncate">
                     {observationLabel(
+                      slot,
                       comparison.observationState,
                       comparison.observedMaterial,
                       t,

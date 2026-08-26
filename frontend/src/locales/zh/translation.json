@@ -7115,6 +7115,14 @@
       "empty": "空闲",
       "unknownSpool": "未知料盘"
     },
+    "route": {
+      "bypass": "旁路",
+      "bypassSelected": "已选择",
+      "bypassSelectedLoaded": "已选择 · 检测到耗材",
+      "bypassSelectedEmpty": "已选择 · 未检测到耗材",
+      "bypassIdle": "未选择",
+      "bypassTooltip": "Happy Hare 将旁路作为独立供料路径报告，不会更改 FilamentHub 中分配的料盘。"
+    },
     "observation": {
       "noData": "暂无数据",
       "conflict": {

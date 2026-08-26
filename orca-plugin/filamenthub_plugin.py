@@ -2207,6 +2207,9 @@ def read_happy_hare_snapshot(connection):
                     "gate_temperature",
                     "gate_spool_id",
                     "spoolman_support",
+                    "has_bypass",
+                    "tool",
+                    "filament_pos",
                 ],
                 "print_stats": ["state"],
             }
@@ -2299,6 +2302,36 @@ def read_happy_hare_snapshot(connection):
         if isinstance(print_stats, dict)
         else ""
     )
+    raw_has_bypass = mmu.get("has_bypass")
+    has_bypass = raw_has_bypass if isinstance(raw_has_bypass, bool) else None
+    raw_tool = mmu.get("tool")
+    try:
+        selected_tool = int(raw_tool) if not isinstance(raw_tool, bool) else None
+    except (TypeError, ValueError):
+        selected_tool = None
+    bypass_selected = selected_tool == -2
+    if bypass_selected:
+        # A selected bypass is stronger evidence than an omitted capability
+        # field from an older Happy Hare build.
+        has_bypass = True
+    bypass = None
+    if has_bypass is True:
+        raw_filament_pos = mmu.get("filament_pos")
+        try:
+            filament_pos = (
+                float(raw_filament_pos)
+                if not isinstance(raw_filament_pos, bool)
+                else None
+            )
+        except (TypeError, ValueError):
+            filament_pos = None
+        bypass_present = None
+        if bypass_selected and filament_pos is not None and filament_pos >= 0:
+            bypass_present = filament_pos > 0
+        bypass = {
+            "selected": bypass_selected,
+            "present": bypass_present,
+        }
     return {
         "gate_count": gate_count,
         "gates": gates,
@@ -2307,19 +2340,26 @@ def read_happy_hare_snapshot(connection):
         "spoolman_support": str(mmu.get("spoolman_support") or "").strip().lower(),
         "print_state": print_state,
         "printer_hostname": hostname,
+        "has_bypass": has_bypass,
+        "bypass": bypass,
     }
 
 
 def upload_happy_hare_snapshot(token, physical_printer_id, snapshot):
+    payload = {
+        "physical_printer_id": physical_printer_id,
+        "gate_count": snapshot["gate_count"],
+        "snapshot_ts": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "gates": snapshot["gates"],
+    }
+    if isinstance(snapshot.get("has_bypass"), bool):
+        payload["has_bypass"] = snapshot["has_bypass"]
+    if isinstance(snapshot.get("bypass"), dict):
+        payload["bypass"] = snapshot["bypass"]
     status, body = http_post_json(
         "/orcaslicer/preset-slot-sync/hh/snapshot",
         token,
-        {
-            "physical_printer_id": physical_printer_id,
-            "gate_count": snapshot["gate_count"],
-            "snapshot_ts": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-            "gates": snapshot["gates"],
-        },
+        payload,
     )
     if status != 200:
         return status, {}
