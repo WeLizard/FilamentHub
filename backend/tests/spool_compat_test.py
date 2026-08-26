@@ -679,21 +679,43 @@ async def test_same_usage_after_retry_window_is_a_new_report(
 
 
 @pytest.mark.asyncio
-async def test_happy_hare_equal_usage_reports_are_not_octoprint_retry_suppressed(
+async def test_happy_hare_usage_storm_is_summed_into_a_bounded_checkpoint(
     client: AsyncClient,
     db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
 ):
     user, spool, device = await _seed_spool_context(db_session)
     await _set_material_system_provider(db_session, user, device, "happy_hare")
     endpoint = f"/api/v1/spool_compat/{device.api_key}/v1/spool/{spool.id}/use"
+    broadcasts: list[tuple[int, str, dict]] = []
 
-    first = await client.put(endpoint, json={"use_weight": 20})
-    second = await client.put(endpoint, json={"use_weight": 20})
+    async def capture_broadcast(user_id: int, event_type: str, payload: dict) -> None:
+        broadcasts.append((user_id, event_type, payload))
 
-    assert first.status_code == 200
-    assert second.status_code == 200
-    assert "x-filamenthub-deduplicated" not in second.headers
-    assert second.json()["used_weight"] == pytest.approx(first.json()["used_weight"] + 20)
+    monkeypatch.setattr(
+        "app.api.v1.endpoints.spool_compat._broadcast_spool_event",
+        capture_broadcast,
+    )
+
+    reports = [2, 5, 4] * 4
+    responses = [
+        await client.put(endpoint, json={"use_weight": weight})
+        for weight in reports
+    ]
+
+    assert all(response.status_code == 200 for response in responses)
+    assert "x-filamenthub-coalesced" not in responses[0].headers
+    assert all(
+        response.headers["x-filamenthub-coalesced"] == "true"
+        for response in responses[1:]
+    )
+    assert all(
+        "x-filamenthub-deduplicated" not in response.headers
+        for response in responses
+    )
+    assert responses[-1].json()["used_weight"] == pytest.approx(
+        100 + sum(reports)
+    )
     events = list(
         (
             await db_session.execute(
@@ -701,7 +723,63 @@ async def test_happy_hare_equal_usage_reports_are_not_octoprint_retry_suppressed
             )
         ).scalars()
     )
+    assert len(events) == 1
+    assert events[0].delta_weight_g == pytest.approx(sum(reports))
+    assert events[0].meta["reported_weight_g"] == pytest.approx(sum(reports))
+    assert events[0].meta["report_count"] == len(reports)
+    assert events[0].meta["aggregation"] == "spoolman_delta_window"
+    assert len(broadcasts) == 1
+
+    events[0].created_at = datetime.now(timezone.utc) - timedelta(minutes=2)
+    await db_session.commit()
+    next_window = await client.put(endpoint, json={"use_weight": 3})
+
+    assert next_window.status_code == 200
+    assert "x-filamenthub-coalesced" not in next_window.headers
+    event_count = await db_session.scalar(
+        select(func.count(PresetUsageEvent.id)).where(
+            PresetUsageEvent.spool_id == spool.id
+        )
+    )
+    assert event_count == 2
+    assert len(broadcasts) == 2
+
+
+@pytest.mark.asyncio
+async def test_inactive_happy_hare_system_does_not_enable_usage_compaction(
+    client: AsyncClient,
+    db_session: AsyncSession,
+):
+    user, spool, device = await _seed_spool_context(db_session)
+    await _set_material_system_provider(db_session, user, device, "happy_hare")
+    system = await db_session.scalar(
+        select(MaterialSystem).where(
+            MaterialSystem.physical_printer_id == device.id
+        )
+    )
+    assert system is not None
+    system.active = False
+    await db_session.commit()
+    endpoint = f"/api/v1/spool_compat/{device.api_key}/v1/spool/{spool.id}/use"
+
+    first = await client.put(endpoint, json={"use_weight": 2})
+    second = await client.put(endpoint, json={"use_weight": 3})
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert "x-filamenthub-coalesced" not in first.headers
+    assert "x-filamenthub-coalesced" not in second.headers
+    events = list(
+        (
+            await db_session.execute(
+                select(PresetUsageEvent).where(
+                    PresetUsageEvent.spool_id == spool.id
+                )
+            )
+        ).scalars()
+    )
     assert len(events) == 2
+    assert all("aggregation" not in (event.meta or {}) for event in events)
 
 
 @pytest.mark.asyncio

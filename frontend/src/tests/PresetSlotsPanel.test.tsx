@@ -209,8 +209,13 @@ describe('PresetSlotsPanel', () => {
     ]);
 
     const happyHareLink = feedAdapterFor('happy_hare').link;
-    expect(happyHareLink?.snippet('https://fh.example/spool_compat', 'device-secret'))
+    const happyHareSnippet = happyHareLink?.snippet(
+      'https://fh.example/spool_compat',
+      'device-secret',
+    );
+    expect(happyHareSnippet)
       .toContain('https://fh.example/spool_compat/device-secret');
+    expect(happyHareSnippet).toContain('sync_rate: 60');
     expect(feedAdapterFor('octoprint').link).toBeNull();
     expect(feedAdapterFor('octoprint').contactMode).toBe('periodic');
     expect(feedAdapterFor('octoprint').slotCountLabelKey)

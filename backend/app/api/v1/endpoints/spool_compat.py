@@ -54,11 +54,14 @@ from app.services.spool_service import (
     shelf_spool_if_unassigned,
 )
 from app.services.spool_usage_service import (
+    append_spoolman_usage_checkpoint,
     find_printer_report_replay,
+    find_spoolman_usage_checkpoint,
     mark_printer_report_replay,
     octoprint_job_ref,
     record_spool_usage,
     resolve_assigned_preset_id,
+    spoolman_usage_checkpoint_meta,
 )
 
 from . import spool_compat_fields
@@ -1254,7 +1257,10 @@ async def _use_spool_impl(
     if _device is not None and normalized_idempotency_key is None:
         provider = await db.scalar(
             select(MaterialSystem.provider)
-            .where(MaterialSystem.physical_printer_id == _device.id)
+            .where(
+                MaterialSystem.physical_printer_id == _device.id,
+                MaterialSystem.active.is_(True),
+            )
             .order_by(MaterialSystem.id)
         )
 
@@ -1300,20 +1306,49 @@ async def _use_spool_impl(
         if _device is not None
         else None
     )
-    await record_spool_usage(
-        db,
-        spool=spool,
-        event_type=PresetUsageEventType.printer_report,
-        delta_weight_g=spool.used_weight_g - before_used,
-        device_id=_device.id if _device is not None else None,
-        preset_id=preset_id,
-        job_ref=(
-            octoprint_job_ref(normalized_idempotency_key)
-            if normalized_idempotency_key is not None
-            else None
-        ),
-        reported_weight_g=delta_weight,
-    )
+    applied_weight = spool.used_weight_g - before_used
+    checkpoint = None
+    if (
+        _device is not None
+        and normalized_idempotency_key is None
+        and provider == "happy_hare"
+    ):
+        checkpoint = await find_spoolman_usage_checkpoint(
+            db,
+            spool_id=spool.id,
+            device_id=_device.id,
+            preset_id=preset_id,
+        )
+    if checkpoint is not None:
+        append_spoolman_usage_checkpoint(
+            checkpoint,
+            spool=spool,
+            applied_weight_g=applied_weight,
+            reported_weight_g=delta_weight,
+            reported_at=now,
+        )
+    else:
+        await record_spool_usage(
+            db,
+            spool=spool,
+            event_type=PresetUsageEventType.printer_report,
+            delta_weight_g=applied_weight,
+            device_id=_device.id if _device is not None else None,
+            preset_id=preset_id,
+            job_ref=(
+                octoprint_job_ref(normalized_idempotency_key)
+                if normalized_idempotency_key is not None
+                else None
+            ),
+            meta=(
+                spoolman_usage_checkpoint_meta(reported_at=now)
+                if _device is not None
+                and normalized_idempotency_key is None
+                and provider == "happy_hare"
+                else None
+            ),
+            reported_weight_g=delta_weight,
+        )
     if spool.first_used_at is None:
         spool.first_used_at = now
     spool.last_used_at = now
@@ -1330,8 +1365,16 @@ async def _use_spool_impl(
         return _err(status.HTTP_500_INTERNAL_SERVER_ERROR, "Failed to use spool.")
     location_map, gate_meta_map = await _build_location_map(db, user.id)
     payload = _to_spool_payload(updated, location_map, gate_meta_map)
-    await _broadcast_spool_event(user.id, "updated", payload)
-    return JSONResponse(content=payload)
+    if checkpoint is None:
+        await _broadcast_spool_event(user.id, "updated", payload)
+    return JSONResponse(
+        content=payload,
+        headers=(
+            {"X-FilamentHub-Coalesced": "true"}
+            if checkpoint is not None
+            else None
+        ),
+    )
 
 
 @router.put("/v1/spool/{spool_id}/use")
