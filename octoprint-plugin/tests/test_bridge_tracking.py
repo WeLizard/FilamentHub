@@ -3,11 +3,16 @@ import logging
 from octoprint.events import Events
 from octoprint_filamenthub_bridge import (
     BridgeRequestError,
+    CAPABILITIES,
     RETRY_MAX_SECONDS,
     STARTUP_JITTER_MAX_SECONDS,
     FilamentHubBridgePlugin,
     _retry_delay,
 )
+
+
+def test_declares_only_capabilities_the_bridge_actually_provides():
+    assert CAPABILITIES == ["read", "write", "spool_identity", "consumption"]
 
 
 class FakeSettings:

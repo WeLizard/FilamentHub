@@ -123,6 +123,22 @@ def _safe_capabilities(values: list[str]) -> list[str]:
     return sorted(set(values).intersection(BRIDGE_CAPABILITIES))
 
 
+async def _record_capabilities(
+    db: AsyncSession,
+    *,
+    connector: PhysicalPrinterConnector,
+    reported: list[str],
+) -> None:
+    """Keep the OctoPrint system aligned with the live bridge contract."""
+    capabilities = _safe_capabilities(reported)
+    connector.capabilities = capabilities
+    if connector.material_system_id is None:
+        return
+    system = await db.get(MaterialSystem, connector.material_system_id)
+    if system is not None and system.provider == OCTOPRINT_PROVIDER:
+        system.capabilities = list(capabilities)
+
+
 def _normalized_tool_slot_map(values: list | None) -> list[dict[str, int]]:
     normalized: dict[int, int] = {}
     for value in values or []:
@@ -556,7 +572,7 @@ async def pair_bridge(
     connection.plugin_version = payload.plugin_version
     connection.octoprint_version = payload.octoprint_version
     connection.observed_at = now
-    connector.capabilities = _safe_capabilities(payload.capabilities)
+    await _record_capabilities(db, connector=connector, reported=payload.capabilities)
     connector.last_seen_at = now
     connector.active = True
     await db.commit()
@@ -651,7 +667,7 @@ async def record_heartbeat(
     connection.octoprint_version = payload.octoprint_version
     connection.active_slot_index = payload.active_slot_index
     connection.observed_at = now
-    connector.capabilities = _safe_capabilities(payload.capabilities)
+    await _record_capabilities(db, connector=connector, reported=payload.capabilities)
     connector.last_seen_at = now
     connector.active = True
     await db.commit()

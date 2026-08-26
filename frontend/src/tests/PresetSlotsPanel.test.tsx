@@ -203,7 +203,6 @@ describe('PresetSlotsPanel', () => {
     expect(feedAdapterFor('octoprint').capabilities).toEqual([
       'read',
       'write',
-      'presence',
       'spool_identity',
       'consumption',
     ]);

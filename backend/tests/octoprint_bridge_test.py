@@ -31,7 +31,13 @@ async def _create_octoprint_system(auth_client: AsyncClient) -> tuple[int, int]:
             "name": "OctoPrint",
             "kind": "mmu",
             "provider": "octoprint",
-            "capabilities": ["read", "write", "spool_identity", "consumption"],
+            "capabilities": [
+                "read",
+                "write",
+                "presence",
+                "spool_identity",
+                "consumption",
+            ],
             "slot_count": 2,
         },
     )
@@ -82,7 +88,6 @@ async def test_bridge_pair_snapshot_usage_replay_and_revoke(
     assert status_response.json()["paired"] is True
     assert status_response.json()["instance_id"] == "octoprint-test-instance"
     paired_last_seen_at = status_response.json()["last_seen_at"]
-
     brand = Brand(name="Bridge Brand", slug="bridge-brand")
     db_session.add(brand)
     await db_session.flush()
@@ -172,9 +177,9 @@ async def test_bridge_pair_snapshot_usage_replay_and_revoke(
         headers=bridge_headers,
         json={
             "instance_id": "octoprint-test-instance",
-            "plugin_version": "0.1.0",
+            "plugin_version": "0.1.1",
             "octoprint_version": "1.11.8",
-            "capabilities": ["read", "write", "presence", "consumption"],
+            "capabilities": ["read", "write", "spool_identity", "consumption"],
             "active_slot_index": 0,
             "routing_mode": "manual",
             "tool_slot_map": [],
@@ -189,6 +194,14 @@ async def test_bridge_pair_snapshot_usage_replay_and_revoke(
         "revision": 1,
         "applied_revision": 1,
     }
+    printer_after_heartbeat = await auth_client.get(f"/api/v1/physical-printers/{printer_id}")
+    assert printer_after_heartbeat.status_code == 200
+    expected_capabilities = ["consumption", "read", "spool_identity", "write"]
+    assert (
+        printer_after_heartbeat.json()["material_systems"][0]["capabilities"]
+        == expected_capabilities
+    )
+    assert printer_after_heartbeat.json()["connectors"][0]["capabilities"] == expected_capabilities
 
     usage_payload = {
         "event_id": "print-job-1-terminal",

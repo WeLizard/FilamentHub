@@ -607,7 +607,8 @@ export const octoprintAdapter: FeedAdapter = {
   labelKey: 'presetSlots.feedSystem.octoprint',
   fixedSlots: null,
   alwaysCollapsible: true,
-  capabilities: ['read', 'write', 'presence', 'spool_identity', 'consumption'],
+  // Manual/tool routing selects a feed path; it does not observe physical presence.
+  capabilities: ['read', 'write', 'spool_identity', 'consumption'],
   contactMode: 'periodic',
   slotCountLabelKey: 'presetSlots.octoprint.slotCount',
   slotCountSummaryKey: 'presetSlots.gates',

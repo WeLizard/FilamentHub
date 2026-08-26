@@ -21,7 +21,8 @@ from octoprint.events import Events
 from .tracker import ExtrusionTracker
 
 PLUGIN_VERSION = "0.1.1"
-CAPABILITIES = ["read", "write", "presence", "spool_identity", "consumption"]
+# A selected manual/tool-routed slot is not proof of physical presence.
+CAPABILITIES = ["read", "write", "spool_identity", "consumption"]
 HEARTBEAT_INTERVAL_SECONDS = 120
 SNAPSHOT_INTERVAL_SECONDS = 120
 RETRY_INITIAL_SECONDS = 5
