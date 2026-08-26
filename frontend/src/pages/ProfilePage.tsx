@@ -2965,7 +2965,7 @@ const SpoolForm: React.FC<SpoolFormProps> = ({
       {qrScanResult && (
         <QrScanResultModal
           result={qrScanResult}
-          isAuthenticated={Boolean(user)}
+          userId={user?.id ?? null}
           onClose={() => setQrScanResult(null)}
           onContinue={applyQrScanResult}
           continueLabel={t('qrScanResult.useForSpool')}

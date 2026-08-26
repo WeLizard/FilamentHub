@@ -3488,6 +3488,11 @@ export const spoolsAPI = {
     return response.data;
   },
 
+  listForFilament: async (filament_id: number): Promise<UserSpool[]> => {
+    const response = await api.get<UserSpool[]>('/spools', { params: { filament_id } });
+    return response.data;
+  },
+
   usage: async (spoolId: number): Promise<SpoolUsageEvent[]> => {
     const response = await api.get<SpoolUsageEvent[]>(`/spools/${spoolId}/usage`);
     return response.data;

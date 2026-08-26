@@ -308,9 +308,18 @@ def _build_response(spool: UserSpool, filament: Filament | None) -> SpoolRespons
     )
 
 
-async def list_spools(db: AsyncSession, user_id: int) -> list[SpoolResponse]:
+async def list_spools(
+    db: AsyncSession,
+    user_id: int,
+    *,
+    filament_id: int | None = None,
+) -> list[SpoolResponse]:
+    query = select(UserSpool).where(UserSpool.user_id == user_id)
+    if filament_id is not None:
+        query = query.where(UserSpool.filament_id == filament_id)
+
     result = await db.execute(
-        select(UserSpool).where(UserSpool.user_id == user_id).order_by(UserSpool.created_at.desc())
+        query.order_by(UserSpool.created_at.desc())
     )
     spools = list(result.scalars().all())
 

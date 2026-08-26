@@ -500,7 +500,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
         <Suspense fallback={null}>
           <QrScanResultModal
             result={qrScanResult}
-            isAuthenticated={Boolean(user)}
+            userId={user?.id ?? null}
             onClose={() => setQrScanResult(null)}
             onRequestLogin={() => setIsAuthModalOpen(true)}
             onOpenMaterial={() => {
@@ -514,6 +514,10 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
               navigate(
                 `/profile?tab=spools&add_spool=1&filament_id=${filamentId}&source=qr`,
               );
+            }}
+            onOpenSpools={() => {
+              setQrScanResult(null);
+              navigate('/profile?tab=spools');
             }}
           />
         </Suspense>

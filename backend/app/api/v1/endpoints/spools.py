@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, Form, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, Query, UploadFile, status
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -67,9 +67,10 @@ def _parse_import_mapping(value: str | None) -> SpoolImportColumnMapping | None:
 async def get_spools(
     current_user: Annotated[User, Depends(get_current_active_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
+    filament_id: Annotated[int | None, Query(ge=1)] = None,
 ) -> list[SpoolResponse]:
-    """List all spools for the current user."""
-    return await list_spools(db, current_user.id)
+    """List the current user's spools, optionally for one exact catalog variant."""
+    return await list_spools(db, current_user.id, filament_id=filament_id)
 
 
 @router.post("", response_model=SpoolResponse, status_code=status.HTTP_201_CREATED)

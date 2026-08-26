@@ -1,26 +1,36 @@
 import { useEffect, useState } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+  Boxes,
   CheckCircle2,
   ExternalLink,
   Library,
   Loader2,
   LogIn,
+  MapPin,
   PackagePlus,
   X,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
-import { savedPresetsAPI, type QrScanResponse } from '../api/client';
+import {
+  physicalPrintersAPI,
+  savedPresetsAPI,
+  spoolsAPI,
+  type QrScanResponse,
+  type UserSpool,
+} from '../api/client';
+import { getSpoolCurrentLocation } from '../utils/spoolLocation';
 import { translateApiError } from '../utils/translateApiError';
 import { ModalOverlay } from './ModalOverlay';
 
 interface QrScanResultModalProps {
   result: QrScanResponse;
-  isAuthenticated: boolean;
+  userId: number | null;
   onClose: () => void;
   onOpenMaterial?: () => void;
   onAddSpool?: () => void;
+  onOpenSpools?: () => void;
   onContinue?: () => void;
   continueLabel?: string;
   onRequestLogin?: () => void;
@@ -28,16 +38,19 @@ interface QrScanResultModalProps {
 
 export function QrScanResultModal({
   result,
-  isAuthenticated,
+  userId,
   onClose,
   onOpenMaterial,
   onAddSpool,
+  onOpenSpools,
   onContinue,
   continueLabel,
   onRequestLogin,
 }: QrScanResultModalProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
+  const filament = result.filament;
+  const isAuthenticated = userId !== null;
   const [presetSaved, setPresetSaved] = useState(result.preset_saved === true);
   const [presetSyncEnabled, setPresetSyncEnabled] = useState(
     result.preset_sync_enabled,
@@ -71,7 +84,69 @@ export function QrScanResultModal({
     },
   });
 
-  const filament = result.filament;
+  const inventoryQuery = useQuery({
+    queryKey: ['spools', 'filament', userId, filament.id],
+    queryFn: () => spoolsAPI.listForFilament(filament.id),
+    enabled: isAuthenticated,
+    staleTime: 30_000,
+  });
+  const printerLocationsQuery = useQuery({
+    queryKey: ['qr-inventory-locations', userId],
+    queryFn: physicalPrintersAPI.list,
+    enabled: isAuthenticated,
+    staleTime: 30_000,
+  });
+  const matchingSpools = (inventoryQuery.data ?? []).filter(
+    (spool) => spool.filament_id === filament.id,
+  );
+  const availableSpools = matchingSpools.filter(
+    (spool) => spool.state === 'active' || spool.state === 'shelf',
+  );
+  const archivedCount = matchingSpools.filter(
+    (spool) => spool.state === 'archived',
+  ).length;
+  const emptyCount = matchingSpools.filter((spool) => spool.state === 'empty').length;
+  const visibleSpools = availableSpools.slice(0, 3);
+  const hiddenAvailableCount = availableSpools.length - visibleSpools.length;
+  const totalRemaining = availableSpools.reduce(
+    (total, spool) => total + Math.max(0, spool.remaining_weight_g),
+    0,
+  );
+
+  const assignedLocation = (spoolId: number) => {
+    for (const printer of printerLocationsQuery.data ?? []) {
+      for (const system of printer.material_systems) {
+        const slot = system.slots.find(
+          (candidate) =>
+            candidate.assignment?.active === true
+            && candidate.assignment.spool_id === spoolId,
+        );
+        if (slot) {
+          return {
+            printer: printer.name,
+            slot: slot.label || slot.provider_index + 1,
+          };
+        }
+      }
+    }
+    return null;
+  };
+
+  const spoolLocation = (spool: UserSpool) => {
+    const canonicalLocation = assignedLocation(spool.id);
+    if (canonicalLocation) {
+      return t('qrScanResult.inventoryLocationPrinter', canonicalLocation);
+    }
+    const currentLocation = getSpoolCurrentLocation(spool.extra);
+    if (currentLocation) {
+      return t('qrScanResult.inventoryLocationPrinter', {
+        printer: currentLocation.printer,
+        slot: currentLocation.gate + 1,
+      });
+    }
+    return t(`profilePage.spoolState.${spool.state}`);
+  };
+
   const filamentTitle = [filament.brand_name, filament.name]
     .filter(Boolean)
     .join(' · ');
@@ -125,6 +200,103 @@ export function QrScanResultModal({
           <p className="mt-3 text-xs leading-5 text-slate-400">
             {t('qrScanResult.productVariantHint')}
           </p>
+        </div>
+
+        <div className="mt-4 rounded-2xl border border-blue-400/15 bg-blue-400/[0.06] p-4">
+          <div className="flex items-start gap-3">
+            <Boxes className="mt-0.5 h-5 w-5 shrink-0 text-blue-300" />
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-medium text-white">
+                {t('qrScanResult.inventoryTitle')}
+              </p>
+              {!isAuthenticated ? (
+                <p className="mt-1 text-sm text-slate-400">
+                  {t('qrScanResult.inventoryLoginHint')}
+                </p>
+              ) : inventoryQuery.isPending ? (
+                <p className="mt-2 flex items-center gap-2 text-sm text-slate-400">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  {t('qrScanResult.inventoryLoading')}
+                </p>
+              ) : inventoryQuery.isError ? (
+                <p className="mt-2 rounded-lg border border-amber-400/25 bg-amber-400/10 px-3 py-2 text-xs text-amber-100">
+                  {t('qrScanResult.inventoryLoadError')}
+                </p>
+              ) : (
+                <>
+                  <p className="mt-1 text-sm text-slate-300">
+                    {matchingSpools.length === 0
+                      ? t('qrScanResult.inventoryNone')
+                      : availableSpools.length === 0
+                        ? t('qrScanResult.inventoryNoAvailable')
+                        : availableSpools.length === 1
+                          ? t('qrScanResult.inventoryOne')
+                          : t('qrScanResult.inventoryMany', {
+                              count: availableSpools.length,
+                            })}
+                  </p>
+                  {availableSpools.length > 0 && (
+                    <p className="mt-1 text-xs text-blue-200">
+                      {t('qrScanResult.inventoryRemainingTotal', {
+                        weight: Math.round(totalRemaining),
+                      })}
+                    </p>
+                  )}
+                  {visibleSpools.length > 0 && (
+                    <div className="mt-3 space-y-2">
+                      {visibleSpools.map((spool) => (
+                        <div
+                          key={spool.id}
+                          data-testid={`qr-inventory-spool-${spool.id}`}
+                          className="rounded-lg border border-white/10 bg-black/15 px-3 py-2"
+                        >
+                          <div className="flex items-center justify-between gap-3 text-xs">
+                            <span className="font-medium text-slate-200">
+                              {t('qrScanResult.inventorySpoolLabel', { id: spool.id })}
+                            </span>
+                            <span className="shrink-0 text-blue-200">
+                              {t('qrScanResult.inventoryRemaining', {
+                                weight: Math.round(spool.remaining_weight_g),
+                              })}
+                            </span>
+                          </div>
+                          <p className="mt-1 flex items-center gap-1.5 text-xs text-slate-400">
+                            <MapPin className="h-3.5 w-3.5 shrink-0" />
+                            <span className="truncate">{spoolLocation(spool)}</span>
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {(archivedCount > 0 || emptyCount > 0) && (
+                    <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-400">
+                      {archivedCount > 0 && (
+                        <span>{t('qrScanResult.inventoryArchived', { count: archivedCount })}</span>
+                      )}
+                      {emptyCount > 0 && (
+                        <span>{t('qrScanResult.inventoryEmpty', { count: emptyCount })}</span>
+                      )}
+                    </div>
+                  )}
+                  {hiddenAvailableCount > 0 && (
+                    <p className="mt-2 text-xs text-slate-400">
+                      {t('qrScanResult.inventoryMore', { count: hiddenAvailableCount })}
+                    </p>
+                  )}
+                  {matchingSpools.length > 0 && onOpenSpools && (
+                    <button
+                      type="button"
+                      onClick={onOpenSpools}
+                      className="mt-3 inline-flex items-center gap-2 text-sm text-blue-300 transition hover:text-blue-200"
+                    >
+                      <ExternalLink className="h-4 w-4" />
+                      {t('qrScanResult.openSpools')}
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
         </div>
 
         <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.04] p-4">
@@ -215,7 +387,9 @@ export function QrScanResultModal({
               className="inline-flex items-center gap-2 rounded-lg bg-blue-500 px-3 py-2 text-sm font-semibold text-white transition hover:bg-blue-400"
             >
               <PackagePlus className="h-4 w-4" />
-              {t('qrScanResult.addSpool')}
+              {matchingSpools.length > 0
+                ? t('qrScanResult.addAnotherSpool')
+                : t('qrScanResult.addSpool')}
             </button>
           )}
           {onContinue && (
