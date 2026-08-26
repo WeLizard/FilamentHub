@@ -81,7 +81,7 @@ async def save_preset(
     saved_preset = UserSavedPreset(
         user_id=current_user.id,
         preset_id=data.preset_id,
-        sync=True,  # По умолчанию синхронизация включена
+        sync=data.sync,
     )
     db.add(saved_preset)
     preset.usage_count += 1

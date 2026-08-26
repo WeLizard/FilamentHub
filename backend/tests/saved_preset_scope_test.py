@@ -118,6 +118,7 @@ async def _save_preset(client: AsyncClient, headers: dict[str, str], preset_id: 
         "/api/v1/saved-presets/", json={"preset_id": preset_id}, headers=headers
     )
     assert response.status_code == 201
+    assert response.json()["sync"] is True
 
 
 async def _patch_scope(

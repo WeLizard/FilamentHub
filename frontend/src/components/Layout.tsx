@@ -11,6 +11,7 @@ import { LanguageSwitcher } from './LanguageSwitcher';
 import { isPluginEmbed, reportAuthStateToPlugin } from '../utils/pluginBridge';
 import { EmbedDebugOverlay } from './EmbedDebugOverlay';
 import { useTranslation } from 'react-i18next';
+import type { QrScanResponse } from '../api/client';
 import { filamentPublicPath } from '../utils/catalogUrls';
 import { PageBackground } from './PageBackground';
 import { SUPPORT_URL } from '../utils/support';
@@ -21,6 +22,7 @@ const GITHUB_PROJECT_URL = 'https://github.com/WeLizard/FilamentHub';
 const AuthModal = lazy(() => import('./AuthModal').then((module) => ({ default: module.AuthModal })));
 const FeedbackModal = lazy(() => import('./FeedbackModal').then((module) => ({ default: module.FeedbackModal })));
 const QrScannerModal = lazy(() => import('./QrScannerModal').then((module) => ({ default: module.QrScannerModal })));
+const QrScanResultModal = lazy(() => import('./QrScanResultModal').then((module) => ({ default: module.QrScanResultModal })));
 const Notifications = lazy(() => import('./Notifications').then((module) => ({ default: module.Notifications })));
 
 interface LayoutProps {
@@ -37,6 +39,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [isScanResolving, setIsScanResolving] = useState(false);
+  const [qrScanResult, setQrScanResult] = useState<QrScanResponse | null>(null);
 
   const handleScanDetected = async (rawCode: string): Promise<boolean> => {
     const code = ownQrShortCode(rawCode);
@@ -48,7 +51,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
       const res = await qrAPI.scan(code);
       if (res?.filament) {
         setIsScannerOpen(false);
-        navigate(`${filamentPublicPath(res.filament)}?qr=true`);
+        setQrScanResult(res);
         return true;
       }
       return false;
@@ -209,16 +212,14 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
 
             {/* Desktop Navigation */}
             <nav className="hidden xl:flex items-center space-x-2 relative z-[100]">
-              {user && (
-                <button
-                  onClick={() => setIsScannerOpen(true)}
-                  className="p-2 text-gray-300 hover:text-white hover:bg-white/10 rounded-lg transition-all"
-                  aria-label={t('qrScanner.open')}
-                  title={t('qrScanner.open')}
-                >
-                  <ScanLine className="w-5 h-5" />
-                </button>
-              )}
+              <button
+                onClick={() => setIsScannerOpen(true)}
+                className="p-2 text-gray-300 hover:text-white hover:bg-white/10 rounded-lg transition-all"
+                aria-label={t('qrScanner.open')}
+                title={t('qrScanner.open')}
+              >
+                <ScanLine className="w-5 h-5" />
+              </button>
               {user && (
                 <Suspense fallback={null}>
                   <Notifications />
@@ -310,16 +311,14 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
 
             {/* Mobile: Notifications + Hamburger */}
             <div className="flex xl:hidden items-center space-x-2">
-              {user && (
-                <button
-                  onClick={() => setIsScannerOpen(true)}
-                  className="p-2 text-gray-300 hover:text-white hover:bg-white/10 rounded-lg transition-all"
-                  aria-label={t('qrScanner.open')}
-                  title={t('qrScanner.open')}
-                >
-                  <ScanLine className="w-5 h-5" />
-                </button>
-              )}
+              <button
+                onClick={() => setIsScannerOpen(true)}
+                className="p-2 text-gray-300 hover:text-white hover:bg-white/10 rounded-lg transition-all"
+                aria-label={t('qrScanner.open')}
+                title={t('qrScanner.open')}
+              >
+                <ScanLine className="w-5 h-5" />
+              </button>
               {user && (
                 <Suspense fallback={null}>
                   <Notifications />
@@ -495,6 +494,29 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
         <div className="hidden md:flex fixed bottom-4 right-4 z-50 rounded-xl bg-slate-900/95 border border-white/15 shadow-2xl shadow-black/40 p-1 backdrop-blur">
           <LanguageSwitcher compact className="!bg-transparent !border-0 !p-0" />
         </div>
+      )}
+
+      {qrScanResult && (
+        <Suspense fallback={null}>
+          <QrScanResultModal
+            result={qrScanResult}
+            isAuthenticated={Boolean(user)}
+            onClose={() => setQrScanResult(null)}
+            onRequestLogin={() => setIsAuthModalOpen(true)}
+            onOpenMaterial={() => {
+              const filament = qrScanResult.filament;
+              setQrScanResult(null);
+              navigate(`${filamentPublicPath(filament)}?qr=true`);
+            }}
+            onAddSpool={() => {
+              const filamentId = qrScanResult.filament.id;
+              setQrScanResult(null);
+              navigate(
+                `/profile?tab=spools&add_spool=1&filament_id=${filamentId}&source=qr`,
+              );
+            }}
+          />
+        </Suspense>
       )}
 
       {/* Auth Modal */}

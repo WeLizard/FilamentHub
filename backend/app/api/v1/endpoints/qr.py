@@ -19,8 +19,10 @@ from app.core.errors import (
 )
 from app.db.session import get_db
 from app.models.filament import Filament
+from app.models.preset import Preset
 from app.models.user import User
 from app.schemas.filament import FilamentResponse
+from app.schemas.preset import PresetResponse
 from app.services.catalog_url_service import filament_public_path
 from app.services.filament_analytics import event_country, record_filament_event
 from app.services.qr_service import (
@@ -92,6 +94,8 @@ async def handle_qr_scan(
     if not filament:
         raise_error(404, ERR_FILAMENT_NOT_FOUND)
 
+    current_user_id = current_user.id if current_user else None
+
     # Recognition is read-only apart from the privacy-safe scan analytics.
     filament.scans_count += 1
     record_filament_event(
@@ -102,24 +106,33 @@ async def handle_qr_scan(
     )
     await db.commit()
 
-    official_preset = None
+    # Return the public official candidate to every client. Authentication only
+    # adds the user's read-only library state; it never changes that state.
+    preset_result = await db.execute(
+        select(Preset).where(
+            Preset.filament_id == filament.id,
+            Preset.is_official == True,
+            Preset.active == True
+        ).order_by(Preset.created_at.desc())
+        .limit(1)
+    )
+    official_preset = preset_result.scalar_one_or_none()
+    preset_saved = None
+    preset_sync_enabled = None
 
-    # Preserve the authenticated response contract without mutating the user's
-    # preset library or its Orca desired state.
-    if current_user:
-        from app.models.preset import Preset
-        from app.schemas.preset import PresetResponse
+    if current_user_id is not None and official_preset is not None:
+        from app.models.user_saved_preset import UserSavedPreset
 
-        # Находим официальный пресет для материала
-        preset_result = await db.execute(
-            select(Preset).where(
-                Preset.filament_id == filament.id,
-                Preset.is_official == True,
-                Preset.active == True
-            ).order_by(Preset.created_at.desc())
-            .limit(1)
+        saved_result = await db.execute(
+            select(UserSavedPreset).where(
+                UserSavedPreset.user_id == current_user_id,
+                UserSavedPreset.preset_id == official_preset.id,
+            )
         )
-        official_preset = preset_result.scalar_one_or_none()
+        saved_preset = saved_result.scalar_one_or_none()
+        preset_saved = saved_preset is not None
+        if saved_preset is not None:
+            preset_sync_enabled = saved_preset.sync
 
     await db.refresh(filament)
     await db.refresh(filament, attribute_names=["brand"])
@@ -134,6 +147,8 @@ async def handle_qr_scan(
     return {
         "filament": filament_response,
         "preset_added": False,
+        "preset_saved": preset_saved,
+        "preset_sync_enabled": preset_sync_enabled,
         "preset": PresetResponse.model_validate_public(official_preset)
         if official_preset
         else None,

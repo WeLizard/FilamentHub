@@ -619,17 +619,25 @@ async def test_saving_preset_increments_usage_once(client: AsyncClient, db_sessi
     await db_session.refresh(preset)
 
     first = await client.post(
-        "/api/v1/saved-presets/", json={"preset_id": preset.id}, headers=headers
+        "/api/v1/saved-presets/",
+        json={"preset_id": preset.id, "sync": False},
+        headers=headers,
     )
     assert first.status_code == 201
+    assert first.json()["sync"] is False
     await db_session.refresh(preset)
     assert preset.usage_count == 1
+
+    desired = await client.get("/api/v1/auth/my-presets", headers=headers)
+    assert desired.status_code == 200
+    assert desired.json()["total"] == 0
 
     # Re-saving the same preset must not double-count (dedup on existing record).
     again = await client.post(
         "/api/v1/saved-presets/", json={"preset_id": preset.id}, headers=headers
     )
     assert again.status_code in (200, 201)
+    assert again.json()["sync"] is False
     await db_session.refresh(preset)
     assert preset.usage_count == 1
 

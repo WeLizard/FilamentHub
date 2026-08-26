@@ -1160,6 +1160,17 @@ export const filamentReviewsAPI = {
 };
 
 // QR Code API
+export interface QrScanResponse {
+  filament: Filament;
+  /** Legacy compatibility field. Recognition never saves a preset. */
+  preset_added: boolean;
+  preset: Preset | null;
+  /** null means the scan was anonymous or no official preset exists. */
+  preset_saved: boolean | null;
+  /** Present only when the authenticated user already saved this preset. */
+  preset_sync_enabled: boolean | null;
+}
+
 export const qrAPI = {
   // Получить QR-код изображение (URL)
   getQRCodeURL: (filamentId: number, size: number = 300, branded = false): string => {
@@ -1187,11 +1198,7 @@ export const qrAPI = {
   },
 
   // Регистрация сканирования QR-кода
-  scan: async (shortCode: string): Promise<{
-    filament: Filament;
-    preset_added: boolean;
-    preset: Preset | null;
-  }> => {
+  scan: async (shortCode: string): Promise<QrScanResponse> => {
     const response = await api.post(`/qr/${shortCode}/scan`);
     return response.data;
   },
@@ -1376,8 +1383,8 @@ export const savedPresetsAPI = {
     return response.data;
   },
 
-  save: async (preset_id: number) => {
-    const response = await api.post<UserSavedPreset>('/saved-presets/', { preset_id });
+  save: async (preset_id: number, sync = true) => {
+    const response = await api.post<UserSavedPreset>('/saved-presets/', { preset_id, sync });
     return response.data;
   },
 

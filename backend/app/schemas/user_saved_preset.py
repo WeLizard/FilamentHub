@@ -12,6 +12,10 @@ class UserSavedPresetCreate(BaseModel):
     """Schema for creating UserSavedPreset."""
 
     preset_id: int = Field(..., gt=0, description="ID пресета для сохранения")
+    sync: bool = Field(
+        default=True,
+        description="Включить ли OrcaSlicer sync вместе с сохранением",
+    )
 
 
 class UserSavedPresetScopeUpdate(BaseModel):
@@ -44,4 +48,3 @@ class UserSavedPresetListResponse(BaseModel):
 
     items: list[UserSavedPresetResponse]
     total: int
-

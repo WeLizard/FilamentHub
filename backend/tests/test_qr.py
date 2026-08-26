@@ -163,9 +163,13 @@ async def test_handle_qr_scan_anonymous_and_authenticated_recognize_exact_varian
         assert anonymous_data["filament"][key] == authenticated_data["filament"][key]
     assert anonymous_data["filament"]["id"] == filament.id
     assert anonymous_data["preset_added"] is False
-    assert anonymous_data["preset"] is None
+    assert anonymous_data["preset"]["id"] == preset.id
+    assert anonymous_data["preset_saved"] is None
+    assert anonymous_data["preset_sync_enabled"] is None
     assert authenticated_data["preset_added"] is False
     assert authenticated_data["preset"]["id"] == preset.id
+    assert authenticated_data["preset_saved"] is False
+    assert authenticated_data["preset_sync_enabled"] is None
 
     await db_session.refresh(filament)
     await db_session.refresh(preset)
@@ -203,6 +207,51 @@ async def test_handle_qr_scan_authenticated_no_preset(
     data = response.json()
     assert data["preset_added"] is False
     assert data["preset"] is None
+    assert data["preset_saved"] is None
+    assert data["preset_sync_enabled"] is None
+
+
+@pytest.mark.asyncio
+async def test_handle_qr_scan_reports_existing_library_state_without_changing_it(
+    client: AsyncClient, db_session: AsyncSession
+):
+    """Recognition exposes saved/sync state but never rewrites either value."""
+    headers, user_id = await _register_and_login(client, "qr-saved-state")
+    filament = await _create_verified_filament(db_session)
+    preset = await _create_official_preset(
+        db_session,
+        filament_id=filament.id,
+        user_id=user_id,
+        name="Official Saved-State Preset",
+    )
+    start_usage = preset.usage_count
+    saved_preset = UserSavedPreset(user_id=user_id, preset_id=preset.id, sync=False)
+    db_session.add(saved_preset)
+    await db_session.commit()
+
+    sync_off = await client.post(
+        f"/api/v1/qr/{filament.qr_code}/scan", headers=headers
+    )
+    assert sync_off.status_code == 200
+    assert sync_off.json()["preset_saved"] is True
+    assert sync_off.json()["preset_sync_enabled"] is False
+
+    saved_preset.sync = True
+    await db_session.commit()
+    sync_on = await client.post(
+        f"/api/v1/qr/{filament.qr_code}/scan", headers=headers
+    )
+    assert sync_on.status_code == 200
+    assert sync_on.json()["preset_saved"] is True
+    assert sync_on.json()["preset_sync_enabled"] is True
+
+    await db_session.refresh(preset)
+    await db_session.refresh(saved_preset)
+    assert preset.usage_count == start_usage
+    assert saved_preset.sync is True
+    assert await _row_count(db_session, UserSavedPreset) == 1
+    assert await _row_count(db_session, UserSpool) == 0
+    assert await _row_count(db_session, MaterialSlotAssignment) == 0
 
 
 @pytest.mark.asyncio
@@ -228,6 +277,10 @@ async def test_handle_qr_scan_repeated_requests_only_record_analytics(
     assert r2.json()["preset_added"] is False
     assert r1.json()["preset"]["id"] == preset.id
     assert r2.json()["preset"]["id"] == preset.id
+    assert r1.json()["preset_saved"] is False
+    assert r2.json()["preset_saved"] is False
+    assert r1.json()["preset_sync_enabled"] is None
+    assert r2.json()["preset_sync_enabled"] is None
 
     await db_session.refresh(filament)
     await db_session.refresh(preset)
@@ -336,6 +389,14 @@ async def test_handle_qr_scan_concurrent_requests_create_no_product_state(tmp_pa
         assert [response.json()["preset_added"] for response in responses] == [
             False,
             False,
+        ]
+        assert [response.json()["preset_saved"] for response in responses] == [
+            False,
+            False,
+        ]
+        assert [response.json()["preset_sync_enabled"] for response in responses] == [
+            None,
+            None,
         ]
         assert [response.json()["preset"]["id"] for response in responses] == [
             preset_id,

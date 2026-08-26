@@ -2646,6 +2646,27 @@
     "customersCount": "Customers",
     "sliceReportsCount": "Slice records"
   },
+  "qrScanResult": {
+    "title": "Scan result",
+    "recognized": "QR recognized",
+    "exactVariant": "Exact material variant",
+    "productVariantHint": "The QR identifies a catalog material variant, not one physical spool.",
+    "officialPreset": "Official preset",
+    "noOfficialPreset": "No active official preset is available for this material yet.",
+    "presetSaved": "Already in your library",
+    "syncOn": "OrcaSlicer sync is enabled",
+    "syncOff": "OrcaSlicer sync is disabled",
+    "loginHint": "Sign in to save the preset or add a spool.",
+    "savePreset": "Save to library",
+    "savingPreset": "Saving...",
+    "saveError": "Could not save the preset.",
+    "openMaterial": "Open material",
+    "addSpool": "Add spool",
+    "useForSpool": "Use for this spool",
+    "continue": "Continue",
+    "login": "Sign in",
+    "close": "Close"
+  },
   "profilePage": {
     "calculator": {
       "proBadge": "Premium",
@@ -3516,7 +3537,6 @@
       "scanQrInvalid": "Could not recognize the QR code.",
       "scanQrNoFilament": "No filament was found for this QR code.",
       "scanQrSuccess": "Filament found and selected.",
-      "scanQrSuccessWithPreset": "Filament found. Official preset was added to profile and selected.",
       "scanQrPasteFailed": "Could not read clipboard.",
       "initialWeight": "Initial weight (g)",
       "usedWeight": "Already used (g)",

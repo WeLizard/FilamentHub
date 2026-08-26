@@ -2641,6 +2641,27 @@
     "customersCount": "客户",
     "sliceReportsCount": "切片记录"
   },
+  "qrScanResult": {
+    "title": "扫描结果",
+    "recognized": "二维码已识别",
+    "exactVariant": "精确材料型号",
+    "productVariantHint": "二维码标识的是目录中的材料型号，而不是某一个实体线轴。",
+    "officialPreset": "官方预设",
+    "noOfficialPreset": "此材料目前没有可用的官方预设。",
+    "presetSaved": "已在您的预设库中",
+    "syncOn": "OrcaSlicer 同步已开启",
+    "syncOff": "OrcaSlicer 同步未开启",
+    "loginHint": "登录后可保存预设或添加线轴。",
+    "savePreset": "保存到预设库",
+    "savingPreset": "正在保存...",
+    "saveError": "无法保存预设。",
+    "openMaterial": "打开材料",
+    "addSpool": "添加线轴",
+    "useForSpool": "用于此线轴",
+    "continue": "继续",
+    "login": "登录",
+    "close": "关闭"
+  },
   "profilePage": {
     "calculator": {
       "proBadge": "高级版",
@@ -3511,7 +3532,6 @@
       "scanQrInvalid": "无法识别二维码。",
       "scanQrNoFilament": "未找到此二维码的耗材。",
       "scanQrSuccess": "耗材已找到并选中。",
-      "scanQrSuccessWithPreset": "耗材已找到。官方预设已添加到配置文件并选中。",
       "scanQrPasteFailed": "无法读取剪贴板。",
       "initialWeight": "初始重量 (g)",
       "usedWeight": "已使用 (g)",

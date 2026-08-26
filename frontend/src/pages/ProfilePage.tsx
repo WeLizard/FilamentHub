@@ -48,7 +48,7 @@ import { useHeaderVisible } from '../hooks/useHeaderVisible';
 import { useUserCurrency } from '../hooks/useUserCurrency';
 import { presetsAPI, filamentsAPI, brandsAPI, savedPresetsAPI, filamentReviewsAPI, printerProfilesAPI, printProfilesAPI, authAPI, spoolsAPI, qrAPI, calculatorAPI, crmAPI, physicalPrintersAPI, achievementsAPI } from '../api/client';
 import { extractQrShortCode, createQrFrameDecoder } from '../utils/qrScanner';
-import type { UserSpool, SpoolState, PhysicalPrinter, MaterialSlot } from '../api/client';
+import type { UserSpool, SpoolState, PhysicalPrinter, MaterialSlot, QrScanResponse } from '../api/client';
 import { SpoolIcon } from '../components/icons/SpoolIcon';
 import { NozzleRequirementBadge } from '../components/NozzleRequirementBadge';
 import { translateApiError } from '../utils/translateApiError';
@@ -70,6 +70,7 @@ const CreatePresetModal = lazy(() =>
 );
 import { ViewPresetModal } from '../components/ViewPresetModal';
 import { ModalOverlay } from '../components/ModalOverlay';
+import { QrScanResultModal } from '../components/QrScanResultModal';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { ConfirmDeleteModal } from '../components/ConfirmDeleteModal';
 import { toast } from '../components/Toast';
@@ -2424,6 +2425,7 @@ const SpoolForm: React.FC<SpoolFormProps> = ({
   const [qrError, setQrError] = useState<string | null>(null);
   const [qrSuccess, setQrSuccess] = useState<string | null>(null);
   const [scannedFilament, setScannedFilament] = useState<Filament | null>(null);
+  const [qrScanResult, setQrScanResult] = useState<QrScanResponse | null>(null);
   const [isCameraOpen, setIsCameraOpen] = useState(false);
   const [isCameraBusy, setIsCameraBusy] = useState(false);
   const [isCameraReady, setIsCameraReady] = useState(false);
@@ -2571,6 +2573,7 @@ const SpoolForm: React.FC<SpoolFormProps> = ({
     setQrError(null);
     setQrSuccess(null);
     setScannedFilament(null);
+    setQrScanResult(null);
     setIsCameraOpen(false);
     setIsCameraBusy(false);
     setIsCameraReady(false);
@@ -2623,20 +2626,7 @@ const SpoolForm: React.FC<SpoolFormProps> = ({
         setQrError(t('profilePage.spoolAddModal.scanQrNoFilament'));
         return;
       }
-
-      setScannedFilament(response.filament);
-      setFilamentId(String(response.filament.id));
-      setSource('qr');
-      if (response.filament.spool_weight && response.filament.spool_weight > 0) {
-        setInitialWeight(String(response.filament.spool_weight));
-      }
-      setQrInput('');
-      setIsQrPanelOpen(false);
-      setQrSuccess(
-        response.preset_added
-          ? t('profilePage.spoolAddModal.scanQrSuccessWithPreset')
-          : t('profilePage.spoolAddModal.scanQrSuccess')
-      );
+      setQrScanResult(response);
     } catch (error: any) {
       setQrError(translateApiError(t, error?.response?.data?.detail));
     } finally {
@@ -2747,6 +2737,23 @@ const SpoolForm: React.FC<SpoolFormProps> = ({
     } catch {
       setQrError(t('profilePage.spoolAddModal.scanQrPasteFailed'));
     }
+  };
+
+  const applyQrScanResult = () => {
+    if (!qrScanResult) {
+      return;
+    }
+    const filament = qrScanResult.filament;
+    setScannedFilament(filament);
+    setFilamentId(String(filament.id));
+    setSource('qr');
+    if (filament.spool_weight && filament.spool_weight > 0) {
+      setInitialWeight(String(filament.spool_weight));
+    }
+    setQrInput('');
+    setIsQrPanelOpen(false);
+    setQrScanResult(null);
+    setQrSuccess(t('profilePage.spoolAddModal.scanQrSuccess'));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -2955,6 +2962,15 @@ const SpoolForm: React.FC<SpoolFormProps> = ({
 
   return (
     <form onSubmit={handleSubmit} className="glass-panel border border-white/20 rounded-2xl p-4 md:p-5 space-y-4 max-w-2xl mx-auto">
+      {qrScanResult && (
+        <QrScanResultModal
+          result={qrScanResult}
+          isAuthenticated={Boolean(user)}
+          onClose={() => setQrScanResult(null)}
+          onContinue={applyQrScanResult}
+          continueLabel={t('qrScanResult.useForSpool')}
+        />
+      )}
       <h3 className="text-white font-semibold text-base">
         {mode === 'edit' ? t('profilePage.spoolEditModal.title') : t('profilePage.spoolAddModal.title')}
       </h3>
