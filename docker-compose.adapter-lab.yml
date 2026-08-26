@@ -1,0 +1,98 @@
+name: filamenthub-adapter-lab
+
+x-lab-runtime: &lab-runtime
+  build:
+    context: ./adapter-lab
+  restart: "no"
+  networks:
+    - adapter_lab
+
+services:
+  octoprint:
+    profiles: [octoprint]
+    build:
+      context: ./octoprint-plugin
+      dockerfile: ../adapter-lab/octoprint/Dockerfile
+    image: filamenthub-adapter-lab-octoprint:local
+    restart: "no"
+    environment:
+      ENABLE_MJPG_STREAMER: "false"
+    entrypoint:
+      - /bin/sh
+      - -ec
+      - |
+        mkdir -p /octoprint/octoprint
+        if [ ! -f /octoprint/.filamenthub-adapter-lab-config-v2 ]; then
+          cp /adapter-lab/config.yaml /octoprint/octoprint/config.yaml
+          touch /octoprint/.filamenthub-adapter-lab-config-v2
+        fi
+        exec /init
+    volumes:
+      - octoprint_adapter_lab:/octoprint
+      - ./adapter-lab/octoprint/config.yaml:/adapter-lab/config.yaml:ro
+    ports:
+      - "127.0.0.1:5010:80"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; r=urllib.request.Request('http://127.0.0.1/api/version', headers={'X-Api-Key':'FHLAB00000000000000000000000000000000001'}); urllib.request.urlopen(r, timeout=2)",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 20s
+    networks:
+      - adapter_lab
+
+  moonraker-hh:
+    <<: *lab-runtime
+    profiles: [moonraker]
+    image: filamenthub-adapter-lab-moonraker:local
+    command: ["python", "/app/moonraker_hh.py"]
+    environment:
+      MOONRAKER_API_KEY: adapter-lab-hh-key
+    ports:
+      - "127.0.0.1:7126:7125"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:7125/healthz', timeout=2)",
+        ]
+      interval: 3s
+      timeout: 2s
+      retries: 10
+
+  bambu-lan:
+    <<: *lab-runtime
+    profiles: [bambu]
+    image: filamenthub-adapter-lab-bambu:local
+    command: ["python", "/app/bambu_lan.py"]
+    environment:
+      BAMBU_ACCESS_CODE: adapterlab
+      BAMBU_SERIAL: FH-BAMBU-LAB
+    ports:
+      - "127.0.0.1:8883:8883"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8884/healthz', timeout=2)",
+        ]
+      interval: 3s
+      timeout: 2s
+      retries: 10
+
+volumes:
+  octoprint_adapter_lab:
+
+networks:
+  adapter_lab:
+    driver: bridge

@@ -1,0 +1,21 @@
+accessControl:
+  enabled: false
+api:
+  key: FHLAB00000000000000000000000000000000001
+plugins:
+  _disabled:
+    - announcements
+    - discovery
+    - errortracking
+    - health_check
+    - pluginmanager
+    - softwareupdate
+    - tracking
+  virtual_printer:
+    enabled: true
+server:
+  firstRun: false
+  onlineCheck:
+    enabled: false
+  pluginBlacklist:
+    enabled: false
