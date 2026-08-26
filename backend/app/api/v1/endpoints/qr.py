@@ -5,7 +5,6 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import RedirectResponse, StreamingResponse
 from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -79,9 +78,10 @@ async def handle_qr_scan(
     current_user: User | None = Depends(get_current_active_user_optional),
 ) -> dict:
     """
-    Регистрирует сканирование QR-кода и автоматически добавляет официальный пресет в профиль пользователя.
+    Регистрирует сканирование QR-кода и возвращает распознанный материал.
 
-    Если пользователь авторизован и есть официальный пресет - он автоматически добавляется.
+    Для совместимости авторизованному пользователю также возвращается официальный
+    пресет, если он есть, но сохранение остаётся отдельным явным действием.
     """
     # Получаем материал по короткому коду
     result = await db.execute(
@@ -92,9 +92,7 @@ async def handle_qr_scan(
     if not filament:
         raise_error(404, ERR_FILAMENT_NOT_FOUND)
 
-    # Регистрируем скан отдельным коммитом: авто-сохранение пресета ниже может
-    # проиграть гонку по unique (user_id, preset_id) и откатиться — счётчик
-    # скана при этом должен сохраниться.
+    # Recognition is read-only apart from the privacy-safe scan analytics.
     filament.scans_count += 1
     record_filament_event(
         db,
@@ -104,13 +102,12 @@ async def handle_qr_scan(
     )
     await db.commit()
 
-    preset_added = False
     official_preset = None
 
-    # Если пользователь авторизован - автоматически добавляем официальный пресет
+    # Preserve the authenticated response contract without mutating the user's
+    # preset library or its Orca desired state.
     if current_user:
         from app.models.preset import Preset
-        from app.models.user_saved_preset import UserSavedPreset
         from app.schemas.preset import PresetResponse
 
         # Находим официальный пресет для материала
@@ -124,38 +121,8 @@ async def handle_qr_scan(
         )
         official_preset = preset_result.scalar_one_or_none()
 
-        if official_preset:
-            # Проверяем, нет ли уже этого пресета в профиле пользователя
-            existing = await db.execute(
-                select(UserSavedPreset).where(
-                    UserSavedPreset.user_id == current_user.id,
-                    UserSavedPreset.preset_id == official_preset.id
-                )
-            )
-
-            if not existing.scalar_one_or_none():
-                # Добавляем пресет в профиль пользователя
-                saved_preset = UserSavedPreset(
-                    user_id=current_user.id,
-                    preset_id=official_preset.id,
-                )
-                db.add(saved_preset)
-                official_preset.usage_count += 1
-                try:
-                    await db.commit()
-                    preset_added = True
-                except IntegrityError:
-                    # Конкурентный скан того же SKU уже добавил этот
-                    # (user_id, preset_id) — сработал восстановленный unique
-                    # индекс. Откатываем дубль-insert; пресет уже в профиле.
-                    await db.rollback()
-                    preset_added = False
-
     await db.refresh(filament)
     await db.refresh(filament, attribute_names=["brand"])
-    # reload after commit: usage_count write expires attrs, model_validate would lazy-load
-    if official_preset is not None:
-        await db.refresh(official_preset)
 
     filament_response = FilamentResponse.model_validate(filament).model_copy(
         update={
@@ -165,9 +132,11 @@ async def handle_qr_scan(
         }
     )
     return {
-        'filament': filament_response,
-        'preset_added': preset_added,
-        'preset': PresetResponse.model_validate_public(official_preset) if official_preset else None
+        "filament": filament_response,
+        "preset_added": False,
+        "preset": PresetResponse.model_validate_public(official_preset)
+        if official_preset
+        else None,
     }
 
 
