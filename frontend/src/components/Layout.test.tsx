@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 
 import { Layout } from './Layout';
@@ -38,10 +38,24 @@ vi.mock('./QrScannerModal', () => ({
   ),
 }));
 vi.mock('./QrScanResultModal', () => ({
-  QrScanResultModal: ({ result }: { result: { filament: { id: number } } }) => (
-    <div data-testid="qr-scan-result">{result.filament.id}</div>
+  QrScanResultModal: ({
+    result,
+    onAddSpool,
+  }: {
+    result: { filament: { id: number } };
+    onAddSpool: (placement: 'shelf' | 'printer') => void;
+  }) => (
+    <div data-testid="qr-scan-result">
+      {result.filament.id}
+      <button type="button" onClick={() => onAddSpool('printer')}>add-to-printer</button>
+    </div>
   ),
 }));
+
+const LocationProbe = () => {
+  const location = useLocation();
+  return <span data-testid="location">{`${location.pathname}${location.search}`}</span>;
+};
 
 describe('Layout', () => {
   it('keeps the steady-state background free from perpetual animation', () => {
@@ -51,7 +65,7 @@ describe('Layout', () => {
     const { container } = render(
       <MemoryRouter>
         <QueryClientProvider client={queryClient}>
-          <Layout><span>content</span></Layout>
+          <Layout><LocationProbe /></Layout>
         </QueryClientProvider>
       </MemoryRouter>,
     );
@@ -74,7 +88,7 @@ describe('Layout', () => {
     render(
       <MemoryRouter>
         <QueryClientProvider client={queryClient}>
-          <Layout><span>content</span></Layout>
+          <Layout><LocationProbe /></Layout>
         </QueryClientProvider>
       </MemoryRouter>,
     );
@@ -84,5 +98,9 @@ describe('Layout', () => {
 
     expect(await screen.findByTestId('qr-scan-result')).toHaveTextContent('42');
     expect(scanQr).toHaveBeenCalledWith('FH-TEST');
+    fireEvent.click(screen.getByRole('button', { name: 'add-to-printer' }));
+    expect(screen.getByTestId('location')).toHaveTextContent(
+      '/profile?tab=spools&add_spool=1&filament_id=42&source=qr&placement=printer',
+    );
   });
 });

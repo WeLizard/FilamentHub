@@ -508,11 +508,11 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
               setQrScanResult(null);
               navigate(`${filamentPublicPath(filament)}?qr=true`);
             }}
-            onAddSpool={() => {
+            onAddSpool={(placement) => {
               const filamentId = qrScanResult.filament.id;
               setQrScanResult(null);
               navigate(
-                `/profile?tab=spools&add_spool=1&filament_id=${filamentId}&source=qr`,
+                `/profile?tab=spools&add_spool=1&filament_id=${filamentId}&source=qr&placement=${placement}`,
               );
             }}
             onOpenSpools={() => {

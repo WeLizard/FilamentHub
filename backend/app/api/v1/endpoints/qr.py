@@ -19,12 +19,12 @@ from app.core.errors import (
 )
 from app.db.session import get_db
 from app.models.filament import Filament
-from app.models.preset import Preset
 from app.models.user import User
 from app.schemas.filament import FilamentResponse
 from app.schemas.preset import PresetResponse
 from app.services.catalog_url_service import filament_public_path
 from app.services.filament_analytics import event_country, record_filament_event
+from app.services.filament_preset_summary import bucket_by_kind, summary_query
 from app.services.qr_service import (
     ensure_filament_qr_code,
     generate_branded_qr_code_image,
@@ -82,8 +82,8 @@ async def handle_qr_scan(
     """
     Регистрирует сканирование QR-кода и возвращает распознанный материал.
 
-    Для совместимости авторизованному пользователю также возвращается официальный
-    пресет, если он есть, но сохранение остаётся отдельным явным действием.
+    Вместе с материалом возвращается ведущий публичный пресет: официальный,
+    либо лучший community-вариант. Сохранение остаётся отдельным явным действием.
     """
     # Получаем материал по короткому коду
     result = await db.execute(
@@ -106,27 +106,43 @@ async def handle_qr_scan(
     )
     await db.commit()
 
-    # Return the public official candidate to every client. Authentication only
-    # adds the user's read-only library state; it never changes that state.
-    preset_result = await db.execute(
-        select(Preset).where(
-            Preset.filament_id == filament.id,
-            Preset.is_official == True,
-            Preset.active == True
-        ).order_by(Preset.created_at.desc())
-        .limit(1)
-    )
-    official_preset = preset_result.scalar_one_or_none()
+    # Reuse the catalogue's public-visibility contract. QR intake deliberately
+    # prefers official provenance, then the highest-rated community candidate.
+    preset_result = await db.execute(summary_query([filament.id]))
+    public_presets = list(preset_result.scalars())
+    preset_bucket = bucket_by_kind(public_presets).get(filament.id, {})
+    if "official" in preset_bucket:
+        selected_preset = preset_bucket["official"]
+        preset_type = "official"
+    else:
+        community_candidates = [
+            preset
+            for preset in public_presets
+            if not preset.is_official and not preset.is_weighted
+        ]
+        selected_preset = max(
+            community_candidates,
+            key=lambda preset: (
+                preset.rating is not None,
+                preset.rating or 0,
+                preset.updated_at,
+            ),
+            default=None,
+        )
+    if selected_preset is not None and not selected_preset.is_official:
+        preset_type = "community"
+    elif selected_preset is None:
+        preset_type = None
     preset_saved = None
     preset_sync_enabled = None
 
-    if current_user_id is not None and official_preset is not None:
+    if current_user_id is not None and selected_preset is not None:
         from app.models.user_saved_preset import UserSavedPreset
 
         saved_result = await db.execute(
             select(UserSavedPreset).where(
                 UserSavedPreset.user_id == current_user_id,
-                UserSavedPreset.preset_id == official_preset.id,
+                UserSavedPreset.preset_id == selected_preset.id,
             )
         )
         saved_preset = saved_result.scalar_one_or_none()
@@ -149,8 +165,9 @@ async def handle_qr_scan(
         "preset_added": False,
         "preset_saved": preset_saved,
         "preset_sync_enabled": preset_sync_enabled,
-        "preset": PresetResponse.model_validate_public(official_preset)
-        if official_preset
+        "preset_type": preset_type,
+        "preset": PresetResponse.model_validate_public(selected_preset)
+        if selected_preset
         else None,
     }
 

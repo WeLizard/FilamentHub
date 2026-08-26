@@ -9,6 +9,7 @@ import {
   LogIn,
   MapPin,
   PackagePlus,
+  Printer,
   X,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -29,7 +30,7 @@ interface QrScanResultModalProps {
   userId: number | null;
   onClose: () => void;
   onOpenMaterial?: () => void;
-  onAddSpool?: () => void;
+  onAddSpool?: (placement: 'shelf' | 'printer') => void;
   onOpenSpools?: () => void;
   onContinue?: () => void;
   continueLabel?: string;
@@ -150,6 +151,8 @@ export function QrScanResultModal({
   const filamentTitle = [filament.brand_name, filament.name]
     .filter(Boolean)
     .join(' · ');
+  const selectedPresetType = result.preset_type
+    ?? (result.preset?.is_official ? 'official' : 'community');
 
   return (
     <ModalOverlay
@@ -162,16 +165,26 @@ export function QrScanResultModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="qr-scan-result-title"
-        className="w-full max-w-xl rounded-2xl border border-white/15 bg-slate-950 p-5 shadow-2xl shadow-black/60 sm:p-6"
+        className="max-h-[calc(100vh-2rem)] w-full max-w-xl overflow-y-auto rounded-2xl border border-white/15 bg-slate-950 p-4 shadow-2xl shadow-black/60 sm:p-5"
       >
         <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-cyan-300">
-              {t('qrScanResult.recognized')}
-            </p>
-            <h2 id="qr-scan-result-title" className="mt-2 text-xl font-semibold text-white">
-              {t('qrScanResult.title')}
+          <div className="min-w-0">
+            <h2 id="qr-scan-result-title" className="truncate text-xl font-semibold text-white">
+              {filamentTitle}
             </h2>
+            <div className="mt-2 flex flex-wrap gap-1.5 text-xs text-slate-300">
+              {filament.color_name && (
+                <span className="rounded-full border border-white/10 bg-white/[0.04] px-2 py-0.5">
+                  {filament.color_name}
+                </span>
+              )}
+              <span className="rounded-full border border-white/10 bg-white/[0.04] px-2 py-0.5">
+                {filament.material_type}
+              </span>
+            </div>
+            <p className="mt-2 text-xs text-slate-500">
+              {t('qrScanResult.productVariantHint')}
+            </p>
           </div>
           <button
             type="button"
@@ -184,25 +197,7 @@ export function QrScanResultModal({
           </button>
         </div>
 
-        <div className="mt-5 rounded-2xl border border-cyan-400/20 bg-cyan-400/10 p-4">
-          <p className="text-xs text-cyan-200">{t('qrScanResult.exactVariant')}</p>
-          <p className="mt-1 text-lg font-semibold text-white">{filamentTitle}</p>
-          <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-300">
-            {filament.color_name && (
-              <span className="rounded-full border border-white/10 bg-black/20 px-2.5 py-1">
-                {filament.color_name}
-              </span>
-            )}
-            <span className="rounded-full border border-white/10 bg-black/20 px-2.5 py-1">
-              {filament.material_type}
-            </span>
-          </div>
-          <p className="mt-3 text-xs leading-5 text-slate-400">
-            {t('qrScanResult.productVariantHint')}
-          </p>
-        </div>
-
-        <div className="mt-4 rounded-2xl border border-blue-400/15 bg-blue-400/[0.06] p-4">
+        <div className="mt-3 rounded-xl border border-blue-400/15 bg-blue-400/[0.06] p-3.5">
           <div className="flex items-start gap-3">
             <Boxes className="mt-0.5 h-5 w-5 shrink-0 text-blue-300" />
             <div className="min-w-0 flex-1">
@@ -243,7 +238,7 @@ export function QrScanResultModal({
                     </p>
                   )}
                   {visibleSpools.length > 0 && (
-                    <div className="mt-3 space-y-2">
+                    <div className="mt-2.5 space-y-1.5">
                       {visibleSpools.map((spool) => (
                         <div
                           key={spool.id}
@@ -299,22 +294,29 @@ export function QrScanResultModal({
           </div>
         </div>
 
-        <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+        <div className="mt-3 rounded-xl border border-white/10 bg-white/[0.04] p-3.5">
           <div className="flex items-start gap-3">
             <Library className="mt-0.5 h-5 w-5 shrink-0 text-purple-300" />
             <div className="min-w-0 flex-1">
               <p className="text-sm font-medium text-white">
-                {t('qrScanResult.officialPreset')}
+                {t('qrScanResult.presetTitle')}
               </p>
               {!result.preset ? (
                 <p className="mt-1 text-sm text-slate-400">
-                  {t('qrScanResult.noOfficialPreset')}
+                  {t('qrScanResult.noPreset')}
                 </p>
               ) : (
                 <>
-                  <p className="mt-1 truncate text-sm text-slate-200">
-                    {result.preset.name}
-                  </p>
+                  <div className="mt-1 flex min-w-0 flex-wrap items-center gap-2">
+                    <p className="min-w-0 truncate text-sm text-slate-200">
+                      {result.preset.name}
+                    </p>
+                    <span className="shrink-0 rounded-full border border-purple-400/20 bg-purple-400/10 px-2 py-0.5 text-[11px] text-purple-200">
+                      {selectedPresetType === 'official'
+                        ? t('qrScanResult.presetSourceOfficial')
+                        : t('qrScanResult.presetSourceCommunity')}
+                    </span>
+                  </div>
                   {presetSaved ? (
                     <div className="mt-2 flex items-start gap-2 text-sm text-emerald-300">
                       <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
@@ -332,7 +334,7 @@ export function QrScanResultModal({
                       type="button"
                       onClick={() => saveMutation.mutate()}
                       disabled={saveMutation.isPending}
-                      className="mt-3 inline-flex items-center gap-2 rounded-lg bg-purple-500 px-3 py-2 text-sm font-semibold text-white transition hover:bg-purple-400 disabled:opacity-50"
+                      className="mt-2 inline-flex items-center gap-2 rounded-lg bg-purple-500 px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-purple-400 disabled:opacity-50"
                     >
                       {saveMutation.isPending ? (
                         <Loader2 className="h-4 w-4 animate-spin" />
@@ -359,7 +361,7 @@ export function QrScanResultModal({
           </div>
         </div>
 
-        <div className="mt-5 flex flex-wrap justify-end gap-2">
+        <div className="mt-4 flex flex-wrap justify-end gap-2">
           {!isAuthenticated && onRequestLogin && (
             <button
               type="button"
@@ -381,16 +383,24 @@ export function QrScanResultModal({
             </button>
           )}
           {isAuthenticated && onAddSpool && (
-            <button
-              type="button"
-              onClick={onAddSpool}
-              className="inline-flex items-center gap-2 rounded-lg bg-blue-500 px-3 py-2 text-sm font-semibold text-white transition hover:bg-blue-400"
-            >
-              <PackagePlus className="h-4 w-4" />
-              {matchingSpools.length > 0
-                ? t('qrScanResult.addAnotherSpool')
-                : t('qrScanResult.addSpool')}
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={() => onAddSpool('shelf')}
+                className="inline-flex items-center gap-2 rounded-lg border border-blue-400/30 px-3 py-2 text-sm font-semibold text-blue-200 transition hover:bg-blue-400/10"
+              >
+                <PackagePlus className="h-4 w-4" />
+                {t('qrScanResult.addToShelf')}
+              </button>
+              <button
+                type="button"
+                onClick={() => onAddSpool('printer')}
+                className="inline-flex items-center gap-2 rounded-lg bg-blue-500 px-3 py-2 text-sm font-semibold text-white transition hover:bg-blue-400"
+              >
+                <Printer className="h-4 w-4" />
+                {t('qrScanResult.installInPrinter')}
+              </button>
+            </>
           )}
           {onContinue && (
             <button

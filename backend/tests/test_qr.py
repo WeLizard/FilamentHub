@@ -91,6 +91,37 @@ async def _create_official_preset(
     return preset
 
 
+async def _create_community_preset(
+    db: AsyncSession,
+    *,
+    filament_id: int,
+    user_id: int,
+    name: str,
+    rating: float | None,
+    moderation_status: PresetModerationStatus = PresetModerationStatus.APPROVED,
+) -> Preset:
+    preset = Preset(
+        filament_id=filament_id,
+        user_id=user_id,
+        name=name,
+        is_official=False,
+        is_weighted=False,
+        active=True,
+        moderation_status=moderation_status,
+        extruder_temp=210.0,
+        bed_temp=65.0,
+        flow_rate=100.0,
+        fan_speed=100,
+        retraction_length=1.0,
+        retraction_speed=45.0,
+        rating=rating,
+    )
+    db.add(preset)
+    await db.commit()
+    await db.refresh(preset)
+    return preset
+
+
 async def _row_count(db: AsyncSession, model: type) -> int:
     result = await db.execute(select(func.count()).select_from(model))
     return result.scalar_one()
@@ -144,9 +175,21 @@ async def test_handle_qr_scan_anonymous_and_authenticated_recognize_exact_varian
         user_id=user_id,
         name="Official Exact Preset",
     )
+    community_preset = await _create_community_preset(
+        db_session,
+        filament_id=filament.id,
+        user_id=user_id,
+        name="Higher-rated Community Preset",
+        rating=5.0,
+    )
     start_scans = filament.scans_count
     start_usage = preset.usage_count
+    start_community_usage = community_preset.usage_count
 
+    # Registration leaves auth cookies on the shared client. Remove them so
+    # this request exercises the genuinely anonymous contract, not CSRF on an
+    # authenticated cookie request without a token.
+    client.cookies.clear()
     anonymous = await client.post(
         f"/api/v1/qr/{filament.qr_code}/scan",
         headers={"x-country-code": "DE"},
@@ -164,17 +207,21 @@ async def test_handle_qr_scan_anonymous_and_authenticated_recognize_exact_varian
     assert anonymous_data["filament"]["id"] == filament.id
     assert anonymous_data["preset_added"] is False
     assert anonymous_data["preset"]["id"] == preset.id
+    assert anonymous_data["preset_type"] == "official"
     assert anonymous_data["preset_saved"] is None
     assert anonymous_data["preset_sync_enabled"] is None
     assert authenticated_data["preset_added"] is False
     assert authenticated_data["preset"]["id"] == preset.id
+    assert authenticated_data["preset_type"] == "official"
     assert authenticated_data["preset_saved"] is False
     assert authenticated_data["preset_sync_enabled"] is None
 
     await db_session.refresh(filament)
     await db_session.refresh(preset)
+    await db_session.refresh(community_preset)
     assert filament.scans_count == start_scans + 2
     assert preset.usage_count == start_usage
+    assert community_preset.usage_count == start_community_usage
 
     events = await db_session.execute(
         select(FilamentAnalyticsEvent)
@@ -207,8 +254,64 @@ async def test_handle_qr_scan_authenticated_no_preset(
     data = response.json()
     assert data["preset_added"] is False
     assert data["preset"] is None
+    assert data["preset_type"] is None
     assert data["preset_saved"] is None
     assert data["preset_sync_enabled"] is None
+
+
+@pytest.mark.asyncio
+async def test_handle_qr_scan_uses_best_public_community_when_official_is_absent(
+    client: AsyncClient, db_session: AsyncSession
+):
+    """Community fallback is public, exact-material and rating ordered."""
+    headers, user_id = await _register_and_login(client, "qr-community")
+    filament = await _create_verified_filament(db_session)
+    lower_rated = await _create_community_preset(
+        db_session,
+        filament_id=filament.id,
+        user_id=user_id,
+        name="Community 4.2",
+        rating=4.2,
+    )
+    best = await _create_community_preset(
+        db_session,
+        filament_id=filament.id,
+        user_id=user_id,
+        name="Community 4.9",
+        rating=4.9,
+    )
+    await _create_community_preset(
+        db_session,
+        filament_id=filament.id,
+        user_id=user_id,
+        name="Unrated Community",
+        rating=None,
+    )
+    await _create_community_preset(
+        db_session,
+        filament_id=filament.id,
+        user_id=user_id,
+        name="Rejected Community",
+        rating=5.0,
+        moderation_status=PresetModerationStatus.REJECTED,
+    )
+
+    response = await client.post(
+        f"/api/v1/qr/{filament.qr_code}/scan",
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["preset"]["id"] == best.id
+    assert data["preset_type"] == "community"
+    assert data["preset_saved"] is False
+    assert data["preset_sync_enabled"] is None
+    assert lower_rated.usage_count == 0
+    assert best.usage_count == 0
+    assert await _row_count(db_session, UserSavedPreset) == 0
+    assert await _row_count(db_session, UserSpool) == 0
+    assert await _row_count(db_session, MaterialSlotAssignment) == 0
 
 
 @pytest.mark.asyncio

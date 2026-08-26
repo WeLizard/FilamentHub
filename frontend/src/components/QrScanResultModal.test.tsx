@@ -36,6 +36,7 @@ const baseResult = {
   },
   preset_added: false,
   preset: { id: 77, name: 'Official Exact PLA' },
+  preset_type: 'official',
   preset_saved: false,
   preset_sync_enabled: null,
 } as QrScanResponse;
@@ -67,7 +68,7 @@ function renderModal(
   options: {
     userId?: number | null;
     onRequestLogin?: () => void;
-    onAddSpool?: () => void;
+    onAddSpool?: (placement: 'shelf' | 'printer') => void;
     onOpenSpools?: () => void;
   } = {},
 ) {
@@ -140,6 +141,26 @@ describe('QrScanResultModal', () => {
     expect(savePreset).not.toHaveBeenCalled();
   });
 
+  it('shows preset provenance without redundant scan headings', () => {
+    renderModal(baseResult);
+
+    expect(screen.getByText('qrScanResult.presetSourceOfficial')).toBeInTheDocument();
+    expect(screen.queryByText('qrScanResult.title')).not.toBeInTheDocument();
+    expect(screen.queryByText('qrScanResult.recognized')).not.toBeInTheDocument();
+    expect(screen.queryByText('qrScanResult.exactVariant')).not.toBeInTheDocument();
+  });
+
+  it('labels a community fallback honestly', () => {
+    renderModal({
+      ...baseResult,
+      preset: { ...baseResult.preset!, is_official: false },
+      preset_type: 'community',
+    });
+
+    expect(screen.getByText('qrScanResult.presetSourceCommunity')).toBeInTheDocument();
+    expect(screen.getByText('Official Exact PLA')).toBeInTheDocument();
+  });
+
   it('keeps anonymous recognition read-only and offers sign-in', () => {
     const onRequestLogin = vi.fn();
     renderModal(
@@ -171,7 +192,7 @@ describe('QrScanResultModal', () => {
       preset_sync_enabled: null,
     });
 
-    expect(screen.getByText('qrScanResult.noOfficialPreset')).toBeInTheDocument();
+    expect(screen.getByText('qrScanResult.noPreset')).toBeInTheDocument();
     expect(
       screen.queryByRole('button', { name: 'qrScanResult.savePreset' }),
     ).not.toBeInTheDocument();
@@ -183,8 +204,12 @@ describe('QrScanResultModal', () => {
 
     expect(await screen.findByText('qrScanResult.inventoryNone')).toBeInTheDocument();
     expect(listSpools).toHaveBeenCalledWith(42);
-    fireEvent.click(screen.getByRole('button', { name: 'qrScanResult.addSpool' }));
-    expect(onAddSpool).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('button', { name: 'qrScanResult.addToShelf' }));
+    expect(onAddSpool).toHaveBeenCalledWith('shelf');
+    fireEvent.click(
+      screen.getByRole('button', { name: 'qrScanResult.installInPrinter' }),
+    );
+    expect(onAddSpool).toHaveBeenCalledWith('printer');
   });
 
   it('shows one exact available spool and ignores a different variant', async () => {
@@ -200,13 +225,14 @@ describe('QrScanResultModal', () => {
     expect(screen.queryByTestId('qr-inventory-spool-12')).not.toBeInTheDocument();
     expect(screen.getByText('profilePage.spoolState.shelf')).toBeInTheDocument();
     fireEvent.click(
-      screen.getByRole('button', { name: 'qrScanResult.addAnotherSpool' }),
+      screen.getByRole('button', { name: 'qrScanResult.addToShelf' }),
     );
-    expect(onAddSpool).toHaveBeenCalledTimes(1);
+    expect(onAddSpool).toHaveBeenCalledWith('shelf');
   });
 
   it('summarizes multiple available, archived and empty spools', async () => {
     const onOpenSpools = vi.fn();
+    const onAddSpool = vi.fn();
     listPrinters.mockResolvedValueOnce([
       {
         id: 31,
@@ -214,11 +240,13 @@ describe('QrScanResultModal', () => {
         material_systems: [
           {
             id: 41,
+            active: true,
             slots: [
               {
                 id: 51,
                 provider_index: 2,
                 label: 'AMS A3',
+                active: true,
                 assignment: {
                   id: 61,
                   spool_id: 21,
@@ -245,7 +273,7 @@ describe('QrScanResultModal', () => {
       makeSpool({ id: 25, state: 'archived' }),
       makeSpool({ id: 26, state: 'empty', remaining_weight_g: 0 }),
     ]);
-    renderModal(baseResult, { onOpenSpools });
+    renderModal(baseResult, { onAddSpool, onOpenSpools });
 
     expect(await screen.findByText('qrScanResult.inventoryMany')).toBeInTheDocument();
     expect(screen.getByTestId('qr-inventory-spool-21')).toBeInTheDocument();
@@ -262,6 +290,10 @@ describe('QrScanResultModal', () => {
     expect(screen.getByText('qrScanResult.inventoryMore')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'qrScanResult.openSpools' }));
     expect(onOpenSpools).toHaveBeenCalledTimes(1);
+    fireEvent.click(
+      screen.getByRole('button', { name: 'qrScanResult.installInPrinter' }),
+    );
+    expect(onAddSpool).toHaveBeenCalledWith('printer');
   });
 
   it('shows historical counts when no usable spool remains', async () => {
@@ -295,7 +327,7 @@ describe('QrScanResultModal', () => {
 
     expect(await screen.findByText('qrScanResult.inventoryLoadError')).toBeInTheDocument();
     expect(screen.getByText('QR Brand · Exact PLA')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'qrScanResult.addSpool' }));
-    expect(onAddSpool).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('button', { name: 'qrScanResult.addToShelf' }));
+    expect(onAddSpool).toHaveBeenCalledWith('shelf');
   });
 });

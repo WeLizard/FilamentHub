@@ -204,6 +204,11 @@ export const ProfilePage: React.FC = () => {
     return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
   }, [profileSearchParams]);
   const spoolIntakeSource = profileSearchParams.get('source') === 'qr' ? 'qr' : 'manual';
+  const spoolIntakePlacement = profileSearchParams.get('placement') === 'printer'
+    ? 'printer'
+    : profileSearchParams.get('placement') === 'shelf'
+      ? 'shelf'
+      : 'ask';
   const [showBrandCabinet, setShowBrandCabinet] = useState<boolean>(() => {
     const requested = (location.state as { brandCabinet?: boolean } | null)?.brandCabinet;
     if (typeof requested === 'boolean') return requested;
@@ -309,6 +314,7 @@ export const ProfilePage: React.FC = () => {
     nextParams.delete('add_spool');
     nextParams.delete('filament_id');
     nextParams.delete('source');
+    nextParams.delete('placement');
     const nextSearch = nextParams.toString();
     navigate(`${location.pathname}${nextSearch ? `?${nextSearch}` : ''}`, { replace: true });
   };
@@ -1274,6 +1280,7 @@ export const ProfilePage: React.FC = () => {
           setIsAddOpen={setAddSpoolOpen}
           initialFilamentId={spoolIntakeFilamentId}
           initialSource={spoolIntakeSource}
+          initialPlacement={spoolIntakePlacement}
           onResolveImport={(draftId) => {
             const draft = userPresets.find((preset) => preset.id === draftId);
             if (draft) {
@@ -2390,6 +2397,7 @@ interface SpoolFormProps {
   spool?: UserSpool;
   initialFilamentId?: number | null;
   initialSource?: 'manual' | 'qr';
+  initialPlacement?: 'ask' | 'shelf' | 'printer';
   onSaved: () => void;
   onCancel: () => void;
 }
@@ -2399,6 +2407,7 @@ const SpoolForm: React.FC<SpoolFormProps> = ({
   spool,
   initialFilamentId = null,
   initialSource = 'manual',
+  initialPlacement = 'ask',
   onSaved,
   onCancel,
 }) => {
@@ -2795,7 +2804,7 @@ const SpoolForm: React.FC<SpoolFormProps> = ({
         used_weight_g: parsedUsed,
         price: savedPrice,
         currency: savedPrice == null ? null : priceCurrencyCode,
-        state,
+        state: mode === 'create' && initialPlacement !== 'ask' ? 'shelf' : state,
         ...(mode === 'create' ? { source } : {}),
         lot_nr: lotNr || null,
         comment: comment || null,
@@ -2807,12 +2816,16 @@ const SpoolForm: React.FC<SpoolFormProps> = ({
       } else {
         const newSpool = await spoolsAPI.create(payload);
         queryClient.invalidateQueries({ queryKey: ['user-spools'] });
+        if (initialPlacement === 'shelf') {
+          onSaved();
+          return;
+        }
         let availableTargets = feedTargets;
         if (!printersQuery.isSuccess) {
           const refreshed = await printersQuery.refetch();
           availableTargets = collectFeedTargets(refreshed.data ?? []);
         }
-        if (availableTargets.length > 0) {
+        if (availableTargets.length > 0 || initialPlacement === 'printer') {
           setCreatedSpool(newSpool);
           if (availableTargets.length === 1) {
             setSelectedTargetKey(availableTargets[0].key);
@@ -2875,6 +2888,11 @@ const SpoolForm: React.FC<SpoolFormProps> = ({
         <p className="text-gray-400 text-sm">{t('profilePage.spoolGateStep.hint')}</p>
 
         <div className="space-y-3">
+          {feedTargets.length === 0 && (
+            <p className="rounded-lg border border-amber-400/20 bg-amber-400/10 px-3 py-2 text-xs text-amber-200">
+              {t('profilePage.spoolGateStep.noTargets')}
+            </p>
+          )}
           {feedTargets.length > 1 ? (
             <div>
               <label className={labelCls}>{t('profilePage.spoolGateStep.systemLabel')}</label>
@@ -3264,6 +3282,7 @@ interface SpoolsTabProps {
   setIsAddOpen: (v: boolean) => void;
   initialFilamentId?: number | null;
   initialSource?: 'manual' | 'qr';
+  initialPlacement?: 'ask' | 'shelf' | 'printer';
   onResolveImport: (draftId: number) => void;
 }
 
@@ -3276,6 +3295,7 @@ const SpoolsTab: React.FC<SpoolsTabProps> = ({
   setIsAddOpen,
   initialFilamentId = null,
   initialSource = 'manual',
+  initialPlacement = 'ask',
   onResolveImport,
 }) => {
   const { t } = useTranslation();
@@ -3454,6 +3474,7 @@ const SpoolsTab: React.FC<SpoolsTabProps> = ({
                 mode="create"
                 initialFilamentId={initialFilamentId}
                 initialSource={initialSource}
+                initialPlacement={initialPlacement}
                 onSaved={() => {
                   setIsAddOpen(false);
                   onRefetch();

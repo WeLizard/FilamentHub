@@ -1165,7 +1165,9 @@ export interface QrScanResponse {
   /** Legacy compatibility field. Recognition never saves a preset. */
   preset_added: boolean;
   preset: Preset | null;
-  /** null means the scan was anonymous or no official preset exists. */
+  /** Provenance of the material-only candidate selected for the scan. */
+  preset_type?: 'official' | 'community' | null;
+  /** null means the scan was anonymous or no public preset exists. */
   preset_saved: boolean | null;
   /** Present only when the authenticated user already saved this preset. */
   preset_sync_enabled: boolean | null;
