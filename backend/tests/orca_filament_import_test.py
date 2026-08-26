@@ -71,6 +71,28 @@ async def _import(client: AsyncClient, headers: dict, *profiles: dict):
 
 
 @pytest.mark.asyncio
+async def test_runtime_comma_serialized_temperature_vector_imports_as_a_draft(
+    client: AsyncClient, db_session: AsyncSession
+):
+    headers, person = await _signed_in(client, db_session, "orca-comma-temperature")
+    profile = _preset("Runtime comma temperature")
+    profile.pop("extruder_temp")
+    profile["orcaslicer_settings"]["nozzle_temperature"] = "220,220"
+
+    response = await _import(client, headers, profile)
+
+    assert response.status_code == 200
+    assert response.json()["results"][0]["status"] == "created"
+    draft = await db_session.scalar(
+        select(Preset).where(Preset.external_id == profile["external_id"])
+    )
+    assert draft is not None
+    assert draft.user_id == person.id
+    assert draft.extruder_temp == 220
+    assert draft.orcaslicer_settings["nozzle_temperature"] == "220,220"
+
+
+@pytest.mark.asyncio
 async def test_a_users_own_preset_arrives_as_a_draft(
     client: AsyncClient, db_session: AsyncSession
 ):

@@ -116,6 +116,26 @@ def test_flow_ratio_preserves_orca_precision():
     assert extracted["flow_rate"] == 103.48
 
 
+def test_comma_serialized_numeric_vector_is_read_without_rewriting_raw_settings():
+    settings = {
+        "nozzle_temperature": "220,220",
+        "nozzle_temperature_initial_layer": "225,225",
+    }
+
+    extracted = extract_structured_filament_values(settings)
+
+    assert extracted["extruder_temp"] == 220
+    assert settings == {
+        "nozzle_temperature": "220,220",
+        "nozzle_temperature_initial_layer": "225,225",
+    }
+
+
+def test_comma_serialized_numeric_vector_validates_every_entry():
+    with pytest.raises(ValueError, match="nozzle_temperature"):
+        validate_orca_filament_settings({"nozzle_temperature": "220,999999"})
+
+
 def test_current_orca_catalog_ranges_are_accepted_without_losing_raw_values():
     settings = {
         "filament_flow_ratio": ["0.48"],

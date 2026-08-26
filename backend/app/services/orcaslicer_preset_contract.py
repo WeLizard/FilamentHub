@@ -79,24 +79,31 @@ def _numeric_values(settings: Mapping[str, Any], key: str) -> list[float]:
     values = raw if isinstance(raw, (list, tuple)) else [raw]
     parsed: list[float] = []
     for item in values:
-        if item is None:
-            continue
-        if isinstance(item, str):
-            normalized = item.strip().lower()
-            if normalized in {"", "nil"} or (
-                normalized == "v" and key in _ORCA_VARIANT_SENTINEL_KEYS
-            ):
-                continue
-        if isinstance(item, bool):
-            raise ValueError(f"OrcaSlicer setting {key} contains a non-numeric value")
-        try:
-            value = float(item)
-        except (TypeError, ValueError) as exc:
-            raise ValueError(f"OrcaSlicer setting {key} contains a non-numeric value") from exc
-        if not isfinite(value):
-            raise ValueError(f"OrcaSlicer setting {key} contains a non-finite value")
-        parsed.append(value)
+        items = item.split(",") if isinstance(item, str) and "," in item else [item]
+        for value_item in items:
+            _append_numeric_value(parsed, value_item, key)
     return parsed
+
+
+def _append_numeric_value(parsed: list[float], item: Any, key: str) -> None:
+    """Read one scalar while leaving the original Orca settings untouched."""
+    if item is None:
+        return
+    if isinstance(item, str):
+        normalized = item.strip().lower()
+        if normalized in {"", "nil"} or (
+            normalized == "v" and key in _ORCA_VARIANT_SENTINEL_KEYS
+        ):
+            return
+    if isinstance(item, bool):
+        raise ValueError(f"OrcaSlicer setting {key} contains a non-numeric value")
+    try:
+        value = float(item)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"OrcaSlicer setting {key} contains a non-numeric value") from exc
+    if not isfinite(value):
+        raise ValueError(f"OrcaSlicer setting {key} contains a non-finite value")
+    parsed.append(value)
 
 
 def validate_orca_filament_settings(settings: Mapping[str, Any] | None) -> None:
