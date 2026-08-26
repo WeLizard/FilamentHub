@@ -1201,6 +1201,7 @@ async def handle_manual_assignment(
     await lock_material_slots_for_spools(
         db,
         involved_spool_ids,
+        user_id=user.id,
         additional_material_slot_ids=target_material_slot_ids,
     )
 

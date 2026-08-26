@@ -220,6 +220,7 @@ async def update_material_slot_assignment(
     await lock_material_slots_for_spools(
         db,
         set(lock_ids),
+        user_id=user.id,
         additional_material_slot_ids={material_slot_id},
     )
 

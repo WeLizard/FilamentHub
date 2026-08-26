@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.material_slot_assignment import MaterialSlotAssignment
 from app.models.material_system import MaterialSlot, MaterialSystem, PhysicalPrinterConnector
-from app.models.preset_gate_state import PresetGateState
+from app.models.preset_gate_state import PresetGateState, PresetGateStateSource
 from app.models.print_profile import PrintProfile
 from app.models.print_profile_configuration import PrintProfileConfigurationLink
 from app.models.print_profile_printer import PrintProfilePrinter
@@ -29,6 +29,7 @@ from app.models.user import User
 from app.models.user_printer_device import UserPrinterDevice
 from app.models.user_spool import UserSpool, UserSpoolState
 from app.services.material_contract_service import ensure_material_topology
+from app.services.spool_service import lock_material_slots_for_spools
 
 
 def _device_fingerprint(device_payload: dict) -> str:
@@ -649,6 +650,7 @@ async def test_identical_models_remain_distinct_physical_printers(
 @pytest.mark.asyncio
 async def test_foreign_configuration_and_printer_are_fail_closed(
     auth_client: AsyncClient,
+    auth_user: User,
     db_session: AsyncSession,
 ) -> None:
     foreign_user = User(
@@ -700,6 +702,48 @@ async def test_foreign_configuration_and_printer_are_fail_closed(
     db_session.add(foreign_system)
     await db_session.commit()
     await db_session.refresh(foreign_slot)
+
+    foreign_spool = UserSpool(
+        user_id=foreign_user.id,
+        initial_weight_g=1000,
+        used_weight_g=0,
+        state=UserSpoolState.shelf,
+        source="manual",
+    )
+    db_session.add(foreign_spool)
+    await db_session.flush()
+    now = datetime.now(timezone.utc)
+    db_session.add_all(
+        [
+            MaterialSlotAssignment(
+                user_id=foreign_user.id,
+                material_slot_id=foreign_slot.id,
+                spool_id=foreign_spool.id,
+                source="web_manual",
+                source_ts=now,
+                active=True,
+            ),
+            PresetGateState(
+                user_id=foreign_user.id,
+                device_id=foreign_printer.id,
+                gate_index=0,
+                spool_id=foreign_spool.id,
+                material_slot_id=foreign_slot.id,
+                source=PresetGateStateSource.web_manual,
+                source_ts=now,
+                is_active=True,
+            ),
+        ]
+    )
+    await db_session.commit()
+
+    locked_slots = await lock_material_slots_for_spools(
+        db_session,
+        {foreign_spool.id},
+        user_id=auth_user.id,
+        additional_material_slot_ids={foreign_slot.id},
+    )
+    assert locked_slots == {}
 
     hidden_assignment = await auth_client.patch(
         f"/api/v1/physical-printers/{foreign_printer.id}/material-slots/"

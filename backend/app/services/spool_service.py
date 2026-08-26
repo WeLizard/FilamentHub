@@ -81,9 +81,10 @@ async def lock_material_slots_for_spools(
     db: AsyncSession,
     spool_ids: set[int],
     *,
+    user_id: int,
     additional_material_slot_ids: set[int] | None = None,
 ) -> dict[int, MaterialSlot]:
-    """Lock every stable route involved in a spool move, in global ID order.
+    """Lock one tenant's stable routes involved in a spool move, in ID order.
 
     Callers lock the physical spool rows first.  Discovering the route IDs is
     safe after that because every desired-assignment writer follows the same
@@ -94,6 +95,7 @@ async def lock_material_slots_for_spools(
     if spool_ids:
         legacy_ids = await db.scalars(
             select(PresetGateState.material_slot_id).where(
+                PresetGateState.user_id == user_id,
                 PresetGateState.spool_id.in_(spool_ids),
                 PresetGateState.material_slot_id.is_not(None),
             )
@@ -101,6 +103,7 @@ async def lock_material_slots_for_spools(
         material_slot_ids.update(legacy_ids.all())
         assignment_ids = await db.scalars(
             select(MaterialSlotAssignment.material_slot_id).where(
+                MaterialSlotAssignment.user_id == user_id,
                 MaterialSlotAssignment.spool_id.in_(spool_ids)
             )
         )
@@ -111,7 +114,10 @@ async def lock_material_slots_for_spools(
         (
             await db.scalars(
                 select(MaterialSlot)
-                .where(MaterialSlot.id.in_(material_slot_ids))
+                .where(
+                    MaterialSlot.id.in_(material_slot_ids),
+                    MaterialSlot.user_id == user_id,
+                )
                 .order_by(MaterialSlot.id)
                 .with_for_update()
             )
@@ -194,6 +200,7 @@ async def assign_spool_to_gate(
     await lock_material_slots_for_spools(
         db,
         involved_spool_ids,
+        user_id=user_id,
         additional_material_slot_ids=target_material_slot_ids,
     )
 
@@ -291,7 +298,11 @@ async def clear_spool_gate_assignments(
 ) -> int:
     """Clear current slot bindings for a physical spool without committing."""
     await lock_spool_row(db, spool.id)
-    locked_material_slots = await lock_material_slots_for_spools(db, {spool.id})
+    locked_material_slots = await lock_material_slots_for_spools(
+        db,
+        {spool.id},
+        user_id=spool.user_id,
+    )
 
     assignment_result = await db.execute(
         select(MaterialSlotAssignment)
