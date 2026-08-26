@@ -2,6 +2,7 @@ import logging
 
 from octoprint.events import Events
 from octoprint_filamenthub_bridge import (
+    BridgeRequestError,
     RETRY_MAX_SECONDS,
     STARTUP_JITTER_MAX_SECONDS,
     FilamentHubBridgePlugin,
@@ -19,7 +20,9 @@ class FakeSettings:
             "snapshot": {
                 "slots": [
                     {
+                        "material_slot_id": 17,
                         "index": 0,
+                        "assignment_revision": 3,
                         "spool": {"id": 41},
                     }
                 ]
@@ -452,3 +455,98 @@ def test_sensitive_settings_are_never_exposed_by_settings_api():
             ["outbox"],
         ]
     }
+
+
+def test_spool_search_is_bounded_and_url_encoded():
+    plugin = FilamentHubBridgePlugin()
+    plugin._settings = FakeSettings()
+    calls = []
+
+    def request(method, path):
+        calls.append((method, path))
+        return 200, {}, {"items": [{"id": 52}], "next_offset": 50}
+
+    plugin._request = request
+
+    response = plugin._search_spools("PETG Blue", 25)
+
+    assert calls == [("GET", "/spools?query=PETG+Blue&limit=25&offset=25")]
+    assert response == {"items": [{"id": 52}], "next_offset": 50}
+
+
+def test_explicit_spool_assignment_uses_snapshot_revision_and_applies_ack():
+    plugin = FilamentHubBridgePlugin()
+    plugin._settings = FakeSettings()
+    calls = []
+    accepted_snapshot = {
+        "revision": "accepted-revision",
+        "system_name": "OctoPrint",
+        "slots": [
+            {
+                "material_slot_id": 17,
+                "index": 0,
+                "assignment_revision": 4,
+                "spool": {"id": 52},
+            }
+        ],
+    }
+
+    def request(method, path, payload):
+        calls.append((method, path, payload))
+        return 200, {}, accepted_snapshot
+
+    plugin._request = request
+    plugin._assign_spool(17, 52)
+
+    assert calls == [
+        (
+            "PATCH",
+            "/material-slots/17",
+            {
+                "expected_revision": 3,
+                "expected_spool_id": 41,
+                "spool_id": 52,
+            },
+        )
+    ]
+    assert plugin._settings.get(["snapshot"]) == accepted_snapshot
+    assert plugin._settings.get(["snapshot_etag"]) == '"accepted-revision"'
+    assert plugin._settings.get(["last_error"]) is None
+
+
+def test_assignment_conflict_refreshes_snapshot_without_retrying_write():
+    plugin = FilamentHubBridgePlugin()
+    plugin._settings = FakeSettings()
+    plugin._logger = logging.getLogger("filamenthub-bridge-test")
+    calls = []
+    fresh_snapshot = {
+        "revision": "fresh-revision",
+        "slots": [
+            {
+                "material_slot_id": 17,
+                "index": 0,
+                "assignment_revision": 4,
+                "spool": {"id": 77},
+            }
+        ],
+    }
+
+    def request(method, path, payload=None, extra_headers=None):
+        calls.append((method, path, payload, extra_headers))
+        if method == "PATCH":
+            raise BridgeRequestError("stale", status_code=409)
+        return 200, {"ETag": '"fresh-revision"'}, fresh_snapshot
+
+    plugin._request = request
+
+    try:
+        plugin._assign_spool(17, 52)
+    except BridgeRequestError as exc:
+        assert exc.status_code == 409
+        assert "latest state was loaded" in str(exc)
+    else:
+        raise AssertionError("A stale assignment must remain a conflict")
+
+    assert [call[0] for call in calls] == ["PATCH", "GET"]
+    assert plugin._settings.get(["snapshot"]) == fresh_snapshot
+    assert plugin._settings.get(["snapshot_etag"]) == '"fresh-revision"'

@@ -20,6 +20,11 @@ $(function () {
     self.lastSyncAt = ko.observable(null);
     self.lastError = ko.observable(null);
     self.busy = ko.observable(false);
+    self.editingSlotId = ko.observable(null);
+    self.spoolQuery = ko.observable("");
+    self.spoolOptions = ko.observableArray([]);
+    self.nextSpoolOffset = ko.observable(null);
+    self.selectedSpoolId = ko.observable(null);
 
     self.mappingRow = function (toolIndex, slotIndex) {
       return {
@@ -74,6 +79,20 @@ $(function () {
         ? (Math.round(remaining) + " g")
         : "";
     };
+    self.spoolOptionText = function (spool) {
+      if (!spool) return "";
+      var title = [spool.brand, spool.name].filter(Boolean).join(" · ") || ("#" + spool.id);
+      var details = [spool.material_type, Math.round(Number(spool.remaining_weight_g) || 0) + " g"];
+      return title + " — " + details.filter(Boolean).join(" · ");
+    };
+    self.spoolLocationText = function (spool) {
+      var location = spool && spool.location;
+      if (!location) return "";
+      var slot = location.slot_label || ("#" + (Number(location.slot_index) + 1));
+      return gettext("Currently assigned to") + " " +
+        [location.printer_name, location.system_name, slot].filter(Boolean).join(" · ") + ". " +
+        gettext("Assigning it here will move it.");
+    };
     self.mappedToolsForSlot = function (slot) {
       var slotIndex = Number(slot.index);
       return self.effectiveToolMappings()
@@ -97,6 +116,23 @@ $(function () {
       return self.useCustomToolMapping()
         ? self.toolMappings()
         : self.automaticMappings();
+    });
+    self.editingSlot = ko.pureComputed(function () {
+      var materialSlotId = Number(self.editingSlotId());
+      return self.slots().find(function (slot) {
+        return Number(slot.material_slot_id) === materialSlotId;
+      }) || null;
+    });
+    self.selectedSpoolLocationText = ko.pureComputed(function () {
+      var selectedId = Number(self.selectedSpoolId());
+      var spool = self.spoolOptions().find(function (candidate) {
+        return Number(candidate.id) === selectedId;
+      });
+      if (spool && spool.location &&
+          Number(spool.location.material_slot_id) === Number(self.editingSlotId())) {
+        return "";
+      }
+      return self.spoolLocationText(spool);
     });
     self.automaticMappingText = ko.pureComputed(function () {
       var mappings = self.automaticMappings();
@@ -162,6 +198,9 @@ $(function () {
       self.outboxSize(state.outbox_size || 0);
       self.lastSyncAt(state.last_sync_at || null);
       self.lastError(state.last_error || null);
+      if (self.editingSlotId() !== null && !self.editingSlot()) {
+        self.editingSlotId(null);
+      }
     };
 
     self.command = function (payload) {
@@ -170,6 +209,7 @@ $(function () {
         .done(self.applyState)
         .fail(function (xhr) {
           var response = xhr.responseJSON || {};
+          if (response.state) self.applyState(response.state);
           self.lastError(response.error || "The Bridge request failed.");
         })
         .always(function () { self.busy(false); });
@@ -187,6 +227,58 @@ $(function () {
     self.selectSlot = function (slot) {
       if (!self.isManualRouting()) return;
       self.command({ command: "select_slot", slot_index: slot.index });
+    };
+    self.searchSpools = function (reset) {
+      var offset = reset ? 0 : self.nextSpoolOffset();
+      if (offset === null || offset === undefined) offset = 0;
+      return self.command({
+        command: "search_spools",
+        query: self.spoolQuery(),
+        offset: offset
+      }).done(function (state) {
+        var page = state.spool_options || {};
+        var items = Array.isArray(page.items) ? page.items : [];
+        self.spoolOptions(reset ? items : self.spoolOptions().concat(items));
+        self.nextSpoolOffset(page.next_offset === undefined ? null : page.next_offset);
+      });
+    };
+    self.openSpoolPicker = function (slot) {
+      self.editingSlotId(Number(slot.material_slot_id));
+      self.spoolQuery("");
+      self.spoolOptions([]);
+      self.nextSpoolOffset(null);
+      self.selectedSpoolId(slot.spool ? Number(slot.spool.id) : null);
+      self.lastError(null);
+      self.searchSpools(true);
+    };
+    self.cancelSpoolPicker = function () {
+      self.editingSlotId(null);
+      self.spoolOptions([]);
+      self.nextSpoolOffset(null);
+    };
+    self.assignSelectedSpool = function () {
+      var slot = self.editingSlot();
+      var spoolId = Number(self.selectedSpoolId());
+      if (!slot || !Number.isInteger(spoolId) || spoolId < 1) {
+        self.lastError(gettext("Choose a spool first."));
+        return;
+      }
+      self.lastError(null);
+      self.command({
+        command: "assign_spool",
+        material_slot_id: slot.material_slot_id,
+        spool_id: spoolId
+      }).done(self.cancelSpoolPicker);
+    };
+    self.clearSpoolAssignment = function () {
+      var slot = self.editingSlot();
+      if (!slot) return;
+      self.lastError(null);
+      self.command({
+        command: "assign_spool",
+        material_slot_id: slot.material_slot_id,
+        spool_id: null
+      }).done(self.cancelSpoolPicker);
     };
     self.addToolMapping = function () {
       if (!self.slots().length) return;

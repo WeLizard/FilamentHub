@@ -25,9 +25,7 @@ class OctoPrintBridgeRoutingState(BaseModel):
 
 class OctoPrintBridgeRoutingUpdateRequest(BaseModel):
     mode: Literal["manual", "tools"]
-    tool_slot_map: list[OctoPrintToolSlotMapping] = Field(
-        default_factory=list, max_length=256
-    )
+    tool_slot_map: list[OctoPrintToolSlotMapping] = Field(default_factory=list, max_length=256)
     expected_revision: int = Field(ge=0)
 
     @model_validator(mode="after")
@@ -75,9 +73,7 @@ class OctoPrintBridgeHeartbeatRequest(BaseModel):
     capabilities: list[str] = Field(default_factory=list, max_length=32)
     active_slot_index: int | None = Field(default=None, ge=0, le=1023)
     routing_mode: Literal["manual", "tools"] | None = None
-    tool_slot_map: list[OctoPrintToolSlotMapping] | None = Field(
-        default=None, max_length=256
-    )
+    tool_slot_map: list[OctoPrintToolSlotMapping] | None = Field(default=None, max_length=256)
     routing_revision: int | None = Field(default=None, ge=0)
 
     model_config = {"str_strip_whitespace": True}
@@ -135,6 +131,35 @@ class OctoPrintBridgeSnapshotResponse(BaseModel):
     system_name: str
     system_kind: str
     slots: list[OctoPrintBridgeSlotSnapshot]
+
+
+class OctoPrintBridgeSpoolLocation(BaseModel):
+    material_slot_id: int = Field(ge=1)
+    slot_index: int = Field(ge=0)
+    slot_label: str | None
+    system_name: str
+    printer_name: str
+
+
+class OctoPrintBridgeSpoolOption(BaseModel):
+    id: int = Field(ge=1)
+    name: str
+    brand: str | None
+    material_type: str | None
+    color_hex: str | None
+    remaining_weight_g: float = Field(ge=0)
+    location: OctoPrintBridgeSpoolLocation | None
+
+
+class OctoPrintBridgeSpoolOptionsResponse(BaseModel):
+    items: list[OctoPrintBridgeSpoolOption]
+    next_offset: int | None = Field(default=None, ge=0)
+
+
+class OctoPrintBridgeSpoolAssignmentRequest(BaseModel):
+    expected_revision: int = Field(ge=0)
+    expected_spool_id: int | None = Field(ge=1)
+    spool_id: int | None = Field(ge=1)
 
 
 class OctoPrintBridgeUsageItem(BaseModel):

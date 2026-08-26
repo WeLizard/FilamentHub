@@ -2,7 +2,7 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, Request, Response, status
+from fastapi import APIRouter, Depends, Header, Query, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_active_user
@@ -15,6 +15,9 @@ from app.schemas.octoprint_bridge import (
     OctoPrintBridgePairResponse,
     OctoPrintBridgeRoutingState,
     OctoPrintBridgeRoutingUpdateRequest,
+    OctoPrintBridgeSnapshotResponse,
+    OctoPrintBridgeSpoolAssignmentRequest,
+    OctoPrintBridgeSpoolOptionsResponse,
     OctoPrintBridgeStatusResponse,
     OctoPrintBridgeUsageRequest,
     OctoPrintBridgeUsageResponse,
@@ -24,6 +27,7 @@ from app.services.octoprint_bridge_service import (
     build_snapshot,
     get_bridge_status,
     issue_pairing_code,
+    list_bridge_spool_options,
     pair_bridge,
     record_heartbeat,
     record_usage_event,
@@ -31,6 +35,7 @@ from app.services.octoprint_bridge_service import (
     revoke_bridge,
     revoke_bridge_context,
     update_bridge_routing_configuration,
+    update_bridge_spool_assignment,
     update_user_routing_configuration,
 )
 
@@ -192,6 +197,55 @@ async def snapshot(
         content=result.model_dump_json(),
         media_type="application/json",
         headers={"ETag": etag},
+    )
+
+
+@router.get("/spools", response_model=OctoPrintBridgeSpoolOptionsResponse)
+@limiter.limit("600/minute", key_func=client_key)
+@limiter.limit("60/minute", key_func=adapter_token_key)
+async def spool_options(
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    bridge_token: Annotated[
+        str | None,
+        Header(alias="X-FilamentHub-Bridge-Token"),
+    ] = None,
+    query: Annotated[str | None, Query(max_length=100)] = None,
+    limit: Annotated[int, Query(ge=1, le=50)] = 25,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> OctoPrintBridgeSpoolOptionsResponse:
+    context = await require_bridge_token(db, bridge_token)
+    return await list_bridge_spool_options(
+        db,
+        context,
+        query=query,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.patch(
+    "/material-slots/{material_slot_id}",
+    response_model=OctoPrintBridgeSnapshotResponse,
+)
+@limiter.limit("600/minute", key_func=client_key)
+@limiter.limit("30/minute", key_func=adapter_token_key)
+async def update_spool_assignment(
+    material_slot_id: int,
+    request: Request,
+    payload: OctoPrintBridgeSpoolAssignmentRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    bridge_token: Annotated[
+        str | None,
+        Header(alias="X-FilamentHub-Bridge-Token"),
+    ] = None,
+) -> OctoPrintBridgeSnapshotResponse:
+    context = await require_bridge_token(db, bridge_token)
+    return await update_bridge_spool_assignment(
+        db,
+        context,
+        material_slot_id=material_slot_id,
+        payload=payload,
     )
 
 

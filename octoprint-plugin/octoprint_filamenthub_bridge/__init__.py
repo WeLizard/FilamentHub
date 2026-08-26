@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from typing import Dict, Optional, Set
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlparse
+from urllib.parse import urlencode, urlparse
 from urllib.request import Request, urlopen
 
 import flask
@@ -31,8 +31,15 @@ STARTUP_JITTER_MAX_SECONDS = 120
 
 
 class BridgeRequestError(RuntimeError):
-    def __init__(self, message: str, *, retry_after_seconds: Optional[float] = None):
+    def __init__(
+        self,
+        message: str,
+        *,
+        status_code: Optional[int] = None,
+        retry_after_seconds: Optional[float] = None,
+    ):
         super().__init__(message)
+        self.status_code = status_code
         self.retry_after_seconds = retry_after_seconds
 
 
@@ -162,6 +169,8 @@ class FilamentHubBridgePlugin(
         return {
             "pair": ["server_url", "pairing_code"],
             "sync": [],
+            "search_spools": ["query", "offset"],
+            "assign_spool": ["material_slot_id", "spool_id"],
             "select_slot": ["slot_index"],
             "set_mapping_mode": ["map_tools_to_slots"],
             "set_routing": ["mode", "tool_slot_map"],
@@ -179,11 +188,21 @@ class FilamentHubBridgePlugin(
 
     def on_api_command(self, command, data):
         try:
+            extra_state = {}
             if command == "pair":
                 self._pair(data["server_url"], data["pairing_code"])
                 self._sync_once(force_snapshot=True)
             elif command == "sync":
                 self._sync_once(force_snapshot=True)
+            elif command == "search_spools":
+                extra_state["spool_options"] = self._search_spools(
+                    data.get("query"), data.get("offset")
+                )
+            elif command == "assign_spool":
+                self._assign_spool(
+                    int(data["material_slot_id"]),
+                    self._optional_positive_int(data.get("spool_id")),
+                )
             elif command == "select_slot":
                 self._select_slot(int(data["slot_index"]))
             elif command == "set_mapping_mode":
@@ -202,10 +221,20 @@ class FilamentHubBridgePlugin(
                 )
             elif command == "unpair":
                 self._unpair()
-            return flask.jsonify(self._public_state())
+            return flask.jsonify({**self._public_state(), **extra_state})
         except Exception as exc:
             self._logger.warning("Bridge API command failed", exc_info=True)
-            return flask.make_response(flask.jsonify(error=str(exc)), 502)
+            state = self._public_state()
+            status_code = (
+                exc.status_code
+                if isinstance(exc, BridgeRequestError)
+                and exc.status_code is not None
+                and 400 <= exc.status_code < 500
+                else 400 if isinstance(exc, ValueError) else 502
+            )
+            return flask.make_response(
+                flask.jsonify(error=str(exc), state=state), status_code
+            )
 
     def on_event(self, event, payload):
         if event == Events.PRINT_STARTED:
@@ -370,6 +399,7 @@ class FilamentHubBridgePlugin(
             content = exc.read().decode("utf-8", errors="replace")
             raise BridgeRequestError(
                 f"FilamentHub returned HTTP {exc.code}: {content[:300]}",
+                status_code=exc.code,
                 retry_after_seconds=_retry_after_seconds(exc.headers),
             ) from exc
         except URLError as exc:
@@ -416,6 +446,91 @@ class FilamentHubBridgePlugin(
     def _available_slots(self) -> Set[int]:
         snapshot = self._settings.get(["snapshot"]) or {}
         return {int(slot["index"]) for slot in snapshot.get("slots", [])}
+
+    def _snapshot_slot(self, material_slot_id: int) -> dict:
+        snapshot = self._settings.get(["snapshot"]) or {}
+        for slot in snapshot.get("slots", []):
+            if int(slot.get("material_slot_id", 0)) == material_slot_id:
+                return slot
+        raise ValueError(
+            "The selected slot is not present in the FilamentHub snapshot."
+        )
+
+    @staticmethod
+    def _optional_positive_int(value) -> Optional[int]:
+        if value is None or value == "":
+            return None
+        parsed = int(value)
+        if parsed < 1:
+            raise ValueError("Spool identity must be a positive whole number.")
+        return parsed
+
+    def _search_spools(self, query, offset) -> dict:
+        normalized_query = str(query or "").strip()
+        normalized_offset = max(int(offset or 0), 0)
+        _, _, response = self._request(
+            "GET",
+            "/spools?"
+            + urlencode(
+                {
+                    "query": normalized_query,
+                    "limit": 25,
+                    "offset": normalized_offset,
+                }
+            ),
+        )
+        if not isinstance(response, dict) or not isinstance(
+            response.get("items"), list
+        ):
+            raise ValueError("FilamentHub returned an invalid spool list.")
+        return response
+
+    def _assign_spool(self, material_slot_id: int, spool_id: Optional[int]) -> None:
+        slot = self._snapshot_slot(material_slot_id)
+        current_spool = slot.get("spool")
+        payload = {
+            "expected_revision": int(slot.get("assignment_revision", 0)),
+            "expected_spool_id": (
+                int(current_spool["id"]) if current_spool is not None else None
+            ),
+            "spool_id": spool_id,
+        }
+        try:
+            _, _, snapshot = self._request(
+                "PATCH", f"/material-slots/{material_slot_id}", payload
+            )
+        except BridgeRequestError as exc:
+            if exc.status_code == 409:
+                refreshed = False
+                try:
+                    self._sync_snapshot()
+                    self._settings.save()
+                    refreshed = True
+                except Exception:
+                    self._logger.warning(
+                        "Could not refresh the snapshot after an assignment conflict",
+                        exc_info=True,
+                    )
+                raise BridgeRequestError(
+                    (
+                        "This slot or spool location changed in FilamentHub. "
+                        "The latest state was loaded; review it and try again."
+                        if refreshed
+                        else "This slot or spool location changed in FilamentHub. "
+                        "Synchronize the Bridge, then review it and try again."
+                    ),
+                    status_code=409,
+                ) from exc
+            raise
+        if not isinstance(snapshot, dict):
+            raise ValueError("FilamentHub returned an invalid assignment snapshot.")
+        revision = snapshot.get("revision")
+        if not isinstance(revision, str) or not revision:
+            raise ValueError("FilamentHub returned an invalid assignment revision.")
+        self._apply_snapshot(snapshot, f'"{revision}"')
+        self._settings.set(["last_sync_at"], datetime.now(timezone.utc).isoformat())
+        self._settings.set(["last_error"], None)
+        self._settings.save()
 
     def _manual_slot(self) -> Optional[int]:
         value = self._settings.get(["active_slot"])
@@ -627,6 +742,18 @@ class FilamentHubBridgePlugin(
             self._job_spools = {}
         self._wake_worker.set()
 
+    def _apply_snapshot(self, payload: dict, etag: Optional[str]) -> None:
+        self._settings.set(["snapshot"], payload)
+        self._settings.set(["snapshot_etag"], etag)
+        available = self._available_slots()
+        manual_slot = self._manual_slot()
+        if manual_slot not in available:
+            assigned = sorted(self._snapshot_spools())
+            fallback = (
+                assigned[0] if assigned else (min(available) if available else None)
+            )
+            self._settings.set(["active_slot"], fallback)
+
     def _sync_snapshot(self) -> None:
         headers = {}
         etag = self._settings.get(["snapshot_etag"])
@@ -638,16 +765,7 @@ class FilamentHubBridgePlugin(
         if status == 304:
             return
         if status == 200 and payload is not None:
-            self._settings.set(["snapshot"], payload)
-            self._settings.set(["snapshot_etag"], response_headers.get("ETag"))
-            available = self._available_slots()
-            manual_slot = self._manual_slot()
-            if manual_slot not in available:
-                assigned = sorted(self._snapshot_spools())
-                fallback = (
-                    assigned[0] if assigned else (min(available) if available else None)
-                )
-                self._settings.set(["active_slot"], fallback)
+            self._apply_snapshot(payload, response_headers.get("ETag"))
 
     def _send_heartbeat(self) -> None:
         _, _, response = self._request(

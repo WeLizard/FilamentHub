@@ -9,10 +9,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.brand import Brand
 from app.models.filament import Filament
+from app.models.material_slot_assignment import MaterialSlotAssignment
 from app.models.octoprint_bridge import OctoPrintBridgeEvent
 from app.models.preset import Preset, PresetModerationStatus
 from app.models.preset_usage_event import PresetUsageEvent
 from app.models.print_job import PrintJob
+from app.models.user import User
 from app.models.user_spool import UserSpool, UserSpoolState
 
 
@@ -264,6 +266,243 @@ async def test_bridge_pair_snapshot_usage_replay_and_revoke(
     assert revoke_response.status_code == 204
     rejected = await auth_client.get("/api/v1/octoprint-bridge/snapshot", headers=bridge_headers)
     assert rejected.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_bridge_spool_picker_and_assignment_use_canonical_desired_state(
+    auth_client: AsyncClient,
+    db_session: AsyncSession,
+    auth_user,
+) -> None:
+    printer_id, system_id = await _create_octoprint_system(auth_client)
+    token = await _pair(auth_client, printer_id, system_id)
+    bridge_headers = {"X-FilamentHub-Bridge-Token": token}
+
+    brand = Brand(name="Picker Brand", slug="picker-brand")
+    db_session.add(brand)
+    await db_session.flush()
+    pla = Filament(
+        brand_id=brand.id,
+        name="Picker PLA Red",
+        slug="picker-pla-red",
+        material_type="PLA",
+        color_name="Red",
+        color_hex="#FF0000",
+    )
+    petg = Filament(
+        brand_id=brand.id,
+        name="Picker PETG Blue",
+        slug="picker-petg-blue",
+        material_type="PETG",
+        color_name="Blue",
+        color_hex="#0000FF",
+    )
+    foreign_user = User(
+        email="bridge-foreign@example.com",
+        username="bridgeforeign",
+        password_hash="$2b$12$test",
+        active=True,
+        email_verified=True,
+    )
+    db_session.add_all([pla, petg, foreign_user])
+    await db_session.flush()
+    first_spool = UserSpool(
+        user_id=auth_user.id,
+        filament_id=pla.id,
+        initial_weight_g=1000.0,
+        used_weight_g=100.0,
+        state=UserSpoolState.shelf,
+    )
+    second_spool = UserSpool(
+        user_id=auth_user.id,
+        filament_id=petg.id,
+        initial_weight_g=750.0,
+        used_weight_g=50.0,
+        state=UserSpoolState.shelf,
+    )
+    archived_spool = UserSpool(
+        user_id=auth_user.id,
+        filament_id=petg.id,
+        initial_weight_g=750.0,
+        used_weight_g=50.0,
+        state=UserSpoolState.archived,
+    )
+    foreign_spool = UserSpool(
+        user_id=foreign_user.id,
+        filament_id=petg.id,
+        initial_weight_g=750.0,
+        used_weight_g=50.0,
+        state=UserSpoolState.shelf,
+    )
+    db_session.add_all([first_spool, second_spool, archived_spool, foreign_spool])
+    await db_session.commit()
+
+    first_page = await auth_client.get(
+        "/api/v1/octoprint-bridge/spools",
+        headers=bridge_headers,
+        params={"limit": 1},
+    )
+    assert first_page.status_code == 200
+    assert len(first_page.json()["items"]) == 1
+    assert first_page.json()["next_offset"] == 1
+
+    searched = await auth_client.get(
+        "/api/v1/octoprint-bridge/spools",
+        headers=bridge_headers,
+        params={"query": "blue"},
+    )
+    assert searched.status_code == 200
+    assert [item["id"] for item in searched.json()["items"]] == [second_spool.id]
+    assert searched.json()["items"][0]["location"] is None
+
+    printer = (await auth_client.get(f"/api/v1/physical-printers/{printer_id}")).json()
+    first_slot, second_slot = printer["material_systems"][0]["slots"]
+    first_command = {
+        "expected_revision": first_slot["assignment_revision"],
+        "expected_spool_id": None,
+        "spool_id": first_spool.id,
+    }
+    assigned = await auth_client.patch(
+        f"/api/v1/octoprint-bridge/material-slots/{first_slot['id']}",
+        headers=bridge_headers,
+        json=first_command,
+    )
+    assert assigned.status_code == 200
+    assigned_slot = assigned.json()["slots"][0]
+    assert assigned_slot["assignment_revision"] == 1
+    assert assigned_slot["spool"]["id"] == first_spool.id
+
+    canonical = (await auth_client.get(f"/api/v1/physical-printers/{printer_id}")).json()
+    canonical_first = canonical["material_systems"][0]["slots"][0]
+    assert canonical_first["assignment_revision"] == 1
+    assert canonical_first["assignment"]["spool_id"] == first_spool.id
+
+    located = await auth_client.get(
+        "/api/v1/octoprint-bridge/spools",
+        headers=bridge_headers,
+        params={"query": "red"},
+    )
+    assert located.status_code == 200
+    assert located.json()["items"][0]["location"] == {
+        "material_slot_id": first_slot["id"],
+        "slot_index": first_slot["provider_index"],
+        "slot_label": first_slot["label"],
+        "system_name": "OctoPrint",
+        "printer_name": "OctoPrint Virtual Printer",
+    }
+
+    other_printer_id, _ = await _create_octoprint_system(auth_client)
+    other_printer = (await auth_client.get(f"/api/v1/physical-printers/{other_printer_id}")).json()
+    other_slot = other_printer["material_systems"][0]["slots"][0]
+    wrong_connection = await auth_client.patch(
+        f"/api/v1/octoprint-bridge/material-slots/{other_slot['id']}",
+        headers=bridge_headers,
+        json={
+            "expected_revision": other_slot["assignment_revision"],
+            "expected_spool_id": None,
+            "spool_id": second_spool.id,
+        },
+    )
+    assert wrong_connection.status_code == 404
+    assert wrong_connection.json()["detail"]["code"] == "ERR_MATERIAL_SLOT_NOT_FOUND"
+
+    replayed = await auth_client.patch(
+        f"/api/v1/octoprint-bridge/material-slots/{first_slot['id']}",
+        headers=bridge_headers,
+        json=first_command,
+    )
+    assert replayed.status_code == 200
+    assert replayed.json()["slots"][0]["assignment_revision"] == 1
+
+    second_assigned = await auth_client.patch(
+        f"/api/v1/octoprint-bridge/material-slots/{second_slot['id']}",
+        headers=bridge_headers,
+        json={
+            "expected_revision": second_slot["assignment_revision"],
+            "expected_spool_id": None,
+            "spool_id": second_spool.id,
+        },
+    )
+    assert second_assigned.status_code == 200
+    current_slots = second_assigned.json()["slots"]
+
+    moved = await auth_client.patch(
+        f"/api/v1/octoprint-bridge/material-slots/{first_slot['id']}",
+        headers=bridge_headers,
+        json={
+            "expected_revision": current_slots[0]["assignment_revision"],
+            "expected_spool_id": first_spool.id,
+            "spool_id": second_spool.id,
+        },
+    )
+    assert moved.status_code == 200
+    moved_slots = moved.json()["slots"]
+    assert moved_slots[0]["spool"]["id"] == second_spool.id
+    assert moved_slots[0]["assignment_revision"] == 2
+    assert moved_slots[1]["spool"] is None
+    assert moved_slots[1]["assignment_revision"] == 2
+
+    await db_session.refresh(first_spool)
+    await db_session.refresh(second_spool)
+    assert first_spool.state == UserSpoolState.shelf
+    assert second_spool.state == UserSpoolState.active
+    assignments = list(
+        (
+            await db_session.scalars(
+                select(MaterialSlotAssignment).where(
+                    MaterialSlotAssignment.spool_id == second_spool.id
+                )
+            )
+        ).all()
+    )
+    assert [assignment.material_slot_id for assignment in assignments] == [first_slot["id"]]
+
+    stale = await auth_client.patch(
+        f"/api/v1/octoprint-bridge/material-slots/{first_slot['id']}",
+        headers=bridge_headers,
+        json={
+            "expected_revision": 1,
+            "expected_spool_id": first_spool.id,
+            "spool_id": None,
+        },
+    )
+    assert stale.status_code == 409
+    assert stale.json()["detail"]["code"] == "ERR_MATERIAL_ASSIGNMENT_CONFLICT"
+
+    foreign = await auth_client.patch(
+        f"/api/v1/octoprint-bridge/material-slots/{first_slot['id']}",
+        headers=bridge_headers,
+        json={
+            "expected_revision": moved_slots[0]["assignment_revision"],
+            "expected_spool_id": second_spool.id,
+            "spool_id": foreign_spool.id,
+        },
+    )
+    assert foreign.status_code == 404
+    assert foreign.json()["detail"]["code"] == "ERR_SPOOL_NOT_ACCESSIBLE"
+
+    clear_command = {
+        "expected_revision": moved_slots[0]["assignment_revision"],
+        "expected_spool_id": second_spool.id,
+        "spool_id": None,
+    }
+    cleared = await auth_client.patch(
+        f"/api/v1/octoprint-bridge/material-slots/{first_slot['id']}",
+        headers=bridge_headers,
+        json=clear_command,
+    )
+    assert cleared.status_code == 200
+    assert cleared.json()["slots"][0]["spool"] is None
+    assert cleared.json()["slots"][0]["assignment_revision"] == 3
+    retried_clear = await auth_client.patch(
+        f"/api/v1/octoprint-bridge/material-slots/{first_slot['id']}",
+        headers=bridge_headers,
+        json=clear_command,
+    )
+    assert retried_clear.status_code == 200
+    assert retried_clear.json()["slots"][0]["assignment_revision"] == 3
+    await db_session.refresh(second_spool)
+    assert second_spool.state == UserSpoolState.shelf
 
 
 @pytest.mark.asyncio

@@ -14,7 +14,7 @@ import secrets
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select
+from sqlalchemy import String, cast, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -30,6 +30,7 @@ from app.core.errors import (
     ERR_OCTOPRINT_BRIDGE_WRONG_PROVIDER,
     raise_error,
 )
+from app.models.brand import Brand
 from app.models.filament import Filament
 from app.models.material_slot_assignment import MaterialSlotAssignment
 from app.models.material_system import MaterialSlot, MaterialSystem, PhysicalPrinterConnector
@@ -37,7 +38,9 @@ from app.models.octoprint_bridge import OctoPrintBridgeConnection, OctoPrintBrid
 from app.models.preset_gate_state import PresetGateStateSource
 from app.models.preset_usage_event import PresetUsageEventType
 from app.models.print_job import PrintJobStatus
+from app.models.user import User
 from app.models.user_spool import UserSpool, UserSpoolState
+from app.schemas.material_contract import MaterialSlotAssignmentUpdate
 from app.schemas.octoprint_bridge import (
     OctoPrintBridgeHeartbeatRequest,
     OctoPrintBridgePairRequest,
@@ -47,12 +50,17 @@ from app.schemas.octoprint_bridge import (
     OctoPrintBridgeRoutingUpdateRequest,
     OctoPrintBridgeSlotSnapshot,
     OctoPrintBridgeSnapshotResponse,
+    OctoPrintBridgeSpoolAssignmentRequest,
+    OctoPrintBridgeSpoolLocation,
+    OctoPrintBridgeSpoolOption,
+    OctoPrintBridgeSpoolOptionsResponse,
     OctoPrintBridgeSpoolSnapshot,
     OctoPrintBridgeStatusResponse,
     OctoPrintBridgeUsageRequest,
     OctoPrintBridgeUsageResponse,
     OctoPrintPairingCodeResponse,
 )
+from app.services.material_assignment_service import update_material_slot_assignment
 from app.services.material_contract_service import require_physical_printer
 from app.services.print_job_service import (
     confirmed_consumption_for_job,
@@ -623,12 +631,11 @@ async def record_heartbeat(
 
         reported_revision = int(payload.routing_revision or 0)
         if (
-            (initialized_from_bridge or reported_revision == connection.routing_revision)
-            and _routing_matches(
-                connection,
-                mode=payload.routing_mode,
-                mapping=reported_mapping,
-            )
+            initialized_from_bridge or reported_revision == connection.routing_revision
+        ) and _routing_matches(
+            connection,
+            mode=payload.routing_mode,
+            mapping=reported_mapping,
         ):
             connection.applied_routing_revision = (
                 connection.routing_revision if initialized_from_bridge else reported_revision
@@ -680,6 +687,7 @@ async def build_snapshot(
             .selectinload(MaterialSlot.assignment)
             .selectinload(MaterialSlotAssignment.preset),
         )
+        .execution_options(populate_existing=True)
     )
     if system is None:
         raise_error(404, ERR_MATERIAL_SYSTEM_NOT_FOUND)
@@ -749,6 +757,134 @@ async def build_snapshot(
         ).encode("utf-8")
     ).hexdigest()
     return OctoPrintBridgeSnapshotResponse(revision=revision, **revision_payload)
+
+
+async def list_bridge_spool_options(
+    db: AsyncSession,
+    context: OctoPrintBridgeContext,
+    *,
+    query: str | None,
+    limit: int,
+    offset: int,
+) -> OctoPrintBridgeSpoolOptionsResponse:
+    """Return a bounded, tenant-scoped picker page for an adapter UI."""
+    user_id = context.connector.user_id
+    statement = (
+        select(UserSpool)
+        .outerjoin(Filament, Filament.id == UserSpool.filament_id)
+        .outerjoin(Brand, Brand.id == Filament.brand_id)
+        .where(
+            UserSpool.user_id == user_id,
+            UserSpool.state.not_in({UserSpoolState.archived, UserSpoolState.empty}),
+            UserSpool.used_weight_g < UserSpool.initial_weight_g,
+        )
+        .options(selectinload(UserSpool.filament).selectinload(Filament.brand))
+    )
+    normalized_query = (query or "").strip()
+    if normalized_query:
+        escaped = normalized_query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        pattern = f"%{escaped}%"
+        statement = statement.where(
+            or_(
+                cast(UserSpool.id, String).ilike(pattern, escape="\\"),
+                Filament.name.ilike(pattern, escape="\\"),
+                Filament.material_type.ilike(pattern, escape="\\"),
+                Filament.color_name.ilike(pattern, escape="\\"),
+                Brand.name.ilike(pattern, escape="\\"),
+            )
+        )
+    spools = list(
+        (
+            await db.scalars(
+                statement.order_by(UserSpool.updated_at.desc(), UserSpool.id.desc())
+                .offset(offset)
+                .limit(limit + 1)
+            )
+        ).unique()
+    )
+    has_more = len(spools) > limit
+    page = spools[:limit]
+
+    locations: dict[int, MaterialSlotAssignment] = {}
+    spool_ids = [spool.id for spool in page]
+    if spool_ids:
+        assignments = (
+            await db.scalars(
+                select(MaterialSlotAssignment)
+                .where(MaterialSlotAssignment.spool_id.in_(spool_ids))
+                .options(
+                    selectinload(MaterialSlotAssignment.material_slot)
+                    .selectinload(MaterialSlot.material_system)
+                    .selectinload(MaterialSystem.physical_printer)
+                )
+            )
+        ).all()
+        locations = {
+            assignment.spool_id: assignment
+            for assignment in assignments
+            if assignment.spool_id is not None
+        }
+
+    items: list[OctoPrintBridgeSpoolOption] = []
+    for spool in page:
+        filament = spool.filament
+        assignment = locations.get(spool.id)
+        location = None
+        if assignment is not None:
+            slot = assignment.material_slot
+            system = slot.material_system
+            location = OctoPrintBridgeSpoolLocation(
+                material_slot_id=slot.id,
+                slot_index=slot.provider_index,
+                slot_label=slot.label,
+                system_name=system.name,
+                printer_name=system.physical_printer.name,
+            )
+        items.append(
+            OctoPrintBridgeSpoolOption(
+                id=spool.id,
+                name=filament.name if filament is not None else f"Spool #{spool.id}",
+                brand=(
+                    filament.brand.name
+                    if filament is not None and filament.brand is not None
+                    else None
+                ),
+                material_type=filament.material_type if filament is not None else None,
+                color_hex=filament.color_hex if filament is not None else None,
+                remaining_weight_g=spool.remaining_weight_g,
+                location=location,
+            )
+        )
+    return OctoPrintBridgeSpoolOptionsResponse(
+        items=items,
+        next_offset=offset + limit if has_more else None,
+    )
+
+
+async def update_bridge_spool_assignment(
+    db: AsyncSession,
+    context: OctoPrintBridgeContext,
+    *,
+    material_slot_id: int,
+    payload: OctoPrintBridgeSpoolAssignmentRequest,
+) -> OctoPrintBridgeSnapshotResponse:
+    """Apply an explicit adapter-UI command through the canonical writer."""
+    user = await db.get(User, context.connector.user_id)
+    if user is None:
+        raise_error(401, ERR_OCTOPRINT_BRIDGE_UNAUTHORIZED)
+    await update_material_slot_assignment(
+        db,
+        user,
+        physical_printer_id=context.connector.physical_printer_id,
+        material_slot_id=material_slot_id,
+        payload=MaterialSlotAssignmentUpdate(
+            expected_revision=payload.expected_revision,
+            expected_spool_id=payload.expected_spool_id,
+            spool_id=payload.spool_id,
+        ),
+        source=PresetGateStateSource.web_manual,
+    )
+    return await build_snapshot(db, context)
 
 
 def _weight_from_length(length_mm: float, density: float, diameter_mm: float) -> float:

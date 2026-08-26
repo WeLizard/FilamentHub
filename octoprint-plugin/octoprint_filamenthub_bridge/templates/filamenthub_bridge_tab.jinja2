@@ -95,28 +95,59 @@
         <div class="fhb-section-heading fhb-spools-heading">
           <div>
             <h4>Spools</h4>
-            <p data-bind="visible: isManualRouting">Select the spool currently loaded into the printer.</p>
-            <p data-bind="visible: isToolRouting">Mappings are shown on each slot. Empty slots remain visible here but not in the sidebar.</p>
+            <p data-bind="visible: isManualRouting">Select the active slot for usage tracking. Change its desired spool explicitly when needed.</p>
+            <p data-bind="visible: isToolRouting">Tool mappings and desired spools are shown per slot. Empty slots remain visible here but not in the sidebar.</p>
           </div>
         </div>
 
         <div class="fhb-grid" data-bind="foreach: slots">
-          <button class="fhb-slot" data-bind="
-              click: $parent.selectSlot,
-              enable: $parent.isManualRouting,
-              css: { active: index === $parent.activeSlot(), readonly: $parent.isToolRouting() }">
-            <span class="fhb-swatch" data-bind="style: { backgroundColor: spool && spool.color_hex ? spool.color_hex : '#64748b' }, css: { empty: !spool }"></span>
-            <span class="fhb-slot-copy">
-              <span class="fhb-slot-title">
-                <strong data-bind="text: $parent.slotIdentity($data)"></strong>
-                <em data-bind="visible: index === $parent.activeSlot()">Active</em>
-                <em data-bind="visible: $parent.isToolRouting() && $parent.mappedToolsForSlot($data), text: $parent.mappedToolsForSlot($data)"></em>
+          <article class="fhb-slot" data-bind="css: { active: index === $parent.activeSlot(), readonly: $parent.isToolRouting() }">
+            <button type="button" class="fhb-slot-main" data-bind="click: $parent.selectSlot, enable: $parent.isManualRouting">
+              <span class="fhb-swatch" data-bind="style: { backgroundColor: spool && spool.color_hex ? spool.color_hex : '#64748b' }, css: { empty: !spool }"></span>
+              <span class="fhb-slot-copy">
+                <span class="fhb-slot-title">
+                  <strong data-bind="text: $parent.slotIdentity($data)"></strong>
+                  <em data-bind="visible: index === $parent.activeSlot()">Active</em>
+                  <em data-bind="visible: $parent.isToolRouting() && $parent.mappedToolsForSlot($data), text: $parent.mappedToolsForSlot($data)"></em>
+                </span>
+                <small data-bind="text: $parent.spoolTitle($data) || 'No spool assigned'"></small>
+                <small data-bind="visible: spool && spool.material_type, text: $parent.spoolMaterial($data)"></small>
               </span>
-              <small data-bind="text: $parent.spoolTitle($data) || 'No spool assigned'"></small>
-              <small data-bind="visible: spool && spool.material_type, text: $parent.spoolMaterial($data)"></small>
-            </span>
-            <span class="fhb-weight" data-bind="text: $parent.spoolRemaining($data)"></span>
-          </button>
+              <span class="fhb-weight" data-bind="text: $parent.spoolRemaining($data)"></span>
+            </button>
+            <button type="button" class="btn btn-small fhb-change-spool" data-bind="click: $parent.openSpoolPicker, disable: $parent.busy">
+              {{ _('Change spool') }}
+            </button>
+          </article>
+        </div>
+
+        <div class="fhb-spool-picker" data-bind="visible: editingSlot">
+          <div class="fhb-picker-heading">
+            <div>
+              <strong>{{ _('Desired spool for') }} <span data-bind="text: editingSlot() ? slotIdentity(editingSlot()) : ''"></span></strong>
+              <small>{{ _('Saved in FilamentHub only. Install the physical spool yourself; hardware state is not changed.') }}</small>
+            </div>
+            <button type="button" class="close" aria-label="{{ _('Close') }}" data-bind="click: cancelSpoolPicker, disable: busy">×</button>
+          </div>
+          <div class="fhb-picker-search">
+            <input type="search" class="input-block-level" placeholder="{{ _('Search by material, color, brand or spool ID') }}" data-bind="textInput: spoolQuery, disable: busy">
+            <button type="button" class="btn" data-bind="click: function () { searchSpools(true); }, disable: busy">{{ _('Search') }}</button>
+          </div>
+          <select class="input-block-level" data-bind="
+              options: spoolOptions,
+              optionsText: spoolOptionText,
+              optionsValue: 'id',
+              optionsCaption: &quot;{{ _('Choose a spool') }}&quot;,
+              value: selectedSpoolId,
+              disable: busy"></select>
+          <small class="fhb-picker-empty" data-bind="visible: !busy() && spoolOptions().length === 0">{{ _('No matching usable spools.') }}</small>
+          <div class="alert alert-warning fhb-picker-warning" data-bind="visible: selectedSpoolLocationText, text: selectedSpoolLocationText"></div>
+          <div class="fhb-picker-actions">
+            <button type="button" class="btn btn-primary" data-bind="click: assignSelectedSpool, disable: busy() || !selectedSpoolId()">{{ _('Assign spool') }}</button>
+            <button type="button" class="btn" data-bind="visible: editingSlot() && editingSlot().spool, click: clearSpoolAssignment, disable: busy">{{ _('Remove spool') }}</button>
+            <button type="button" class="btn btn-link" data-bind="click: cancelSpoolPicker, disable: busy">{{ _('Cancel') }}</button>
+            <button type="button" class="btn btn-link fhb-load-more" data-bind="visible: nextSpoolOffset() !== null, click: function () { searchSpools(false); }, disable: busy">{{ _('Load more') }}</button>
+          </div>
         </div>
       </section>
     </div>

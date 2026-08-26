@@ -4,9 +4,10 @@ FilamentHub Bridge is the native outbound connector between a local OctoPrint
 instance and a FilamentHub material system. It synchronizes the slots and spool
 assignments the user selected in FilamentHub, reports the locally selected slot,
 and sends measured extrusion after a terminal print event with durable retry
-identifiers. Assigned spools are also shown in OctoPrint's sidebar, where a
-manual setup can switch the currently loaded spool without opening the main
-Bridge tab.
+identifiers. Assigned spools are also shown in OctoPrint's sidebar. In the main
+Bridge tab, the user can explicitly assign an existing FilamentHub spool to a
+slot or remove it. This updates the same desired assignment shown on the site;
+it does not claim that OctoPrint changed the physical hardware.
 
 The Bridge does not expose OctoPrint to the public internet. It initiates HTTPS
 requests to the FilamentHub instance configured by the user. It does not require
@@ -28,6 +29,12 @@ Spoolman or SpoolManager and does not copy their local databases.
      number. By default, tools follow the visible slot order (`T0 -> #1`,
      `T1 -> #2`, ...); an optional custom table handles non-standard layouts.
      Extrusion position is tracked separately for every tool.
+5. Use **Change spool** on a slot to search the account's usable physical
+   spools and update its desired assignment. If that spool is assigned
+   elsewhere, the Bridge names the current location before confirmation.
+   FilamentHub moves the desired assignment atomically; the user still installs
+   the physical spool unless a separate provider capability explicitly supports
+   hardware commands.
 
 If a print selects an unmapped `Tn`, the Bridge leaves that extrusion
 unassigned and displays a warning instead of charging it to an unrelated spool.
