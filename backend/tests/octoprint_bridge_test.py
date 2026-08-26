@@ -13,7 +13,7 @@ from app.models.material_slot_assignment import MaterialSlotAssignment
 from app.models.octoprint_bridge import OctoPrintBridgeEvent
 from app.models.preset import Preset, PresetModerationStatus
 from app.models.preset_usage_event import PresetUsageEvent
-from app.models.print_job import PrintJob
+from app.models.print_job import PrintJob, PrintJobEvent, PrintJobMaterial
 from app.models.user import User
 from app.models.user_spool import UserSpool, UserSpoolState
 
@@ -279,6 +279,217 @@ async def test_bridge_pair_snapshot_usage_replay_and_revoke(
     assert revoke_response.status_code == 204
     rejected = await auth_client.get("/api/v1/octoprint-bridge/snapshot", headers=bridge_headers)
     assert rejected.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_bridge_checkpoints_accumulate_once_and_terminal_closes_same_job(
+    auth_client: AsyncClient,
+    db_session: AsyncSession,
+    auth_user,
+) -> None:
+    printer_id, system_id = await _create_octoprint_system(auth_client)
+    token = await _pair(auth_client, printer_id, system_id)
+    bridge_headers = {"X-FilamentHub-Bridge-Token": token}
+
+    brand = Brand(name="Checkpoint Brand", slug="checkpoint-brand")
+    db_session.add(brand)
+    await db_session.flush()
+    filament = Filament(
+        brand_id=brand.id,
+        name="Checkpoint PLA",
+        slug="checkpoint-pla",
+        material_type="PLA",
+        density=1.24,
+        diameter=1.75,
+    )
+    db_session.add(filament)
+    await db_session.flush()
+    preset = Preset(
+        filament_id=filament.id,
+        user_id=auth_user.id,
+        name="Checkpoint profile",
+        extruder_temp=210,
+        bed_temp=60,
+        active=True,
+        is_official=False,
+        is_weighted=False,
+        moderation_status=PresetModerationStatus.APPROVED,
+    )
+    spool = UserSpool(
+        user_id=auth_user.id,
+        filament_id=filament.id,
+        initial_weight_g=1000.0,
+        used_weight_g=0.0,
+        state=UserSpoolState.shelf,
+    )
+    db_session.add_all([preset, spool])
+    await db_session.commit()
+
+    printer_response = await auth_client.get(f"/api/v1/physical-printers/{printer_id}")
+    slot = printer_response.json()["material_systems"][0]["slots"][0]
+    assignment_response = await auth_client.patch(
+        f"/api/v1/physical-printers/{printer_id}/material-slots/{slot['id']}",
+        json={
+            "expected_revision": slot["assignment_revision"],
+            "expected_spool_id": None,
+            "spool_id": spool.id,
+            "preset_id": preset.id,
+        },
+    )
+    assert assignment_response.status_code == 200
+
+    invalid_empty_checkpoint = await auth_client.post(
+        "/api/v1/octoprint-bridge/usage",
+        headers=bridge_headers,
+        json={
+            "event_id": "checkpoint-empty",
+            "job_id": "segmented-job",
+            "event_type": "checkpoint",
+            "reasons": ["periodic"],
+            "items": [],
+        },
+    )
+    assert invalid_empty_checkpoint.status_code == 422
+    invalid_checkpoint_outcome = await auth_client.post(
+        "/api/v1/octoprint-bridge/usage",
+        headers=bridge_headers,
+        json={
+            "event_id": "checkpoint-with-outcome",
+            "job_id": "segmented-job",
+            "event_type": "checkpoint",
+            "outcome": "completed",
+            "items": [{"slot_index": 0, "spool_id": spool.id, "used_length_mm": 1.0}],
+        },
+    )
+    assert invalid_checkpoint_outcome.status_code == 422
+
+    started_at = "2026-08-25T12:00:00Z"
+    checkpoint_payloads = [
+        {
+            "event_id": "segmented-job-checkpoint-1",
+            "job_id": "segmented-job",
+            "event_type": "checkpoint",
+            "reasons": ["periodic"],
+            "file_name": "segmented.gcode",
+            "started_at": started_at,
+            "observed_at": "2026-08-25T12:05:00Z",
+            "items": [{"slot_index": 0, "spool_id": spool.id, "used_length_mm": 100.0}],
+        },
+        {
+            "event_id": "segmented-job-checkpoint-2",
+            "job_id": "segmented-job",
+            "event_type": "checkpoint",
+            "reasons": ["paused", "filament_change"],
+            "file_name": "segmented.gcode",
+            "started_at": started_at,
+            "observed_at": "2026-08-25T12:06:00Z",
+            "items": [{"slot_index": 0, "spool_id": spool.id, "used_length_mm": 50.0}],
+        },
+        {
+            "event_id": "segmented-job-checkpoint-3",
+            "job_id": "segmented-job",
+            "event_type": "checkpoint",
+            "reasons": ["periodic"],
+            "file_name": "segmented.gcode",
+            "started_at": started_at,
+            "observed_at": "2026-08-25T12:10:00Z",
+            "items": [{"slot_index": 0, "spool_id": spool.id, "used_length_mm": 25.0}],
+        },
+    ]
+    expected_deltas = []
+    for payload in checkpoint_payloads:
+        response = await auth_client.post(
+            "/api/v1/octoprint-bridge/usage",
+            headers=bridge_headers,
+            json=payload,
+        )
+        assert response.status_code == 200
+        expected_delta = (
+            payload["items"][0]["used_length_mm"] * math.pi * (1.75 / 2.0) ** 2 / 1000.0 * 1.24
+        )
+        expected_deltas.append(expected_delta)
+        assert response.json()["deduplicated"] is False
+        assert response.json()["consumed_weight_g"] == pytest.approx(expected_delta)
+
+    replay = await auth_client.post(
+        "/api/v1/octoprint-bridge/usage",
+        headers=bridge_headers,
+        json=checkpoint_payloads[0],
+    )
+    assert replay.status_code == 200
+    assert replay.json()["deduplicated"] is True
+    assert replay.json()["consumed_weight_g"] == pytest.approx(expected_deltas[0])
+
+    terminal_payload = {
+        "event_id": "segmented-job-terminal",
+        "job_id": "segmented-job",
+        "event_type": "terminal",
+        "reasons": ["terminal"],
+        "outcome": "completed",
+        "file_name": "segmented.gcode",
+        "started_at": started_at,
+        "observed_at": "2026-08-25T12:12:00Z",
+        "duration_s": 720.0,
+        "items": [],
+    }
+    terminal = await auth_client.post(
+        "/api/v1/octoprint-bridge/usage",
+        headers=bridge_headers,
+        json=terminal_payload,
+    )
+    assert terminal.status_code == 200
+    assert terminal.json() == {
+        "accepted": True,
+        "deduplicated": False,
+        "consumed_weight_g": 0.0,
+    }
+
+    terminal_retry = await auth_client.post(
+        "/api/v1/octoprint-bridge/usage",
+        headers=bridge_headers,
+        json={**terminal_payload, "event_id": "segmented-job-terminal-retry"},
+    )
+    assert terminal_retry.status_code == 200
+    assert terminal_retry.json()["deduplicated"] is True
+    assert terminal_retry.json()["consumed_weight_g"] == pytest.approx(sum(expected_deltas))
+
+    late_checkpoint = await auth_client.post(
+        "/api/v1/octoprint-bridge/usage",
+        headers=bridge_headers,
+        json={
+            **checkpoint_payloads[0],
+            "event_id": "segmented-job-late-checkpoint",
+        },
+    )
+    assert late_checkpoint.status_code == 409
+    assert late_checkpoint.json()["detail"]["code"] == "ERR_PRINT_JOB_REPLAY_CONFLICT"
+
+    await db_session.refresh(spool)
+    assert spool.used_weight_g == pytest.approx(sum(expected_deltas))
+    jobs = list((await db_session.execute(select(PrintJob))).scalars())
+    assert len(jobs) == 1
+    assert jobs[0].status.value == "completed"
+    assert jobs[0].actual_duration_s == 720.0
+    lifecycle = list(
+        (await db_session.execute(select(PrintJobEvent).order_by(PrintJobEvent.id))).scalars()
+    )
+    assert [event.status.value for event in lifecycle] == [
+        "printing",
+        "paused",
+        "printing",
+        "completed",
+    ]
+    materials = list((await db_session.execute(select(PrintJobMaterial))).scalars())
+    assert len(materials) == 1
+    assert materials[0].spool_id == spool.id
+    usage_events = list((await db_session.execute(select(PresetUsageEvent))).scalars())
+    assert len(usage_events) == 3
+    assert {event.print_job_id for event in usage_events} == {jobs[0].id}
+    assignment = await db_session.scalar(
+        select(MaterialSlotAssignment).where(MaterialSlotAssignment.material_slot_id == slot["id"])
+    )
+    assert assignment is not None
+    assert assignment.spool_id == spool.id
 
 
 @pytest.mark.asyncio

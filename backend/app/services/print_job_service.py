@@ -414,7 +414,39 @@ async def transition_print_job(
     return _response(await _load_job(db, user_id=user_id, job_id=job.id))
 
 
-async def ensure_provider_terminal_job(
+async def _ensure_provider_job_materials(
+    db: AsyncSession,
+    *,
+    job: PrintJob,
+    materials: list[tuple[UserSpool, str | None, int | None]],
+) -> None:
+    existing = set(
+        (
+            await db.execute(
+                select(
+                    PrintJobMaterial.spool_id,
+                    PrintJobMaterial.material_line_key,
+                ).where(PrintJobMaterial.print_job_id == job.id)
+            )
+        ).all()
+    )
+    for spool, material_line_key, tool_index in materials:
+        key = (spool.id, material_line_key)
+        if key in existing:
+            continue
+        db.add(
+            PrintJobMaterial(
+                print_job_id=job.id,
+                spool_id=spool.id,
+                material_line_key=material_line_key,
+                tool_index=tool_index,
+                spool_snapshot=_material_snapshot(spool),
+            )
+        )
+        existing.add(key)
+
+
+async def ensure_provider_job_event(
     db: AsyncSession,
     *,
     user_id: int,
@@ -429,15 +461,18 @@ async def ensure_provider_terminal_job(
     file_name: str | None,
     actual_duration_s: float | None,
     materials: list[tuple[UserSpool, str | None, int | None]],
+    occurred_at: datetime,
+    started_at: datetime | None = None,
+    details: dict | None = None,
 ) -> tuple[PrintJob, bool]:
-    """Create exactly one terminal job from a provider's final-only report.
+    """Create or advance one provider job and reject terminal replays.
 
-    The adapter keeps its own transport replay table. This job-level identity
-    additionally prevents two distinct transport events for the same physical
-    print from consuming material twice.
+    The adapter owns transport replay. This job-level identity additionally
+    prevents a terminal retry under a different transport event from consuming
+    material twice, while checkpoints may add new deltas to the same attempt.
     """
-    if status not in TERMINAL_STATUSES:
-        raise ValueError("provider terminal job requires a terminal status")
+    if status not in {PrintJobStatus.printing, PrintJobStatus.paused, *TERMINAL_STATUSES}:
+        raise ValueError("unsupported provider job status")
     existing = await db.scalar(
         select(PrintJob)
         .where(
@@ -448,11 +483,55 @@ async def ensure_provider_terminal_job(
         .with_for_update()
     )
     if existing is not None:
-        if existing.status != status or existing.source_payload_hash != payload_hash:
-            raise_error(409, ERR_PRINT_JOB_REPLAY_CONFLICT)
-        return existing, False
+        previous_status = existing.status
+        if existing.status in TERMINAL_STATUSES:
+            if existing.status != status or existing.source_payload_hash != payload_hash:
+                raise_error(409, ERR_PRINT_JOB_REPLAY_CONFLICT)
+            return existing, False
+        if status in TERMINAL_STATUSES:
+            if status not in ALLOWED_TRANSITIONS[existing.status]:
+                raise_error(409, ERR_PRINT_JOB_REPLAY_CONFLICT)
+            existing.status = status
+            existing.source_payload_hash = payload_hash
+            existing.actual_duration_s = actual_duration_s
+            existing.finished_at = occurred_at
+        elif status != existing.status:
+            if status not in ALLOWED_TRANSITIONS[existing.status]:
+                raise_error(409, ERR_PRINT_JOB_REPLAY_CONFLICT)
+            existing.status = status
+            if status == PrintJobStatus.printing and existing.started_at is None:
+                existing.started_at = started_at or occurred_at
+        if existing.file_name_snapshot is None and file_name is not None:
+            existing.file_name_snapshot = file_name
+        if existing.started_at is None and started_at is not None:
+            existing.started_at = started_at
+        await _ensure_provider_job_materials(db, job=existing, materials=materials)
+        if status != previous_status:
+            # Lifecycle events stay compact: periodic/tool checkpoints do not
+            # duplicate the current state, while pause/resume/terminal do.
+            db.add(
+                PrintJobEvent(
+                    print_job_id=existing.id,
+                    user_id=user_id,
+                    status=status,
+                    source=source,
+                    event_key=event_key,
+                    payload_hash=payload_hash,
+                    details=details,
+                    occurred_at=occurred_at,
+                )
+            )
+        await db.flush()
+        return existing, True
 
-    now = _now()
+    if status in TERMINAL_STATUSES:
+        source_payload_hash = payload_hash
+        finished_at = occurred_at
+    else:
+        source_payload_hash = _hash_payload({"source": source, "source_ref": source_ref})
+        finished_at = None
+    if started_at is None and status in {PrintJobStatus.printing, PrintJobStatus.paused}:
+        started_at = occurred_at
     job = PrintJob(
         user_id=user_id,
         physical_printer_id=physical_printer_id,
@@ -460,24 +539,16 @@ async def ensure_provider_terminal_job(
         status=status,
         source=source,
         source_ref=source_ref,
-        source_payload_hash=payload_hash,
+        source_payload_hash=source_payload_hash,
         printer_name_snapshot=printer_name,
         file_name_snapshot=file_name,
         actual_duration_s=actual_duration_s,
-        finished_at=now,
+        started_at=started_at,
+        finished_at=finished_at,
     )
     db.add(job)
     await db.flush()
-    for spool, material_line_key, tool_index in materials:
-        db.add(
-            PrintJobMaterial(
-                print_job_id=job.id,
-                spool_id=spool.id,
-                material_line_key=material_line_key,
-                tool_index=tool_index,
-                spool_snapshot=_material_snapshot(spool),
-            )
-        )
+    await _ensure_provider_job_materials(db, job=job, materials=materials)
     db.add(
         PrintJobEvent(
             print_job_id=job.id,
@@ -486,7 +557,8 @@ async def ensure_provider_terminal_job(
             source=source,
             event_key=event_key,
             payload_hash=payload_hash,
-            occurred_at=now,
+            details=details,
+            occurred_at=occurred_at,
         )
     )
     await db.flush()

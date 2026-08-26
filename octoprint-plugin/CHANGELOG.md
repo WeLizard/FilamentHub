@@ -2,6 +2,17 @@
 
 Newest first. The top entry is used for GitHub release notes.
 
+## 0.1.2
+- Records long-print usage in durable, replay-safe checkpoints instead of
+  waiting for the terminal event, while keeping per-command extrusion local.
+- Segments usage at tool, selected-slot and exact-spool changes so one print
+  can safely consume multiple physical spools.
+- Coalesces unsent checkpoint deltas and seals each payload before its first
+  network attempt, preventing a lost acknowledgement from changing a retried
+  event under the same id.
+- Treats OctoPrint's M600/M701/M702 signal as a filament change without
+  claiming that a runout sensor confirmed an empty spool.
+
 ## 0.1.1
 - Shows the Bridge's live FilamentHub slot and spool snapshot in the OctoPrint sidebar, including the active slot, material colour and remaining weight.
 - Lets users choose `filamenthub.ru` or `filamenthub.club` while pairing and shows pairing failures directly in the connection form.

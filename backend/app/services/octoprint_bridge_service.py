@@ -64,7 +64,7 @@ from app.services.material_assignment_service import update_material_slot_assign
 from app.services.material_contract_service import require_physical_printer
 from app.services.print_job_service import (
     confirmed_consumption_for_job,
-    ensure_provider_terminal_job,
+    ensure_provider_job_event,
 )
 from app.services.spool_service import clear_spool_gate_assignments, clear_spool_location_projection
 from app.services.spool_usage_service import (
@@ -909,14 +909,50 @@ def _weight_from_length(length_mm: float, density: float, diameter_mm: float) ->
 
 
 def _usage_payload_hash(payload: OctoPrintBridgeUsageRequest) -> str:
+    payload_data = payload.model_dump(mode="json")
+    if payload.event_type == "terminal":
+        # Preserve hashes written before checkpoint fields were added.
+        payload_data.pop("event_type", None)
+    if not payload.reasons:
+        payload_data.pop("reasons", None)
+    if payload.started_at is None:
+        payload_data.pop("started_at", None)
+    if payload.observed_at is None:
+        payload_data.pop("observed_at", None)
     return hashlib.sha256(
         json.dumps(
-            payload.model_dump(mode="json"),
+            payload_data,
             sort_keys=True,
             separators=(",", ":"),
             ensure_ascii=False,
         ).encode("utf-8")
     ).hexdigest()
+
+
+def _terminal_payload_hash(payload: OctoPrintBridgeUsageRequest) -> str:
+    payload_data = payload.model_dump(mode="json")
+    payload_data.pop("event_id", None)
+    payload_data.pop("event_type", None)
+    if not payload.reasons:
+        payload_data.pop("reasons", None)
+    if payload.started_at is None:
+        payload_data.pop("started_at", None)
+    if payload.observed_at is None:
+        payload_data.pop("observed_at", None)
+    return hashlib.sha256(
+        json.dumps(
+            payload_data,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        ).encode("utf-8")
+    ).hexdigest()
+
+
+def _received_source_time(value: datetime | None, received_at: datetime) -> datetime:
+    if value is None:
+        return received_at
+    return min(_as_utc(value), received_at)
 
 
 async def record_usage_event(
@@ -925,7 +961,7 @@ async def record_usage_event(
     payload: OctoPrintBridgeUsageRequest,
 ) -> OctoPrintBridgeUsageResponse:
     connector = context.connector
-    # Serialize terminal events per Bridge connection. This closes the replay
+    # Serialize usage events per Bridge connection. This closes the replay
     # race even when two conflicting retries mention different spools and would
     # therefore not contend on the same inventory rows.
     connection = await db.scalar(
@@ -984,32 +1020,40 @@ async def record_usage_event(
     if set(spools_by_id) != spool_ids:
         raise_error(404, ERR_ACCESS_DENIED)
 
-    terminal_payload_hash = hashlib.sha256(
-        json.dumps(
-            payload.model_dump(mode="json", exclude={"event_id"}),
-            sort_keys=True,
-            separators=(",", ":"),
-            ensure_ascii=False,
-        ).encode("utf-8")
-    ).hexdigest()
-    print_job, print_job_created = await ensure_provider_terminal_job(
+    received_at = _now()
+    occurred_at = _received_source_time(payload.observed_at, received_at)
+    started_at = (
+        min(_as_utc(payload.started_at), occurred_at) if payload.started_at is not None else None
+    )
+    if payload.event_type == "terminal":
+        if payload.outcome is None:  # guarded by the request model
+            raise ValueError("terminal usage event requires an outcome")
+        status = PrintJobStatus(payload.outcome)
+        job_payload_hash = _terminal_payload_hash(payload)
+    else:
+        status = PrintJobStatus.paused if "paused" in payload.reasons else PrintJobStatus.printing
+        job_payload_hash = payload_hash
+    print_job, should_record_usage = await ensure_provider_job_event(
         db,
         user_id=connector.user_id,
         physical_printer_id=connector.physical_printer_id,
         printer_name=physical_printer.name,
         source=OCTOPRINT_PROVIDER,
         source_ref=f"{connection.id}:{payload.job_id}",
-        event_key=f"terminal:{payload.event_id}",
-        payload_hash=terminal_payload_hash,
-        status=PrintJobStatus(payload.outcome),
+        event_key=f"{payload.event_type}:{payload.event_id}",
+        payload_hash=job_payload_hash,
+        status=status,
         title=payload.file_name or payload.job_id,
         file_name=payload.file_name,
         actual_duration_s=payload.duration_s,
         materials=[
             (spools_by_id[item.spool_id], f"slot:{item.slot_index}", None) for item in payload.items
         ],
+        occurred_at=occurred_at,
+        started_at=started_at,
+        details={"reasons": payload.reasons} if payload.reasons else None,
     )
-    if not print_job_created:
+    if not should_record_usage:
         consumed_weight_g = await confirmed_consumption_for_job(db, print_job.id)
         db.add(
             OctoPrintBridgeEvent(
@@ -1028,7 +1072,7 @@ async def record_usage_event(
             consumed_weight_g=consumed_weight_g,
         )
 
-    now = _now()
+    now = received_at
     total_consumed = 0.0
     for item in payload.items:
         spool = spools_by_id[item.spool_id]
@@ -1077,6 +1121,9 @@ async def record_usage_event(
                 "adapter": OCTOPRINT_PROVIDER,
                 "job_id": payload.job_id,
                 "outcome": payload.outcome,
+                "event_type": payload.event_type,
+                "reasons": payload.reasons,
+                "observed_at": occurred_at.isoformat(),
                 "slot_index": item.slot_index,
                 "file_name": payload.file_name,
                 "duration_s": payload.duration_s,

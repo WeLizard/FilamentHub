@@ -178,12 +178,38 @@ class OctoPrintBridgeUsageItem(BaseModel):
 class OctoPrintBridgeUsageRequest(BaseModel):
     event_id: str = Field(min_length=1, max_length=128)
     job_id: str = Field(min_length=1, max_length=200)
-    outcome: Literal["completed", "cancelled", "failed"]
+    event_type: Literal["checkpoint", "terminal"] = "terminal"
+    reasons: list[
+        Literal[
+            "periodic",
+            "tool_change",
+            "slot_change",
+            "spool_change",
+            "filament_change",
+            "paused",
+            "disconnect",
+            "shutdown",
+            "terminal",
+        ]
+    ] = Field(default_factory=list, max_length=16)
+    outcome: Literal["completed", "cancelled", "failed"] | None = None
     file_name: str | None = Field(default=None, max_length=500)
+    started_at: datetime | None = None
+    observed_at: datetime | None = None
     duration_s: float | None = Field(default=None, ge=0)
-    items: list[OctoPrintBridgeUsageItem] = Field(min_length=1, max_length=256)
+    items: list[OctoPrintBridgeUsageItem] = Field(default_factory=list, max_length=256)
 
     model_config = {"str_strip_whitespace": True}
+
+    @model_validator(mode="after")
+    def validate_event_shape(self) -> "OctoPrintBridgeUsageRequest":
+        if self.event_type == "terminal" and self.outcome is None:
+            raise ValueError("terminal usage event requires an outcome")
+        if self.event_type == "checkpoint" and self.outcome is not None:
+            raise ValueError("checkpoint usage event cannot have an outcome")
+        if self.event_type == "checkpoint" and not self.items:
+            raise ValueError("checkpoint usage event requires an amount")
+        return self
 
 
 class OctoPrintBridgeUsageResponse(BaseModel):

@@ -24,6 +24,12 @@ class ExtrusionTracker:
         self.seen_tools: Set[int] = set()
         self.unmapped_tools: Set[int] = set()
 
+    def drain_usage(self) -> Dict[int, float]:
+        """Return checkpoint deltas without losing extrusion-mode/tool state."""
+        usage = dict(self.used_length_by_slot)
+        self.used_length_by_slot = {}
+        return usage
+
     def _slot_for_tool(
         self,
         *,

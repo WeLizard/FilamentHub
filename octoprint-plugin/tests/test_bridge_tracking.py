@@ -6,6 +6,7 @@ from octoprint_filamenthub_bridge import (
     CAPABILITIES,
     RETRY_MAX_SECONDS,
     STARTUP_JITTER_MAX_SECONDS,
+    USAGE_CHECKPOINT_INTERVAL_SECONDS,
     FilamentHubBridgePlugin,
     _retry_delay,
 )
@@ -109,6 +110,8 @@ def test_sent_gcode_starts_tracking_before_delayed_print_started_event():
     plugin._finish_print("completed", {"time": 1.0})
     outbox = plugin._settings.get(["outbox"])
     assert len(outbox) == 1
+    assert outbox[0]["event_type"] == "terminal"
+    assert outbox[0]["reasons"] == ["terminal"]
     assert outbox[0]["items"] == [
         {"slot_index": 0, "spool_id": 41, "used_length_mm": 200.0}
     ]
@@ -127,8 +130,136 @@ def test_print_cancelled_queues_usage_as_cancelled():
 
     outbox = plugin._settings.get(["outbox"])
     assert len(outbox) == 1
+    assert outbox[0]["event_type"] == "terminal"
     assert outbox[0]["outcome"] == "cancelled"
     assert outbox[0]["items"][0]["used_length_mm"] == 12.0
+
+
+def test_terminal_event_closes_a_print_even_without_new_usage():
+    plugin = FilamentHubBridgePlugin()
+    plugin._settings = FakeSettings()
+    plugin._printer = FakePrinter()
+    plugin._logger = logging.getLogger("filamenthub-bridge-test")
+
+    plugin._begin_print({"name": "empty-terminal.gcode"})
+    plugin._finish_print("failed", {"time": 2.0})
+
+    outbox = plugin._settings.get(["outbox"])
+    assert len(outbox) == 1
+    assert outbox[0]["event_type"] == "terminal"
+    assert outbox[0]["outcome"] == "failed"
+    assert outbox[0]["items"] == []
+
+
+def test_tool_and_spool_boundaries_keep_exact_spool_identity():
+    plugin = FilamentHubBridgePlugin()
+    plugin._settings = FakeSettings()
+    plugin._settings.set(
+        ["snapshot"],
+        {
+            "slots": [
+                {"material_slot_id": 17, "index": 0, "spool": {"id": 41}},
+                {"material_slot_id": 18, "index": 1, "spool": {"id": 42}},
+            ]
+        },
+    )
+    plugin._settings.set_boolean(["map_tools_to_slots"], True)
+    plugin._settings.set(["tool_slot_map"], {"0": 0, "1": 1})
+    plugin._printer = FakePrinter()
+    plugin._logger = logging.getLogger("filamenthub-bridge-test")
+    comm = PrintingComm()
+
+    plugin._begin_print({"name": "two-spools.gcode"})
+    plugin.on_gcode_sent(comm, "sent", "M83", None, "M83")
+    plugin.on_gcode_sent(comm, "sent", "G1 E10", None, "G1")
+    plugin.on_gcode_sent(comm, "sent", "T1", None, "T")
+    plugin.on_gcode_sent(comm, "sent", "G1 E5", None, "G1")
+    plugin._apply_snapshot(
+        {
+            "slots": [
+                {"material_slot_id": 17, "index": 0, "spool": {"id": 41}},
+                {"material_slot_id": 18, "index": 1, "spool": {"id": 99}},
+            ]
+        },
+        '"changed"',
+    )
+
+    checkpoint = plugin._settings.get(["outbox"])[0]
+    assert checkpoint["event_type"] == "checkpoint"
+    assert checkpoint["reasons"] == ["tool_change", "spool_change"]
+    assert checkpoint["items"] == [
+        {"slot_index": 0, "spool_id": 41, "used_length_mm": 10.0},
+        {"slot_index": 1, "spool_id": 42, "used_length_mm": 5.0},
+    ]
+
+    plugin.on_gcode_sent(comm, "sent", "G1 E2", None, "G1")
+    plugin._finish_print("completed", {"time": 20.0})
+
+    terminal = plugin._settings.get(["outbox"])[1]
+    assert terminal["items"] == [
+        {"slot_index": 1, "spool_id": 99, "used_length_mm": 2.0}
+    ]
+
+
+def test_filament_change_is_not_mislabeled_as_runout():
+    plugin = FilamentHubBridgePlugin()
+    plugin._settings = FakeSettings()
+    plugin._printer = FakePrinter()
+    plugin._logger = logging.getLogger("filamenthub-bridge-test")
+    comm = PrintingComm()
+
+    plugin._begin_print({"name": "m600.gcode"})
+    plugin.on_gcode_sent(comm, "sent", "M83", None, "M83")
+    plugin.on_gcode_sent(comm, "sent", "G1 E8", None, "G1")
+    plugin.on_event(Events.FILAMENT_CHANGE, {"gcode": "M600"})
+
+    checkpoint = plugin._settings.get(["outbox"])[0]
+    assert checkpoint["reasons"] == ["filament_change"]
+    assert "runout" not in checkpoint["reasons"]
+
+
+def test_frequent_extrusion_waits_for_one_periodic_checkpoint(monkeypatch):
+    monotonic_now = [100.0]
+    monkeypatch.setattr(
+        "octoprint_filamenthub_bridge.time.monotonic",
+        lambda: monotonic_now[0],
+    )
+    plugin = FilamentHubBridgePlugin()
+    plugin._settings = FakeSettings()
+    plugin._printer = FakePrinter()
+    plugin._logger = logging.getLogger("filamenthub-bridge-test")
+    plugin._identifier = "filamenthub_bridge"
+    plugin._last_snapshot_monotonic = monotonic_now[0]
+    plugin._plugin_manager = type(
+        "PluginManager",
+        (),
+        {"send_plugin_message": lambda *args: None},
+    )()
+    requests = []
+
+    def request(method, path, payload=None, **kwargs):
+        requests.append((method, path, payload))
+        return 200, {}, {}
+
+    plugin._request = request
+    plugin._begin_print({"name": "storm.gcode"})
+    plugin.on_gcode_sent(PrintingComm(), "sent", "M83", None, "M83")
+    for _ in range(100):
+        plugin.on_gcode_sent(PrintingComm(), "sent", "G1 E2", None, "G1")
+
+    assert requests == []
+    assert plugin._settings.get(["outbox"]) == []
+
+    monotonic_now[0] += USAGE_CHECKPOINT_INTERVAL_SECONDS
+    assert plugin._sync_once() is True
+
+    usage_requests = [request for request in requests if request[1] == "/usage"]
+    assert len(usage_requests) == 1
+    assert usage_requests[0][2]["reasons"] == ["periodic"]
+    assert usage_requests[0][2]["items"] == [
+        {"slot_index": 0, "spool_id": 41, "used_length_mm": 200.0}
+    ]
+    assert plugin._settings.get(["outbox"]) == []
 
 
 def test_outbox_flush_preserves_event_appended_during_request():
@@ -143,7 +274,9 @@ def test_outbox_flush_preserves_event_appended_during_request():
     def request(method, path, payload):
         sent.append(payload)
         if payload == first:
-            plugin._settings.set(["outbox"], [first, second])
+            current = list(plugin._settings.get(["outbox"]) or [])
+            current.append(second)
+            plugin._settings.set(["outbox"], current)
         return 200, {}, {"accepted": True}
 
     plugin._request = request
@@ -151,6 +284,47 @@ def test_outbox_flush_preserves_event_appended_during_request():
 
     assert sent == [first, second]
     assert plugin._settings.get(["outbox"]) == []
+
+
+def test_failed_send_seals_event_before_network_and_prevents_mutation():
+    plugin = FilamentHubBridgePlugin()
+    plugin._settings = FakeSettings()
+    plugin._printer = FakePrinter()
+    plugin._logger = logging.getLogger("filamenthub-bridge-test")
+    comm = PrintingComm()
+
+    plugin._begin_print({"name": "lost-ack.gcode"})
+    plugin.on_gcode_sent(comm, "sent", "M83", None, "M83")
+    plugin.on_gcode_sent(comm, "sent", "G1 E10", None, "G1")
+    plugin._checkpoint_usage("periodic")
+    sent = []
+
+    def fail_after_send(method, path, payload):
+        sent.append(payload)
+        raise RuntimeError("acknowledgement lost")
+
+    plugin._request = fail_after_send
+    try:
+        plugin._flush_outbox()
+    except RuntimeError as exc:
+        assert str(exc) == "acknowledgement lost"
+    else:
+        raise AssertionError("A lost acknowledgement must leave the event pending")
+
+    sealed = plugin._settings.get(["outbox"])[0]
+    assert sealed["_sealed"] is True
+    assert "_sealed" not in sent[0]
+    first_event_id = sealed["event_id"]
+
+    plugin.on_gcode_sent(comm, "sent", "G1 E5", None, "G1")
+    plugin._checkpoint_usage("tool_change")
+
+    outbox = plugin._settings.get(["outbox"])
+    assert len(outbox) == 2
+    assert outbox[0]["event_id"] == first_event_id
+    assert outbox[0]["items"][0]["used_length_mm"] == 10.0
+    assert outbox[1]["event_id"] != first_event_id
+    assert outbox[1]["items"][0]["used_length_mm"] == 5.0
 
 
 def test_failed_pairing_preserves_existing_connection():

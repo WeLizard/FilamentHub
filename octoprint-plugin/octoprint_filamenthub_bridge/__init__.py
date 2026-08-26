@@ -20,11 +20,12 @@ from octoprint.events import Events
 
 from .tracker import ExtrusionTracker
 
-PLUGIN_VERSION = "0.1.1"
+PLUGIN_VERSION = "0.1.2"
 # A selected manual/tool-routed slot is not proof of physical presence.
 CAPABILITIES = ["read", "write", "spool_identity", "consumption"]
 HEARTBEAT_INTERVAL_SECONDS = 120
 SNAPSHOT_INTERVAL_SECONDS = 120
+USAGE_CHECKPOINT_INTERVAL_SECONDS = 300
 RETRY_INITIAL_SECONDS = 5
 RETRY_MAX_SECONDS = 300
 INTERVAL_JITTER_RATIO = 0.2
@@ -96,6 +97,8 @@ class FilamentHubBridgePlugin(
         self._job_file: Optional[str] = None
         self._job_started_at: Optional[str] = None
         self._job_spools: Dict[int, int] = {}
+        self._usage_event_sequence = 0
+        self._last_usage_checkpoint_monotonic: Optional[float] = None
         self._last_retry_after_seconds: Optional[float] = None
         self._selected_tool: Optional[int] = None
 
@@ -161,6 +164,7 @@ class FilamentHubBridgePlugin(
         self._logger.info("FilamentHub Bridge %s started", PLUGIN_VERSION)
 
     def on_shutdown(self):
+        self._checkpoint_usage("shutdown")
         self._stop_worker.set()
         self._wake_worker.set()
         if self._worker is not None:
@@ -231,7 +235,9 @@ class FilamentHubBridgePlugin(
                 if isinstance(exc, BridgeRequestError)
                 and exc.status_code is not None
                 and 400 <= exc.status_code < 500
-                else 400 if isinstance(exc, ValueError) else 502
+                else 400
+                if isinstance(exc, ValueError)
+                else 502
             )
             return flask.make_response(
                 flask.jsonify(error=str(exc), state=state), status_code
@@ -246,6 +252,12 @@ class FilamentHubBridgePlugin(
             self._finish_print("cancelled", payload)
         elif event == Events.PRINT_FAILED:
             self._finish_print("failed", payload)
+        elif event == Events.PRINT_PAUSED:
+            self._checkpoint_usage("paused")
+        elif event == Events.FILAMENT_CHANGE:
+            self._checkpoint_usage("filament_change")
+        elif event == Events.DISCONNECTING:
+            self._checkpoint_usage("disconnect")
 
     def on_gcode_sent(
         self,
@@ -264,6 +276,15 @@ class FilamentHubBridgePlugin(
         with self._lock:
             sent_tool = self._tracker.tool_index(cmd, gcode)
             if sent_tool is not None:
+                if self._printing and self._settings.get_boolean(
+                    ["map_tools_to_slots"]
+                ):
+                    mapping = self._tool_slot_map()
+                    if mapping.get(self._tracker.active_tool) != mapping.get(sent_tool):
+                        self._queue_usage_locked(
+                            event_type="checkpoint",
+                            reason="tool_change",
+                        )
                 # This is the last standard Tn command OctoPrint wrote to the
                 # printer. It seeds a subsequent print, but is not presented as
                 # firmware-confirmed hardware state.
@@ -554,8 +575,14 @@ class FilamentHubBridgePlugin(
             raise ValueError(
                 "The selected slot is not present in the FilamentHub snapshot."
             )
-        self._settings.set(["active_slot"], slot_index)
-        self._settings.save()
+        with self._lock:
+            if self._printing and self._manual_slot() != slot_index:
+                self._queue_usage_locked(
+                    event_type="checkpoint",
+                    reason="slot_change",
+                )
+            self._settings.set(["active_slot"], slot_index)
+            self._settings.save()
         self._wake_worker.set()
 
     @staticmethod
@@ -647,22 +674,39 @@ class FilamentHubBridgePlugin(
         if revision < 0:
             raise ValueError("FilamentHub returned an invalid routing revision.")
         enabled = mode == "tools"
-        if (
-            self._settings.get_boolean(["map_tools_to_slots"]) == enabled
-            and self._tool_slot_map() == mapping
-            and int(self._settings.get(["routing_revision"]) or 0) == revision
-        ):
-            return
-        self._settings.set_boolean(["map_tools_to_slots"], enabled)
-        self._settings.set(
-            ["tool_slot_map"],
-            {str(tool): slot for tool, slot in sorted(mapping.items())},
-        )
-        self._settings.set(["routing_revision"], revision)
-        self._settings.save()
+        with self._lock:
+            if (
+                self._settings.get_boolean(["map_tools_to_slots"]) == enabled
+                and self._tool_slot_map() == mapping
+                and int(self._settings.get(["routing_revision"]) or 0) == revision
+            ):
+                return
+            previous_active_slot = self._active_slot()
+            next_active_slot = (
+                mapping.get(self._tracker.active_tool)
+                if enabled and self._printing
+                else self._manual_slot()
+                if not enabled
+                else None
+            )
+            if self._printing and previous_active_slot != next_active_slot:
+                self._queue_usage_locked(
+                    event_type="checkpoint",
+                    reason="slot_change",
+                )
+            self._settings.set_boolean(["map_tools_to_slots"], enabled)
+            self._settings.set(
+                ["tool_slot_map"],
+                {str(tool): slot for tool, slot in sorted(mapping.items())},
+            )
+            self._settings.set(["routing_revision"], revision)
+            self._settings.save()
 
     def _snapshot_spools(self) -> Dict[int, int]:
-        snapshot = self._settings.get(["snapshot"]) or {}
+        return self._spools_from_snapshot(self._settings.get(["snapshot"]) or {})
+
+    @staticmethod
+    def _spools_from_snapshot(snapshot: dict) -> Dict[int, int]:
         result = {}
         for slot in snapshot.get("slots", []):
             spool = slot.get("spool")
@@ -685,6 +729,8 @@ class FilamentHubBridgePlugin(
             self._job_file = payload.get("name") or payload.get("path")
             self._job_started_at = datetime.now(timezone.utc).isoformat()
             self._job_spools = self._snapshot_spools()
+            self._usage_event_sequence = 0
+            self._last_usage_checkpoint_monotonic = time.monotonic()
             available = self._available_slots()
             manual_slot = self._manual_slot()
             if (
@@ -700,60 +746,175 @@ class FilamentHubBridgePlugin(
                 len(self._job_spools),
             )
 
+    def _checkpoint_usage(self, reason: str) -> None:
+        with self._lock:
+            if not self._printing or self._job_id is None:
+                return
+            self._queue_usage_locked(event_type="checkpoint", reason=reason)
+
+    @staticmethod
+    def _usage_item_key(item: dict) -> tuple[int, int]:
+        return int(item["slot_index"]), int(item["spool_id"])
+
+    def _queue_usage_locked(
+        self,
+        *,
+        event_type: str,
+        reason: str,
+        outcome: Optional[str] = None,
+        duration_s: Optional[float] = None,
+    ) -> int:
+        if not self._printing or self._job_id is None:
+            return 0
+
+        usage = self._tracker.drain_usage()
+        items = []
+        unattributed_slots = []
+        for slot_index, used_length in sorted(usage.items()):
+            spool_id = self._job_spools.get(slot_index)
+            if used_length <= 0:
+                continue
+            if spool_id is None:
+                unattributed_slots.append(slot_index)
+                continue
+            items.append(
+                {
+                    "slot_index": slot_index,
+                    "spool_id": spool_id,
+                    "used_length_mm": used_length,
+                }
+            )
+        if unattributed_slots:
+            self._logger.warning(
+                "Skipped unattributed usage in FilamentHub slot(s): %s",
+                ", ".join(str(slot + 1) for slot in unattributed_slots),
+            )
+
+        outbox = list(self._settings.get(["outbox"]) or [])
+        observed_at = datetime.now(timezone.utc).isoformat()
+        if event_type == "checkpoint":
+            pending = next(
+                (
+                    event
+                    for event in reversed(outbox)
+                    if event.get("event_type") == "checkpoint"
+                    and event.get("job_id") == self._job_id
+                    and not event.get("_sealed", False)
+                ),
+                None,
+            )
+            if pending is not None and (items or pending.get("items")):
+                merged = {
+                    self._usage_item_key(item): dict(item)
+                    for item in pending.get("items", [])
+                }
+                for item in items:
+                    key = self._usage_item_key(item)
+                    if key in merged:
+                        merged[key]["used_length_mm"] += item["used_length_mm"]
+                    else:
+                        merged[key] = dict(item)
+                if len(merged) <= 256:
+                    pending["items"] = [merged[key] for key in sorted(merged)]
+                    reasons = list(pending.get("reasons") or [])
+                    if reason not in reasons:
+                        reasons.append(reason)
+                    pending["reasons"] = reasons
+                    pending["observed_at"] = observed_at
+                    self._settings.set(["outbox"], outbox)
+                    self._settings.save()
+                    if items:
+                        self._last_usage_checkpoint_monotonic = time.monotonic()
+                    return len(items)
+                pending["_sealed"] = True
+            if not items:
+                return 0
+            self._usage_event_sequence += 1
+            event = {
+                "event_id": (f"{self._job_id}:checkpoint:{self._usage_event_sequence}"),
+                "job_id": self._job_id,
+                "event_type": "checkpoint",
+                "reasons": [reason],
+                "file_name": self._job_file,
+                "started_at": self._job_started_at,
+                "observed_at": observed_at,
+                "duration_s": None,
+                "items": items,
+            }
+        elif event_type == "terminal":
+            event = {
+                "event_id": f"{self._job_id}:terminal",
+                "job_id": self._job_id,
+                "event_type": "terminal",
+                "reasons": [reason],
+                "outcome": outcome,
+                "file_name": self._job_file,
+                "started_at": self._job_started_at,
+                "observed_at": observed_at,
+                "duration_s": duration_s,
+                "items": items,
+            }
+        else:
+            raise ValueError(f"Unsupported usage event type: {event_type}")
+
+        outbox.append(event)
+        self._settings.set(["outbox"], outbox)
+        self._settings.save()
+        if items:
+            self._last_usage_checkpoint_monotonic = time.monotonic()
+        return len(items)
+
     def _finish_print(self, outcome: str, payload) -> None:
         with self._lock:
             if not self._printing or self._job_id is None:
                 return
-            items = []
-            for slot_index, used_length in sorted(
-                self._tracker.used_length_by_slot.items()
-            ):
-                spool_id = self._job_spools.get(slot_index)
-                if used_length > 0 and spool_id is not None:
-                    items.append(
-                        {
-                            "slot_index": slot_index,
-                            "spool_id": spool_id,
-                            "used_length_mm": used_length,
-                        }
-                    )
-            if items:
-                event = {
-                    "event_id": f"{self._job_id}:terminal",
-                    "job_id": self._job_id,
-                    "outcome": outcome,
-                    "file_name": self._job_file,
-                    "duration_s": payload.get("time"),
-                    "items": items,
-                }
-                outbox = list(self._settings.get(["outbox"]) or [])
-                outbox.append(event)
-                self._settings.set(["outbox"], outbox)
-                self._settings.save()
+            item_count = self._queue_usage_locked(
+                event_type="terminal",
+                reason="terminal",
+                outcome=outcome,
+                duration_s=payload.get("time") if payload else None,
+            )
             self._logger.info(
                 "Finished tracking print %s: outcome=%s, usage_items=%d",
                 self._job_file or self._job_id,
                 outcome,
-                len(items),
+                item_count,
             )
             self._printing = False
             self._job_id = None
             self._job_file = None
             self._job_started_at = None
             self._job_spools = {}
+            self._last_usage_checkpoint_monotonic = None
         self._wake_worker.set()
 
     def _apply_snapshot(self, payload: dict, etag: Optional[str]) -> None:
-        self._settings.set(["snapshot"], payload)
-        self._settings.set(["snapshot_etag"], etag)
-        available = self._available_slots()
-        manual_slot = self._manual_slot()
-        if manual_slot not in available:
-            assigned = sorted(self._snapshot_spools())
-            fallback = (
-                assigned[0] if assigned else (min(available) if available else None)
-            )
-            self._settings.set(["active_slot"], fallback)
+        with self._lock:
+            next_job_spools = self._spools_from_snapshot(payload)
+            changed_slots = {
+                slot_index
+                for slot_index in set(self._job_spools) | set(next_job_spools)
+                if self._job_spools.get(slot_index) != next_job_spools.get(slot_index)
+            }
+            if self._printing and changed_slots.intersection(
+                self._tracker.used_length_by_slot
+            ):
+                self._queue_usage_locked(
+                    event_type="checkpoint",
+                    reason="spool_change",
+                )
+            self._settings.set(["snapshot"], payload)
+            self._settings.set(["snapshot_etag"], etag)
+            if self._printing:
+                self._job_spools = next_job_spools
+            available = self._available_slots()
+            manual_slot = self._manual_slot()
+            if manual_slot not in available:
+                assigned = sorted(self._snapshot_spools())
+                fallback = (
+                    assigned[0] if assigned else (min(available) if available else None)
+                )
+                self._settings.set(["active_slot"], fallback)
 
     def _sync_snapshot(self) -> None:
         headers = {}
@@ -799,16 +960,28 @@ class FilamentHubBridgePlugin(
                 outbox = list(self._settings.get(["outbox"]) or [])
                 if not outbox:
                     return
-                event = outbox[0]
+                event = dict(outbox[0])
+                if not event.get("_sealed", False):
+                    event["_sealed"] = True
+                    outbox[0] = event
+                    self._settings.set(["outbox"], outbox)
+                    self._settings.save()
+                request_payload = {
+                    key: value
+                    for key, value in event.items()
+                    if not key.startswith("_")
+                }
 
             # Never hold the print-tracking lock during network I/O. Once FH
             # acknowledges the event, remove that exact event from the latest
             # outbox value so a terminal event appended concurrently survives.
-            self._request("POST", "/usage", event)
+            self._request("POST", "/usage", request_payload)
             with self._lock:
                 current = list(self._settings.get(["outbox"]) or [])
                 for index, pending in enumerate(current):
-                    if pending == event:
+                    if pending.get("event_id") == event.get("event_id") and pending.get(
+                        "_sealed", False
+                    ):
                         current.pop(index)
                         self._settings.set(["outbox"], current)
                         self._settings.save()
@@ -820,6 +993,17 @@ class FilamentHubBridgePlugin(
         try:
             self._last_retry_after_seconds = None
             now_monotonic = time.monotonic()
+            with self._lock:
+                if (
+                    self._printing
+                    and self._last_usage_checkpoint_monotonic is not None
+                    and now_monotonic - self._last_usage_checkpoint_monotonic
+                    >= USAGE_CHECKPOINT_INTERVAL_SECONDS
+                ):
+                    self._queue_usage_locked(
+                        event_type="checkpoint",
+                        reason="periodic",
+                    )
             if (
                 force_snapshot
                 or now_monotonic - self._last_snapshot_monotonic
