@@ -3641,8 +3641,16 @@ export interface DeviceRegisterPayload {
 }
 
 export interface SlotAssignPayload {
+  expected_revision: number;
+  expected_spool_id: number | null;
   preset_id?: number | null;
   spool_id?: number | null;
+}
+
+export interface SlotAssignmentExpectation {
+  material_slot_id: number;
+  expected_revision: number;
+  expected_spool_id: number | null;
 }
 
 export interface MaterialSlotAssignment {
@@ -3673,6 +3681,7 @@ export interface MaterialSlot {
   label: string | null;
   kind: string;
   active: boolean;
+  assignment_revision: number;
   assignment: MaterialSlotAssignment | null;
   observation?: MaterialSlotObservation | null;
   legacy_projection: LegacySlotProjection | null;
@@ -4084,9 +4093,11 @@ export const physicalPrintersAPI = {
   clearSystem: async (
     physicalPrinterId: number,
     materialSystemId: number,
+    slots: SlotAssignmentExpectation[],
   ): Promise<PhysicalPrinter> => {
     const response = await api.post<PhysicalPrinter>(
       `/physical-printers/${physicalPrinterId}/material-systems/${materialSystemId}/clear`,
+      { slots },
     );
     return response.data;
   },

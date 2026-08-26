@@ -2844,17 +2844,23 @@ const SpoolForm: React.FC<SpoolFormProps> = ({
 
   const handleAssignToGate = async () => {
     const target = feedTargets.find((item) => item.key === selectedTargetKey);
-    if (!createdSpool || !target || selectedSlotId === '') return;
+    const targetSlot = target?.slots.find((slot) => String(slot.id) === selectedSlotId);
+    if (!createdSpool || !target || !targetSlot) return;
     setAssigning(true);
     setErrorText(null);
     try {
-      await physicalPrintersAPI.assignSlot(target.printerId, Number(selectedSlotId), {
+      await physicalPrintersAPI.assignSlot(target.printerId, targetSlot.id, {
+        expected_revision: targetSlot.assignment_revision,
+        expected_spool_id: targetSlot.assignment?.spool_id ?? null,
         spool_id: createdSpool.id,
       });
       queryClient.invalidateQueries({ queryKey: ['user-spools'] });
       queryClient.invalidateQueries({ queryKey: ['physical-printers'] });
       onSaved();
     } catch (err: any) {
+      if (err?.response?.status === 409) {
+        await printersQuery.refetch();
+      }
       setErrorText(translateApiError(t, err?.response?.data?.detail));
       setAssigning(false);
     }
@@ -2879,6 +2885,9 @@ const SpoolForm: React.FC<SpoolFormProps> = ({
 
   if (gateStep && createdSpool) {
     const selectedTarget = feedTargets.find((item) => item.key === selectedTargetKey);
+    const selectedTargetSlot = selectedTarget?.slots.find(
+      (slot) => String(slot.id) === selectedSlotId,
+    );
     return (
       <div className="glass-panel border border-white/20 rounded-2xl p-4 md:p-5 space-y-4 max-w-2xl mx-auto">
         <div className="flex items-center gap-2">
@@ -2944,10 +2953,12 @@ const SpoolForm: React.FC<SpoolFormProps> = ({
                   );
                 })}
               </div>
-              {selectedSlotId !== '' && selectedTarget.slots.some(
-                (slot) => String(slot.id) === selectedSlotId && slot.assignment?.spool_id != null,
-              ) && (
-                <p className="mt-2 text-xs text-amber-300">{t('profilePage.spoolGateStep.slotOccupiedHint')}</p>
+              {selectedTargetSlot?.assignment?.spool_id != null && (
+                <p className="mt-2 text-xs text-amber-300">
+                  {t('presetSlots.modal.replaceWarning', {
+                    spool: `#${selectedTargetSlot.assignment.spool_id}`,
+                  })}
+                </p>
               )}
             </div>
           )}

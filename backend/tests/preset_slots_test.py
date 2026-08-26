@@ -44,11 +44,26 @@ def _first_slot_id(printer_payload: dict) -> int:
 
 
 def _slot_assignment(printer_payload: dict, slot_id: int) -> dict | None:
+    return _slot_state(printer_payload, slot_id)["assignment"]
+
+
+def _slot_state(printer_payload: dict, slot_id: int) -> dict:
     for system in printer_payload["material_systems"]:
         for slot in system["slots"]:
             if slot["id"] == slot_id:
-                return slot["assignment"]
+                return slot
     raise AssertionError(f"slot {slot_id} is missing from the printer payload")
+
+
+def _slot_update(printer_payload: dict, slot_id: int, **changes) -> dict:
+    slot = _slot_state(printer_payload, slot_id)
+    return {
+        "expected_revision": slot["assignment_revision"],
+        "expected_spool_id": (
+            slot["assignment"]["spool_id"] if slot["assignment"] else None
+        ),
+        **changes,
+    }
 
 
 @pytest.mark.asyncio
@@ -115,37 +130,40 @@ async def test_slot_spool_update_does_not_clear_existing_preset(
     assert heartbeat_response.status_code == 200
     device_id = heartbeat_response.json()["device_id"]
 
+    printer_payload = (
+        await client.get(
+            f"/api/v1/physical-printers/{device_id}",
+            headers=headers,
+        )
+    ).json()
     slot_id = _first_slot_id(
-        (
-            await client.get(
-                f"/api/v1/physical-printers/{device_id}",
-                headers=headers,
-            )
-        ).json()
+        printer_payload
     )
     slot_url = f"/api/v1/physical-printers/{device_id}/material-slots/{slot_id}"
 
     # 1) Assign preset only.
     assign_preset_response = await client.patch(
         slot_url,
-        json={"preset_id": preset.id},
+        json=_slot_update(printer_payload, slot_id, preset_id=preset.id),
         headers=headers,
     )
     assert assign_preset_response.status_code == 200
     assignment = _slot_assignment(assign_preset_response.json(), slot_id)
     assert assignment["preset_id"] == preset.id
     assert assignment["spool_id"] is None
+    printer_payload = assign_preset_response.json()
 
     # 2) Update spool only (preset must be preserved).
     assign_spool_response = await client.patch(
         slot_url,
-        json={"spool_id": spool.id},
+        json=_slot_update(printer_payload, slot_id, spool_id=spool.id),
         headers=headers,
     )
     assert assign_spool_response.status_code == 200
     assignment = _slot_assignment(assign_spool_response.json(), slot_id)
     assert assignment["preset_id"] == preset.id
     assert assignment["spool_id"] == spool.id
+    printer_payload = assign_spool_response.json()
 
     read_back = await client.get(
         f"/api/v1/physical-printers/{device_id}",
@@ -159,7 +177,12 @@ async def test_slot_spool_update_does_not_clear_existing_preset(
     # 3) Explicit clear should null both preset and spool.
     clear_response = await client.patch(
         slot_url,
-        json={"preset_id": None, "spool_id": None},
+        json=_slot_update(
+            printer_payload,
+            slot_id,
+            preset_id=None,
+            spool_id=None,
+        ),
         headers=headers,
     )
     assert clear_response.status_code == 200
@@ -219,17 +242,18 @@ async def test_assign_slot_rejects_foreign_spool_id(
     assert heartbeat_response.status_code == 200
     device_id = heartbeat_response.json()["device_id"]
 
+    printer_payload = (
+        await client.get(
+            f"/api/v1/physical-printers/{device_id}",
+            headers=owner_headers,
+        )
+    ).json()
     slot_id = _first_slot_id(
-        (
-            await client.get(
-                f"/api/v1/physical-printers/{device_id}",
-                headers=owner_headers,
-            )
-        ).json()
+        printer_payload
     )
     assign_response = await client.patch(
         f"/api/v1/physical-printers/{device_id}/material-slots/{slot_id}",
-        json={"spool_id": foreign_spool.id},
+        json=_slot_update(printer_payload, slot_id, spool_id=foreign_spool.id),
         headers=owner_headers,
     )
 
@@ -464,7 +488,9 @@ async def test_plugin_material_topology_is_minimal_scoped_and_owned(
     assert [printer["id"] for printer in payload["printers"]] == [owner_device_id]
     printer = payload["printers"][0]
     assert printer["connection_refs"] == ["fh-local-profile-ref-1"]
-    assert [slot["provider_index"] for slot in printer["material_systems"][0]["slots"]] == [0, 1]
+    context_slots = printer["material_systems"][0]["slots"]
+    assert [slot["provider_index"] for slot in context_slots] == [0, 1]
+    assert all(slot["material_slot_id"] > 0 for slot in context_slots)
     serialized = str(payload)
     assert "Workshop Voron" not in serialized
     assert "normalized_endpoint" not in serialized
@@ -620,12 +646,13 @@ async def test_plugin_context_exposes_bambu_assignment_only_to_paired_install(
         },
     )
     assert snapshot.status_code == 200
-    slot_id = (
+    printer_payload = (
         await client.get(f"/api/v1/physical-printers/{printer_id}", headers=headers)
-    ).json()["material_systems"][0]["slots"][0]["id"]
+    ).json()
+    slot_id = printer_payload["material_systems"][0]["slots"][0]["id"]
     assigned = await client.patch(
         f"/api/v1/physical-printers/{printer_id}/material-slots/{slot_id}",
-        json={"preset_id": preset.id},
+        json=_slot_update(printer_payload, slot_id, preset_id=preset.id),
         headers=headers,
     )
     assert assigned.status_code == 200
@@ -639,6 +666,8 @@ async def test_plugin_context_exposes_bambu_assignment_only_to_paired_install(
     )
     assert context.status_code == 200
     slot = context.json()["printers"][0]["material_systems"][0]["slots"][0]
+    assert slot["material_slot_id"] == slot_id
+    assert slot["assignment_revision"] == 1
     assert slot["preset_id"] == preset.id
     assert slot["spool_id"] is None
     assert slot["source_ts"] is not None
@@ -808,17 +837,18 @@ async def test_hh_reconciliation_never_clears_desired_from_presence_status(
     db_session.add(spool)
     await db_session.commit()
     await db_session.refresh(spool)
+    printer_payload = (
+        await client.get(
+            f"/api/v1/physical-printers/{printer_id}",
+            headers=headers,
+        )
+    ).json()
     slot_id = _first_slot_id(
-        (
-            await client.get(
-                f"/api/v1/physical-printers/{printer_id}",
-                headers=headers,
-            )
-        ).json()
+        printer_payload
     )
     assigned = await client.patch(
         f"/api/v1/physical-printers/{printer_id}/material-slots/{slot_id}",
-        json={"spool_id": spool.id},
+        json=_slot_update(printer_payload, slot_id, spool_id=spool.id),
         headers=headers,
     )
     assert assigned.status_code == 200

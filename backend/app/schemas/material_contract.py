@@ -94,9 +94,34 @@ class MaterialSystemUpdate(BaseModel):
     model_config = {"str_strip_whitespace": True}
 
 
+class MaterialSlotAssignmentExpectation(BaseModel):
+    material_slot_id: int = Field(ge=1)
+    expected_revision: int = Field(ge=0)
+    expected_spool_id: int | None = Field(ge=1)
+
+
 class MaterialSlotAssignmentUpdate(BaseModel):
+    expected_revision: int = Field(ge=0)
+    expected_spool_id: int | None = Field(ge=1)
     preset_id: int | None = Field(default=None, ge=1)
     spool_id: int | None = Field(default=None, ge=1)
+
+    @model_validator(mode="after")
+    def require_assignment_field(self) -> "MaterialSlotAssignmentUpdate":
+        if not {"preset_id", "spool_id"}.intersection(self.model_fields_set):
+            raise ValueError("preset_id or spool_id must be provided")
+        return self
+
+
+class MaterialSystemAssignmentsClearRequest(BaseModel):
+    slots: list[MaterialSlotAssignmentExpectation] = Field(max_length=256)
+
+    @model_validator(mode="after")
+    def require_unique_slot_ids(self) -> "MaterialSystemAssignmentsClearRequest":
+        slot_ids = [item.material_slot_id for item in self.slots]
+        if len(slot_ids) != len(set(slot_ids)):
+            raise ValueError("material_slot_id values must be unique")
+        return self
 
 
 class PhysicalPrinterConnectorCreate(BaseModel):
@@ -157,6 +182,7 @@ class MaterialSlotResponse(BaseModel):
     label: str | None
     kind: str
     active: bool
+    assignment_revision: int
     assignment: MaterialSlotAssignmentResponse | None = None
     observation: MaterialSlotObservationResponse | None = None
     legacy_projection: LegacySlotProjectionResponse | None = None
@@ -284,6 +310,7 @@ class PhysicalPrinterResponse(BaseModel):
                     label=slot.label,
                     kind=slot.kind,
                     active=slot.active,
+                    assignment_revision=slot.assignment_revision,
                     assignment=assignment,
                     observation=(
                         MaterialSlotObservationResponse.model_validate(slot.observation)

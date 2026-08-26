@@ -7056,6 +7056,7 @@
     "ERR_SPOOL_EMPTY_ON_CREATE": "Нельзя добавить уже пустую катушку",
     "ERR_SPOOL_USED_EXCEEDS_INITIAL": "Использованный вес не может превышать начальный",
     "ERR_SPOOL_LOCATION_CONFLICT": "Катушку уже перемещает другой запрос. Обновите страницу и повторите",
+    "ERR_MATERIAL_ASSIGNMENT_CONFLICT": "Эта позиция подачи уже изменилась. Показано актуальное состояние — проверьте его и повторите действие",
     "ERR_SNAPSHOT_TOO_FREQUENT": "Снимки отправляются слишком часто",
     "ERR_OCTOPRINT_BRIDGE_WRONG_PROVIDER": "Эта система подачи не настроена для OctoPrint Bridge",
     "ERR_OCTOPRINT_BRIDGE_NOT_CONFIGURED": "OctoPrint Bridge не настроен для этой системы подачи",
@@ -7343,6 +7344,7 @@
       "showAllPresets": "Показать все",
       "backToFilamentPresets": "← Пресеты для {{filament}}",
       "assign": "Назначить",
+      "replaceWarning": "В этой позиции подачи сейчас {{spool}}. При назначении другой катушки эта вернётся на полку.",
       "clear": "Очистить слот",
       "cancel": "Отмена",
       "assigned": "Назначение для слота {{gate}} сохранено"

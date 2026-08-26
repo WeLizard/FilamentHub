@@ -17,6 +17,7 @@ function slot(
     label: null,
     kind: 'slot',
     active: true,
+    assignment_revision: 0,
     assignment,
     observation: null,
     legacy_projection: observation,

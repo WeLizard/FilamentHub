@@ -28,6 +28,7 @@ const physicalPrinter: PhysicalPrinter = {
           label: null,
           kind: 'slot',
           active: true,
+          assignment_revision: 0,
           assignment: null,
           legacy_projection: null,
         },

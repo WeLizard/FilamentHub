@@ -6881,6 +6881,7 @@
     "ERR_SPOOL_EMPTY_ON_CREATE": "无法添加已空的线轴",
     "ERR_SPOOL_USED_EXCEEDS_INITIAL": "已使用重量不能超过初始重量",
     "ERR_SPOOL_LOCATION_CONFLICT": "该线轴正被另一个请求移动，请刷新后重试",
+    "ERR_MATERIAL_ASSIGNMENT_CONFLICT": "该供料位置已发生变化。请检查刷新后的状态并重试",
     "ERR_SNAPSHOT_TOO_FREQUENT": "快照发送过于频繁",
     "ERR_OCTOPRINT_BRIDGE_WRONG_PROVIDER": "该供料系统未配置为使用 OctoPrint Bridge",
     "ERR_OCTOPRINT_BRIDGE_NOT_CONFIGURED": "该供料系统尚未配置 OctoPrint Bridge",
@@ -7161,6 +7162,7 @@
       "showAllPresets": "显示全部",
       "backToFilamentPresets": "← {{filament}} 的预设",
       "assign": "分配",
+      "replaceWarning": "此供料位置当前为 {{spool}}。分配其他线轴后，当前线轴将返回货架。",
       "clear": "清空位置",
       "cancel": "取消",
       "assigned": "位置 {{gate}} 的分配已保存"

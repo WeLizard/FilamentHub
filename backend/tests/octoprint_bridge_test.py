@@ -119,10 +119,16 @@ async def test_bridge_pair_snapshot_usage_replay_and_revoke(
     await db_session.refresh(spool)
 
     printer_response = await auth_client.get(f"/api/v1/physical-printers/{printer_id}")
-    slot_id = printer_response.json()["material_systems"][0]["slots"][0]["id"]
+    slot = printer_response.json()["material_systems"][0]["slots"][0]
+    slot_id = slot["id"]
     assignment_response = await auth_client.patch(
         f"/api/v1/physical-printers/{printer_id}/material-slots/{slot_id}",
-        json={"spool_id": spool.id, "preset_id": preset.id},
+        json={
+            "expected_revision": slot["assignment_revision"],
+            "expected_spool_id": None,
+            "spool_id": spool.id,
+            "preset_id": preset.id,
+        },
     )
     assert assignment_response.status_code == 200
 
@@ -134,6 +140,8 @@ async def test_bridge_pair_snapshot_usage_replay_and_revoke(
     assert snapshot_response.headers["etag"]
     snapshot = snapshot_response.json()
     assert snapshot["material_system_id"] == system_id
+    assert snapshot["slots"][0]["material_slot_id"] == slot_id
+    assert snapshot["slots"][0]["assignment_revision"] == 1
     assert snapshot["slots"][0]["spool"] == {
         "id": spool.id,
         "filament_id": filament.id,

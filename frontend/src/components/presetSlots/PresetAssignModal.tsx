@@ -18,6 +18,8 @@ interface PresetAssignModalProps {
   gate: GateState | null;
   physicalPrinterId: number;
   materialSlotId: number;
+  assignmentRevision: number;
+  expectedSpoolId: number | null;
   deviceName: string;
   systemName: string;
   provider: string;
@@ -33,6 +35,8 @@ export function PresetAssignModal({
   gate,
   physicalPrinterId,
   materialSlotId,
+  assignmentRevision,
+  expectedSpoolId,
   deviceName,
   systemName,
   provider,
@@ -128,6 +132,8 @@ export function PresetAssignModal({
     setIsSubmitting(true);
     try {
       await physicalPrintersAPI.assignSlot(physicalPrinterId, materialSlotId, {
+        expected_revision: assignmentRevision,
+        expected_spool_id: expectedSpoolId,
         preset_id: selectedPresetId,
         spool_id: selectedSpoolId,
       });
@@ -139,6 +145,14 @@ export function PresetAssignModal({
       toast.success(t('presetSlots.modal.assigned', { gate: gateIndex }));
       onAssigned();
     } catch (err: any) {
+      if (err?.response?.status === 409) {
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: ['physical-printers'] }),
+          queryClient.invalidateQueries({ queryKey: ['spools'] }),
+          queryClient.invalidateQueries({ queryKey: ['user-spools'] }),
+        ]);
+        onClose();
+      }
       toast.error(translateApiError(t, err?.response?.data?.detail, t('common.error')));
     } finally {
       setIsSubmitting(false);
@@ -149,6 +163,8 @@ export function PresetAssignModal({
     setIsSubmitting(true);
     try {
       await physicalPrintersAPI.assignSlot(physicalPrinterId, materialSlotId, {
+        expected_revision: assignmentRevision,
+        expected_spool_id: expectedSpoolId,
         preset_id: null,
         spool_id: null,
       });
@@ -160,6 +176,14 @@ export function PresetAssignModal({
       toast.success(t('presetSlots.modal.assigned', { gate: gateIndex }));
       onAssigned();
     } catch (err: any) {
+      if (err?.response?.status === 409) {
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: ['physical-printers'] }),
+          queryClient.invalidateQueries({ queryKey: ['spools'] }),
+          queryClient.invalidateQueries({ queryKey: ['user-spools'] }),
+        ]);
+        onClose();
+      }
       toast.error(translateApiError(t, err?.response?.data?.detail, t('common.error')));
     } finally {
       setIsSubmitting(false);
@@ -205,6 +229,18 @@ export function PresetAssignModal({
     : [gate?.hh_material, observedStatus].filter(Boolean).join(' · ');
   const hasProviderObservation = gate?.hh_status != null || gate?.hh_material != null || colorHex != null;
   const hasExistingAssignment = !!(gate?.preset_id || gate?.spool_id);
+  const currentSpool = expectedSpoolId == null
+    ? null
+    : spools.find((spool) => spool.id === expectedSpoolId) ?? null;
+  const currentSpoolLabel = currentSpool?.filament
+    ? [currentSpool.filament.brand_name, currentSpool.filament.name]
+        .filter(Boolean)
+        .join(' ')
+    : expectedSpoolId == null
+      ? null
+      : `#${expectedSpoolId}`;
+  const replacesCurrentSpool = expectedSpoolId != null
+    && selectedSpoolId !== expectedSpoolId;
   const canSave = selectedPresetId !== null || selectedSpoolId !== null;
 
   return (
@@ -521,6 +557,12 @@ export function PresetAssignModal({
             </div>
           )}
         </div>
+
+        {replacesCurrentSpool && currentSpoolLabel && (
+          <div className="border-t border-amber-400/15 bg-amber-500/10 px-5 py-2.5 text-xs text-amber-100">
+            {t('presetSlots.modal.replaceWarning', { spool: currentSpoolLabel })}
+          </div>
+        )}
 
         {/* Footer */}
         <div className="flex items-center justify-between gap-2 border-t border-white/10 px-5 py-4">

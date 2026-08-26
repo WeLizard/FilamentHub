@@ -68,6 +68,7 @@ function observedSlot(
     label: null,
     kind: 'slot',
     active: true,
+    assignment_revision: 0,
     assignment,
     legacy_projection: {
       gate_state_id: 30,
@@ -93,6 +94,7 @@ describe('GateMapGrid material slots', () => {
       label: null,
       kind: 'slot',
       active: true,
+      assignment_revision: 0,
       assignment: {
         id: 20,
         preset_id: null,
@@ -259,6 +261,7 @@ describe('GateMapGrid material slots', () => {
       label: null,
       kind: 'slot',
       active: true,
+      assignment_revision: 0,
       assignment: {
         id: 20,
         preset_id: null,

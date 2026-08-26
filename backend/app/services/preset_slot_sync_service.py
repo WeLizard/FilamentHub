@@ -59,7 +59,9 @@ from app.services.material_contract_service import (
 from app.services.physical_printer_discovery_service import list_user_bindings
 from app.services.spool_service import (
     clear_spool_gate_assignments,
+    lock_material_slots_for_spools,
     lock_spool_row,
+    material_slot_ids_for_gate,
     set_spool_location_projection,
     shelf_spool_if_unassigned,
 )
@@ -223,6 +225,30 @@ async def get_gate_states(
         .order_by(PresetGateState.gate_index)
     )
     return list(result.scalars().all())
+
+
+async def _lock_material_gate_slots(
+    db: AsyncSession,
+    *,
+    user_id: int,
+    physical_printer_id: int,
+    gate_indices: set[int],
+) -> None:
+    """Lock stable gate routes before a legacy gate-row mutation."""
+    if not gate_indices:
+        return
+    await db.execute(
+        select(MaterialSlot.id)
+        .join(MaterialSystem, MaterialSystem.id == MaterialSlot.material_system_id)
+        .where(
+            MaterialSlot.user_id == user_id,
+            MaterialSlot.provider_index.in_(gate_indices),
+            MaterialSystem.user_id == user_id,
+            MaterialSystem.physical_printer_id == physical_printer_id,
+        )
+        .order_by(MaterialSlot.id)
+        .with_for_update()
+    )
 
 
 async def _upsert_gate_state(
@@ -460,6 +486,23 @@ async def handle_hh_snapshot(
     device.reports_feed = True
     touch_device_last_seen(device)
 
+    # Desired assignment writers lock stable slots before touching the legacy
+    # gate row.  Establish and lock the complete topology first so an HH
+    # observation cannot deadlock with a concurrent user assignment while it
+    # updates the observation fields on that same legacy row.
+    await ensure_material_topology(
+        db,
+        device,
+        gate_indices={item.gate for item in payload.gates},
+        exact_gate_count=payload.gate_count,
+    )
+    await _lock_material_gate_slots(
+        db,
+        user_id=user.id,
+        physical_printer_id=device.id,
+        gate_indices=set(range(payload.gate_count)),
+    )
+
     snapshot_ts = _normalize_utc(payload.snapshot_ts)
     current_states = await get_gate_states(db, device.id)
     state_by_gate = {s.gate_index: s for s in current_states}
@@ -620,7 +663,9 @@ async def build_plugin_material_topology_context(
                     source_ts = slot.legacy_gate_state.source_ts
                 slots.append(
                     PluginMaterialSlotContext(
+                        material_slot_id=slot.id,
                         provider_index=slot.provider_index,
+                        assignment_revision=slot.assignment_revision,
                         preset_id=preset_id,
                         spool_id=spool_id,
                         source_ts=source_ts,
@@ -916,13 +961,15 @@ async def adopt_hh_reconciliation(
     for spool_id in sorted(lock_ids):
         await lock_spool_row(db, spool_id)
     await db.execute(
-        select(PresetGateState)
-        .where(PresetGateState.device_id == payload.physical_printer_id)
+        select(MaterialSlot)
+        .where(MaterialSlot.material_system_id == payload.material_system_id)
+        .order_by(MaterialSlot.id)
         .with_for_update()
     )
     await db.execute(
-        select(MaterialSlot)
-        .where(MaterialSlot.material_system_id == payload.material_system_id)
+        select(PresetGateState)
+        .where(PresetGateState.device_id == payload.physical_printer_id)
+        .order_by(PresetGateState.gate_index)
         .with_for_update()
     )
     confirmed = await build_hh_reconciliation_preview(db, user, payload)
@@ -996,24 +1043,13 @@ async def handle_manual_assignment(
     if payload.preset_id is not None:
         await require_accessible_preset(db, user.id, payload.preset_id)
 
-    new_spool: UserSpool | None = None
-    if payload.spool_id is not None:
-        new_spool = await require_accessible_spool(
-            db,
-            user.id,
-            payload.spool_id,
-            require_usable=True,
-        )
-        # Serialize concurrent moves of this physical spool before touching
-        # any of its gate bindings.
-        await lock_spool_row(db, new_spool.id)
-
     if preset_id_provided is None:
         preset_id_provided = "preset_id" in payload.model_fields_set
     if spool_id_provided is None:
         spool_id_provided = "spool_id" in payload.model_fields_set
 
-    # Capture old spool at this gate before upsert (to clear its HH extra fields later)
+    # Capture both physical identities before taking locks, then follow the
+    # shared order: all involved spools, stable slot, legacy gate row.
     old_spool_id: int | None = None
     old_spool: UserSpool | None = None
     if spool_id_provided:
@@ -1030,6 +1066,39 @@ async def handle_manual_assignment(
             )
             old_spool = old_spool_result.scalars().first()
 
+    new_spool: UserSpool | None = None
+    if payload.spool_id is not None:
+        new_spool = await require_accessible_spool(
+            db,
+            user.id,
+            payload.spool_id,
+            require_usable=True,
+        )
+    involved_spool_ids = {
+        spool_id
+        for spool_id in {old_spool_id, payload.spool_id}
+        if spool_id is not None
+    }
+    for spool_id in sorted(involved_spool_ids):
+        await lock_spool_row(db, spool_id)
+
+    await ensure_material_topology(
+        db,
+        resolved_device,
+        gate_indices={payload.gate},
+        sync_legacy_assignments=False,
+    )
+    target_material_slot_ids = await material_slot_ids_for_gate(
+        db,
+        device_id=resolved_device.id,
+        gate_index=payload.gate,
+    )
+    await lock_material_slots_for_spools(
+        db,
+        involved_spool_ids,
+        additional_material_slot_ids=target_material_slot_ids,
+    )
+
     now = datetime.now(timezone.utc)
     if new_spool is not None:
         await clear_spool_gate_assignments(
@@ -1038,6 +1107,7 @@ async def handle_manual_assignment(
             source=source,
             except_device_id=resolved_device.id,
             except_gate_index=payload.gate,
+            except_material_slot_id=min(target_material_slot_ids, default=None),
         )
         # Old bindings must hit the DB before the new one to satisfy the
         # single-location unique index within the transaction.

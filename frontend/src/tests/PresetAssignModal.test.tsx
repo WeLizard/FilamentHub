@@ -62,6 +62,8 @@ describe('PresetAssignModal', () => {
         gate={null}
         physicalPrinterId={1}
         materialSlotId={10}
+        assignmentRevision={0}
+        expectedSpoolId={null}
         deviceName="Device"
         systemName="MMU"
         provider="manual"
@@ -94,6 +96,8 @@ describe('PresetAssignModal', () => {
         gate={null}
         physicalPrinterId={1}
         materialSlotId={10}
+        assignmentRevision={0}
+        expectedSpoolId={null}
         deviceName="Device"
         systemName="MMU"
         provider="happy_hare"
@@ -129,6 +133,8 @@ describe('PresetAssignModal', () => {
 
     await waitFor(() => {
       expect(assignSlotMock).toHaveBeenCalledWith(1, 10, {
+        expected_revision: 0,
+        expected_spool_id: null,
         preset_id: null,
         spool_id: 23,
       });
@@ -139,6 +145,73 @@ describe('PresetAssignModal', () => {
     expect(invalidateQueriesMock).toHaveBeenCalledWith({ queryKey: ['spools'] });
     expect(invalidateQueriesMock).toHaveBeenCalledWith({
       queryKey: ['user-spools'],
+    });
+  });
+
+  it('shows displacement and sends the reviewed spool identity', async () => {
+    const { PresetAssignModal } = await import('../components/presetSlots/PresetAssignModal');
+    const spool = (id: number) => ({
+      id,
+      user_id: 1,
+      filament_id: null,
+      initial_weight_g: 1000,
+      used_weight_g: 0,
+      remaining_weight_g: 1000,
+      remaining_pct: 100,
+      state: 'shelf' as const,
+      source: 'manual',
+      price: null,
+      currency: null,
+      lot_nr: null,
+      comment: null,
+      extra: null,
+      filament: null,
+      created_at: '2026-08-26T00:00:00Z',
+      updated_at: '2026-08-26T00:00:00Z',
+      last_used_at: null,
+    });
+
+    render(
+      <PresetAssignModal
+        isOpen
+        gateIndex={0}
+        gate={{
+          id: 1,
+          gate_index: 0,
+          preset_id: null,
+          spool_id: 23,
+          source: 'web_manual',
+          source_ts: '2026-08-26T00:00:00Z',
+          is_active: true,
+          hh_material: null,
+          hh_color_hex: null,
+          hh_status: null,
+          updated_at: '2026-08-26T00:00:00Z',
+        }}
+        physicalPrinterId={1}
+        materialSlotId={10}
+        assignmentRevision={7}
+        expectedSpoolId={23}
+        deviceName="Device"
+        systemName="MMU"
+        provider="happy_hare"
+        spools={[spool(23), spool(24)]}
+        onClose={vi.fn()}
+        onAssigned={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getAllByText('profilePage.spoolNoFilament')[1]);
+    expect(screen.getByText('presetSlots.modal.replaceWarning')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('presetSlots.modal.assign'));
+
+    await waitFor(() => {
+      expect(assignSlotMock).toHaveBeenCalledWith(1, 10, {
+        expected_revision: 7,
+        expected_spool_id: 23,
+        preset_id: null,
+        spool_id: 24,
+      });
     });
   });
 });

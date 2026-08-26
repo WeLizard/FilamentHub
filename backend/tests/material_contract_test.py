@@ -38,6 +38,53 @@ def _device_fingerprint(device_payload: dict) -> str:
     )
 
 
+async def _slot_update_payload(
+    client: AsyncClient,
+    printer_id: int,
+    slot_id: int,
+    **changes,
+) -> dict:
+    response = await client.get(f"/api/v1/physical-printers/{printer_id}")
+    assert response.status_code == 200
+    slot = next(
+        slot
+        for system in response.json()["material_systems"]
+        for slot in system["slots"]
+        if slot["id"] == slot_id
+    )
+    return {
+        "expected_revision": slot["assignment_revision"],
+        "expected_spool_id": (
+            slot["assignment"]["spool_id"] if slot["assignment"] else None
+        ),
+        **changes,
+    }
+
+
+async def _system_clear_payload(
+    client: AsyncClient,
+    printer_id: int,
+    system_id: int,
+) -> dict:
+    response = await client.get(f"/api/v1/physical-printers/{printer_id}")
+    assert response.status_code == 200
+    system = next(
+        system for system in response.json()["material_systems"] if system["id"] == system_id
+    )
+    return {
+        "slots": [
+            {
+                "material_slot_id": slot["id"],
+                "expected_revision": slot["assignment_revision"],
+                "expected_spool_id": (
+                    slot["assignment"]["spool_id"] if slot["assignment"] else None
+                ),
+            }
+            for slot in system["slots"]
+        ]
+    }
+
+
 @pytest.mark.asyncio
 async def test_bambu_bridge_keeps_credentials_local_and_observations_separate(
     auth_client: AsyncClient,
@@ -657,12 +704,25 @@ async def test_foreign_configuration_and_printer_are_fail_closed(
     hidden_assignment = await auth_client.patch(
         f"/api/v1/physical-printers/{foreign_printer.id}/material-slots/"
         f"{foreign_slot.id}",
-        json={"spool_id": None},
+        json={
+            "expected_revision": 0,
+            "expected_spool_id": None,
+            "spool_id": None,
+        },
     )
     assert hidden_assignment.status_code == 404
     hidden_clear = await auth_client.post(
         f"/api/v1/physical-printers/{foreign_printer.id}/material-systems/"
-        f"{foreign_system.id}/clear"
+        f"{foreign_system.id}/clear",
+        json={
+            "slots": [
+                {
+                    "material_slot_id": foreign_slot.id,
+                    "expected_revision": 0,
+                    "expected_spool_id": None,
+                }
+            ]
+        },
     )
     assert hidden_clear.status_code == 404
 
@@ -808,7 +868,9 @@ async def test_legacy_hh_flow_dual_writes_system_slots_and_connector(
     )
     assigned = await auth_client.patch(
         f"/api/v1/physical-printers/{device_id}/material-slots/{gate_one_slot_id}",
-        json={"spool_id": spool.id},
+        json=await _slot_update_payload(
+            auth_client, device_id, gate_one_slot_id, spool_id=spool.id
+        ),
     )
     assert assigned.status_code == 200
 
@@ -861,10 +923,17 @@ async def test_legacy_hh_flow_dual_writes_system_slots_and_connector(
         "updated_at": gate_state.updated_at.isoformat().replace("+00:00", "Z"),
     }
     assert physical_slots[1]["assignment"]["spool_id"] == spool.id
+    assert physical_slots[1]["assignment_revision"] == 1
 
     cleared = await auth_client.patch(
         f"/api/v1/physical-printers/{device_id}/material-slots/{slots[1].id}",
-        json={"preset_id": None, "spool_id": None},
+        json=await _slot_update_payload(
+            auth_client,
+            device_id,
+            slots[1].id,
+            preset_id=None,
+            spool_id=None,
+        ),
     )
     assert cleared.status_code == 200
     cleared_slot = next(
@@ -876,6 +945,7 @@ async def test_legacy_hh_flow_dual_writes_system_slots_and_connector(
     assert cleared_slot["assignment"] is None
     assert cleared_slot["legacy_projection"]["preset_id"] is None
     assert cleared_slot["legacy_projection"]["spool_id"] is None
+    assert cleared_slot["assignment_revision"] == 2
     await db_session.refresh(spool)
     assert spool.state == UserSpoolState.shelf
 
@@ -931,7 +1001,9 @@ async def test_slots_sharing_a_provider_index_assign_by_slot_id(
 
     assigned_first = await auth_client.patch(
         f"/api/v1/physical-printers/{left_id}/material-slots/{first_slot_id}",
-        json={"spool_id": spool.id},
+        json=await _slot_update_payload(
+            auth_client, left_id, first_slot_id, spool_id=spool.id
+        ),
     )
     assert assigned_first.status_code == 200
     systems = assigned_first.json()["material_systems"]
@@ -939,7 +1011,9 @@ async def test_slots_sharing_a_provider_index_assign_by_slot_id(
 
     assigned_second = await auth_client.patch(
         f"/api/v1/physical-printers/{right_id}/material-slots/{second_slot_id}",
-        json={"spool_id": spool.id},
+        json=await _slot_update_payload(
+            auth_client, right_id, second_slot_id, spool_id=spool.id
+        ),
     )
     assert assigned_second.status_code == 200
     both = await auth_client.get("/api/v1/physical-printers")
@@ -965,7 +1039,10 @@ async def test_slots_sharing_a_provider_index_assign_by_slot_id(
 
     cleared = await auth_client.post(
         f"/api/v1/physical-printers/{right_id}/material-systems/"
-        f"{second_system['id']}/clear"
+        f"{second_system['id']}/clear",
+        json=await _system_clear_payload(
+            auth_client, right_id, second_system["id"]
+        ),
     )
     assert cleared.status_code == 200
     cleared_slot = next(
@@ -1127,6 +1204,25 @@ async def test_reported_gate_fills_the_slots_below_it(
     system = physical.json()["material_systems"][0]
     assert [slot["provider_index"] for slot in system["slots"]] == [0, 1, 2, 3, 4]
     assert system["declared_slot_count"] is None
+    gate_four = next(slot for slot in system["slots"] if slot["provider_index"] == 4)
+    assert gate_four["assignment_revision"] == 1
+
+    replayed = await auth_client.post(
+        "/api/v1/orcaslicer/preset-slot-sync/manual/assignment",
+        json={
+            "device_fingerprint": _device_fingerprint(created.json()["device"]),
+            "gate": 4,
+            "spool_id": spool.id,
+        },
+    )
+    assert replayed.status_code == 200
+    after_replay = await auth_client.get(f"/api/v1/physical-printers/{device_id}")
+    replayed_gate = next(
+        slot
+        for slot in after_replay.json()["material_systems"][0]["slots"]
+        if slot["provider_index"] == 4
+    )
+    assert replayed_gate["assignment_revision"] == 1
 
 
 @pytest.mark.asyncio
@@ -1171,7 +1267,9 @@ async def test_declared_slot_count_resizes_and_protects_occupied_slots(
     )
     assigned = await auth_client.patch(
         f"/api/v1/physical-printers/{device_id}/material-slots/{last_slot_id}",
-        json={"spool_id": spool.id},
+        json=await _slot_update_payload(
+            auth_client, device_id, last_slot_id, spool_id=spool.id
+        ),
     )
     assert assigned.status_code == 200
 
@@ -1255,7 +1353,9 @@ async def test_deleting_a_system_returns_spools_keeps_the_printer_and_revokes_it
     )
     assigned = await auth_client.patch(
         f"/api/v1/physical-printers/{device_id}/material-slots/{third_slot_id}",
-        json={"spool_id": spool.id},
+        json=await _slot_update_payload(
+            auth_client, device_id, third_slot_id, spool_id=spool.id
+        ),
     )
     assert assigned.status_code == 200
     await db_session.refresh(spool)
@@ -1331,7 +1431,9 @@ async def test_manual_system_spools_are_shelved_and_protected_like_legacy_ones(
 
     assigned = await auth_client.patch(
         f"/api/v1/physical-printers/{printer_id}/material-slots/{last_slot_id}",
-        json={"spool_id": spool.id},
+        json=await _slot_update_payload(
+            auth_client, printer_id, last_slot_id, spool_id=spool.id
+        ),
     )
     assert assigned.status_code == 200
     await db_session.refresh(spool)
@@ -1425,7 +1527,9 @@ async def test_a_slot_the_printer_stops_reporting_survives_while_it_holds_a_spoo
     external_slot_id = next(slot["id"] for slot in slots if slot["provider_index"] == 255)
     assigned = await auth_client.patch(
         f"/api/v1/physical-printers/{printer_id}/material-slots/{external_slot_id}",
-        json={"spool_id": spool.id},
+        json=await _slot_update_payload(
+            auth_client, printer_id, external_slot_id, spool_id=spool.id
+        ),
     )
     assert assigned.status_code == 200
 
@@ -1446,7 +1550,13 @@ async def test_a_slot_the_printer_stops_reporting_survives_while_it_holds_a_spoo
     # Emptying it hands the slot back to the printer's account of itself.
     cleared = await auth_client.patch(
         f"/api/v1/physical-printers/{printer_id}/material-slots/{external_slot_id}",
-        json={"preset_id": None, "spool_id": None},
+        json=await _slot_update_payload(
+            auth_client,
+            printer_id,
+            external_slot_id,
+            preset_id=None,
+            spool_id=None,
+        ),
     )
     assert cleared.status_code == 200
     vanished = await auth_client.post(
@@ -1489,10 +1599,12 @@ async def test_clearing_a_system_frees_every_slot_and_shelves_its_spools(
     for spool in spools:
         await db_session.refresh(spool)
 
-    for slot, spool in zip(system["slots"], spools):
+    for slot, spool in zip(system["slots"], spools, strict=True):
         assigned = await auth_client.patch(
             f"/api/v1/physical-printers/{device_id}/material-slots/{slot['id']}",
-            json={"spool_id": spool.id},
+            json=await _slot_update_payload(
+                auth_client, device_id, slot["id"], spool_id=spool.id
+            ),
         )
         assert assigned.status_code == 200
 
@@ -1502,7 +1614,8 @@ async def test_clearing_a_system_frees_every_slot_and_shelves_its_spools(
 
     cleared = await auth_client.post(
         f"/api/v1/physical-printers/{device_id}"
-        f"/material-systems/{system['id']}/clear"
+        f"/material-systems/{system['id']}/clear",
+        json=await _system_clear_payload(auth_client, device_id, system["id"]),
     )
     assert cleared.status_code == 200
     cleared_slots = cleared.json()["material_systems"][0]["slots"]

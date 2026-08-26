@@ -275,7 +275,9 @@ class HHReconciliationResponse(BaseModel):
 class PluginMaterialSlotContext(BaseModel):
     """Only the desired state a local material adapter needs for one slot."""
 
+    material_slot_id: int = Field(ge=1)
     provider_index: int = Field(ge=0, le=1023)
+    assignment_revision: int = Field(ge=0)
     preset_id: int | None = Field(default=None, ge=1)
     spool_id: int | None = Field(default=None, ge=1)
     source_ts: datetime | None = None

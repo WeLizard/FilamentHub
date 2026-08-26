@@ -6887,6 +6887,7 @@
     "ERR_SPOOL_EMPTY_ON_CREATE": "An already empty spool cannot be added",
     "ERR_SPOOL_USED_EXCEEDS_INITIAL": "Used weight cannot exceed initial weight",
     "ERR_SPOOL_LOCATION_CONFLICT": "This spool is being moved by another request. Refresh and try again",
+    "ERR_MATERIAL_ASSIGNMENT_CONFLICT": "This feed position has already changed. Review the refreshed state and try again",
     "ERR_SNAPSHOT_TOO_FREQUENT": "Snapshots are being sent too frequently",
     "ERR_OCTOPRINT_BRIDGE_WRONG_PROVIDER": "This material system is not configured for OctoPrint Bridge",
     "ERR_OCTOPRINT_BRIDGE_NOT_CONFIGURED": "OctoPrint Bridge is not configured for this material system",
@@ -7170,6 +7171,7 @@
       "showAllPresets": "Show all",
       "backToFilamentPresets": "← Presets for {{filament}}",
       "assign": "Assign",
+      "replaceWarning": "This feed position currently contains {{spool}}. Assigning another spool will return it to the shelf.",
       "clear": "Clear slot",
       "cancel": "Cancel",
       "assigned": "Assignment for gate {{gate}} saved"

@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import joinedload, selectinload
+from sqlalchemy.orm import joinedload
 from sqlalchemy.orm.attributes import set_committed_value
 
 from app.core.errors import (
@@ -21,6 +21,7 @@ from app.core.errors import (
 )
 from app.models.filament import Filament
 from app.models.material_slot_assignment import MaterialSlotAssignment
+from app.models.material_system import MaterialSlot, MaterialSystem
 from app.models.preset_gate_state import PresetGateState, PresetGateStateSource
 from app.models.preset_usage_event import PresetUsageEventType
 from app.models.print_job import PrintJobMaterial
@@ -76,6 +77,72 @@ async def lock_spool_row(db: AsyncSession, spool_id: int) -> None:
     await db.execute(select(UserSpool.id).where(UserSpool.id == spool_id).with_for_update())
 
 
+async def lock_material_slots_for_spools(
+    db: AsyncSession,
+    spool_ids: set[int],
+    *,
+    additional_material_slot_ids: set[int] | None = None,
+) -> dict[int, MaterialSlot]:
+    """Lock every stable route involved in a spool move, in global ID order.
+
+    Callers lock the physical spool rows first.  Discovering the route IDs is
+    safe after that because every desired-assignment writer follows the same
+    spool-first order.  The optional IDs cover the destination route before a
+    legacy gate row is claimed.
+    """
+    material_slot_ids = set(additional_material_slot_ids or ())
+    if spool_ids:
+        legacy_ids = await db.scalars(
+            select(PresetGateState.material_slot_id).where(
+                PresetGateState.spool_id.in_(spool_ids),
+                PresetGateState.material_slot_id.is_not(None),
+            )
+        )
+        material_slot_ids.update(legacy_ids.all())
+        assignment_ids = await db.scalars(
+            select(MaterialSlotAssignment.material_slot_id).where(
+                MaterialSlotAssignment.spool_id.in_(spool_ids)
+            )
+        )
+        material_slot_ids.update(assignment_ids.all())
+    if not material_slot_ids:
+        return {}
+    material_slots = list(
+        (
+            await db.scalars(
+                select(MaterialSlot)
+                .where(MaterialSlot.id.in_(material_slot_ids))
+                .order_by(MaterialSlot.id)
+                .with_for_update()
+            )
+        ).all()
+    )
+    return {slot.id: slot for slot in material_slots}
+
+
+async def material_slot_ids_for_gate(
+    db: AsyncSession,
+    *,
+    device_id: int,
+    gate_index: int,
+) -> set[int]:
+    """Resolve legacy provider coordinates to their stable feed-route IDs."""
+    return set(
+        (
+            await db.scalars(
+                select(MaterialSlot.id)
+                .join(MaterialSystem, MaterialSystem.id == MaterialSlot.material_system_id)
+                .where(
+                    MaterialSystem.physical_printer_id == device_id,
+                    MaterialSystem.active.is_(True),
+                    MaterialSlot.provider_index == gate_index,
+                    MaterialSlot.active.is_(True),
+                )
+            )
+        ).all()
+    )
+
+
 async def shelf_spool_if_unassigned(db: AsyncSession, spool: UserSpool) -> None:
     """Return a spool to the shelf once it has no current slot binding."""
     if await spool_has_gate_assignment(db, spool.id):
@@ -101,7 +168,34 @@ async def assign_spool_to_gate(
     goes back to the shelf. Does not commit. Raises 409 when a concurrent
     move wins the race (unique index on active spool_id is the backstop).
     """
-    await lock_spool_row(db, spool.id)
+    displaced_spool_id = await db.scalar(
+        select(PresetGateState.spool_id).where(
+            PresetGateState.device_id == device.id,
+            PresetGateState.gate_index == gate_index,
+        )
+    )
+    involved_spool_ids = {
+        spool_id for spool_id in {spool.id, displaced_spool_id} if spool_id is not None
+    }
+    for spool_id in sorted(involved_spool_ids):
+        await lock_spool_row(db, spool_id)
+
+    from app.services.material_contract_service import ensure_material_topology
+
+    await ensure_material_topology(
+        db,
+        device,
+        gate_indices={gate_index},
+        sync_legacy_assignments=False,
+    )
+    target_material_slot_ids = await material_slot_ids_for_gate(
+        db, device_id=device.id, gate_index=gate_index
+    )
+    await lock_material_slots_for_spools(
+        db,
+        involved_spool_ids,
+        additional_material_slot_ids=target_material_slot_ids,
+    )
 
     await clear_spool_gate_assignments(
         db,
@@ -109,6 +203,7 @@ async def assign_spool_to_gate(
         source=source,
         except_device_id=device.id,
         except_gate_index=gate_index,
+        except_material_slot_id=min(target_material_slot_ids, default=None),
     )
     # Old bindings must hit the DB before the new one to satisfy the
     # single-location unique index within the transaction.
@@ -148,8 +243,6 @@ async def assign_spool_to_gate(
         await db.flush()
     except IntegrityError:
         raise_error(409, ERR_SPOOL_LOCATION_CONFLICT)
-
-    from app.services.material_contract_service import ensure_material_topology
 
     await ensure_material_topology(db, device, gate_indices={gate_index})
 
@@ -197,12 +290,23 @@ async def clear_spool_gate_assignments(
     except_material_slot_id: int | None = None,
 ) -> int:
     """Clear current slot bindings for a physical spool without committing."""
+    await lock_spool_row(db, spool.id)
+    locked_material_slots = await lock_material_slots_for_spools(db, {spool.id})
+
+    assignment_result = await db.execute(
+        select(MaterialSlotAssignment)
+        .where(MaterialSlotAssignment.spool_id == spool.id)
+        .with_for_update()
+    )
+    assignments = list(assignment_result.scalars().all())
+
     result = await db.execute(
         select(PresetGateState).where(PresetGateState.spool_id == spool.id).with_for_update()
     )
     states = list(result.scalars().all())
     now = datetime.now(timezone.utc)
     cleared = 0
+    revision_slot_ids: set[int] = set()
     for gate_state in states:
         if (
             except_device_id is not None
@@ -215,28 +319,28 @@ async def clear_spool_gate_assignments(
         gate_state.source = source
         gate_state.source_ts = now
         gate_state.is_active = True
+        if gate_state.material_slot_id is not None:
+            revision_slot_ids.add(gate_state.material_slot_id)
         cleared += 1
 
-    # selectinload, not joinedload: the latter builds an outer join, and Postgres
-    # refuses FOR UPDATE on the nullable side of one. SQLite accepts it, so this
-    # only ever surfaced against the real database.
-    assignment_result = await db.execute(
-        select(MaterialSlotAssignment)
-        .where(MaterialSlotAssignment.spool_id == spool.id)
-        .options(selectinload(MaterialSlotAssignment.material_slot))
-        .with_for_update()
-    )
-    for assignment in assignment_result.scalars().all():
+    for assignment in assignments:
         if assignment.material_slot_id == except_material_slot_id:
             continue
         assignment.spool_id = None
         assignment.source = source.value
         assignment.source_ts = now
+        revision_slot_ids.add(assignment.material_slot_id)
         if assignment.preset_id is None:
-            material_slot = assignment.material_slot
             await db.delete(assignment)
-            set_committed_value(material_slot, "assignment", None)
+            material_slot = locked_material_slots.get(assignment.material_slot_id)
+            if material_slot is not None:
+                set_committed_value(material_slot, "assignment", None)
         cleared += 1
+
+    for material_slot_id in revision_slot_ids:
+        material_slot = locked_material_slots.get(material_slot_id)
+        if material_slot is not None:
+            material_slot.assignment_revision += 1
 
     if cleared:
         clear_spool_location_projection(spool)

@@ -119,9 +119,11 @@ class OctoPrintBridgePresetSnapshot(BaseModel):
 
 
 class OctoPrintBridgeSlotSnapshot(BaseModel):
+    material_slot_id: int = Field(ge=1)
     index: int
     label: str | None
     kind: str
+    assignment_revision: int = Field(ge=0)
     spool: OctoPrintBridgeSpoolSnapshot | None
     preset: OctoPrintBridgePresetSnapshot | None
 

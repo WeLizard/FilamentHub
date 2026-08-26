@@ -723,9 +723,11 @@ async def build_snapshot(
             )
         slots.append(
             OctoPrintBridgeSlotSnapshot(
+                material_slot_id=slot.id,
                 index=slot.provider_index,
                 label=slot.label,
                 kind=slot.kind,
+                assignment_revision=slot.assignment_revision,
                 spool=spool_snapshot,
                 preset=preset_snapshot,
             )

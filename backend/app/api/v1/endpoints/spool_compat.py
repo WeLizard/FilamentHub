@@ -1452,17 +1452,7 @@ async def delete_spool(
     if spool is None:
         return _err(status.HTTP_404_NOT_FOUND, f"No spool with ID {spool_id} found.")
 
-    gate_states_result = await db.execute(
-        select(PresetGateState).where(
-            PresetGateState.user_id == user.id,
-            PresetGateState.spool_id == spool.id,
-        )
-    )
-    for gate_state in gate_states_result.scalars().all():
-        gate_state.spool_id = None
-        gate_state.source = PresetGateStateSource.web_manual
-        gate_state.source_ts = datetime.now(timezone.utc)
-
+    await clear_spool_gate_assignments(db, spool)
     await db.delete(spool)
     await db.commit()
     await _broadcast_spool_event(user.id, "deleted", {"id": spool_id})

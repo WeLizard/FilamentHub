@@ -463,7 +463,15 @@ function MaterialSystemSection({ printer, system, presetsSeedMap, spools, spoolC
     if (!window.confirm(t('presetSlots.clearAllConfirm', { name: systemLabel }))) return;
     setClearing(true);
     try {
-      await physicalPrintersAPI.clearSystem(printer.id, system.id);
+      await physicalPrintersAPI.clearSystem(
+        printer.id,
+        system.id,
+        system.slots.map((slot) => ({
+          material_slot_id: slot.id,
+          expected_revision: slot.assignment_revision,
+          expected_spool_id: slot.assignment?.spool_id ?? null,
+        })),
+      );
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['physical-printers'] }),
         queryClient.invalidateQueries({ queryKey: ['spools'] }),
@@ -471,6 +479,13 @@ function MaterialSystemSection({ printer, system, presetsSeedMap, spools, spoolC
       ]);
       toast.success(t('presetSlots.cleared'));
     } catch (err: any) {
+      if (err?.response?.status === 409) {
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: ['physical-printers'] }),
+          queryClient.invalidateQueries({ queryKey: ['spools'] }),
+          queryClient.invalidateQueries({ queryKey: ['user-spools'] }),
+        ]);
+      }
       toast.error(translateApiError(t, err?.response?.data?.detail, t('common.error')));
     } finally {
       setClearing(false);
@@ -1001,6 +1016,10 @@ export function PresetSlotsPanel({
           gate={modalState.gate}
           physicalPrinterId={modalState.printer.id}
           materialSlotId={modalState.slot.id}
+          assignmentRevision={modalState.slot.assignment_revision}
+          expectedSpoolId={modalState.slot.assignment?.spool_id
+            ?? modalState.slot.legacy_projection?.spool_id
+            ?? null}
           deviceName={modalState.printer.name}
           systemName={modalState.system.name}
           provider={modalState.system.provider}

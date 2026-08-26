@@ -647,6 +647,7 @@ async def ensure_material_topology(
     provider: str | None = None,
     gate_indices: set[int] | None = None,
     exact_gate_count: int | None = None,
+    sync_legacy_assignments: bool = True,
 ) -> None:
     """Write what a provider reports about a printer's feed into the contract.
 
@@ -769,7 +770,8 @@ async def ensure_material_topology(
         )
         for state in states_result.scalars().all():
             state.material_slot_id = slots_by_index[state.gate_index].id
-            await sync_legacy_material_assignment(db, state)
+            if sync_legacy_assignments:
+                await sync_legacy_material_assignment(db, state)
 
     connector = await db.scalar(
         select(PhysicalPrinterConnector)

@@ -15,6 +15,7 @@ from app.models.user import User
 from app.models.user_printer_device import UserPrinterDevice
 from app.schemas.material_contract import (
     MaterialSlotAssignmentUpdate,
+    MaterialSystemAssignmentsClearRequest,
     MaterialSystemCreate,
     MaterialSystemUpdate,
     PhysicalPrinterConfigurationsUpdate,
@@ -264,6 +265,7 @@ async def patch_material_slot_assignment(
 async def clear_material_system(
     physical_printer_id: int,
     material_system_id: int,
+    payload: MaterialSystemAssignmentsClearRequest,
     current_user: Annotated[User, Depends(get_current_active_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> PhysicalPrinterResponse:
@@ -272,6 +274,7 @@ async def clear_material_system(
         current_user,
         physical_printer_id=physical_printer_id,
         material_system_id=material_system_id,
+        payload=payload,
     )
     printer = await require_physical_printer(
         db, current_user.id, physical_printer_id
