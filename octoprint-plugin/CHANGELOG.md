@@ -3,10 +3,14 @@
 Newest first. The top entry is used for GitHub release notes.
 
 ## 0.1.2
+- Lets users search for, assign, replace or remove the desired spool for any
+  FilamentHub slot directly from OctoPrint. Concurrent changes refresh the
+  latest assignment instead of silently overwriting it.
 - Records long-print usage in durable, replay-safe checkpoints instead of
   waiting for the terminal event, while keeping per-command extrusion local.
-- Segments usage at tool, selected-slot and exact-spool changes so one print
-  can safely consume multiple physical spools.
+- Checkpoints only the new usage at periodic intervals and on tool, selected
+  slot, exact-spool and filament changes, pause, graceful disconnect or
+  shutdown, and print completion, cancellation or failure.
 - Coalesces unsent checkpoint deltas and seals each payload before its first
   network attempt, preventing a lost acknowledgement from changing a retried
   event under the same id.
