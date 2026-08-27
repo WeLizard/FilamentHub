@@ -2,6 +2,10 @@
 
 Newest first. The top entry is the text pasted into the Plugin Hub on release.
 
+## Unreleased
+- Plugin-owned workers, the local Bambu observer and loopback shell now follow OrcaSlicer's capability lifecycle and stop on cancellation/unload; older OrcaSlicer builds retain the existing registration fallback.
+- The embedded page can no longer navigate its iframe or open a popup to another site. Internal FilamentHub routes and external-browser OAuth remain available.
+
 ## 0.1.4
 - The native FilamentHub plugin interface is now fully localized for all 23 languages available in OrcaSlicer, including navigation, synchronization, recovery, connection status, Bambu LAN controls and error messages.
 - The embedded FilamentHub site now receives a supported language explicitly: Russian and Chinese follow OrcaSlicer, while other OrcaSlicer languages open the English site instead of showing a maintenance page.

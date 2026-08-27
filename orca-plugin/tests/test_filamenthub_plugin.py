@@ -6,6 +6,7 @@ import json
 import sys
 import threading
 import tomllib
+import urllib.request
 import zipfile
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
@@ -124,6 +125,55 @@ def test_background_worker_reuses_one_thread_for_bursty_jobs(plugin_module):
     assert len(set(thread_ids)) == 1
 
 
+def test_background_worker_discards_old_generation_after_plugin_reload(
+    plugin_module, monkeypatch
+):
+    worker = plugin_module.ReusableDaemonWorker(
+        "filamenthub-lifecycle-worker", idle_timeout=0.2
+    )
+    monkeypatch.setattr(plugin_module, "BACKGROUND_WORKER", worker)
+    entered = threading.Event()
+    release = threading.Event()
+    fresh_done = threading.Event()
+    stale_results = []
+    queued_ran = []
+    posted = []
+
+    class Window:
+        def is_open(self):
+            return True
+
+        def post(self, payload):
+            posted.append(payload)
+
+    def stale_job():
+        entered.set()
+        assert release.wait(2)
+        stale_results.append(
+            plugin_module.post_window(Window(), {"generation": "stale"})
+        )
+
+    worker.submit(stale_job)
+    assert entered.wait(2)
+    worker.submit(lambda: queued_ran.append(True))
+
+    worker.shutdown(wait_timeout=0)
+    worker.activate()
+    worker.submit(
+        lambda: (
+            plugin_module.post_window(Window(), {"generation": "fresh"}),
+            fresh_done.set(),
+        )
+    )
+    release.set()
+
+    assert fresh_done.wait(2)
+    assert stale_results == [False]
+    assert queued_ran == []
+    assert posted == [{"generation": "fresh"}]
+    worker.shutdown()
+
+
 def test_shell_server_stops_without_starting_a_shutdown_worker(plugin_module):
     server = plugin_module.ShellServer()
     url = server.url_for("<!doctype html><title>fixture</title>")
@@ -131,9 +181,24 @@ def test_shell_server_stops_without_starting_a_shutdown_worker(plugin_module):
 
     assert url.startswith("http://127.0.0.1:")
     assert stop_event is not None
+    with urllib.request.urlopen(url, timeout=2) as response:
+        policy = response.headers["Content-Security-Policy"]
+        assert "frame-src %s" % plugin_module.SITE_ORIGIN in policy
+        assert "connect-src 'self'" in policy
+        assert "default-src 'none'" in policy
+        assert "frame-src *" not in policy
     server.stop()
     assert stop_event.is_set()
     assert server._server is None
+
+
+def test_shell_sandboxes_the_catalog_without_popup_or_top_navigation(plugin_module):
+    iframe = plugin_module.PAGE.split('<iframe id="fh"', 1)[1].split(">", 1)[0]
+
+    assert 'sandbox="allow-scripts allow-same-origin allow-forms allow-downloads"' in iframe
+    assert "allow-popups" not in iframe
+    assert "allow-top-navigation" not in iframe
+    assert "SITE_ORIGIN = '%s'" % plugin_module.SITE_ORIGIN in plugin_module.PAGE
 
 
 def test_shell_server_recovers_when_the_host_denies_thread_start(plugin_module, monkeypatch):
@@ -3355,7 +3420,7 @@ def _module_with_slicing():
     return module, registered
 
 
-def _module_with_pages():
+def _module_with_pages(native_lifecycle=False):
     """The plugin as it loads on the PR #14992 Pages artifact."""
     class PagesCapabilityBase:
         def __init__(self):
@@ -3363,6 +3428,10 @@ def _module_with_pages():
 
         def post_message(self, message):
             self.posted_messages.append(message)
+
+    if native_lifecycle:
+        PagesCapabilityBase.on_load = lambda self: None
+        PagesCapabilityBase.on_unload = lambda self: None
 
     fake_orca = ModuleType("orca")
     fake_orca.base = object
@@ -3547,6 +3616,35 @@ def test_pages_host_registers_a_tab_instead_of_the_window_action():
     assert module.FilamentHubCatalog not in registered
 
 
+def test_current_host_defers_runtime_resources_to_capability_lifecycle(monkeypatch):
+    module, _ = _module_with_pages(native_lifecycle=True)
+    started = []
+    stopped = []
+    monkeypatch.setattr(module, "start_plugin_runtime", lambda: started.append(True))
+    monkeypatch.setattr(module, "stop_plugin_runtime", lambda: stopped.append(True))
+
+    module.FilamentHubPlugin().register_capabilities()
+    assert started == []
+
+    page = module.FilamentHubPage()
+    page.on_load()
+    page.on_cancelled()
+    page.on_unload()
+
+    assert started == [True]
+    assert stopped == [True, True]
+
+
+def test_old_host_keeps_registration_time_runtime_fallback(monkeypatch):
+    module, _ = _module_with_pages(native_lifecycle=False)
+    started = []
+    monkeypatch.setattr(module, "start_plugin_runtime", lambda: started.append(True))
+
+    module.FilamentHubPlugin().register_capabilities()
+
+    assert started == [True]
+
+
 def test_pages_host_delivers_plugin_messages_through_post_message():
     module, _ = _module_with_pages()
     page = module.FilamentHubPage()
@@ -3629,6 +3727,7 @@ def test_host_storage_migrates_mutable_state_without_deleting_legacy(
         raising=False,
     )
 
+    plugin_module.stop_plugin_runtime()
     plugin_module.FilamentHubPlugin().register_capabilities()
 
     assert plugin_module.PLUGIN_STORAGE_DIR == str(storage)
@@ -4237,6 +4336,78 @@ def test_bambu_runtime_spreads_automatic_startup_but_wake_interrupts_it(
     runtime._run()
 
     assert waits == [plugin_module.BAMBU_STARTUP_JITTER_SECONDS]
+
+
+def test_bambu_runtime_stop_interrupts_startup_without_polling(
+    plugin_module, monkeypatch
+):
+    runtime = plugin_module.BambuBridgeRuntime()
+    original_wait = runtime._wake.wait
+    waiting = threading.Event()
+    reads = []
+
+    def wait(timeout):
+        waiting.set()
+        return original_wait(timeout)
+
+    monkeypatch.setattr(runtime._wake, "wait", wait)
+    monkeypatch.setattr(
+        plugin_module,
+        "load_bambu_config",
+        lambda: reads.append(True)
+        or {"source_instance_id": "fixture", "printers": []},
+    )
+    monkeypatch.setattr(
+        plugin_module.random,
+        "uniform",
+        lambda _lower, _upper: plugin_module.BAMBU_STARTUP_JITTER_SECONDS,
+    )
+
+    runtime.start()
+    assert waiting.wait(2)
+    runtime.stop(wait_timeout=2)
+
+    assert reads == []
+    assert runtime._thread is None
+
+
+def test_bambu_runtime_restarts_after_previous_generation_finishes(
+    plugin_module, monkeypatch
+):
+    runtime = plugin_module.BambuBridgeRuntime()
+    first_read_started = threading.Event()
+    release_first_read = threading.Event()
+    second_read_finished = threading.Event()
+    read_count = 0
+    read_lock = threading.Lock()
+
+    monkeypatch.setattr(runtime._wake, "wait", lambda _timeout: False)
+    monkeypatch.setattr(plugin_module.random, "uniform", lambda lower, _upper: lower)
+
+    def load_config():
+        nonlocal read_count
+        with read_lock:
+            read_count += 1
+            current_read = read_count
+        if current_read == 1:
+            first_read_started.set()
+            assert release_first_read.wait(2)
+        else:
+            second_read_finished.set()
+        return {"source_instance_id": "fixture", "printers": []}
+
+    monkeypatch.setattr(plugin_module, "load_bambu_config", load_config)
+
+    runtime.start()
+    assert first_read_started.wait(2)
+    runtime.stop(wait_timeout=0)
+    runtime.start()
+    release_first_read.set()
+
+    assert second_read_finished.wait(2)
+    runtime.stop(wait_timeout=2)
+    assert read_count == 2
+    assert runtime._thread is None
 
 
 def test_bambu_pair_is_revoked_when_local_binding_cannot_be_persisted(

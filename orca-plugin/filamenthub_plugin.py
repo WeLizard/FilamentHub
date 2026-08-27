@@ -49,9 +49,11 @@ normal flow. Account tokens are held in memory only — never written to disk.
                   --> host restart dialog
 
 Runtime surface used (confirmed against the current upstream plugin API):
-  * orca.script.ScriptPluginCapabilityBase.execute()       — entry point
-  * orca.host.ui.create_window(html, on_message, on_close)  — the shell window
-  * orca.host.ui.message(...)                               — restart notice
+  * orca.pages.PagesPluginCapabilityBase                    — native page
+  * orca.script.ScriptPluginCapabilityBase.execute()        — old-host fallback
+  * capability on_load/on_cancelled/on_unload hooks         — runtime lifecycle
+  * orca.host.ui.create_window(...), message(...)           — fallback UI/notices
+  * orca.host.plugin.storage(), app_language()              — private state/locale
   * the injected window.orca bridge (PluginWebDialog.cpp:ORCA_BRIDGE_JS)
 
 Login/token: the user signs in inside the iframe on our own site (normal flow).
@@ -103,10 +105,31 @@ class ReusableDaemonWorker:
         self._jobs = queue.Queue()
         self._lock = threading.Lock()
         self._thread = None
+        self._generation = 0
+        self._stopping = False
+        self._local = threading.local()
+
+    def activate(self):
+        """Accept work for a new plugin lifecycle generation."""
+        with self._lock:
+            if self._stopping:
+                self._generation += 1
+                self._stopping = False
+
+    def current_job_is_active(self):
+        """Whether the calling worker job still belongs to the loaded plugin."""
+        generation = getattr(self._local, "generation", None)
+        if generation is None:
+            return True
+        with self._lock:
+            return not self._stopping and generation == self._generation
 
     def submit(self, function, *args, **kwargs):
-        self._jobs.put((function, args, kwargs))
         with self._lock:
+            if self._stopping:
+                return False
+            generation = self._generation
+            self._jobs.put((generation, function, args, kwargs))
             if self._thread is None or not self._thread.is_alive():
                 self._thread = threading.Thread(
                     target=self._run,
@@ -114,12 +137,35 @@ class ReusableDaemonWorker:
                     daemon=True,
                 )
                 self._thread.start()
+        return True
+
+    def shutdown(self, wait_timeout=0.25):
+        """Reject new work and discard jobs that have not started yet."""
+        with self._lock:
+            if not self._stopping:
+                self._stopping = True
+                self._generation += 1
+            thread = self._thread
+            while True:
+                try:
+                    self._jobs.get_nowait()
+                except queue.Empty:
+                    break
+                else:
+                    self._jobs.task_done()
+            self._jobs.put(None)
+        if (
+            thread is not None
+            and thread is not threading.current_thread()
+            and wait_timeout > 0
+        ):
+            thread.join(wait_timeout)
 
     def _run(self):
         current = threading.current_thread()
         while True:
             try:
-                function, args, kwargs = self._jobs.get(timeout=self._idle_timeout)
+                job = self._jobs.get(timeout=self._idle_timeout)
             except queue.Empty:
                 with self._lock:
                     if self._jobs.empty():
@@ -127,13 +173,32 @@ class ReusableDaemonWorker:
                             self._thread = None
                         return
                 continue
+            if job is None:
+                self._jobs.task_done()
+                with self._lock:
+                    if self._stopping:
+                        if self._thread is current:
+                            self._thread = None
+                        return
+                continue
+            generation, function, args, kwargs = job
+            with self._lock:
+                should_run = not self._stopping and generation == self._generation
+            if not should_run:
+                self._jobs.task_done()
+                continue
             try:
+                self._local.generation = generation
                 function(*args, **kwargs)
             except Exception as exc:
                 logger = globals().get("fh_log")
                 if logger is not None:
                     logger("background job failed: %s" % exc)
             finally:
+                try:
+                    del self._local.generation
+                except AttributeError:
+                    pass
                 self._jobs.task_done()
 
 
@@ -142,6 +207,9 @@ BACKGROUND_WORKER = ReusableDaemonWorker("filamenthub-worker")
 
 def post_window(window, payload):
     """Best-effort host push, safe against a window closing during a worker job."""
+    worker = globals().get("BACKGROUND_WORKER")
+    if worker is not None and not worker.current_job_is_active():
+        return False
     try:
         post = getattr(window, "post", None)
         if window is None or not window.is_open() or not callable(post):
@@ -158,6 +226,10 @@ def post_window(window, payload):
 PLUGIN_VERSION = "0.1.4"
 PROD_SITE_URL = "https://filamenthub.ru"
 SITE_URL = os.environ.get("FILAMENTHUB_SITE_URL", "http://localhost:3000").rstrip("/")
+_SITE_PARTS = urllib.parse.urlsplit(SITE_URL)
+SITE_ORIGIN = urllib.parse.urlunsplit(
+    (_SITE_PARTS.scheme, _SITE_PARTS.netloc, "", "", "")
+)
 DEV_CONTOUR = SITE_URL != PROD_SITE_URL
 SHOW_DIAGNOSTICS = DEV_CONTOUR and os.environ.get(
     "FILAMENTHUB_SHOW_LOG", ""
@@ -849,6 +921,18 @@ class ShellServer:
                     self.send_header("Content-Type", content_type)
                     self.send_header("Content-Length", str(len(body)))
                     self.send_header("Cache-Control", "no-store")
+                    self.send_header(
+                        "Content-Security-Policy",
+                        "default-src 'none'; "
+                        "script-src 'unsafe-inline'; "
+                        "style-src 'unsafe-inline'; "
+                        "img-src data:; "
+                        "connect-src 'self'; "
+                        "frame-src %s; "
+                        "object-src 'none'; "
+                        "base-uri 'none'; "
+                        "form-action 'none'" % SITE_ORIGIN,
+                    )
                     self.end_headers()
                     self.wfile.write(body)
 
@@ -4116,7 +4200,9 @@ PAGE = r"""<!DOCTYPE html>
         <button id="service-retry" type="button">Try again</button>
       </div>
     </div>
-    <iframe id="fh" src="__EMBED_URL__" title="FilamentHub catalog" allow="clipboard-write"></iframe>
+    <iframe id="fh" src="__EMBED_URL__" title="FilamentHub catalog"
+      sandbox="allow-scripts allow-same-origin allow-forms allow-downloads"
+      allow="clipboard-write"></iframe>
   </div>
 <script>
 'use strict';
@@ -4815,7 +4901,7 @@ document.getElementById('logout').addEventListener('click', function () {
 </script>
 </body>
 </html>
-""".replace("__SITE_ORIGIN__", SITE_URL).replace(
+""".replace("__SITE_ORIGIN__", SITE_ORIGIN).replace(
     "__PLUGIN_VERSION__", PLUGIN_VERSION).replace(
     "__UI_COPY__", json.dumps(UI_COPY, ensure_ascii=False).replace("</", "<\\/")).replace(
     "__OAUTH_STATUS_PATH__", SHELL_SERVER.status_path()).replace(
@@ -5645,26 +5731,61 @@ class BambuBridgeRuntime:
         self._lock = threading.Lock()
         self._thread = None
         self._wake = threading.Event()
+        self._stop = threading.Event()
+        self._restart_requested = False
         self._last_snapshot_digest = {}
         self._last_snapshot_at = {}
         self._last_heartbeat_at = {}
         self._failure_count = {}
         self._retry_at = {}
 
+    def _start_locked(self):
+        self._stop.clear()
+        self._thread = threading.Thread(
+            target=self._run,
+            name="filamenthub-bambu-bridge",
+            daemon=True,
+        )
+        self._thread.start()
+
     def start(self):
         with self._lock:
             if self._thread is not None and self._thread.is_alive():
+                if self._stop.is_set():
+                    # A blocking LAN request can outlive Orca's short unload
+                    # wait. Restart only after that generation retires; clearing
+                    # its shared stop flag here would revive the old observer.
+                    self._restart_requested = True
                 return
-            self._thread = threading.Thread(
-                target=self._run,
-                name="filamenthub-bambu-bridge",
-                daemon=True,
-            )
-            self._thread.start()
+            self._restart_requested = False
+            self._start_locked()
+
+    def stop(self, wait_timeout=0.25):
+        """Stop observations promptly when Orca unloads the plugin."""
+        with self._lock:
+            thread = self._thread
+            self._restart_requested = False
+            self._stop.set()
+            self._wake.set()
+        if (
+            thread is not None
+            and thread is not threading.current_thread()
+            and wait_timeout > 0
+        ):
+            thread.join(wait_timeout)
 
     def wake(self):
         self.start()
         self._wake.set()
+
+    def _retire_current_thread(self):
+        current = threading.current_thread()
+        with self._lock:
+            if self._thread is current:
+                self._thread = None
+                if self._restart_requested:
+                    self._restart_requested = False
+                    self._start_locked()
 
     def _run(self):
         # A slicer update or workstation power recovery can start many plugin
@@ -5673,14 +5794,18 @@ class BambuBridgeRuntime:
         # An explicit user action calls wake() and interrupts this delay.
         self._wake.wait(random.uniform(0.0, BAMBU_STARTUP_JITTER_SECONDS))
         self._wake.clear()
-        while True:
+        if self._stop.is_set():
+            self._retire_current_thread()
+            return
+        while not self._stop.is_set():
             local = load_bambu_config()
             active = [item for item in local["printers"] if item.get("bridge_token")]
             if not active:
-                with self._lock:
-                    self._thread = None
+                self._retire_current_thread()
                 return
             for config in active:
+                if self._stop.is_set():
+                    break
                 binding_key = (
                     config.get("physical_printer_id"),
                     config.get("material_system_id"),
@@ -5791,15 +5916,70 @@ class BambuBridgeRuntime:
                         min(BAMBU_RETRY_MAX_SECONDS, base_delay + spread),
                     )
                     fh_log("Bambu bridge poll failed: %s" % type(exc).__name__)
+            if self._stop.is_set():
+                break
             spread = BAMBU_POLL_SECONDS * BAMBU_INTERVAL_JITTER_RATIO
             self._wake.wait(random.uniform(
                 BAMBU_POLL_SECONDS - spread,
                 BAMBU_POLL_SECONDS + spread,
             ))
             self._wake.clear()
+        self._retire_current_thread()
 
 
 BAMBU_BRIDGE_RUNTIME = BambuBridgeRuntime()
+
+
+_PLUGIN_RUNTIME_LOCK = threading.Lock()
+_PLUGIN_RUNTIME_ACTIVE = False
+
+
+def start_plugin_runtime():
+    """Start process-wide resources once after a host lifecycle load."""
+    global _PLUGIN_RUNTIME_ACTIVE
+    with _PLUGIN_RUNTIME_LOCK:
+        if _PLUGIN_RUNTIME_ACTIVE:
+            return False
+        _PLUGIN_RUNTIME_ACTIVE = True
+    try:
+        BACKGROUND_WORKER.activate()
+        refresh_ui_language()
+        configure_plugin_storage()
+        if any(item.get("bridge_token") for item in load_bambu_config()["printers"]):
+            BAMBU_BRIDGE_RUNTIME.start()
+        repaired = repair_local_bundle_parents()
+        if repaired:
+            fh_log("repaired %d local bundle parent reference(s)" % repaired)
+        return True
+    except Exception:
+        stop_plugin_runtime()
+        raise
+
+
+def stop_plugin_runtime():
+    """Cooperatively stop plugin-owned work before the host releases Python."""
+    global _PLUGIN_RUNTIME_ACTIVE
+    with _PLUGIN_RUNTIME_LOCK:
+        if not _PLUGIN_RUNTIME_ACTIVE:
+            return False
+        _PLUGIN_RUNTIME_ACTIVE = False
+    BACKGROUND_WORKER.shutdown()
+    BAMBU_BRIDGE_RUNTIME.stop()
+    SHELL_SERVER.stop()
+    return True
+
+
+class _PluginRuntimeLifecycleMixin:
+    """Use the common lifecycle supplied by every current capability base."""
+
+    def on_load(self):
+        start_plugin_runtime()
+
+    def on_cancelled(self):
+        stop_plugin_runtime()
+
+    def on_unload(self):
+        stop_plugin_runtime()
 
 
 # --------------------------------------------------------------------------- #
@@ -6131,7 +6311,7 @@ def report_slice(gcode_path, output_name="", host=""):
 SLICE_CAPABILITY_NAME = "filamenthub-slice-reporter"
 
 
-class _SliceReporterMixin:
+class _SliceReporterMixin(_PluginRuntimeLifecycleMixin):
     def get_name(self):
         return SLICE_CAPABILITY_NAME
 
@@ -6174,7 +6354,10 @@ else:
 # --------------------------------------------------------------------------- #
 # The capability
 # --------------------------------------------------------------------------- #
-class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
+class FilamentHubCatalog(
+    _PluginRuntimeLifecycleMixin,
+    orca.script.ScriptPluginCapabilityBase,
+):
     win = None
 
     def get_name(self):
@@ -6270,6 +6453,10 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
         # Stop serving the token-bearing shell while no window needs it; a
         # reopen spins up a fresh server with a new secret path.
         SHELL_SERVER.stop()
+
+    def on_unload(self):
+        self.on_close()
+        stop_plugin_runtime()
 
     def _known_filament_preset_names(self):
         # Names of every filament preset OrcaSlicer currently has (system + user).
@@ -7824,7 +8011,7 @@ class _PageWindowProxy:
 
 
 if _PAGE_CAPABILITY_BASE is not None:
-    class FilamentHubPage(_PAGE_CAPABILITY_BASE):
+    class FilamentHubPage(_PluginRuntimeLifecycleMixin, _PAGE_CAPABILITY_BASE):
         def __init__(self):
             super().__init__()
             self._catalog = FilamentHubCatalog()
@@ -7850,20 +8037,35 @@ if _PAGE_CAPABILITY_BASE is not None:
 
         def on_unload(self):
             self._catalog.on_close()
+            stop_plugin_runtime()
 else:
     FilamentHubPage = None
+
+
+def host_capability_lifecycle_available():
+    """Whether every capability selected for this host has load/unload hooks."""
+    bases = [
+        _PAGE_CAPABILITY_BASE
+        if _PAGE_CAPABILITY_BASE is not None
+        else orca.script.ScriptPluginCapabilityBase
+    ]
+    if _SLICE_CAPABILITY_BASE is not None:
+        bases.append(_SLICE_CAPABILITY_BASE)
+    return all(
+        callable(getattr(base, "on_load", None))
+        and callable(getattr(base, "on_unload", None))
+        for base in bases
+    )
 
 
 @orca.plugin
 class FilamentHubPlugin(orca.base):
     def register_capabilities(self):
-        refresh_ui_language()
-        configure_plugin_storage()
-        if any(item.get("bridge_token") for item in load_bambu_config()["printers"]):
-            BAMBU_BRIDGE_RUNTIME.start()
-        repaired = repair_local_bundle_parents()
-        if repaired:
-            fh_log("repaired %d local bundle parent reference(s)" % repaired)
+        # Hosts predating capability lifecycle hooks still need the registration
+        # behavior used by earlier plugin releases. Current hosts start resources
+        # from on_load and stop them through on_cancelled/on_unload instead.
+        if not host_capability_lifecycle_available():
+            start_plugin_runtime()
         if FilamentHubPage is not None:
             orca.register_capability(FilamentHubPage)
         else:

@@ -173,6 +173,9 @@ OrcaSlicer build exposes the same capabilities:
   fallback;
 - `orca.slicing.SlicingPipelineCapabilityBase` reports and annotates completed
   G-code at `psGCodePostProcess` when the host exposes it;
+- current capability lifecycle hooks start plugin resources from `on_load` and
+  stop queued work, the local Bambu observer and loopback shell from
+  `on_cancelled`/`on_unload`; older hosts keep the registration-time fallback;
 - `orca.host.ui`, `orca.host.preset_bundle()`, optional
   `orca.host.app_language()` and optional `orca.host.plugin.storage()` provide
   UI, read-only preset observations, locale and private plugin state.
@@ -183,7 +186,10 @@ the plugin-owned user preset folder and become selectable after OrcaSlicer
 reload/restart. The plugin never edits an unmanaged profile.
 
 The shell accepts messages only from `https://filamenthub.ru` and only from its
-catalog iframe. HTTP responses are bounded to 5 MiB; preset/state writes use
+catalog iframe. Its response policy allows iframe documents only from the exact
+configured FilamentHub origin, and the iframe sandbox forbids popups and top-level
+navigation; external OAuth continues through the system browser. HTTP responses
+are bounded to 5 MiB; preset/state writes use
 same-directory atomic replacement; generated filenames are Windows-safe and
 include the FilamentHub preset id to avoid collisions.
 
