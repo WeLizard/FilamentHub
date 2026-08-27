@@ -1089,6 +1089,7 @@ async def create_plugin_session(
         scopes=[
             "presets:read",
             "presets:write",
+            "sync:report",
             "printer-bundles:read",
             "material-topology:read",
             "material-topology:report",

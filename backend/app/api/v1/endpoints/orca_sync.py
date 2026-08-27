@@ -20,9 +20,11 @@ from app.core.dependencies import (
     get_current_active_user,
     require_preset_read,
     require_preset_write,
+    require_sync_report,
 )
 from app.core.errors import (
     ERR_ACCESS_DENIED,
+    ERR_DEVICE_NOT_FOUND,
     ERR_EXPORT_PRINT_DISABLED,
     ERR_EXPORT_PRINTER_DISABLED,
     ERR_IMPORT_FILAMENT_DISABLED,
@@ -4089,6 +4091,7 @@ from app.schemas.sync_plan import (
 )
 from app.schemas.sync_plan import (
     SyncCompleteRequest,
+    SyncCompleteResponse,
     SyncPlanRequest,
     SyncPlanResponse,
     SyncStatusResponse,
@@ -4097,13 +4100,13 @@ from app.services.orcaslicer_validator import (
     validate_parent_preset,
     validate_preset_batch,
 )
-from app.services.sync_orchestrator import SyncOrchestrator
+from app.services.sync_orchestrator import SyncOrchestrator, SyncReportConflictError
 
 
-@router.post("/orcaslicer/sync-plan", response_model=SyncPlanResponse)
+@router.post("/sync-plan", response_model=SyncPlanResponse)
 async def create_sync_plan(
     request: SyncPlanRequest,
-    current_user: Annotated[User, Depends(get_current_active_user)],
+    current_user: Annotated[User, Depends(require_sync_report)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     """Генерирует план синхронизации для устройства."""
@@ -4114,40 +4117,53 @@ async def create_sync_plan(
         preset_type=request.preset_type,
         force_full_sync=request.force_full_sync,
         orcaslicer_version=request.orcaslicer_version,
+        include_changes=request.include_changes,
     )
     await db.commit()
     return SyncPlanResponse(**plan)
 
 
-@router.post("/orcaslicer/sync-complete")
+@router.post("/sync-complete", response_model=SyncCompleteResponse)
 async def complete_sync(
     request: SyncCompleteRequest,
-    current_user: Annotated[User, Depends(get_current_active_user)],
+    current_user: Annotated[User, Depends(require_sync_report)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    """Подтверждение завершения синхронизации — инкрементирует sync_version."""
+    """Идемпотентно принять фактический результат конкретного устройства."""
     orchestrator = SyncOrchestrator(db)
-    device = await orchestrator.complete_sync(
-        user_id=current_user.id,
-        device_fingerprint=request.device_fingerprint,
-    )
+    try:
+        device, duplicate = await orchestrator.complete_sync(
+            user_id=current_user.id,
+            device_fingerprint=request.device_fingerprint,
+            sync_version=request.sync_version,
+            results=[item.model_dump() for item in request.results],
+        )
+    except SyncReportConflictError:
+        raise_error(status.HTTP_409_CONFLICT, ERR_SYNC_ITEM_FAILED)
     await db.commit()
-    return {"sync_version": device.sync_version, "last_sync_at": device.last_sync_at.isoformat()}
+    return SyncCompleteResponse(
+        sync_version=device.sync_version,
+        last_sync_at=device.last_sync_at.isoformat(),
+        duplicate=duplicate,
+    )
 
 
-@router.get("/orcaslicer/sync-status", response_model=SyncStatusResponse)
+@router.get("/sync-status", response_model=SyncStatusResponse)
 async def get_sync_status(
-    device_fingerprint: Annotated[str, Query(...)],
     current_user: Annotated[User, Depends(get_current_active_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
+    device_fingerprint: Annotated[str | None, Query()] = None,
 ):
     """Получить статус последней синхронизации устройства."""
     orchestrator = SyncOrchestrator(db)
-    status = await orchestrator.get_sync_status(
-        user_id=current_user.id,
-        device_fingerprint=device_fingerprint,
-    )
-    return SyncStatusResponse(**status)
+    try:
+        sync_status = await orchestrator.get_sync_status(
+            user_id=current_user.id,
+            device_fingerprint=device_fingerprint,
+        )
+    except LookupError:
+        raise_error(status.HTTP_404_NOT_FOUND, ERR_DEVICE_NOT_FOUND)
+    return SyncStatusResponse(**sync_status)
 
 
 @router.post("/orcaslicer/validate-parent", response_model=ParentPresetValidationResponse)

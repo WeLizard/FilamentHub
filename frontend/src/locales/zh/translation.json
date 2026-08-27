@@ -6214,6 +6214,23 @@
     "disabledTitle": "同步已禁用。点击以启用。",
     "enabled": "同步已启用",
     "disabled": "同步已禁用",
+    "desiredEnabledTitle": "此预设应保留在 OrcaSlicer 中。点击可将其从目标集合中移除。",
+    "desiredDisabledTitle": "此预设不应保留在 OrcaSlicer 中。点击可将其加入目标集合。",
+    "desiredEnabled": "添加到 OrcaSlicer",
+    "desiredDisabled": "不添加到 OrcaSlicer",
+    "desiredFilter": "用于 OrcaSlicer",
+    "actual": {
+      "device": "OrcaSlicer 中的状态",
+      "noDevice": "尚无设备报告同步结果。",
+      "observedAt": "报告于 {{value}}",
+      "loadError": "无法加载设备状态。",
+      "pending": "设备尚未确认目标状态。",
+      "on_disk": "文件已写入磁盘；无法确认 OrcaSlicer 是否已加载。",
+      "pending_restart": "文件已更新，将在重启 OrcaSlicer 后加载。",
+      "loaded": "此预设已在该设备的 OrcaSlicer 中加载。",
+      "error": "设备无法写入或加载此预设。",
+      "removed": "此预设已从该设备移除。"
+    },
     "toggleError": "切换同步失败",
     "unknownError": "未知错误"
   },

@@ -1,5 +1,6 @@
 """Оркестратор синхронизации пресетов между OrcaSlicer и FilamentHub."""
 
+import json
 import logging
 from datetime import datetime, timezone
 
@@ -14,6 +15,48 @@ from app.models.sync_history import SyncHistory, SyncOperation, SyncPresetType, 
 from app.models.user_saved_preset import UserSavedPreset
 
 logger = logging.getLogger(__name__)
+
+
+class SyncReportConflictError(ValueError):
+    """The device report does not match the next or latest accepted version."""
+
+
+_OBSERVATION_STATUS = {
+    "loaded": SyncStatus.SUCCESS,
+    "on_disk": SyncStatus.SUCCESS,
+    "pending_restart": SyncStatus.CONFLICT,
+    "error": SyncStatus.ERROR,
+    "removed": SyncStatus.SUCCESS,
+}
+
+
+def _observation_payload(state: str, error_code: str | None = None) -> str:
+    payload = {"state": state}
+    if error_code:
+        payload["error_code"] = error_code
+    return json.dumps(payload, ensure_ascii=True, separators=(",", ":"), sort_keys=True)
+
+
+def _decode_observation(history: SyncHistory) -> tuple[str, str | None]:
+    """Read new structured observations while keeping old history useful."""
+    if history.error_message:
+        try:
+            payload = json.loads(history.error_message)
+        except (TypeError, ValueError):
+            payload = None
+        if isinstance(payload, dict) and payload.get("state") in _OBSERVATION_STATUS:
+            error_code = payload.get("error_code")
+            return payload["state"], error_code if isinstance(error_code, str) else None
+
+    if history.status == SyncStatus.ERROR:
+        return "error", "legacy_sync_error"
+    if history.status == SyncStatus.CONFLICT:
+        return "pending_restart", None
+    if history.operation == SyncOperation.DELETE:
+        return "removed", None
+    # A historical SUCCESS only proved that a download completed. It never
+    # proved that the running Orca host loaded the resulting profile.
+    return "on_disk", None
 
 
 class SyncOrchestrator:
@@ -62,6 +105,7 @@ class SyncOrchestrator:
         preset_type: str,
         force_full_sync: bool = False,
         orcaslicer_version: str | None = None,
+        include_changes: bool = True,
     ) -> dict:
         """
         Генерирует план синхронизации.
@@ -82,8 +126,13 @@ class SyncOrchestrator:
             orcaslicer_version=orcaslicer_version,
         )
 
-        # Полная синхронизация или инкрементальная
-        if force_full_sync or device.sync_version == 0:
+        # The active plugin already gets its desired payload from /auth/my-presets.
+        # It can ask this endpoint only for the next device-scoped report version
+        # instead of downloading the same list twice.
+        if not include_changes:
+            to_download = []
+            deleted_on_server = []
+        elif force_full_sync or device.sync_version == 0:
             to_download = await self._get_all_active_presets(user_id, preset_type)
             deleted_on_server = []
         else:
@@ -107,17 +156,54 @@ class SyncOrchestrator:
         self,
         user_id: int,
         device_fingerprint: str,
-    ) -> SyncDevice:
+        sync_version: int,
+        results: list[dict],
+    ) -> tuple[SyncDevice, bool]:
         """
-        Завершить синхронизацию — инкрементировать sync_version ОДИН раз.
+        Идемпотентно принять фактический результат устройства.
 
-        Вызывается ПОСЛЕ того как клиент подтвердил что всё скачал.
+        Блокировка строки сериализует два одновременных ответа одного устройства.
+        Повтор последнего идентичного отчёта не создаёт историю второй раз.
         """
-        device = await self.get_or_create_device(user_id, device_fingerprint)
-        device.sync_version += 1
+        device_result = await self.db.execute(
+            select(SyncDevice)
+            .where(
+                and_(
+                    SyncDevice.user_id == user_id,
+                    SyncDevice.device_fingerprint == device_fingerprint,
+                )
+            )
+            .with_for_update()
+        )
+        device = device_result.scalar_one_or_none()
+        if device is None:
+            raise SyncReportConflictError("device has no sync plan")
+
+        if sync_version == device.sync_version:
+            if await self._report_matches_history(device, sync_version, results):
+                return device, True
+            raise SyncReportConflictError("latest report payload differs")
+        if sync_version != device.sync_version + 1:
+            raise SyncReportConflictError("unexpected sync version")
+
+        for item in results:
+            state = item["state"]
+            history = SyncHistory(
+                user_id=user_id,
+                device_id=device.id,
+                sync_version=sync_version,
+                preset_type=SyncPresetType(item["preset_type"]),
+                operation=SyncOperation(item["operation"]),
+                preset_id=item["preset_id"],
+                status=_OBSERVATION_STATUS[state],
+                error_message=_observation_payload(state, item.get("error_code")),
+            )
+            self.db.add(history)
+
+        device.sync_version = sync_version
         device.last_sync_at = datetime.now(timezone.utc)
         await self.db.flush()
-        return device
+        return device, False
 
     async def record_sync_success(
         self,
@@ -197,37 +283,164 @@ class SyncOrchestrator:
     async def get_sync_status(
         self,
         user_id: int,
-        device_fingerprint: str,
+        device_fingerprint: str | None = None,
     ) -> dict:
-        """Получить статус последней синхронизации."""
-        device = await self.get_or_create_device(user_id, device_fingerprint)
+        """Получить desired state и последнее наблюдение выбранного устройства."""
+        devices_result = await self.db.execute(
+            select(SyncDevice).where(SyncDevice.user_id == user_id)
+        )
+        devices = list(devices_result.scalars().all())
+        devices.sort(
+            key=lambda item: (
+                item.last_sync_at or item.updated_at or item.created_at,
+                item.id,
+            ),
+            reverse=True,
+        )
 
-        # Последняя история для этого устройства
-        result = await self.db.execute(
-            select(SyncHistory)
+        device = None
+        if device_fingerprint is not None:
+            device = next(
+                (item for item in devices if item.device_fingerprint == device_fingerprint),
+                None,
+            )
+            if device is None:
+                raise LookupError("sync device not found")
+        elif devices:
+            device = devices[0]
+
+        saved_result = await self.db.execute(
+            select(UserSavedPreset)
+            .join(Preset, Preset.id == UserSavedPreset.preset_id)
             .where(
                 and_(
-                    SyncHistory.device_id == device.id,
-                    SyncHistory.sync_version == device.sync_version,
+                    UserSavedPreset.user_id == user_id,
+                    Preset.active.is_(True),
+                    Preset.filament_id.isnot(None),
                 )
             )
-            .order_by(SyncHistory.created_at.desc())
+            .order_by(UserSavedPreset.preset_id)
         )
-        history_entries = result.scalars().all()
+        saved_presets = list(saved_result.scalars().all())
+
+        history_entries: list[SyncHistory] = []
+        latest_by_preset: dict[int, SyncHistory] = {}
+        if device is not None:
+            history_result = await self.db.execute(
+                select(SyncHistory)
+                .where(
+                    and_(
+                        SyncHistory.device_id == device.id,
+                        SyncHistory.preset_type == SyncPresetType.FILAMENT,
+                    )
+                )
+                .order_by(SyncHistory.created_at.desc(), SyncHistory.id.desc())
+            )
+            all_history = list(history_result.scalars().all())
+            for history in all_history:
+                latest_by_preset.setdefault(history.preset_id, history)
+            history_entries = [
+                history for history in all_history if history.sync_version == device.sync_version
+            ]
+
+        preset_statuses = []
+        for saved in saved_presets:
+            desired = bool(saved.sync)
+            latest = latest_by_preset.get(saved.preset_id)
+            state = "pending"
+            operation = None
+            error_code = None
+            observed_at = None
+            if latest is not None:
+                observed_state, observed_error = _decode_observation(latest)
+                operation = latest.operation.value
+                observed_at = latest.created_at.isoformat()
+                if desired and latest.operation == SyncOperation.DOWNLOAD:
+                    state = observed_state
+                    error_code = observed_error
+                elif not desired and latest.operation == SyncOperation.DELETE:
+                    state = observed_state
+                    error_code = observed_error
+
+            preset_statuses.append(
+                {
+                    "preset_id": saved.preset_id,
+                    "desired": desired,
+                    "state": state,
+                    "operation": operation,
+                    "error_code": error_code,
+                    "observed_at": observed_at,
+                }
+            )
 
         success_count = sum(1 for h in history_entries if h.status == SyncStatus.SUCCESS)
         error_count = sum(1 for h in history_entries if h.status == SyncStatus.ERROR)
+        conflict_count = sum(1 for h in history_entries if h.status == SyncStatus.CONFLICT)
 
         return {
-            "device_fingerprint": device.device_fingerprint,
-            "sync_version": device.sync_version,
-            "last_sync_at": device.last_sync_at.isoformat() if device.last_sync_at else None,
+            "device_fingerprint": device.device_fingerprint if device else None,
+            "sync_version": device.sync_version if device else 0,
+            "last_sync_at": (
+                device.last_sync_at.isoformat()
+                if device is not None and device.last_sync_at
+                else None
+            ),
             "last_sync_stats": {
                 "total": len(history_entries),
                 "success": success_count,
                 "errors": error_count,
+                "pending_restart": conflict_count,
             },
+            "devices": [
+                {
+                    "device_fingerprint": item.device_fingerprint,
+                    "orcaslicer_version": item.orcaslicer_version,
+                    "sync_version": item.sync_version,
+                    "last_sync_at": item.last_sync_at.isoformat() if item.last_sync_at else None,
+                }
+                for item in devices
+            ],
+            "presets": preset_statuses,
         }
+
+    async def _report_matches_history(
+        self,
+        device: SyncDevice,
+        sync_version: int,
+        results: list[dict],
+    ) -> bool:
+        history_result = await self.db.execute(
+            select(SyncHistory).where(
+                and_(
+                    SyncHistory.device_id == device.id,
+                    SyncHistory.sync_version == sync_version,
+                )
+            )
+        )
+        history_entries = list(history_result.scalars().all())
+        expected = sorted(
+            (
+                item["preset_type"],
+                item["operation"],
+                item["preset_id"],
+                item["state"],
+                item.get("error_code"),
+            )
+            for item in results
+        )
+        actual = []
+        for history in history_entries:
+            state, error_code = _decode_observation(history)
+            actual.append(
+                (
+                    history.preset_type.value,
+                    history.operation.value,
+                    history.preset_id,
+                    state,
+                    error_code,
+                )
+            )
+        return expected == sorted(actual)
 
     # ── Private helpers ───────────────────────────────────────────
 
@@ -258,40 +471,24 @@ class SyncOrchestrator:
     async def _get_filament_presets(
         self, user_id: int, since: datetime | None
     ) -> list[dict]:
-        """Получить filament presets пользователя."""
-        # Собственные пресеты
-        own_query = select(Preset).where(
-            and_(
-                Preset.user_id == user_id,
-                Preset.active == True,
-            )
-        )
-        if since:
-            own_query = own_query.where(Preset.updated_at >= since)
-
-        result = await self.db.execute(own_query)
-        own_presets = {p.id: p for p in result.scalars().all()}
-
-        # Сохранённые пресеты с sync=True
-        saved_query = (
+        """Получить точный desired set из пользовательской библиотеки."""
+        query = (
             select(Preset)
             .join(UserSavedPreset, UserSavedPreset.preset_id == Preset.id)
             .where(
                 and_(
                     UserSavedPreset.user_id == user_id,
-                    UserSavedPreset.sync == True,
-                    Preset.active == True,
+                    UserSavedPreset.sync.is_(True),
+                    Preset.active.is_(True),
+                    Preset.filament_id.isnot(None),
                 )
             )
         )
         if since:
-            saved_query = saved_query.where(Preset.updated_at >= since)
+            query = query.where((Preset.updated_at >= since) | (UserSavedPreset.saved_at >= since))
 
-        result = await self.db.execute(saved_query)
-        # Сохранённые НЕ перезаписывают собственные (собственные имеют приоритет)
-        for p in result.scalars().all():
-            if p.id not in own_presets:
-                own_presets[p.id] = p
+        result = await self.db.execute(query)
+        presets = list(result.scalars().unique().all())
 
         return [
             {
@@ -301,7 +498,7 @@ class SyncOrchestrator:
                 "updated_at": p.updated_at.isoformat() if p.updated_at else None,
                 "orcaslicer_settings": p.orcaslicer_settings,
             }
-            for p in own_presets.values()
+            for p in presets
         ]
 
     async def _get_printer_profiles(
@@ -389,8 +586,15 @@ class SyncOrchestrator:
         current_ids = set()
         if preset_type == "filament":
             res = await self.db.execute(
-                select(Preset.id).where(
-                    and_(Preset.user_id == user_id, Preset.active == True)
+                select(UserSavedPreset.preset_id)
+                .join(Preset, Preset.id == UserSavedPreset.preset_id)
+                .where(
+                    and_(
+                        UserSavedPreset.user_id == user_id,
+                        UserSavedPreset.sync.is_(True),
+                        Preset.active.is_(True),
+                        Preset.filament_id.isnot(None),
+                    )
                 )
             )
             current_ids = {row[0] for row in res.all()}

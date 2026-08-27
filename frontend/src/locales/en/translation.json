@@ -6220,6 +6220,23 @@
     "disabledTitle": "Sync disabled. Click to enable.",
     "enabled": "Sync enabled",
     "disabled": "Sync disabled",
+    "desiredEnabledTitle": "This preset should be present in OrcaSlicer. Click to remove it from the desired set.",
+    "desiredDisabledTitle": "This preset should not be present in OrcaSlicer. Click to add it to the desired set.",
+    "desiredEnabled": "Add to OrcaSlicer",
+    "desiredDisabled": "Do not add to OrcaSlicer",
+    "desiredFilter": "For OrcaSlicer",
+    "actual": {
+      "device": "State in OrcaSlicer",
+      "noDevice": "No device has reported a sync result yet.",
+      "observedAt": "reported {{value}}",
+      "loadError": "Device state could not be loaded.",
+      "pending": "The device has not confirmed the desired state yet.",
+      "on_disk": "The file is on disk; loading it in OrcaSlicer could not be observed.",
+      "pending_restart": "The file was updated and will load after OrcaSlicer restarts.",
+      "loaded": "The preset is loaded in OrcaSlicer on this device.",
+      "error": "The device could not write or load the preset.",
+      "removed": "The preset was removed from this device."
+    },
     "toggleError": "Error toggling sync",
     "unknownError": "Unknown error"
   },

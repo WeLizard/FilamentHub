@@ -1385,6 +1385,7 @@ async def test_plugin_session_is_short_lived_and_endpoint_scoped(
         "presets:read",
         "presets:write",
         "printer-bundles:read",
+        "sync:report",
     }
     plugin_headers = {"Authorization": f"Bearer {plugin_token}"}
 
@@ -1404,6 +1405,35 @@ async def test_plugin_session_is_short_lived_and_endpoint_scoped(
     )
     assert plugin_write.status_code == 200
 
+    sync_plan = await auth_client.post(
+        "/api/v1/orcaslicer/sync-plan",
+        headers=plugin_headers,
+        json={
+            "device_fingerprint": "plugin-scope-device",
+            "preset_type": "filament",
+            "include_changes": False,
+        },
+    )
+    assert sync_plan.status_code == 200
+    sync_complete = await auth_client.post(
+        "/api/v1/orcaslicer/sync-complete",
+        headers=plugin_headers,
+        json={
+            "device_fingerprint": "plugin-scope-device",
+            "sync_version": sync_plan.json()["sync_version"],
+            "results": [],
+        },
+    )
+    assert sync_complete.status_code == 200
+    assert sync_complete.json()["duplicate"] is False
+    sync_status = await auth_client.get(
+        "/api/v1/orcaslicer/sync-status",
+        params={"device_fingerprint": "plugin-scope-device"},
+    )
+    assert sync_status.status_code == 200
+    assert sync_status.json()["device_fingerprint"] == "plugin-scope-device"
+    assert sync_status.json()["devices"][0]["sync_version"] == 1
+
     read_only_token = create_plugin_token(
         {"sub": auth_user.email, "user_id": auth_user.id},
         ["presets:read"],
@@ -1415,6 +1445,18 @@ async def test_plugin_session_is_short_lived_and_endpoint_scoped(
     )
     assert denied_write.status_code == 403
     assert denied_write.json()["detail"]["code"] == "ERR_ACCESS_DENIED"
+
+    denied_sync_report = await auth_client.post(
+        "/api/v1/orcaslicer/sync-plan",
+        headers={"Authorization": f"Bearer {read_only_token}"},
+        json={
+            "device_fingerprint": "forbidden-device",
+            "preset_type": "filament",
+            "include_changes": False,
+        },
+    )
+    assert denied_sync_report.status_code == 403
+    assert denied_sync_report.json()["detail"]["code"] == "ERR_ACCESS_DENIED"
 
 
 @pytest.mark.asyncio

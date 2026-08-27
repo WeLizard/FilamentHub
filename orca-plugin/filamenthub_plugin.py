@@ -1758,6 +1758,47 @@ def http_post_json(path, token, payload):
         return 0, str(exc).encode("utf-8", errors="replace")
 
 
+def begin_filament_sync_report(token, device_fingerprint):
+    """Reserve the next version on the existing device sync contour."""
+    status, body = http_post_json(
+        "/orcaslicer/sync-plan",
+        token,
+        {
+            "device_fingerprint": device_fingerprint,
+            "preset_type": "filament",
+            "include_changes": False,
+        },
+    )
+    if status != 200:
+        fh_log("sync observation plan rejected: status=%s" % status)
+        return None
+    try:
+        sync_version = (json.loads(body.decode("utf-8")) or {}).get("sync_version")
+    except (AttributeError, UnicodeDecodeError, ValueError):
+        sync_version = None
+    if not isinstance(sync_version, int) or sync_version < 1:
+        fh_log("sync observation plan returned no usable version")
+        return None
+    return sync_version
+
+
+def complete_filament_sync_report(token, device_fingerprint, sync_version, results):
+    """Report bounded per-preset facts; never send file paths or raw exceptions."""
+    status, _body = http_post_json(
+        "/orcaslicer/sync-complete",
+        token,
+        {
+            "device_fingerprint": device_fingerprint,
+            "sync_version": sync_version,
+            "results": results,
+        },
+    )
+    if status != 200:
+        fh_log("sync observation report rejected: status=%s" % status)
+        return False
+    return True
+
+
 def _bridge_retry_after_seconds(headers):
     """Read how long the server asked this adapter to wait, in seconds.
 
@@ -7402,6 +7443,8 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
         overall_status = "success"
         new_draft_count = 0
         restart_required = False
+        filament_report_version = None
+        filament_report_results = None
 
         def add_contour(kind, parts, status="success"):
             nonlocal overall_status
@@ -7418,6 +7461,7 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
             pulled = updated = pushed = skipped = failed = renamed = removed = 0
             failed_ids = []
             remote_ids = set()
+            changed_file_ids = set()
             folder = user_filament_dir()
             allow_pull = preferences["allow_filament_presets_export"]
             allow_push = preferences["allow_filament_presets_import"]
@@ -7427,6 +7471,10 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
                     os.makedirs(folder, exist_ok=True)
                 except OSError:
                     pass
+                if source_instance_id and operation_id:
+                    filament_report_version = begin_filament_sync_report(
+                        token, source_instance_id
+                    )
                 remote_status, remote_body = http_get("/auth/my-presets", token=token)
                 if remote_status == 401:
                     clear_auth()
@@ -7449,6 +7497,11 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
 
                 if remote_items is not None:
                     local = scan_local_fh_presets(folder)
+                    previous_managed_ids = set(local)
+                    previous_managed_ids.update(
+                        int(key) for key in state
+                        if isinstance(key, str) and key.isdigit()
+                    )
                     fh_log(
                         "sync start: plugin %s scope=%s trigger=%s remote=%d local=%d"
                         % (PLUGIN_VERSION, scope, trigger, len(remote_items), len(local))
@@ -7468,6 +7521,7 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
                             if result:
                                 state[str(preset_id)] = result
                                 pulled += 1
+                                changed_file_ids.add(preset_id)
                             else:
                                 failed += 1
                                 failed_ids.append(preset_id)
@@ -7479,6 +7533,7 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
                             if result:
                                 state[str(preset_id)] = result
                                 updated += 1
+                                changed_file_ids.add(preset_id)
                             else:
                                 failed += 1
                                 failed_ids.append(preset_id)
@@ -7541,6 +7596,7 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
                             if result:
                                 state[str(preset_id)] = result
                                 updated += 1
+                                changed_file_ids.add(preset_id)
                             else:
                                 failed += 1
                                 failed_ids.append(preset_id)
@@ -7566,12 +7622,13 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
                                     except OSError:
                                         pass
                                     renamed += 1
+                                    changed_file_ids.add(preset_id)
                             remove_stale_preset_files(
                                 folder, preset_id, local_entry["path"]
                             )
                             skipped += 1
 
-                    removed, _removed_ids = quarantine_unwanted_managed_preset_files(
+                    removed, removed_ids = quarantine_unwanted_managed_preset_files(
                         folder, remote_ids
                     )
                     for key in list(state):
@@ -7581,6 +7638,50 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
                         folder, remote_ids, loaded_preset_ids, failed_ids
                     )
                     restart_required = bool(pulled or updated or removed or renamed)
+                    if filament_report_version is not None:
+                        on_disk_ids = set(scan_local_fh_presets(folder))
+                        failed_id_set = set(failed_ids)
+                        report_results = []
+                        for preset_id in sorted(remote_ids):
+                            error_code = None
+                            if preset_id in failed_id_set:
+                                observed_state = "error"
+                                error_code = "local_write_or_validation_failed"
+                            elif preset_id not in on_disk_ids:
+                                observed_state = "error"
+                                error_code = "managed_file_missing"
+                            elif loaded_preset_ids is None:
+                                observed_state = "on_disk"
+                            elif preset_id in changed_file_ids:
+                                observed_state = "pending_restart"
+                            elif preset_id in loaded_preset_ids:
+                                observed_state = "loaded"
+                            else:
+                                observed_state = "error"
+                                error_code = "host_did_not_load"
+                            item = {
+                                "preset_id": preset_id,
+                                "preset_type": "filament",
+                                "operation": "download",
+                                "state": observed_state,
+                            }
+                            if error_code:
+                                item["error_code"] = error_code
+                            report_results.append(item)
+
+                        confirmed_removed_ids = (
+                            previous_managed_ids | set(removed_ids)
+                        ) - remote_ids - on_disk_ids
+                        report_results.extend(
+                            {
+                                "preset_id": preset_id,
+                                "preset_type": "filament",
+                                "operation": "delete",
+                                "state": "removed",
+                            }
+                            for preset_id in sorted(confirmed_removed_ids)
+                        )
+                        filament_report_results = report_results
             elif not allow_push:
                 filament_parts.append(ui_text("summaryDisabled"))
                 filament_status = "warning"
@@ -7669,6 +7770,16 @@ class FilamentHubCatalog(orca.script.ScriptPluginCapabilityBase):
             sync_happy_hare_topologies(token, moonraker_connections)
 
         save_sync_state(state)
+        if (
+            filament_report_version is not None
+            and filament_report_results is not None
+        ):
+            complete_filament_sync_report(
+                token,
+                source_instance_id,
+                filament_report_version,
+                filament_report_results,
+            )
         labels = {
             "filament": ui_text("profileFilament"),
             "machine": ui_text("profileMachine"),

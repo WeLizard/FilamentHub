@@ -1235,6 +1235,44 @@ export interface UserSavedPreset {
   target_printer_profile_ids: number[]; // PrinterProfile.id целевых принтер-профилей
 }
 
+export type OrcaPresetSyncState =
+  | 'pending'
+  | 'on_disk'
+  | 'pending_restart'
+  | 'loaded'
+  | 'error'
+  | 'removed';
+
+export interface OrcaSyncDeviceStatus {
+  device_fingerprint: string;
+  orcaslicer_version: string | null;
+  sync_version: number;
+  last_sync_at: string | null;
+}
+
+export interface OrcaPresetSyncStatus {
+  preset_id: number;
+  desired: boolean;
+  state: OrcaPresetSyncState;
+  operation: 'download' | 'delete' | null;
+  error_code: string | null;
+  observed_at: string | null;
+}
+
+export interface OrcaSyncStatusResponse {
+  device_fingerprint: string | null;
+  sync_version: number;
+  last_sync_at: string | null;
+  last_sync_stats: {
+    total?: number;
+    success?: number;
+    errors?: number;
+    pending_restart?: number;
+  };
+  devices: OrcaSyncDeviceStatus[];
+  presets: OrcaPresetSyncStatus[];
+}
+
 export type PricingMethod = 'by_weight' | 'by_time' | 'combined';
 export type RoundingMode = 'up' | 'down' | 'nearest';
 

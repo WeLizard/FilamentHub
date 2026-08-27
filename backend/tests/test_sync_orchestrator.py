@@ -9,19 +9,21 @@ Covers the actual public API of SyncOrchestrator:
 - get_sync_status — last sync status for a device
 """
 
+from datetime import datetime, timedelta, timezone
+
 import pytest
 import pytest_asyncio
-from datetime import datetime, timezone, timedelta
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.user import User
-from app.models.preset import Preset, PresetModerationStatus
-from app.models.filament import Filament
 from app.models.brand import Brand
+from app.models.filament import Filament
+from app.models.preset import Preset, PresetModerationStatus
 from app.models.sync_device import SyncDevice
 from app.models.sync_history import SyncHistory, SyncStatus
-from app.services.sync_orchestrator import SyncOrchestrator
+from app.models.user import User
+from app.models.user_saved_preset import UserSavedPreset
+from app.services.sync_orchestrator import SyncOrchestrator, SyncReportConflictError
 
 
 @pytest_asyncio.fixture
@@ -75,9 +77,7 @@ async def test_filament(db_session: AsyncSession, test_brand: Brand) -> Filament
 
 
 @pytest_asyncio.fixture
-async def test_preset(
-    db_session: AsyncSession, test_user: User, test_filament: Filament
-) -> Preset:
+async def test_preset(db_session: AsyncSession, test_user: User, test_filament: Filament) -> Preset:
     """Create a test preset owned by test_user."""
     preset = Preset(
         name="Test Preset",
@@ -173,6 +173,14 @@ async def test_create_sync_plan_full_sync(
     db_session: AsyncSession,
 ):
     """Full sync returns all active presets of the user."""
+    db_session.add(
+        UserSavedPreset(
+            user_id=test_user.id,
+            preset_id=test_preset.id,
+            sync=True,
+        )
+    )
+    await db_session.commit()
     sync_plan = await sync_orchestrator.create_sync_plan(
         user_id=test_user.id,
         device_fingerprint="test-device-003",
@@ -237,11 +245,14 @@ async def test_complete_sync_increments_version(
     )
     assert device.sync_version == 0
 
-    updated = await sync_orchestrator.complete_sync(
+    updated, duplicate = await sync_orchestrator.complete_sync(
         user_id=test_user.id,
         device_fingerprint=device_fingerprint,
+        sync_version=1,
+        results=[],
     )
 
+    assert duplicate is False
     assert updated.sync_version == 1
     assert updated.last_sync_at is not None
 
@@ -273,9 +284,7 @@ async def test_record_sync_success(
     assert history.preset_id == test_preset.id
     assert history.status == SyncStatus.SUCCESS
 
-    result = await db_session.execute(
-        select(SyncHistory).where(SyncHistory.device_id == device.id)
-    )
+    result = await db_session.execute(select(SyncHistory).where(SyncHistory.device_id == device.id))
     saved = result.scalar_one_or_none()
     assert saved is not None
     assert saved.id == history.id
@@ -330,10 +339,19 @@ async def test_get_deleted_presets(
 async def test_get_sync_status(
     sync_orchestrator: SyncOrchestrator,
     test_user: User,
+    test_preset: Preset,
     db_session: AsyncSession,
 ):
     """get_sync_status returns device fingerprint, version and stats."""
     device_fingerprint = "test-device-009"
+    db_session.add(
+        UserSavedPreset(
+            user_id=test_user.id,
+            preset_id=test_preset.id,
+            sync=True,
+        )
+    )
+    await db_session.commit()
 
     device = await sync_orchestrator.get_or_create_device(
         user_id=test_user.id,
@@ -345,7 +363,7 @@ async def test_get_sync_status(
         device_id=device.id,
         sync_version=device.sync_version,
         preset_type="filament",
-        preset_id=1,
+        preset_id=test_preset.id,
         operation="download",
     )
 
@@ -358,3 +376,281 @@ async def test_get_sync_status(
     assert status["device_fingerprint"] == device_fingerprint
     assert status["sync_version"] == device.sync_version
     assert "last_sync_stats" in status
+    assert status["presets"] == [
+        {
+            "preset_id": test_preset.id,
+            "desired": True,
+            "state": "on_disk",
+            "operation": "download",
+            "error_code": None,
+            "observed_at": status["presets"][0]["observed_at"],
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_sync_report_keeps_partial_device_outcomes_distinct(
+    sync_orchestrator: SyncOrchestrator,
+    test_user: User,
+    test_preset: Preset,
+    test_filament: Filament,
+    db_session: AsyncSession,
+):
+    """Written, restart-pending and failed presets are not collapsed to success."""
+    pending_preset = Preset(
+        name="Pending restart",
+        filament_id=test_filament.id,
+        user_id=test_user.id,
+        extruder_temp=205.0,
+        bed_temp=60.0,
+        moderation_status=PresetModerationStatus.APPROVED,
+        active=True,
+    )
+    failed_preset = Preset(
+        name="Write failed",
+        filament_id=test_filament.id,
+        user_id=test_user.id,
+        extruder_temp=210.0,
+        bed_temp=65.0,
+        moderation_status=PresetModerationStatus.APPROVED,
+        active=True,
+    )
+    db_session.add_all([pending_preset, failed_preset])
+    await db_session.flush()
+    db_session.add_all(
+        [
+            UserSavedPreset(user_id=test_user.id, preset_id=test_preset.id, sync=True),
+            UserSavedPreset(user_id=test_user.id, preset_id=pending_preset.id, sync=True),
+            UserSavedPreset(user_id=test_user.id, preset_id=failed_preset.id, sync=True),
+        ]
+    )
+    await db_session.commit()
+
+    plan = await sync_orchestrator.create_sync_plan(
+        test_user.id,
+        "partial-device",
+        "filament",
+        include_changes=False,
+    )
+    device, duplicate = await sync_orchestrator.complete_sync(
+        test_user.id,
+        "partial-device",
+        plan["sync_version"],
+        [
+            {
+                "preset_id": test_preset.id,
+                "preset_type": "filament",
+                "operation": "download",
+                "state": "loaded",
+                "error_code": None,
+            },
+            {
+                "preset_id": pending_preset.id,
+                "preset_type": "filament",
+                "operation": "download",
+                "state": "pending_restart",
+                "error_code": None,
+            },
+            {
+                "preset_id": failed_preset.id,
+                "preset_type": "filament",
+                "operation": "download",
+                "state": "error",
+                "error_code": "local_write_or_validation_failed",
+            },
+        ],
+    )
+
+    assert duplicate is False
+    assert device.sync_version == 1
+    status_result = await sync_orchestrator.get_sync_status(test_user.id, "partial-device")
+    states = {item["preset_id"]: item for item in status_result["presets"]}
+    assert states[test_preset.id]["state"] == "loaded"
+    assert states[pending_preset.id]["state"] == "pending_restart"
+    assert states[failed_preset.id]["state"] == "error"
+    assert states[failed_preset.id]["error_code"] == "local_write_or_validation_failed"
+    assert status_result["last_sync_stats"] == {
+        "total": 3,
+        "success": 1,
+        "errors": 1,
+        "pending_restart": 1,
+    }
+
+
+@pytest.mark.asyncio
+async def test_repeated_sync_report_is_idempotent(
+    sync_orchestrator: SyncOrchestrator,
+    test_user: User,
+    test_preset: Preset,
+    db_session: AsyncSession,
+):
+    """Retrying the accepted report does not duplicate SyncHistory."""
+    plan = await sync_orchestrator.create_sync_plan(
+        test_user.id, "retry-device", "filament", include_changes=False
+    )
+    report = [
+        {
+            "preset_id": test_preset.id,
+            "preset_type": "filament",
+            "operation": "download",
+            "state": "on_disk",
+            "error_code": None,
+        }
+    ]
+
+    _device, first_duplicate = await sync_orchestrator.complete_sync(
+        test_user.id, "retry-device", plan["sync_version"], report
+    )
+    _device, second_duplicate = await sync_orchestrator.complete_sync(
+        test_user.id, "retry-device", plan["sync_version"], report
+    )
+
+    assert first_duplicate is False
+    assert second_duplicate is True
+    rows = list(
+        (
+            await db_session.execute(
+                select(SyncHistory).where(SyncHistory.preset_id == test_preset.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert len(rows) == 1
+
+    changed_report = [{**report[0], "state": "loaded"}]
+    with pytest.raises(SyncReportConflictError):
+        await sync_orchestrator.complete_sync(
+            test_user.id, "retry-device", plan["sync_version"], changed_report
+        )
+
+
+@pytest.mark.asyncio
+async def test_offline_device_leaves_new_desired_preset_pending(
+    sync_orchestrator: SyncOrchestrator,
+    test_user: User,
+    test_preset: Preset,
+    db_session: AsyncSession,
+):
+    db_session.add(
+        UserSavedPreset(
+            user_id=test_user.id,
+            preset_id=test_preset.id,
+            sync=True,
+        )
+    )
+    await db_session.commit()
+
+    status_result = await sync_orchestrator.get_sync_status(test_user.id)
+
+    assert status_result["device_fingerprint"] is None
+    assert status_result["sync_version"] == 0
+    assert status_result["devices"] == []
+    assert status_result["presets"][0]["state"] == "pending"
+
+
+@pytest.mark.asyncio
+async def test_deleted_desired_preset_stays_pending_until_device_confirms_removal(
+    sync_orchestrator: SyncOrchestrator,
+    test_user: User,
+    test_preset: Preset,
+    db_session: AsyncSession,
+):
+    saved = UserSavedPreset(
+        user_id=test_user.id,
+        preset_id=test_preset.id,
+        sync=True,
+    )
+    db_session.add(saved)
+    await db_session.commit()
+    plan = await sync_orchestrator.create_sync_plan(
+        test_user.id, "delete-device", "filament", include_changes=False
+    )
+    await sync_orchestrator.complete_sync(
+        test_user.id,
+        "delete-device",
+        plan["sync_version"],
+        [
+            {
+                "preset_id": test_preset.id,
+                "preset_type": "filament",
+                "operation": "download",
+                "state": "loaded",
+                "error_code": None,
+            }
+        ],
+    )
+    saved.sync = False
+    await db_session.commit()
+
+    pending = await sync_orchestrator.get_sync_status(test_user.id, "delete-device")
+    assert pending["presets"][0]["desired"] is False
+    assert pending["presets"][0]["state"] == "pending"
+
+    next_plan = await sync_orchestrator.create_sync_plan(
+        test_user.id, "delete-device", "filament", include_changes=False
+    )
+    await sync_orchestrator.complete_sync(
+        test_user.id,
+        "delete-device",
+        next_plan["sync_version"],
+        [
+            {
+                "preset_id": test_preset.id,
+                "preset_type": "filament",
+                "operation": "delete",
+                "state": "removed",
+                "error_code": None,
+            }
+        ],
+    )
+    removed = await sync_orchestrator.get_sync_status(test_user.id, "delete-device")
+    assert removed["presets"][0]["state"] == "removed"
+
+
+@pytest.mark.asyncio
+async def test_two_devices_keep_independent_preset_observations(
+    sync_orchestrator: SyncOrchestrator,
+    test_user: User,
+    test_preset: Preset,
+    db_session: AsyncSession,
+):
+    db_session.add(
+        UserSavedPreset(
+            user_id=test_user.id,
+            preset_id=test_preset.id,
+            sync=True,
+        )
+    )
+    await db_session.commit()
+
+    for fingerprint, state, error_code in (
+        ("loaded-device", "loaded", None),
+        ("failed-device", "error", "host_did_not_load"),
+    ):
+        plan = await sync_orchestrator.create_sync_plan(
+            test_user.id, fingerprint, "filament", include_changes=False
+        )
+        await sync_orchestrator.complete_sync(
+            test_user.id,
+            fingerprint,
+            plan["sync_version"],
+            [
+                {
+                    "preset_id": test_preset.id,
+                    "preset_type": "filament",
+                    "operation": "download",
+                    "state": state,
+                    "error_code": error_code,
+                }
+            ],
+        )
+
+    loaded = await sync_orchestrator.get_sync_status(test_user.id, "loaded-device")
+    failed = await sync_orchestrator.get_sync_status(test_user.id, "failed-device")
+    assert loaded["presets"][0]["state"] == "loaded"
+    assert failed["presets"][0]["state"] == "error"
+    assert {item["device_fingerprint"] for item in failed["devices"]} == {
+        "loaded-device",
+        "failed-device",
+    }

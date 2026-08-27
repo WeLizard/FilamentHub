@@ -46,7 +46,7 @@ import { FilamentSpoolIcon } from '../components/icons/FilamentSpoolIcon';
 import { useAuth } from '../contexts/AuthContext';
 import { useHeaderVisible } from '../hooks/useHeaderVisible';
 import { useUserCurrency } from '../hooks/useUserCurrency';
-import { presetsAPI, filamentsAPI, brandsAPI, savedPresetsAPI, filamentReviewsAPI, printerProfilesAPI, printProfilesAPI, authAPI, spoolsAPI, qrAPI, calculatorAPI, crmAPI, physicalPrintersAPI, achievementsAPI } from '../api/client';
+import { presetsAPI, filamentsAPI, brandsAPI, savedPresetsAPI, filamentReviewsAPI, printerProfilesAPI, printProfilesAPI, authAPI, spoolsAPI, qrAPI, calculatorAPI, crmAPI, physicalPrintersAPI, achievementsAPI, orcaSyncAPI } from '../api/client';
 import { extractQrShortCode, createQrFrameDecoder } from '../utils/qrScanner';
 import type { UserSpool, SpoolState, PhysicalPrinter, MaterialSlot, QrScanResponse } from '../api/client';
 import { SpoolIcon } from '../components/icons/SpoolIcon';
@@ -99,6 +99,7 @@ import type {
   AchievementOverview,
   Preset,
   PresetDraftAnalysis,
+  OrcaPresetSyncStatus,
   PrinterProfile,
   PrintProfile,
   Filament,
@@ -259,6 +260,7 @@ export const ProfilePage: React.FC = () => {
   );
   const [isScanning, setIsScanning] = useState(false);
   const [presetsViewMode, setPresetsViewMode] = useState<ViewMode>('grid');
+  const [selectedOrcaSyncDevice, setSelectedOrcaSyncDevice] = useState<string | null>(null);
   const needsPresetData = !showBrandCabinet && (userTab === 'dashboard' || userTab === 'presets');
   const needsPrinterProfileData = !showBrandCabinet && (
     userTab === 'dashboard' || userTab === 'printer-profiles' || userTab === 'spools'
@@ -401,6 +403,13 @@ export const ProfilePage: React.FC = () => {
     staleTime: 60_000,
   });
 
+  const { data: orcaSyncStatus, isError: isOrcaSyncStatusError } = useQuery({
+    queryKey: ['orca-sync-status', user?.id, selectedOrcaSyncDevice ?? 'latest'],
+    queryFn: () => orcaSyncAPI.getStatus(selectedOrcaSyncDevice),
+    enabled: !!user?.id && needsPresetData,
+    staleTime: 15_000,
+  });
+
 
   // Загружаем детали сохранённых пресетов
   const savedPresetIds = useMemo(() => {
@@ -460,22 +469,34 @@ export const ProfilePage: React.FC = () => {
     return m;
   }, [savedPresetsData]);
 
-  // Only a preset that can actually reach OrcaSlicer counts as synchronised —
-  // the same condition that decides whether the sync toggle exists at all
-  // (PresetSyncToggle). A draft has no material yet, so it goes nowhere and must
-  // not be listed here. Historical own profiles without a saved row use the
-  // backend's default-on fallback.
-  const syncedPresetIds = useMemo(() => new Set(
+  // This is desired state only. Actual state is a separate device-scoped
+  // observation returned by /orcaslicer/sync-status.
+  const desiredPresetIds = useMemo(() => new Set(
     user?.allow_filament_presets_export === false
       ? []
       : allMyPresets
           .filter((p) => (
             p.active
             && p.filament_id != null
-            && (syncByPresetId.has(p.id) ? syncByPresetId.get(p.id) === true : p.source === 'own')
+            && syncByPresetId.get(p.id) === true
           ))
           .map(p => p.id),
   ), [allMyPresets, syncByPresetId, user?.allow_filament_presets_export]);
+
+  const orcaSyncByPresetId = useMemo(
+    () => new Map(
+      (orcaSyncStatus?.presets ?? []).map((item) => [item.preset_id, item]),
+    ),
+    [orcaSyncStatus?.presets],
+  );
+
+  const selectedOrcaDeviceLabel = useMemo(() => {
+    const fingerprint = orcaSyncStatus?.device_fingerprint;
+    if (!fingerprint) return null;
+    return fingerprint.length > 18
+      ? `${fingerprint.slice(0, 8)}…${fingerprint.slice(-6)}`
+      : fingerprint;
+  }, [orcaSyncStatus?.device_fingerprint]);
 
   const filteredPresets = useMemo(() => {
     switch (presetFilter) {
@@ -487,7 +508,7 @@ export const ProfilePage: React.FC = () => {
       case 'saved':
         return allMyPresets.filter(p => p.source === 'saved');
       case 'synced':
-        return allMyPresets.filter(p => syncedPresetIds.has(p.id));
+        return allMyPresets.filter(p => desiredPresetIds.has(p.id));
       case 'drafts':
         return allMyPresets
           .filter(p => p.source === 'own' && !p.active)
@@ -505,7 +526,7 @@ export const ProfilePage: React.FC = () => {
       default:
         return allMyPresets;
     }
-  }, [allMyPresets, draftAnalysisById, presetFilter, syncedPresetIds]);
+  }, [allMyPresets, desiredPresetIds, draftAnalysisById, presetFilter]);
 
   const userPresets = filteredPresets;
 
@@ -1183,6 +1204,48 @@ export const ProfilePage: React.FC = () => {
             </div>
           </div>
 
+          {allMyPresets.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs text-gray-300">
+              <Settings className="h-4 w-4 flex-shrink-0 text-blue-300" />
+              <span className="font-medium text-gray-200">{t('presetSync.actual.device')}</span>
+              {(orcaSyncStatus?.devices.length ?? 0) > 0 ? (
+                <>
+                  <select
+                    value={orcaSyncStatus?.device_fingerprint ?? ''}
+                    onChange={(event) => setSelectedOrcaSyncDevice(event.target.value || null)}
+                    className="max-w-full rounded-lg border border-white/15 bg-slate-900 px-2 py-1 text-xs text-white outline-none focus:border-blue-400"
+                    aria-label={t('presetSync.actual.device')}
+                  >
+                    {orcaSyncStatus?.devices.map((device) => {
+                      const fingerprint = device.device_fingerprint;
+                      const label = fingerprint.length > 18
+                        ? `${fingerprint.slice(0, 8)}…${fingerprint.slice(-6)}`
+                        : fingerprint;
+                      return (
+                        <option key={fingerprint} value={fingerprint}>
+                          {label}{device.orcaslicer_version ? ` · Orca ${device.orcaslicer_version}` : ''}
+                        </option>
+                      );
+                    })}
+                  </select>
+                  {orcaSyncStatus?.last_sync_at && (
+                    <span className="text-gray-500">
+                      {t('presetSync.actual.observedAt', {
+                        value: formatLocalDateTime(orcaSyncStatus.last_sync_at),
+                      })}
+                    </span>
+                  )}
+                </>
+              ) : (
+                <span className={isOrcaSyncStatusError ? 'text-red-300' : 'text-amber-200'}>
+                  {t(isOrcaSyncStatusError
+                    ? 'presetSync.actual.loadError'
+                    : 'presetSync.actual.noDevice')}
+                </span>
+              )}
+            </div>
+          )}
+
           {/* Filter chips */}
           {allMyPresets.length > 0 && (
             <div className="flex flex-wrap gap-2">
@@ -1190,7 +1253,7 @@ export const ProfilePage: React.FC = () => {
                 { key: 'all' as const, label: t('profilePage.presetFilterAll'), count: allMyPresets.length },
                 { key: 'own' as const, label: t('profilePage.presetFilterOwn'), count: allMyPresets.filter(p => p.source === 'own' && p.active).length },
                 { key: 'saved' as const, label: t('profilePage.presetFilterSaved'), count: allMyPresets.filter(p => p.source === 'saved').length },
-                { key: 'synced' as const, label: t('profilePage.presetFilterSynced'), count: syncedPresetIds.size },
+                { key: 'synced' as const, label: t('presetSync.desiredFilter'), count: desiredPresetIds.size },
                 { key: 'drafts' as const, label: t('profilePage.presetFilterDrafts'), count: allMyPresets.filter(p => p.source === 'own' && !p.active).length },
               ]).filter(f => f.key === 'all' || f.count > 0).map(f => (
                 <button
@@ -1240,6 +1303,8 @@ export const ProfilePage: React.FC = () => {
                 onView={handleViewPreset}
                 onDelete={handleDeletePreset}
                 draftAnalysis={draftAnalysisById.get(preset.id)}
+                syncObservation={orcaSyncByPresetId.get(preset.id)}
+                syncDeviceLabel={selectedOrcaDeviceLabel}
               />
             ))}
           </div>
@@ -3746,10 +3811,21 @@ interface PresetCardProps {
   onView?: (preset: Preset) => void;
   onDelete?: (preset: Preset) => void;
   draftAnalysis?: PresetDraftAnalysis;
+  syncObservation?: OrcaPresetSyncStatus;
+  syncDeviceLabel?: string | null;
   viewMode?: ViewMode;
 }
 
-const PresetCard: React.FC<PresetCardProps> = ({ preset, onEdit, onView, onDelete, draftAnalysis, viewMode = 'grid' }) => {
+const PresetCard: React.FC<PresetCardProps> = ({
+  preset,
+  onEdit,
+  onView,
+  onDelete,
+  draftAnalysis,
+  syncObservation,
+  syncDeviceLabel,
+  viewMode = 'grid',
+}) => {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [isDownloading, setIsDownloading] = useState(false);
@@ -3930,7 +4006,13 @@ const PresetCard: React.FC<PresetCardProps> = ({ preset, onEdit, onView, onDelet
       </button>
       {preset.active && preset.filament_id && (
         <>
-      <PresetSyncToggle preset={preset} size="sm" className="p-2 bg-white/10 hover:bg-white/20 rounded-lg" />
+      <PresetSyncToggle
+        preset={preset}
+        size="sm"
+        className="p-2 bg-white/10 hover:bg-white/20 rounded-lg"
+        observation={syncObservation}
+        deviceLabel={syncDeviceLabel}
+      />
       <button
         onClick={handleDownload}
         disabled={isDownloading}

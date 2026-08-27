@@ -2432,6 +2432,204 @@ def test_sync_reports_written_files_and_host_loaded_presets_separately(
     assert any("desired=2 files=2 loaded=unknown" in msg for msg in messages)
 
 
+def test_filament_sync_reports_device_scoped_partial_result(
+    plugin_module, monkeypatch, tmp_path
+):
+    live = tmp_path / "live"
+    live.mkdir()
+    profiles = {
+        10: {"name": "Loaded", "bundle_id": "filamenthub:10"},
+        12: {"name": "Rejected", "bundle_id": "filamenthub:12"},
+        20: {"name": "No longer desired", "bundle_id": "filamenthub:20"},
+    }
+    for preset_id, profile in profiles.items():
+        (live / (profile["name"] + ".json")).write_text(
+            json.dumps(profile), encoding="utf-8"
+        )
+    state = {
+        str(preset_id): {
+            "updated_at": "2026-08-01",
+            "hash": plugin_module.preset_content_hash(profile),
+            "name": profile["name"],
+        }
+        for preset_id, profile in profiles.items()
+    }
+    monkeypatch.setattr(plugin_module, "user_filament_dir", lambda: str(live))
+    monkeypatch.setattr(
+        plugin_module,
+        "managed_preset_quarantine_dir",
+        lambda: str(tmp_path / "quarantine"),
+    )
+    monkeypatch.setattr(plugin_module, "ensure_bundle_metadata", lambda: None)
+    monkeypatch.setattr(plugin_module, "load_sync_state", lambda: state)
+    monkeypatch.setattr(plugin_module, "save_sync_state", lambda _value: None)
+    monkeypatch.setattr(
+        plugin_module,
+        "_sync_preferences",
+        lambda _token: {
+            "available": True,
+            "auto_import_local_presets": False,
+            "sync_printer_endpoints": False,
+            "allow_filament_presets_import": False,
+            "allow_filament_presets_export": True,
+            "allow_printer_profiles_import": False,
+            "allow_printer_profiles_export": False,
+            "allow_print_profiles_import": False,
+            "allow_print_profiles_export": False,
+        },
+    )
+    remote_items = [
+        {"id": preset_id, "name": name, "updated_at": "2026-08-01"}
+        for preset_id, name in (
+            (10, "Loaded"),
+            (11, "New"),
+            (12, "Rejected"),
+            (13, "Write failure"),
+        )
+    ]
+    monkeypatch.setattr(
+        plugin_module,
+        "http_get",
+        lambda path, token=None: (
+            200,
+            json.dumps({"items": remote_items}).encode("utf-8"),
+        ),
+    )
+    posted = []
+
+    def post(path, _token, payload):
+        posted.append((path, payload))
+        if path == "/orcaslicer/sync-plan":
+            return 200, json.dumps({"sync_version": 4}).encode("utf-8")
+        if path == "/orcaslicer/sync-complete":
+            return 200, json.dumps({"sync_version": 4}).encode("utf-8")
+        raise AssertionError(path)
+
+    monkeypatch.setattr(plugin_module, "http_post_json", post)
+    catalog = plugin_module.FilamentHubCatalog()
+
+    def pull(preset_id, _token, _known, folder, remote):
+        if preset_id == 13:
+            return None
+        profile = {"name": remote["name"], "bundle_id": "filamenthub:%d" % preset_id}
+        path = plugin_module.preset_file_path(folder, remote["name"], preset_id)
+        plugin_module.write_bytes_atomic(
+            path, json.dumps(profile).encode("utf-8")
+        )
+        return {
+            "updated_at": remote["updated_at"],
+            "hash": plugin_module.preset_content_hash(profile),
+            "name": remote["name"],
+        }
+
+    monkeypatch.setattr(catalog, "_pull_one", pull)
+
+    catalog._do_sync(
+        "token",
+        set(),
+        announce=False,
+        source_instance_id="device-a",
+        loaded_preset_ids={10},
+        scope="filament",
+        operation_id="sync-a",
+    )
+
+    assert [path for path, _payload in posted] == [
+        "/orcaslicer/sync-plan",
+        "/orcaslicer/sync-complete",
+    ]
+    report = posted[1][1]
+    assert report["device_fingerprint"] == "device-a"
+    assert report["sync_version"] == 4
+    assert {
+        (item["preset_id"], item["operation"], item["state"], item.get("error_code"))
+        for item in report["results"]
+    } == {
+        (10, "download", "loaded", None),
+        (11, "download", "pending_restart", None),
+        (12, "download", "error", "host_did_not_load"),
+        (13, "download", "error", "local_write_or_validation_failed"),
+        (20, "delete", "removed", None),
+    }
+
+
+def test_filament_sync_reports_on_disk_when_host_observation_is_unavailable(
+    plugin_module, monkeypatch, tmp_path
+):
+    live = tmp_path / "live"
+    live.mkdir()
+    profile = {"name": "Present", "bundle_id": "filamenthub:42"}
+    (live / "Present.json").write_text(json.dumps(profile), encoding="utf-8")
+    monkeypatch.setattr(plugin_module, "user_filament_dir", lambda: str(live))
+    monkeypatch.setattr(plugin_module, "ensure_bundle_metadata", lambda: None)
+    monkeypatch.setattr(
+        plugin_module,
+        "load_sync_state",
+        lambda: {
+            "42": {
+                "updated_at": "2026-08-01",
+                "hash": plugin_module.preset_content_hash(profile),
+                "name": "Present",
+            }
+        },
+    )
+    monkeypatch.setattr(plugin_module, "save_sync_state", lambda _value: None)
+    monkeypatch.setattr(
+        plugin_module,
+        "_sync_preferences",
+        lambda _token: {
+            "available": True,
+            "auto_import_local_presets": False,
+            "sync_printer_endpoints": False,
+            "allow_filament_presets_import": False,
+            "allow_filament_presets_export": True,
+            "allow_printer_profiles_import": False,
+            "allow_printer_profiles_export": False,
+            "allow_print_profiles_import": False,
+            "allow_print_profiles_export": False,
+        },
+    )
+    monkeypatch.setattr(
+        plugin_module,
+        "http_get",
+        lambda *_args, **_kwargs: (
+            200,
+            json.dumps({
+                "items": [{
+                    "id": 42,
+                    "name": "Present",
+                    "updated_at": "2026-08-01",
+                }]
+            }).encode("utf-8"),
+        ),
+    )
+    posted = []
+
+    def post(path, _token, payload):
+        posted.append((path, payload))
+        body = {"sync_version": 1}
+        return 200, json.dumps(body).encode("utf-8")
+
+    monkeypatch.setattr(plugin_module, "http_post_json", post)
+
+    plugin_module.FilamentHubCatalog()._do_sync(
+        "token",
+        set(),
+        announce=False,
+        source_instance_id="device-b",
+        loaded_preset_ids=None,
+        scope="filament",
+        operation_id="sync-b",
+    )
+
+    assert posted[1][1]["results"] == [{
+        "preset_id": 42,
+        "preset_type": "filament",
+        "operation": "download",
+        "state": "on_disk",
+    }]
+
+
 def test_loaded_managed_preset_ids_reports_unknown_without_a_host_bundle(
     plugin_module, monkeypatch
 ):

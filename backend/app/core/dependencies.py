@@ -233,6 +233,20 @@ async def require_preset_write(
     )
 
 
+async def require_sync_report(
+    request: Request,
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> User:
+    """Allow a browser session or the plugin to report device-scoped sync facts."""
+    return await _get_current_user_or_plugin_scope(
+        request=request,
+        credentials=credentials,
+        db=db,
+        required_scope="sync:report",
+    )
+
+
 async def require_printer_bundle_read(
     request: Request,
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security)],
