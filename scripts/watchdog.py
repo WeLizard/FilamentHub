@@ -5,8 +5,9 @@ Runs on the old home machine, not on the server it watches: a server cannot
 report its own death, and a check from the same network cannot tell a broken
 site from a broken route to it.
 
-Checks the site, the API, how long the certificate has left and whether last
-night's backup arrived. Given a way in, it also asks the watched machine how
+Checks the site, the API, the OrcaSlicer embed contract, how long the
+certificate has left and whether last night's backup arrived. Given a way in,
+it also asks the watched machine how
 much memory and disk it has left — those are the failures worth hearing about
 before they become an outage rather than after. Notifies through Telegram,
 which stays reachable when our own infrastructure does not.
@@ -22,6 +23,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import socket
 import ssl
 import subprocess
@@ -39,6 +41,15 @@ STATE_FILE = Path(os.environ.get("WATCHDOG_STATE", "/home/lizard/watchdog-state.
 BACKUP_MAX_AGE = timedelta(hours=36)
 CERT_WARN_DAYS = 14
 TIMEOUT = 20
+EMBED_BODY_LIMIT = 128 * 1024
+EMBED_FRAME_ANCESTORS = frozenset(
+    {
+        "'self'",
+        "file:",
+        "http://127.0.0.1:*",
+        "http://localhost:*",
+    }
+)
 
 # The machine being watched, as ssh would address it, and the key to reach it
 # with. Left unset, the two checks that need to look inside are skipped.
@@ -151,6 +162,48 @@ def check_memory(probe: dict[str, object]) -> str | None:
     return None
 
 
+def check_embed() -> str | None:
+    """Verify the public Orca iframe entry point and its framing contract."""
+    url = f"{SITE.rstrip('/')}/embed/catalog"
+    try:
+        with urllib.request.urlopen(url, timeout=TIMEOUT) as response:
+            if response.status != 200:
+                return f"Orca embed отвечает кодом {response.status}"
+            content_type = response.headers.get("Content-Type", "").lower()
+            x_frame_options = response.headers.get("X-Frame-Options")
+            csp = response.headers.get("Content-Security-Policy")
+            body = response.read(EMBED_BODY_LIMIT + 1)
+    except urllib.error.HTTPError as exc:
+        return f"Orca embed отвечает кодом {exc.code}"
+    except Exception as exc:  # noqa: BLE001
+        return f"Orca embed недоступен: {type(exc).__name__}"
+
+    if "text/html" not in content_type:
+        return f"Orca embed вернул не HTML ({content_type or 'без Content-Type'})"
+    if len(body) > EMBED_BODY_LIMIT or not re.search(
+        br"\bid\s*=\s*['\"]root['\"]",
+        body,
+    ):
+        return "Orca embed не содержит корневой маркер приложения"
+    if x_frame_options is not None:
+        return f"Orca embed содержит запрещённый X-Frame-Options: {x_frame_options!r}"
+    if not csp:
+        return "Orca embed не содержит Content-Security-Policy"
+
+    frame_ancestors = []
+    for directive in csp.split(";"):
+        parts = directive.split()
+        if parts and parts[0].lower() == "frame-ancestors":
+            frame_ancestors.append(parts[1:])
+
+    if len(frame_ancestors) != 1:
+        return "Orca embed должен содержать ровно одну директиву frame-ancestors"
+    sources = frame_ancestors[0]
+    if len(sources) != len(EMBED_FRAME_ANCESTORS) or set(sources) != EMBED_FRAME_ANCESTORS:
+        return f"Orca embed содержит недопустимый frame-ancestors: {' '.join(sources) or '<empty>'}"
+    return None
+
+
 def check_disk(probe: dict[str, object]) -> str | None:
     used = probe.get("disk_used_percent")
     if not isinstance(used, int):
@@ -178,6 +231,7 @@ def check_ssh_policy(probe: dict[str, object]) -> str | None:
 BASE_CHECKS = {
     "сайт": check_site,
     "API": check_api,
+    "Orca embed": check_embed,
     "сертификат": check_certificate,
     "резервные копии": check_backup,
 }

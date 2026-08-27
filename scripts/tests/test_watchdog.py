@@ -23,11 +23,85 @@ SECURE_PROBE = {
     "ssh_security_events": [],
 }
 
+HEALTHY_EMBED_CSP = (
+    "default-src 'self'; "
+    "frame-ancestors 'self' file: http://127.0.0.1:* http://localhost:*;"
+)
+
+
+class FakeResponse:
+    def __init__(
+        self,
+        *,
+        status: int = 200,
+        headers: dict[str, str] | None = None,
+        body: bytes = b'<html><body><div id="root"></div></body></html>',
+    ) -> None:
+        self.status = status
+        self.headers = headers or {}
+        self.body = body
+
+    def __enter__(self) -> "FakeResponse":
+        return self
+
+    def __exit__(self, *_args: object) -> None:
+        return None
+
+    def read(self, limit: int = -1) -> bytes:
+        return self.body if limit < 0 else self.body[:limit]
+
+
+class WatchdogEmbedTest(unittest.TestCase):
+    def response(self, **headers: str) -> FakeResponse:
+        return FakeResponse(
+            headers={
+                "Content-Type": "text/html; charset=utf-8",
+                "Content-Security-Policy": HEALTHY_EMBED_CSP,
+                **headers,
+            }
+        )
+
+    def test_healthy_embed_contract_passes(self) -> None:
+        with patch.object(watchdog.urllib.request, "urlopen", return_value=self.response()):
+            self.assertIsNone(watchdog.check_embed())
+
+    def test_missing_csp_is_reported(self) -> None:
+        response = FakeResponse(headers={"Content-Type": "text/html"})
+        with patch.object(watchdog.urllib.request, "urlopen", return_value=response):
+            self.assertIn("не содержит Content-Security-Policy", watchdog.check_embed() or "")
+
+    def test_missing_root_marker_is_reported(self) -> None:
+        response = self.response()
+        response.body = b"<html><body>empty shell</body></html>"
+        with patch.object(watchdog.urllib.request, "urlopen", return_value=response):
+            self.assertIn("корневой маркер", watchdog.check_embed() or "")
+
+    def test_x_frame_options_is_rejected(self) -> None:
+        with patch.object(
+            watchdog.urllib.request,
+            "urlopen",
+            return_value=self.response(**{"X-Frame-Options": "SAMEORIGIN"}),
+        ):
+            self.assertIn("запрещённый X-Frame-Options", watchdog.check_embed() or "")
+
+    def test_broad_frame_ancestor_is_rejected(self) -> None:
+        response = self.response(
+            **{
+                "Content-Security-Policy": (
+                    "default-src 'self'; frame-ancestors 'self' file: "
+                    "http://127.0.0.1:* http://localhost:* https://example.com;"
+                )
+            }
+        )
+        with patch.object(watchdog.urllib.request, "urlopen", return_value=response):
+            self.assertIn("недопустимый frame-ancestors", watchdog.check_embed() or "")
+
 
 class WatchdogProbeTest(unittest.TestCase):
     def test_probe_is_parsed_once_and_drives_server_checks(self) -> None:
         with (
             patch.object(watchdog, "SERVER", "filamenthub-watchdog@server"),
+            patch.object(watchdog, "BASE_CHECKS", {}),
             patch.object(watchdog, "_ask_server", return_value=json.dumps(SECURE_PROBE)) as ask,
         ):
             probe = watchdog.read_server_probe()
