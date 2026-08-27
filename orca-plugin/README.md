@@ -15,11 +15,10 @@ embed route in our existing frontend.
 
 ## Approach: iframe passthrough (confirmed by spike)
 
-The plugin's WebView2 renders an external-HTTPS `<iframe>` from its `file://`
-shell page (`PluginWebDialog` loads HTML via `SetPage` with **no** CSP and no
-navigation veto). Our own `X-Frame-Options: SAMEORIGIN` was the only blocker, so
-the owner added a framable `/embed/` nginx location that serves the SPA without
-`X-Frame-Options` / `frame-ancestors`.
+OrcaSlicer's WebView2 first receives a tiny opaque-origin `SetPage` bootstrap,
+which immediately redirects to a loopback-only HTTP shell on an unguessable
+path. That real shell origin is accepted by the site's `frame-ancestors` policy
+and embeds the external-HTTPS catalog with a restrictive CSP and iframe sandbox.
 
 So the plugin is a **thin shell** that embeds `https://filamenthub.ru/embed/catalog`
 and relays the catalog's actions to Python. We reuse the entire React frontend —
@@ -281,7 +280,7 @@ with a retry action. Local OrcaSlicer presets remain available.
 | # | Gap | Impact | Workaround |
 |---|---|---|---|
 | 1 | **No preset-install / hot-reload host API.** `orca.host` is read-only; `PluginType.Importer` has no capability base. | Filament, machine, and process imports need an **app restart**. Not a publish blocker; rough UX. | Atomic writes below `data_dir/user/<active>/_local/filamenthub/`; only FilamentHub-managed copies are updated. Ask upstream for `orca.host.presets.install(...)` / `reload_user_presets()`. |
-| 2 | **A short-lived plugin capability crosses the iframe boundary** with `targetOrigin: '*'` because the `file://` parent has an opaque origin. | The shell rejects every message not originating from the exact catalog iframe and `https://filamenthub.ru`; account access/refresh credentials never cross. | Keep the origin/source regression test and rotate the capability every 30 minutes. |
+| 2 | **The host's `SetPage` bootstrap has an opaque origin**, so the catalog cannot be embedded directly under the site's `frame-ancestors` policy. | The plugin needs a loopback-only HTTP shell while its window is open. | Keep the unguessable loopback path, restrictive shell CSP and iframe sandbox; exchange messages only with the exact catalog frame and site origin. |
 | 3 | **Outbound HTTPS is ungated today** and the declared network allow-list is not enforced yet. | A future host policy may require an explicit permission contract. | Keep `network = [...]` declared and follow the host's audit-first permission design. |
 | 4 | **The Python `Preset` binding omits read-only `filament_id` and `setting_id`.** | A loaded managed material cannot be mapped to Bambu's exact material command from the public object alone. | Walk only the host-selected backing-file inheritance chain and block when it cannot be resolved. Ask upstream to expose both fields as read-only properties. |
 

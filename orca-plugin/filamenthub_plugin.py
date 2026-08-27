@@ -612,10 +612,10 @@ def fallback_plugin_storage_dir():
 def configure_plugin_storage():
     """Use durable private storage without depending on a particular host API.
 
-    New hosts may expose ``orca.host.plugin.storage()``.  The current public
-    plugin host does not, so it falls back to a stable directory outside the
-    replaceable plugin package.  Existing sidecar state is copied once and
-    retained as a rollback fallback.
+    Prefer ``orca.host.plugin.storage()`` when the host exposes it, with a
+    stable directory outside the replaceable plugin package for compatible
+    older hosts.  Existing sidecar state is copied once and retained as a
+    rollback fallback.
     """
     global PLUGIN_STORAGE_DIR
     global SYNC_LOG_FILE, AUTH_FILE, BAMBU_CONFIG_FILE, IMPORTED_DRAFTS_FILE, SYNC_STATE_FILE
