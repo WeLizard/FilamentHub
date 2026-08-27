@@ -221,11 +221,13 @@ describe('MyPrintersList Orca bundle action', () => {
 
     renderList();
 
+    await waitFor(() => expect(mocks.getPrinterProfile).toHaveBeenCalledWith(33));
+    fireEvent.click(screen.getByRole('button', { name: /profilePage\.profilesCount:1/ }));
     expect(await screen.findByText('Official machine configuration')).toBeInTheDocument();
     expect(mocks.getPrinterProfile).toHaveBeenCalledWith(33);
   });
 
-  it('orders configurations by nozzle and collapses a long list without hiding it permanently', async () => {
+  it('keeps configurations compact, then orders and progressively reveals them', async () => {
     mocks.isPluginEmbed.mockReturnValue(false);
     mocks.listPrinters.mockResolvedValue([
       {
@@ -247,19 +249,22 @@ describe('MyPrintersList Orca bundle action', () => {
     renderList(profiles);
 
     await screen.findByText('Voron 2.4 350');
+    expect(screen.queryAllByTestId('printer-configuration')).toHaveLength(0);
+    const configurationSection = screen.getByRole('button', {
+      name: /profilePage\.profilesCount:6/,
+    });
+    expect(configurationSection).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByText('myPrinters.configurations')).not.toBeInTheDocument();
+
+    fireEvent.click(configurationSection);
+
+    expect(configurationSection).toHaveAttribute('aria-expanded', 'true');
     expect(screen.getAllByTestId('printer-configuration').map((row) => row.textContent)).toEqual([
       'Nozzle 0.15',
       'Nozzle 0.25',
       'Nozzle 0.4',
       'Nozzle 0.6',
     ]);
-    expect(
-      screen.getByText(
-        (content, element) =>
-          element?.tagName === 'P' && content.includes('profilePage.profilesCount:6'),
-      ),
-    ).toBeInTheDocument();
-
     fireEvent.click(
       screen.getByRole('button', {
         name: 'filamentDetailPage.showMorePresets +2',

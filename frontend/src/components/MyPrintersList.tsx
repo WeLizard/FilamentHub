@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQueries, useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { Activity, Download, History, Loader2, Plus, RefreshCw, Settings, Wifi } from 'lucide-react';
+import { Activity, ChevronDown, Download, History, Loader2, Plus, RefreshCw, Settings, Wifi } from 'lucide-react';
 import {
   physicalPrintersAPI,
   printProfilesAPI,
@@ -83,6 +83,8 @@ export function MyPrintersList({
   const [bundleActionPrinterIds, setBundleActionPrinterIds] = useState<Set<number>>(
     () => new Set(),
   );
+  const [openConfigurationPrinterIds, setOpenConfigurationPrinterIds] =
+    useState<Set<number>>(() => new Set());
   const [expandedConfigurationPrinterIds, setExpandedConfigurationPrinterIds] =
     useState<Set<number>>(() => new Set());
 
@@ -309,6 +311,8 @@ export function MyPrintersList({
               });
             const configurationListExpanded =
               expandedConfigurationPrinterIds.has(printer.id);
+            const configurationSectionOpen =
+              openConfigurationPrinterIds.has(printer.id);
             const visibleConfigurations = configurationListExpanded
               ? printerConfigurations
               : printerConfigurations.slice(0, COLLAPSED_CONFIGURATION_LIMIT);
@@ -444,12 +448,26 @@ export function MyPrintersList({
                 )}
 
                 <div>
-                  <p className="text-[11px] uppercase tracking-wide text-gray-500 mb-1">
-                    {t('myPrinters.configurations')}
-                  </p>
                   {printerConfigurations.length > 0 ? (
                     <div className="space-y-1.5">
-                      <p className="px-0.5 text-[11px] text-gray-400">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setOpenConfigurationPrinterIds((current) => {
+                            const next = new Set(current);
+                            if (next.has(printer.id)) next.delete(printer.id);
+                            else next.add(printer.id);
+                            return next;
+                          })
+                        }
+                        className={`flex w-full items-center gap-2 rounded-lg border px-2.5 py-1.5 text-left text-[11px] transition-colors ${
+                          configurationSectionOpen
+                            ? 'border-purple-400/20 bg-purple-500/[0.08] text-gray-200'
+                            : 'border-white/10 bg-white/[0.035] text-gray-400 hover:border-purple-400/20 hover:bg-purple-500/[0.06] hover:text-gray-200'
+                        }`}
+                        aria-expanded={configurationSectionOpen}
+                      >
+                        <span className="min-w-0 flex-1">
                         {t('profilePage.profilesCount', {
                           count: printerConfigurations.length,
                         })}
@@ -459,8 +477,12 @@ export function MyPrintersList({
                             {t('profilePage.nozzles')}: {nozzleRange} {t('profilePage.mm')}
                           </>
                         )}
-                      </p>
-                      {visibleConfigurations.map(({ id, profile }) => (
+                        </span>
+                        <ChevronDown
+                          className={`h-3.5 w-3.5 shrink-0 text-purple-300 transition-transform ${configurationSectionOpen ? 'rotate-180' : ''}`}
+                        />
+                      </button>
+                      {configurationSectionOpen && visibleConfigurations.map(({ id, profile }) => (
                           <PrinterConfigurationRow
                             key={id}
                             profile={profile}
@@ -475,7 +497,7 @@ export function MyPrintersList({
                             onDownloadPrintProfile={onDownloadPrintProfile}
                           />
                       ))}
-                      {printerConfigurations.length > COLLAPSED_CONFIGURATION_LIMIT && (
+                      {configurationSectionOpen && printerConfigurations.length > COLLAPSED_CONFIGURATION_LIMIT && (
                         <button
                           type="button"
                           onClick={() =>
