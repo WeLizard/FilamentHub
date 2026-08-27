@@ -45,6 +45,7 @@ import { Printer3DIcon } from '../components/icons/Printer3DIcon';
 import { FilamentSpoolIcon } from '../components/icons/FilamentSpoolIcon';
 import { useAuth } from '../contexts/AuthContext';
 import { useHeaderVisible } from '../hooks/useHeaderVisible';
+import { useStoredUiChoice } from '../hooks/useStoredUiChoice';
 import { useUserCurrency } from '../hooks/useUserCurrency';
 import { presetsAPI, filamentsAPI, brandsAPI, savedPresetsAPI, filamentReviewsAPI, printerProfilesAPI, printProfilesAPI, authAPI, spoolsAPI, qrAPI, calculatorAPI, crmAPI, physicalPrintersAPI, achievementsAPI, orcaSyncAPI } from '../api/client';
 import { extractQrShortCode, createQrFrameDecoder } from '../utils/qrScanner';
@@ -263,7 +264,6 @@ export const ProfilePage: React.FC = () => {
     'profile.presetsView',
     user?.id,
   );
-  const [selectedOrcaSyncDevice, setSelectedOrcaSyncDevice] = useState<string | null>(null);
   const needsPresetData = !showBrandCabinet && (userTab === 'dashboard' || userTab === 'presets');
   const needsPrinterProfileData = !showBrandCabinet && (
     userTab === 'dashboard' || userTab === 'printer-profiles' || userTab === 'spools'
@@ -406,12 +406,44 @@ export const ProfilePage: React.FC = () => {
     staleTime: 60_000,
   });
 
-  const { data: orcaSyncStatus, isError: isOrcaSyncStatusError } = useQuery({
-    queryKey: ['orca-sync-status', user?.id, selectedOrcaSyncDevice ?? 'latest'],
-    queryFn: () => orcaSyncAPI.getStatus(selectedOrcaSyncDevice),
+  // Load the latest device first so a stored fingerprint can be validated
+  // before it is ever sent to the API. Removed devices therefore fall back
+  // cleanly instead of producing ERR_DEVICE_NOT_FOUND.
+  const {
+    data: latestOrcaSyncStatus,
+    isError: isLatestOrcaSyncStatusError,
+  } = useQuery({
+    queryKey: ['orca-sync-status', user?.id, 'latest'],
+    queryFn: () => orcaSyncAPI.getStatus(null),
     enabled: !!user?.id && needsPresetData,
     staleTime: 15_000,
   });
+  const orcaSyncDeviceFingerprints = useMemo(
+    () => (latestOrcaSyncStatus?.devices ?? []).map((device) => device.device_fingerprint),
+    [latestOrcaSyncStatus?.devices],
+  );
+  const [selectedOrcaSyncDevice, setSelectedOrcaSyncDevice] = useStoredUiChoice(
+    'profile.orcaSyncDevice',
+    user?.id,
+    orcaSyncDeviceFingerprints,
+    latestOrcaSyncStatus?.device_fingerprint ?? '',
+  );
+  const shouldLoadSelectedOrcaDevice = Boolean(
+    selectedOrcaSyncDevice
+      && selectedOrcaSyncDevice !== latestOrcaSyncStatus?.device_fingerprint,
+  );
+  const selectedOrcaSyncStatusQuery = useQuery({
+    queryKey: ['orca-sync-status', user?.id, selectedOrcaSyncDevice],
+    queryFn: () => orcaSyncAPI.getStatus(selectedOrcaSyncDevice),
+    enabled: !!user?.id && needsPresetData && shouldLoadSelectedOrcaDevice,
+    staleTime: 15_000,
+  });
+  const orcaSyncStatus = shouldLoadSelectedOrcaDevice
+    ? selectedOrcaSyncStatusQuery.data
+    : latestOrcaSyncStatus;
+  const isOrcaSyncStatusError = isLatestOrcaSyncStatusError
+    || (shouldLoadSelectedOrcaDevice && selectedOrcaSyncStatusQuery.isError);
+  const orcaSyncDevices = latestOrcaSyncStatus?.devices ?? [];
 
 
   // Загружаем детали сохранённых пресетов
@@ -1211,15 +1243,15 @@ export const ProfilePage: React.FC = () => {
             <div className="flex flex-wrap items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs text-gray-300">
               <Settings className="h-4 w-4 flex-shrink-0 text-blue-300" />
               <span className="font-medium text-gray-200">{t('presetSync.actual.device')}</span>
-              {(orcaSyncStatus?.devices.length ?? 0) > 0 ? (
+              {orcaSyncDevices.length > 0 ? (
                 <>
                   <select
-                    value={orcaSyncStatus?.device_fingerprint ?? ''}
-                    onChange={(event) => setSelectedOrcaSyncDevice(event.target.value || null)}
+                    value={selectedOrcaSyncDevice}
+                    onChange={(event) => setSelectedOrcaSyncDevice(event.target.value)}
                     className="max-w-full rounded-lg border border-white/15 bg-slate-900 px-2 py-1 text-xs text-white outline-none focus:border-blue-400"
                     aria-label={t('presetSync.actual.device')}
                   >
-                    {orcaSyncStatus?.devices.map((device) => {
+                    {orcaSyncDevices.map((device) => {
                       const fingerprint = device.device_fingerprint;
                       const label = fingerprint.length > 18
                         ? `${fingerprint.slice(0, 8)}…${fingerprint.slice(-6)}`

@@ -40,6 +40,7 @@ import {
   Search,
 } from 'lucide-react';
 import { ViewModeToggle } from '../components/ViewModeToggle';
+import { useStoredUiChoice } from '../hooks/useStoredUiChoice';
 import { useStoredViewMode } from '../hooks/useStoredViewMode';
 import { useAuth } from '../contexts/AuthContext';
 import { authAPI, brandsAPI, filamentsAPI, brandRequestsAPI, presetsAPI, proofFilesAPI, qrAPI } from '../api/client';
@@ -192,6 +193,8 @@ interface BrandProfilePageProps {
 }
 
 const BRAND_MATERIALS_PAGE_SIZE = 24;
+const BRAND_TAB_IDS = ['materials', 'presets', 'qr', 'analytics', 'usage', 'team', 'settings'] as const;
+type BrandTab = typeof BRAND_TAB_IDS[number];
 
 const IMPORT_CSV_COLUMNS = [
   'name',
@@ -230,7 +233,13 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({
   const { user, refreshUser } = useAuth();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const [brandTab, setBrandTab] = useState<'materials' | 'presets' | 'qr' | 'analytics' | 'usage' | 'team' | 'settings'>('materials');
+  const companyPreferenceContext = `${user?.brand_id ?? 'none'}:${user?.active_organization_id ?? 'none'}`;
+  const [brandTab, setBrandTab] = useStoredUiChoice<BrandTab>(
+    `companyProfile.tab:${companyPreferenceContext}`,
+    user?.id,
+    BRAND_TAB_IDS,
+    'materials',
+  );
   const [materialsViewMode, setMaterialsViewMode] = useStoredViewMode(
     'companyProfile.materialsView',
     user?.id,
@@ -277,7 +286,6 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({
   const [importModalError, setImportModalError] = useState<string | null>(null);
   const [isBrandLogoVisible, setIsBrandLogoVisible] = useState(false);
   const [isBrandSwitcherOpen, setIsBrandSwitcherOpen] = useState(false);
-  const [workspaceCountry, setWorkspaceCountry] = useState<string | null>(null);
   const [isAddingBrand, setIsAddingBrand] = useState(Boolean(initialClaimBrandId));
   const brandSwitcherRef = useRef<HTMLDivElement>(null);
 
@@ -343,16 +351,13 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({
   const hasGlobalScope = (territoriesQuery.data?.territories ?? []).some(
     (item) => item.country === null,
   );
-  useEffect(() => {
-    if (hasGlobalScope) {
-      setWorkspaceCountry(null);
-      return;
-    }
-    setWorkspaceCountry((current) => (
-      current && managedCountries.includes(current) ? current : managedCountries[0] ?? null
-    ));
-  }, [hasGlobalScope, territoriesQuery.data, user?.active_organization_id]);
-  const scopeCountry = workspaceCountry;
+  const [workspaceCountry, setWorkspaceCountry] = useStoredUiChoice(
+    `companyProfile.workspaceCountry:${companyPreferenceContext}`,
+    user?.id,
+    managedCountries,
+    managedCountries[0] ?? '',
+  );
+  const scopeCountry = hasGlobalScope ? null : workspaceCountry || null;
 
   const [materialsSearch, setMaterialsSearch] = useState('');
   const debouncedMaterialsSearch = useDebounce(materialsSearch.trim(), 350);
