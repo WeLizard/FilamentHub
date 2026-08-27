@@ -801,6 +801,28 @@ async def test_get_current_user(client: AsyncClient):
 
 
 @pytest.mark.asyncio
+async def test_legacy_account_api_key_is_hidden_and_generator_is_gone(
+    auth_client: AsyncClient,
+    auth_user: User,
+    db_session: AsyncSession,
+):
+    """Release A keeps rollback data but removes every public account-key path."""
+    auth_user.api_key = "legacy-account-key-kept-for-rollback"
+    await db_session.commit()
+
+    me = await auth_client.get("/api/v1/auth/me")
+    assert me.status_code == 200
+    assert "api_key" not in me.json()
+
+    retired = await auth_client.post("/api/v1/auth/api-key")
+    assert retired.status_code == 410
+    assert retired.json()["detail"]["code"] == "ERR_ACCESS_DENIED"
+
+    await db_session.refresh(auth_user)
+    assert auth_user.api_key == "legacy-account-key-kept-for-rollback"
+
+
+@pytest.mark.asyncio
 async def test_profile_update_cannot_assign_arbitrary_brand(
     auth_client: AsyncClient,
     auth_user: User,

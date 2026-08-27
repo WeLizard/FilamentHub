@@ -496,11 +496,6 @@ export const authAPI = {
     return response.data;
   },
 
-  generateApiKey: async () => {
-    const response = await api.post<{ api_key: string }>('/auth/api-key');
-    return response.data;
-  },
-
   getDeletionStats: async (): Promise<AccountDeletionStats> => {
     const response = await api.get<AccountDeletionStats>('/auth/deletion-stats');
     return response.data;

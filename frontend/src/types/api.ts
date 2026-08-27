@@ -804,7 +804,6 @@ export interface User {
   allow_print_profiles_export?: boolean;
   auto_import_local_presets?: boolean | null;
   sync_printer_endpoints?: boolean | null;
-  api_key?: string | null;
   id: number;
   email: string;
   username: string;

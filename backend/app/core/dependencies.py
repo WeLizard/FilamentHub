@@ -3,7 +3,7 @@
 import logging
 from typing import Annotated
 
-from fastapi import Depends, Header, Request, status
+from fastapi import Depends, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,7 +16,6 @@ from app.core.errors import (
     ERR_CALCULATOR_ACCESS_REQUIRED,
     ERR_COULD_NOT_VALIDATE,
     ERR_EMAIL_NOT_VERIFIED,
-    ERR_INVALID_API_KEY,
     ERR_LEGAL_ACCEPTANCE_REQUIRED,
     ERR_NOT_ADMIN,
     ERR_NOT_BRAND_USER,
@@ -413,26 +412,5 @@ async def require_calculator_access(
     return current_user
 
 
-async def get_user_by_api_key(
-    api_key: str,
-    db: Annotated[AsyncSession, Depends(get_db)],
-) -> User | None:
-    """Get user by API key (for OrcaSlicer integration)."""
-    result = await db.execute(select(User).where(User.api_key == api_key))
-    user = result.scalar_one_or_none()
-    return user
-
-
-async def get_current_user_by_api_key(
-    api_key: Annotated[str, Header(alias="X-API-Key")],
-    db: Annotated[AsyncSession, Depends(get_db)],
-) -> User:
-    """Validate API key from header and return active user for OrcaSlicer integration."""
-    user = await get_user_by_api_key(api_key, db)
-    if user is None:
-        raise_error(status.HTTP_401_UNAUTHORIZED, ERR_INVALID_API_KEY)
-    if not user.active:
-        raise_error(status.HTTP_403_FORBIDDEN, ERR_USER_INACTIVE)
-    if requires_current_legal_acceptance(user):
-        raise_error(status.HTTP_403_FORBIDDEN, ERR_LEGAL_ACCEPTANCE_REQUIRED)
-    return user
+# Account-level API-key dependencies were retired; device credentials remain
+# scoped to their adapter endpoints.

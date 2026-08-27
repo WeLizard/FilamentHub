@@ -42,7 +42,6 @@ from app.core.security import (
     decode_email_verification_token,
     decode_password_reset_token,
     decode_refresh_token,
-    generate_api_key,
     generate_email_change_token,
     generate_email_verification_token,
     generate_password_reset_token,
@@ -63,7 +62,6 @@ from app.schemas.user import (
     AccountDeleteRequest,
     AccountDeletionStats,
     ActiveBrandUpdate,
-    APIKeyResponse,
     AuthMethodsResponse,
     ConfirmEmailChangeResponse,
     EmailChangeResponse,
@@ -1249,20 +1247,12 @@ async def update_active_brand(
     return UserResponse.model_validate(current_user)
 
 
-@router.post("/api-key", response_model=APIKeyResponse)
-async def generate_api_key_endpoint(
-    current_user: Annotated[User, Depends(get_current_active_user)],
-    db: Annotated[AsyncSession, Depends(get_db)],
-) -> APIKeyResponse:
-    """Сгенерировать API key для OrcaSlicer интеграции."""
-    # Generate new API key
-    new_api_key = generate_api_key()
-
-    # Update user
-    current_user.api_key = new_api_key
-    await db.commit()
-
-    return APIKeyResponse(api_key=new_api_key)
+@router.post("/api-key", status_code=status.HTTP_410_GONE)
+async def retired_api_key_endpoint(
+    _current_user: Annotated[User, Depends(get_current_active_user)],
+) -> None:
+    """Keep the retired account-key route stable during the rollback window."""
+    raise_error(status.HTTP_410_GONE, ERR_ACCESS_DENIED)
 
 
 @router.get("/deletion-stats", response_model=AccountDeletionStats)

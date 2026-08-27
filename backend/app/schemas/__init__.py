@@ -22,7 +22,6 @@ from app.schemas.preset import (
     PresetUpdate,
 )
 from app.schemas.user import (
-    APIKeyResponse,
     LoginRequest,
     RegisterRequest,
     Token,
@@ -56,6 +55,5 @@ __all__ = [
     "TokenData",
     "LoginRequest",
     "RegisterRequest",
-    "APIKeyResponse",
 ]
 

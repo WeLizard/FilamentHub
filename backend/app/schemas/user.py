@@ -131,7 +131,6 @@ class UserResponse(UserBase):
     email: str
     id: int
     role: UserRole
-    api_key: str | None = None
     active: bool
     email_verified: bool
     avatar_url: str | None = None  # Загруженный аватар пользователя
@@ -357,13 +356,6 @@ class OAuthCallbackRequest(BaseModel):
 
     code: str
     state: str
-
-
-class APIKeyResponse(BaseModel):
-    """Schema for API key response."""
-
-    api_key: str
-    message: str = "API key generated. Use it for OrcaSlicer integration."
 
 
 class AccountDeleteRequest(BaseModel):
