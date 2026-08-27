@@ -158,6 +158,11 @@ async def test_bambu_bridge_keeps_credentials_local_and_observations_separate(
     assert heartbeat.json()["accepted"] is True
     heartbeat_seen_at = datetime.fromisoformat(heartbeat.json()["last_seen_at"])
     assert heartbeat_seen_at >= heartbeat_started_at
+    bridge_status = await auth_client.get(
+        f"/api/v1/printer-bridge/connections/{printer_id}/{system_id}"
+    )
+    assert bridge_status.status_code == 200
+    assert bridge_status.json()["capabilities"] == ["presence", "read"]
     assert await db_session.scalar(select(PhysicalPrinterStatusObservation)) is None
     assert await db_session.scalar(select(MaterialSlotObservation)) is None
     observed_at = datetime.now(timezone.utc)

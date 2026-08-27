@@ -2,7 +2,7 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, Request, status
+from fastapi import APIRouter, Depends, Header, Query, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_active_user
@@ -14,14 +14,19 @@ from app.schemas.material_contract import (
     PrinterBridgeSnapshotResponse,
 )
 from app.schemas.printer_bridge import (
+    PrinterBridgeDesiredSnapshotResponse,
     PrinterBridgeHeartbeatRequest,
     PrinterBridgeHeartbeatResponse,
     PrinterBridgePairingCodeResponse,
     PrinterBridgePairRequest,
     PrinterBridgePairResponse,
     PrinterBridgeStatusResponse,
+    PrinterBridgeTransport,
 )
-from app.services.material_contract_service import ingest_printer_bridge_snapshot
+from app.services.material_contract_service import (
+    build_printer_bridge_desired_snapshot,
+    ingest_printer_bridge_snapshot,
+)
 from app.services.printer_bridge_service import (
     get_printer_bridge_status,
     issue_printer_bridge_pairing_code,
@@ -44,12 +49,14 @@ async def create_pairing_code(
     material_system_id: int,
     current_user: Annotated[User, Depends(get_current_active_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
+    transport: Annotated[PrinterBridgeTransport, Query()] = "orca_plugin_lan",
 ) -> PrinterBridgePairingCodeResponse:
     return await issue_printer_bridge_pairing_code(
         db,
         user_id=current_user.id,
         physical_printer_id=physical_printer_id,
         material_system_id=material_system_id,
+        transport=transport,
     )
 
 
@@ -62,12 +69,14 @@ async def connection_status(
     material_system_id: int,
     current_user: Annotated[User, Depends(get_current_active_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
+    transport: Annotated[PrinterBridgeTransport, Query()] = "orca_plugin_lan",
 ) -> PrinterBridgeStatusResponse:
     return await get_printer_bridge_status(
         db,
         user_id=current_user.id,
         physical_printer_id=physical_printer_id,
         material_system_id=material_system_id,
+        transport=transport,
     )
 
 
@@ -84,7 +93,7 @@ async def pair(
 @router.post("/snapshot", response_model=PrinterBridgeSnapshotResponse)
 @limiter.limit("600/minute", key_func=client_key)
 @limiter.limit("30/minute", key_func=adapter_token_key)
-async def snapshot(
+async def observed_snapshot(
     request: Request,
     payload: PrinterBridgeSnapshotRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -98,12 +107,41 @@ async def snapshot(
         context,
         material_system_id=payload.material_system_id,
         source_instance_id=payload.source_instance_id,
+        provider=payload.provider,
+        transport=payload.transport,
     )
     return await ingest_printer_bridge_snapshot(
         db,
         user_id=context.connector.user_id,
         physical_printer_id=context.connector.physical_printer_id,
         payload=payload,
+    )
+
+
+@router.get("/snapshot", response_model=None)
+@limiter.limit("600/minute", key_func=client_key)
+@limiter.limit("30/minute", key_func=adapter_token_key)
+async def desired_snapshot(
+    request: Request,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    bridge_token: Annotated[
+        str | None,
+        Header(alias="X-FilamentHub-Bridge-Token"),
+    ] = None,
+    if_none_match: Annotated[str | None, Header(alias="If-None-Match")] = None,
+) -> Response:
+    context = await require_printer_bridge_token(db, bridge_token)
+    result: PrinterBridgeDesiredSnapshotResponse = await build_printer_bridge_desired_snapshot(
+        db,
+        context.connector,
+    )
+    etag = f'"{result.revision}"'
+    if if_none_match == etag:
+        return Response(status_code=status.HTTP_304_NOT_MODIFIED, headers={"ETag": etag})
+    return Response(
+        content=result.model_dump_json(),
+        media_type="application/json",
+        headers={"ETag": etag},
     )
 
 

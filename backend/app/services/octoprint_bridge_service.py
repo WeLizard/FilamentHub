@@ -45,23 +45,23 @@ from app.schemas.octoprint_bridge import (
     OctoPrintBridgeHeartbeatRequest,
     OctoPrintBridgePairRequest,
     OctoPrintBridgePairResponse,
-    OctoPrintBridgePresetSnapshot,
     OctoPrintBridgeRoutingState,
     OctoPrintBridgeRoutingUpdateRequest,
-    OctoPrintBridgeSlotSnapshot,
     OctoPrintBridgeSnapshotResponse,
     OctoPrintBridgeSpoolAssignmentRequest,
     OctoPrintBridgeSpoolLocation,
     OctoPrintBridgeSpoolOption,
     OctoPrintBridgeSpoolOptionsResponse,
-    OctoPrintBridgeSpoolSnapshot,
     OctoPrintBridgeStatusResponse,
     OctoPrintBridgeUsageRequest,
     OctoPrintBridgeUsageResponse,
     OctoPrintPairingCodeResponse,
 )
 from app.services.material_assignment_service import update_material_slot_assignment
-from app.services.material_contract_service import require_physical_printer
+from app.services.material_contract_service import (
+    build_printer_bridge_desired_snapshot,
+    require_physical_printer,
+)
 from app.services.print_job_service import (
     confirmed_consumption_for_job,
     ensure_provider_job_event,
@@ -687,92 +687,8 @@ async def record_heartbeat(
 async def build_snapshot(
     db: AsyncSession, context: OctoPrintBridgeContext
 ) -> OctoPrintBridgeSnapshotResponse:
-    connector = context.connector
-    if connector.material_system_id is None:
-        raise_error(409, ERR_OCTOPRINT_BRIDGE_NOT_CONFIGURED)
-    system = await db.scalar(
-        select(MaterialSystem)
-        .where(MaterialSystem.id == connector.material_system_id)
-        .options(
-            selectinload(MaterialSystem.slots)
-            .selectinload(MaterialSlot.assignment)
-            .selectinload(MaterialSlotAssignment.spool)
-            .selectinload(UserSpool.filament)
-            .selectinload(Filament.brand),
-            selectinload(MaterialSystem.slots)
-            .selectinload(MaterialSlot.assignment)
-            .selectinload(MaterialSlotAssignment.preset),
-        )
-        .execution_options(populate_existing=True)
-    )
-    if system is None:
-        raise_error(404, ERR_MATERIAL_SYSTEM_NOT_FOUND)
-
-    slots: list[OctoPrintBridgeSlotSnapshot] = []
-    for slot in sorted(system.slots, key=lambda item: (item.provider_index, item.id)):
-        assignment = slot.assignment
-        spool_snapshot = None
-        preset_snapshot = None
-        if assignment is not None and assignment.spool is not None:
-            spool = assignment.spool
-            filament = spool.filament
-            spool_snapshot = OctoPrintBridgeSpoolSnapshot(
-                id=spool.id,
-                filament_id=spool.filament_id,
-                name=filament.name if filament is not None else f"Spool #{spool.id}",
-                brand=(
-                    filament.brand.name
-                    if filament is not None and filament.brand is not None
-                    else None
-                ),
-                material_type=filament.material_type if filament is not None else None,
-                color_hex=filament.color_hex if filament is not None else None,
-                remaining_weight_g=spool.remaining_weight_g,
-                initial_weight_g=spool.initial_weight_g,
-                density_g_cm3=(
-                    filament.density
-                    if filament is not None and filament.density and filament.density > 0
-                    else DEFAULT_DENSITY_G_CM3
-                ),
-                diameter_mm=(
-                    filament.diameter
-                    if filament is not None and filament.diameter and filament.diameter > 0
-                    else DEFAULT_DIAMETER_MM
-                ),
-            )
-        if assignment is not None and assignment.preset is not None:
-            preset_snapshot = OctoPrintBridgePresetSnapshot(
-                id=assignment.preset.id,
-                name=assignment.preset.name,
-            )
-        slots.append(
-            OctoPrintBridgeSlotSnapshot(
-                material_slot_id=slot.id,
-                index=slot.provider_index,
-                label=slot.label,
-                kind=slot.kind,
-                assignment_revision=slot.assignment_revision,
-                spool=spool_snapshot,
-                preset=preset_snapshot,
-            )
-        )
-
-    revision_payload = {
-        "physical_printer_id": connector.physical_printer_id,
-        "material_system_id": system.id,
-        "system_name": system.name,
-        "system_kind": system.kind,
-        "slots": [slot.model_dump(mode="json") for slot in slots],
-    }
-    revision = hashlib.sha256(
-        json.dumps(
-            revision_payload,
-            sort_keys=True,
-            separators=(",", ":"),
-            ensure_ascii=False,
-        ).encode("utf-8")
-    ).hexdigest()
-    return OctoPrintBridgeSnapshotResponse(revision=revision, **revision_payload)
+    snapshot = await build_printer_bridge_desired_snapshot(db, context.connector)
+    return OctoPrintBridgeSnapshotResponse.model_validate(snapshot.model_dump())
 
 
 async def list_bridge_spool_options(

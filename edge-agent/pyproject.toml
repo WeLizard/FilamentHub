@@ -1,0 +1,23 @@
+[project]
+name = "filamenthub-edge"
+version = "0.1.0"
+description = "Provider-neutral local Edge runtime for FilamentHub"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+filamenthub-edge = "filamenthub_edge.__main__:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "B", "C4"]

@@ -1,0 +1,22 @@
+configuration:
+  filamenthub_url:
+    name: FilamentHub 地址
+    description: 用于安全 Edge 同步的云端地址。
+  pairing_code:
+    name: 配对码
+    description: 在 FilamentHub 中为此打印机创建的一次性代码。
+  material_provider:
+    name: 供料系统
+    description: Happy Hare MMU 或 Klipper 直送料路径。
+  moonraker_url:
+    name: Moonraker 地址
+    description: 打印机 Moonraker 服务的本地 HTTP(S) 地址。
+  moonraker_api_key:
+    name: Moonraker API 密钥
+    description: 可选的本地密钥；它不会发送到 FilamentHub。
+  sync_interval:
+    name: 同步间隔
+    description: 成功同步周期之间的秒数。
+  allow_insecure_cloud:
+    name: 允许云端 HTTP
+    description: 仅用于开发；FilamentHub 生产环境中请保持关闭。

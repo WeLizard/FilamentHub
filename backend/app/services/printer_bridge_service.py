@@ -27,13 +27,23 @@ from app.schemas.printer_bridge import (
     PrinterBridgePairRequest,
     PrinterBridgePairResponse,
     PrinterBridgeStatusResponse,
+    PrinterBridgeTransport,
 )
 from app.services.material_contract_service import require_physical_printer
 
 PAIRING_TTL = timedelta(minutes=10)
 BAMBU_PROVIDER = "bambu"
-BAMBU_TRANSPORT = "orca_plugin_lan"
-BRIDGE_CAPABILITIES = {"read", "write", "presence"}
+BAMBU_TRANSPORT: PrinterBridgeTransport = "orca_plugin_lan"
+EDGE_TRANSPORT: PrinterBridgeTransport = "edge_agent"
+SUPPORTED_TRANSPORTS = {BAMBU_TRANSPORT, EDGE_TRANSPORT}
+BRIDGE_CAPABILITIES = {
+    "read",
+    "write",
+    "presence",
+    "spool_identity",
+    "consumption",
+    "local_command",
+}
 
 
 @dataclass(frozen=True)
@@ -72,12 +82,13 @@ def _safe_capabilities(values: list[str]) -> list[str]:
     return sorted(set(values).intersection(BRIDGE_CAPABILITIES))
 
 
-async def _require_bambu_system(
+async def _require_bridge_system(
     db: AsyncSession,
     *,
     user_id: int,
     physical_printer_id: int,
     material_system_id: int,
+    transport: PrinterBridgeTransport,
 ) -> MaterialSystem:
     await require_physical_printer(db, user_id, physical_printer_id)
     system = await db.scalar(
@@ -89,25 +100,27 @@ async def _require_bambu_system(
     )
     if system is None:
         raise_error(404, ERR_MATERIAL_SYSTEM_NOT_FOUND)
-    if system.provider != BAMBU_PROVIDER:
+    if transport == BAMBU_TRANSPORT and system.provider != BAMBU_PROVIDER:
         raise_error(409, ERR_PRINTER_BRIDGE_WRONG_PROVIDER)
     return system
 
 
-async def _find_bambu_connector(
+async def _find_bridge_connector(
     db: AsyncSession,
     *,
     user_id: int,
     physical_printer_id: int,
     material_system_id: int,
+    provider: str,
+    transport: PrinterBridgeTransport,
 ) -> PhysicalPrinterConnector | None:
     return await db.scalar(
         select(PhysicalPrinterConnector).where(
             PhysicalPrinterConnector.user_id == user_id,
             PhysicalPrinterConnector.physical_printer_id == physical_printer_id,
             PhysicalPrinterConnector.material_system_id == material_system_id,
-            PhysicalPrinterConnector.provider == BAMBU_PROVIDER,
-            PhysicalPrinterConnector.transport == BAMBU_TRANSPORT,
+            PhysicalPrinterConnector.provider == provider,
+            PhysicalPrinterConnector.transport == transport,
         )
     )
 
@@ -118,26 +131,30 @@ async def issue_printer_bridge_pairing_code(
     user_id: int,
     physical_printer_id: int,
     material_system_id: int,
+    transport: PrinterBridgeTransport = BAMBU_TRANSPORT,
 ) -> PrinterBridgePairingCodeResponse:
-    system = await _require_bambu_system(
+    system = await _require_bridge_system(
         db,
         user_id=user_id,
         physical_printer_id=physical_printer_id,
         material_system_id=material_system_id,
+        transport=transport,
     )
-    connector = await _find_bambu_connector(
+    connector = await _find_bridge_connector(
         db,
         user_id=user_id,
         physical_printer_id=physical_printer_id,
         material_system_id=material_system_id,
+        provider=system.provider,
+        transport=transport,
     )
     if connector is None:
         connector = PhysicalPrinterConnector(
             user_id=user_id,
             physical_printer_id=physical_printer_id,
             material_system_id=material_system_id,
-            provider=BAMBU_PROVIDER,
-            transport=BAMBU_TRANSPORT,
+            provider=system.provider,
+            transport=transport,
             capabilities=_safe_capabilities(system.capabilities),
             active=True,
         )
@@ -170,18 +187,22 @@ async def get_printer_bridge_status(
     user_id: int,
     physical_printer_id: int,
     material_system_id: int,
+    transport: PrinterBridgeTransport = BAMBU_TRANSPORT,
 ) -> PrinterBridgeStatusResponse:
-    await _require_bambu_system(
+    system = await _require_bridge_system(
         db,
         user_id=user_id,
         physical_printer_id=physical_printer_id,
         material_system_id=material_system_id,
+        transport=transport,
     )
-    connector = await _find_bambu_connector(
+    connector = await _find_bridge_connector(
         db,
         user_id=user_id,
         physical_printer_id=physical_printer_id,
         material_system_id=material_system_id,
+        provider=system.provider,
+        transport=transport,
     )
     if connector is None:
         return PrinterBridgeStatusResponse(
@@ -190,6 +211,9 @@ async def get_printer_bridge_status(
             pairing_expires_at=None,
             last_seen_at=None,
             source_instance_id=None,
+            provider=system.provider,
+            transport=transport,
+            capabilities=[],
         )
     credential = await db.scalar(
         select(PrinterBridgeCredential).where(
@@ -206,6 +230,9 @@ async def get_printer_bridge_status(
         pairing_expires_at=credential.pairing_expires_at if credential else None,
         last_seen_at=connector.last_seen_at,
         source_instance_id=connector.source_instance_id,
+        provider=connector.provider,
+        transport=transport,
+        capabilities=list(connector.capabilities),
     )
 
 
@@ -245,6 +272,9 @@ async def pair_printer_bridge(
     connector.source_instance_id = payload.source_instance_id
     connector.capabilities = _safe_capabilities(payload.capabilities)
     connector.active = True
+    system = await db.get(MaterialSystem, connector.material_system_id)
+    if system is not None:
+        system.capabilities = list(connector.capabilities)
     await db.commit()
     return PrinterBridgePairResponse(
         bridge_token=token,
@@ -270,8 +300,7 @@ async def require_printer_bridge_token(
     if (
         connector is None
         or not connector.active
-        or connector.provider != BAMBU_PROVIDER
-        or connector.transport != BAMBU_TRANSPORT
+        or connector.transport not in SUPPORTED_TRANSPORTS
         or connector.material_system_id is None
     ):
         raise_error(401, ERR_PRINTER_BRIDGE_UNAUTHORIZED)
@@ -295,10 +324,14 @@ def validate_snapshot_context(
     *,
     material_system_id: int,
     source_instance_id: str,
+    provider: str,
+    transport: PrinterBridgeTransport,
 ) -> None:
     connector = context.connector
     if (
         connector.material_system_id != material_system_id
+        or connector.provider != provider
+        or connector.transport != transport
         or connector.source_instance_id != source_instance_id
         or context.credential.source_instance_id != source_instance_id
     ):
@@ -322,6 +355,8 @@ async def record_printer_bridge_heartbeat(
         context,
         material_system_id=payload.material_system_id,
         source_instance_id=payload.source_instance_id,
+        provider=payload.provider,
+        transport=payload.transport,
     )
     received_at = _now()
     printer = await require_physical_printer(
@@ -334,6 +369,11 @@ async def record_printer_bridge_heartbeat(
     # client-supplied observed_at must not make a live adapter look stale.
     context.connector.last_seen_at = received_at
     context.connector.active = True
+    if payload.capabilities is not None:
+        context.connector.capabilities = _safe_capabilities(payload.capabilities)
+        system = await db.get(MaterialSystem, payload.material_system_id)
+        if system is not None:
+            system.capabilities = list(context.connector.capabilities)
     printer.last_seen_at = received_at
     printer.reports_feed = True
     await db.commit()

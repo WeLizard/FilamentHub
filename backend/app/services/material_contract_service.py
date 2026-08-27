@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from datetime import datetime, timezone
 
 from sqlalchemy import delete, or_, select, update
@@ -17,6 +19,7 @@ from app.core.errors import (
     ERR_PRINTER_PROFILE_NOT_FOUND,
     raise_error,
 )
+from app.models.filament import Filament
 from app.models.material_slot_assignment import MaterialSlotAssignment
 from app.models.material_system import (
     MaterialSlot,
@@ -33,6 +36,7 @@ from app.models.printer_bridge_observation import (
 )
 from app.models.printer_profile import PrinterProfile
 from app.models.user_printer_device import UserPrinterDevice
+from app.models.user_spool import UserSpool
 from app.schemas.material_contract import (
     MaterialSlotCreate,
     MaterialSystemCreate,
@@ -43,6 +47,12 @@ from app.schemas.material_contract import (
     PhysicalPrinterUpdate,
     PrinterBridgeSnapshotRequest,
     PrinterBridgeSnapshotResponse,
+)
+from app.schemas.printer_bridge import (
+    PrinterBridgeDesiredPresetSnapshot,
+    PrinterBridgeDesiredSlotSnapshot,
+    PrinterBridgeDesiredSnapshotResponse,
+    PrinterBridgeDesiredSpoolSnapshot,
 )
 from app.services.material_assignment_service import sync_legacy_material_assignment
 
@@ -64,6 +74,8 @@ HAPPY_HARE_CAPABILITIES = [
 # indices through 1023, so the last value is a stable local identity for the
 # optional direct bypass route and can never collide with a real HH gate.
 HAPPY_HARE_BYPASS_PROVIDER_INDEX = 1023
+DEFAULT_DENSITY_G_CM3 = 1.24
+DEFAULT_DIAMETER_MM = 1.75
 
 
 def _printer_load_options():
@@ -477,6 +489,108 @@ def _newer_observation(candidate: datetime, existing: datetime | None) -> bool:
     return existing is None or _utc_datetime(candidate) >= _utc_datetime(existing)
 
 
+def _printer_bridge_observation_source(provider: str, transport: str) -> str:
+    if provider == "bambu" and transport == "orca_plugin_lan":
+        return "bambu_lan_mqtt"
+    return f"{provider}_edge"[:50]
+
+
+async def build_printer_bridge_desired_snapshot(
+    db: AsyncSession,
+    connector: PhysicalPrinterConnector,
+) -> PrinterBridgeDesiredSnapshotResponse:
+    """Build the provider-neutral desired spool and preset state for one connector."""
+    if connector.material_system_id is None:
+        raise_error(404, ERR_MATERIAL_SYSTEM_NOT_FOUND)
+    system = await db.scalar(
+        select(MaterialSystem)
+        .where(
+            MaterialSystem.id == connector.material_system_id,
+            MaterialSystem.user_id == connector.user_id,
+            MaterialSystem.physical_printer_id == connector.physical_printer_id,
+        )
+        .options(
+            selectinload(MaterialSystem.slots)
+            .selectinload(MaterialSlot.assignment)
+            .selectinload(MaterialSlotAssignment.spool)
+            .selectinload(UserSpool.filament)
+            .selectinload(Filament.brand),
+            selectinload(MaterialSystem.slots)
+            .selectinload(MaterialSlot.assignment)
+            .selectinload(MaterialSlotAssignment.preset),
+        )
+        .execution_options(populate_existing=True)
+    )
+    if system is None:
+        raise_error(404, ERR_MATERIAL_SYSTEM_NOT_FOUND)
+
+    slots: list[PrinterBridgeDesiredSlotSnapshot] = []
+    for slot in sorted(system.slots, key=lambda item: (item.provider_index, item.id)):
+        assignment = slot.assignment
+        spool_snapshot = None
+        preset_snapshot = None
+        if assignment is not None and assignment.spool is not None:
+            spool = assignment.spool
+            filament = spool.filament
+            spool_snapshot = PrinterBridgeDesiredSpoolSnapshot(
+                id=spool.id,
+                filament_id=spool.filament_id,
+                name=filament.name if filament is not None else f"Spool #{spool.id}",
+                brand=(
+                    filament.brand.name
+                    if filament is not None and filament.brand is not None
+                    else None
+                ),
+                material_type=filament.material_type if filament is not None else None,
+                color_hex=filament.color_hex if filament is not None else None,
+                remaining_weight_g=spool.remaining_weight_g,
+                initial_weight_g=spool.initial_weight_g,
+                density_g_cm3=(
+                    filament.density
+                    if filament is not None and filament.density and filament.density > 0
+                    else DEFAULT_DENSITY_G_CM3
+                ),
+                diameter_mm=(
+                    filament.diameter
+                    if filament is not None and filament.diameter and filament.diameter > 0
+                    else DEFAULT_DIAMETER_MM
+                ),
+            )
+        if assignment is not None and assignment.preset is not None:
+            preset_snapshot = PrinterBridgeDesiredPresetSnapshot(
+                id=assignment.preset.id,
+                name=assignment.preset.name,
+            )
+        slots.append(
+            PrinterBridgeDesiredSlotSnapshot(
+                material_slot_id=slot.id,
+                index=slot.provider_index,
+                label=slot.label,
+                kind=slot.kind,
+                assignment_revision=slot.assignment_revision,
+                spool=spool_snapshot,
+                preset=preset_snapshot,
+            )
+        )
+
+    revision_payload = {
+        "physical_printer_id": connector.physical_printer_id,
+        "material_system_id": system.id,
+        "system_name": system.name,
+        "system_kind": system.kind,
+        "slots": [slot.model_dump(mode="json") for slot in slots],
+    }
+    revision = hashlib.sha256(
+        json.dumps(
+            revision_payload,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        ).encode("utf-8")
+    ).hexdigest()
+    return PrinterBridgeDesiredSnapshotResponse(revision=revision, **revision_payload)
+
+
 async def ingest_printer_bridge_snapshot(
     db: AsyncSession,
     user_id: int,
@@ -501,7 +615,10 @@ async def ingest_printer_bridge_snapshot(
 
     received_at = datetime.now(timezone.utc)
     observed_at = min(_utc_datetime(payload.observed_at), received_at)
-    capabilities = ["read", "presence"]
+    observation_source = _printer_bridge_observation_source(
+        payload.provider,
+        payload.transport,
+    )
 
     connector = await db.scalar(
         select(PhysicalPrinterConnector).where(
@@ -533,10 +650,9 @@ async def ingest_printer_bridge_snapshot(
 
     connector.material_system_id = system.id
     connector.source_instance_id = payload.source_instance_id
-    connector.capabilities = capabilities
     connector.active = True
     system.provider = payload.provider
-    system.capabilities = capabilities
+    system.capabilities = list(connector.capabilities)
     system.active = True
 
     accepted = False
@@ -558,14 +674,14 @@ async def ingest_printer_bridge_snapshot(
             status_observation = PhysicalPrinterStatusObservation(
                 user_id=user_id,
                 connector_id=connector.id,
-                source="bambu_lan_mqtt",
+                source=observation_source,
                 observed_at=observed_at,
                 state=payload.printer.state,
             )
             db.add(status_observation)
         for field_name, value in payload.printer.model_dump().items():
             setattr(status_observation, field_name, value)
-        status_observation.source = "bambu_lan_mqtt"
+        status_observation.source = observation_source
         status_observation.observed_at = observed_at
         status_observation.received_at = received_at
         accepted = True
@@ -622,7 +738,7 @@ async def ingest_printer_bridge_snapshot(
                 user_id=user_id,
                 connector_id=connector.id,
                 material_slot_id=slot.id,
-                source="bambu_lan_mqtt",
+                source=observation_source,
                 observed_at=observed_at,
             )
             db.add(observation)
@@ -630,7 +746,7 @@ async def ingest_printer_bridge_snapshot(
         values["color_hex"] = values["color_hex"].upper() if values["color_hex"] else None
         for field_name, value in values.items():
             setattr(observation, field_name, value)
-        observation.source = "bambu_lan_mqtt"
+        observation.source = observation_source
         observation.observed_at = observed_at
         observation.received_at = received_at
         accepted = True

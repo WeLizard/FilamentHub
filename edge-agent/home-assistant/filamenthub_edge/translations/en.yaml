@@ -1,0 +1,22 @@
+configuration:
+  filamenthub_url:
+    name: FilamentHub address
+    description: Cloud address used for secure Edge synchronization.
+  pairing_code:
+    name: Pairing code
+    description: One-time code created for this printer in FilamentHub.
+  material_provider:
+    name: Material system
+    description: Happy Hare MMU or a direct Klipper feed.
+  moonraker_url:
+    name: Moonraker address
+    description: Local HTTP(S) origin of the printer's Moonraker service.
+  moonraker_api_key:
+    name: Moonraker API key
+    description: Optional local API key; it is never sent to FilamentHub.
+  sync_interval:
+    name: Sync interval
+    description: Seconds between successful synchronization cycles.
+  allow_insecure_cloud:
+    name: Allow HTTP cloud
+    description: Development only. Keep disabled for FilamentHub production.

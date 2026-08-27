@@ -377,8 +377,8 @@ class PrinterBridgeSlotSnapshot(BaseModel):
 
 class PrinterBridgeSnapshotRequest(BaseModel):
     material_system_id: int = Field(ge=1)
-    provider: Literal["bambu"]
-    transport: Literal["orca_plugin_lan"]
+    provider: str = Field(min_length=1, max_length=50)
+    transport: Literal["orca_plugin_lan", "edge_agent"]
     source_instance_id: str = Field(min_length=16, max_length=100)
     observed_at: datetime
     printer: PrinterBridgeStatusSnapshot | None = None

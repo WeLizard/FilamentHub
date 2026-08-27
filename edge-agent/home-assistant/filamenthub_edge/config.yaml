@@ -1,0 +1,30 @@
+name: FilamentHub Edge
+version: 0.1.0
+slug: filamenthub_edge
+description: Secure local printer and spool synchronization with FilamentHub
+url: https://filamenthub.ru
+arch:
+  - amd64
+  - aarch64
+startup: application
+boot: auto
+stage: experimental
+init: false
+host_network: true
+image: ghcr.io/welizard/filamenthub-edge
+options:
+  filamenthub_url: https://filamenthub.ru
+  pairing_code: ""
+  material_provider: happy_hare
+  moonraker_url: http://127.0.0.1:7125
+  moonraker_api_key: ""
+  sync_interval: 30
+  allow_insecure_cloud: false
+schema:
+  filamenthub_url: url
+  pairing_code: password
+  material_provider: list(happy_hare|legacy)
+  moonraker_url: url
+  moonraker_api_key: password
+  sync_interval: int(15,3600)
+  allow_insecure_cloud: bool
