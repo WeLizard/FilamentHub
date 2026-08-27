@@ -40,7 +40,7 @@ import {
   Search,
 } from 'lucide-react';
 import { ViewModeToggle } from '../components/ViewModeToggle';
-import type { ViewMode } from '../components/ViewModeToggle';
+import { useStoredViewMode } from '../hooks/useStoredViewMode';
 import { useAuth } from '../contexts/AuthContext';
 import { authAPI, brandsAPI, filamentsAPI, brandRequestsAPI, presetsAPI, proofFilesAPI, qrAPI } from '../api/client';
 import { translateApiError } from '../utils/translateApiError';
@@ -231,8 +231,14 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [brandTab, setBrandTab] = useState<'materials' | 'presets' | 'qr' | 'analytics' | 'usage' | 'team' | 'settings'>('materials');
-  const [materialsViewMode, setMaterialsViewMode] = useState<ViewMode>('grid');
-  const [presetsViewMode, setPresetsViewMode] = useState<ViewMode>('grid');
+  const [materialsViewMode, setMaterialsViewMode] = useStoredViewMode(
+    'companyProfile.materialsView',
+    user?.id,
+  );
+  const [presetsViewMode, setPresetsViewMode] = useStoredViewMode(
+    'companyProfile.presetsView',
+    user?.id,
+  );
   const [isCreateFilamentModalOpen, setIsCreateFilamentModalOpen] = useState(false);
   const [isCreatePresetModalOpen, setIsCreatePresetModalOpen] = useState(false);
   const [editingFilament, setEditingFilament] = useState<Filament | null>(null);

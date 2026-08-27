@@ -93,6 +93,7 @@ import { GuidedEmptyState } from '../components/GuidedEmptyState';
 import { PresetSlotsPanel } from '../components/presetSlots/PresetSlotsPanel';
 import { ViewModeToggle } from '../components/ViewModeToggle';
 import type { ViewMode } from '../components/ViewModeToggle';
+import { useStoredViewMode } from '../hooks/useStoredViewMode';
 import { SpoolUsageModal } from '../components/SpoolUsageModal';
 import type {
   AchievementCode,
@@ -254,12 +255,14 @@ export const ProfilePage: React.FC = () => {
   const [editingPrinterProfile, setEditingPrinterProfile] = useState<PrinterProfile | null>(null);
   const [editingPrintProfile, setEditingPrintProfile] = useState<PrintProfile | null>(null);
   const [createPrintProfileContext, setCreatePrintProfileContext] = useState<PrinterProfile | null>(null);
-  const [_viewMode, _setViewMode] = useState<'grid' | 'list'>('grid');
   const [presetFilter, setPresetFilter] = useState<PresetFilter>(
     () => readUiChoice(uiScopeForUser(user?.id), 'presetFilter', PRESET_FILTERS, 'all'),
   );
   const [isScanning, setIsScanning] = useState(false);
-  const [presetsViewMode, setPresetsViewMode] = useState<ViewMode>('grid');
+  const [presetsViewMode, setPresetsViewMode] = useStoredViewMode(
+    'profile.presetsView',
+    user?.id,
+  );
   const [selectedOrcaSyncDevice, setSelectedOrcaSyncDevice] = useState<string | null>(null);
   const needsPresetData = !showBrandCabinet && (userTab === 'dashboard' || userTab === 'presets');
   const needsPrinterProfileData = !showBrandCabinet && (
@@ -3390,7 +3393,10 @@ const SpoolsTab: React.FC<SpoolsTabProps> = ({
   const [busySpoolId, setBusySpoolId] = useState<number | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
-  const [spoolsViewMode, setSpoolsViewMode] = useState<ViewMode>('grid');
+  const [spoolsViewMode, setSpoolsViewMode] = useStoredViewMode(
+    'profile.spoolsView',
+    user?.id,
+  );
   const [deletingSpoolId, setDeletingSpoolId] = useState<number | null>(null);
 
   // the machines themselves live on the Printers tab.
