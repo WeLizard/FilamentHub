@@ -14,11 +14,11 @@
 
 A platform that connects three sides of the 3D-printing workflow that normally live in separate silos:
 
-- **Filament brands** — publish official, verified presets for their materials, with QR codes on packaging that auto-import into a user's profile.
+- **Filament brands** — publish official, verified presets for their materials and place QR codes on packaging so users can identify the exact catalog entry.
 - **Users** — keep printer / filament / process presets in one place, sync with OrcaSlicer, track physical spools, see ratings and reviews from other users on the same material.
-- **Klipper / Happy Hare / MMU setups** — spools registered on FilamentHub flow into Happy Hare via Moonraker, then back into OrcaSlicer through the existing `MoonrakerPrinterAgent` path.
+- **Klipper / Happy Hare / MMU setups** — connect printer feed systems through the Spoolman-compatible API and keep explicit spool assignments available to the printing workflow.
 
-End-to-end: scan a QR code on a spool → official preset lands in your profile → spool registers in Happy Hare with weight/color/type → OrcaSlicer syncs HH state. No manual entry.
+Scanning a FilamentHub QR code identifies the catalog entity. Opening the material, adding a physical spool, assigning it to a feed slot, and syncing a preset remain explicit user actions.
 
 ---
 
@@ -27,10 +27,10 @@ End-to-end: scan a QR code on a spool → official preset lands in your profile 
 ### Filament & preset catalog
 - Brand → filament line → preset hierarchy with explicit `BundleSource` and moderation pipeline
 - **Star rating (1–5)** per preset with success/fail flag and per-printer-model context
-- **Weighted rating algorithm** (`rating × usage × success_rate`) for ranking community presets
-- **Auto-generated "average" preset** that regenerates when ≥10 community presets accumulate for a material (uses weighted average — law of large numbers + Fermi estimation)
-- **UI-based preset editor** — ~150 OrcaSlicer fields with labels and validation, no raw JSON editing required
-- 350+ system printers + per-vendor profiles, imported from the OrcaSlicer system bundle with content-hash dedup
+- **Robust weighted-median recommendations** from trusted contributions, with confidence based on sample size
+- **Auto-generated aggregate preset** that recalculates when enough trusted contributions exist for a material
+- **UI-based preset editor** for supported OrcaSlicer fields with labels and validation, without requiring raw JSON editing
+- System printers and per-vendor profiles imported from the OrcaSlicer system bundle with content-hash deduplication
 
 ### Spool inventory
 - Per-user physical spool tracking with state, weight remaining, usage history
@@ -38,7 +38,7 @@ End-to-end: scan a QR code on a spool → official preset lands in your profile 
 
 ### Brand workflow
 - Brand reps self-register, verify, and publish official presets for their products
-- QR-code generation on packaging (format: `FH-XXX` or `FH-XXX-XXX`, base36) with auto-link to preset
+- QR-code generation for catalog materials; scanning identifies the entity and presents explicit next actions
 
 ### OrcaSlicer integration
 - Official Python plugin distributed through Orca Cloud Plugin Hub
@@ -64,11 +64,10 @@ End-to-end: scan a QR code on a spool → official preset lands in your profile 
 Repository layout:
 
 ```
-backend/    FastAPI app — 29 endpoints, 33 models, 61 Alembic migrations
-frontend/   React app — 17 pages, 68 components
-orca-plugin/ FilamentHub plugin for OrcaSlicer
-docs/       Internal docs and roadmap
-scripts/    Deploy and local utilities
+backend/      FastAPI application and Alembic migrations
+frontend/     React application and production nginx configuration
+orca-plugin/  FilamentHub plugin for OrcaSlicer
+scripts/      Development, verification, and owner-run deployment utilities
 ```
 
 ---
@@ -78,18 +77,19 @@ scripts/    Deploy and local utilities
 Requires Docker Desktop.
 
 ```bash
-git clone --recursive https://github.com/WeLizard/FilamentHub.git
+git clone https://github.com/WeLizard/FilamentHub.git
 cd FilamentHub
-cp .env.template .env
-docker compose -f docker-compose.dev.yml up -d
+docker compose -f docker-compose.dev.yml up --build -d
 ```
 
 Then:
-- Frontend: http://localhost:3000
-- Backend API: http://localhost:8001
-- Swagger UI: http://localhost:8001/api/v1/docs
+- Frontend: http://127.0.0.1:3000
+- Backend API: http://127.0.0.1:8001
+- Swagger UI: http://127.0.0.1:8001/api/v1/docs
 
-Production updates are automated by [`scripts/deploy.sh`](scripts/deploy.sh); internal deployment notes are kept outside the Git repository.
+On Windows, `./scripts/start.ps1 -Command up` is a convenience wrapper around the same development Compose file.
+
+Production deployment is owner-run through [`scripts/deploy.sh`](scripts/deploy.sh); internal deployment notes are kept outside the public repository.
 
 ---
 
