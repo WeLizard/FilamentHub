@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter } from 'react-router-dom';
 import { i18nReady } from './i18n';
 import App from './App';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import './index.css';
 import { clearLegacyLocalAuthStateIfNeeded } from './utils/auth';
 import { stripOrcaHostTheme } from './utils/pluginBridge';
@@ -23,14 +24,17 @@ const queryClient = new QueryClient({
 });
 
 const localeBasename = getLocaleBasename(window.location.pathname);
+const homeHref = localeBasename ? `${localeBasename}/` : '/';
 
 void i18nReady.then(() => {
   ReactDOM.createRoot(document.getElementById('root')!).render(
     <React.StrictMode>
       <QueryClientProvider client={queryClient}>
-        <BrowserRouter basename={localeBasename}>
-          <App />
-        </BrowserRouter>
+        <ErrorBoundary homeHref={homeHref}>
+          <BrowserRouter basename={localeBasename}>
+            <App />
+          </BrowserRouter>
+        </ErrorBoundary>
       </QueryClientProvider>
     </React.StrictMode>,
   );
