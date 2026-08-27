@@ -21,9 +21,14 @@ import {
   type QrScanResponse,
   type UserSpool,
 } from '../api/client';
+import { useConfigurationPresetRecommendation } from '../hooks/useConfigurationPresetRecommendation';
 import { getSpoolCurrentLocation } from '../utils/spoolLocation';
 import { translateApiError } from '../utils/translateApiError';
 import { ModalOverlay } from './ModalOverlay';
+import {
+  PresetRecommendationEvidence,
+  PrinterConfigurationSelect,
+} from './ConfigurationPresetRecommendation';
 
 interface QrScanResultModalProps {
   result: QrScanResponse;
@@ -52,6 +57,20 @@ export function QrScanResultModal({
   const queryClient = useQueryClient();
   const filament = result.filament;
   const isAuthenticated = userId !== null;
+  const configurationRecommendation = useConfigurationPresetRecommendation(
+    userId,
+    filament.id,
+  );
+  const hasConfiguration = configurationRecommendation.selectedKey !== '';
+  const recommendationResolved = hasConfiguration
+    && !configurationRecommendation.isLoadingRecommendation
+    && !configurationRecommendation.isRecommendationError;
+  const recommendedItem = hasConfiguration
+    ? configurationRecommendation.recommendation
+    : null;
+  const selectedPreset = recommendationResolved
+    ? recommendedItem?.preset ?? null
+    : result.preset;
   const [presetSaved, setPresetSaved] = useState(result.preset_saved === true);
   const [presetSyncEnabled, setPresetSyncEnabled] = useState(
     result.preset_sync_enabled,
@@ -59,13 +78,19 @@ export function QrScanResultModal({
   const [saveError, setSaveError] = useState<string | null>(null);
 
   useEffect(() => {
-    setPresetSaved(result.preset_saved === true);
-    setPresetSyncEnabled(result.preset_sync_enabled);
+    setPresetSaved(
+      recommendedItem?.saved
+        ?? (selectedPreset?.id === result.preset?.id && result.preset_saved === true),
+    );
+    setPresetSyncEnabled(
+      recommendedItem?.sync_enabled
+        ?? (selectedPreset?.id === result.preset?.id ? result.preset_sync_enabled : null),
+    );
     setSaveError(null);
-  }, [result]);
+  }, [recommendedItem, result, selectedPreset?.id]);
 
   const saveMutation = useMutation({
-    mutationFn: () => savedPresetsAPI.save(result.preset!.id, false),
+    mutationFn: () => savedPresetsAPI.save(selectedPreset!.id, false),
     onSuccess: (savedPreset) => {
       setPresetSaved(true);
       setPresetSyncEnabled(savedPreset.sync);
@@ -151,8 +176,9 @@ export function QrScanResultModal({
   const filamentTitle = [filament.brand_name, filament.name]
     .filter(Boolean)
     .join(' · ');
-  const selectedPresetType = result.preset_type
-    ?? (result.preset?.is_official ? 'official' : 'community');
+  const selectedPresetType = recommendedItem
+    ? (selectedPreset?.is_official ? 'official' : 'community')
+    : result.preset_type ?? (selectedPreset?.is_official ? 'official' : 'community');
 
   return (
     <ModalOverlay
@@ -301,7 +327,24 @@ export function QrScanResultModal({
               <p className="text-sm font-medium text-white">
                 {t('qrScanResult.presetTitle')}
               </p>
-              {!result.preset ? (
+              {isAuthenticated && (
+                <div className="mt-2">
+                  <PrinterConfigurationSelect
+                    options={configurationRecommendation.options}
+                    selectedKey={configurationRecommendation.selectedKey}
+                    onChange={configurationRecommendation.select}
+                    isLoading={configurationRecommendation.isLoadingOptions}
+                    isError={configurationRecommendation.isOptionsError}
+                    compact
+                  />
+                </div>
+              )}
+              {hasConfiguration && configurationRecommendation.isLoadingRecommendation ? (
+                <p className="mt-2 flex items-center gap-2 text-sm text-slate-400">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  {t('filamentDetailPage.loadingPresets')}
+                </p>
+              ) : !selectedPreset ? (
                 <p className="mt-1 text-sm text-slate-400">
                   {t('qrScanResult.noPreset')}
                 </p>
@@ -309,7 +352,7 @@ export function QrScanResultModal({
                 <>
                   <div className="mt-1 flex min-w-0 flex-wrap items-center gap-2">
                     <p className="min-w-0 truncate text-sm text-slate-200">
-                      {result.preset.name}
+                      {selectedPreset.name}
                     </p>
                     <span className="shrink-0 rounded-full border border-purple-400/20 bg-purple-400/10 px-2 py-0.5 text-[11px] text-purple-200">
                       {selectedPresetType === 'official'
@@ -317,6 +360,12 @@ export function QrScanResultModal({
                         : t('qrScanResult.presetSourceCommunity')}
                     </span>
                   </div>
+                  {recommendedItem && configurationRecommendation.printerName && (
+                    <PresetRecommendationEvidence
+                      recommendation={recommendedItem}
+                      printerName={configurationRecommendation.printerName}
+                    />
+                  )}
                   {presetSaved ? (
                     <div className="mt-2 flex items-start gap-2 text-sm text-emerald-300">
                       <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />

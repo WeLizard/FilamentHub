@@ -751,10 +751,29 @@ export type PresetMatchReason =
   | 'same_manufacturer'
   | 'compatible_specs';
 
+export type PresetRecommendationCompatibilityStatus =
+  | 'compatible'
+  | 'incompatible'
+  | 'unknown';
+
+export interface PresetRecommendationCompatibilityCheck {
+  kind: 'hotend_temperature' | 'nozzle_hrc';
+  status: PresetRecommendationCompatibilityStatus;
+  required_value: number;
+  available_value: number | null;
+  unit: '°C' | 'HRC';
+}
+
 export interface RecommendedPresetItem {
   preset: Preset;
   match_score: number; // базовый уровень совпадения + бонусы (0..1.2)
   match_reason: PresetMatchReason;
+  compatibility_status: PresetRecommendationCompatibilityStatus;
+  compatibility_coverage: number;
+  compatibility_checks: PresetRecommendationCompatibilityCheck[];
+  hard_conflicts: Array<'hotend_temperature' | 'nozzle_hrc'>;
+  saved: boolean;
+  sync_enabled: boolean | null;
 }
 
 export interface RecommendedForPrinterResponse {

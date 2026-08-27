@@ -54,6 +54,10 @@ async def save_preset(
     current_user: Annotated[User, Depends(get_current_active_user)],
 ) -> UserSavedPresetResponse:
     """Сохранить пресет в профиль пользователя."""
+    # Keep scalar identity across a possible IntegrityError rollback. SQLAlchemy
+    # expires ORM instances on rollback, and a concurrent duplicate save must
+    # still be able to query the row committed by the winning request.
+    user_id = current_user.id
     # Проверяем, существует ли пресет
     preset_result = await db.execute(select(Preset).where(Preset.id == data.preset_id))
     preset = preset_result.scalar_one_or_none()
@@ -67,7 +71,7 @@ async def save_preset(
     # Проверяем, не сохранён ли уже этот пресет
     existing_result = await db.execute(
         select(UserSavedPreset).where(
-            UserSavedPreset.user_id == current_user.id,
+            UserSavedPreset.user_id == user_id,
             UserSavedPreset.preset_id == data.preset_id,
         )
     )
@@ -79,13 +83,13 @@ async def save_preset(
 
     # Создаём новую запись
     saved_preset = UserSavedPreset(
-        user_id=current_user.id,
+        user_id=user_id,
         preset_id=data.preset_id,
         sync=data.sync,
     )
     db.add(saved_preset)
     preset.usage_count += 1
-    if preset.user_id is not None and preset.user_id != current_user.id:
+    if preset.user_id is not None and preset.user_id != user_id:
         from app.services.preset_funnel_metrics import record_preset_funnel_event
 
         record_preset_funnel_event(db, "installed_or_used")
@@ -97,7 +101,7 @@ async def save_preset(
         await db.rollback()
         existing_result = await db.execute(
             select(UserSavedPreset).where(
-                UserSavedPreset.user_id == current_user.id,
+                UserSavedPreset.user_id == user_id,
                 UserSavedPreset.preset_id == data.preset_id,
             )
         )

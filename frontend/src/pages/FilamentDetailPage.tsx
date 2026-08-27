@@ -60,6 +60,11 @@ import {
   filamentVariantLabel,
 } from '../utils/catalogUrls';
 import { absoluteLocalizedUrl, normalizeSiteLocale } from '../utils/siteLocale';
+import { useConfigurationPresetRecommendation } from '../hooks/useConfigurationPresetRecommendation';
+import {
+  PresetRecommendationEvidence,
+  PrinterConfigurationSelect,
+} from '../components/ConfigurationPresetRecommendation';
 
 // A grid of tiles rather than a column of rows, so a page's worth arrives at
 // once and the next arrives before the person reaches the end of this one.
@@ -325,6 +330,10 @@ export const FilamentDetailPage: React.FC = () => {
   });
 
   const savedPresetIds = new Set(savedPresets?.items.map(sp => sp.preset_id) || []);
+  const configurationRecommendation = useConfigurationPresetRecommendation(
+    user?.id ?? null,
+    filament?.id ?? null,
+  );
 
   // Мутация для сохранения пресета
   const savePresetMutation = useMutation({
@@ -332,7 +341,7 @@ export const FilamentDetailPage: React.FC = () => {
       if (!user) {
         throw new Error(t('filamentDetailPage.loginRequired'));
       }
-      return savedPresetsAPI.save(presetId);
+      return savedPresetsAPI.save(presetId, false);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['saved-presets'] });
@@ -441,15 +450,25 @@ export const FilamentDetailPage: React.FC = () => {
   // Плотность отвечает на вопрос «хватит ли на модель» только переведённая в метры.
   const spoolMeters = spoolLengthMeters(filament.spool_weight, filament.density, filament.diameter);
 
-  const primaryPreset =
-    loadedPresets.find((p) => p.id === activeSummary?.id) ??
-    loadedPresets.find((p) => p.is_official) ??
-    loadedPresets.find((p) => p.is_weighted) ??
-    (loadedPresets.length > 0
-      ? [...loadedPresets].sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0))[0]
-      : undefined);
+  const hasConfigurationRecommendation = configurationRecommendation.selectedKey !== '';
+  const configurationRecommendationResolved = hasConfigurationRecommendation
+    && !configurationRecommendation.isLoadingRecommendation
+    && !configurationRecommendation.isRecommendationError;
+  const recommendedPreset = configurationRecommendation.recommendation?.preset;
+  const primaryPreset = configurationRecommendationResolved
+    ? recommendedPreset
+      ? loadedPresets.find((preset) => preset.id === recommendedPreset.id) ?? recommendedPreset
+      : undefined
+    : loadedPresets.find((p) => p.id === activeSummary?.id) ??
+      loadedPresets.find((p) => p.is_official) ??
+      loadedPresets.find((p) => p.is_weighted) ??
+      (loadedPresets.length > 0
+        ? [...loadedPresets].sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0))[0]
+        : undefined);
   const primaryKind: 'official' | 'weighted' | 'top' =
-    (activeSummary?.preset_type as 'official' | 'weighted' | undefined) ??
+    (configurationRecommendationResolved
+      ? undefined
+      : activeSummary?.preset_type as 'official' | 'weighted' | undefined) ??
     (primaryPreset?.is_official ? 'official' : primaryPreset?.is_weighted ? 'weighted' : 'top');
   // В список ниже попадает всё, кроме главного пресета.
   const communityPresets = loadedPresets.filter((p) => p.id !== primaryPreset?.id);
@@ -862,6 +881,30 @@ export const FilamentDetailPage: React.FC = () => {
 
         <FilamentHandlingDetails filament={filament} className="mb-4 md:mb-6" />
 
+        {user && (
+          <div className="mb-4 rounded-xl border border-white/10 bg-white/[0.04] p-3.5">
+            <PrinterConfigurationSelect
+              options={configurationRecommendation.options}
+              selectedKey={configurationRecommendation.selectedKey}
+              onChange={configurationRecommendation.select}
+              isLoading={configurationRecommendation.isLoadingOptions}
+              isError={configurationRecommendation.isOptionsError}
+            />
+            {configurationRecommendation.isLoadingRecommendation && (
+              <p className="mt-2 text-xs text-slate-400">
+                {t('filamentDetailPage.loadingPresets')}
+              </p>
+            )}
+            {configurationRecommendation.recommendation
+              && configurationRecommendation.printerName && (
+              <PresetRecommendationEvidence
+                recommendation={configurationRecommendation.recommendation}
+                printerName={configurationRecommendation.printerName}
+              />
+            )}
+          </div>
+        )}
+
         {isQrEntry && (
           <div className="mb-4 flex flex-col gap-3 rounded-xl border border-emerald-400/25 bg-emerald-500/10 p-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-start gap-3">
@@ -1074,7 +1117,7 @@ export const FilamentDetailPage: React.FC = () => {
 
                   {/* Листается так же, как на карточке в каталоге:
                       официальный, генеративный, лучший от сообщества. */}
-                  {carousel.length > 1 && (
+                  {!configurationRecommendationResolved && carousel.length > 1 && (
                       <div className="flex items-center gap-1 sm:gap-2 shrink-0">
                         <button
                           type="button"

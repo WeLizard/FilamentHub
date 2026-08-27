@@ -51,6 +51,7 @@ from app.models.printer import Printer
 from app.models.printer_profile import PrinterProfile
 from app.models.user import User, UserRole
 from app.models.user_printer_device import UserPrinterDevice
+from app.models.user_saved_preset import UserSavedPreset
 from app.schemas.preset import (
     OfficialPresetCreate,
     PresetActivateRequest,
@@ -319,9 +320,13 @@ async def list_presets(
     )
 
 
-def _build_recommended_items(scored: list[Any]) -> list[RecommendedPresetItem]:
+def _build_recommended_items(
+    scored: list[Any],
+    saved_by_preset_id: dict[int, UserSavedPreset] | None = None,
+) -> list[RecommendedPresetItem]:
     """Serialize scored presets into API items (shared by the recommendation routes)."""
     items: list[RecommendedPresetItem] = []
+    saved_by_preset_id = saved_by_preset_id or {}
     for entry in scored:
         preset_dict = PresetResponse.model_validate_public(entry.preset).model_dump()
         preset_dict["printers"] = [
@@ -329,11 +334,27 @@ def _build_recommended_items(scored: list[Any]) -> list[RecommendedPresetItem]:
             for link in entry.preset.printer_links
             if link.printer is not None
         ]
+        saved = saved_by_preset_id.get(entry.preset.id)
         items.append(
             RecommendedPresetItem(
                 preset=PresetResponse(**preset_dict),
                 match_score=round(entry.match_score, 3),
                 match_reason=entry.match_reason,
+                compatibility_status=entry.compatibility_status,
+                compatibility_coverage=round(entry.compatibility_coverage, 3),
+                compatibility_checks=[
+                    {
+                        "kind": check.kind,
+                        "status": check.status,
+                        "required_value": check.required_value,
+                        "available_value": check.available_value,
+                        "unit": check.unit,
+                    }
+                    for check in entry.compatibility_checks
+                ],
+                hard_conflicts=entry.hard_conflicts,
+                saved=saved is not None,
+                sync_enabled=saved.sync if saved is not None else None,
             )
         )
     return items
@@ -458,12 +479,29 @@ async def recommended_for_configuration(
     if printer is None:
         raise_error(404, ERR_PRINTER_NOT_FOUND)
 
-    scored = await get_recommended_presets(db, printer, filament_id, limit)
+    scored = await get_recommended_presets(
+        db,
+        printer,
+        filament_id,
+        limit,
+        printer_profile=profile,
+    )
+
+    preset_ids = [entry.preset.id for entry in scored]
+    saved_by_preset_id: dict[int, UserSavedPreset] = {}
+    if preset_ids:
+        saved_rows = await db.scalars(
+            select(UserSavedPreset).where(
+                UserSavedPreset.user_id == current_user.id,
+                UserSavedPreset.preset_id.in_(preset_ids),
+            )
+        )
+        saved_by_preset_id = {row.preset_id: row for row in saved_rows}
 
     return RecommendedForPrinterResponse(
         printer_id=printer.id,
         printer_name=printer.name,
-        items=_build_recommended_items(scored),
+        items=_build_recommended_items(scored, saved_by_preset_id),
     )
 
 

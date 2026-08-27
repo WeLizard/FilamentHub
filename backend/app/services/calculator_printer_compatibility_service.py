@@ -65,7 +65,14 @@ def _profile_nozzles(profile: PrinterProfile) -> list[float]:
     return _numbers((profile.orcaslicer_settings or {}).get("nozzle_diameter"))
 
 
-def _profile_nozzle_hrc(profile: PrinterProfile | None) -> float | None:
+def profile_nozzle_hrc(profile: PrinterProfile | None) -> float | None:
+    """Return the configured nozzle hardness when the profile proves it.
+
+    This small fact is shared by calculator preflight and preset
+    recommendations. Keeping one decoder matters because Orca profiles may
+    describe the same nozzle either with an explicit HRC value or a nozzle
+    material enum.
+    """
     if profile is None:
         return None
     settings = profile.orcaslicer_settings or {}
@@ -216,7 +223,7 @@ async def calculate_printer_compatibility(
             required_hrc = filament.required_nozzle_hrc if filament is not None else None
             if required_hrc is None or required_hrc <= 0:
                 continue
-            configured_hrc = _profile_nozzle_hrc(profile)
+            configured_hrc = profile_nozzle_hrc(profile)
             if configured_hrc is None:
                 hrc_status: CalculatorPrinterCompatibilityStatus = "unknown"
                 available_hrc: list[float] = []

@@ -257,8 +257,18 @@ class RecommendedPresetResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class RecommendedPresetCompatibilityCheck(BaseModel):
+    """One explainable hard requirement for a recommended material preset."""
+
+    kind: Literal["hotend_temperature", "nozzle_hrc"]
+    status: Literal["compatible", "incompatible", "unknown"]
+    required_value: float = Field(..., gt=0)
+    available_value: float | None = Field(None, gt=0)
+    unit: Literal["°C", "HRC"]
+
+
 class RecommendedPresetItem(BaseModel):
-    """A preset ranked by how well it matches a printer."""
+    """A preset ranked by fit, factual compatibility, and public evidence."""
 
     preset: PresetResponse
     match_score: float = Field(..., ge=0.0, le=1.2, description="Base tier score plus ranking bonuses")
@@ -266,6 +276,21 @@ class RecommendedPresetItem(BaseModel):
         ...,
         description="exact_match | same_model | same_family | same_manufacturer | compatible_specs",
     )
+    compatibility_status: Literal["compatible", "incompatible", "unknown"] = "unknown"
+    compatibility_coverage: float = Field(
+        0.0,
+        ge=0.0,
+        le=1.0,
+        description="Share of relevant hard requirements backed by configuration facts",
+    )
+    compatibility_checks: list[RecommendedPresetCompatibilityCheck] = Field(
+        default_factory=list
+    )
+    hard_conflicts: list[Literal["hotend_temperature", "nozzle_hrc"]] = Field(
+        default_factory=list
+    )
+    saved: bool = False
+    sync_enabled: bool | None = None
 
 
 class RecommendedForPrinterResponse(BaseModel):

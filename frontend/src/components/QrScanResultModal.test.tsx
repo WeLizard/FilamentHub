@@ -11,6 +11,22 @@ const { listPrinters, listSpools, savePreset } = vi.hoisted(() => ({
   savePreset: vi.fn(),
 }));
 
+const { recommendationState } = vi.hoisted(() => ({
+  recommendationState: {
+    current: {
+      options: [],
+      selectedKey: '',
+      select: vi.fn(),
+      recommendation: null,
+      printerName: null,
+      isLoadingOptions: false,
+      isOptionsError: false,
+      isLoadingRecommendation: false,
+      isRecommendationError: false,
+    } as any,
+  },
+}));
+
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string, values?: Record<string, string | number>) =>
@@ -24,6 +40,10 @@ vi.mock('../api/client', () => ({
   physicalPrintersAPI: { list: listPrinters },
   savedPresetsAPI: { save: savePreset },
   spoolsAPI: { listForFilament: listSpools },
+}));
+
+vi.mock('../hooks/useConfigurationPresetRecommendation', () => ({
+  useConfigurationPresetRecommendation: () => recommendationState.current,
 }));
 
 const baseResult = {
@@ -94,6 +114,17 @@ function renderModal(
 
 describe('QrScanResultModal', () => {
   beforeEach(() => {
+    recommendationState.current = {
+      options: [],
+      selectedKey: '',
+      select: vi.fn(),
+      recommendation: null,
+      printerName: null,
+      isLoadingOptions: false,
+      isOptionsError: false,
+      isLoadingRecommendation: false,
+      isRecommendationError: false,
+    };
     listPrinters.mockReset();
     listPrinters.mockResolvedValue([]);
     listSpools.mockReset();
@@ -159,6 +190,72 @@ describe('QrScanResultModal', () => {
 
     expect(screen.getByText('qrScanResult.presetSourceCommunity')).toBeInTheDocument();
     expect(screen.getByText('Official Exact PLA')).toBeInTheDocument();
+  });
+
+  it('saves the configuration recommendation rather than the generic scan preset', async () => {
+    recommendationState.current = {
+      ...recommendationState.current,
+      selectedKey: '31:91',
+      printerName: 'Configured Voron',
+      recommendation: {
+        preset: {
+          ...baseResult.preset,
+          id: 88,
+          name: 'Compatible community preset',
+          is_official: false,
+        },
+        match_score: 1.1,
+        match_reason: 'exact_match',
+        compatibility_status: 'compatible',
+        compatibility_coverage: 1,
+        compatibility_checks: [{
+          kind: 'hotend_temperature',
+          status: 'compatible',
+          required_value: 220,
+          available_value: 300,
+          unit: '°C',
+        }],
+        hard_conflicts: [],
+        saved: false,
+        sync_enabled: null,
+      },
+    };
+    savePreset.mockResolvedValueOnce({ preset_id: 88, sync: false });
+
+    renderModal(baseResult);
+
+    expect(screen.getByText('Compatible community preset')).toBeInTheDocument();
+    expect(screen.getByText('qrScanResult.presetSourceCommunity')).toBeInTheDocument();
+    expect(
+      screen.getByText('profilePage.calculator.printerCompatibilityStatus.compatible'),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'qrScanResult.savePreset' }));
+    await waitFor(() => expect(savePreset).toHaveBeenCalledWith(88, false));
+  });
+
+  it('does not offer another save for an already saved recommendation', () => {
+    recommendationState.current = {
+      ...recommendationState.current,
+      selectedKey: '31:91',
+      printerName: 'Configured Voron',
+      recommendation: {
+        preset: { ...baseResult.preset, id: 89, name: 'Already saved' },
+        match_score: 1.05,
+        match_reason: 'exact_match',
+        compatibility_status: 'unknown',
+        compatibility_coverage: 0,
+        compatibility_checks: [],
+        hard_conflicts: [],
+        saved: true,
+        sync_enabled: false,
+      },
+    };
+
+    renderModal(baseResult);
+
+    expect(screen.getByText('qrScanResult.presetSaved')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'qrScanResult.savePreset' })).not.toBeInTheDocument();
+    expect(savePreset).not.toHaveBeenCalled();
   });
 
   it('keeps anonymous recognition read-only and offers sign-in', () => {

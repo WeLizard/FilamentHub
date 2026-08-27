@@ -13,9 +13,12 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.models.filament import Filament
 from app.models.preset import PUBLIC_PRESET_STATUSES, Preset
 from app.models.preset_printer import PresetPrinter
 from app.models.printer import Printer
+from app.models.printer_profile import PrinterProfile
+from app.services.calculator_printer_compatibility_service import profile_nozzle_hrc
 
 # Match tiers as (base_score, reason). Higher is better.
 MATCH_EXACT = (1.0, "exact_match")
@@ -112,6 +115,83 @@ class ScoredPreset:
     preset: Preset
     match_score: float
     match_reason: str
+    compatibility_status: str
+    compatibility_coverage: float
+    compatibility_checks: list["RecommendationCompatibilityCheck"]
+    hard_conflicts: list[str]
+
+
+@dataclass(frozen=True)
+class RecommendationCompatibilityCheck:
+    """One factual machine requirement used by recommendation ranking."""
+
+    kind: str
+    status: str
+    required_value: float
+    available_value: float | None
+    unit: str
+
+
+def evaluate_preset_compatibility(
+    preset: Preset,
+    printer: Printer,
+    filament: Filament | None,
+    printer_profile: PrinterProfile | None,
+) -> tuple[str, float, list[RecommendationCompatibilityCheck], list[str]]:
+    """Explain known hard conflicts without guessing missing capabilities."""
+    checks: list[RecommendationCompatibilityCheck] = []
+
+    if preset.extruder_temp > 0:
+        available_temperature = (
+            float(printer.max_extruder_temp) if printer.max_extruder_temp is not None else None
+        )
+        temperature_status = (
+            "unknown"
+            if available_temperature is None
+            else "compatible"
+            if available_temperature >= preset.extruder_temp
+            else "incompatible"
+        )
+        checks.append(
+            RecommendationCompatibilityCheck(
+                kind="hotend_temperature",
+                status=temperature_status,
+                required_value=float(preset.extruder_temp),
+                available_value=available_temperature,
+                unit="°C",
+            )
+        )
+
+    required_hrc = filament.required_nozzle_hrc if filament is not None else None
+    if required_hrc is not None and required_hrc > 0:
+        available_hrc = profile_nozzle_hrc(printer_profile)
+        hrc_status = (
+            "unknown"
+            if available_hrc is None
+            else "compatible"
+            if available_hrc >= required_hrc
+            else "incompatible"
+        )
+        checks.append(
+            RecommendationCompatibilityCheck(
+                kind="nozzle_hrc",
+                status=hrc_status,
+                required_value=float(required_hrc),
+                available_value=available_hrc,
+                unit="HRC",
+            )
+        )
+
+    known_checks = [check for check in checks if check.status != "unknown"]
+    coverage = len(known_checks) / len(checks) if checks else 0.0
+    hard_conflicts = [check.kind for check in checks if check.status == "incompatible"]
+    if hard_conflicts:
+        status = "incompatible"
+    elif checks and len(known_checks) == len(checks):
+        status = "compatible"
+    else:
+        status = "unknown"
+    return status, coverage, checks, hard_conflicts
 
 
 async def get_recommended_presets(
@@ -119,6 +199,8 @@ async def get_recommended_presets(
     printer: Printer,
     filament_id: int | None = None,
     limit: int = 20,
+    *,
+    printer_profile: PrinterProfile | None = None,
 ) -> list[ScoredPreset]:
     """Load approved+active presets and return the top matches for ``printer``."""
     query = (
@@ -137,19 +219,41 @@ async def get_recommended_presets(
 
     result = await db.execute(query)
     presets = result.scalars().unique().all()
+    filament = await db.get(Filament, filament_id) if filament_id is not None else None
 
     scored: list[ScoredPreset] = []
     for preset in presets:
         base, reason = score_preset_for_printer(preset, printer)
         if base <= 0.0:
             continue
+        compatibility_status, compatibility_coverage, checks, hard_conflicts = (
+            evaluate_preset_compatibility(
+                preset,
+                printer,
+                filament,
+                printer_profile,
+            )
+        )
         scored.append(
             ScoredPreset(
                 preset=preset,
                 match_score=apply_bonuses(base, preset),
                 match_reason=reason,
+                compatibility_status=compatibility_status,
+                compatibility_coverage=compatibility_coverage,
+                compatibility_checks=checks,
+                hard_conflicts=hard_conflicts,
             )
         )
 
-    scored.sort(key=lambda item: item.match_score, reverse=True)
+    compatibility_priority = {"incompatible": 0, "unknown": 1, "compatible": 2}
+    scored.sort(
+        key=lambda item: (
+            compatibility_priority[item.compatibility_status],
+            item.match_score,
+            item.preset.rating or 0.0,
+            -item.preset.id,
+        ),
+        reverse=True,
+    )
     return scored[:limit]

@@ -5,14 +5,17 @@ Pure-function coverage over in-memory model instances (no database).
 
 from __future__ import annotations
 
+from app.models.filament import Filament
 from app.models.preset import Preset
 from app.models.preset_printer import PresetPrinter
 from app.models.printer import Printer
+from app.models.printer_profile import PrinterProfile
 from app.services.preset_matcher import (
     BONUS_OFFICIAL,
     BONUS_RATING_MAX,
     BONUS_WEIGHTED,
     apply_bonuses,
+    evaluate_preset_compatibility,
     score_preset_for_printer,
 )
 
@@ -129,3 +132,58 @@ def test_rating_bonus_is_capped() -> None:
 def test_no_bonuses_when_flags_absent() -> None:
     preset = _preset()
     assert apply_bonuses(0.5, preset) == 0.5
+
+
+def test_known_hotend_conflict_is_hard_incompatibility() -> None:
+    printer = _printer(20, "Voron", "2.4")
+    printer.max_extruder_temp = 250
+    preset = _preset(printer)
+    preset.extruder_temp = 280
+
+    status, coverage, checks, conflicts = evaluate_preset_compatibility(
+        preset,
+        printer,
+        None,
+        None,
+    )
+
+    assert status == "incompatible"
+    assert coverage == 1.0
+    assert conflicts == ["hotend_temperature"]
+    assert checks[0].available_value == 250
+
+
+def test_missing_capability_is_unknown_not_compatible() -> None:
+    printer = _printer(21, "Voron", "2.4")
+    printer.max_extruder_temp = None
+
+    status, coverage, checks, conflicts = evaluate_preset_compatibility(
+        _preset(printer),
+        printer,
+        None,
+        None,
+    )
+
+    assert status == "unknown"
+    assert coverage == 0.0
+    assert checks[0].status == "unknown"
+    assert conflicts == []
+
+
+def test_material_nozzle_requirement_uses_exact_configuration() -> None:
+    printer = _printer(22, "Voron", "2.4")
+    printer.max_extruder_temp = 300
+    filament = Filament(required_nozzle_hrc=50)
+    profile = PrinterProfile(orcaslicer_settings={"nozzle_type": ["brass"]})
+
+    status, coverage, checks, conflicts = evaluate_preset_compatibility(
+        _preset(printer),
+        printer,
+        filament,
+        profile,
+    )
+
+    assert status == "incompatible"
+    assert coverage == 1.0
+    assert [check.kind for check in checks] == ["hotend_temperature", "nozzle_hrc"]
+    assert conflicts == ["nozzle_hrc"]

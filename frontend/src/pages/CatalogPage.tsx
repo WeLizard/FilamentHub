@@ -22,7 +22,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { filamentsAPI, brandsAPI, savedPresetsAPI, qrAPI, printersAPI, physicalPrintersAPI } from '../api/client';
 import { translateApiError } from '../utils/translateApiError';
 import { currencySymbol } from '../utils/currency';
-import { isPluginEmbed, notifyProfileChanged } from '../utils/pluginBridge';
+import { isPluginEmbed } from '../utils/pluginBridge';
 import { Dropdown } from '../components/Dropdown';
 import { FilamentPreview } from '../components/FilamentPreview';
 import { NozzleRequirementBadge } from '../components/NozzleRequirementBadge';
@@ -152,15 +152,14 @@ export const CatalogPage: React.FC = () => {
       if (!user) {
         throw new Error(t('catalogPage.errorLoginRequired'));
       }
-      return savedPresetsAPI.save(presetId);
+      return savedPresetsAPI.save(presetId, false);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['saved-presets'] });
       queryClient.invalidateQueries({ queryKey: ['saved-presets-details'] });
       queryClient.invalidateQueries({ queryKey: ['user-presets'] });
-      // Refresh the plugin toolbar count and auto-sync the new preset into the slicer.
+      // Refresh the library count. Orca sync remains a separate explicit action.
       queryClient.invalidateQueries({ queryKey: ['presets-stats'] });
-      notifyProfileChanged();
     },
     onError: (error: AxiosError<{ detail: unknown }>) => {
       console.error('Error saving preset:', error);
@@ -968,4 +967,3 @@ export const CatalogFilamentCard = memo(function CatalogFilamentCard({
     </div>
   );
 });
-
