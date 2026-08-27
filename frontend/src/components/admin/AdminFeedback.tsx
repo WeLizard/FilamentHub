@@ -1,9 +1,9 @@
 /** Компонент для управления обратной связью от пользователей */
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ModalOverlay } from '../ModalOverlay';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { MessageCircle, Eye, Send, XCircle, Bug, Lightbulb, HelpCircle, MessageSquare, Filter, Search, Trash2 } from 'lucide-react';
+import { MessageCircle, Eye, Send, XCircle, Bug, Lightbulb, HelpCircle, MessageSquare, Filter, Search, SmilePlus, Trash2 } from 'lucide-react';
 import { adminFeedbackAPI } from '../../api/client';
 import type { Feedback, FeedbackType, FeedbackStatus } from '../../types/api';
 import { useTranslation } from 'react-i18next';
@@ -13,6 +13,12 @@ import { translateApiError } from '../../utils/translateApiError';
 import { createIdempotencyKey } from '../../utils/idempotencyKey';
 import { formatMediumDateTime } from '../../utils/formatDate';
 import type { AxiosError } from 'axios';
+
+const RESPONSE_EMOJIS = [
+  '😀', '😄', '🙂', '😊', '😉', '🤔',
+  '👍', '👎', '👏', '🙏', '🎉', '✅',
+  '⚠️', '❤️', '🔥', '🚀', '🧵', '🛠️',
+] as const;
 
 export function AdminFeedback() {
   const { t } = useTranslation();
@@ -26,6 +32,22 @@ export function AdminFeedback() {
   const [responseStatus, setResponseStatus] = useState<FeedbackStatus>('in_progress');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [isEmojiPickerOpen, setIsEmojiPickerOpen] = useState(false);
+  const responseTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const emojiPickerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!isEmojiPickerOpen) return;
+
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      if (!emojiPickerRef.current?.contains(event.target as Node)) {
+        setIsEmojiPickerOpen(false);
+      }
+    };
+
+    document.addEventListener('pointerdown', closeOnOutsidePointer);
+    return () => document.removeEventListener('pointerdown', closeOnOutsidePointer);
+  }, [isEmojiPickerOpen]);
 
   // Загрузка обратной связи
   const { data, isLoading, error } = useQuery({
@@ -68,6 +90,7 @@ export function AdminFeedback() {
       );
       setSelectedFeedback(updatedFeedback);
       setAdminResponse('');
+      setIsEmojiPickerOpen(false);
       setReplyIdempotencyKey(createIdempotencyKey());
       setResponseStatus(updatedFeedback.status);
       toast.success(t('adminFeedback.replySent'));
@@ -102,6 +125,7 @@ export function AdminFeedback() {
       queryClient.invalidateQueries({ queryKey: ['admin-feedback'] });
       queryClient.invalidateQueries({ queryKey: ['admin-communications-unread-count'] });
       setSelectedFeedback(null);
+      setIsEmojiPickerOpen(false);
     },
     onError: (error: AxiosError<{ detail: unknown }>) => {
       toast.error(translateApiError(t, error?.response?.data?.detail, t('adminFeedback.deleteError')));
@@ -118,6 +142,26 @@ export function AdminFeedback() {
       response: adminResponse,
       idempotencyKey: replyIdempotencyKey,
     });
+  };
+
+  const insertEmoji = (emoji: string) => {
+    const textarea = responseTextareaRef.current;
+    const selectionStart = textarea?.selectionStart ?? adminResponse.length;
+    const selectionEnd = textarea?.selectionEnd ?? selectionStart;
+    const nextResponse = `${adminResponse.slice(0, selectionStart)}${emoji}${adminResponse.slice(selectionEnd)}`;
+    const nextCursorPosition = selectionStart + emoji.length;
+
+    setAdminResponse(nextResponse);
+    requestAnimationFrame(() => {
+      textarea?.focus();
+      textarea?.setSelectionRange(nextCursorPosition, nextCursorPosition);
+    });
+  };
+
+  const closeFeedback = () => {
+    setSelectedFeedback(null);
+    setAdminResponse('');
+    setIsEmojiPickerOpen(false);
   };
 
   const getStatusBadge = (status: FeedbackStatus) => {
@@ -348,7 +392,7 @@ export function AdminFeedback() {
 
       {/* Модалка просмотра и ответа */}
       {selectedFeedbackView && (
-        <ModalOverlay onClose={() => { setSelectedFeedback(null); setAdminResponse(''); }} className="!bg-black/60">
+        <ModalOverlay onClose={closeFeedback} className="!bg-black/60">
               <div
                 className="bg-gradient-to-br from-gray-900 to-gray-800 rounded-2xl shadow-2xl border border-white/20 max-w-3xl w-full max-h-[90vh] overflow-hidden flex flex-col"
                 onClick={(e) => e.stopPropagation()}
@@ -375,10 +419,7 @@ export function AdminFeedback() {
                     </div>
                   </div>
                   <button
-                    onClick={() => {
-                      setSelectedFeedback(null);
-                      setAdminResponse('');
-                    }}
+                    onClick={closeFeedback}
                     className="text-gray-400 hover:text-white transition-colors p-2 -mt-2 -mr-2"
                   >
                     <XCircle className="w-5 h-5" />
@@ -430,13 +471,59 @@ export function AdminFeedback() {
                   {/* Форма ответа */}
                   <div>
                     <h3 className="text-sm font-medium text-gray-300 mb-2">{t('adminFeedback.modal_response_placeholder')}</h3>
-                    <textarea
-                      value={adminResponse}
-                      onChange={(e) => setAdminResponse(e.target.value)}
-                      rows={6}
-                      placeholder={t('adminFeedback.modal_response_placeholder')}
-                      className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-none custom-scrollbar"
-                    />
+                    <div
+                      className="relative"
+                      onKeyDown={(event) => {
+                        if (event.key === 'Escape' && isEmojiPickerOpen) {
+                          event.stopPropagation();
+                          setIsEmojiPickerOpen(false);
+                          responseTextareaRef.current?.focus();
+                        }
+                      }}
+                    >
+                      <textarea
+                        ref={responseTextareaRef}
+                        value={adminResponse}
+                        onChange={(e) => setAdminResponse(e.target.value)}
+                        rows={6}
+                        placeholder={t('adminFeedback.modal_response_placeholder')}
+                        className="w-full resize-none rounded-lg border border-white/10 bg-white/5 px-4 py-2 pb-12 text-white placeholder-gray-500 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-purple-500 custom-scrollbar"
+                      />
+                      <div ref={emojiPickerRef} className="absolute bottom-3 right-3">
+                        <button
+                          type="button"
+                          aria-label={t('adminFeedback.addEmoji')}
+                          aria-haspopup="dialog"
+                          aria-expanded={isEmojiPickerOpen}
+                          aria-controls="admin-feedback-emoji-picker"
+                          onClick={() => setIsEmojiPickerOpen((isOpen) => !isOpen)}
+                          className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 bg-gray-900/90 text-gray-400 shadow-lg transition hover:border-purple-400/40 hover:bg-purple-500/15 hover:text-purple-200 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                        >
+                          <SmilePlus className="h-4 w-4" />
+                        </button>
+                        {isEmojiPickerOpen && (
+                          <div
+                            id="admin-feedback-emoji-picker"
+                            role="dialog"
+                            aria-label={t('adminFeedback.emojiPicker')}
+                            className="absolute bottom-full right-0 z-30 mb-2 grid w-56 grid-cols-6 gap-1 rounded-xl border border-white/15 bg-gray-950/95 p-2 shadow-2xl shadow-black/50 backdrop-blur-md"
+                          >
+                            {RESPONSE_EMOJIS.map((emoji) => (
+                              <button
+                                key={emoji}
+                                type="button"
+                                aria-label={t('adminFeedback.insertEmoji', { emoji })}
+                                onMouseDown={(event) => event.preventDefault()}
+                                onClick={() => insertEmoji(emoji)}
+                                className="flex h-8 w-8 items-center justify-center rounded-lg text-lg transition hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                              >
+                                {emoji}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
                   </div>
 
                   {/* Статус */}
@@ -477,10 +564,7 @@ export function AdminFeedback() {
                   </button>
                   <div className="flex items-center gap-3">
                   <button
-                    onClick={() => {
-                      setSelectedFeedback(null);
-                      setAdminResponse('');
-                    }}
+                    onClick={closeFeedback}
                     className="px-4 py-2 rounded-lg border border-white/20 text-sm text-gray-300 hover:bg-white/10 transition-all"
                   >
                     {t('adminFeedback.modal_close_button')}
