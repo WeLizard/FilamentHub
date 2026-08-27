@@ -87,6 +87,29 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/presets", tags=["presets"])
 
 
+async def _refresh_weighted_preset_best_effort(
+    filament_id: int | None,
+    db: AsyncSession,
+) -> None:
+    """Recompute after the primary mutation without poisoning its DB session."""
+    if filament_id is None:
+        return
+    try:
+        await create_or_update_weighted_preset(
+            filament_id,
+            db,
+            min_presets_count=4,
+        )
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        logger.warning(
+            "Failed to update weighted preset for filament %s",
+            filament_id,
+            exc_info=True,
+        )
+
+
 def _serialize_moderation_reason(reason: Any) -> str | None:
     if reason is None:
         return None
@@ -168,14 +191,7 @@ async def _finish_created_preset(
     )
     await db.commit()
 
-    try:
-        await create_or_update_weighted_preset(preset.filament_id, db, min_presets_count=4)
-    except Exception as exc:
-        logger.error(
-            "Failed to update weighted preset for filament %s: %s",
-            preset.filament_id,
-            exc,
-        )
+    await _refresh_weighted_preset_best_effort(preset.filament_id, db)
 
     result = await db.execute(
         select(Preset)
@@ -892,10 +908,7 @@ async def update_preset(
 
     # Обновляем взвешенный пресет для этого филамента (если достаточно пресетов и есть filament_id)
     if preset.filament_id:
-        try:
-            await create_or_update_weighted_preset(preset.filament_id, db, min_presets_count=4)
-        except Exception as e:
-            logger.error(f"Failed to update weighted preset for filament {preset.filament_id}: {e}")
+        await _refresh_weighted_preset_best_effort(preset.filament_id, db)
 
         # Создаем уведомления для пользователей, у которых сохранен этот пресет
         try:
@@ -948,6 +961,10 @@ async def delete_preset(
     await db.delete(preset)
     await db.commit()
 
+    # Recompute before notifications so a failed optional notification write
+    # cannot leave the shared session unusable for the weighted transaction.
+    await _refresh_weighted_preset_best_effort(filament_id, db)
+
     # Создаем уведомления для пользователей, у которых сохранен этот пресет
     try:
         await notify_preset_deleted(
@@ -958,13 +975,6 @@ async def delete_preset(
         )
     except Exception as e:
         logger.error(f"Failed to create notifications for preset {preset_id_for_notification} deletion: {e}")
-
-    # Обновляем взвешенный пресет для этого филамента (если достаточно пресетов)
-    try:
-        await create_or_update_weighted_preset(filament_id, db, min_presets_count=4)
-    except Exception as e:
-        logger.error(f"Failed to update weighted preset for filament {filament_id}: {e}")
-
 
 @router.post("/{preset_id}/activate", response_model=PresetResponse)
 async def activate_preset(

@@ -4,7 +4,18 @@ from datetime import datetime
 from enum import Enum
 from typing import TYPE_CHECKING
 
-from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    text,
+)
 from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
@@ -52,6 +63,15 @@ class Preset(Base):
         # One OrcaSlicer preset is one row in its owner's account. Rows without an
         # owner or without an OrcaSlicer id contain a NULL and so never collide.
         Index("uq_presets_user_external_id", "user_id", "external_id", unique=True),
+        # A weighted preset is the single generated projection for one filament.
+        # The service serializes writers; this index remains the database backstop.
+        Index(
+            "uq_presets_weighted_filament",
+            "filament_id",
+            unique=True,
+            postgresql_where=text("is_weighted IS TRUE"),
+            sqlite_where=text("is_weighted = 1"),
+        ),
     )
 
     # Primary key

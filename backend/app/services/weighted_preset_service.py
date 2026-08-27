@@ -28,8 +28,12 @@ async def create_or_update_weighted_preset(
     Returns:
         Preset или None, если недостаточно пресетов для расчета
     """
-    # Проверяем существование филамента
-    filament_result = await db.execute(select(Filament).where(Filament.id == filament_id))
+    # Serialise every writer for one filament. The partial unique index is the
+    # final backstop, while this lock keeps normal concurrent recomputes on the
+    # update path instead of racing two inserts.
+    filament_result = await db.execute(
+        select(Filament).where(Filament.id == filament_id).with_for_update()
+    )
     filament = filament_result.scalar_one_or_none()
 
     if not filament:
@@ -60,7 +64,7 @@ async def create_or_update_weighted_preset(
         weighted_preset = existing_weighted.scalar_one_or_none()
         if weighted_preset:
             weighted_preset.active = False
-            await db.commit()
+            await db.flush()
         return None
 
     # Вычисляем взвешенные значения (используем существующую функцию)
@@ -77,7 +81,7 @@ async def create_or_update_weighted_preset(
         weighted_preset = existing_weighted.scalar_one_or_none()
         if weighted_preset:
             weighted_preset.active = False
-            await db.commit()
+            await db.flush()
         return None
 
     # Ищем существующий взвешенный пресет
@@ -119,8 +123,7 @@ async def create_or_update_weighted_preset(
         # но он остаётся видимым (PUBLIC_PRESET_STATUSES включает AUTO_GENERATED).
         weighted_preset.moderation_status = PresetModerationStatus.AUTO_GENERATED
 
-        await db.commit()
-        await db.refresh(weighted_preset)
+        await db.flush()
         return weighted_preset
     else:
         # Создаем новый взвешенный пресет
@@ -145,7 +148,6 @@ async def create_or_update_weighted_preset(
         )
 
         db.add(weighted_preset)
-        await db.commit()
-        await db.refresh(weighted_preset)
+        await db.flush()
         return weighted_preset
 
