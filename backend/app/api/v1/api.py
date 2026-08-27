@@ -25,6 +25,7 @@ from app.api.v1.endpoints import (
     filament_lines,
     filament_reviews,
     filaments,
+    manufacturer_qr,
     notification_campaigns,
     notifications,
     octoprint_bridge,
@@ -44,6 +45,7 @@ from app.api.v1.endpoints import (
     qr,
     saved_presets,
     spool_compat,
+    spool_qr,
     spools,
     wiki,
     wiki_authoring,
@@ -74,6 +76,7 @@ api_router.include_router(presets.router)
 api_router.include_router(preset_versions.router)
 api_router.include_router(print_jobs.router)
 api_router.include_router(qr.router)
+api_router.include_router(manufacturer_qr.router)
 api_router.include_router(printers.router)
 api_router.include_router(printer_profiles.router)
 api_router.include_router(print_profiles.router)
@@ -93,6 +96,7 @@ api_router.include_router(notification_campaigns.router)
 api_router.include_router(orca_sync.router)
 api_router.include_router(orca_preset_slot_sync.router)
 api_router.include_router(spools.router)
+api_router.include_router(spool_qr.router)
 api_router.include_router(feedback.router)
 api_router.include_router(downloads.router)
 api_router.include_router(wiki.router)

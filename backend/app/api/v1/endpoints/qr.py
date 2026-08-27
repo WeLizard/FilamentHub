@@ -6,7 +6,6 @@ from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import RedirectResponse, StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from app.core.dependencies import get_current_active_user, get_current_active_user_optional
 from app.core.errors import (
@@ -22,9 +21,11 @@ from app.models.filament import Filament
 from app.models.user import User
 from app.schemas.filament import FilamentResponse
 from app.schemas.preset import PresetResponse
+from app.schemas.qr_identity import ManufacturerQrClaimRequest, ManufacturerQrClaimResponse
 from app.services.catalog_url_service import filament_public_path
 from app.services.filament_analytics import event_country, record_filament_event
 from app.services.filament_preset_summary import bucket_by_kind, summary_query
+from app.services.qr_identity_service import claim_manufacturer_qr, resolve_qr_identity
 from app.services.qr_service import (
     ensure_filament_qr_code,
     generate_branded_qr_code_image,
@@ -49,14 +50,8 @@ async def redirect_qr_scan(
 
     Инкрементирует счетчик сканирований.
     """
-    # Получаем материал по короткому коду
-    result = await db.execute(
-        select(Filament).options(selectinload(Filament.brand)).where(Filament.qr_code == short_code)
-    )
-    filament = result.scalar_one_or_none()
-
-    if not filament:
-        raise_error(404, ERR_FILAMENT_NOT_FOUND)
+    resolution = await resolve_qr_identity(db, short_code, current_user=current_user)
+    filament = resolution.filament
 
     # Инкрементируем счетчик
     filament.scans_count += 1
@@ -69,7 +64,9 @@ async def redirect_qr_scan(
     await db.commit()
 
     # Редирект на страницу материала
-    return RedirectResponse(f"{filament_public_path(filament, filament.brand)}?qr=true", status_code=301)
+    return RedirectResponse(
+        f"{filament_public_path(filament, filament.brand)}?qr=true", status_code=301
+    )
 
 
 @router.post("/{short_code}/scan")
@@ -85,14 +82,8 @@ async def handle_qr_scan(
     Вместе с материалом возвращается ведущий публичный пресет: официальный,
     либо лучший community-вариант. Сохранение остаётся отдельным явным действием.
     """
-    # Получаем материал по короткому коду
-    result = await db.execute(
-        select(Filament).options(selectinload(Filament.brand)).where(Filament.qr_code == short_code)
-    )
-    filament = result.scalar_one_or_none()
-
-    if not filament:
-        raise_error(404, ERR_FILAMENT_NOT_FOUND)
+    resolution = await resolve_qr_identity(db, short_code, current_user=current_user)
+    filament = resolution.filament
 
     current_user_id = current_user.id if current_user else None
 
@@ -116,9 +107,7 @@ async def handle_qr_scan(
         preset_type = "official"
     else:
         community_candidates = [
-            preset
-            for preset in public_presets
-            if not preset.is_official and not preset.is_weighted
+            preset for preset in public_presets if not preset.is_official and not preset.is_weighted
         ]
         selected_preset = max(
             community_candidates,
@@ -162,13 +151,14 @@ async def handle_qr_scan(
     )
     return {
         "filament": filament_response,
+        "qr_identity": resolution.public_identity(),
         "preset_added": False,
         "preset_saved": preset_saved,
         "preset_sync_enabled": preset_sync_enabled,
         "preset_type": preset_type,
-        "preset": PresetResponse.model_validate_public(selected_preset)
-        if selected_preset
-        else None,
+        "preset": (
+            PresetResponse.model_validate_public(selected_preset) if selected_preset else None
+        ),
     }
 
 
@@ -182,25 +172,16 @@ async def get_qr_preset(
 
     Формат: OrcaSlicer JSON профиль.
     """
-    # Получаем материал по короткому коду
-    result = await db.execute(
-        select(Filament).where(Filament.qr_code == short_code)
-    )
-    filament = result.scalar_one_or_none()
-
-    if not filament:
-        raise_error(404, ERR_FILAMENT_NOT_FOUND)
+    filament = (await resolve_qr_identity(db, short_code)).filament
 
     # Находим официальный пресет
     from app.models.preset import Preset
     from app.services.orcaslicer_exporter import export_preset_to_orcaslicer
 
     preset_result = await db.execute(
-        select(Preset).where(
-            Preset.filament_id == filament.id,
-            Preset.is_official == True,
-            Preset.active == True
-        ).order_by(Preset.created_at.desc())
+        select(Preset)
+        .where(Preset.filament_id == filament.id, Preset.is_official == True, Preset.active == True)
+        .order_by(Preset.created_at.desc())
         .limit(1)
     )
     preset = preset_result.scalar_one_or_none()
@@ -212,6 +193,62 @@ async def get_qr_preset(
     preset_json = await export_preset_to_orcaslicer(preset, db)
 
     return preset_json
+
+
+@router.post("/{short_code}/claim", response_model=ManufacturerQrClaimResponse)
+async def claim_manufacturer_instance(
+    short_code: str,
+    payload: ManufacturerQrClaimRequest,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> ManufacturerQrClaimResponse:
+    """Explicitly bind one valid unbound manufacturer serial to an owned spool."""
+    return await claim_manufacturer_qr(
+        db,
+        user=current_user,
+        short_code=short_code,
+        spool_id=payload.spool_id,
+    )
+
+
+@router.get("/{short_code}/image")
+async def render_known_qr_code(
+    short_code: str,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    size: int = Query(600, ge=100, le=1200),
+    image_format: Annotated[Literal["png", "svg"], Query(alias="format")] = "svg",
+    branded: bool = Query(False),
+) -> StreamingResponse:
+    """Render a known SKU or instance payload without exposing private binding facts."""
+    await resolve_qr_identity(db, short_code)
+    suffix = "-branded" if branded else ""
+    if image_format == "svg":
+        buffer = (
+            generate_branded_qr_code_svg(short_code)
+            if branded
+            else generate_qr_code_svg(short_code)
+        )
+        return StreamingResponse(
+            iter([buffer.getvalue()]),
+            media_type="image/svg+xml",
+            headers={
+                "Content-Disposition": f'inline; filename="qr{suffix}.svg"',
+                "Cache-Control": "public, max-age=3600",
+            },
+        )
+    buffer = (
+        generate_branded_qr_code_image(short_code, size=size)
+        if branded
+        else generate_qr_code_image(short_code, size=size)
+    )
+    return StreamingResponse(
+        iter([buffer.getvalue()]),
+        media_type="image/png",
+        headers={
+            "Content-Disposition": f'inline; filename="qr-{size}x{size}{suffix}.png"',
+            "Cache-Control": "public, max-age=3600",
+        },
+    )
 
 
 @router.get("/filaments/{filament_id}/qr-code")
@@ -241,6 +278,7 @@ async def get_filament_qr_code(
     if not filament.qr_code:
         # Проверяем, верифицирован ли бренд
         from app.models.brand import Brand
+
         brand_result = await db.execute(select(Brand).where(Brand.id == filament.brand_id))
         brand = brand_result.scalar_one_or_none()
 
@@ -272,12 +310,13 @@ async def get_filament_qr_code(
     if saved_path:
         # Используем сохраненное изображение
         from fastapi.responses import FileResponse
+
         return FileResponse(
             str(saved_path),
-            media_type='image/png',
+            media_type="image/png",
             headers={
-                'Cache-Control': 'public, max-age=31536000',  # Кэшируем на 1 год
-            }
+                "Cache-Control": "public, max-age=31536000",  # Кэшируем на 1 год
+            },
         )
 
     # Если сохраненного нет - генерируем на лету (fallback)
@@ -286,11 +325,11 @@ async def get_filament_qr_code(
     # Возвращаем напрямую через StreamingResponse
     return StreamingResponse(
         iter([qr_buffer.getvalue()]),
-        media_type='image/png',
+        media_type="image/png",
         headers={
-            'Content-Disposition': f'inline; filename="qr-{filament.qr_code}-{size}x{size}.png"',
-            'Cache-Control': 'public, max-age=3600',  # Кэшируем на 1 час
-        }
+            "Content-Disposition": f'inline; filename="qr-{filament.qr_code}-{size}x{size}.png"',
+            "Cache-Control": "public, max-age=3600",  # Кэшируем на 1 час
+        },
     )
 
 
@@ -354,13 +393,13 @@ async def download_filament_qr_code(
         )
         return StreamingResponse(
             iter([vector.getvalue()]),
-            media_type='image/svg+xml',
+            media_type="image/svg+xml",
             headers={
-                'Content-Disposition': (
+                "Content-Disposition": (
                     f'attachment; filename="qr-{filament.qr_code}{suffix}.svg"'
                 ),
-                'Cache-Control': 'public, max-age=3600',
-            }
+                "Cache-Control": "public, max-age=3600",
+            },
         )
 
     # Заранее сохранённые картинки есть только у обычного варианта.
@@ -369,13 +408,14 @@ async def download_filament_qr_code(
     if saved_path:
         # Используем сохраненное изображение
         from fastapi.responses import FileResponse
+
         return FileResponse(
             str(saved_path),
-            media_type='image/png',
+            media_type="image/png",
             headers={
-                'Content-Disposition': f'attachment; filename="qr-{filament.qr_code}-{size}x{size}.png"',
-                'Cache-Control': 'public, max-age=31536000',
-            }
+                "Content-Disposition": f'attachment; filename="qr-{filament.qr_code}-{size}x{size}.png"',
+                "Cache-Control": "public, max-age=31536000",
+            },
         )
 
     # Если сохраненного нет - генерируем на лету (fallback)
@@ -388,11 +428,11 @@ async def download_filament_qr_code(
     # Возвращаем напрямую через StreamingResponse с заголовком для скачивания
     return StreamingResponse(
         iter([qr_buffer.getvalue()]),
-        media_type='image/png',
+        media_type="image/png",
         headers={
-            'Content-Disposition': (
+            "Content-Disposition": (
                 f'attachment; filename="qr-{filament.qr_code}-{size}x{size}{suffix}.png"'
             ),
-            'Cache-Control': 'public, max-age=3600',
-        }
+            "Cache-Control": "public, max-age=3600",
+        },
     )

@@ -127,6 +127,13 @@ async def _start_background_tasks(application: FastAPI) -> None:
         name="auth-state-sweeper",
     )
 
+    from app.services.qr_identity_service import run_qr_binding_sweeper
+
+    application.state.qr_binding_sweeper_task = asyncio.create_task(
+        run_qr_binding_sweeper(AsyncSessionLocal),
+        name="qr-binding-sweeper",
+    )
+
     from app.services.inbound_mail_service import run_inbound_mail_poller
 
     application.state.inbound_mail_task = asyncio.create_task(
@@ -182,6 +189,7 @@ async def _stop_background_tasks(application: FastAPI) -> None:
     for name in (
         "provisional_account_sweeper_task",
         "auth_state_sweeper_task",
+        "qr_binding_sweeper_task",
         "inbound_mail_task",
         "pdf_warmup_task",
         "qr_repair_task",
@@ -212,6 +220,7 @@ app.add_middleware(
         "Content-Type",
         "X-API-Key",
         "X-CSRF-Token",
+        "Idempotency-Key",
         "Accept",
         "Origin",
     ],
