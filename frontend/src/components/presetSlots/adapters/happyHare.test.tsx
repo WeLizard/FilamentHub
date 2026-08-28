@@ -90,11 +90,20 @@ function renderSetup() {
 
 describe('Happy Hare Edge setup', () => {
   beforeEach(() => {
+    vi.unstubAllEnvs();
     issuePairingCode.mockReset();
     status.mockReset();
   });
 
+  it('stays hidden unless the Edge UI is explicitly enabled', () => {
+    renderSetup();
+
+    expect(screen.queryByText('presetSlots.happyHare.edge.title')).not.toBeInTheDocument();
+    expect(status).not.toHaveBeenCalled();
+  });
+
   it('uses the isolated Edge transport and shows the one-time pairing code', async () => {
+    vi.stubEnv('VITE_ENABLE_EDGE_UI', 'true');
     const expiresAt = new Date(Date.now() + 10 * 60_000).toISOString();
     status
       .mockResolvedValueOnce(bridgeStatus())
@@ -127,6 +136,7 @@ describe('Happy Hare Edge setup', () => {
   });
 
   it('reports a paired Edge separately from the local Happy Hare credentials', async () => {
+    vi.stubEnv('VITE_ENABLE_EDGE_UI', 'true');
     status.mockResolvedValue(bridgeStatus({
       configured: true,
       paired: true,
@@ -143,6 +153,7 @@ describe('Happy Hare Edge setup', () => {
   });
 
   it('keeps the one-time code visible when the follow-up status check fails', async () => {
+    vi.stubEnv('VITE_ENABLE_EDGE_UI', 'true');
     status
       .mockResolvedValueOnce(bridgeStatus())
       .mockRejectedValueOnce(new Error('status unavailable'));

@@ -33,6 +33,10 @@ import type { AdapterViewContext, FeedAdapter } from './types';
 
 const EDGE_TRANSPORT = 'edge_agent' as const;
 
+function isEdgeUiEnabled(): boolean {
+  return import.meta.env.VITE_ENABLE_EDGE_UI === 'true';
+}
+
 function HappyHareEdgeSetup({
   printer,
   system,
@@ -798,7 +802,9 @@ function HappyHareSetup(context: AdapterViewContext) {
   const needsLegacyPairing = pluginAvailable === false && !context.printer.printer_hostname;
   return (
     <>
-      <HappyHareEdgeSetup printer={context.printer} system={context.system} />
+      {isEdgeUiEnabled() && (
+        <HappyHareEdgeSetup printer={context.printer} system={context.system} />
+      )}
       {needsLegacyPairing && (
         <PairingStep gates={context.gates} hasContact={context.printer.reports_feed} />
       )}
