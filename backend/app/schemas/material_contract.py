@@ -212,6 +212,9 @@ class PhysicalPrinterConnectorResponse(BaseModel):
     capabilities: list[str]
     active: bool
     last_seen_at: datetime | None
+    last_observation_at: datetime | None
+    last_snapshot_sequence: int | None
+    last_snapshot_source_instance_id: str | None
     status_observation: "PhysicalPrinterStatusObservationResponse | None" = None
 
     model_config = {"from_attributes": True}
@@ -380,6 +383,7 @@ class PrinterBridgeSnapshotRequest(BaseModel):
     provider: str = Field(min_length=1, max_length=50)
     transport: Literal["orca_plugin_lan", "edge_agent"]
     source_instance_id: str = Field(min_length=16, max_length=100)
+    sequence: int | None = Field(default=None, ge=1, le=9_223_372_036_854_775_807)
     observed_at: datetime
     printer: PrinterBridgeStatusSnapshot | None = None
     slots: list[PrinterBridgeSlotSnapshot] = Field(default_factory=list, max_length=256)

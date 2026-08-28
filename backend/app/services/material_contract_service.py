@@ -15,6 +15,7 @@ from app.core.errors import (
     ERR_MATERIAL_SLOT_IN_USE,
     ERR_MATERIAL_SYSTEM_EXISTS,
     ERR_MATERIAL_SYSTEM_NOT_FOUND,
+    ERR_PRINTER_BRIDGE_UNAUTHORIZED,
     ERR_PRINTER_NOT_FOUND,
     ERR_PRINTER_PROFILE_NOT_FOUND,
     raise_error,
@@ -489,6 +490,21 @@ def _newer_observation(candidate: datetime, existing: datetime | None) -> bool:
     return existing is None or _utc_datetime(candidate) >= _utc_datetime(existing)
 
 
+def _snapshot_is_current(
+    connector: PhysicalPrinterConnector,
+    payload: PrinterBridgeSnapshotRequest,
+    observed_at: datetime,
+) -> bool:
+    if payload.sequence is None:
+        return _newer_observation(observed_at, connector.last_observation_at)
+    if connector.last_snapshot_source_instance_id != payload.source_instance_id:
+        return True
+    return (
+        connector.last_snapshot_sequence is None
+        or payload.sequence > connector.last_snapshot_sequence
+    )
+
+
 def _printer_bridge_observation_source(provider: str, transport: str) -> str:
     if provider == "bambu" and transport == "orca_plugin_lan":
         return "bambu_lan_mqtt"
@@ -621,12 +637,15 @@ async def ingest_printer_bridge_snapshot(
     )
 
     connector = await db.scalar(
-        select(PhysicalPrinterConnector).where(
+        select(PhysicalPrinterConnector)
+        .where(
             PhysicalPrinterConnector.user_id == user_id,
             PhysicalPrinterConnector.physical_printer_id == physical_printer_id,
             PhysicalPrinterConnector.provider == payload.provider,
             PhysicalPrinterConnector.transport == payload.transport,
         )
+        .with_for_update()
+        .execution_options(populate_existing=True)
     )
     if connector is None:
         connector = PhysicalPrinterConnector(
@@ -637,9 +656,17 @@ async def ingest_printer_bridge_snapshot(
         )
         db.add(connector)
         await db.flush()
+    elif connector.source_instance_id != payload.source_instance_id:
+        raise_error(401, ERR_PRINTER_BRIDGE_UNAUTHORIZED)
 
-    snapshot_is_current = _newer_observation(observed_at, connector.last_seen_at)
+    connector.last_seen_at = received_at
+    connector.active = True
+    printer.last_seen_at = received_at
+    printer.reports_feed = True
+
+    snapshot_is_current = _snapshot_is_current(connector, payload, observed_at)
     if not snapshot_is_current:
+        await db.commit()
         return PrinterBridgeSnapshotResponse(
             accepted=False,
             stale=True,
@@ -650,15 +677,15 @@ async def ingest_printer_bridge_snapshot(
 
     connector.material_system_id = system.id
     connector.source_instance_id = payload.source_instance_id
-    connector.active = True
+    if _newer_observation(observed_at, connector.last_observation_at):
+        connector.last_observation_at = observed_at
+    if payload.sequence is not None:
+        connector.last_snapshot_sequence = payload.sequence
+        connector.last_snapshot_source_instance_id = payload.source_instance_id
     system.provider = payload.provider
     system.capabilities = list(connector.capabilities)
     system.active = True
 
-    accepted = False
-    connector.last_seen_at = observed_at
-    printer.last_seen_at = observed_at
-    printer.reports_feed = True
     accepted = True
 
     status_observation = await db.scalar(
@@ -666,10 +693,7 @@ async def ingest_printer_bridge_snapshot(
             PhysicalPrinterStatusObservation.connector_id == connector.id
         )
     )
-    if payload.printer is not None and (
-        status_observation is None
-        or _newer_observation(observed_at, status_observation.observed_at)
-    ):
+    if payload.printer is not None:
         if status_observation is None:
             status_observation = PhysicalPrinterStatusObservation(
                 user_id=user_id,
@@ -731,8 +755,6 @@ async def ingest_printer_bridge_snapshot(
                 MaterialSlotObservation.material_slot_id == slot.id,
             )
         )
-        if observation is not None and not _newer_observation(observed_at, observation.observed_at):
-            continue
         if observation is None:
             observation = MaterialSlotObservation(
                 user_id=user_id,

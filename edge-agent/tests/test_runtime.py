@@ -93,6 +93,8 @@ class EdgeRuntimeTest(unittest.TestCase):
             self.assertIsNotNone(persisted.desired_snapshot)
             self.assertIsNotNone(persisted.pending_observation)
             first_observed_at = persisted.pending_observation["observed_at"]
+            self.assertEqual(persisted.pending_observation["sequence"], 1)
+            self.assertEqual(persisted.last_snapshot_sequence, 1)
 
             cloud.fail_upload = False
             restarted = EdgeRuntime(
@@ -107,7 +109,10 @@ class EdgeRuntimeTest(unittest.TestCase):
             self.assertEqual(cloud.pair_calls, 1)
             self.assertEqual(len(cloud.uploads), 2)
             self.assertEqual(cloud.uploads[0]["observed_at"], first_observed_at)
+            self.assertEqual(cloud.uploads[0]["sequence"], 1)
+            self.assertEqual(cloud.uploads[1]["sequence"], 2)
             self.assertIsNone(store.load().pending_observation)
+            self.assertEqual(store.load().last_snapshot_sequence, 2)
             self.assertEqual(len(cloud.heartbeats), 1)
 
 

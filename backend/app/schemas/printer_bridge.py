@@ -35,6 +35,9 @@ class PrinterBridgeStatusResponse(BaseModel):
     paired: bool
     pairing_expires_at: datetime | None
     last_seen_at: datetime | None
+    last_observation_at: datetime | None
+    last_snapshot_sequence: int | None
+    last_snapshot_source_instance_id: str | None
     source_instance_id: str | None
     provider: str
     transport: PrinterBridgeTransport

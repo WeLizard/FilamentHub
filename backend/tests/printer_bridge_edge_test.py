@@ -9,7 +9,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.material_slot_assignment import MaterialSlotAssignment
 from app.models.material_system import MaterialSlot, PhysicalPrinterConnector
-from app.models.printer_bridge_observation import MaterialSlotObservation
+from app.models.printer_bridge_observation import (
+    MaterialSlotObservation,
+    PhysicalPrinterStatusObservation,
+)
 from app.models.user import User
 from app.models.user_spool import UserSpool, UserSpoolState
 
@@ -212,3 +215,216 @@ async def test_edge_token_rejects_provider_or_transport_confusion(
     )
     assert confused.status_code == 401
     assert confused.json()["detail"]["code"] == "ERR_PRINTER_BRIDGE_UNAUTHORIZED"
+
+
+@pytest.mark.asyncio
+async def test_edge_sequence_orders_snapshots_independently_from_clock_and_liveness(
+    auth_client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    created = await auth_client.post(
+        "/api/v1/physical-printers",
+        json={"name": "Edge ordering boundary"},
+    )
+    printer_id = created.json()["id"]
+    system_response = await auth_client.post(
+        f"/api/v1/physical-printers/{printer_id}/material-systems",
+        json={
+            "name": "Happy Hare",
+            "kind": "mmu",
+            "provider": "happy_hare",
+            "slot_count": 1,
+        },
+    )
+    system_id = system_response.json()["material_systems"][0]["id"]
+    source_instance_id = "edge-ordering-instance-0001"
+    pairing = await auth_client.post(
+        f"/api/v1/printer-bridge/connections/{printer_id}/{system_id}/pairing-code",
+        params={"transport": "edge_agent"},
+    )
+    paired = await auth_client.post(
+        "/api/v1/printer-bridge/pair",
+        json={
+            "pairing_code": pairing.json()["pairing_code"],
+            "provider": "happy_hare",
+            "transport": "edge_agent",
+            "source_instance_id": source_instance_id,
+            "plugin_version": "0.1.0-test",
+        },
+    )
+    headers = {"X-FilamentHub-Bridge-Token": paired.json()["bridge_token"]}
+    context = {
+        "material_system_id": system_id,
+        "provider": "happy_hare",
+        "transport": "edge_agent",
+        "source_instance_id": source_instance_id,
+    }
+
+    heartbeat = await auth_client.post(
+        "/api/v1/printer-bridge/heartbeat",
+        headers=headers,
+        json={
+            **context,
+            "observed_at": "2099-01-01T00:00:00+00:00",
+        },
+    )
+    assert heartbeat.status_code == 200
+
+    first = await auth_client.post(
+        "/api/v1/printer-bridge/snapshot",
+        headers=headers,
+        json={
+            **context,
+            "sequence": 2,
+            "observed_at": "2020-01-01T00:00:00+00:00",
+            "printer": {"state": "printing"},
+        },
+    )
+    assert first.status_code == 200
+    assert first.json()["accepted"] is True
+
+    out_of_order = await auth_client.post(
+        "/api/v1/printer-bridge/snapshot",
+        headers=headers,
+        json={
+            **context,
+            "sequence": 1,
+            "observed_at": "2021-01-01T00:00:00+00:00",
+            "printer": {"state": "failed"},
+        },
+    )
+    assert out_of_order.status_code == 200
+    assert out_of_order.json()["accepted"] is False
+    assert out_of_order.json()["stale"] is True
+
+    clock_moved_back = await auth_client.post(
+        "/api/v1/printer-bridge/snapshot",
+        headers=headers,
+        json={
+            **context,
+            "sequence": 3,
+            "observed_at": "2019-01-01T00:00:00+00:00",
+            "printer": {"state": "paused"},
+        },
+    )
+    assert clock_moved_back.status_code == 200
+    assert clock_moved_back.json()["accepted"] is True
+
+    connector = await db_session.scalar(
+        select(PhysicalPrinterConnector).where(
+            PhysicalPrinterConnector.physical_printer_id == printer_id,
+            PhysicalPrinterConnector.transport == "edge_agent",
+        )
+    )
+    assert connector is not None
+    await db_session.refresh(connector)
+    assert connector.last_snapshot_sequence == 3
+    assert connector.last_snapshot_source_instance_id == source_instance_id
+    assert connector.last_observation_at.replace(tzinfo=None) == datetime(2020, 1, 1)
+    assert connector.last_seen_at is not None
+    assert connector.last_seen_at > connector.last_observation_at
+    observation = await db_session.scalar(
+        select(PhysicalPrinterStatusObservation).where(
+            PhysicalPrinterStatusObservation.connector_id == connector.id
+        )
+    )
+    assert observation is not None
+    assert observation.state == "paused"
+    assert observation.observed_at.replace(tzinfo=None) == datetime(2019, 1, 1)
+
+    next_source = "edge-ordering-instance-0002"
+    replacement_pairing = await auth_client.post(
+        f"/api/v1/printer-bridge/connections/{printer_id}/{system_id}/pairing-code",
+        params={"transport": "edge_agent"},
+    )
+    replacement = await auth_client.post(
+        "/api/v1/printer-bridge/pair",
+        json={
+            "pairing_code": replacement_pairing.json()["pairing_code"],
+            "provider": "happy_hare",
+            "transport": "edge_agent",
+            "source_instance_id": next_source,
+            "plugin_version": "0.1.0-test",
+        },
+    )
+    restarted = await auth_client.post(
+        "/api/v1/printer-bridge/snapshot",
+        headers={"X-FilamentHub-Bridge-Token": replacement.json()["bridge_token"]},
+        json={
+            **context,
+            "source_instance_id": next_source,
+            "sequence": 1,
+            "observed_at": "2018-01-01T00:00:00+00:00",
+            "printer": {"state": "idle"},
+        },
+    )
+    assert restarted.status_code == 200
+    assert restarted.json()["accepted"] is True
+    await db_session.refresh(connector)
+    assert connector.last_snapshot_sequence == 1
+    assert connector.last_snapshot_source_instance_id == next_source
+
+
+@pytest.mark.asyncio
+async def test_legacy_edge_snapshot_uses_observation_watermark_not_heartbeat(
+    auth_client: AsyncClient,
+) -> None:
+    created = await auth_client.post(
+        "/api/v1/physical-printers",
+        json={"name": "Legacy Edge ordering"},
+    )
+    printer_id = created.json()["id"]
+    system_response = await auth_client.post(
+        f"/api/v1/physical-printers/{printer_id}/material-systems",
+        json={"name": "Legacy feed", "provider": "legacy", "slot_count": 1},
+    )
+    system_id = system_response.json()["material_systems"][0]["id"]
+    source_instance_id = "legacy-edge-instance-0001"
+    pairing = await auth_client.post(
+        f"/api/v1/printer-bridge/connections/{printer_id}/{system_id}/pairing-code",
+        params={"transport": "edge_agent"},
+    )
+    paired = await auth_client.post(
+        "/api/v1/printer-bridge/pair",
+        json={
+            "pairing_code": pairing.json()["pairing_code"],
+            "provider": "legacy",
+            "transport": "edge_agent",
+            "source_instance_id": source_instance_id,
+            "plugin_version": "0.1.0-test",
+        },
+    )
+    headers = {"X-FilamentHub-Bridge-Token": paired.json()["bridge_token"]}
+    context = {
+        "material_system_id": system_id,
+        "provider": "legacy",
+        "transport": "edge_agent",
+        "source_instance_id": source_instance_id,
+    }
+    heartbeat = await auth_client.post(
+        "/api/v1/printer-bridge/heartbeat",
+        headers=headers,
+        json={**context, "observed_at": "2099-01-01T00:00:00+00:00"},
+    )
+    assert heartbeat.status_code == 200
+
+    first = await auth_client.post(
+        "/api/v1/printer-bridge/snapshot",
+        headers=headers,
+        json={
+            **context,
+            "observed_at": "2020-01-01T00:00:00+00:00",
+            "printer": {"state": "idle"},
+        },
+    )
+    older = await auth_client.post(
+        "/api/v1/printer-bridge/snapshot",
+        headers=headers,
+        json={
+            **context,
+            "observed_at": "2019-01-01T00:00:00+00:00",
+            "printer": {"state": "failed"},
+        },
+    )
+    assert first.json()["accepted"] is True
+    assert older.json()["stale"] is True

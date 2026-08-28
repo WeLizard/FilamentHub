@@ -1,0 +1,73 @@
+from __future__ import annotations
+
+import json
+import os
+import stat
+import tempfile
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+
+from filamenthub_edge.errors import StateError
+from filamenthub_edge.state import EdgeState, StateStore
+
+
+class StateStoreTest(unittest.TestCase):
+    def test_save_fsyncs_state_before_atomic_replace(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            state_path = Path(directory) / "edge-state.json"
+            store = StateStore(state_path)
+
+            with patch("filamenthub_edge.state.os.fsync", wraps=os.fsync) as fsync:
+                store.save(EdgeState())
+
+            expected_calls = 2 if os.name == "posix" else 1
+            self.assertEqual(fsync.call_count, expected_calls)
+            self.assertEqual(store.load().instance_id[:5], "edge-")
+
+    def test_pending_sequence_must_match_durable_watermark(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            state_path = Path(directory) / "edge-state.json"
+            state = EdgeState(
+                last_snapshot_sequence=2,
+                pending_observation={"sequence": 2},
+            )
+            store = StateStore(state_path)
+            store.save(state)
+            decoded = json.loads(state_path.read_text(encoding="utf-8"))
+            decoded["pending_observation"]["sequence"] = 1
+            state_path.write_text(json.dumps(decoded), encoding="utf-8")
+            if os.name == "posix":
+                state_path.chmod(0o600)
+
+            with self.assertRaisesRegex(StateError, "sequence"):
+                store.load()
+
+    @unittest.skipUnless(os.name == "posix", "POSIX ownership and mode contract")
+    def test_state_and_directory_permissions_are_private(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            state_directory = Path(directory) / "edge"
+            state_path = state_directory / "edge-state.json"
+            store = StateStore(state_path)
+
+            store.save(EdgeState())
+
+            self.assertEqual(stat.S_IMODE(state_directory.stat().st_mode), 0o700)
+            self.assertEqual(stat.S_IMODE(state_path.stat().st_mode), 0o600)
+
+    @unittest.skipUnless(os.name == "posix", "POSIX ownership and mode contract")
+    def test_unsafe_custom_state_directory_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            state_directory = Path(directory) / "shared"
+            state_directory.mkdir(mode=0o755)
+            state_directory.chmod(0o755)
+            store = StateStore(state_directory / "edge-state.json")
+
+            with self.assertRaisesRegex(StateError, "permissions"):
+                store.load()
+            with self.assertRaisesRegex(StateError, "permissions"):
+                store.save(EdgeState())
+
+
+if __name__ == "__main__":
+    unittest.main()

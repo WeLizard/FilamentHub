@@ -13,7 +13,7 @@ from .cloud import FilamentHubCloud
 from .config import EdgeConfig
 from .errors import AuthenticationError, EdgeError, PairingRequired, ProviderUnavailable
 from .providers.base import EdgeProvider, ProviderSnapshot
-from .state import EdgeState, StateStore
+from .state import MAX_SNAPSHOT_SEQUENCE, EdgeState, StateStore
 
 logger = logging.getLogger("filamenthub_edge")
 
@@ -154,8 +154,12 @@ class EdgeRuntime:
         )
 
     def _queue_and_upload(self, snapshot: ProviderSnapshot) -> None:
+        if self.state.last_snapshot_sequence >= MAX_SNAPSHOT_SEQUENCE:
+            raise PairingRequired("Edge snapshot sequence is exhausted; reset and pair Edge again")
+        self.state.last_snapshot_sequence += 1
         payload = {
             **self._context_payload(),
+            "sequence": self.state.last_snapshot_sequence,
             "observed_at": _now_iso(),
             "printer": snapshot.printer,
             "slots": snapshot.slots,
