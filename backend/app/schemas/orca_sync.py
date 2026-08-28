@@ -24,6 +24,10 @@ class OrcaSyncResult(BaseModel):
         default=None,
         description="ID созданного или обновленного объекта в FilamentHub.",
     )
+    version_id: int | None = Field(
+        default=None,
+        description="Immutable PresetVersion selected after this saved change.",
+    )
     status: Literal["created", "updated", "skipped", "error"]
     message: str | None = Field(default=None, description="Дополнительные детали по элементу.")
     review_state: str | None = Field(
@@ -201,6 +205,33 @@ class OrcaProfileSnapshotFinalizeResponse(BaseModel):
     absent_count: int = 0
 
 
+class OrcaPrinterRecoveryPlanRequest(BaseModel):
+    """Identify the exact Orca data directory/account requesting a preview."""
+
+    source_instance_id: str = Field(..., min_length=16, max_length=100)
+    account_id: str = Field(..., min_length=36, max_length=36, pattern=_UUID_PATTERN)
+    machine_snapshot_complete: bool = False
+    machine_present_local_profile_ids: list[str] = Field(
+        default_factory=list, max_length=500
+    )
+    process_snapshot_complete: bool = False
+    process_present_local_profile_ids: list[str] = Field(
+        default_factory=list, max_length=500
+    )
+
+    @field_validator(
+        "machine_present_local_profile_ids",
+        "process_present_local_profile_ids",
+    )
+    @classmethod
+    def validate_present_local_profile_ids(cls, values: list[str]) -> list[str]:
+        try:
+            normalized = [str(UUID(value)) for value in values]
+        except (TypeError, ValueError, AttributeError) as exc:
+            raise ValueError("Every local profile id must be a UUID") from exc
+        return list(dict.fromkeys(normalized))
+
+
 class OrcaFilamentPresetPayload(BaseModel):
     """Payload для импорта пресета филамента из OrcaSlicer."""
 
@@ -209,6 +240,11 @@ class OrcaFilamentPresetPayload(BaseModel):
     )
     fhub_id: int | None = Field(
         default=None, ge=1, description="ID существующего пресета в FilamentHub (если обновляем)."
+    )
+    base_version_id: int | None = Field(
+        default=None,
+        ge=1,
+        description="Версия, из которой пользователь начал сохранённое редактирование.",
     )
     name: str = Field(..., max_length=200)
     slug: str | None = Field(

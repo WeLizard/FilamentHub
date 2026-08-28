@@ -93,6 +93,18 @@ class PresetVersion(Base):
         _BigIntPK, ForeignKey("preset_versions.id", ondelete="SET NULL"), nullable=True
     )
 
+    # Previous snapshot in this lineage. Legacy rows may be NULL; every new
+    # write records its actual base so concurrent edits are explainable.
+    parent_version_id: Mapped[int | None] = mapped_column(
+        _BigIntPK,
+        ForeignKey(
+            "preset_versions.id",
+            ondelete="SET NULL",
+            name="fk_pv_parent",
+        ),
+        nullable=True,
+    )
+
     # In-place squash bookkeeping: number of orca_sync saves folded into this
     # row within the squash window. 1 = never squashed.
     squash_count: Mapped[int] = mapped_column(

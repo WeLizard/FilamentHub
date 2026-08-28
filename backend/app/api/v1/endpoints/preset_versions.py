@@ -65,13 +65,7 @@ async def _can_view_private_history(
 
 def _is_public_version(version: PresetVersion, preset: Preset) -> bool:
     """Only versions created from the managed public projection are shareable."""
-    snapshot = version.snapshot_orcaslicer_settings
-    if not isinstance(snapshot, dict):
-        return False
-    return (
-        snapshot.get("fhub_source") == "filamenthub"
-        and str(snapshot.get("fhub_id")) == str(preset.id)
-    )
+    return preset_version_service.is_public_version(version, preset)
 
 
 async def _load_preset_for_view(
@@ -113,6 +107,7 @@ def _to_list_item(v: PresetVersion) -> PresetVersionListItem:
         label_description=v.label_description,
         change_source=v.change_source,
         restored_from_version_id=v.restored_from_version_id,
+        parent_version_id=v.parent_version_id,
         squash_count=v.squash_count,
         created_at=v.created_at,
         updated_at=v.updated_at,

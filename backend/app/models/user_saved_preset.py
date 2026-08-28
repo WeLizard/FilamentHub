@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, String
+from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Index, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
@@ -11,6 +11,7 @@ from app.db.base import Base
 
 if TYPE_CHECKING:
     from app.models.preset import Preset
+    from app.models.preset_version import PresetVersion
     from app.models.printer_profile import PrinterProfile
     from app.models.user import User
 
@@ -48,6 +49,31 @@ class UserSavedPreset(Base):
     # to the target profiles.
     scope: Mapped[str] = mapped_column(String(20), default="unscoped", server_default="unscoped")
 
+    # The library row is the user's installation of a stable Preset lineage.
+    # Selection is deliberately separate from Preset.updated_at: publishing a
+    # newer version must not silently replace the version the user chose.
+    selected_version_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey(
+            "preset_versions.id",
+            ondelete="SET NULL",
+            name="fk_usp_selected_version",
+        ),
+        nullable=True,
+    )
+    # The newest version for which the user already made a decision. Keeping an
+    # older selected version marks the current update as seen without hiding a
+    # future version.
+    seen_version_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey(
+            "preset_versions.id",
+            ondelete="SET NULL",
+            name="fk_usp_seen_version",
+        ),
+        nullable=True,
+    )
+
     __table_args__ = (
         # One saved row per (user, preset). The original unique index from
         # 572fc7e611e3 was dropped by cd4a3c3232ff; restored by the
@@ -61,11 +87,18 @@ class UserSavedPreset(Base):
         # Historical name: the column was renamed sync_enabled -> sync in
         # 0de996edecbd, the index was not.
         Index("ix_user_saved_presets_sync_enabled", "sync"),
+        Index("ix_usp_selected_version", "selected_version_id"),
     )
 
     # Relationships
     user: Mapped["User"] = relationship("User", back_populates="saved_presets")
     preset: Mapped["Preset"] = relationship("Preset", back_populates="saved_by_users")
+    selected_version: Mapped["PresetVersion | None"] = relationship(
+        "PresetVersion", foreign_keys=[selected_version_id]
+    )
+    seen_version: Mapped["PresetVersion | None"] = relationship(
+        "PresetVersion", foreign_keys=[seen_version_id]
+    )
     # lazy="selectin": the target set is small and needed by every response
     # serialization; avoids MissingGreenlet on async lazy loads.
     targets: Mapped[list["UserSavedPresetTarget"]] = relationship(

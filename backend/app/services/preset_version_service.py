@@ -82,12 +82,54 @@ async def get_latest_version(db: AsyncSession, preset_id: int) -> PresetVersion 
     return result.scalar_one_or_none()
 
 
+async def _select_version_for_author(
+    db: AsyncSession,
+    *,
+    preset_id: int,
+    user_id: int | None,
+    version_id: int,
+) -> None:
+    """Move only the writer's installation; other users remain pinned."""
+    if user_id is None:
+        return
+    from app.models.user_saved_preset import UserSavedPreset
+
+    result = await db.execute(
+        select(UserSavedPreset).where(
+            UserSavedPreset.user_id == user_id,
+            UserSavedPreset.preset_id == preset_id,
+        )
+    )
+    saved = result.scalar_one_or_none()
+    if saved is not None:
+        saved.selected_version_id = version_id
+        saved.seen_version_id = version_id
+
+
+async def _is_selected_by_another_user(
+    db: AsyncSession,
+    *,
+    version_id: int,
+    user_id: int | None,
+) -> bool:
+    """A selected snapshot must never be changed underneath another user."""
+    from app.models.user_saved_preset import UserSavedPreset
+
+    query = select(UserSavedPreset.id).where(
+        UserSavedPreset.selected_version_id == version_id
+    )
+    if user_id is not None:
+        query = query.where(UserSavedPreset.user_id != user_id)
+    return (await db.execute(query.limit(1))).scalar_one_or_none() is not None
+
+
 async def record_version(
     db: AsyncSession,
     preset: Preset,
     source: str,
     user_id: int | None = None,
     restored_from_version_id: int | None = None,
+    parent_version_id: int | None = None,
 ) -> PresetVersion | None:
     """Record a version for the current state of ``preset``.
 
@@ -118,6 +160,12 @@ async def record_version(
         and latest.change_source == PresetVersionSource.ORCA_SYNC
         and latest.created_by_user_id == user_id
         and not latest.label
+        and (parent_version_id is None or parent_version_id == latest.id)
+        and not await _is_selected_by_another_user(
+            db,
+            version_id=latest.id,
+            user_id=user_id,
+        )
     ):
         window = timedelta(minutes=settings.PRESET_VERSION_SQUASH_WINDOW_MINUTES)
         latest_ts = latest.updated_at
@@ -131,6 +179,12 @@ async def record_version(
             latest.content_hash = new_hash
             latest.squash_count += 1
             await db.flush()
+            await _select_version_for_author(
+                db,
+                preset_id=preset.id,
+                user_id=user_id,
+                version_id=latest.id,
+            )
             return latest
 
     # 3. New version.
@@ -145,11 +199,29 @@ async def record_version(
         content_hash=new_hash,
         change_source=source,
         restored_from_version_id=restored_from_version_id,
+        parent_version_id=(parent_version_id if parent_version_id is not None else (latest.id if latest else None)),
         created_by_user_id=user_id,
     )
     db.add(version)
     await db.flush()
+    await _select_version_for_author(
+        db,
+        preset_id=preset.id,
+        user_id=user_id,
+        version_id=version.id,
+    )
     return version
+
+
+def is_public_version(version: PresetVersion, preset: Preset) -> bool:
+    """Whether a snapshot belongs to the managed public projection."""
+    snapshot = version.snapshot_orcaslicer_settings
+    if not isinstance(snapshot, dict):
+        return False
+    return (
+        snapshot.get("fhub_source") == "filamenthub"
+        and str(snapshot.get("fhub_id")) == str(preset.id)
+    )
 
 
 async def list_versions(

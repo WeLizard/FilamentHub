@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQueries, useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { Activity, ChevronDown, Download, History, Loader2, Plus, RefreshCw, Settings, Wifi } from 'lucide-react';
+import { Activity, ArchiveRestore, ChevronDown, Download, History, Loader2, Plus, Settings, Wifi } from 'lucide-react';
 import {
   physicalPrintersAPI,
   printProfilesAPI,
@@ -18,7 +18,6 @@ import {
 import { AddPhysicalPrinterModal } from './AddPhysicalPrinterModal';
 import { toast } from './Toast';
 import {
-  installPrinterBundleInPlugin,
   isPluginEmbed,
   requestPluginCapabilities,
   subscribeToPluginCapabilities,
@@ -29,6 +28,7 @@ import { LayeredPrinterIcon } from './icons/LayeredPrinterIcon';
 import { PrintJobHistoryModal } from './PrintJobHistoryModal';
 import { visiblePrinterConnections } from '../utils/printerConnections';
 import { GuidedEmptyState } from './GuidedEmptyState';
+import { PrinterRecoveryModal } from './PrinterRecoveryModal';
 
 const COLLAPSED_CONFIGURATION_LIMIT = 4;
 
@@ -79,7 +79,8 @@ export function MyPrintersList({
   const [settingsPrinter, setSettingsPrinter] = useState<PhysicalPrinter | null>(null);
   const [historyPrinter, setHistoryPrinter] = useState<PhysicalPrinter | null>(null);
   const [showAdd, setShowAdd] = useState(false);
-  const [pluginCanInstallBundle, setPluginCanInstallBundle] = useState(!pluginEmbed);
+  const [showRecovery, setShowRecovery] = useState(false);
+  const [pluginCanRecover, setPluginCanRecover] = useState(false);
   const [bundleActionPrinterIds, setBundleActionPrinterIds] = useState<Set<number>>(
     () => new Set(),
   );
@@ -90,11 +91,10 @@ export function MyPrintersList({
 
   useEffect(() => {
     if (!pluginEmbed) {
-      setPluginCanInstallBundle(true);
       return;
     }
     const unsubscribe = subscribeToPluginCapabilities((capabilities) => {
-      setPluginCanInstallBundle(capabilities.has('printer-bundle-install'));
+      setPluginCanRecover(capabilities.has('printer-recovery-v1'));
     });
     requestPluginCapabilities();
     return unsubscribe;
@@ -198,7 +198,6 @@ export function MyPrintersList({
   }, [bindings]);
 
   const list = printers ?? [];
-
   const handlePrinterBundle = async (printer: PhysicalPrinter) => {
     if (
       !hasRestorableBundle(printer) ||
@@ -212,17 +211,12 @@ export function MyPrintersList({
       return next;
     });
     try {
-      if (pluginEmbed) {
-        const result = await installPrinterBundleInPlugin(printer.id);
-        toast.success(result.message || t('myPrinters.bundleRequestSent'));
-      } else {
-        const bundle = await physicalPrintersAPI.downloadOrcaBundle(printer.id);
-        downloadBlob(
-          bundle,
-          `${safeDownloadStem(printer.name, `printer-${printer.id}`)}-orcaslicer.zip`,
-        );
-        toast.success(t('myPrinters.bundleDownloaded'));
-      }
+      const bundle = await physicalPrintersAPI.downloadOrcaBundle(printer.id);
+      downloadBlob(
+        bundle,
+        `${safeDownloadStem(printer.name, `printer-${printer.id}`)}-orcaslicer.zip`,
+      );
+      toast.success(t('myPrinters.bundleDownloaded'));
     } catch (error: any) {
       toast.error(
         translateApiError(
@@ -248,14 +242,26 @@ export function MyPrintersList({
           <h3 className="text-lg font-semibold text-white">{t('myPrinters.title')}</h3>
           <p className="text-xs text-gray-400">{t('myPrinters.subtitle')}</p>
         </div>
-        <button
-          type="button"
-          onClick={() => setShowAdd(true)}
-          className="flex items-center gap-2 rounded-lg border border-white/20 px-3 py-1.5 text-sm text-white transition-colors hover:bg-white/10"
-        >
-          <Plus className="h-4 w-4" />
-          {t('addPrinter.title')}
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          {pluginEmbed && pluginCanRecover && currentUserId != null && (
+            <button
+              type="button"
+              onClick={() => setShowRecovery(true)}
+              className="flex items-center gap-2 rounded-lg border border-purple-400/30 bg-purple-500/10 px-3 py-1.5 text-sm text-purple-100 transition-colors hover:bg-purple-500/20"
+            >
+              <ArchiveRestore className="h-4 w-4" />
+              {t('printerRecovery.open')}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => setShowAdd(true)}
+            className="flex items-center gap-2 rounded-lg border border-white/20 px-3 py-1.5 text-sm text-white transition-colors hover:bg-white/10"
+          >
+            <Plus className="h-4 w-4" />
+            {t('addPrinter.title')}
+          </button>
+        </div>
       </div>
 
       {isLoading ? (
@@ -340,7 +346,7 @@ export function MyPrintersList({
                 <div className="flex items-center gap-2 min-w-0">
                   <LayeredPrinterIcon className="w-5 h-5 text-purple-400 flex-shrink-0" />
                   <h4 className="flex-1 text-sm font-semibold text-white truncate">{printer.name}</h4>
-                  {pluginCanInstallBundle && <button
+                  {!pluginEmbed && <button
                     type="button"
                     onClick={() => void handlePrinterBundle(printer)}
                     disabled={
@@ -351,20 +357,12 @@ export function MyPrintersList({
                     title={
                       !bundleAvailable
                         ? t('myPrinters.bundleUnavailable')
-                        : pluginEmbed
-                          ? t('myPrinters.installBundleInOrca')
-                          : t('myPrinters.downloadBundle')
-                    }
-                    aria-label={
-                      pluginEmbed
-                        ? t('myPrinters.installBundleInOrca')
                         : t('myPrinters.downloadBundle')
                     }
+                    aria-label={t('myPrinters.downloadBundle')}
                   >
                     {bundleActionPrinterIds.has(printer.id) ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : pluginEmbed ? (
-                      <RefreshCw className="h-4 w-4" />
                     ) : (
                       <Download className="h-4 w-4" />
                     )}
@@ -550,6 +548,13 @@ export function MyPrintersList({
     </div>
 
     <AddPhysicalPrinterModal isOpen={showAdd} onClose={() => setShowAdd(false)} />
+
+    {showRecovery && currentUserId != null && (
+      <PrinterRecoveryModal
+        ownerUserId={currentUserId}
+        onClose={() => setShowRecovery(false)}
+      />
+    )}
 
     {settingsPrinter && (
       <PhysicalPrinterSettingsModal

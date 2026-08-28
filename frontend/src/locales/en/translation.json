@@ -3755,7 +3755,8 @@
     "enrichmentConfidenceLow": "Low",
     "fieldsAutoFilled": "{{count}} fields auto-filled",
     "materialDetected": "Detected type: {{type}}",
-    "draftContributionReady": "Settings imported — important decisions left: {{count}}",
+    "draftContributionReady": "Settings imported",
+    "draftContributionDecisionsRemaining": "Important decisions: {{count}}",
     "draftContributionHint": "Confirm a few clear fields and your working profile will help people using the catalogue.",
     "draftContributionAmbiguous": "The material needs to be identified",
     "draftContributionNeedsFix": "This profile needs a small correction",
@@ -3906,9 +3907,11 @@
     "profilesCount_one": "{{count}} configuration",
     "profilesCount_few": "{{count}} configurations",
     "profilesCount_many": "{{count}} configurations",
+    "profilesCount_other": "{{count}} configurations",
     "unattachedCount_one": "{{count}} configuration",
     "unattachedCount_few": "{{count}} configurations",
     "unattachedCount_many": "{{count}} configurations",
+    "unattachedCount_other": "{{count}} configurations",
     "emailNotVerified": "Your address is not confirmed. Confirming it is what lets you regain access if you forget your password.",
     "emailNotVerifiedResend": "Send the letter again",
     "emailNotVerifiedSent": "Letter sent",
@@ -5279,7 +5282,8 @@
     "syncPrinterTitle": "Printers",
     "syncPrinterHint": "Printers, their configurations and print processes.",
     "syncPrinterToHubNote": "Printers found in the slicer",
-    "syncPrinterToSlicerNote": "Installing a printer together with its print processes",
+    "syncPrinterToSlicerNote": "Allows an explicit, previewed recovery from FilamentHub; it does not enable background sync",
+    "allowPrinterRecovery": "Allow recovery to OrcaSlicer",
     "syncToHub": "To FilamentHub",
     "syncToSlicer": "To the slicer",
     "syncNotYet": "not available yet"
@@ -5955,7 +5959,8 @@
     "timeline": {
       "labeledOnly": "Labeled only",
       "empty": "No versions yet",
-      "current": "Current"
+      "current": "Latest",
+      "selected": "In use"
     },
     "diff": {
       "selectPrompt": "Select a version to compare with the current one.",
@@ -5989,6 +5994,13 @@
       "descPlaceholder": "Description (optional)",
       "save": "Save",
       "saved": "Label saved"
+    },
+    "selection": {
+      "useVersion": "Use v{{version}}",
+      "acceptUpdate": "Accept v{{version}}",
+      "keepVersion": "Keep v{{version}}",
+      "selected": "Version v{{version}} selected",
+      "kept": "Current version kept"
     }
   },
   "reviewCard": {
@@ -6227,6 +6239,8 @@
     "desiredDisabledTitle": "This preset should not be present in OrcaSlicer. Click to add it to the desired set.",
     "desiredEnabled": "Add to OrcaSlicer",
     "desiredDisabled": "Do not add to OrcaSlicer",
+    "updateAvailable": "Update available",
+    "updateAvailableTitle": "You use v{{current}}; v{{latest}} is available. Open version history to compare and choose.",
     "desiredFilter": "For OrcaSlicer",
     "actual": {
       "device": "State in OrcaSlicer",
@@ -6979,8 +6993,10 @@
     "configurations": "Configurations",
     "noConfigurations": "No configurations yet",
     "installBundleInOrca": "Add set to OrcaSlicer",
+    "removeBundleFromOrca": "Remove set from OrcaSlicer",
     "downloadBundle": "Download OrcaSlicer set",
     "bundleRequestSent": "OrcaSlicer is installing the selected set. The plugin will report the result when it finishes.",
+    "bundleRemoved": "The set was removed from OrcaSlicer.",
     "bundleDownloaded": "The OrcaSlicer profile set was downloaded.",
     "bundleError": "Could not get the printer profile set.",
     "bundleUnavailable": "Add at least one printer configuration first.",
@@ -6992,6 +7008,45 @@
     "gates_many": "{{count}} slots",
     "noFeedSystem": "No feed system described",
     "localConnection": "address stored in OrcaSlicer"
+  },
+  "printerRecovery": {
+    "open": "Recover profiles in OrcaSlicer…",
+    "title": "Recover profiles in OrcaSlicer",
+    "subtitle": "Preview the exact managed copies before writing anything. Normal Sync continues to send machine and process profiles only from OrcaSlicer to FilamentHub.",
+    "loading": "Reading this OrcaSlicer account and preparing the preview…",
+    "planError": "The FilamentHub recovery library is unavailable. Local managed copies can still be removed below.",
+    "localStateError": "Could not read locally managed OrcaSlicer profiles.",
+    "applyError": "Could not recover the selected profiles.",
+    "removeError": "Could not remove the selected managed copy.",
+    "done": "Operation completed.",
+    "restartRequired": "Files were written safely, but this OrcaSlicer build requires a restart before the change is loaded.",
+    "availableTitle": "Available backups",
+    "availableHint": "Missing originals are selected automatically. Existing originals are never duplicated; profiles with unknown state require your choice.",
+    "selected_one": "{{count}} selected",
+    "selected_other": "{{count}} selected",
+    "noneAvailable": "No machine or process profiles are available for recovery.",
+    "restoreSelected": "Recover selected",
+    "managedInstalled": "managed copy installed",
+    "managedOutdated": "managed copy can be updated",
+    "managedConflict": "remove the conflicting local managed copy first",
+    "localTitle": "Managed copies in this OrcaSlicer account",
+    "localHint": "Removal is local and remains available without the server, even if the source printer or profile no longer exists.",
+    "noneInstalled": "No managed machine or process copies are installed.",
+    "removeLocal": "Remove",
+    "kind": {
+      "machine": "Machine",
+      "process": "Process"
+    },
+    "original": {
+      "present": "The original exists in this OrcaSlicer account",
+      "missing": "The previously backed-up original is missing",
+      "unknown": "No fresh presence evidence for this OrcaSlicer account"
+    },
+    "ownership": {
+      "current": "this FilamentHub account",
+      "foreign": "another FilamentHub account or environment",
+      "untracked": "legacy or recovered journal"
+    }
   },
   "printJobs": {
     "open": "Print history",

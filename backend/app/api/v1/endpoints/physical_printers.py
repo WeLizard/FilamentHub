@@ -24,6 +24,7 @@ from app.schemas.material_contract import (
     PhysicalPrinterResponse,
     PhysicalPrinterUpdate,
 )
+from app.schemas.orca_sync import OrcaPrinterRecoveryPlanRequest
 from app.schemas.printer_economics import (
     PrinterEconomicsResponse,
     PrinterEconomicsSuggestion,
@@ -48,6 +49,7 @@ from app.services.material_contract_service import (
 from app.services.orca_printer_bundle_service import (
     build_orca_printer_archive,
     build_orca_printer_bundle,
+    build_orca_printer_recovery_bundle,
 )
 from app.services.printer_economics_service import (
     DEFAULT_USAGE,
@@ -66,6 +68,37 @@ async def list_items(
 ) -> list[PhysicalPrinterResponse]:
     printers = await list_physical_printers(db, current_user.id)
     return [PhysicalPrinterResponse.from_model(printer) for printer in printers]
+
+
+@router.post("/orcaslicer-recovery-plan", response_model=None)
+async def get_orcaslicer_recovery_plan(
+    payload: OrcaPrinterRecoveryPlanRequest,
+    current_user: Annotated[User, Depends(require_printer_bundle_read)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict:
+    """Preview recoverable profiles for one exact Orca account on user action."""
+
+    if not (
+        current_user.allow_printer_profiles_export
+        or current_user.allow_print_profiles_export
+    ):
+        raise_error(status.HTTP_403_FORBIDDEN, ERR_EXPORT_PRINTER_DISABLED)
+    return await build_orca_printer_recovery_bundle(
+        db=db,
+        user_id=current_user.id,
+        source_instance_id=payload.source_instance_id,
+        account_id=payload.account_id,
+        include_machine_profiles=current_user.allow_printer_profiles_export,
+        include_process_profiles=current_user.allow_print_profiles_export,
+        machine_snapshot_complete=payload.machine_snapshot_complete,
+        machine_present_local_profile_ids=set(
+            payload.machine_present_local_profile_ids
+        ),
+        process_snapshot_complete=payload.process_snapshot_complete,
+        process_present_local_profile_ids=set(
+            payload.process_present_local_profile_ids
+        ),
+    )
 
 
 @router.post(

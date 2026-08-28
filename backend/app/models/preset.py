@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy import (
     JSON,
+    BigInteger,
     Boolean,
     DateTime,
     Float,
@@ -72,6 +73,7 @@ class Preset(Base):
             postgresql_where=text("is_weighted IS TRUE"),
             sqlite_where=text("is_weighted = 1"),
         ),
+        Index("ix_presets_derived_version", "derived_from_version_id"),
     )
 
     # Primary key
@@ -107,6 +109,19 @@ class Preset(Base):
         ForeignKey("presets.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
+    )
+
+    # Exact source snapshot of a fork. Preset identity alone is insufficient:
+    # two users may fork the same shared preset from different versions.
+    derived_from_version_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey(
+            "preset_versions.id",
+            ondelete="SET NULL",
+            use_alter=True,
+            name="fk_presets_derived_version",
+        ),
+        nullable=True,
     )
 
     # Preset info

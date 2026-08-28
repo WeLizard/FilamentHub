@@ -2,13 +2,13 @@
 
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { CheckCircle2, Clock3, HardDrive, RefreshCw, RefreshCwOff, RotateCcw, XCircle } from 'lucide-react';
+import { RefreshCw, RefreshCwOff } from 'lucide-react';
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import { savedPresetsAPI } from '../api/client';
 import { translateApiError } from '../utils/translateApiError';
 import { notifyProfileChanged } from '../utils/pluginBridge';
 import { useAuth } from '../contexts/AuthContext';
-import type { OrcaPresetSyncStatus, Preset } from '../types/api';
+import type { Preset } from '../types/api';
 import type { AxiosError } from 'axios';
 
 interface PresetSyncToggleProps {
@@ -16,8 +16,6 @@ interface PresetSyncToggleProps {
   size?: 'sm' | 'md' | 'lg';
   className?: string;
   showLabel?: boolean;
-  observation?: OrcaPresetSyncStatus | null;
-  deviceLabel?: string | null;
 }
 
 export const PresetSyncToggle: React.FC<PresetSyncToggleProps> = ({
@@ -25,8 +23,6 @@ export const PresetSyncToggle: React.FC<PresetSyncToggleProps> = ({
   size = 'md',
   className = '',
   showLabel = false,
-  observation = null,
-  deviceLabel = null,
 }) => {
   const { t } = useTranslation();
   const { user } = useAuth();
@@ -69,7 +65,6 @@ export const PresetSyncToggle: React.FC<PresetSyncToggleProps> = ({
       queryClient.invalidateQueries({ queryKey: ['my-presets'] });
       // Счётчик «всего/к синхронизации» на дашборде и в тулбаре плагина.
       queryClient.invalidateQueries({ queryKey: ['presets-stats'] });
-      queryClient.invalidateQueries({ queryKey: ['orca-sync-status'] });
       // Плагин пересинхронизирует набор (включая removal sync) без ручного Sync.
       notifyProfileChanged();
     },
@@ -89,7 +84,6 @@ export const PresetSyncToggle: React.FC<PresetSyncToggleProps> = ({
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['saved-presets', user?.id] });
-      queryClient.invalidateQueries({ queryKey: ['orca-sync-status'] });
     },
   });
 
@@ -125,65 +119,51 @@ export const PresetSyncToggle: React.FC<PresetSyncToggleProps> = ({
     return null; // Не показываем для чужих пресетов, которые не сохранены
   }
 
-  const actualState = observation?.state;
-  const actualTitle = actualState
-    ? `${t(`presetSync.actual.${actualState}`)}${deviceLabel ? ` · ${deviceLabel}` : ''}`
-    : null;
-  const actualIcon = actualState === 'loaded' ? (
-    <CheckCircle2 className={`${iconSize} text-emerald-400`} />
-  ) : actualState === 'on_disk' ? (
-    <HardDrive className={`${iconSize} text-sky-400`} />
-  ) : actualState === 'pending_restart' ? (
-    <RotateCcw className={`${iconSize} text-amber-400`} />
-  ) : actualState === 'error' ? (
-    <XCircle className={`${iconSize} text-red-400`} />
-  ) : actualState === 'removed' ? (
-    <RefreshCwOff className={`${iconSize} text-gray-500`} />
-  ) : actualState === 'pending' ? (
-    <Clock3 className={`${iconSize} text-amber-300`} />
-  ) : null;
-
   return (
-    <div className="flex items-center gap-1">
-      <button
-        onClick={handleToggle}
-        disabled={isToggling}
-        className={`flex items-center gap-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed ${className}`}
-        title={
-          isSyncEnabled
+    <button
+      onClick={handleToggle}
+      disabled={isToggling}
+      className={`flex items-center gap-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed ${className}`}
+      title={
+        savedPreset?.update_unseen
+          ? t('presetSync.updateAvailableTitle', {
+              current: savedPreset.selected_version_number,
+              latest: savedPreset.latest_version_number,
+            })
+          : isSyncEnabled
             ? t('presetSync.desiredEnabledTitle')
             : t('presetSync.desiredDisabledTitle')
-        }
-      >
-        {isSyncEnabled ? (
-          <RefreshCw
-            className={`${iconSize} text-blue-400 hover:text-blue-300 transition-colors ${
-              isToggling ? 'animate-spin' : ''
-            }`}
-          />
-        ) : (
-          <RefreshCwOff
-            className={`${iconSize} text-gray-500 hover:text-gray-400 transition-colors ${
-              isToggling ? 'opacity-50' : ''
-            }`}
-          />
-        )}
-        {showLabel && (
-          <span className="text-sm text-gray-300">
-            {isSyncEnabled ? t('presetSync.desiredEnabled') : t('presetSync.desiredDisabled')}
-          </span>
-        )}
-      </button>
-      {actualIcon && actualTitle && (
+      }
+    >
+      {isSyncEnabled ? (
+        <RefreshCw
+          className={`${iconSize} text-blue-400 hover:text-blue-300 transition-colors ${
+            isToggling ? 'animate-spin' : ''
+          }`}
+        />
+      ) : (
+        <RefreshCwOff
+          className={`${iconSize} text-gray-500 hover:text-gray-400 transition-colors ${
+            isToggling ? 'opacity-50' : ''
+          }`}
+        />
+      )}
+      {savedPreset?.update_unseen && (
         <span
-          className="flex items-center rounded-lg border border-white/10 bg-black/20 p-2"
-          title={actualTitle}
-          aria-label={actualTitle}
-        >
-          {actualIcon}
+          aria-label={t('presetSync.updateAvailable')}
+          className="h-2 w-2 rounded-full bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.65)]"
+        />
+      )}
+      {showLabel && (
+        <span className="text-sm text-gray-300">
+          {savedPreset?.update_unseen
+            ? t('presetSync.updateAvailable')
+            : isSyncEnabled
+              ? t('presetSync.desiredEnabled')
+              : t('presetSync.desiredDisabled')}
         </span>
       )}
-    </div>
+    </button>
   );
 };
 

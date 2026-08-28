@@ -133,7 +133,6 @@ function AppContent() {
         void queryClient.invalidateQueries({ queryKey: ['user-presets'] });
         void queryClient.invalidateQueries({ queryKey: ['preset-draft-queue'] });
         void queryClient.invalidateQueries({ queryKey: ['preset-stats'] });
-        void queryClient.invalidateQueries({ queryKey: ['orca-sync-status'] });
       }
     });
   }, [navigate, queryClient, t]);

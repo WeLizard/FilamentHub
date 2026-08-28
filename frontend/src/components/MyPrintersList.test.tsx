@@ -6,7 +6,6 @@ import { MyPrintersList } from './MyPrintersList';
 const mocks = vi.hoisted(() => ({
   downloadBundle: vi.fn(),
   downloadBlob: vi.fn(),
-  installBundle: vi.fn(),
   isPluginEmbed: vi.fn(),
   requestCapabilities: vi.fn(),
   listPrinters: vi.fn(),
@@ -38,7 +37,6 @@ vi.mock('../api/client', () => ({
 }));
 
 vi.mock('../utils/pluginBridge', () => ({
-  installPrinterBundleInPlugin: (...args: unknown[]) => mocks.installBundle(...args),
   isPluginEmbed: () => mocks.isPluginEmbed(),
   requestPluginCapabilities: () => mocks.requestCapabilities(),
   subscribeToPluginCapabilities: (
@@ -60,6 +58,11 @@ vi.mock('./Toast', () => ({
 
 vi.mock('./AddPhysicalPrinterModal', () => ({ AddPhysicalPrinterModal: () => null }));
 vi.mock('./PhysicalPrinterSettingsModal', () => ({ PhysicalPrinterSettingsModal: () => null }));
+vi.mock('./PrinterRecoveryModal', () => ({
+  PrinterRecoveryModal: ({ ownerUserId }: { ownerUserId: number }) => (
+    <div>recovery-modal:{ownerUserId}</div>
+  ),
+}));
 vi.mock('./PrinterConfigurationRow', () => ({
   PrinterConfigurationRow: ({ profile }: { profile: { name: string } }) => (
     <span data-testid="printer-configuration">{profile.name}</span>
@@ -68,8 +71,8 @@ vi.mock('./PrinterConfigurationRow', () => ({
 
 function renderList(
   printerProfiles = [
-    { id: 11, name: 'Config One' },
-    { id: 22, name: 'Config Two' },
+    { id: 11, name: 'Config One', owner_user_id: 7 },
+    { id: 22, name: 'Config Two', owner_user_id: 7 },
   ],
 ) {
   const queryClient = new QueryClient({
@@ -79,6 +82,7 @@ function renderList(
     <QueryClientProvider client={queryClient}>
       <MyPrintersList
         printerProfiles={printerProfiles as never}
+        currentUserId={7}
       />
     </QueryClientProvider>,
   );
@@ -89,7 +93,6 @@ describe('MyPrintersList Orca bundle action', () => {
     vi.clearAllMocks();
     mocks.capabilityListener = null;
     mocks.downloadBundle.mockResolvedValue(new Blob(['bundle']));
-    mocks.installBundle.mockResolvedValue({ message: 'installed' });
     mocks.listPrintProfiles.mockResolvedValue([]);
     mocks.listPrinters.mockResolvedValue([
       {
@@ -107,52 +110,48 @@ describe('MyPrintersList Orca bundle action', () => {
     ]);
   });
 
-  it('shows install actions only after a supporting plugin advertises the capability', async () => {
+  it('shows one explicit Recovery Center only after the plugin advertises it', async () => {
     mocks.isPluginEmbed.mockReturnValue(true);
     renderList();
 
     await screen.findByText('Printer One');
-    expect(screen.queryByRole('button', { name: 'myPrinters.installBundleInOrca' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'printerRecovery.open' })).toBeNull();
     expect(mocks.requestCapabilities).toHaveBeenCalledOnce();
 
     act(() => {
-      mocks.capabilityListener?.(new Set(['printer-bundle-install']));
+      mocks.capabilityListener?.(new Set(['printer-recovery-v1']));
     });
 
-    const actions = screen.getAllByRole('button', {
-      name: 'myPrinters.installBundleInOrca',
-    });
-    expect(actions).toHaveLength(2);
-
-    await act(async () => {
-      fireEvent.click(actions[0]);
-      await Promise.resolve();
-    });
-    expect(mocks.installBundle).toHaveBeenCalledWith(1);
+    const action = screen.getByRole('button', { name: 'printerRecovery.open' });
+    expect(screen.queryByRole('button', { name: 'myPrinters.installBundleInOrca' })).toBeNull();
+    fireEvent.click(action);
+    expect(screen.getByText('recovery-modal:7')).toBeInTheDocument();
     expect(mocks.downloadBundle).not.toHaveBeenCalled();
   });
 
-  it('keeps only the matching printer busy until the plugin confirms installation', async () => {
+  it('does not fetch any per-printer bundle merely by opening the list', async () => {
     mocks.isPluginEmbed.mockReturnValue(true);
-    let resolveInstall: ((result: { message: string }) => void) | undefined;
-    mocks.installBundle.mockReturnValue(new Promise((resolve) => {
-      resolveInstall = resolve;
-    }));
     renderList();
     await screen.findByText('Printer One');
     act(() => {
-      mocks.capabilityListener?.(new Set(['printer-bundle-install']));
+      mocks.capabilityListener?.(new Set(['printer-recovery-v1']));
     });
-    const actions = screen.getAllByRole('button', {
-      name: 'myPrinters.installBundleInOrca',
+    expect(screen.getByRole('button', { name: 'printerRecovery.open' })).toBeEnabled();
+    expect(mocks.downloadBundle).not.toHaveBeenCalled();
+  });
+
+  it('never shows the old circular install/remove controls in the embed', async () => {
+    mocks.isPluginEmbed.mockReturnValue(true);
+    renderList();
+    await screen.findByText('Printer One');
+
+    act(() => {
+      mocks.capabilityListener?.(new Set(['printer-recovery-v1']));
     });
 
-    fireEvent.click(actions[0]);
-    await waitFor(() => expect(actions[0]).toBeDisabled());
-    expect(actions[1]).toBeEnabled();
-
-    act(() => resolveInstall?.({ message: 'installed' }));
-    await waitFor(() => expect(actions[0]).toBeEnabled());
+    expect(screen.queryByRole('button', { name: 'myPrinters.installBundleInOrca' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'myPrinters.removeBundleFromOrca' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'myPrinters.downloadBundle' })).toBeNull();
   });
 
   it('keeps install actions hidden in an embed without the capability', async () => {
@@ -177,7 +176,6 @@ describe('MyPrintersList Orca bundle action', () => {
     fireEvent.click(actions[0]);
 
     await waitFor(() => expect(mocks.downloadBundle).toHaveBeenCalledWith(1));
-    expect(mocks.installBundle).not.toHaveBeenCalled();
   });
 
   it('marks only the selected printer while its archive is being prepared', async () => {
@@ -238,12 +236,12 @@ describe('MyPrintersList Orca bundle action', () => {
       },
     ]);
     const profiles = [
-      { id: 11, name: 'Nozzle 0.8', nozzle_diameters: [0.8] },
-      { id: 12, name: 'Nozzle 0.15', nozzle_diameters: [0.15] },
-      { id: 13, name: 'Nozzle 0.6', nozzle_diameters: [0.6] },
-      { id: 14, name: 'Nozzle 0.25', nozzle_diameters: [0.25] },
-      { id: 15, name: 'Nozzle 0.4', nozzle_diameters: [0.4] },
-      { id: 16, name: 'Nozzle 1.0', nozzle_diameters: [1.0] },
+      { id: 11, name: 'Nozzle 0.8', nozzle_diameters: [0.8], owner_user_id: 7 },
+      { id: 12, name: 'Nozzle 0.15', nozzle_diameters: [0.15], owner_user_id: 7 },
+      { id: 13, name: 'Nozzle 0.6', nozzle_diameters: [0.6], owner_user_id: 7 },
+      { id: 14, name: 'Nozzle 0.25', nozzle_diameters: [0.25], owner_user_id: 7 },
+      { id: 15, name: 'Nozzle 0.4', nozzle_diameters: [0.4], owner_user_id: 7 },
+      { id: 16, name: 'Nozzle 1.0', nozzle_diameters: [1.0], owner_user_id: 7 },
     ];
 
     renderList(profiles);

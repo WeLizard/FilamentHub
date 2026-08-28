@@ -3346,7 +3346,8 @@
     "enrichmentConfidenceLow": "Низкая",
     "fieldsAutoFilled": "{{count}} полей заполнено автоматически",
     "materialDetected": "Определён тип: {{type}}",
-    "draftContributionReady": "Настройки импортированы — важных решений: {{count}}",
+    "draftContributionReady": "Настройки импортированы",
+    "draftContributionDecisionsRemaining": "Важных решений: {{count}}",
     "draftContributionHint": "Подтвердите несколько понятных полей, и рабочий профиль станет полезным участникам каталога.",
     "draftContributionAmbiguous": "Нужно уточнить, какой это материал",
     "draftContributionNeedsFix": "Профилю нужны небольшие исправления",
@@ -5448,7 +5449,8 @@
     "syncPrinterTitle": "Принтеры",
     "syncPrinterHint": "Принтеры, их конфигурации и процессы печати.",
     "syncPrinterToHubNote": "Принтеры, найденные в слайсере",
-    "syncPrinterToSlicerNote": "Установка принтера вместе с процессами печати",
+    "syncPrinterToSlicerNote": "Разрешает явное восстановление из FilamentHub с предпросмотром; фоновую синхронизацию не включает",
+    "allowPrinterRecovery": "Разрешить восстановление в OrcaSlicer",
     "syncToHub": "В FilamentHub",
     "syncToSlicer": "В слайсер",
     "syncNotYet": "пока недоступно"
@@ -6124,7 +6126,8 @@
     "timeline": {
       "labeledOnly": "Только с метками",
       "empty": "Версий пока нет",
-      "current": "Текущая"
+      "current": "Последняя",
+      "selected": "Используется"
     },
     "diff": {
       "selectPrompt": "Выберите версию для сравнения с текущей.",
@@ -6158,6 +6161,13 @@
       "descPlaceholder": "Описание (необязательно)",
       "save": "Сохранить",
       "saved": "Метка сохранена"
+    },
+    "selection": {
+      "useVersion": "Использовать v{{version}}",
+      "acceptUpdate": "Принять v{{version}}",
+      "keepVersion": "Остаться на v{{version}}",
+      "selected": "Выбрана версия v{{version}}",
+      "kept": "Текущая версия сохранена"
     }
   },
   "reviewCard": {
@@ -6396,6 +6406,8 @@
     "desiredDisabledTitle": "Пресет не должен быть в OrcaSlicer. Нажмите, чтобы добавить его в желаемый набор.",
     "desiredEnabled": "Добавлять в OrcaSlicer",
     "desiredDisabled": "Не добавлять в OrcaSlicer",
+    "updateAvailable": "Доступно обновление",
+    "updateAvailableTitle": "Вы используете v{{current}}; доступна v{{latest}}. Откройте историю версий, чтобы сравнить и выбрать.",
     "desiredFilter": "Для OrcaSlicer",
     "actual": {
       "device": "Состояние в OrcaSlicer",
@@ -7148,8 +7160,10 @@
     "configurations": "Конфигурации",
     "noConfigurations": "Пока без конфигураций",
     "installBundleInOrca": "Добавить комплект в OrcaSlicer",
+    "removeBundleFromOrca": "Убрать комплект из OrcaSlicer",
     "downloadBundle": "Скачать комплект для OrcaSlicer",
     "bundleRequestSent": "OrcaSlicer устанавливает выбранный комплект. После завершения плагин сообщит результат.",
+    "bundleRemoved": "Комплект удалён из OrcaSlicer.",
     "bundleDownloaded": "Комплект профилей OrcaSlicer скачан.",
     "bundleError": "Не удалось получить комплект профилей принтера.",
     "bundleUnavailable": "Сначала добавьте хотя бы одну конфигурацию принтера.",
@@ -7160,6 +7174,47 @@
     "gates_many": "{{count}} слотов",
     "noFeedSystem": "Система подачи не описана",
     "localConnection": "адрес хранится в OrcaSlicer"
+  },
+  "printerRecovery": {
+    "open": "Восстановить профили в OrcaSlicer…",
+    "title": "Восстановление профилей в OrcaSlicer",
+    "subtitle": "Сначала показывается точный список управляемых копий — до подтверждения ничего не записывается. Обычный Sync по-прежнему отправляет machine/process только из OrcaSlicer в FilamentHub.",
+    "loading": "Читаем текущий аккаунт OrcaSlicer и готовим предпросмотр…",
+    "planError": "Библиотека восстановления FilamentHub недоступна. Локальные управляемые копии всё равно можно удалить ниже.",
+    "localStateError": "Не удалось прочитать локальные управляемые профили OrcaSlicer.",
+    "applyError": "Не удалось восстановить выбранные профили.",
+    "removeError": "Не удалось убрать выбранную управляемую копию.",
+    "done": "Операция завершена.",
+    "restartRequired": "Файлы безопасно записаны, но этой сборке OrcaSlicer нужен перезапуск, чтобы загрузить изменения.",
+    "availableTitle": "Доступные резервные профили",
+    "availableHint": "Пропавшие оригиналы выбраны автоматически. Существующие оригиналы не дублируются; для неизвестного состояния решение остаётся за вами.",
+    "selected_one": "Выбран {{count}}",
+    "selected_few": "Выбрано {{count}}",
+    "selected_many": "Выбрано {{count}}",
+    "selected_other": "Выбрано {{count}}",
+    "noneAvailable": "Нет конфигураций принтера или процессов, доступных для восстановления.",
+    "restoreSelected": "Восстановить выбранные",
+    "managedInstalled": "управляемая копия установлена",
+    "managedOutdated": "управляемую копию можно обновить",
+    "managedConflict": "сначала уберите конфликтующую локальную управляемую копию",
+    "localTitle": "Управляемые копии в этом аккаунте OrcaSlicer",
+    "localHint": "Удаление выполняется локально и доступно без сервера, даже если исходный принтер или профиль уже удалён.",
+    "noneInstalled": "Управляемых копий конфигураций и процессов нет.",
+    "removeLocal": "Убрать",
+    "kind": {
+      "machine": "Конфигурация",
+      "process": "Процесс"
+    },
+    "original": {
+      "present": "Оригинал есть в этом аккаунте OrcaSlicer",
+      "missing": "Ранее сохранённый оригинал пропал",
+      "unknown": "Нет свежих данных о наличии в этом аккаунте OrcaSlicer"
+    },
+    "ownership": {
+      "current": "текущий аккаунт FilamentHub",
+      "foreign": "другой аккаунт или среда FilamentHub",
+      "untracked": "старая копия или потерянный журнал"
+    }
   },
   "printJobs": {
     "open": "История печатей",

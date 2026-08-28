@@ -4,7 +4,18 @@ Newest first. The top entry is the text pasted into the Plugin Hub on release.
 
 ## Unreleased
 
+## 0.1.5
+- Synced material presets now retain their exact FilamentHub preset and version identity when OrcaSlicer saves them. Allowed local edits survive the following synchronization, including settings introduced by newer OrcaSlicer builds.
+- **Save As** creates a separate private draft instead of modifying the managed source, and unsaved editor changes are never uploaded.
+- FilamentHub version choices are synchronized exactly. Editing another author's managed preset creates a personal preset derived from that specific version rather than changing the shared source.
+- The new Recovery Center restores only the managed machine and print profiles you explicitly select and can quarantine individual managed copies without touching original or user-owned presets.
+- Synchronization follows OrcaSlicer's current account folder, presents material presets as `Type • Brand • Name`, and shuts down its background services cleanly with the plugin lifecycle.
+- The native interface is localized for all 23 OrcaSlicer languages, while the embedded page is restricted to trusted FilamentHub navigation and browser-based sign-in.
+
 ## 0.1.4
+- The new Recovery Center scans local FilamentHub-managed machine and print profiles, restores only profiles you explicitly select, and can quarantine individual managed copies without touching original, built-in, user-owned, or differently scoped OrcaSlicer presets.
+- Preset sync no longer writes into a stale signed-in account folder after OrcaSlicer switches back to its default local profile.
+- Synced filament presets use the recognizable `Type • Brand • Name` label in OrcaSlicer without changing their names on FilamentHub.
 - Plugin-owned workers, the local Bambu observer and loopback shell now follow OrcaSlicer's capability lifecycle and stop on cancellation/unload; older OrcaSlicer builds retain the existing registration fallback.
 - The embedded page can no longer navigate its iframe or open a popup to another site. Internal FilamentHub routes and external-browser OAuth remain available.
 - The native FilamentHub plugin interface is now fully localized for all 23 languages available in OrcaSlicer, including navigation, synchronization, recovery, connection status, Bambu LAN controls and error messages.

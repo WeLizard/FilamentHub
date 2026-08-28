@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.material_slot_assignment import MaterialSlotAssignment
 from app.models.material_system import MaterialSlot, MaterialSystem, PhysicalPrinterConnector
+from app.models.orca_profile_sync import OrcaProfileBinding, OrcaProfileSyncScope
 from app.models.preset_gate_state import PresetGateState, PresetGateStateSource
 from app.models.print_profile import PrintProfile
 from app.models.print_profile_configuration import PrintProfileConfigurationLink
@@ -420,7 +421,16 @@ async def test_physical_printer_exports_explicit_orca_bundle(
         active=True,
         orcaslicer_settings={"nozzle_diameter": ["0.4"]},
     )
-    db_session.add_all([nozzle_04, nozzle_06, stock_nozzle])
+    unbound_machine = PrinterProfile(
+        name="Unbound recovery machine 0.8",
+        slug="unbound-recovery-machine-08",
+        owner_user_id=auth_user.id,
+        printer_id=catalog_printer.id,
+        source="orcaslicer",
+        active=True,
+        orcaslicer_settings={"nozzle_diameter": ["0.8"]},
+    )
+    db_session.add_all([nozzle_04, nozzle_06, stock_nozzle, unbound_machine])
     await db_session.commit()
     await db_session.refresh(nozzle_04)
     await db_session.refresh(nozzle_06)
@@ -516,6 +526,22 @@ async def test_physical_printer_exports_explicit_orca_bundle(
         )
     ]
     db_session.add(resolved_unassigned)
+    unbound_process = PrintProfile(
+        name="0.36 mm unbound recovery process",
+        slug="036-mm-unbound-recovery-process",
+        owner_user_id=auth_user.id,
+        active=True,
+        configuration_links_resolved=True,
+        orcaslicer_settings={"layer_height": "0.36"},
+    )
+    db_session.add(unbound_process)
+    await db_session.flush()
+    db_session.add(
+        PrintProfileConfigurationLink(
+            print_profile_id=unbound_process.id,
+            printer_profile_id=unbound_machine.id,
+        )
+    )
     await db_session.commit()
 
     response = await auth_client.get(
@@ -543,7 +569,10 @@ async def test_physical_printer_exports_explicit_orca_bundle(
     machine_names = {
         entry["profile"]["name"] for entry in bundle["machine_profiles"]
     }
-    all_compatible_machine_names = machine_names | {stock_nozzle.name}
+    all_compatible_machine_names = machine_names | {
+        stock_nozzle.name,
+        unbound_machine.name,
+    }
     machine_name_by_id = {
         entry["id"]: entry["profile"]["name"]
         for entry in bundle["machine_profiles"]
@@ -605,6 +634,139 @@ async def test_physical_printer_exports_explicit_orca_bundle(
     )
     assert missing_bundle_scope.status_code == 403
     assert missing_bundle_scope.json()["detail"]["code"] == "ERR_ACCESS_DENIED"
+
+    second = await auth_client.post(
+        "/api/v1/physical-printers",
+        json={
+            "name": "Second physical printer",
+            "printer_id": catalog_printer.id,
+            "printer_profile_ids": [nozzle_04.id],
+        },
+    )
+    assert second.status_code == 201
+    stock_only = await auth_client.post(
+        "/api/v1/physical-printers",
+        json={
+            "name": "Stock configuration only",
+            "printer_id": catalog_printer.id,
+            "printer_profile_ids": [stock_nozzle.id],
+        },
+    )
+    assert stock_only.status_code == 201
+
+    source_instance_id = "recovery-source-instance"
+    account_id = "11111111-1111-4111-8111-111111111111"
+    machine_snapshot = "22222222-2222-4222-8222-222222222222"
+    process_snapshot = "33333333-3333-4333-8333-333333333333"
+    db_session.add_all([
+        OrcaProfileSyncScope(
+            owner_user_id=auth_user.id,
+            source_instance_id=source_instance_id,
+            account_id=account_id,
+            kind="machine",
+            current_snapshot_id=machine_snapshot,
+            status="finalized",
+            finalized_at=datetime.now(timezone.utc),
+        ),
+        OrcaProfileSyncScope(
+            owner_user_id=auth_user.id,
+            source_instance_id=source_instance_id,
+            account_id=account_id,
+            kind="process",
+            current_snapshot_id=process_snapshot,
+            status="finalized",
+            finalized_at=datetime.now(timezone.utc),
+        ),
+        OrcaProfileBinding(
+            owner_user_id=auth_user.id,
+            source_instance_id=source_instance_id,
+            account_id=account_id,
+            kind="machine",
+            local_profile_id="44444444-4444-4444-8444-444444444444",
+            printer_profile_id=nozzle_04.id,
+            print_profile_id=None,
+            present=False,
+            last_snapshot_id=machine_snapshot,
+            last_name=nozzle_04.name,
+        ),
+        OrcaProfileBinding(
+            owner_user_id=auth_user.id,
+            source_instance_id=source_instance_id,
+            account_id=account_id,
+            kind="process",
+            local_profile_id="55555555-5555-4555-8555-555555555555",
+            printer_profile_id=None,
+            print_profile_id=process.id,
+            present=True,
+            last_snapshot_id=process_snapshot,
+            last_name=process.name,
+        ),
+    ])
+    await db_session.commit()
+
+    plan_response = await auth_client.post(
+        "/api/v1/physical-printers/orcaslicer-recovery-plan",
+        json={
+            "source_instance_id": source_instance_id,
+            "account_id": account_id,
+        },
+    )
+    assert plan_response.status_code == 200
+    plan = plan_response.json()
+    assert plan["format"] == "filamenthub.orcaslicer.printer-recovery"
+    machine_by_id = {entry["id"]: entry for entry in plan["machine_profiles"]}
+    process_by_id = {entry["id"]: entry for entry in plan["process_profiles"]}
+    assert machine_by_id[nozzle_04.id]["original_state"] == "missing"
+    assert machine_by_id[nozzle_06.id]["original_state"] == "unknown"
+    assert machine_by_id[unbound_machine.id]["physical_printer_ids"] == []
+    assert process_by_id[process.id]["original_state"] == "present"
+    assert process_by_id[unbound_process.id]["physical_printer_ids"] == []
+    assert set(process_by_id[process.id]["physical_printer_ids"]) == {
+        physical_printer_id,
+        second.json()["id"],
+    }
+    assert len(process_by_id[process.id]["content_hash"]) == 64
+
+    fresh_plan_response = await auth_client.post(
+        "/api/v1/physical-printers/orcaslicer-recovery-plan",
+        json={
+            "source_instance_id": source_instance_id,
+            "account_id": account_id,
+            "machine_snapshot_complete": True,
+            "machine_present_local_profile_ids": [
+                "44444444-4444-4444-8444-444444444444"
+            ],
+            "process_snapshot_complete": True,
+            "process_present_local_profile_ids": [],
+        },
+    )
+    assert fresh_plan_response.status_code == 200
+    fresh_plan = fresh_plan_response.json()
+    fresh_machine = {
+        entry["id"]: entry for entry in fresh_plan["machine_profiles"]
+    }
+    fresh_process = {
+        entry["id"]: entry for entry in fresh_plan["process_profiles"]
+    }
+    assert fresh_machine[nozzle_04.id]["original_state"] == "present"
+    assert fresh_process[process.id]["original_state"] == "missing"
+
+    second_bundle = await auth_client.get(
+        f"/api/v1/physical-printers/{second.json()['id']}/orcaslicer-bundle"
+    )
+    assert second_bundle.status_code == 200
+    second_process = next(
+        entry for entry in second_bundle.json()["process_profiles"]
+        if entry["id"] == process.id
+    )
+    assert second_process["profile"] == process_by_id[process.id]["profile"]
+
+    process_only = await auth_client.get(
+        f"/api/v1/physical-printers/{stock_only.json()['id']}/orcaslicer-bundle"
+    )
+    assert process_only.status_code == 200
+    assert process_only.json()["machine_profiles"] == []
+    assert process_only.json()["process_profiles"]
 
     auth_user.allow_print_profiles_export = False
     await db_session.commit()

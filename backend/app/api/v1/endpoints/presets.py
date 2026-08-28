@@ -34,6 +34,7 @@ from app.core.errors import (
     ERR_PRESET_NOT_FOUND,
     ERR_PRESET_NOT_OWNER,
     ERR_PRESET_OWNERSHIP_IMMUTABLE,
+    ERR_PRESET_VERSION_NOT_FOUND,
     ERR_PRINTER_NOT_FOUND,
     ERR_PRINTER_PROFILE_NOT_FOUND,
     ERR_PRINTER_PROFILE_NOT_LINKED,
@@ -1074,6 +1075,7 @@ async def export_preset_json(
     preset_id: int,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(require_preset_read)],
+    version_id: int | None = Query(None, ge=1),
 ) -> Response:
     """
     Экспортировать профиль в формате OrcaSlicer (.json).
@@ -1097,13 +1099,48 @@ async def export_preset_json(
     if not preset.active or not preset.filament:
         raise_error(404, ERR_PRESET_NOT_FOUND)
 
+    selected_version = None
+    if version_id is not None:
+        from app.services import preset_version_service
+
+        selected_version = await preset_version_service.get_version(
+            db, preset_id, version_id
+        )
+        if selected_version is None:
+            raise_error(
+                404,
+                ERR_PRESET_VERSION_NOT_FOUND,
+                params={"version_id": version_id},
+            )
+        if not await _can_update_preset(db, current_user, preset, preset.filament):
+            if not preset_version_service.is_public_version(selected_version, preset):
+                raise_error(
+                    404,
+                    ERR_PRESET_VERSION_NOT_FOUND,
+                    params={"version_id": version_id},
+                )
+
+    structured_override = (
+        selected_version.snapshot_structured if selected_version is not None else None
+    )
+    export_name = (
+        structured_override.get("name")
+        if isinstance(structured_override, dict)
+        else preset.name
+    ) or preset.name
+    export_extruder_temp = (
+        structured_override.get("extruder_temp", preset.extruder_temp)
+        if isinstance(structured_override, dict)
+        else preset.extruder_temp
+    )
+
     # EXPORT-6 fix: валидация обязательных полей перед экспортом → HTTP 422
     missing_fields = []
-    if not preset.name:
+    if not export_name:
         missing_fields.append("name")
     if not preset.filament.material_type:
         missing_fields.append("filament.material_type")
-    if preset.extruder_temp is None:
+    if export_extruder_temp is None:
         missing_fields.append("nozzle_temperature")
     if missing_fields:
         raise_error(422, ERR_EXPORT_MISSING_FIELDS, params={"fields": ", ".join(missing_fields)})
@@ -1138,17 +1175,26 @@ async def export_preset_json(
 
     # Экспортируем в JSON
     try:
-        settings_override = None
+        settings_override = (
+            selected_version.snapshot_orcaslicer_settings
+            if selected_version is not None
+            else None
+        )
         if not await _can_update_preset(db, current_user, preset, preset.filament):
             from app.services.preset_publication import public_orca_settings
 
-            settings_override = public_orca_settings(preset.orcaslicer_settings)
+            settings_override = public_orca_settings(
+                settings_override
+                if settings_override is not None
+                else preset.orcaslicer_settings
+            )
         profile_dict = await preset_to_orcaslicer_json(
             preset,
             preset.filament,
             db,
             target_profiles=target_profiles,
             settings_override=settings_override,
+            structured_override=structured_override,
         )
     except Exception as e:
         logger.error(f"Error exporting preset {preset_id}: {str(e)}", exc_info=True)
@@ -1160,8 +1206,8 @@ async def export_preset_json(
 
     # Формируем имя файла: используем имя пресета (OrcaSlicer поддерживает кириллицу, пробелы, спецсимволы)
     # Примеры из OrcaSlicer: "TEST-2 ABS.json", "ABS @FilamentHub2.json", "ABS HTP.json"
-    if preset.name:
-        filename = safe_download_stem(preset.name, "preset") + ".json"
+    if export_name:
+        filename = safe_download_stem(export_name, "preset") + ".json"
     else:
         # Fallback: Brand Material.json или просто Material.json
         filename_parts = []

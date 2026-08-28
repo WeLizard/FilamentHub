@@ -7,7 +7,7 @@
 # name = "FilamentHub"
 # description = "Browse and sync community-rated filament profiles from FilamentHub, with spool inventory and print-cost tools."
 # author = "FilamentHub"
-# version = "0.1.4"
+# version = "0.1.5"
 #
 # # Proposed forward-looking key (see README gap). The current
 # # host reads only name/description/author/version/dependencies and ignores unknown
@@ -22,9 +22,10 @@ chrome-less in embed mode and, when the user clicks "Import into OrcaSlicer" on 
 preset, posts a message up to this shell via window.parent.postMessage. The shell
 relays it through the injected window.orca bridge to Python on_message below, which
 downloads the authenticated OrcaSlicer export and writes it into the user preset
-folder, then shows a native "restart required" dialog. A separate explicit action
-on a physical-printer card can restore managed machine and process profile copies;
-they are never pulled automatically and never overwrite unmanaged Orca profiles.
+folder, then shows a native "restart required" dialog. A separate explicit
+Recovery Center can restore selected managed machine and process profile copies;
+they are never pulled automatically and never overwrite unmanaged or differently
+scoped Orca profiles.
 
 The shell also renders an Orca-themed toolbar (host --orca-* CSS variables, same
 role as the native Catalog/Profile/Wiki buttons of the C++ fork panel) and drives
@@ -223,7 +224,7 @@ def post_window(window, payload):
 # --------------------------------------------------------------------------- #
 # Configuration
 # --------------------------------------------------------------------------- #
-PLUGIN_VERSION = "0.1.4"
+PLUGIN_VERSION = "0.1.5"
 PROD_SITE_URL = "https://filamenthub.ru"
 SITE_URL = os.environ.get("FILAMENTHUB_SITE_URL", "http://localhost:3000").rstrip("/")
 _SITE_PARTS = urllib.parse.urlsplit(SITE_URL)
@@ -484,17 +485,15 @@ def refresh_user_preset_folder():
 
 
 def resolve_user_preset_folder():
-    """Cached folder, else the sole non-default account dir on disk, else 'default'."""
+    """Use the folder observed from the live host, otherwise Orca's default.
+
+    An old signed-in account directory may remain as the only non-default
+    directory after Orca switches back to its ``default`` preset folder. Using
+    that stale directory makes a successful sync write files into a bundle the
+    running host never loads.
+    """
     if _user_preset_folder:
         return _user_preset_folder
-    try:
-        base = os.path.join(DATA_DIR, "user")
-        subs = [d for d in os.listdir(base)
-                if d != "default" and os.path.isdir(os.path.join(base, d))]
-        if len(subs) == 1:
-            return subs[0]
-    except OSError:
-        pass
     return "default"
 
 
@@ -554,6 +553,22 @@ def ensure_bundle_metadata():
             )
     except OSError:
         pass
+
+
+def reload_managed_local_bundle_if_available():
+    """Make the completed FilamentHub bundle live when the host supports it."""
+    reload_bundle = getattr(
+        getattr(orca, "host", None), "reload_local_bundle", None
+    )
+    if not callable(reload_bundle):
+        return False
+    try:
+        reload_bundle(BUNDLE_ID)
+    except Exception as exc:
+        fh_log("managed local-bundle reload failed: %s" % type(exc).__name__)
+        return False
+    fh_log("managed local bundle reloaded")
+    return True
 
 
 def resolve_plugin_dir():
@@ -619,6 +634,7 @@ def configure_plugin_storage():
     """
     global PLUGIN_STORAGE_DIR
     global SYNC_LOG_FILE, AUTH_FILE, BAMBU_CONFIG_FILE, IMPORTED_DRAFTS_FILE, SYNC_STATE_FILE
+    global PRINTER_BUNDLE_STATE_FILE
     global _SLICE_INDEX_FILE, _SLICE_CACHE_DIR
 
     fallback_root = fallback_plugin_storage_dir()
@@ -650,6 +666,7 @@ def configure_plugin_storage():
         ".fh_sync.json",
         ".fh_slices.json",
         ".fh_bambu.json",
+        ".fh_printer_bundles.json",
     )
     source_roots = []
     for candidate in (fallback_root, PLUGIN_DIR):
@@ -687,6 +704,7 @@ def configure_plugin_storage():
     BAMBU_CONFIG_FILE = os.path.join(target_root, ".fh_bambu.json")
     IMPORTED_DRAFTS_FILE = os.path.join(target_root, ".fh_imported.json")
     SYNC_STATE_FILE = os.path.join(target_root, ".fh_sync.json")
+    PRINTER_BUNDLE_STATE_FILE = os.path.join(target_root, ".fh_printer_bundles.json")
     _SLICE_INDEX_FILE = os.path.join(target_root, ".fh_slices.json")
     _SLICE_CACHE_DIR = target_cache
     return True
@@ -744,6 +762,7 @@ def read_sync_log():
 # own storage is partitioned and dies with the window.
 AUTH_FILE = os.path.join(PLUGIN_DIR, ".auth.json")
 BAMBU_CONFIG_FILE = os.path.join(PLUGIN_DIR, ".fh_bambu.json")
+PRINTER_BUNDLE_STATE_FILE = os.path.join(PLUGIN_DIR, ".fh_printer_bundles.json")
 
 
 # Shown in the user's real browser at the end of the external OAuth flow, right
@@ -1079,6 +1098,17 @@ def preset_id_from_info_content(content):
     return None
 
 
+def preset_version_id_from_info_content(content):
+    if not isinstance(content, str):
+        return None
+    for line in content.splitlines():
+        key, separator, value = line.partition("=")
+        if separator and key.strip() == "fhub_version_id":
+            normalized = value.strip()
+            return int(normalized) if normalized.isdigit() else None
+    return None
+
+
 def preset_id_from_info_file(path):
     try:
         with open(path, "r", encoding="utf-8") as fh:
@@ -1088,14 +1118,25 @@ def preset_id_from_info_file(path):
     return None
 
 
-def managed_info_bytes(preset_id):
-    return ("sync_info = filamenthub:preset:%d\n" % preset_id).encode("utf-8")
+def preset_version_id_from_info_file(path):
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            return preset_version_id_from_info_content(fh.read())
+    except OSError:
+        return None
 
 
-def write_managed_info(base, preset_id, token):
+def managed_info_bytes(preset_id, version_id=None):
+    content = "sync_info = filamenthub:preset:%d\n" % preset_id
+    if isinstance(version_id, int) and version_id > 0:
+        content += "fhub_version_id = %d\n" % version_id
+    return content.encode("utf-8")
+
+
+def write_managed_info(base, preset_id, token, version_id=None):
     """Persist durable identity even if the optional server .info is unavailable."""
     target = base + ".info"
-    write_bytes_atomic(target, managed_info_bytes(preset_id))
+    write_bytes_atomic(target, managed_info_bytes(preset_id, version_id))
     try:
         status, info = http_get(
             "/presets/%d/export/orcaslicer.info" % preset_id,
@@ -1105,7 +1146,13 @@ def write_managed_info(base, preset_id, token):
             return
         decoded = info.decode("utf-8")
         if preset_id_from_info_content(decoded) == preset_id:
-            write_bytes_atomic(target, info)
+            lines = [
+                line for line in decoded.splitlines()
+                if not line.strip().startswith("fhub_version_id")
+            ]
+            if isinstance(version_id, int) and version_id > 0:
+                lines.append("fhub_version_id = %d" % version_id)
+            write_bytes_atomic(target, ("\n".join(lines) + "\n").encode("utf-8"))
     except (OSError, UnicodeDecodeError):
         pass
 
@@ -1244,17 +1291,23 @@ def _quarantine_managed_preset_artifact(artifact, reason):
     except OSError as exc:
         fh_log("managed preset quarantine unavailable: %r" % exc)
         return False
-    moved = 0
+    moved = []
     for source in paths:
+        target = os.path.join(batch, os.path.basename(source))
         try:
-            os.replace(source, os.path.join(batch, os.path.basename(source)))
+            os.replace(source, target)
         except OSError as exc:
             fh_log("managed preset quarantine move failed: %r" % exc)
+            for original, quarantined in reversed(moved):
+                try:
+                    os.replace(quarantined, original)
+                except OSError as rollback_exc:
+                    fh_log("managed preset quarantine rollback failed: %r" % rollback_exc)
+            return False
         else:
-            moved += 1
-    if moved:
-        fh_log("managed preset quarantined: reason=%s files=%d" % (reason, moved))
-    return bool(moved)
+            moved.append((source, target))
+    fh_log("managed preset quarantined: reason=%s files=%d" % (reason, len(moved)))
+    return len(moved) == len(paths)
 
 
 def is_orca_transportable_value(value):
@@ -1337,6 +1390,77 @@ def normalize_local_bundle_parent(profile, known_presets=None):
     return False
 
 
+FILAMENT_DISPLAY_SEPARATOR = " • "
+
+
+def _filament_profile_text(profile, key):
+    value = profile.get(key) if isinstance(profile, dict) else None
+    if isinstance(value, list):
+        value = value[0] if value else ""
+    return value.strip() if isinstance(value, str) else ""
+
+
+def _filament_material_type(profile):
+    return _filament_profile_text(profile, "filament_type")
+
+
+def _filament_brand(profile):
+    return _filament_profile_text(profile, "filament_vendor")
+
+
+def _filament_display_prefixes(profile):
+    material_type = _filament_material_type(profile)
+    brand = _filament_brand(profile)
+    current_parts = [part for part in (material_type, brand) if part]
+    prefixes = []
+    if current_parts:
+        prefixes.append(FILAMENT_DISPLAY_SEPARATOR.join(current_parts) + FILAMENT_DISPLAY_SEPARATOR)
+    if material_type:
+        legacy = material_type + FILAMENT_DISPLAY_SEPARATOR
+        if legacy not in prefixes:
+            prefixes.append(legacy)
+    return prefixes
+
+
+def filament_display_name(profile, source_name=None):
+    """Return ``Type • Brand • Name`` without changing server identity."""
+    name = source_name
+    if not isinstance(name, str) or not name.strip():
+        name = profile.get("name") if isinstance(profile, dict) else ""
+    name = name.strip() if isinstance(name, str) else ""
+    name = filament_source_name(profile, name)
+    parts = [
+        part
+        for part in (_filament_material_type(profile), _filament_brand(profile), name)
+        if part
+    ]
+    if not parts:
+        return name
+    return FILAMENT_DISPLAY_SEPARATOR.join(parts)
+
+
+def filament_source_name(profile, display_name=None):
+    """Remove only current/legacy automatic prefixes before an FH upload."""
+    name = display_name
+    if not isinstance(name, str) or not name.strip():
+        name = profile.get("name") if isinstance(profile, dict) else ""
+    name = name.strip() if isinstance(name, str) else ""
+    for prefix in _filament_display_prefixes(profile):
+        if name.startswith(prefix):
+            return name[len(prefix):]
+    return name
+
+
+def _legacy_material_display_name(profile, source_name):
+    name = filament_source_name(profile, source_name)
+    material_type = _filament_material_type(profile)
+    return (
+        material_type + FILAMENT_DISPLAY_SEPARATOR + name
+        if material_type and name
+        else name
+    )
+
+
 def preset_file_path(folder, name, preset_id):
     """Path for a managed preset file. OrcaSlicer displays user presets by the
     file stem, so the stem must be the clean preset name; identity lives in the
@@ -1387,6 +1511,61 @@ def remove_stale_preset_files(folder, preset_id, keep_path):
     return removed
 
 
+def migrate_managed_filament_display_name(folder, preset_id, local_entry, remote):
+    """Rename an untouched managed preset to ``Type • Brand • Name``.
+
+    Bare server names and the earlier ``Type • Name`` labels are recognized.
+    A name edited by the user in Orca remains a local change and follows the
+    normal push path.
+    """
+    profile = local_entry.get("profile") if isinstance(local_entry, dict) else None
+    path = local_entry.get("path") if isinstance(local_entry, dict) else None
+    remote_name = (remote or {}).get("name")
+    if not isinstance(profile, dict) or not path or not isinstance(remote_name, str):
+        return False
+    remote_name = remote_name.strip()
+    if not remote_name or not _filament_material_type(profile):
+        return False
+
+    legacy_names = set()
+    for candidate in (
+        safe_filename(remote_name),
+        safe_filename(_legacy_material_display_name(profile, remote_name)),
+    ):
+        if not candidate:
+            continue
+        legacy_names.add(candidate)
+        legacy_names.add("%s (FH-%d)" % (candidate, int(preset_id)))
+    current_name = str(profile.get("name") or "")
+    current_stem = os.path.basename(path)[:-len(".json")]
+    if current_name not in legacy_names or current_stem not in legacy_names:
+        return False
+
+    target = preset_file_path(
+        folder,
+        filament_display_name(profile, remote_name),
+        preset_id,
+    )
+    if os.path.normcase(os.path.abspath(target)) == os.path.normcase(os.path.abspath(path)):
+        return False
+
+    migrated_profile = dict(profile)
+    name = apply_managed_filename_identity(migrated_profile, target)
+    validate_filament_profile(migrated_profile)
+    write_json_atomic(target, migrated_profile)
+    write_bytes_atomic(
+        target[:-len(".json")] + ".info",
+        managed_info_bytes(preset_id, local_entry.get("version_id")),
+    )
+    remove_stale_preset_files(folder, preset_id, target)
+    local_entry.update({
+        "path": target,
+        "profile": migrated_profile,
+        "hash": preset_content_hash(migrated_profile),
+    })
+    return name
+
+
 def quarantine_unwanted_managed_preset_files(folder, remote_ids):
     """Remove FilamentHub-owned artifacts absent from authoritative desired state.
 
@@ -1425,7 +1604,7 @@ def quarantine_unwanted_managed_preset_files(folder, remote_ids):
     return removed, removed_ids
 
 
-def _managed_profile_id_from_info(path, kind):
+def _managed_profile_info_claim(path, kind):
     prefix = "filamenthub:%s:" % kind
     try:
         with open(path, "r", encoding="utf-8") as fh:
@@ -1433,11 +1612,21 @@ def _managed_profile_id_from_info(path, kind):
                 key, separator, value = line.partition("=")
                 if separator and key.strip() == "sync_info":
                     value = value.strip()
+                    claimed = (
+                        value.startswith("filamenthub:machine:")
+                        or value.startswith("filamenthub:process:")
+                    )
                     if value.startswith(prefix):
                         tail = value[len(prefix):]
-                        return int(tail) if tail.isdigit() else None
+                        return claimed, int(tail) if tail.isdigit() else None
+                    return claimed, None
     except OSError:
         pass
+    return False, None
+
+
+def _managed_profile_id_from_info(path, kind):
+    return _managed_profile_info_claim(path, kind)[1]
 
 
 MAX_BAMBU_BRIDGES = 8
@@ -1710,10 +1899,318 @@ def _validated_bundle_entries(bundle, key, kind, maximum):
     return validated
 
 
+MAX_TRACKED_PRINTER_BUNDLES = 100
+MAX_TRACKED_RECOVERY_ARTIFACTS = (
+    MAX_MACHINE_BUNDLE_PROFILES + MAX_PROCESS_BUNDLE_PROFILES
+)
+
+
+def _empty_printer_bundle_state():
+    return {"version": 2, "printers": [], "scopes": []}
+
+
+def _validated_profile_ids(values, maximum):
+    if not isinstance(values, list) or len(values) > maximum:
+        return None
+    result = []
+    for value in values:
+        if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+            return None
+        if value not in result:
+            result.append(value)
+    return result
+
+
+def load_printer_bundle_state():
+    """Load scoped ownership state; v1 remains readable for local cleanup."""
+    try:
+        with open(PRINTER_BUNDLE_STATE_FILE, "r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+    except (OSError, ValueError):
+        return _empty_printer_bundle_state()
+    if not isinstance(payload, dict) or payload.get("version") not in (1, 2):
+        return _empty_printer_bundle_state()
+    printers = []
+    seen = set()
+    for item in payload.get("printers") or []:
+        if not isinstance(item, dict):
+            continue
+        physical_id = item.get("physical_printer_id")
+        machines = _validated_profile_ids(
+            item.get("machine_profile_ids"), MAX_MACHINE_BUNDLE_PROFILES
+        )
+        processes = _validated_profile_ids(
+            item.get("process_profile_ids"), MAX_PROCESS_BUNDLE_PROFILES
+        )
+        if (
+            isinstance(physical_id, bool)
+            or not isinstance(physical_id, int)
+            or physical_id <= 0
+            or physical_id in seen
+            or machines is None
+            or processes is None
+            or (not machines and not processes)
+        ):
+            continue
+        seen.add(physical_id)
+        printers.append({
+            "physical_printer_id": physical_id,
+            "machine_profile_ids": machines,
+            "process_profile_ids": processes,
+        })
+        if len(printers) >= MAX_TRACKED_PRINTER_BUNDLES:
+            break
+    scopes = []
+    if payload.get("version") == 2:
+        for raw_scope in payload.get("scopes") or []:
+            if not isinstance(raw_scope, dict):
+                continue
+            owner_user_id = raw_scope.get("owner_user_id")
+            source_instance_id = raw_scope.get("source_instance_id")
+            account_id = _valid_uuid(raw_scope.get("account_id"))
+            server_origin = raw_scope.get("server_origin")
+            if (
+                isinstance(owner_user_id, bool)
+                or not isinstance(owner_user_id, int)
+                or owner_user_id <= 0
+                or not isinstance(source_instance_id, str)
+                or not 16 <= len(source_instance_id) <= 100
+                or account_id is None
+                or not isinstance(server_origin, str)
+                or not server_origin
+            ):
+                continue
+            artifacts = []
+            seen_artifacts = set()
+            for artifact in raw_scope.get("artifacts") or []:
+                if not isinstance(artifact, dict):
+                    continue
+                kind = artifact.get("kind")
+                profile_id = artifact.get("profile_id")
+                key = (kind, profile_id)
+                content_hash = artifact.get("content_hash")
+                name = artifact.get("name")
+                if (
+                    kind not in ("machine", "process")
+                    or isinstance(profile_id, bool)
+                    or not isinstance(profile_id, int)
+                    or profile_id <= 0
+                    or key in seen_artifacts
+                    or not isinstance(content_hash, str)
+                    or len(content_hash) != 64
+                    or not isinstance(name, str)
+                ):
+                    continue
+                seen_artifacts.add(key)
+                artifacts.append({
+                    "kind": kind,
+                    "profile_id": profile_id,
+                    "name": name[:200],
+                    "content_hash": content_hash,
+                })
+                if len(artifacts) >= MAX_TRACKED_RECOVERY_ARTIFACTS:
+                    break
+            scopes.append({
+                "server_origin": server_origin.rstrip("/"),
+                "owner_user_id": owner_user_id,
+                "source_instance_id": source_instance_id,
+                "account_id": account_id,
+                "artifacts": artifacts,
+            })
+            if len(scopes) >= 20:
+                break
+    return {"version": 2, "printers": printers, "scopes": scopes}
+
+
+def save_printer_bundle_state(payload):
+    write_json_atomic(PRINTER_BUNDLE_STATE_FILE, payload, mode=0o600)
+
+
+def printer_bundle_profile_ids(bundle):
+    if not isinstance(bundle, dict):
+        raise ValueError("Printer bundle must be a JSON object")
+    if bundle.get("format") not in (
+        "filamenthub.orcaslicer.printer-bundle",
+        "filamenthub.orcaslicer.printer-recovery",
+    ) or bundle.get("version") != 1:
+        raise ValueError("Unsupported printer bundle format")
+    machines = _validated_bundle_entries(
+        bundle, "machine_profiles", "machine", MAX_MACHINE_BUNDLE_PROFILES
+    )
+    processes = _validated_bundle_entries(
+        bundle, "process_profiles", "process", MAX_PROCESS_BUNDLE_PROFILES
+    )
+    if not machines and not processes:
+        raise ValueError("Printer bundle has no profiles")
+    return {
+        "machine": [entry["id"] for entry in machines],
+        "process": [entry["id"] for entry in processes],
+    }
+
+
+def remember_installed_printer_bundle(physical_printer_id, profile_ids):
+    state = load_printer_bundle_state()
+    state["printers"] = [
+        item for item in state["printers"]
+        if item["physical_printer_id"] != int(physical_printer_id)
+    ]
+    state["printers"].append({
+        "physical_printer_id": int(physical_printer_id),
+        "machine_profile_ids": list(profile_ids["machine"]),
+        "process_profile_ids": list(profile_ids["process"]),
+    })
+    if len(state["printers"]) > MAX_TRACKED_PRINTER_BUNDLES:
+        state["printers"] = state["printers"][-MAX_TRACKED_PRINTER_BUNDLES:]
+    save_printer_bundle_state(state)
+
+
+def _managed_profile_artifacts(folder, kind):
+    try:
+        names = os.listdir(folder)
+    except OSError:
+        return []
+    stems = {
+        name[:-len(extension)]
+        for name in names
+        for extension in (".json", ".info")
+        if name.endswith(extension)
+    }
+    artifacts = []
+    for stem in stems:
+        json_path = os.path.join(folder, stem + ".json")
+        info_path = os.path.join(folder, stem + ".info")
+        profile = None
+        if os.path.isfile(json_path):
+            try:
+                with open(json_path, "r", encoding="utf-8") as handle:
+                    candidate = json.load(handle)
+                if isinstance(candidate, dict):
+                    profile = candidate
+            except (OSError, ValueError):
+                pass
+        json_id = (
+            preset_id_from_bundle(profile.get("bundle_id"))
+            if isinstance(profile, dict) else None
+        )
+        bundle_value = profile.get("bundle_id") if isinstance(profile, dict) else None
+        bundle_claimed = (
+            isinstance(bundle_value, str)
+            and bundle_value.startswith("filamenthub:")
+        )
+        info_claimed, info_id = _managed_profile_info_claim(info_path, kind)
+        if not bundle_claimed and not info_claimed:
+            continue
+        claimed = {value for value in (json_id, info_id) if value is not None}
+        profile_id = next(iter(claimed)) if len(claimed) == 1 else None
+        markers_valid = (
+            (not bundle_claimed or json_id is not None)
+            and (not info_claimed or info_id is not None)
+        )
+        artifacts.append({
+            "json_path": json_path if os.path.isfile(json_path) else None,
+            "info_path": info_path if os.path.isfile(info_path) else None,
+            "profile": profile,
+            "profile_id": profile_id,
+            "healthy": (
+                profile is not None
+                and profile_id is not None
+                and len(claimed) == 1
+                and markers_valid
+            ),
+        })
+    return artifacts
+
+
+def installed_managed_profile_ids(folder, kind):
+    return {
+        artifact["profile_id"]
+        for artifact in _managed_profile_artifacts(folder, kind)
+        if artifact["healthy"]
+    }
+
+
+def installed_printer_bundle_ids(physical_printer_ids):
+    wanted = set(physical_printer_ids)
+    machines = installed_managed_profile_ids(user_machine_dir(), "machine")
+    processes = installed_managed_profile_ids(user_process_dir(), "process")
+    installed = set()
+    for item in load_printer_bundle_state()["printers"]:
+        if item["physical_printer_id"] not in wanted:
+            continue
+        if (
+            set(item["machine_profile_ids"]).issubset(machines)
+            and set(item["process_profile_ids"]).issubset(processes)
+        ):
+            installed.add(item["physical_printer_id"])
+    return installed
+
+
+def printer_bundle_profiles_present(profile_ids):
+    return (
+        set(profile_ids["machine"]).issubset(
+            installed_managed_profile_ids(user_machine_dir(), "machine")
+        )
+        and set(profile_ids["process"]).issubset(
+            installed_managed_profile_ids(user_process_dir(), "process")
+        )
+    )
+
+
+def remove_installed_printer_bundle(physical_printer_id):
+    """Quarantine only FH-owned profiles no other installed printer needs."""
+    state = load_printer_bundle_state()
+    current = next(
+        (
+            item for item in state["printers"]
+            if item["physical_printer_id"] == int(physical_printer_id)
+        ),
+        None,
+    )
+    if current is None:
+        return {"machine": 0, "process": 0}
+
+    others = [item for item in state["printers"] if item is not current]
+    protected = {
+        "machine": {
+            profile_id for item in others for profile_id in item["machine_profile_ids"]
+        },
+        "process": {
+            profile_id for item in others for profile_id in item["process_profile_ids"]
+        },
+    }
+    wanted = {
+        "machine": set(current["machine_profile_ids"]) - protected["machine"],
+        "process": set(current["process_profile_ids"]) - protected["process"],
+    }
+    counts = {"machine": 0, "process": 0}
+    for kind, folder in (
+        ("machine", user_machine_dir()),
+        ("process", user_process_dir()),
+    ):
+        for artifact in _managed_profile_artifacts(folder, kind):
+            if artifact["profile_id"] not in wanted[kind]:
+                continue
+            if not _quarantine_managed_preset_artifact(
+                artifact,
+                "printer-%d-%s-%d" % (
+                    int(physical_printer_id), kind, artifact["profile_id"]
+                ),
+            ):
+                raise OSError("could not quarantine managed %s profile" % kind)
+            counts[kind] += 1
+
+    state["printers"] = others
+    save_printer_bundle_state(state)
+    return counts
+
+
 def prepare_printer_bundle_install(bundle):
     if not isinstance(bundle, dict):
         raise ValueError("Printer bundle must be a JSON object")
-    if bundle.get("format") != "filamenthub.orcaslicer.printer-bundle" or bundle.get("version") != 1:
+    if bundle.get("format") not in (
+        "filamenthub.orcaslicer.printer-bundle",
+        "filamenthub.orcaslicer.printer-recovery",
+    ) or bundle.get("version") != 1:
         raise ValueError("Unsupported printer bundle format")
 
     machines = _validated_bundle_entries(
@@ -1722,8 +2219,8 @@ def prepare_printer_bundle_install(bundle):
     processes = _validated_bundle_entries(
         bundle, "process_profiles", "process", MAX_PROCESS_BUNDLE_PROFILES
     )
-    if not machines:
-        raise ValueError("Printer bundle has no machine profiles")
+    if not machines and not processes:
+        raise ValueError("Printer bundle has no profiles")
 
     prepared = []
     machine_names = {}
@@ -1753,18 +2250,459 @@ def prepare_printer_bundle_install(bundle):
     return prepared
 
 
-def install_printer_bundle(bundle):
+def install_printer_bundle(
+    bundle, physical_printer_id=None, replace_existing_ids=False
+):
+    profile_ids = printer_bundle_profile_ids(bundle)
     prepared = prepare_printer_bundle_install(bundle)
     ensure_bundle_metadata()
     counts = {"machine": 0, "process": 0}
-    for kind, profile_id, path, profile in prepared:
-        write_json_atomic(path, profile)
-        write_managed_profile_info(path[:-len(".json")], kind, profile_id)
-        remove_stale_managed_profile_files(
-            os.path.dirname(path), profile_id, kind, path
-        )
-        counts[kind] += 1
+    os.makedirs(user_bundle_dir(), mode=0o700, exist_ok=True)
+    # Keep staging on the same volume as the live local bundle: os.replace is
+    # atomic only within one filesystem (and Windows rejects cross-volume moves).
+    stage_root = tempfile.mkdtemp(prefix=".printer-recovery-", dir=user_bundle_dir())
+    staged = []
+    backups = []
+    installed = []
+    try:
+        for index, (kind, profile_id, path, profile) in enumerate(prepared):
+            stage_base = os.path.join(stage_root, "%03d-%s-%d" % (index, kind, profile_id))
+            staged_json = stage_base + ".json"
+            staged_info = stage_base + ".info"
+            write_json_atomic(staged_json, profile)
+            write_managed_profile_info(stage_base, kind, profile_id)
+            with open(staged_json, "r", encoding="utf-8") as handle:
+                verified = json.load(handle)
+            if managed_profile_id(staged_json, verified, kind) != profile_id:
+                raise ValueError("Staged managed profile identity mismatch")
+            staged.append((kind, profile_id, path, staged_json, staged_info))
+
+        rollback_root = os.path.join(stage_root, "rollback")
+        os.makedirs(rollback_root, mode=0o700, exist_ok=True)
+        for kind, profile_id, path, staged_json, staged_info in staged:
+            os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
+            target_info = path[:-len(".json")] + ".info"
+            replacement_targets = [path, target_info]
+            if replace_existing_ids:
+                for artifact in _managed_profile_artifacts(
+                    os.path.dirname(path), kind
+                ):
+                    if artifact.get("profile_id") != profile_id:
+                        continue
+                    replacement_targets.extend(
+                        candidate
+                        for candidate in (
+                            artifact.get("json_path"),
+                            artifact.get("info_path"),
+                        )
+                        if candidate
+                    )
+            seen_targets = set()
+            for target in replacement_targets:
+                normalized_target = os.path.normcase(os.path.abspath(target))
+                if normalized_target in seen_targets:
+                    continue
+                seen_targets.add(normalized_target)
+                if not os.path.isfile(target):
+                    continue
+                backup = os.path.join(
+                    rollback_root,
+                    "%03d-%s" % (len(backups), os.path.basename(target)),
+                )
+                os.replace(target, backup)
+                backups.append((target, backup))
+            os.replace(staged_json, path)
+            installed.append((path, staged_json))
+            os.replace(staged_info, target_info)
+            installed.append((target_info, staged_info))
+            counts[kind] += 1
+        if backups:
+            quarantine_root = managed_preset_quarantine_dir()
+            os.makedirs(quarantine_root, mode=0o700, exist_ok=True)
+            durable_rollback = os.path.join(
+                quarantine_root,
+                "%s-printer-recovery-replaced-%s" % (
+                    time.strftime("%Y%m%d-%H%M%S"),
+                    secrets.token_hex(4),
+                ),
+            )
+            os.replace(rollback_root, durable_rollback)
+    except Exception:
+        for target, staged_path in reversed(installed):
+            if os.path.isfile(target):
+                try:
+                    os.replace(target, staged_path)
+                except OSError as exc:
+                    fh_log("printer recovery rollback move failed: %r" % exc)
+        for target, backup in reversed(backups):
+            if os.path.isfile(backup):
+                try:
+                    os.replace(backup, target)
+                except OSError as exc:
+                    fh_log("printer recovery rollback restore failed: %r" % exc)
+        raise
+    finally:
+        shutil.rmtree(stage_root, ignore_errors=True)
+    if physical_printer_id is not None:
+        remember_installed_printer_bundle(physical_printer_id, profile_ids)
     return counts
+
+
+def _managed_profile_content_hash(profile):
+    encoded = json.dumps(
+        profile,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _recovery_scope_from_bundle(bundle):
+    if (
+        not isinstance(bundle, dict)
+        or bundle.get("format") != "filamenthub.orcaslicer.printer-recovery"
+        or bundle.get("version") != 1
+    ):
+        raise ValueError("Unsupported printer recovery format")
+    raw = bundle.get("scope")
+    if not isinstance(raw, dict):
+        raise ValueError("Printer recovery scope is missing")
+    owner_user_id = raw.get("owner_user_id")
+    source_instance_id = raw.get("source_instance_id")
+    account_id = _valid_uuid(raw.get("account_id"))
+    if (
+        isinstance(owner_user_id, bool)
+        or not isinstance(owner_user_id, int)
+        or owner_user_id <= 0
+        or not isinstance(source_instance_id, str)
+        or not 16 <= len(source_instance_id) <= 100
+        or account_id is None
+    ):
+        raise ValueError("Invalid printer recovery scope")
+    return {
+        "server_origin": SITE_URL.rstrip("/"),
+        "owner_user_id": owner_user_id,
+        "source_instance_id": source_instance_id,
+        "account_id": account_id,
+    }
+
+
+def _scope_matches(left, right):
+    return all(
+        left.get(key) == right.get(key)
+        for key in (
+            "server_origin",
+            "owner_user_id",
+            "source_instance_id",
+            "account_id",
+        )
+    )
+
+
+def _recovery_bundle_journal_artifacts(bundle):
+    artifacts = []
+    seen = set()
+    for key, kind, maximum in (
+        ("machine_profiles", "machine", MAX_MACHINE_BUNDLE_PROFILES),
+        ("process_profiles", "process", MAX_PROCESS_BUNDLE_PROFILES),
+    ):
+        entries = _validated_bundle_entries(bundle, key, kind, maximum)
+        raw_by_id = {
+            entry.get("id"): entry
+            for entry in bundle.get(key) or []
+            if isinstance(entry, dict)
+        }
+        for entry in entries:
+            artifact_key = (kind, entry["id"])
+            if artifact_key in seen:
+                raise ValueError("Printer recovery contains duplicate profiles")
+            seen.add(artifact_key)
+            raw = raw_by_id.get(entry["id"]) or {}
+            expected_hash = raw.get("content_hash")
+            actual_hash = _managed_profile_content_hash(raw.get("profile"))
+            if (
+                not isinstance(expected_hash, str)
+                or len(expected_hash) != 64
+                or expected_hash != actual_hash
+            ):
+                raise ValueError("Printer recovery content hash mismatch")
+            artifacts.append({
+                "kind": kind,
+                "profile_id": entry["id"],
+                "name": entry["name"],
+                "content_hash": expected_hash,
+            })
+    if not artifacts:
+        raise ValueError("Printer recovery has no profiles")
+    return artifacts
+
+
+def remember_recovered_profiles(scope, artifacts):
+    state = load_printer_bundle_state()
+    current = next(
+        (item for item in state["scopes"] if _scope_matches(item, scope)),
+        None,
+    )
+    if current is None:
+        current = dict(scope, artifacts=[])
+        state["scopes"].append(current)
+    merged = {
+        (item["kind"], item["profile_id"]): item
+        for item in current["artifacts"]
+    }
+    for artifact in artifacts:
+        merged[(artifact["kind"], artifact["profile_id"])] = dict(artifact)
+    current["artifacts"] = list(merged.values())[-MAX_TRACKED_RECOVERY_ARTIFACTS:]
+    state["scopes"] = state["scopes"][-20:]
+    save_printer_bundle_state(state)
+
+
+def _assert_recovery_install_is_owned(scope, artifacts):
+    """Refuse to adopt or overwrite managed files from an ambiguous scope."""
+    wanted = {(item["kind"], item["profile_id"]) for item in artifacts}
+    state = load_printer_bundle_state()
+    current = next(
+        (item for item in state["scopes"] if _scope_matches(item, scope)),
+        None,
+    )
+    current_by_key = {
+        (item["kind"], item["profile_id"]): item
+        for item in (current or {}).get("artifacts", [])
+    }
+    foreign_keys = {
+        (item["kind"], item["profile_id"])
+        for saved_scope in state["scopes"]
+        if not _scope_matches(saved_scope, scope)
+        for item in saved_scope["artifacts"]
+    }
+    found = {}
+    conflicts = set()
+    for kind, folder in (
+        ("machine", user_machine_dir()),
+        ("process", user_process_dir()),
+    ):
+        for artifact in _managed_profile_artifacts(folder, kind):
+            key = (kind, artifact.get("profile_id"))
+            if key not in wanted:
+                continue
+            found[key] = found.get(key, 0) + 1
+            if (
+                key not in current_by_key
+                or key in foreign_keys
+                or not artifact.get("healthy")
+            ):
+                conflicts.add(key)
+    conflicts.update(key for key, count in found.items() if count != 1)
+    if conflicts:
+        raise ValueError(
+            "Conflicting local managed profiles must be removed before recovery"
+        )
+    return {
+        key: current_by_key[key]["content_hash"]
+        for key, count in found.items()
+        if count == 1 and key in current_by_key
+    }
+
+
+def install_printer_recovery(bundle):
+    scope = _recovery_scope_from_bundle(bundle)
+    if scope["source_instance_id"] != plugin_source_instance_id():
+        raise ValueError("Printer recovery belongs to another Orca installation")
+    registry = load_profile_identity_registry()
+    if scope["account_id"] != registry["account_id"]:
+        raise ValueError("Printer recovery belongs to another Orca account")
+    artifacts = _recovery_bundle_journal_artifacts(bundle)
+    installed_hashes = _assert_recovery_install_is_owned(scope, artifacts)
+    unchanged = {
+        (item["kind"], item["profile_id"])
+        for item in artifacts
+        if installed_hashes.get((item["kind"], item["profile_id"]))
+        == item["content_hash"]
+    }
+    write_bundle = dict(bundle)
+    write_bundle["machine_profiles"] = [
+        item for item in bundle.get("machine_profiles") or []
+        if ("machine", item.get("id")) not in unchanged
+    ]
+    write_bundle["process_profiles"] = [
+        item for item in bundle.get("process_profiles") or []
+        if ("process", item.get("id")) not in unchanged
+    ]
+    if write_bundle["machine_profiles"] or write_bundle["process_profiles"]:
+        counts = install_printer_bundle(
+            write_bundle, replace_existing_ids=True
+        )
+    else:
+        counts = {"machine": 0, "process": 0}
+    remember_recovered_profiles(scope, artifacts)
+    return scope, [
+        dict(
+            item,
+            unchanged=(item["kind"], item["profile_id"]) in unchanged,
+        )
+        for item in artifacts
+    ], counts
+
+
+def _recovery_artifact_key(kind, artifact):
+    stems = sorted(_artifact_stems(artifact), key=str.casefold)
+    encoded = (kind + "\0" + "\0".join(stems)).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()[:32]
+
+
+def current_printer_recovery_state(owner_user_id, original_observations=None):
+    registry = load_profile_identity_registry()
+    save_profile_identity_registry(registry)
+    scope = {
+        "server_origin": SITE_URL.rstrip("/"),
+        "owner_user_id": int(owner_user_id),
+        "source_instance_id": plugin_source_instance_id(),
+        "account_id": registry["account_id"],
+    }
+    state = load_printer_bundle_state()
+    current = next(
+        (item for item in state["scopes"] if _scope_matches(item, scope)),
+        None,
+    )
+    current_by_key = {
+        (item["kind"], item["profile_id"]): item
+        for item in (current or {}).get("artifacts", [])
+    }
+    foreign_keys = {
+        (item["kind"], item["profile_id"])
+        for saved_scope in state["scopes"]
+        if not _scope_matches(saved_scope, scope)
+        for item in saved_scope["artifacts"]
+    }
+    artifacts = []
+    for kind, folder in (
+        ("machine", user_machine_dir()),
+        ("process", user_process_dir()),
+    ):
+        for artifact in _managed_profile_artifacts(folder, kind):
+            profile_id = artifact.get("profile_id")
+            key = (kind, profile_id)
+            journal = current_by_key.get(key)
+            ownership = (
+                "current"
+                if journal is not None
+                else "foreign"
+                if profile_id is not None and key in foreign_keys
+                else "untracked"
+            )
+            profile = artifact.get("profile")
+            artifacts.append({
+                "artifactKey": _recovery_artifact_key(kind, artifact),
+                "kind": kind,
+                "profileId": profile_id,
+                "name": (
+                    profile.get("name")
+                    if isinstance(profile, dict) and isinstance(profile.get("name"), str)
+                    else (
+                        sorted(_artifact_stems(artifact), key=str.casefold)[0]
+                        if _artifact_stems(artifact)
+                        else "Managed profile"
+                    )
+                ),
+                "contentHash": journal.get("content_hash") if journal else None,
+                "ownership": ownership,
+                "healthy": bool(artifact.get("healthy")),
+            })
+    return {
+        "context": scope,
+        "artifacts": artifacts,
+        "originalObservations": original_observations or {},
+    }
+
+
+def observe_recovery_originals():
+    """Read original user profiles on the UI thread without contacting FH."""
+    observed = {}
+    for kind in ("machine", "process"):
+        items, complete = scan_user_profiles_checked(kind)
+        if not complete:
+            observed[kind] = {"complete": False, "presentLocalProfileIds": []}
+            continue
+        _account_id, identified, saved = reconcile_local_profile_identities(
+            kind, items, authoritative=True
+        )
+        observed[kind] = {
+            "complete": bool(saved),
+            "presentLocalProfileIds": [
+                item["local_profile_id"] for item in identified
+                if item.get("local_profile_id")
+            ] if saved else [],
+        }
+    return observed
+
+
+def remove_printer_recovery_artifacts(artifact_keys):
+    wanted = set(artifact_keys)
+    removed = []
+    failed = []
+    for kind, folder in (
+        ("machine", user_machine_dir()),
+        ("process", user_process_dir()),
+    ):
+        for artifact in _managed_profile_artifacts(folder, kind):
+            artifact_key = _recovery_artifact_key(kind, artifact)
+            if artifact_key not in wanted:
+                continue
+            result = {
+                "artifactKey": artifact_key,
+                "kind": kind,
+                "profileId": artifact.get("profile_id"),
+            }
+            if _quarantine_managed_preset_artifact(
+                artifact, "printer-recovery-%s" % artifact_key
+            ):
+                removed.append(result)
+            else:
+                failed.append(result)
+
+    remaining = {
+        (kind, artifact.get("profile_id"))
+        for kind, folder in (
+            ("machine", user_machine_dir()),
+            ("process", user_process_dir()),
+        )
+        for artifact in _managed_profile_artifacts(folder, kind)
+        if artifact.get("profile_id") is not None
+    }
+    state = load_printer_bundle_state()
+    for saved_scope in state["scopes"]:
+        saved_scope["artifacts"] = [
+            item
+            for item in saved_scope["artifacts"]
+            if (item["kind"], item["profile_id"]) in remaining
+        ]
+    state["printers"] = [
+        dict(
+            item,
+            machine_profile_ids=[
+                profile_id
+                for profile_id in item["machine_profile_ids"]
+                if ("machine", profile_id) in remaining
+            ],
+            process_profile_ids=[
+                profile_id
+                for profile_id in item["process_profile_ids"]
+                if ("process", profile_id) in remaining
+            ],
+        )
+        for item in state["printers"]
+        if any(
+            (kind, profile_id) in remaining
+            for kind, ids_key in (
+                ("machine", "machine_profile_ids"),
+                ("process", "process_profile_ids"),
+            )
+            for profile_id in item[ids_key]
+        )
+    ]
+    save_printer_bundle_state(state)
+    return {"removed": removed, "failed": failed}
 
 
 def ensure_parent_exists(profile, known_presets):
@@ -3115,34 +4053,76 @@ def loaded_managed_preset_ids():
 
 
 def scan_active_user_filaments():
-    """The loaded account's own filament presets (UI thread — reads preset_bundle).
-    Keep is_user() presets, skip system/vendor and our [fh] ones. Configuration
-    comes from Orca's Preset API instead of reopening the backing JSON file."""
+    """Return only saved, unmanaged user filament presets from the active account.
+
+    Orca's live Preset object can include editor changes that have not been
+    written to disk yet. Importing that state would make a private draft appear
+    in FilamentHub before the user saved it, so the persisted file is the source
+    for this particular outbound path.
+    """
     candidates = []
-    managed_names = set()
-    for entry in scan_local_fh_presets(user_filament_dir()).values():
-        managed_names.add(os.path.basename(entry["path"])[:-len(".json")])
     try:
         filaments = orca.host.preset_bundle().filaments
         for i in range(filaments.size()):
             preset = filaments.preset(i)
             if not preset.is_user():
                 continue
-            name = preset.name or ""
-            if "[fh]" in name or "@fh" in name or name in managed_names:
+            name = str(getattr(preset, "name", "") or "").strip()
+            if not name or "[fh]" in name or "@fh" in name:
                 continue
-            if preset_id_from_bundle(getattr(preset, "bundle_id", "")) is not None:
+            profile = saved_user_filament_profile(preset, name)
+            if profile is None:
                 continue
-            profile = preset_config_dict(preset, include_metadata=True)
-            if profile:
-                candidates.append({
-                    "name": name,
-                    "profile": profile,
-                    "locator": _local_profile_locator(preset, "filament", name),
-                })
+            candidates.append({
+                "name": name,
+                "profile": profile,
+                "locator": _local_profile_locator(preset, "filament", name),
+            })
     except Exception:
         pass
     return candidates
+
+
+def saved_user_filament_profile(preset, expected_name):
+    """Read one saved unmanaged filament profile without trusting live edits."""
+    path = str(getattr(preset, "file", "") or "").strip()
+    if not path or not path.lower().endswith(".json"):
+        return None
+    account_root = os.path.abspath(
+        os.path.join(DATA_DIR, "user", resolve_user_preset_folder())
+    )
+    candidate = os.path.abspath(path)
+    managed_root = os.path.abspath(user_filament_dir())
+    try:
+        if os.path.normcase(os.path.commonpath((account_root, candidate))) != os.path.normcase(
+            account_root
+        ):
+            return None
+        if os.path.normcase(os.path.commonpath((managed_root, candidate))) == os.path.normcase(
+            managed_root
+        ):
+            return None
+        if os.path.getsize(candidate) > 2 * 1024 * 1024:
+            return None
+        with open(candidate, "r", encoding="utf-8") as fh:
+            profile = json.load(fh)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(profile, dict):
+        return None
+    saved_name = str(profile.get("name") or "").strip()
+    if not saved_name or saved_name != expected_name:
+        return None
+    # A bundle preset saved through Orca's Save As can retain its old metadata,
+    # but its new path makes it a user profile.  Directory ownership is the
+    # authority here; never let copied FilamentHub markers turn it back into an
+    # update of the managed source.
+    if preset_id_from_bundle(profile.get("bundle_id")) is not None:
+        profile = dict(profile)
+        profile.pop("bundle_id", None)
+        profile.pop("fhub_id", None)
+        profile.pop("fhub_source", None)
+    return profile
 
 
 def _sync_preferences(token):
@@ -3348,8 +4328,8 @@ def push_filament_drafts(token, candidates, authoritative=True):
 #                                     backend updates the owned preset or forks a
 #                                     non-owned one into a new user preset)
 #   * neither                      -> skip (never re-apply an unchanged preset)
-# A local edit always wins over a remote bump so an OrcaSlicer change is never
-# silently lost.
+#   * both changed                 -> keep both copies and report a conflict;
+#                                     neither side wins silently.
 # --------------------------------------------------------------------------- #
 BUNDLE_PREFIX = "filamenthub:"
 SYNC_STATE_FILE = os.path.join(PLUGIN_DIR, ".fh_sync.json")
@@ -3462,7 +4442,12 @@ def recover_sync_record(pid, token, known_presets, local_entry, remote_updated):
     compare hashes. Returns the record to adopt when contents match, False when
     the local copy differs (a real local edit — caller pushes it), or None when
     the remote couldn't be fetched (caller skips this round)."""
-    status, body = http_get("/presets/%d/export/orcaslicer.json" % pid, token=token)
+    version_id = (remote_updated or {}).get("selected_version_id") if isinstance(remote_updated, dict) else None
+    remote_timestamp = (remote_updated or {}).get("updated_at") if isinstance(remote_updated, dict) else remote_updated
+    export_path = "/presets/%d/export/orcaslicer.json" % pid
+    if isinstance(version_id, int):
+        export_path += "?version_id=%d" % version_id
+    status, body = http_get(export_path, token=token)
     if status != 200:
         return None
     try:
@@ -3477,9 +4462,23 @@ def recover_sync_record(pid, token, known_presets, local_entry, remote_updated):
         apply_managed_filename_identity(remote, local_path)
     if preset_content_hash(remote) != local_entry["hash"]:
         return False
-    return {"updated_at": remote_updated or "",
-            "hash": local_entry["hash"],
-            "name": local_entry["profile"].get("name") or ""}
+    if isinstance(version_id, int) and local_path:
+        try:
+            write_managed_info(
+                local_path[:-len(".json")],
+                pid,
+                token,
+                version_id,
+            )
+        except OSError as exc:
+            fh_log("sync state recovery %d FAILED to persist version: %r" % (pid, exc))
+            return None
+    record = {"updated_at": remote_timestamp or "",
+              "hash": local_entry["hash"],
+              "name": local_entry["profile"].get("name") or ""}
+    if isinstance(version_id, int):
+        record["version_id"] = version_id
+    return record
 
 
 def scan_local_fh_presets(folder):
@@ -3498,6 +4497,9 @@ def scan_local_fh_presets(folder):
                 "path": path,
                 "profile": profile,
                 "hash": preset_content_hash(profile),
+                "version_id": preset_version_id_from_info_file(
+                    artifact.get("info_path") or ""
+                ),
             }
     return out
 
@@ -3506,7 +4508,7 @@ def scan_local_fh_presets(folder):
 # Automatic printer (machine) and print (process) profile sync remains one-way:
 # profiles are read from OrcaSlicer and handed to FilamentHub, so the site knows
 # which machine a spool, a gate or a recommendation belongs to. A user may also
-# explicitly restore the profiles linked to one physical-printer card. That
+# explicitly restore selected profiles from the Recovery Center. That
 # separate action creates only FilamentHub-managed copies and never overwrites an
 # unmanaged Orca profile. Automatic sync does not pull machine/process profiles.
 # Outbound profiles are sent once and again only after they change; the content
@@ -3773,6 +4775,7 @@ def scan_user_profiles_checked(kind):
     Selection is evidence/reference, not ownership.
     """
     out = []
+    complete = True
     try:
         spec = PROFILE_KINDS[kind]
         bundle = orca.host.preset_bundle()
@@ -3782,6 +4785,7 @@ def scan_user_profiles_checked(kind):
             preset = collection.preset(i)
             name = str(getattr(preset, "name", "") or "")
             if name in seen_names:
+                complete = False
                 continue
             try:
                 is_user = bool(preset.is_user())
@@ -3800,6 +4804,7 @@ def scan_user_profiles_checked(kind):
                 # delta, so keep it as observation evidence and retry after the
                 # parent bundle becomes available instead of uploading a clone.
                 seen_names.add(name)
+                complete = False
                 continue
             # A child created only to hold an IP/credentials is not a new
             # technical configuration. It is still sent as an observation by
@@ -3824,7 +4829,7 @@ def scan_user_profiles_checked(kind):
     except Exception as exc:
         fh_log("%s profile scan failed: %s" % (kind, exc))
         return out, False
-    return out, True
+    return out, complete
 
 
 def scan_user_profiles(kind):
@@ -4352,6 +5357,7 @@ function sendPluginCapabilities() {
       { source: 'filamenthub-plugin', type: 'plugin-capabilities',
         pluginVersion: '__PLUGIN_VERSION__',
         capabilities: ['printer-bundle-install', 'printer-bundle-result-v1',
+                       'printer-bundle-toggle-v1', 'printer-recovery-v1',
                        'bambu-lan-bridge', 'profile-sync', 'profile-sync-scopes-v1',
                        'bambu-material-write', 'happy-hare-moonraker', 'open-external'] },
       SITE_ORIGIN);
@@ -4408,7 +5414,9 @@ window.addEventListener('message', function (event) {
     return;
   }
   if (data.type === 'sync' || data.type === 'profile-changed' ||
-      data.type === 'install-printer-bundle') {
+      data.type === 'install-printer-bundle' ||
+      data.type === 'remove-printer-bundle' ||
+      data.type === 'printer-bundle-status') {
     startSyncPolling(
       typeof data.operationId === 'string' ? data.operationId :
       typeof data.requestId === 'string' ? data.requestId : ''
@@ -4663,7 +5671,7 @@ function pollSyncOnce() {
   fetch(SYNC_STATUS_PATH, { cache: 'no-store' })
     .then(function (r) { return r.json(); })
     .then(function (st) {
-      if (st.text) {
+      if (st.text || st.resultType === 'printer-bundle-status-result') {
         var resultId = st.operationId || st.requestId || '';
         if (syncExpectedOperationId && resultId !== syncExpectedOperationId) {
           syncPollTimer = setTimeout(pollSyncOnce, 500);
@@ -4837,7 +5845,17 @@ try {
         frame.contentWindow.postMessage(
           { source: 'filamenthub-plugin', type: 'printer-bundle-result',
             requestId: data.requestId || '', text: data.text || '',
-            status: data.status || 'success' }, SITE_ORIGIN);
+            status: data.status || 'success',
+            physicalPrinterId: Number(data.physicalPrinterId) || 0,
+            installed: data.installed === true }, SITE_ORIGIN);
+      } catch (e) { /* iframe not ready */ }
+    } else if (data.type === 'printer-bundle-status-result') {
+      try {
+        frame.contentWindow.postMessage(
+          { source: 'filamenthub-plugin', type: 'printer-bundle-status-result',
+            requestId: data.requestId || '', status: data.status || 'success',
+            installedPrinterIds: Array.isArray(data.installedPrinterIds)
+              ? data.installedPrinterIds : [] }, SITE_ORIGIN);
       } catch (e) { /* iframe not ready */ }
     } else if (data.type === 'recover-list') {
       stopRecoverPolling();
@@ -6517,16 +7535,42 @@ class FilamentHubCatalog(
                 dict(payload, resultType="plugin-notice")
             )
 
-    def _deliver_printer_bundle_result(self, request_id, text, status="success"):
+    def _deliver_printer_bundle_result(
+        self,
+        request_id,
+        text,
+        status="success",
+        physical_printer_id=0,
+        installed=False,
+    ):
         payload = {
             "requestId": request_id,
             "text": text,
             "status": status,
+            "physicalPrinterId": int(physical_printer_id or 0),
+            "installed": bool(installed),
         }
         if not self._deliver("printer-bundle-result", **payload):
             SHELL_SERVER.set_sync_result(
                 dict(payload, resultType="printer-bundle-result")
             )
+
+    def _deliver_printer_bundle_status(self, request_id, installed_printer_ids):
+        payload = {
+            "requestId": request_id,
+            "status": "success",
+            "installedPrinterIds": sorted(set(installed_printer_ids)),
+        }
+        if not self._deliver("printer-bundle-status-result", **payload):
+            SHELL_SERVER.set_sync_result(
+                dict(payload, resultType="printer-bundle-status-result")
+            )
+
+    def _deliver_printer_recovery(self, message_type, request_id, status="success", **data):
+        payload = {"requestId": request_id, "status": status}
+        payload.update(data)
+        if not self._deliver(message_type, **payload):
+            SHELL_SERVER.set_sync_result(dict(payload, resultType=message_type))
 
     def _deliver_recovery(self, items):
         if not self._deliver("recover-list", items=items):
@@ -7047,12 +8091,67 @@ class FilamentHubCatalog(
             known = self._known_filament_preset_names()  # host read on the UI thread
             refresh_user_preset_folder()
             BACKGROUND_WORKER.submit(self._do_import, preset_id, token, known)
+        elif msg_type == "printer-recovery-state":
+            request_id = msg.get("requestId")
+            owner_user_id = msg.get("ownerUserId")
+            if not (
+                isinstance(request_id, str)
+                and 0 < len(request_id) <= 100
+                and not isinstance(owner_user_id, bool)
+                and isinstance(owner_user_id, int)
+                and owner_user_id > 0
+            ):
+                return
+            refresh_user_preset_folder()
+            original_observations = observe_recovery_originals()
+            BACKGROUND_WORKER.submit(
+                self._do_printer_recovery_state,
+                request_id,
+                owner_user_id,
+                original_observations,
+            )
+        elif msg_type == "apply-printer-recovery":
+            request_id = msg.get("requestId")
+            bundle = msg.get("bundle")
+            if not (
+                isinstance(request_id, str)
+                and 0 < len(request_id) <= 100
+                and isinstance(bundle, dict)
+            ):
+                return
+            refresh_user_preset_folder()
+            BACKGROUND_WORKER.submit(
+                self._do_apply_printer_recovery,
+                request_id,
+                bundle,
+            )
+        elif msg_type == "remove-printer-recovery":
+            request_id = msg.get("requestId")
+            artifact_keys = msg.get("artifactKeys")
+            if not (
+                isinstance(request_id, str)
+                and 0 < len(request_id) <= 100
+                and isinstance(artifact_keys, list)
+                and 0 < len(artifact_keys) <= MAX_TRACKED_RECOVERY_ARTIFACTS
+                and all(
+                    isinstance(value, str) and 0 < len(value) <= 64
+                    for value in artifact_keys
+                )
+            ):
+                return
+            refresh_user_preset_folder()
+            BACKGROUND_WORKER.submit(
+                self._do_remove_printer_recovery,
+                request_id,
+                list(dict.fromkeys(artifact_keys)),
+            )
         elif msg_type == "install-printer-bundle":
             request_id = msg.get("requestId")
             physical_printer_id = msg.get("physicalPrinterId")
             if not (
                 isinstance(request_id, str)
                 and 0 < len(request_id) <= 100
+                and not isinstance(physical_printer_id, bool)
                 and isinstance(physical_printer_id, int)
                 and physical_printer_id > 0
             ):
@@ -7067,6 +8166,51 @@ class FilamentHubCatalog(
                 self._do_install_printer_bundle,
                 request_id,
                 physical_printer_id,
+                token,
+            )
+        elif msg_type == "remove-printer-bundle":
+            request_id = msg.get("requestId")
+            physical_printer_id = msg.get("physicalPrinterId")
+            if not (
+                isinstance(request_id, str)
+                and 0 < len(request_id) <= 100
+                and not isinstance(physical_printer_id, bool)
+                and isinstance(physical_printer_id, int)
+                and physical_printer_id > 0
+            ):
+                return
+            refresh_user_preset_folder()
+            BACKGROUND_WORKER.submit(
+                self._do_remove_printer_bundle,
+                request_id,
+                physical_printer_id,
+            )
+        elif msg_type == "printer-bundle-status":
+            request_id = msg.get("requestId")
+            physical_printer_ids = msg.get("physicalPrinterIds")
+            if not (
+                isinstance(request_id, str)
+                and 0 < len(request_id) <= 100
+                and isinstance(physical_printer_ids, list)
+                and len(physical_printer_ids) <= MAX_TRACKED_PRINTER_BUNDLES
+                and all(
+                    not isinstance(value, bool)
+                    and isinstance(value, int)
+                    and value > 0
+                    for value in physical_printer_ids
+                )
+            ):
+                return
+            token = msg.get("token") or ""
+            if not isinstance(token, str) or len(token) > MAX_TOKEN_LENGTH:
+                return
+            if not token:
+                token = (load_saved_auth() or {}).get("accessToken") or ""
+            refresh_user_preset_folder()
+            BACKGROUND_WORKER.submit(
+                self._do_printer_bundle_status,
+                request_id,
+                list(dict.fromkeys(physical_printer_ids)),
                 token,
             )
         elif msg_type == "configure-bambu-local":
@@ -7371,6 +8515,99 @@ class FilamentHubCatalog(
             ui_text("recoveryDone", count=len(recovered_keys)), "success"
         )
 
+    def _do_printer_recovery_state(
+        self, request_id, owner_user_id, original_observations
+    ):
+        try:
+            local_state = current_printer_recovery_state(
+                owner_user_id, original_observations
+            )
+        except (OSError, ValueError) as exc:
+            fh_log("printer recovery inventory failed: %s" % exc)
+            self._deliver_printer_recovery(
+                "printer-recovery-state-result",
+                request_id,
+                status="error",
+                message=ui_text("printerBundleInvalid"),
+            )
+            return
+        self._deliver_printer_recovery(
+            "printer-recovery-state-result",
+            request_id,
+            localState=local_state,
+        )
+
+    def _do_apply_printer_recovery(self, request_id, bundle):
+        try:
+            _scope, artifacts, counts = install_printer_recovery(bundle)
+        except (OSError, ValueError) as exc:
+            fh_log("printer recovery install failed: %s" % exc)
+            self._deliver_printer_recovery(
+                "printer-recovery-action-result",
+                request_id,
+                status="error",
+                message=ui_text("printerBundleInvalid"),
+                results=[],
+            )
+            return
+        wrote_profiles = counts["machine"] + counts["process"] > 0
+        reload_requested = (
+            reload_managed_local_bundle_if_available() if wrote_profiles else False
+        )
+        result_state = (
+            "reload_requested" if reload_requested else "written_restart_required"
+        )
+        self._deliver_printer_recovery(
+            "printer-recovery-action-result",
+            request_id,
+            message=(
+                ui_text(
+                    "printerBundleInstalled",
+                    machines=counts["machine"],
+                    processes=counts["process"],
+                )
+                if wrote_profiles else ""
+            ),
+            results=[
+                {
+                    "kind": item["kind"],
+                    "profileId": item["profile_id"],
+                    "name": item["name"],
+                    "state": "unchanged" if item["unchanged"] else result_state,
+                }
+                for item in artifacts
+            ],
+        )
+
+    def _do_remove_printer_recovery(self, request_id, artifact_keys):
+        try:
+            outcome = remove_printer_recovery_artifacts(artifact_keys)
+        except OSError as exc:
+            fh_log("printer recovery removal failed: %s" % exc)
+            self._deliver_printer_recovery(
+                "printer-recovery-action-result",
+                request_id,
+                status="error",
+                message=ui_text("printerBundleInvalid"),
+                results=[],
+            )
+            return
+        reload_requested = reload_managed_local_bundle_if_available()
+        removed_state = (
+            "removal_reload_requested"
+            if reload_requested
+            else "removed_restart_required"
+        )
+        results = [dict(item, state=removed_state) for item in outcome["removed"]]
+        results.extend(dict(item, state="error") for item in outcome["failed"])
+        self._deliver_printer_recovery(
+            "printer-recovery-action-result",
+            request_id,
+            status="warning" if outcome["failed"] else "success",
+            message=ui_text("summaryRemoved", count=len(outcome["removed"])),
+            results=results,
+        )
+
     def _do_install_printer_bundle(self, request_id, physical_printer_id, token):
         if not token:
             self._deliver_printer_bundle_result(
@@ -7396,21 +8633,57 @@ class FilamentHubCatalog(
             return
         try:
             bundle = json.loads(body.decode("utf-8"))
-            counts = install_printer_bundle(bundle)
+            counts = install_printer_bundle(bundle, physical_printer_id)
         except (OSError, UnicodeDecodeError, ValueError) as exc:
             fh_log("printer bundle install failed: %s" % exc)
             self._deliver_printer_bundle_result(
                 request_id, ui_text("printerBundleInvalid"), "error"
             )
             return
+        # The host API only confirms that a reload was requested. It does not
+        # prove the new presets became selectable in the current session.
+        reload_managed_local_bundle_if_available()
         self._deliver_printer_bundle_result(
             request_id,
             ui_text(
                 "printerBundleInstalled",
                 machines=counts["machine"],
                 processes=counts["process"],
-            )
+            ),
+            physical_printer_id=physical_printer_id,
+            installed=True,
         )
+
+    def _do_remove_printer_bundle(self, request_id, physical_printer_id):
+        try:
+            counts = remove_installed_printer_bundle(physical_printer_id)
+        except OSError as exc:
+            fh_log("printer bundle removal failed: %s" % exc)
+            self._deliver_printer_bundle_result(
+                request_id,
+                ui_text("printerBundleInvalid"),
+                "error",
+                physical_printer_id=physical_printer_id,
+                installed=True,
+            )
+            return
+        reload_managed_local_bundle_if_available()
+        self._deliver_printer_bundle_result(
+            request_id,
+            ui_text("summaryRemoved", count=counts["machine"] + counts["process"]),
+            physical_printer_id=physical_printer_id,
+            installed=False,
+        )
+
+    def _do_printer_bundle_status(
+        self, request_id, physical_printer_ids, token
+    ):
+        installed = installed_printer_bundle_ids(physical_printer_ids)
+        # Compatibility status is deliberately local-only. Reconstructing old
+        # per-printer ownership by fetching every server bundle caused an N×GET
+        # fan-out merely by opening the page and failed noisily when export was
+        # disabled. The Recovery Center scans durable local markers instead.
+        self._deliver_printer_bundle_status(request_id, installed)
 
     def _start_external_oauth(self, provider):
         # Google/Yandex block their consent pages in embedded WebViews, so run the
@@ -7469,7 +8742,8 @@ class FilamentHubCatalog(
             # Namespace the managed preset with the same provider identity used by
             # the sync API; a plain user preset has no FilamentHub bundle_id.
             profile["bundle_id"] = "filamenthub:%d" % preset_id
-            name = profile.get("name") or ("FilamentHub preset %d" % preset_id)
+            source_name = profile.get("name") or ("FilamentHub preset %d" % preset_id)
+            name = filament_display_name(profile, source_name)
             ensure_bundle_metadata()
             target_dir = user_filament_dir()
             profile_path = preset_file_path(target_dir, name, preset_id)
@@ -7479,11 +8753,14 @@ class FilamentHubCatalog(
             write_managed_info(base, preset_id, token)
             write_json_atomic(profile_path, profile)
             remove_stale_preset_files(target_dir, preset_id, profile_path)
-            fh_log("import %d written, pending restart: %s" % (preset_id, name))
-
-            orca.host.ui.message(
-                ui_text("importedRestart", name=name),
-                title="FilamentHub", icon="info")
+            if reload_managed_local_bundle_if_available():
+                fh_log("import %d written and reloaded: %s" % (preset_id, name))
+                message_key = "importedLive"
+            else:
+                fh_log("import %d written, pending restart: %s" % (preset_id, name))
+                message_key = "importedRestart"
+            orca.host.ui.message(ui_text(message_key, name=name),
+                                 title="FilamentHub", icon="info")
         except Exception as exc:
             orca.host.ui.message(
                 ui_text("importFailed", error=exc), title="FilamentHub", icon="error")
@@ -7515,7 +8792,11 @@ class FilamentHubCatalog(
     def _pull_one(self, pid, token, known_presets, folder, remote):
         # Download a FilamentHub preset and write it locally under the FilamentHub
         # group. Returns the sync-state record to store, or None on failure.
-        status, body = http_get("/presets/%d/export/orcaslicer.json" % pid, token=token)
+        version_id = (remote or {}).get("selected_version_id")
+        export_path = "/presets/%d/export/orcaslicer.json" % pid
+        if isinstance(version_id, int):
+            export_path += "?version_id=%d" % version_id
+        status, body = http_get(export_path, token=token)
         if status != 200:
             fh_log("pull %d FAILED: export HTTP %s" % (pid, status))
             return None
@@ -7527,7 +8808,8 @@ class FilamentHubCatalog(
         ensure_parent_exists(profile, known_presets)
         ensure_filament_colour(profile)
         profile["bundle_id"] = "%s%d" % (BUNDLE_PREFIX, pid)
-        name = profile.get("name") or ("FilamentHub preset %d" % pid)
+        source_name = profile.get("name") or ("FilamentHub preset %d" % pid)
+        name = filament_display_name(profile, source_name)
         profile_path = preset_file_path(folder, name, pid)
         name = apply_managed_filename_identity(profile, profile_path)
         base = profile_path[:-len(".json")]
@@ -7539,13 +8821,14 @@ class FilamentHubCatalog(
             fh_log("pull %d FAILED: profile Orca would reject: %r" % (pid, exc))
             return None
         try:
-            write_managed_info(base, pid, token)
+            write_managed_info(base, pid, token, version_id)
             write_json_atomic(profile_path, profile)
         except OSError as exc:
             fh_log("pull %d FAILED: write error at %s: %r" % (pid, profile_path, exc))
             return None
         remove_stale_preset_files(folder, pid, profile_path)
         return {"updated_at": (remote or {}).get("updated_at") or "",
+                "version_id": version_id,
                 "hash": preset_content_hash(profile), "name": name}
 
     def _push_one(self, pid, token, local_entry, remote):
@@ -7555,11 +8838,27 @@ class FilamentHubCatalog(
         local_name = profile.get("name") or ("FilamentHub preset %d" % pid)
         remote_name = (remote or {}).get("name") or ""
         normalized_remote_name = safe_filename(remote_name) if remote_name else ""
-        automatic_local_names = {
-            normalized_remote_name,
-            "%s (FH-%d)" % (normalized_remote_name, pid),
-        }
-        upload_name = remote_name if local_name in automatic_local_names else local_name
+        automatic_local_names = set()
+        if normalized_remote_name:
+            automatic_display_name = safe_filename(
+                filament_display_name(profile, normalized_remote_name)
+            )
+            legacy_display_name = safe_filename(
+                _legacy_material_display_name(profile, normalized_remote_name)
+            )
+            automatic_local_names.update({
+                normalized_remote_name,
+                "%s (FH-%d)" % (normalized_remote_name, pid),
+                automatic_display_name,
+                "%s (FH-%d)" % (automatic_display_name, pid),
+                legacy_display_name,
+                "%s (FH-%d)" % (legacy_display_name, pid),
+            })
+        upload_name = (
+            remote_name
+            if local_name in automatic_local_names
+            else filament_source_name(profile, local_name)
+        )
         upload_profile = restore_remote_parent_for_upload(profile, pid, token)
         if upload_profile is None:
             fh_log("push %d deferred: canonical parent could not be verified" % pid)
@@ -7568,6 +8867,10 @@ class FilamentHubCatalog(
         upload_profile["filament_settings_id"] = [upload_name]
         item = {
             "fhub_id": pid,
+            "base_version_id": (
+                local_entry.get("version_id")
+                or (remote or {}).get("selected_version_id")
+            ),
             "name": upload_name[:200],
             "orcaslicer_settings": upload_profile,
             "source": "orcaslicer",
@@ -7578,12 +8881,81 @@ class FilamentHubCatalog(
                 item["info_content"] = fh.read()
         except OSError:
             pass
-        status, _ = http_post_json("/orcaslicer/filaments/import", token, {"profiles": [item]})
+        status, response_body = http_post_json(
+            "/orcaslicer/filaments/import", token, {"profiles": [item]}
+        )
         if status != 200:
             fh_log("push %d FAILED: import HTTP %s" % (pid, status))
             return None
-        return {"updated_at": (remote or {}).get("updated_at") or "",
-                "hash": local_entry["hash"], "name": profile.get("name") or ""}
+        try:
+            response_items = (
+                json.loads(response_body.decode("utf-8")) or {}
+            ).get("results") or []
+            response_item = response_items[0] if response_items else {}
+        except (AttributeError, UnicodeDecodeError, ValueError):
+            response_item = {}
+        server_id = response_item.get("fhub_id")
+        if not isinstance(server_id, int):
+            server_id = pid
+        server_version_id = response_item.get("version_id")
+        if not isinstance(server_version_id, int):
+            server_version_id = item.get("base_version_id")
+
+        result_path = local_entry["path"]
+        result_hash = local_entry["hash"]
+        if server_id != pid:
+            # Editing a foreign shared preset creates a personal fork. Move the
+            # saved bytes to the new managed identity and quarantine the old
+            # marker pair so the source can be downloaded again independently.
+            fork_profile = dict(profile)
+            fork_profile["bundle_id"] = "%s%d" % (BUNDLE_PREFIX, server_id)
+            fork_profile["fhub_id"] = str(server_id)
+            fork_profile["fhub_source"] = "filamenthub"
+            fork_path = preset_file_path(
+                os.path.dirname(local_entry["path"]),
+                fork_profile.get("name") or upload_name,
+                server_id,
+            )
+            apply_managed_filename_identity(fork_profile, fork_path)
+            try:
+                write_managed_info(
+                    fork_path[:-len(".json")], server_id, token, server_version_id
+                )
+                write_json_atomic(fork_path, fork_profile)
+            except OSError as exc:
+                fh_log("push %d fork identity write FAILED: %r" % (pid, exc))
+                return None
+            old_artifact = {
+                "json_path": local_entry["path"],
+                "info_path": local_entry["path"][:-len(".json")] + ".info",
+            }
+            if not _quarantine_managed_preset_artifact(
+                old_artifact, "forked-from-%d" % pid
+            ):
+                fh_log("push %d fork kept both marker pairs for recovery" % pid)
+                return None
+            result_path = fork_path
+            result_hash = preset_content_hash(fork_profile)
+        elif isinstance(server_version_id, int):
+            try:
+                write_managed_info(
+                    local_entry["path"][:-len(".json")],
+                    pid,
+                    token,
+                    server_version_id,
+                )
+            except OSError as exc:
+                fh_log("push %d version marker write FAILED: %r" % (pid, exc))
+                return None
+
+        return {
+            "updated_at": (remote or {}).get("updated_at") or "",
+            "version_id": server_version_id,
+            "hash": result_hash,
+            "name": profile.get("name") or "",
+            "preset_id": server_id,
+            "path": result_path,
+        }
 
     def _do_sync(self, token, known_presets, announce=True, active_filaments=None,
                  host_profiles=None, observations=None, source_instance_id="",
@@ -7645,7 +9017,7 @@ class FilamentHubCatalog(
         if sync_scope_includes(scope, "filament"):
             filament_parts = []
             filament_status = "success"
-            pulled = updated = pushed = skipped = failed = renamed = removed = 0
+            pulled = updated = pushed = skipped = failed = renamed = removed = conflicts = 0
             failed_ids = []
             remote_ids = set()
             changed_file_ids = set()
@@ -7713,6 +9085,24 @@ class FilamentHubCatalog(
                                 failed += 1
                                 failed_ids.append(preset_id)
                             continue
+                        try:
+                            migrated_name = migrate_managed_filament_display_name(
+                                folder, preset_id, local_entry, remote
+                            )
+                        except (OSError, ValueError) as exc:
+                            fh_log(
+                                "preset %d display-name migration failed: %s"
+                                % (preset_id, type(exc).__name__)
+                            )
+                            migrated_name = False
+                        if migrated_name:
+                            renamed += 1
+                            changed_file_ids.add(preset_id)
+                            if record:
+                                record = dict(record)
+                                record["hash"] = local_entry["hash"]
+                                record["name"] = migrated_name
+                                state[str(preset_id)] = record
                         if orca_transport_violations(local_entry["profile"]):
                             result = self._pull_one(
                                 preset_id, token, known_presets, folder, remote
@@ -7728,7 +9118,7 @@ class FilamentHubCatalog(
                         if not record:
                             recovered = recover_sync_record(
                                 preset_id, token, known_presets, local_entry,
-                                remote_updated,
+                                remote,
                             )
                             if recovered is None:
                                 skipped += 1
@@ -7742,10 +9132,30 @@ class FilamentHubCatalog(
                                     preset_id, token, local_entry, remote
                                 )
                                 if result:
-                                    state[str(preset_id)] = result
-                                    remove_stale_preset_files(
-                                        folder, preset_id, local_entry["path"]
-                                    )
+                                    pushed_id = result.get("preset_id") or preset_id
+                                    state_record = {
+                                        key: value for key, value in result.items()
+                                        if key not in {"preset_id", "path"}
+                                    }
+                                    state[str(pushed_id)] = state_record
+                                    if pushed_id != preset_id:
+                                        remote_ids.add(pushed_id)
+                                        changed_file_ids.add(pushed_id)
+                                        restored = self._pull_one(
+                                            preset_id, token, known_presets, folder, remote
+                                        )
+                                        if restored:
+                                            state[str(preset_id)] = restored
+                                            changed_file_ids.add(preset_id)
+                                            pulled += 1
+                                        else:
+                                            state.pop(str(preset_id), None)
+                                            failed += 1
+                                            failed_ids.append(preset_id)
+                                    else:
+                                        remove_stale_preset_files(
+                                            folder, preset_id, local_entry["path"]
+                                        )
                                     pushed += 1
                                 else:
                                     failed += 1
@@ -7756,9 +9166,21 @@ class FilamentHubCatalog(
                         local_changed = local_entry["hash"] != (
                             record.get("hash") or ""
                         )
-                        remote_newer = remote_updated > (
-                            record.get("updated_at") or ""
-                        )
+                        remote_version_id = remote.get("selected_version_id")
+                        if isinstance(remote_version_id, int):
+                            remote_newer = remote_version_id != record.get("version_id")
+                        else:
+                            remote_newer = remote_updated > (
+                                record.get("updated_at") or ""
+                            )
+                        if local_changed and remote_newer:
+                            conflicts += 1
+                            filament_status = "warning"
+                            fh_log(
+                                "preset %d conflict: local and FilamentHub changed since the last sync"
+                                % preset_id
+                            )
+                            continue
                         if local_changed:
                             if not allow_push:
                                 skipped += 1
@@ -7768,10 +9190,30 @@ class FilamentHubCatalog(
                                 preset_id, token, local_entry, remote
                             )
                             if result:
-                                state[str(preset_id)] = result
-                                remove_stale_preset_files(
-                                    folder, preset_id, local_entry["path"]
-                                )
+                                pushed_id = result.get("preset_id") or preset_id
+                                state_record = {
+                                    key: value for key, value in result.items()
+                                    if key not in {"preset_id", "path"}
+                                }
+                                state[str(pushed_id)] = state_record
+                                if pushed_id != preset_id:
+                                    remote_ids.add(pushed_id)
+                                    changed_file_ids.add(pushed_id)
+                                    restored = self._pull_one(
+                                        preset_id, token, known_presets, folder, remote
+                                    )
+                                    if restored:
+                                        state[str(preset_id)] = restored
+                                        changed_file_ids.add(preset_id)
+                                        pulled += 1
+                                    else:
+                                        state.pop(str(preset_id), None)
+                                        failed += 1
+                                        failed_ids.append(preset_id)
+                                else:
+                                    remove_stale_preset_files(
+                                        folder, preset_id, local_entry["path"]
+                                    )
                                 pushed += 1
                             else:
                                 failed += 1
@@ -7804,7 +9246,11 @@ class FilamentHubCatalog(
                                     try:
                                         write_bytes_atomic(
                                             canonical[:-len(".json")] + ".info",
-                                            managed_info_bytes(preset_id),
+                                            managed_info_bytes(
+                                                preset_id,
+                                                local_entry.get("version_id")
+                                                or record.get("version_id"),
+                                            ),
                                         )
                                     except OSError:
                                         pass
@@ -7821,10 +9267,17 @@ class FilamentHubCatalog(
                     for key in list(state):
                         if key.isdigit() and int(key) not in remote_ids:
                             state.pop(key, None)
+                    file_changes = bool(pulled or updated or removed or renamed)
+                    bundle_reloaded = (
+                        reload_managed_local_bundle_if_available()
+                        if file_changes else False
+                    )
+                    if bundle_reloaded:
+                        loaded_preset_ids = set(scan_local_fh_presets(folder))
                     self._log_managed_preset_state(
                         folder, remote_ids, loaded_preset_ids, failed_ids
                     )
-                    restart_required = bool(pulled or updated or removed or renamed)
+                    restart_required = file_changes and not bundle_reloaded
                     if filament_report_version is not None:
                         on_disk_ids = set(scan_local_fh_presets(folder))
                         failed_id_set = set(failed_ids)
@@ -7837,6 +9290,8 @@ class FilamentHubCatalog(
                             elif preset_id not in on_disk_ids:
                                 observed_state = "error"
                                 error_code = "managed_file_missing"
+                            elif bundle_reloaded:
+                                observed_state = "loaded"
                             elif loaded_preset_ids is None:
                                 observed_state = "on_disk"
                             elif preset_id in changed_file_ids:
@@ -7898,6 +9353,8 @@ class FilamentHubCatalog(
                 filament_parts.append(ui_text("summaryRemoved", count=removed))
             if renamed:
                 filament_parts.append(ui_text("summaryRenamed", count=renamed))
+            if conflicts:
+                filament_parts.append(ui_text("summaryConflict", count=conflicts))
             if skipped:
                 filament_parts.append(ui_text("summaryCurrent", count=skipped))
             if failed:

@@ -531,8 +531,9 @@ export function subscribeToPluginCapabilities(
  * физического принтера. Автоматическая синхронизация machine/process-профилей
  * остаётся только исходящей; этот pull запускается исключительно пользователем.
  */
-export function installPrinterBundleInPlugin(
+function setPrinterBundleInstalledInPlugin(
   physicalPrinterId: number,
+  installed: boolean,
 ): Promise<{ message?: string }> {
   const requestId = pluginRequestId('printer-bundle');
   return new Promise((resolve, reject) => {
@@ -568,9 +569,75 @@ export function installPrinterBundleInPlugin(
     }, 120_000);
     postToPlugin({
       source: PLUGIN_MESSAGE_SOURCE,
-      type: 'install-printer-bundle',
+      type: installed ? 'install-printer-bundle' : 'remove-printer-bundle',
       requestId,
       physicalPrinterId,
+      token: activePluginToken ?? '',
+    });
+  });
+}
+
+export function installPrinterBundleInPlugin(
+  physicalPrinterId: number,
+): Promise<{ message?: string }> {
+  return setPrinterBundleInstalledInPlugin(physicalPrinterId, true);
+}
+
+export function removePrinterBundleFromPlugin(
+  physicalPrinterId: number,
+): Promise<{ message?: string }> {
+  return setPrinterBundleInstalledInPlugin(physicalPrinterId, false);
+}
+
+export function requestInstalledPrinterBundles(
+  physicalPrinterIds: number[],
+): Promise<ReadonlySet<number>> {
+  const requestId = pluginRequestId('printer-bundle-status');
+  return new Promise((resolve, reject) => {
+    let timeoutId: number | null = null;
+    const cleanup = () => {
+      window.removeEventListener('message', onMessage);
+      if (timeoutId !== null) window.clearTimeout(timeoutId);
+    };
+    const onMessage = (event: MessageEvent) => {
+      if (!isTrustedPluginParentEvent(event)) return;
+      const data = event.data as Partial<PluginMessage> | undefined;
+      if (
+        !data
+        || data.source !== PLUGIN_MESSAGE_SOURCE
+        || data.type !== 'printer-bundle-status-result'
+      ) {
+        return;
+      }
+      const payload = data as {
+        requestId?: unknown;
+        status?: unknown;
+        installedPrinterIds?: unknown;
+      };
+      if (payload.requestId !== requestId) return;
+      cleanup();
+      if (payload.status === 'error') {
+        reject(new Error());
+        return;
+      }
+      const ids = Array.isArray(payload.installedPrinterIds)
+        ? payload.installedPrinterIds.filter(
+          (value): value is number =>
+            typeof value === 'number' && Number.isInteger(value) && value > 0,
+        )
+        : [];
+      resolve(new Set(ids));
+    };
+    window.addEventListener('message', onMessage);
+    timeoutId = window.setTimeout(() => {
+      cleanup();
+      reject(new Error());
+    }, 120_000);
+    postToPlugin({
+      source: PLUGIN_MESSAGE_SOURCE,
+      type: 'printer-bundle-status',
+      requestId,
+      physicalPrinterIds: Array.from(new Set(physicalPrinterIds)),
       token: activePluginToken ?? '',
     });
   });
@@ -803,6 +870,119 @@ export function requestHappyHareAction(
       ...(expectedDesiredAssignments ? { expectedDesiredAssignments } : {}),
     });
   });
+}
+
+export interface PrinterRecoveryScope {
+  server_origin: string;
+  owner_user_id: number;
+  source_instance_id: string;
+  account_id: string;
+}
+
+export interface PrinterRecoveryLocalArtifact {
+  artifactKey: string;
+  kind: 'machine' | 'process';
+  profileId: number | null;
+  name: string;
+  contentHash: string | null;
+  ownership: 'current' | 'foreign' | 'untracked';
+  healthy: boolean;
+}
+
+export interface PrinterRecoveryLocalState {
+  context: PrinterRecoveryScope;
+  artifacts: PrinterRecoveryLocalArtifact[];
+  originalObservations?: Partial<Record<'machine' | 'process', {
+    complete: boolean;
+    presentLocalProfileIds: string[];
+  }>>;
+}
+
+export interface PrinterRecoveryActionResult {
+  message?: string;
+  status: 'success' | 'warning';
+  results: Array<{
+    artifactKey?: string;
+    kind: 'machine' | 'process';
+    profileId: number | null;
+    name?: string;
+    state: string;
+  }>;
+}
+
+function requestPrinterRecoveryMessage<T>(
+  messageType: 'printer-recovery-state' | 'apply-printer-recovery' | 'remove-printer-recovery',
+  resultType: 'printer-recovery-state-result' | 'printer-recovery-action-result',
+  payload: Record<string, unknown>,
+): Promise<T> {
+  const requestId = pluginRequestId('printer-recovery');
+  return new Promise((resolve, reject) => {
+    let timeoutId: number | null = null;
+    const cleanup = () => {
+      window.removeEventListener('message', onMessage);
+      if (timeoutId !== null) window.clearTimeout(timeoutId);
+    };
+    const onMessage = (event: MessageEvent) => {
+      if (!isTrustedPluginParentEvent(event)) return;
+      const data = event.data as Partial<PluginMessage> | undefined;
+      if (
+        !data
+        || data.source !== PLUGIN_MESSAGE_SOURCE
+        || data.type !== resultType
+        || data.requestId !== requestId
+      ) {
+        return;
+      }
+      cleanup();
+      const message = typeof data.message === 'string' ? data.message : undefined;
+      if (data.status === 'error') {
+        reject(new Error(message));
+        return;
+      }
+      resolve(data as T);
+    };
+    window.addEventListener('message', onMessage);
+    timeoutId = window.setTimeout(() => {
+      cleanup();
+      reject(new Error());
+    }, 120_000);
+    postToPlugin({
+      source: PLUGIN_MESSAGE_SOURCE,
+      type: messageType,
+      requestId,
+      ...payload,
+    });
+  });
+}
+
+export async function requestPrinterRecoveryState(
+  ownerUserId: number,
+): Promise<PrinterRecoveryLocalState> {
+  const response = await requestPrinterRecoveryMessage<{
+    localState?: PrinterRecoveryLocalState;
+  }>('printer-recovery-state', 'printer-recovery-state-result', { ownerUserId });
+  if (!response.localState) throw new Error();
+  return response.localState;
+}
+
+export function applyPrinterRecoveryInPlugin(
+  bundle: Record<string, unknown>,
+): Promise<PrinterRecoveryActionResult> {
+  return requestPrinterRecoveryMessage<PrinterRecoveryActionResult>(
+    'apply-printer-recovery',
+    'printer-recovery-action-result',
+    { bundle },
+  );
+}
+
+export function removePrinterRecoveryFromPlugin(
+  artifactKeys: string[],
+): Promise<PrinterRecoveryActionResult> {
+  return requestPrinterRecoveryMessage<PrinterRecoveryActionResult>(
+    'remove-printer-recovery',
+    'printer-recovery-action-result',
+    { artifactKeys },
+  );
 }
 
 /**

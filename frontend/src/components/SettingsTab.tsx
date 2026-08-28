@@ -83,7 +83,7 @@ const SYNC_CONTOURS: {
         available: true,
       },
       {
-        labelKey: 'settings.syncToSlicer',
+        labelKey: 'settings.allowPrinterRecovery',
         noteKey: 'settings.syncPrinterToSlicerNote',
         keys: ['allow_printer_profiles_export', 'allow_print_profiles_export'],
         available: true,

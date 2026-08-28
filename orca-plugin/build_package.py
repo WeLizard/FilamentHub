@@ -2,13 +2,17 @@ from __future__ import annotations
 
 import argparse
 import ast
+import base64
+import csv
 import hashlib
+import io
 import json
 import re
 import shutil
 import subprocess
 import sys
 import tomllib
+import zipfile
 from pathlib import Path
 
 
@@ -22,6 +26,52 @@ LOCALES = ROOT / "filamenthub_locales"
 DEV_SITE_DEFAULT = '"http://localhost:3000"'
 PROD_SITE_DEFAULT = '"https://filamenthub.ru"'
 EMBEDDED_UI_COPY_TOKEN = "_EMBEDDED_UI_COPY = {}"
+
+
+def _wheel_record_digest(payload: bytes) -> str:
+    digest = base64.urlsafe_b64encode(hashlib.sha256(payload).digest())
+    return "sha256=" + digest.rstrip(b"=").decode("ascii")
+
+
+def _normalize_wheel_metadata(wheel_path: Path) -> None:
+    """Prevent Orca's current Windows wheel parser from retaining CR fields."""
+    with zipfile.ZipFile(wheel_path, "r") as archive:
+        entries = archive.infolist()
+        payloads = {entry.filename: archive.read(entry.filename) for entry in entries}
+
+    metadata_paths = [
+        name for name in payloads if name.endswith(".dist-info/METADATA")
+    ]
+    if len(metadata_paths) != 1:
+        raise ValueError("Wheel must contain exactly one METADATA file")
+    metadata_path = metadata_paths[0]
+    record_path = metadata_path.removesuffix("METADATA") + "RECORD"
+    if record_path not in payloads:
+        raise ValueError("Wheel RECORD file is missing")
+
+    metadata = payloads[metadata_path].replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+    payloads[metadata_path] = metadata
+
+    rows = list(csv.reader(io.StringIO(
+        payloads[record_path].decode("utf-8"),
+        newline="",
+    )))
+    metadata_rows = [row for row in rows if row and row[0] == metadata_path]
+    if len(metadata_rows) != 1:
+        raise ValueError("Wheel RECORD must contain exactly one METADATA row")
+    metadata_rows[0][1:] = [_wheel_record_digest(metadata), str(len(metadata))]
+    record_buffer = io.StringIO(newline="")
+    csv.writer(record_buffer, lineterminator="\n").writerows(rows)
+    payloads[record_path] = record_buffer.getvalue().encode("utf-8")
+
+    temporary = wheel_path.with_suffix(wheel_path.suffix + ".tmp")
+    try:
+        with zipfile.ZipFile(temporary, "w") as archive:
+            for entry in entries:
+                archive.writestr(entry, payloads[entry.filename])
+        temporary.replace(wheel_path)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def extract_metadata(source: str) -> dict[str, object]:
@@ -153,7 +203,9 @@ def _build_wheel(prod_bytes: bytes, version: str, output_root: Path) -> Path:
         cwd=build_dir,
         check=True,
     )
-    return wheels_out / f"filamenthub-{version}-py3-none-any.whl"
+    wheel_path = wheels_out / f"filamenthub-{version}-py3-none-any.whl"
+    _normalize_wheel_metadata(wheel_path)
+    return wheel_path
 
 
 def build(output_root: Path, wheel: bool = True) -> Path:

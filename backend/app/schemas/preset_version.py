@@ -23,6 +23,7 @@ class PresetVersionListItem(BaseModel):
     label_description: str | None = None
     change_source: str
     restored_from_version_id: int | None = None
+    parent_version_id: int | None = None
     squash_count: int = 1
     created_at: datetime
     updated_at: datetime

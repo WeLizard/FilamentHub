@@ -45,9 +45,8 @@ import { Printer3DIcon } from '../components/icons/Printer3DIcon';
 import { FilamentSpoolIcon } from '../components/icons/FilamentSpoolIcon';
 import { useAuth } from '../contexts/AuthContext';
 import { useHeaderVisible } from '../hooks/useHeaderVisible';
-import { useStoredUiChoice } from '../hooks/useStoredUiChoice';
 import { useUserCurrency } from '../hooks/useUserCurrency';
-import { presetsAPI, filamentsAPI, brandsAPI, savedPresetsAPI, filamentReviewsAPI, printerProfilesAPI, printProfilesAPI, authAPI, spoolsAPI, qrAPI, calculatorAPI, crmAPI, physicalPrintersAPI, achievementsAPI, orcaSyncAPI } from '../api/client';
+import { presetsAPI, filamentsAPI, brandsAPI, savedPresetsAPI, filamentReviewsAPI, printerProfilesAPI, printProfilesAPI, authAPI, spoolsAPI, qrAPI, calculatorAPI, crmAPI, physicalPrintersAPI, achievementsAPI } from '../api/client';
 import { extractQrShortCode, createQrFrameDecoder } from '../utils/qrScanner';
 import type { UserSpool, SpoolState, PhysicalPrinter, MaterialSlot, QrScanResponse } from '../api/client';
 import { SpoolIcon } from '../components/icons/SpoolIcon';
@@ -101,7 +100,6 @@ import type {
   AchievementOverview,
   Preset,
   PresetDraftAnalysis,
-  OrcaPresetSyncStatus,
   PrinterProfile,
   PrintProfile,
   Filament,
@@ -406,46 +404,6 @@ export const ProfilePage: React.FC = () => {
     staleTime: 60_000,
   });
 
-  // Load the latest device first so a stored fingerprint can be validated
-  // before it is ever sent to the API. Removed devices therefore fall back
-  // cleanly instead of producing ERR_DEVICE_NOT_FOUND.
-  const {
-    data: latestOrcaSyncStatus,
-    isError: isLatestOrcaSyncStatusError,
-  } = useQuery({
-    queryKey: ['orca-sync-status', user?.id, 'latest'],
-    queryFn: () => orcaSyncAPI.getStatus(null),
-    enabled: !!user?.id && needsPresetData,
-    staleTime: 15_000,
-  });
-  const orcaSyncDeviceFingerprints = useMemo(
-    () => (latestOrcaSyncStatus?.devices ?? []).map((device) => device.device_fingerprint),
-    [latestOrcaSyncStatus?.devices],
-  );
-  const [selectedOrcaSyncDevice, setSelectedOrcaSyncDevice] = useStoredUiChoice(
-    'profile.orcaSyncDevice',
-    user?.id,
-    orcaSyncDeviceFingerprints,
-    latestOrcaSyncStatus?.device_fingerprint ?? '',
-  );
-  const shouldLoadSelectedOrcaDevice = Boolean(
-    selectedOrcaSyncDevice
-      && selectedOrcaSyncDevice !== latestOrcaSyncStatus?.device_fingerprint,
-  );
-  const selectedOrcaSyncStatusQuery = useQuery({
-    queryKey: ['orca-sync-status', user?.id, selectedOrcaSyncDevice],
-    queryFn: () => orcaSyncAPI.getStatus(selectedOrcaSyncDevice),
-    enabled: !!user?.id && needsPresetData && shouldLoadSelectedOrcaDevice,
-    staleTime: 15_000,
-  });
-  const orcaSyncStatus = shouldLoadSelectedOrcaDevice
-    ? selectedOrcaSyncStatusQuery.data
-    : latestOrcaSyncStatus;
-  const isOrcaSyncStatusError = isLatestOrcaSyncStatusError
-    || (shouldLoadSelectedOrcaDevice && selectedOrcaSyncStatusQuery.isError);
-  const orcaSyncDevices = latestOrcaSyncStatus?.devices ?? [];
-
-
   // Загружаем детали сохранённых пресетов
   const savedPresetIds = useMemo(() => {
     if (!savedPresetsData?.items) return [];
@@ -517,21 +475,6 @@ export const ProfilePage: React.FC = () => {
           ))
           .map(p => p.id),
   ), [allMyPresets, syncByPresetId, user?.allow_filament_presets_export]);
-
-  const orcaSyncByPresetId = useMemo(
-    () => new Map(
-      (orcaSyncStatus?.presets ?? []).map((item) => [item.preset_id, item]),
-    ),
-    [orcaSyncStatus?.presets],
-  );
-
-  const selectedOrcaDeviceLabel = useMemo(() => {
-    const fingerprint = orcaSyncStatus?.device_fingerprint;
-    if (!fingerprint) return null;
-    return fingerprint.length > 18
-      ? `${fingerprint.slice(0, 8)}…${fingerprint.slice(-6)}`
-      : fingerprint;
-  }, [orcaSyncStatus?.device_fingerprint]);
 
   const filteredPresets = useMemo(() => {
     switch (presetFilter) {
@@ -1239,48 +1182,6 @@ export const ProfilePage: React.FC = () => {
             </div>
           </div>
 
-          {allMyPresets.length > 0 && (
-            <div className="flex flex-wrap items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs text-gray-300">
-              <Settings className="h-4 w-4 flex-shrink-0 text-blue-300" />
-              <span className="font-medium text-gray-200">{t('presetSync.actual.device')}</span>
-              {orcaSyncDevices.length > 0 ? (
-                <>
-                  <select
-                    value={selectedOrcaSyncDevice}
-                    onChange={(event) => setSelectedOrcaSyncDevice(event.target.value)}
-                    className="max-w-full rounded-lg border border-white/15 bg-slate-900 px-2 py-1 text-xs text-white outline-none focus:border-blue-400"
-                    aria-label={t('presetSync.actual.device')}
-                  >
-                    {orcaSyncDevices.map((device) => {
-                      const fingerprint = device.device_fingerprint;
-                      const label = fingerprint.length > 18
-                        ? `${fingerprint.slice(0, 8)}…${fingerprint.slice(-6)}`
-                        : fingerprint;
-                      return (
-                        <option key={fingerprint} value={fingerprint}>
-                          {label}{device.orcaslicer_version ? ` · Orca ${device.orcaslicer_version}` : ''}
-                        </option>
-                      );
-                    })}
-                  </select>
-                  {orcaSyncStatus?.last_sync_at && (
-                    <span className="text-gray-500">
-                      {t('presetSync.actual.observedAt', {
-                        value: formatLocalDateTime(orcaSyncStatus.last_sync_at),
-                      })}
-                    </span>
-                  )}
-                </>
-              ) : (
-                <span className={isOrcaSyncStatusError ? 'text-red-300' : 'text-amber-200'}>
-                  {t(isOrcaSyncStatusError
-                    ? 'presetSync.actual.loadError'
-                    : 'presetSync.actual.noDevice')}
-                </span>
-              )}
-            </div>
-          )}
-
           {/* Filter chips */}
           {allMyPresets.length > 0 && (
             <div className="flex flex-wrap gap-2">
@@ -1338,8 +1239,6 @@ export const ProfilePage: React.FC = () => {
                 onView={handleViewPreset}
                 onDelete={handleDeletePreset}
                 draftAnalysis={draftAnalysisById.get(preset.id)}
-                syncObservation={orcaSyncByPresetId.get(preset.id)}
-                syncDeviceLabel={selectedOrcaDeviceLabel}
               />
             ))}
           </div>
@@ -3849,8 +3748,6 @@ interface PresetCardProps {
   onView?: (preset: Preset) => void;
   onDelete?: (preset: Preset) => void;
   draftAnalysis?: PresetDraftAnalysis;
-  syncObservation?: OrcaPresetSyncStatus;
-  syncDeviceLabel?: string | null;
   viewMode?: ViewMode;
 }
 
@@ -3860,8 +3757,6 @@ const PresetCard: React.FC<PresetCardProps> = ({
   onView,
   onDelete,
   draftAnalysis,
-  syncObservation,
-  syncDeviceLabel,
   viewMode = 'grid',
 }) => {
   const { t } = useTranslation();
@@ -4044,13 +3939,7 @@ const PresetCard: React.FC<PresetCardProps> = ({
       </button>
       {preset.active && preset.filament_id && (
         <>
-      <PresetSyncToggle
-        preset={preset}
-        size="sm"
-        className="p-2 bg-white/10 hover:bg-white/20 rounded-lg"
-        observation={syncObservation}
-        deviceLabel={syncDeviceLabel}
-      />
+      <PresetSyncToggle preset={preset} size="sm" className="p-2 bg-white/10 hover:bg-white/20 rounded-lg" />
       <button
         onClick={handleDownload}
         disabled={isDownloading}
@@ -4249,23 +4138,20 @@ const PresetCard: React.FC<PresetCardProps> = ({
         {actionButtons}
       </div>
 
-      {isImportedDraft && (
-        <div className={`mb-4 flex flex-col gap-3 rounded-xl border p-3 sm:flex-row sm:items-center sm:justify-between ${
-          preset.moderation_status === 'rejected'
+        {isImportedDraft && (
+          <div className={`mb-4 flex flex-col gap-3 rounded-xl border p-3 sm:flex-row sm:items-center sm:justify-between ${
+            preset.moderation_status === 'rejected'
             ? 'border-rose-400/25 bg-rose-500/10'
             : 'border-cyan-400/20 bg-cyan-500/10'
         }`}>
           <div className="min-w-0">
-            <p className="text-sm font-medium text-white">
-              {preset.moderation_status === 'rejected'
-                ? t('profilePage.draftContributionNeedsFix')
-                : draftAnalysis?.review_state === 'ambiguous'
-                  ? t('profilePage.draftContributionAmbiguous')
-                  : t('profilePage.draftContributionReady', {
-                      count: (draftAnalysis?.preset_decisions.length ?? 0)
-                        + (draftAnalysis?.catalog_decisions.length ?? 0),
-                    })}
-            </p>
+            {(preset.moderation_status === 'rejected' || draftAnalysis?.review_state === 'ambiguous') && (
+              <p className="text-sm font-medium text-white">
+                {preset.moderation_status === 'rejected'
+                  ? t('profilePage.draftContributionNeedsFix')
+                  : t('profilePage.draftContributionAmbiguous')}
+              </p>
+            )}
             <p className="mt-0.5 text-xs leading-5 text-gray-300">
               {preset.moderation_status === 'rejected'
                 ? t('profilePage.draftContributionNeedsFixHint')
@@ -4282,14 +4168,23 @@ const PresetCard: React.FC<PresetCardProps> = ({
               </div>
             )}
           </div>
-          <button
-            type="button"
-            onClick={() => onEdit?.(preset)}
-            className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg border border-cyan-300/25 bg-cyan-400/15 px-3 py-2 text-sm font-medium text-cyan-100 transition hover:bg-cyan-400/25"
-          >
-            <Zap className="h-4 w-4" />
-            {t('profilePage.reviewAndPublishDraft')}
-          </button>
+          <div className="flex shrink-0 flex-col items-stretch gap-1 sm:items-end">
+            <button
+              type="button"
+              onClick={() => onEdit?.(preset)}
+              className="inline-flex items-center justify-center gap-2 rounded-lg border border-cyan-300/25 bg-cyan-400/15 px-3 py-2 text-sm font-medium text-cyan-100 transition hover:bg-cyan-400/25"
+            >
+              <Zap className="h-4 w-4" />
+              {t('profilePage.reviewAndPublishDraft')}
+            </button>
+            {preset.moderation_status !== 'rejected' && draftAnalysis?.review_state !== 'ambiguous' && draftAnalysis && (
+              <p className="text-center text-[11px] text-cyan-100/75">
+                {t('profilePage.draftContributionDecisionsRemaining', {
+                  count: draftAnalysis.preset_decisions.length + draftAnalysis.catalog_decisions.length,
+                })}
+              </p>
+            )}
+          </div>
         </div>
       )}
 

@@ -4,7 +4,6 @@ import axios from 'axios';
 import type { InternalAxiosRequestConfig } from 'axios';
 import type { BrandAnalytics } from '../types/api';
 import type { AdminAchievementOverview } from '../types/api';
-import type { OrcaSyncStatusResponse } from '../types/api';
 import type { AccessibleBrand, AdminUserListResponse, AuthMethods, Brand, BrandUsage, BrandCountryCell, BrandRepresentative, BrandRepresentativeInvite, BrandRequest, BrandRequestStatus, BrandTeamInvite, BrandTeamRole, BrandTeamWorkspace, Filament, FilamentAdditive, FilamentPropertyClaim, FilamentLine, FilamentImportPreviewResult, FilamentImportResult, FilamentListResponse, FilamentPalettePayload, BrandInvitePublic, BrandInviteAdmin, BrandInviteAcceptResult, BrandInviteBatchPreview, BrandInviteBatchSendResult, FilamentAvailability, CountryAvailability, FilamentCountryCell, FilamentVisualSettings, FilamentReview, FilamentRatingStats, Notification, NotificationListResponse, Preset, RecommendedPreset, RecommendedForPrinterResponse, Printer, PrinterProfile, PrintProfile, PrinterRequest, User, Token, RefreshTokenRequest, RefreshTokenResponse, ListResponse, AccountDeletionStats, UserSavedPreset, CalculatorEstimateRequest, CalculatorEstimateResponse, CalculatorProfileResponse, CalculatorProfileUpdate, Feedback, FeedbackDetail, FeedbackListResponse, FeedbackType, PluginDownloadsResponse, WikiCategory, WikiCategoryListResponse, WikiArticle, WikiArticleListResponse, WikiArticleTranslation, WikiFeedbackStats, WikiFeedbackCreate, WikiFeedback, WikiGuideProgressResponse, WikiLanguage, WikiMediaAsset, WikiReviewVerdict, WikiRevision, WikiRevisionListResponse, WikiPublicRevisionListResponse, WikiRevisionStatus, WikiSpace, WikiSpaceKey, EmailThreadDetail, EmailThreadListResponse, EmailThreadStatus, EmailMessage, EmailSenderProfile, EmailLanguage, NotificationCampaignAudience, NotificationCampaignHistoryResponse, NotificationCampaignPreview, NotificationCampaignSendResult, LegalAcceptancePayload, LegalDocument, LegalDocumentType, LegalPack, LegalRequirements, RegistrationPayload, SpoolUsageEvent, OrcaSliceReport, OrcaPresetScope, OrcaSchemaObservation, OrcaSchemaObservationListResponse, OrcaSchemaObservationStatus, UnreadCommunicationsCount } from '../types/api';
 import { getCsrfToken, getRefreshToken, getToken, isCookieAuthMode, isJwtAuthMode, isOrcaEmbedded, removeToken, setRefreshToken, setToken, shouldPersistTokensLocally } from '../utils/auth';
 import { isPluginEmbed, reportPluginSessionToPlugin } from '../utils/pluginBridge';
@@ -1401,12 +1400,15 @@ export const savedPresetsAPI = {
     });
     return response.data;
   },
-};
 
-export const orcaSyncAPI = {
-  getStatus: async (deviceFingerprint?: string | null): Promise<OrcaSyncStatusResponse> => {
-    const response = await api.get<OrcaSyncStatusResponse>('/orcaslicer/sync-status', {
-      params: deviceFingerprint ? { device_fingerprint: deviceFingerprint } : undefined,
+  updateVersion: async (
+    preset_id: number,
+    action: 'select' | 'keep_current',
+    version_id: number,
+  ) => {
+    const response = await api.patch<UserSavedPreset>(`/saved-presets/${preset_id}/version`, {
+      action,
+      version_id,
     });
     return response.data;
   },
@@ -1425,6 +1427,7 @@ export type PresetVersionListItem = {
   label_description: string | null;
   change_source: string;
   restored_from_version_id: number | null;
+  parent_version_id: number | null;
   squash_count: number;
   created_at: string;
   updated_at: string;
@@ -3953,6 +3956,28 @@ export const devicesAPI = {
   },
 };
 
+export interface PrinterRecoveryProfileEntry {
+  id: number;
+  name: string;
+  profile: Record<string, unknown>;
+  content_hash: string;
+  physical_printer_ids: number[];
+  original_state: 'present' | 'missing' | 'unknown';
+}
+
+export interface PrinterRecoveryPlan {
+  format: 'filamenthub.orcaslicer.printer-recovery';
+  version: 1;
+  scope: {
+    owner_user_id: number;
+    source_instance_id: string;
+    account_id: string;
+  };
+  physical_printers: Array<{ id: number; name: string }>;
+  machine_profiles: PrinterRecoveryProfileEntry[];
+  process_profiles: PrinterRecoveryProfileEntry[];
+}
+
 export const physicalPrintersAPI = {
   list: async (): Promise<PhysicalPrinter[]> => {
     const response = await api.get<PhysicalPrinter[]>('/physical-printers');
@@ -3963,6 +3988,30 @@ export const physicalPrintersAPI = {
     const response = await api.get<Blob>(
       `/physical-printers/${physicalPrinterId}/orcaslicer-bundle`,
       { params: { archive: true }, responseType: 'blob' },
+    );
+    return response.data;
+  },
+
+  getOrcaRecoveryPlan: async (
+    sourceInstanceId: string,
+    accountId: string,
+    originalObservations: Partial<Record<'machine' | 'process', {
+      complete: boolean;
+      presentLocalProfileIds: string[];
+    }>> = {},
+  ): Promise<PrinterRecoveryPlan> => {
+    const response = await api.post<PrinterRecoveryPlan>(
+      '/physical-printers/orcaslicer-recovery-plan',
+      {
+        source_instance_id: sourceInstanceId,
+        account_id: accountId,
+        machine_snapshot_complete: originalObservations.machine?.complete ?? false,
+        machine_present_local_profile_ids:
+          originalObservations.machine?.presentLocalProfileIds ?? [],
+        process_snapshot_complete: originalObservations.process?.complete ?? false,
+        process_present_local_profile_ids:
+          originalObservations.process?.presentLocalProfileIds ?? [],
+      },
     );
     return response.data;
   },

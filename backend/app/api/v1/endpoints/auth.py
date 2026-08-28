@@ -1045,11 +1045,51 @@ async def get_my_presets(
     )
     saved_presets_relations = saved_result.scalars().all()
 
+    from app.models.preset_version import PresetVersion
+
+    version_rows: list[tuple[int, int, int]] = []
+    relation_preset_ids = {
+        relation.preset_id for relation in saved_presets_relations
+    }
+    if relation_preset_ids:
+        version_rows = [
+            (version_id, preset_id, version_number)
+            for version_id, preset_id, version_number in (
+                await db.execute(
+                    select(
+                        PresetVersion.id,
+                        PresetVersion.preset_id,
+                        PresetVersion.version_number,
+                    )
+                    .where(PresetVersion.preset_id.in_(relation_preset_ids))
+                    .order_by(
+                        PresetVersion.preset_id.asc(),
+                        PresetVersion.version_number.asc(),
+                    )
+                )
+            ).all()
+        ]
+    versions_by_id = {
+        version_id: (version_id, preset_id, version_number)
+        for version_id, preset_id, version_number in version_rows
+    }
+    latest_by_preset: dict[int, tuple[int, int, int]] = {}
+    for version_id, preset_id, version_number in version_rows:
+        latest_by_preset[preset_id] = (version_id, preset_id, version_number)
+
+    version_state_by_preset: dict[
+        int, tuple[tuple[int, int, int] | None, tuple[int, int, int] | None]
+    ] = {}
     for saved_preset_relation in saved_presets_relations:
         preset = saved_preset_relation.preset
         preset_id = preset.id
         preset_ids.add(preset_id)
         presets_dict[preset_id] = preset
+        latest = latest_by_preset.get(preset_id)
+        selected = versions_by_id.get(saved_preset_relation.selected_version_id)
+        if selected is None or selected[1] != preset_id:
+            selected = latest
+        version_state_by_preset[preset_id] = (selected, latest)
 
     # 2. УДАЛЕНО: Старая логика проверки presets.sync_enabled
     # Теперь ВСЕ пресеты (свои + чужие) управляются через user_saved_presets.sync_enabled
@@ -1060,7 +1100,18 @@ async def get_my_presets(
     presets_list = [presets_dict[pid] for pid in sorted(preset_ids)]
 
     # 4. Преобразуем в PresetResponse
-    preset_responses = [PresetResponse.model_validate(p) for p in presets_list]
+    preset_responses = []
+    for preset in presets_list:
+        response = PresetResponse.model_validate(preset)
+        selected, latest = version_state_by_preset.get(preset.id, (None, None))
+        response.selected_version_id = selected[0] if selected else None
+        response.selected_version_number = selected[2] if selected else None
+        response.latest_version_id = latest[0] if latest else None
+        response.latest_version_number = latest[2] if latest else None
+        response.update_available = bool(
+            selected is not None and latest is not None and selected[0] != latest[0]
+        )
+        preset_responses.append(response)
 
     return PresetListResponse(
         items=preset_responses,

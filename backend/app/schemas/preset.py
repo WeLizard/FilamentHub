@@ -134,6 +134,7 @@ class PresetResponse(PresetBase):
     organization_id: int | None = None
     created_by_user_id: int | None = None
     derived_from_preset_id: int | None = None
+    derived_from_version_id: int | None = None
     active: bool
     moderation_status: str  # pending, approved, rejected
     # УДАЛЕНО: sync_enabled - теперь управляется через user_saved_presets.sync
@@ -144,6 +145,13 @@ class PresetResponse(PresetBase):
     moderated_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
+    # Present on the authenticated Orca desired-state manifest. Other preset
+    # responses leave these fields null.
+    selected_version_id: int | None = None
+    selected_version_number: int | None = None
+    latest_version_id: int | None = None
+    latest_version_number: int | None = None
+    update_available: bool = False
     printers: list[PrinterResponse] = Field(default_factory=list, description="Список принтеров, для которых подходит этот пресет")
 
     @classmethod

@@ -15,8 +15,11 @@ import { formatDateTime } from '../../utils/formatDate';
 import { translateApiError } from '../../utils/translateApiError';
 import {
   presetVersionsAPI,
+  savedPresetsAPI,
   type PresetVersionListItem,
 } from '../../api/client';
+import { useAuth } from '../../contexts/AuthContext';
+import { notifyProfileChanged } from '../../utils/pluginBridge';
 
 interface Props {
   presetId: number;
@@ -36,6 +39,7 @@ const SOURCE_COLORS: Record<string, string> = {
 
 export const PresetHistoryModal: React.FC<Props> = ({ presetId, canRestore = false, onClose }) => {
   const { t } = useTranslation();
+  const { user } = useAuth();
   const queryClient = useQueryClient();
 
   const [labeledOnly, setLabeledOnly] = useState(false);
@@ -51,6 +55,14 @@ export const PresetHistoryModal: React.FC<Props> = ({ presetId, canRestore = fal
   });
 
   const versions = versionsQuery.data?.items ?? [];
+  const savedPresetsQuery = useQuery({
+    queryKey: ['saved-presets', user?.id],
+    queryFn: () => savedPresetsAPI.list(),
+    enabled: !!user,
+  });
+  const savedPreset = savedPresetsQuery.data?.items.find(
+    (item) => item.preset_id === presetId,
+  );
   const latest = useMemo(
     () => versions.reduce<PresetVersionListItem | null>(
       (acc, v) => (acc === null || v.version_number > acc.version_number ? v : acc),
@@ -63,7 +75,9 @@ export const PresetHistoryModal: React.FC<Props> = ({ presetId, canRestore = fal
   // showing "what changed in the latest version").
   const effectiveSelectedId =
     selectedId ??
-    (versions.length > 1
+    (savedPreset?.update_available && savedPreset.selected_version_id
+      ? savedPreset.selected_version_id
+      : versions.length > 1
       ? [...versions].sort((a, b) => b.version_number - a.version_number)[1]?.id ?? null
       : null);
 
@@ -99,6 +113,26 @@ export const PresetHistoryModal: React.FC<Props> = ({ presetId, canRestore = fal
       toast.success(t('presetVersions.label.saved'));
       queryClient.invalidateQueries({ queryKey: ['preset-versions', presetId] });
       setEditingLabel(false);
+    },
+    onError: (err: any) => {
+      toast.error(translateApiError(t, err?.response?.data?.detail, t('common.error')));
+    },
+  });
+
+  const selectionMutation = useMutation({
+    mutationFn: ({ action, versionId }: { action: 'select' | 'keep_current'; versionId: number }) =>
+      savedPresetsAPI.updateVersion(presetId, action, versionId),
+    onSuccess: (updated, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['saved-presets', user?.id] });
+      queryClient.invalidateQueries({ queryKey: ['my-presets'] });
+      notifyProfileChanged();
+      toast.success(
+        variables.action === 'keep_current'
+          ? t('presetVersions.selection.kept')
+          : t('presetVersions.selection.selected', {
+              version: updated.selected_version_number,
+            }),
+      );
     },
     onError: (err: any) => {
       toast.error(translateApiError(t, err?.response?.data?.detail, t('common.error')));
@@ -162,6 +196,11 @@ export const PresetHistoryModal: React.FC<Props> = ({ presetId, canRestore = fal
                           {isLat && (
                             <span className="text-[10px] uppercase tracking-wide text-emerald-400">
                               {t('presetVersions.timeline.current')}
+                            </span>
+                          )}
+                          {savedPreset?.selected_version_id === v.id && (
+                            <span className="text-[10px] uppercase tracking-wide text-cyan-300">
+                              {t('presetVersions.timeline.selected')}
                             </span>
                           )}
                           <span
@@ -332,6 +371,60 @@ export const PresetHistoryModal: React.FC<Props> = ({ presetId, canRestore = fal
                         </div>
                       </details>
                     )}
+                  </div>
+                )}
+
+                {savedPreset && latest && selected && (
+                  <div className="mt-6 pt-4 border-t border-white/10 flex flex-wrap gap-2">
+                    {selected.id !== savedPreset.selected_version_id && (
+                      <button
+                        onClick={() =>
+                          selectionMutation.mutate({
+                            action: 'select',
+                            versionId: selected.id,
+                          })
+                        }
+                        disabled={selectionMutation.isPending}
+                        className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white text-sm font-medium rounded-lg disabled:opacity-50"
+                      >
+                        {t('presetVersions.selection.useVersion', {
+                          version: selected.version_number,
+                        })}
+                      </button>
+                    )}
+                    {savedPreset.update_available &&
+                      selected.id === savedPreset.selected_version_id && (
+                        <>
+                          <button
+                            onClick={() =>
+                              selectionMutation.mutate({
+                                action: 'select',
+                                versionId: latest.id,
+                              })
+                            }
+                            disabled={selectionMutation.isPending}
+                            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium rounded-lg disabled:opacity-50"
+                          >
+                            {t('presetVersions.selection.acceptUpdate', {
+                              version: latest.version_number,
+                            })}
+                          </button>
+                          <button
+                            onClick={() =>
+                              selectionMutation.mutate({
+                                action: 'keep_current',
+                                versionId: latest.id,
+                              })
+                            }
+                            disabled={selectionMutation.isPending}
+                            className="px-4 py-2 bg-white/10 hover:bg-white/20 text-gray-200 text-sm rounded-lg disabled:opacity-50"
+                          >
+                            {t('presetVersions.selection.keepVersion', {
+                              version: savedPreset.selected_version_number,
+                            })}
+                          </button>
+                        </>
+                      )}
                   </div>
                 )}
 

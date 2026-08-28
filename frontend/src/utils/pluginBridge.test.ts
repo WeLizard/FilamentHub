@@ -3,12 +3,14 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   importPresetToPlugin,
   installPrinterBundleInPlugin,
+  removePrinterBundleFromPlugin,
   PLUGIN_MESSAGE_SOURCE,
   reportPluginSessionToPlugin,
   requestBambuMaterialAction,
   requestHappyHareAction,
   requestPluginProfileSync,
   requestPluginCapabilities,
+  requestInstalledPrinterBundles,
   subscribeToPluginCapabilities,
   subscribeToPluginNavigation,
   subscribeToPluginRecoverList,
@@ -131,7 +133,11 @@ describe('pluginBridge inbound messages', () => {
         data: {
           source: PLUGIN_MESSAGE_SOURCE,
           type: 'plugin-capabilities',
-          capabilities: ['profile-sync-scopes-v1', 'printer-bundle-result-v1'],
+          capabilities: [
+            'profile-sync-scopes-v1',
+            'printer-bundle-result-v1',
+            'printer-bundle-toggle-v1',
+          ],
         },
         origin: window.location.origin,
         source: parent as unknown as Window,
@@ -197,6 +203,44 @@ describe('pluginBridge inbound messages', () => {
         source: parent as unknown as Window,
       }));
       await expect(installing).resolves.toEqual({ message: 'bundle installed' });
+
+      const removing = removePrinterBundleFromPlugin(7);
+      const removeRequest = postMessage.mock.calls.at(-1)?.[0];
+      expect(removeRequest).toMatchObject({
+        type: 'remove-printer-bundle',
+        physicalPrinterId: 7,
+      });
+      window.dispatchEvent(new MessageEvent('message', {
+        data: {
+          source: PLUGIN_MESSAGE_SOURCE,
+          type: 'printer-bundle-result',
+          requestId: removeRequest.requestId,
+          status: 'success',
+          text: 'bundle removed',
+        },
+        origin: window.location.origin,
+        source: parent as unknown as Window,
+      }));
+      await expect(removing).resolves.toEqual({ message: 'bundle removed' });
+
+      const readingStatus = requestInstalledPrinterBundles([7, 8, 8]);
+      const statusRequest = postMessage.mock.calls.at(-1)?.[0];
+      expect(statusRequest).toMatchObject({
+        type: 'printer-bundle-status',
+        physicalPrinterIds: [7, 8],
+      });
+      window.dispatchEvent(new MessageEvent('message', {
+        data: {
+          source: PLUGIN_MESSAGE_SOURCE,
+          type: 'printer-bundle-status-result',
+          requestId: statusRequest.requestId,
+          status: 'success',
+          installedPrinterIds: [7, '8', true, -1],
+        },
+        origin: window.location.origin,
+        source: parent as unknown as Window,
+      }));
+      await expect(readingStatus).resolves.toEqual(new Set([7]));
     } finally {
       unsubscribe();
       Object.defineProperty(window, 'parent', {

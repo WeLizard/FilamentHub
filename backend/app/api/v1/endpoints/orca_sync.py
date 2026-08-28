@@ -39,6 +39,7 @@ from app.core.errors import (
     ERR_ORCA_PROFILE_SNAPSHOT_SUPERSEDED,
     ERR_PRESET_IDS_REQUIRED,
     ERR_PRESET_NOT_FOUND,
+    ERR_PRESET_VERSION_NOT_FOUND,
     ERR_SYNC_ITEM_FAILED,
     ERR_TOO_MANY_PROFILES,
     raise_error,
@@ -118,6 +119,13 @@ def _preset_id_from_sync_info(value: str | None) -> int | None:
         parts = normalized.split(":")
         return int(parts[1]) if len(parts) >= 2 and parts[1].isdigit() else None
     return None
+
+
+def _is_shareable_preset_source(preset: Preset) -> bool:
+    """Only catalog-visible presets may become another user's fork source."""
+    return preset.is_official or (
+        preset.active and preset.moderation_status in PUBLIC_PRESET_STATUSES
+    )
 
 
 def _serialize_moderation_reason(reason: Any) -> str | None:
@@ -2743,10 +2751,17 @@ async def _upsert_filament_preset(
                 preset.user_id != current_user.id
                 and current_user.role != UserRole.ADMIN
             ):
-                logger.info(
-                    f"Preset fhub_id={fhub_id_from_info} (from .info) belongs to user_id={preset.user_id}, "
-                    f"current user_id={current_user.id} — will create new preset instead"
-                )
+                if _is_shareable_preset_source(preset):
+                    shared_source_preset = preset
+                    logger.info(
+                        f"Preset fhub_id={fhub_id_from_info} (from .info) belongs to user_id={preset.user_id}, "
+                        f"current user_id={current_user.id} — will create a personal fork"
+                    )
+                else:
+                    logger.warning(
+                        "Ignoring inaccessible foreign preset fhub_id=%s from .info",
+                        fhub_id_from_info,
+                    )
                 preset = None
             else:
                 logger.info(f"Found preset by fhub_id from .info file: {fhub_id_from_info} (preset.name='{preset.name}')")
@@ -2762,10 +2777,17 @@ async def _upsert_filament_preset(
                 preset.user_id != current_user.id
                 and current_user.role != UserRole.ADMIN
             ):
-                logger.info(
-                    f"Preset fhub_id={payload.fhub_id} belongs to user_id={preset.user_id}, "
-                    f"current user_id={current_user.id} — will create new preset instead"
-                )
+                if _is_shareable_preset_source(preset):
+                    shared_source_preset = preset
+                    logger.info(
+                        f"Preset fhub_id={payload.fhub_id} belongs to user_id={preset.user_id}, "
+                        f"current user_id={current_user.id} — will create a personal fork"
+                    )
+                else:
+                    logger.warning(
+                        "Ignoring inaccessible foreign preset fhub_id=%s from payload",
+                        payload.fhub_id,
+                    )
                 preset = None
             else:
                 logger.info(f"Found preset by fhub_id from payload: {payload.fhub_id}")
@@ -2789,10 +2811,17 @@ async def _upsert_filament_preset(
                         preset.user_id != current_user.id
                         and current_user.role != UserRole.ADMIN
                     ):
-                        logger.info(
-                            f"Preset fhub_id={fhub_id_int} (from metadata) belongs to user_id={preset.user_id}, "
-                            f"current user_id={current_user.id} — will create new preset instead"
-                        )
+                        if _is_shareable_preset_source(preset):
+                            shared_source_preset = preset
+                            logger.info(
+                                f"Preset fhub_id={fhub_id_int} (from metadata) belongs to user_id={preset.user_id}, "
+                                f"current user_id={current_user.id} — will create a personal fork"
+                            )
+                        else:
+                            logger.warning(
+                                "Ignoring inaccessible foreign preset fhub_id=%s from metadata",
+                                fhub_id_int,
+                            )
                         preset = None
                     else:
                         logger.info(f"Found preset by fhub_id from metadata: {fhub_id_int}")
@@ -3096,6 +3125,28 @@ async def _upsert_filament_preset(
                 status="skipped",
                 message="Template already promoted to FilamentHub preset",
             )
+
+    shared_source_version_id = None
+    if shared_source_preset is not None:
+        from app.services import preset_version_service
+
+        if payload.base_version_id is not None:
+            source_version = await preset_version_service.get_version(
+                db, shared_source_preset.id, payload.base_version_id
+            )
+            if source_version is None:
+                return OrcaSyncResult(
+                    external_id=payload.external_id,
+                    fhub_id=shared_source_preset.id,
+                    status="error",
+                    message=ERR_PRESET_VERSION_NOT_FOUND,
+                )
+        else:
+            source_version = await preset_version_service.get_latest_version(
+                db, shared_source_preset.id
+            )
+        if source_version is not None:
+            shared_source_version_id = source_version.id
 
     if shared_source_preset is not None and _payload_matches_shared_preset(
         shared_source_preset, payload
@@ -3512,6 +3563,9 @@ async def _upsert_filament_preset(
             derived_from_preset_id=(
                 shared_source_preset.id if shared_source_preset is not None else None
             ),
+            derived_from_version_id=(
+                shared_source_version_id
+            ),
             extruder_temp=extruder_temp,
             bed_temp=bed_temp,
             flow_rate=payload.flow_rate if payload.flow_rate is not None else extracted.get("flow_rate"),
@@ -3547,7 +3601,11 @@ async def _upsert_filament_preset(
             is_official=False,
             # ВАЖНО: Для пресетов с @FilamentHub всегда active=True (это наши пресеты из каталога)
             # Для остальных - active=False (черновики пользователя)
-            active=True if is_our_preset else (payload.active if payload.active is not None else False),
+            active=(
+                True
+                if is_our_preset or shared_source_preset is not None
+                else (payload.active if payload.active is not None else False)
+            ),
             moderation_status=PresetModerationStatus.PENDING,
             source=payload.source or "orcaslicer",
             external_id=payload.external_id,
@@ -3604,7 +3662,11 @@ async def _upsert_filament_preset(
             external_id=payload.external_id,
             fhub_id=preset.id,
             status="created",
-            message="Preset created as draft",
+            message=(
+                "Personal fork created"
+                if shared_source_preset is not None
+                else "Preset created as draft"
+            ),
         )
 
 
@@ -3670,12 +3732,42 @@ async def import_filament_presets(
 
                         synced_preset = await db.get(Preset, result.fhub_id)
                         if synced_preset is not None:
-                            await preset_version_service.record_version(
+                            parent_version_id = None
+                            if item.base_version_id is not None:
+                                base_version = await preset_version_service.get_version(
+                                    db, synced_preset.id, item.base_version_id
+                                )
+                                if base_version is not None:
+                                    parent_version_id = base_version.id
+                            recorded_version = await preset_version_service.record_version(
                                 db,
                                 synced_preset,
                                 source=PresetVersionSource.ORCA_SYNC,
                                 user_id=current_user.id,
+                                parent_version_id=parent_version_id,
                             )
+                            selected_version = (
+                                recorded_version
+                                or await preset_version_service.get_latest_version(
+                                    db, synced_preset.id
+                                )
+                            )
+                            if selected_version is not None:
+                                from app.models.user_saved_preset import UserSavedPreset
+
+                                saved_result = await db.execute(
+                                    select(UserSavedPreset).where(
+                                        UserSavedPreset.user_id == current_user.id,
+                                        UserSavedPreset.preset_id == synced_preset.id,
+                                    )
+                                )
+                                saved_row = saved_result.scalar_one_or_none()
+                                if saved_row is not None:
+                                    saved_row.selected_version_id = selected_version.id
+                                    saved_row.seen_version_id = selected_version.id
+                                result = result.model_copy(
+                                    update={"version_id": selected_version.id}
+                                )
 
                             if not synced_preset.active:
                                 from app.services.preset_draft_analysis import (

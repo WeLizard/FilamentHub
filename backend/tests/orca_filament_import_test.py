@@ -920,9 +920,16 @@ async def test_official_round_trip_is_immutable_and_a_change_becomes_a_personal_
     )
     db_session.add(official)
     await db_session.flush()
+    from app.models.preset_version import PresetVersionSource
+    from app.services import preset_version_service
     from app.services.preset_publication import apply_managed_orca_identity
 
     apply_managed_orca_identity(official)
+    source_version = await preset_version_service.record_version(
+        db_session,
+        official,
+        PresetVersionSource.WEB_EDIT,
+    )
     await db_session.commit()
 
     headers, person = await _signed_in(client, db_session, "orca-official-fork")
@@ -930,6 +937,7 @@ async def test_official_round_trip_is_immutable_and_a_change_becomes_a_personal_
         "Round Trip Quality @fh",
         external_id="orca-official-round-trip",
         fhub_id=official.id,
+        base_version_id=source_version.id,
         filament_id=filament.id,
         extruder_temp=215,
         bed_temp=60,
@@ -958,7 +966,10 @@ async def test_official_round_trip_is_immutable_and_a_change_becomes_a_personal_
     }
     changed = await _import(client, headers, changed_payload)
     assert changed.status_code == 200, changed.text
-    assert changed.json()["results"][0]["status"] == "created"
+    changed_result = changed.json()["results"][0]
+    assert changed_result["status"] == "created"
+    assert changed_result["fhub_id"] != official.id
+    assert changed_result["version_id"] is not None
 
     fork = await db_session.scalar(
         select(Preset).where(
@@ -970,6 +981,7 @@ async def test_official_round_trip_is_immutable_and_a_change_becomes_a_personal_
     assert fork.is_official is False
     assert fork.organization_id is None
     assert fork.extruder_temp == 225
+    assert fork.derived_from_version_id == source_version.id
     await db_session.refresh(official)
     assert official.user_id is None
     assert official.is_official is True

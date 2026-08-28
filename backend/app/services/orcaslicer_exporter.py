@@ -206,6 +206,7 @@ async def preset_to_orcaslicer_json(
     target_profiles: "list[PrinterProfile] | None" = None,
     *,
     settings_override: dict[str, Any] | None = None,
+    structured_override: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """
     Конвертировать Preset из FilamentHub в формат профиля OrcaSlicer.
@@ -229,13 +230,19 @@ async def preset_to_orcaslicer_json(
     # ОБЯЗАТЕЛЬНЫЕ поля профиля (в соответствии с OrcaSlicer)
     # BBL_JSON_KEY constants: version, name, from, inherits, filament_settings_id
     # OrcaSlicer проверяет config.has("filament_settings_id") для определения типа профиля
+    structured = structured_override or {}
+
+    def preset_value(field: str) -> Any:
+        return structured.get(field, getattr(preset, field, None))
+
+    export_name = preset_value("name") or preset.name
     profile = {
         "version": "2.3.0.0",  # Версия профиля OrcaSlicer (совместимость с OrcaSlicer 2.3.x)
         "type": "filament",  # Тип профиля
-        "name": preset.name,  # Имя пресета (будет добавлен постфикс [fh] в C++)
+        "name": export_name,  # Имя пресета (будет добавлен постфикс [fh] в C++)
         "from": "system" if preset.is_official else "user",  # Источник пресета
         "instantiation": "true",  # Флаг инстанцирования
-        "filament_settings_id": [preset.name],  # ОБЯЗАТЕЛЬНО: OrcaSlicer определяет тип профиля по наличию этого поля
+        "filament_settings_id": [export_name],  # ОБЯЗАТЕЛЬНО: OrcaSlicer определяет тип профиля по наличию этого поля
     }
 
     # Stable preset identity for Orca/FilamentHub lifecycle. Do not put the
@@ -287,13 +294,15 @@ async def preset_to_orcaslicer_json(
         return [str(value)]
 
     # Температуры экструдера
-    if preset.extruder_temp:
-        profile["nozzle_temperature"] = to_array(int(preset.extruder_temp))
-        profile["nozzle_temperature_initial_layer"] = to_array(int(preset.extruder_temp))
+    extruder_temp = preset_value("extruder_temp")
+    if extruder_temp:
+        profile["nozzle_temperature"] = to_array(int(extruder_temp))
+        profile["nozzle_temperature_initial_layer"] = to_array(int(extruder_temp))
 
     # Температуры стола (bed_temp)
-    if preset.bed_temp:
-        bed_temp = int(preset.bed_temp)
+    bed_temp_value = preset_value("bed_temp")
+    if bed_temp_value:
+        bed_temp = int(bed_temp_value)
         # OrcaSlicer различает типы столов
         profile["hot_plate_temp"] = to_array(bed_temp)
         profile["hot_plate_temp_initial_layer"] = to_array(bed_temp)
@@ -310,8 +319,9 @@ async def preset_to_orcaslicer_json(
         profile["textured_cool_plate_temp_initial_layer"] = to_array(bed_temp)
 
     # Вентилятор
-    if preset.fan_speed is not None:
-        fan_speed = max(0, min(100, preset.fan_speed))  # Ограничиваем 0-100
+    fan_speed_value = preset_value("fan_speed")
+    if fan_speed_value is not None:
+        fan_speed = max(0, min(100, fan_speed_value))  # Ограничиваем 0-100
         profile["fan_min_speed"] = to_array(fan_speed)
         profile["fan_max_speed"] = to_array(100)
         profile["overhang_fan_speed"] = to_array(100)
@@ -341,20 +351,23 @@ async def preset_to_orcaslicer_json(
         profile["filament_vendor"] = to_array(filament.brand.name)
 
     # Retraction
-    if preset.retraction_length is not None:
+    retraction_length = preset_value("retraction_length")
+    if retraction_length is not None:
         profile["filament_retraction_length"] = to_array(
-            format_orca_number(preset.retraction_length)
+            format_orca_number(retraction_length)
         )
 
-    if preset.retraction_speed is not None:
+    retraction_speed = preset_value("retraction_speed")
+    if retraction_speed is not None:
         profile["filament_retraction_speed"] = to_array(
-            format_orca_number(preset.retraction_speed)
+            format_orca_number(retraction_speed)
         )
 
     # Flow ratio (коэффициент потока)
     # БД хранит проценты (>0-200), OrcaSlicer ожидает множитель (>0-2.0)
-    if preset.flow_rate is not None:
-        profile["filament_flow_ratio"] = to_array(format_orca_flow_ratio(preset.flow_rate))
+    flow_rate = preset_value("flow_rate")
+    if flow_rate is not None:
+        profile["filament_flow_ratio"] = to_array(format_orca_flow_ratio(flow_rate))
 
     # Расширенные параметры из JSON поля orcaslicer_settings.
     # The stored blob is the round-trip authority for everything not rewritten

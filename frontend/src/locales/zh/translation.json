@@ -3750,7 +3750,8 @@
     "enrichmentConfidenceLow": "低",
     "fieldsAutoFilled": "{{count}}个字段自动填充",
     "materialDetected": "检测到的类型：{{type}}",
-    "draftContributionReady": "设置已导入，还需确认 {{count}} 项重要信息",
+    "draftContributionReady": "设置已导入",
+    "draftContributionDecisionsRemaining": "重要事项：{{count}}",
     "draftContributionHint": "确认几个清晰字段后，您的实际配置就能帮助目录中的其他用户。",
     "draftContributionAmbiguous": "需要确认具体材料",
     "draftContributionNeedsFix": "此配置需要少量修正",
@@ -3901,9 +3902,11 @@
     "profilesCount_one": "{{count}} 项配置",
     "profilesCount_few": "{{count}} 项配置",
     "profilesCount_many": "{{count}} 项配置",
+    "profilesCount_other": "{{count}} 项配置",
     "unattachedCount_one": "{{count}} 项配置",
     "unattachedCount_few": "{{count}} 项配置",
     "unattachedCount_many": "{{count}} 项配置",
+    "unattachedCount_other": "{{count}} 项配置",
     "emailNotVerified": "邮箱尚未确认。确认后，忘记密码时才能找回账户。",
     "emailNotVerifiedResend": "重新发送邮件",
     "emailNotVerifiedSent": "邮件已发送",
@@ -5273,7 +5276,8 @@
     "syncPrinterTitle": "打印机",
     "syncPrinterHint": "打印机、其配置及打印工艺。",
     "syncPrinterToHubNote": "在切片软件中发现的打印机",
-    "syncPrinterToSlicerNote": "连同打印流程一起安装打印机",
+    "syncPrinterToSlicerNote": "允许经预览确认后从 FilamentHub 恢复；不会启用后台同步",
+    "allowPrinterRecovery": "允许恢复到 OrcaSlicer",
     "syncToHub": "上传到 FilamentHub",
     "syncToSlicer": "下发到切片软件",
     "syncNotYet": "暂不可用"
@@ -5949,7 +5953,8 @@
     "timeline": {
       "labeledOnly": "仅已标记的",
       "empty": "暂无版本",
-      "current": "当前"
+      "current": "最新",
+      "selected": "正在使用"
     },
     "diff": {
       "selectPrompt": "选择要与当前版本比较的版本。",
@@ -5983,6 +5988,13 @@
       "descPlaceholder": "描述（可选）",
       "save": "保存",
       "saved": "标签已保存"
+    },
+    "selection": {
+      "useVersion": "使用 v{{version}}",
+      "acceptUpdate": "接受 v{{version}}",
+      "keepVersion": "保留 v{{version}}",
+      "selected": "已选择版本 v{{version}}",
+      "kept": "已保留当前版本"
     }
   },
   "reviewCard": {
@@ -6221,6 +6233,8 @@
     "desiredDisabledTitle": "此预设不应保留在 OrcaSlicer 中。点击可将其加入目标集合。",
     "desiredEnabled": "添加到 OrcaSlicer",
     "desiredDisabled": "不添加到 OrcaSlicer",
+    "updateAvailable": "有可用更新",
+    "updateAvailableTitle": "您正在使用 v{{current}}；v{{latest}} 可用。请打开版本历史进行比较和选择。",
     "desiredFilter": "用于 OrcaSlicer",
     "actual": {
       "device": "OrcaSlicer 中的状态",
@@ -6973,8 +6987,10 @@
     "configurations": "配置",
     "noConfigurations": "暂无配置",
     "installBundleInOrca": "添加配置集到 OrcaSlicer",
+    "removeBundleFromOrca": "从 OrcaSlicer 移除配置集",
     "downloadBundle": "下载 OrcaSlicer 配置集",
     "bundleRequestSent": "OrcaSlicer 正在安装所选配置集。完成后插件会报告结果。",
+    "bundleRemoved": "已从 OrcaSlicer 移除配置集。",
     "bundleDownloaded": "已下载 OrcaSlicer 配置集。",
     "bundleError": "无法获取打印机配置集。",
     "bundleUnavailable": "请先添加至少一个打印机配置。",
@@ -6986,6 +7002,45 @@
     "gates_many": "{{count}} 个槽位",
     "noFeedSystem": "未描述供料系统",
     "localConnection": "地址保存在 OrcaSlicer 中"
+  },
+  "printerRecovery": {
+    "open": "在 OrcaSlicer 中恢复配置…",
+    "title": "在 OrcaSlicer 中恢复配置",
+    "subtitle": "写入前会显示准确的托管副本列表。常规同步仍只把机器和工艺配置从 OrcaSlicer 发送到 FilamentHub。",
+    "loading": "正在读取当前 OrcaSlicer 账户并准备预览…",
+    "planError": "FilamentHub 恢复库当前不可用。仍可在下方移除本地托管副本。",
+    "localStateError": "无法读取 OrcaSlicer 的本地托管配置。",
+    "applyError": "无法恢复所选配置。",
+    "removeError": "无法移除所选托管副本。",
+    "done": "操作已完成。",
+    "restartRequired": "文件已安全写入，但此 OrcaSlicer 版本需要重启后才能加载更改。",
+    "availableTitle": "可恢复的备份",
+    "availableHint": "缺失的原始配置会自动选中。现有原始配置不会重复创建；状态未知时由您决定。",
+    "selected_other": "已选择 {{count}} 项",
+    "selected_one": "已选择 {{count}} 项",
+    "noneAvailable": "没有可恢复的机器或工艺配置。",
+    "restoreSelected": "恢复所选项",
+    "managedInstalled": "已安装托管副本",
+    "managedOutdated": "可更新托管副本",
+    "managedConflict": "请先移除冲突的本地托管副本",
+    "localTitle": "此 OrcaSlicer 账户中的托管副本",
+    "localHint": "移除操作完全在本地完成，即使服务器离线或源打印机、配置已删除仍然可用。",
+    "noneInstalled": "未安装托管机器或工艺副本。",
+    "removeLocal": "移除",
+    "kind": {
+      "machine": "机器",
+      "process": "工艺"
+    },
+    "original": {
+      "present": "原始配置存在于此 OrcaSlicer 账户",
+      "missing": "之前备份的原始配置已缺失",
+      "unknown": "此 OrcaSlicer 账户没有最新的存在状态"
+    },
+    "ownership": {
+      "current": "当前 FilamentHub 账户",
+      "foreign": "其他 FilamentHub 账户或环境",
+      "untracked": "旧副本或日志已丢失"
+    }
   },
   "printJobs": {
     "open": "打印历史",
