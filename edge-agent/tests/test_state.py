@@ -43,6 +43,40 @@ class StateStoreTest(unittest.TestCase):
             with self.assertRaisesRegex(StateError, "sequence"):
                 store.load()
 
+    def test_usage_outbox_requires_strictly_ordered_durable_sequences(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            state_path = Path(directory) / "edge-state.json"
+            store = StateStore(state_path)
+            store.save(
+                EdgeState(
+                    last_usage_batch_sequence=2,
+                    usage_outbox=[
+                        {"sequence": 2, "events": [{"event_id": "event-2"}]},
+                    ],
+                )
+            )
+            decoded = json.loads(state_path.read_text(encoding="utf-8"))
+            decoded["usage_outbox"].append(
+                {"sequence": 1, "events": [{"event_id": "event-1"}]}
+            )
+            state_path.write_text(json.dumps(decoded), encoding="utf-8")
+            if os.name == "posix":
+                state_path.chmod(0o600)
+
+            with self.assertRaisesRegex(StateError, "outbox"):
+                store.load()
+
+    def test_oversized_outbox_is_rejected_before_state_replace(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            state_path = Path(directory) / "edge-state.json"
+            store = StateStore(state_path)
+
+            with patch("filamenthub_edge.state.MAX_STATE_BYTES", 128):
+                with self.assertRaisesRegex(StateError, "size"):
+                    store.save(EdgeState(usage_tracker={"payload": "x" * 256}))
+
+            self.assertFalse(state_path.exists())
+
     @unittest.skipUnless(os.name == "posix", "POSIX ownership and mode contract")
     def test_state_and_directory_permissions_are_private(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

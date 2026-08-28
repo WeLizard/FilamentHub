@@ -10,10 +10,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.brand import Brand
 from app.models.filament import Filament
 from app.models.material_slot_assignment import MaterialSlotAssignment
-from app.models.octoprint_bridge import OctoPrintBridgeEvent
 from app.models.preset import Preset, PresetModerationStatus
 from app.models.preset_usage_event import PresetUsageEvent
 from app.models.print_job import PrintJob, PrintJobEvent, PrintJobMaterial
+from app.models.printer_bridge_receipt import PrinterBridgeReceipt
 from app.models.user import User
 from app.models.user_spool import UserSpool, UserSpoolState
 
@@ -248,7 +248,15 @@ async def test_bridge_pair_snapshot_usage_replay_and_revoke(
 
     await db_session.refresh(spool)
     assert spool.used_weight_g == pytest.approx(expected_weight)
-    events = list((await db_session.execute(select(OctoPrintBridgeEvent))).scalars())
+    events = list(
+        (
+            await db_session.execute(
+                select(PrinterBridgeReceipt).where(
+                    PrinterBridgeReceipt.receipt_kind == "usage_event"
+                )
+            )
+        ).scalars()
+    )
     assert len(events) == 1
     print_jobs = list((await db_session.execute(select(PrintJob))).scalars())
     assert len(print_jobs) == 1

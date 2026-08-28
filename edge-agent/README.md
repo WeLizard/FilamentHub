@@ -5,8 +5,10 @@ exposing LAN credentials to the cloud. The first provider reads Moonraker and
 Happy Hare, synchronizes observed printer/slot state to FilamentHub, and keeps a
 durable local copy of desired spool and preset assignments.
 
-It never treats provider observations as user-approved assignments and does not
-report filament consumption in this release.
+It never treats provider observations as user-approved assignments. When
+Moonraker exposes the cumulative `print_stats.filament_used` counter, Edge sends
+replay-protected usage checkpoints only for an unambiguous active desired spool;
+FilamentHub remains the only writer of canonical spool consumption.
 
 ## Docker
 
@@ -22,5 +24,5 @@ docker run --restart unless-stopped --network host \
 ```
 
 The pairing code is needed only for the first successful connection. The
-revocable bridge token, cached desired state, and one pending observation are
-stored in `/data/edge-state.json`.
+revocable bridge token, cached desired state, pending observation, usage tracker,
+and bounded durable usage outbox are stored in `/data/edge-state.json`.

@@ -105,6 +105,21 @@ class FilamentHubCloud:
         if not isinstance(decoded, dict) or not isinstance(decoded.get("accepted"), bool):
             raise HttpRequestError("FilamentHub observation response is invalid")
 
+    def upload_usage_batch(self, *, token: str, payload: dict[str, Any]) -> None:
+        _, decoded, _ = self._authorized_request(
+            "POST",
+            "/api/v1/printer-bridge/usage-batches",
+            token=token,
+            payload=payload,
+        )
+        if (
+            not isinstance(decoded, dict)
+            or decoded.get("accepted") is not True
+            or decoded.get("ack_sequence") != payload.get("sequence")
+            or not isinstance(decoded.get("events"), list)
+        ):
+            raise HttpRequestError("FilamentHub usage batch response is invalid")
+
     def heartbeat(self, *, token: str, payload: dict[str, Any]) -> None:
         _, decoded, _ = self._authorized_request(
             "POST",

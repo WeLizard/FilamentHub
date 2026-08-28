@@ -15,6 +15,7 @@ from .errors import StateError
 
 MAX_STATE_BYTES = 4 * 1024 * 1024
 MAX_SNAPSHOT_SEQUENCE = 9_223_372_036_854_775_807
+MAX_USAGE_OUTBOX_BATCHES = 1024
 
 
 def _process_user_id() -> int:
@@ -35,6 +36,9 @@ class EdgeState:
     desired_snapshot: dict[str, Any] | None = None
     last_snapshot_sequence: int = 0
     pending_observation: dict[str, Any] | None = None
+    last_usage_batch_sequence: int = 0
+    usage_outbox: list[dict[str, Any]] = field(default_factory=list)
+    usage_tracker: dict[str, Any] | None = None
 
 
 class StateStore:
@@ -91,6 +95,37 @@ class StateStore:
                 or pending_sequence != state.last_snapshot_sequence
             ):
                 raise StateError("Pending observation sequence is invalid")
+        if (
+            isinstance(state.last_usage_batch_sequence, bool)
+            or not isinstance(state.last_usage_batch_sequence, int)
+            or state.last_usage_batch_sequence < 0
+            or state.last_usage_batch_sequence > MAX_SNAPSHOT_SEQUENCE
+        ):
+            raise StateError("Edge usage batch sequence is invalid")
+        if not isinstance(state.usage_outbox, list) or len(state.usage_outbox) > (
+            MAX_USAGE_OUTBOX_BATCHES
+        ):
+            raise StateError("Edge usage outbox is invalid")
+        previous_sequence = 0
+        for batch in state.usage_outbox:
+            if not isinstance(batch, dict):
+                raise StateError("Edge usage outbox batch is invalid")
+            sequence = batch.get("sequence")
+            events = batch.get("events")
+            if (
+                isinstance(sequence, bool)
+                or not isinstance(sequence, int)
+                or sequence <= previous_sequence
+                or sequence < 1
+                or sequence > state.last_usage_batch_sequence
+                or not isinstance(events, list)
+                or not events
+                or len(events) > 128
+            ):
+                raise StateError("Edge usage outbox batch is invalid")
+            previous_sequence = sequence
+        if state.usage_tracker is not None and not isinstance(state.usage_tracker, dict):
+            raise StateError("Edge usage tracker is invalid")
         return state
 
     def save(self, state: EdgeState) -> None:
@@ -105,6 +140,8 @@ class StateStore:
                 separators=(",", ":"),
                 sort_keys=True,
             )
+            if len(payload.encode("utf-8")) > MAX_STATE_BYTES:
+                raise StateError("Edge state exceeds the size limit")
             descriptor, temporary_name = tempfile.mkstemp(
                 prefix=f".{self.path.name}.",
                 suffix=".tmp",

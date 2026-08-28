@@ -6,5 +6,7 @@ slot observations synchronized while storing the cloud token and cached spool
 assignments only in Home Assistant's local `/data` volume.
 
 Choose `happy_hare` for an MMU managed by Happy Hare or `legacy` for a direct
-Klipper feed. This release is read-only toward printer hardware: it does not
-change gates, consume spool weight, or write RFID/NFC tags.
+Klipper feed. The app can report replay-protected filament usage when Moonraker
+provides an unambiguous counter and active desired spool. It remains read-only
+toward printer hardware: it does not change gates, run local commands, or write
+RFID/NFC tags.

@@ -103,7 +103,13 @@ class MoonrakerHandler(BaseHTTPRequestHandler):
         if "mmu" in objects:
             status["mmu"] = MMU_STATE
         if "print_stats" in objects:
-            status["print_stats"] = {"state": "standby"}
+            status["print_stats"] = {
+                "state": "standby",
+                "filename": "",
+                "filament_used": 0.0,
+                "total_duration": 0.0,
+                "print_duration": 0.0,
+            }
         self._json(200, {"result": {"eventtime": 1.0, "status": status}})
 
 

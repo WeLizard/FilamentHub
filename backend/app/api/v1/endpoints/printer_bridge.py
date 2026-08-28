@@ -22,6 +22,8 @@ from app.schemas.printer_bridge import (
     PrinterBridgePairResponse,
     PrinterBridgeStatusResponse,
     PrinterBridgeTransport,
+    PrinterBridgeUsageBatchRequest,
+    PrinterBridgeUsageBatchResponse,
 )
 from app.services.material_contract_service import (
     build_printer_bridge_desired_snapshot,
@@ -32,6 +34,7 @@ from app.services.printer_bridge_service import (
     issue_printer_bridge_pairing_code,
     pair_printer_bridge,
     record_printer_bridge_heartbeat,
+    record_printer_bridge_usage_batch,
     require_printer_bridge_token,
     revoke_printer_bridge,
     validate_snapshot_context,
@@ -159,6 +162,29 @@ async def heartbeat(
 ) -> PrinterBridgeHeartbeatResponse:
     context = await require_printer_bridge_token(db, bridge_token)
     return await record_printer_bridge_heartbeat(db, context, payload)
+
+
+@router.post("/usage-batches", response_model=PrinterBridgeUsageBatchResponse)
+@limiter.limit("600/minute", key_func=client_key)
+@limiter.limit("120/minute", key_func=adapter_token_key)
+async def usage_batch(
+    request: Request,
+    payload: PrinterBridgeUsageBatchRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    bridge_token: Annotated[
+        str | None,
+        Header(alias="X-FilamentHub-Bridge-Token"),
+    ] = None,
+) -> PrinterBridgeUsageBatchResponse:
+    context = await require_printer_bridge_token(db, bridge_token)
+    validate_snapshot_context(
+        context,
+        material_system_id=payload.material_system_id,
+        source_instance_id=payload.source_instance_id,
+        provider=payload.provider,
+        transport=payload.transport,
+    )
+    return await record_printer_bridge_usage_batch(db, context, payload)
 
 
 @router.delete("/connection", status_code=status.HTTP_204_NO_CONTENT)

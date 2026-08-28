@@ -73,14 +73,20 @@ class MoonrakerProvider:
             default_headers=headers,
         )
         self.material_provider = material_provider
-        self._capabilities = ["read", "presence"]
+        self._capabilities = ["read", "presence", "consumption"]
 
     def capabilities(self) -> list[str]:
         return list(self._capabilities)
 
     def observe(self) -> ProviderSnapshot:
         objects: dict[str, list[str]] = {
-            "print_stats": ["state", "filename"],
+            "print_stats": [
+                "state",
+                "filename",
+                "filament_used",
+                "total_duration",
+                "print_duration",
+            ],
             "display_status": ["progress"],
             "extruder": ["temperature", "target"],
             "heater_bed": ["temperature", "target"],
@@ -97,6 +103,7 @@ class MoonrakerProvider:
             raise ProviderUnavailable("Moonraker object query failed") from exc
         status = self._status_map(decoded)
         printer = self._printer_snapshot(status)
+        usage = self._usage_snapshot(status)
         slots: list[dict[str, Any]] = []
         topology_complete = False
         if self.material_provider == "happy_hare":
@@ -110,6 +117,7 @@ class MoonrakerProvider:
             slots=slots,
             slot_topology_complete=topology_complete,
             capabilities=self.capabilities(),
+            usage=usage,
         )
 
     @staticmethod
@@ -149,6 +157,31 @@ class MoonrakerProvider:
             if value is not None:
                 printer[target] = value
         return printer
+
+    @staticmethod
+    def _usage_snapshot(status: dict[str, Any]) -> dict[str, Any] | None:
+        print_stats = status.get("print_stats")
+        if not isinstance(print_stats, dict):
+            return None
+        filament_used = _number(print_stats.get("filament_used"))
+        if filament_used is None or filament_used < 0:
+            return None
+        raw_state = str(print_stats.get("state") or "").strip().lower()
+        usage: dict[str, Any] = {
+            "state": raw_state,
+            "filament_used_mm": filament_used,
+        }
+        filename = print_stats.get("filename")
+        if isinstance(filename, str) and filename.strip():
+            usage["file_name"] = filename.strip()[:500]
+        for source, target in (
+            ("total_duration", "total_duration_s"),
+            ("print_duration", "print_duration_s"),
+        ):
+            value = _number(print_stats.get(source))
+            if value is not None and value >= 0:
+                usage[target] = value
+        return usage
 
     @staticmethod
     def _happy_hare_slots(mmu: dict[str, Any]) -> list[dict[str, Any]]:

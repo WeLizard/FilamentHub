@@ -80,6 +80,7 @@ from app.models.printer_bridge_observation import (
     MaterialSlotObservation,
     PhysicalPrinterStatusObservation,
 )
+from app.models.printer_bridge_receipt import PrinterBridgeReceipt
 from app.models.printer_connection_binding import PrinterConnectionBinding
 from app.models.printer_profile import PrinterProfile
 from app.models.printer_request import PrinterRequest, PrinterRequestStatus
@@ -181,6 +182,7 @@ __all__ = [
     "MaterialSlotObservation",
     "PhysicalPrinterStatusObservation",
     "PrinterBridgeCredential",
+    "PrinterBridgeReceipt",
     "Notification",
     "NotificationCampaign",
     "NotificationCampaignRecipient",

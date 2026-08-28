@@ -3,7 +3,9 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+
+from app.schemas.printer_usage import PrinterUsageEvent, PrinterUsageEventResult
 
 PrinterBridgeTransport = Literal["orca_plugin_lan", "edge_agent"]
 
@@ -58,6 +60,31 @@ class PrinterBridgeHeartbeatRequest(BaseModel):
 class PrinterBridgeHeartbeatResponse(BaseModel):
     accepted: bool
     last_seen_at: datetime
+
+
+class PrinterBridgeUsageBatchRequest(BaseModel):
+    material_system_id: int = Field(gt=0)
+    provider: str = Field(min_length=1, max_length=50)
+    transport: PrinterBridgeTransport
+    source_instance_id: str = Field(min_length=16, max_length=100)
+    sequence: int = Field(ge=1, le=9_223_372_036_854_775_807)
+    events: list[PrinterUsageEvent] = Field(min_length=1, max_length=128)
+
+    model_config = {"str_strip_whitespace": True, "extra": "forbid"}
+
+    @model_validator(mode="after")
+    def unique_event_ids(self) -> "PrinterBridgeUsageBatchRequest":
+        event_ids = [event.event_id for event in self.events]
+        if len(event_ids) != len(set(event_ids)):
+            raise ValueError("event ids must be unique within a batch")
+        return self
+
+
+class PrinterBridgeUsageBatchResponse(BaseModel):
+    accepted: bool
+    deduplicated: bool
+    ack_sequence: int
+    events: list[PrinterUsageEventResult]
 
 
 class PrinterBridgeDesiredSpoolSnapshot(BaseModel):

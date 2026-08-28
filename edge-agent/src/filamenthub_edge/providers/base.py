@@ -12,6 +12,7 @@ class ProviderSnapshot:
     slots: list[dict[str, Any]]
     slot_topology_complete: bool
     capabilities: list[str]
+    usage: dict[str, Any] | None = None
 
 
 class EdgeProvider(Protocol):

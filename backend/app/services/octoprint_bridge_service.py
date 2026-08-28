@@ -8,8 +8,6 @@ this module is required by Happy Hare, Bambu MQTT or another provider.
 from __future__ import annotations
 
 import hashlib
-import json
-import math
 import secrets
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -19,7 +17,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.errors import (
-    ERR_ACCESS_DENIED,
     ERR_MATERIAL_SLOT_NOT_FOUND,
     ERR_MATERIAL_SYSTEM_NOT_FOUND,
     ERR_OCTOPRINT_BRIDGE_EVENT_CONFLICT,
@@ -34,10 +31,8 @@ from app.models.brand import Brand
 from app.models.filament import Filament
 from app.models.material_slot_assignment import MaterialSlotAssignment
 from app.models.material_system import MaterialSlot, MaterialSystem, PhysicalPrinterConnector
-from app.models.octoprint_bridge import OctoPrintBridgeConnection, OctoPrintBridgeEvent
+from app.models.octoprint_bridge import OctoPrintBridgeConnection
 from app.models.preset_gate_state import PresetGateStateSource
-from app.models.preset_usage_event import PresetUsageEventType
-from app.models.print_job import PrintJobStatus
 from app.models.user import User
 from app.models.user_spool import UserSpool, UserSpoolState
 from app.schemas.material_contract import MaterialSlotAssignmentUpdate
@@ -62,21 +57,11 @@ from app.services.material_contract_service import (
     build_printer_bridge_desired_snapshot,
     require_physical_printer,
 )
-from app.services.print_job_service import (
-    confirmed_consumption_for_job,
-    ensure_provider_job_event,
-)
-from app.services.spool_service import clear_spool_gate_assignments, clear_spool_location_projection
-from app.services.spool_usage_service import (
-    record_spool_usage,
-    resolve_assigned_preset_id,
-)
+from app.services.printer_usage_service import process_printer_usage_event
 
 OCTOPRINT_PROVIDER = "octoprint"
 OCTOPRINT_TRANSPORT = "bridge_https"
 PAIRING_TTL = timedelta(minutes=10)
-DEFAULT_DENSITY_G_CM3 = 1.24
-DEFAULT_DIAMETER_MM = 1.75
 BRIDGE_CAPABILITIES = {
     "read",
     "write",
@@ -819,58 +804,6 @@ async def update_bridge_spool_assignment(
     return await build_snapshot(db, context)
 
 
-def _weight_from_length(length_mm: float, density: float, diameter_mm: float) -> float:
-    radius = diameter_mm / 2.0
-    return max(length_mm * math.pi * radius * radius / 1000.0 * density, 0.0)
-
-
-def _usage_payload_hash(payload: OctoPrintBridgeUsageRequest) -> str:
-    payload_data = payload.model_dump(mode="json")
-    if payload.event_type == "terminal":
-        # Preserve hashes written before checkpoint fields were added.
-        payload_data.pop("event_type", None)
-    if not payload.reasons:
-        payload_data.pop("reasons", None)
-    if payload.started_at is None:
-        payload_data.pop("started_at", None)
-    if payload.observed_at is None:
-        payload_data.pop("observed_at", None)
-    return hashlib.sha256(
-        json.dumps(
-            payload_data,
-            sort_keys=True,
-            separators=(",", ":"),
-            ensure_ascii=False,
-        ).encode("utf-8")
-    ).hexdigest()
-
-
-def _terminal_payload_hash(payload: OctoPrintBridgeUsageRequest) -> str:
-    payload_data = payload.model_dump(mode="json")
-    payload_data.pop("event_id", None)
-    payload_data.pop("event_type", None)
-    if not payload.reasons:
-        payload_data.pop("reasons", None)
-    if payload.started_at is None:
-        payload_data.pop("started_at", None)
-    if payload.observed_at is None:
-        payload_data.pop("observed_at", None)
-    return hashlib.sha256(
-        json.dumps(
-            payload_data,
-            sort_keys=True,
-            separators=(",", ":"),
-            ensure_ascii=False,
-        ).encode("utf-8")
-    ).hexdigest()
-
-
-def _received_source_time(value: datetime | None, received_at: datetime) -> datetime:
-    if value is None:
-        return received_at
-    return min(_as_utc(value), received_at)
-
-
 async def record_usage_event(
     db: AsyncSession,
     context: OctoPrintBridgeContext,
@@ -887,185 +820,22 @@ async def record_usage_event(
     )
     if connection is None:
         raise_error(401, ERR_OCTOPRINT_BRIDGE_UNAUTHORIZED)
-    if connector.material_system_id is None:
-        raise_error(409, ERR_OCTOPRINT_BRIDGE_NOT_CONFIGURED)
-    physical_printer = await require_physical_printer(
-        db, connector.user_id, connector.physical_printer_id
-    )
-
-    payload_hash = _usage_payload_hash(payload)
-    existing = await db.scalar(
-        select(OctoPrintBridgeEvent).where(
-            OctoPrintBridgeEvent.connection_id == connection.id,
-            OctoPrintBridgeEvent.event_id == payload.event_id,
-        )
-    )
-    if existing is not None:
-        if existing.payload_hash != payload_hash:
-            raise_error(409, ERR_OCTOPRINT_BRIDGE_EVENT_CONFLICT)
-        return OctoPrintBridgeUsageResponse(
-            accepted=True,
-            deduplicated=True,
-            consumed_weight_g=existing.consumed_weight_g,
-        )
-
-    valid_slot_indices = set(
-        (
-            await db.execute(
-                select(MaterialSlot.provider_index).where(
-                    MaterialSlot.material_system_id == connector.material_system_id
-                )
-            )
-        ).scalars()
-    )
-    if any(item.slot_index not in valid_slot_indices for item in payload.items):
-        raise_error(404, ERR_MATERIAL_SLOT_NOT_FOUND)
-
-    spool_ids = {item.spool_id for item in payload.items}
-    spools = list(
-        (
-            await db.execute(
-                select(UserSpool)
-                .where(UserSpool.id.in_(spool_ids), UserSpool.user_id == connector.user_id)
-                .options(selectinload(UserSpool.filament).selectinload(Filament.brand))
-                .with_for_update()
-            )
-        ).scalars()
-    )
-    spools_by_id = {spool.id: spool for spool in spools}
-    if set(spools_by_id) != spool_ids:
-        raise_error(404, ERR_ACCESS_DENIED)
-
-    received_at = _now()
-    occurred_at = _received_source_time(payload.observed_at, received_at)
-    started_at = (
-        min(_as_utc(payload.started_at), occurred_at) if payload.started_at is not None else None
-    )
-    if payload.event_type == "terminal":
-        if payload.outcome is None:  # guarded by the request model
-            raise ValueError("terminal usage event requires an outcome")
-        status = PrintJobStatus(payload.outcome)
-        job_payload_hash = _terminal_payload_hash(payload)
-    else:
-        status = PrintJobStatus.paused if "paused" in payload.reasons else PrintJobStatus.printing
-        job_payload_hash = payload_hash
-    print_job, should_record_usage = await ensure_provider_job_event(
+    source_instance_id = connection.instance_id or f"octoprint-connection-{connection.id}"
+    result = await process_printer_usage_event(
         db,
-        user_id=connector.user_id,
-        physical_printer_id=connector.physical_printer_id,
-        printer_name=physical_printer.name,
-        source=OCTOPRINT_PROVIDER,
-        source_ref=f"{connection.id}:{payload.job_id}",
-        event_key=f"{payload.event_type}:{payload.event_id}",
-        payload_hash=job_payload_hash,
-        status=status,
-        title=payload.file_name or payload.job_id,
-        file_name=payload.file_name,
-        actual_duration_s=payload.duration_s,
-        materials=[
-            (spools_by_id[item.spool_id], f"slot:{item.slot_index}", None) for item in payload.items
-        ],
-        occurred_at=occurred_at,
-        started_at=started_at,
-        details={"reasons": payload.reasons} if payload.reasons else None,
+        connector=connector,
+        source_instance_id=source_instance_id,
+        payload=payload,
+        print_job_source=OCTOPRINT_PROVIDER,
+        print_job_source_ref=f"{connection.id}:{payload.job_id}",
+        adapter=OCTOPRINT_PROVIDER,
+        conflict_error=ERR_OCTOPRINT_BRIDGE_EVENT_CONFLICT,
     )
-    if not should_record_usage:
-        consumed_weight_g = await confirmed_consumption_for_job(db, print_job.id)
-        db.add(
-            OctoPrintBridgeEvent(
-                connection_id=connection.id,
-                event_id=payload.event_id,
-                payload_hash=payload_hash,
-                consumed_weight_g=consumed_weight_g,
-            )
-        )
-        connector.last_seen_at = _now()
-        connection.observed_at = connector.last_seen_at
-        await db.commit()
-        return OctoPrintBridgeUsageResponse(
-            accepted=True,
-            deduplicated=True,
-            consumed_weight_g=consumed_weight_g,
-        )
-
-    now = received_at
-    total_consumed = 0.0
-    for item in payload.items:
-        spool = spools_by_id[item.spool_id]
-        filament = spool.filament
-        density = (
-            filament.density
-            if filament is not None and filament.density and filament.density > 0
-            else DEFAULT_DENSITY_G_CM3
-        )
-        diameter = (
-            filament.diameter
-            if filament is not None and filament.diameter and filament.diameter > 0
-            else DEFAULT_DIAMETER_MM
-        )
-        reported_weight = (
-            item.used_weight_g
-            if item.used_weight_g is not None
-            else _weight_from_length(item.used_length_mm or 0.0, density, diameter)
-        )
-        before = spool.used_weight_g
-        spool.used_weight_g = min(spool.initial_weight_g, before + reported_weight)
-        consumed = spool.used_weight_g - before
-        total_consumed += consumed
-        spool.last_used_at = now
-        if spool.first_used_at is None:
-            spool.first_used_at = now
-        preset_id = await resolve_assigned_preset_id(
-            db,
-            user_id=spool.user_id,
-            spool_id=spool.id,
-            physical_printer_id=connector.physical_printer_id,
-            material_system_id=connector.material_system_id,
-            slot_index=item.slot_index,
-        )
-        await record_spool_usage(
-            db,
-            spool=spool,
-            event_type=PresetUsageEventType.printer_report,
-            delta_weight_g=consumed,
-            device_id=connector.physical_printer_id,
-            preset_id=preset_id,
-            print_job_id=print_job.id,
-            job_ref=f"octoprint_bridge:{payload.event_id}:{spool.id}",
-            reported_weight_g=reported_weight,
-            meta={
-                "adapter": OCTOPRINT_PROVIDER,
-                "job_id": payload.job_id,
-                "outcome": payload.outcome,
-                "event_type": payload.event_type,
-                "reasons": payload.reasons,
-                "observed_at": occurred_at.isoformat(),
-                "slot_index": item.slot_index,
-                "file_name": payload.file_name,
-                "duration_s": payload.duration_s,
-                "used_length_mm": item.used_length_mm,
-            },
-        )
-        if spool.remaining_weight_g <= 0:
-            spool.state = UserSpoolState.empty
-            await clear_spool_gate_assignments(
-                db, spool, source=PresetGateStateSource.provider_report
-            )
-            clear_spool_location_projection(spool)
-
-    db.add(
-        OctoPrintBridgeEvent(
-            connection_id=connection.id,
-            event_id=payload.event_id,
-            payload_hash=payload_hash,
-            consumed_weight_g=total_consumed,
-        )
-    )
-    connector.last_seen_at = now
-    connection.observed_at = now
+    connector.last_seen_at = _now()
+    connection.observed_at = connector.last_seen_at
     await db.commit()
     return OctoPrintBridgeUsageResponse(
         accepted=True,
-        deduplicated=False,
-        consumed_weight_g=total_consumed,
+        deduplicated=result.deduplicated,
+        consumed_weight_g=result.consumed_weight_g,
     )

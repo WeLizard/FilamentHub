@@ -11,9 +11,21 @@ from typing import Any
 from . import __version__
 from .cloud import FilamentHubCloud
 from .config import EdgeConfig
-from .errors import AuthenticationError, EdgeError, PairingRequired, ProviderUnavailable
+from .errors import (
+    AuthenticationError,
+    EdgeError,
+    PairingRequired,
+    ProviderUnavailable,
+    StateError,
+)
 from .providers.base import EdgeProvider, ProviderSnapshot
-from .state import MAX_SNAPSHOT_SEQUENCE, EdgeState, StateStore
+from .state import (
+    MAX_SNAPSHOT_SEQUENCE,
+    MAX_USAGE_OUTBOX_BATCHES,
+    EdgeState,
+    StateStore,
+)
+from .usage import capture_usage_events
 
 logger = logging.getLogger("filamenthub_edge")
 
@@ -44,15 +56,48 @@ class EdgeRuntime:
 
     def run_cycle(self) -> None:
         self._ensure_paired()
-        self._flush_pending_observation()
-        self._pull_desired_snapshot()
+        cloud_error: EdgeError | None = None
+        try:
+            self._flush_pending_observation()
+            self._flush_usage_outbox()
+            self._pull_desired_snapshot()
+        except AuthenticationError:
+            raise
+        except EdgeError as exc:
+            # Cloud outages must not stop local usage collection. Cached desired
+            # assignments remain authoritative until synchronization recovers.
+            cloud_error = exc
         try:
             snapshot = self.provider.observe()
         except ProviderUnavailable:
-            self._heartbeat(self.provider.capabilities())
+            if cloud_error is None:
+                self._heartbeat(self.provider.capabilities())
             raise
-        self._queue_and_upload(snapshot)
-        self._heartbeat(snapshot.capabilities)
+        observed_at = _now_iso()
+        if len(self.state.usage_outbox) >= MAX_USAGE_OUTBOX_BATCHES:
+            raise StateError(
+                "Edge usage outbox is full; local counters were left untouched until "
+                "synchronization recovers"
+            )
+        usage_events = capture_usage_events(self.state, snapshot, observed_at=observed_at)
+        if usage_events:
+            self._enqueue_usage_batch(usage_events)
+        else:
+            # The cumulative baseline and unflushed sub-checkpoint delta are
+            # themselves durable evidence and must survive a restart.
+            self.store.save(self.state)
+        self._queue_observation(snapshot, observed_at=observed_at)
+        if cloud_error is None:
+            try:
+                self._flush_pending_observation()
+                self._flush_usage_outbox()
+                self._heartbeat(snapshot.capabilities)
+            except AuthenticationError:
+                raise
+            except EdgeError as exc:
+                cloud_error = exc
+        if cloud_error is not None:
+            raise cloud_error
 
     def run_forever(self) -> None:
         backoff = 5
@@ -130,6 +175,13 @@ class EdgeRuntime:
         self.state.pending_observation = None
         self.store.save(self.state)
 
+    def _flush_usage_outbox(self) -> None:
+        while self.state.usage_outbox:
+            batch = self.state.usage_outbox[0]
+            self.cloud.upload_usage_batch(token=self._token(), payload=batch)
+            self.state.usage_outbox.pop(0)
+            self.store.save(self.state)
+
     def _pull_desired_snapshot(self) -> None:
         result = self.cloud.desired_snapshot(
             token=self._token(),
@@ -153,22 +205,48 @@ class EdgeRuntime:
             assigned,
         )
 
-    def _queue_and_upload(self, snapshot: ProviderSnapshot) -> None:
+    def _queue_observation(self, snapshot: ProviderSnapshot, *, observed_at: str) -> None:
+        if self.state.pending_observation is not None:
+            return
         if self.state.last_snapshot_sequence >= MAX_SNAPSHOT_SEQUENCE:
             raise PairingRequired("Edge snapshot sequence is exhausted; reset and pair Edge again")
         self.state.last_snapshot_sequence += 1
         payload = {
             **self._context_payload(),
             "sequence": self.state.last_snapshot_sequence,
-            "observed_at": _now_iso(),
+            "observed_at": observed_at,
             "printer": snapshot.printer,
             "slots": snapshot.slots,
             "slot_topology_complete": snapshot.slot_topology_complete,
         }
         self.state.pending_observation = payload
         self.store.save(self.state)
-        self.cloud.upload_observation(token=self._token(), payload=payload)
-        self.state.pending_observation = None
+
+    def _enqueue_usage_batch(self, events: list[dict[str, Any]]) -> None:
+        if len(self.state.usage_outbox) >= MAX_USAGE_OUTBOX_BATCHES:
+            raise StateError(
+                "Edge usage outbox is full; usage evidence was preserved but synchronization "
+                "must recover before another checkpoint can be queued"
+            )
+        if self.state.last_usage_batch_sequence >= MAX_SNAPSHOT_SEQUENCE:
+            raise PairingRequired("Edge usage sequence is exhausted; reset and pair Edge again")
+        self.state.last_usage_batch_sequence += 1
+        sequence = self.state.last_usage_batch_sequence
+        batch_events = []
+        for position, event in enumerate(events, start=1):
+            batch_events.append(
+                {
+                    **event,
+                    "event_id": f"{self.state.instance_id}:{sequence}:{position}",
+                }
+            )
+        self.state.usage_outbox.append(
+            {
+                **self._context_payload(),
+                "sequence": sequence,
+                "events": batch_events,
+            }
+        )
         self.store.save(self.state)
 
     def _heartbeat(self, capabilities: list[str]) -> None:

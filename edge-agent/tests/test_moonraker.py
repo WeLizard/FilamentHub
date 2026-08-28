@@ -20,7 +20,13 @@ class MoonrakerProviderTest(unittest.TestCase):
         response = {
             "result": {
                 "status": {
-                    "print_stats": {"state": "printing", "filename": "part.gcode"},
+                    "print_stats": {
+                        "state": "printing",
+                        "filename": "part.gcode",
+                        "filament_used": 123.5,
+                        "total_duration": 400.0,
+                        "print_duration": 360.0,
+                    },
                     "display_status": {"progress": 0.42},
                     "extruder": {"temperature": 218.5, "target": 220},
                     "heater_bed": {"temperature": 59.5, "target": 60},
@@ -50,7 +56,9 @@ class MoonrakerProviderTest(unittest.TestCase):
         self.assertEqual(snapshot.printer["state"], "printing")
         self.assertEqual(snapshot.printer["progress_percent"], 42)
         self.assertTrue(snapshot.slot_topology_complete)
-        self.assertEqual(snapshot.capabilities, ["read", "presence"])
+        self.assertEqual(snapshot.capabilities, ["read", "presence", "consumption"])
+        self.assertEqual(snapshot.usage["filament_used_mm"], 123.5)
+        self.assertEqual(snapshot.usage["print_duration_s"], 360.0)
         self.assertEqual(snapshot.slots[0]["material"], "PLA")
         self.assertEqual(snapshot.slots[0]["color_hex"], "FF6A13")
         self.assertTrue(snapshot.slots[0]["present"])
