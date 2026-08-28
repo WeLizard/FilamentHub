@@ -90,6 +90,7 @@ from app.models.qr_identity import (
     QrManufacturerBatchStatus,
     QrManufacturerInstanceState,
     QrManufacturerInstanceStatus,
+    QrOperationReceipt,
     QrUserBindingState,
     QrUserSpoolBinding,
 )
@@ -217,6 +218,7 @@ __all__ = [
     "QrManufacturerBatchStatus",
     "QrManufacturerInstanceState",
     "QrManufacturerInstanceStatus",
+    "QrOperationReceipt",
     "QrUserBindingState",
     "QrUserSpoolBinding",
     "PrinterProfile",

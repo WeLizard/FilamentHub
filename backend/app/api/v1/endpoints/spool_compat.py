@@ -45,6 +45,7 @@ from app.services.preset_slot_sync_service import (
     claim_printer_hostname,
     touch_device_last_seen,
 )
+from app.services.spool_material_service import set_spool_filament_with_qr_guard
 from app.services.spool_service import (
     assign_spool_to_gate,
     clear_spool_gate_assignments,
@@ -1150,7 +1151,11 @@ async def patch_spool(
         filament = filament_result.scalar_one_or_none()
         if filament is None:
             return _err(status.HTTP_404_NOT_FOUND, f"No filament with ID {body.filament_id} found.")
-        spool.filament_id = body.filament_id
+        spool = await set_spool_filament_with_qr_guard(
+            db,
+            spool=spool,
+            filament_id=body.filament_id,
+        )
 
     before_used = spool.used_weight_g
     if body.initial_weight is not None:

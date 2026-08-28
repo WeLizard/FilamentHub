@@ -10,6 +10,7 @@ from app.core.dependencies import get_current_active_user
 from app.db.session import get_db
 from app.models.user import User
 from app.schemas.qr_identity import (
+    QrReplaceMaterialRequest,
     QrRevisionRequest,
     QrRotateRequest,
     UserSpoolQrListResponse,
@@ -19,6 +20,7 @@ from app.services.qr_identity_service import (
     get_user_spool_qr,
     issue_user_spool_qr,
     list_user_spool_qr,
+    replace_user_spool_qr_material,
     restore_user_spool_qr,
     retire_user_spool_qr,
     rotate_user_spool_qr,
@@ -115,6 +117,25 @@ async def rotate_owned_spool_qr(
         spool_id=spool_id,
         revision=payload.revision,
         idempotency_key=payload.idempotency_key,
+    )
+
+
+@router.post("/{spool_id}/qr/replace-material", response_model=UserSpoolQrResponse)
+async def replace_owned_spool_qr_material(
+    spool_id: int,
+    payload: QrReplaceMaterialRequest,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> UserSpoolQrResponse:
+    """Atomically change material and issue the replacement QR to reprint."""
+    return await replace_user_spool_qr_material(
+        db,
+        user=current_user,
+        spool_id=spool_id,
+        filament_id=payload.filament_id,
+        revision=payload.revision,
+        idempotency_key=payload.idempotency_key,
+        confirm_reprint=payload.confirm_reprint,
     )
 
 

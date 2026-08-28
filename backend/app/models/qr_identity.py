@@ -202,9 +202,8 @@ class QrManufacturerInstanceState(Base):
             name="ck_qr_instance_state",
         ),
         CheckConstraint(
-            "(status = 'claimed' AND user_id IS NOT NULL AND user_spool_id IS NOT NULL) "
-            "OR (status IN ('revoked', 'scrapped') AND user_id IS NULL "
-            "AND user_spool_id IS NULL)",
+            "status = 'claimed' OR (status IN ('revoked', 'scrapped') "
+            "AND user_id IS NULL AND user_spool_id IS NULL)",
             name="ck_qr_instance_binding_shape",
         ),
         CheckConstraint("ordinal >= 0", name="ck_qr_instance_ordinal"),
@@ -225,10 +224,10 @@ class QrManufacturerInstanceState(Base):
     )
     status: Mapped[str] = mapped_column(String(16), nullable=False)
     user_id: Mapped[int | None] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), nullable=True
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
     user_spool_id: Mapped[int | None] = mapped_column(
-        ForeignKey("user_spools.id", ondelete="CASCADE"), nullable=True
+        ForeignKey("user_spools.id", ondelete="SET NULL"), nullable=True
     )
     last_operation_key_digest: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
@@ -242,3 +241,34 @@ class QrManufacturerInstanceState(Base):
     filament: Mapped["Filament"] = relationship("Filament")
     user: Mapped["User | None"] = relationship("User")
     spool: Mapped["UserSpool | None"] = relationship("UserSpool")
+
+
+class QrOperationReceipt(Base):
+    """Immutable replay result for a QR mutation with an idempotency key."""
+
+    __tablename__ = "qr_operation_receipts"
+    __table_args__ = (
+        UniqueConstraint(
+            "scope",
+            "subject",
+            "key_digest",
+            name="uq_qr_operation_receipt_key",
+        ),
+        Index(
+            "ix_qr_operation_receipt_subject_created",
+            "scope",
+            "subject",
+            "created_at",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    scope: Mapped[str] = mapped_column(String(64), nullable=False)
+    subject: Mapped[str] = mapped_column(String(128), nullable=False)
+    key_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    action: Mapped[str] = mapped_column(String(64), nullable=False)
+    request_digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    response_snapshot_ciphertext: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )

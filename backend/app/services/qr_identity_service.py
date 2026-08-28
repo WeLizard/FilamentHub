@@ -12,9 +12,10 @@ import re
 import secrets
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Literal, cast
+from typing import Literal, TypeVar, cast
 from uuid import uuid4
 
+from pydantic import BaseModel
 from sqlalchemy import delete, func, literal, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -23,6 +24,7 @@ from sqlalchemy.orm import selectinload
 from app.core.errors import (
     ERR_ACCESS_DENIED,
     ERR_FILAMENT_NOT_FOUND,
+    ERR_MANUFACTURER_QR_MATERIAL_LOCKED,
     ERR_QR_BATCH_LIMIT_EXCEEDED,
     ERR_QR_BATCH_NOT_FOUND,
     ERR_QR_BINDING_REVISION_CONFLICT,
@@ -30,6 +32,7 @@ from app.core.errors import (
     ERR_QR_IDEMPOTENCY_CONFLICT,
     ERR_QR_IDEMPOTENCY_KEY_INVALID,
     ERR_QR_INSTANCE_UNAVAILABLE,
+    ERR_QR_MATERIAL_CHANGE_REQUIRES_REISSUE,
     ERR_QR_NOT_FOUND,
     ERR_QR_PAYLOAD_TOO_LONG,
     ERR_QR_RECOVERY_EXPIRED,
@@ -45,6 +48,7 @@ from app.models.qr_identity import (
     QrManufacturerBatchStatus,
     QrManufacturerInstanceState,
     QrManufacturerInstanceStatus,
+    QrOperationReceipt,
     QrUserBindingState,
     QrUserSpoolBinding,
 )
@@ -66,6 +70,8 @@ from app.services.qr_service import _qr_target_url, ensure_filament_qr_code
 from app.services.territorial_access import active_grants_for
 
 logger = logging.getLogger(__name__)
+
+ResponseModel = TypeVar("ResponseModel", bound=BaseModel)
 
 QR_ENVELOPE_PREFIX = "FHQ1_"
 QR_ENVELOPE_VERSION = 1
@@ -219,6 +225,74 @@ def _user_token_digest(token: str) -> str:
 
 def _operation_key_digest(value: str, *, context: str) -> str:
     return blind_index(value, context=context)
+
+
+def _request_digest(payload: dict[str, object]) -> str:
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _receipt_coordinates(
+    *,
+    scope: str,
+    subject: str,
+    idempotency_key: str,
+) -> tuple[str, str]:
+    normalized_key = idempotency_key.strip()
+    if not 8 <= len(normalized_key) <= 128:
+        raise_error(400, ERR_QR_IDEMPOTENCY_KEY_INVALID)
+    return normalized_key, _operation_key_digest(
+        normalized_key,
+        context=f"qr-operation-receipt-v1:{scope}:{subject}",
+    )
+
+
+async def _read_operation_receipt(
+    db: AsyncSession,
+    *,
+    scope: str,
+    subject: str,
+    key_digest: str,
+    action: str,
+    request_digest: str,
+    response_model: type[ResponseModel],
+) -> ResponseModel | None:
+    receipt = await db.scalar(
+        select(QrOperationReceipt).where(
+            QrOperationReceipt.scope == scope,
+            QrOperationReceipt.subject == subject,
+            QrOperationReceipt.key_digest == key_digest,
+        )
+    )
+    if receipt is None:
+        return None
+    if receipt.action != action or receipt.request_digest != request_digest:
+        raise_error(409, ERR_QR_IDEMPOTENCY_CONFLICT)
+    return response_model.model_validate_json(
+        decrypt_field(receipt.response_snapshot_ciphertext)
+    )
+
+
+def _add_operation_receipt(
+    db: AsyncSession,
+    *,
+    scope: str,
+    subject: str,
+    key_digest: str,
+    action: str,
+    request_digest: str,
+    response: BaseModel,
+) -> None:
+    db.add(
+        QrOperationReceipt(
+            scope=scope,
+            subject=subject,
+            key_digest=key_digest,
+            action=action,
+            request_digest=request_digest,
+            response_snapshot_ciphertext=encrypt_field(response.model_dump_json()),
+        )
+    )
 
 
 def _binding_expired(binding: QrUserSpoolBinding, now: datetime) -> bool:
@@ -506,6 +580,7 @@ async def list_user_spool_qr(
         )
         .where(
             QrManufacturerInstanceState.user_id == user.id,
+            QrManufacturerInstanceState.user_spool_id.is_not(None),
             QrManufacturerInstanceState.status == QrManufacturerInstanceStatus.CLAIMED,
             QrManufacturerBatch.status == QrManufacturerBatchStatus.ACTIVE,
         )
@@ -653,16 +728,58 @@ async def rotate_user_spool_qr(
     now: datetime | None = None,
 ) -> UserSpoolQrResponse:
     current_time = _as_utc(now or datetime.now(timezone.utc))
+    scope = f"user:{user.id}"
+    subject = f"spool:{spool_id}"
+    normalized_key, key_digest = _receipt_coordinates(
+        scope=scope,
+        subject=subject,
+        idempotency_key=idempotency_key,
+    )
+    request_digest = _request_digest({"revision": revision})
+    replay = await _read_operation_receipt(
+        db,
+        scope=scope,
+        subject=subject,
+        key_digest=key_digest,
+        action="rotate_user_spool_qr",
+        request_digest=request_digest,
+        response_model=UserSpoolQrResponse,
+    )
+    if replay is not None:
+        return replay
+
     spool = await _owned_spool(db, user_id=user.id, spool_id=spool_id, for_update=True)
+    replay = await _read_operation_receipt(
+        db,
+        scope=scope,
+        subject=subject,
+        key_digest=key_digest,
+        action="rotate_user_spool_qr",
+        request_digest=request_digest,
+        response_model=UserSpoolQrResponse,
+    )
+    if replay is not None:
+        return replay
     binding = await _user_binding_for_spool(db, spool.id, for_update=True)
     if binding is None:
         raise_error(404, ERR_QR_NOT_FOUND)
     await db.refresh(binding, attribute_names=["filament"])
-    operation_digest = _operation_key_digest(
-        idempotency_key, context=f"qr-user-rotate-v1:{user.id}:{spool.id}"
+    legacy_operation_digest = _operation_key_digest(
+        normalized_key, context=f"qr-user-rotate-v1:{user.id}:{spool.id}"
     )
-    if binding.last_rotation_key_digest == operation_digest:
-        return _user_binding_response(binding)
+    if binding.last_rotation_key_digest == legacy_operation_digest:
+        response = _user_binding_response(binding)
+        _add_operation_receipt(
+            db,
+            scope=scope,
+            subject=subject,
+            key_digest=key_digest,
+            action="rotate_user_spool_qr",
+            request_digest=request_digest,
+            response=response,
+        )
+        await db.commit()
+        return response
     if binding.state != QrUserBindingState.ACTIVE or _binding_expired(binding, current_time):
         raise_error(409, ERR_QR_BINDING_STATE_CONFLICT)
     if binding.revision != revision:
@@ -671,11 +788,109 @@ async def rotate_user_spool_qr(
     token = _new_user_token()
     binding.token_digest = _user_token_digest(token)
     binding.token_ciphertext = encrypt_field(token)
-    binding.last_rotation_key_digest = operation_digest
+    binding.last_rotation_key_digest = legacy_operation_digest
     binding.revision += 1
+    await db.flush()
+    response = _user_binding_response(binding)
+    _add_operation_receipt(
+        db,
+        scope=scope,
+        subject=subject,
+        key_digest=key_digest,
+        action="rotate_user_spool_qr",
+        request_digest=request_digest,
+        response=response,
+    )
     await db.commit()
-    await db.refresh(binding)
-    return _user_binding_response(binding)
+    return response
+
+
+async def replace_user_spool_qr_material(
+    db: AsyncSession,
+    *,
+    user: User,
+    spool_id: int,
+    filament_id: int,
+    revision: int,
+    idempotency_key: str,
+    confirm_reprint: bool,
+) -> UserSpoolQrResponse:
+    """Atomically change material and replace the linked user-issued token."""
+    if not confirm_reprint:
+        raise_error(409, ERR_QR_MATERIAL_CHANGE_REQUIRES_REISSUE)
+    scope = f"user:{user.id}"
+    subject = f"spool:{spool_id}"
+    _normalized_key, key_digest = _receipt_coordinates(
+        scope=scope,
+        subject=subject,
+        idempotency_key=idempotency_key,
+    )
+    request_digest = _request_digest(
+        {
+            "confirm_reprint": True,
+            "filament_id": filament_id,
+            "revision": revision,
+        }
+    )
+    replay = await _read_operation_receipt(
+        db,
+        scope=scope,
+        subject=subject,
+        key_digest=key_digest,
+        action="replace_user_spool_qr_material",
+        request_digest=request_digest,
+        response_model=UserSpoolQrResponse,
+    )
+    if replay is not None:
+        return replay
+
+    spool = await _owned_spool(db, user_id=user.id, spool_id=spool_id, for_update=True)
+    replay = await _read_operation_receipt(
+        db,
+        scope=scope,
+        subject=subject,
+        key_digest=key_digest,
+        action="replace_user_spool_qr_material",
+        request_digest=request_digest,
+        response_model=UserSpoolQrResponse,
+    )
+    if replay is not None:
+        return replay
+    if await _manufacturer_binding_for_spool(db, spool.id) is not None:
+        raise_error(409, ERR_MANUFACTURER_QR_MATERIAL_LOCKED)
+
+    binding = await _user_binding_for_spool(db, spool.id, for_update=True)
+    if binding is None:
+        raise_error(404, ERR_QR_NOT_FOUND)
+    if binding.state != QrUserBindingState.ACTIVE:
+        raise_error(409, ERR_QR_BINDING_STATE_CONFLICT)
+    if binding.revision != revision:
+        raise_error(409, ERR_QR_BINDING_REVISION_CONFLICT)
+    if spool.filament_id == filament_id:
+        raise_error(409, ERR_QR_BINDING_STATE_CONFLICT)
+
+    filament = await _filament_with_qr(db, filament_id)
+    token = _new_user_token()
+    spool.filament_id = filament.id
+    binding.filament_id = filament.id
+    binding.filament = filament
+    binding.token_digest = _user_token_digest(token)
+    binding.token_ciphertext = encrypt_field(token)
+    binding.last_rotation_key_digest = None
+    binding.revision += 1
+    await db.flush()
+    response = _user_binding_response(binding)
+    _add_operation_receipt(
+        db,
+        scope=scope,
+        subject=subject,
+        key_digest=key_digest,
+        action="replace_user_spool_qr_material",
+        request_digest=request_digest,
+        response=response,
+    )
+    await db.commit()
+    return response
 
 
 async def purge_expired_user_qr_bindings(
@@ -728,7 +943,6 @@ async def _resolve_manufacturer_instance(
     *,
     filament: Filament,
     token: str,
-    for_update: bool = False,
 ) -> ResolvedManufacturerInstance | None:
     try:
         reference = _manufacturer_token_reference(token)
@@ -742,8 +956,6 @@ async def _resolve_manufacturer_instance(
             QrManufacturerBatch.status == QrManufacturerBatchStatus.ACTIVE,
         )
     )
-    if for_update:
-        query = query.with_for_update()
     batch = await db.scalar(query)
     if batch is None:
         return None
@@ -761,8 +973,6 @@ async def _resolve_manufacturer_instance(
         QrManufacturerInstanceState.batch_id == batch.id,
         QrManufacturerInstanceState.ordinal == reference.ordinal,
     )
-    if for_update:
-        state_query = state_query.with_for_update()
     state = await db.scalar(state_query)
     return ResolvedManufacturerInstance(
         batch=batch,
@@ -843,6 +1053,7 @@ async def resolve_qr_identity(
         state.status == QrManufacturerInstanceStatus.CLAIMED
         and current_user is not None
         and state.user_id == current_user.id
+        and state.user_spool_id is not None
     ):
         resolution.resolution = "linked"
         resolution.spool_id = state.user_spool_id
@@ -1170,6 +1381,25 @@ async def set_manufacturer_qr_exception(
     item = _item_for_ordinal(batch.items, ordinal)
     if item is None:
         raise_error(404, ERR_QR_INSTANCE_UNAVAILABLE)
+    scope = f"organization:{batch.organization_id}"
+    subject = f"batch:{batch.public_id}:ordinal:{ordinal}"
+    _normalized_key, operation_digest = _receipt_coordinates(
+        scope=scope,
+        subject=subject,
+        idempotency_key=idempotency_key,
+    )
+    request_digest = _request_digest({"action": action, "ordinal": ordinal})
+    replay = await _read_operation_receipt(
+        db,
+        scope=scope,
+        subject=subject,
+        key_digest=operation_digest,
+        action="set_manufacturer_qr_exception",
+        request_digest=request_digest,
+        response_model=ManufacturerQrExceptionResponse,
+    )
+    if replay is not None:
+        return replay
     state = await db.scalar(
         select(QrManufacturerInstanceState)
         .where(
@@ -1178,34 +1408,11 @@ async def set_manufacturer_qr_exception(
         )
         .with_for_update()
     )
-    operation_digest = _operation_key_digest(
-        idempotency_key,
-        context=f"qr-manufacturer-exception-v1:{batch.public_id}:{ordinal}",
-    )
     next_status = {
         "revoke": QrManufacturerInstanceStatus.REVOKED,
         "scrap": QrManufacturerInstanceStatus.SCRAPPED,
         "restore": None,
     }[action]
-    if state is not None and state.last_operation_key_digest == operation_digest:
-        if state.status != next_status:
-            raise_error(409, ERR_QR_IDEMPOTENCY_CONFLICT)
-        return ManufacturerQrExceptionResponse(
-            ordinal=ordinal,
-            status=cast(
-                Literal["revoked", "scrapped"] | None,
-                (
-                    state.status
-                    if state.status
-                    in {
-                        QrManufacturerInstanceStatus.REVOKED,
-                        QrManufacturerInstanceStatus.SCRAPPED,
-                    }
-                    else None
-                ),
-            ),
-            manifest_revision=batch.manifest_revision,
-        )
     if state is not None and state.status == QrManufacturerInstanceStatus.CLAIMED:
         raise_error(409, ERR_QR_INSTANCE_UNAVAILABLE)
 
@@ -1213,12 +1420,22 @@ async def set_manufacturer_qr_exception(
         if state is not None:
             await db.delete(state)
             batch.manifest_revision += 1
-        await db.commit()
-        return ManufacturerQrExceptionResponse(
+        response = ManufacturerQrExceptionResponse(
             ordinal=ordinal,
             status=None,
             manifest_revision=batch.manifest_revision,
         )
+        _add_operation_receipt(
+            db,
+            scope=scope,
+            subject=subject,
+            key_digest=operation_digest,
+            action="set_manufacturer_qr_exception",
+            request_digest=request_digest,
+            response=response,
+        )
+        await db.commit()
+        return response
 
     assert next_status is not None
     if state is None:
@@ -1227,19 +1444,27 @@ async def set_manufacturer_qr_exception(
             ordinal=ordinal,
             filament_id=item.filament_id,
             status=next_status,
-            last_operation_key_digest=operation_digest,
         )
         db.add(state)
     else:
         state.status = next_status
-        state.last_operation_key_digest = operation_digest
     batch.manifest_revision += 1
-    await db.commit()
-    return ManufacturerQrExceptionResponse(
+    response = ManufacturerQrExceptionResponse(
         ordinal=ordinal,
         status=cast(Literal["revoked", "scrapped"], next_status),
         manifest_revision=batch.manifest_revision,
     )
+    _add_operation_receipt(
+        db,
+        scope=scope,
+        subject=subject,
+        key_digest=operation_digest,
+        action="set_manufacturer_qr_exception",
+        request_digest=request_digest,
+        response=response,
+    )
+    await db.commit()
+    return response
 
 
 async def claim_manufacturer_qr(
@@ -1262,7 +1487,6 @@ async def claim_manufacturer_qr(
         db,
         filament=filament,
         token=envelope.token,
-        for_update=True,
     )
     if resolved is None:
         raise_error(409, ERR_QR_INSTANCE_UNAVAILABLE)
@@ -1271,7 +1495,16 @@ async def claim_manufacturer_qr(
         raise_error(409, ERR_QR_INSTANCE_UNAVAILABLE)
     if spool.state in {UserSpoolState.empty, UserSpoolState.archived}:
         raise_error(409, ERR_QR_BINDING_STATE_CONFLICT)
-    state = resolved.state
+    batch_id = resolved.batch.id
+    ordinal = resolved.ordinal
+    state = await db.scalar(
+        select(QrManufacturerInstanceState)
+        .where(
+            QrManufacturerInstanceState.batch_id == batch_id,
+            QrManufacturerInstanceState.ordinal == ordinal,
+        )
+        .with_for_update()
+    )
     if state is not None:
         if (
             state.status == QrManufacturerInstanceStatus.CLAIMED
@@ -1287,14 +1520,13 @@ async def claim_manufacturer_qr(
         raise_error(409, ERR_QR_BINDING_STATE_CONFLICT)
 
     state = QrManufacturerInstanceState(
-        batch_id=resolved.batch.id,
-        ordinal=resolved.ordinal,
+        batch_id=batch_id,
+        ordinal=ordinal,
         filament_id=filament.id,
         status=QrManufacturerInstanceStatus.CLAIMED,
         user_id=user.id,
         user_spool_id=spool.id,
     )
-    batch_id = resolved.batch.id
     claimed_user_id = user.id
     claimed_filament_id = filament.id
     claimed_spool_id = spool.id
@@ -1306,7 +1538,7 @@ async def claim_manufacturer_qr(
         replayed = await db.scalar(
             select(QrManufacturerInstanceState).where(
                 QrManufacturerInstanceState.batch_id == batch_id,
-                QrManufacturerInstanceState.ordinal == resolved.ordinal,
+                QrManufacturerInstanceState.ordinal == ordinal,
             )
         )
         if (

@@ -5,8 +5,9 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 import pytest
+from fastapi import HTTPException
 from httpx import AsyncClient
-from sqlalchemy import func, select
+from sqlalchemy import event, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import create_access_token
@@ -18,20 +19,25 @@ from app.models.brand_territorial_grant import (
 )
 from app.models.filament import Filament
 from app.models.organization import Organization, OrganizationMembership
+from app.models.preset import Preset, PresetModerationStatus
 from app.models.qr_identity import (
     QrManufacturerBatch,
     QrManufacturerBatchItem,
     QrManufacturerInstanceState,
+    QrOperationReceipt,
     QrUserSpoolBinding,
 )
 from app.models.user import User
+from app.models.user_printer_device import UserPrinterDevice
 from app.models.user_spool import UserSpool, UserSpoolState
 from app.services.qr_identity_service import (
     QR_MAX_SHORT_CODE_LENGTH,
     encode_qr_envelope,
+    list_manufacturer_qr_batches,
     parse_qr_envelope,
     purge_expired_user_qr_bindings,
 )
+from app.services.spoolmanager_import_service import link_imported_spools_to_preset
 from tests.conftest import accepted_legal
 
 
@@ -87,6 +93,26 @@ async def _second_user(db: AsyncSession, suffix: str) -> tuple[User, str]:
     await db.commit()
     await db.refresh(user)
     return user, create_access_token({"sub": user.email})
+
+
+async def _second_filament(
+    db: AsyncSession,
+    *,
+    source: Filament,
+    suffix: str,
+) -> Filament:
+    filament = Filament(
+        brand_id=source.brand_id,
+        name=f"QR Replacement Filament {suffix}",
+        slug=f"qr-replacement-filament-{suffix}",
+        material_type="ABS",
+        active=True,
+        qr_code=f"FH-R{suffix.upper()}",
+    )
+    db.add(filament)
+    await db.commit()
+    await db.refresh(filament)
+    return filament
 
 
 def test_versioned_envelope_keeps_product_code_independently_decodable():
@@ -266,6 +292,194 @@ async def test_user_qr_retirement_restores_then_purges_without_reusing_token(
     assert reissued_response.json()["short_code"] != retired_again["short_code"]
 
 
+@pytest.mark.asyncio
+async def test_material_change_requires_atomic_qr_replacement_and_preserves_old_product(
+    auth_client: AsyncClient,
+    auth_user: User,
+    db_session: AsyncSession,
+):
+    original_filament, spool = await _catalog_spool(
+        db_session,
+        user=auth_user,
+        suffix="MATERIAL1",
+    )
+    first_replacement = await _second_filament(
+        db_session,
+        source=original_filament,
+        suffix="MATERIAL1A",
+    )
+    second_replacement = await _second_filament(
+        db_session,
+        source=original_filament,
+        suffix="MATERIAL1B",
+    )
+
+    ordinary_change = await auth_client.patch(
+        f"/api/v1/spools/{spool.id}",
+        json={"filament_id": first_replacement.id},
+    )
+    assert ordinary_change.status_code == 200
+    assert ordinary_change.json()["filament_id"] == first_replacement.id
+
+    issued = (await auth_client.post(f"/api/v1/spools/{spool.id}/qr/issue")).json()
+    blocked = await auth_client.patch(
+        f"/api/v1/spools/{spool.id}",
+        json={"filament_id": second_replacement.id},
+    )
+    assert blocked.status_code == 409
+    assert blocked.json()["detail"]["code"] == "ERR_QR_MATERIAL_CHANGE_REQUIRES_REISSUE"
+
+    missing_confirmation = await auth_client.post(
+        f"/api/v1/spools/{spool.id}/qr/replace-material",
+        json={
+            "filament_id": second_replacement.id,
+            "revision": issued["revision"],
+            "idempotency_key": "replace-material-0001",
+            "confirm_reprint": False,
+        },
+    )
+    assert missing_confirmation.status_code == 422
+
+    request = {
+        "filament_id": second_replacement.id,
+        "revision": issued["revision"],
+        "idempotency_key": "replace-material-0001",
+        "confirm_reprint": True,
+    }
+    replaced = await auth_client.post(
+        f"/api/v1/spools/{spool.id}/qr/replace-material",
+        json=request,
+    )
+    replay = await auth_client.post(
+        f"/api/v1/spools/{spool.id}/qr/replace-material",
+        json=request,
+    )
+    assert replaced.status_code == replay.status_code == 200
+    assert replay.json() == replaced.json()
+    assert replaced.json()["filament_id"] == second_replacement.id
+    assert replaced.json()["short_code"] != issued["short_code"]
+
+    conflicting_replay = await auth_client.post(
+        f"/api/v1/spools/{spool.id}/qr/replace-material",
+        json={**request, "filament_id": original_filament.id},
+    )
+    assert conflicting_replay.status_code == 409
+    assert conflicting_replay.json()["detail"]["code"] == "ERR_QR_IDEMPOTENCY_CONFLICT"
+
+    old_scan = await auth_client.post(f"/api/v1/qr/{issued['short_code']}/scan")
+    assert old_scan.status_code == 200
+    assert old_scan.json()["filament"]["id"] == first_replacement.id
+    assert old_scan.json()["qr_identity"]["resolution"] == "product_only"
+    replacement_scan = await auth_client.post(
+        f"/api/v1/qr/{replaced.json()['short_code']}/scan"
+    )
+    assert replacement_scan.status_code == 200
+    assert replacement_scan.json()["filament"]["id"] == second_replacement.id
+    assert replacement_scan.json()["qr_identity"]["resolution"] == "linked"
+
+    rotated = await auth_client.post(
+        f"/api/v1/spools/{spool.id}/qr/rotate",
+        json={
+            "revision": replaced.json()["revision"],
+            "idempotency_key": "rotate-after-replace-0001",
+        },
+    )
+    assert rotated.status_code == 200
+    replay_after_newer_operation = await auth_client.post(
+        f"/api/v1/spools/{spool.id}/qr/replace-material",
+        json=request,
+    )
+    assert replay_after_newer_operation.status_code == 200
+    assert replay_after_newer_operation.json() == replaced.json()
+    assert (
+        await db_session.scalar(select(func.count()).select_from(QrOperationReceipt))
+        == 2
+    )
+
+
+@pytest.mark.asyncio
+async def test_import_resolution_and_spool_compat_use_the_material_qr_guard(
+    client: AsyncClient,
+    auth_user: User,
+    db_session: AsyncSession,
+):
+    original_filament, spool = await _catalog_spool(
+        db_session,
+        user=auth_user,
+        suffix="MATERIAL2",
+    )
+    first_replacement = await _second_filament(
+        db_session,
+        source=original_filament,
+        suffix="MATERIAL2A",
+    )
+    second_replacement = await _second_filament(
+        db_session,
+        source=original_filament,
+        suffix="MATERIAL2B",
+    )
+    spool.source = "octoprint_spoolmanager"
+    spool.extra = {"import_external_ref": "material-guard-ref"}
+    preset = Preset(
+        filament_id=first_replacement.id,
+        user_id=auth_user.id,
+        name="Resolved import material",
+        is_official=False,
+        is_weighted=False,
+        extruder_temp=240,
+        bed_temp=90,
+        moderation_status=PresetModerationStatus.PENDING,
+        active=True,
+        orcaslicer_settings={
+            "import_external_ref": "material-guard-ref",
+            "import_provider": "octoprint_spoolmanager",
+        },
+    )
+    db_session.add(preset)
+    await db_session.commit()
+
+    assert await link_imported_spools_to_preset(db_session, preset) == [spool.id]
+    await db_session.commit()
+    await db_session.refresh(spool)
+    assert spool.filament_id == first_replacement.id
+
+    token = create_access_token({"sub": auth_user.email})
+    issued = await client.post(
+        f"/api/v1/spools/{spool.id}/qr/issue",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert issued.status_code == 200
+    user_id = auth_user.id
+    spool_id = spool.id
+    second_replacement_id = second_replacement.id
+    preset.filament_id = second_replacement.id
+    await db_session.commit()
+
+    with pytest.raises(HTTPException) as exc:
+        await link_imported_spools_to_preset(db_session, preset)
+    assert exc.value.status_code == 409
+    assert exc.value.detail["code"] == "ERR_QR_MATERIAL_CHANGE_REQUIRES_REISSUE"
+    await db_session.rollback()
+
+    device = UserPrinterDevice(
+        user_id=user_id,
+        name="QR guard adapter",
+        device_fingerprint="qr-guard-adapter",
+        api_key="qr_guard_adapter_key",
+    )
+    db_session.add(device)
+    await db_session.commit()
+    compatible_patch = await client.patch(
+        f"/api/v1/spool_compat/{device.api_key}/v1/spool/{spool_id}",
+        json={"filament_id": second_replacement_id},
+    )
+    assert compatible_patch.status_code == 409
+    assert (
+        compatible_patch.json()["detail"]["code"]
+        == "ERR_QR_MATERIAL_CHANGE_REQUIRES_REISSUE"
+    )
+
+
 async def _manufacturer_workspace(
     db: AsyncSession,
     *,
@@ -437,6 +651,135 @@ async def test_manufacturer_million_batch_is_compact_deterministic_and_claimable
 
 
 @pytest.mark.asyncio
+async def test_claimed_manufacturer_qr_permanently_locks_spool_material(
+    auth_client: AsyncClient,
+    auth_user: User,
+    db_session: AsyncSession,
+):
+    brand, filament, _organization = await _manufacturer_workspace(
+        db_session,
+        user=auth_user,
+        suffix="MATERIALLOCK",
+    )
+    replacement = await _second_filament(
+        db_session,
+        source=filament,
+        suffix="MATERIALLOCK",
+    )
+    created = await auth_client.post(
+        "/api/v1/manufacturer/qr-batches",
+        json={
+            "brand_id": brand.id,
+            "mode": "serialized",
+            "items": [{"filament_id": filament.id, "quantity": 1}],
+        },
+        headers={"Idempotency-Key": "manufacturer-lock-0001"},
+    )
+    assert created.status_code == 201
+    payloads = await auth_client.get(
+        f"/api/v1/manufacturer/qr-batches/{created.json()['public_id']}/payloads"
+    )
+    code = payloads.json()["items"][0]["short_code"]
+    spool = UserSpool(
+        user_id=auth_user.id,
+        filament_id=filament.id,
+        initial_weight_g=1000,
+        used_weight_g=0,
+        state=UserSpoolState.shelf,
+        source="manual",
+    )
+    db_session.add(spool)
+    await db_session.commit()
+    await db_session.refresh(spool)
+    claimed = await auth_client.post(
+        f"/api/v1/qr/{code}/claim",
+        json={"spool_id": spool.id},
+    )
+    assert claimed.status_code == 200
+
+    ordinary_change = await auth_client.patch(
+        f"/api/v1/spools/{spool.id}",
+        json={"filament_id": replacement.id},
+    )
+    assert ordinary_change.status_code == 409
+    assert (
+        ordinary_change.json()["detail"]["code"]
+        == "ERR_MANUFACTURER_QR_MATERIAL_LOCKED"
+    )
+    explicit_replacement = await auth_client.post(
+        f"/api/v1/spools/{spool.id}/qr/replace-material",
+        json={
+            "filament_id": replacement.id,
+            "revision": 1,
+            "idempotency_key": "manufacturer-replace-0001",
+            "confirm_reprint": True,
+        },
+    )
+    assert explicit_replacement.status_code == 409
+    assert (
+        explicit_replacement.json()["detail"]["code"]
+        == "ERR_MANUFACTURER_QR_MATERIAL_LOCKED"
+    )
+
+
+@pytest.mark.asyncio
+async def test_manufacturer_batch_list_loads_all_items_in_one_query(
+    auth_client: AsyncClient,
+    auth_user: User,
+    db_session: AsyncSession,
+):
+    brand, filament, _organization = await _manufacturer_workspace(
+        db_session,
+        user=auth_user,
+        suffix="QUERYCOUNT",
+    )
+    for index in range(3):
+        created = await auth_client.post(
+            "/api/v1/manufacturer/qr-batches",
+            json={
+                "brand_id": brand.id,
+                "mode": "serialized",
+                "items": [{"filament_id": filament.id, "quantity": index + 1}],
+            },
+            headers={"Idempotency-Key": f"query-count-batch-{index:04d}"},
+        )
+        assert created.status_code == 201
+
+    statements: list[str] = []
+
+    def record_statement(
+        _connection: object,
+        _cursor: object,
+        statement: str,
+        _parameters: object,
+        _context: object,
+        _executemany: bool,
+    ) -> None:
+        statements.append(statement)
+
+    assert db_session.bind is not None
+    event.listen(db_session.bind.sync_engine, "before_cursor_execute", record_statement)
+    try:
+        listed = await list_manufacturer_qr_batches(
+            db_session,
+            user=auth_user,
+            offset=0,
+            limit=50,
+        )
+    finally:
+        event.remove(db_session.bind.sync_engine, "before_cursor_execute", record_statement)
+
+    assert len(listed.items) == 3
+    item_queries = [
+        statement
+        for statement in statements
+        if "FROM qr_manufacturer_batch_items" in statement
+    ]
+    assert len(statements) == 5
+    assert len(item_queries) == 1
+
+
+@pytest.mark.asyncio
 async def test_manufacturer_batch_permissions_idempotency_and_sparse_exception(
     auth_client: AsyncClient,
     auth_user: User,
@@ -506,6 +849,50 @@ async def test_manufacturer_batch_permissions_idempotency_and_sparse_exception(
     )
     assert conflicting_replay.status_code == 409
     assert conflicting_replay.json()["detail"]["code"] == "ERR_QR_IDEMPOTENCY_CONFLICT"
+
+    restored = await auth_client.post(
+        f"/api/v1/manufacturer/qr-batches/{batch['public_id']}/exceptions",
+        json={
+            "ordinal": 1,
+            "action": "restore",
+            "idempotency_key": "manufacturer-restore-0001",
+        },
+    )
+    assert restored.status_code == 200
+    assert restored.json()["status"] is None
+    revoked = await auth_client.post(
+        f"/api/v1/manufacturer/qr-batches/{batch['public_id']}/exceptions",
+        json={
+            "ordinal": 1,
+            "action": "revoke",
+            "idempotency_key": "manufacturer-revoke-0001",
+        },
+    )
+    assert revoked.status_code == 200
+    assert revoked.json()["status"] == "revoked"
+    old_key_after_newer_operation = await auth_client.post(
+        f"/api/v1/manufacturer/qr-batches/{batch['public_id']}/exceptions",
+        json={
+            "ordinal": 1,
+            "action": "scrap",
+            "idempotency_key": "manufacturer-scrap-0001",
+        },
+    )
+    assert old_key_after_newer_operation.status_code == 200
+    assert old_key_after_newer_operation.json() == exception.json()
+    batch_id = await db_session.scalar(
+        select(QrManufacturerBatch.id).where(
+            QrManufacturerBatch.public_id == batch["public_id"]
+        )
+    )
+    current_state = await db_session.scalar(
+        select(QrManufacturerInstanceState).where(
+            QrManufacturerInstanceState.batch_id == batch_id,
+            QrManufacturerInstanceState.ordinal == 1,
+        )
+    )
+    assert current_state is not None
+    assert current_state.status == "revoked"
 
     foreign, foreign_token = await _second_user(db_session, "foreign-manufacturer")
     foreign.active_organization_id = None

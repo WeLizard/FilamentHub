@@ -34,6 +34,7 @@ from app.schemas.spool import (
     SpoolResponse,
     SpoolUpdateRequest,
 )
+from app.services.spool_material_service import set_spool_filament_with_qr_guard
 from app.services.spool_usage_service import record_spool_usage
 
 
@@ -500,10 +501,6 @@ async def update_spool(
     if spool is None or spool.user_id != user.id:
         raise_error(404, ERR_ACCESS_DENIED)
 
-    previous_initial_weight = spool.initial_weight_g
-    previous_used_weight = spool.used_weight_g
-    previous_remaining_weight = spool.remaining_weight_g
-
     if "filament_id" in payload.model_fields_set:
         if payload.filament_id is not None:
             filament = await _load_filament_info(db, payload.filament_id)
@@ -511,9 +508,17 @@ async def update_spool(
                 raise_error(404, ERR_FILAMENT_NOT_FOUND)
         else:
             filament = None
-        spool.filament_id = payload.filament_id
+        spool = await set_spool_filament_with_qr_guard(
+            db,
+            spool=spool,
+            filament_id=payload.filament_id,
+        )
     else:
         filament = await _load_filament_info(db, spool.filament_id) if spool.filament_id else None
+
+    previous_initial_weight = spool.initial_weight_g
+    previous_used_weight = spool.used_weight_g
+    previous_remaining_weight = spool.remaining_weight_g
 
     next_initial_weight = (
         payload.initial_weight_g if payload.initial_weight_g is not None else spool.initial_weight_g

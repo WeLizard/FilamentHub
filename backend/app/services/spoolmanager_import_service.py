@@ -32,6 +32,7 @@ from app.schemas.spool import (
     SpoolManagerPreviewResponse,
     SpoolManagerPreviewRow,
 )
+from app.services.spool_material_service import set_spool_filament_with_qr_guard
 
 SPOOLMANAGER_SOURCE = "octoprint_spoolmanager"
 MAX_IMPORT_ROWS = 1_000
@@ -229,7 +230,7 @@ async def link_imported_spools_to_preset(
             select(UserSpool).where(
                 UserSpool.user_id == preset.user_id,
                 UserSpool.source == import_provider,
-            )
+            ).order_by(UserSpool.id)
         )
     ).all()
     linked_ids: list[int] = []
@@ -238,7 +239,11 @@ async def link_imported_spools_to_preset(
             continue
         if spool.extra.get("import_external_ref") != import_ref:
             continue
-        spool.filament_id = preset.filament_id
+        spool = await set_spool_filament_with_qr_guard(
+            db,
+            spool=spool,
+            filament_id=preset.filament_id,
+        )
         spool.extra = {
             **spool.extra,
             "import_draft_id": str(preset.id),

@@ -28,6 +28,13 @@ class QrRotateRequest(QrRevisionRequest):
         return normalized
 
 
+class QrReplaceMaterialRequest(QrRotateRequest):
+    """Explicitly replace a spool material and its user-issued QR identity."""
+
+    filament_id: int = Field(..., ge=1)
+    confirm_reprint: Literal[True]
+
+
 class UserSpoolQrResponse(BaseModel):
     """Private owner view of one QR identity linked to a spool."""
 
