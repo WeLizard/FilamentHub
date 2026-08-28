@@ -1,6 +1,7 @@
 <div class="fhb-sidebar-summary">
-  <span data-bind="text: isManualRouting() ? 'Manual selection' : 'G-code tool routing'"></span>
-  <span data-bind="visible: currentToolText, text: currentToolText"></span>
+  <span data-bind="text: isManualRouting() ? 'Manual routing' : 'G-code tool routing'"></span>
+  <span data-bind="visible: manualSlotText, text: manualSlotText"></span>
+  <span data-bind="visible: commandedToolText, text: commandedToolText"></span>
 </div>
 <div class="fhb-sidebar-empty-state" data-bind="visible: assignedSlots().length === 0">
   No spools are assigned in FilamentHub.

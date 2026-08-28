@@ -323,6 +323,11 @@ class FilamentHubBridgePlugin(
 
     def _public_state(self):
         snapshot = self._settings.get(["snapshot"])
+        commanded_tool = (
+            self._tracker.active_tool
+            if self._printing and self._settings.get_boolean(["map_tools_to_slots"])
+            else None
+        )
         return {
             "paired": bool(self._settings.get(["bridge_token"])),
             "server_url": self._settings.get(["server_url"]),
@@ -340,11 +345,11 @@ class FilamentHubBridgePlugin(
                 for tool, slot in sorted(self._tool_slot_map().items())
             ],
             "routing_revision": int(self._settings.get(["routing_revision"]) or 0),
-            "current_tool": (
-                self._tracker.active_tool
-                if self._printing and self._settings.get_boolean(["map_tools_to_slots"])
-                else None
-            ),
+            # ``current_tool`` is retained for older Bridge UIs. OctoPrint only
+            # confirms that this Tn command was sent; it does not prove the
+            # printer physically activated that tool.
+            "current_tool": commanded_tool,
+            "commanded_tool": commanded_tool,
             "unmapped_tools": (
                 sorted(self._tracker.unmapped_tools) if self._printing else []
             ),

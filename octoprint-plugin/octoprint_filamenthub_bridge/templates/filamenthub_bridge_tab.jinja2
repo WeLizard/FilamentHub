@@ -68,7 +68,7 @@
               <strong>Automatic tool routing</strong>
               <small data-bind="text: automaticMappingText"></small>
             </div>
-            <span data-bind="visible: currentToolText, text: currentToolText"></span>
+            <span data-bind="visible: commandedToolText, text: commandedToolText"></span>
           </div>
           <label class="checkbox fhb-custom-toggle">
             <input type="checkbox" data-bind="checked: useCustomToolMapping, disable: busy">
@@ -107,7 +107,7 @@
               <span class="fhb-slot-copy">
                 <span class="fhb-slot-title">
                   <strong data-bind="text: $parent.slotIdentity($data)"></strong>
-                  <em data-bind="visible: index === $parent.activeSlot()">Active</em>
+                  <em data-bind="visible: index === $parent.activeSlot(), text: $parent.isManualRouting() ? 'Declared loaded' : 'Usage route'"></em>
                   <em data-bind="visible: $parent.isToolRouting() && $parent.mappedToolsForSlot($data), text: $parent.mappedToolsForSlot($data)"></em>
                 </span>
                 <small data-bind="text: $parent.spoolTitle($data) || 'No spool assigned'"></small>

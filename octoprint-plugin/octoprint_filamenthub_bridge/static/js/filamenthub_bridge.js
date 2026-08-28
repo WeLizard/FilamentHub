@@ -13,7 +13,7 @@ $(function () {
     self.routingMode = ko.observable("manual");
     self.toolMappings = ko.observableArray([]);
     self.useCustomToolMapping = ko.observable(false);
-    self.currentTool = ko.observable(null);
+    self.commandedTool = ko.observable(null);
     self.unmappedTools = ko.observableArray([]);
     self.printing = ko.observable(false);
     self.outboxSize = ko.observable(0);
@@ -164,9 +164,13 @@ $(function () {
       if (!self.lastSyncAt()) return "Not synchronized yet";
       return "Last synchronization: " + new Date(self.lastSyncAt()).toLocaleString();
     });
-    self.currentToolText = ko.pureComputed(function () {
-      if (!self.printing() || self.currentTool() === null) return "";
-      return "Printing with T" + self.currentTool();
+    self.commandedToolText = ko.pureComputed(function () {
+      if (!self.printing() || self.commandedTool() === null) return "";
+      return "Last G-code tool command: T" + self.commandedTool();
+    });
+    self.manualSlotText = ko.pureComputed(function () {
+      if (!self.isManualRouting() || self.manualSlot() === null) return "";
+      return "Declared loaded slot: #" + (Number(self.manualSlot()) + 1);
     });
     self.unmappedToolsText = ko.pureComputed(function () {
       var tools = self.unmappedTools();
@@ -192,7 +196,9 @@ $(function () {
       });
       self.toolMappings(mappings);
       self.useCustomToolMapping(mappings.length > 0 && !self.isAutomaticMapping(mappings));
-      self.currentTool(state.current_tool === undefined ? null : state.current_tool);
+      var commandedTool = state.commanded_tool;
+      if (commandedTool === undefined) commandedTool = state.current_tool;
+      self.commandedTool(commandedTool === undefined ? null : commandedTool);
       self.unmappedTools(Array.isArray(state.unmapped_tools) ? state.unmapped_tools : []);
       self.printing(Boolean(state.printing));
       self.outboxSize(state.outbox_size || 0);

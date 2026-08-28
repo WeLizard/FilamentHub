@@ -39,7 +39,11 @@ Spoolman or SpoolManager and does not copy their local databases.
 If a print selects an unmapped `Tn`, the Bridge leaves that extrusion
 unassigned and displays a warning instead of charging it to an unrelated spool.
 Only standard `Tn` commands handled by OctoPrint are interpreted as tool
-selections; printer-specific macros are not guessed.
+selections; printer-specific macros are not guessed. The UI labels this signal
+as the last G-code tool command, not as a physically observed active tool. In
+manual mode the selected slot is explicitly labelled as the user's declared
+loaded slot. Neither signal proves physical presence or a completed hardware
+switch.
 
 The bridge token is stored in OctoPrint's local plugin settings and is filtered
 from OctoPrint's settings API. Usage checkpoints are kept in a local outbox until

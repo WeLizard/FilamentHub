@@ -339,7 +339,7 @@ function BridgeConnectionStatus({ printer, system }: AdapterViewContext) {
       {status.plugin_version && (
         <span>Bridge {status.plugin_version}</span>
       )}
-      {status.active_slot_index != null && (
+      {status.routing.mode === 'manual' && status.active_slot_index != null && (
         <span className="text-emerald-200/75">
           {t('presetSlots.octoprint.activeSlot', { count: status.active_slot_index + 1 })}
         </span>

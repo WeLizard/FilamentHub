@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
+  OctoPrintBridgeStatus,
   PhysicalPrinter,
   PrinterBridgeStatus,
   PrinterConnectionBinding,
@@ -53,7 +54,22 @@ let printerBridgeStatusForQuery: PrinterBridgeStatus = {
   last_seen_at: null,
   source_instance_id: null,
 };
-let octoprintBridgePairedForQuery = true;
+let octoprintBridgeStatusForQuery: OctoPrintBridgeStatus = {
+  configured: true,
+  paired: true,
+  pairing_expires_at: null,
+  last_seen_at: '2026-08-28T10:40:57Z',
+  active_slot_index: 0,
+  instance_id: 'octoprint-fixture',
+  plugin_version: '0.1.0',
+  octoprint_version: '1.11.8',
+  routing: {
+    mode: 'tools',
+    tool_slot_map: [{ tool_index: 7, slot_index: 0 }],
+    revision: 4,
+    applied_revision: 3,
+  },
+};
 const createSystem = vi.fn();
 const regenerateKey = vi.fn();
 const updateOctoPrintRouting = vi.fn();
@@ -84,18 +100,7 @@ vi.mock('@tanstack/react-query', () => ({
     }
     if (queryKey[0] === 'octoprint-bridge-status') {
       return {
-        data: {
-          paired: octoprintBridgePairedForQuery,
-          octoprint_version: '1.11.8',
-          plugin_version: '0.1.0',
-          active_slot_index: 0,
-          routing: {
-            mode: 'tools',
-            tool_slot_map: [{ tool_index: 7, slot_index: 0 }],
-            revision: 4,
-            applied_revision: 3,
-          },
-        },
+        data: octoprintBridgeStatusForQuery,
         isLoading: false,
         refetch: vi.fn(),
       };
@@ -170,7 +175,22 @@ describe('PresetSlotsPanel', () => {
       last_seen_at: null,
       source_instance_id: null,
     };
-    octoprintBridgePairedForQuery = true;
+    octoprintBridgeStatusForQuery = {
+      configured: true,
+      paired: true,
+      pairing_expires_at: null,
+      last_seen_at: '2026-08-28T10:40:57Z',
+      active_slot_index: 0,
+      instance_id: 'octoprint-fixture',
+      plugin_version: '0.1.0',
+      octoprint_version: '1.11.8',
+      routing: {
+        mode: 'tools',
+        tool_slot_map: [{ tool_index: 7, slot_index: 0 }],
+        revision: 4,
+        applied_revision: 3,
+      },
+    };
     createSystem.mockReset();
     createSystem.mockResolvedValue({});
     regenerateKey.mockReset();
@@ -308,8 +328,43 @@ describe('PresetSlotsPanel', () => {
     expect(physicalPrinter.material_systems[0].declared_slot_count).toBe(1);
   });
 
+  it('shows a selected slot only for an explicit manual declaration', async () => {
+    const { feedAdapterFor } = await import('../components/presetSlots/adapters');
+    const octoprintSystem = {
+      ...physicalPrinter.material_systems[0],
+      provider: 'octoprint',
+    };
+    const context = {
+      printer: { ...physicalPrinter, material_systems: [octoprintSystem] },
+      system: octoprintSystem,
+      gates: [],
+      spools: [],
+      linkConfirmed: true,
+    };
+
+    const toolRouting = render(<>{feedAdapterFor('octoprint').renderSettings?.(context)}</>);
+    expect(screen.queryByText('presetSlots.octoprint.activeSlot')).not.toBeInTheDocument();
+    toolRouting.unmount();
+
+    octoprintBridgeStatusForQuery = {
+      ...octoprintBridgeStatusForQuery,
+      routing: {
+        mode: 'manual',
+        tool_slot_map: [],
+        revision: 5,
+        applied_revision: 5,
+      },
+    };
+    render(<>{feedAdapterFor('octoprint').renderSettings?.(context)}</>);
+
+    expect(screen.getByText('presetSlots.octoprint.activeSlot')).toBeInTheDocument();
+  });
+
   it('shows OctoPrint Bridge installation instructions without external navigation', async () => {
-    octoprintBridgePairedForQuery = false;
+    octoprintBridgeStatusForQuery = {
+      ...octoprintBridgeStatusForQuery,
+      paired: false,
+    };
     const { feedAdapterFor } = await import('../components/presetSlots/adapters');
     const octoprintSystem = {
       ...physicalPrinter.material_systems[0],

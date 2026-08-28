@@ -1,5 +1,7 @@
 import logging
+from pathlib import Path
 
+import octoprint_filamenthub_bridge
 from octoprint.events import Events
 from octoprint_filamenthub_bridge import (
     BridgeRequestError,
@@ -327,6 +329,78 @@ def test_failed_send_seals_event_before_network_and_prevents_mutation():
     assert outbox[1]["items"][0]["used_length_mm"] == 5.0
 
 
+def test_sealed_outbox_event_survives_plugin_recreation_and_replays_once():
+    settings = FakeSettings()
+    first_plugin = FilamentHubBridgePlugin()
+    first_plugin._settings = settings
+    first_plugin._printer = FakePrinter()
+    first_plugin._logger = logging.getLogger("filamenthub-bridge-test")
+
+    first_plugin._begin_print({"name": "restart.gcode"})
+    first_plugin.on_gcode_sent(PrintingComm(), "sent", "M83", None, "M83")
+    first_plugin.on_gcode_sent(PrintingComm(), "sent", "G1 E10", None, "G1")
+    first_plugin._checkpoint_usage("periodic")
+
+    attempted = []
+
+    def lose_ack(method, path, payload):
+        attempted.append(payload)
+        raise RuntimeError("acknowledgement lost")
+
+    first_plugin._request = lose_ack
+    try:
+        first_plugin._flush_outbox()
+    except RuntimeError:
+        pass
+    else:
+        raise AssertionError("The first plugin instance must retain the event")
+
+    restarted_plugin = FilamentHubBridgePlugin()
+    restarted_plugin._settings = settings
+    delivered = []
+
+    def accept(method, path, payload):
+        delivered.append(payload)
+        return 200, {}, {"accepted": True}
+
+    restarted_plugin._request = accept
+    restarted_plugin._flush_outbox()
+    restarted_plugin._flush_outbox()
+
+    assert delivered == attempted
+    assert settings.get(["outbox"]) == []
+
+
+def test_public_state_keeps_legacy_current_tool_but_labels_it_as_commanded():
+    plugin = FilamentHubBridgePlugin()
+    plugin._settings = FakeSettings()
+    plugin._settings.set_boolean(["map_tools_to_slots"], True)
+    plugin._settings.set(["tool_slot_map"], {"7": 0})
+    plugin._printing = True
+    plugin._tracker.active_tool = 7
+
+    state = plugin._public_state()
+
+    assert state["manual_slot"] == 0
+    assert state["active_slot"] == 0
+    assert state["commanded_tool"] == 7
+    assert state["current_tool"] == 7
+
+
+def test_manual_public_state_does_not_present_a_stale_tool_command():
+    plugin = FilamentHubBridgePlugin()
+    plugin._settings = FakeSettings()
+    plugin._printing = True
+    plugin._tracker.active_tool = 7
+
+    state = plugin._public_state()
+
+    assert state["manual_slot"] == 0
+    assert state["active_slot"] == 0
+    assert state["commanded_tool"] is None
+    assert state["current_tool"] is None
+
+
 def test_failed_pairing_preserves_existing_connection():
     plugin = FilamentHubBridgePlugin()
     plugin._settings = FakeSettings()
@@ -484,6 +558,27 @@ def test_plugin_registers_shared_tab_and_sidebar_view_model_surfaces():
             "data_bind": "visible: paired",
         },
     ]
+
+
+def test_plugin_ui_separates_declared_slot_from_last_gcode_tool_command():
+    package_root = Path(octoprint_filamenthub_bridge.__file__).resolve().parent
+    javascript = (package_root / "static/js/filamenthub_bridge.js").read_text(
+        encoding="utf-8"
+    )
+    tab = (package_root / "templates/filamenthub_bridge_tab.jinja2").read_text(
+        encoding="utf-8"
+    )
+    sidebar = (
+        package_root / "templates/filamenthub_bridge_sidebar.jinja2"
+    ).read_text(encoding="utf-8")
+
+    assert "state.commanded_tool" in javascript
+    assert "state.current_tool" in javascript
+    assert "Last G-code tool command" in javascript
+    assert "Declared loaded slot" in javascript
+    assert "Usage route" in tab
+    assert "commandedToolText" in sidebar
+    assert "manualSlotText" in sidebar
 
 
 def test_explicit_tool_routing_accepts_virtual_tools_independent_of_slot_number():
