@@ -23,4 +23,7 @@ ENV FH_EDGE_STATE_PATH=/data/edge-state.json \
 VOLUME ["/data"]
 USER filamenthub
 
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD ["filamenthub-edge", "--status"]
+
 ENTRYPOINT ["filamenthub-edge"]

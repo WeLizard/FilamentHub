@@ -72,6 +72,23 @@ class StateStore:
             not isinstance(state.bridge_token, str) or not state.bridge_token.startswith("fhpb_")
         ):
             raise StateError("Edge bridge token is invalid")
+        for binding_id in (state.physical_printer_id, state.material_system_id):
+            if binding_id is not None and (
+                isinstance(binding_id, bool)
+                or not isinstance(binding_id, int)
+                or binding_id < 1
+            ):
+                raise StateError("Edge binding identity is invalid")
+        if (state.physical_printer_id is None) != (state.material_system_id is None):
+            raise StateError("Edge binding identity is incomplete")
+        if state.bridge_token is not None and state.physical_printer_id is None:
+            raise StateError("Paired Edge binding identity is missing")
+        if state.pairing_code_digest is not None and (
+            not isinstance(state.pairing_code_digest, str)
+            or len(state.pairing_code_digest) != 64
+            or any(character not in "0123456789abcdef" for character in state.pairing_code_digest)
+        ):
+            raise StateError("Edge pairing digest is invalid")
         if state.desired_snapshot is not None and not isinstance(state.desired_snapshot, dict):
             raise StateError("Cached desired snapshot is invalid")
         if (
@@ -95,6 +112,8 @@ class StateStore:
                 or pending_sequence != state.last_snapshot_sequence
             ):
                 raise StateError("Pending observation sequence is invalid")
+            if state.material_system_id is None:
+                raise StateError("Pending observation has no Edge binding")
         if (
             isinstance(state.last_usage_batch_sequence, bool)
             or not isinstance(state.last_usage_batch_sequence, int)
@@ -106,6 +125,8 @@ class StateStore:
             MAX_USAGE_OUTBOX_BATCHES
         ):
             raise StateError("Edge usage outbox is invalid")
+        if state.usage_outbox and state.material_system_id is None:
+            raise StateError("Edge usage outbox has no binding")
         previous_sequence = 0
         for batch in state.usage_outbox:
             if not isinstance(batch, dict):

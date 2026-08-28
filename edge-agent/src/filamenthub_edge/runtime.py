@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import logging
-import time
 from datetime import datetime, timezone
+from threading import Event
 from typing import Any
 
 from . import __version__
@@ -25,7 +25,11 @@ from .state import (
     EdgeState,
     StateStore,
 )
-from .usage import capture_usage_events
+from .usage import (
+    LifecycleCheckpointReason,
+    capture_pending_usage_event,
+    capture_usage_events,
+)
 
 logger = logging.getLogger("filamenthub_edge")
 
@@ -69,10 +73,17 @@ class EdgeRuntime:
             cloud_error = exc
         try:
             snapshot = self.provider.observe()
-        except ProviderUnavailable:
+        except ProviderUnavailable as provider_error:
+            self._checkpoint_without_provider(reason="disconnect")
             if cloud_error is None:
-                self._heartbeat(self.provider.capabilities())
-            raise
+                try:
+                    self._flush_usage_outbox()
+                    self._heartbeat(self.provider.capabilities())
+                except AuthenticationError:
+                    raise
+                except EdgeError as exc:
+                    logger.warning("Disconnect checkpoint delivery delayed: %s", exc)
+            raise provider_error
         observed_at = _now_iso()
         if len(self.state.usage_outbox) >= MAX_USAGE_OUTBOX_BATCHES:
             raise StateError(
@@ -99,17 +110,16 @@ class EdgeRuntime:
         if cloud_error is not None:
             raise cloud_error
 
-    def run_forever(self) -> None:
+    def run_forever(self, *, stop_event: Event | None = None) -> None:
+        stop = stop_event or Event()
         backoff = 5
-        while True:
+        while not stop.is_set():
             try:
                 self.run_cycle()
             except AuthenticationError as exc:
                 if self._new_pairing_code_available():
                     logger.warning("Bridge authorization changed; using the new pairing code")
                     self.state.bridge_token = None
-                    self.state.physical_printer_id = None
-                    self.state.material_system_id = None
                     self.store.save(self.state)
                     backoff = 5
                 else:
@@ -123,9 +133,104 @@ class EdgeRuntime:
                 backoff = min(backoff * 2, 300)
             else:
                 backoff = 5
-                time.sleep(self.config.sync_interval)
+                if stop.wait(self.config.sync_interval):
+                    break
                 continue
-            time.sleep(backoff)
+            stop.wait(backoff)
+
+    def shutdown(self) -> None:
+        """Best-effort durable checkpoint and delivery for SIGTERM/service stop."""
+        if self.state.bridge_token is None or self.state.material_system_id is None:
+            return
+        try:
+            self._flush_pending_observation()
+            self._flush_usage_outbox()
+        except EdgeError as exc:
+            logger.warning("Edge shutdown started with pending cloud delivery: %s", exc)
+        if len(self.state.usage_outbox) >= MAX_USAGE_OUTBOX_BATCHES:
+            logger.error("Edge shutdown checkpoint deferred because the usage outbox is full")
+            return
+
+        observed_at = _now_iso()
+        try:
+            snapshot = self.provider.observe()
+        except ProviderUnavailable:
+            self._checkpoint_without_provider(reason="shutdown", observed_at=observed_at)
+        else:
+            events = capture_usage_events(
+                self.state,
+                snapshot,
+                observed_at=observed_at,
+                checkpoint_reason="shutdown",
+            )
+            if events:
+                self._enqueue_usage_batch(events)
+            else:
+                self.store.save(self.state)
+            self._queue_observation(snapshot, observed_at=observed_at)
+
+        try:
+            self._flush_pending_observation()
+            self._flush_usage_outbox()
+        except EdgeError as exc:
+            logger.warning("Edge shutdown data remains safely queued: %s", exc)
+
+    def reset_connection(self) -> None:
+        """Explicitly revoke and clear one idle local binding before a rebind."""
+        blockers = self.connection_reset_blockers()
+        if blockers:
+            raise StateError(
+                "Edge connection reset is blocked by durable state: " + ", ".join(blockers)
+            )
+        if self.state.bridge_token is not None:
+            try:
+                self.cloud.revoke(token=self.state.bridge_token)
+            except AuthenticationError:
+                # An owner-side revoke already made the local token harmless.
+                pass
+        self.state.bridge_token = None
+        self.state.physical_printer_id = None
+        self.state.material_system_id = None
+        self.state.pairing_code_digest = None
+        self.state.desired_etag = None
+        self.state.desired_snapshot = None
+        self.state.last_snapshot_sequence = 0
+        self.state.last_usage_batch_sequence = 0
+        self.state.usage_tracker = None
+        self.store.save(self.state)
+
+    def connection_reset_blockers(self) -> list[str]:
+        blockers: list[str] = []
+        if self.state.pending_observation is not None:
+            blockers.append("pending observation")
+        if self.state.usage_outbox:
+            blockers.append("usage outbox")
+        tracker = self.state.usage_tracker
+        if isinstance(tracker, dict) and tracker.get("terminal_emitted") is not True:
+            blockers.append("active usage tracker")
+        return blockers
+
+    def diagnostic_status(self) -> dict[str, Any]:
+        return {
+            "instance_id": self.state.instance_id,
+            "paired": self.state.bridge_token is not None,
+            "physical_printer_id": self.state.physical_printer_id,
+            "material_system_id": self.state.material_system_id,
+            "pending_observation": self.state.pending_observation is not None,
+            "usage_outbox_batches": len(self.state.usage_outbox),
+            "usage_outbox_events": sum(
+                len(batch.get("events", []))
+                for batch in self.state.usage_outbox
+                if isinstance(batch, dict)
+            ),
+            "usage_tracker_active": bool(
+                isinstance(self.state.usage_tracker, dict)
+                and self.state.usage_tracker.get("terminal_emitted") is not True
+            ),
+            "last_snapshot_sequence": self.state.last_snapshot_sequence,
+            "last_usage_batch_sequence": self.state.last_usage_batch_sequence,
+            "connection_reset_blockers": self.connection_reset_blockers(),
+        }
 
     def _ensure_paired(self) -> None:
         if self.state.bridge_token is not None:
@@ -140,6 +245,8 @@ class EdgeRuntime:
             instance_id=self.state.instance_id,
             version=__version__,
             capabilities=self.provider.capabilities(),
+            previous_physical_printer_id=self.state.physical_printer_id,
+            previous_material_system_id=self.state.material_system_id,
         )
         self.state.bridge_token = result.bridge_token
         self.state.physical_printer_id = result.physical_printer_id
@@ -248,6 +355,26 @@ class EdgeRuntime:
             }
         )
         self.store.save(self.state)
+
+    def _checkpoint_without_provider(
+        self,
+        *,
+        reason: LifecycleCheckpointReason,
+        observed_at: str | None = None,
+    ) -> None:
+        if len(self.state.usage_outbox) >= MAX_USAGE_OUTBOX_BATCHES:
+            raise StateError(
+                "Edge usage outbox is full; pending provider evidence was left untouched"
+            )
+        events = capture_pending_usage_event(
+            self.state,
+            observed_at=observed_at or _now_iso(),
+            reason=reason,
+        )
+        if events:
+            self._enqueue_usage_batch(events)
+        else:
+            self.store.save(self.state)
 
     def _heartbeat(self, capabilities: list[str]) -> None:
         self.cloud.heartbeat(

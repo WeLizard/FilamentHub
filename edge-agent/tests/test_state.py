@@ -29,6 +29,8 @@ class StateStoreTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             state_path = Path(directory) / "edge-state.json"
             state = EdgeState(
+                physical_printer_id=10,
+                material_system_id=20,
                 last_snapshot_sequence=2,
                 pending_observation={"sequence": 2},
             )
@@ -49,6 +51,8 @@ class StateStoreTest(unittest.TestCase):
             store = StateStore(state_path)
             store.save(
                 EdgeState(
+                    physical_printer_id=10,
+                    material_system_id=20,
                     last_usage_batch_sequence=2,
                     usage_outbox=[
                         {"sequence": 2, "events": [{"event_id": "event-2"}]},
@@ -65,6 +69,30 @@ class StateStoreTest(unittest.TestCase):
 
             with self.assertRaisesRegex(StateError, "outbox"):
                 store.load()
+
+    def test_pairing_and_retry_state_require_a_complete_binding(self) -> None:
+        invalid_states = [
+            EdgeState(bridge_token="fhpb_fixture"),
+            EdgeState(physical_printer_id=10),
+            EdgeState(
+                physical_printer_id=10,
+                material_system_id=20,
+                pairing_code_digest="not-a-sha256-digest",
+            ),
+            EdgeState(pending_observation={"sequence": 0}),
+            EdgeState(
+                last_usage_batch_sequence=1,
+                usage_outbox=[{"sequence": 1, "events": [{"event_id": "event-1"}]}],
+            ),
+        ]
+
+        with tempfile.TemporaryDirectory() as directory:
+            store = StateStore(Path(directory) / "edge-state.json")
+            for state in invalid_states:
+                with self.subTest(state=state):
+                    store.save(state)
+                    with self.assertRaises(StateError):
+                        store.load()
 
     def test_oversized_outbox_is_rejected_before_state_replace(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

@@ -22,8 +22,18 @@ class PrinterBridgePairRequest(BaseModel):
     source_instance_id: str = Field(min_length=16, max_length=100)
     plugin_version: str = Field(min_length=1, max_length=50)
     capabilities: list[str] = Field(default_factory=list, max_length=32)
+    previous_physical_printer_id: int | None = Field(default=None, gt=0)
+    previous_material_system_id: int | None = Field(default=None, gt=0)
 
     model_config = {"str_strip_whitespace": True, "extra": "forbid"}
+
+    @model_validator(mode="after")
+    def complete_previous_binding(self) -> "PrinterBridgePairRequest":
+        if (self.previous_physical_printer_id is None) != (
+            self.previous_material_system_id is None
+        ):
+            raise ValueError("previous printer and material system must be supplied together")
+        return self
 
 
 class PrinterBridgePairResponse(BaseModel):

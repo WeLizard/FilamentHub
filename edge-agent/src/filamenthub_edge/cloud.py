@@ -45,6 +45,8 @@ class FilamentHubCloud:
         instance_id: str,
         version: str,
         capabilities: list[str],
+        previous_physical_printer_id: int | None,
+        previous_material_system_id: int | None,
     ) -> PairingResult:
         _, decoded, _ = self.http.request(
             "POST",
@@ -56,6 +58,8 @@ class FilamentHubCloud:
                 "source_instance_id": instance_id,
                 "plugin_version": version,
                 "capabilities": capabilities,
+                "previous_physical_printer_id": previous_physical_printer_id,
+                "previous_material_system_id": previous_material_system_id,
             },
         )
         if not isinstance(decoded, dict):
@@ -129,6 +133,14 @@ class FilamentHubCloud:
         )
         if not isinstance(decoded, dict) or decoded.get("accepted") is not True:
             raise HttpRequestError("FilamentHub heartbeat response is invalid")
+
+    def revoke(self, *, token: str) -> None:
+        self._authorized_request(
+            "DELETE",
+            "/api/v1/printer-bridge/connection",
+            token=token,
+            expected_statuses={204},
+        )
 
     def _authorized_request(
         self,

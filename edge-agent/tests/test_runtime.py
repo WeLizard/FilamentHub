@@ -6,7 +6,7 @@ from pathlib import Path
 
 from filamenthub_edge.cloud import DesiredResult, PairingResult
 from filamenthub_edge.config import EdgeConfig
-from filamenthub_edge.errors import HttpRequestError
+from filamenthub_edge.errors import HttpRequestError, ProviderUnavailable, StateError
 from filamenthub_edge.providers.base import ProviderSnapshot
 from filamenthub_edge.runtime import EdgeRuntime
 from filamenthub_edge.state import StateStore
@@ -15,13 +15,17 @@ from filamenthub_edge.state import StateStore
 class FakeCloud:
     def __init__(self) -> None:
         self.fail_upload = True
+        self.fail_revoke = False
         self.pair_calls = 0
+        self.pair_payloads: list[dict] = []
         self.uploads: list[dict] = []
         self.usage_uploads: list[dict] = []
         self.heartbeats: list[dict] = []
+        self.revoked_tokens: list[str] = []
 
     def pair(self, **kwargs) -> PairingResult:  # noqa: ANN003
         self.pair_calls += 1
+        self.pair_payloads.append(kwargs)
         return PairingResult("fhpb_fixture", 10, 20)
 
     def desired_snapshot(self, **kwargs) -> DesiredResult:  # noqa: ANN003
@@ -51,6 +55,11 @@ class FakeCloud:
     def heartbeat(self, **kwargs) -> None:  # noqa: ANN003
         self.heartbeats.append(kwargs["payload"])
 
+    def revoke(self, **kwargs) -> None:  # noqa: ANN003
+        if self.fail_revoke:
+            raise HttpRequestError("cloud unavailable")
+        self.revoked_tokens.append(kwargs["token"])
+
 
 class FakeProvider:
     def observe(self) -> ProviderSnapshot:
@@ -66,11 +75,14 @@ class FakeProvider:
 
 
 class SequenceProvider:
-    def __init__(self, snapshots: list[ProviderSnapshot]) -> None:
+    def __init__(self, snapshots: list[ProviderSnapshot | Exception]) -> None:
         self.snapshots = snapshots
 
     def observe(self) -> ProviderSnapshot:
-        return self.snapshots.pop(0)
+        value = self.snapshots.pop(0)
+        if isinstance(value, Exception):
+            raise value
+        return value
 
     def capabilities(self) -> list[str]:
         return ["read", "presence", "consumption"]
@@ -207,6 +219,162 @@ class EdgeRuntimeTest(unittest.TestCase):
             self.assertEqual([batch["sequence"] for batch in cloud.usage_uploads], [1, 2])
             self.assertEqual(store.load().usage_outbox, [])
             self.assertIsNone(store.load().pending_observation)
+
+    def test_rotation_preserves_binding_and_idle_reset_revokes_token(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            state_path = Path(directory) / "edge-state.json"
+            config = self._config(state_path)
+            cloud = FakeCloud()
+            cloud.fail_upload = False
+            store = StateStore(state_path)
+            state = store.load()
+            state.physical_printer_id = 10
+            state.material_system_id = 20
+            store.save(state)
+            runtime = EdgeRuntime(
+                config=config,
+                cloud=cloud,
+                provider=FakeProvider(),
+                store=store,
+                state=state,
+            )
+
+            runtime.run_cycle()
+
+            self.assertEqual(cloud.pair_payloads[0]["previous_physical_printer_id"], 10)
+            self.assertEqual(cloud.pair_payloads[0]["previous_material_system_id"], 20)
+            status = runtime.diagnostic_status()
+            self.assertTrue(status["paired"])
+            self.assertNotIn("fhpb_fixture", str(status))
+
+            runtime.reset_connection()
+
+            reset_state = store.load()
+            self.assertEqual(cloud.revoked_tokens, ["fhpb_fixture"])
+            self.assertIsNone(reset_state.bridge_token)
+            self.assertIsNone(reset_state.physical_printer_id)
+            self.assertIsNone(reset_state.material_system_id)
+            self.assertIsNone(reset_state.desired_snapshot)
+            self.assertEqual(reset_state.last_snapshot_sequence, 0)
+
+    def test_reset_refuses_to_discard_durable_usage_or_active_job(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            state_path = Path(directory) / "edge-state.json"
+            config = self._config(state_path)
+            cloud = FakeCloud()
+            store = StateStore(state_path)
+            state = store.load()
+            state.bridge_token = "fhpb_fixture"
+            state.physical_printer_id = 10
+            state.material_system_id = 20
+            state.last_usage_batch_sequence = 1
+            state.usage_outbox = [{"sequence": 1, "events": [{"event_id": "event-1"}]}]
+            state.usage_tracker = {"terminal_emitted": False}
+            store.save(state)
+            runtime = EdgeRuntime(
+                config=config,
+                cloud=cloud,
+                provider=FakeProvider(),
+                store=store,
+                state=state,
+            )
+
+            with self.assertRaisesRegex(StateError, "usage outbox, active usage tracker"):
+                runtime.reset_connection()
+
+            self.assertEqual(cloud.revoked_tokens, [])
+            self.assertEqual(store.load().usage_outbox[0]["sequence"], 1)
+
+    def test_reset_keeps_binding_when_cloud_revoke_is_unconfirmed(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            state_path = Path(directory) / "edge-state.json"
+            config = self._config(state_path)
+            cloud = FakeCloud()
+            cloud.fail_revoke = True
+            store = StateStore(state_path)
+            state = store.load()
+            state.bridge_token = "fhpb_fixture"
+            state.physical_printer_id = 10
+            state.material_system_id = 20
+            store.save(state)
+            runtime = EdgeRuntime(
+                config=config,
+                cloud=cloud,
+                provider=FakeProvider(),
+                store=store,
+                state=state,
+            )
+
+            with self.assertRaises(HttpRequestError):
+                runtime.reset_connection()
+
+            persisted = store.load()
+            self.assertEqual(persisted.bridge_token, "fhpb_fixture")
+            self.assertEqual(persisted.physical_printer_id, 10)
+            self.assertEqual(persisted.material_system_id, 20)
+
+    def test_provider_disconnect_and_shutdown_flush_safe_checkpoints(self) -> None:
+        def provider_snapshot(used: float, duration: float) -> ProviderSnapshot:
+            return ProviderSnapshot(
+                printer={"state": "printing"},
+                slots=[{"provider_index": 0, "active_feed": True}],
+                slot_topology_complete=True,
+                capabilities=["read", "presence", "consumption"],
+                usage={
+                    "state": "printing",
+                    "file_name": "lifecycle.gcode",
+                    "filament_used_mm": used,
+                    "print_duration_s": duration,
+                    "total_duration_s": duration,
+                },
+            )
+
+        with tempfile.TemporaryDirectory() as directory:
+            state_path = Path(directory) / "edge-state.json"
+            config = self._config(state_path)
+            cloud = FakeCloud()
+            cloud.fail_upload = False
+            store = StateStore(state_path)
+            provider = SequenceProvider(
+                [
+                    provider_snapshot(0, 0),
+                    provider_snapshot(40, 40),
+                    ProviderUnavailable("moonraker offline"),
+                    provider_snapshot(70, 70),
+                ]
+            )
+            runtime = EdgeRuntime(
+                config=config,
+                cloud=cloud,
+                provider=provider,
+                store=store,
+                state=store.load(),
+            )
+            runtime.run_cycle()
+            runtime.run_cycle()
+
+            with self.assertRaises(ProviderUnavailable):
+                runtime.run_cycle()
+            self.assertEqual(
+                cloud.usage_uploads[-1]["events"][0]["reasons"],
+                ["disconnect"],
+            )
+            self.assertEqual(
+                cloud.usage_uploads[-1]["events"][0]["items"][0]["used_length_mm"],
+                40,
+            )
+
+            runtime.shutdown()
+
+            self.assertEqual(
+                cloud.usage_uploads[-1]["events"][0]["reasons"],
+                ["shutdown"],
+            )
+            self.assertEqual(
+                cloud.usage_uploads[-1]["events"][0]["items"][0]["used_length_mm"],
+                30,
+            )
+            self.assertEqual(store.load().usage_outbox, [])
 
 
 if __name__ == "__main__":

@@ -37,6 +37,7 @@ from app.services.printer_bridge_service import (
     record_printer_bridge_usage_batch,
     require_printer_bridge_token,
     revoke_printer_bridge,
+    revoke_printer_bridge_for_user,
     validate_snapshot_context,
 )
 
@@ -75,6 +76,26 @@ async def connection_status(
     transport: Annotated[PrinterBridgeTransport, Query()] = "orca_plugin_lan",
 ) -> PrinterBridgeStatusResponse:
     return await get_printer_bridge_status(
+        db,
+        user_id=current_user.id,
+        physical_printer_id=physical_printer_id,
+        material_system_id=material_system_id,
+        transport=transport,
+    )
+
+
+@router.delete(
+    "/connections/{physical_printer_id}/{material_system_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def revoke_owned_connection(
+    physical_printer_id: int,
+    material_system_id: int,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    transport: Annotated[PrinterBridgeTransport, Query()] = "orca_plugin_lan",
+) -> None:
+    await revoke_printer_bridge_for_user(
         db,
         user_id=current_user.id,
         physical_printer_id=physical_printer_id,

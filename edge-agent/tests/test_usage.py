@@ -4,7 +4,7 @@ import unittest
 
 from filamenthub_edge.providers.base import ProviderSnapshot
 from filamenthub_edge.state import EdgeState
-from filamenthub_edge.usage import capture_usage_events
+from filamenthub_edge.usage import capture_pending_usage_event, capture_usage_events
 
 
 def snapshot(
@@ -135,6 +135,52 @@ class UsageTrackerTest(unittest.TestCase):
         self.assertEqual(
             event["items"][0],
             {"slot_index": 7, "spool_id": 55, "used_length_mm": 50.0},
+        )
+
+    def test_shutdown_flushes_latest_safe_counter_delta(self) -> None:
+        capture_usage_events(
+            self.state,
+            snapshot(state="printing", filament_used=0, print_duration=0, active_slot=0),
+            observed_at="2026-01-01T00:00:00+00:00",
+        )
+        event = capture_usage_events(
+            self.state,
+            snapshot(state="printing", filament_used=75, print_duration=90, active_slot=0),
+            observed_at="2026-01-01T00:01:30+00:00",
+            checkpoint_reason="shutdown",
+        )[0]
+
+        self.assertEqual(event["reasons"], ["shutdown"])
+        self.assertEqual(event["items"][0]["used_length_mm"], 75)
+        self.assertEqual(self.state.usage_tracker["pending_length_mm"], 0)
+
+    def test_disconnect_flushes_only_previously_attributed_pending_usage(self) -> None:
+        capture_usage_events(
+            self.state,
+            snapshot(state="printing", filament_used=0, print_duration=0, active_slot=0),
+            observed_at="2026-01-01T00:00:00+00:00",
+        )
+        capture_usage_events(
+            self.state,
+            snapshot(state="printing", filament_used=40, print_duration=40, active_slot=0),
+            observed_at="2026-01-01T00:00:40+00:00",
+        )
+        event = capture_pending_usage_event(
+            self.state,
+            observed_at="2026-01-01T00:00:45+00:00",
+            reason="disconnect",
+        )[0]
+
+        self.assertEqual(event["reasons"], ["disconnect"])
+        self.assertEqual(event["items"][0]["spool_id"], 99)
+        self.assertEqual(event["items"][0]["used_length_mm"], 40)
+        self.assertEqual(
+            capture_pending_usage_event(
+                self.state,
+                observed_at="2026-01-01T00:00:50+00:00",
+                reason="disconnect",
+            ),
+            [],
         )
 
 

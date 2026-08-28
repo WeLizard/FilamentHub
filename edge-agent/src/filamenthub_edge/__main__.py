@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import argparse
+import json
 import logging
+import signal
 from dataclasses import replace
+from threading import Event
 
 from .cloud import FilamentHubCloud
 from .config import EdgeConfig
@@ -16,7 +19,18 @@ from .state import StateStore
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="FilamentHub Edge runtime")
-    parser.add_argument("--once", action="store_true", help="run one synchronization cycle")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--once", action="store_true", help="run one synchronization cycle")
+    mode.add_argument(
+        "--status",
+        action="store_true",
+        help="print secret-free local synchronization status",
+    )
+    mode.add_argument(
+        "--reset-connection",
+        action="store_true",
+        help="revoke and clear an idle binding before pairing this Edge elsewhere",
+    )
     return parser
 
 
@@ -50,10 +64,26 @@ def main() -> None:
             store=store,
             state=state,
         )
-        if config.run_once:
+        if args.status:
+            print(json.dumps(runtime.diagnostic_status(), sort_keys=True))
+        elif args.reset_connection:
+            runtime.reset_connection()
+            logging.getLogger("filamenthub_edge").info("Edge connection was reset safely")
+        elif config.run_once:
             runtime.run_cycle()
         else:
-            runtime.run_forever()
+            stop_event = Event()
+
+            def request_stop(signum, frame) -> None:  # noqa: ANN001, ARG001
+                logging.getLogger("filamenthub_edge").info("Edge stop requested")
+                stop_event.set()
+
+            signal.signal(signal.SIGINT, request_stop)
+            signal.signal(signal.SIGTERM, request_stop)
+            try:
+                runtime.run_forever(stop_event=stop_event)
+            finally:
+                runtime.shutdown()
     except EdgeError as exc:
         logging.getLogger("filamenthub_edge").error("%s", exc)
         raise SystemExit(2) from None

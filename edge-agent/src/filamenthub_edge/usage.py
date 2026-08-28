@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from typing import Any
+from typing import Any, Literal
 
 from .providers.base import ProviderSnapshot
 from .state import EdgeState
@@ -16,6 +16,7 @@ TERMINAL_OUTCOMES = {
 }
 CHECKPOINT_INTERVAL_S = 300.0
 COUNTER_EPSILON_MM = 0.001
+LifecycleCheckpointReason = Literal["disconnect", "shutdown"]
 
 
 def _number(value: Any) -> float | None:
@@ -138,6 +139,7 @@ def capture_usage_events(
     snapshot: ProviderSnapshot,
     *,
     observed_at: str,
+    checkpoint_reason: LifecycleCheckpointReason | None = None,
 ) -> list[dict[str, Any]]:
     """Advance local evidence and return only unambiguous usage events.
 
@@ -239,6 +241,21 @@ def capture_usage_events(
         )
         pending = 0.0
         tracker["terminal_emitted"] = True
+    elif checkpoint_reason is not None and pending > COUNTER_EPSILON_MM:
+        events.append(
+            _event(
+                tracker,
+                event_type="checkpoint",
+                observed_at=observed_at,
+                route=current_route,
+                length_mm=pending,
+                reasons=[checkpoint_reason],
+                outcome=None,
+                duration_s=total_duration,
+            )
+        )
+        pending = 0.0
+        tracker["last_emitted_print_duration_s"] = current_print_duration
     elif (
         raw_state == "paused"
         and previous_state != "paused"
@@ -287,3 +304,39 @@ def capture_usage_events(
     tracker["pending_length_mm"] = pending
     state.usage_tracker = tracker
     return events
+
+
+def capture_pending_usage_event(
+    state: EdgeState,
+    *,
+    observed_at: str,
+    reason: LifecycleCheckpointReason,
+) -> list[dict[str, Any]]:
+    """Flush only evidence already attributed by a previous provider observation."""
+    tracker = state.usage_tracker
+    if (
+        not isinstance(tracker, dict)
+        or tracker.get("terminal_emitted") is True
+        or tracker.get("last_state") not in ACTIVE_STATES
+    ):
+        return []
+    route = tracker.get("route")
+    pending = _number(tracker.get("pending_length_mm"))
+    if not isinstance(route, dict) or pending is None or pending <= COUNTER_EPSILON_MM:
+        return []
+    event = _event(
+        tracker,
+        event_type="checkpoint",
+        observed_at=observed_at,
+        route=route,
+        length_mm=pending,
+        reasons=[reason],
+        outcome=None,
+        duration_s=_number(tracker.get("last_total_duration_s")),
+    )
+    tracker["pending_length_mm"] = 0.0
+    tracker["last_emitted_print_duration_s"] = float(
+        _number(tracker.get("last_print_duration_s")) or 0.0
+    )
+    state.usage_tracker = tracker
+    return [event]

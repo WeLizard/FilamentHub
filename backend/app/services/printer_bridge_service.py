@@ -295,9 +295,16 @@ async def pair_printer_bridge(
         or connector.material_system_id is None
     ):
         raise_error(401, ERR_PRINTER_BRIDGE_PAIRING_INVALID)
-
+    if payload.previous_physical_printer_id is not None and (
+        connector.physical_printer_id != payload.previous_physical_printer_id
+        or connector.material_system_id != payload.previous_material_system_id
+    ):
+        # A local Edge with durable retry data may rotate credentials for the
+        # same binding, but it must explicitly reset before moving elsewhere.
+        raise_error(409, ERR_PRINTER_BRIDGE_PAIRING_INVALID)
     token = _new_bridge_token()
     now = _now()
+    replacing_active_token = credential.token_hash is not None and credential.revoked_at is None
     credential.token_hash = _digest(token)
     credential.pairing_code_hash = None
     credential.pairing_expires_at = None
@@ -305,6 +312,8 @@ async def pair_printer_bridge(
     credential.revoked_at = None
     credential.source_instance_id = payload.source_instance_id
     credential.plugin_version = payload.plugin_version
+    credential.credential_generation = int(credential.credential_generation or 0) + 1
+    credential.rotated_at = now if replacing_active_token else credential.rotated_at
     connector.source_instance_id = payload.source_instance_id
     connector.capabilities = _safe_capabilities(payload.capabilities)
     connector.active = True
@@ -451,11 +460,56 @@ async def revoke_printer_bridge(
     db: AsyncSession,
     context: PrinterBridgeContext,
 ) -> None:
-    context.credential.token_hash = None
-    context.credential.pairing_code_hash = None
-    context.credential.pairing_expires_at = None
-    context.credential.revoked_at = _now()
-    context.connector.active = False
+    _mark_bridge_revoked(context.credential, context.connector)
+    await db.commit()
+
+
+def _mark_bridge_revoked(
+    credential: PrinterBridgeCredential,
+    connector: PhysicalPrinterConnector,
+) -> None:
+    credential.token_hash = None
+    credential.pairing_code_hash = None
+    credential.pairing_expires_at = None
+    credential.revoked_at = _now()
+    connector.active = False
+
+
+async def revoke_printer_bridge_for_user(
+    db: AsyncSession,
+    *,
+    user_id: int,
+    physical_printer_id: int,
+    material_system_id: int,
+    transport: PrinterBridgeTransport,
+) -> None:
+    """Idempotently revoke one owned bridge without requiring its device token."""
+    system = await _require_bridge_system(
+        db,
+        user_id=user_id,
+        physical_printer_id=physical_printer_id,
+        material_system_id=material_system_id,
+        transport=transport,
+    )
+    connector = await _find_bridge_connector(
+        db,
+        user_id=user_id,
+        physical_printer_id=physical_printer_id,
+        material_system_id=material_system_id,
+        provider=system.provider,
+        transport=transport,
+    )
+    if connector is None:
+        return
+    credential = await db.scalar(
+        select(PrinterBridgeCredential)
+        .where(PrinterBridgeCredential.connector_id == connector.id)
+        .with_for_update()
+    )
+    if credential is not None:
+        _mark_bridge_revoked(credential, connector)
+    else:
+        connector.active = False
     await db.commit()
 
 

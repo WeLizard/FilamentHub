@@ -26,3 +26,13 @@ docker run --restart unless-stopped --network host \
 The pairing code is needed only for the first successful connection. The
 revocable bridge token, cached desired state, pending observation, usage tracker,
 and bounded durable usage outbox are stored in `/data/edge-state.json`.
+Clear the one-time pairing code from the container or Home Assistant options
+after pairing. Supplying a new code rotates the credential for the same printer
+binding without discarding queued evidence.
+
+`filamenthub-edge --status` prints secret-free local diagnostics, including the
+pending observation and usage backlog. `filamenthub-edge --reset-connection`
+revokes an idle binding before moving the same Edge to another printer; it
+refuses to discard an active job or durable retry data. SIGTERM and a lost
+Moonraker connection produce a final safe usage checkpoint when evidence is
+available, leaving it in the outbox if the cloud is offline.

@@ -12,6 +12,7 @@ from app.models.material_slot_assignment import MaterialSlotAssignment
 from app.models.material_system import MaterialSlot, PhysicalPrinterConnector
 from app.models.preset_usage_event import PresetUsageEvent
 from app.models.print_job import PrintJob
+from app.models.printer_bridge_credential import PrinterBridgeCredential
 from app.models.printer_bridge_observation import (
     MaterialSlotObservation,
     PhysicalPrinterStatusObservation,
@@ -492,6 +493,131 @@ async def test_edge_token_rejects_provider_or_transport_confusion(
     )
     assert confused.status_code == 401
     assert confused.json()["detail"]["code"] == "ERR_PRINTER_BRIDGE_UNAUTHORIZED"
+
+
+@pytest.mark.asyncio
+async def test_edge_rotation_preserves_binding_and_owner_can_revoke(
+    auth_client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    first_printer = await auth_client.post(
+        "/api/v1/physical-printers",
+        json={"name": "Edge credential owner"},
+    )
+    first_printer_id = first_printer.json()["id"]
+    first_system_response = await auth_client.post(
+        f"/api/v1/physical-printers/{first_printer_id}/material-systems",
+        json={
+            "name": "First feed",
+            "kind": "single",
+            "provider": "happy_hare",
+            "slot_count": 1,
+        },
+    )
+    first_system_id = first_system_response.json()["material_systems"][0]["id"]
+    source_instance_id = "edge-credential-instance-0001"
+    first_code = await auth_client.post(
+        f"/api/v1/printer-bridge/connections/{first_printer_id}/{first_system_id}/pairing-code",
+        params={"transport": "edge_agent"},
+    )
+    first_pair = await auth_client.post(
+        "/api/v1/printer-bridge/pair",
+        json={
+            "pairing_code": first_code.json()["pairing_code"],
+            "provider": "happy_hare",
+            "transport": "edge_agent",
+            "source_instance_id": source_instance_id,
+            "plugin_version": "0.1.0-test",
+        },
+    )
+    first_headers = {
+        "X-FilamentHub-Bridge-Token": first_pair.json()["bridge_token"]
+    }
+
+    rotation_code = await auth_client.post(
+        f"/api/v1/printer-bridge/connections/{first_printer_id}/{first_system_id}/pairing-code",
+        params={"transport": "edge_agent"},
+    )
+    rotated = await auth_client.post(
+        "/api/v1/printer-bridge/pair",
+        json={
+            "pairing_code": rotation_code.json()["pairing_code"],
+            "provider": "happy_hare",
+            "transport": "edge_agent",
+            "source_instance_id": source_instance_id,
+            "plugin_version": "0.1.0-test",
+            "previous_physical_printer_id": first_printer_id,
+            "previous_material_system_id": first_system_id,
+        },
+    )
+    assert rotated.status_code == 200
+    credential = await db_session.scalar(
+        select(PrinterBridgeCredential).join(
+            PhysicalPrinterConnector,
+            PhysicalPrinterConnector.id == PrinterBridgeCredential.connector_id,
+        ).where(
+            PhysicalPrinterConnector.physical_printer_id == first_printer_id,
+            PhysicalPrinterConnector.transport == "edge_agent",
+        )
+    )
+    assert credential is not None
+    assert credential.credential_generation == 2
+    assert credential.rotated_at is not None
+    rejected_old_token = await auth_client.get(
+        "/api/v1/printer-bridge/snapshot",
+        headers=first_headers,
+    )
+    assert rejected_old_token.status_code == 401
+
+    second_printer = await auth_client.post(
+        "/api/v1/physical-printers",
+        json={"name": "Wrong rebind target"},
+    )
+    second_printer_id = second_printer.json()["id"]
+    second_system_response = await auth_client.post(
+        f"/api/v1/physical-printers/{second_printer_id}/material-systems",
+        json={
+            "name": "Second feed",
+            "kind": "single",
+            "provider": "happy_hare",
+            "slot_count": 1,
+        },
+    )
+    second_system_id = second_system_response.json()["material_systems"][0]["id"]
+    second_code = await auth_client.post(
+        f"/api/v1/printer-bridge/connections/{second_printer_id}/{second_system_id}/pairing-code",
+        params={"transport": "edge_agent"},
+    )
+    accidental_rebind = await auth_client.post(
+        "/api/v1/printer-bridge/pair",
+        json={
+            "pairing_code": second_code.json()["pairing_code"],
+            "provider": "happy_hare",
+            "transport": "edge_agent",
+            "source_instance_id": source_instance_id,
+            "plugin_version": "0.1.0-test",
+            "previous_physical_printer_id": first_printer_id,
+            "previous_material_system_id": first_system_id,
+        },
+    )
+    assert accidental_rebind.status_code == 409
+    assert accidental_rebind.json()["detail"]["code"] == "ERR_PRINTER_BRIDGE_PAIRING_INVALID"
+
+    revoked = await auth_client.delete(
+        f"/api/v1/printer-bridge/connections/{first_printer_id}/{first_system_id}",
+        params={"transport": "edge_agent"},
+    )
+    assert revoked.status_code == 204
+    revoked_again = await auth_client.delete(
+        f"/api/v1/printer-bridge/connections/{first_printer_id}/{first_system_id}",
+        params={"transport": "edge_agent"},
+    )
+    assert revoked_again.status_code == 204
+    rejected_rotated_token = await auth_client.get(
+        "/api/v1/printer-bridge/snapshot",
+        headers={"X-FilamentHub-Bridge-Token": rotated.json()["bridge_token"]},
+    )
+    assert rejected_rotated_token.status_code == 401
 
 
 @pytest.mark.asyncio
