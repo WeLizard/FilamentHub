@@ -1,9 +1,19 @@
 import { useEffect, useState } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { AlertTriangle, Check, Clock, Copy, Loader2, RefreshCw, X } from 'lucide-react';
+import {
+  Activity,
+  AlertTriangle,
+  Check,
+  Clock,
+  Copy,
+  Loader2,
+  RefreshCw,
+  ShieldCheck,
+  X,
+} from 'lucide-react';
 
-import { devicesAPI } from '../../../api/client';
+import { devicesAPI, printerBridgeAPI } from '../../../api/client';
 import type { UserSpool } from '../../../api/client';
 import {
   isPluginEmbed,
@@ -20,6 +30,187 @@ import { toast } from '../../Toast';
 import { ModalOverlay } from '../../ModalOverlay';
 import { translateApiError } from '../../../utils/translateApiError';
 import type { AdapterViewContext, FeedAdapter } from './types';
+
+const EDGE_TRANSPORT = 'edge_agent' as const;
+
+function HappyHareEdgeSetup({
+  printer,
+  system,
+}: Pick<AdapterViewContext, 'printer' | 'system'>) {
+  const { t, i18n } = useTranslation();
+  const [issuing, setIssuing] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [pairingCode, setPairingCode] = useState<string | null>(null);
+  const [pairingWasPending, setPairingWasPending] = useState(false);
+  const [pollDeadline, setPollDeadline] = useState(() => Date.now() + 60_000);
+
+  const statusQuery = useQuery({
+    queryKey: ['printer-bridge-status', printer.id, system.id, EDGE_TRANSPORT],
+    queryFn: () => printerBridgeAPI.status(printer.id, system.id, EDGE_TRANSPORT),
+    staleTime: 10_000,
+    refetchOnWindowFocus: true,
+    refetchInterval: (query) => {
+      const status = query.state.data;
+      const pairingPending = Boolean(
+        status?.pairing_expires_at
+          && Date.parse(status.pairing_expires_at) > Date.now(),
+      );
+      const awaitingFirstData = Boolean(status?.paired && !status.last_seen_at);
+      return (pairingPending || awaitingFirstData) && Date.now() < pollDeadline
+        ? 5_000
+        : false;
+    },
+  });
+  const status = statusQuery.data;
+  const pairingPending = Boolean(
+    status?.pairing_expires_at
+      && Date.parse(status.pairing_expires_at) > Date.now(),
+  );
+  const hasReceivedData = Boolean(status?.paired && status.last_seen_at);
+  const awaitingFirstData = Boolean(status?.paired && !status.last_seen_at);
+
+  useEffect(() => {
+    if (!pairingCode) return;
+    if (pairingPending) {
+      setPairingWasPending(true);
+    } else if (pairingWasPending) {
+      setPairingCode(null);
+      setCopied(false);
+      setPairingWasPending(false);
+    }
+  }, [pairingCode, pairingPending, pairingWasPending]);
+
+  const issuePairingCode = async () => {
+    setIssuing(true);
+    try {
+      const issued = await printerBridgeAPI.issuePairingCode(
+        printer.id,
+        system.id,
+        EDGE_TRANSPORT,
+      );
+      const expiresAt = Date.parse(issued.expires_at);
+      setPollDeadline(expiresAt);
+      setPairingWasPending(false);
+      await statusQuery.refetch();
+      setPairingCode(issued.pairing_code);
+      setCopied(false);
+    } catch (err: any) {
+      toast.error(translateApiError(t, err?.response?.data?.detail, t('common.error')));
+    } finally {
+      setIssuing(false);
+    }
+  };
+
+  const copyPairingCode = async () => {
+    if (!pairingCode) return;
+    try {
+      await navigator.clipboard.writeText(pairingCode);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1800);
+    } catch {
+      toast.error(t('common.error'));
+    }
+  };
+
+  const lastContact = status?.last_seen_at
+    ? new Date(status.last_seen_at).toLocaleString(i18n.language)
+    : null;
+
+  return (
+    <div className="mb-3 rounded-lg border border-sky-400/20 bg-sky-500/[0.07] px-3 py-2">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <Activity className="h-3.5 w-3.5 shrink-0 text-sky-300" />
+        <span className="text-xs font-medium text-sky-100">
+          {t('presetSlots.happyHare.edge.title')}
+        </span>
+        {statusQuery.isLoading ? (
+          <span className="inline-flex items-center gap-1 text-[11px] text-gray-400">
+            <Loader2 className="h-3 w-3 animate-spin" />
+            {t('presetSlots.happyHare.edge.checking')}
+          </span>
+        ) : statusQuery.isError ? (
+          <span className="text-[11px] text-red-300">
+            {t('presetSlots.happyHare.edge.statusUnavailable')}
+          </span>
+        ) : hasReceivedData ? (
+          <span className="inline-flex items-center gap-1 text-[11px] text-emerald-300">
+            <Check className="h-3 w-3" />
+            {t('presetSlots.happyHare.edge.connected')}
+          </span>
+        ) : awaitingFirstData ? (
+          <span className="inline-flex items-center gap-1 text-[11px] text-amber-200">
+            <Clock className="h-3 w-3" />
+            {t('presetSlots.happyHare.edge.awaitingData')}
+          </span>
+        ) : pairingPending ? (
+          <span className="inline-flex items-center gap-1 text-[11px] text-amber-200">
+            <Clock className="h-3 w-3" />
+            {t('presetSlots.happyHare.edge.waiting')}
+          </span>
+        ) : (
+          <span className="text-[11px] text-gray-500">
+            {t('presetSlots.happyHare.edge.notConnected')}
+          </span>
+        )}
+
+        <button
+          type="button"
+          onClick={statusQuery.isError ? () => statusQuery.refetch() : issuePairingCode}
+          disabled={issuing || statusQuery.isLoading}
+          className="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-sky-300/20 bg-sky-300/10 px-2.5 py-1 text-[11px] font-medium text-sky-100 transition hover:bg-sky-300/20 disabled:opacity-40"
+        >
+          {issuing && <Loader2 className="h-3 w-3 animate-spin" />}
+          {t(statusQuery.isError
+            ? 'presetSlots.happyHare.edge.retry'
+            : status?.paired
+              ? 'presetSlots.happyHare.edge.replaceCode'
+              : 'presetSlots.happyHare.edge.createCode')}
+        </button>
+      </div>
+
+      <p className="mt-1 text-[11px] leading-4 text-gray-400">
+        {t('presetSlots.happyHare.edge.description')}
+      </p>
+
+      {lastContact && (
+        <p className="mt-1 text-[11px] text-gray-500">
+          {t('presetSlots.happyHare.edge.lastContact', { date: lastContact })}
+        </p>
+      )}
+
+      {pairingCode && (
+        <div className="mt-2 rounded-lg border border-white/10 bg-black/20 p-2.5">
+          <span className="text-[11px] font-medium text-gray-300">
+            {t('presetSlots.happyHare.edge.codeLabel')}
+          </span>
+          <div className="mt-1 flex flex-wrap items-center gap-2">
+            <code className="rounded border border-white/10 bg-black/30 px-2 py-1 text-sm tracking-wide text-white">
+              {pairingCode}
+            </code>
+            <button
+              type="button"
+              onClick={copyPairingCode}
+              className="inline-flex items-center gap-1 rounded px-2 py-1 text-[11px] text-sky-200 hover:bg-white/10"
+            >
+              {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+              {t(copied
+                ? 'presetSlots.happyHare.edge.copied'
+                : 'presetSlots.happyHare.edge.copyCode')}
+            </button>
+          </div>
+          <p className="mt-1.5 text-[11px] leading-4 text-gray-400">
+            {t('presetSlots.happyHare.edge.codeHint')}
+          </p>
+        </div>
+      )}
+
+      <p className="mt-2 flex items-start gap-1.5 text-[11px] leading-4 text-sky-100/65">
+        <ShieldCheck className="mt-0.5 h-3 w-3 shrink-0" />
+        {t('presetSlots.happyHare.edge.security')}
+      </p>
+    </div>
+  );
+}
 
 function HostnameField({ printer }: { printer: AdapterViewContext['printer'] }) {
   const { t } = useTranslation();
@@ -604,8 +795,15 @@ function HappyHareRefreshAction({
 
 function HappyHareSetup(context: AdapterViewContext) {
   const pluginAvailable = useHappyHarePlugin();
-  if (pluginAvailable !== false || context.printer.printer_hostname) return null;
-  return <PairingStep gates={context.gates} hasContact={context.printer.reports_feed} />;
+  const needsLegacyPairing = pluginAvailable === false && !context.printer.printer_hostname;
+  return (
+    <>
+      <HappyHareEdgeSetup printer={context.printer} system={context.system} />
+      {needsLegacyPairing && (
+        <PairingStep gates={context.gates} hasContact={context.printer.reports_feed} />
+      )}
+    </>
+  );
 }
 
 function HappyHareActions(context: AdapterViewContext) {

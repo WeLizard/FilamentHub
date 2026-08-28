@@ -52,7 +52,13 @@ let printerBridgeStatusForQuery: PrinterBridgeStatus = {
   paired: false,
   pairing_expires_at: null,
   last_seen_at: null,
+  last_observation_at: null,
+  last_snapshot_sequence: null,
+  last_snapshot_source_instance_id: null,
   source_instance_id: null,
+  provider: 'bambu',
+  transport: 'orca_plugin_lan',
+  capabilities: [],
 };
 let octoprintBridgeStatusForQuery: OctoPrintBridgeStatus = {
   configured: true,
@@ -173,7 +179,13 @@ describe('PresetSlotsPanel', () => {
       paired: false,
       pairing_expires_at: null,
       last_seen_at: null,
+      last_observation_at: null,
+      last_snapshot_sequence: null,
+      last_snapshot_source_instance_id: null,
       source_instance_id: null,
+      provider: 'bambu',
+      transport: 'orca_plugin_lan',
+      capabilities: [],
     };
     octoprintBridgeStatusForQuery = {
       configured: true,
@@ -427,7 +439,13 @@ describe('PresetSlotsPanel', () => {
       paired: true,
       pairing_expires_at: null,
       last_seen_at: null,
+      last_observation_at: null,
+      last_snapshot_sequence: null,
+      last_snapshot_source_instance_id: null,
       source_instance_id: 'fixture-instance',
+      provider: 'bambu',
+      transport: 'orca_plugin_lan',
+      capabilities: ['read', 'presence'],
     };
 
     const first = render(<>{feedAdapterFor('bambu').renderSetup?.(context)}</>);

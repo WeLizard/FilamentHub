@@ -3796,8 +3796,16 @@ export interface PrinterBridgeStatus {
   paired: boolean;
   pairing_expires_at: string | null;
   last_seen_at: string | null;
+  last_observation_at: string | null;
+  last_snapshot_sequence: number | null;
+  last_snapshot_source_instance_id: string | null;
   source_instance_id: string | null;
+  provider: string;
+  transport: PrinterBridgeTransport;
+  capabilities: string[];
 }
+
+export type PrinterBridgeTransport = 'orca_plugin_lan' | 'edge_agent';
 
 export interface PrinterBridgePairingCode {
   pairing_code: string;
@@ -4159,9 +4167,11 @@ export const printerBridgeAPI = {
   status: async (
     physicalPrinterId: number,
     materialSystemId: number,
+    transport: PrinterBridgeTransport = 'orca_plugin_lan',
   ): Promise<PrinterBridgeStatus> => {
     const response = await api.get<PrinterBridgeStatus>(
       `/printer-bridge/connections/${physicalPrinterId}/${materialSystemId}`,
+      { params: { transport } },
     );
     return response.data;
   },
@@ -4169,9 +4179,12 @@ export const printerBridgeAPI = {
   issuePairingCode: async (
     physicalPrinterId: number,
     materialSystemId: number,
+    transport: PrinterBridgeTransport = 'orca_plugin_lan',
   ): Promise<PrinterBridgePairingCode> => {
     const response = await api.post<PrinterBridgePairingCode>(
       `/printer-bridge/connections/${physicalPrinterId}/${materialSystemId}/pairing-code`,
+      undefined,
+      { params: { transport } },
     );
     return response.data;
   },
