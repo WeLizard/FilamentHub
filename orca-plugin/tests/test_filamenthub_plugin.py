@@ -2255,6 +2255,27 @@ def test_active_filaments_use_only_saved_user_files(plugin_module, monkeypatch, 
     }]
 
 
+def test_local_profile_locator_lowercases_independently_of_platform_normcase(
+    plugin_module, monkeypatch, tmp_path
+):
+    monkeypatch.setattr(plugin_module, "DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(
+        plugin_module,
+        "resolve_user_preset_folder",
+        lambda: "default",
+    )
+    monkeypatch.setattr(plugin_module.os.path, "normcase", lambda value: value)
+
+    preset_file = (
+        tmp_path / "user" / "default" / "filament" / "Local PETG.json"
+    )
+    assert plugin_module._local_profile_locator_from_path(
+        preset_file,
+        "filament",
+        "Local PETG",
+    ) == "file:filament/local petg.json"
+
+
 def test_save_as_user_filament_becomes_a_new_draft(plugin_module, monkeypatch, tmp_path):
     managed_path = (
         tmp_path
