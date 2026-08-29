@@ -27,6 +27,14 @@ AsyncSessionLocal = async_sessionmaker(
     autoflush=False,
 )
 
+# Every Preset ORM mutation, including Orca batch import, must pass through the
+# same before/after classifier and durable queue in its own transaction.
+from app.services.weighted_preset_reconciliation import (  # noqa: E402
+    install_weighted_preset_reconciliation,
+)
+
+install_weighted_preset_reconciliation()
+
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     """
@@ -41,9 +49,19 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
         try:
             yield session
             await session.commit()
+            from app.services.weighted_preset_reconciliation import (
+                process_weighted_preset_refreshes_best_effort,
+                take_committed_weighted_refresh_ids,
+            )
+
+            affected_ids = take_committed_weighted_refresh_ids(session)
+            if affected_ids:
+                await process_weighted_preset_refreshes_best_effort(
+                    session,
+                    affected_ids,
+                )
         except Exception:
             await session.rollback()
             raise
         finally:
             await session.close()
-

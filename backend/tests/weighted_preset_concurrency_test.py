@@ -1,15 +1,19 @@
-from unittest.mock import AsyncMock
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.endpoints import presets as presets_endpoint
 from app.models.brand import Brand
 from app.models.filament import Filament
 from app.models.preset import Preset, PresetModerationStatus
+from app.models.weighted_preset_refresh_job import WeightedPresetRefreshJob
 from app.services import weighted_preset_service
+from app.services.weighted_preset_reconciliation import (
+    enqueue_weighted_preset_refreshes,
+    process_weighted_preset_refreshes_best_effort,
+)
 
 
 async def _filament(db: AsyncSession, suffix: str) -> Filament:
@@ -111,14 +115,56 @@ async def test_weighted_service_is_idempotent_and_never_commits(
 
 
 @pytest.mark.asyncio
-async def test_best_effort_wrapper_rolls_back_after_recompute_failure(
+async def test_immediate_failure_keeps_committed_mutation_and_durable_retry(
+    db_session: AsyncSession,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    failure = AsyncMock(side_effect=RuntimeError("recompute failed"))
-    monkeypatch.setattr(presets_endpoint, "create_or_update_weighted_preset", failure)
-    db = AsyncMock(spec=AsyncSession)
+    filament = await _filament(db_session, "retry")
+    filament.name = "Committed before derived refresh"
+    await enqueue_weighted_preset_refreshes(db_session, {filament.id})
+    await db_session.commit()
 
-    await presets_endpoint._refresh_weighted_preset_best_effort(42, db)
+    async def failure(*_args, **_kwargs):
+        raise RuntimeError("recompute failed")
 
-    db.commit.assert_not_awaited()
-    db.rollback.assert_awaited_once_with()
+    monkeypatch.setattr(
+        weighted_preset_service,
+        "create_or_update_weighted_preset",
+        failure,
+    )
+
+    result = await process_weighted_preset_refreshes_best_effort(
+        db_session,
+        {filament.id},
+    )
+
+    assert result.failed == 1
+    filament_id = filament.id
+    db_session.expire_all()
+    persisted = await db_session.get(Filament, filament_id)
+    job = await db_session.get(WeightedPresetRefreshJob, filament_id)
+    assert persisted is not None
+    assert persisted.name == "Committed before derived refresh"
+    assert job is not None
+    assert job.attempt_count == 1
+    assert job.last_error == "RuntimeError"
+    assert job.next_attempt_at > job.requested_at
+
+    job.next_attempt_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+    await db_session.commit()
+
+    async def success(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(
+        weighted_preset_service,
+        "create_or_update_weighted_preset",
+        success,
+    )
+    retry = await process_weighted_preset_refreshes_best_effort(
+        db_session,
+        {filament_id},
+    )
+
+    assert retry.succeeded == 1
+    assert await db_session.get(WeightedPresetRefreshJob, filament_id) is None

@@ -81,34 +81,10 @@ from app.services.orcaslicer_preset_contract import (
 from app.services.preset_matcher import get_recommended_presets
 from app.services.preset_moderation import moderate_preset
 from app.services.preset_recommender import get_recommended_preset_values
-from app.services.weighted_preset_service import create_or_update_weighted_preset
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/presets", tags=["presets"])
-
-
-async def _refresh_weighted_preset_best_effort(
-    filament_id: int | None,
-    db: AsyncSession,
-) -> None:
-    """Recompute after the primary mutation without poisoning its DB session."""
-    if filament_id is None:
-        return
-    try:
-        await create_or_update_weighted_preset(
-            filament_id,
-            db,
-            min_presets_count=4,
-        )
-        await db.commit()
-    except Exception:
-        await db.rollback()
-        logger.warning(
-            "Failed to update weighted preset for filament %s",
-            filament_id,
-            exc_info=True,
-        )
 
 
 def _serialize_moderation_reason(reason: Any) -> str | None:
@@ -191,8 +167,6 @@ async def _finish_created_preset(
         user_id=current_user.id,
     )
     await db.commit()
-
-    await _refresh_weighted_preset_best_effort(preset.filament_id, db)
 
     result = await db.execute(
         select(Preset)
@@ -785,7 +759,11 @@ async def update_preset(
 
     # Определяем filament_id: из update_data (если передан) или из preset
     # Для черновиков filament_id может быть None, и мы его обновляем через update_data
-    target_filament_id = update_data.get("filament_id") or preset.filament_id
+    target_filament_id = (
+        update_data["filament_id"]
+        if "filament_id" in update_data
+        else preset.filament_id
+    )
     target_active = update_data.get("active", preset.active)
     if target_active and target_filament_id is None:
         raise_error(400, ERR_PRESET_FILAMENT_REQUIRED)
@@ -907,10 +885,7 @@ async def update_preset(
 
     await db.commit()
 
-    # Обновляем взвешенный пресет для этого филамента (если достаточно пресетов и есть filament_id)
     if preset.filament_id:
-        await _refresh_weighted_preset_best_effort(preset.filament_id, db)
-
         # Создаем уведомления для пользователей, у которых сохранен этот пресет
         try:
             await notify_preset_updated(
@@ -961,10 +936,6 @@ async def delete_preset(
 
     await db.delete(preset)
     await db.commit()
-
-    # Recompute before notifications so a failed optional notification write
-    # cannot leave the shared session unusable for the weighted transaction.
-    await _refresh_weighted_preset_best_effort(filament_id, db)
 
     # Создаем уведомления для пользователей, у которых сохранен этот пресет
     try:

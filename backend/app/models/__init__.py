@@ -107,6 +107,7 @@ from app.models.user_legal_acceptance import UserLegalAcceptance
 from app.models.user_printer_device import UserPrinterDevice
 from app.models.user_saved_preset import UserSavedPreset, UserSavedPresetTarget
 from app.models.user_spool import UserSpool, UserSpoolState
+from app.models.weighted_preset_refresh_job import WeightedPresetRefreshJob
 from app.models.wiki_article import (
     WikiArticle,
     WikiArticleProvenance,
@@ -252,6 +253,7 @@ __all__ = [
     "UserSavedPresetTarget",
     "UserSpool",
     "UserSpoolState",
+    "WeightedPresetRefreshJob",
     "WikiArticle",
     "WikiArticleProvenance",
     "WikiArticleFeedback",

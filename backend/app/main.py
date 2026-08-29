@@ -99,6 +99,9 @@ async def _start_background_tasks(application: FastAPI) -> None:
         sweep_abandoned_provisional_accounts,
     )
     from app.services.subscription_service import refresh_settings_cache
+    from app.services.weighted_preset_reconciliation import (
+        run_weighted_preset_refresh_worker,
+    )
 
     try:
         async with AsyncSessionLocal() as db:
@@ -139,6 +142,11 @@ async def _start_background_tasks(application: FastAPI) -> None:
     application.state.inbound_mail_task = asyncio.create_task(
         run_inbound_mail_poller(AsyncSessionLocal),
         name="inbound-mail-poller",
+    )
+
+    application.state.weighted_preset_refresh_task = asyncio.create_task(
+        run_weighted_preset_refresh_worker(AsyncSessionLocal),
+        name="weighted-preset-refresh-worker",
     )
 
     # The document renderer is a heavy native library loaded on first use, which
@@ -191,6 +199,7 @@ async def _stop_background_tasks(application: FastAPI) -> None:
         "auth_state_sweeper_task",
         "qr_binding_sweeper_task",
         "inbound_mail_task",
+        "weighted_preset_refresh_task",
         "pdf_warmup_task",
         "qr_repair_task",
     ):
