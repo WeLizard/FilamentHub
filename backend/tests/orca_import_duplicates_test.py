@@ -163,6 +163,80 @@ async def test_repeated_import_of_one_profile_updates_instead_of_copying(
 
 
 @pytest.mark.asyncio
+async def test_machine_and_process_reimports_keep_opaque_untransported_settings(
+    client: AsyncClient, db_session: AsyncSession
+):
+    headers = await _register_and_login(client, "orca-opaque-profile-reimport")
+    cases = (
+        (
+            "printer-profiles",
+            PrinterProfile,
+            "orca-opaque-machine",
+            "Opaque machine 0.4",
+            {
+                "nozzle_diameter": ["0.4"],
+                "future_scalar": "old",
+                "future_object": {"keep": [1, 2]},
+                "future_nullable": None,
+            },
+        ),
+        (
+            "print-profiles",
+            PrintProfile,
+            "orca-opaque-process",
+            "Opaque process 0.20",
+            {
+                "layer_height": "0.20",
+                "future_scalar": "old",
+                "future_object": {"keep": [1, 2]},
+                "future_nullable": None,
+            },
+        ),
+    )
+
+    for endpoint, model, external_id, name, settings in cases:
+        first = await client.post(
+            f"/api/v1/orcaslicer/{endpoint}/import",
+            headers=headers,
+            json={
+                "profiles": [
+                    {
+                        "external_id": external_id,
+                        "name": name,
+                        "orcaslicer_settings": settings,
+                    }
+                ]
+            },
+        )
+        assert first.status_code == 200, first.text
+        assert first.json()["results"][0]["status"] == "created"
+
+        second = await client.post(
+            f"/api/v1/orcaslicer/{endpoint}/import",
+            headers=headers,
+            json={
+                "profiles": [
+                    {
+                        "external_id": external_id,
+                        "name": name,
+                        "orcaslicer_settings": {"future_scalar": "edited"},
+                    }
+                ]
+            },
+        )
+        assert second.status_code == 200, second.text
+        assert second.json()["results"][0]["status"] == "updated"
+
+        profile = await db_session.scalar(
+            select(model).where(model.external_id == external_id)
+        )
+        await db_session.refresh(profile)
+        assert profile.orcaslicer_settings["future_scalar"] == "edited"
+        assert profile.orcaslicer_settings["future_object"] == {"keep": [1, 2]}
+        assert profile.orcaslicer_settings["future_nullable"] is None
+
+
+@pytest.mark.asyncio
 async def test_creating_a_profile_by_hand_reports_a_taken_identifier(
     client: AsyncClient, db_session: AsyncSession
 ):

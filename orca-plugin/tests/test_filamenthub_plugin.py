@@ -1900,6 +1900,71 @@ def test_printer_recovery_rejects_content_hash_mismatch(plugin_module):
         plugin_module._recovery_bundle_journal_artifacts(recovery)
 
 
+def test_invalid_recovery_keeps_last_good_and_a_valid_retry_can_replace_it(
+    plugin_module, monkeypatch, tmp_path
+):
+    bundle_root = tmp_path / "bundle"
+    state_file = tmp_path / "storage" / ".fh_printer_bundles.json"
+    source_id = "source-instance-123456"
+    account_id = "11111111-1111-4111-8111-111111111111"
+    monkeypatch.setattr(plugin_module, "user_bundle_dir", lambda: str(bundle_root))
+    monkeypatch.setattr(plugin_module, "PRINTER_BUNDLE_STATE_FILE", str(state_file))
+    monkeypatch.setattr(plugin_module, "plugin_source_instance_id", lambda: source_id)
+    monkeypatch.setattr(
+        plugin_module,
+        "managed_preset_quarantine_dir",
+        lambda: str(tmp_path / "quarantine"),
+    )
+    monkeypatch.setattr(
+        plugin_module,
+        "load_profile_identity_registry",
+        lambda: {"version": 1, "account_id": account_id, "profiles": {}},
+    )
+    monkeypatch.setattr(
+        plugin_module, "save_profile_identity_registry", lambda _value: True
+    )
+
+    def recovery_for(profile):
+        return {
+            "format": "filamenthub.orcaslicer.printer-recovery",
+            "version": 1,
+            "scope": {
+                "owner_user_id": 7,
+                "source_instance_id": source_id,
+                "account_id": account_id,
+            },
+            "machine_profiles": [],
+            "process_profiles": [
+                {
+                    "id": 77,
+                    "name": profile["name"],
+                    "profile": profile,
+                    "content_hash": plugin_module._managed_profile_content_hash(
+                        profile
+                    ),
+                }
+            ],
+        }
+
+    good = {
+        "name": "Safe process",
+        "type": "process",
+        "layer_height": "0.20",
+    }
+    plugin_module.install_printer_recovery(recovery_for(good))
+    live_path = bundle_root / "process" / "Safe process.json"
+    last_good = live_path.read_bytes()
+
+    invalid = dict(good, layer_height={"value": 0.28})
+    with pytest.raises(ValueError, match="cannot load"):
+        plugin_module.install_printer_recovery(recovery_for(invalid))
+    assert live_path.read_bytes() == last_good
+
+    retry = dict(good, layer_height="0.28")
+    plugin_module.install_printer_recovery(recovery_for(retry))
+    assert json.loads(live_path.read_text(encoding="utf-8"))["layer_height"] == "0.28"
+
+
 def test_managed_artifact_quarantine_rolls_back_partial_move(
     plugin_module, monkeypatch, tmp_path
 ):

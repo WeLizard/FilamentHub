@@ -14,6 +14,7 @@ import pytest
 
 from app.models.filament import Filament
 from app.models.preset import Preset
+from app.services.orca_transport import merge_orca_roundtrip_settings
 from app.services.orcaslicer_exporter import generate_profile_info, preset_to_orcaslicer_json
 from app.services.profile_validator import (
     orca_transport_violations,
@@ -45,6 +46,49 @@ def _preset(orcaslicer_settings: dict) -> Preset:
         active=True,
         orcaslicer_settings=orcaslicer_settings,
     )
+
+
+def test_roundtrip_merge_preserves_only_values_the_artifact_could_not_carry():
+    stored = {
+        "future_scalar": "old",
+        "future_vector": ["old"],
+        "future_number": 7.25,
+        "future_object": {"mode": "adaptive", "levels": [1, 3]},
+        "future_nullable": None,
+        "enrichment": {"material_type": "PETG"},
+        "derived_from_external_id": "private-local-id",
+    }
+    incoming = {
+        "future_scalar": "new",
+        "future_vector": ["new"],
+    }
+    stored_snapshot = deepcopy(stored)
+    incoming_snapshot = deepcopy(incoming)
+
+    merged = merge_orca_roundtrip_settings(stored, incoming, "filament")
+
+    assert merged == {
+        "future_scalar": "new",
+        "future_vector": ["new"],
+        "future_number": 7.25,
+        "future_object": {"mode": "adaptive", "levels": [1, 3]},
+        "future_nullable": None,
+        "enrichment": {"material_type": "PETG"},
+        "derived_from_external_id": "private-local-id",
+    }
+    assert stored == stored_snapshot
+    assert incoming == incoming_snapshot
+
+
+def test_roundtrip_merge_accepts_deletion_of_an_unknown_transportable_field():
+    merged = merge_orca_roundtrip_settings(
+        {"future_scalar": "sent to Orca", "future_object": {"keep": True}},
+        {},
+        "filament",
+    )
+
+    assert "future_scalar" not in merged
+    assert merged["future_object"] == {"keep": True}
 
 
 @pytest.mark.asyncio

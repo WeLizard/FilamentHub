@@ -85,6 +85,7 @@ from app.services.notification_service import create_notification
 from app.services.orca_import_guard import hold_account_import_lock
 from app.services.orca_schema_observer import observe_orca_schema_fields
 from app.services.orca_settings_security import sanitize_orca_settings_for_storage
+from app.services.orca_transport import merge_orca_roundtrip_settings
 from app.services.orcaslicer_preset_contract import (
     extract_structured_filament_values,
     is_allowed_orca_preset_name,
@@ -1484,7 +1485,11 @@ async def _upsert_printer_profile(
             profile.extra_metadata = payload.extra_metadata
         if payload.orcaslicer_settings:
             # Сохраняем метки FilamentHub при обновлении
-            updated_settings = dict(payload.orcaslicer_settings)
+            updated_settings = merge_orca_roundtrip_settings(
+                profile.orcaslicer_settings,
+                payload.orcaslicer_settings,
+                "machine",
+            )
 
             # Always ensure bundle_id is present and correct (regenerated from profile.id —
             # it's the canonical identity and may have been stripped/changed in the payload).
@@ -1887,7 +1892,11 @@ async def _upsert_print_profile(
         profile.compatible_filaments = compatible_filaments
         if payload.orcaslicer_settings:
             # Сохраняем метки FilamentHub при обновлении
-            updated_settings = dict(payload.orcaslicer_settings)
+            updated_settings = merge_orca_roundtrip_settings(
+                profile.orcaslicer_settings,
+                payload.orcaslicer_settings,
+                "process",
+            )
 
             # Приоритет: метки из payload.orcaslicer_settings (если есть), иначе существующие метки
             if "fhub_id" in updated_settings and "fhub_source" in updated_settings:
@@ -3334,7 +3343,11 @@ async def _upsert_filament_preset(
                 # Сохраняем метки FilamentHub при обновлении
                 # Если это черновик - сохраняем fhub_draft_id
                 # Если это наш пресет - сохраняем fhub_id и fhub_source
-                updated_settings = dict(payload.orcaslicer_settings)
+                updated_settings = merge_orca_roundtrip_settings(
+                    preset.orcaslicer_settings,
+                    payload.orcaslicer_settings,
+                    "filament",
+                )
 
                 # Сохраняем существующие метки, если они есть
                 if preset.orcaslicer_settings:
@@ -3464,7 +3477,11 @@ async def _upsert_filament_preset(
                 preset.retraction_speed = extracted["retraction_speed"]
             if payload.orcaslicer_settings:
                 # Сохраняем метки FilamentHub при обновлении
-                updated_settings = dict(payload.orcaslicer_settings)
+                updated_settings = merge_orca_roundtrip_settings(
+                    preset.orcaslicer_settings,
+                    payload.orcaslicer_settings,
+                    "filament",
+                )
 
                 # Сохраняем существующие метки, если они есть
                 if preset.orcaslicer_settings:

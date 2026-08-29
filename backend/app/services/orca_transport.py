@@ -448,3 +448,31 @@ def build_orca_transport_settings(
             continue
         transport[key] = projected
     return transport
+
+
+def merge_orca_roundtrip_settings(
+    stored: Any,
+    incoming: Any,
+    kind: str,
+    skip_keys: frozenset[str] = frozenset(),
+) -> dict[str, Any]:
+    """Merge a returned artifact without losing values it never carried.
+
+    A missing transportable key is a real Orca-side deletion. A missing key
+    that this concrete artifact could not carry, or that FilamentHub withheld
+    deliberately, is not deletion evidence and remains in the raw stored blob.
+    Both inputs stay untouched, including nested values.
+    """
+    merged = deepcopy(incoming) if isinstance(incoming, dict) else {}
+    if not isinstance(stored, dict):
+        return merged
+    for key, value in stored.items():
+        if key in merged:
+            continue
+        if key in skip_keys or key in FILAMENTHUB_INTERNAL_KEYS:
+            merged[key] = deepcopy(value)
+            continue
+        accepted, _projected = project_orca_setting(key, value, kind)
+        if not accepted:
+            merged[key] = deepcopy(value)
+    return merged

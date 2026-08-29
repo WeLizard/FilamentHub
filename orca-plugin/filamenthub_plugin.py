@@ -1895,6 +1895,12 @@ def _validated_bundle_entries(bundle, key, kind, maximum):
         profile["type"] = expected_type
         normalize_local_bundle_parent(profile)
         profile["bundle_id"] = "filamenthub:%d" % profile_id
+        rejected = orca_transport_violations(profile)
+        if rejected:
+            raise ValueError(
+                "OrcaSlicer cannot load these %s profile values: %s"
+                % (kind, ", ".join(rejected))
+            )
         validated.append({"id": profile_id, "name": name.strip(), "profile": profile})
     return validated
 

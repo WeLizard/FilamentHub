@@ -853,6 +853,92 @@ async def test_sending_the_same_preset_again_updates_it(
 
 
 @pytest.mark.asyncio
+async def test_managed_filament_roundtrip_keeps_opaque_untransported_settings(
+    client: AsyncClient, db_session: AsyncSession
+):
+    from app.services.orcaslicer_exporter import preset_to_orcaslicer_json
+
+    brand = Brand(name="Opaque Round Trip", slug="opaque-round-trip", active=True)
+    db_session.add(brand)
+    await db_session.flush()
+    filament = Filament(
+        brand_id=brand.id,
+        name="Opaque PLA",
+        slug="opaque-pla",
+        material_type="PLA",
+        diameter=1.75,
+        active=True,
+    )
+    db_session.add(filament)
+    await db_session.flush()
+    headers, person = await _signed_in(client, db_session, "orca-opaque-roundtrip")
+    preset = Preset(
+        user_id=person.id,
+        filament_id=filament.id,
+        name="Opaque managed preset",
+        extruder_temp=210,
+        bed_temp=60,
+        active=True,
+        orcaslicer_settings={
+            "nozzle_temperature": [210],
+            "future_scalar": "sent",
+            "future_vector": ["left", "right"],
+            "future_number": 7.25,
+            "future_object": {"mode": "adaptive", "levels": [1, 3]},
+            "future_nullable": None,
+            "enrichment": {"material_type": "PLA"},
+            "derived_from_external_id": "private-local-id",
+        },
+    )
+    db_session.add(preset)
+    await db_session.flush()
+
+    exported = await preset_to_orcaslicer_json(preset, filament, db_session)
+    assert exported["future_scalar"] == "sent"
+    assert exported["future_vector"] == ["left", "right"]
+    for hidden in (
+        "future_number",
+        "future_object",
+        "future_nullable",
+        "enrichment",
+        "derived_from_external_id",
+    ):
+        assert hidden not in exported
+
+    exported["future_scalar"] = "edited in Orca"
+    exported.pop("future_vector")
+    returned = await _import(
+        client,
+        headers,
+        _preset(
+            preset.name,
+            fhub_id=preset.id,
+            filament_id=filament.id,
+            info_content=f"sync_info = fhub:{preset.id}:filamenthub\n",
+            extruder_temp=220,
+            orcaslicer_settings=exported,
+        ),
+    )
+
+    assert returned.status_code == 200, returned.text
+    assert returned.json()["results"][0]["status"] == "updated"
+    await db_session.refresh(preset)
+    assert preset.orcaslicer_settings["future_scalar"] == "edited in Orca"
+    assert "future_vector" not in preset.orcaslicer_settings
+    assert preset.orcaslicer_settings["future_number"] == 7.25
+    assert preset.orcaslicer_settings["future_object"] == {
+        "mode": "adaptive",
+        "levels": [1, 3],
+    }
+    assert preset.orcaslicer_settings["future_nullable"] is None
+    assert preset.orcaslicer_settings["enrichment"] == {"material_type": "PLA"}
+    assert (
+        preset.orcaslicer_settings["derived_from_external_id"]
+        == "private-local-id"
+    )
+
+
+@pytest.mark.asyncio
 async def test_stable_plugin_identity_turns_a_rename_into_an_update(
     client: AsyncClient, db_session: AsyncSession
 ):
