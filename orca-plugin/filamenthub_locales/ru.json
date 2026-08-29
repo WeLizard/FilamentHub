@@ -79,6 +79,7 @@
   "summaryPreferencesUnavailable": "настройки синхронизации временно недоступны",
   "summaryScanIncomplete": "локальная проверка не завершена; отсутствующие профили не отмечались",
   "summaryObservationFailed": "не удалось передать сведения о принтерах",
+  "summaryReportFailed": "статус устройства не передан; повторите синхронизацию",
   "profileFilament": "Пресеты филамента",
   "profileMachine": "Конфигурации принтеров",
   "profileProcess": "Профили печати",

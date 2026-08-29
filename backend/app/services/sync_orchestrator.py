@@ -1,8 +1,10 @@
 """Оркестратор синхронизации пресетов между OrcaSlicer и FilamentHub."""
 
+import hashlib
 import json
 import logging
 from datetime import datetime, timezone
+from uuid import uuid4
 
 from sqlalchemy import and_, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,6 +16,7 @@ from app.models.printer_profile import PrinterProfile
 from app.models.sync_device import SyncDevice
 from app.models.sync_history import SyncHistory, SyncOperation, SyncPresetType, SyncStatus
 from app.models.sync_preset_state import SyncPresetState
+from app.models.sync_report import SyncReport, SyncReportChunk, SyncReportItem
 from app.models.user_saved_preset import UserSavedPreset
 
 logger = logging.getLogger(__name__)
@@ -114,6 +117,7 @@ class SyncOrchestrator:
         force_full_sync: bool = False,
         orcaslicer_version: str | None = None,
         include_changes: bool = True,
+        chunked_report: bool = False,
     ) -> dict:
         """
         Генерирует план синхронизации.
@@ -133,6 +137,9 @@ class SyncOrchestrator:
             device_fingerprint=device_fingerprint,
             orcaslicer_version=orcaslicer_version,
         )
+        report_id = None
+        if chunked_report:
+            report_id = await self._begin_chunked_report(user_id, device)
 
         # The active plugin already gets its desired payload from /auth/my-presets.
         # It can ask this endpoint only for the next device-scoped report version
@@ -158,7 +165,52 @@ class SyncOrchestrator:
             "deleted_on_server": deleted_on_server,
             "conflicts": [],
             "last_sync_at": device.last_sync_at.isoformat() if device.last_sync_at else None,
+            "report_id": report_id,
         }
+
+    async def _begin_chunked_report(
+        self,
+        user_id: int,
+        device: SyncDevice,
+    ) -> str:
+        """Start a fresh report without exposing any partial prior staging."""
+        locked_result = await self.db.execute(
+            select(SyncDevice)
+            .where(
+                and_(
+                    SyncDevice.id == device.id,
+                    SyncDevice.user_id == user_id,
+                )
+            )
+            .with_for_update()
+        )
+        device = locked_result.scalar_one()
+        sync_version = device.sync_version + 1
+        existing_result = await self.db.execute(
+            select(SyncReport).where(
+                and_(
+                    SyncReport.device_id == device.id,
+                    SyncReport.sync_version == sync_version,
+                )
+            )
+        )
+        existing = existing_result.scalar_one_or_none()
+        if existing is not None:
+            if existing.completed_at is not None:
+                raise SyncReportConflictError("next report version is already complete")
+            await self._discard_report(existing.id)
+
+        report_id = str(uuid4())
+        self.db.add(
+            SyncReport(
+                user_id=user_id,
+                device_id=device.id,
+                report_id=report_id,
+                sync_version=sync_version,
+            )
+        )
+        await self.db.flush()
+        return report_id
 
     async def complete_sync(
         self,
@@ -222,6 +274,272 @@ class SyncOrchestrator:
         await self.db.flush()
         await self._prune_history(device.id, sync_version)
         return device, False
+
+    async def accept_sync_report_chunk(
+        self,
+        *,
+        user_id: int,
+        device_fingerprint: str,
+        sync_version: int,
+        report_id: str,
+        chunk_index: int,
+        chunk_count: int,
+        results: list[dict],
+    ) -> dict:
+        """Durably accept one chunk and publish only after the full report."""
+        device_result = await self.db.execute(
+            select(SyncDevice)
+            .where(
+                and_(
+                    SyncDevice.user_id == user_id,
+                    SyncDevice.device_fingerprint == device_fingerprint,
+                )
+            )
+            .with_for_update()
+        )
+        device = device_result.scalar_one_or_none()
+        if device is None:
+            raise SyncReportConflictError("device has no sync plan")
+
+        report_result = await self.db.execute(
+            select(SyncReport).where(
+                and_(
+                    SyncReport.user_id == user_id,
+                    SyncReport.device_id == device.id,
+                    SyncReport.sync_version == sync_version,
+                    SyncReport.report_id == report_id,
+                )
+            )
+        )
+        report = report_result.scalar_one_or_none()
+        if report is None:
+            raise SyncReportConflictError("chunk does not match the active report")
+        if report.chunk_count is None:
+            report.chunk_count = chunk_count
+        elif report.chunk_count != chunk_count:
+            raise SyncReportConflictError("report chunk count differs")
+
+        payload_digest = self._chunk_digest(results)
+        existing_chunk_result = await self.db.execute(
+            select(SyncReportChunk).where(
+                and_(
+                    SyncReportChunk.report_pk == report.id,
+                    SyncReportChunk.chunk_index == chunk_index,
+                )
+            )
+        )
+        existing_chunk = existing_chunk_result.scalar_one_or_none()
+
+        if report.completed_at is not None:
+            if device.sync_version != sync_version:
+                raise SyncReportConflictError("completed report version differs")
+            if (
+                existing_chunk is None
+                or existing_chunk.payload_digest != payload_digest
+                or existing_chunk.item_count != len(results)
+            ):
+                raise SyncReportConflictError("completed chunk payload differs")
+            return self._chunk_receipt(
+                device=device,
+                report=report,
+                chunk_index=chunk_index,
+                received_chunks=report.chunk_count,
+                duplicate=True,
+            )
+
+        if sync_version != device.sync_version + 1:
+            raise SyncReportConflictError("unexpected sync version")
+        if existing_chunk is not None:
+            if (
+                existing_chunk.payload_digest != payload_digest
+                or existing_chunk.item_count != len(results)
+            ):
+                raise SyncReportConflictError("chunk payload differs")
+            received_chunks = await self._received_chunk_count(report.id)
+            return self._chunk_receipt(
+                device=device,
+                report=report,
+                chunk_index=chunk_index,
+                received_chunks=received_chunks,
+                duplicate=True,
+            )
+
+        await self._reject_cross_chunk_duplicates(report.id, results)
+        chunk = SyncReportChunk(
+            report_pk=report.id,
+            chunk_index=chunk_index,
+            item_count=len(results),
+            payload_digest=payload_digest,
+        )
+        self.db.add(chunk)
+        await self.db.flush()
+        self.db.add_all(
+            [
+                SyncReportItem(
+                    report_pk=report.id,
+                    chunk_pk=chunk.id,
+                    item_index=item_index,
+                    preset_type=SyncPresetType(item["preset_type"]),
+                    operation=SyncOperation(item["operation"]),
+                    preset_id=item["preset_id"],
+                    state=item["state"],
+                    error_code=item.get("error_code"),
+                )
+                for item_index, item in enumerate(results)
+            ]
+        )
+        await self.db.flush()
+
+        received_chunks = await self._received_chunk_count(report.id)
+        if received_chunks == chunk_count:
+            await self._finalize_chunked_report(device, report)
+        return self._chunk_receipt(
+            device=device,
+            report=report,
+            chunk_index=chunk_index,
+            received_chunks=received_chunks,
+            duplicate=False,
+        )
+
+    @staticmethod
+    def _chunk_digest(results: list[dict]) -> str:
+        payload = json.dumps(
+            results,
+            ensure_ascii=True,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+        return hashlib.sha256(payload).hexdigest()
+
+    async def _received_chunk_count(self, report_pk: int) -> int:
+        result = await self.db.execute(
+            select(func.count(SyncReportChunk.id)).where(
+                SyncReportChunk.report_pk == report_pk
+            )
+        )
+        return int(result.scalar_one())
+
+    async def _reject_cross_chunk_duplicates(
+        self,
+        report_pk: int,
+        results: list[dict],
+    ) -> None:
+        if not results:
+            return
+        preset_ids = {item["preset_id"] for item in results}
+        existing_result = await self.db.execute(
+            select(
+                SyncReportItem.preset_type,
+                SyncReportItem.operation,
+                SyncReportItem.preset_id,
+            ).where(
+                and_(
+                    SyncReportItem.report_pk == report_pk,
+                    SyncReportItem.preset_id.in_(preset_ids),
+                )
+            )
+        )
+        existing = {
+            (preset_type.value, operation.value, preset_id)
+            for preset_type, operation, preset_id in existing_result.all()
+        }
+        incoming = {
+            (item["preset_type"], item["operation"], item["preset_id"])
+            for item in results
+        }
+        if existing & incoming:
+            raise SyncReportConflictError("duplicate result across report chunks")
+
+    async def _finalize_chunked_report(
+        self,
+        device: SyncDevice,
+        report: SyncReport,
+    ) -> None:
+        """Publish staged rows in bounded batches inside the final transaction."""
+        observed_at = datetime.now(timezone.utc)
+        cursor = 0
+        while True:
+            page_result = await self.db.execute(
+                select(SyncReportItem)
+                .where(
+                    and_(
+                        SyncReportItem.report_pk == report.id,
+                        SyncReportItem.id > cursor,
+                    )
+                )
+                .order_by(SyncReportItem.id)
+                .limit(1000)
+            )
+            page = list(page_result.scalars().all())
+            if not page:
+                break
+            results = [
+                {
+                    "preset_type": item.preset_type.value,
+                    "operation": item.operation.value,
+                    "preset_id": item.preset_id,
+                    "state": item.state,
+                    "error_code": item.error_code,
+                }
+                for item in page
+            ]
+            self.db.add_all(
+                [
+                    SyncHistory(
+                        user_id=report.user_id,
+                        device_id=device.id,
+                        sync_version=report.sync_version,
+                        preset_type=item.preset_type,
+                        operation=item.operation,
+                        preset_id=item.preset_id,
+                        status=_OBSERVATION_STATUS[item.state],
+                        error_message=_observation_payload(item.state, item.error_code),
+                        created_at=observed_at,
+                    )
+                    for item in page
+                ]
+            )
+            await self._publish_observations(
+                user_id=report.user_id,
+                device_id=device.id,
+                sync_version=report.sync_version,
+                results=results,
+                observed_at=observed_at,
+            )
+            cursor = page[-1].id
+            await self.db.flush()
+
+        device.sync_version = report.sync_version
+        device.last_sync_at = observed_at
+        report.completed_at = observed_at
+        await self.db.execute(
+            delete(SyncReportItem).where(SyncReportItem.report_pk == report.id)
+        )
+        await self.db.flush()
+        await self._prune_history(device.id, report.sync_version)
+        await self._prune_reports(device.id, report.sync_version)
+
+    @staticmethod
+    def _chunk_receipt(
+        *,
+        device: SyncDevice,
+        report: SyncReport,
+        chunk_index: int,
+        received_chunks: int,
+        duplicate: bool,
+    ) -> dict:
+        return {
+            "sync_version": report.sync_version,
+            "report_id": report.report_id,
+            "chunk_index": chunk_index,
+            "received_chunks": received_chunks,
+            "chunk_count": report.chunk_count,
+            "complete": report.completed_at is not None,
+            "duplicate": duplicate,
+            "last_sync_at": (
+                device.last_sync_at.isoformat() if device.last_sync_at else None
+            ),
+        }
 
     async def record_sync_success(
         self,
@@ -620,6 +938,33 @@ class SyncOrchestrator:
                 )
             )
         )
+
+    async def _prune_reports(self, device_id: int, sync_version: int) -> None:
+        retention_versions = settings.ORCA_SYNC_HISTORY_RETENTION_VERSIONS
+        oldest_retained = sync_version - retention_versions + 1
+        if oldest_retained <= 0:
+            return
+        stale_result = await self.db.execute(
+            select(SyncReport.id).where(
+                and_(
+                    SyncReport.device_id == device_id,
+                    SyncReport.sync_version < oldest_retained,
+                )
+            )
+        )
+        for report_pk in stale_result.scalars().all():
+            await self._discard_report(report_pk)
+
+    async def _discard_report(self, report_pk: int) -> None:
+        """Delete staging in FK-safe order without relying on ORM cascades."""
+        await self.db.execute(
+            delete(SyncReportItem).where(SyncReportItem.report_pk == report_pk)
+        )
+        await self.db.execute(
+            delete(SyncReportChunk).where(SyncReportChunk.report_pk == report_pk)
+        )
+        await self.db.execute(delete(SyncReport).where(SyncReport.id == report_pk))
+        await self.db.flush()
 
     async def _report_matches_history(
         self,

@@ -14,7 +14,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 import pytest_asyncio
 from pydantic import ValidationError
-from sqlalchemy import event, select
+from sqlalchemy import event, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -24,6 +24,7 @@ from app.models.preset import Preset, PresetModerationStatus
 from app.models.sync_device import SyncDevice
 from app.models.sync_history import SyncHistory, SyncStatus
 from app.models.sync_preset_state import SyncPresetState
+from app.models.sync_report import SyncReport, SyncReportChunk, SyncReportItem
 from app.models.user import User
 from app.models.user_saved_preset import UserSavedPreset
 from app.schemas.sync_plan import SyncPlanRequest
@@ -903,3 +904,179 @@ async def test_deleted_detection_query_count_does_not_scale_per_preset(
     assert len(one) == 1
     assert len(many) == 20
     assert many_query_count == one_query_count
+
+
+@pytest.mark.asyncio
+async def test_chunked_report_publishes_only_after_every_chunk_and_retries_safely(
+    sync_orchestrator: SyncOrchestrator,
+    test_user: User,
+    db_session: AsyncSession,
+):
+    plan = await sync_orchestrator.create_sync_plan(
+        test_user.id,
+        "chunk-device",
+        "filament",
+        include_changes=False,
+        chunked_report=True,
+    )
+    report_id = plan["report_id"]
+    first_results = [
+        {
+            "preset_id": preset_id,
+            "preset_type": "filament",
+            "operation": "download",
+            "state": "on_disk",
+            "error_code": None,
+        }
+        for preset_id in range(1, 1001)
+    ]
+    first = await sync_orchestrator.accept_sync_report_chunk(
+        user_id=test_user.id,
+        device_fingerprint="chunk-device",
+        sync_version=plan["sync_version"],
+        report_id=report_id,
+        chunk_index=0,
+        chunk_count=2,
+        results=first_results,
+    )
+    duplicate = await sync_orchestrator.accept_sync_report_chunk(
+        user_id=test_user.id,
+        device_fingerprint="chunk-device",
+        sync_version=plan["sync_version"],
+        report_id=report_id,
+        chunk_index=0,
+        chunk_count=2,
+        results=first_results,
+    )
+
+    device = (
+        await db_session.execute(
+            select(SyncDevice).where(SyncDevice.device_fingerprint == "chunk-device")
+        )
+    ).scalar_one()
+    assert first["complete"] is False
+    assert duplicate["duplicate"] is True
+    assert device.sync_version == 0
+    assert (await db_session.execute(select(func.count(SyncHistory.id)))).scalar_one() == 0
+    assert (
+        await db_session.execute(select(func.count(SyncPresetState.id)))
+    ).scalar_one() == 0
+
+    changed = [dict(first_results[0], state="loaded")]
+    with pytest.raises(SyncReportConflictError, match="payload differs"):
+        await sync_orchestrator.accept_sync_report_chunk(
+            user_id=test_user.id,
+            device_fingerprint="chunk-device",
+            sync_version=plan["sync_version"],
+            report_id=report_id,
+            chunk_index=0,
+            chunk_count=2,
+            results=changed,
+        )
+
+    final_results = [
+        {
+            "preset_id": 1001,
+            "preset_type": "filament",
+            "operation": "download",
+            "state": "loaded",
+            "error_code": None,
+        }
+    ]
+    final = await sync_orchestrator.accept_sync_report_chunk(
+        user_id=test_user.id,
+        device_fingerprint="chunk-device",
+        sync_version=plan["sync_version"],
+        report_id=report_id,
+        chunk_index=1,
+        chunk_count=2,
+        results=final_results,
+    )
+    final_retry = await sync_orchestrator.accept_sync_report_chunk(
+        user_id=test_user.id,
+        device_fingerprint="chunk-device",
+        sync_version=plan["sync_version"],
+        report_id=report_id,
+        chunk_index=1,
+        chunk_count=2,
+        results=final_results,
+    )
+
+    assert final["complete"] is True
+    assert final["received_chunks"] == 2
+    assert final_retry["complete"] is True
+    assert final_retry["duplicate"] is True
+    assert device.sync_version == 1
+    assert (await db_session.execute(select(func.count(SyncHistory.id)))).scalar_one() == 1001
+    assert (
+        await db_session.execute(select(func.count(SyncPresetState.id)))
+    ).scalar_one() == 1001
+    assert (
+        await db_session.execute(select(func.count(SyncReportItem.id)))
+    ).scalar_one() == 0
+    assert (
+        await db_session.execute(select(func.count(SyncReportChunk.id)))
+    ).scalar_one() == 2
+
+
+@pytest.mark.asyncio
+async def test_new_plan_replaces_only_incomplete_chunk_staging(
+    sync_orchestrator: SyncOrchestrator,
+    test_user: User,
+    db_session: AsyncSession,
+):
+    first_plan = await sync_orchestrator.create_sync_plan(
+        test_user.id,
+        "restart-report-device",
+        "filament",
+        include_changes=False,
+        chunked_report=True,
+    )
+    staged = [
+        {
+            "preset_id": 77,
+            "preset_type": "filament",
+            "operation": "download",
+            "state": "on_disk",
+            "error_code": None,
+        }
+    ]
+    await sync_orchestrator.accept_sync_report_chunk(
+        user_id=test_user.id,
+        device_fingerprint="restart-report-device",
+        sync_version=first_plan["sync_version"],
+        report_id=first_plan["report_id"],
+        chunk_index=0,
+        chunk_count=2,
+        results=staged,
+    )
+
+    second_plan = await sync_orchestrator.create_sync_plan(
+        test_user.id,
+        "restart-report-device",
+        "filament",
+        include_changes=False,
+        chunked_report=True,
+    )
+
+    assert second_plan["sync_version"] == first_plan["sync_version"]
+    assert second_plan["report_id"] != first_plan["report_id"]
+    assert (
+        await db_session.execute(select(func.count(SyncReport.id)))
+    ).scalar_one() == 1
+    assert (
+        await db_session.execute(select(func.count(SyncReportChunk.id)))
+    ).scalar_one() == 0
+    assert (
+        await db_session.execute(select(func.count(SyncReportItem.id)))
+    ).scalar_one() == 0
+    with pytest.raises(SyncReportConflictError, match="active report"):
+        await sync_orchestrator.accept_sync_report_chunk(
+            user_id=test_user.id,
+            device_fingerprint="restart-report-device",
+            sync_version=first_plan["sync_version"],
+            report_id=first_plan["report_id"],
+            chunk_index=1,
+            chunk_count=2,
+            results=[],
+        )

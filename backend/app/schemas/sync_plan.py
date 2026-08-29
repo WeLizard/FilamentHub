@@ -1,6 +1,7 @@
 """Pydantic schemas для SyncPlan API."""
 
 from typing import Literal
+from uuid import UUID
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -53,6 +54,7 @@ class SyncPlanRequest(BaseModel):
     force_full_sync: bool = False
     orcaslicer_version: str | None = Field(default=None, min_length=1, max_length=50)
     include_changes: bool = True
+    chunked_report: bool = False
 
 
 class SyncPlanResponse(BaseModel):
@@ -64,6 +66,7 @@ class SyncPlanResponse(BaseModel):
     deleted_on_server: list[dict] = Field(default_factory=list)
     conflicts: list[PresetConflict] = Field(default_factory=list)
     last_sync_at: str | None = None
+    report_id: UUID | None = None
 
 
 class PresetSyncResult(BaseModel):
@@ -109,6 +112,39 @@ class SyncCompleteResponse(BaseModel):
     sync_version: int
     last_sync_at: str
     duplicate: bool = False
+
+
+class SyncReportChunkRequest(BaseModel):
+    """One durable chunk of a versioned device report."""
+
+    device_fingerprint: str = Field(..., min_length=1, max_length=255)
+    sync_version: int = Field(..., ge=1)
+    report_id: UUID
+    chunk_index: int = Field(..., ge=0)
+    chunk_count: int = Field(..., ge=1, le=1000)
+    results: list[PresetSyncResult] = Field(default_factory=list, max_length=1000)
+
+    @model_validator(mode="after")
+    def validate_chunk(self) -> "SyncReportChunkRequest":
+        if self.chunk_index >= self.chunk_count:
+            raise ValueError("chunk_index must be less than chunk_count")
+        keys = [(item.preset_type, item.operation, item.preset_id) for item in self.results]
+        if len(keys) != len(set(keys)):
+            raise ValueError("duplicate preset sync result")
+        return self
+
+
+class SyncReportChunkResponse(BaseModel):
+    """Receipt for an accepted chunk and the report assembly state."""
+
+    sync_version: int
+    report_id: UUID
+    chunk_index: int
+    received_chunks: int
+    chunk_count: int
+    complete: bool
+    duplicate: bool = False
+    last_sync_at: str | None = None
 
 
 class SyncDeviceStatus(BaseModel):

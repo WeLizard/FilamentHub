@@ -79,6 +79,7 @@
   "summaryPreferencesUnavailable": "sync settings are temporarily unavailable",
   "summaryScanIncomplete": "local scan was incomplete; nothing was marked absent",
   "summaryObservationFailed": "printer observation failed",
+  "summaryReportFailed": "device status was not reported; retry Sync",
   "profileFilament": "Filament presets",
   "profileMachine": "Printer configurations",
   "profileProcess": "print profiles",

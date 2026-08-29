@@ -79,6 +79,7 @@
   "summaryPreferencesUnavailable": "同步設定暫時無法使用",
   "summaryScanIncomplete": "本機掃描未完成；未將任何配置標記為缺少",
   "summaryObservationFailed": "印表機狀態資訊傳送失敗",
+  "summaryReportFailed": "裝置狀態未回報；請重試同步",
   "profileFilament": "耗材預設",
   "profileMachine": "印表機配置",
   "profileProcess": "列印配置",

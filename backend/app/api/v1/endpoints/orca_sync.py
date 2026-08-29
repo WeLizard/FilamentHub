@@ -4204,6 +4204,8 @@ from app.schemas.sync_plan import (
     SyncHistoryResponse,
     SyncPlanRequest,
     SyncPlanResponse,
+    SyncReportChunkRequest,
+    SyncReportChunkResponse,
     SyncStatusResponse,
 )
 from app.services.orcaslicer_validator import (
@@ -4228,6 +4230,7 @@ async def create_sync_plan(
         force_full_sync=request.force_full_sync,
         orcaslicer_version=request.orcaslicer_version,
         include_changes=request.include_changes,
+        chunked_report=request.chunked_report,
     )
     await db.commit()
     return SyncPlanResponse(**plan)
@@ -4256,6 +4259,30 @@ async def complete_sync(
         last_sync_at=device.last_sync_at.isoformat(),
         duplicate=duplicate,
     )
+
+
+@router.post("/sync-complete/chunk", response_model=SyncReportChunkResponse)
+async def complete_sync_chunk(
+    request: SyncReportChunkRequest,
+    current_user: Annotated[User, Depends(require_sync_report)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Durably accept one chunk and publish only when the report is complete."""
+    orchestrator = SyncOrchestrator(db)
+    try:
+        receipt = await orchestrator.accept_sync_report_chunk(
+            user_id=current_user.id,
+            device_fingerprint=request.device_fingerprint,
+            sync_version=request.sync_version,
+            report_id=str(request.report_id),
+            chunk_index=request.chunk_index,
+            chunk_count=request.chunk_count,
+            results=[item.model_dump() for item in request.results],
+        )
+    except SyncReportConflictError:
+        raise_error(status.HTTP_409_CONFLICT, ERR_SYNC_ITEM_FAILED)
+    await db.commit()
+    return SyncReportChunkResponse(**receipt)
 
 
 @router.get("/sync-status", response_model=SyncStatusResponse)

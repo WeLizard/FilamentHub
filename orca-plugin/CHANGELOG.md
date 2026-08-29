@@ -3,7 +3,10 @@
 Newest first. The top entry is the text pasted into the Plugin Hub on release.
 
 ## Unreleased
+
+## 0.1.7
 - Plugin storage is now initialized from OrcaSlicer's native load callback, and unload fully retires the background worker, Bambu observer and loopback server without sending a delayed Bambu update afterward.
+- Large device-status reports are now delivered in retry-safe bounded chunks, and an interrupted report is shown as a warning instead of being mistaken for a completed sync.
 
 ## 0.1.6
 - Local profile identity is now stable across Windows and Linux, allowing the release checks and synchronization to use the same saved OrcaSlicer profile paths on every supported platform.

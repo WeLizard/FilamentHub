@@ -79,6 +79,7 @@
   "summaryPreferencesUnavailable": "同步设置暂时不可用",
   "summaryScanIncomplete": "本地扫描未完成；未将任何配置标记为缺失",
   "summaryObservationFailed": "打印机状态信息发送失败",
+  "summaryReportFailed": "设备状态未上报；请重试同步",
   "profileFilament": "耗材预设",
   "profileMachine": "打印机配置",
   "profileProcess": "打印配置",

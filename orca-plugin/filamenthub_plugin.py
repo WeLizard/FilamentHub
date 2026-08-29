@@ -7,7 +7,7 @@
 # name = "FilamentHub"
 # description = "Browse and sync community-rated filament profiles from FilamentHub, with spool inventory and print-cost tools."
 # author = "FilamentHub"
-# version = "0.1.6"
+# version = "0.1.7"
 #
 # # Proposed forward-looking key (see README gap). The current
 # # host reads only name/description/author/version/dependencies and ignores unknown
@@ -228,7 +228,7 @@ def post_window(window, payload):
 # --------------------------------------------------------------------------- #
 # Configuration
 # --------------------------------------------------------------------------- #
-PLUGIN_VERSION = "0.1.6"
+PLUGIN_VERSION = "0.1.7"
 PROD_SITE_URL = "https://filamenthub.ru"
 SITE_URL = os.environ.get("FILAMENTHUB_SITE_URL", "http://localhost:3000").rstrip("/")
 _SITE_PARTS = urllib.parse.urlsplit(SITE_URL)
@@ -247,6 +247,9 @@ MAX_TOKEN_LENGTH = 8192
 MAX_FILENAME_LENGTH = 120
 MAX_MACHINE_BUNDLE_PROFILES = 32
 MAX_PROCESS_BUNDLE_PROFILES = 200
+SYNC_REPORT_CHUNK_SIZE = 500
+SYNC_REPORT_CHUNK_RETRIES = 3
+SYNC_REPORT_RETRY_SECONDS = 0.25
 _SSL_CTX = ssl.create_default_context()
 
 
@@ -2809,36 +2812,103 @@ def begin_filament_sync_report(token, device_fingerprint):
             "device_fingerprint": device_fingerprint,
             "preset_type": "filament",
             "include_changes": False,
+            "chunked_report": True,
         },
     )
     if status != 200:
         fh_log("sync observation plan rejected: status=%s" % status)
         return None
     try:
-        sync_version = (json.loads(body.decode("utf-8")) or {}).get("sync_version")
+        response = json.loads(body.decode("utf-8")) or {}
+        sync_version = response.get("sync_version")
+        report_id = str(uuid.UUID(str(response.get("report_id"))))
     except (AttributeError, UnicodeDecodeError, ValueError):
         sync_version = None
-    if not isinstance(sync_version, int) or sync_version < 1:
-        fh_log("sync observation plan returned no usable version")
+        report_id = None
+    if not isinstance(sync_version, int) or sync_version < 1 or not report_id:
+        fh_log("sync observation plan returned no usable report")
         return None
-    return sync_version
+    return sync_version, report_id
 
 
-def complete_filament_sync_report(token, device_fingerprint, sync_version, results):
-    """Report bounded per-preset facts; never send file paths or raw exceptions."""
-    status, _body = http_post_json(
-        "/orcaslicer/sync-complete",
-        token,
-        {
+def complete_filament_sync_report(
+    token,
+    device_fingerprint,
+    sync_version,
+    report_id,
+    results,
+):
+    """Send retry-safe chunks without exposing paths or raw exceptions."""
+    chunks = [
+        results[offset:offset + SYNC_REPORT_CHUNK_SIZE]
+        for offset in range(0, len(results), SYNC_REPORT_CHUNK_SIZE)
+    ] or [[]]
+    chunk_count = len(chunks)
+    retryable_statuses = {0, 408, 425, 429, 500, 502, 503, 504}
+    for chunk_index, chunk_results in enumerate(chunks):
+        payload = {
             "device_fingerprint": device_fingerprint,
             "sync_version": sync_version,
-            "results": results,
-        },
-    )
-    if status != 200:
-        fh_log("sync observation report rejected: status=%s" % status)
-        return False
+            "report_id": report_id,
+            "chunk_index": chunk_index,
+            "chunk_count": chunk_count,
+            "results": chunk_results,
+        }
+        accepted = None
+        last_status = 0
+        for attempt in range(SYNC_REPORT_CHUNK_RETRIES):
+            last_status, body = http_post_json(
+                "/orcaslicer/sync-complete/chunk",
+                token,
+                payload,
+            )
+            if last_status == 200:
+                try:
+                    candidate = json.loads(body.decode("utf-8")) or {}
+                except (AttributeError, UnicodeDecodeError, ValueError):
+                    candidate = None
+                if (
+                    isinstance(candidate, dict)
+                    and candidate.get("sync_version") == sync_version
+                    and candidate.get("report_id") == report_id
+                    and candidate.get("chunk_index") == chunk_index
+                    and candidate.get("chunk_count") == chunk_count
+                ):
+                    accepted = candidate
+                    break
+            if (
+                last_status not in retryable_statuses
+                or attempt + 1 >= SYNC_REPORT_CHUNK_RETRIES
+            ):
+                break
+            time.sleep(SYNC_REPORT_RETRY_SECONDS * (2 ** attempt))
+        if accepted is None:
+            fh_log(
+                "sync observation chunk %d/%d rejected: status=%s"
+                % (chunk_index + 1, chunk_count, last_status)
+            )
+            return False
+        if chunk_index + 1 == chunk_count and not accepted.get("complete"):
+            fh_log("sync observation report remained incomplete after final chunk")
+            return False
     return True
+
+
+def mark_sync_report_failed(contours, overall_status):
+    """Make a failed device report explicit without hiding local sync results."""
+    if overall_status == "success":
+        overall_status = "warning"
+    for item in contours:
+        if item.get("kind") != "filament":
+            continue
+        if item.get("status") == "success":
+            item["status"] = "warning"
+        item["summary"] = "%s, %s" % (
+            item.get("summary") or ui_text("summaryNothing"),
+            ui_text("summaryReportFailed"),
+        )
+        break
+    return overall_status
 
 
 def _bridge_retry_after_seconds(headers):
@@ -9039,8 +9109,9 @@ class FilamentHubCatalog(
         overall_status = "success"
         new_draft_count = 0
         restart_required = False
-        filament_report_version = None
+        filament_report = None
         filament_report_results = None
+        filament_report_requested = False
 
         def add_contour(kind, parts, status="success"):
             nonlocal overall_status
@@ -9068,7 +9139,8 @@ class FilamentHubCatalog(
                 except OSError:
                     pass
                 if source_instance_id and operation_id:
-                    filament_report_version = begin_filament_sync_report(
+                    filament_report_requested = True
+                    filament_report = begin_filament_sync_report(
                         token, source_instance_id
                     )
                 remote_status, remote_body = http_get("/auth/my-presets", token=token)
@@ -9315,7 +9387,7 @@ class FilamentHubCatalog(
                         folder, remote_ids, loaded_preset_ids, failed_ids
                     )
                     restart_required = file_changes and not bundle_reloaded
-                    if filament_report_version is not None:
+                    if filament_report is not None:
                         on_disk_ids = set(scan_local_fh_presets(folder))
                         failed_id_set = set(failed_ids)
                         report_results = []
@@ -9451,16 +9523,18 @@ class FilamentHubCatalog(
             sync_happy_hare_topologies(token, moonraker_connections)
 
         save_sync_state(state)
-        if (
-            filament_report_version is not None
-            and filament_report_results is not None
-        ):
-            complete_filament_sync_report(
-                token,
-                source_instance_id,
-                filament_report_version,
-                filament_report_results,
-            )
+        if filament_report_requested:
+            report_ok = False
+            if filament_report is not None and filament_report_results is not None:
+                report_ok = complete_filament_sync_report(
+                    token,
+                    source_instance_id,
+                    filament_report[0],
+                    filament_report[1],
+                    filament_report_results,
+                )
+            if not report_ok:
+                overall_status = mark_sync_report_failed(contours, overall_status)
         labels = {
             "filament": ui_text("profileFilament"),
             "machine": ui_text("profileMachine"),

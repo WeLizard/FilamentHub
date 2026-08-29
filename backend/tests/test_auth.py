@@ -1461,6 +1461,32 @@ async def test_plugin_session_is_short_lived_and_endpoint_scoped(
     )
     assert sync_history.status_code == 200
     assert sync_history.json() == {"items": [], "next_cursor": None}
+    chunk_plan = await auth_client.post(
+        "/api/v1/orcaslicer/sync-plan",
+        headers=plugin_headers,
+        json={
+            "device_fingerprint": "plugin-scope-device",
+            "preset_type": "filament",
+            "include_changes": False,
+            "chunked_report": True,
+        },
+    )
+    assert chunk_plan.status_code == 200
+    chunk_complete = await auth_client.post(
+        "/api/v1/orcaslicer/sync-complete/chunk",
+        headers=plugin_headers,
+        json={
+            "device_fingerprint": "plugin-scope-device",
+            "sync_version": chunk_plan.json()["sync_version"],
+            "report_id": chunk_plan.json()["report_id"],
+            "chunk_index": 0,
+            "chunk_count": 1,
+            "results": [],
+        },
+    )
+    assert chunk_complete.status_code == 200
+    assert chunk_complete.json()["complete"] is True
+    assert chunk_complete.json()["received_chunks"] == 1
 
     read_only_token = create_plugin_token(
         {"sub": auth_user.email, "user_id": auth_user.id},

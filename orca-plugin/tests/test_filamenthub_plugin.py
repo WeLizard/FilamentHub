@@ -3758,13 +3758,26 @@ def test_filament_sync_reports_device_scoped_partial_result(
         ),
     )
     posted = []
+    report_id = "11111111-1111-4111-8111-111111111111"
 
     def post(path, _token, payload):
         posted.append((path, payload))
         if path == "/orcaslicer/sync-plan":
-            return 200, json.dumps({"sync_version": 4}).encode("utf-8")
-        if path == "/orcaslicer/sync-complete":
-            return 200, json.dumps({"sync_version": 4}).encode("utf-8")
+            return 200, json.dumps(
+                {"sync_version": 4, "report_id": report_id}
+            ).encode("utf-8")
+        if path == "/orcaslicer/sync-complete/chunk":
+            return 200, json.dumps(
+                {
+                    "sync_version": 4,
+                    "report_id": report_id,
+                    "chunk_index": payload["chunk_index"],
+                    "received_chunks": 1,
+                    "chunk_count": payload["chunk_count"],
+                    "complete": True,
+                    "duplicate": False,
+                }
+            ).encode("utf-8")
         raise AssertionError(path)
 
     monkeypatch.setattr(plugin_module, "http_post_json", post)
@@ -3798,11 +3811,14 @@ def test_filament_sync_reports_device_scoped_partial_result(
 
     assert [path for path, _payload in posted] == [
         "/orcaslicer/sync-plan",
-        "/orcaslicer/sync-complete",
+        "/orcaslicer/sync-complete/chunk",
     ]
     report = posted[1][1]
     assert report["device_fingerprint"] == "device-a"
     assert report["sync_version"] == 4
+    assert report["report_id"] == report_id
+    assert report["chunk_index"] == 0
+    assert report["chunk_count"] == 1
     assert {
         (item["preset_id"], item["operation"], item["state"], item.get("error_code"))
         for item in report["results"]
@@ -3813,6 +3829,114 @@ def test_filament_sync_reports_device_scoped_partial_result(
         (13, "download", "error", "local_write_or_validation_failed"),
         (20, "delete", "removed", None),
     }
+
+
+def test_filament_sync_report_chunks_more_than_one_thousand_results(
+    plugin_module,
+    monkeypatch,
+):
+    report_id = "22222222-2222-4222-8222-222222222222"
+    posted = []
+
+    def post(path, _token, payload):
+        posted.append((path, payload))
+        return 200, json.dumps(
+            {
+                "sync_version": 9,
+                "report_id": report_id,
+                "chunk_index": payload["chunk_index"],
+                "received_chunks": payload["chunk_index"] + 1,
+                "chunk_count": payload["chunk_count"],
+                "complete": payload["chunk_index"] + 1 == payload["chunk_count"],
+                "duplicate": False,
+            }
+        ).encode("utf-8")
+
+    monkeypatch.setattr(plugin_module, "http_post_json", post)
+    results = [
+        {
+            "preset_id": preset_id,
+            "preset_type": "filament",
+            "operation": "download",
+            "state": "on_disk",
+        }
+        for preset_id in range(1, 1002)
+    ]
+
+    assert plugin_module.complete_filament_sync_report(
+        "token",
+        "device-a",
+        9,
+        report_id,
+        results,
+    ) is True
+    assert [path for path, _payload in posted] == [
+        "/orcaslicer/sync-complete/chunk",
+        "/orcaslicer/sync-complete/chunk",
+        "/orcaslicer/sync-complete/chunk",
+    ]
+    assert [len(payload["results"]) for _path, payload in posted] == [500, 500, 1]
+    assert [payload["chunk_index"] for _path, payload in posted] == [0, 1, 2]
+    assert {payload["report_id"] for _path, payload in posted} == {report_id}
+
+
+def test_filament_sync_report_retries_the_exact_same_chunk(
+    plugin_module,
+    monkeypatch,
+):
+    report_id = "33333333-3333-4333-8333-333333333333"
+    posted = []
+    responses = iter((503, 200))
+    monkeypatch.setattr(plugin_module.time, "sleep", lambda _seconds: None)
+
+    def post(_path, _token, payload):
+        posted.append(json.loads(json.dumps(payload)))
+        status = next(responses)
+        if status != 200:
+            return status, b"temporary"
+        return 200, json.dumps(
+            {
+                "sync_version": 2,
+                "report_id": report_id,
+                "chunk_index": 0,
+                "received_chunks": 1,
+                "chunk_count": 1,
+                "complete": True,
+                "duplicate": True,
+            }
+        ).encode("utf-8")
+
+    monkeypatch.setattr(plugin_module, "http_post_json", post)
+
+    assert plugin_module.complete_filament_sync_report(
+        "token",
+        "device-a",
+        2,
+        report_id,
+        [
+            {
+                "preset_id": 1,
+                "preset_type": "filament",
+                "operation": "download",
+                "state": "loaded",
+            }
+        ],
+    ) is True
+    assert posted[0] == posted[1]
+
+
+def test_failed_sync_report_becomes_an_explicit_warning(plugin_module):
+    contours = [
+        {"kind": "filament", "status": "success", "summary": "up to date: 4"},
+        {"kind": "machine", "status": "success", "summary": "nothing to sync"},
+    ]
+
+    status = plugin_module.mark_sync_report_failed(contours, "success")
+
+    assert status == "warning"
+    assert contours[0]["status"] == "warning"
+    assert plugin_module.ui_text("summaryReportFailed") in contours[0]["summary"]
+    assert contours[1]["status"] == "success"
 
 
 def test_filament_sync_reports_on_disk_when_host_observation_is_unavailable(
@@ -3867,9 +3991,22 @@ def test_filament_sync_reports_on_disk_when_host_observation_is_unavailable(
     )
     posted = []
 
+    report_id = "44444444-4444-4444-8444-444444444444"
+
     def post(path, _token, payload):
         posted.append((path, payload))
-        body = {"sync_version": 1}
+        if path == "/orcaslicer/sync-plan":
+            body = {"sync_version": 1, "report_id": report_id}
+        else:
+            body = {
+                "sync_version": 1,
+                "report_id": report_id,
+                "chunk_index": payload["chunk_index"],
+                "received_chunks": 1,
+                "chunk_count": 1,
+                "complete": True,
+                "duplicate": False,
+            }
         return 200, json.dumps(body).encode("utf-8")
 
     monkeypatch.setattr(plugin_module, "http_post_json", post)
@@ -3951,9 +4088,23 @@ def test_sync_reports_loaded_after_native_local_bundle_reload(
     )
     posted = []
 
+    report_id = "55555555-5555-4555-8555-555555555555"
+
     def post(path, _token, payload):
         posted.append((path, payload))
-        return 200, json.dumps({"sync_version": 1}).encode("utf-8")
+        if path == "/orcaslicer/sync-plan":
+            body = {"sync_version": 1, "report_id": report_id}
+        else:
+            body = {
+                "sync_version": 1,
+                "report_id": report_id,
+                "chunk_index": payload["chunk_index"],
+                "received_chunks": 1,
+                "chunk_count": 1,
+                "complete": True,
+                "duplicate": False,
+            }
+        return 200, json.dumps(body).encode("utf-8")
 
     monkeypatch.setattr(plugin_module, "http_post_json", post)
 
