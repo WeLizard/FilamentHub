@@ -140,7 +140,7 @@ class ReusableDaemonWorker:
                 self._thread.start()
         return True
 
-    def shutdown(self, wait_timeout=0.25):
+    def stop(self, wait_timeout=0.25):
         """Reject new work and discard jobs that have not started yet."""
         with self._lock:
             if not self._stopping:
@@ -161,6 +161,10 @@ class ReusableDaemonWorker:
             and wait_timeout > 0
         ):
             thread.join(wait_timeout)
+
+    def shutdown(self, wait_timeout=0.25):
+        """Backward-compatible alias for existing internal callers."""
+        self.stop(wait_timeout=wait_timeout)
 
     def _run(self):
         current = threading.current_thread()
@@ -800,6 +804,7 @@ class ShellServer:
     def __init__(self):
         self._server = None
         self._server_stop = None
+        self._server_thread = None
         self._html = b""
         self._path = ""
         # OAuth handoff: Google/Yandex refuse to render their consent pages in an
@@ -1009,6 +1014,7 @@ class ShellServer:
                 name="filamenthub-loopback",
                 daemon=True,
             )
+            self._server_thread = worker
             try:
                 worker.start()
             except Exception:
@@ -1016,16 +1022,24 @@ class ShellServer:
                 server.server_close()
                 self._server = None
                 self._server_stop = None
+                self._server_thread = None
                 raise
         return "http://127.0.0.1:%d%s" % (self._server.server_address[1], self._path)
 
-    def stop(self):
+    def stop(self, wait_timeout=0.5):
         server, self._server = self._server, None
         stop_event, self._server_stop = self._server_stop, None
+        worker, self._server_thread = self._server_thread, None
         with self._oauth_lock:
             self._oauth = None
         if server is not None and stop_event is not None:
             stop_event.set()
+        if (
+            worker is not None
+            and worker is not threading.current_thread()
+            and wait_timeout > 0
+        ):
+            worker.join(wait_timeout)
 
 
 SHELL_SERVER = ShellServer()
@@ -6840,6 +6854,8 @@ class BambuBridgeRuntime:
                     continue
                 try:
                     serial, report = read_bambu_lan_snapshot(config)
+                    if self._stop.is_set():
+                        break
                     snapshot = build_bambu_bridge_snapshot(
                         config, local["source_instance_id"], report
                     )
@@ -6866,16 +6882,22 @@ class BambuBridgeRuntime:
                         or now_monotonic - last_heartbeat_at >= BAMBU_HEARTBEAT_SECONDS
                     )
                     if snapshot_changed and snapshot_due:
+                        if self._stop.is_set():
+                            break
                         status, _, retry_after = http_post_bridge_json(
                             "/printer-bridge/snapshot",
                             config["bridge_token"],
                             snapshot,
                         )
+                        if self._stop.is_set():
+                            break
                         if status == 200:
                             self._last_snapshot_digest[binding_key] = snapshot_digest
                             self._last_snapshot_at[binding_key] = now_monotonic
                             self._last_heartbeat_at[binding_key] = now_monotonic
                     elif heartbeat_due:
+                        if self._stop.is_set():
+                            break
                         status, _, retry_after = http_post_bridge_json(
                             "/printer-bridge/heartbeat",
                             config["bridge_token"],
@@ -6889,11 +6911,15 @@ class BambuBridgeRuntime:
                                 ).isoformat(),
                             },
                         )
+                        if self._stop.is_set():
+                            break
                         if status == 200:
                             self._last_heartbeat_at[binding_key] = now_monotonic
                     else:
                         status = 200
                         retry_after = None
+                    if self._stop.is_set():
+                        break
                     if status == 401:
                         # The owner may have removed the system from the site or
                         # replaced this binding elsewhere. The rejected token is
@@ -6927,6 +6953,8 @@ class BambuBridgeRuntime:
                         )
                         fh_log("Bambu bridge upload failed: HTTP %s" % status)
                 except Exception as exc:
+                    if self._stop.is_set():
+                        break
                     # Never stringify network exceptions: addresses are local
                     # configuration and do not belong in a support log.
                     failures = self._failure_count.get(binding_key, 0) + 1
@@ -6959,7 +6987,7 @@ _PLUGIN_RUNTIME_LOCK = threading.Lock()
 _PLUGIN_RUNTIME_ACTIVE = False
 
 
-def start_plugin_runtime():
+def start_plugin_runtime(storage_initialized=False):
     """Start process-wide resources once after a host lifecycle load."""
     global _PLUGIN_RUNTIME_ACTIVE
     with _PLUGIN_RUNTIME_LOCK:
@@ -6967,9 +6995,10 @@ def start_plugin_runtime():
             return False
         _PLUGIN_RUNTIME_ACTIVE = True
     try:
+        if not storage_initialized:
+            configure_plugin_storage()
         BACKGROUND_WORKER.activate()
         refresh_ui_language()
-        configure_plugin_storage()
         if any(item.get("bridge_token") for item in load_bambu_config()["printers"]):
             BAMBU_BRIDGE_RUNTIME.start()
         repaired = repair_local_bundle_parents()
@@ -6988,7 +7017,7 @@ def stop_plugin_runtime():
         if not _PLUGIN_RUNTIME_ACTIVE:
             return False
         _PLUGIN_RUNTIME_ACTIVE = False
-    BACKGROUND_WORKER.shutdown()
+    BACKGROUND_WORKER.stop()
     BAMBU_BRIDGE_RUNTIME.stop()
     SHELL_SERVER.stop()
     return True
@@ -6998,7 +7027,8 @@ class _PluginRuntimeLifecycleMixin:
     """Use the common lifecycle supplied by every current capability base."""
 
     def on_load(self):
-        start_plugin_runtime()
+        configure_plugin_storage()
+        start_plugin_runtime(storage_initialized=True)
 
     def on_cancelled(self):
         stop_plugin_runtime()

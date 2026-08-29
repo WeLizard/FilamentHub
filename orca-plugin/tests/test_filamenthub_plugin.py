@@ -181,18 +181,22 @@ def test_shell_server_stops_without_starting_a_shutdown_worker(plugin_module):
     server = plugin_module.ShellServer()
     url = server.url_for("<!doctype html><title>fixture</title>")
     stop_event = server._server_stop
+    worker = server._server_thread
 
     assert url.startswith("http://127.0.0.1:")
     assert stop_event is not None
+    assert worker is not None and worker.is_alive()
     with urllib.request.urlopen(url, timeout=2) as response:
         policy = response.headers["Content-Security-Policy"]
         assert "frame-src %s" % plugin_module.SITE_ORIGIN in policy
         assert "connect-src 'self'" in policy
         assert "default-src 'none'" in policy
         assert "frame-src *" not in policy
-    server.stop()
+    server.stop(wait_timeout=2)
     assert stop_event.is_set()
+    assert not worker.is_alive()
     assert server._server is None
+    assert server._server_thread is None
 
 
 def test_shell_sandboxes_the_catalog_without_popup_or_top_navigation(plugin_module):
@@ -219,6 +223,7 @@ def test_shell_server_recovers_when_the_host_denies_thread_start(plugin_module, 
         server.url_for("<!doctype html><title>fixture</title>")
     assert server._server is None
     assert server._server_stop is None
+    assert server._server_thread is None
 
 
 def test_shell_replaces_webview_errors_with_maintenance_status(plugin_module):
@@ -4944,20 +4949,31 @@ def test_pages_host_registers_a_tab_instead_of_the_window_action():
 
 def test_current_host_defers_runtime_resources_to_capability_lifecycle(monkeypatch):
     module, _ = _module_with_pages(native_lifecycle=True)
-    started = []
+    lifecycle = []
     stopped = []
-    monkeypatch.setattr(module, "start_plugin_runtime", lambda: started.append(True))
+    monkeypatch.setattr(
+        module,
+        "configure_plugin_storage",
+        lambda: lifecycle.append("storage") or True,
+    )
+    monkeypatch.setattr(
+        module,
+        "start_plugin_runtime",
+        lambda storage_initialized=False: lifecycle.append(
+            ("start", storage_initialized)
+        ),
+    )
     monkeypatch.setattr(module, "stop_plugin_runtime", lambda: stopped.append(True))
 
     module.FilamentHubPlugin().register_capabilities()
-    assert started == []
+    assert lifecycle == []
 
     page = module.FilamentHubPage()
     page.on_load()
     page.on_cancelled()
     page.on_unload()
 
-    assert started == [True]
+    assert lifecycle == ["storage", ("start", True)]
     assert stopped == [True, True]
 
 
@@ -4969,6 +4985,30 @@ def test_old_host_keeps_registration_time_runtime_fallback(monkeypatch):
     module.FilamentHubPlugin().register_capabilities()
 
     assert started == [True]
+
+
+def test_runtime_stop_closes_every_owned_resource(plugin_module, monkeypatch):
+    stopped = []
+    monkeypatch.setattr(
+        plugin_module,
+        "BACKGROUND_WORKER",
+        SimpleNamespace(stop=lambda: stopped.append("worker")),
+    )
+    monkeypatch.setattr(
+        plugin_module,
+        "BAMBU_BRIDGE_RUNTIME",
+        SimpleNamespace(stop=lambda: stopped.append("bambu")),
+    )
+    monkeypatch.setattr(
+        plugin_module,
+        "SHELL_SERVER",
+        SimpleNamespace(stop=lambda: stopped.append("loopback")),
+    )
+    monkeypatch.setattr(plugin_module, "_PLUGIN_RUNTIME_ACTIVE", True)
+
+    assert plugin_module.stop_plugin_runtime() is True
+    assert stopped == ["worker", "bambu", "loopback"]
+    assert plugin_module._PLUGIN_RUNTIME_ACTIVE is False
 
 
 def test_pages_host_delivers_plugin_messages_through_post_message():
@@ -5710,6 +5750,52 @@ def test_bambu_runtime_stop_interrupts_startup_without_polling(
     runtime.stop(wait_timeout=2)
 
     assert reads == []
+    assert runtime._thread is None
+
+
+def test_bambu_runtime_does_not_upload_after_stop_during_lan_read(
+    plugin_module, monkeypatch
+):
+    runtime = plugin_module.BambuBridgeRuntime()
+    read_started = threading.Event()
+    release_read = threading.Event()
+    posts = []
+    binding = {
+        "physical_printer_id": 3,
+        "material_system_id": 5,
+        "bridge_token": "fhpb_live",
+    }
+
+    monkeypatch.setattr(runtime._wake, "wait", lambda _timeout: False)
+    monkeypatch.setattr(plugin_module.random, "uniform", lambda lower, _upper: lower)
+    monkeypatch.setattr(
+        plugin_module,
+        "load_bambu_config",
+        lambda: {
+            "source_instance_id": "fixture-instance-0001",
+            "printers": [binding],
+        },
+    )
+
+    def read_snapshot(_config):
+        read_started.set()
+        assert release_read.wait(2)
+        return "SERIAL-2", _bambu_report()
+
+    monkeypatch.setattr(plugin_module, "read_bambu_lan_snapshot", read_snapshot)
+    monkeypatch.setattr(
+        plugin_module,
+        "http_post_bridge_json",
+        lambda path, _token, _payload: posts.append(path) or (200, b"", None),
+    )
+
+    runtime.start()
+    assert read_started.wait(2)
+    runtime.stop(wait_timeout=0)
+    release_read.set()
+    runtime.stop(wait_timeout=2)
+
+    assert posts == []
     assert runtime._thread is None
 
 
