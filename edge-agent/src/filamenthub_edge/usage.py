@@ -43,13 +43,12 @@ def _route(state: EdgeState, snapshot: ProviderSnapshot) -> dict[str, int] | Non
         if isinstance(index, int) and isinstance(spool_id, int) and spool_id > 0:
             assignments[index] = spool_id
 
-    active_indices: list[int] = []
-    for slot in snapshot.slots:
-        if not isinstance(slot, dict) or slot.get("active_feed") is not True:
-            continue
-        provider_index = slot.get("provider_index")
-        if isinstance(provider_index, int) and not isinstance(provider_index, bool):
-            active_indices.append(provider_index)
+    active_indices = [
+        slot.get("provider_index")
+        for slot in snapshot.slots
+        if isinstance(slot, dict) and slot.get("active_feed") is True
+    ]
+    active_indices = [value for value in active_indices if isinstance(value, int)]
     if len(active_indices) == 1:
         index = active_indices[0]
         spool_id = assignments.get(index)
