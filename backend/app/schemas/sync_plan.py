@@ -48,10 +48,10 @@ class SyncPlan(BaseModel):
 class SyncPlanRequest(BaseModel):
     """Запрос на создание плана синхронизации."""
 
-    device_fingerprint: str
+    device_fingerprint: str = Field(..., min_length=1, max_length=255)
     preset_type: str = Field(..., pattern="^(filament|printer|print)$")
     force_full_sync: bool = False
-    orcaslicer_version: str | None = None
+    orcaslicer_version: str | None = Field(default=None, min_length=1, max_length=50)
     include_changes: bool = True
 
 
@@ -139,7 +139,30 @@ class SyncStatusResponse(BaseModel):
     last_sync_at: str | None = None
     last_sync_stats: dict = Field(default_factory=dict)
     devices: list[SyncDeviceStatus] = Field(default_factory=list)
+    device_next_cursor: int | None = None
     presets: list[PresetSyncStatus] = Field(default_factory=list)
+    preset_next_cursor: int | None = None
+
+
+class SyncHistoryItem(BaseModel):
+    """One device report outcome from the bounded audit history."""
+
+    id: int
+    device_fingerprint: str
+    sync_version: int
+    preset_type: Literal["filament", "printer", "print"]
+    operation: Literal["download", "upload", "delete"]
+    preset_id: int
+    state: Literal["on_disk", "pending_restart", "loaded", "error", "removed"]
+    error_code: str | None = None
+    observed_at: str
+
+
+class SyncHistoryResponse(BaseModel):
+    """Cursor page of raw sync outcomes."""
+
+    items: list[SyncHistoryItem] = Field(default_factory=list)
+    next_cursor: int | None = None
 
 
 # ── Deleted Presets ───────────────────────────────────────────
@@ -148,7 +171,7 @@ class SyncStatusResponse(BaseModel):
 class DeletedPresetsRequest(BaseModel):
     """Запрос на получение удалённых пресетов."""
 
-    device_fingerprint: str
+    device_fingerprint: str = Field(..., min_length=1, max_length=255)
     preset_type: str = Field(..., pattern="^(filament|printer|print)$")
 
 

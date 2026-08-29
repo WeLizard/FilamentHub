@@ -1455,6 +1455,12 @@ async def test_plugin_session_is_short_lived_and_endpoint_scoped(
     assert sync_status.status_code == 200
     assert sync_status.json()["device_fingerprint"] == "plugin-scope-device"
     assert sync_status.json()["devices"][0]["sync_version"] == 1
+    sync_history = await auth_client.get(
+        "/api/v1/orcaslicer/sync-history",
+        params={"device_fingerprint": "plugin-scope-device", "limit": 1},
+    )
+    assert sync_history.status_code == 200
+    assert sync_history.json() == {"items": [], "next_cursor": None}
 
     read_only_token = create_plugin_token(
         {"sub": auth_user.email, "user_id": auth_user.id},

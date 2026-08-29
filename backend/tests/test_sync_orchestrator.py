@@ -13,16 +13,20 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import select
+from pydantic import ValidationError
+from sqlalchemy import event, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.models.brand import Brand
 from app.models.filament import Filament
 from app.models.preset import Preset, PresetModerationStatus
 from app.models.sync_device import SyncDevice
 from app.models.sync_history import SyncHistory, SyncStatus
+from app.models.sync_preset_state import SyncPresetState
 from app.models.user import User
 from app.models.user_saved_preset import UserSavedPreset
+from app.schemas.sync_plan import SyncPlanRequest
 from app.services.sync_orchestrator import SyncOrchestrator, SyncReportConflictError
 
 
@@ -654,3 +658,248 @@ async def test_two_devices_keep_independent_preset_observations(
         "loaded-device",
         "failed-device",
     }
+
+
+def test_sync_plan_identity_fields_are_bounded():
+    with pytest.raises(ValidationError):
+        SyncPlanRequest(
+            device_fingerprint="x" * 256,
+            preset_type="filament",
+        )
+    with pytest.raises(ValidationError):
+        SyncPlanRequest(
+            device_fingerprint="device",
+            preset_type="filament",
+            orcaslicer_version="v" * 51,
+        )
+
+
+@pytest.mark.asyncio
+async def test_sync_service_identity_fields_are_bounded(
+    sync_orchestrator: SyncOrchestrator,
+    test_user: User,
+):
+    with pytest.raises(ValueError, match="device_fingerprint"):
+        await sync_orchestrator.get_or_create_device(test_user.id, "x" * 256)
+    with pytest.raises(ValueError, match="orcaslicer_version"):
+        await sync_orchestrator.get_or_create_device(
+            test_user.id,
+            "device",
+            "v" * 51,
+        )
+
+
+@pytest.mark.asyncio
+async def test_sync_status_uses_cursor_pages_for_devices_and_presets(
+    sync_orchestrator: SyncOrchestrator,
+    test_user: User,
+    test_preset: Preset,
+    test_filament: Filament,
+    db_session: AsyncSession,
+):
+    extra_presets = [
+        Preset(
+            name=f"Paged preset {index}",
+            filament_id=test_filament.id,
+            user_id=test_user.id,
+            extruder_temp=200.0 + index,
+            bed_temp=60.0,
+            moderation_status=PresetModerationStatus.APPROVED,
+            active=True,
+        )
+        for index in range(2)
+    ]
+    db_session.add_all(extra_presets)
+    await db_session.flush()
+    db_session.add_all(
+        [
+            UserSavedPreset(user_id=test_user.id, preset_id=preset.id, sync=True)
+            for preset in [test_preset, *extra_presets]
+        ]
+    )
+    for index in range(3):
+        await sync_orchestrator.get_or_create_device(
+            test_user.id,
+            f"paged-device-{index}",
+        )
+    await db_session.flush()
+
+    first = await sync_orchestrator.get_sync_status(
+        test_user.id,
+        device_limit=2,
+        preset_limit=2,
+    )
+    second = await sync_orchestrator.get_sync_status(
+        test_user.id,
+        device_limit=2,
+        device_cursor=first["device_next_cursor"],
+        preset_limit=2,
+        preset_cursor=first["preset_next_cursor"],
+    )
+
+    first_devices = {item["device_fingerprint"] for item in first["devices"]}
+    second_devices = {item["device_fingerprint"] for item in second["devices"]}
+    assert len(first_devices) == 2
+    assert len(second_devices) == 1
+    assert first_devices.isdisjoint(second_devices)
+    assert first["device_next_cursor"] is not None
+    assert second["device_next_cursor"] is None
+
+    first_presets = {item["preset_id"] for item in first["presets"]}
+    second_presets = {item["preset_id"] for item in second["presets"]}
+    assert len(first_presets) == 2
+    assert len(second_presets) == 1
+    assert first_presets.isdisjoint(second_presets)
+    assert first["preset_next_cursor"] is not None
+    assert second["preset_next_cursor"] is None
+
+
+@pytest.mark.asyncio
+async def test_sync_history_cursor_and_projection_survive_retention(
+    sync_orchestrator: SyncOrchestrator,
+    test_user: User,
+    test_preset: Preset,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(settings, "ORCA_SYNC_HISTORY_RETENTION_VERSIONS", 2)
+    for expected_version, state in enumerate(
+        ("on_disk", "loaded", "pending_restart"),
+        start=1,
+    ):
+        plan = await sync_orchestrator.create_sync_plan(
+            test_user.id,
+            "retention-device",
+            "filament",
+            include_changes=False,
+        )
+        assert plan["sync_version"] == expected_version
+        await sync_orchestrator.complete_sync(
+            test_user.id,
+            "retention-device",
+            plan["sync_version"],
+            [
+                {
+                    "preset_id": test_preset.id,
+                    "preset_type": "filament",
+                    "operation": "download",
+                    "state": state,
+                    "error_code": None,
+                }
+            ],
+        )
+
+    versions = list(
+        (
+            await db_session.execute(
+                select(SyncHistory.sync_version).order_by(SyncHistory.sync_version)
+            )
+        ).scalars()
+    )
+    projection = (
+        await db_session.execute(
+            select(SyncPresetState).where(
+                SyncPresetState.preset_id == test_preset.id
+            )
+        )
+    ).scalar_one()
+    assert versions == [2, 3]
+    assert projection.sync_version == 3
+    assert projection.status == SyncStatus.CONFLICT
+
+    first_page = await sync_orchestrator.get_sync_history(
+        test_user.id,
+        device_fingerprint="retention-device",
+        limit=1,
+    )
+    second_page = await sync_orchestrator.get_sync_history(
+        test_user.id,
+        device_fingerprint="retention-device",
+        limit=1,
+        cursor=first_page["next_cursor"],
+    )
+    assert [item["sync_version"] for item in first_page["items"]] == [3]
+    assert [item["sync_version"] for item in second_page["items"]] == [2]
+    assert first_page["next_cursor"] is not None
+    assert second_page["next_cursor"] is None
+
+@pytest.mark.asyncio
+async def test_deleted_detection_query_count_does_not_scale_per_preset(
+    sync_orchestrator: SyncOrchestrator,
+    test_user: User,
+    db_session: AsyncSession,
+):
+    device = await sync_orchestrator.get_or_create_device(
+        test_user.id,
+        "bulk-deleted-device",
+    )
+    device.sync_version = 1
+    now = datetime.now(timezone.utc)
+    db_session.add(
+        SyncPresetState(
+            user_id=test_user.id,
+            device_id=device.id,
+            preset_type="filament",
+            preset_id=10_001,
+            sync_version=1,
+            operation="download",
+            status="success",
+            present=True,
+            observed_at=now,
+        )
+    )
+    await db_session.flush()
+
+    statements: list[str] = []
+
+    def record_statement(
+        _connection,
+        _cursor,
+        statement,
+        _parameters,
+        _context,
+        _executemany,
+    ):
+        statements.append(statement)
+
+    sync_engine = db_session.bind.sync_engine
+    event.listen(sync_engine, "before_cursor_execute", record_statement)
+    try:
+        one = await sync_orchestrator.get_deleted_presets(
+            test_user.id,
+            "bulk-deleted-device",
+            "filament",
+        )
+        one_query_count = len(statements)
+        statements.clear()
+
+        db_session.add_all(
+            [
+                SyncPresetState(
+                    user_id=test_user.id,
+                    device_id=device.id,
+                    preset_type="filament",
+                    preset_id=10_001 + index,
+                    sync_version=1,
+                    operation="download",
+                    status="success",
+                    present=True,
+                    observed_at=now,
+                )
+                for index in range(1, 20)
+            ]
+        )
+        await db_session.flush()
+        statements.clear()
+        many = await sync_orchestrator.get_deleted_presets(
+            test_user.id,
+            "bulk-deleted-device",
+            "filament",
+        )
+        many_query_count = len(statements)
+    finally:
+        event.remove(sync_engine, "before_cursor_execute", record_statement)
+
+    assert len(one) == 1
+    assert len(many) == 20
+    assert many_query_count == one_query_count

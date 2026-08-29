@@ -3,7 +3,7 @@
 from datetime import datetime
 from enum import Enum
 
-from sqlalchemy import DateTime, ForeignKey, Integer, Text
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, Text
 from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -62,6 +62,18 @@ class SyncHistory(Base):
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        Index("ix_sync_history_device_version", "device_id", "sync_version"),
+        Index("ix_sync_history_user_id_cursor", "user_id", "id"),
+        Index(
+            "ix_sync_history_device_type_preset_cursor",
+            "device_id",
+            "preset_type",
+            "preset_id",
+            "id",
+        ),
     )
 
     def __repr__(self) -> str:

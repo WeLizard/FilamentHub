@@ -4201,6 +4201,7 @@ from app.schemas.sync_plan import (
 from app.schemas.sync_plan import (
     SyncCompleteRequest,
     SyncCompleteResponse,
+    SyncHistoryResponse,
     SyncPlanRequest,
     SyncPlanResponse,
     SyncStatusResponse,
@@ -4261,7 +4262,13 @@ async def complete_sync(
 async def get_sync_status(
     current_user: Annotated[User, Depends(get_current_active_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
-    device_fingerprint: Annotated[str | None, Query()] = None,
+    device_fingerprint: Annotated[
+        str | None, Query(min_length=1, max_length=255)
+    ] = None,
+    device_limit: Annotated[int, Query(ge=1, le=100)] = 50,
+    device_cursor: Annotated[int | None, Query(ge=1)] = None,
+    preset_limit: Annotated[int, Query(ge=1, le=100)] = 100,
+    preset_cursor: Annotated[int | None, Query(ge=1)] = None,
 ):
     """Получить статус последней синхронизации устройства."""
     orchestrator = SyncOrchestrator(db)
@@ -4269,10 +4276,39 @@ async def get_sync_status(
         sync_status = await orchestrator.get_sync_status(
             user_id=current_user.id,
             device_fingerprint=device_fingerprint,
+            device_limit=device_limit,
+            device_cursor=device_cursor,
+            preset_limit=preset_limit,
+            preset_cursor=preset_cursor,
         )
     except LookupError:
         raise_error(status.HTTP_404_NOT_FOUND, ERR_DEVICE_NOT_FOUND)
     return SyncStatusResponse(**sync_status)
+
+
+@router.get("/sync-history", response_model=SyncHistoryResponse)
+async def get_sync_history(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    device_fingerprint: Annotated[
+        str | None, Query(min_length=1, max_length=255)
+    ] = None,
+    preset_type: Annotated[
+        str | None, Query(pattern="^(filament|printer|print)$")
+    ] = None,
+    limit: Annotated[int, Query(ge=1, le=100)] = 100,
+    cursor: Annotated[int | None, Query(ge=1)] = None,
+):
+    """Return a bounded cursor page of raw device sync outcomes."""
+    orchestrator = SyncOrchestrator(db)
+    history = await orchestrator.get_sync_history(
+        user_id=current_user.id,
+        device_fingerprint=device_fingerprint,
+        preset_type=preset_type,
+        limit=limit,
+        cursor=cursor,
+    )
+    return SyncHistoryResponse(**history)
 
 
 @router.post("/orcaslicer/validate-parent", response_model=ParentPresetValidationResponse)

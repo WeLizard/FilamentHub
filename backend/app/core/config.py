@@ -3,7 +3,7 @@
 from typing import Literal
 from urllib.parse import quote_plus
 
-from pydantic import model_validator
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -139,6 +139,9 @@ class Settings(BaseSettings):
 
     # OrcaSlicer bundles
     ORCA_SYSTEM_PRESETS_PATH: str = "docs/orca_bundles/system_presets"
+    # Raw device reports are retained for a bounded number of accepted sync
+    # versions. The latest state survives independently in sync_preset_states.
+    ORCA_SYNC_HISTORY_RETENTION_VERSIONS: int = Field(default=100, ge=1, le=1000)
 
     # Distributions (downloadable files)
     DISTRIBUTIONS_DIR: str = "distributions"

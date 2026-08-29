@@ -101,6 +101,7 @@ from app.models.shared_quote import SharedQuote
 from app.models.subscription import Subscription, SubscriptionStatus
 from app.models.sync_device import SyncDevice
 from app.models.sync_history import SyncHistory, SyncOperation, SyncPresetType, SyncStatus
+from app.models.sync_preset_state import SyncPresetState
 from app.models.user import User, UserRole
 from app.models.user_achievement import UserAchievement
 from app.models.user_legal_acceptance import UserLegalAcceptance
@@ -243,6 +244,7 @@ __all__ = [
     "SyncHistory",
     "SyncOperation",
     "SyncPresetType",
+    "SyncPresetState",
     "SyncStatus",
     "User",
     "UserAchievement",

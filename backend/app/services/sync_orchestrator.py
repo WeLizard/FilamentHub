@@ -4,14 +4,16 @@ import json
 import logging
 from datetime import datetime, timezone
 
-from sqlalchemy import and_, select
+from sqlalchemy import and_, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.models.preset import Preset
 from app.models.print_profile import PrintProfile
 from app.models.printer_profile import PrinterProfile
 from app.models.sync_device import SyncDevice
 from app.models.sync_history import SyncHistory, SyncOperation, SyncPresetType, SyncStatus
+from app.models.sync_preset_state import SyncPresetState
 from app.models.user_saved_preset import UserSavedPreset
 
 logger = logging.getLogger(__name__)
@@ -37,22 +39,24 @@ def _observation_payload(state: str, error_code: str | None = None) -> str:
     return json.dumps(payload, ensure_ascii=True, separators=(",", ":"), sort_keys=True)
 
 
-def _decode_observation(history: SyncHistory) -> tuple[str, str | None]:
+def _decode_observation(
+    observation: SyncHistory | SyncPresetState,
+) -> tuple[str, str | None]:
     """Read new structured observations while keeping old history useful."""
-    if history.error_message:
+    if observation.error_message:
         try:
-            payload = json.loads(history.error_message)
+            payload = json.loads(observation.error_message)
         except (TypeError, ValueError):
             payload = None
         if isinstance(payload, dict) and payload.get("state") in _OBSERVATION_STATUS:
             error_code = payload.get("error_code")
             return payload["state"], error_code if isinstance(error_code, str) else None
 
-    if history.status == SyncStatus.ERROR:
+    if observation.status == SyncStatus.ERROR:
         return "error", "legacy_sync_error"
-    if history.status == SyncStatus.CONFLICT:
+    if observation.status == SyncStatus.CONFLICT:
         return "pending_restart", None
-    if history.operation == SyncOperation.DELETE:
+    if observation.operation == SyncOperation.DELETE:
         return "removed", None
     # A historical SUCCESS only proved that a download completed. It never
     # proved that the running Orca host loaded the resulting profile.
@@ -72,6 +76,10 @@ class SyncOrchestrator:
         orcaslicer_version: str | None = None,
     ) -> SyncDevice:
         """Получить или создать устройство для синхронизации."""
+        if not 1 <= len(device_fingerprint) <= 255:
+            raise ValueError("device_fingerprint length is out of bounds")
+        if orcaslicer_version is not None and not 1 <= len(orcaslicer_version) <= 50:
+            raise ValueError("orcaslicer_version length is out of bounds")
         result = await self.db.execute(
             select(SyncDevice).where(
                 and_(
@@ -186,6 +194,7 @@ class SyncOrchestrator:
         if sync_version != device.sync_version + 1:
             raise SyncReportConflictError("unexpected sync version")
 
+        observed_at = datetime.now(timezone.utc)
         for item in results:
             state = item["state"]
             history = SyncHistory(
@@ -197,12 +206,21 @@ class SyncOrchestrator:
                 preset_id=item["preset_id"],
                 status=_OBSERVATION_STATUS[state],
                 error_message=_observation_payload(state, item.get("error_code")),
+                created_at=observed_at,
             )
             self.db.add(history)
 
+        await self._publish_observations(
+            user_id=user_id,
+            device_id=device.id,
+            sync_version=sync_version,
+            results=results,
+            observed_at=observed_at,
+        )
         device.sync_version = sync_version
-        device.last_sync_at = datetime.now(timezone.utc)
+        device.last_sync_at = observed_at
         await self.db.flush()
+        await self._prune_history(device.id, sync_version)
         return device, False
 
     async def record_sync_success(
@@ -225,6 +243,21 @@ class SyncOrchestrator:
             status=SyncStatus.SUCCESS,
         )
         self.db.add(history)
+        await self._publish_observations(
+            user_id=user_id,
+            device_id=device_id,
+            sync_version=sync_version,
+            results=[
+                {
+                    "preset_type": preset_type,
+                    "operation": operation,
+                    "preset_id": preset_id,
+                    "state": "removed" if operation == "delete" else "on_disk",
+                    "error_code": None,
+                }
+            ],
+            observed_at=datetime.now(timezone.utc),
+        )
         await self.db.flush()
         return history
 
@@ -250,6 +283,21 @@ class SyncOrchestrator:
             error_message=error_message,
         )
         self.db.add(history)
+        await self._publish_observations(
+            user_id=user_id,
+            device_id=device_id,
+            sync_version=sync_version,
+            results=[
+                {
+                    "preset_type": preset_type,
+                    "operation": operation,
+                    "preset_id": preset_id,
+                    "state": "error",
+                    "error_code": "legacy_sync_error",
+                }
+            ],
+            observed_at=datetime.now(timezone.utc),
+        )
         await self.db.flush()
         return history
 
@@ -269,47 +317,73 @@ class SyncOrchestrator:
             user_id, device.id, preset_type, device.sync_version
         )
 
-        results = []
-        for item in deleted_ids:
-            preset_id = item["id"]
-            results.append({
-                "preset_id": preset_id,
+        preset_ids = [item["id"] for item in deleted_ids]
+        saved_ids: set[int] = set()
+        if preset_ids:
+            saved_result = await self.db.execute(
+                select(UserSavedPreset.preset_id).where(
+                    and_(
+                        UserSavedPreset.user_id == user_id,
+                        UserSavedPreset.preset_id.in_(preset_ids),
+                    )
+                )
+            )
+            saved_ids = set(saved_result.scalars().all())
+
+        return [
+            {
+                "preset_id": item["id"],
                 "name": item.get("name", ""),
                 "was_created_by_user": item.get("user_id") == user_id,
-                "was_saved_by_user": await self._is_saved_by_user(user_id, preset_id),
-            })
-        return results
+                "was_saved_by_user": item["id"] in saved_ids,
+            }
+            for item in deleted_ids
+        ]
 
     async def get_sync_status(
         self,
         user_id: int,
         device_fingerprint: str | None = None,
+        *,
+        device_limit: int = 50,
+        device_cursor: int | None = None,
+        preset_limit: int = 100,
+        preset_cursor: int | None = None,
     ) -> dict:
-        """Получить desired state и последнее наблюдение выбранного устройства."""
+        """Return bounded desired state and the selected device observation."""
+        device_query = select(SyncDevice).where(SyncDevice.user_id == user_id)
+        if device_cursor is not None:
+            device_query = device_query.where(SyncDevice.id < device_cursor)
         devices_result = await self.db.execute(
-            select(SyncDevice).where(SyncDevice.user_id == user_id)
+            device_query.order_by(SyncDevice.id.desc()).limit(device_limit + 1)
         )
-        devices = list(devices_result.scalars().all())
-        devices.sort(
-            key=lambda item: (
-                item.last_sync_at or item.updated_at or item.created_at,
-                item.id,
-            ),
-            reverse=True,
-        )
+        devices_page = list(devices_result.scalars().all())
+        has_more_devices = len(devices_page) > device_limit
+        devices = devices_page[:device_limit]
 
-        device = None
+        device: SyncDevice | None = None
         if device_fingerprint is not None:
-            device = next(
-                (item for item in devices if item.device_fingerprint == device_fingerprint),
-                None,
+            selected_result = await self.db.execute(
+                select(SyncDevice).where(
+                    and_(
+                        SyncDevice.user_id == user_id,
+                        SyncDevice.device_fingerprint == device_fingerprint,
+                    )
+                )
             )
+            device = selected_result.scalar_one_or_none()
             if device is None:
                 raise LookupError("sync device not found")
-        elif devices:
-            device = devices[0]
+        else:
+            selected_result = await self.db.execute(
+                select(SyncDevice)
+                .where(SyncDevice.user_id == user_id)
+                .order_by(SyncDevice.last_sync_at.desc().nullslast(), SyncDevice.id.desc())
+                .limit(1)
+            )
+            device = selected_result.scalar_one_or_none()
 
-        saved_result = await self.db.execute(
+        saved_query = (
             select(UserSavedPreset)
             .join(Preset, Preset.id == UserSavedPreset.preset_id)
             .where(
@@ -321,27 +395,29 @@ class SyncOrchestrator:
             )
             .order_by(UserSavedPreset.preset_id)
         )
-        saved_presets = list(saved_result.scalars().all())
+        if preset_cursor is not None:
+            saved_query = saved_query.where(UserSavedPreset.preset_id > preset_cursor)
+        saved_result = await self.db.execute(saved_query.limit(preset_limit + 1))
+        saved_page = list(saved_result.scalars().all())
+        has_more_presets = len(saved_page) > preset_limit
+        saved_presets = saved_page[:preset_limit]
 
-        history_entries: list[SyncHistory] = []
-        latest_by_preset: dict[int, SyncHistory] = {}
-        if device is not None:
-            history_result = await self.db.execute(
-                select(SyncHistory)
-                .where(
+        latest_by_preset: dict[int, SyncPresetState] = {}
+        preset_ids = [saved.preset_id for saved in saved_presets]
+        if device is not None and preset_ids:
+            projection_result = await self.db.execute(
+                select(SyncPresetState).where(
                     and_(
-                        SyncHistory.device_id == device.id,
-                        SyncHistory.preset_type == SyncPresetType.FILAMENT,
+                        SyncPresetState.device_id == device.id,
+                        SyncPresetState.preset_type == SyncPresetType.FILAMENT,
+                        SyncPresetState.preset_id.in_(preset_ids),
                     )
                 )
-                .order_by(SyncHistory.created_at.desc(), SyncHistory.id.desc())
             )
-            all_history = list(history_result.scalars().all())
-            for history in all_history:
-                latest_by_preset.setdefault(history.preset_id, history)
-            history_entries = [
-                history for history in all_history if history.sync_version == device.sync_version
-            ]
+            latest_by_preset = {
+                observation.preset_id: observation
+                for observation in projection_result.scalars().all()
+            }
 
         preset_statuses = []
         for saved in saved_presets:
@@ -354,7 +430,7 @@ class SyncOrchestrator:
             if latest is not None:
                 observed_state, observed_error = _decode_observation(latest)
                 operation = latest.operation.value
-                observed_at = latest.created_at.isoformat()
+                observed_at = latest.observed_at.isoformat()
                 if desired and latest.operation == SyncOperation.DOWNLOAD:
                     state = observed_state
                     error_code = observed_error
@@ -373,9 +449,20 @@ class SyncOrchestrator:
                 }
             )
 
-        success_count = sum(1 for h in history_entries if h.status == SyncStatus.SUCCESS)
-        error_count = sum(1 for h in history_entries if h.status == SyncStatus.ERROR)
-        conflict_count = sum(1 for h in history_entries if h.status == SyncStatus.CONFLICT)
+        stats = {status: 0 for status in SyncStatus}
+        if device is not None:
+            stats_result = await self.db.execute(
+                select(SyncHistory.status, func.count(SyncHistory.id))
+                .where(
+                    and_(
+                        SyncHistory.device_id == device.id,
+                        SyncHistory.sync_version == device.sync_version,
+                    )
+                )
+                .group_by(SyncHistory.status)
+            )
+            stats.update(dict(stats_result.all()))
+        total_count = sum(stats.values())
 
         return {
             "device_fingerprint": device.device_fingerprint if device else None,
@@ -386,10 +473,10 @@ class SyncOrchestrator:
                 else None
             ),
             "last_sync_stats": {
-                "total": len(history_entries),
-                "success": success_count,
-                "errors": error_count,
-                "pending_restart": conflict_count,
+                "total": total_count,
+                "success": stats[SyncStatus.SUCCESS],
+                "errors": stats[SyncStatus.ERROR],
+                "pending_restart": stats[SyncStatus.CONFLICT],
             },
             "devices": [
                 {
@@ -400,8 +487,139 @@ class SyncOrchestrator:
                 }
                 for item in devices
             ],
+            "device_next_cursor": devices[-1].id if has_more_devices and devices else None,
             "presets": preset_statuses,
+            "preset_next_cursor": (
+                saved_presets[-1].preset_id
+                if has_more_presets and saved_presets
+                else None
+            ),
         }
+
+    async def get_sync_history(
+        self,
+        user_id: int,
+        *,
+        device_fingerprint: str | None = None,
+        preset_type: str | None = None,
+        limit: int = 100,
+        cursor: int | None = None,
+    ) -> dict:
+        """Return a bounded keyset page of raw device outcomes."""
+        query = (
+            select(SyncHistory, SyncDevice.device_fingerprint)
+            .join(SyncDevice, SyncDevice.id == SyncHistory.device_id)
+            .where(SyncHistory.user_id == user_id)
+        )
+        if device_fingerprint is not None:
+            query = query.where(SyncDevice.device_fingerprint == device_fingerprint)
+        if preset_type is not None:
+            query = query.where(SyncHistory.preset_type == SyncPresetType(preset_type))
+        if cursor is not None:
+            query = query.where(SyncHistory.id < cursor)
+
+        result = await self.db.execute(
+            query.order_by(SyncHistory.id.desc()).limit(limit + 1)
+        )
+        page = list(result.all())
+        has_more = len(page) > limit
+        rows = page[:limit]
+        items = []
+        for history, fingerprint in rows:
+            state, error_code = _decode_observation(history)
+            items.append(
+                {
+                    "id": history.id,
+                    "device_fingerprint": fingerprint,
+                    "sync_version": history.sync_version,
+                    "preset_type": history.preset_type.value,
+                    "operation": history.operation.value,
+                    "preset_id": history.preset_id,
+                    "state": state,
+                    "error_code": error_code,
+                    "observed_at": history.created_at.isoformat(),
+                }
+            )
+        return {
+            "items": items,
+            "next_cursor": rows[-1][0].id if has_more and rows else None,
+        }
+
+    async def _publish_observations(
+        self,
+        *,
+        user_id: int,
+        device_id: int,
+        sync_version: int,
+        results: list[dict],
+        observed_at: datetime,
+    ) -> None:
+        """Atomically refresh the latest-state projection for one report."""
+        if not results:
+            return
+
+        preset_ids = {item["preset_id"] for item in results}
+        current_result = await self.db.execute(
+            select(SyncPresetState).where(
+                and_(
+                    SyncPresetState.device_id == device_id,
+                    SyncPresetState.preset_id.in_(preset_ids),
+                )
+            )
+        )
+        current = {
+            (item.preset_type.value, item.preset_id): item
+            for item in current_result.scalars().all()
+        }
+
+        for result_item in results:
+            preset_type = SyncPresetType(result_item["preset_type"])
+            operation = SyncOperation(result_item["operation"])
+            state = result_item["state"]
+            key = (preset_type.value, result_item["preset_id"])
+            projection = current.get(key)
+            present = projection.present if projection is not None else False
+            if operation == SyncOperation.DELETE and state == "removed":
+                present = False
+            elif operation == SyncOperation.DOWNLOAD and state != "error":
+                present = True
+
+            values = {
+                "user_id": user_id,
+                "device_id": device_id,
+                "preset_type": preset_type,
+                "preset_id": result_item["preset_id"],
+                "sync_version": sync_version,
+                "operation": operation,
+                "status": _OBSERVATION_STATUS[state],
+                "error_message": _observation_payload(
+                    state, result_item.get("error_code")
+                ),
+                "present": present,
+                "observed_at": observed_at,
+            }
+            if projection is None:
+                projection = SyncPresetState(**values)
+                self.db.add(projection)
+                current[key] = projection
+            else:
+                for field, value in values.items():
+                    setattr(projection, field, value)
+
+    async def _prune_history(self, device_id: int, sync_version: int) -> None:
+        """Retain a bounded number of complete report versions per device."""
+        retention_versions = max(1, settings.ORCA_SYNC_HISTORY_RETENTION_VERSIONS)
+        oldest_retained = sync_version - retention_versions + 1
+        if oldest_retained <= 0:
+            return
+        await self.db.execute(
+            delete(SyncHistory).where(
+                and_(
+                    SyncHistory.device_id == device_id,
+                    SyncHistory.sync_version < oldest_retained,
+                )
+            )
+        )
 
     async def _report_matches_history(
         self,
@@ -566,30 +784,20 @@ class SyncOrchestrator:
         if sync_version == 0:
             return []
 
-        # Получить ID пресетов из истории последней синхронизации
-        result = await self.db.execute(
-            select(SyncHistory.preset_id).where(
-                and_(
-                    SyncHistory.device_id == device_id,
-                    SyncHistory.preset_type == SyncPresetType(preset_type),
-                    SyncHistory.status == SyncStatus.SUCCESS,
-                    SyncHistory.operation == SyncOperation.DOWNLOAD,
-                )
+        deleted_query = select(SyncPresetState.preset_id).where(
+            and_(
+                SyncPresetState.device_id == device_id,
+                SyncPresetState.preset_type == SyncPresetType(preset_type),
+                SyncPresetState.present.is_(True),
             )
         )
-        synced_ids = {row[0] for row in result.all()}
-
-        if not synced_ids:
-            return []
-
-        # Получить текущие активные ID
-        current_ids = set()
         if preset_type == "filament":
-            res = await self.db.execute(
+            current = (
                 select(UserSavedPreset.preset_id)
                 .join(Preset, Preset.id == UserSavedPreset.preset_id)
                 .where(
                     and_(
+                        UserSavedPreset.preset_id == SyncPresetState.preset_id,
                         UserSavedPreset.user_id == user_id,
                         UserSavedPreset.sync.is_(True),
                         Preset.active.is_(True),
@@ -597,65 +805,70 @@ class SyncOrchestrator:
                     )
                 )
             )
-            current_ids = {row[0] for row in res.all()}
+            deleted_query = deleted_query.where(~current.exists())
         elif preset_type == "printer":
-            res = await self.db.execute(
+            current = (
                 select(PrinterProfile.id).where(
-                    and_(PrinterProfile.owner_user_id == user_id, PrinterProfile.active == True)
+                    and_(
+                        PrinterProfile.id == SyncPresetState.preset_id,
+                        PrinterProfile.owner_user_id == user_id,
+                        PrinterProfile.active.is_(True),
+                    )
                 )
             )
-            current_ids = {row[0] for row in res.all()}
+            deleted_query = deleted_query.where(~current.exists())
         elif preset_type == "print":
-            res = await self.db.execute(
+            current = (
                 select(PrintProfile.id).where(
-                    and_(PrintProfile.owner_user_id == user_id, PrintProfile.active == True)
+                    and_(
+                        PrintProfile.id == SyncPresetState.preset_id,
+                        PrintProfile.owner_user_id == user_id,
+                        PrintProfile.active.is_(True),
+                    )
                 )
             )
-            current_ids = {row[0] for row in res.all()}
+            deleted_query = deleted_query.where(~current.exists())
 
-        deleted_ids = synced_ids - current_ids
-
-        # Собираем метаданные удалённых
-        deleted_presets = []
-        for pid in deleted_ids:
-            # Попробуем найти неактивный пресет для получения имени
-            name = f"Preset #{pid}"
-            p_user_id = None
-            if preset_type == "filament":
-                res = await self.db.execute(select(Preset).where(Preset.id == pid))
-                p = res.scalar_one_or_none()
-                if p:
-                    name = p.name
-                    p_user_id = p.user_id
-            elif preset_type == "printer":
-                res = await self.db.execute(select(PrinterProfile).where(PrinterProfile.id == pid))
-                p = res.scalar_one_or_none()
-                if p:
-                    name = p.name
-                    p_user_id = p.owner_user_id
-            elif preset_type == "print":
-                res = await self.db.execute(select(PrintProfile).where(PrintProfile.id == pid))
-                p = res.scalar_one_or_none()
-                if p:
-                    name = p.name
-                    p_user_id = p.owner_user_id
-
-            deleted_presets.append({
-                "id": pid,
-                "name": name,
-                "user_id": p_user_id,
-            })
-
-        return deleted_presets
-
-    async def _is_saved_by_user(self, user_id: int, preset_id: int) -> bool:
-        """Проверить, сохранён ли пресет пользователем."""
-        result = await self.db.execute(
-            select(UserSavedPreset.id).where(
-                and_(
-                    UserSavedPreset.user_id == user_id,
-                    UserSavedPreset.preset_id == preset_id,
-                )
-            )
+        deleted_result = await self.db.execute(
+            deleted_query.order_by(SyncPresetState.preset_id)
         )
-        return result.scalar_one_or_none() is not None
+        deleted_ids = list(deleted_result.scalars().all())
+        if not deleted_ids:
+            return []
+
+        metadata: dict[int, tuple[str, int | None]] = {}
+        if preset_type == "filament":
+            metadata_result = await self.db.execute(
+                select(Preset.id, Preset.name, Preset.user_id).where(
+                    Preset.id.in_(deleted_ids)
+                )
+            )
+        elif preset_type == "printer":
+            metadata_result = await self.db.execute(
+                select(
+                    PrinterProfile.id,
+                    PrinterProfile.name,
+                    PrinterProfile.owner_user_id,
+                ).where(PrinterProfile.id.in_(deleted_ids))
+            )
+        else:
+            metadata_result = await self.db.execute(
+                select(
+                    PrintProfile.id,
+                    PrintProfile.name,
+                    PrintProfile.owner_user_id,
+                ).where(PrintProfile.id.in_(deleted_ids))
+            )
+        metadata = {
+            preset_id: (name, owner_user_id)
+            for preset_id, name, owner_user_id in metadata_result.all()
+        }
+
+        return [
+            {
+                "id": preset_id,
+                "name": metadata.get(preset_id, (f"Preset #{preset_id}", None))[0],
+                "user_id": metadata.get(preset_id, ("", None))[1],
+            }
+            for preset_id in deleted_ids
+        ]

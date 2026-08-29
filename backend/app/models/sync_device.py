@@ -47,6 +47,8 @@ class SyncDevice(Base):
             "device_fingerprint",
             unique=True,
         ),
+        Index("ix_sync_devices_user_cursor", "user_id", "id"),
+        Index("ix_sync_devices_user_last_sync", "user_id", "last_sync_at", "id"),
         {"extend_existing": True},
     )
 
