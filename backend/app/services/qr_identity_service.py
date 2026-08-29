@@ -67,7 +67,7 @@ from app.schemas.qr_identity import (
     UserSpoolQrResponse,
 )
 from app.services.qr_service import _qr_target_url, ensure_filament_qr_code
-from app.services.territorial_access import active_grants_for
+from app.services.territorial_access import active_grant_brand_ids_for, active_grants_for
 
 logger = logging.getLogger(__name__)
 
@@ -1264,33 +1264,20 @@ async def list_manufacturer_qr_batches(
     organization_id = user.active_organization_id
     if organization_id is None:
         return ManufacturerQrBatchListResponse(items=[], total=0, offset=offset, limit=limit)
-    organization_brand_ids = set(
-        (
-            await db.scalars(
-                select(QrManufacturerBatch.brand_id)
-                .where(QrManufacturerBatch.organization_id == organization_id)
-                .distinct()
+    authorized_brand_ids = active_grant_brand_ids_for(user)
+    total = int(
+        await db.scalar(
+            select(func.count())
+            .select_from(QrManufacturerBatch)
+            .where(
+                QrManufacturerBatch.organization_id == organization_id,
+                QrManufacturerBatch.brand_id.in_(authorized_brand_ids),
             )
-        ).all()
-    )
-    authorized_brand_ids = {
-        brand_id
-        for brand_id in organization_brand_ids
-        if any(
-            grant.organization_id == organization_id
-            for grant in await active_grants_for(db, user, brand_id)
         )
-    }
-    if not authorized_brand_ids:
+        or 0
+    )
+    if total == 0:
         return ManufacturerQrBatchListResponse(items=[], total=0, offset=offset, limit=limit)
-    total = await db.scalar(
-        select(func.count())
-        .select_from(QrManufacturerBatch)
-        .where(
-            QrManufacturerBatch.organization_id == organization_id,
-            QrManufacturerBatch.brand_id.in_(authorized_brand_ids),
-        )
-    )
     batches = list(
         (
             await db.scalars(
@@ -1308,7 +1295,7 @@ async def list_manufacturer_qr_batches(
     )
     return ManufacturerQrBatchListResponse(
         items=[_batch_response(batch) for batch in batches],
-        total=int(total or 0),
+        total=total,
         offset=offset,
         limit=limit,
     )

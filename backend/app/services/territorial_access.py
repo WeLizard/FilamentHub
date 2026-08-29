@@ -7,7 +7,7 @@
 окончательная власть над ним переходит глобальной организации.
 """
 
-from sqlalchemy import or_, select
+from sqlalchemy import Select, false, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.brand_territorial_grant import BrandTerritorialGrant, GrantStatus
@@ -19,15 +19,8 @@ from app.models.organization import (
 from app.models.user import User, UserRole
 
 
-async def active_grants_for(
-    db: AsyncSession, user: User, brand_id: int
-) -> list[BrandTerritorialGrant]:
-    """Действующие права человека на бренд.
-
-    Один бренд бывает доступен через несколько организаций сразу. Если человек
-    выбрал, от какой действует, берутся права только этой: иначе он получил бы
-    объединение полномочий разных компаний, не действуя ни от одной.
-    """
+def _active_grants_statement(user: User) -> Select[tuple[BrandTerritorialGrant]]:
+    """SQL-критерий действующих прав выбранной организации пользователя."""
     query = (
         select(BrandTerritorialGrant)
         .join(
@@ -43,7 +36,6 @@ async def active_grants_for(
             OrganizationBrandAccess.membership_id == OrganizationMembership.id,
         )
         .where(
-            BrandTerritorialGrant.brand_id == brand_id,
             BrandTerritorialGrant.status == GrantStatus.active,
             BrandTerritorialGrant.revoked_at.is_(None),
             Organization.active.is_(True),
@@ -51,16 +43,39 @@ async def active_grants_for(
             OrganizationMembership.active.is_(True),
             or_(
                 OrganizationMembership.all_brands.is_(True),
-                OrganizationBrandAccess.brand_id == brand_id,
+                OrganizationBrandAccess.brand_id == BrandTerritorialGrant.brand_id,
             ),
         )
     )
-    if user.active_organization_id is None:
-        return []
-    query = query.where(
+    return query.where(
         BrandTerritorialGrant.organization_id == user.active_organization_id
     )
+
+
+async def active_grants_for(
+    db: AsyncSession, user: User, brand_id: int
+) -> list[BrandTerritorialGrant]:
+    """Действующие права человека на бренд.
+
+    Один бренд бывает доступен через несколько организаций сразу. Если человек
+    выбрал, от какой действует, берутся права только этой: иначе он получил бы
+    объединение полномочий разных компаний, не действуя ни от одной.
+    """
+    if user.active_organization_id is None:
+        return []
+    query = _active_grants_statement(user).where(
+        BrandTerritorialGrant.brand_id == brand_id
+    )
     return list(await db.scalars(query))
+
+
+def active_grant_brand_ids_for(user: User) -> Select[tuple[int]]:
+    """Бренды, для которых у пользователя есть действующее право в выбранной организации."""
+    if user.active_organization_id is None:
+        return select(BrandTerritorialGrant.brand_id).where(false())
+    return _active_grants_statement(user).with_only_columns(
+        BrandTerritorialGrant.brand_id
+    ).distinct()
 
 
 async def brand_has_active_global_grant(db: AsyncSession, brand_id: int) -> bool:

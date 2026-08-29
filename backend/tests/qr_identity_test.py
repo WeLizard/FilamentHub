@@ -723,7 +723,7 @@ async def test_claimed_manufacturer_qr_permanently_locks_spool_material(
 
 
 @pytest.mark.asyncio
-async def test_manufacturer_batch_list_loads_all_items_in_one_query(
+async def test_manufacturer_batch_list_uses_bounded_queries_for_brand_history(
     auth_client: AsyncClient,
     auth_user: User,
     db_session: AsyncSession,
@@ -744,6 +744,37 @@ async def test_manufacturer_batch_list_loads_all_items_in_one_query(
             headers={"Idempotency-Key": f"query-count-batch-{index:04d}"},
         )
         assert created.status_code == 201
+
+    historical_brands = [
+        Brand(
+            name=f"QR Historical Manufacturer {index}",
+            slug=f"qr-historical-manufacturer-{index}",
+            active=True,
+            verified=True,
+        )
+        for index in range(24)
+    ]
+    db_session.add_all(historical_brands)
+    await db_session.flush()
+    db_session.add_all(
+        [
+            QrManufacturerBatch(
+                public_id=f"historical-batch-{index:016d}",
+                token_ref=f"HIST{index:010d}",
+                organization_id=_organization.id,
+                brand_id=brand.id,
+                created_by_id=auth_user.id,
+                mode="serialized",
+                total_quantity=1,
+                manifest_revision=1,
+                secret_ciphertext="history",
+                idempotency_key_digest=f"{index + 10_000:064x}",
+                request_digest=f"{index + 20_000:064x}",
+            )
+            for index, brand in enumerate(historical_brands)
+        ]
+    )
+    await db_session.commit()
 
     statements: list[str] = []
 
@@ -769,14 +800,24 @@ async def test_manufacturer_batch_list_loads_all_items_in_one_query(
     finally:
         event.remove(db_session.bind.sync_engine, "before_cursor_execute", record_statement)
 
+    assert listed.total == 3
     assert len(listed.items) == 3
     item_queries = [
         statement
         for statement in statements
         if "FROM qr_manufacturer_batch_items" in statement
     ]
-    assert len(statements) == 5
+    assert len(statements) == 3
     assert len(item_queries) == 1
+
+    second_page = await list_manufacturer_qr_batches(
+        db_session,
+        user=auth_user,
+        offset=1,
+        limit=1,
+    )
+    assert second_page.total == 3
+    assert len(second_page.items) == 1
 
 
 @pytest.mark.asyncio
