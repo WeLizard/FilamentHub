@@ -27,6 +27,7 @@ jobs:
           python -m unittest \
             scripts.tests.test_check_duplication \
             scripts.tests.test_deploy_resilience_contract \
+            scripts.tests.test_nginx_websocket_contract \
             scripts.tests.test_orca_catalog_source_contract \
             scripts.tests.test_server_security_contract \
             scripts.tests.test_telegram_publish \
