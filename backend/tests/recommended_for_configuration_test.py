@@ -29,18 +29,21 @@ URL = "/api/v1/presets/recommended-for-configuration"
 async def _catalog_printer(
     db: AsyncSession,
     *,
+    nozzle_diameter: float | None = 0.4,
     max_extruder_temp: int | None = None,
+    max_bed_temp: int | None = None,
 ) -> Printer:
     printer = Printer(
         name="Voron 2.4 350",
         manufacturer="Voron",
         model="2.4 350",
         slug="voron-2-4-350",
-        nozzle_diameter=0.4,
+        nozzle_diameter=nozzle_diameter,
         build_volume_x=350,
         build_volume_y=350,
         build_volume_z=350,
         max_extruder_temp=max_extruder_temp,
+        max_bed_temp=max_bed_temp,
     )
     db.add(printer)
     await db.commit()
@@ -54,13 +57,14 @@ async def _profile(
     catalog_id: int | None,
     suffix: str = "04",
     orcaslicer_settings: dict | None = None,
+    nozzle_diameters: tuple[float, ...] | None = (0.4,),
 ) -> PrinterProfile:
     profile = PrinterProfile(
         owner_user_id=user.id,
         printer_id=catalog_id,
         name=f"Voron 2.4 350 · {suffix}",
         slug=f"voron-2-4-350-{suffix}",
-        nozzle_diameters=[0.4],
+        nozzle_diameters=list(nozzle_diameters) if nozzle_diameters is not None else None,
         orcaslicer_settings=orcaslicer_settings or {},
         active=True,
     )
@@ -154,6 +158,10 @@ async def test_config_resolves_catalog_and_recommends(
     assert body["printer_id"] == catalog.id
     assert body["printer_name"] == "Voron 2.4 350"
     assert len(body["items"]) == 1
+    item = body["items"][0]
+    assert item["ranking_score"] == item["match_score"]
+    assert item["evidence_coverage"] == item["compatibility_coverage"]
+    assert item["ranking_bonuses"] == [{"kind": "official", "value": 0.05}]
 
 
 @pytest.mark.asyncio
@@ -283,7 +291,11 @@ async def test_config_without_catalog_model(
 async def test_compatible_community_ranks_above_incompatible_official(
     auth_client: AsyncClient, db_session: AsyncSession, auth_user: User
 ) -> None:
-    catalog = await _catalog_printer(db_session, max_extruder_temp=250)
+    catalog = await _catalog_printer(
+        db_session,
+        max_extruder_temp=250,
+        max_bed_temp=120,
+    )
     filament = await _filament(db_session)
     official = await _preset_for(
         db_session,
@@ -333,15 +345,25 @@ async def test_missing_machine_specs_report_unknown_coverage(
 
     item = resp.json()["items"][0]
     assert item["compatibility_status"] == "unknown"
-    assert item["compatibility_coverage"] == 0.0
-    assert item["compatibility_checks"][0]["status"] == "unknown"
+    assert item["technical_match"] == 1.0
+    assert item["evidence_count"] == 1
+    assert item["evidence_total"] == 3
+    assert item["evidence_coverage"] == pytest.approx(0.333, abs=0.001)
+    nozzle_check = item["compatibility_checks"][0]
+    assert nozzle_check["kind"] == "nozzle_diameter"
+    assert nozzle_check["status"] == "compatible"
+    assert nozzle_check["capability_source"] == "printer_profile"
 
 
 @pytest.mark.asyncio
 async def test_nozzle_conflict_and_existing_saved_state_are_explained(
     auth_client: AsyncClient, db_session: AsyncSession, auth_user: User
 ) -> None:
-    catalog = await _catalog_printer(db_session, max_extruder_temp=300)
+    catalog = await _catalog_printer(
+        db_session,
+        max_extruder_temp=300,
+        max_bed_temp=120,
+    )
     filament = await _filament(db_session, required_nozzle_hrc=50)
     preset = await _preset_for(db_session, catalog, filament_id=filament.id)
     profile = await _profile(
@@ -370,6 +392,84 @@ async def test_nozzle_conflict_and_existing_saved_state_are_explained(
     assert item["hard_conflicts"] == ["nozzle_hrc"]
     assert item["saved"] is True
     assert item["sync_enabled"] is False
+    hrc_check = next(
+        check for check in item["compatibility_checks"] if check["kind"] == "nozzle_hrc"
+    )
+    assert hrc_check["requirement_source"] == "filament_catalog"
+    assert hrc_check["capability_source"] == "printer_profile"
+
+
+@pytest.mark.asyncio
+async def test_exact_profile_nozzle_overrides_catalog_fallback(
+    auth_client: AsyncClient, db_session: AsyncSession, auth_user: User
+) -> None:
+    catalog = await _catalog_printer(
+        db_session,
+        max_extruder_temp=300,
+        max_bed_temp=120,
+    )
+    filament = await _filament(db_session)
+    await _preset_for(db_session, catalog, filament_id=filament.id)
+    exact_profile = await _profile(
+        db_session,
+        auth_user,
+        catalog.id,
+        suffix="06",
+        nozzle_diameters=(0.6,),
+    )
+
+    response = await auth_client.get(
+        URL,
+        params={"printer_profile_id": exact_profile.id, "filament_id": filament.id},
+    )
+
+    assert response.status_code == 200
+    item = response.json()["items"][0]
+    nozzle_check = next(
+        check for check in item["compatibility_checks"] if check["kind"] == "nozzle_diameter"
+    )
+    assert item["compatibility_status"] == "incompatible"
+    assert item["hard_conflicts"] == ["nozzle_diameter"]
+    assert nozzle_check["required_values"] == [0.4]
+    assert nozzle_check["available_values"] == [0.6]
+    assert nozzle_check["required_value"] == 0.4
+    assert nozzle_check["available_value"] == 0.6
+    assert nozzle_check["capability_source"] == "printer_profile"
+
+
+@pytest.mark.asyncio
+async def test_configuration_uses_explicit_catalog_fallback_when_profile_fact_is_missing(
+    auth_client: AsyncClient, db_session: AsyncSession, auth_user: User
+) -> None:
+    catalog = await _catalog_printer(
+        db_session,
+        max_extruder_temp=300,
+        max_bed_temp=120,
+    )
+    filament = await _filament(db_session)
+    await _preset_for(db_session, catalog, filament_id=filament.id)
+    profile = await _profile(
+        db_session,
+        auth_user,
+        catalog.id,
+        suffix="fallback",
+        nozzle_diameters=None,
+    )
+
+    response = await auth_client.get(
+        URL,
+        params={"printer_profile_id": profile.id, "filament_id": filament.id},
+    )
+
+    assert response.status_code == 200
+    item = response.json()["items"][0]
+    nozzle_check = next(
+        check for check in item["compatibility_checks"] if check["kind"] == "nozzle_diameter"
+    )
+    assert item["compatibility_status"] == "compatible"
+    assert nozzle_check["status"] == "compatible"
+    assert nozzle_check["available_values"] == [0.4]
+    assert nozzle_check["capability_source"] == "catalog_printer"
 
 
 @pytest.mark.asyncio

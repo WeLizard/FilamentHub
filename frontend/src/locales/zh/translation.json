@@ -2825,7 +2825,26 @@
       "printerCompatibilityKind": {
         "nozzle_diameter": "喷嘴直径",
         "nozzle_hrc": "喷嘴硬度",
-        "hotend_temperature": "热端温度上限"
+        "hotend_temperature": "热端温度上限",
+        "bed_temperature": "热床温度上限"
+      },
+      "printerCompatibilityTechnicalSummary": "技术匹配 {{technical}}% · 已核对 {{known}}/{{total}} 项",
+      "printerCompatibilityNoComparableFacts": "没有可比较的技术信息 · 已核对 {{known}}/{{total}} 项",
+      "printerCompatibilitySources": "（要求：{{requirement}} · 能力：{{capability}}）",
+      "printerCompatibilityRequirementSource": {
+        "preset": "预设设置",
+        "preset_printer": "预设的打印机约束",
+        "filament_catalog": "材料目录"
+      },
+      "printerCompatibilityCapabilitySource": {
+        "printer_profile": "精确配置",
+        "catalog_printer": "打印机目录回退数据"
+      },
+      "printerCompatibilityRankingSignals": "排序因素",
+      "printerCompatibilityRankingBonus": {
+        "official": "官方",
+        "weighted": "加权",
+        "rating": "评分"
       },
       "printerCompatibilityValues": "需要 {{required}} · 可用 {{available}}",
       "printerCompatibilityUnknownValue": "未确认",

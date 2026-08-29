@@ -2830,7 +2830,26 @@
       "printerCompatibilityKind": {
         "nozzle_diameter": "Nozzle diameter",
         "nozzle_hrc": "Nozzle hardness",
-        "hotend_temperature": "Hotend limit"
+        "hotend_temperature": "Hotend limit",
+        "bed_temperature": "Bed limit"
+      },
+      "printerCompatibilityTechnicalSummary": "Technical match {{technical}}% · evidence {{known}} of {{total}}",
+      "printerCompatibilityNoComparableFacts": "No comparable technical facts · evidence {{known}} of {{total}}",
+      "printerCompatibilitySources": "(requirement: {{requirement}} · capability: {{capability}})",
+      "printerCompatibilityRequirementSource": {
+        "preset": "preset settings",
+        "preset_printer": "preset printer constraint",
+        "filament_catalog": "material catalog"
+      },
+      "printerCompatibilityCapabilitySource": {
+        "printer_profile": "exact configuration",
+        "catalog_printer": "printer catalog fallback"
+      },
+      "printerCompatibilityRankingSignals": "Ranking signals",
+      "printerCompatibilityRankingBonus": {
+        "official": "official",
+        "weighted": "weighted",
+        "rating": "rating"
       },
       "printerCompatibilityValues": "required {{required}} · available {{available}}",
       "printerCompatibilityUnknownValue": "not confirmed",

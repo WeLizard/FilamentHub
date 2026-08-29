@@ -8,6 +8,7 @@ to (``preset.printer_links``) and the best tier wins.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -43,8 +44,10 @@ def _norm(value: str | None) -> str:
 
 
 def _specs_compatible(a: Printer, b: Printer) -> bool:
-    """True if nozzle and every provided build-volume axis are within tolerance."""
+    """True only when at least one shared catalog fact is compatible."""
+    compared = False
     if a.nozzle_diameter is not None and b.nozzle_diameter is not None:
+        compared = True
         if abs(a.nozzle_diameter - b.nozzle_diameter) > NOZZLE_TOLERANCE:
             return False
 
@@ -54,33 +57,40 @@ def _specs_compatible(a: Printer, b: Printer) -> bool:
         (a.build_volume_z, b.build_volume_z),
     ):
         if axis_a is not None and axis_b is not None and axis_a > 0:
+            compared = True
             if abs(axis_a - axis_b) / axis_a > BUILD_VOLUME_TOLERANCE:
                 return False
 
-    return True
+    return compared
 
 
-def score_preset_for_printer(preset: Preset, printer: Printer) -> tuple[float, str]:
-    """Return ``(base_score, match_reason)`` for how well a preset fits a printer.
+@dataclass(frozen=True)
+class PresetPrinterMatch:
+    """Best catalog targeting tier and the links that establish it."""
 
-    Pure function over the already-loaded ``preset.printer_links[].printer``.
-    Returns :data:`NO_MATCH` when the preset targets no compatible printer.
-    """
+    base_score: float
+    reason: str
+    printers: tuple[Printer, ...]
+
+
+def match_preset_for_printer(preset: Preset, printer: Printer) -> PresetPrinterMatch:
+    """Return the best catalog tier without treating missing facts as a match."""
     target_mfr = _norm(printer.manufacturer)
     target_model = _norm(printer.model)
     target_family = _norm(printer.family)
 
-    best = NO_MATCH
+    best_score, best_reason = NO_MATCH
+    best_printers: list[Printer] = []
 
     for link in preset.printer_links:
         linked = link.printer
         if linked is None:
             continue
-        if linked.id == printer.id:
-            return MATCH_EXACT  # nothing beats an exact link
 
         candidate: tuple[float, str] | None = None
-        if target_mfr and _norm(linked.manufacturer) == target_mfr:
+        if linked.id == printer.id:
+            candidate = MATCH_EXACT
+        elif target_mfr and _norm(linked.manufacturer) == target_mfr:
             if target_model and _norm(linked.model) == target_model:
                 candidate = MATCH_SAME_MODEL
             elif target_family and _norm(linked.family) == target_family:
@@ -90,33 +100,73 @@ def score_preset_for_printer(preset: Preset, printer: Printer) -> tuple[float, s
         elif _specs_compatible(printer, linked):
             candidate = MATCH_COMPATIBLE_SPECS
 
-        if candidate is not None and candidate[0] > best[0]:
-            best = candidate
+        if candidate is None:
+            continue
+        if candidate[0] > best_score:
+            best_score, best_reason = candidate
+            best_printers = [linked]
+        elif candidate[0] == best_score and all(
+            existing.id != linked.id for existing in best_printers
+        ):
+            best_printers.append(linked)
 
-    return best
+    return PresetPrinterMatch(best_score, best_reason, tuple(best_printers))
+
+
+def score_preset_for_printer(preset: Preset, printer: Printer) -> tuple[float, str]:
+    """Return ``(base_score, match_reason)`` for how well a preset fits a printer.
+
+    Pure function over the already-loaded ``preset.printer_links[].printer``.
+    Returns :data:`NO_MATCH` when the preset targets no compatible printer.
+    """
+    match = match_preset_for_printer(preset, printer)
+    return match.base_score, match.reason
+
+
+@dataclass(frozen=True)
+class RecommendationRankingBonus:
+    """One non-technical signal used only to order recommendation candidates."""
+
+    kind: str
+    value: float
+
+
+def ranking_bonuses(preset: Preset) -> list[RecommendationRankingBonus]:
+    """Return ranking signals separately so they cannot inflate technical match."""
+    bonuses: list[RecommendationRankingBonus] = []
+    if preset.is_official:
+        bonuses.append(RecommendationRankingBonus(kind="official", value=BONUS_OFFICIAL))
+    if preset.is_weighted:
+        bonuses.append(RecommendationRankingBonus(kind="weighted", value=BONUS_WEIGHTED))
+    if preset.rating:
+        bonuses.append(
+            RecommendationRankingBonus(
+                kind="rating",
+                value=min(preset.rating * 0.02, BONUS_RATING_MAX),
+            )
+        )
+    return bonuses
 
 
 def apply_bonuses(base_score: float, preset: Preset) -> float:
     """Add official/weighted/rating ranking bonuses to a base tier score."""
-    score = base_score
-    if preset.is_official:
-        score += BONUS_OFFICIAL
-    if preset.is_weighted:
-        score += BONUS_WEIGHTED
-    if preset.rating:
-        score += min(preset.rating * 0.02, BONUS_RATING_MAX)
-    return score
+    return base_score + sum(bonus.value for bonus in ranking_bonuses(preset))
 
 
 @dataclass
 class ScoredPreset:
-    """A preset paired with its computed match score and reason."""
+    """One recommendation with technical evidence kept apart from ranking."""
 
     preset: Preset
-    match_score: float
+    ranking_base_score: float
+    ranking_score: float
+    ranking_bonuses: list[RecommendationRankingBonus]
     match_reason: str
     compatibility_status: str
-    compatibility_coverage: float
+    technical_match: float | None
+    evidence_coverage: float
+    evidence_count: int
+    evidence_total: int
     compatibility_checks: list["RecommendationCompatibilityCheck"]
     hard_conflicts: list[str]
 
@@ -127,9 +177,98 @@ class RecommendationCompatibilityCheck:
 
     kind: str
     status: str
-    required_value: float
-    available_value: float | None
+    required_values: tuple[float, ...]
+    available_values: tuple[float, ...]
     unit: str
+    requirement_source: str
+    capability_source: str | None
+
+    @property
+    def required_value(self) -> float:
+        """Legacy singular projection for existing API consumers."""
+        return self.required_values[0]
+
+    @property
+    def available_value(self) -> float | None:
+        """Legacy singular projection for existing API consumers."""
+        return self.available_values[0] if self.available_values else None
+
+
+@dataclass(frozen=True)
+class RecommendationCompatibility:
+    """Tri-state compatibility plus independently measurable evidence."""
+
+    status: str
+    technical_match: float | None
+    evidence_coverage: float
+    evidence_count: int
+    evidence_total: int
+    checks: list[RecommendationCompatibilityCheck]
+    hard_conflicts: list[str]
+
+
+def _positive_numbers(value: Any) -> tuple[float, ...]:
+    values = value if isinstance(value, (list, tuple)) else [value]
+    result: list[float] = []
+    for item in values:
+        try:
+            number = float(item)
+        except (TypeError, ValueError):
+            continue
+        if number <= 0 or any(abs(number - known) <= 0.001 for known in result):
+            continue
+        result.append(number)
+    return tuple(sorted(result))
+
+
+def _profile_nozzles(profile: PrinterProfile | None) -> tuple[float, ...]:
+    if profile is None:
+        return ()
+    if profile.nozzle_diameters:
+        return _positive_numbers(profile.nozzle_diameters)
+    return _positive_numbers((profile.orcaslicer_settings or {}).get("nozzle_diameter"))
+
+
+def _catalog_nozzles(printer: Printer) -> tuple[float, ...]:
+    return _positive_numbers([printer.nozzle_diameter, *(printer.nozzle_options or [])])
+
+
+def _comparison_status(
+    required: tuple[float, ...],
+    available: tuple[float, ...],
+    *,
+    minimum: bool = False,
+) -> str:
+    if not available:
+        return "unknown"
+    if minimum:
+        return "compatible" if max(available) >= max(required) else "incompatible"
+    return (
+        "compatible"
+        if any(abs(expected - actual) <= 0.01 for expected in required for actual in available)
+        else "incompatible"
+    )
+
+
+def _check(
+    *,
+    kind: str,
+    required: tuple[float, ...],
+    available: tuple[float, ...],
+    unit: str,
+    requirement_source: str,
+    capability_source: str | None,
+    minimum: bool = False,
+) -> RecommendationCompatibilityCheck:
+    return RecommendationCompatibilityCheck(
+        kind=kind,
+        status=_comparison_status(required, available, minimum=minimum),
+        required_values=required,
+        available_values=available,
+        unit=unit,
+        requirement_source=requirement_source,
+        capability_source=capability_source if available else None,
+    )
 
 
 def evaluate_preset_compatibility(
@@ -137,53 +276,83 @@ def evaluate_preset_compatibility(
     printer: Printer,
     filament: Filament | None,
     printer_profile: PrinterProfile | None,
-) -> tuple[str, float, list[RecommendationCompatibilityCheck], list[str]]:
-    """Explain known hard conflicts without guessing missing capabilities."""
+    *,
+    matched_printers: tuple[Printer, ...] | None = None,
+) -> RecommendationCompatibility:
+    """Compare explicit requirements against exact facts, then catalog fallback."""
     checks: list[RecommendationCompatibilityCheck] = []
 
-    if preset.extruder_temp > 0:
-        available_temperature = (
-            float(printer.max_extruder_temp) if printer.max_extruder_temp is not None else None
+    if matched_printers is None:
+        matched_printers = match_preset_for_printer(preset, printer).printers
+
+    required_nozzles = _positive_numbers(
+        [nozzle for matched in matched_printers for nozzle in _catalog_nozzles(matched)]
+    )
+    if required_nozzles:
+        exact_nozzles = _profile_nozzles(printer_profile)
+        available_nozzles = exact_nozzles or _catalog_nozzles(printer)
+        checks.append(
+            _check(
+                kind="nozzle_diameter",
+                required=required_nozzles,
+                available=available_nozzles,
+                unit="mm",
+                requirement_source="preset_printer",
+                capability_source=("printer_profile" if exact_nozzles else "catalog_printer"),
+            )
         )
-        temperature_status = (
-            "unknown"
-            if available_temperature is None
-            else "compatible"
-            if available_temperature >= preset.extruder_temp
-            else "incompatible"
+
+    if preset.extruder_temp > 0:
+        available_temperatures = _positive_numbers(
+            printer.max_extruder_temp if printer.max_extruder_temp is not None else None
         )
         checks.append(
-            RecommendationCompatibilityCheck(
+            _check(
                 kind="hotend_temperature",
-                status=temperature_status,
-                required_value=float(preset.extruder_temp),
-                available_value=available_temperature,
+                required=(float(preset.extruder_temp),),
+                available=available_temperatures,
                 unit="°C",
+                requirement_source="preset",
+                capability_source="catalog_printer",
+                minimum=True,
+            )
+        )
+
+    if preset.bed_temp > 0:
+        available_bed_temperatures = _positive_numbers(
+            printer.max_bed_temp if printer.max_bed_temp is not None else None
+        )
+        checks.append(
+            _check(
+                kind="bed_temperature",
+                required=(float(preset.bed_temp),),
+                available=available_bed_temperatures,
+                unit="°C",
+                requirement_source="preset",
+                capability_source="catalog_printer",
+                minimum=True,
             )
         )
 
     required_hrc = filament.required_nozzle_hrc if filament is not None else None
     if required_hrc is not None and required_hrc > 0:
         available_hrc = profile_nozzle_hrc(printer_profile)
-        hrc_status = (
-            "unknown"
-            if available_hrc is None
-            else "compatible"
-            if available_hrc >= required_hrc
-            else "incompatible"
-        )
         checks.append(
-            RecommendationCompatibilityCheck(
+            _check(
                 kind="nozzle_hrc",
-                status=hrc_status,
-                required_value=float(required_hrc),
-                available_value=available_hrc,
+                required=(float(required_hrc),),
+                available=_positive_numbers(available_hrc),
                 unit="HRC",
+                requirement_source="filament_catalog",
+                capability_source="printer_profile",
+                minimum=True,
             )
         )
 
     known_checks = [check for check in checks if check.status != "unknown"]
-    coverage = len(known_checks) / len(checks) if checks else 0.0
+    evidence_count = len(known_checks)
+    evidence_total = len(checks)
+    coverage = evidence_count / evidence_total if evidence_total else 0.0
     hard_conflicts = [check.kind for check in checks if check.status == "incompatible"]
     if hard_conflicts:
         status = "incompatible"
@@ -191,7 +360,20 @@ def evaluate_preset_compatibility(
         status = "compatible"
     else:
         status = "unknown"
-    return status, coverage, checks, hard_conflicts
+    technical_match = (
+        sum(check.status == "compatible" for check in known_checks) / evidence_count
+        if evidence_count
+        else None
+    )
+    return RecommendationCompatibility(
+        status=status,
+        technical_match=technical_match,
+        evidence_coverage=coverage,
+        evidence_count=evidence_count,
+        evidence_total=evidence_total,
+        checks=checks,
+        hard_conflicts=hard_conflicts,
+    )
 
 
 async def get_recommended_presets(
@@ -223,26 +405,31 @@ async def get_recommended_presets(
 
     scored: list[ScoredPreset] = []
     for preset in presets:
-        base, reason = score_preset_for_printer(preset, printer)
-        if base <= 0.0:
+        catalog_match = match_preset_for_printer(preset, printer)
+        if catalog_match.base_score <= 0.0:
             continue
-        compatibility_status, compatibility_coverage, checks, hard_conflicts = (
-            evaluate_preset_compatibility(
-                preset,
-                printer,
-                filament,
-                printer_profile,
-            )
+        compatibility = evaluate_preset_compatibility(
+            preset,
+            printer,
+            filament,
+            printer_profile,
+            matched_printers=catalog_match.printers,
         )
+        bonuses = ranking_bonuses(preset)
         scored.append(
             ScoredPreset(
                 preset=preset,
-                match_score=apply_bonuses(base, preset),
-                match_reason=reason,
-                compatibility_status=compatibility_status,
-                compatibility_coverage=compatibility_coverage,
-                compatibility_checks=checks,
-                hard_conflicts=hard_conflicts,
+                ranking_base_score=catalog_match.base_score,
+                ranking_score=catalog_match.base_score + sum(bonus.value for bonus in bonuses),
+                ranking_bonuses=bonuses,
+                match_reason=catalog_match.reason,
+                compatibility_status=compatibility.status,
+                technical_match=compatibility.technical_match,
+                evidence_coverage=compatibility.evidence_coverage,
+                evidence_count=compatibility.evidence_count,
+                evidence_total=compatibility.evidence_total,
+                compatibility_checks=compatibility.checks,
+                hard_conflicts=compatibility.hard_conflicts,
             )
         )
 
@@ -250,7 +437,9 @@ async def get_recommended_presets(
     scored.sort(
         key=lambda item: (
             compatibility_priority[item.compatibility_status],
-            item.match_score,
+            item.technical_match if item.technical_match is not None else -1.0,
+            item.evidence_coverage,
+            item.ranking_score,
             item.preset.rating or 0.0,
             -item.preset.id,
         ),

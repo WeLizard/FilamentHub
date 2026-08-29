@@ -74,6 +74,9 @@ export function PresetRecommendationEvidence({
   printerName,
 }: PresetRecommendationEvidenceProps) {
   const { t } = useTranslation();
+  const technicalPercent = recommendation.technical_match == null
+    ? null
+    : Math.round(recommendation.technical_match * 100);
 
   return (
     <div className="mt-2 text-xs">
@@ -85,17 +88,55 @@ export function PresetRecommendationEvidence({
           {t(`profilePage.calculator.printerCompatibilityStatus.${recommendation.compatibility_status}`)}
         </span>
       </div>
+      <div className="mt-1 text-slate-400">
+        {technicalPercent == null
+          ? t('profilePage.calculator.printerCompatibilityNoComparableFacts', {
+              known: recommendation.evidence_count,
+              total: recommendation.evidence_total,
+            })
+          : t('profilePage.calculator.printerCompatibilityTechnicalSummary', {
+              technical: technicalPercent,
+              known: recommendation.evidence_count,
+              total: recommendation.evidence_total,
+            })}
+      </div>
       {recommendation.compatibility_checks.length > 0 && (
-        <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-slate-400">
+        <div className="mt-1.5 space-y-1 text-slate-400">
           {recommendation.compatibility_checks.map((check) => (
-            <span key={check.kind} className={check.status === 'incompatible' ? 'text-red-300' : undefined}>
-              {t(`profilePage.calculator.printerCompatibilityKind.${check.kind}`)}:{' '}
-              {check.available_value == null
-                ? t('profilePage.calculator.printerCompatibilityUnknownValue')
-                : t('profilePage.calculator.printerCompatibilityValues', {
-                    required: `${check.required_value}${check.unit}`,
-                    available: `${check.available_value}${check.unit}`,
-                  })}
+            <div key={check.kind} className={check.status === 'incompatible' ? 'text-red-300' : undefined}>
+              <span>
+                {t(`profilePage.calculator.printerCompatibilityKind.${check.kind}`)}:{' '}
+                {check.available_values.length === 0
+                  ? t('profilePage.calculator.printerCompatibilityUnknownValue')
+                  : t('profilePage.calculator.printerCompatibilityValues', {
+                      required: check.required_values.map((value) => `${value}${check.unit}`).join(', '),
+                      available: check.available_values.map((value) => `${value}${check.unit}`).join(', '),
+                    })}
+              </span>
+              <span className="ml-1 text-slate-500">
+                {t('profilePage.calculator.printerCompatibilitySources', {
+                  requirement: t(
+                    `profilePage.calculator.printerCompatibilityRequirementSource.${check.requirement_source}`,
+                  ),
+                  capability: check.capability_source
+                    ? t(
+                        `profilePage.calculator.printerCompatibilityCapabilitySource.${check.capability_source}`,
+                      )
+                    : t('profilePage.calculator.printerCompatibilityUnknownValue'),
+                })}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+      {recommendation.ranking_bonuses.length > 0 && (
+        <div className="mt-1.5 text-slate-500">
+          {t('profilePage.calculator.printerCompatibilityRankingSignals')}:{' '}
+          {recommendation.ranking_bonuses.map((bonus, index) => (
+            <span key={bonus.kind}>
+              {index > 0 ? ' · ' : ''}
+              {t(`profilePage.calculator.printerCompatibilityRankingBonus.${bonus.kind}`)}{' '}
+              +{Math.round(bonus.value * 100)}%
             </span>
           ))}
         </div>

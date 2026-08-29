@@ -3638,7 +3638,26 @@
       "printerCompatibilityKind": {
         "nozzle_diameter": "Диаметр сопла",
         "nozzle_hrc": "Твёрдость сопла",
-        "hotend_temperature": "Предел хотэнда"
+        "hotend_temperature": "Предел хотэнда",
+        "bed_temperature": "Предел стола"
+      },
+      "printerCompatibilityTechnicalSummary": "Техническое совпадение {{technical}}% · учтено {{known}} из {{total}}",
+      "printerCompatibilityNoComparableFacts": "Нет сравнимых технических фактов · учтено {{known}} из {{total}}",
+      "printerCompatibilitySources": "(требование: {{requirement}} · возможность: {{capability}})",
+      "printerCompatibilityRequirementSource": {
+        "preset": "настройки пресета",
+        "preset_printer": "ограничение принтера пресета",
+        "filament_catalog": "каталог материала"
+      },
+      "printerCompatibilityCapabilitySource": {
+        "printer_profile": "точная конфигурация",
+        "catalog_printer": "резервные данные каталога принтера"
+      },
+      "printerCompatibilityRankingSignals": "Факторы сортировки",
+      "printerCompatibilityRankingBonus": {
+        "official": "официальный",
+        "weighted": "взвешенный",
+        "rating": "рейтинг"
       },
       "printerCompatibilityValues": "требуется {{required}} · доступно {{available}}",
       "printerCompatibilityUnknownValue": "не подтверждено",

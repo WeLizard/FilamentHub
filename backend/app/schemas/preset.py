@@ -19,7 +19,9 @@ class PresetBase(BaseModel):
     name: str = Field(..., min_length=1, max_length=200)
     description: str | None = Field(None, max_length=1000)
     is_official: bool = Field(False)
-    is_weighted: bool = Field(False, description="Динамический взвешенный пресет, автоматически пересчитывается системой")
+    is_weighted: bool = Field(
+        False, description="Динамический взвешенный пресет, автоматически пересчитывается системой"
+    )
 
     # Filament settings (material scope). print/travel speed и layer heights —
     # process-scope (Orca print profile), не свойства филамента: на пресете их нет.
@@ -37,11 +39,15 @@ class PresetBase(BaseModel):
     retraction_speed: float | None = Field(None, ge=0, le=200)
 
     # Extended OrcaSlicer parameters (JSON)
-    orcaslicer_settings: dict[str, Any] | None = Field(None, description="Расширенные параметры OrcaSlicer в формате JSON")
+    orcaslicer_settings: dict[str, Any] | None = Field(
+        None, description="Расширенные параметры OrcaSlicer в формате JSON"
+    )
 
     # Rating
     rating: float | None = Field(None, ge=1, le=5)
-    success_rate: float | None = Field(None, ge=0.0, le=100.0, description="Процент успешных печатей (0-100)")
+    success_rate: float | None = Field(
+        None, ge=0.0, le=100.0, description="Процент успешных печатей (0-100)"
+    )
     usage_count: int = Field(0, ge=0)
 
     @field_validator("name")
@@ -52,12 +58,15 @@ class PresetBase(BaseModel):
             raise ValueError("Preset name cannot be empty")
         return normalized
 
+
 class PresetCreate(PresetBase):
     """Schema for creating Preset."""
 
     filament_id: int = Field(..., gt=0)
     user_id: int | None = Field(None, gt=0)  # Автоматически заполняется из токена
-    printer_ids: list[int] = Field(default_factory=list, description="Список ID принтеров, для которых подходит этот пресет")
+    printer_ids: list[int] = Field(
+        default_factory=list, description="Список ID принтеров, для которых подходит этот пресет"
+    )
 
 
 class OfficialPresetCreate(PresetCreate):
@@ -90,7 +99,9 @@ class PresetUpdate(BaseModel):
     retraction_speed: float | None = Field(None, ge=0, le=200)
 
     # Extended OrcaSlicer parameters (JSON)
-    orcaslicer_settings: dict[str, Any] | None = Field(None, description="Расширенные параметры OrcaSlicer в формате JSON")
+    orcaslicer_settings: dict[str, Any] | None = Field(
+        None, description="Расширенные параметры OrcaSlicer в формате JSON"
+    )
 
     # Rating
     rating: float | None = Field(None, ge=1, le=5)
@@ -98,7 +109,9 @@ class PresetUpdate(BaseModel):
     # УДАЛЕНО: sync_enabled - теперь управляется через user_saved_presets.sync
 
     # Printers
-    printer_ids: list[int] | None = Field(None, description="Список ID принтеров, для которых подходит этот пресет")
+    printer_ids: list[int] | None = Field(
+        None, description="Список ID принтеров, для которых подходит этот пресет"
+    )
 
     @field_validator("name")
     @classmethod
@@ -139,7 +152,9 @@ class PresetResponse(PresetBase):
     moderation_status: str  # pending, approved, rejected
     # УДАЛЕНО: sync_enabled - теперь управляется через user_saved_presets.sync
     external_id: str | None = Field(None, description="ID пресета в OrcaSlicer (для маппинга)")
-    source: str | None = Field(None, description="Источник пресета (orcaslicer, user, system, etc.)")
+    source: str | None = Field(
+        None, description="Источник пресета (orcaslicer, user, system, etc.)"
+    )
     moderation_reason: str | None = None
     moderated_by: int | None = None
     moderated_at: datetime | None = None
@@ -152,7 +167,9 @@ class PresetResponse(PresetBase):
     latest_version_id: int | None = None
     latest_version_number: int | None = None
     update_available: bool = False
-    printers: list[PrinterResponse] = Field(default_factory=list, description="Список принтеров, для которых подходит этот пресет")
+    printers: list[PrinterResponse] = Field(
+        default_factory=list, description="Список принтеров, для которых подходит этот пресет"
+    )
 
     @classmethod
     def model_validate_public(cls, obj: Any) -> PresetResponse:
@@ -161,9 +178,7 @@ class PresetResponse(PresetBase):
         if isinstance(response.orcaslicer_settings, dict):
             from app.services.preset_publication import public_orca_settings
 
-            response.orcaslicer_settings = public_orca_settings(
-                response.orcaslicer_settings
-            )
+            response.orcaslicer_settings = public_orca_settings(response.orcaslicer_settings)
         return response
 
     model_config = ConfigDict(from_attributes=True)
@@ -234,7 +249,6 @@ class PresetDraftQueueResponse(BaseModel):
     ambiguous: int = Field(ge=0)
 
 
-
 class PresetListResponse(BaseModel):
     """Schema for Preset list response."""
 
@@ -268,35 +282,76 @@ class RecommendedPresetResponse(BaseModel):
 class RecommendedPresetCompatibilityCheck(BaseModel):
     """One explainable hard requirement for a recommended material preset."""
 
-    kind: Literal["hotend_temperature", "nozzle_hrc"]
+    kind: Literal[
+        "nozzle_diameter",
+        "hotend_temperature",
+        "bed_temperature",
+        "nozzle_hrc",
+    ]
     status: Literal["compatible", "incompatible", "unknown"]
+    required_values: list[float] = Field(default_factory=list)
+    available_values: list[float] = Field(default_factory=list)
     required_value: float = Field(..., gt=0)
     available_value: float | None = Field(None, gt=0)
-    unit: Literal["°C", "HRC"]
+    unit: Literal["mm", "°C", "HRC"]
+    requirement_source: Literal["preset", "preset_printer", "filament_catalog"]
+    capability_source: Literal["printer_profile", "catalog_printer"] | None = None
+
+
+class RecommendedPresetRankingBonus(BaseModel):
+    """A non-technical signal that affects ordering, not compatibility."""
+
+    kind: Literal["official", "weighted", "rating"]
+    value: float = Field(..., gt=0, le=0.1)
 
 
 class RecommendedPresetItem(BaseModel):
     """A preset ranked by fit, factual compatibility, and public evidence."""
 
     preset: PresetResponse
-    match_score: float = Field(..., ge=0.0, le=1.2, description="Base tier score plus ranking bonuses")
+    ranking_base_score: float = Field(..., ge=0.0, le=1.0)
+    ranking_score: float = Field(..., ge=0.0, le=1.2)
+    ranking_bonuses: list[RecommendedPresetRankingBonus] = Field(default_factory=list)
+    match_score: float = Field(
+        ...,
+        ge=0.0,
+        le=1.2,
+        description="Transitional alias of ranking_score for existing clients",
+    )
     match_reason: str = Field(
         ...,
         description="exact_match | same_model | same_family | same_manufacturer | compatible_specs",
     )
     compatibility_status: Literal["compatible", "incompatible", "unknown"] = "unknown"
+    technical_match: float | None = Field(
+        None,
+        ge=0.0,
+        le=1.0,
+        description="Share of compatible checks among comparable technical requirements",
+    )
+    evidence_coverage: float = Field(
+        0.0,
+        ge=0.0,
+        le=1.0,
+        description="Share of relevant requirements backed by comparable facts",
+    )
+    evidence_count: int = Field(0, ge=0)
+    evidence_total: int = Field(0, ge=0)
     compatibility_coverage: float = Field(
         0.0,
         ge=0.0,
         le=1.0,
-        description="Share of relevant hard requirements backed by configuration facts",
+        description="Transitional alias of evidence_coverage for existing clients",
     )
-    compatibility_checks: list[RecommendedPresetCompatibilityCheck] = Field(
-        default_factory=list
-    )
-    hard_conflicts: list[Literal["hotend_temperature", "nozzle_hrc"]] = Field(
-        default_factory=list
-    )
+    compatibility_checks: list[RecommendedPresetCompatibilityCheck] = Field(default_factory=list)
+    hard_conflicts: list[
+        Literal[
+            "nozzle_diameter",
+            "hotend_temperature",
+            "bed_temperature",
+            "nozzle_hrc",
+        ]
+    ] = Field(default_factory=list)
     saved: bool = False
     sync_enabled: bool | None = None
 

@@ -756,22 +756,45 @@ export type PresetRecommendationCompatibilityStatus =
   | 'incompatible'
   | 'unknown';
 
+export type PresetRecommendationCompatibilityKind =
+  | 'nozzle_diameter'
+  | 'hotend_temperature'
+  | 'bed_temperature'
+  | 'nozzle_hrc';
+
 export interface PresetRecommendationCompatibilityCheck {
-  kind: 'hotend_temperature' | 'nozzle_hrc';
+  kind: PresetRecommendationCompatibilityKind;
   status: PresetRecommendationCompatibilityStatus;
+  required_values: number[];
+  available_values: number[];
   required_value: number;
   available_value: number | null;
-  unit: '°C' | 'HRC';
+  unit: 'mm' | '°C' | 'HRC';
+  requirement_source: 'preset' | 'preset_printer' | 'filament_catalog';
+  capability_source: 'printer_profile' | 'catalog_printer' | null;
+}
+
+export interface PresetRecommendationRankingBonus {
+  kind: 'official' | 'weighted' | 'rating';
+  value: number;
 }
 
 export interface RecommendedPresetItem {
   preset: Preset;
-  match_score: number; // базовый уровень совпадения + бонусы (0..1.2)
+  ranking_base_score: number;
+  ranking_score: number;
+  ranking_bonuses: PresetRecommendationRankingBonus[];
+  match_score: number; // transitional alias of ranking_score
   match_reason: PresetMatchReason;
   compatibility_status: PresetRecommendationCompatibilityStatus;
+  technical_match: number | null;
+  evidence_coverage: number;
+  evidence_count: number;
+  evidence_total: number;
+  // Transitional alias of evidence_coverage.
   compatibility_coverage: number;
   compatibility_checks: PresetRecommendationCompatibilityCheck[];
-  hard_conflicts: Array<'hotend_temperature' | 'nozzle_hrc'>;
+  hard_conflicts: PresetRecommendationCompatibilityKind[];
   saved: boolean;
   sync_enabled: boolean | null;
 }

@@ -329,17 +329,33 @@ def _build_recommended_items(
         items.append(
             RecommendedPresetItem(
                 preset=PresetResponse(**preset_dict),
-                match_score=round(entry.match_score, 3),
+                ranking_base_score=round(entry.ranking_base_score, 3),
+                ranking_score=round(entry.ranking_score, 3),
+                ranking_bonuses=[
+                    {"kind": bonus.kind, "value": round(bonus.value, 3)}
+                    for bonus in entry.ranking_bonuses
+                ],
+                match_score=round(entry.ranking_score, 3),
                 match_reason=entry.match_reason,
                 compatibility_status=entry.compatibility_status,
-                compatibility_coverage=round(entry.compatibility_coverage, 3),
+                technical_match=(
+                    round(entry.technical_match, 3) if entry.technical_match is not None else None
+                ),
+                evidence_coverage=round(entry.evidence_coverage, 3),
+                evidence_count=entry.evidence_count,
+                evidence_total=entry.evidence_total,
+                compatibility_coverage=round(entry.evidence_coverage, 3),
                 compatibility_checks=[
                     {
                         "kind": check.kind,
                         "status": check.status,
+                        "required_values": list(check.required_values),
+                        "available_values": list(check.available_values),
                         "required_value": check.required_value,
                         "available_value": check.available_value,
                         "unit": check.unit,
+                        "requirement_source": check.requirement_source,
+                        "capability_source": check.capability_source,
                     }
                     for check in entry.compatibility_checks
                 ],

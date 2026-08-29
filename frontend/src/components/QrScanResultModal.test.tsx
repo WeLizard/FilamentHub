@@ -204,16 +204,27 @@ describe('QrScanResultModal', () => {
           name: 'Compatible community preset',
           is_official: false,
         },
+        ranking_base_score: 1,
+        ranking_score: 1.1,
+        ranking_bonuses: [{ kind: 'rating', value: 0.1 }],
         match_score: 1.1,
         match_reason: 'exact_match',
         compatibility_status: 'compatible',
+        technical_match: 1,
+        evidence_coverage: 1,
+        evidence_count: 1,
+        evidence_total: 1,
         compatibility_coverage: 1,
         compatibility_checks: [{
           kind: 'hotend_temperature',
           status: 'compatible',
+          required_values: [220],
+          available_values: [300],
           required_value: 220,
           available_value: 300,
           unit: '°C',
+          requirement_source: 'preset',
+          capability_source: 'catalog_printer',
         }],
         hard_conflicts: [],
         saved: false,
@@ -229,6 +240,12 @@ describe('QrScanResultModal', () => {
     expect(
       screen.getByText('profilePage.calculator.printerCompatibilityStatus.compatible'),
     ).toBeInTheDocument();
+    expect(
+      screen.getByText('profilePage.calculator.printerCompatibilityTechnicalSummary'),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('profilePage.calculator.printerCompatibilitySources'),
+    ).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'qrScanResult.savePreset' }));
     await waitFor(() => expect(savePreset).toHaveBeenCalledWith(88, false));
   });
@@ -240,9 +257,16 @@ describe('QrScanResultModal', () => {
       printerName: 'Configured Voron',
       recommendation: {
         preset: { ...baseResult.preset, id: 89, name: 'Already saved' },
+        ranking_base_score: 1,
+        ranking_score: 1.05,
+        ranking_bonuses: [{ kind: 'official', value: 0.05 }],
         match_score: 1.05,
         match_reason: 'exact_match',
         compatibility_status: 'unknown',
+        technical_match: null,
+        evidence_coverage: 0,
+        evidence_count: 0,
+        evidence_total: 0,
         compatibility_coverage: 0,
         compatibility_checks: [],
         hard_conflicts: [],
