@@ -6995,6 +6995,7 @@
     "mm": "mm"
   },
   "addPrinter": {
+    "manualDescription": "Add a physical printer by name. OrcaSlicer is optional; the connection and material system are configured separately.",
     "title": "Add a printer",
     "description": "Printers appear on their own when you print over the network from OrcaSlicer. Add a machine without a network address — a Bambu Lab, for instance — here.",
     "foundInOrca": "Found in your OrcaSlicer",
@@ -7235,6 +7236,8 @@
     "observation": {
       "noData": "No data",
       "conflict": {
+        "observed_spool_differs": "The printer reports a different spool. Review the assignment.",
+        "observed_spool_unknown": "Filament is present, but the printer has not identified the spool.",
         "assigned_but_observed_empty": "FilamentHub has an assignment, but the printer reports this slot as empty.",
         "observed_loaded_without_spool": "The printer sees filament, but no FilamentHub spool is assigned.",
         "observed_details_differ": "The material or color reported by the printer differs from the selected spool."
@@ -7291,6 +7294,15 @@
       "octoprint": "OctoPrint"
     },
     "happyHare": {
+      "inventoryError": "Moonraker must use this FH printer's keyed [spoolman] URL. Check the setting and restart Moonraker while idle. Gates were read, but spool IDs cannot be safely matched.",
+      "connectionTitle": "Connect with or without OrcaSlicer",
+      "connectionGuide": "In OrcaSlicer, use the selected printer connection and Check printer. Without the slicer, install Edge alongside Moonraker and enter the code below. Both paths need [spoolman] with this printer's key and a loaded [mmu_server]. HH v4 uses mmu.cfg for spoolman_support; older installations use mmu_parameters.cfg. Pull mode takes assignments from FH: review the existing map first.",
+      "installation": "Installation without a slicer: Linux / Docker",
+      "refreshStatus": "Refresh information",
+      "documentation": "Happy Hare documentation",
+      "withoutPlugin": "Edge reports the map without OrcaSlicer. Connect it in the material-system setup. This page shows the last received state, not a direct request into your local network. Spools are exchanged through Moonraker [spoolman]. For an immediate sync while idle, run the command below in the printer console.",
+      "observedSpool": "Printer reports: {{name}}",
+      "acceptObserved": "Select the observed spool",
       "hostname": "Klipper hostname",
       "hostnameNotSet": "not set",
       "autoPairingTitle": "Waiting for Happy Hare",

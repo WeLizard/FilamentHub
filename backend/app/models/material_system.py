@@ -1,6 +1,6 @@
 """Provider-neutral material systems, slots, and connector capabilities."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 from sqlalchemy import (
@@ -132,13 +132,33 @@ class MaterialSlot(Base):
         single_parent=True,
         uselist=False,
     )
-    observation: Mapped["MaterialSlotObservation | None"] = relationship(
+    observations: Mapped[list["MaterialSlotObservation"]] = relationship(
         "MaterialSlotObservation",
         back_populates="material_slot",
         cascade="all, delete-orphan",
-        single_parent=True,
-        uselist=False,
     )
+
+    @property
+    def observation(self) -> "MaterialSlotObservation | None":
+        def freshness(item: "MaterialSlotObservation") -> tuple[datetime, datetime, int]:
+            def utc(value: datetime) -> datetime:
+                return (
+                    value.astimezone(timezone.utc)
+                    if value.tzinfo
+                    else value.replace(tzinfo=timezone.utc)
+                )
+
+            return (
+                utc(item.observed_at),
+                utc(item.received_at),
+                item.id,
+            )
+
+        return max(
+            (item for item in self.observations if item.connector.active),
+            key=freshness,
+            default=None,
+        )
 
 
 class PhysicalPrinterConnector(Base):
@@ -170,9 +190,7 @@ class PhysicalPrinterConnector(Base):
         DateTime(timezone=True), nullable=True
     )
     last_snapshot_sequence: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
-    last_snapshot_source_instance_id: Mapped[str | None] = mapped_column(
-        String(100), nullable=True
-    )
+    last_snapshot_source_instance_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

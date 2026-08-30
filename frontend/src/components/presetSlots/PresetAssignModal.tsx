@@ -11,6 +11,7 @@ import { getSpoolCurrentLocation, getSpoolLastLocation } from '../../utils/spool
 import { ModalOverlay } from '../ModalOverlay';
 import { isUnidentifiedHHFilament, markHHGateEmptyCommand } from '../../utils/hhGateState';
 import { useDebounce } from '../../hooks/useDebounce';
+import { MATERIAL_SLOT_OBSERVATION_FRESH_MS } from '../../utils/materialSlotComparison';
 
 interface PresetAssignModalProps {
   isOpen: boolean;
@@ -475,6 +476,15 @@ export function PresetAssignModal({
 
           {activeTab === 'spool' && (
             <div className="my-3 max-h-64 overflow-y-auto px-5">
+              {slotObservation?.spool_identity_known && slotObservation.spool_id != null
+                && Date.now() - Date.parse(slotObservation.observed_at) < MATERIAL_SLOT_OBSERVATION_FRESH_MS
+                && Date.now() - Date.parse(slotObservation.observed_at) >= -60_000
+                && activeSpools.some((item) => item.id === slotObservation.spool_id) && (
+                  <button type="button" className="mb-2 rounded-lg border border-emerald-500/30 px-3 py-2 text-xs text-emerald-200"
+                    onClick={() => setSelectedSpoolId(slotObservation.spool_id ?? null)}>
+                    {t('presetSlots.happyHare.acceptObserved')}
+                  </button>
+                )}
               {activeSpools.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-8 text-center">
                   <Package className="mb-3 h-8 w-8 text-gray-600" />

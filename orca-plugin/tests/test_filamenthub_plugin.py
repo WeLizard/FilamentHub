@@ -2694,6 +2694,8 @@ def test_happy_hare_snapshot_requires_one_exact_topology(plugin_module, monkeypa
     def moonraker(_connection, path, payload=None):
         if path == "/printer/info":
             return 200, {"result": {"hostname": "voron"}}, ""
+        if path == "/server/config":
+            return 200, {"result": {"config": {}}}, ""
         assert payload is not None
         return 200, {
             "result": {
@@ -2722,6 +2724,8 @@ def test_happy_hare_v3_can_report_exact_count_before_gate_arrays(
     plugin_module, monkeypatch
 ):
     def moonraker(_connection, path, payload=None):
+        if path == "/server/config":
+            return 200, {"result": {"config": {}}}, ""
         if path == "/printer/info":
             return 200, {"result": {"hostname": "voron"}}, ""
         assert payload is not None
@@ -2755,6 +2759,8 @@ def test_happy_hare_snapshot_reports_selected_bypass_without_a_fake_gate(
     requested_mmu_fields = []
 
     def moonraker(_connection, path, payload=None):
+        if path == "/server/config":
+            return 200, {"result": {"config": {}}}, ""
         if path == "/printer/info":
             return 200, {"result": {"hostname": "voron"}}, ""
         requested_mmu_fields.extend(payload["objects"]["mmu"])
@@ -2916,6 +2922,25 @@ def test_happy_hare_preview_allows_server_validated_import_without_pull(
     assert delivered[0][1]["ok"] is True
     assert delivered[0][1]["importChanges"][0]["proposedSpoolId"] == 11
     assert delivered[0][1]["gateCount"] == 8
+
+
+@pytest.mark.parametrize("proof", [None, "0" * 64])
+def test_happy_hare_wrong_inventory_cannot_reconcile_or_send_commands(plugin_module, monkeypatch, proof):
+    snapshot = {"inventory_key_digest": proof}
+    monkeypatch.setattr(plugin_module, "resolve_happy_hare_connection", lambda *args: (
+        {"print_host": "printer.local"}, snapshot, {"inventory_key_digest": "1" * 64}, None,
+    ))
+    monkeypatch.setattr(plugin_module, "upload_happy_hare_snapshot", lambda *args: (200, {}))
+    def forbidden(*args, **kwargs):
+        pytest.fail("unverified inventory must not be reconciled or written")
+    monkeypatch.setattr(plugin_module, "request_happy_hare_reconciliation", forbidden)
+    monkeypatch.setattr(plugin_module, "_moonraker_json", forbidden)
+    delivered = []
+    catalog = plugin_module.FilamentHubCatalog()
+    monkeypatch.setattr(catalog, "_deliver_happy_hare_result", lambda request, result: delivered.append(result))
+    catalog._do_happy_hare_action("unverified", "apply", 3, 7, "token", [])
+    assert delivered[0]["ok"] is False
+    assert delivered[0]["code"] == "inventory_not_connected"
 
 
 def test_happy_hare_apply_waits_for_allowlisted_refresh_to_converge(

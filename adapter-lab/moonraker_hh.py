@@ -8,6 +8,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 
 API_KEY = os.environ.get("MOONRAKER_API_KEY", "adapter-lab-hh-key")
+SPOOLMAN_URL = os.environ.get(
+    "SPOOLMAN_URL", "https://filamenthub.ru/api/v1/spool_compat/adapter-lab-inventory-key"
+)
 MAX_BODY_BYTES = 64 * 1024
 
 MMU_STATE = {
@@ -20,6 +23,7 @@ MMU_STATE = {
     "spoolman_support": "pull",
     "has_bypass": True,
     "tool": -2,
+    "gate": -2,
     "filament_pos": 8.0,
 }
 
@@ -49,6 +53,9 @@ class MoonrakerHandler(BaseHTTPRequestHandler):
             self._json(200, {"status": "ok"})
             return
         if not self._authorized():
+            return
+        if self.path == "/server/config":
+            self._json(200, {"result": {"config": {"spoolman": {"server": SPOOLMAN_URL}}}})
             return
         if self.path == "/printer/info":
             self._json(

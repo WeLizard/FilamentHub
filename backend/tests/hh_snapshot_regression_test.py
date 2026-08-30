@@ -206,7 +206,7 @@ async def test_partial_snapshot_leaves_missing_gates_untouched(db_session: Async
     states = list(result.scalars().all())
     assert states[0].hh_material == "ABS"
     assert states[1].hh_material == "PETG"  # untouched
-    assert states[1].source_ts == old_ts
+    assert states[1].source_ts.replace(tzinfo=timezone.utc) == old_ts
 
 
 @pytest.mark.asyncio

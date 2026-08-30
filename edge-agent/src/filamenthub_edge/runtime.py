@@ -325,6 +325,7 @@ class EdgeRuntime:
             "printer": snapshot.printer,
             "slots": snapshot.slots,
             "slot_topology_complete": snapshot.slot_topology_complete,
+            "inventory_key_digest": snapshot.inventory_key_digest,
         }
         self.state.pending_observation = payload
         self.store.save(self.state)

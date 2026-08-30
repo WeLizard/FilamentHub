@@ -20,6 +20,7 @@ from app.core.errors import (
     ERR_SPOOL_LOCATION_CONFLICT,
     raise_error,
 )
+from app.core.security import device_inventory_digest
 from app.models.filament import Filament
 from app.models.material_slot_assignment import MaterialSlotAssignment
 from app.models.material_system import (
@@ -30,12 +31,15 @@ from app.models.material_system import (
 from app.models.preset import Preset
 from app.models.preset_gate_state import PresetGateState, PresetGateStateSource
 from app.models.preset_usage_event import PresetUsageEvent, PresetUsageEventType
-from app.models.printer_bridge_observation import MaterialSlotObservation
 from app.models.printer_connection_binding import PrinterConnectionBinding
 from app.models.user import User
 from app.models.user_printer_device import UserPrinterDevice
 from app.models.user_spool import UserSpool, UserSpoolState
-from app.schemas.material_contract import MaterialSlotCreate
+from app.schemas.material_contract import (
+    MaterialSlotCreate,
+    PrinterBridgeSlotSnapshot,
+    PrinterBridgeSnapshotRequest,
+)
 from app.schemas.preset_slot_sync import (
     DeviceRegisterRequest,
     DeviceUpdateRequest,
@@ -60,6 +64,7 @@ from app.services.material_assignment_service import (
 from app.services.material_contract_service import (
     HAPPY_HARE_BYPASS_PROVIDER_INDEX,
     ensure_material_topology,
+    ingest_printer_bridge_snapshot,
     list_physical_printers,
     require_physical_printer,
 )
@@ -114,9 +119,7 @@ async def require_device(
     user_id: int,
     device_id: int,
 ) -> UserPrinterDevice:
-    result = await db.execute(
-        select(UserPrinterDevice).where(UserPrinterDevice.id == device_id)
-    )
+    result = await db.execute(select(UserPrinterDevice).where(UserPrinterDevice.id == device_id))
     device = result.scalars().first()
     if not device:
         raise_error(404, ERR_DEVICE_NOT_FOUND)
@@ -132,22 +135,24 @@ async def claim_printer_hostname(
     if device.printer_hostname == hostname:
         return
     previous = (
-        await db.execute(
-            select(UserPrinterDevice)
-            .where(
-                UserPrinterDevice.user_id == device.user_id,
-                UserPrinterDevice.printer_hostname == hostname,
-                UserPrinterDevice.id != device.id,
+        (
+            await db.execute(
+                select(UserPrinterDevice)
+                .where(
+                    UserPrinterDevice.user_id == device.user_id,
+                    UserPrinterDevice.printer_hostname == hostname,
+                    UserPrinterDevice.id != device.id,
+                )
+                .order_by(UserPrinterDevice.id)
+                .with_for_update()
             )
-            .order_by(UserPrinterDevice.id)
-            .with_for_update()
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     for other in previous:
         other.printer_hostname = None
-        logger.info(
-            "Printer hostname moved from device id=%s to id=%s", other.id, device.id
-        )
+        logger.info("Printer hostname moved from device id=%s to id=%s", other.id, device.id)
     if previous:
         await db.flush()
     device.printer_hostname = hostname
@@ -279,75 +284,6 @@ def _hh_reported_routes(
     return []
 
 
-async def _record_hh_bypass_observation(
-    db: AsyncSession,
-    *,
-    device: UserPrinterDevice,
-    payload: HHSnapshotRequest,
-) -> None:
-    """Store selected/present as observation without touching assignment."""
-    if payload.bypass is None:
-        return
-    system = await db.scalar(
-        select(MaterialSystem).where(
-            MaterialSystem.physical_printer_id == device.id,
-            MaterialSystem.user_id == device.user_id,
-            MaterialSystem.provider == "happy_hare",
-        )
-    )
-    if system is None:
-        return
-    slot = await db.scalar(
-        select(MaterialSlot).where(
-            MaterialSlot.material_system_id == system.id,
-            MaterialSlot.provider_index == HAPPY_HARE_BYPASS_PROVIDER_INDEX,
-        )
-    )
-    connector = await db.scalar(
-        select(PhysicalPrinterConnector)
-        .where(
-            PhysicalPrinterConnector.physical_printer_id == device.id,
-            PhysicalPrinterConnector.user_id == device.user_id,
-            PhysicalPrinterConnector.material_system_id == system.id,
-            PhysicalPrinterConnector.active.is_(True),
-        )
-        .order_by(PhysicalPrinterConnector.id)
-    )
-    if slot is None or connector is None:
-        return
-
-    observed_at = _normalize_utc(payload.snapshot_ts)
-    observation = await db.scalar(
-        select(MaterialSlotObservation).where(
-            MaterialSlotObservation.connector_id == connector.id,
-            MaterialSlotObservation.material_slot_id == slot.id,
-        )
-    )
-    if (
-        observation is not None
-        and observed_at <= _normalize_utc(observation.observed_at)
-    ):
-        return
-    if observation is None:
-        observation = MaterialSlotObservation(
-            user_id=device.user_id,
-            connector_id=connector.id,
-            material_slot_id=slot.id,
-            source="happy_hare_moonraker",
-            observed_at=observed_at,
-        )
-        db.add(observation)
-    observation.source = "happy_hare_moonraker"
-    observation.observed_at = observed_at
-    observation.received_at = datetime.now(timezone.utc)
-    observation.present = payload.bypass.present
-    observation.active_feed = payload.bypass.selected
-    observation.material = None
-    observation.color_hex = None
-    observation.remaining_percent = None
-    observation.remaining_grams = None
-
-
 async def _upsert_gate_state(
     db: AsyncSession,
     *,
@@ -447,9 +383,7 @@ async def _upsert_gate_state(
         # material-slot relationship. Refresh that identity from RETURNING;
         # otherwise SQLAlchemy can hand the caller the pre-upsert values and
         # the topology mirror writes the old assignment back immediately.
-        result = await db.execute(
-            upsert_stmt.execution_options(populate_existing=True)
-        )
+        result = await db.execute(upsert_stmt.execution_options(populate_existing=True))
         state = result.scalars().first()
         if state is not None:
             return state
@@ -493,10 +427,9 @@ async def _upsert_gate_state(
         return state
 
     can_override = priority[source] >= priority[state.source]
-    hh_ts_is_fresh = (
-        source != PresetGateStateSource.hh_snapshot
-        or _normalize_utc(source_ts) > _normalize_utc(state.source_ts)
-    )
+    hh_ts_is_fresh = source != PresetGateStateSource.hh_snapshot or _normalize_utc(
+        source_ts
+    ) > _normalize_utc(state.source_ts)
 
     if can_override and hh_ts_is_fresh:
         state.source = source
@@ -578,6 +511,25 @@ async def handle_hh_snapshot(
         db.add(device)
         await db.flush()
     else:
+        device = await db.scalar(
+            select(UserPrinterDevice)
+            .where(
+                UserPrinterDevice.id == device.id,
+            )
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        newer_source = await db.scalar(
+            select(PhysicalPrinterConnector.id)
+            .where(
+                PhysicalPrinterConnector.physical_printer_id == device.id,
+                PhysicalPrinterConnector.active.is_(True),
+                PhysicalPrinterConnector.last_observation_at > _normalize_utc(payload.snapshot_ts),
+            )
+            .limit(1)
+        )
+        if newer_source is not None:
+            return device, 0, []
         device.supports_hh = True
         device.gate_count = payload.gate_count
     device.reports_feed = True
@@ -605,7 +557,6 @@ async def handle_hh_snapshot(
         physical_printer_id=device.id,
         gate_indices=locked_indices,
     )
-    await _record_hh_bypass_observation(db, device=device, payload=payload)
 
     snapshot_ts = _normalize_utc(payload.snapshot_ts)
     current_states = await get_gate_states(db, device.id)
@@ -696,10 +647,63 @@ async def handle_hh_snapshot(
     await ensure_material_topology(
         db,
         device,
-        gate_indices={state.gate_index for _, state in gate_state_updates}
-        | set(state_by_gate),
+        gate_indices={state.gate_index for _, state in gate_state_updates} | set(state_by_gate),
         exact_gate_count=payload.gate_count,
         reported_routes=reported_routes,
+    )
+    normalized_slots = [
+        PrinterBridgeSlotSnapshot(
+            provider_index=item.gate,
+            kind="gate",
+            present=None if item.status == -1 else item.status in (1, 2),
+            active_feed=payload.selected_gate == item.gate and payload.filament_loaded
+            if payload.selected_gate is not None and payload.filament_loaded is not None
+            else None,
+            material=item.material or None,
+            color_hex=item.color_hex or None,
+            spool_id=payload.spool_ids[item.gate] if payload.spool_ids is not None else None,
+            spool_identity_known=payload.spool_ids is not None,
+        )
+        for item in payload.gates
+    ]
+    if not payload.gates:
+        normalized_slots = [
+            PrinterBridgeSlotSnapshot(
+                provider_index=index,
+                kind="gate",
+                present=False,
+            )
+            for index in range(payload.gate_count)
+        ]
+    if payload.bypass is not None:
+        normalized_slots.append(
+            PrinterBridgeSlotSnapshot(
+                provider_index=HAPPY_HARE_BYPASS_PROVIDER_INDEX,
+                kind="bypass",
+                present=payload.bypass.present,
+                active_feed=payload.bypass.selected,
+            )
+        )
+    await ingest_printer_bridge_snapshot(
+        db,
+        user.id,
+        device.id,
+        PrinterBridgeSnapshotRequest(
+            material_system_id=await db.scalar(
+                select(MaterialSystem.id).where(
+                    MaterialSystem.physical_printer_id == device.id,
+                    MaterialSystem.user_id == user.id,
+                    MaterialSystem.provider == "happy_hare",
+                )
+            ),
+            provider="happy_hare",
+            transport="orca_plugin_lan",
+            source_instance_id=f"happy-hare-plugin-{device.logical_id}",
+            observed_at=payload.snapshot_ts,
+            slots=normalized_slots,
+            inventory_key_digest=payload.inventory_key_digest,
+        ),
+        commit=False,
     )
     await db.commit()
     await db.refresh(device)
@@ -723,10 +727,7 @@ async def build_plugin_material_topology_context(
     bindings = await list_user_bindings(db, user_id)
     refs_by_printer: dict[int, set[str]] = {}
     for binding in bindings:
-        if (
-            binding.source_instance_id == source_instance_id
-            and binding.connection_ref
-        ):
+        if binding.source_instance_id == source_instance_id and binding.connection_ref:
             refs_by_printer.setdefault(binding.physical_printer_id, set()).add(
                 binding.connection_ref
             )
@@ -747,9 +748,7 @@ async def build_plugin_material_topology_context(
             ):
                 continue
             slots: list[PluginMaterialSlotContext] = []
-            for slot in sorted(
-                system.slots, key=lambda item: (item.provider_index, item.id)
-            ):
+            for slot in sorted(system.slots, key=lambda item: (item.provider_index, item.id)):
                 if not slot.active:
                     continue
                 preset_id = None
@@ -759,10 +758,7 @@ async def build_plugin_material_topology_context(
                     preset_id = slot.assignment.preset_id
                     spool_id = slot.assignment.spool_id
                     source_ts = slot.assignment.source_ts
-                elif (
-                    slot.legacy_gate_state is not None
-                    and slot.legacy_gate_state.is_active
-                ):
+                elif slot.legacy_gate_state is not None and slot.legacy_gate_state.is_active:
                     preset_id = slot.legacy_gate_state.preset_id
                     spool_id = slot.legacy_gate_state.spool_id
                     source_ts = slot.legacy_gate_state.source_ts
@@ -787,6 +783,7 @@ async def build_plugin_material_topology_context(
             result.append(
                 PluginPhysicalPrinterContext(
                     id=printer.id,
+                    inventory_key_digest=device_inventory_digest(printer.api_key),
                     connection_refs=sorted(refs_by_printer.get(printer.id, set())),
                     material_systems=systems,
                 )
@@ -861,9 +858,7 @@ async def build_hh_reconciliation_preview(
     exact unassigned last-location hint may be proposed. A hint is never applied
     automatically and colour/material similarity is deliberately ignored.
     """
-    printer, system = await _require_hh_reconciliation_target(
-        db, user.id, payload
-    )
+    printer, system = await _require_hh_reconciliation_target(db, user.id, payload)
     slots_by_gate = {
         slot.provider_index: slot
         for slot in system.slots
@@ -885,9 +880,7 @@ async def build_hh_reconciliation_preview(
 
     actual_by_gate = {item.gate: item.spool_id for item in payload.gates}
     status_by_gate = {item.gate: int(item.status) for item in payload.gates}
-    positive_ids = {
-        spool_id for spool_id in actual_by_gate.values() if spool_id is not None
-    }
+    positive_ids = {spool_id for spool_id in actual_by_gate.values() if spool_id is not None}
     usable_by_id: dict[int, UserSpool] = {}
     if positive_ids:
         usable_spools = list(
@@ -896,9 +889,7 @@ async def build_hh_reconciliation_preview(
                     select(UserSpool).where(
                         UserSpool.id.in_(positive_ids),
                         UserSpool.user_id == user.id,
-                        UserSpool.state.not_in(
-                            {UserSpoolState.archived, UserSpoolState.empty}
-                        ),
+                        UserSpool.state.not_in({UserSpoolState.archived, UserSpoolState.empty}),
                         UserSpool.initial_weight_g > UserSpool.used_weight_g,
                     )
                 )
@@ -938,9 +929,7 @@ async def build_hh_reconciliation_preview(
     )
 
     previous_by_gate: dict[int, list[int]] = {}
-    location_names = {
-        name for name in (printer.printer_hostname, printer.name) if name
-    }
+    location_names = {name for name in (printer.printer_hostname, printer.name) if name}
     if location_names:
         previous_spools = list(
             (
@@ -948,9 +937,7 @@ async def build_hh_reconciliation_preview(
                     select(UserSpool).where(
                         UserSpool.user_id == user.id,
                         UserSpool.extra.is_not(None),
-                        UserSpool.state.not_in(
-                            {UserSpoolState.archived, UserSpoolState.empty}
-                        ),
+                        UserSpool.state.not_in({UserSpoolState.archived, UserSpoolState.empty}),
                         UserSpool.initial_weight_g > UserSpool.used_weight_g,
                     )
                 )
@@ -985,13 +972,9 @@ async def build_hh_reconciliation_preview(
 
         if actual is not None:
             if actual_counts.get(actual, 0) > 1:
-                unresolved.append(
-                    HHReconciliationUnresolved(gate=gate, reason="duplicate_spool")
-                )
+                unresolved.append(HHReconciliationUnresolved(gate=gate, reason="duplicate_spool"))
             elif actual not in usable_by_id:
-                unresolved.append(
-                    HHReconciliationUnresolved(gate=gate, reason="spool_unavailable")
-                )
+                unresolved.append(HHReconciliationUnresolved(gate=gate, reason="spool_unavailable"))
             elif actual != wanted:
                 imports.append(
                     HHReconciliationImportChange(
@@ -1021,9 +1004,7 @@ async def build_hh_reconciliation_preview(
             unresolved.append(
                 HHReconciliationUnresolved(
                     gate=gate,
-                    reason=(
-                        "ambiguous_last_known" if len(candidates) > 1 else "identity_unknown"
-                    ),
+                    reason=("ambiguous_last_known" if len(candidates) > 1 else "identity_unknown"),
                 )
             )
 
@@ -1055,13 +1036,9 @@ async def adopt_hh_reconciliation(
     # Follow the shared writer's lock order: physical spools first, then slot
     # rows. This prevents a last-known hint from stealing a spool that was moved
     # after the preview and keeps the full-map CAS atomic on PostgreSQL.
-    lock_ids = {
-        item.proposed_spool_id for item in preview.import_changes
-    }
+    lock_ids = {item.proposed_spool_id for item in preview.import_changes}
     lock_ids.update(
-        item.spool_id
-        for item in preview.desired_assignments
-        if item.spool_id is not None
+        item.spool_id for item in preview.desired_assignments if item.spool_id is not None
     )
     for spool_id in sorted(lock_ids):
         await lock_spool_row(db, spool_id)
@@ -1078,16 +1055,12 @@ async def adopt_hh_reconciliation(
         .with_for_update()
     )
     confirmed = await build_hh_reconciliation_preview(db, user, payload)
-    confirmed_current = {
-        item.gate: item.spool_id for item in confirmed.desired_assignments
-    }
+    confirmed_current = {item.gate: item.spool_id for item in confirmed.desired_assignments}
     preview_proposals = {
-        (item.gate, item.proposed_spool_id, item.source)
-        for item in preview.import_changes
+        (item.gate, item.proposed_spool_id, item.source) for item in preview.import_changes
     }
     confirmed_proposals = {
-        (item.gate, item.proposed_spool_id, item.source)
-        for item in confirmed.import_changes
+        (item.gate, item.proposed_spool_id, item.source) for item in confirmed.import_changes
     }
     if confirmed_current != expected or confirmed_proposals != preview_proposals:
         raise_error(409, ERR_MATERIAL_TOPOLOGY_CHANGED)
@@ -1098,8 +1071,7 @@ async def adopt_hh_reconciliation(
             db,
             user,
             ManualAssignmentRequest(
-                device_fingerprint=printer.device_fingerprint
-                or f"logical:{printer.logical_id}",
+                device_fingerprint=printer.device_fingerprint or f"logical:{printer.logical_id}",
                 gate=change.gate,
                 spool_id=change.proposed_spool_id,
             ),
@@ -1130,9 +1102,7 @@ async def handle_manual_assignment(
 ) -> PresetGateState:
     resolved_device = device
     if resolved_device is None:
-        resolved_device = await get_device_by_fingerprint(
-            db, user.id, payload.device_fingerprint
-        )
+        resolved_device = await get_device_by_fingerprint(db, user.id, payload.device_fingerprint)
         if resolved_device is None:
             raise_error(404, ERR_DEVICE_NOT_FOUND)
     elif resolved_device.user_id != user.id:
@@ -1180,9 +1150,7 @@ async def handle_manual_assignment(
             require_usable=True,
         )
     involved_spool_ids = {
-        spool_id
-        for spool_id in {old_spool_id, payload.spool_id}
-        if spool_id is not None
+        spool_id for spool_id in {old_spool_id, payload.spool_id} if spool_id is not None
     }
     for spool_id in sorted(involved_spool_ids):
         await lock_spool_row(db, spool_id)
@@ -1236,9 +1204,7 @@ async def handle_manual_assignment(
     except IntegrityError:
         raise_error(409, ERR_SPOOL_LOCATION_CONFLICT)
 
-    await ensure_material_topology(
-        db, resolved_device, gate_indices={payload.gate}
-    )
+    await ensure_material_topology(db, resolved_device, gate_indices={payload.gate})
     # Production sessions disable autoflush. Persist the mirrored assignment
     # deletion before asking whether the old spool is still mounted anywhere.
     await db.flush()

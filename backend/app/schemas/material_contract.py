@@ -159,6 +159,8 @@ class MaterialSlotObservationResponse(BaseModel):
     received_at: datetime
     present: bool | None
     active_feed: bool | None
+    spool_id: int | None = None
+    spool_identity_known: bool = False
     material: str | None
     color_hex: str | None
     remaining_percent: int | None
@@ -268,9 +270,7 @@ class PhysicalPrinterResponse(BaseModel):
             printer_hostname=printer.printer_hostname,
             reports_feed=printer.reports_feed,
             last_seen_at=printer.last_seen_at,
-            printer_profile_ids=sorted(
-                link.printer_profile_id for link in printer.profile_links
-            ),
+            printer_profile_ids=sorted(link.printer_profile_id for link in printer.profile_links),
             material_systems=[cls._material_system_response(system) for system in systems],
             connectors=[
                 PhysicalPrinterConnectorResponse.model_validate(connector)
@@ -370,6 +370,8 @@ class PrinterBridgeSlotSnapshot(BaseModel):
     kind: str = Field(default="slot", min_length=1, max_length=50)
     present: bool | None = None
     active_feed: bool | None = None
+    spool_id: int | None = Field(default=None, ge=1)
+    spool_identity_known: bool = False
     material: str | None = Field(default=None, max_length=80)
     color_hex: str | None = Field(default=None, pattern=r"^[0-9A-Fa-f]{6}$")
     remaining_percent: int | None = Field(default=None, ge=0, le=100)
@@ -386,8 +388,9 @@ class PrinterBridgeSnapshotRequest(BaseModel):
     sequence: int | None = Field(default=None, ge=1, le=9_223_372_036_854_775_807)
     observed_at: datetime
     printer: PrinterBridgeStatusSnapshot | None = None
-    slots: list[PrinterBridgeSlotSnapshot] = Field(default_factory=list, max_length=256)
+    slots: list[PrinterBridgeSlotSnapshot] = Field(default_factory=list, max_length=257)
     slot_topology_complete: bool = False
+    inventory_key_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
 
     @model_validator(mode="after")
     def unique_slot_indices(self) -> "PrinterBridgeSnapshotRequest":

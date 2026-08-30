@@ -109,7 +109,7 @@ export function AddPhysicalPrinterModal({
           </div>
 
           <div className="space-y-4 px-6 py-5">
-            <p className="text-xs text-gray-400">{t('addPrinter.description')}</p>
+            <p className="text-xs text-gray-400">{t('addPrinter.manualDescription')}</p>
 
             {(candidates?.length ?? 0) > 0 && (
               <div>

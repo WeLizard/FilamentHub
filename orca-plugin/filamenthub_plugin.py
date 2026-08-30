@@ -3345,6 +3345,27 @@ _HH_ARRAY_FIELDS = (
 )
 
 
+def _happy_hare_inventory_digest(connection):
+    status, body, _error = _moonraker_json(connection, "/server/config")
+    result = body.get("result") if status == 200 and isinstance(body, dict) else None
+    config = result.get("config") if isinstance(result, dict) else None
+    spoolman = config.get("spoolman") if isinstance(config, dict) else None
+    server = spoolman.get("server") if isinstance(spoolman, dict) else None
+    if not isinstance(server, str):
+        return None
+    try:
+        parsed = urllib.parse.urlsplit(server)
+    except ValueError:
+        return None
+    cloud = urllib.parse.urlsplit(SITE_URL)
+    if (parsed.scheme, parsed.netloc) != (cloud.scheme, cloud.netloc):
+        return None
+    match = re.fullmatch(r"/api/v1/spool_compat/([A-Za-z0-9_-]+)/*", parsed.path)
+    if not match or parsed.query or parsed.fragment:
+        return None
+    return hashlib.sha256(match.group(1).encode()).hexdigest()
+
+
 def read_happy_hare_snapshot(connection):
     """Read one complete Happy Hare topology through Moonraker, without writes."""
     query_status, query, query_error = _moonraker_json(
@@ -3362,6 +3383,7 @@ def read_happy_hare_snapshot(connection):
                     "spoolman_support",
                     "has_bypass",
                     "tool",
+                    "gate",
                     "filament_pos",
                 ],
                 "print_stats": ["state"],
@@ -3462,22 +3484,20 @@ def read_happy_hare_snapshot(connection):
         selected_tool = int(raw_tool) if not isinstance(raw_tool, bool) else None
     except (TypeError, ValueError):
         selected_tool = None
-    bypass_selected = selected_tool == -2
+    raw_gate = mmu.get("gate")
+    selected_gate = raw_gate if type(raw_gate) is int and -2 <= raw_gate < gate_count else None
+    bypass_selected = selected_gate == -2 or selected_tool == -2
+    raw_filament_pos = mmu.get("filament_pos")
+    try:
+        filament_pos = float(raw_filament_pos) if not isinstance(raw_filament_pos, bool) else None
+    except (TypeError, ValueError):
+        filament_pos = None
     if bypass_selected:
         # A selected bypass is stronger evidence than an omitted capability
         # field from an older Happy Hare build.
         has_bypass = True
     bypass = None
     if has_bypass is True:
-        raw_filament_pos = mmu.get("filament_pos")
-        try:
-            filament_pos = (
-                float(raw_filament_pos)
-                if not isinstance(raw_filament_pos, bool)
-                else None
-            )
-        except (TypeError, ValueError):
-            filament_pos = None
         bypass_present = None
         if bypass_selected and filament_pos is not None and filament_pos >= 0:
             bypass_present = filament_pos > 0
@@ -3495,6 +3515,9 @@ def read_happy_hare_snapshot(connection):
         "printer_hostname": hostname,
         "has_bypass": has_bypass,
         "bypass": bypass,
+        "selected_gate": selected_gate,
+        "filament_loaded": filament_pos > 0 if filament_pos is not None and filament_pos >= 0 else None,
+        "inventory_key_digest": _happy_hare_inventory_digest(connection),
     }
 
 
@@ -3504,6 +3527,10 @@ def upload_happy_hare_snapshot(token, physical_printer_id, snapshot):
         "gate_count": snapshot["gate_count"],
         "snapshot_ts": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         "gates": snapshot["gates"],
+        "spool_ids": snapshot.get("actual_spool_ids") if snapshot.get("spool_ids_known") else None,
+        "inventory_key_digest": snapshot.get("inventory_key_digest"),
+        "selected_gate": snapshot.get("selected_gate"),
+        "filament_loaded": snapshot.get("filament_loaded"),
     }
     if isinstance(snapshot.get("has_bypass"), bool):
         payload["has_bypass"] = snapshot["has_bypass"]
@@ -8008,6 +8035,12 @@ class FilamentHubCatalog(
                 ),
                 status=snapshot_status,
             )
+            return
+        if "inventory_key_digest" in device and (
+            not snapshot.get("inventory_key_digest")
+            or snapshot["inventory_key_digest"] != device["inventory_key_digest"]
+        ):
+            finish(ok=False, code="inventory_not_connected")
             return
         desired = _desired_happy_hare_spools(device, material_system_id)
         if desired is None:

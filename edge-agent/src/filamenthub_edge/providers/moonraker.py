@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import hashlib
 import re
 from typing import Any
+from urllib.parse import urlsplit
 
 from ..errors import HttpRequestError, ProviderUnavailable
 from ..http import JsonHttpClient
@@ -19,6 +21,7 @@ HAPPY_HARE_FIELDS = [
     "gate",
     "tool",
     "filament_pos",
+    "spoolman_support",
 ]
 COLOR_PATTERN = re.compile(r"^[0-9A-F]{6}$")
 BYPASS_PROVIDER_INDEX = 1023
@@ -64,6 +67,7 @@ class MoonrakerProvider:
         material_provider: str,
         timeout: float,
         http_client: JsonHttpClient | None = None,
+        filamenthub_url: str = "https://filamenthub.ru",
     ) -> None:
         headers = {"X-Api-Key": api_key} if api_key else None
         self.http = http_client or JsonHttpClient(
@@ -73,6 +77,7 @@ class MoonrakerProvider:
             default_headers=headers,
         )
         self.material_provider = material_provider
+        self.filamenthub_url = filamenthub_url
         self._capabilities = ["read", "presence", "consumption"]
 
     def capabilities(self) -> list[str]:
@@ -106,19 +111,54 @@ class MoonrakerProvider:
         usage = self._usage_snapshot(status)
         slots: list[dict[str, Any]] = []
         topology_complete = False
+        inventory_key_digest = None
         if self.material_provider == "happy_hare":
             mmu = status.get("mmu")
             if not isinstance(mmu, dict):
                 raise ProviderUnavailable("Happy Hare object 'mmu' is unavailable")
             slots = self._happy_hare_slots(mmu)
             topology_complete = True
+            inventory_key_digest = self._inventory_key_digest()
+            if self._native_spoolman_configured or mmu.get("spoolman_support") != "off":
+                # Moonraker's native Spoolman component owns usage for this feed.
+                # Running Edge and Orca alongside it must not debit the spool twice.
+                usage = None
+                self._capabilities = ["read", "presence", "spool_identity"]
+            else:
+                self._capabilities = ["read", "presence", "spool_identity", "consumption"]
         return ProviderSnapshot(
             printer=printer,
             slots=slots,
             slot_topology_complete=topology_complete,
             capabilities=self.capabilities(),
             usage=usage,
+            inventory_key_digest=inventory_key_digest,
         )
+
+    def _inventory_key_digest(self) -> str | None:
+        self._native_spoolman_configured = True  # Unknown config must not double-debit usage.
+        try:
+            _, decoded, _ = self.http.request("GET", "/server/config")
+        except HttpRequestError:
+            return None
+        result = decoded.get("result", {}) if isinstance(decoded, dict) else {}
+        config = result.get("config", {}) if isinstance(result, dict) else {}
+        spoolman = config.get("spoolman", {}) if isinstance(config, dict) else {}
+        server = spoolman.get("server") if isinstance(spoolman, dict) else None
+        self._native_spoolman_configured = bool(server)
+        if not isinstance(server, str):
+            return None
+        try:
+            parsed = urlsplit(server)
+        except ValueError:
+            return None
+        cloud = urlsplit(self.filamenthub_url)
+        if (parsed.scheme, parsed.netloc) != (cloud.scheme, cloud.netloc):
+            return None
+        match = re.fullmatch(r"/api/v1/spool_compat/([A-Za-z0-9_-]+)/*", parsed.path)
+        if not match or parsed.query or parsed.fragment:
+            return None
+        return hashlib.sha256(match.group(1).encode()).hexdigest()
 
     @staticmethod
     def _status_map(decoded: Any) -> dict[str, Any]:
@@ -207,8 +247,6 @@ class MoonrakerProvider:
             raise ProviderUnavailable("Happy Hare gate arrays disagree with num_gates")
 
         selected_gate = _integer(mmu.get("gate"))
-        if selected_gate is None:
-            selected_gate = _integer(mmu.get("tool"))
         filament_pos = _number(mmu.get("filament_pos"))
         filament_loaded = filament_pos is not None and filament_pos > 0
 
@@ -228,22 +266,29 @@ class MoonrakerProvider:
                 "kind": "gate",
                 "present": present,
                 "active_feed": selected_gate == index and filament_loaded,
+                "spool_id": (_integer(value_at("gate_spool_id", index, -1)) or -1),
+                "spool_identity_known": arrays["gate_spool_id"] is not None,
             }
+            if slot["spool_id"] < 1:
+                slot["spool_id"] = None
             if material:
                 slot["material"] = material
             if COLOR_PATTERN.fullmatch(color):
                 slot["color_hex"] = color
             slots.append(slot)
 
-        has_bypass = mmu.get("has_bypass") is True or selected_gate == -2
+        has_bypass = mmu.get("has_bypass") is True or selected_gate == -2 or mmu.get("tool") == -2
         if has_bypass:
             slots.append(
                 {
                     "provider_index": BYPASS_PROVIDER_INDEX,
                     "label": "Bypass",
                     "kind": "bypass",
-                    "present": filament_loaded if selected_gate == -2 else None,
-                    "active_feed": selected_gate == -2 and filament_loaded,
+                    "present": filament_loaded
+                    if selected_gate == -2 or mmu.get("tool") == -2
+                    else None,
+                    "active_feed": (selected_gate == -2 or mmu.get("tool") == -2)
+                    and filament_loaded,
                 }
             )
         return slots

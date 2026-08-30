@@ -6989,6 +6989,7 @@
     "mm": "毫米"
   },
   "addPrinter": {
+    "manualDescription": "按名称添加实体打印机。无需 OrcaSlicer；打印机连接和供料系统另行配置。",
     "title": "添加打印机",
     "description": "通过 OrcaSlicer 联网打印时，打印机会自动出现。没有网络地址的机器（例如 Bambu Lab）请在此添加。",
     "foundInOrca": "在您的 OrcaSlicer 中找到",
@@ -7226,6 +7227,8 @@
     "observation": {
       "noData": "暂无数据",
       "conflict": {
+        "observed_spool_differs": "打印机报告了不同的料卷，请检查分配。",
+        "observed_spool_unknown": "存在耗材，但打印机尚未识别料卷。",
         "assigned_but_observed_empty": "FilamentHub 已分配材料，但打印机报告该槽位为空。",
         "observed_loaded_without_spool": "打印机检测到耗材，但尚未分配 FilamentHub 线轴。",
         "observed_details_differ": "打印机报告的材料或颜色与所选线轴不同。"
@@ -7282,6 +7285,15 @@
       "octoprint": "OctoPrint"
     },
     "happyHare": {
+      "inventoryError": "Moonraker 必须使用此 FH 打印机专属的 [spoolman] 密钥链接。请检查配置，并在空闲时重启 Moonraker。已读取槽位，但无法安全匹配料卷 ID。",
+      "connectionTitle": "通过或不通过 OrcaSlicer 连接",
+      "connectionGuide": "在 OrcaSlicer 中使用所选打印机的连接并点击“检查打印机”。不使用切片软件时，在 Moonraker 所在设备或同一网络安装 Edge，并输入配对码。两种方式均需要 [spoolman] 配置中的本打印机密钥，以及已加载的 [mmu_server]。HH v4 的 spoolman_support 位于 mmu.cfg，旧版本通常位于 mmu_parameters.cfg。pull 模式使用 FH 的分配，请先检查现有映射。",
+      "installation": "无需切片软件的安装：Linux / Docker",
+      "refreshStatus": "刷新信息",
+      "documentation": "Happy Hare 文档",
+      "withoutPlugin": "Edge 可在不运行 OrcaSlicer 时上传映射。请在供料系统设置中连接 Edge。此页面显示最近收到的状态，不会直接访问您的本地网络。料卷通过 Moonraker [spoolman] 交换。需要立即同步时，请在打印机空闲时于控制台运行以下命令。",
+      "observedSpool": "打印机报告：{{name}}",
+      "acceptObserved": "选择检测到的料卷",
       "hostname": "Klipper 主机名",
       "hostnameNotSet": "未设置",
       "autoPairingTitle": "正在等待 Happy Hare",

@@ -56,6 +56,7 @@ def main() -> None:
             api_key=config.moonraker_api_key,
             material_provider=config.material_provider,
             timeout=config.request_timeout,
+            filamenthub_url=config.filamenthub_url,
         )
         runtime = EdgeRuntime(
             config=config,

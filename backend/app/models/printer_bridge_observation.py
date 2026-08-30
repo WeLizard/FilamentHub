@@ -75,6 +75,12 @@ class MaterialSlotObservation(Base):
     )
     present: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     active_feed: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    spool_id: Mapped[int | None] = mapped_column(
+        ForeignKey("user_spools.id", ondelete="SET NULL"), nullable=True
+    )
+    spool_identity_known: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
     material: Mapped[str | None] = mapped_column(String(80), nullable=True)
     color_hex: Mapped[str | None] = mapped_column(String(6), nullable=True)
     remaining_percent: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -92,5 +98,5 @@ class MaterialSlotObservation(Base):
         "PhysicalPrinterConnector", back_populates="slot_observations"
     )
     material_slot: Mapped["MaterialSlot"] = relationship(
-        "MaterialSlot", back_populates="observation"
+        "MaterialSlot", back_populates="observations"
     )

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 from datetime import datetime, timezone
 
@@ -20,6 +21,7 @@ from app.core.errors import (
     ERR_PRINTER_PROFILE_NOT_FOUND,
     raise_error,
 )
+from app.core.security import device_inventory_digest
 from app.models.filament import Filament
 from app.models.material_slot_assignment import MaterialSlotAssignment
 from app.models.material_system import (
@@ -61,7 +63,7 @@ from app.services.material_assignment_service import sync_legacy_material_assign
 # one system on the printer instead of each creating its own.
 KLIPPER_PROVIDERS = ("happy_hare", "legacy")
 
-MAX_GATE_INDEX = 31
+MAX_GATE_INDEX = 255
 
 HAPPY_HARE_CAPABILITIES = [
     "read",
@@ -90,7 +92,9 @@ def _printer_load_options():
         .selectinload(MaterialSlot.assignment),
         selectinload(UserPrinterDevice.material_systems)
         .selectinload(MaterialSystem.slots)
-        .selectinload(MaterialSlot.observation),
+        .selectinload(MaterialSlot.observations)
+        .selectinload(MaterialSlotObservation.connector)
+        .selectinload(PhysicalPrinterConnector.status_observation),
         selectinload(UserPrinterDevice.connectors).selectinload(
             PhysicalPrinterConnector.status_observation
         ),
@@ -107,6 +111,7 @@ async def require_physical_printer(
             UserPrinterDevice.user_id == user_id,
         )
         .options(*_printer_load_options())
+        .execution_options(populate_existing=True)
     )
     printer = result.scalar_one_or_none()
     if printer is None:
@@ -134,11 +139,11 @@ async def _validate_profile_ids(
     if not profile_ids:
         return []
     query = select(PrinterProfile).where(
-            PrinterProfile.id.in_(profile_ids),
-            or_(
-                PrinterProfile.owner_user_id == user_id,
-                (PrinterProfile.owner_user_id.is_(None) & PrinterProfile.is_official.is_(True)),
-            ),
+        PrinterProfile.id.in_(profile_ids),
+        or_(
+            PrinterProfile.owner_user_id == user_id,
+            (PrinterProfile.owner_user_id.is_(None) & PrinterProfile.is_official.is_(True)),
+        ),
     )
     if active_only:
         query = query.where(PrinterProfile.active.is_(True))
@@ -508,7 +513,7 @@ def _snapshot_is_current(
 def _printer_bridge_observation_source(provider: str, transport: str) -> str:
     if provider == "bambu" and transport == "orca_plugin_lan":
         return "bambu_lan_mqtt"
-    return f"{provider}_edge"[:50]
+    return f"{provider}_{'edge' if transport == 'edge_agent' else 'moonraker'}"[:50]
 
 
 async def build_printer_bridge_desired_snapshot(
@@ -612,6 +617,8 @@ async def ingest_printer_bridge_snapshot(
     user_id: int,
     physical_printer_id: int,
     payload: PrinterBridgeSnapshotRequest,
+    *,
+    commit: bool = True,
 ) -> PrinterBridgeSnapshotResponse:
     """Persist only normalized facts from a locally authenticated connector.
 
@@ -619,6 +626,16 @@ async def ingest_printer_bridge_snapshot(
     source timestamp is capped at receipt time so a fast client clock cannot
     make every later observation look stale forever.
     """
+    # Both local transports may report at once. Serialize topology creation
+    # before locking connectors or slots, not just updates from one connector.
+    await db.execute(
+        select(UserPrinterDevice.id)
+        .where(
+            UserPrinterDevice.id == physical_printer_id,
+            UserPrinterDevice.user_id == user_id,
+        )
+        .with_for_update()
+    )
     printer = await require_physical_printer(db, user_id, physical_printer_id)
     system = await _require_material_system(
         db,
@@ -666,7 +683,8 @@ async def ingest_printer_bridge_snapshot(
 
     snapshot_is_current = _snapshot_is_current(connector, payload, observed_at)
     if not snapshot_is_current:
-        await db.commit()
+        if commit:
+            await db.commit()
         return PrinterBridgeSnapshotResponse(
             accepted=False,
             stale=True,
@@ -683,10 +701,32 @@ async def ingest_printer_bridge_snapshot(
         connector.last_snapshot_sequence = payload.sequence
         connector.last_snapshot_source_instance_id = payload.source_instance_id
     system.provider = payload.provider
-    system.capabilities = list(connector.capabilities)
+    system.capabilities = sorted(set(system.capabilities) | set(connector.capabilities))
     system.active = True
 
     accepted = True
+
+    inventory_matches = bool(
+        printer.api_key
+        and payload.inventory_key_digest
+        and hmac.compare_digest(
+            device_inventory_digest(printer.api_key) or "", payload.inventory_key_digest
+        )
+    )
+    reported_spool_ids = {item.spool_id for item in payload.slots if item.spool_id is not None}
+    owned_spool_ids = (
+        set(
+            (
+                await db.scalars(
+                    select(UserSpool.id).where(
+                        UserSpool.user_id == user_id, UserSpool.id.in_(reported_spool_ids)
+                    )
+                )
+            ).all()
+        )
+        if inventory_matches and reported_spool_ids
+        else set()
+    )
 
     status_observation = await db.scalar(
         select(PhysicalPrinterStatusObservation).where(
@@ -716,7 +756,18 @@ async def ingest_printer_bridge_snapshot(
         .all()
     )
     slots_by_index = {slot.provider_index: slot for slot in existing_slots}
-    if payload.slot_topology_complete and snapshot_is_current:
+    newer_source = await db.scalar(
+        select(PhysicalPrinterConnector.id)
+        .where(
+            PhysicalPrinterConnector.material_system_id == system.id,
+            PhysicalPrinterConnector.id != connector.id,
+            PhysicalPrinterConnector.active.is_(True),
+            PhysicalPrinterConnector.last_observation_at > observed_at,
+        )
+        .limit(1)
+    )
+    topology_is_current = snapshot_is_current and newer_source is None
+    if payload.slot_topology_complete and topology_is_current:
         reported_indices = {item.provider_index for item in payload.slots}
         # A slot the printer stopped reporting is hidden, but not when a person
         # put something in it: hiding it would strand the spool in a slot nobody
@@ -732,6 +783,8 @@ async def ingest_printer_bridge_snapshot(
                 slot.active = False
     for item in payload.slots:
         slot = slots_by_index.get(item.provider_index)
+        if not topology_is_current and (slot is None or not slot.active):
+            continue
         if slot is None:
             slot = MaterialSlot(
                 user_id=user_id,
@@ -765,6 +818,12 @@ async def ingest_printer_bridge_snapshot(
             )
             db.add(observation)
         values = item.model_dump(exclude={"provider_index", "label", "kind"})
+        values["spool_identity_known"] = (
+            inventory_matches
+            and item.spool_identity_known
+            and (item.spool_id is None or item.spool_id in owned_spool_ids)
+        )
+        values["spool_id"] = item.spool_id if values["spool_identity_known"] else None
         values["color_hex"] = values["color_hex"].upper() if values["color_hex"] else None
         for field_name, value in values.items():
             setattr(observation, field_name, value)
@@ -773,7 +832,29 @@ async def ingest_printer_bridge_snapshot(
         observation.received_at = received_at
         accepted = True
 
-    await db.commit()
+    if payload.provider == "happy_hare" and payload.slot_topology_complete and topology_is_current:
+        gates = {item.provider_index for item in payload.slots if item.kind != "bypass"}
+        if gates and gates == set(range(len(gates))):
+            printer.supports_hh = True
+            printer.gate_count = len(gates)
+            system.kind = "mmu"
+            await ensure_material_topology(
+                db,
+                printer,
+                exact_gate_count=len(gates),
+                reported_routes=[
+                    MaterialSlotCreate(
+                        provider_index=item.provider_index,
+                        label=item.label,
+                        kind=item.kind,
+                    )
+                    for item in payload.slots
+                    if item.kind == "bypass"
+                ],
+            )
+
+    if commit:
+        await db.commit()
     return PrinterBridgeSnapshotResponse(
         accepted=accepted,
         stale=not accepted,
@@ -811,9 +892,7 @@ async def ensure_material_topology(
         # A reported gate proves every lower gate exists, so the panel shows a
         # contiguous system instead of a hole where no spool has been seen yet.
         indices = set(range(min(max(indices), MAX_GATE_INDEX) + 1))
-    routes_by_index = {
-        route.provider_index: route for route in (reported_routes or [])
-    }
+    routes_by_index = {route.provider_index: route for route in (reported_routes or [])}
     indices.update(routes_by_index)
 
     await db.flush()
@@ -904,32 +983,17 @@ async def ensure_material_topology(
         # occupied gate. Keep rows outside a shrunken topology recoverable, but
         # do not present them as current hardware slots.
         system.declared_slot_count = exact_gate_count
-        occupied_route_indices: set[int] = set()
-        if reported_routes is not None:
-            occupied_route_indices = set(
-                (
-                    await db.execute(
-                        select(MaterialSlot.provider_index)
-                        .join(
-                            MaterialSlotAssignment,
-                            MaterialSlotAssignment.material_slot_id == MaterialSlot.id,
-                        )
-                        .where(
-                            MaterialSlot.material_system_id == system.id,
-                            MaterialSlotAssignment.active.is_(True),
-                        )
-                    )
-                ).scalars()
-            )
+        occupied_route_indices = await _occupied_slot_indices(db, list(slots_by_index.values()))
         for provider_index, slot in slots_by_index.items():
-            if slot.kind == "slot":
-                slot.active = provider_index < exact_gate_count
+            if slot.kind in {"slot", "gate"}:
+                slot.active = (
+                    provider_index < exact_gate_count or provider_index in occupied_route_indices
+                )
             elif reported_routes is not None:
                 # A complete route report can retire a removed bypass, but an
                 # assigned spool must stay visible until the person moves it.
                 slot.active = (
-                    provider_index in routes_by_index
-                    or provider_index in occupied_route_indices
+                    provider_index in routes_by_index or provider_index in occupied_route_indices
                 )
 
     if (
@@ -959,6 +1023,7 @@ async def ensure_material_topology(
         .where(
             PhysicalPrinterConnector.physical_printer_id == device.id,
             PhysicalPrinterConnector.user_id == device.user_id,
+            PhysicalPrinterConnector.transport.in_(["spoolman_compat", "legacy_adapter"]),
             or_(
                 PhysicalPrinterConnector.material_system_id == system.id,
                 PhysicalPrinterConnector.provider.in_(siblings),

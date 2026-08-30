@@ -33,15 +33,12 @@ import type { AdapterViewContext, FeedAdapter } from './types';
 
 const EDGE_TRANSPORT = 'edge_agent' as const;
 
-function isEdgeUiEnabled(): boolean {
-  return import.meta.env.VITE_ENABLE_EDGE_UI === 'true';
-}
-
 function HappyHareEdgeSetup({
   printer,
   system,
 }: Pick<AdapterViewContext, 'printer' | 'system'>) {
   const { t, i18n } = useTranslation();
+  const queryClient = useQueryClient();
   const [issuing, setIssuing] = useState(false);
   const [copied, setCopied] = useState(false);
   const [pairingCode, setPairingCode] = useState<string | null>(null);
@@ -59,7 +56,7 @@ function HappyHareEdgeSetup({
         status?.pairing_expires_at
           && Date.parse(status.pairing_expires_at) > Date.now(),
       );
-      const awaitingFirstData = Boolean(status?.paired && !status.last_seen_at);
+      const awaitingFirstData = Boolean(status?.paired && !status.last_observation_at);
       return (pairingPending || awaitingFirstData) && Date.now() < pollDeadline
         ? 5_000
         : false;
@@ -70,8 +67,14 @@ function HappyHareEdgeSetup({
     status?.pairing_expires_at
       && Date.parse(status.pairing_expires_at) > Date.now(),
   );
-  const hasReceivedData = Boolean(status?.paired && status.last_seen_at);
-  const awaitingFirstData = Boolean(status?.paired && !status.last_seen_at);
+  const hasReceivedData = Boolean(status?.paired && status.last_observation_at);
+  const awaitingFirstData = Boolean(status?.paired && !status.last_observation_at);
+
+  useEffect(() => {
+    if (status?.last_observation_at) {
+      void queryClient.invalidateQueries({ queryKey: ['physical-printers'] });
+    }
+  }, [status?.last_observation_at, queryClient]);
 
   useEffect(() => {
     if (!pairingCode) return;
@@ -95,9 +98,9 @@ function HappyHareEdgeSetup({
       const expiresAt = Date.parse(issued.expires_at);
       setPollDeadline(expiresAt);
       setPairingWasPending(false);
-      await statusQuery.refetch();
       setPairingCode(issued.pairing_code);
       setCopied(false);
+      await statusQuery.refetch();
     } catch (err: any) {
       toast.error(translateApiError(t, err?.response?.data?.detail, t('common.error')));
     } finally {
@@ -175,6 +178,14 @@ function HappyHareEdgeSetup({
       <p className="mt-1 text-[11px] leading-4 text-gray-400">
         {t('presetSlots.happyHare.edge.description')}
       </p>
+      <a href="https://github.com/WeLizard/FilamentHub/tree/main/edge-agent#installation"
+        target="_blank" rel="noopener noreferrer" className="text-xs text-sky-200 underline">
+        {t('presetSlots.happyHare.installation')}
+      </a>
+      <button type="button" onClick={() => statusQuery.refetch()}
+        disabled={statusQuery.isFetching} className="ml-3 text-xs text-sky-200 underline">
+        {t('presetSlots.happyHare.refreshStatus')}
+      </button>
 
       {lastContact && (
         <p className="mt-1 text-[11px] text-gray-500">
@@ -555,7 +566,7 @@ function HappyHareRefreshAction({
       preview.spoolmanSupport === 'pull' && !busy
     ));
   const errorText = (code?: string | null) => (
-    t(`presetSlots.happyHare.refresh.errors.${code || 'unknown'}`, {
+    t(code === 'inventory_not_connected' ? 'presetSlots.happyHare.inventoryError' : `presetSlots.happyHare.refresh.errors.${code || 'unknown'}`, {
       defaultValue: t('presetSlots.happyHare.refresh.errors.unknown'),
     })
   );
@@ -666,7 +677,10 @@ function HappyHareRefreshAction({
         type="button"
         onClick={() => {
           if (pluginAvailable) void check();
-          else if (pluginAvailable === false) setFallbackOpen(true);
+          else if (pluginAvailable === false) {
+            void refreshData();
+            setFallbackOpen(true);
+          }
         }}
         disabled={pluginAvailable == null || loading != null}
         title={t('presetSlots.happyHare.refresh.description')}
@@ -675,7 +689,7 @@ function HappyHareRefreshAction({
         {loading === 'preview'
           ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
           : <RefreshCw className="h-3.5 w-3.5" />}
-        {t('presetSlots.happyHare.refresh.check')}
+        {t(pluginAvailable ? 'presetSlots.happyHare.refresh.check' : 'presetSlots.happyHare.refreshStatus')}
       </button>
 
       {fallbackOpen && (
@@ -687,7 +701,7 @@ function HappyHareRefreshAction({
                   {t('presetSlots.happyHare.refresh.title')}
                 </h3>
                 <p className="mt-1 text-sm leading-5 text-gray-400">
-                  {t('presetSlots.happyHare.refresh.fallback')}
+                  {t('presetSlots.happyHare.withoutPlugin')}
                 </p>
               </div>
               <button
@@ -798,13 +812,23 @@ function HappyHareRefreshAction({
 }
 
 function HappyHareSetup(context: AdapterViewContext) {
+  const { t } = useTranslation();
   const pluginAvailable = useHappyHarePlugin();
   const needsLegacyPairing = pluginAvailable === false && !context.printer.printer_hostname;
   return (
     <>
-      {isEdgeUiEnabled() && (
+      <details open={pluginAvailable === false && context.system.slots.length === 0}
+        className="mb-3 rounded-lg border border-white/10 p-3">
+        <summary className="cursor-pointer text-xs text-gray-200">
+          {t('presetSlots.happyHare.connectionTitle')}
+        </summary>
+        <p className="my-2 text-xs text-gray-400">{t('presetSlots.happyHare.connectionGuide')}</p>
         <HappyHareEdgeSetup printer={context.printer} system={context.system} />
-      )}
+        <a href="https://moggieuk.github.io/Happy-Hare-Doc/Feature-Spoolman/#filamenthub"
+          target="_blank" rel="noopener noreferrer" className="text-xs text-sky-200 underline">
+          {t('presetSlots.happyHare.documentation')}
+        </a>
+      </details>
       {needsLegacyPairing && (
         <PairingStep gates={context.gates} hasContact={context.printer.reports_feed} />
       )}
@@ -833,8 +857,7 @@ export const happyHareAdapter: FeedAdapter = {
   link: {
     hintKey: 'presetSlots.happyHare.linkHint',
     snippet: (baseUrl, apiKey) => `[spoolman]
-server: ${baseUrl}/${apiKey}
-sync_rate: 60`,
+server: ${baseUrl}/${apiKey}`,
   },
   renderCreateHelp: () => <HappyHareCreationGuide />,
   renderSettings: ({ printer }) => <HostnameField printer={printer} />,

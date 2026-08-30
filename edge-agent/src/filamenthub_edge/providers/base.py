@@ -13,6 +13,7 @@ class ProviderSnapshot:
     slot_topology_complete: bool
     capabilities: list[str]
     usage: dict[str, Any] | None = None
+    inventory_key_digest: str | None = None
 
 
 class EdgeProvider(Protocol):

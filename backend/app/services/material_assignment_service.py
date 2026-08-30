@@ -246,7 +246,7 @@ async def update_material_slot_assignment(
     current_spool_id = current.spool_id if current is not None else None
     legacy_state = slot.legacy_gate_state
     requires_legacy_projection = legacy_state is not None or (
-        slot.kind == "slot"
+        slot.kind in {"slot", "gate"}
         and slot.material_system.provider in {"happy_hare", "legacy"}
     )
     legacy_matches = not requires_legacy_projection or (

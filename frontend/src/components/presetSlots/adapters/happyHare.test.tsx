@@ -95,11 +95,21 @@ describe('Happy Hare Edge setup', () => {
     status.mockReset();
   });
 
-  it('stays hidden unless the Edge UI is explicitly enabled', () => {
+  it('offers a connection without Orca by default', async () => {
+    status.mockResolvedValue(bridgeStatus());
     renderSetup();
 
-    expect(screen.queryByText('presetSlots.happyHare.edge.title')).not.toBeInTheDocument();
-    expect(status).not.toHaveBeenCalled();
+    expect(screen.getByText('presetSlots.happyHare.edge.title')).toBeInTheDocument();
+    await waitFor(() => expect(status).toHaveBeenCalledWith(10, 20, 'edge_agent'));
+  });
+
+  it('does not mistake a heartbeat for a received printer map', async () => {
+    status.mockResolvedValue(bridgeStatus({
+      configured: true, paired: true, last_seen_at: new Date().toISOString(),
+    }));
+    renderSetup();
+    expect(await screen.findByText('presetSlots.happyHare.edge.awaitingData')).toBeInTheDocument();
+    expect(screen.queryByText('presetSlots.happyHare.edge.connected')).not.toBeInTheDocument();
   });
 
   it('uses the isolated Edge transport and shows the one-time pairing code', async () => {

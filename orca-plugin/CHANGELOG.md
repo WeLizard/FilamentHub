@@ -3,6 +3,7 @@
 Newest first. The top entry is the text pasted into the Plugin Hub on release.
 
 ## Unreleased
+- Happy Hare reports exact observed spools separately from saved assignments and shares one printer map with connections running without OrcaSlicer. Applying a map requires the printer's matching FilamentHub inventory.
 
 ## 0.1.7
 - Plugin storage is now initialized from OrcaSlicer's native load callback, and unload fully retires the background worker, Bambu observer and loopback server without sending a delayed Bambu update afterward.

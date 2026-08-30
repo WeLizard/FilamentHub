@@ -106,6 +106,20 @@ def device_api_key_lookup_candidates(api_key: str) -> tuple[str, ...]:
     return verifier, api_key
 
 
+def device_inventory_digest(stored_key: str | None) -> str | None:
+    """Non-bearer inventory identity, for both migrated and legacy device keys."""
+    if not stored_key:
+        return None
+    if not stored_key.startswith(DEVICE_API_KEY_VERIFIER_PREFIX):
+        return hashlib.sha256(stored_key.encode("utf-8")).hexdigest()
+    encoded = stored_key[len(DEVICE_API_KEY_VERIFIER_PREFIX):]
+    try:
+        digest = base64.b64decode(encoded + "=", altchars=b"-_", validate=True)
+    except ValueError:
+        return None
+    return digest.hex() if len(digest) == 32 else None
+
+
 def create_access_token(data: dict[str, Any], expires_delta: timedelta | None = None) -> str:
     """Create a JWT access token."""
     to_encode = data.copy()

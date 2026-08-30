@@ -4,6 +4,8 @@ export type MaterialSlotConflict =
   | 'assigned_but_observed_empty'
   | 'observed_loaded_without_spool'
   | 'observed_details_differ'
+  | 'observed_spool_differs'
+  | 'observed_spool_unknown'
   | null;
 
 export type MaterialSlotObservationState = 'none' | 'unknown' | 'empty' | 'loaded' | 'buffer';
@@ -113,7 +115,11 @@ export function compareMaterialSlot(
     conflict = 'assigned_but_observed_empty';
   } else if ((state === 'loaded' || state === 'buffer') && desiredSpoolId == null) {
     conflict = 'observed_loaded_without_spool';
-  } else if ((state === 'loaded' || state === 'buffer') && desiredSpool?.filament) {
+  } else if ((state === 'loaded' || state === 'buffer') && normalizedObservation?.spool_identity_known) {
+    if (normalizedObservation.spool_id == null) conflict = 'observed_spool_unknown';
+    else if (normalizedObservation.spool_id !== desiredSpoolId) conflict = 'observed_spool_differs';
+  }
+  if (conflict == null && (state === 'loaded' || state === 'buffer') && desiredSpool?.filament) {
     const desiredMaterial = normalizeMaterial(desiredSpool.filament.material_type);
     const observedMaterial = normalizeMaterial(observedMaterialValue);
     const desiredColor = normalizeHex(desiredSpool.filament.color_hex);

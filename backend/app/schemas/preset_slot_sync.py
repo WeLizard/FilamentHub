@@ -163,6 +163,10 @@ class HHSnapshotRequest(BaseModel):
     gates: list[HHGateItem]
     has_bypass: bool | None = None
     bypass: HHBypassObservation | None = None
+    spool_ids: list[int | None] | None = Field(default=None, max_length=256)
+    inventory_key_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    selected_gate: int | None = Field(default=None, ge=-2, le=255)
+    filament_loaded: bool | None = None
 
     @field_validator("gates")
     @classmethod
@@ -186,6 +190,14 @@ class HHSnapshotRequest(BaseModel):
                 )
         if self.has_bypass is False and self.bypass is not None:
             raise ValueError("bypass observation requires has_bypass=true")
+        if self.spool_ids is not None:
+            if len(self.spool_ids) != self.gate_count:
+                raise ValueError("spool_ids must cover every gate")
+            if any(
+                value is not None and (isinstance(value, bool) or value < 1)
+                for value in self.spool_ids
+            ):
+                raise ValueError("spool_ids must contain positive IDs or null")
         return self
 
 
@@ -306,6 +318,7 @@ class PluginPhysicalPrinterContext(BaseModel):
     """Opaque physical identity plus bindings belonging to this Orca install."""
 
     id: int
+    inventory_key_digest: str | None = None
     connection_refs: list[str]
     material_systems: list[PluginMaterialSystemContext]
 
@@ -367,7 +380,9 @@ class DeviceCreateWithKeyRequest(BaseModel):
     """Create a new printer device with a generated API key."""
 
     name: str = Field(..., min_length=1, max_length=200)
-    printer_id: int | None = Field(None, gt=0, description="Link to a printer model from the catalog")
+    printer_id: int | None = Field(
+        None, gt=0, description="Link to a printer model from the catalog"
+    )
     gate_count: int | None = Field(default=None, ge=1, le=256)
 
 

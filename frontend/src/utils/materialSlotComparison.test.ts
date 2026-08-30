@@ -100,6 +100,26 @@ function spoolFixture(material: string, colorHex: string): UserSpool {
 }
 
 describe('compareMaterialSlot', () => {
+  it('compares exact identities without changing desired assignments', () => {
+    const observedSlot = slot(assignment(40), null);
+    observedSlot.observation = {
+      source: 'happy_hare_edge', observed_at: new Date(NOW).toISOString(),
+      received_at: new Date(NOW).toISOString(), present: true, active_feed: false,
+      material: 'PLA', color_hex: 'FF0000', remaining_percent: null, remaining_grams: null,
+      spool_id: 41, spool_identity_known: true,
+    };
+    const compare = () => compareMaterialSlot(observedSlot, null, spoolFixture('PLA', 'FF0000'), NOW);
+    expect(compare().conflict).toBe('observed_spool_differs');
+    expect(compare().desiredSpoolId).toBe(40);
+    observedSlot.observation.spool_id = null;
+    expect(compare().conflict).toBe('observed_spool_unknown');
+    expect(compare().observationState).toBe('loaded');
+    observedSlot.observation.spool_id = 40;
+    expect(compare().conflict).toBeNull();
+    observedSlot.observation.material = 'PETG';
+    expect(compare().conflict).toBe('observed_details_differ');
+  });
+
   it('does not treat a provider-side assignment as proof that filament is loaded', () => {
     const providerAssignment = {
       ...observation(1, null, null),

@@ -3701,6 +3701,8 @@ export interface MaterialSlotObservation {
   received_at: string;
   present: boolean | null;
   active_feed: boolean | null;
+  spool_id?: number | null;
+  spool_identity_known?: boolean;
   material: string | null;
   color_hex: string | null;
   remaining_percent: number | null;

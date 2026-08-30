@@ -1,0 +1,17 @@
+[Unit]
+Description=FilamentHub local printer connection
+After=network-online.target
+
+[Service]
+Type=simple
+Environment=FH_EDGE_OPTIONS_FILE=%h/.config/filamenthub-edge/options.json
+Environment=FH_EDGE_STATE_PATH=%h/.local/share/filamenthub-edge/edge-state.json
+ExecStart=%h/.local/share/filamenthub-edge/venv/bin/filamenthub-edge
+Restart=on-failure
+RestartSec=15
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=default.target

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import unittest
 from typing import Any
 
@@ -32,6 +33,7 @@ class MoonrakerProviderTest(unittest.TestCase):
                     "heater_bed": {"temperature": 59.5, "target": 60},
                     "mmu": {
                         "num_gates": 2,
+                        "spoolman_support": "off",
                         "gate_status": [2, 0],
                         "gate_material": ["PLA", ""],
                         "gate_color": ["ff6a13", "invalid"],
@@ -56,7 +58,9 @@ class MoonrakerProviderTest(unittest.TestCase):
         self.assertEqual(snapshot.printer["state"], "printing")
         self.assertEqual(snapshot.printer["progress_percent"], 42)
         self.assertTrue(snapshot.slot_topology_complete)
-        self.assertEqual(snapshot.capabilities, ["read", "presence", "consumption"])
+        self.assertEqual(
+            snapshot.capabilities, ["read", "presence", "spool_identity", "consumption"]
+        )
         self.assertEqual(snapshot.usage["filament_used_mm"], 123.5)
         self.assertEqual(snapshot.usage["print_duration_s"], 360.0)
         self.assertEqual(snapshot.slots[0]["material"], "PLA")
@@ -91,6 +95,67 @@ class MoonrakerProviderTest(unittest.TestCase):
 
         with self.assertRaises(ProviderUnavailable):
             provider.observe()
+
+    def test_native_spoolman_owns_usage_and_tool_mapping_is_not_a_gate(self) -> None:
+        class NativeHttp:
+            def request(self, method, path, **kwargs):
+                if path == "/server/config":
+                    return (
+                        200,
+                        {
+                            "result": {
+                                "config": {
+                                    "spoolman": {
+                                        "server": "https://filamenthub.ru/api/v1/spool_compat/test-device-key",
+                                    }
+                                }
+                            }
+                        },
+                        {},
+                    )
+                return (
+                    200,
+                    {
+                        "result": {
+                            "status": {
+                                "mmu": {
+                                    "num_gates": 2,
+                                    "gate_status": [1, 1],
+                                    "gate_spool_id": [42, -1],
+                                    "gate": 1,
+                                    "tool": 0,
+                                    "filament_pos": 10,
+                                    "spoolman_support": "pull",
+                                },
+                                "print_stats": {"state": "printing", "filament_used": 100},
+                            }
+                        }
+                    },
+                    {},
+                )
+
+        provider = MoonrakerProvider(
+            "http://printer:7125",
+            api_key=None,
+            material_provider="happy_hare",
+            timeout=2,
+            http_client=NativeHttp(),
+        )
+        snapshot = provider.observe()
+        self.assertIsNone(snapshot.usage)
+        self.assertNotIn("consumption", snapshot.capabilities)
+        self.assertEqual(
+            snapshot.inventory_key_digest, hashlib.sha256(b"test-device-key").hexdigest()
+        )
+        self.assertFalse(snapshot.slots[0]["active_feed"])
+        self.assertTrue(snapshot.slots[1]["active_feed"])
+        self.assertEqual(snapshot.slots[0]["spool_id"], 42)
+        self.assertIsNone(snapshot.slots[1]["spool_id"])
+        self.assertTrue(snapshot.slots[1]["present"])
+        provider.filamenthub_url = "https://another-site.example"
+        snapshot = provider.observe()
+        self.assertIsNone(snapshot.inventory_key_digest)
+        self.assertIsNone(snapshot.usage)
 
 
 if __name__ == "__main__":

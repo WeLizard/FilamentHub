@@ -246,7 +246,7 @@ describe('PresetSlotsPanel', () => {
     );
     expect(happyHareSnippet)
       .toContain('https://fh.example/spool_compat/device-secret');
-    expect(happyHareSnippet).toContain('sync_rate: 60');
+    expect(happyHareSnippet).not.toContain('sync_rate:');
     expect(feedAdapterFor('octoprint').link).toBeNull();
     expect(feedAdapterFor('octoprint').contactMode).toBe('periodic');
     expect(feedAdapterFor('octoprint').slotCountLabelKey)
@@ -493,13 +493,13 @@ describe('PresetSlotsPanel', () => {
       {adapter.renderSetup?.(pairedContext)}
       {adapter.renderActions?.(pairedContext)}
     </>);
-    expect(screen.getByText('presetSlots.happyHare.refresh.check')).toBeInTheDocument();
+    expect(screen.getAllByText('presetSlots.happyHare.refreshStatus')).toHaveLength(2);
     expect(screen.queryByText('presetSlots.happyHare.refresh.title')).not.toBeInTheDocument();
     expect(screen.queryByText('presetSlots.happyHare.refresh.fallback')).not.toBeInTheDocument();
     expect(screen.queryByText('presetSlots.happyHare.refresh.copyCommand')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByText('presetSlots.happyHare.refresh.check'));
+    fireEvent.click(screen.getAllByText('presetSlots.happyHare.refreshStatus')[1]);
     expect(screen.getByText('presetSlots.happyHare.refresh.title')).toBeInTheDocument();
-    expect(screen.getByText('presetSlots.happyHare.refresh.fallback')).toBeInTheDocument();
+    expect(screen.getByText('presetSlots.happyHare.withoutPlugin')).toBeInTheDocument();
     expect(screen.getByText('presetSlots.happyHare.refresh.copyCommand')).toBeInTheDocument();
     expect(paired.container).not.toBeEmptyDOMElement();
   });

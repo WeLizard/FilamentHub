@@ -174,6 +174,8 @@ export function GateMapGrid({
           ?? (comparison.observationState === 'loaded' ? comparison.observedMaterial : null);
         const hasContent = comparison.desiredPresetId != null || comparison.desiredSpoolId != null;
         const hasObservation = comparison.observationState !== 'none';
+        const observedSpool = hasObservation && slot.observation?.spool_identity_known
+          && slot.observation.spool_id != null ? spoolMap.get(slot.observation.spool_id) : null;
         const hasConflict = comparison.conflict != null;
         // An observation older than the freshness window stops describing the
         // hardware, but it is still the last thing the printer told us. Keeping
@@ -274,6 +276,14 @@ export function GateMapGrid({
                   detail: staleObservation.material
                     ?? t('presetSlots.observation.lastSeenSpool'),
                   age: formatLastSeen(staleObservation.observed_at, t, i18n.language, now),
+                })}
+              </span>
+            )}
+
+            {observedSpool && (
+              <span className="max-w-full truncate text-[10px] text-emerald-200/80">
+                {t('presetSlots.happyHare.observedSpool', {
+                  name: observedSpool.filament?.name ?? `#${observedSpool.id}`,
                 })}
               </span>
             )}
