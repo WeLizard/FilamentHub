@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from uuid import UUID
 
 API_KEY = os.environ.get("MOONRAKER_API_KEY", "adapter-lab-hh-key")
@@ -15,6 +16,7 @@ SPOOLMAN_URL = os.environ.get(
     "SPOOLMAN_URL", "https://filamenthub.ru/api/v1/spool_compat/adapter-lab-inventory-key"
 )
 MAX_BODY_BYTES = 64 * 1024
+STATE_FILE = Path(__file__).with_name("moonraker-state.json")
 
 MMU_STATE = {
     "num_gates": 4,
@@ -29,6 +31,33 @@ MMU_STATE = {
     "gate": -2,
     "filament_pos": 8.0,
 }
+PRINT_STATS = {
+    "state": "standby",
+    "filename": "",
+    "filament_used": 0.0,
+    "total_duration": 0.0,
+    "print_duration": 0.0,
+}
+
+
+def read_state() -> dict:
+    """Read bounded local overrides; replace the file atomically between steps."""
+    try:
+        with STATE_FILE.open("rb") as stream:
+            raw = stream.read(MAX_BODY_BYTES + 1)
+    except FileNotFoundError:
+        return {}
+    if len(raw) > MAX_BODY_BYTES:
+        raise ValueError("Lab state is too large")
+    state = json.loads(raw)
+    if not isinstance(state, dict) or set(state) - {"mmu", "print_stats", "spoolman_url"}:
+        raise ValueError("Invalid lab state")
+    if any(key in state and not isinstance(state[key], dict) for key in ("mmu", "print_stats")):
+        raise ValueError("Invalid lab objects")
+    url = state.get("spoolman_url")
+    if url is not None and not isinstance(url, str):
+        raise ValueError("Invalid lab Spoolman URL")
+    return state
 
 
 class MoonrakerHandler(BaseHTTPRequestHandler):
@@ -51,6 +80,13 @@ class MoonrakerHandler(BaseHTTPRequestHandler):
         self._json(401, {"error": {"code": 401, "message": "Unauthorized"}})
         return False
 
+    def _state(self) -> dict | None:
+        try:
+            return read_state()
+        except (OSError, ValueError):
+            self._json(503, {"error": {"code": 503, "message": "Invalid local lab state"}})
+            return None
+
     def do_GET(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler API
         if self.path == "/healthz":
             self._json(200, {"status": "ok"})
@@ -67,7 +103,12 @@ class MoonrakerHandler(BaseHTTPRequestHandler):
             }})
             return
         if self.path == "/server/config":
-            self._json(200, {"result": {"config": {"spoolman": {"server": SPOOLMAN_URL}}}})
+            state = self._state()
+            if state is None:
+                return
+            url = state.get("spoolman_url", SPOOLMAN_URL)
+            config = {"spoolman": {"server": url}} if url is not None else {}
+            self._json(200, {"result": {"config": config}})
             return
         if self.path == "/printer/info":
             self._json(
@@ -118,17 +159,14 @@ class MoonrakerHandler(BaseHTTPRequestHandler):
         if not isinstance(objects, dict):
             self._json(400, {"error": {"code": 400, "message": "Missing objects"}})
             return
+        state = self._state()
+        if state is None:
+            return
         status = {}
         if "mmu" in objects:
-            status["mmu"] = MMU_STATE
+            status["mmu"] = MMU_STATE | state.get("mmu", {})
         if "print_stats" in objects:
-            status["print_stats"] = {
-                "state": "standby",
-                "filename": "",
-                "filament_used": 0.0,
-                "total_duration": 0.0,
-                "print_duration": 0.0,
-            }
+            status["print_stats"] = PRINT_STATS | state.get("print_stats", {})
         self._json(200, {"result": {"eventtime": 1.0, "status": status}})
 
 
