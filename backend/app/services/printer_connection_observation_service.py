@@ -316,6 +316,9 @@ async def record_observations(
     owner_id: int,
     source_instance_id: str | None,
     observations: Iterable[PrinterConnectionObservationIn],
+    *,
+    commit: bool = True,
+    snapshot_complete: bool = True,
 ) -> tuple[int, int, int]:
     """Upsert observations. Returns (accepted, matched, unmatched)."""
     observations = list(observations)
@@ -342,10 +345,10 @@ async def record_observations(
         if payload.get("is_current") is True:
             payload["is_current"] = False
             changed = True
-        if payload.get("is_visible") is True:
+        if snapshot_complete and payload.get("is_visible") is True:
             payload["is_visible"] = False
             changed = True
-        if payload.get("present_in_snapshot") is not False:
+        if snapshot_complete and payload.get("present_in_snapshot") is not False:
             payload["present_in_snapshot"] = False
             changed = True
         if changed:
@@ -365,12 +368,15 @@ async def record_observations(
             obs.inherits,
             obs.has_technical_changes,
             obs.host_type,
-            endpoint_fingerprint,
+            obs.endpoint_token or endpoint_fingerprint,
         )
 
         matched_id = await _match_printer_profile(db, owner_id, obs)
 
         sanitized = {
+            "endpoint_token": obs.endpoint_token,
+            "device_identity": obs.device_identity.model_dump() if obs.device_identity else None,
+            "has_connection": obs.has_connection,
             "connection_ref": obs.connection_ref,
             "preset_name": obs.preset_name,
             "printer_settings_id": obs.printer_settings_id,
@@ -406,6 +412,8 @@ async def record_observations(
             db.add(
                 OrcaPrinterConnectionObservation(
                     owner_user_id=owner_id,
+                    last_seen_at=now,
+                    received_at=now,
                     source=SOURCE,
                     source_instance_id=source_instance_id,
                     connection_ref=obs.connection_ref,
@@ -445,5 +453,8 @@ async def record_observations(
         else:
             unmatched += 1
 
-    await db.commit()
+    if commit:
+        await db.commit()
+    else:
+        await db.flush()
     return accepted, matched, unmatched

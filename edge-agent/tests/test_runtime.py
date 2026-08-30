@@ -2,11 +2,17 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 
 from filamenthub_edge.cloud import DesiredResult, PairingResult
 from filamenthub_edge.config import EdgeConfig
-from filamenthub_edge.errors import HttpRequestError, ProviderUnavailable, StateError
+from filamenthub_edge.errors import (
+    HttpRequestError,
+    IdentityConflict,
+    ProviderUnavailable,
+    StateError,
+)
 from filamenthub_edge.providers.base import ProviderSnapshot
 from filamenthub_edge.runtime import EdgeRuntime
 from filamenthub_edge.state import StateStore
@@ -89,6 +95,100 @@ class SequenceProvider:
 
 
 class EdgeRuntimeTest(unittest.TestCase):
+    def test_replaced_device_cannot_debit_usage_and_rejected_queue_recovers(self) -> None:
+        class IdentityCloud(FakeCloud):
+            def upload_observation(self, **kwargs):
+                identity = kwargs["payload"].get("device_identity")
+                if self.uploads and identity != self.uploads[0].get("device_identity"):
+                    raise IdentityConflict("different device", status_code=409)
+                return super().upload_observation(**kwargs)
+
+        def snapshot(identity, used):
+            return ProviderSnapshot(
+                printer={"state": "printing"},
+                slots=[{"provider_index": 0, "active_feed": True}],
+                slot_topology_complete=True,
+                capabilities=["read", "consumption"],
+                device_identity=("moonraker_instance", identity),
+                usage={
+                    "state": "printing",
+                    "file_name": "same-name.gcode",
+                    "filament_used_mm": used,
+                    "print_duration_s": used,
+                    "total_duration_s": used,
+                },
+            )
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "edge-state.json"
+            store = StateStore(path)
+            state = store.load()
+            state.bridge_token, state.physical_printer_id, state.material_system_id = (
+                "fhpb_fixture",
+                10,
+                20,
+            )
+            state.printer_discovery_key = "ab" * 32
+            cloud = IdentityCloud()
+            cloud.fail_upload = False
+            runtime = EdgeRuntime(
+                config=self._config(path),
+                cloud=cloud,
+                store=store,
+                state=state,
+                provider=SequenceProvider(
+                    [
+                        snapshot("a" * 32, 0),
+                        snapshot("b" * 32, 5000),
+                        snapshot("b" * 32, 6000),
+                        snapshot("a" * 32, 100),
+                    ]
+                ),
+            )
+            runtime.run_cycle()
+            baseline = dict(state.usage_tracker)
+            with self.assertRaises(IdentityConflict):
+                runtime.run_cycle()
+            self.assertEqual(state.usage_tracker, baseline)
+            self.assertEqual(cloud.usage_uploads, [])
+            self.assertIsNone(store.load().pending_observation)
+            self.assertIsNotNone(store.load().rejected_observation)
+            runtime.shutdown()
+            self.assertEqual(cloud.usage_uploads, [])
+            runtime.run_cycle()
+            self.assertIsNone(store.load().rejected_observation)
+            self.assertEqual(state.usage_tracker["last_filament_used_mm"], 100)
+
+    def test_stale_observation_cannot_confirm_a_new_device(self) -> None:
+        class StaleCloud(FakeCloud):
+            def upload_observation(self, **kwargs):
+                return False
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "edge-state.json"
+            store = StateStore(path)
+            state = store.load()
+            state.bridge_token, state.physical_printer_id, state.material_system_id = (
+                "fhpb_fixture",
+                10,
+                20,
+            )
+            state.printer_discovery_key = "ab" * 32
+            snapshot = replace(
+                FakeProvider().observe(), device_identity=("moonraker_instance", "a" * 32)
+            )
+            runtime = EdgeRuntime(
+                config=self._config(path),
+                cloud=StaleCloud(),
+                store=store,
+                state=state,
+                provider=SequenceProvider([snapshot]),
+            )
+            with self.assertRaises(ProviderUnavailable):
+                runtime.run_cycle()
+            self.assertIsNone(state.confirmed_device_identity)
+            self.assertIsNone(state.usage_tracker)
+
     @staticmethod
     def _config(state_path: Path) -> EdgeConfig:
         return EdgeConfig(

@@ -38,6 +38,7 @@ from app.schemas.printer_bridge import (
 )
 from app.schemas.printer_usage import PrinterUsageEventResult
 from app.services.material_contract_service import require_physical_printer
+from app.services.printer_identity_service import discovery_key
 from app.services.printer_usage_service import process_printer_usage_event
 
 PAIRING_TTL = timedelta(minutes=10)
@@ -325,6 +326,7 @@ async def pair_printer_bridge(
         bridge_token=token,
         physical_printer_id=connector.physical_printer_id,
         material_system_id=connector.material_system_id,
+        printer_discovery_key=await discovery_key(db, connector.user_id),
     )
 
 

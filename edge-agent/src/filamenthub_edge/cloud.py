@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from .errors import AuthenticationError, HttpRequestError
+from .errors import AuthenticationError, HttpRequestError, IdentityConflict
 from .http import JsonHttpClient
 
 
@@ -14,6 +14,7 @@ class PairingResult:
     bridge_token: str
     physical_printer_id: int
     material_system_id: int
+    printer_discovery_key: str | None = None
 
 
 @dataclass(frozen=True)
@@ -76,7 +77,17 @@ class FilamentHubCloud:
             or system_id < 1
         ):
             raise HttpRequestError("FilamentHub pairing response is invalid")
-        return PairingResult(token, printer_id, system_id)
+        return PairingResult(token, printer_id, system_id, decoded.get("printer_discovery_key"))
+
+    def identity_context(self, *, token: str) -> str | None:
+        _, decoded, _ = self._authorized_request(
+            "GET",
+            "/api/v1/printer-bridge/identity-context",
+            token=token,
+            headers=self._headers(token),
+            expected_statuses={200, 404},
+        )
+        return decoded.get("printer_discovery_key") if isinstance(decoded, dict) else None
 
     def desired_snapshot(self, *, token: str, etag: str | None) -> DesiredResult:
         headers = self._headers(token)
@@ -99,15 +110,24 @@ class FilamentHubCloud:
             raise HttpRequestError("FilamentHub desired snapshot is invalid")
         return DesiredResult(True, response_etag, decoded)
 
-    def upload_observation(self, *, token: str, payload: dict[str, Any]) -> None:
-        _, decoded, _ = self._authorized_request(
+    def upload_observation(self, *, token: str, payload: dict[str, Any]) -> bool:
+        status, decoded, _ = self._authorized_request(
             "POST",
             "/api/v1/printer-bridge/snapshot",
             token=token,
             payload=payload,
+            expected_statuses={200, 409},
         )
+        if status == 409:
+            detail = decoded.get("detail") if isinstance(decoded, dict) else None
+            if isinstance(detail, dict) and detail.get("code") == "ERR_PRINTER_IDENTITY_CONFLICT":
+                raise IdentityConflict(
+                    "The local device does not match this printer connection", status_code=409
+                )
+            raise HttpRequestError("FilamentHub rejected the observation", status_code=409)
         if not isinstance(decoded, dict) or not isinstance(decoded.get("accepted"), bool):
             raise HttpRequestError("FilamentHub observation response is invalid")
+        return decoded["accepted"]
 
     def upload_usage_batch(self, *, token: str, payload: dict[str, Any]) -> None:
         _, decoded, _ = self._authorized_request(

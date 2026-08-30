@@ -626,6 +626,11 @@ async def ingest_printer_bridge_snapshot(
     source timestamp is capped at receipt time so a fast client clock cannot
     make every later observation look stale forever.
     """
+    from app.core.errors import ERR_PRINTER_IDENTITY_CONFLICT
+    from app.services.orca_import_guard import hold_account_import_lock
+    from app.services.printer_identity_service import remember_identity
+
+    await hold_account_import_lock(db, user_id)
     # Both local transports may report at once. Serialize topology creation
     # before locking connectors or slots, not just updates from one connector.
     await db.execute(
@@ -692,6 +697,11 @@ async def ingest_printer_bridge_snapshot(
             material_system_id=system.id,
             slots_seen=len(payload.slots),
         )
+
+    if payload.device_identity and not await remember_identity(
+        db, user_id, physical_printer_id, payload.device_identity,
+    ):
+        raise_error(409, ERR_PRINTER_IDENTITY_CONFLICT)
 
     connector.material_system_id = system.id
     connector.source_instance_id = payload.source_instance_id

@@ -3,10 +3,13 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MaterialSystem, PhysicalPrinter, PrinterBridgeStatus } from '../../../api/client';
 import { happyHareAdapter } from './happyHare';
+import { toast } from '../../Toast';
 
-const { issuePairingCode, status } = vi.hoisted(() => ({
+const { issuePairingCode, status, bridgeState, requestAction } = vi.hoisted(() => ({
   issuePairingCode: vi.fn(),
   status: vi.fn(),
+  bridgeState: { embedded: false },
+  requestAction: vi.fn(),
 }));
 
 vi.mock('../../../api/client', () => ({
@@ -15,10 +18,13 @@ vi.mock('../../../api/client', () => ({
 }));
 
 vi.mock('../../../utils/pluginBridge', () => ({
-  isPluginEmbed: () => false,
-  requestHappyHareAction: vi.fn(),
+  isPluginEmbed: () => bridgeState.embedded,
+  requestHappyHareAction: requestAction,
   requestPluginCapabilities: vi.fn(),
-  subscribeToPluginCapabilities: vi.fn(() => vi.fn()),
+  subscribeToPluginCapabilities: vi.fn((callback) => {
+    callback(new Set(['happy-hare-moonraker']));
+    return vi.fn();
+  }),
 }));
 
 vi.mock('react-i18next', () => ({
@@ -93,6 +99,7 @@ describe('Happy Hare Edge setup', () => {
     vi.unstubAllEnvs();
     issuePairingCode.mockReset();
     status.mockReset();
+    bridgeState.embedded = false;
   });
 
   it('offers a connection without Orca by default', async () => {
@@ -101,6 +108,24 @@ describe('Happy Hare Edge setup', () => {
 
     expect(screen.getByText('presetSlots.happyHare.edge.title')).toBeInTheDocument();
     await waitFor(() => expect(status).toHaveBeenCalledWith(10, 20, 'edge_agent'));
+  });
+
+  it('reports the same failed check on every click, scoped to this printer', async () => {
+    bridgeState.embedded = true;
+    requestAction.mockResolvedValue({ ok: false, code: 'connection_not_found' });
+    const error = vi.spyOn(toast, 'error');
+    const queryClient = new QueryClient();
+    render(<QueryClientProvider client={queryClient}>{happyHareAdapter.renderActions?.({
+      printer, system, gates: [], spools: [], linkConfirmed: false,
+    })}</QueryClientProvider>);
+    const button = await screen.findByText('presetSlots.happyHare.refresh.check');
+    fireEvent.click(button);
+    await waitFor(() => expect(error).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(button).not.toBeDisabled());
+    fireEvent.click(button);
+    await waitFor(() => expect(error).toHaveBeenCalledTimes(2));
+    expect(error).toHaveBeenLastCalledWith('presetSlots.happyHare.refresh.errors.connection_not_found', undefined, 'happy-hare-10-20');
+    error.mockRestore();
   });
 
   it('does not mistake a heartbeat for a received printer map', async () => {

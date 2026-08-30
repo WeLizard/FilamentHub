@@ -21,8 +21,9 @@ from app.services.orcaslicer_preset_contract import (
 
 
 @pytest.mark.asyncio
-async def test_plugin_sync_preferences_expose_every_direction():
+async def test_plugin_sync_preferences_expose_every_direction(auth_user, db_session):
     user = SimpleNamespace(
+        id=auth_user.id,
         auto_import_local_presets=True,
         sync_printer_endpoints=False,
         allow_filament_presets_import=True,
@@ -33,7 +34,10 @@ async def test_plugin_sync_preferences_expose_every_direction():
         allow_print_profiles_export=False,
     )
 
-    assert await get_sync_prefs(user) == {
+    result = await get_sync_prefs(user, db_session)
+    key = result.pop("printer_discovery_key")
+    assert isinstance(key, str) and len(key) == 64
+    assert result == {
         "auto_import_local_presets": True,
         "sync_printer_endpoints": False,
         "allow_filament_presets_import": True,

@@ -452,6 +452,7 @@ async def test_connection_binding_can_be_explicitly_assigned_to_owned_printer(
             "provider": "moonraker",
             "display_endpoint": None,
             "endpoint_shared": False,
+            "status": "bound",
             "last_seen_at": listed.json()[0]["last_seen_at"],
         }
     ]

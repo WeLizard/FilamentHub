@@ -7,6 +7,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from app.schemas.printer_connection_observation import PrinterIdentityEvidence
+
 CapabilityName = Literal[
     "read",
     "write",
@@ -15,6 +17,11 @@ CapabilityName = Literal[
     "consumption",
     "local_command",
 ]
+
+
+class PhysicalPrinterMergeRequest(BaseModel):
+    target_id: int = Field(gt=0)
+    revision: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
 class PhysicalPrinterCreate(BaseModel):
@@ -381,6 +388,7 @@ class PrinterBridgeSlotSnapshot(BaseModel):
 
 
 class PrinterBridgeSnapshotRequest(BaseModel):
+    device_identity: PrinterIdentityEvidence | None = None
     material_system_id: int = Field(ge=1)
     provider: str = Field(min_length=1, max_length=50)
     transport: Literal["orca_plugin_lan", "edge_agent"]

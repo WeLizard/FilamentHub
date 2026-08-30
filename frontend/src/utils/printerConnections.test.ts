@@ -18,6 +18,14 @@ const binding = (
 });
 
 describe('visiblePrinterConnections', () => {
+  it('does not hide a conflicted connection behind an old disclosed address', () => {
+    const result = visiblePrinterConnections([
+      binding({ status: 'conflict', connection_ref: 'current' }),
+      binding({ status: 'bound', display_endpoint: 'old.local:5000' }),
+    ]);
+    expect(result).toHaveLength(2);
+    expect(result.some((item) => item.status === 'conflict')).toBe(true);
+  });
   it('shows the disclosed endpoint instead of duplicate local-only labels', () => {
     const result = visiblePrinterConnections([
       binding({ connection_ref: 'local-a' }),

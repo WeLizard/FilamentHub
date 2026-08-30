@@ -1,4 +1,28 @@
 {
+  "printerConnections": {
+    "awaitingTopology": "Waiting for slot map",
+    "status": {
+      "conflict": "Connection needs review",
+      "disconnected": "Not in the current connection list"
+    },
+    "title": "Confirm the printer connection",
+    "hint": "Some connections conflict with earlier bindings. Choose the existing printer or confirm a separate device. If there is already a duplicate card for the same printer, merge it in the card settings.",
+    "choose": "Which physical printer uses this connection?",
+    "newDevice": "This is a separate new printer",
+    "confirm": "Save connection",
+    "failed": "Could not save changes. Check again.",
+    "retry": "Could not check connections. Retry",
+    "mergeTitle": "Merge a duplicate printer card",
+    "mergeHint": "Only merge two cards for the very same physical printer, never separate units of the same model. Keep the card containing the material system.",
+    "mergeChoose": "Which card should remain?",
+    "previewMerge": "Review merge",
+    "mergeAction": "Merge cards",
+    "mergeConfirm": "“{{source}}” will be merged into “{{target}}”. Configurations to transfer: {{configurations}}, connections: {{connections}}, history records: {{history}}. Spools, gates and the remaining card’s material system will be preserved. Continue?",
+    "mergeReasons": {
+      "source_connected": "This card has a material system or device connection. Keep it: open the duplicate card and select this one as the destination.",
+      "facts_conflict": "The cards have different models or saved cost settings. Review those before merging."
+    }
+  },
   "sharedQuotePage": {
     "title": "Quote",
     "ctaTitle": "Create your own quote",
@@ -6666,6 +6690,8 @@
     "retraction_speed": "Retraction speed"
   },
   "apiErrors": {
+    "ERR_PRINTER_IDENTITY_CONFLICT": "The device identity conflicts with the saved connection. Review connections in My printers; do not merge distinct devices.",
+    "ERR_PRINTER_MERGE_CONFLICT": "The cards changed or contain incompatible data. Review the merge again.",
     "UNKNOWN_ERROR": "An unexpected error occurred",
     "ERR_NETWORK": "No connection to the server. Check your internet and try again.",
     "ERR_REQUEST_TIMEOUT": "The server is not responding. Please try again later.",
@@ -7014,7 +7040,7 @@
   "myPrinters": {
     "title": "My Printers",
     "liveLayer": "layer {{current}} / {{total}}",
-    "subtitle": "They show up on their own from OrcaSlicer when you print over the network.",
+    "subtitle": "Physical printers and their configurations. OrcaSlicer connections are synchronized separately from presets.",
     "loading": "Loading…",
     "loadError": "Failed to load printers.",
     "empty": "Printers will appear here on their own once the plugin sees them in OrcaSlicer.",
@@ -7363,7 +7389,7 @@
           "access": "The plugin was not granted access to printer bindings. Refresh the FilamentHub page in OrcaSlicer to obtain current permissions.",
           "server": "FilamentHub data could not be loaded.",
           "not_found": "This printer was not found in your profile.",
-          "connection_not_found": "The plugin could not find one unambiguous local connection for this printer. Run the full Sync, then select the exact Orca connection under Connection in the physical printer settings.",
+          "connection_not_found": "No unambiguous printer connection was found. Open My Printers, review connections and merge a duplicate card if it is the same device. Then run Sync again.",
           "ambiguous_connection": "Several connections match. Give each physical printer its own OrcaSlicer user profile.",
           "unreachable": "Moonraker did not respond or rejected the local API key.",
           "device_not_ready": "The printer link is not ready yet. Run the full Sync in OrcaSlicer.",

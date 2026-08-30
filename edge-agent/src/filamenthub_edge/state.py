@@ -29,6 +29,7 @@ def _process_user_id() -> int:
 class EdgeState:
     instance_id: str = field(default_factory=lambda: f"edge-{uuid.uuid4().hex}")
     bridge_token: str | None = None
+    printer_discovery_key: str | None = None
     physical_printer_id: int | None = None
     material_system_id: int | None = None
     pairing_code_digest: str | None = None
@@ -36,6 +37,8 @@ class EdgeState:
     desired_snapshot: dict[str, Any] | None = None
     last_snapshot_sequence: int = 0
     pending_observation: dict[str, Any] | None = None
+    rejected_observation: dict[str, Any] | None = None
+    confirmed_device_identity: dict[str, str] | None = None
     last_usage_batch_sequence: int = 0
     usage_outbox: list[dict[str, Any]] = field(default_factory=list)
     usage_tracker: dict[str, Any] | None = None
@@ -72,13 +75,31 @@ class StateStore:
             not isinstance(state.bridge_token, str) or not state.bridge_token.startswith("fhpb_")
         ):
             raise StateError("Edge bridge token is invalid")
+        if state.printer_discovery_key is not None and (
+            not isinstance(state.printer_discovery_key, str)
+            or len(state.printer_discovery_key) != 64
+            or any(c not in "0123456789abcdef" for c in state.printer_discovery_key)
+        ):
+            raise StateError("Edge discovery key is invalid")
         for binding_id in (state.physical_printer_id, state.material_system_id):
             if binding_id is not None and (
-                isinstance(binding_id, bool)
-                or not isinstance(binding_id, int)
-                or binding_id < 1
+                isinstance(binding_id, bool) or not isinstance(binding_id, int) or binding_id < 1
             ):
                 raise StateError("Edge binding identity is invalid")
+        if state.confirmed_device_identity is not None:
+            identity = state.confirmed_device_identity
+            if (
+                not isinstance(identity, dict)
+                or not isinstance(identity.get("kind"), str)
+                or not isinstance(identity.get("token"), str)
+                or len(identity["token"]) != 64
+                or any(c not in "0123456789abcdef" for c in identity["token"])
+            ):
+                raise StateError("Confirmed device identity is invalid")
+        if state.rejected_observation is not None and not isinstance(
+            state.rejected_observation, dict
+        ):
+            raise StateError("Rejected device evidence is invalid")
         if (state.physical_printer_id is None) != (state.material_system_id is None):
             raise StateError("Edge binding identity is incomplete")
         if state.bridge_token is not None and state.physical_printer_id is None:

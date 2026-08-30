@@ -3891,6 +3891,29 @@ export interface PrinterConnectionBinding {
   display_endpoint: string | null;
   endpoint_shared: boolean;
   last_seen_at: string;
+  status?: 'bound' | 'conflict' | 'disconnected';
+}
+
+export interface PendingPrinterConnection {
+  revision: string;
+  id: number;
+  preset_name: string | null;
+  provider: string | null;
+  candidate_printer_ids: number[];
+  last_seen_at: string;
+}
+
+export interface PrinterMergePreview {
+  source_id: number;
+  target_id: number;
+  source_name: string;
+  target_name: string;
+  allowed: boolean;
+  reason: 'source_connected' | 'facts_conflict' | null;
+  revision: string;
+  configurations: number;
+  connections: number;
+  history: number;
 }
 
 /** What OrcaSlicer had selected at the last sync. */
@@ -3984,6 +4007,25 @@ export interface PrinterRecoveryPlan {
 }
 
 export const physicalPrintersAPI = {
+  pendingConnections: async (): Promise<PendingPrinterConnection[]> => (
+    await api.get<PendingPrinterConnection[]>('/orcaslicer/printer-connections/pending')
+  ).data,
+
+  resolveConnection: async (id: number, physicalPrinterId: number | null, revision: string): Promise<void> => {
+    await api.post(`/orcaslicer/printer-connections/pending/${id}/resolve`, {
+      physical_printer_id: physicalPrinterId, create_new: physicalPrinterId === null, revision,
+    });
+  },
+
+  previewMerge: async (sourceId: number, targetId: number): Promise<PrinterMergePreview> => (
+    await api.get<PrinterMergePreview>(`/physical-printers/${sourceId}/merge-preview`, {
+      params: { target_id: targetId },
+    })
+  ).data,
+
+  merge: async (sourceId: number, targetId: number, revision: string): Promise<void> => {
+    await api.post(`/physical-printers/${sourceId}/merge`, { target_id: targetId, revision });
+  },
   list: async (): Promise<PhysicalPrinter[]> => {
     const response = await api.get<PhysicalPrinter[]>('/physical-printers');
     return response.data;

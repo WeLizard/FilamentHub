@@ -10,7 +10,7 @@ here so the same machine survives config changes and merge/split later.
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
@@ -47,6 +47,15 @@ class PrinterConnectionBinding(Base):
     print_host: Mapped[str | None] = mapped_column(String(500), nullable=True)
     endpoint_ciphertext: Mapped[str | None] = mapped_column(Text, nullable=True)
     endpoint_fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    endpoint_token: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    identity_kind: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    identity_token: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    assignment_confirmed: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false", nullable=False
+    )
+    status: Mapped[str] = mapped_column(
+        String(20), default="bound", server_default="bound", nullable=False
+    )
 
     first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -64,6 +73,7 @@ class PrinterConnectionBinding(Base):
             unique=True,
         ),
         Index("ix_pcb_physical_printer", "physical_printer_id"),
+        Index("ix_pcb_user_endpoint_token", "user_id", "endpoint_token"),
     )
 
     def __repr__(self) -> str:

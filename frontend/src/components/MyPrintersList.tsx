@@ -29,6 +29,7 @@ import { PrintJobHistoryModal } from './PrintJobHistoryModal';
 import { visiblePrinterConnections } from '../utils/printerConnections';
 import { GuidedEmptyState } from './GuidedEmptyState';
 import { PrinterRecoveryModal } from './PrinterRecoveryModal';
+import { PrinterConnectionReview } from './PrinterConnectionReview';
 
 const COLLAPSED_CONFIGURATION_LIMIT = 4;
 
@@ -264,6 +265,7 @@ export function MyPrintersList({
         </div>
       </div>
 
+      <PrinterConnectionReview printers={list} />
       {isLoading ? (
         <p className="text-sm text-gray-400">{t('myPrinters.loading')}</p>
       ) : isError ? (
@@ -403,6 +405,8 @@ export function MyPrintersList({
                               : null,
                             binding.display_endpoint
                               ?? (binding.connection_ref ? t('myPrinters.localConnection') : null),
+                            binding.status && binding.status !== 'bound'
+                              ? t(`printerConnections.status.${binding.status}`) : null,
                           ].filter(Boolean).join(' · ')}
                         </span>
                       </div>

@@ -82,6 +82,7 @@ from app.models.printer_bridge_observation import (
 )
 from app.models.printer_bridge_receipt import PrinterBridgeReceipt
 from app.models.printer_connection_binding import PrinterConnectionBinding
+from app.models.printer_identity import PrinterIdentity
 from app.models.printer_profile import PrinterProfile
 from app.models.printer_request import PrinterRequest, PrinterRequestStatus
 from app.models.qr_identity import (
@@ -215,6 +216,7 @@ __all__ = [
     "PresetPrinter",
     "Printer",
     "PrinterConnectionBinding",
+    "PrinterIdentity",
     "PrinterRequest",
     "PrinterRequestStatus",
     "QrManufacturerBatch",

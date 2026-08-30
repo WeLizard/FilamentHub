@@ -11,17 +11,13 @@ from sqlalchemy.orm import selectinload
 
 from app.models.orca_printer_connection_observation import OrcaPrinterConnectionObservation
 from app.models.orca_slice_report import OrcaSliceReport
-from app.models.physical_printer_profile import UserPrinterProfileLink
 from app.models.print_job import PrintJob
 from app.models.print_profile import PrintProfile
-from app.models.printer_connection_binding import PrinterConnectionBinding
 from app.models.printer_profile import PrinterProfile
 from app.schemas.orca_slice_report import (
     OrcaSliceReportIn,
     OrcaSliceReportResponse,
 )
-from app.services.physical_printer_discovery_service import normalize_endpoint
-from app.services.printer_connection_observation_service import observed_endpoint
 from app.services.slicer_identity_access import (
     visible_print_profile_ids,
     visible_printer_profile_ids,
@@ -46,186 +42,47 @@ def _dedupe_key(user_id: int, payload: OrcaSliceReportIn) -> str:
 
 
 async def _resolve_printer(
-    db: AsyncSession,
-    *,
-    user_id: int,
-    printer_settings_id: str | None,
-    fhub_printer_profile_id: int | None,
-    source_instance_id: str | None,
+    db: AsyncSession, *, user_id: int, printer_settings_id: str | None,
+    fhub_printer_profile_id: int | None, source_instance_id: str | None,
 ) -> tuple[int | None, int | None]:
-    """Find the configuration the slice names, and the printer it is linked to."""
+    """A slice identifies its configuration, not necessarily the physical machine."""
+    from app.services.physical_printer_discovery_service import observation_physical_printer
+
+    profile_hint = None
     if fhub_printer_profile_id is not None:
         visible_ids = await visible_printer_profile_ids(
             db, user_id=user_id, profile_ids={fhub_printer_profile_id}
         )
         if fhub_printer_profile_id in visible_ids:
-            physical_printer_ids = set(
-                (
-                    await db.execute(
-                        select(UserPrinterProfileLink.physical_printer_id).where(
-                            UserPrinterProfileLink.user_id == user_id,
-                            UserPrinterProfileLink.printer_profile_id == fhub_printer_profile_id,
-                        )
-                    )
-                )
-                .scalars()
-                .all()
-            )
-            physical_printer_id = (
-                next(iter(physical_printer_ids)) if len(physical_printer_ids) == 1 else None
-            )
-            return physical_printer_id, fhub_printer_profile_id
-
-    if not printer_settings_id:
-        return None, None
-
-    # Native Orca IDs in G-code are usually preset display names, not the
-    # server-side setting_id. The observation from the same plugin installation
-    # is the strongest available bridge and also understands connection-only
-    # machine children mapped to their canonical parent.
-    if source_instance_id:
-        observation = (
-            await db.execute(
-                select(OrcaPrinterConnectionObservation)
-                .where(
-                    OrcaPrinterConnectionObservation.owner_user_id == user_id,
-                    OrcaPrinterConnectionObservation.source_instance_id
-                    == source_instance_id,
-                    OrcaPrinterConnectionObservation.matched_printer_profile_id.is_not(
-                        None
-                    ),
-                    or_(
-                        OrcaPrinterConnectionObservation.preset_name
-                        == printer_settings_id,
-                        OrcaPrinterConnectionObservation.printer_settings_id
-                        == printer_settings_id,
-                    ),
-                )
-                .order_by(
-                    OrcaPrinterConnectionObservation.last_seen_at.desc(),
-                    OrcaPrinterConnectionObservation.id.desc(),
-                )
-                .limit(1)
-            )
-        ).scalar_one_or_none()
-        if observation is not None:
-            profile_id = observation.matched_printer_profile_id
-            if observation.connection_ref or observation.endpoint_fingerprint:
-                identity_filters = []
-                if observation.connection_ref:
-                    identity_filters.append(
-                        (
-                            PrinterConnectionBinding.source_instance_id
-                            == source_instance_id
-                        )
-                        & (
-                            PrinterConnectionBinding.connection_ref
-                            == observation.connection_ref
-                        )
-                    )
-                if observation.endpoint_fingerprint:
-                    identity_filters.append(
-                        PrinterConnectionBinding.endpoint_fingerprint
-                        == observation.endpoint_fingerprint
-                    )
-                raw_endpoint = observed_endpoint(observation)
-                if raw_endpoint:
-                    legacy_endpoint = normalize_endpoint(
-                        raw_endpoint,
-                        observation.host_type,
-                    )
-                    identity_filters.append(
-                        PrinterConnectionBinding.normalized_endpoint
-                        == legacy_endpoint["normalized"]
-                    )
-                exact_physical_ids = set(
-                    (
-                        await db.execute(
-                            select(PrinterConnectionBinding.physical_printer_id)
-                            .join(
-                                UserPrinterProfileLink,
-                                UserPrinterProfileLink.physical_printer_id
-                                == PrinterConnectionBinding.physical_printer_id,
-                            )
-                            .where(
-                                PrinterConnectionBinding.user_id == user_id,
-                                or_(*identity_filters),
-                                UserPrinterProfileLink.user_id == user_id,
-                                UserPrinterProfileLink.printer_profile_id == profile_id,
-                            )
-                        )
-                    ).scalars()
-                )
-                if len(exact_physical_ids) == 1:
-                    return next(iter(exact_physical_ids)), profile_id
-            physical_ids = set(
-                (
-                    await db.execute(
-                        select(UserPrinterProfileLink.physical_printer_id).where(
-                            UserPrinterProfileLink.user_id == user_id,
-                            UserPrinterProfileLink.printer_profile_id == profile_id,
-                        )
-                    )
-                ).scalars()
-            )
+            profile_hint = fhub_printer_profile_id
+    if source_instance_id and printer_settings_id:
+        observations = list((await db.execute(select(OrcaPrinterConnectionObservation).where(
+            OrcaPrinterConnectionObservation.owner_user_id == user_id,
+            OrcaPrinterConnectionObservation.source_instance_id == source_instance_id,
+            OrcaPrinterConnectionObservation.matched_printer_profile_id.is_not(None),
+            or_(OrcaPrinterConnectionObservation.preset_name == printer_settings_id,
+                OrcaPrinterConnectionObservation.printer_settings_id == printer_settings_id),
+        ))).scalars())
+        observations = [o for o in observations
+                        if (o.sanitized_payload or {}).get("present_in_snapshot") is not False]
+        exact = [o for o in observations if o.preset_name == printer_settings_id]
+        observations = exact or observations
+        if profile_hint is not None:
+            observations = [o for o in observations if o.matched_printer_profile_id == profile_hint]
+        if observations:
+            profile_ids = {o.matched_printer_profile_id for o in observations}
+            physical_ids = {await observation_physical_printer(db, user_id, o) for o in observations}
+            profile_id = next(iter(profile_ids)) if len(profile_ids) == 1 else profile_hint
             physical_id = next(iter(physical_ids)) if len(physical_ids) == 1 else None
-            return physical_id, profile_id
-
-    linked_rows = (
-        await db.execute(
-            select(
-                PrinterProfile.id,
-                UserPrinterProfileLink.physical_printer_id,
-            )
-            .join(
-                UserPrinterProfileLink,
-                UserPrinterProfileLink.printer_profile_id == PrinterProfile.id,
-            )
-            .where(
-                UserPrinterProfileLink.user_id == user_id,
-                or_(
-                    PrinterProfile.setting_id == printer_settings_id,
-                    PrinterProfile.name == printer_settings_id,
-                ),
-            )
-        )
-    ).all()
-    if linked_rows:
-        profile_ids = {row.id for row in linked_rows}
-        physical_printer_ids = {row.physical_printer_id for row in linked_rows}
-        profile_id = next(iter(profile_ids)) if len(profile_ids) == 1 else None
-        physical_printer_id = (
-            next(iter(physical_printer_ids)) if len(physical_printer_ids) == 1 else None
-        )
-        return physical_printer_id, profile_id
-
-    visible_profile_ids = (
-        (
-            await db.execute(
-                select(PrinterProfile.id)
-                .where(
-                    or_(
-                        PrinterProfile.owner_user_id == user_id,
-                        (
-                            PrinterProfile.owner_user_id.is_(None)
-                            & PrinterProfile.is_official.is_(True)
-                        ),
-                    ),
-                    or_(
-                        PrinterProfile.setting_id == printer_settings_id,
-                        PrinterProfile.name == printer_settings_id,
-                    ),
-                )
-                .order_by(PrinterProfile.id.desc())
-            )
-        )
-        .scalars()
-        .all()
-    )
-    profile_ids = set(visible_profile_ids)
-    profile_id = next(iter(profile_ids)) if len(profile_ids) == 1 else None
-    return None, profile_id
-
+            return physical_id if profile_id is not None else None, profile_id
+    if profile_hint is not None or not printer_settings_id:
+        return None, profile_hint
+    profile_ids = set((await db.execute(select(PrinterProfile.id).where(
+        or_(PrinterProfile.owner_user_id == user_id,
+            (PrinterProfile.owner_user_id.is_(None) & PrinterProfile.is_official.is_(True))),
+        or_(PrinterProfile.setting_id == printer_settings_id, PrinterProfile.name == printer_settings_id),
+    ))).scalars())
+    return None, next(iter(profile_ids)) if len(profile_ids) == 1 else None
 
 async def _resolve_print_profile(
     db: AsyncSession,

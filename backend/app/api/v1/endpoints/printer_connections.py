@@ -16,6 +16,7 @@ from app.schemas.printer_connection_observation import (
     PrinterConnectionBindingResponse,
     PrinterConnectionObserveRequest,
     PrinterConnectionObserveResponse,
+    PrinterConnectionResolveRequest,
 )
 from app.services.orca_import_guard import hold_account_import_lock
 from app.services.physical_printer_discovery_service import (
@@ -24,8 +25,10 @@ from app.services.physical_printer_discovery_service import (
     current_printer_context,
     display_endpoint,
     list_installed_printer_candidates,
+    list_pending_connections,
     list_user_bindings,
     reconcile_user_printers,
+    resolve_pending_connection,
 )
 from app.services.printer_connection_observation_service import record_observations
 
@@ -48,7 +51,8 @@ async def observe_printer_connections(
     # per account so two requests cannot create the same selected machine twice.
     await hold_account_import_lock(db, current_user.id)
     accepted, matched, unmatched = await record_observations(
-        db, current_user.id, payload.source_instance_id, payload.observations
+        db, current_user.id, payload.source_instance_id, payload.observations,
+        commit=False, snapshot_complete=payload.snapshot_complete,
     )
     await hold_account_import_lock(db, current_user.id)
     created = await reconcile_user_printers(
@@ -61,6 +65,7 @@ async def observe_printer_connections(
         matched=matched,
         unmatched=unmatched,
         created=created,
+        pending=len(await list_pending_connections(db, current_user.id)),
     )
 
 
@@ -117,6 +122,7 @@ async def list_connection_bindings(
             display_endpoint=display_endpoint(b),
             endpoint_shared=bool(b.endpoint_ciphertext or b.print_host),
             last_seen_at=b.last_seen_at,
+            status=b.status,
         )
         for b in bindings
     ]
@@ -135,5 +141,28 @@ async def assign_connection_binding(
         user_id=current_user.id,
         binding_id=binding_id,
         physical_printer_id=payload.physical_printer_id,
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/pending")
+async def pending_connections(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> list[dict]:
+    return await list_pending_connections(db, current_user.id)
+
+
+@router.post("/pending/{observation_id}/resolve", status_code=status.HTTP_204_NO_CONTENT)
+async def resolve_connection(
+    observation_id: int,
+    payload: PrinterConnectionResolveRequest,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> Response:
+    await resolve_pending_connection(
+        db, user_id=current_user.id, observation_id=observation_id,
+        physical_printer_id=payload.physical_printer_id, create_new=payload.create_new,
+        revision=payload.revision,
     )
     return Response(status_code=status.HTTP_204_NO_CONTENT)

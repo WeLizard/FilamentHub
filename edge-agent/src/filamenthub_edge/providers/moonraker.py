@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import re
+import time
+import uuid
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -79,6 +81,8 @@ class MoonrakerProvider:
         self.material_provider = material_provider
         self.filamenthub_url = filamenthub_url
         self._capabilities = ["read", "presence", "consumption"]
+        self._identity_checked_at = float("-inf")
+        self._identity: tuple[str, str] | None = None
 
     def capabilities(self) -> list[str]:
         return list(self._capabilities)
@@ -133,7 +137,26 @@ class MoonrakerProvider:
             capabilities=self.capabilities(),
             usage=usage,
             inventory_key_digest=inventory_key_digest,
+            device_identity=self._device_identity(),
         )
+
+    def _device_identity(self) -> tuple[str, str] | None:
+        if time.monotonic() - self._identity_checked_at < 60:
+            return self._identity
+        self._identity_checked_at = time.monotonic()
+        self._identity = None
+        try:
+            _, decoded, _ = self.http.request(
+                "GET",
+                "/server/database/item?namespace=moonraker&key=instance_id",
+            )
+            value = decoded.get("result", {}).get("value")
+            self._identity = ("moonraker_instance", uuid.UUID(str(value)).hex)
+        except (HttpRequestError, ValueError, AttributeError, TypeError):
+            # Older/restricted servers still provide observations; no hostname
+            # or shared SBC serial is substituted for missing instance identity.
+            return None
+        return self._identity
 
     def _inventory_key_digest(self) -> str | None:
         self._native_spoolman_configured = True  # Unknown config must not double-debit usage.

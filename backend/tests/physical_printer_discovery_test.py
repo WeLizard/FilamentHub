@@ -17,6 +17,7 @@ from app.services.physical_printer_discovery_service import (
     reconcile_user_printers,
 )
 from app.services.printer_connection_observation_service import record_observations
+from app.services.printer_identity_service import discovery_key, endpoint_token
 
 
 async def _make_profile(db: AsyncSession, user: User, suffix: str, setting_id: str) -> PrinterProfile:
@@ -55,7 +56,7 @@ async def test_new_endpoint_creates_physical_printer(db_session: AsyncSession, a
     binding = (await db_session.execute(select(PrinterConnectionBinding))).scalar_one()
     assert binding.provider == "moonraker"
     assert binding.host is None
-    assert display_endpoint(binding) == "192.168.1.21:7125"
+    assert display_endpoint(binding) == "192.168.1.21:80"
     assert binding.physical_printer_id == printer.id
 
 
@@ -70,7 +71,7 @@ async def test_known_endpoint_is_idempotent(db_session: AsyncSession, auth_user:
 
 
 @pytest.mark.asyncio
-async def test_generated_preset_name_is_replaced_by_the_printer_model(
+async def test_sync_does_not_rename_existing_physical_printer(
     db_session: AsyncSession, auth_user: User
 ):
     preset_name = "Voron 2.4 350 0.4 nozzle - Copy"
@@ -110,7 +111,7 @@ async def test_generated_preset_name_is_replaced_by_the_printer_model(
     await reconcile_user_printers(db_session, auth_user.id)
 
     await db_session.refresh(printer)
-    assert printer.name == "Voron 2.4 350"
+    assert printer.name == preset_name
 
 
 @pytest.mark.asyncio
@@ -127,7 +128,7 @@ async def test_several_presets_one_endpoint_one_printer(db_session: AsyncSession
 
 
 @pytest.mark.asyncio
-async def test_exact_profile_link_claims_connection_without_duplicate(
+async def test_profile_without_connection_does_not_claim_physical_printer(
     db_session: AsyncSession, auth_user: User
 ):
     profile = await _make_profile(db_session, auth_user, "04-linked", "Voron linked 0.4")
@@ -165,8 +166,7 @@ async def test_exact_profile_link_claims_connection_without_duplicate(
         db_session, auth_user.id, source_instance_id="inst-1"
     ) == 0
     assert await _count(db_session, UserPrinterDevice) == 1
-    binding = (await db_session.execute(select(PrinterConnectionBinding))).scalar_one()
-    assert binding.physical_printer_id == printer.id
+    assert await _count(db_session, PrinterConnectionBinding) == 0
 
 
 @pytest.mark.asyncio
@@ -245,7 +245,7 @@ async def test_unmatched_still_creates_printer_without_link(db_session: AsyncSes
 
 
 @pytest.mark.asyncio
-async def test_visible_stock_profile_creates_one_physical_printer_and_links_it(
+async def test_visible_stock_profile_only_offers_catalog_candidate(
     db_session: AsyncSession, auth_user: User
 ):
     catalog_printer = Printer(
@@ -284,18 +284,12 @@ async def test_visible_stock_profile_creates_one_physical_printer_and_links_it(
     ]
     await _observe(db_session, auth_user, observations)
 
-    assert await reconcile_user_printers(
-        db_session, auth_user.id, source_instance_id="inst-1"
-    ) == 1
-    assert await reconcile_user_printers(
-        db_session, auth_user.id, source_instance_id="inst-1"
-    ) == 0
-
-    printer = (await db_session.execute(select(UserPrinterDevice))).scalar_one()
-    assert printer.name == "Bambu Lab P2S"
-    assert printer.printer_id == catalog_printer.id
-    link = (await db_session.execute(select(UserPrinterProfileLink))).scalar_one()
-    assert (link.physical_printer_id, link.printer_profile_id) == (printer.id, profile.id)
+    assert await reconcile_user_printers(db_session, auth_user.id, source_instance_id="inst-1") == 0
+    assert await _count(db_session, UserPrinterDevice) == 0
+    assert await _count(db_session, UserPrinterProfileLink) == 0
+    from app.services.physical_printer_discovery_service import list_installed_printer_candidates
+    candidates = await list_installed_printer_candidates(db_session, auth_user.id)
+    assert [c["printer_id"] for c in candidates] == [catalog_printer.id]
 
 
 @pytest.mark.asyncio
@@ -385,19 +379,19 @@ async def test_current_stock_profile_does_not_guess_between_identical_printers(
 
 
 @pytest.mark.asyncio
-async def test_same_profile_follows_endpoint_change_without_second_printer(
+async def test_stable_connection_follows_endpoint_change_without_second_printer(
     db_session: AsyncSession, auth_user: User
 ):
     db_session.autoflush = False
     await _make_profile(db_session, auth_user, "04", "Voron 0.4")
     await _observe(db_session, auth_user, [
-        _obs(printer_settings_id="Voron 0.4", printer_model="Voron 2.4",
+        _obs(connection_ref="stable-voron", printer_settings_id="Voron 0.4", printer_model="Voron 2.4",
              print_host="192.168.1.21", host_type="moonraker"),
     ])
     await reconcile_user_printers(db_session, auth_user.id)
 
     await _observe(db_session, auth_user, [
-        _obs(printer_settings_id="Voron 0.4", printer_model="Voron 2.4",
+        _obs(connection_ref="stable-voron", printer_settings_id="Voron 0.4", printer_model="Voron 2.4",
              print_host="192.168.1.99", host_type="moonraker"),
     ])
     created = await reconcile_user_printers(db_session, auth_user.id)
@@ -411,7 +405,7 @@ async def test_same_profile_follows_endpoint_change_without_second_printer(
             )
         ).scalars()
     )
-    assert [display_endpoint(binding) for binding in bindings] == ["192.168.1.99:7125"]
+    assert [display_endpoint(binding) for binding in bindings] == ["192.168.1.99:80"]
 
 
 @pytest.mark.asyncio
@@ -453,7 +447,7 @@ async def test_connection_ref_survives_endpoint_change_without_new_printer(
 
     assert await _count(db_session, UserPrinterDevice) == 1
     binding = (await db_session.execute(select(PrinterConnectionBinding))).scalar_one()
-    assert display_endpoint(binding) == "192.168.1.99:7125"
+    assert display_endpoint(binding) == "192.168.1.99:80"
 
 
 @pytest.mark.asyncio
@@ -488,6 +482,7 @@ async def test_stable_ref_upgrades_one_profile_linked_legacy_printer(
                 preset_name=profile.name,
                 profile_fingerprint=None,
                 print_host=None,
+                endpoint_token=endpoint_token(await discovery_key(db_session, auth_user.id), "192.168.1.21", "moonraker"),
                 host_type="moonraker",
             )
         ],
@@ -529,6 +524,7 @@ async def test_superseded_endpoint_observation_is_not_reconciled(
                 printer_settings_id=profile.setting_id,
                 preset_name=profile.name,
                 print_host=None,
+                endpoint_token="a" * 64,
                 host_type="moonraker",
             )
         ],
@@ -555,6 +551,7 @@ async def test_local_only_connection_ref_creates_no_server_endpoint(
                 connection_ref="orca-local-v1:account:machine-local",
                 preset_name="Local-only printer",
                 print_host=None,
+                endpoint_token="b" * 64,
                 host_type="moonraker",
             )
         ],
@@ -597,7 +594,7 @@ async def test_two_profile_refs_at_one_endpoint_share_physical_printer(
 
 
 def test_normalize_endpoint():
-    assert normalize_endpoint("192.168.1.21", "moonraker")["normalized"] == "moonraker|http|192.168.1.21|7125|"
+    assert normalize_endpoint("192.168.1.21", "moonraker")["normalized"] == "moonraker|http|192.168.1.21|80|"
     assert normalize_endpoint("http://192.168.1.21:5000/x", "octoprint")["normalized"] == "octoprint|http|192.168.1.21|5000|/x"
     assert (
         normalize_endpoint("192.168.1.21", "moonraker")["normalized"]

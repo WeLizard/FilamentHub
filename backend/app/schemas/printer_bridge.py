@@ -40,6 +40,7 @@ class PrinterBridgePairResponse(BaseModel):
     bridge_token: str
     physical_printer_id: int
     material_system_id: int
+    printer_discovery_key: str | None = None
 
 
 class PrinterBridgeStatusResponse(BaseModel):

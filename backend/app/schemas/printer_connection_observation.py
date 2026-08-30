@@ -5,8 +5,24 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 
 
+class PrinterIdentityEvidence(BaseModel):
+    """Account-scoped HMAC of a provider identifier read from the local device.
+
+    Shared by desktop, Edge and future mobile adapters. It is matching evidence,
+    never authentication or permission to operate a printer.
+    """
+
+    kind: str = Field(pattern=r"^[a-z][a-z0-9_]{1,49}$")
+    token: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+    model_config = {"extra": "forbid"}
+
+
 class PrinterConnectionObservationIn(BaseModel):
     connection_ref: str | None = Field(None, max_length=120)
+    endpoint_token: str | None = Field(None, pattern=r"^[0-9a-f]{64}$")
+    device_identity: PrinterIdentityEvidence | None = None
+    has_connection: bool | None = None
     preset_name: str | None = Field(None, max_length=200)
     printer_settings_id: str | None = Field(None, max_length=200)
     inherits: str | None = Field(None, max_length=200)
@@ -41,6 +57,7 @@ class PrinterConnectionObserveRequest(BaseModel):
         default_factory=list, max_length=256
     )
     source_instance_id: str | None = Field(None, max_length=100)
+    snapshot_complete: bool = True
 
 
 class PrinterConnectionObserveResponse(BaseModel):
@@ -48,6 +65,7 @@ class PrinterConnectionObserveResponse(BaseModel):
     matched: int
     unmatched: int
     created: int = 0
+    pending: int = 0
 
 
 class PrinterConnectionBindingResponse(BaseModel):
@@ -65,7 +83,14 @@ class PrinterConnectionBindingResponse(BaseModel):
     display_endpoint: str | None
     endpoint_shared: bool = False
     last_seen_at: datetime
+    status: str = "bound"
 
 
 class PrinterConnectionBindingAssignRequest(BaseModel):
     physical_printer_id: int = Field(..., gt=0)
+
+
+class PrinterConnectionResolveRequest(BaseModel):
+    revision: str = Field(pattern=r"^[0-9a-f]{64}$")
+    physical_printer_id: int | None = Field(None, gt=0)
+    create_new: bool = False

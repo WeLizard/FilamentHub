@@ -1,4 +1,28 @@
 {
+  "printerConnections": {
+    "awaitingTopology": "等待槽位图",
+    "status": {
+      "conflict": "需要确认连接",
+      "disconnected": "不在当前连接列表中"
+    },
+    "title": "请确认打印机连接",
+    "hint": "部分连接与之前的关联冲突。请选择现有打印机或确认它是独立设备。如果同一台打印机已有重复卡片，请在卡片设置中合并。",
+    "choose": "此连接对应哪台物理打印机？",
+    "newDevice": "这是一台独立的新打印机",
+    "confirm": "保存连接",
+    "failed": "无法保存更改。请重新检查。",
+    "retry": "无法检查连接。重试",
+    "mergeTitle": "合并重复的打印机卡片",
+    "mergeHint": "仅合并同一台物理打印机的两张卡片，不要合并相同型号的不同设备。请保留包含供料系统的卡片。",
+    "mergeChoose": "保留哪张卡片？",
+    "previewMerge": "检查合并",
+    "mergeAction": "合并卡片",
+    "mergeConfirm": "将“{{source}}”合并到“{{target}}”。将转移配置：{{configurations}}，连接：{{connections}}，历史记录：{{history}}。保留卡片的料卷、槽位和供料系统不会丢失。是否继续？",
+    "mergeReasons": {
+      "source_connected": "此卡片已配置供料系统或设备连接。请保留它：打开重复卡片并将此卡片选为目标。",
+      "facts_conflict": "卡片的型号或成本设置不同。请先检查再合并。"
+    }
+  },
   "sharedQuotePage": {
     "title": "报价单",
     "ctaTitle": "创建您自己的报价单",
@@ -6660,6 +6684,8 @@
     "retraction_speed": "回抽速度"
   },
   "apiErrors": {
+    "ERR_PRINTER_IDENTITY_CONFLICT": "设备标识与已保存的连接冲突。请在“我的打印机”中检查连接；不要合并不同设备。",
+    "ERR_PRINTER_MERGE_CONFLICT": "卡片已更改或包含不兼容的数据。请重新检查合并。",
     "UNKNOWN_ERROR": "发生了意外错误",
     "ERR_NETWORK": "无法连接到服务器。检查您的网络连接并重试。",
     "ERR_REQUEST_TIMEOUT": "服务器未响应。请稍后重试。",
@@ -7008,7 +7034,7 @@
   "myPrinters": {
     "title": "我的打印机",
     "liveLayer": "第 {{current}} / {{total}} 层",
-    "subtitle": "通过网络打印时，它们会自动从 OrcaSlicer 出现。",
+    "subtitle": "实体打印机及其配置。OrcaSlicer 连接与预设分别同步。",
     "loading": "加载中…",
     "loadError": "无法加载打印机。",
     "empty": "一旦插件在 OrcaSlicer 中发现打印机，它们就会自动显示在这里。",
@@ -7354,7 +7380,7 @@
           "access": "插件尚未获得打印机绑定访问权限。请在 OrcaSlicer 中刷新 FilamentHub 页面以获取最新权限。",
           "server": "无法加载 FilamentHub 数据。",
           "not_found": "您的个人资料中没有这台打印机。",
-          "connection_not_found": "插件无法为这台打印机找到唯一的本地连接。请先运行完整同步，然后在实体打印机设置的“连接”中选择准确的 Orca 连接。",
+          "connection_not_found": "未找到明确的打印机连接。打开“我的打印机”，检查连接；如果是同一台设备，请合并重复卡片，然后重新同步。",
           "ambiguous_connection": "找到多个匹配连接。请为每台物理打印机保留独立的 OrcaSlicer 用户配置。",
           "unreachable": "Moonraker 未响应或拒绝了本地 API 密钥。",
           "device_not_ready": "打印机连接尚未完成。请在 OrcaSlicer 中运行完整同步。",

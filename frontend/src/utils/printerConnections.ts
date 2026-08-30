@@ -29,7 +29,7 @@ export function visiblePrinterConnections(
   const byProvider = new Map<string, PrinterConnectionBinding[]>();
 
   [...bindings].sort(newestFirst).forEach((binding) => {
-    const provider = normalizedProvider(binding);
+    const provider = `${normalizedProvider(binding)}:${binding.status ?? 'bound'}`;
     const current = byProvider.get(provider) ?? [];
     current.push(binding);
     byProvider.set(provider, current);

@@ -25,6 +25,10 @@ class AuthenticationError(HttpRequestError):
     """The FilamentHub bridge token is invalid or revoked."""
 
 
+class IdentityConflict(HttpRequestError):
+    """A snapshot belongs to a different device; retrying it cannot fix the binding."""
+
+
 class PairingRequired(EdgeError):
     """A new one-time pairing code is required."""
 

@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import logging
+import re
 from datetime import datetime, timezone
 from threading import Event
 from typing import Any
@@ -14,6 +16,7 @@ from .config import EdgeConfig
 from .errors import (
     AuthenticationError,
     EdgeError,
+    IdentityConflict,
     PairingRequired,
     ProviderUnavailable,
     StateError,
@@ -85,6 +88,7 @@ class EdgeRuntime:
                     logger.warning("Disconnect checkpoint delivery delayed: %s", exc)
             raise provider_error
         observed_at = _now_iso()
+        self._verify_snapshot_identity(snapshot, observed_at=observed_at)
         if len(self.state.usage_outbox) >= MAX_USAGE_OUTBOX_BATCHES:
             raise StateError(
                 "Edge usage outbox is full; local counters were left untouched until "
@@ -157,6 +161,12 @@ class EdgeRuntime:
         except ProviderUnavailable:
             self._checkpoint_without_provider(reason="shutdown", observed_at=observed_at)
         else:
+            try:
+                self._verify_snapshot_identity(snapshot, observed_at=observed_at)
+            except EdgeError as exc:
+                logger.warning("Shutdown ignored unverified device counters: %s", exc)
+                self._checkpoint_without_provider(reason="shutdown", observed_at=observed_at)
+                return
             events = capture_usage_events(
                 self.state,
                 snapshot,
@@ -189,6 +199,10 @@ class EdgeRuntime:
                 # An owner-side revoke already made the local token harmless.
                 pass
         self.state.bridge_token = None
+        self.state.printer_discovery_key = None
+        self.state.confirmed_device_identity = None
+        self.state.rejected_observation = None
+        self._identity_context_checked = False
         self.state.physical_printer_id = None
         self.state.material_system_id = None
         self.state.pairing_code_digest = None
@@ -217,6 +231,7 @@ class EdgeRuntime:
             "physical_printer_id": self.state.physical_printer_id,
             "material_system_id": self.state.material_system_id,
             "pending_observation": self.state.pending_observation is not None,
+            "identity_conflict": self.state.rejected_observation is not None,
             "usage_outbox_batches": len(self.state.usage_outbox),
             "usage_outbox_events": sum(
                 len(batch.get("events", []))
@@ -249,6 +264,7 @@ class EdgeRuntime:
             previous_material_system_id=self.state.material_system_id,
         )
         self.state.bridge_token = result.bridge_token
+        self.state.printer_discovery_key = result.printer_discovery_key
         self.state.physical_printer_id = result.physical_printer_id
         self.state.material_system_id = result.material_system_id
         self.state.pairing_code_digest = _pairing_digest(self.config.pairing_code)
@@ -275,12 +291,36 @@ class EdgeRuntime:
         if self.state.pending_observation is None:
             return
         token = self._token()
-        self.cloud.upload_observation(
-            token=token,
-            payload=self.state.pending_observation,
-        )
+        try:
+            accepted = self.cloud.upload_observation(
+                token=token, payload=self.state.pending_observation
+            )
+        except IdentityConflict:
+            # Keep the rejected evidence for diagnosis, without poisoning the
+            # retry queue. Usage history and its durable outbox are untouched.
+            self.state.rejected_observation = self.state.pending_observation
+            self.state.pending_observation = None
+            self.store.save(self.state)
+            raise
+        identity = self.state.pending_observation.get("device_identity")
+        if identity and accepted is not False:
+            self.state.confirmed_device_identity = identity
+            self.state.rejected_observation = None
         self.state.pending_observation = None
         self.store.save(self.state)
+
+    def _verify_snapshot_identity(self, snapshot: ProviderSnapshot, *, observed_at: str) -> None:
+        identity = self._identity_evidence(snapshot)
+        if self.state.confirmed_device_identity and identity is None:
+            raise ProviderUnavailable("The configured printer identity could not be verified")
+        if identity and identity != self.state.confirmed_device_identity:
+            # Verify replacement devices before reading counters, including at
+            # shutdown. Established devices retain ordinary offline accounting.
+            self._flush_pending_observation()
+            self._queue_observation(snapshot, observed_at=observed_at)
+            self._flush_pending_observation()
+            if identity != self.state.confirmed_device_identity:
+                raise ProviderUnavailable("The server has not confirmed this device identity")
 
     def _flush_usage_outbox(self) -> None:
         while self.state.usage_outbox:
@@ -327,8 +367,32 @@ class EdgeRuntime:
             "slot_topology_complete": snapshot.slot_topology_complete,
             "inventory_key_digest": snapshot.inventory_key_digest,
         }
+        identity = self._identity_evidence(snapshot)
+        if identity:
+            payload["device_identity"] = identity
         self.state.pending_observation = payload
         self.store.save(self.state)
+
+    def _identity_evidence(self, snapshot: ProviderSnapshot) -> dict[str, str] | None:
+        if not snapshot.device_identity:
+            return None
+        if not self.state.printer_discovery_key and not getattr(
+            self, "_identity_context_checked", False
+        ):
+            self.state.printer_discovery_key = self.cloud.identity_context(token=self._token())
+            self._identity_context_checked = True
+        key = self.state.printer_discovery_key
+        if not isinstance(key, str) or not re.fullmatch(r"[0-9a-f]{64}", key):
+            return None
+        kind, value = snapshot.device_identity
+        return {
+            "kind": kind,
+            "token": hmac.new(
+                bytes.fromhex(key),
+                ("device\0" + kind + "\0" + value).encode(),
+                hashlib.sha256,
+            ).hexdigest(),
+        }
 
     def _enqueue_usage_batch(self, events: list[dict[str, Any]]) -> None:
         if len(self.state.usage_outbox) >= MAX_USAGE_OUTBOX_BATCHES:

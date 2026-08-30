@@ -8,7 +8,7 @@ import { useTranslation } from 'react-i18next';
 import { Coins, Loader2, Save, Wifi, X, Link2Off, SlidersHorizontal, Trash2 } from 'lucide-react';
 import type { AxiosError } from 'axios';
 import { physicalPrintersAPI, printerProfilesAPI, printersAPI } from '../api/client';
-import type { PhysicalPrinter, PrinterConnectionBinding } from '../api/client';
+import type { PhysicalPrinter, PrinterConnectionBinding, PrinterMergePreview } from '../api/client';
 import type { PrinterProfile } from '../types/api';
 import { useAuth } from '../contexts/AuthContext';
 import { useDebounce } from '../hooks/useDebounce';
@@ -50,6 +50,34 @@ export const PhysicalPrinterSettingsModal: React.FC<PhysicalPrinterSettingsModal
   const [showDelete, setShowDelete] = useState(false);
   const [costModalOpen, setCostModalOpen] = useState(false);
   const [selectedBindingId, setSelectedBindingId] = useState<number | null>(null);
+  const [mergeTarget, setMergeTarget] = useState<number | null>(null);
+  const [mergePreview, setMergePreview] = useState<PrinterMergePreview | null>(null);
+  const { data: allPrinters = [] } = useQuery({
+    queryKey: ['physical-printers'], queryFn: physicalPrintersAPI.list, enabled: isOpen,
+  });
+  const previewMerge = useMutation({
+    mutationFn: () => physicalPrintersAPI.previewMerge(printer.id, mergeTarget!),
+    onSuccess: (preview) => {
+      if (preview.allowed) { setMergePreview(preview); setError(null); }
+      else setError(t(`printerConnections.mergeReasons.${preview.reason}`));
+    },
+    onError: (err: AxiosError<{ detail: unknown }>) => {
+      setError(translateApiError(t, err.response?.data?.detail, t('printerConnections.failed')));
+    },
+  });
+  const mergeMutation = useMutation({
+    mutationFn: () => physicalPrintersAPI.merge(printer.id, mergePreview!.target_id, mergePreview!.revision),
+    onSuccess: async () => {
+      await Promise.all(['physical-printers', 'printer-bindings', 'printer-connections-pending', 'devices', 'print-jobs']
+        .map((key) => queryClient.invalidateQueries({ queryKey: [key] })));
+      setMergePreview(null);
+      onClose();
+    },
+    onError: (err: AxiosError<{ detail: unknown }>) => {
+      setMergePreview(null);
+      setError(translateApiError(t, err.response?.data?.detail, t('printerConnections.failed')));
+    },
+  });
   const pendingActionRef = useRef<(() => void) | null>(null);
   const debouncedSearch = useDebounce(printerSearch, 250);
   const printerBindings = useMemo(
@@ -472,6 +500,19 @@ export const PhysicalPrinterSettingsModal: React.FC<PhysicalPrinterSettingsModal
             </section>
 
             {error && <p className="text-sm text-rose-400">{error}</p>}
+            {allPrinters.length > 1 && <section className="space-y-2">
+              <h3 className="text-sm text-gray-200">{t('printerConnections.mergeTitle')}</h3>
+              <p className="text-xs text-gray-400">{t('printerConnections.mergeHint')}</p>
+              <Dropdown size="sm" value={mergeTarget ?? ''}
+                options={allPrinters.filter((p) => p.id !== printer.id).map((p) => ({ value: p.id, label: `${p.name} · #${p.id}` }))}
+                placeholder={t('printerConnections.mergeChoose')}
+                onChange={(value) => setMergeTarget(value === '' ? null : Number(value))} />
+              <button type="button" disabled={mergeTarget == null || previewMerge.isPending}
+                onClick={() => guard(() => previewMerge.mutate())}
+                className="rounded-lg border border-white/20 px-3 py-2 text-sm text-gray-200 disabled:opacity-50">
+                {t('printerConnections.previewMerge')}
+              </button>
+            </section>}
           </div>
 
           <div className="flex items-center justify-between gap-3 px-6 py-4 border-t border-white/10">
@@ -519,6 +560,16 @@ export const PhysicalPrinterSettingsModal: React.FC<PhysicalPrinterSettingsModal
         confirmText={t('printerSettings.delete')}
         cancelText={t('common.cancel')}
       />
+      <ConfirmModal isOpen={mergePreview !== null} onClose={() => setMergePreview(null)}
+        onConfirm={() => mergeMutation.mutate()} isLoading={mergeMutation.isPending}
+        title={t('printerConnections.mergeTitle')}
+        message={mergePreview ? t('printerConnections.mergeConfirm', {
+          source: `${mergePreview.source_name} · #${mergePreview.source_id}`,
+          target: `${mergePreview.target_name} · #${mergePreview.target_id}`,
+          configurations: mergePreview.configurations, connections: mergePreview.connections,
+          history: mergePreview.history,
+        }) : ''}
+        confirmText={t('printerConnections.mergeAction')} cancelText={t('common.cancel')} />
 
       <ConfirmModal
         isOpen={showDiscard}

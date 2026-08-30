@@ -14,6 +14,7 @@ class ProviderSnapshot:
     capabilities: list[str]
     usage: dict[str, Any] | None = None
     inventory_key_digest: str | None = None
+    device_identity: tuple[str, str] | None = None
 
 
 class EdgeProvider(Protocol):

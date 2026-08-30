@@ -63,7 +63,7 @@ async def test_a_slice_only_selects_an_unambiguous_printer_configuration(
     auth_user: User,
     db_session: AsyncSession,
 ) -> None:
-    """An official preset can identify one machine, but never guesses between two."""
+    """A configuration does not identify hardware, even with only one linked printer."""
     printer = UserPrinterDevice(
         user_id=auth_user.id,
         name="Voron at home",
@@ -93,8 +93,8 @@ async def test_a_slice_only_selects_an_unambiguous_printer_configuration(
     await auth_client.post("/api/v1/orcaslicer/slices", json={"slices": [_slice()]})
 
     reported = (await auth_client.get("/api/v1/orcaslicer/slices")).json()[0]
-    assert reported["physical_printer_id"] == printer.id
-    assert reported["physical_printer_name"] == "Voron at home"
+    assert reported["physical_printer_id"] is None
+    assert reported["physical_printer_name"] is None
     assert reported["printer_profile_id"] == profile.id
     assert reported["source_key"] == "9f1c2ad4e7b30512"
 
@@ -160,6 +160,12 @@ async def test_native_orca_child_name_resolves_through_same_plugin_observation(
     await db_session.commit()
 
     source_instance_id = "fixture-plugin-instance-0002"
+    db_session.add(PrinterConnectionBinding(
+        user_id=auth_user.id, physical_printer_id=printer.id,
+        source_instance_id=source_instance_id, connection_ref="p2s-connection",
+        normalized_endpoint="fixture-p2s-connection", status="bound",
+    ))
+    await db_session.commit()
     await record_observations(
         db_session,
         auth_user.id,
@@ -167,6 +173,7 @@ async def test_native_orca_child_name_resolves_through_same_plugin_observation(
         [
             PrinterConnectionObservationIn(
                 preset_name="Workshop P2S",
+                connection_ref="p2s-connection",
                 printer_settings_id="Workshop P2S",
                 inherits=profile.name,
                 vendor_id="BBL",
@@ -235,10 +242,13 @@ async def test_observed_endpoint_selects_one_of_two_printers_using_the_same_prof
         ]
     )
     endpoint = normalize_endpoint("192.168.1.31:7125", "moonraker")
+    source_instance_id = "fixture-plugin-instance-endpoint"
     db_session.add(
         PrinterConnectionBinding(
             user_id=auth_user.id,
             physical_printer_id=workshop.id,
+            source_instance_id=source_instance_id,
+            connection_ref="workshop-connection",
             normalized_endpoint=endpoint["normalized"],
             provider=endpoint["provider"],
             scheme=endpoint["scheme"],
@@ -250,7 +260,6 @@ async def test_observed_endpoint_selects_one_of_two_printers_using_the_same_prof
     )
     await db_session.commit()
 
-    source_instance_id = "fixture-plugin-instance-endpoint"
     await record_observations(
         db_session,
         auth_user.id,
@@ -258,6 +267,7 @@ async def test_observed_endpoint_selects_one_of_two_printers_using_the_same_prof
         [
             PrinterConnectionObservationIn(
                 preset_name="Workshop connection",
+                connection_ref="workshop-connection",
                 printer_settings_id="Workshop connection",
                 inherits=profile.name,
                 vendor_id="Voron",
@@ -344,7 +354,7 @@ async def test_managed_machine_and_process_ids_win_over_mutable_orca_names(
     assert response.status_code == 200
     reported = (await auth_client.get("/api/v1/orcaslicer/slices")).json()[0]
     assert reported["printer_profile_id"] == machine.id
-    assert reported["physical_printer_id"] == printer.id
+    assert reported["physical_printer_id"] is None
     assert reported["print_profile_id"] == process.id
     assert reported["print_settings_id"] == "renamed-process"
 

@@ -67,6 +67,7 @@ capability may be cached locally until expiry so a reopened window can resume.
 import csv
 import datetime
 import hashlib
+import hmac
 import http.server
 import ipaddress
 import json
@@ -87,6 +88,7 @@ import urllib.parse
 import urllib.request
 import uuid
 import webbrowser
+from concurrent.futures import ThreadPoolExecutor
 
 import orca
 
@@ -3081,6 +3083,12 @@ def _profile_settings_fingerprint(settings):
         return ""
 
 
+class PrinterObservationSnapshot(list):
+    """A partial host read must never retire previously known connections."""
+
+    complete = False
+
+
 def observe_printer_presets():
     """What OrcaSlicer knows about the machines this person has (UI thread —
     reads preset_bundle). Two kinds of entry, and printhost_apikey is in neither:
@@ -3090,7 +3098,7 @@ def observe_printer_presets():
       setup separately from the rest of each vendor bundle, so visibility is the
       evidence that a stock machine belongs in the user's workspace.
     """
-    observed_connections = []
+    observed_connections = PrinterObservationSnapshot()
     identity_items = []
     identity_observations = []
     try:
@@ -3199,6 +3207,7 @@ def observe_printer_presets():
                     observation["connection_ref"] = local_profile_external_id(
                         account_id, identity["local_profile_id"]
                     )[:120]
+        observed_connections.complete = True
     except Exception as exc:
         fh_log("printer observation scan failed: %s" % exc)
     return observed_connections
@@ -3294,7 +3303,7 @@ def _moonraker_base_url(value):
     )
 
 
-def _moonraker_json(connection, path, payload=None):
+def _moonraker_json(connection, path, payload=None, timeout=None):
     """Call only the endpoint read from Orca's local machine preset."""
     base_url = _moonraker_base_url(connection.get("print_host"))
     headers = {
@@ -3319,7 +3328,7 @@ def _moonraker_json(connection, path, payload=None):
     try:
         with urllib.request.urlopen(
             request,
-            timeout=min(HTTP_TIMEOUT, 10),
+            timeout=min(HTTP_TIMEOUT, timeout if timeout is not None else 10),
             context=_SSL_CTX,
         ) as response:
             status = response.getcode()
@@ -3847,10 +3856,10 @@ def sync_happy_hare_topologies(token, local_connections):
     return synced, failed
 
 
-def send_printer_observations(token, observations, source_instance_id=""):
+def send_printer_observations(token, observations, source_instance_id="", *, snapshot_complete=None):
     """POST observed printer connection data. The backend records it raw; the
     plugin makes no physical-printer identity decisions."""
-    if not token or not observations:
+    if not token:
         return None, {}
     status, body = http_post_json(
         "/orcaslicer/printer-connections/observe",
@@ -3858,6 +3867,8 @@ def send_printer_observations(token, observations, source_instance_id=""):
         {
             "observations": observations,
             "source_instance_id": source_instance_id or None,
+            "snapshot_complete": (getattr(observations, "complete", True)
+                                  if snapshot_complete is None else snapshot_complete),
         },
     )
     if status != 200:
@@ -4248,6 +4259,7 @@ def _sync_preferences(token):
         "available": False,
         "auto_import_local_presets": False,
         "sync_printer_endpoints": False,
+        "printer_discovery_key": "",
         "allow_filament_presets_import": False,
         "allow_filament_presets_export": False,
         "allow_printer_profiles_import": False,
@@ -4265,6 +4277,7 @@ def _sync_preferences(token):
             "available": True,
             "auto_import_local_presets": bool(raw.get("auto_import_local_presets")),
             "sync_printer_endpoints": bool(raw.get("sync_printer_endpoints")),
+            "printer_discovery_key": str(raw.get("printer_discovery_key") or ""),
             "allow_filament_presets_import": bool(
                 raw.get("allow_filament_presets_import")
             ),
@@ -4288,11 +4301,68 @@ def _sync_preferences(token):
         return defaults
 
 
-def _observations_for_sync(observations, share_endpoints=False):
+def _printer_evidence_token(key, kind, value):
+    if not re.fullmatch(r"[0-9a-f]{64}", str(key or "")) or not value:
+        return None
+    return hmac.new(bytes.fromhex(key), (kind + "\0" + value).encode("utf-8"), hashlib.sha256).hexdigest()
+
+
+def _connection_endpoint_token(key, host, provider):
+    raw = str(host or "").strip()
+    if not raw:
+        return None
+    if "://" not in raw:
+        raw = "http://" + raw
+    try:
+        parts = urllib.parse.urlsplit(raw)
+        provider = str(provider or "generic").strip().lower()
+        scheme = (parts.scheme or "http").lower()
+        hostname = (parts.hostname or "").lower().rstrip(".")
+        port = parts.port
+    except ValueError:
+        return None
+    if not hostname:
+        return None
+    if port is None:
+        port = {"http": 80, "https": 443, "mqtt": 1883, "mqtts": 8883}.get(scheme)
+    canonical = "|".join([provider, scheme, hostname, str(port or ""), (parts.path or "").rstrip("/")])
+    return _printer_evidence_token(key, "endpoint", canonical)
+
+
+def _observe_moonraker_identity(connection):
+    status, body, _ = _moonraker_json(
+        connection, "/server/database/item?namespace=moonraker&key=instance_id", timeout=3,
+    )
+    result = body.get("result") if status == 200 else None
+    value = result.get("value") if isinstance(result, dict) else None
+    try:
+        return uuid.UUID(str(value)).hex
+    except (ValueError, AttributeError):
+        return None
+
+
+def _observations_for_sync(observations, share_endpoints=False, discovery_key="", local_connections=None):
     """Keep LAN addresses local unless the account explicitly opted in."""
-    prepared = []
+    prepared = PrinterObservationSnapshot()
+    prepared.complete = getattr(observations, "complete", True)
+    identities = {}
+    connections = {str(c.get("print_host")): c for c in local_connections or []}
+    if discovery_key and connections:
+        # No LAN I/O on Orca's UI thread; one bounded read per configured host.
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            values = pool.map(_observe_moonraker_identity, connections.values())
+            identities = dict(zip(connections, values))
     for observation in observations or []:
         item = dict(observation)
+        host = str(item.get("print_host") or "")
+        item["has_connection"] = bool(host)
+        item["endpoint_token"] = _connection_endpoint_token(discovery_key, host, item.get("host_type"))
+        identity = identities.get(host)
+        if identity:
+            item["device_identity"] = {
+                "kind": "moonraker_instance",
+                "token": _printer_evidence_token(discovery_key, "device", "moonraker_instance\0" + identity),
+            }
         if not share_endpoints:
             item["print_host"] = ""
         prepared.append(item)
@@ -8634,8 +8704,10 @@ class FilamentHubCatalog(
                 _observations_for_sync(
                     observations,
                     share_endpoints=sync_preferences["sync_printer_endpoints"],
+                    discovery_key=sync_preferences.get("printer_discovery_key", ""),
                 ),
                 plugin_source_instance_id(),
+                snapshot_complete=False,
             )
             if status == 200:
                 for observation in observations:
@@ -9540,6 +9612,8 @@ class FilamentHubCatalog(
                 _observations_for_sync(
                     observations,
                     share_endpoints=preferences["sync_printer_endpoints"],
+                    discovery_key=preferences.get("printer_discovery_key", ""),
+                    local_connections=moonraker_connections,
                 ),
                 source_instance_id,
             )
@@ -9552,6 +9626,15 @@ class FilamentHubCatalog(
                             item["summary"],
                             ui_text("summaryObservationFailed"),
                         )
+                        break
+            elif _observation_result.get("pending"):
+                if overall_status != "error":
+                    overall_status = "warning"
+                for item in contours:
+                    if item["kind"] == "machine":
+                        if item["status"] != "error":
+                            item["status"] = "warning"
+                        item["summary"] += ", " + ui_text("summaryConnectionReview")
                         break
             sync_happy_hare_topologies(token, moonraker_connections)
 

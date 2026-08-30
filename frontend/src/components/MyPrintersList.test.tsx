@@ -26,6 +26,7 @@ vi.mock('../api/client', () => ({
   physicalPrintersAPI: {
     list: (...args: unknown[]) => mocks.listPrinters(...args),
     listBindings: vi.fn().mockResolvedValue([]),
+    pendingConnections: vi.fn().mockResolvedValue([]),
     downloadOrcaBundle: (...args: unknown[]) => mocks.downloadBundle(...args),
   },
   printerProfilesAPI: {

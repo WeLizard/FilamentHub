@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import csv
 import hashlib
+import hmac
 import importlib.util
 import io
 import json
@@ -2633,6 +2634,55 @@ def test_printer_endpoint_sync_is_local_only_until_opt_in(plugin_module):
     assert private[0]["print_host"] == ""
     assert shared[0]["print_host"] == "192.168.1.21:7125"
     assert observations[0]["print_host"] == "192.168.1.21:7125"
+
+
+@pytest.mark.parametrize("host,canonical", [
+    ("PRINTER.local./", "moonraker|http|printer.local|80|"),
+    ("http://printer.local:80", "moonraker|http|printer.local|80|"),
+    ("https://printer.local/moonraker/", "moonraker|https|printer.local|443|/moonraker"),
+    ("http://[fd00::1]:7125", "moonraker|http|fd00::1|7125|"),
+])
+def test_printer_endpoint_evidence_has_a_stable_cross_client_format(plugin_module, host, canonical):
+    key = "ab" * 32
+    expected = hmac.new(bytes.fromhex(key), ("endpoint\0" + canonical).encode(), hashlib.sha256).hexdigest()
+    assert plugin_module._connection_endpoint_token(key, host, "moonraker") == expected
+
+
+def test_device_probe_is_bounded_private_and_off_the_calling_thread(plugin_module, monkeypatch):
+    caller = threading.get_ident()
+    calls = []
+    def probe(connection, path, timeout=None):
+        assert threading.get_ident() != caller
+        assert timeout == 3
+        assert path == "/server/database/item?namespace=moonraker&key=instance_id"
+        calls.append(path)
+        return 200, {"result": {"value": "33B71C40-C780-44BA-BD4C-0F3F340C1CC8"}}, ""
+    monkeypatch.setattr(plugin_module, "_moonraker_json", probe)
+    host = "192.168.1.21:7125"
+    observations = [{"print_host": host, "host_type": "moonraker", "connection_ref": ref}
+                    for ref in ("first", "second")]
+    result = plugin_module._observations_for_sync(observations, discovery_key="ab" * 32,
+                                                 local_connections=[{"print_host": host, "api_key": "secret"}])
+    assert len(calls) == 1
+    assert result[0]["device_identity"] == result[1]["device_identity"]
+    assert result[0]["device_identity"]["kind"] == "moonraker_instance"
+    assert host not in json.dumps(result) and "secret" not in json.dumps(result)
+    assert "33b71c40" not in json.dumps(result)
+
+
+def test_failed_probe_does_not_invent_identity_and_empty_snapshot_is_sent(plugin_module, monkeypatch):
+    monkeypatch.setattr(plugin_module, "_moonraker_json", lambda *a, **k: (404, {}, ""))
+    result = plugin_module._observations_for_sync([{"print_host": "printer:7125", "host_type": "moonraker"}],
+        discovery_key="ab" * 32, local_connections=[{"print_host": "printer:7125"}])
+    assert "device_identity" not in result[0] and result[0]["endpoint_token"]
+    posted = []
+    monkeypatch.setattr(plugin_module, "http_post_json", lambda path, token, body: (posted.append(body) or 200, b'{}'))
+    empty = plugin_module.PrinterObservationSnapshot()
+    plugin_module.send_printer_observations("token", plugin_module._observations_for_sync(empty), "source")
+    assert posted[0]["observations"] == [] and posted[0]["snapshot_complete"] is False
+    empty.complete = True
+    plugin_module.send_printer_observations("token", empty, "source")
+    assert posted[1]["snapshot_complete"] is True
 
 
 def test_moonraker_api_key_stays_in_local_connection_scan(plugin_module, monkeypatch):

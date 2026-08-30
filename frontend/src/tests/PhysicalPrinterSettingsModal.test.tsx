@@ -4,6 +4,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const updateMock = vi.fn();
 const setConfigurationsMock = vi.fn();
 const assignBindingMock = vi.fn();
+const previewMergeMock = vi.fn();
+const mergeMock = vi.fn();
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key, i18n: { language: 'en' } }),
@@ -23,6 +25,7 @@ vi.mock('@tanstack/react-query', () => ({
     if (key === 'printers') return { data: { items: [{ id: 1, name: 'Voron 2.4 350' }] } };
     if (key === 'printer') return { data: { id: 1, name: 'Voron 2.4 350' } };
     if (key === 'printer-profiles') return { data: profiles };
+    if (key === 'physical-printers') return { data: [{ id: 5, name: 'My Voron' }, { id: 8, name: 'Main printer' }] };
     return { data: undefined };
   },
   useMutation: ({
@@ -52,6 +55,9 @@ vi.mock('../api/client', () => ({
     update: updateMock,
     setConfigurations: setConfigurationsMock,
     assignBinding: assignBindingMock,
+    list: vi.fn(),
+    previewMerge: previewMergeMock,
+    merge: mergeMock,
   },
   printerProfilesAPI: { list: vi.fn() },
   printersAPI: { list: vi.fn(), get: vi.fn() },
@@ -96,12 +102,29 @@ describe('PhysicalPrinterSettingsModal', () => {
     updateMock.mockResolvedValue({});
     setConfigurationsMock.mockResolvedValue({});
     assignBindingMock.mockResolvedValue(undefined);
+    mergeMock.mockResolvedValue(undefined);
   });
 
   it('renders name and the linked configuration', async () => {
     await renderModal();
     expect(screen.getByDisplayValue('My Voron')).toBeTruthy();
     expect(screen.getByText(/Voron 2\.4 350 · 0\.4/)).toBeTruthy();
+  });
+
+  it('requires preview and explicit confirmation before merging cards', async () => {
+    previewMergeMock.mockResolvedValue({ allowed: true, source_name: 'My Voron', target_name: 'Main printer',
+      target_id: 8, revision: 'a'.repeat(64), configurations: 1, connections: 1, history: 3 });
+    const { onClose } = await renderModal();
+    fireEvent.focus(screen.getByPlaceholderText('printerConnections.mergeChoose'));
+    fireEvent.click(screen.getByText('Main printer · #8'));
+    expect(mergeMock).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByText('printerConnections.previewMerge'));
+    expect(await screen.findByText('printerConnections.mergeConfirm')).toBeInTheDocument();
+    expect(previewMergeMock).toHaveBeenCalledWith(5, 8);
+    expect(mergeMock).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByText('printerConnections.mergeAction'));
+    await waitFor(() => expect(mergeMock).toHaveBeenCalledWith(5, 8, 'a'.repeat(64)));
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
   });
 
   it('shows every connection bound to the physical printer', async () => {

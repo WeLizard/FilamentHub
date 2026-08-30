@@ -727,7 +727,8 @@ async def build_plugin_material_topology_context(
     bindings = await list_user_bindings(db, user_id)
     refs_by_printer: dict[int, set[str]] = {}
     for binding in bindings:
-        if binding.source_instance_id == source_instance_id and binding.connection_ref:
+        if (binding.status == "bound" and binding.source_instance_id == source_instance_id
+                and binding.connection_ref):
             refs_by_printer.setdefault(binding.physical_printer_id, set()).add(
                 binding.connection_ref
             )
@@ -819,6 +820,7 @@ async def _require_hh_reconciliation_target(
             PrinterConnectionBinding.physical_printer_id == printer.id,
             PrinterConnectionBinding.source_instance_id == payload.source_instance_id,
             PrinterConnectionBinding.connection_ref == payload.connection_ref,
+            PrinterConnectionBinding.status == "bound",
         )
     )
     if bound is None:

@@ -44,6 +44,16 @@ from app.services.printer_bridge_service import (
 router = APIRouter(prefix="/printer-bridge", tags=["printer-bridge"])
 
 
+@router.get("/identity-context")
+async def identity_context(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    bridge_token: Annotated[str | None, Header(alias="X-FilamentHub-Bridge-Token")] = None,
+) -> dict:
+    from app.services.printer_identity_service import discovery_key
+    context = await require_printer_bridge_token(db, bridge_token)
+    return {"printer_discovery_key": await discovery_key(db, context.connector.user_id)}
+
+
 @router.post(
     "/connections/{physical_printer_id}/{material_system_id}/pairing-code",
     response_model=PrinterBridgePairingCodeResponse,

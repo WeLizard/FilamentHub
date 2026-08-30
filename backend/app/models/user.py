@@ -85,6 +85,7 @@ class User(Base):
     # Network addresses are local-only unless the person explicitly opts in.
     # Credentials are never synchronized regardless of this preference.
     sync_printer_endpoints: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    printer_discovery_key: Mapped[str | None] = mapped_column(String(300), nullable=True)
 
     # Deleted preset rule (правило обработки удалённых пресетов)
     deleted_preset_rule: Mapped[str | None] = mapped_column(String(50), nullable=True)

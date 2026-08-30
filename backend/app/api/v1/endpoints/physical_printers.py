@@ -21,6 +21,7 @@ from app.schemas.material_contract import (
     PhysicalPrinterConfigurationsUpdate,
     PhysicalPrinterConnectorCreate,
     PhysicalPrinterCreate,
+    PhysicalPrinterMergeRequest,
     PhysicalPrinterResponse,
     PhysicalPrinterUpdate,
 )
@@ -59,6 +60,27 @@ from app.services.printer_economics_service import (
 )
 
 router = APIRouter(prefix="/physical-printers", tags=["physical-printers"])
+
+
+@router.get("/{physical_printer_id}/merge-preview")
+async def merge_preview(
+    physical_printer_id: int, target_id: int,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict:
+    from app.services.printer_merge_service import preview_printer_merge
+    return await preview_printer_merge(db, current_user.id, physical_printer_id, target_id)
+
+
+@router.post("/{physical_printer_id}/merge", status_code=status.HTTP_204_NO_CONTENT)
+async def merge_items(
+    physical_printer_id: int, payload: PhysicalPrinterMergeRequest,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> Response:
+    from app.services.printer_merge_service import merge_printers
+    await merge_printers(db, current_user.id, physical_printer_id, payload.target_id, payload.revision)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("", response_model=list[PhysicalPrinterResponse])

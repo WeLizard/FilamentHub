@@ -3845,10 +3845,14 @@ async def import_filament_presets(
 @router.get("/sync-prefs")
 async def get_sync_prefs(
     current_user: Annotated[User, Depends(require_preset_read)],
+    db: Annotated[AsyncSession, Depends(get_db)],
 ) -> dict:
     """Sync preferences the plugin reads with its preset-scoped token (it never
     holds a full account session, so /auth/me is out of reach)."""
+    from app.services.printer_identity_service import discovery_key
+
     return {
+        "printer_discovery_key": await discovery_key(db, current_user.id),
         "auto_import_local_presets": bool(current_user.auto_import_local_presets),
         "sync_printer_endpoints": bool(current_user.sync_printer_endpoints),
         "allow_filament_presets_import": bool(

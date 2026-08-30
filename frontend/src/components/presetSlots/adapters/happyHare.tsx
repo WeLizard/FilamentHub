@@ -551,6 +551,7 @@ function HappyHareRefreshAction({
   const [preview, setPreview] = useState<HappyHareActionResult | null>(null);
   const [copied, setCopied] = useState(false);
   const [fallbackOpen, setFallbackOpen] = useState(false);
+  const feedbackKey = `happy-hare-${printer.id}-${system.id}`;
   const changes = preview?.changes ?? [];
   const importChanges = preview?.importChanges ?? [];
   const recoveryChanges = importChanges.filter((item) => item.source === 'last_known');
@@ -587,7 +588,7 @@ function HappyHareRefreshAction({
       await refreshData();
       if (!result.ok) {
         setPreview(null);
-        toast.error(errorText(result.code));
+        toast.error(errorText(result.code), undefined, feedbackKey);
       } else if (
         (result.changes?.length ?? 0) === 0
         && (result.importChanges?.length ?? 0) === 0
@@ -596,13 +597,13 @@ function HappyHareRefreshAction({
         setPreview(null);
         toast.success(t('presetSlots.happyHare.refresh.inSync', {
           count: result.gateCount ?? 0,
-        }));
+        }), undefined, feedbackKey);
       } else {
         setPreview(result);
       }
     } catch {
       setPreview(null);
-      toast.error(errorText('timeout'));
+      toast.error(errorText('timeout'), undefined, feedbackKey);
     } finally {
       setLoading(null);
     }

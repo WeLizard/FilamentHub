@@ -524,7 +524,9 @@ function MaterialSystemSection({ printer, system, presetsSeedMap, spools, spoolC
               title={t(linkState === 'ready' ? 'deviceLink.onDemandTooltip' : 'deviceLink.tooltip')}
               className={[
                 'flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium',
-                linkState === 'active' || linkState === 'ready'
+                adapter.topologyFromProvider && visibleSlots.length === 0
+                  ? 'bg-amber-500/15 text-amber-300'
+                  : linkState === 'active' || linkState === 'ready'
                   ? 'bg-emerald-500/15 text-emerald-300'
                   : linkState === 'delayed'
                     ? 'bg-amber-500/15 text-amber-300'
@@ -544,7 +546,8 @@ function MaterialSystemSection({ printer, system, presetsSeedMap, spools, spoolC
               ) : (
                 <Clock className="h-3 w-3" />
               )}
-              {t(`deviceLink.${linkState}`)}
+              {t(adapter.topologyFromProvider && visibleSlots.length === 0
+                ? 'printerConnections.awaitingTopology' : `deviceLink.${linkState}`)}
             </span>
             {!adapter.topologyFromProvider && editingSlots ? (
               <span className="flex items-center gap-1">
