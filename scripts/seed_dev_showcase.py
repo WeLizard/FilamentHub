@@ -1048,24 +1048,26 @@ async def seed_showcase() -> int:
         }
 
         olga_printer_definitions = (
-            ("olga-a1-mini", "Мастерская · A1 mini", "bambulab-bambu-lab-a1-mini", 28900.0, 145.0),
-            ("olga-p1s", "Bambu Lab P1S · мастерская", "bambulab-bambu-lab-p1s", 77900.0, 170.0),
-            ("olga-mk4s", "Prusa MK4S · прототипы", "prusa-prusa-mk4s", 112000.0, 155.0),
+            ("olga-a1-mini", "Olga's A1 mini", "bambulab-bambu-lab-a1-mini", 28900.0, 145.0),
+            ("olga-p1s", "Bambu Lab P1S", "bambulab-bambu-lab-p1s", 77900.0, 170.0),
+            ("olga-mk4s", "Prusa MK4S", "prusa-prusa-mk4s", 112000.0, 155.0),
         )
         olga_printers: dict[str, UserPrinterDevice] = {}
         for key, name, printer_slug, purchase_cost, machine_rate in olga_printer_definitions:
+            fingerprint = f"showcase:{key}"
             device = await db.scalar(
                 select(UserPrinterDevice).where(
                     UserPrinterDevice.user_id == olga.id,
-                    UserPrinterDevice.name == name,
+                    UserPrinterDevice.device_fingerprint == fingerprint,
                 )
             )
             if device is None:
                 device = UserPrinterDevice(user_id=olga.id, name=name)
                 db.add(device)
             apply_values(device, {
+                "name": name,
                 "printer_id": catalog_printers.get(printer_slug).id if catalog_printers.get(printer_slug) else None,
-                "device_fingerprint": f"showcase:{key}",
+                "device_fingerprint": fingerprint,
                 "supports_hh": False,
                 "reports_feed": False,
                 "purchase_cost": purchase_cost,
