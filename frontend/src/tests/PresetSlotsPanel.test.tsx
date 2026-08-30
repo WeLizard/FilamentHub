@@ -712,9 +712,8 @@ describe('PresetSlotsPanel', () => {
     />);
 
     fireEvent.click(screen.getByText('printerSetup.title'));
-    fireEvent.focus(screen.getByDisplayValue('printerSetup.newDevice'));
-    expect(screen.getByText('Voron 2.4 350 · #41 — Workshop Voron 0.4')).toBeInTheDocument();
-    expect(screen.getByText('Voron 2.4 350 · #42 — Office Voron 0.4 / Office Voron 0.6')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Voron 2.4 350 — Workshop Voron 0.4/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Voron 2.4 350 — Office Voron 0.4 \/ Office Voron 0.6/ })).toBeInTheDocument();
   });
 
   it('uses a next step when the selected material system requires a printer link', async () => {
@@ -728,11 +727,10 @@ describe('PresetSlotsPanel', () => {
 
     render(<PresetSlotsPanel spools={[]} printerProfiles={[]} />);
     fireEvent.click(screen.getByText('printerSetup.title'));
-    fireEvent.focus(screen.getByDisplayValue('printerSetup.newDevice'));
-    fireEvent.click(screen.getByText('Manual Voron · #11'));
+    fireEvent.click(screen.getByRole('button', { name: /Manual Voron/ }));
     fireEvent.focus(screen.getByDisplayValue('presetSlots.feedSystem.direct'));
     fireEvent.click(screen.getByText('presetSlots.feedSystem.happy_hare'));
-    fireEvent.click(screen.getByText('printerSetup.save'));
+    fireEvent.click(screen.getByText('printerSetup.connect'));
     await waitFor(() => {
       expect(setupConnection).toHaveBeenCalledWith(11, expect.objectContaining({
         material_system: expect.objectContaining({ provider: 'happy_hare' }),

@@ -3,7 +3,7 @@
 import { useState, useRef, ReactNode, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { createPortal } from 'react-dom';
-import { Check, X } from 'lucide-react';
+import { Check, ChevronDown, X } from 'lucide-react';
 
 interface DropdownOption {
   value: string | number;
@@ -21,6 +21,7 @@ interface DropdownProps {
   label?: ReactNode;
   className?: string;
   disabled?: boolean;
+  clearable?: boolean;
   filterable?: boolean; // Можно ли фильтровать по введенному тексту
   filterValue?: string; // Значение для фильтрации
   onFilterChange?: (value: string) => void; // Callback при изменении фильтра
@@ -41,6 +42,7 @@ export const Dropdown: React.FC<DropdownProps> = ({
   label,
   className = '',
   disabled = false,
+  clearable = true,
   filterable = false,
   filterValue = '',
   onFilterChange,
@@ -152,7 +154,7 @@ export const Dropdown: React.FC<DropdownProps> = ({
   const handleClear = () => {
     if (multiple) {
       onMultiChange?.([]);
-    } else {
+    } else if (clearable) {
       onChange('');
     }
     setIsOpen(false);
@@ -168,7 +170,7 @@ export const Dropdown: React.FC<DropdownProps> = ({
       onFilterChange?.(newValue);
       
       // Если поле фильтра полностью очищено (пользователь удалил весь текст через Backspace) - очищаем выбор
-      if (newValue === '' && value !== '') {
+      if (clearable && newValue === '' && value !== '') {
         onChange('');
       }
     }
@@ -221,7 +223,7 @@ export const Dropdown: React.FC<DropdownProps> = ({
               }}
               onKeyDown={(e) => {
                 // Если нажали Escape и поле пустое - очищаем выбор
-                if (e.key === 'Escape' && filter === '' && value !== '') {
+                if (clearable && e.key === 'Escape' && filter === '' && value !== '') {
                   handleClear();
                 }
                 if (e.key === 'Enter') {
@@ -237,7 +239,7 @@ export const Dropdown: React.FC<DropdownProps> = ({
                 disabled ? 'opacity-50 cursor-not-allowed' : ''
               }`}
             />
-            {hasSelection && !disabled && (
+            {clearable && hasSelection && !disabled && (
               <button
                 type="button"
                 onClick={(e) => {
@@ -265,7 +267,8 @@ export const Dropdown: React.FC<DropdownProps> = ({
                 disabled ? 'opacity-50 cursor-not-allowed' : ''
               }`}
             />
-            {hasSelection && !disabled && (
+            {!clearable && <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />}
+            {clearable && hasSelection && !disabled && (
               <button
                 type="button"
                 onClick={(e) => {
