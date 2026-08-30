@@ -5,9 +5,12 @@ from __future__ import annotations
 import json
 import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-
+from uuid import UUID
 
 API_KEY = os.environ.get("MOONRAKER_API_KEY", "adapter-lab-hh-key")
+INSTANCE_ID = str(
+    UUID(os.environ.get("MOONRAKER_INSTANCE_ID", "180c0846-5920-4d68-a7eb-71d97ff632ca"))
+)
 SPOOLMAN_URL = os.environ.get(
     "SPOOLMAN_URL", "https://filamenthub.ru/api/v1/spool_compat/adapter-lab-inventory-key"
 )
@@ -60,7 +63,7 @@ class MoonrakerHandler(BaseHTTPRequestHandler):
         if self.path == "/server/database/item?namespace=moonraker&key=instance_id":
             self._json(200, {"result": {
                 "namespace": "moonraker", "key": "instance_id",
-                "value": "180c0846-5920-4d68-a7eb-71d97ff632ca",
+                "value": INSTANCE_ID,
             }})
             return
         if self.path == "/server/config":
