@@ -184,7 +184,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
 
               {/* Отметка о бете видна всем, обратная связь внутри неё — вошедшим.
                   Пояснение раскрывается поверх страницы, поэтому шапка не растёт. */}
-              <div className="ml-2 sm:ml-4 shrink-0 relative group">
+              <div className="ml-2 sm:ml-4 shrink-0 sm:relative group">
                 <div className="flex items-center gap-2 rounded-lg border border-amber-400/50 bg-amber-400/15 px-2 py-1 sm:px-2.5 sm:py-1.5">
                   <span className="rounded bg-amber-400 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-gray-900">
                     {t('layout.beta.badge')}
@@ -202,7 +202,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
 
                 <div
                   role="tooltip"
-                  className="pointer-events-none absolute left-0 top-full z-[60] mt-2 w-72 origin-top -translate-y-1 scale-95 rounded-xl border border-amber-400/30 bg-gray-900/95 p-3 opacity-0 shadow-xl backdrop-blur-sm transition-all duration-150 group-hover:translate-y-0 group-hover:scale-100 group-hover:opacity-100 group-focus-within:translate-y-0 group-focus-within:scale-100 group-focus-within:opacity-100"
+                  className="pointer-events-none absolute left-4 sm:left-0 top-full z-[60] mt-2 w-72 max-w-[calc(100%_-_2rem)] sm:max-w-none origin-top -translate-y-1 scale-95 rounded-xl border border-amber-400/30 bg-gray-900/95 p-3 opacity-0 shadow-xl backdrop-blur-sm transition-all duration-150 group-hover:translate-y-0 group-hover:scale-100 group-hover:opacity-100 group-focus-within:translate-y-0 group-focus-within:scale-100 group-focus-within:opacity-100"
                 >
                   <p className="text-sm font-semibold text-amber-200">{t('layout.beta.title')}</p>
                   <p className="mt-1 text-xs leading-relaxed text-gray-300">{t('layout.beta.body')}</p>
