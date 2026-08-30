@@ -10,7 +10,8 @@ startup: application
 boot: auto
 stage: experimental
 init: false
-host_network: true
+timeout: 210
+backup: cold
 image: ghcr.io/welizard/filamenthub-edge
 options:
   filamenthub_url: https://filamenthub.ru

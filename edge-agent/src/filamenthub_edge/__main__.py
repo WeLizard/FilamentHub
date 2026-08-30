@@ -6,6 +6,7 @@ import argparse
 import json
 import logging
 import signal
+from collections.abc import Callable
 from dataclasses import replace
 from threading import Event
 
@@ -33,7 +34,7 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main() -> None:
+def main(*, config_loader: Callable[[], NodeConfig] = NodeConfig.load) -> None:
     parser = _parser()
     args = parser.parse_args()
     if args.reset_connection and not args.connection:
@@ -45,7 +46,7 @@ def main() -> None:
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
     try:
-        config = NodeConfig.load()
+        config = config_loader()
         if args.once:
             config = replace(config, run_once=True)
         if args.status:
@@ -63,6 +64,9 @@ def main() -> None:
                 logging.getLogger("filamenthub_edge").info("Edge connection was reset safely")
                 return
             node.initialize()
+            logging.getLogger("filamenthub_edge").info(
+                "Edge node ready with %d configured connections", len(config.connections)
+            )
             if config.run_once:
                 success = node.run_once()
                 print(json.dumps(node.diagnostic_status(), sort_keys=True))

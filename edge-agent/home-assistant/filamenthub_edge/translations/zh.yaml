@@ -2,18 +2,37 @@ configuration:
   filamenthub_url:
     name: FilamentHub 地址
     description: 用于安全 Edge 同步的云端地址。
-  pairing_code:
-    name: 配对码
-    description: 在 FilamentHub 中为此打印机创建的一次性代码。
-  material_provider:
-    name: 供料系统
-    description: Happy Hare MMU 或 Klipper 直送料路径。
-  moonraker_url:
-    name: Moonraker 地址
-    description: 打印机 Moonraker 服务的本地 HTTP(S) 地址。
-  moonraker_api_key:
-    name: Moonraker API 密钥
-    description: 可选的本地密钥；它不会发送到 FilamentHub。
+  connections:
+    name: 打印机
+    description: 每台打印机对应一条记录。将打印机添加到同一个 Edge 实例；保存修改后重启应用。
+    fields:
+      id:
+        name: 连接标识
+        description: 使用小写字母、数字、连字符和下划线的唯一标识。配对后请勿更改，它对应打印机的持久状态。
+      name:
+        name: 名称
+        description: 便于识别的打印机名称。
+      enabled:
+        name: 启用
+        description: 关闭后仅暂停此连接。默认启用；待发送事件会保留。
+      adapter:
+        name: 适配器
+        description: 目前支持 Moonraker。省略时默认为 moonraker。
+      pairing_code:
+        name: 配对码
+        description: FilamentHub 为此打印机生成的一次性代码。成功配对后请移除此代码。
+      material_provider:
+        name: 供料系统
+        description: happy_hare 表示 Happy Hare MMU；legacy 表示 Klipper 直送料。
+      moonraker_url:
+        name: Moonraker 地址
+        description: HA 可访问的打印机本地 HTTP(S) 地址，例如 http://192.168.1.20:7125，而非 HA 地址。
+      moonraker_api_key:
+        name: Moonraker API 密钥
+        description: 可选的本地密钥；它不会发送到 FilamentHub。
+      sync_interval:
+        name: 打印机同步间隔
+        description: 15 至 3600 秒。省略时使用全局间隔。
   sync_interval:
     name: 同步间隔
     description: 成功同步周期之间的秒数。

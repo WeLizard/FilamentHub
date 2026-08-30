@@ -2,18 +2,37 @@ configuration:
   filamenthub_url:
     name: Адрес FilamentHub
     description: Облачный адрес для защищённой синхронизации Edge.
-  pairing_code:
-    name: Код подключения
-    description: Одноразовый код, созданный для этого принтера в FilamentHub.
-  material_provider:
-    name: Система подачи
-    description: MMU под управлением Happy Hare или прямая подача Klipper.
-  moonraker_url:
-    name: Адрес Moonraker
-    description: Локальный HTTP(S)-адрес сервиса Moonraker принтера.
-  moonraker_api_key:
-    name: API-ключ Moonraker
-    description: Необязательный локальный ключ; он не отправляется в FilamentHub.
+  connections:
+    name: Принтеры
+    description: По одной записи на принтер. Добавляйте принтеры в эту же установку Edge; после сохранения перезапустите приложение.
+    fields:
+      id:
+        name: Идентификатор подключения
+        description: Уникальное имя из строчных латинских букв, цифр, дефиса и подчёркивания. Не меняйте после подключения — оно связано с сохранённым состоянием принтера.
+      name:
+        name: Название
+        description: Понятное вам название принтера.
+      enabled:
+        name: Включено
+        description: Выключите для паузы только этого подключения. По умолчанию включено; очередь событий сохраняется.
+      adapter:
+        name: Адаптер
+        description: Сейчас поддерживается Moonraker. Если не указан, используется moonraker.
+      pairing_code:
+        name: Код подключения
+        description: Одноразовый код из FilamentHub для этого принтера. Удалите код после успешного подключения.
+      material_provider:
+        name: Система подачи
+        description: happy_hare — MMU Happy Hare; legacy — прямая подача Klipper.
+      moonraker_url:
+        name: Адрес Moonraker
+        description: Локальный HTTP(S)-адрес принтера, доступный из HA, например http://192.168.1.20:7125. Не адрес самого HA.
+      moonraker_api_key:
+        name: API-ключ Moonraker
+        description: Необязательный локальный ключ; он не отправляется в FilamentHub.
+      sync_interval:
+        name: Интервал этого принтера
+        description: От 15 до 3600 секунд. Если не указан, используется общий интервал.
   sync_interval:
     name: Интервал синхронизации
     description: Число секунд между успешными циклами синхронизации.

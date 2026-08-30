@@ -57,6 +57,25 @@ Moonraker's Python environment.
    Edge (optional)** for direct feed. Create a separate one-time pairing code for
    each system, then add its entry to the same installation below.
 
+### Home Assistant OS
+
+Use **Settings → Apps → Install app → menu → Repositories** and add
+`https://github.com/WeLizard/FilamentHub`. Then open **FilamentHub Edge** in the
+store. This uses the same runtime as Docker, not a HACS integration.
+
+[Open the repository in Home Assistant](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https%3A%2F%2Fgithub.com%2FWeLizard%2FFilamentHub)
+
+The repository files and matching public image must be published first. This
+checkout alone does not make the app installable; do not substitute an unrelated
+image if HA cannot download the stated version. See the
+[HA installation and update guide](home-assistant/filamenthub_edge/DOCS.md) and
+[release checklist](#release-checklist).
+
+Install once, add printers in the app's **Configuration** tab, save and start.
+Use the built-in YAML editor if the HA form cannot edit the `connections` list.
+Start-on-boot, logs, backups and updates are managed by HA; no SSH, terminal,
+Supervisor token, port forwarding or disabled protection mode is required.
+
 ### Linux without Docker
 
 Requires Python 3.11 or newer with `venv`. Use a dedicated virtual environment,
@@ -132,24 +151,26 @@ registry image exists:
 docker build -t filamenthub-edge:local ./edge-agent
 ```
 
-Put the options above into a local protected `options.json` readable by the
-container's `filamenthub` user. Resolve its UID with
-`docker run --entrypoint id filamenthub-edge:local -u`, then grant that UID read
-access without making the file world-readable. Mount it read-only; keep durable state
-in a named volume. The host-network example is for Linux:
+Put the options above into a local protected `options.json` (mode `600`). The
+container bootstrap reads the file, prepares only its dedicated `/data` mount,
+then drops root and supplementary groups before running Edge. It does not change
+the options file's contents, owner or permissions. Mount it read-only and keep
+durable state in a named volume:
 
 ```text
-docker run --restart unless-stopped --stop-timeout 210 --network host \
+docker run --restart unless-stopped --stop-timeout 210 \
   --name filamenthub-edge \
   -v /absolute/path/options.json:/data/options.json:ro \
   -v filamenthub-edge-data:/data \
   filamenthub-edge:local
 ```
 
-On Docker Desktop use an explicit reachable printer LAN address in the options,
-not container-local `127.0.0.1`. Host networking availability depends on the host.
-The Home Assistant packaging in this repository is not a published add-on feed;
-use these source-install options unless a release explicitly supplies one.
+Use an explicit reachable printer LAN address in the options, not container-local
+`127.0.0.1`. This adapter makes outbound connections; it does not need host
+networking. LAN firewalls must permit the container's routed connection to the
+configured Moonraker endpoint. For an explicitly non-root Docker deployment,
+pre-provision the state volume and readable options for the image's `filamenthub`
+user and pass `--user filamenthub`; automatic volume preparation is then skipped.
 
 The pairing code is needed only for the first successful connection. Node identity
 is stored in `/data/node.json`. Each connection's revocable bridge token, cached
@@ -162,6 +183,8 @@ binding without discarding queued evidence.
 `filamenthub-edge --status` prints secret-free local diagnostics for the node and
 each connection, including pending observations and usage backlogs. Use
 `--status --connection workshop-mmu` to inspect one entry.
+In Docker, use `docker exec filamenthub-edge python -m filamenthub_edge.container --status`
+so diagnostics read the private options through the same privilege-dropping entrypoint.
 `filamenthub-edge --reset-connection --connection workshop-mmu` revokes only the
 selected idle binding; it refuses to discard an active job or durable retry data.
 Stop the service before resetting, then restart it afterwards. SIGTERM saves a
@@ -204,3 +227,33 @@ printing. See the [official command reference](https://moggieuk.github.io/Happy-
 Both local readers can be enabled together. They use one physical printer and
 material system. The newest active-source observation wins; delayed data cannot
 shrink a newer topology, and neither reader makes an automatic desired assignment.
+
+## Release checklist
+
+The repository root `repository.yaml` identifies the HA feed. Supervisor discovers
+the app under `edge-agent/home-assistant/filamenthub_edge/`; there is no second
+runtime or separate application repository. The metadata under
+`edge-agent/home-assistant/repository.yaml` matches the root for standalone package
+exports; tests prevent these copies from drifting.
+
+Before an owner publishes a release:
+
+1. Run `python edge-agent/scripts/check_versions.py`, the Edge tests, Ruff and mypy.
+   Test tooling includes PyYAML; the runtime itself has no added dependencies.
+2. Build and run `python edge-agent/scripts/smoke_image.py <image>` for both
+   supported architectures. This keeps its isolated synthetic containers/volume
+   for inspection; it does not contact printers or FilamentHub.
+3. Publish the matching `edge-vX.Y.Z` release through the existing Edge workflow.
+   It validates both platform images before publishing the versioned multi-arch
+   manifest. Make the GHCR package public and verify an unauthenticated pull of
+   that exact version; HA users must not need registry credentials.
+4. Publish the matching feed metadata only when its versioned image is available.
+   Subsequent releases update the package/runtime/image/app versions together and
+   the app's `CHANGELOG.md`. Keep the repository URL and app slug stable.
+5. On the selected HA host, verify store installation, configuration of two
+   printers, pairing, logs, restart and update with preserved identity/queues.
+   Container tests do not replace this Supervisor or real-printer verification.
+
+HA uses `config.yaml`'s exact version tag, not `latest`. There is no automatic
+publisher inside Edge and no automatic update of printer software. Publication,
+HA installation and physical-print verification are separate owner-run steps.

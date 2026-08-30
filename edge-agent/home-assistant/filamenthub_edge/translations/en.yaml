@@ -2,18 +2,37 @@ configuration:
   filamenthub_url:
     name: FilamentHub address
     description: Cloud address used for secure Edge synchronization.
-  pairing_code:
-    name: Pairing code
-    description: One-time code created for this printer in FilamentHub.
-  material_provider:
-    name: Material system
-    description: Happy Hare MMU or a direct Klipper feed.
-  moonraker_url:
-    name: Moonraker address
-    description: Local HTTP(S) origin of the printer's Moonraker service.
-  moonraker_api_key:
-    name: Moonraker API key
-    description: Optional local API key; it is never sent to FilamentHub.
+  connections:
+    name: Printers
+    description: One entry per printer. Add printers to this same Edge installation; restart the app after saving changes.
+    fields:
+      id:
+        name: Connection ID
+        description: A unique lowercase slug using letters, digits, hyphens and underscores. Keep it unchanged after pairing; it identifies the printer's saved state.
+      name:
+        name: Name
+        description: A recognizable name for this printer.
+      enabled:
+        name: Enabled
+        description: Disable to pause only this connection. Enabled by default; queued events are preserved.
+      adapter:
+        name: Adapter
+        description: Moonraker is currently supported. Defaults to moonraker when omitted.
+      pairing_code:
+        name: Pairing code
+        description: One-time code from FilamentHub for this printer. Remove it after successful pairing.
+      material_provider:
+        name: Material system
+        description: happy_hare for a Happy Hare MMU; legacy for direct Klipper feed.
+      moonraker_url:
+        name: Moonraker address
+        description: The printer's local HTTP(S) address reachable from HA, for example http://192.168.1.20:7125. Not the HA address.
+      moonraker_api_key:
+        name: Moonraker API key
+        description: Optional local API key; it is never sent to FilamentHub.
+      sync_interval:
+        name: Printer sync interval
+        description: From 15 to 3600 seconds. Uses the shared interval when omitted.
   sync_interval:
     name: Sync interval
     description: Seconds between successful synchronization cycles.
