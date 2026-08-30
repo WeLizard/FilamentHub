@@ -173,9 +173,65 @@ async def assign_user_binding(
         )
     ):
         raise_error(409, ERR_PRINTER_IDENTITY_CONFLICT)
+    observations_query = select(OrcaPrinterConnectionObservation).where(
+        OrcaPrinterConnectionObservation.owner_user_id == user_id,
+        OrcaPrinterConnectionObservation.source_instance_id == binding.source_instance_id,
+        OrcaPrinterConnectionObservation.connection_ref == binding.connection_ref,
+    )
+    if not binding.connection_ref:
+        observations_query = observations_query.where(
+            OrcaPrinterConnectionObservation.endpoint_fingerprint == binding.endpoint_fingerprint,
+        )
+    observations = (await db.execute(observations_query)).scalars().all()
+    for observation in observations:
+        payload = observation.sanitized_payload or {}
+        if binding.status == "detached" and payload.get("present_in_snapshot") is not False and payload.get("device_identity"):
+            evidence = PrinterIdentityEvidence.model_validate(payload["device_identity"])
+            identified = await identity_printer(db, user_id, evidence)
+            if (_binding_identity_changed(binding, evidence)
+                    or identified is not None and identified != physical_printer_id):
+                raise_error(409, ERR_PRINTER_IDENTITY_CONFLICT)
     binding.physical_printer_id = physical_printer_id
     binding.assignment_confirmed = True
     binding.status = "bound"
+    for observation in observations:
+        if (observation.sanitized_payload or {}).get("resolution_status") == "detached":
+            _resolution(observation, "bound", [physical_printer_id])
+    await db.commit()
+
+
+async def detach_user_binding(
+    db: AsyncSession, *, user_id: int, binding_id: int, physical_printer_id: int,
+) -> None:
+    """Keep a tombstone so later automatic observations cannot undo detachment."""
+    await hold_account_import_lock(db, user_id)
+    binding = await db.scalar(select(PrinterConnectionBinding).where(
+        PrinterConnectionBinding.id == binding_id,
+        PrinterConnectionBinding.user_id == user_id,
+    ).with_for_update())
+    if binding is None:
+        raise_error(404, ERR_PRINTER_CONNECTION_NOT_FOUND)
+    if binding.physical_printer_id != physical_printer_id:
+        raise_error(409, ERR_PRINTER_IDENTITY_CONFLICT)
+    binding.status = "detached"
+    binding.assignment_confirmed = False
+    key = await discovery_key(db, user_id)
+    # A pending-resolution request opened before detach must not revive it.
+    observations = (await db.execute(select(OrcaPrinterConnectionObservation).where(
+        OrcaPrinterConnectionObservation.owner_user_id == user_id,
+        OrcaPrinterConnectionObservation.source_instance_id == binding.source_instance_id,
+    ))).scalars()
+    for observation in observations:
+        payload = observation.sanitized_payload or {}
+        token = payload.get("endpoint_token") or make_endpoint_token(
+            key, observed_endpoint(observation), observation.host_type,
+        )
+        if (binding.connection_ref and observation.connection_ref == binding.connection_ref
+                or not binding.connection_ref and observation.endpoint_fingerprint
+                and observation.endpoint_fingerprint == binding.endpoint_fingerprint
+                or payload.get("resolution_status") == "pending" and token
+                and token == binding.endpoint_token):
+            _resolution(observation, "detached")
     await db.commit()
 
 
@@ -195,6 +251,11 @@ def _resolution(observation, status: str, candidates=()) -> None:
     payload["resolution_status"] = status
     payload["candidate_printer_ids"] = sorted(set(candidates))
     observation.sanitized_payload = payload
+
+
+def _binding_identity_changed(binding: PrinterConnectionBinding | None, evidence: PrinterIdentityEvidence | None) -> bool:
+    return bool(binding and evidence and binding.identity_token
+                and (binding.identity_kind, binding.identity_token) != (evidence.kind, evidence.token))
 
 
 async def reconcile_user_printers(
@@ -232,6 +293,8 @@ async def reconcile_user_printers(
     key = await discovery_key(db, user_id)
     bindings = await list_user_bindings(db, user_id)
     for binding in bindings:
+        if binding.status == "detached":
+            continue
         raw = _binding_endpoint(binding)
         if raw:
             binding.endpoint_token = make_endpoint_token(key, raw, binding.provider)
@@ -289,6 +352,14 @@ async def reconcile_user_printers(
             ),
             None,
         )
+        local_peers = [b for b in bindings if token and b.endpoint_token == token
+                       and b.source_instance_id == obs.source_instance_id]
+        if binding is None and not obs.connection_ref:
+            binding = next((b for b in local_peers if b.connection_ref is None), None)
+        if (binding is not None and binding.status == "detached"
+                or binding is None and any(b.status == "detached" for b in local_peers)):
+            _resolution(obs, "detached")
+            continue
         if not token and not evidence:
             # Old hidden-address payloads do not prove that a user preset has a
             # connection. Preserve known links, but never manufacture new ones.
@@ -306,7 +377,7 @@ async def reconcile_user_printers(
                 _resolution(obs, "configuration")
             continue
 
-        peers = [b for b in bindings if token and b.endpoint_token == token]
+        peers = [b for b in bindings if token and b.endpoint_token == token and b.status != "detached"]
         local_ids = {
             b.physical_printer_id for b in peers if b.source_instance_id == obs.source_instance_id
         }
@@ -317,12 +388,7 @@ async def reconcile_user_printers(
             if b.source_instance_id == obs.source_instance_id and b.assignment_confirmed
         }
         identified = await identity_printer(db, user_id, evidence) if evidence else None
-        identity_changed = bool(
-            binding
-            and evidence
-            and binding.identity_token
-            and (binding.identity_kind, binding.identity_token) != (evidence.kind, evidence.token)
-        )
+        identity_changed = _binding_identity_changed(binding, evidence)
         candidates = set(local_ids)
         if binding:
             candidates.add(binding.physical_printer_id)
@@ -498,6 +564,13 @@ async def resolve_pending_connection(
     )
     if not token or (physical_printer_id is None) == (not create_new):
         raise_error(409, ERR_PRINTER_IDENTITY_CONFLICT)
+    if await db.scalar(select(PrinterConnectionBinding.id).where(
+        PrinterConnectionBinding.user_id == user_id,
+        PrinterConnectionBinding.source_instance_id == obs.source_instance_id,
+        PrinterConnectionBinding.endpoint_token == token,
+        PrinterConnectionBinding.status == "detached",
+    ).limit(1)):
+        raise_error(409, ERR_PRINTER_IDENTITY_CONFLICT)
     if physical_printer_id is not None:
         if not await db.scalar(
             select(UserPrinterDevice.id).where(
@@ -556,7 +629,8 @@ async def resolve_pending_connection(
     if evidence:
         binding.identity_kind, binding.identity_token = evidence.kind, evidence.token
     for peer in await list_user_bindings(db, user_id):
-        if peer.source_instance_id == obs.source_instance_id and peer.endpoint_token == token:
+        if (peer.source_instance_id == obs.source_instance_id and peer.endpoint_token == token
+                and peer.status != "detached"):
             peer.physical_printer_id = physical_printer_id
             peer.assignment_confirmed = True
             peer.status = "bound"
@@ -694,6 +768,7 @@ async def observation_physical_printer(
     if payload.get("present_in_snapshot") is False or payload.get("resolution_status") in {
         "pending",
         "configuration",
+        "detached",
     }:
         return None
     query = select(PrinterConnectionBinding.physical_printer_id).where(

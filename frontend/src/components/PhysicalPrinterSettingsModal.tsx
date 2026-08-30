@@ -1,5 +1,5 @@
 /** Settings for a user's physical printer: name, catalog model, linked Orca
- *  configurations, and read-only connection info. Slicing parameters (nozzle,
+ *  configurations, and explicit connection management. Slicing parameters (nozzle,
  *  volume, limits) live in the configuration (PrinterProfile), not here. */
 
 import { useMemo, useRef, useState, FormEvent } from 'react';
@@ -20,7 +20,6 @@ import { Dropdown } from './Dropdown';
 import { configLabel } from '../utils/printerConfig';
 import { formatLastSeen } from '../utils/deviceLink';
 import { translateApiError } from '../utils/translateApiError';
-import { visiblePrinterConnections } from '../utils/printerConnections';
 
 interface PhysicalPrinterSettingsModalProps {
   isOpen: boolean;
@@ -50,6 +49,11 @@ export const PhysicalPrinterSettingsModal: React.FC<PhysicalPrinterSettingsModal
   const [showDelete, setShowDelete] = useState(false);
   const [costModalOpen, setCostModalOpen] = useState(false);
   const [selectedBindingId, setSelectedBindingId] = useState<number | null>(null);
+  const [detachBinding, setDetachBinding] = useState<PrinterConnectionBinding | null>(null);
+  const { data: settingsBindings = bindings } = useQuery({
+    queryKey: ['printer-bindings', 'settings'], queryFn: physicalPrintersAPI.listBindingsForSettings,
+    enabled: isOpen,
+  });
   const [mergeTarget, setMergeTarget] = useState<number | null>(null);
   const [mergePreview, setMergePreview] = useState<PrinterMergePreview | null>(null);
   const { data: allPrinters = [] } = useQuery({
@@ -81,22 +85,23 @@ export const PhysicalPrinterSettingsModal: React.FC<PhysicalPrinterSettingsModal
   const pendingActionRef = useRef<(() => void) | null>(null);
   const debouncedSearch = useDebounce(printerSearch, 250);
   const printerBindings = useMemo(
-    () => bindings.filter((binding) => binding.physical_printer_id === printer.id),
-    [bindings, printer.id],
+    () => settingsBindings.filter((binding) => binding.physical_printer_id === printer.id),
+    [settingsBindings, printer.id],
   );
   const visibleBindings = useMemo(
-    () => visiblePrinterConnections(printerBindings),
+    () => printerBindings.filter((binding) => binding.status !== 'detached')
+      .sort((left, right) => right.last_seen_at.localeCompare(left.last_seen_at)),
     [printerBindings],
   );
   const assignableBindings = useMemo(
     () =>
-      bindings
+      settingsBindings
         .filter(
           (binding) =>
             binding.connection_ref != null && binding.physical_printer_id !== printer.id,
         )
         .sort((left, right) => right.last_seen_at.localeCompare(left.last_seen_at)),
-    [bindings, printer.id],
+    [settingsBindings, printer.id],
   );
   const bindingOptions = useMemo(
     () =>
@@ -110,7 +115,7 @@ export const PhysicalPrinterSettingsModal: React.FC<PhysicalPrinterSettingsModal
             })
             : null,
           binding.display_endpoint ?? t('myPrinters.localConnection'),
-          t('printerSettings.connectionAssignedTo', {
+          binding.status === 'detached' ? t('printerSettings.connectionDetached') : t('printerSettings.connectionAssignedTo', {
             name: binding.physical_printer_name,
           }),
         ].filter(Boolean).join(' · '),
@@ -262,6 +267,7 @@ export const PhysicalPrinterSettingsModal: React.FC<PhysicalPrinterSettingsModal
       setSelectedBindingId(null);
       setError(null);
       queryClient.invalidateQueries({ queryKey: ['printer-bindings'] });
+      queryClient.invalidateQueries({ queryKey: ['printer-context'] });
     },
     onError: (err: AxiosError<{ detail: unknown }>) => {
       setError(
@@ -273,6 +279,24 @@ export const PhysicalPrinterSettingsModal: React.FC<PhysicalPrinterSettingsModal
       );
     },
   });
+
+  const detachBindingMutation = useMutation({
+    mutationFn: (bindingId: number) => physicalPrintersAPI.detachBinding(bindingId, printer.id),
+    onSuccess: async () => {
+      setDetachBinding(null); setError(null);
+      await Promise.all(['printer-bindings', 'physical-printers', 'printer-context', 'printer-connections-pending', 'devices']
+        .map((key) => queryClient.invalidateQueries({ queryKey: [key] })));
+    },
+    onError: (err: AxiosError<{ detail: unknown }>) => {
+      setDetachBinding(null);
+      setError(translateApiError(t, err.response?.data?.detail, t('printerSettings.connectionDetachError')));
+    },
+  });
+  const connectionLabel = (binding: PrinterConnectionBinding) => [
+    binding.preset_name,
+    binding.provider ? t(`presetSlots.connectionProvider.${binding.provider}`, { defaultValue: binding.provider }) : null,
+    binding.display_endpoint ?? (binding.connection_ref ? t('myPrinters.localConnection') : null),
+  ].filter(Boolean).join(' · ');
 
   if (!isOpen) return null;
 
@@ -307,7 +331,7 @@ export const PhysicalPrinterSettingsModal: React.FC<PhysicalPrinterSettingsModal
   }
 
   return (
-    <ModalOverlay onClose={() => guard(onClose)}>
+    <ModalOverlay onClose={() => guard(onClose)} closeOnEscape={!detachBinding} closeOnOverlayClick={!detachBinding}>
       <div className="bg-gray-900 rounded-2xl border border-white/20 w-full max-w-lg max-h-[85vh] overflow-y-auto">
         <form
           onSubmit={(e: FormEvent) => {
@@ -440,32 +464,39 @@ export const PhysicalPrinterSettingsModal: React.FC<PhysicalPrinterSettingsModal
               </h3>
               {visibleBindings.length > 0 ? (
                 <div className="space-y-1.5">
-                  {visibleBindings.map((binding, index) => (
+                  {visibleBindings.map((binding) => (
                     <div
-                      key={`${binding.connection_ref ?? binding.display_endpoint ?? 'binding'}-${index}`}
+                      key={binding.id}
                       className="flex items-center gap-2 text-sm text-gray-300"
                     >
                       <Wifi className="w-4 h-4 text-gray-400 flex-shrink-0" />
-                      <span className="truncate">
-                        {[
-                          binding.provider
-                            ? t(`presetSlots.connectionProvider.${binding.provider}`, {
-                              defaultValue: binding.provider,
-                            })
-                            : null,
-                          binding.display_endpoint
-                            ?? (binding.connection_ref ? t('myPrinters.localConnection') : null),
-                        ].filter(Boolean).join(' · ')}
-                      </span>
+                      <span className="min-w-0 truncate" title={connectionLabel(binding)}>{connectionLabel(binding)}</span>
                       <span className="text-xs text-gray-500 ml-auto flex-shrink-0">
                         {formatLastSeen(binding.last_seen_at, t, i18n.language)}
                       </span>
+                      <button type="button" className="shrink-0 rounded p-1 text-gray-400 hover:bg-white/10 hover:text-rose-300 disabled:opacity-40"
+                        disabled={detachBindingMutation.isPending || assignBindingMutation.isPending}
+                        title={t('printerSettings.connectionDetach')}
+                        aria-label={t('printerSettings.connectionDetach') + ' · ' + connectionLabel(binding)}
+                        onClick={() => setDetachBinding(binding)}><Link2Off className="h-4 w-4" /></button>
                     </div>
                   ))}
                 </div>
               ) : (
                 <p className="text-xs text-gray-500">{t('printerSettings.noConnection')}</p>
               )}
+              {printerBindings.some((binding) => binding.status === 'detached') && <details className="text-xs text-gray-400">
+                <summary className="cursor-pointer">{t('printerSettings.detachedConnections')}</summary>
+                <div className="mt-2 space-y-2">{printerBindings.filter((binding) => binding.status === 'detached').map((binding) => (
+                  <div key={binding.id} className="flex items-center gap-2">
+                    <span className="min-w-0 flex-1 truncate" title={connectionLabel(binding)}>{connectionLabel(binding)}</span>
+                    <button type="button" disabled={assignBindingMutation.isPending || detachBindingMutation.isPending}
+                      onClick={() => assignBindingMutation.mutate(binding.id)} className="shrink-0 text-purple-300 underline disabled:opacity-40">
+                      {t('printerSettings.connectionRestore')}
+                    </button>
+                  </div>
+                ))}</div>
+              </details>}
               {bindingOptions.length > 0 && (
                 <div className="space-y-2 pt-2">
                   <p className="text-xs text-gray-500">
@@ -560,6 +591,12 @@ export const PhysicalPrinterSettingsModal: React.FC<PhysicalPrinterSettingsModal
         confirmText={t('printerSettings.delete')}
         cancelText={t('common.cancel')}
       />
+      <ConfirmModal isOpen={detachBinding !== null}
+        onClose={() => { if (!detachBindingMutation.isPending) setDetachBinding(null); }}
+        onConfirm={() => { if (detachBinding) detachBindingMutation.mutate(detachBinding.id); }}
+        isLoading={detachBindingMutation.isPending} title={t('printerSettings.connectionDetach')}
+        message={t('printerSettings.connectionDetachMessage', { name: detachBinding ? connectionLabel(detachBinding) : '' })}
+        confirmText={t('printerSettings.connectionDetach')} cancelText={t('common.cancel')} />
       <ConfirmModal isOpen={mergePreview !== null} onClose={() => setMergePreview(null)}
         onConfirm={() => mergeMutation.mutate()} isLoading={mergeMutation.isPending}
         title={t('printerConnections.mergeTitle')}

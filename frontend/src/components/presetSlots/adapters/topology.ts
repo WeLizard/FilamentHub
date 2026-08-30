@@ -25,7 +25,9 @@ export function initialTopology(choice: FeedTopologyChoice): TopologySelection {
 }
 
 export function topologyFromSystem(choices: FeedTopologyChoice[], system?: MaterialSystem): TopologySelection {
-  const choice = choices.find((item) => item.kind === system?.kind) ?? choices[0];
+  const provider = system?.provider === 'legacy' ? 'manual' : system?.provider;
+  const choice = choices.find((item) => item.kind === system?.kind && item.provider === provider)
+    ?? choices.find((item) => item.kind === system?.kind) ?? choices[0];
   if (!system) return initialTopology(choice);
   const extraIndices = new Set(choice.extras?.map((item) => item.index));
   const slots = system.slots.filter((slot) => slot.active);

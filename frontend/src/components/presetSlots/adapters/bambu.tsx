@@ -504,6 +504,7 @@ function BambuMaterialActions({
 export const bambuAdapter: FeedAdapter = {
   id: 'bambu',
   onboarding: {
+    connectionProviders: ['bambu'],
     connectionLabelKey: 'printerSetup.connections.bambu',
     connectionHintKey: 'printerSetup.connections.bambuHint',
     methods: ['orca'],

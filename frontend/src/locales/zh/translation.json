@@ -1,5 +1,15 @@
 {
   "printerSetup": {
+    "inventoryReady": "已验证 Happy Hare 与 FH 料卷的连接。",
+    "inventoryIncomplete": "尚未确认 Happy Hare 与 FH 料卷的连接。",
+    "finishInventory": "完成 Happy Hare 连接",
+    "inventorySafety": "如果已使用其他 Spoolman 服务器，请先确认再更换地址。以下为连接 FH 的配置，打印机上的更改由您执行。",
+    "checkInventory": "检查料卷连接",
+    "detectedHappyHare": "已检测到 Happy Hare · 料道：{{count}}",
+    "inventoryNext": "保存后将检查 FH 料卷连接，并提示完成设置。",
+    "checkKnown": "检查连接",
+    "withoutLocalAccess": "可在 OrcaSlicer 插件中检查本地地址。下方仍可使用手动管理及其他连接方式。",
+    "manualStart": "可以先添加打印机进行手动管理，稍后补充连接和供料信息。",
     "connectionType": "打印机通过什么连接？",
     "otherConnection": "我使用其他连接",
     "connectionReady": "连接已检查，尚未收到供料状态。",
@@ -7,12 +17,11 @@
     "manualTracking": "手动管理",
     "connections": {
       "moonraker": "Klipper / Moonraker",
-      "moonrakerHint": "连接 Klipper。换料系统将单独检测。",
+      "moonrakerHint": "通过 Moonraker 连接 Klipper。",
       "octoprint": "OctoPrint",
       "octoprintHint": "OctoPrint 中的 FilamentHub 插件直接连接，无需 OrcaSlicer 或 FH Edge。",
       "bambu": "Bambu Lab",
       "bambuHint": "此打印机的料卷与 AMS。请在本地 OrcaSlicer 插件中设置访问权限。",
-      "happyHare": "Happy Hare / Moonraker",
       "happyHareHint": "适用于 Happy Hare 系统。可通过 Moonraker 设置直接连接料卷管理。"
     },
     "feed": {
@@ -58,7 +67,9 @@
     "connect": "保存连接",
     "back": "返回",
     "retry": "重试",
-    "connectionOptional": "打印机连接（可选）",
+    "connectionOptional": "手动配置",
+    "replaceKey": "生成新密钥",
+    "replaceKeyConfirm": "旧密钥将失效。生成新密钥后，请更新 Moonraker 中的 FilamentHub 地址。是否继续？",
     "recoveryUnavailable": "浏览器无法保存请求以便安全重试，因此未发送请求。请允许网站存储，或在普通浏览器中打开网站。",
     "edgeUnsupported": "FH Edge 暂不支持此供料系统。您可以暂不连接，或使用该系统自己的设置。",
     "description": "从列表选择打印机，或手动添加。",
@@ -91,7 +102,7 @@
     "modelHint": "找不到您的型号？可留空，并在下方输入打印机名称。",
     "save": "添加打印机",
     "working": "请稍候…",
-    "saved": "打印机已保存，现在可以分配料卷。可稍后设置连接。",
+    "saved": "打印机已保存。",
     "observed": "打印机已响应并已收到首批数据。料卷分配保持不变。",
     "failed": "此步骤未能完成。请检查连接和输入后重试。使用 Orca 时请检查 Moonraker 是否可访问及其 API 密钥。",
     "savedConnectionFailed": "打印机已保存，但本地检查未完成。请重试连接。如果检查已过期，请关闭向导并在现有卡片上打开“配置连接”。",
@@ -101,7 +112,7 @@
     "otherCard": "此连接属于另一张打印机卡片。请选择该卡片，或在打印机设置中明确合并卡片。",
     "inventorySetup": "连接料卷管理",
     "issueKey": "获取料卷管理设置",
-    "keyExists": "已存在料卷管理密钥，请使用已保存的设置。可在供料系统设置中替换并撤销旧密钥。",
+    "keyExists": "密钥已生成，无法再次显示。请使用已保存的设置，或生成新密钥。",
     "connectionSettings": "配置连接"
   },
   "printerConnections": {
@@ -7117,6 +7128,12 @@
     "connectionAssignedTo": "当前：{{name}}",
     "connectionAssignHint": "如果同步创建了单独的卡片或匹配不明确，请选择准确的 Orca 配置。连接会移到此打印机；OrcaSlicer 中的地址和密钥不会改变。",
     "connectionAssignError": "无法关联连接",
+    "connectionDetach": "解除连接关联",
+    "connectionDetachMessage": "将“{{name}}”与此打印机卡片解除关联？打印机、配置和料卷将保留。下次同步不会自动恢复此关联，其他连接不受影响。",
+    "connectionDetachError": "无法解除连接关联",
+    "connectionDetached": "未关联",
+    "detachedConnections": "已解除的连接",
+    "connectionRestore": "恢复",
     "savePartialError": "名称和型号已保存，但配置更新失败。请重试。",
     "saveError": "保存设置失败"
   },

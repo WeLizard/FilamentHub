@@ -34,6 +34,97 @@ async def observe(db, user, source, items):
     return await reconcile_user_printers(db, user.id, source_instance_id=source)
 
 
+@pytest.mark.parametrize("ref", ["orca-device", None])
+async def test_detach_survives_sync_absence_alias_and_explicit_restore(
+    auth_client, db_session, auth_user, ref,
+):
+    profile = PrinterProfile(owner_user_id=auth_user.id, name="Workshop", slug="detach-workshop", setting_id="detach-workshop")
+    db_session.add(profile)
+    await db_session.commit()
+    item = {"connection_ref": ref, "print_host": "printer.local:7125", "host_type": "moonraker",
+            "preset_name": "Workshop", "printer_settings_id": "detach-workshop", "has_connection": True, "is_current": True}
+    assert await observe(db_session, auth_user, "detach-desktop", [item]) == 1
+    binding = await db_session.scalar(select(PrinterConnectionBinding))
+    printer_id = binding.physical_printer_id
+    path = f"/api/v1/orcaslicer/printer-connections/bindings/{binding.id}"
+    for _ in range(2):
+        response = await auth_client.delete(path, params={"physical_printer_id": printer_id})
+        assert response.status_code == 204, response.text
+    assert (await auth_client.get("/api/v1/orcaslicer/printer-connections/bindings")).json() == []
+    manageable = (await auth_client.get("/api/v1/orcaslicer/printer-connections/bindings",
+                                       params={"include_detached": True})).json()
+    assert len(manageable) == 1 and manageable[0]["status"] == "detached"
+    for items in ([], [item], [dict(item, connection_ref="new-alias")], [item]):
+        assert await observe(db_session, auth_user, "detach-desktop", items) == 0
+        await db_session.refresh(binding)
+        assert binding.status == "detached"
+    assert await db_session.scalar(select(func.count()).select_from(UserPrinterDevice)) == 1
+    assert await db_session.scalar(select(func.count()).select_from(PrinterConnectionBinding)) == 1
+    assert await db_session.scalar(select(func.count()).select_from(UserPrinterProfileLink)) == 1
+    assert (await current_printer_context(db_session, auth_user.id))["physical_printer_id"] is None
+    response = await auth_client.patch(path, json={"physical_printer_id": printer_id})
+    assert response.status_code == 204, response.text
+    assert (await current_printer_context(db_session, auth_user.id))["physical_printer_id"] == printer_id
+    assert await _resolve_printer(db_session, user_id=auth_user.id, printer_settings_id="detach-workshop",
+                                  fhub_printer_profile_id=profile.id, source_instance_id="detach-desktop") == (printer_id, profile.id)
+    assert await observe(db_session, auth_user, "detach-desktop", [item]) == 0
+    await db_session.refresh(binding)
+    assert binding.status == "bound" and binding.physical_printer_id == printer_id
+    assert (await current_printer_context(db_session, auth_user.id))["physical_printer_id"] == printer_id
+
+
+async def test_detach_rejects_foreign_or_moved_binding_and_invalidates_pending_alias(
+    auth_client, db_session, auth_user, admin_user,
+):
+    item = {"connection_ref": "original", "endpoint_token": "a" * 64, "host_type": "moonraker",
+            "preset_name": "Workshop", "device_identity": {"kind": "moonraker_instance", "token": "c" * 64}}
+    await observe(db_session, auth_user, "detach-desktop", [item])
+    binding = await db_session.scalar(select(PrinterConnectionBinding))
+    path = f"/api/v1/orcaslicer/printer-connections/bindings/{binding.id}"
+    response = await auth_client.delete(path, params={"physical_printer_id": binding.physical_printer_id + 1000})
+    assert response.status_code == 409
+    foreign = UserPrinterDevice(user_id=admin_user.id, name="Foreign")
+    db_session.add(foreign)
+    await db_session.flush()
+    foreign_binding = PrinterConnectionBinding(user_id=admin_user.id, physical_printer_id=foreign.id,
+                                                normalized_endpoint="foreign")
+    db_session.add(foreign_binding)
+    await db_session.commit()
+    response = await auth_client.delete(f"/api/v1/orcaslicer/printer-connections/bindings/{foreign_binding.id}",
+                                        params={"physical_printer_id": foreign.id})
+    assert response.status_code == 404
+    alias = dict(item, connection_ref="pending-alias",
+                 device_identity={"kind": "moonraker_instance", "token": "d" * 64})
+    await observe(db_session, auth_user, "detach-desktop", [item, alias])
+    pending = (await list_pending_connections(db_session, auth_user.id))[0]
+    count_before = await db_session.scalar(select(func.count()).select_from(PrinterConnectionBinding))
+    assert (await auth_client.delete(path, params={"physical_printer_id": binding.physical_printer_id})).status_code == 204
+    response = await auth_client.post(f'/api/v1/orcaslicer/printer-connections/pending/{pending["id"]}/resolve',
+                                      json={"create_new": True, "revision": pending["revision"]})
+    assert response.status_code == 409, response.text
+    assert await db_session.scalar(select(func.count()).select_from(PrinterConnectionBinding)) == count_before
+
+
+async def test_restore_rejects_a_different_device_observed_while_detached(auth_client, db_session, auth_user):
+    profile = PrinterProfile(owner_user_id=auth_user.id, name="Workshop", slug="restore-check", setting_id="restore-check")
+    db_session.add(profile)
+    await db_session.commit()
+    item = {"connection_ref": "original", "endpoint_token": "a" * 64, "host_type": "moonraker",
+            "preset_name": "Workshop", "printer_settings_id": "restore-check", "is_current": True,
+            "device_identity": {"kind": "moonraker_instance", "token": "c" * 64}}
+    await observe(db_session, auth_user, "detach-desktop", [item])
+    binding = await db_session.scalar(select(PrinterConnectionBinding))
+    assert (await current_printer_context(db_session, auth_user.id))["physical_printer_id"] == binding.physical_printer_id
+    path = f"/api/v1/orcaslicer/printer-connections/bindings/{binding.id}"
+    assert (await auth_client.delete(path, params={"physical_printer_id": binding.physical_printer_id})).status_code == 204
+    await observe(db_session, auth_user, "detach-desktop", [dict(item, device_identity={"kind": "moonraker_instance", "token": "d" * 64})])
+    response = await auth_client.patch(path, json={"physical_printer_id": binding.physical_printer_id})
+    assert response.status_code == 409
+    await db_session.refresh(binding)
+    assert binding.status == "detached"
+    assert (await current_printer_context(db_session, auth_user.id))["physical_printer_id"] is None
+
+
 @pytest.mark.parametrize("provider", ["moonraker", "octoprint", "bambu", "prusalink"])
 async def test_three_identical_printers_shared_configuration_and_repeated_sync(
     db_session, auth_user, provider

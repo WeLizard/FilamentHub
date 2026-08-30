@@ -794,6 +794,7 @@ export interface PrinterSetupResult {
   printerHostname?: string | null;
   spoolmanSupport?: string | null;
   observed?: boolean;
+  inventoryLinked?: boolean;
 }
 
 /** The native shell owns manual LAN credentials; this request never contains them. */

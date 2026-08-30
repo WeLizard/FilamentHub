@@ -18,14 +18,21 @@ async def find_setup_printer(
 ) -> int | None:
     if connection is None:
         return None
-    ids = set((await db.execute(select(PrinterConnectionBinding.physical_printer_id).where(
+    bindings = (await db.execute(select(PrinterConnectionBinding).where(
         PrinterConnectionBinding.user_id == user_id,
         PrinterConnectionBinding.source_instance_id == connection.source_instance_id,
         or_(
             PrinterConnectionBinding.connection_ref == connection.connection_ref,
             PrinterConnectionBinding.endpoint_token == connection.endpoint_token,
         ),
-    ))).scalars())
+    ))).scalars().all()
+    exact = next((binding for binding in bindings if binding.connection_ref == connection.connection_ref), None)
+    if (exact is not None and exact.status == "detached"
+            or exact is None and any(binding.status == "detached" for binding in bindings)):
+        # Only explicit assignment can restore a detached connection, not an
+        # old setup request or a new alias for the same local endpoint.
+        raise_error(409, ERR_PRINTER_IDENTITY_CONFLICT)
+    ids = {binding.physical_printer_id for binding in bindings if binding.status != "detached"}
     if connection.device_identity:
         identified = await identity_printer(db, user_id, connection.device_identity)
         if identified is not None:

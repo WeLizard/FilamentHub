@@ -1,5 +1,15 @@
 {
   "printerSetup": {
+    "inventoryReady": "Happy Hare’s connection to FH spools is verified.",
+    "inventoryIncomplete": "Happy Hare’s connection to FH spools is not verified yet.",
+    "finishInventory": "Finish Happy Hare connection",
+    "inventorySafety": "If you already use another Spoolman server, review it before replacing its address. The settings below connect to FH; you apply changes on the printer.",
+    "checkInventory": "Check spool connection",
+    "detectedHappyHare": "Happy Hare detected · gates: {{count}}",
+    "inventoryNext": "After saving, we will check the FH spool connection and offer to finish setup.",
+    "checkKnown": "Check connection",
+    "withoutLocalAccess": "Checking a local address is available in the OrcaSlicer plugin. Manual tracking and other connection methods are available below.",
+    "manualStart": "You can add the printer for manual tracking and complete its connection and feed details later.",
     "connectionType": "What does your printer connect through?",
     "otherConnection": "I use a different connection",
     "connectionReady": "Connection checked. No feed observations received yet.",
@@ -7,12 +17,11 @@
     "manualTracking": "Manual tracking",
     "connections": {
       "moonraker": "Klipper / Moonraker",
-      "moonrakerHint": "Connect to Klipper. A filament changer is detected separately.",
+      "moonrakerHint": "Klipper connection through Moonraker.",
       "octoprint": "OctoPrint",
       "octoprintHint": "The FilamentHub plugin in OctoPrint connects directly. No OrcaSlicer or FH Edge required.",
       "bambu": "Bambu Lab",
       "bambuHint": "This printer's spools and AMS. Set up access in the local OrcaSlicer plugin.",
-      "happyHare": "Happy Hare / Moonraker",
       "happyHareHint": "For a Happy Hare system. Connect spool tracking directly through Moonraker settings."
     },
     "feed": {
@@ -58,7 +67,9 @@
     "connect": "Save connection",
     "back": "Back",
     "retry": "Retry",
-    "connectionOptional": "Printer connection — optional",
+    "connectionOptional": "Configure manually",
+    "replaceKey": "Issue a new key",
+    "replaceKeyConfirm": "The old key will stop working. Update the FilamentHub URL in Moonraker after issuing the new key. Continue?",
     "recoveryUnavailable": "The browser cannot retain this request for a safe retry. The request was not sent. Allow site storage or open the site in a regular browser.",
     "edgeUnsupported": "FH Edge does not yet support this feeding system. Continue without a connection or use the system’s own setup.",
     "description": "Choose a printer from the list or add one manually.",
@@ -91,7 +102,7 @@
     "modelHint": "Cannot find your model? Leave this field empty and enter a printer name below.",
     "save": "Add printer",
     "working": "Please wait…",
-    "saved": "Printer saved. You can now assign spools, and set up a connection later.",
+    "saved": "Printer saved.",
     "observed": "Printer responded and initial data was received. Spool assignments are preserved.",
     "failed": "This step could not complete. Check connectivity and inputs, then retry. For Orca, check Moonraker availability and its API key.",
     "savedConnectionFailed": "The printer is saved, but the local check did not complete. Retry the connection. If the check expired, close this wizard and open Configure connection on the existing card.",
@@ -101,7 +112,7 @@
     "otherCard": "This connection belongs to another printer card. Select it, or explicitly merge the cards in printer settings.",
     "inventorySetup": "Connect spool inventory",
     "issueKey": "Get inventory settings",
-    "keyExists": "An inventory key already exists. Use your saved settings. You can replace and revoke the old key in feed-system settings.",
+    "keyExists": "A key has already been issued and cannot be shown again. Use your saved settings or issue a new key.",
     "connectionSettings": "Configure connection"
   },
   "printerConnections": {
@@ -7123,6 +7134,12 @@
     "connectionAssignedTo": "currently: {{name}}",
     "connectionAssignHint": "If Sync created a separate card or the match is ambiguous, select the exact Orca preset. The connection moves to this printer; its OrcaSlicer address and key do not change.",
     "connectionAssignError": "Could not link the connection",
+    "connectionDetach": "Detach connection",
+    "connectionDetachMessage": "Detach “{{name}}” from this card? The printer, configurations and spools will be kept. The next Sync will not restore the link automatically. Other connections will keep working.",
+    "connectionDetachError": "Could not detach the connection",
+    "connectionDetached": "not linked",
+    "detachedConnections": "Detached connections",
+    "connectionRestore": "Restore",
     "savePartialError": "Name and model saved, but configurations couldn't be updated. Try again.",
     "saveError": "Failed to save settings"
   },

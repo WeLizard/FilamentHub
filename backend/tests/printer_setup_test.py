@@ -56,6 +56,44 @@ async def test_three_explicit_identical_manual_printers_remain_three(auth_client
     assert len(ids) == 3
 
 
+async def test_detaching_one_binding_does_not_block_a_bound_or_explicitly_restored_sibling(auth_client, db_session):
+    created = await auth_client.post(PATH, json={"name": "Local", "connection": connection()})
+    printer_id = created.json()["id"]
+    setup_path = f"{PATH}/{printer_id}/connection-setup"
+    sibling = connection(connection_ref="sibling")
+    assert (await auth_client.post(setup_path, json={"connection": sibling})).status_code == 200
+    bindings = (await db_session.scalars(select(PrinterConnectionBinding).order_by(PrinterConnectionBinding.id))).all()
+    base = "/api/v1/orcaslicer/printer-connections/bindings"
+    assert (await auth_client.delete(f"{base}/{bindings[0].id}", params={"physical_printer_id": printer_id})).status_code == 204
+    assert (await auth_client.post(setup_path, json={"connection": sibling})).status_code == 200
+    assert bindings[0].status == "detached"
+    assert (await auth_client.delete(f"{base}/{bindings[1].id}", params={"physical_printer_id": printer_id})).status_code == 204
+    assert (await auth_client.patch(f"{base}/{bindings[1].id}", json={"physical_printer_id": printer_id})).status_code == 204
+    assert (await auth_client.post(setup_path, json={"connection": sibling})).status_code == 200
+    assert bindings[0].status == "detached"
+    assert (await auth_client.post(setup_path, json={"connection": connection(connection_ref="new-alias")})).status_code == 409
+
+
+async def test_detached_connection_cannot_be_restored_by_setup_or_endpoint_alias(auth_client, db_session):
+    payload = {"name": "Workshop", "request_id": str(uuid4()), "connection": connection()}
+    created = await auth_client.post(PATH, json=payload)
+    assert created.status_code == 201, created.text
+    printer = created.json()
+    binding = await db_session.scalar(select(PrinterConnectionBinding))
+    response = await auth_client.delete(f"/api/v1/orcaslicer/printer-connections/bindings/{binding.id}",
+                                        params={"physical_printer_id": printer["id"]})
+    assert response.status_code == 204
+    for ref in (connection()["connection_ref"], "stale-alias"):
+        response = await auth_client.post(f"{PATH}/{printer['id']}/connection-setup",
+                                          json={"request_id": str(uuid4()), "connection": connection(connection_ref=ref)})
+        assert response.status_code == 409, response.text
+    replay = await auth_client.post(PATH, json=payload)
+    assert replay.status_code in {201, 409}
+    await db_session.refresh(binding)
+    assert binding.status == "detached"
+    assert await db_session.scalar(select(func.count()).select_from(UserPrinterDevice)) == 1
+
+
 async def test_manual_topology_preserves_external_spool_and_rejects_stale_or_occupied_edits(
     auth_client, db_session, auth_user,
 ):
@@ -296,11 +334,25 @@ async def test_context_is_scoped_and_contains_no_local_secrets(auth_client):
     assert response.status_code == 200, response.text
     assert len(response.json()["discovery_key"]) == 64
     assert len(response.json()["bindings"]) == 1
-    assert set(response.json()["bindings"][0]) == {"connection_ref", "physical_printer_id", "status"}
+    assert set(response.json()["bindings"][0]) == {"connection_ref", "physical_printer_id", "status", "inventory_key_digest"}
     other = await auth_client.get(path, params={"source_instance_id": "other-desktop-instance"})
     assert other.json()["bindings"] == []
     assert other.json()["discovery_key"] == response.json()["discovery_key"]
     assert (await auth_client.get(path, params={"source_instance_id": "x"})).status_code == 422
+
+
+async def test_setup_context_exposes_only_inventory_digest_for_the_bound_printer(auth_client, db_session):
+    from app.core.security import device_api_key_verifier, device_inventory_digest
+
+    created = await auth_client.post(PATH, json={"name": "Local", "connection": connection()})
+    printer = await db_session.get(UserPrinterDevice, created.json()["id"])
+    printer.api_key = device_api_key_verifier("fh_device_local-test-only")
+    await db_session.commit()
+    response = await auth_client.get("/api/v1/orcaslicer/printer-connections/setup-context",
+                                     params={"source_instance_id": SOURCE})
+    assert response.status_code == 200
+    assert response.json()["bindings"][0]["inventory_key_digest"] == device_inventory_digest(printer.api_key)
+    assert "fh_device_local-test-only" not in response.text and printer.api_key not in response.text
 
 
 async def test_connection_setup_requires_ownership(auth_client, db_session, admin_user):

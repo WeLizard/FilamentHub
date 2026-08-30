@@ -653,7 +653,8 @@ function HappyHareActions(context: AdapterViewContext) {
 export const happyHareAdapter: FeedAdapter = {
   id: 'happy_hare',
   onboarding: {
-    connectionLabelKey: 'printerSetup.connections.happyHare',
+    connectionProvider: 'manual',
+    connectionLabelKey: 'printerSetup.connections.moonraker',
     connectionHintKey: 'printerSetup.connections.happyHareHint',
     methods: ['native', 'orca', 'edge'],
     orcaProbe: true,

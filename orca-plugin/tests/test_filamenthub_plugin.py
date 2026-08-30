@@ -100,11 +100,34 @@ def setup_manual_probe(catalog):
     }, "token", [])
 
 
+def test_setup_inventory_does_not_present_detached_binding_as_connected(setup_flow):
+    _plugin, catalog, context, results, _uploads = setup_flow
+    context["bindings"] = [{"connection_ref": "ref-1", "physical_printer_id": 7, "status": "detached"}]
+    catalog._do_printer_setup({"operation": "list", "requestId": "list"}, "token", [
+        {"connection_ref": "ref-1", "label": "Workshop", "print_host": "printer.local"},
+    ])
+    assert results[-1]["candidates"] == []
+
+
 def setup_bind_and_activate(catalog, context, probe):
     context["bindings"] = [{"connection_ref": probe["connection"]["connection_ref"],
                             "physical_printer_id": 7, "status": "bound"}]
     catalog._do_printer_setup({"operation": "activate", "requestId": "activate",
                               "physicalPrinterId": 7, "probeId": probe["probeId"]}, "token", [])
+
+
+@pytest.mark.parametrize("status,mode,digest,expected", [
+    ("bound", "pull", "a" * 64, True),
+    ("detached", "pull", "a" * 64, False),
+    ("bound", "push", "a" * 64, False),
+    ("bound", "pull", "b" * 64, False),
+    ("bound", "pull", None, False),
+])
+def test_setup_inventory_link_requires_this_binding_and_current_inventory(plugin_module, status, mode, digest, expected):
+    context = {"bindings": [{"connection_ref": "ref-1", "status": status, "inventory_key_digest": "a" * 64}]}
+    snapshot = {"spoolman_support": mode, "inventory_key_digest": digest}
+    assert plugin_module.setup_inventory_linked(context, "ref-1", snapshot) is expected
+    assert not plugin_module.setup_inventory_linked(context, "other-ref", snapshot)
 
 
 def test_setup_keeps_secrets_local_and_requires_cloud_binding_before_activation(setup_flow):
@@ -6219,7 +6242,7 @@ def test_bambu_pair_is_revoked_when_local_binding_cannot_be_persisted(
         "http_post_json",
         lambda *_args, **_kwargs: (
             200,
-            json.dumps({"bridge_token": "fhpb_fresh-token"}).encode("utf-8"),
+            json.dumps({"bridge_token": "fhpb_fresh-token", "physical_printer_id": 3, "material_system_id": 5}).encode("utf-8"),
         ),
     )
     monkeypatch.setattr(
@@ -6255,8 +6278,9 @@ def test_bambu_pair_is_revoked_when_local_binding_cannot_be_persisted(
     assert delivered == [("bambuInvalid", "error")]
 
 
+@pytest.mark.parametrize("paired_printer,paired_system", [(3, 5), (4, 5), (3, 6)])
 def test_fresh_bambu_pair_and_first_snapshot_share_one_source_identity(
-    plugin_module, tmp_path, monkeypatch
+    plugin_module, tmp_path, monkeypatch, paired_printer, paired_system
 ):
     target = tmp_path / ".fh_bambu.json"
     monkeypatch.setattr(plugin_module, "BAMBU_CONFIG_FILE", str(target))
@@ -6270,13 +6294,15 @@ def test_fresh_bambu_pair_and_first_snapshot_share_one_source_identity(
 
     def pair(_path, _token, payload):
         captured["pair_source"] = payload["source_instance_id"]
-        return 200, json.dumps({"bridge_token": "fhpb_fresh-token"}).encode("utf-8")
+        return 200, json.dumps({"bridge_token": "fhpb_fresh-token", "physical_printer_id": paired_printer, "material_system_id": paired_system}).encode("utf-8")
 
     def snapshot(_path, _token, payload):
         captured["snapshot_source"] = payload["source_instance_id"]
         return 200, b"{}", None
 
     monkeypatch.setattr(plugin_module, "http_post_json", pair)
+    revoked = []
+    monkeypatch.setattr(plugin_module, "http_delete_bridge", lambda path, token: revoked.append((path, token)) or 204)
     monkeypatch.setattr(plugin_module, "http_post_bridge_json", snapshot)
     monkeypatch.setattr(plugin_module.BAMBU_BRIDGE_RUNTIME, "wake", lambda: None)
     monkeypatch.setattr(plugin_module, "ui_text", lambda key: key)
@@ -6288,8 +6314,19 @@ def test_fresh_bambu_pair_and_first_snapshot_share_one_source_identity(
         lambda text, status="info": delivered.append((text, status)),
     )
 
+    previous = []
+    if (paired_printer, paired_system) != (3, 5):
+        plugin_module.configure_bambu_bridge(3, 5, "previous.local", "old-secret", "OLD-SERIAL", "fhpb_previous")
+        previous = plugin_module.load_bambu_config()["printers"]
     catalog._do_configure_bambu(3, 5, "printer.local", "secret", "", "pair-code")
 
+    if (paired_printer, paired_system) != (3, 5):
+        assert revoked == [("/printer-bridge/connection", "fhpb_fresh-token")]
+        assert "snapshot_source" not in captured
+        assert plugin_module.load_bambu_config()["printers"] == previous
+        assert delivered == [("bambuPairingFailed", "error")]
+        return
+    assert revoked == []
     assert captured["pair_source"] == captured["snapshot_source"]
     stored = plugin_module.load_bambu_config()
     assert stored["source_instance_id"] == captured["pair_source"]

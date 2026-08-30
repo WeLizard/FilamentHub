@@ -606,6 +606,7 @@ function CreationGuide() {
 export const octoprintAdapter: FeedAdapter = {
   id: 'octoprint',
   onboarding: {
+    connectionProviders: ['octoprint'],
     connectionLabelKey: 'printerSetup.connections.octoprint',
     connectionHintKey: 'printerSetup.connections.octoprintHint',
     methods: ['native'],

@@ -4,6 +4,7 @@ import { ordinaryTopologies } from './topology';
 export const directFeedAdapter: FeedAdapter = {
   id: 'manual',
   onboarding: {
+    connectionProviders: ['moonraker'],
     connectionLabelKey: 'printerSetup.connections.moonraker',
     connectionHintKey: 'printerSetup.connections.moonrakerHint',
     methods: ['orca', 'edge'],

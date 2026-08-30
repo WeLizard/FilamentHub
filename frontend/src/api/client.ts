@@ -3892,7 +3892,7 @@ export interface PrinterConnectionBinding {
   display_endpoint: string | null;
   endpoint_shared: boolean;
   last_seen_at: string;
-  status?: 'bound' | 'conflict' | 'disconnected';
+  status?: 'bound' | 'conflict' | 'disconnected' | 'detached';
 }
 
 export interface PendingPrinterConnection {
@@ -4136,6 +4136,19 @@ export const physicalPrintersAPI = {
   assignBinding: async (bindingId: number, physicalPrinterId: number): Promise<void> => {
     await api.patch(`/orcaslicer/printer-connections/bindings/${bindingId}`, {
       physical_printer_id: physicalPrinterId,
+    });
+  },
+
+  listBindingsForSettings: async (): Promise<PrinterConnectionBinding[]> => {
+    const response = await api.get<PrinterConnectionBinding[]>(
+      '/orcaslicer/printer-connections/bindings', { params: { include_detached: true } },
+    );
+    return response.data;
+  },
+
+  detachBinding: async (bindingId: number, physicalPrinterId: number): Promise<void> => {
+    await api.delete(`/orcaslicer/printer-connections/bindings/${bindingId}`, {
+      params: { physical_printer_id: physicalPrinterId },
     });
   },
 

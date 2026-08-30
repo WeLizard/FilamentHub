@@ -730,8 +730,10 @@ describe('PresetSlotsPanel', () => {
     render(<PresetSlotsPanel spools={[]} printerProfiles={[]} />);
     fireEvent.click(screen.getByText('printerSetup.title'));
     fireEvent.click(screen.getByRole('button', { name: /Manual Voron/ }));
-    fireEvent.focus(screen.getByLabelText('printerSetup.connectionType'));
-    fireEvent.click(screen.getByText('printerSetup.connections.happyHare'));
+    fireEvent.click(screen.getByText('printerSetup.feed.configure'));
+    fireEvent.focus(screen.getByLabelText('printerSetup.feed.label'));
+    fireEvent.click(screen.getByText('presetSlots.feedSystem.happy_hare'));
+    fireEvent.click(screen.getByText('printerSetup.routes.native'));
     fireEvent.click(screen.getByText('printerSetup.connect'));
     await waitFor(() => {
       expect(setupConnection).toHaveBeenCalledWith(11, expect.objectContaining({

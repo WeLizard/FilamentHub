@@ -11,6 +11,8 @@ import type { Printer as CatalogPrinter } from '../../../types/api';
 export type PrinterConnectionMethod = 'orca' | 'edge' | 'native';
 export interface FeedTopologyChoice {
   id: string;
+  /** Owning feed adapter when several systems share a connection. */
+  provider?: string;
   labelKey: string;
   kind: string;
   count?: { labelKey: string; initial: number; max: number };
@@ -19,6 +21,9 @@ export interface FeedTopologyChoice {
 }
 
 export interface AdapterOnboarding {
+  connectionProviders?: string[];
+  /** Reuse this adapter's connection instead of offering a competing entry. */
+  connectionProvider?: string;
   connectionLabelKey: string;
   connectionHintKey: string;
   methods: PrinterConnectionMethod[];

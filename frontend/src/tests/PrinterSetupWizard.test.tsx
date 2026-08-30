@@ -118,7 +118,7 @@ describe('PrinterSetupWizard', () => {
     } finally { storage.mockRestore(); history.mockRestore(); }
   });
   it('does not offer Edge for an unsupported existing feed system or block manual tracking', async () => {
-    show({ ...saved, material_systems: [{ provider: 'bambu' }] } as PhysicalPrinter);
+    show({ ...saved, material_systems: [{ provider: 'bambu', slots: [] }] } as unknown as PhysicalPrinter);
     expect(screen.queryByText('printerSetup.routes.edge')).not.toBeInTheDocument();
     savePrinter();
     await screen.findByText('printerSetup.saved');
@@ -132,7 +132,7 @@ describe('PrinterSetupWizard', () => {
     fireEvent.click(screen.getByText('printerSetup.routes.edge'));
     await waitFor(() => expect(client.isFetching({ queryKey: ['physical-printers'] })).toBe(0));
     await act(async () => {
-      client.setQueryData(['physical-printers'], [{ ...saved, material_systems: [{ provider: 'octoprint' }] }]);
+      client.setQueryData(['physical-printers'], [{ ...saved, material_systems: [{ provider: 'octoprint', slots: [] }] }]);
     });
     expect(screen.getByText('printerSetup.routes.edge')).toHaveAttribute('aria-pressed', 'true');
     await waitFor(() => expect(screen.getByText('printerSetup.routes.edge')).toBeDisabled());
@@ -192,13 +192,19 @@ describe('PrinterSetupWizard', () => {
   it('selects an already added printer without presenting its Orca connection as another printer', async () => {
     mocks.embed = true;
     mocks.printers.mockResolvedValue([saved]);
-    mocks.plugin.mockResolvedValue({ ok: true, candidates: [{ label: 'Same Workshop connection', connectionRef: 'ref-1', physicalPrinterId: 7 }] });
+    mocks.plugin.mockImplementation(async (op: string) => op === 'list'
+      ? { ok: true, candidates: [{ label: 'Same Workshop connection', connectionRef: 'ref-1', physicalPrinterId: 7 }] }
+      : op === 'probe' ? probe : { ok: true, observed: true });
     show();
     const existing = await screen.findByRole('button', { name: /Workshop —/ });
     await waitFor(() => expect(existing).not.toBeDisabled());
     expect(screen.queryByText('Same Workshop connection')).not.toBeInTheDocument();
-    fireEvent.click(existing); savePrinter();
-    await screen.findByText('printerSetup.saved');
+    fireEvent.click(existing);
+    await screen.findByText('printerSetup.detectedHappyHare');
+    expect(mocks.plugin).toHaveBeenCalledWith('probe', { connectionRef: 'ref-1' });
+    expect(screen.getByText('printerSetup.connectionOptional').closest('details')).not.toHaveAttribute('open');
+    savePrinter();
+    await screen.findByText('printerSetup.observed');
     expect(mocks.setup).toHaveBeenCalledWith(7, expect.any(Object));
     expect(mocks.create).not.toHaveBeenCalled();
   });
@@ -266,6 +272,7 @@ describe('PrinterSetupWizard', () => {
     expect(screen.queryByText('printerSetup.routes.edge')).not.toBeInTheDocument();
     expect(screen.queryByText('printerSetup.connections.octoprint')).not.toBeInTheDocument();
     expect(screen.getByLabelText('printerSetup.feed.label')).toHaveValue('printerSetup.feed.noAms');
+    fireEvent.click(screen.getByText('printerSetup.routes.manual'));
     savePrinter(); await screen.findByText('printerSetup.saved');
     expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({ material_system: expect.objectContaining({
       provider: 'bambu', kind: 'direct_feed', slots: [{ provider_index: 255, kind: 'external' }],
@@ -295,16 +302,40 @@ describe('PrinterSetupWizard', () => {
 
   it('creates manually declared Happy Hare gates and bypass without generating a key or requiring Edge', async () => {
     show(); await namePrinter();
-    fireEvent.focus(screen.getByLabelText('printerSetup.connectionType'));
-    fireEvent.click(screen.getByText('printerSetup.connections.happyHare'));
-    fireEvent.click(screen.getByText('printerSetup.routes.manual'));
+    fireEvent.click(screen.getByText('printerSetup.feed.configure'));
+    fireEvent.focus(screen.getByLabelText('printerSetup.feed.label'));
+    fireEvent.click(screen.getByText('presetSlots.feedSystem.happy_hare'));
+    expect(screen.getByLabelText('printerSetup.connectionType')).toHaveValue('printerSetup.connections.moonraker');
+    expect(screen.getByText('printerSetup.routes.manual')).toHaveAttribute('aria-pressed', 'true');
     fireEvent.change(screen.getByLabelText('printerSetup.feed.gateCount'), { target: { value: '8' } });
     fireEvent.click(screen.getByLabelText('printerSetup.feed.bypass'));
+    // Selecting the shared connection must not replace Happy Hare with direct feed.
+    fireEvent.focus(screen.getByLabelText('printerSetup.connectionType'));
+    expect(screen.queryByText('printerSetup.connections.happyHare')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'printerSetup.connections.moonraker' }));
+    expect(screen.getByText('printerSetup.routes.manual')).toHaveAttribute('aria-pressed', 'true');
     savePrinter(); await screen.findByText('printerSetup.saved');
     const system = mocks.create.mock.calls[0][0].material_system;
+    expect(system).toMatchObject({ provider: 'happy_hare', kind: 'mmu' });
     expect(system.slots).toHaveLength(9);
     expect(system.slots[8]).toEqual({ provider_index: 1023, kind: 'bypass' });
     expect(mocks.key).not.toHaveBeenCalled(); expect(mocks.plugin).not.toHaveBeenCalled();
+  });
+
+  it.each(['orca', 'edge'] as const)('keeps the %s route when adding Happy Hare to Moonraker', async (route) => {
+    show(); await namePrinter(); chooseMoonraker();
+    fireEvent.click(screen.getByText('printerSetup.routes.' + route));
+    fireEvent.click(screen.getByText('printerSetup.feed.configure'));
+    fireEvent.focus(screen.getByLabelText('printerSetup.feed.label'));
+    fireEvent.click(screen.getByText('presetSlots.feedSystem.happy_hare'));
+    expect(screen.getByText('printerSetup.routes.' + route)).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByLabelText('printerSetup.connectionType')).toHaveValue('printerSetup.connections.moonraker');
+    fireEvent.change(screen.getByLabelText('printerSetup.feed.gateCount'), { target: { value: '8' } });
+    if (route === 'edge') {
+      savePrinter(); await screen.findByText('printerSetup.saved');
+      expect(mocks.create.mock.calls[0][0].material_system).toMatchObject({ provider: 'happy_hare', kind: 'mmu' });
+      expect(mocks.create.mock.calls[0][0].material_system.slots).toHaveLength(8);
+    }
   });
 
   it('keeps an unknown model usable without silently picking a connection or turning independent tools into an MMU', async () => {
@@ -349,6 +380,82 @@ describe('PrinterSetupWizard', () => {
     expect(mocks.setup.mock.calls[0][0]).toBe(saved.id);
     expect(mocks.setup.mock.calls[0][1].material_system.provider).toBe('bambu');
     expect(mocks.create).not.toHaveBeenCalled();
+  });
+
+  it('does not overwrite a manual feed choice when catalog suggestions arrive late', async () => {
+    let resolveModel!: (model: unknown) => void;
+    mocks.model.mockReturnValue(new Promise((resolve) => { resolveModel = resolve; }));
+    show(undefined, 99);
+    fireEvent.change(screen.getByLabelText('printerSetup.name'), { target: { value: 'Custom Bambu' } });
+    fireEvent.click(screen.getByText('printerSetup.feed.configure'));
+    fireEvent.focus(screen.getByLabelText('printerSetup.feed.label'));
+    fireEvent.click(screen.getByText('printerSetup.feed.tools'));
+    await act(async () => resolveModel({ id: 99, name: 'Bambu Lab X1C', manufacturer: 'Bambulab' }));
+    expect(screen.getByLabelText('printerSetup.feed.label')).toHaveValue('printerSetup.feed.tools');
+    savePrinter(); await screen.findByText('printerSetup.saved');
+    expect(mocks.create.mock.calls[0][0].material_system).toMatchObject({ provider: 'manual', kind: 'multi_tool' });
+  });
+
+  it('does not guess which of two local connections should be checked', async () => {
+    mocks.embed = true;
+    mocks.plugin.mockResolvedValue({ ok: true, candidates: [
+      { label: 'Front port', connectionRef: 'ref-1', physicalPrinterId: 7 },
+      { label: 'Back port', connectionRef: 'ref-2', physicalPrinterId: 7 },
+    ] });
+    show(saved);
+    await screen.findByRole('button', { name: 'Front port' });
+    expect(screen.getByRole('button', { name: 'Back port' })).toBeInTheDocument();
+    expect(mocks.plugin).toHaveBeenCalledTimes(1);
+    expect(mocks.plugin).toHaveBeenLastCalledWith('list');
+  });
+
+  it('keeps feed layout editable after Moonraker reports no HH', async () => {
+    mocks.embed = true;
+    mocks.plugin.mockImplementation(async (op: string) => op === 'list'
+      ? { ok: true, candidates: [{ label: 'Klipper tools', connectionRef: 'ref-1', physicalPrinterId: 7 }] }
+      : op === 'probe' ? { ...probe, provider: 'manual', gateCount: null } : { ok: true, observed: false });
+    show(saved); await screen.findByText('printerSetup.probeConnected');
+    fireEvent.click(screen.getByText('printerSetup.feed.configure'));
+    fireEvent.focus(screen.getByLabelText('printerSetup.feed.label'));
+    fireEvent.click(screen.getByText('printerSetup.feed.tools'));
+    savePrinter(); await screen.findByText('printerSetup.connectionReady');
+    expect(mocks.setup.mock.calls[0][1].material_system).toMatchObject({ provider: 'manual', kind: 'multi_tool' });
+    expect(mocks.setup.mock.calls[0][1].connection).toEqual(probe.connection);
+  });
+
+  it('offers HH completion and verifies inventory separately from a successful printer snapshot', async () => {
+    const hh = { ...saved, material_systems: [{ id: 4, provider: 'happy_hare', kind: 'mmu', slots: [] }] } as unknown as PhysicalPrinter;
+    mocks.embed = true; mocks.setup.mockResolvedValue(hh);
+    mocks.plugin.mockImplementation(async (op: string) => op === 'list'
+      ? { ok: true, candidates: [{ label: 'Voron', connectionRef: 'ref-1', physicalPrinterId: 7 }] }
+      : op === 'probe' ? probe : { ok: true, observed: true, inventoryLinked: false });
+    show(hh); await screen.findByText('printerSetup.detectedHappyHare');
+    savePrinter(); await screen.findByText('printerSetup.observed');
+    expect(screen.getByText('printerSetup.inventoryIncomplete')).toBeInTheDocument();
+    expect(screen.queryByText('printerSetup.inventoryReady')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText('printerSetup.finishInventory'));
+    expect(screen.getByText('printerSetup.issueKey')).toBeInTheDocument();
+    expect(mocks.key).not.toHaveBeenCalled();
+    mocks.plugin.mockImplementation(async (op: string) => op === 'probe' ? probe
+      : { ok: true, observed: true, inventoryLinked: true });
+    fireEvent.click(screen.getByText('printerSetup.checkInventory'));
+    await screen.findByText('printerSetup.inventoryReady');
+    expect(mocks.setup).toHaveBeenCalledTimes(1);
+    expect(mocks.create).not.toHaveBeenCalled();
+  });
+
+  it('does not rotate an existing HH key until its replacement is confirmed', async () => {
+    const hh = { ...saved, has_api_key: true, material_systems: [{ id: 4, provider: 'happy_hare', kind: 'mmu', slots: [] }] } as unknown as PhysicalPrinter;
+    mocks.setup.mockResolvedValue(hh); mocks.key.mockResolvedValue({ api_key: 'test-only-key' });
+    show(hh); savePrinter(); await screen.findByText('printerSetup.saved');
+    fireEvent.click(screen.getByRole('button', { name: 'printerSetup.replaceKey' }));
+    expect(mocks.key).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'confirmModal.cancel' }));
+    expect(mocks.key).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'printerSetup.replaceKey' }));
+    fireEvent.click(screen.getAllByRole('button', { name: 'printerSetup.replaceKey' }).at(-1)!);
+    await waitFor(() => expect(mocks.key).toHaveBeenCalledWith(7));
+    expect(screen.queryByText('printerSetup.inventoryReady')).not.toBeInTheDocument();
   });
 
   it('preserves sparse provider indices, labels, and expectations when reopening or retrying a topology edit', async () => {

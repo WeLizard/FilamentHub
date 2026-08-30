@@ -12,6 +12,7 @@ from app.core.dependencies import (
     require_preset_write,
 )
 from app.core.errors import ERR_IMPORT_PRINTER_DISABLED, ERR_PRINTER_SETUP_LIMIT, raise_error
+from app.core.security import device_inventory_digest
 from app.db.session import get_db
 from app.models.printer_connection_binding import PrinterConnectionBinding
 from app.models.user import User
@@ -28,6 +29,7 @@ from app.services.physical_printer_discovery_service import (
     assign_user_binding,
     binding_preset_names,
     current_printer_context,
+    detach_user_binding,
     display_endpoint,
     list_installed_printer_candidates,
     list_pending_connections,
@@ -59,6 +61,10 @@ async def setup_context(
     if len(bindings) > 1024:
         # Never give the local client a truncated inventory as if it were complete.
         raise_error(409, ERR_PRINTER_SETUP_LIMIT)
+    keys = dict((await db.execute(select(UserPrinterDevice.id, UserPrinterDevice.api_key).where(
+        UserPrinterDevice.user_id == current_user.id,
+        UserPrinterDevice.id.in_({binding.physical_printer_id for binding in bindings}),
+    ))).all())
     await db.commit()
     return {
         "discovery_key": key,
@@ -68,6 +74,7 @@ async def setup_context(
                 "connection_ref": binding.connection_ref,
                 "physical_printer_id": binding.physical_printer_id,
                 "status": binding.status,
+                "inventory_key_digest": device_inventory_digest(keys.get(binding.physical_printer_id)),
             }
             for binding in bindings
         ],
@@ -133,6 +140,7 @@ async def list_installed_candidates(
 async def list_connection_bindings(
     current_user: Annotated[User, Depends(get_current_active_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
+    include_detached: bool = False,
 ) -> list[PrinterConnectionBindingResponse]:
     """Safe display view of the user's connection bindings (endpoint as a label)."""
     bindings = await list_user_bindings(db, current_user.id)
@@ -163,7 +171,7 @@ async def list_connection_bindings(
             last_seen_at=b.last_seen_at,
             status=b.status,
         )
-        for b in bindings
+        for b in bindings if include_detached or b.status != "detached"
     ]
 
 
@@ -181,6 +189,18 @@ async def assign_connection_binding(
         binding_id=binding_id,
         physical_printer_id=payload.physical_printer_id,
     )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.delete("/bindings/{binding_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def detach_connection_binding(
+    binding_id: int,
+    physical_printer_id: Annotated[int, Query(gt=0)],
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> Response:
+    await detach_user_binding(db, user_id=current_user.id, binding_id=binding_id,
+                              physical_printer_id=physical_printer_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

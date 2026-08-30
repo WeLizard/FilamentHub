@@ -3325,6 +3325,16 @@ def printer_setup_context(token):
     return value
 
 
+def setup_inventory_linked(context, connection_ref, snapshot):
+    if not snapshot or snapshot.get("spoolman_support") != "pull":
+        return False
+    digest = snapshot.get("inventory_key_digest")
+    return bool(digest and any(
+        item.get("connection_ref") == connection_ref and item.get("status") == "bound"
+        and item.get("inventory_key_digest") == digest for item in context["bindings"]
+    ))
+
+
 def local_setup_connections(context):
     """Only this account's still-bound connections may address the local network."""
     with _LOCAL_SETUP_LOCK:
@@ -5972,6 +5982,14 @@ function showBambuOverlay(binding) {
   var host = field(uiCopy.bambuAddress, 'text', uiCopy.bambuAddressPlaceholder, true);
   var code = field(uiCopy.bambuCode, 'password', '', true);
   var serial = field(uiCopy.bambuSerial, 'text', uiCopy.bambuSerialHint, false);
+  var serialDetails = document.createElement('details');
+  serialDetails.style.marginTop = '12px';
+  var serialSummary = document.createElement('summary');
+  serialSummary.textContent = uiCopy.bambuSerial;
+  serialSummary.style.cursor = 'pointer';
+  serialDetails.appendChild(serialSummary);
+  serialDetails.appendChild(serial.parentElement);
+  box.appendChild(serialDetails);
   var local = document.createElement('div');
   local.textContent = uiCopy.bambuLocalOnly;
   local.style.cssText = 'margin-top:12px;color:var(--orca-muted,#a0a0a0);font-size:11px;line-height:1.45;';
@@ -8065,6 +8083,14 @@ class FilamentHubCatalog(
             if not isinstance(bridge_token, str) or not bridge_token.startswith("fhpb_"):
                 self._deliver_notice(ui_text("bambuPairingFailed"), "error")
                 return
+            if (paired.get("physical_printer_id") != physical_printer_id
+                    or paired.get("material_system_id") != material_system_id):
+                # Reject the newly issued credential without replacing or
+                # removing a previous local connection for this printer.
+                rejected_token, bridge_token = bridge_token, ""
+                http_delete_bridge("/printer-bridge/connection", rejected_token)
+                self._deliver_notice(ui_text("bambuPairingFailed"), "error")
+                return
             configure_bambu_bridge(
                 physical_printer_id,
                 material_system_id,
@@ -8506,12 +8532,15 @@ class FilamentHubCatalog(
             operation = msg.get("operation")
             if operation == "list":
                 names = msg.get("labels") or {}
-                bound = {item["connection_ref"]: item for item in context["bindings"]}
+                bound = {item["connection_ref"]: item for item in context["bindings"]
+                         if item.get("status") == "bound"}
+                detached = {item["connection_ref"] for item in context["bindings"]
+                            if item.get("status") == "detached"}
                 finish(ok=True, candidates=[{
                     "connectionRef": item["connection_ref"],
                     "label": str(item.get("label") or names.get(item["connection_ref"]) or "Moonraker")[:200],
                     "physicalPrinterId": (bound.get(item["connection_ref"]) or {}).get("physical_printer_id"),
-                } for item in local])
+                } for item in local if item["connection_ref"] not in detached])
                 return
             pending = {
                 key: value for key, value in getattr(self, "_printer_setup_pending", {}).items()
@@ -8550,7 +8579,8 @@ class FilamentHubCatalog(
                        provider="happy_hare" if snapshot else "manual",
                        gateCount=snapshot["gate_count"] if snapshot else None,
                        printerHostname=snapshot.get("printer_hostname") if snapshot else None,
-                       spoolmanSupport=snapshot.get("spoolman_support") if snapshot else None)
+                       spoolmanSupport=snapshot.get("spoolman_support") if snapshot else None,
+                       inventoryLinked=setup_inventory_linked(context, connection["connection_ref"], snapshot))
                 return
             if operation != "activate":
                 raise ValueError("invalid")
@@ -8581,7 +8611,8 @@ class FilamentHubCatalog(
                 if status != 200:
                     raise ValueError("snapshot_failed")
             # Keep a bounded retry token until expiry: response loss is not a new setup.
-            finish(ok=True, physicalPrinterId=printer_id, observed=snapshot is not None)
+            finish(ok=True, physicalPrinterId=printer_id, observed=snapshot is not None,
+                   inventoryLinked=setup_inventory_linked(context, evidence["connection_ref"], snapshot))
         except (OSError, RuntimeError, ValueError, TypeError, KeyError) as exc:
             # Exceptions can carry addresses, headers or response bodies. Never relay them.
             code = str(exc)

@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const updateMock = vi.fn();
 const setConfigurationsMock = vi.fn();
 const assignBindingMock = vi.fn();
+const detachBindingMock = vi.fn();
 const previewMergeMock = vi.fn();
 const mergeMock = vi.fn();
 
@@ -55,6 +56,8 @@ vi.mock('../api/client', () => ({
     update: updateMock,
     setConfigurations: setConfigurationsMock,
     assignBinding: assignBindingMock,
+    detachBinding: detachBindingMock,
+    listBindingsForSettings: vi.fn(),
     list: vi.fn(),
     previewMerge: previewMergeMock,
     merge: mergeMock,
@@ -89,7 +92,7 @@ async function renderModal(
     <PhysicalPrinterSettingsModal
       isOpen
       printer={{ ...basePrinter, ...overrides } as never}
-      bindings={bindings as never}
+      bindings={bindings.map((binding, index) => ({ id: index + 1, ...binding })) as never}
       onClose={onClose}
     />,
   );
@@ -102,6 +105,7 @@ describe('PhysicalPrinterSettingsModal', () => {
     updateMock.mockResolvedValue({});
     setConfigurationsMock.mockResolvedValue({});
     assignBindingMock.mockResolvedValue(undefined);
+    detachBindingMock.mockResolvedValue(undefined);
     mergeMock.mockResolvedValue(undefined);
   });
 
@@ -155,7 +159,7 @@ describe('PhysicalPrinterSettingsModal', () => {
     ).toBeInTheDocument();
   });
 
-  it('shows a disclosed endpoint once instead of duplicate local-only bindings', async () => {
+  it('keeps every separately detachable connection visible even when addresses are hidden', async () => {
     await renderModal({}, [
       {
         physical_printer_id: 5,
@@ -186,7 +190,35 @@ describe('PhysicalPrinterSettingsModal', () => {
     expect(
       screen.getAllByText('presetSlots.connectionProvider.octoprint · 192.168.31.200:5000'),
     ).toHaveLength(1);
-    expect(screen.queryByText(/myPrinters\.localConnection/)).toBeNull();
+    expect(screen.getAllByRole('button', { name: /printerSettings.connectionDetach/ })).toHaveLength(3);
+    fireEvent.click(screen.getAllByRole('button', { name: /printerSettings.connectionDetach/ })[0]);
+    expect(detachBindingMock).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'printerSettings.connectionDetach' }));
+    await waitFor(() => expect(detachBindingMock).toHaveBeenCalledWith(1, 5));
+    expect(updateMock).not.toHaveBeenCalled();
+    expect(setConfigurationsMock).not.toHaveBeenCalled();
+  });
+
+  it('restores a detached connection to the same printer without creating a card', async () => {
+    await renderModal({}, [{ id: 91, physical_printer_id: 5, provider: 'moonraker',
+      connection_ref: 'retained-ref', preset_name: 'Workshop', status: 'detached',
+      last_seen_at: '2026-08-30T03:00:00Z' }]);
+    expect(screen.getByText('printerSettings.noConnection')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /printerSettings.connectionDetach/ })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText('printerSettings.detachedConnections'));
+    fireEvent.click(screen.getByText('printerSettings.connectionRestore'));
+    await waitFor(() => expect(assignBindingMock).toHaveBeenCalledWith(91, 5));
+    expect(updateMock).not.toHaveBeenCalled();
+  });
+
+  it('keeps the connection visible when detachment fails', async () => {
+    detachBindingMock.mockRejectedValueOnce(new Error('network'));
+    await renderModal({}, [{ id: 91, physical_printer_id: 5, provider: 'moonraker',
+      connection_ref: 'retained-ref', preset_name: 'Workshop', last_seen_at: '2026-08-30T03:00:00Z' }]);
+    fireEvent.click(screen.getByRole('button', { name: /printerSettings.connectionDetach/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'printerSettings.connectionDetach' }));
+    expect(await screen.findByText('printerSettings.connectionDetachError')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /printerSettings.connectionDetach/ })).toBeInTheDocument();
   });
 
   it('moves an observed Orca connection to this physical printer explicitly', async () => {
