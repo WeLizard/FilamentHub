@@ -15,10 +15,18 @@ send replay-protected usage for an unambiguous active desired spool.
 
 ## Installation
 
-OrcaSlicer is optional. Run one Edge instance per physical printer on the
-printer's Linux computer or another always-on computer on the same LAN. No
-inbound internet port, printer API key in FilamentHub, or separate hardware is
-required. Do not install into Klipper's or Moonraker's Python environment.
+Edge is intended to bridge a home, office, or printer farm to FilamentHub: one
+node serving multiple printers through supported adapters. Device resources and
+adapter capabilities determine capacity, not a one-printer-per-node product rule.
+
+The current runtime supports only one Moonraker endpoint and one printer binding
+per instance. Multi-printer configuration within one node is not implemented yet;
+the instructions below describe the current single-printer setup.
+
+OrcaSlicer is optional. Install on the printer's Linux computer or another
+always-on computer on the same LAN. No inbound internet port, printer API key in
+FilamentHub, or separate hardware is required. Do not install into Klipper's or
+Moonraker's Python environment.
 
 1. In FilamentHub, add a physical printer and its Happy Hare material system.
    Create physical spools in **My Filaments**, not just catalogue entries.
