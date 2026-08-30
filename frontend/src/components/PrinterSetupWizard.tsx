@@ -5,12 +5,15 @@ import { useTranslation } from 'react-i18next';
 import { ArrowLeft, Check, ChevronRight, Loader2, Plus, Printer, RefreshCw, X } from 'lucide-react';
 import type { AxiosError } from 'axios';
 import { devicesAPI, physicalPrintersAPI, printersAPI } from '../api/client';
-import type { PhysicalPrinter } from '../api/client';
+import type { MaterialSystem, PhysicalPrinter } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 import { useDebounce } from '../hooks/useDebounce';
 import { ModalOverlay } from './ModalOverlay';
 import { Dropdown } from './Dropdown';
-import { FEED_ADAPTERS, feedAdapterFor, supportsEdgeSetup } from './presetSlots/adapters';
+import { feedAdapterFor, setupAdaptersFor, supportsEdgeSetup } from './presetSlots/adapters';
+import { TopologyEditor } from './presetSlots/TopologyEditor';
+import { initialTopology, ordinaryTopologies, topologyFromSystem, topologyPayload } from './presetSlots/adapters/topology';
+import type { Printer as CatalogPrinter } from '../types/api';
 import { EdgeConnectionSetup } from './presetSlots/EdgeConnectionSetup';
 import { LinkInstructions } from './presetSlots/LinkInstructions';
 import { translateApiError } from '../utils/translateApiError';
@@ -51,8 +54,18 @@ export function PrinterSetupWizard({
   const [profileIds, setProfileIds] = useState(pending?.payload.printer_profile_ids ?? initialProfileIds);
   const [targetId, setTargetId] = useState(pending?.targetId ?? physicalPrinter?.id ?? 0);
   const [mode, setMode] = useState<PrinterSetupRoute>(pending?.route ?? (pending?.probe ? 'orca' : 'manual'));
-  const [provider, setProvider] = useState(pending?.payload.material_system?.provider ?? 'manual');
-  const [slotCount, setSlotCount] = useState(String(pending?.payload.material_system?.slot_count ?? 1));
+  const [provider, setProvider] = useState(pending?.payload.material_system_update?.provider ?? pending?.payload.material_system?.provider ?? physicalPrinter?.material_systems[0]?.provider ?? 'manual');
+  const [topology, setTopology] = useState(() => initialTopology(
+    feedAdapterFor(provider).onboarding?.topologies[0] ?? ordinaryTopologies[0],
+  ));
+  const [selectedModel, setSelectedModel] = useState<CatalogPrinter>();
+  const [otherConnection, setOtherConnection] = useState(false);
+  const [editTopology, setEditTopology] = useState(false);
+  const [topologyBase, setTopologyBase] = useState<MaterialSystem | null>(null);
+  const [connectionChosen, setConnectionChosen] = useState(Boolean(
+    pending?.route && pending.route !== 'manual' || physicalPrinter?.material_systems[0]?.provider !== undefined
+      && physicalPrinter.material_systems[0].provider !== 'manual',
+  ));
   const [search, setSearch] = useState('');
   const [pluginReady, setPluginReady] = useState(false);
   const [candidates, setCandidates] = useState<PrinterSetupCandidate[] | null>(null);
@@ -62,6 +75,7 @@ export function PrinterSetupWizard({
   const [probe, setProbe] = useState<PrinterSetupResult | null>(pending?.probe ?? null);
   const [saved, setSaved] = useState<PhysicalPrinter | null>(null);
   const [activated, setActivated] = useState(false);
+  const [observed, setObserved] = useState(false);
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
   const alive = useRef(true);
@@ -88,14 +102,35 @@ export function PrinterSetupWizard({
   const current = printers.find((item) => item.id === saved?.id) ?? saved;
   const selected = printers.find((item) => item.id === targetId)
     ?? (physicalPrinter?.id === targetId ? physicalPrinter : undefined);
+  const existingSystem = selected?.material_systems[0];
+  const modelLookupId = targetId ? selected?.printer_id ?? 0 : modelId;
+  const { data: modelDetail } = useQuery({
+    queryKey: ['printers', 'setup-model', modelLookupId], queryFn: () => printersAPI.get(modelLookupId),
+    enabled: modelLookupId > 0 && selectedModel?.id !== modelLookupId && !pending && !saved,
+  });
+  useEffect(() => {
+    if (!modelDetail || modelDetail.id !== modelLookupId || selectedModel?.id === modelLookupId) return;
+    setSelectedModel(modelDetail);
+    // An explicit connection choice wins over catalog suggestions arriving late.
+    if (!connectionChosen && !existingSystem) {
+      const suggested = setupAdaptersFor(modelDetail).find((item) => item.onboarding?.matchesModel?.(modelDetail));
+      if (suggested) {
+        setProvider(suggested.id); setConnectionChosen(true);
+        setTopology(initialTopology(suggested.onboarding!.topologies[0]));
+      }
+    }
+  }, [modelDetail, modelLookupId, selectedModel?.id, connectionChosen, existingSystem]);
   const adapter = feedAdapterFor(provider);
   const system = current?.material_systems[0];
   const savedAdapter = feedAdapterFor(system?.provider ?? provider);
-  const edgeAvailable = supportsEdgeSetup(selected?.material_systems[0]?.provider ?? provider);
-  const count = probe?.gateCount ?? (adapter.topologyFromProvider ? null : Number(slotCount));
-  const valid = Boolean(targetId || name.trim()) && (count == null || (
-    Number.isInteger(count) && count >= 1 && count <= 256
-  )) && (mode !== 'orca' || Boolean(probe?.ok) || provider === 'bambu')
+  const topologies = adapter.onboarding?.topologies ?? ordinaryTopologies;
+  const manualTopology = topologyPayload(topologies, topology);
+  const setupAdapters = setupAdaptersFor(selectedModel, otherConnection);
+  const methods = connectionChosen || probe ? adapter.onboarding?.methods ?? [] : [];
+  const edgeAvailable = supportsEdgeSetup(existingSystem && !editTopology ? existingSystem.provider : provider,
+    existingSystem && !editTopology ? existingSystem.kind : manualTopology?.kind);
+  const valid = Boolean(targetId || name.trim()) && Boolean(probe || existingSystem && !editTopology || manualTopology)
+    && (mode !== 'orca' || Boolean(probe?.ok) || adapter.onboarding?.orcaProbe !== true)
     && (mode !== 'edge' || edgeAvailable);
   const printerChoices = printers.map((item) => {
     const connections = bindings.filter((binding) => binding.physical_printer_id === item.id);
@@ -184,6 +219,7 @@ export function PrinterSetupWizard({
     });
     if (!result.ok) { setError(t('printerSetup.savedConnectionFailed')); return; }
     setActivated(true);
+    setObserved(result.observed === true);
     await invalidate();
   };
   const save = () => run(async () => {
@@ -192,16 +228,33 @@ export function PrinterSetupWizard({
     if (!pending && mode === 'edge' && !edgeAvailable) {
       setError(t('printerSetup.edgeUnsupported')); return;
     }
+    const changingTopology = existingSystem && editTopology;
+    const baseSystem = topologyBase ?? existingSystem;
+    const feedName = t(provider === 'manual'
+      ? (topologies.find((item) => item.id === topology.choice)?.labelKey ?? adapter.labelKey)
+      : adapter.labelKey);
+    const oldAdapter = feedAdapterFor(baseSystem?.provider ?? provider);
+    const generatedNames = [oldAdapter.labelKey, ...(oldAdapter.onboarding?.topologies.map((item) => item.labelKey) ?? [])].map((key) => t(key));
     const intent: PendingPrinterSetup = pending ?? {
       targetId, probe, route: mode,
       payload: {
         request_id: crypto.randomUUID(), name: name.trim() || selected?.name || 'Printer',
         printer_id: modelId || null, printer_profile_ids: profileIds,
         ...(probe?.connection ? { connection: probe.connection } : {}),
+        ...(changingTopology ? {
+          material_system_id: existingSystem.id,
+          material_system_update: { ...manualTopology!, provider,
+            ...(baseSystem && generatedNames.includes(baseSystem.name) ? { name: feedName } : {}),
+            expected_slots: baseSystem!.slots.map((slot) => ({ material_slot_id: slot.id,
+              expected_revision: slot.assignment_revision,
+              expected_spool_id: slot.assignment?.spool_id ?? slot.legacy_projection?.spool_id ?? null })) },
+        } : {}),
         ...(selected?.material_systems.length ? {} : { material_system: {
-          name: t(adapter.labelKey), provider: adapter.id,
-          kind: adapter.topologyFromProvider || Number(count) > 1 ? 'mmu' : 'direct_feed',
-          capabilities: adapter.capabilities, ...(count == null ? {} : { slot_count: count }),
+          name: feedName, provider: adapter.id,
+          capabilities: adapter.capabilities,
+          ...(probe && adapter.topologyFromProvider ? { kind: 'mmu' }
+            : { ...manualTopology!, ...(manualTopology?.slots.length === 1 && manualTopology.slots[0].provider_index === 0
+              ? { slot_count: 1 } : {}) }),
         } }),
       },
     };
@@ -238,8 +291,24 @@ export function PrinterSetupWizard({
   const choose = (printer?: PhysicalPrinter) => {
     setTargetId(printer?.id ?? 0); setName(printer?.name ?? '');
     setModelId(0); setProfileIds([]); setSearch('');
-    setProvider(printer?.material_systems[0]?.provider ?? 'manual'); setSlotCount('1');
+    changeProvider(printer?.material_systems[0]?.provider ?? 'manual');
+    setTopology(topologyFromSystem(feedAdapterFor(printer?.material_systems[0]?.provider ?? 'manual').onboarding?.topologies
+      ?? ordinaryTopologies, printer?.material_systems[0]));
+    setSelectedModel(undefined); setOtherConnection(false); setEditTopology(false); setTopologyBase(null);
+    setConnectionChosen(Boolean(printer?.material_systems[0]?.provider && printer.material_systems[0].provider !== 'manual'));
     setProbe(null); setMode('manual'); setError(null); setStep('setup');
+  };
+  const changeProvider = (value: string) => {
+    setProvider(value); setProbe(null); setError(null);
+    setTopology(topologyFromSystem(feedAdapterFor(value).onboarding?.topologies ?? ordinaryTopologies, existingSystem));
+  };
+  const chooseModel = (model?: CatalogPrinter) => {
+    setSelectedModel(model); setModelId(model?.id ?? 0); setProfileIds(initialProfileIds);
+    setOtherConnection(false); setMode('manual');
+    const suggested = setupAdaptersFor(model).find((item) => item.onboarding?.matchesModel?.(model!));
+    changeProvider(suggested?.id ?? 'manual');
+    setConnectionChosen(Boolean(suggested));
+    if (model && (!name.trim() || name === selectedModel?.name)) setName(model.name);
   };
   const chooseCandidate = (candidate: PrinterSetupCandidate) => {
     choose(printers.find((item) => item.id === candidate.physicalPrinterId));
@@ -247,6 +316,7 @@ export function PrinterSetupWizard({
     setTargetId(candidate.physicalPrinterId ?? 0);
     setName(printers.find((item) => item.id === candidate.physicalPrinterId)?.name ?? candidate.label);
     setMode('orca');
+    setConnectionChosen(true);
     void inspect(candidate);
   };
   const back = () => {
@@ -266,14 +336,14 @@ export function PrinterSetupWizard({
         <div className="space-y-4 overflow-y-auto px-6 py-5">
           {current ? <>
             <h3 className="flex items-center gap-2 font-medium"><Check className="h-5 w-5 text-emerald-400" />{current.name}</h3>
-            <p className="text-sm text-gray-300">{t(activated ? 'printerSetup.observed' : 'printerSetup.saved')}</p>
+            <p className="text-sm text-gray-300">{t(observed ? 'printerSetup.observed' : activated ? 'printerSetup.connectionReady' : 'printerSetup.saved')}</p>
             {probe && !activated && <button type="button" className={button} disabled={busy} onClick={() => void save()}>{t('printerSetup.retryConnection')}</button>}
             {system && mode === 'edge'
-              ? supportsEdgeSetup(system.provider)
+              ? supportsEdgeSetup(system.provider, system.kind)
                 ? <EdgeConnectionSetup printer={current} system={system} />
                 : <p role="alert" className="text-sm text-amber-200">{t('printerSetup.edgeUnsupported')}</p>
-              : system && savedAdapter.renderSetup?.({ printer: current, system, gates: [], spools: [], linkConfirmed: false })}
-            {savedAdapter.link && <details className="rounded-lg border border-white/10 p-3">
+              : system && mode !== 'manual' && !savedAdapter.link && savedAdapter.renderSetup?.({ printer: current, system, gates: [], spools: [], linkConfirmed: current.reports_feed })}
+            {savedAdapter.link && mode !== 'manual' && <details open={mode === 'native'} className="rounded-lg border border-white/10 p-3">
               <summary className="cursor-pointer text-sm">{t('printerSetup.inventorySetup')}</summary>
               {savedAdapter.renderCreateHelp?.()}
               {issuedKey ? <LinkInstructions link={savedAdapter.link}
@@ -325,17 +395,17 @@ export function PrinterSetupWizard({
             <fieldset disabled={busy || Boolean(pending)} className="min-w-0 space-y-4 disabled:opacity-70">
               {!targetId && !probe && <div className="space-y-2">
                 <Dropdown label={t('printerSetup.model')} value={modelId || ''} onChange={(value) => {
-                  setModelId(Number(value)); setProfileIds(initialProfileIds);
                   const model = models?.items.find((item) => item.id === Number(value));
-                  if (model && !name.trim()) setName(model.name);
-                }} options={(models?.items ?? []).map((item) => ({ value: item.id, label: item.name }))}
+                  chooseModel(model);
+                }} options={[...(selectedModel && !models?.items.some((item) => item.id === selectedModel.id) ? [selectedModel] : []),
+                  ...(models?.items ?? [])].map((item) => ({ value: item.id, label: item.name }))}
                   placeholder={t('addPrinter.modelPlaceholder')} filterable filterValue={search} onFilterChange={setSearch} />
                 <p className="text-xs text-gray-400">{t('printerSetup.modelHint')}</p>
                 {(installed ?? []).length > 0 && <details>
                   <summary className="cursor-pointer text-xs text-gray-400">{t('printerSetup.savedModels')}</summary>
                   <p className="my-2 text-xs text-gray-400">{t('printerSetup.savedModelsHint')}</p>
                   <div className="flex flex-wrap gap-2">{(installed ?? []).map((item) => <button key={item.model}
-                    type="button" className={button} onClick={() => { setModelId(item.printer_id ?? 0);
+                    type="button" className={button} onClick={() => { chooseModel(models?.items.find((model) => model.id === item.printer_id)); setModelId(item.printer_id ?? 0);
                       setName(item.model); setProfileIds(item.printer_profile_id ? [item.printer_profile_id] : []); }}>{item.model}</button>)}</div>
                 </details>}
               </div>}
@@ -347,17 +417,28 @@ export function PrinterSetupWizard({
               <details className="rounded-lg border border-white/10 p-3" open={mode !== 'manual' || targetId > 0}>
                 <summary className="cursor-pointer text-sm font-medium">{t('printerSetup.connectionOptional')}</summary>
                 <div className="mt-3 space-y-3">
+                  {(!existingSystem || existingSystem.provider === 'manual') && !probe && <>
+                    <Dropdown label={t('printerSetup.connectionType')} value={connectionChosen ? provider : ''} clearable={false}
+                      options={setupAdapters.map((item) => ({ value: item.id, label: t(item.onboarding!.connectionLabelKey) }))}
+                      onChange={(value) => { changeProvider(String(value));
+                        setConnectionChosen(true);
+                        if (existingSystem && value !== existingSystem.provider) { setEditTopology(true); setTopologyBase(existingSystem); }
+                        setMode(feedAdapterFor(String(value)).onboarding?.methods[0] ?? 'manual'); }} />
+                    {selectedModel && !otherConnection && <button type="button" className="text-xs text-gray-400 underline"
+                      onClick={() => setOtherConnection(true)}>{t('printerSetup.otherConnection')}</button>}
+                  </>}
+                  {connectionChosen && adapter.onboarding && <p className="text-xs text-gray-400">{t(adapter.onboarding.connectionHintKey)}</p>}
                   <p className="mb-2 text-sm font-medium">{t('printerSetup.route')}</p>
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-3" role="group" aria-label={t('printerSetup.route')}>
-                    {(['manual', 'orca', 'edge'] as const).map((route) => <button key={route} type="button"
+                  <div className="flex flex-wrap gap-2" role="group" aria-label={t('printerSetup.route')}>
+                    {(['manual', ...methods] as const).map((route) => <button key={route} type="button"
                       disabled={route === 'edge' && !edgeAvailable}
                       aria-pressed={mode === route} className={button + (mode === route ? ' border-purple-400 bg-purple-500/20' : '')}
                       onClick={() => { setMode(route); setProbe(null); setError(null); }}>{t('printerSetup.routes.' + route)}</button>)}
                   </div>
-                  {!edgeAvailable && <p className="text-xs text-amber-200">{t('printerSetup.edgeUnsupported')}</p>}
                   {mode === 'manual' && <p className="text-xs text-gray-400">{t('printerSetup.manualHint')}</p>}
                   {mode === 'edge' && <p className="text-xs text-gray-400">{t('printerSetup.edgeHint')}</p>}
-                  {mode === 'orca' && <div className="space-y-2 rounded-lg border border-white/10 p-3">
+                  {mode === 'native' && <p className="text-xs text-gray-400">{t('printerSetup.nativeHint')}</p>}
+                  {mode === 'orca' && adapter.onboarding?.orcaProbe && <div className="space-y-2 rounded-lg border border-white/10 p-3">
                     {!pluginReady ? <p className="text-sm text-amber-200">{t('printerSetup.pluginUnavailable')}</p> : <>
                       <p className="text-xs text-gray-400">{t('printerSetup.orcaHint')}</p>
                       {loadingConnections && <p role="status" className="text-xs text-gray-400">{t('printerSetup.loadingConnections')}</p>}
@@ -377,18 +458,16 @@ export function PrinterSetupWizard({
                   </div>}
                 </div>
               </details>
-              {!selected?.material_systems.length && <>
-                <label className="block text-sm">{t('printerSetup.feedSystem')}
-                  <Dropdown value={provider} onChange={(value) => setProvider(String(value))} clearable={false}
-                    disabled={Boolean(probe)} options={FEED_ADAPTERS.filter((item) => mode !== 'edge' || supportsEdgeSetup(item.id))
-                      .map((item) => ({ value: item.id, label: t(item.labelKey) }))} />
-                </label>
-                {!probe && <p className="text-xs text-gray-400">{t(adapter.topologyFromProvider ? 'printerSetup.slotsAfterConnection' : 'printerSetup.feedHint')}</p>}
-                {count !== null && !probe?.gateCount && <label className="block text-sm">{t('presetSlots.newSystem.slotCount')}
-                  <input className={control + ' mt-1'} type="number" min={1} max={256} value={slotCount}
-                    onChange={(event) => setSlotCount(event.target.value)} />
-                </label>}
-              </>}
+              {existingSystem && !probe && !editTopology && <button type="button" className={button} onClick={() => {
+                setTopology(topologyFromSystem(topologies, existingSystem)); setEditTopology(true); setTopologyBase(existingSystem);
+              }}>{t('printerSetup.feed.edit')}</button>}
+              {(!existingSystem || editTopology || provider !== existingSystem.provider) && !probe && <details className="rounded-lg border border-white/10 p-3"
+                open={adapter.topologyFromProvider === true}>
+                <summary className="cursor-pointer text-sm font-medium">{t('printerSetup.feed.configure')}</summary>
+                <div className="mt-3 space-y-3"><TopologyEditor choices={topologies} value={topology} onChange={setTopology} />
+                  <p className="text-xs text-gray-400">{t('printerSetup.feed.manualHint')}</p>
+                </div>
+              </details>}
               {(targetId > 0 || name.trim()) && <p className="break-words rounded-lg bg-white/5 p-3 text-sm text-gray-300">{t(targetId ? 'printerSetup.confirmExisting' : 'printerSetup.confirmNew', { name: selected?.name ?? name.trim() })}</p>}
             </fieldset>
           </>}

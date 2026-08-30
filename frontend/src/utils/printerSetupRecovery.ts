@@ -2,9 +2,9 @@ import type { physicalPrintersAPI } from '../api/client';
 import type { PrinterSetupResult } from './pluginBridge';
 import { safeStorage } from './storage';
 
-export type PrinterSetupRoute = 'manual' | 'orca' | 'edge';
+export type PrinterSetupRoute = 'manual' | 'orca' | 'edge' | 'native';
 export interface PendingPrinterSetup {
-  payload: Parameters<typeof physicalPrintersAPI.create>[0];
+  payload: Parameters<typeof physicalPrintersAPI.create>[0] & Parameters<typeof physicalPrintersAPI.setupConnection>[1];
   targetId: number;
   probe: PrinterSetupResult | null;
   route?: PrinterSetupRoute;
@@ -20,7 +20,7 @@ function parseIntent(value: string | null): PendingPrinterSetup | null {
       && typeof item.payload.request_id === 'string'
       && /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(item.payload.request_id)
       && Number.isSafeInteger(item.targetId) && item.targetId >= 0
-      && (item.route === undefined || ['manual', 'orca', 'edge'].includes(item.route))
+      && (item.route === undefined || ['manual', 'orca', 'edge', 'native'].includes(item.route))
       ? item : null;
   } catch { return null; }
 }

@@ -6,6 +6,27 @@ import type {
   UserSpool,
 } from '../../../api/client';
 import type { DeviceContactMode } from '../../../utils/deviceLink';
+import type { Printer as CatalogPrinter } from '../../../types/api';
+
+export type PrinterConnectionMethod = 'orca' | 'edge' | 'native';
+export interface FeedTopologyChoice {
+  id: string;
+  labelKey: string;
+  kind: string;
+  count?: { labelKey: string; initial: number; max: number };
+  extras?: Array<{ labelKey: string; index: number; kind: string; checked?: boolean }>;
+  slots: (count: number) => Array<{ provider_index: number; kind: string }>;
+}
+
+export interface AdapterOnboarding {
+  connectionLabelKey: string;
+  connectionHintKey: string;
+  methods: PrinterConnectionMethod[];
+  orcaProbe?: boolean;
+  /** Matching suggests a path, never proves a device identity or installed hardware. */
+  matchesModel?: (model: CatalogPrinter) => boolean;
+  topologies: FeedTopologyChoice[];
+}
 
 export type FeedAdapterCapability =
   | 'read'
@@ -35,6 +56,7 @@ export interface FeedAdapterLink {
 export interface FeedAdapter {
   /** Stored on the system as its provider. */
   id: string;
+  onboarding?: AdapterOnboarding;
   /** Locale key for the name a person picks in the list. */
   labelKey: string;
   /** Systems with a fixed shape do not ask how many slots they have. */
@@ -47,6 +69,7 @@ export interface FeedAdapter {
   capabilities: FeedAdapterCapability[];
   /** This provider has an implemented Edge setup path, not merely read capability. */
   supportsEdge?: boolean;
+  edgeKinds?: string[];
   /** Whether silence between provider requests is expected. */
   contactMode?: DeviceContactMode;
   /** Provider-specific wording for the topology field and its saved summary. */

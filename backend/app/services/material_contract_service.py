@@ -14,6 +14,7 @@ from sqlalchemy.orm import selectinload
 
 from app.core.errors import (
     ERR_DEVICE_NOT_FOUND,
+    ERR_MATERIAL_ASSIGNMENT_CONFLICT,
     ERR_MATERIAL_SLOT_IN_USE,
     ERR_MATERIAL_SYSTEM_EXISTS,
     ERR_MATERIAL_SYSTEM_NOT_FOUND,
@@ -415,58 +416,144 @@ async def _first_occupied_slot_index(db: AsyncSession, slots: list[MaterialSlot]
     return min(occupied) if occupied else None
 
 
+async def _lock_system_slots(db: AsyncSession, system_id: int) -> list[MaterialSlot]:
+    # Slot writers must not wait for a parent while a topology writer holds that
+    # parent and waits for the slot. Call before changing the system or printer.
+    with db.no_autoflush:
+        return list((await db.scalars(
+            select(MaterialSlot).where(MaterialSlot.material_system_id == system_id)
+            .order_by(MaterialSlot.id)
+            .options(selectinload(MaterialSlot.assignment), selectinload(MaterialSlot.legacy_gate_state))
+            .with_for_update().execution_options(populate_existing=True)
+        )).all())
+
+
+def _route_meaning(kind: str, system_kind: str, single_route: bool) -> str:
+    if kind in {"slot", "gate"}:
+        # Older manual single-spool cards used the generic name "slot".
+        return "external" if single_route and system_kind == "direct_feed" else "gate"
+    return kind
+
+
+async def _guard_route_reinterpretation(
+    db: AsyncSession, system: MaterialSystem, slots: list[MaterialSlot],
+    routes: list[MaterialSlotCreate], next_kind: str,
+    *, retain_missing: bool = False,
+) -> None:
+    by_index = {item.provider_index: item.kind for item in slots} if retain_missing else {}
+    by_index.update({item.provider_index: item.kind for item in routes})
+    changed = [slot for slot in slots if slot.provider_index in by_index
+               if _route_meaning(slot.kind, system.kind, len(slots) == 1)
+               != _route_meaning(by_index[slot.provider_index], next_kind, len(by_index) == 1)]
+    busy = await _first_occupied_slot_index(db, changed)
+    if busy is not None:
+        raise_error(409, ERR_MATERIAL_SLOT_IN_USE, params={"index": busy + 1})
+
+
 async def update_material_system(
     db: AsyncSession,
     user_id: int,
     physical_printer_id: int,
     material_system_id: int,
     payload: MaterialSystemUpdate,
+    *,
+    commit: bool = True,
 ) -> UserPrinterDevice:
-    """Rename a material system or resize it to a declared number of slots."""
+    """Edit declared topology without losing occupied routes or their identity."""
+    from app.services.orca_import_guard import hold_account_import_lock
+
+    await hold_account_import_lock(db, user_id)
     system = await _require_material_system(
         db,
         user_id=user_id,
         physical_printer_id=physical_printer_id,
         material_system_id=material_system_id,
     )
-    if payload.name is not None:
-        system.name = payload.name
-
-    if payload.slot_count is not None:
-        slots_result = await db.execute(
-            select(MaterialSlot)
-            .where(MaterialSlot.material_system_id == system.id)
-            .order_by(MaterialSlot.provider_index)
-        )
-        slots = list(slots_result.scalars().all())
+    if payload.slot_count is not None or payload.slots is not None:
+        slots = await _lock_system_slots(db, system.id)
+        if payload.name is not None:
+            system.name = payload.name
         by_index = {slot.provider_index: slot for slot in slots}
-        for provider_index in range(payload.slot_count):
-            if provider_index not in by_index:
-                db.add(
-                    MaterialSlot(
-                        user_id=user_id,
-                        material_system_id=system.id,
-                        provider_index=provider_index,
-                        kind="slot",
-                    )
-                )
-
-        doomed = [slot for slot in slots if slot.provider_index >= payload.slot_count]
+        if payload.slots is not None:
+            unchanged = (
+                payload.kind in {None, system.kind} and payload.provider in {None, system.provider}
+                and {(item.provider_index, item.kind, item.label) for item in payload.slots}
+                == {(slot.provider_index, slot.kind, slot.label) for slot in slots if slot.active}
+            )
+            # A lost response may replay an already applied explicit map. It
+            # cannot change any assignment, and must not force a fresh card.
+            if unchanged:
+                if commit:
+                    await db.commit()
+                else:
+                    await db.flush()
+                return await require_physical_printer(db, user_id, physical_printer_id)
+            expected = {item.material_slot_id: item for item in payload.expected_slots or []}
+            if len(expected) != len(payload.expected_slots or []) or set(expected) != {slot.id for slot in slots}:
+                raise_error(409, ERR_MATERIAL_ASSIGNMENT_CONFLICT)
+            for slot in slots:
+                assignment = slot.assignment or slot.legacy_gate_state
+                if (slot.assignment_revision != expected[slot.id].expected_revision
+                    or (assignment.spool_id if assignment else None) != expected[slot.id].expected_spool_id):
+                    raise_error(409, ERR_MATERIAL_ASSIGNMENT_CONFLICT)
+            requested = payload.slots
+        else:
+            # Count describes ordinary routes only. External holders and bypass
+            # are not the tail of a contiguous array of gates.
+            assert payload.slot_count is not None
+            requested = [MaterialSlotCreate(provider_index=index,
+                         kind=by_index[index].kind if index in by_index else "slot",
+                         label=by_index[index].label if index in by_index else None)
+                         for index in range(payload.slot_count)]
+            requested += [MaterialSlotCreate(provider_index=slot.provider_index, kind=slot.kind, label=slot.label)
+                          for slot in slots if slot.kind not in {"slot", "gate"}]
+            if len({item.provider_index for item in requested}) != len(requested):
+                raise_error(409, ERR_MATERIAL_ASSIGNMENT_CONFLICT)
+        requested_indices = {item.provider_index for item in requested}
+        doomed = [slot for slot in slots if slot.provider_index not in requested_indices]
+        await _guard_route_reinterpretation(db, system, slots, requested, payload.kind or system.kind)
+        busy = await _first_occupied_slot_index(db, doomed)
+        if busy is not None:
+            raise_error(409, ERR_MATERIAL_SLOT_IN_USE, params={"index": busy + 1})
+        if payload.provider is not None and payload.provider != system.provider:
+            connected = await db.scalar(select(PhysicalPrinterConnector.id).where(
+                PhysicalPrinterConnector.material_system_id == system.id,
+                PhysicalPrinterConnector.active.is_(True),
+            ).limit(1))
+            if system.provider != "manual" or connected is not None:
+                raise_error(409, ERR_MATERIAL_SYSTEM_EXISTS)
+            system.provider = payload.provider
+        for item in requested:
+            slot = by_index.get(item.provider_index)
+            if slot is None:
+                db.add(MaterialSlot(user_id=user_id, material_system_id=system.id,
+                                    provider_index=item.provider_index, kind=item.kind, label=item.label))
+            else:
+                if (slot.kind != item.kind or slot.label != item.label or not slot.active
+                    or payload.kind is not None and payload.kind != system.kind):
+                    slot.assignment_revision += 1
+                slot.kind, slot.label, slot.active = item.kind, item.label, True
         if doomed:
-            busy = await _first_occupied_slot_index(db, doomed)
-            if busy is not None:
-                raise_error(409, ERR_MATERIAL_SLOT_IN_USE, params={"index": busy + 1})
             await db.execute(
                 delete(MaterialSlot).where(MaterialSlot.id.in_([slot.id for slot in doomed]))
             )
-        system.declared_slot_count = payload.slot_count
+        ordinary = {item.provider_index for item in requested if item.kind in {"slot", "gate"}}
+        declared_count = len(ordinary) if ordinary and ordinary == set(range(len(ordinary))) else None
+        system.declared_slot_count = declared_count
+        if payload.kind is not None:
+            system.kind = payload.kind
         if system.provider in KLIPPER_PROVIDERS:
             # The legacy gate map still gates manual assignment, so it has to
             # follow the declared size or the new slots refuse every spool.
             printer = await require_physical_printer(db, user_id, physical_printer_id)
-            printer.gate_count = payload.slot_count
+            printer.gate_count = declared_count
 
-    await db.commit()
+    if payload.name is not None:
+        system.name = payload.name
+    if commit:
+        await db.commit()
+    else:
+        await db.flush()
     return await require_physical_printer(db, user_id, physical_printer_id)
 
 
@@ -674,16 +761,6 @@ async def ingest_printer_bridge_snapshot(
     from app.services.printer_identity_service import remember_identity
 
     await hold_account_import_lock(db, user_id)
-    # Both local transports may report at once. Serialize topology creation
-    # before locking connectors or slots, not just updates from one connector.
-    await db.execute(
-        select(UserPrinterDevice.id)
-        .where(
-            UserPrinterDevice.id == physical_printer_id,
-            UserPrinterDevice.user_id == user_id,
-        )
-        .with_for_update()
-    )
     printer = await require_physical_printer(db, user_id, physical_printer_id)
     system = await _require_material_system(
         db,
@@ -693,6 +770,7 @@ async def ingest_printer_bridge_snapshot(
     )
     if system.provider not in {"manual", payload.provider}:
         raise_error(409, ERR_MATERIAL_SYSTEM_EXISTS)
+    existing_slots = await _lock_system_slots(db, system.id)
 
     received_at = datetime.now(timezone.utc)
     observed_at = min(_utc_datetime(payload.observed_at), received_at)
@@ -753,6 +831,25 @@ async def ingest_printer_bridge_snapshot(
     if payload.sequence is not None:
         connector.last_snapshot_sequence = payload.sequence
         connector.last_snapshot_source_instance_id = payload.source_instance_id
+    newer_source = await db.scalar(
+        select(PhysicalPrinterConnector.id).where(
+            PhysicalPrinterConnector.material_system_id == system.id,
+            PhysicalPrinterConnector.id != connector.id,
+            PhysicalPrinterConnector.active.is_(True),
+            PhysicalPrinterConnector.last_observation_at > observed_at,
+        ).limit(1)
+    )
+    topology_is_current = newer_source is None
+    next_kind = "mmu" if payload.provider == "happy_hare" and payload.slots else system.kind
+    if topology_is_current:
+        await _guard_route_reinterpretation(db, system, existing_slots, [
+            MaterialSlotCreate(provider_index=item.provider_index, kind=item.kind, label=item.label)
+            for item in payload.slots
+        ], next_kind, retain_missing=True)
+        if system.kind != next_kind:
+            for slot in existing_slots:
+                slot.assignment_revision += 1
+        system.kind = next_kind
     system.provider = payload.provider
     system.capabilities = sorted(set(system.capabilities) | set(connector.capabilities))
     system.active = True
@@ -803,23 +900,7 @@ async def ingest_printer_bridge_snapshot(
         status_observation.received_at = received_at
         accepted = True
 
-    existing_slots = list(
-        (await db.execute(select(MaterialSlot).where(MaterialSlot.material_system_id == system.id)))
-        .scalars()
-        .all()
-    )
     slots_by_index = {slot.provider_index: slot for slot in existing_slots}
-    newer_source = await db.scalar(
-        select(PhysicalPrinterConnector.id)
-        .where(
-            PhysicalPrinterConnector.material_system_id == system.id,
-            PhysicalPrinterConnector.id != connector.id,
-            PhysicalPrinterConnector.active.is_(True),
-            PhysicalPrinterConnector.last_observation_at > observed_at,
-        )
-        .limit(1)
-    )
-    topology_is_current = snapshot_is_current and newer_source is None
     if payload.slot_topology_complete and topology_is_current:
         reported_indices = {item.provider_index for item in payload.slots}
         # A slot the printer stopped reporting is hidden, but not when a person
@@ -833,6 +914,8 @@ async def ingest_printer_bridge_snapshot(
                 slot.provider_index not in reported_indices
                 and slot.provider_index not in occupied_indices
             ):
+                if slot.active:
+                    slot.assignment_revision += 1
                 slot.active = False
     for item in payload.slots:
         slot = slots_by_index.get(item.provider_index)
@@ -849,7 +932,9 @@ async def ingest_printer_bridge_snapshot(
             db.add(slot)
             await db.flush()
             slots_by_index[item.provider_index] = slot
-        else:
+        elif topology_is_current:
+            if slot.kind != item.kind or not slot.active:
+                slot.assignment_revision += 1
             if item.label:
                 slot.label = item.label
             slot.kind = item.kind
@@ -935,6 +1020,8 @@ async def ensure_material_topology(
     passing its name instead of inheriting the Klipper pair.
     """
     provider = provider or ("happy_hare" if device.supports_hh else "legacy")
+    if device.id is None:
+        await db.flush()
     siblings = list(KLIPPER_PROVIDERS) if provider in KLIPPER_PROVIDERS else [provider]
     indices = set(gate_indices or ())
     if exact_gate_count is not None:
@@ -950,7 +1037,6 @@ async def ensure_material_topology(
     routes_by_index = {route.provider_index: route for route in (reported_routes or [])}
     indices.update(routes_by_index)
 
-    await db.flush()
     system = await db.scalar(
         select(MaterialSystem)
         .where(
@@ -959,6 +1045,7 @@ async def ensure_material_topology(
             MaterialSystem.provider.in_(siblings),
         )
         .order_by(MaterialSystem.id)
+        .execution_options(autoflush=False)
     )
     if system is None:
         # A printer normally feeds from one place. If the person already
@@ -973,6 +1060,7 @@ async def ensure_material_topology(
                         MaterialSystem.user_id == device.user_id,
                     )
                     .order_by(MaterialSystem.id)
+                    .execution_options(autoflush=False)
                 )
             )
             .scalars()
@@ -997,22 +1085,35 @@ async def ensure_material_topology(
         # This feed already names its own way of reporting, so nothing here is
         # about it: neither its name, nor its slots, nor how many it declares.
         return
-    elif device.supports_hh:
-        # Happy Hare is a provider-owned multi-gate topology even when an old
-        # manually created row was originally saved as direct_feed.  Normalize
-        # it on every provider contact so legacy data self-heals without a
-        # destructive migration.
-        system.kind = "mmu"
+    existing_slots_result = await db.execute(
+        select(MaterialSlot).where(MaterialSlot.material_system_id == system.id)
+        .execution_options(autoflush=False)
+    )
+    slots_by_index = {slot.provider_index: slot for slot in existing_slots_result.scalars().all()}
+    next_kind = "mmu" if device.supports_hh else system.kind
+    requested = [routes_by_index.get(index) or MaterialSlotCreate(
+        provider_index=index, kind="slot",
+    ) for index in sorted(indices)]
+    # Ordinary assignment mirroring does not change topology and may already
+    # hold its target slot. Only topology-changing calls acquire the whole map.
+    topology_changes = (system.kind != next_kind or exact_gate_count is not None
+                        or any(index not in slots_by_index for index in indices)
+                        or any(index in slots_by_index and (
+                            slots_by_index[index].kind != route.kind or not slots_by_index[index].active
+                        ) for index, route in routes_by_index.items()))
+    if topology_changes:
+        locked = await _lock_system_slots(db, system.id)
+        slots_by_index = {slot.provider_index: slot for slot in locked}
+        await _guard_route_reinterpretation(db, system, locked, requested, next_kind, retain_missing=True)
+    prior = {slot.id: (slot.kind, slot.active) for slot in slots_by_index.values()}
+    kind_changed = system.kind != next_kind
+    if device.supports_hh:
+        system.kind = next_kind
         system.provider = "happy_hare"
         system.capabilities = list(HAPPY_HARE_CAPABILITIES)
         system.active = True
     elif system.provider == "manual":
         system.provider = provider
-
-    existing_slots_result = await db.execute(
-        select(MaterialSlot).where(MaterialSlot.material_system_id == system.id)
-    )
-    slots_by_index = {slot.provider_index: slot for slot in existing_slots_result.scalars().all()}
     for provider_index in sorted(indices):
         route = routes_by_index.get(provider_index)
         if provider_index not in slots_by_index:
@@ -1060,6 +1161,10 @@ async def ensure_material_topology(
         # The machine reported more slots than the person declared; their answer
         # is stale, so ask again instead of hiding the extra slots.
         system.declared_slot_count = None
+
+    for slot in slots_by_index.values():
+        if slot.id in prior and (kind_changed or prior[slot.id] != (slot.kind, slot.active)):
+            slot.assignment_revision += 1
 
     if slots_by_index:
         states_result = await db.execute(

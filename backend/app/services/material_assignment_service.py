@@ -109,7 +109,7 @@ async def _require_material_slot(
             selectinload(MaterialSlot.legacy_gate_state),
         )
         .execution_options(populate_existing=True)
-        .with_for_update()
+        .with_for_update(of=MaterialSlot)
     )
     if slot is None:
         raise_error(404, ERR_MATERIAL_SLOT_NOT_FOUND)
@@ -307,6 +307,7 @@ async def update_material_slot_assignment(
             device=device,
             preset_id_provided="preset_id" in fields,
             spool_id_provided="spool_id" in fields,
+            material_slot_id=slot.id,
         )
         return
 

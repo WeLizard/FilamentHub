@@ -1,6 +1,6 @@
 /** Универсальный компонент выпадающего списка для всего сайта */
 
-import { useState, useRef, ReactNode, useEffect, useMemo } from 'react';
+import { useState, useRef, ReactNode, useEffect, useMemo, useId } from 'react';
 import { useTranslation } from 'react-i18next';
 import { createPortal } from 'react-dom';
 import { Check, ChevronDown, X } from 'lucide-react';
@@ -55,6 +55,7 @@ export const Dropdown: React.FC<DropdownProps> = ({
   onMultiChange,
 }) => {
   const { t } = useTranslation();
+  const inputId = useId();
   const inputSizeClasses = size === 'sm' ? 'px-3 py-1.5 text-sm rounded-lg' : 'px-4 py-3 rounded-xl';
   const optionSizeClasses = size === 'sm' ? 'px-3 py-2 text-sm' : 'px-4 py-3';
   const selectedSet = new Set(selectedValues);
@@ -199,7 +200,7 @@ export const Dropdown: React.FC<DropdownProps> = ({
   return (
     <div className={`relative ${className}`} ref={containerRef}>
       {label && (
-        <label className="block text-gray-300 mb-2 text-sm font-medium">
+        <label htmlFor={inputId} className="block text-gray-300 mb-2 text-sm font-medium">
           {label}
         </label>
       )}
@@ -208,6 +209,7 @@ export const Dropdown: React.FC<DropdownProps> = ({
         {filterable ? (
           <div className="relative">
             <input
+              id={inputId}
               ref={inputRef}
               type="text"
               value={isOpen ? filter : displayLabel}
@@ -256,6 +258,7 @@ export const Dropdown: React.FC<DropdownProps> = ({
         ) : (
           <div className="relative">
             <input
+              id={inputId}
               ref={inputRef}
               type="text"
               value={displayLabel}

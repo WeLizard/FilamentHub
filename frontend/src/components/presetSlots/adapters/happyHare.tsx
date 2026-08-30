@@ -27,7 +27,6 @@ import type {
 import { toast } from '../../Toast';
 import { ModalOverlay } from '../../ModalOverlay';
 import { translateApiError } from '../../../utils/translateApiError';
-import { EdgeConnectionSetup } from '../EdgeConnectionSetup';
 import type { AdapterViewContext, FeedAdapter } from './types';
 
 function HostnameField({ printer }: { printer: AdapterViewContext['printer'] }) {
@@ -627,7 +626,6 @@ function HappyHareSetup(context: AdapterViewContext) {
           {t('presetSlots.happyHare.connectionTitle')}
         </summary>
         <p className="my-2 text-xs text-gray-400">{t('presetSlots.happyHare.connectionGuide')}</p>
-        <EdgeConnectionSetup printer={context.printer} system={context.system} />
         <a href="https://moggieuk.github.io/Happy-Hare-Doc/Feature-Spoolman/#filamenthub"
           target="_blank" rel="noopener noreferrer" className="text-xs text-sky-200 underline">
           {t('presetSlots.happyHare.documentation')}
@@ -654,6 +652,16 @@ function HappyHareActions(context: AdapterViewContext) {
 
 export const happyHareAdapter: FeedAdapter = {
   id: 'happy_hare',
+  onboarding: {
+    connectionLabelKey: 'printerSetup.connections.happyHare',
+    connectionHintKey: 'printerSetup.connections.happyHareHint',
+    methods: ['native', 'orca', 'edge'],
+    orcaProbe: true,
+    topologies: [{ id: 'gates', labelKey: 'presetSlots.feedSystem.happy_hare', kind: 'mmu',
+      count: { labelKey: 'printerSetup.feed.gateCount', initial: 4, max: 256 },
+      slots: (count) => Array.from({ length: count }, (_, provider_index) => ({ provider_index, kind: 'gate' })),
+      extras: [{ labelKey: 'printerSetup.feed.bypass', index: 1023, kind: 'bypass' }] }],
+  },
   labelKey: 'presetSlots.feedSystem.happy_hare',
   fixedSlots: null,
   topologyFromProvider: true,

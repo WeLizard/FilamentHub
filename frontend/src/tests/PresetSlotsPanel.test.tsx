@@ -235,8 +235,10 @@ describe('PresetSlotsPanel', () => {
       '../components/presetSlots/adapters'
     );
 
-    expect(['manual', 'legacy', 'happy_hare'].map(supportsEdgeSetup)).toEqual([true, true, true]);
-    expect(['bambu', 'octoprint', 'unknown'].map(supportsEdgeSetup)).toEqual([false, false, false]);
+    expect(['manual', 'legacy', 'happy_hare'].map((provider) => supportsEdgeSetup(provider))).toEqual([true, true, true]);
+    expect(['bambu', 'octoprint', 'unknown'].map((provider) => supportsEdgeSetup(provider))).toEqual([false, false, false]);
+    expect(supportsEdgeSetup('manual', 'multi_tool')).toBe(false);
+    expect(supportsEdgeSetup('manual', 'mmu')).toBe(false);
 
     expect(feedAdapterFor('manual').capabilities).toEqual([]);
     expect(feedAdapterFor('happy_hare').capabilities).toEqual([
@@ -510,11 +512,11 @@ describe('PresetSlotsPanel', () => {
       {adapter.renderSetup?.(pairedContext)}
       {adapter.renderActions?.(pairedContext)}
     </>);
-    expect(screen.getAllByText('presetSlots.happyHare.refreshStatus')).toHaveLength(2);
+    expect(screen.getAllByText('presetSlots.happyHare.refreshStatus')).toHaveLength(1);
     expect(screen.queryByText('presetSlots.happyHare.refresh.title')).not.toBeInTheDocument();
     expect(screen.queryByText('presetSlots.happyHare.refresh.fallback')).not.toBeInTheDocument();
     expect(screen.queryByText('presetSlots.happyHare.refresh.copyCommand')).not.toBeInTheDocument();
-    fireEvent.click(screen.getAllByText('presetSlots.happyHare.refreshStatus')[1]);
+    fireEvent.click(screen.getByText('presetSlots.happyHare.refreshStatus'));
     expect(screen.getByText('presetSlots.happyHare.refresh.title')).toBeInTheDocument();
     expect(screen.getByText('presetSlots.happyHare.withoutPlugin')).toBeInTheDocument();
     expect(screen.getByText('presetSlots.happyHare.refresh.copyCommand')).toBeInTheDocument();
@@ -728,8 +730,8 @@ describe('PresetSlotsPanel', () => {
     render(<PresetSlotsPanel spools={[]} printerProfiles={[]} />);
     fireEvent.click(screen.getByText('printerSetup.title'));
     fireEvent.click(screen.getByRole('button', { name: /Manual Voron/ }));
-    fireEvent.focus(screen.getByDisplayValue('presetSlots.feedSystem.direct'));
-    fireEvent.click(screen.getByText('presetSlots.feedSystem.happy_hare'));
+    fireEvent.focus(screen.getByLabelText('printerSetup.connectionType'));
+    fireEvent.click(screen.getByText('printerSetup.connections.happyHare'));
     fireEvent.click(screen.getByText('printerSetup.connect'));
     await waitFor(() => {
       expect(setupConnection).toHaveBeenCalledWith(11, expect.objectContaining({

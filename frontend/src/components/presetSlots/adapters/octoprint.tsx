@@ -29,6 +29,7 @@ import { ModalOverlay } from '../../ModalOverlay';
 import { toast } from '../../Toast';
 import { translateApiError } from '../../../utils/translateApiError';
 import type { AdapterViewContext, FeedAdapter } from './types';
+import { ordinaryTopologies } from './topology';
 
 interface RoutingEditorProps {
   printer: AdapterViewContext['printer'];
@@ -604,6 +605,12 @@ function CreationGuide() {
 
 export const octoprintAdapter: FeedAdapter = {
   id: 'octoprint',
+  onboarding: {
+    connectionLabelKey: 'printerSetup.connections.octoprint',
+    connectionHintKey: 'printerSetup.connections.octoprintHint',
+    methods: ['native'],
+    topologies: ordinaryTopologies,
+  },
   labelKey: 'presetSlots.feedSystem.octoprint',
   fixedSlots: null,
   alwaysCollapsible: true,

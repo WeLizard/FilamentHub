@@ -508,7 +508,7 @@ async def revoke_printer_bridge_for_user(
         user_id=user_id,
         physical_printer_id=physical_printer_id,
         material_system_id=material_system_id,
-        provider=system.provider,
+        provider=_bridge_provider(system, transport),
         transport=transport,
     )
     if connector is None:

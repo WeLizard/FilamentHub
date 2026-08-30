@@ -4022,12 +4022,24 @@ export interface MaterialSystemCreate {
   provider: string;
   capabilities: Array<'read' | 'write' | 'presence' | 'spool_identity' | 'consumption' | 'local_command'>;
   slot_count?: number;
+  slots?: Array<{ provider_index: number; kind: string; label?: string | null }>;
+}
+
+export interface MaterialSystemUpdate {
+  name?: string;
+  slot_count?: number;
+  kind?: string;
+  provider?: string;
+  slots?: NonNullable<MaterialSystemCreate['slots']>;
+  expected_slots?: SlotAssignmentExpectation[];
 }
 
 export const physicalPrintersAPI = {
   setupConnection: async (id: number, payload: {
     connection?: PrinterSetupConnection;
     material_system?: MaterialSystemCreate;
+    material_system_id?: number;
+    material_system_update?: MaterialSystemUpdate;
   }): Promise<PhysicalPrinter> => (
     await api.post<PhysicalPrinter>(`/physical-printers/${id}/connection-setup`, payload)
   ).data,
@@ -4196,7 +4208,7 @@ export const physicalPrintersAPI = {
   updateSystem: async (
     physicalPrinterId: number,
     materialSystemId: number,
-    payload: { name?: string; slot_count?: number },
+    payload: MaterialSystemUpdate,
   ): Promise<PhysicalPrinter> => {
     const response = await api.patch<PhysicalPrinter>(
       `/physical-printers/${physicalPrinterId}/material-systems/${materialSystemId}`,

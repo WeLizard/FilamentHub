@@ -159,6 +159,11 @@ async def setup_connection(
     await hold_account_import_lock(db, current_user.id)
     await require_physical_printer(db, current_user.id, physical_printer_id)
     await attach_setup_connection(db, current_user.id, physical_printer_id, payload.connection)
+    if payload.material_system_update is not None:
+        await update_material_system(
+            db, current_user.id, physical_printer_id, payload.material_system_id,
+            payload.material_system_update, commit=False,
+        )
     await setup_material_system(db, current_user.id, physical_printer_id, payload.material_system)
     await db.commit()
     return PhysicalPrinterResponse.from_model(

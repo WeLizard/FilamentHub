@@ -503,7 +503,23 @@ function BambuMaterialActions({
 
 export const bambuAdapter: FeedAdapter = {
   id: 'bambu',
-  labelKey: 'presetSlots.feedSystem.bambu',
+  onboarding: {
+    connectionLabelKey: 'printerSetup.connections.bambu',
+    connectionHintKey: 'printerSetup.connections.bambuHint',
+    methods: ['orca'],
+    matchesModel: (model) => /^(bambu|bambulab|bambu lab)$/i.test(model.manufacturer?.trim() ?? ''),
+    topologies: [
+      { id: 'external', labelKey: 'printerSetup.feed.noAms', kind: 'direct_feed',
+        slots: () => [{ provider_index: 255, kind: 'external' }],
+        extras: [{ labelKey: 'printerSetup.feed.secondExternal', index: 254, kind: 'external' }] },
+      { id: 'ams', labelKey: 'printerSetup.feed.ams', kind: 'mmu',
+        count: { labelKey: 'printerSetup.feed.amsSlots', initial: 4, max: 252 },
+        slots: (count) => Array.from({ length: count }, (_, provider_index) => ({ provider_index, kind: 'slot' })),
+        extras: [{ labelKey: 'printerSetup.feed.external', index: 255, kind: 'external', checked: true },
+          { labelKey: 'printerSetup.feed.secondExternal', index: 254, kind: 'external' }] },
+    ],
+  },
+  labelKey: 'printerSetup.connections.bambu',
   fixedSlots: null,
   topologyFromProvider: true,
   capabilities: ['read', 'write', 'presence'],

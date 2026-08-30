@@ -493,6 +493,9 @@ async def handle_hh_snapshot(
     payload: HHSnapshotRequest,
 ) -> tuple[UserPrinterDevice, int, list[int]]:
     """Process HH snapshot. Returns (device, updated_count, mismatch_gate_indices)."""
+    from app.services.orca_import_guard import hold_account_import_lock
+
+    await hold_account_import_lock(db, user.id)
     device = (
         await require_device(db, user.id, payload.physical_printer_id)
         if payload.physical_printer_id is not None
@@ -511,14 +514,6 @@ async def handle_hh_snapshot(
         db.add(device)
         await db.flush()
     else:
-        device = await db.scalar(
-            select(UserPrinterDevice)
-            .where(
-                UserPrinterDevice.id == device.id,
-            )
-            .with_for_update()
-            .execution_options(populate_existing=True)
-        )
         newer_source = await db.scalar(
             select(PhysicalPrinterConnector.id)
             .where(
@@ -1103,6 +1098,7 @@ async def handle_manual_assignment(
     preset_id_provided: bool | None = None,
     spool_id_provided: bool | None = None,
     commit: bool = True,
+    material_slot_id: int | None = None,
 ) -> PresetGateState:
     resolved_device = device
     if resolved_device is None:
@@ -1159,12 +1155,13 @@ async def handle_manual_assignment(
     for spool_id in sorted(involved_spool_ids):
         await lock_spool_row(db, spool_id)
 
-    await ensure_material_topology(
-        db,
-        resolved_device,
-        gate_indices={payload.gate},
-        sync_legacy_assignments=False,
-    )
+    if material_slot_id is None:
+        await ensure_material_topology(
+            db,
+            resolved_device,
+            gate_indices={payload.gate},
+            sync_legacy_assignments=False,
+        )
     target_material_slot_ids = await material_slot_ids_for_gate(
         db,
         device_id=resolved_device.id,
@@ -1208,7 +1205,15 @@ async def handle_manual_assignment(
     except IntegrityError:
         raise_error(409, ERR_SPOOL_LOCATION_CONFLICT)
 
-    await ensure_material_topology(db, resolved_device, gate_indices={payload.gate})
+    if material_slot_id is None:
+        await ensure_material_topology(db, resolved_device, gate_indices={payload.gate})
+    else:
+        # The canonical assignment already holds this route's lock. It must not
+        # reinterpret or grow topology while holding only one slot in the map.
+        from app.services.material_assignment_service import sync_legacy_material_assignment
+
+        state.material_slot_id = material_slot_id
+        await sync_legacy_material_assignment(db, state)
     # Production sessions disable autoflush. Persist the mirrored assignment
     # deletion before asking whether the old spool is still mounted anywhere.
     await db.flush()

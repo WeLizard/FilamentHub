@@ -79,7 +79,7 @@ class MaterialSystemCreate(BaseModel):
     provider: str = Field(default="manual", min_length=1, max_length=50)
     capabilities: list[CapabilityName] = Field(default_factory=list)
     slot_count: int | None = Field(default=None, ge=1, le=256)
-    slots: list[MaterialSlotCreate] = Field(default_factory=list, max_length=256)
+    slots: list[MaterialSlotCreate] = Field(default_factory=list, max_length=257)
 
     model_config = {"str_strip_whitespace": True}
 
@@ -95,14 +95,32 @@ class MaterialSystemCreate(BaseModel):
         indices = [slot.provider_index for slot in self.slots]
         if len(indices) != len(set(indices)):
             raise ValueError("slot provider_index values must be unique within a system")
+        if self.slots and self.slot_count is not None and set(indices) != set(range(self.slot_count)):
+            raise ValueError("slot_count must describe exactly the explicit slot indices")
         return self
 
 
 class MaterialSystemUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=200)
     slot_count: int | None = Field(default=None, ge=1, le=256)
+    kind: str | None = Field(default=None, min_length=1, max_length=50)
+    provider: str | None = Field(default=None, min_length=1, max_length=50)
+    slots: list[MaterialSlotCreate] | None = Field(default=None, min_length=1, max_length=257)
+    expected_slots: list[MaterialSlotAssignmentExpectation] | None = Field(default=None, max_length=257)
 
     model_config = {"str_strip_whitespace": True}
+
+    @model_validator(mode="after")
+    def explicit_topology(self) -> "MaterialSystemUpdate":
+        if self.slots is not None:
+            indices = [slot.provider_index for slot in self.slots]
+            if len(indices) != len(set(indices)) or self.expected_slots is None:
+                raise ValueError("explicit topology requires unique indices and slot expectations")
+            if self.slot_count is not None:
+                raise ValueError("use explicit slots or slot_count, not both")
+        elif self.kind is not None or self.provider is not None:
+            raise ValueError("changing topology kind or provider requires explicit slots")
+        return self
 
 
 class PrinterSetupConnection(BaseModel):
@@ -121,6 +139,16 @@ class PrinterSetupConnection(BaseModel):
 class PhysicalPrinterConnectionSetup(BaseModel):
     connection: PrinterSetupConnection | None = None
     material_system: MaterialSystemCreate | None = None
+    material_system_update: MaterialSystemUpdate | None = None
+    material_system_id: int | None = Field(default=None, ge=1)
+
+    @model_validator(mode="after")
+    def target_existing_topology(self) -> "PhysicalPrinterConnectionSetup":
+        if self.material_system_update is not None and (
+            self.material_system_id is None or self.material_system is not None
+        ):
+            raise ValueError("topology update requires one existing material system")
+        return self
 
 
 class MaterialSlotAssignmentExpectation(BaseModel):
@@ -143,7 +171,7 @@ class MaterialSlotAssignmentUpdate(BaseModel):
 
 
 class MaterialSystemAssignmentsClearRequest(BaseModel):
-    slots: list[MaterialSlotAssignmentExpectation] = Field(max_length=256)
+    slots: list[MaterialSlotAssignmentExpectation] = Field(max_length=257)
 
     @model_validator(mode="after")
     def require_unique_slot_ids(self) -> "MaterialSystemAssignmentsClearRequest":

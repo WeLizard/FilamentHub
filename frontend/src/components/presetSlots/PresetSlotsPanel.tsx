@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { Cpu, Clock, Eraser, KeyRound, Layers, Trash2, Loader2, Wifi, WifiOff, AlertTriangle, Check, ChevronDown, Plus } from 'lucide-react';
+import { Cpu, Clock, Eraser, KeyRound, Layers, Trash2, Loader2, Wifi, WifiOff, AlertTriangle, Check, ChevronDown, Plus, Settings2 } from 'lucide-react';
 import { devicesAPI, physicalPrintersAPI, presetsAPI, printerProfilesAPI, spoolsAPI } from '../../api/client';
 import type {
   GateState,
@@ -14,6 +14,7 @@ import type { Preset } from '../../types/api';
 import { ConfirmDeleteModal } from '../ConfirmDeleteModal';
 import { feedAdapterFor } from './adapters';
 import { AddPhysicalPrinterModal } from '../AddPhysicalPrinterModal';
+import { PrinterSetupWizard } from '../PrinterSetupWizard';
 import { GateMapGrid } from './GateMapGrid';
 import { LinkInstructions } from './LinkInstructions';
 import { removeBambuBridgeInPlugin } from '../../utils/pluginBridge';
@@ -96,6 +97,7 @@ function MaterialSystemSection({ printer, system, presetsSeedMap, spools, spoolC
   const [deleting, setDeleting] = useState(false);
   const [issuedKey, setIssuedKey] = useState<string | null>(null);
   const [issuingKey, setIssuingKey] = useState(false);
+  const [setupOpen, setSetupOpen] = useState(false);
   const canCollapse = adapter.alwaysCollapsible === true
     || system.kind === 'mmu'
     || adapter.topologyFromProvider === true
@@ -315,9 +317,15 @@ function MaterialSystemSection({ printer, system, presetsSeedMap, spools, spoolC
                 <Clock className="h-3 w-3" />
               )}
               {t(adapter.topologyFromProvider && visibleSlots.length === 0
-                ? 'printerConnections.awaitingTopology' : `deviceLink.${linkState}`)}
+                ? 'printerConnections.awaitingTopology'
+                : !lastSeenAt && visibleSlots.length > 0 ? 'printerSetup.manualTracking' : `deviceLink.${linkState}`)}
             </span>
-            {!adapter.topologyFromProvider && editingSlots ? (
+            {adapter.onboarding && visibleSlots.length > 0 ? (
+              <button type="button" onClick={() => setSetupOpen(true)} title={t('printerSetup.feed.edit')}
+                className="rounded-full bg-white/5 px-2 py-0.5 text-[11px] text-gray-400 hover:text-white">
+                {t(adapter.slotCountSummaryKey ?? 'presetSlots.gates', { count: visibleSlots.length })}
+              </button>
+            ) : !adapter.topologyFromProvider && editingSlots ? (
               <span className="flex items-center gap-1">
                 <input
                   type="number"
@@ -339,13 +347,13 @@ function MaterialSystemSection({ printer, system, presetsSeedMap, spools, spoolC
                   {savingSlotCount ? '…' : t('common.save')}
                 </button>
               </span>
-            ) : adapter.topologyFromProvider ? (
+            ) : adapter.topologyFromProvider && visibleSlots.length > 0 ? (
               <span className="rounded-full bg-white/5 px-2 py-0.5 text-[11px] text-gray-400">
                 {t(adapter.slotCountSummaryKey ?? 'presetSlots.gates', {
                   count: visibleSlots.length,
                 })}
               </span>
-            ) : (
+            ) : !adapter.topologyFromProvider ? (
               <button
                 type="button"
                 onClick={() => {
@@ -359,7 +367,7 @@ function MaterialSystemSection({ printer, system, presetsSeedMap, spools, spoolC
                   count: visibleSlots.length,
                 })}
               </button>
-            )}
+            ) : null}
             {lastSeenAt && (
               <span className="rounded-full bg-white/5 px-2 py-0.5 text-[11px] text-gray-500">
                 {formatLastSeen(lastSeenAt, t, i18n.language, now)}
@@ -417,6 +425,11 @@ function MaterialSystemSection({ printer, system, presetsSeedMap, spools, spoolC
             </button>
           )}
           {adapter.renderActions?.({ printer, system, gates, spools, linkConfirmed })}
+          <button type="button" onClick={() => setSetupOpen(true)}
+            aria-label={t('printerSetup.connectionSettings')}
+            className="rounded-lg border border-white/10 bg-white/5 p-1.5 text-gray-400 hover:text-white">
+            <Settings2 className="h-3.5 w-3.5" />
+          </button>
           <button
             type="button"
             onClick={handleClearAll}
@@ -455,6 +468,7 @@ function MaterialSystemSection({ printer, system, presetsSeedMap, spools, spoolC
         confirmText={t('presetSlots.deleteSystem')}
         message={t('presetSlots.deleteSystemConfirm', { name: systemLabel })}
       />
+      {setupOpen && <PrinterSetupWizard physicalPrinter={printer} onClose={() => setSetupOpen(false)} />}
 
       {!collapsed && adapter.renderSetup?.({ printer, system, gates, spools, linkConfirmed })}
 
@@ -469,7 +483,7 @@ function MaterialSystemSection({ printer, system, presetsSeedMap, spools, spoolC
         </div>
       )}
 
-      {!collapsed && !adapter.topologyFromProvider
+      {!collapsed && !adapter.topologyFromProvider && !adapter.onboarding
         && system.declared_slot_count == null
         && visibleSlots.length > 0 && (
         <div className="mb-4 rounded-xl border border-white/10 bg-white/5 p-4">

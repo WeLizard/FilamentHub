@@ -5,6 +5,7 @@ import type { MaterialSystem, PhysicalPrinter, PrinterBridgeStatus } from '../..
 import { happyHareAdapter } from './happyHare';
 import { directFeedAdapter } from './direct';
 import { toast } from '../../Toast';
+import { EdgeConnectionSetup } from '../EdgeConnectionSetup';
 
 const { issuePairingCode, status, revoke, bridgeState, requestAction } = vi.hoisted(() => ({
   issuePairingCode: vi.fn(),
@@ -81,19 +82,12 @@ function bridgeStatus(overrides: Partial<PrinterBridgeStatus> = {}): PrinterBrid
   };
 }
 
-function renderSetup() {
+function renderSetup(feed = system, collapsible = false) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
-  const setup = happyHareAdapter.renderSetup?.({
-    printer,
-    system,
-    gates: [],
-    spools: [],
-    linkConfirmed: false,
-  });
   return render(
-    <QueryClientProvider client={queryClient}>{setup}</QueryClientProvider>,
+    <QueryClientProvider client={queryClient}><EdgeConnectionSetup printer={printer} system={feed} collapsible={collapsible} /></QueryClientProvider>,
   );
 }
 
@@ -106,7 +100,7 @@ describe('Happy Hare Edge setup', () => {
     bridgeState.embedded = false;
   });
 
-  it('offers a connection without Orca by default', async () => {
+  it('offers a connection without Orca after the user chooses FH Edge', async () => {
     status.mockResolvedValue(bridgeStatus());
     renderSetup();
 
@@ -114,13 +108,19 @@ describe('Happy Hare Edge setup', () => {
     await waitFor(() => expect(status).toHaveBeenCalledWith(10, 20, 'edge_agent'));
   });
 
-  it('offers direct-feed setup as an optional collapsed block using the same node contract', async () => {
-    status.mockResolvedValue(bridgeStatus({ provider: 'legacy' }));
+  it('does not load Edge status merely by opening a manual Happy Hare card', () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    const view = render(<QueryClientProvider client={client}>{directFeedAdapter.renderSetup?.({
-      printer, system: { ...system, provider: 'manual', kind: 'direct_feed' },
-      gates: [], spools: [], linkConfirmed: false,
+    render(<QueryClientProvider client={client}>{happyHareAdapter.renderSetup?.({
+      printer, system, gates: [], spools: [], linkConfirmed: false,
     })}</QueryClientProvider>);
+    expect(screen.queryByText('presetSlots.edge.title')).not.toBeInTheDocument();
+    expect(status).not.toHaveBeenCalled();
+    expect(directFeedAdapter.renderSetup).toBeUndefined();
+  });
+
+  it('offers explicitly selected direct-feed setup using the same node contract', async () => {
+    status.mockResolvedValue(bridgeStatus({ provider: 'legacy' }));
+    const view = renderSetup({ ...system, provider: 'manual', kind: 'direct_feed' }, true);
     expect(view.container.querySelector('details')).not.toHaveAttribute('open');
     await waitFor(() => expect(status).toHaveBeenCalledWith(10, 20, 'edge_agent'));
     expect(screen.getByText('presetSlots.edge.connectionTitle')).toBeInTheDocument();

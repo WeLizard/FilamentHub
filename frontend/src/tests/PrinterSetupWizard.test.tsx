@@ -6,14 +6,14 @@ import type { PhysicalPrinter } from '../api/client';
 
 const mocks = vi.hoisted(() => ({
   create: vi.fn(), setup: vi.fn(), plugin: vi.fn(), key: vi.fn(), embed: false,
-  printers: vi.fn(), models: vi.fn(), installed: vi.fn(),
+  printers: vi.fn(), models: vi.fn(), model: vi.fn(), installed: vi.fn(),
 }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('../contexts/AuthContext', () => ({ useAuth: () => ({ user: { id: 1 } }) }));
 vi.mock('../api/client', () => ({
   physicalPrintersAPI: { create: mocks.create, setupConnection: mocks.setup,
     list: mocks.printers, listInstalledCandidates: mocks.installed, listBindings: async () => [] },
-  printersAPI: { list: mocks.models }, devicesAPI: { regenerateKey: mocks.key },
+  printersAPI: { list: mocks.models, get: mocks.model }, devicesAPI: { regenerateKey: mocks.key },
 }));
 vi.mock('../utils/pluginBridge', () => ({
   isPluginEmbed: () => mocks.embed, requestPrinterSetup: mocks.plugin,
@@ -22,11 +22,10 @@ vi.mock('../utils/pluginBridge', () => ({
     cb(new Set(['printer-setup-v1'])); return () => {};
   },
 }));
-vi.mock('../components/presetSlots/adapters', () => {
-  const adapters = [{ id: 'manual', labelKey: 'direct', fixedSlots: 1, capabilities: [], link: null },
-    { id: 'happy_hare', labelKey: 'happy_hare', topologyFromProvider: true, capabilities: ['read'], link: null }];
-  return { FEED_ADAPTERS: adapters, feedAdapterFor: (id: string) => adapters.find((a) => a.id === id) ?? adapters[0],
-    supportsEdgeSetup: (id: string) => ['manual', 'legacy', 'happy_hare'].includes(id) };
+vi.mock('../components/presetSlots/adapters', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../components/presetSlots/adapters')>();
+  return { ...actual, feedAdapterFor: (id: string) => ({ ...actual.feedAdapterFor(id),
+    renderSetup: () => <div data-testid="adapter-setup">{id}</div> }) };
 });
 vi.mock('../components/presetSlots/EdgeConnectionSetup', () => ({ EdgeConnectionSetup: () => <div>edge-setup</div> }));
 
@@ -35,10 +34,10 @@ const probe = { ok: true, probeId: 'probe-1', provider: 'happy_hare', gateCount:
   connection: { source_instance_id: 'local-desktop-source', connection_ref: 'ref-1',
     origin: 'orca_profile', provider: 'moonraker', endpoint_token: 'a'.repeat(64) } };
 
-function show(physicalPrinter?: PhysicalPrinter) {
+function show(physicalPrinter?: PhysicalPrinter, initialPrinterId?: number) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return { client, ...render(<QueryClientProvider client={client}>
-    <PrinterSetupWizard onClose={vi.fn()} physicalPrinter={physicalPrinter} />
+    <PrinterSetupWizard onClose={vi.fn()} physicalPrinter={physicalPrinter} initialPrinterId={initialPrinterId} />
   </QueryClientProvider>) };
 }
 async function namePrinter() {
@@ -46,6 +45,10 @@ async function namePrinter() {
   fireEvent.click(screen.getByText('printerSetup.newDevice'));
   fireEvent.change(screen.getByLabelText('printerSetup.name'), { target: { value: 'Workshop' } });
   fireEvent.click(screen.getByText('printerSetup.connectionOptional'));
+}
+function chooseMoonraker() {
+  fireEvent.focus(screen.getByLabelText('printerSetup.connectionType'));
+  fireEvent.click(screen.getByText('printerSetup.connections.moonraker'));
 }
 function savePrinter() {
   fireEvent.click(screen.getByRole('button', { name: /^printerSetup\.(save|connect)$/ }));
@@ -57,6 +60,7 @@ describe('PrinterSetupWizard', () => {
     window.history.replaceState({}, '');
     mocks.create.mockResolvedValue(saved); mocks.setup.mockResolvedValue(saved);
     mocks.printers.mockResolvedValue([]); mocks.models.mockResolvedValue({ items: [] }); mocks.installed.mockResolvedValue([]);
+    mocks.model.mockResolvedValue(null);
   });
   it('creates a usable manual printer and feed system without a plugin or Edge', async () => {
     show();
@@ -77,6 +81,7 @@ describe('PrinterSetupWizard', () => {
     mocks.create.mockRejectedValueOnce(new Error('response lost'));
     mocks.create.mockResolvedValueOnce({ ...saved, material_systems: [{ provider: 'manual' }] });
     const view = show(); await namePrinter();
+    chooseMoonraker();
     fireEvent.click(screen.getByText('printerSetup.routes.edge'));
     fireEvent.click(screen.getByText('printerSetup.save'));
     await screen.findByRole('alert');
@@ -112,10 +117,9 @@ describe('PrinterSetupWizard', () => {
       expect(screen.queryByText('printerSetup.resume')).not.toBeInTheDocument();
     } finally { storage.mockRestore(); history.mockRestore(); }
   });
-  it('disables Edge for an unsupported existing feed system without blocking manual tracking', async () => {
+  it('does not offer Edge for an unsupported existing feed system or block manual tracking', async () => {
     show({ ...saved, material_systems: [{ provider: 'bambu' }] } as PhysicalPrinter);
-    expect(screen.getByText('printerSetup.routes.edge')).toBeDisabled();
-    expect(screen.getByText('printerSetup.edgeUnsupported')).toBeInTheDocument();
+    expect(screen.queryByText('printerSetup.routes.edge')).not.toBeInTheDocument();
     savePrinter();
     await screen.findByText('printerSetup.saved');
     expect(mocks.setup).toHaveBeenCalledWith(7, expect.not.objectContaining({ material_system: expect.anything() }));
@@ -124,6 +128,7 @@ describe('PrinterSetupWizard', () => {
   });
   it('blocks a selected Edge route if refreshed data reveals an unsupported system', async () => {
     const { client } = show(saved);
+    chooseMoonraker();
     fireEvent.click(screen.getByText('printerSetup.routes.edge'));
     await waitFor(() => expect(client.isFetching({ queryKey: ['physical-printers'] })).toBe(0));
     await act(async () => {
@@ -153,6 +158,7 @@ describe('PrinterSetupWizard', () => {
   });
   it('offers manual fallback immediately when local plugin capabilities are unavailable', async () => {
     show(); await namePrinter();
+    chooseMoonraker();
     fireEvent.click(screen.getByText('printerSetup.routes.orca'));
     expect(screen.getByText('printerSetup.pluginUnavailable')).toBeInTheDocument();
     expect(screen.getByText('printerSetup.save')).toBeDisabled();
@@ -164,7 +170,7 @@ describe('PrinterSetupWizard', () => {
     mocks.plugin.mockImplementation(async (op: string) => op === 'list'
       ? { ok: true, candidates: [{ label: 'Local Voron', connectionRef: 'ref-1' }] }
       : op === 'probe' ? probe : { ok: false });
-    show(); await namePrinter(); fireEvent.click(screen.getByText('printerSetup.routes.orca'));
+    show(); await namePrinter(); chooseMoonraker(); fireEvent.click(screen.getByText('printerSetup.routes.orca'));
     fireEvent.click(await screen.findByText('Local Voron'));
     await screen.findByText('printerSetup.probeGates');
     fireEvent.click(screen.getByText('printerSetup.save'));
@@ -178,7 +184,7 @@ describe('PrinterSetupWizard', () => {
   it('rejects a local connection already belonging to another selected card', async () => {
     mocks.embed = true;
     mocks.plugin.mockResolvedValue({ ok: true, candidates: [{ label: 'Other', connectionRef: 'ref-2', physicalPrinterId: 9 }] });
-    show(saved); fireEvent.click(screen.getByText('printerSetup.routes.orca'));
+    show(saved); chooseMoonraker(); fireEvent.click(screen.getByText('printerSetup.routes.orca'));
     fireEvent.click(await screen.findByText('Other · #9'));
     await waitFor(() => expect(screen.getByText('printerSetup.otherCard')).toBeInTheDocument());
     expect(mocks.plugin).toHaveBeenCalledTimes(1); expect(mocks.setup).not.toHaveBeenCalled();
@@ -249,5 +255,119 @@ describe('PrinterSetupWizard', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     savePrinter(); await screen.findByText('printerSetup.saved');
     expect(mocks.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses Bambu equipment choices without offering unrelated connections or requiring AMS', async () => {
+    mocks.models.mockResolvedValue({ items: [{ id: 10, name: 'Bambu Lab P1S', manufacturer: 'Bambu Lab' }] });
+    show(); fireEvent.click(screen.getByText('printerSetup.newDevice'));
+    fireEvent.focus(screen.getByLabelText('printerSetup.model'));
+    fireEvent.click(await screen.findByRole('button', { name: 'Bambu Lab P1S' }));
+    fireEvent.click(screen.getByText('printerSetup.connectionOptional'));
+    expect(screen.queryByText('printerSetup.routes.edge')).not.toBeInTheDocument();
+    expect(screen.queryByText('printerSetup.connections.octoprint')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('printerSetup.feed.label')).toHaveValue('printerSetup.feed.noAms');
+    savePrinter(); await screen.findByText('printerSetup.saved');
+    expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({ material_system: expect.objectContaining({
+      provider: 'bambu', kind: 'direct_feed', slots: [{ provider_index: 255, kind: 'external' }],
+    }) }));
+    expect(mocks.plugin).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('adapter-setup')).not.toBeInTheDocument();
+  });
+
+  it('connects OctoPrint natively and keeps the feed layout independent of the connection', async () => {
+    show(); await namePrinter();
+    fireEvent.focus(screen.getByLabelText('printerSetup.connectionType'));
+    fireEvent.click(screen.getByText('printerSetup.connections.octoprint'));
+    expect(screen.getByText('printerSetup.routes.native')).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.queryByText('printerSetup.routes.orca')).not.toBeInTheDocument();
+    expect(screen.queryByText('printerSetup.routes.edge')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText('printerSetup.feed.configure'));
+    fireEvent.focus(screen.getByLabelText('printerSetup.feed.label'));
+    fireEvent.click(screen.getByText('printerSetup.feed.tools'));
+    savePrinter(); await screen.findByText('printerSetup.saved');
+    expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({ material_system: expect.objectContaining({
+      provider: 'octoprint', kind: 'multi_tool', slots: [
+        { provider_index: 0, kind: 'tool' }, { provider_index: 1, kind: 'tool' },
+      ],
+    }) }));
+    expect(mocks.plugin).not.toHaveBeenCalled();
+  });
+
+  it('creates manually declared Happy Hare gates and bypass without generating a key or requiring Edge', async () => {
+    show(); await namePrinter();
+    fireEvent.focus(screen.getByLabelText('printerSetup.connectionType'));
+    fireEvent.click(screen.getByText('printerSetup.connections.happyHare'));
+    fireEvent.click(screen.getByText('printerSetup.routes.manual'));
+    fireEvent.change(screen.getByLabelText('printerSetup.feed.gateCount'), { target: { value: '8' } });
+    fireEvent.click(screen.getByLabelText('printerSetup.feed.bypass'));
+    savePrinter(); await screen.findByText('printerSetup.saved');
+    const system = mocks.create.mock.calls[0][0].material_system;
+    expect(system.slots).toHaveLength(9);
+    expect(system.slots[8]).toEqual({ provider_index: 1023, kind: 'bypass' });
+    expect(mocks.key).not.toHaveBeenCalled(); expect(mocks.plugin).not.toHaveBeenCalled();
+  });
+
+  it('keeps an unknown model usable without silently picking a connection or turning independent tools into an MMU', async () => {
+    show(); await namePrinter();
+    expect(screen.getByLabelText('printerSetup.connectionType')).toHaveValue('');
+    expect(screen.queryByText('printerSetup.routes.edge')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText('printerSetup.feed.configure'));
+    fireEvent.focus(screen.getByLabelText('printerSetup.feed.label'));
+    fireEvent.click(screen.getByText('printerSetup.feed.tools'));
+    savePrinter(); await screen.findByText('printerSetup.saved');
+    expect(mocks.create.mock.calls[0][0].material_system).toMatchObject({ provider: 'manual', kind: 'multi_tool' });
+  });
+
+  it('applies model-specific options when opened from a saved printer configuration outside the search page', async () => {
+    mocks.model.mockResolvedValue({ id: 99, name: 'Bambu Lab X1C', manufacturer: 'Bambulab' });
+    show(undefined, 99);
+    await waitFor(() => expect(screen.getByLabelText('printerSetup.feed.label')).toHaveValue('printerSetup.feed.noAms'));
+    fireEvent.click(screen.getByText('printerSetup.connectionOptional'));
+    expect(screen.getByLabelText('printerSetup.connectionType')).toHaveValue('printerSetup.connections.bambu');
+    expect(screen.queryByText('printerSetup.routes.edge')).not.toBeInTheDocument();
+  });
+
+  it('restores a zero-slot Happy Hare card manually instead of sending an empty map', async () => {
+    show({ ...saved, material_systems: [{ id: 4, provider: 'happy_hare', kind: 'mmu', slots: [] }] } as unknown as PhysicalPrinter);
+    fireEvent.click(screen.getByText('printerSetup.feed.edit'));
+    expect(screen.getByLabelText('printerSetup.feed.gateCount')).not.toBeDisabled();
+    fireEvent.change(screen.getByLabelText('printerSetup.feed.gateCount'), { target: { value: '8' } });
+    savePrinter(); await screen.findByText('printerSetup.saved');
+    const payload = mocks.setup.mock.calls[0][1];
+    expect(payload.material_system).toBeUndefined();
+    expect(payload.material_system_update.slots).toHaveLength(8);
+    expect(payload.material_system_update.expected_slots).toEqual([]);
+  });
+
+  it('uses the known model when configuring an already imported printer without a feed system', async () => {
+    mocks.model.mockResolvedValue({ id: 99, name: 'Bambu Lab P1S', manufacturer: 'Bambulab' });
+    show({ ...saved, printer_id: 99 });
+    await waitFor(() => expect(screen.getByLabelText('printerSetup.connectionType')).toHaveValue('printerSetup.connections.bambu'));
+    expect(screen.queryByText('printerSetup.routes.edge')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('printerSetup.feed.label')).toHaveValue('printerSetup.feed.noAms');
+    savePrinter(); await screen.findByText('printerSetup.saved');
+    expect(mocks.setup.mock.calls[0][0]).toBe(saved.id);
+    expect(mocks.setup.mock.calls[0][1].material_system.provider).toBe('bambu');
+    expect(mocks.create).not.toHaveBeenCalled();
+  });
+
+  it('preserves sparse provider indices, labels, and expectations when reopening or retrying a topology edit', async () => {
+    const slots = [0, 128, 255].map((index) => ({ id: index + 10, provider_index: index,
+      kind: index === 255 ? 'external' : 'slot', label: `Position ${index}`, active: true,
+      assignment_revision: 3, assignment: null, legacy_projection: null }));
+    const printer = { ...saved, material_systems: [{ id: 4, provider: 'bambu', kind: 'mmu', slots }] } as unknown as PhysicalPrinter;
+    mocks.setup.mockRejectedValueOnce(new Error('response lost')).mockResolvedValueOnce(printer);
+    const view = show(printer);
+    fireEvent.click(screen.getByText('printerSetup.feed.edit'));
+    expect(screen.getByLabelText('printerSetup.feed.amsSlots')).toBeDisabled();
+    savePrinter(); await screen.findByRole('alert');
+    const payload = mocks.setup.mock.calls[0][1];
+    expect(payload.material_system_update.slots).toEqual(slots.map(({ provider_index, kind, label }) => ({ provider_index, kind, label })));
+    expect(payload.material_system_update.expected_slots).toEqual(slots.map((slot) => ({ material_slot_id: slot.id, expected_spool_id: null, expected_revision: 3 })));
+    view.unmount(); show(printer);
+    fireEvent.click(screen.getByText('printerSetup.resumeButton'));
+    await screen.findByText('printerSetup.saved');
+    expect(mocks.setup.mock.calls[1][1]).toEqual(payload);
+    expect(mocks.create).not.toHaveBeenCalled();
   });
 });
