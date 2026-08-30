@@ -657,6 +657,7 @@ export const happyHareAdapter: FeedAdapter = {
   labelKey: 'presetSlots.feedSystem.happy_hare',
   fixedSlots: null,
   topologyFromProvider: true,
+  supportsEdge: true,
   capabilities: ['read', 'write', 'presence', 'spool_identity', 'consumption', 'local_command'],
   link: {
     hintKey: 'presetSlots.happyHare.linkHint',

@@ -45,6 +45,8 @@ export interface FeedAdapter {
   alwaysCollapsible?: boolean;
   /** Capabilities provided by this integration path, not hoped-for future features. */
   capabilities: FeedAdapterCapability[];
+  /** This provider has an implemented Edge setup path, not merely read capability. */
+  supportsEdge?: boolean;
   /** Whether silence between provider requests is expected. */
   contactMode?: DeviceContactMode;
   /** Provider-specific wording for the topology field and its saved summary. */

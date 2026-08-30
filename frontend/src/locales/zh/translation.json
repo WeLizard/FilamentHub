@@ -2,6 +2,8 @@
   "printerSetup": {
     "errors": {"auth":"请重新登录插件，本地会话缺少所需权限。","setup_context":"无法从网站获取连接上下文。请检查网络及服务器更新。","printer_auth":"Moonraker 拒绝访问，请检查 API 密钥或本地客户端权限。","unreachable":"Moonraker 未正确响应。请检查地址、网络及 Klipper 是否就绪。","connection_not_found":"连接已不可用或属于另一张卡片。请刷新列表。","identity_changed":"此地址现在响应的是另一台设备，请重新检查连接。","expired":"检查已过期，请重新检查连接。","snapshot_failed":"无法保存打印机状态。卡片已保存，请重试连接。"},
     "title": "连接打印机",
+    "recoveryUnavailable": "浏览器无法保存请求以便安全重试，因此未发送请求。请允许网站存储，或在普通浏览器中打开网站。",
+    "edgeUnsupported": "Edge 暂不支持此供料系统。请使用手动记录或该系统支持的连接方式。",
     "description": "一台物理打印机对应一张卡片。请选择现有打印机或添加新打印机；自动连接可以稍后启用。",
     "target": "物理打印机",
     "newDevice": "添加新的物理打印机",

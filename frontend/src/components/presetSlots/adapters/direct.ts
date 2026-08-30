@@ -7,6 +7,7 @@ export const directFeedAdapter: FeedAdapter = {
   labelKey: 'presetSlots.feedSystem.direct',
   fixedSlots: 1,
   capabilities: [],
+  supportsEdge: true,
   link: null,
   renderSetup: (context) => ['manual', 'legacy'].includes(context.system.provider)
     ? createElement(EdgeConnectionSetup, { ...context, collapsible: true })

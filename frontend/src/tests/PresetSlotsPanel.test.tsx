@@ -231,9 +231,12 @@ describe('PresetSlotsPanel', () => {
   });
 
   it('declares only the capabilities supported by each feed adapter', async () => {
-    const { feedAdapterFor } = await import(
+    const { feedAdapterFor, supportsEdgeSetup } = await import(
       '../components/presetSlots/adapters'
     );
+
+    expect(['manual', 'legacy', 'happy_hare'].map(supportsEdgeSetup)).toEqual([true, true, true]);
+    expect(['bambu', 'octoprint', 'unknown'].map(supportsEdgeSetup)).toEqual([false, false, false]);
 
     expect(feedAdapterFor('manual').capabilities).toEqual([]);
     expect(feedAdapterFor('happy_hare').capabilities).toEqual([

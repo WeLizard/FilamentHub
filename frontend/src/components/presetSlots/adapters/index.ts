@@ -16,4 +16,11 @@ export function feedAdapterFor(provider: string): FeedAdapter {
   return FEED_ADAPTERS.find((adapter) => adapter.id === provider) ?? directFeedAdapter;
 }
 
+export function supportsEdgeSetup(provider: string): boolean {
+  const adapter = provider === 'legacy' ? directFeedAdapter
+    : FEED_ADAPTERS.find((item) => item.id === provider);
+  // An unknown provider's display fallback is not proof of transport support.
+  return adapter?.supportsEdge === true;
+}
+
 export type { FeedAdapter, FeedAdapterLink } from './types';

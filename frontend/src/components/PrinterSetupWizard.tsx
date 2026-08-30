@@ -10,11 +10,12 @@ import { useAuth } from '../contexts/AuthContext';
 import { useDebounce } from '../hooks/useDebounce';
 import { ModalOverlay } from './ModalOverlay';
 import { Dropdown } from './Dropdown';
-import { FEED_ADAPTERS, feedAdapterFor } from './presetSlots/adapters';
+import { FEED_ADAPTERS, feedAdapterFor, supportsEdgeSetup } from './presetSlots/adapters';
 import { EdgeConnectionSetup } from './presetSlots/EdgeConnectionSetup';
 import { LinkInstructions } from './presetSlots/LinkInstructions';
 import { translateApiError } from '../utils/translateApiError';
-import { safeStorage } from '../utils/storage';
+import { clearPrinterSetupIntent, persistPrinterSetupIntent, readPrinterSetupIntent } from '../utils/printerSetupRecovery';
+import type { PendingPrinterSetup, PrinterSetupRoute } from '../utils/printerSetupRecovery';
 import {
   isPluginEmbed, requestPluginCapabilities, requestPrinterSetup, subscribeToPluginCapabilities,
 } from '../utils/pluginBridge';
@@ -29,8 +30,6 @@ export interface PrinterSetupWizardProps {
   printerProfiles?: Array<{ id: number; name: string }>;
 }
 
-type CreatePayload = Parameters<typeof physicalPrintersAPI.create>[0];
-type PendingSetup = { payload: CreatePayload; targetId: number; probe: PrinterSetupResult | null };
 const control = 'w-full rounded-lg border border-white/20 bg-white/5 px-3 py-2 text-sm text-white';
 const button = 'rounded-lg border border-white/20 px-3 py-2 text-sm text-white hover:bg-white/10 disabled:opacity-40';
 
@@ -41,20 +40,16 @@ export function PrinterSetupWizard({
   const { t } = useTranslation();
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const storageKey = 'fh-printer-setup-' + user?.id;
-  const [pending, setPending] = useState<PendingSetup | null>(() => {
-    try {
-      const item = JSON.parse(safeStorage.get(storageKey) || 'null');
-      return item?.payload?.request_id && typeof item.targetId === 'number' ? item : null;
-    } catch { return null; }
-  });
+  const [pending, setPending] = useState<PendingPrinterSetup | null>(() => (
+    user ? readPrinterSetupIntent(user.id) : null
+  ));
   const [name, setName] = useState(pending?.payload.name ?? physicalPrinter?.name ?? initialName);
-  const [modelId, setModelId] = useState(initialPrinterId ?? 0);
-  const [profileIds, setProfileIds] = useState(initialProfileIds);
+  const [modelId, setModelId] = useState(pending?.payload.printer_id ?? initialPrinterId ?? 0);
+  const [profileIds, setProfileIds] = useState(pending?.payload.printer_profile_ids ?? initialProfileIds);
   const [targetId, setTargetId] = useState(pending?.targetId ?? physicalPrinter?.id ?? 0);
-  const [mode, setMode] = useState<'manual' | 'orca' | 'edge'>('manual');
-  const [provider, setProvider] = useState('manual');
-  const [slotCount, setSlotCount] = useState('1');
+  const [mode, setMode] = useState<PrinterSetupRoute>(pending?.route ?? (pending?.probe ? 'orca' : 'manual'));
+  const [provider, setProvider] = useState(pending?.payload.material_system?.provider ?? 'manual');
+  const [slotCount, setSlotCount] = useState(String(pending?.payload.material_system?.slot_count ?? 1));
   const [search, setSearch] = useState('');
   const [pluginReady, setPluginReady] = useState(false);
   const [candidates, setCandidates] = useState<PrinterSetupCandidate[] | null>(null);
@@ -85,14 +80,17 @@ export function PrinterSetupWizard({
     enabled: !targetId && initialProfileIds.length === 0,
   });
   const current = printers.find((item) => item.id === saved?.id) ?? saved;
-  const selected = printers.find((item) => item.id === targetId) ?? physicalPrinter;
+  const selected = printers.find((item) => item.id === targetId)
+    ?? (physicalPrinter?.id === targetId ? physicalPrinter : undefined);
   const adapter = feedAdapterFor(provider);
   const system = current?.material_systems[0];
   const savedAdapter = feedAdapterFor(system?.provider ?? provider);
+  const edgeAvailable = supportsEdgeSetup(selected?.material_systems[0]?.provider ?? provider);
   const count = probe?.gateCount ?? (adapter.topologyFromProvider ? null : Number(slotCount));
   const valid = Boolean(targetId || name.trim()) && (count == null || (
     Number.isInteger(count) && count >= 1 && count <= 256
-  )) && (mode !== 'orca' || Boolean(probe?.ok) || provider === 'bambu');
+  )) && (mode !== 'orca' || Boolean(probe?.ok) || provider === 'bambu')
+    && (mode !== 'edge' || edgeAvailable);
   const targetOptions = printers.map((item) => {
     const connections = bindings.filter((binding) => binding.physical_printer_id === item.id);
     const names = printerProfiles.filter((profile) => item.printer_profile_ids.includes(profile.id))
@@ -175,8 +173,12 @@ export function PrinterSetupWizard({
   };
   const save = () => run(async () => {
     if (saved) { await activate(saved, probe); return; }
-    const intent: PendingSetup = pending ?? {
-      targetId, probe,
+    if (!user) return;
+    if (!pending && mode === 'edge' && !edgeAvailable) {
+      setError(t('printerSetup.edgeUnsupported')); return;
+    }
+    const intent: PendingPrinterSetup = pending ?? {
+      targetId, probe, route: mode,
       payload: {
         request_id: crypto.randomUUID(), name: name.trim() || selected?.name || 'Printer',
         printer_id: modelId || null, printer_profile_ids: profileIds,
@@ -188,10 +190,12 @@ export function PrinterSetupWizard({
         } }),
       },
     };
-    setPending(intent);
     // Persist the exact request before sending: reopening after response loss
     // must resume it, not manufacture a fresh physical printer.
-    safeStorage.set(storageKey, JSON.stringify(intent));
+    if (!persistPrinterSetupIntent(user.id, intent)) {
+      setError(t('printerSetup.recoveryUnavailable')); return;
+    }
+    setPending(intent);
     let printer: PhysicalPrinter;
     try {
       printer = intent.targetId
@@ -200,12 +204,12 @@ export function PrinterSetupWizard({
     } catch (err) {
       const status = (err as AxiosError).response?.status;
       if (status && status >= 400 && status < 500) {
-        setPending(null); safeStorage.remove(storageKey);
+        setPending(null); clearPrinterSetupIntent(user.id, intent.payload.request_id);
       }
       throw err;
     }
     setSaved(printer); setProbe(intent.probe); setPending(null);
-    safeStorage.remove(storageKey);
+    clearPrinterSetupIntent(user.id, intent.payload.request_id);
     await invalidate();
     await activate(printer, intent.probe);
   });
@@ -230,8 +234,10 @@ export function PrinterSetupWizard({
             <h3 className="flex items-center gap-2 font-medium"><Check className="h-5 w-5 text-emerald-400" />{current.name}</h3>
             <p className="text-sm text-gray-300">{t(activated ? 'printerSetup.observed' : 'printerSetup.saved')}</p>
             {probe && !activated && <button type="button" className={button} disabled={busy} onClick={() => void save()}>{t('printerSetup.retryConnection')}</button>}
-            {system && mode === 'edge' && ['manual', 'legacy', 'happy_hare'].includes(system.provider)
-              ? <EdgeConnectionSetup printer={current} system={system} />
+            {system && mode === 'edge'
+              ? supportsEdgeSetup(system.provider)
+                ? <EdgeConnectionSetup printer={current} system={system} />
+                : <p role="alert" className="text-sm text-amber-200">{t('printerSetup.edgeUnsupported')}</p>
               : system && savedAdapter.renderSetup?.({ printer: current, system, gates: [], spools: [], linkConfirmed: false })}
             {savedAdapter.link && <details className="rounded-lg border border-white/10 p-3">
               <summary className="cursor-pointer text-sm">{t('printerSetup.inventorySetup')}</summary>
@@ -256,11 +262,11 @@ export function PrinterSetupWizard({
               {targetId > 0 && <p className="text-sm text-purple-200">{t('printerSetup.keepExisting', { name: selected?.name ?? name })}</p>}
               <div className="grid grid-cols-3 gap-2" role="group" aria-label={t('printerSetup.route')}>
                 {(['manual', 'orca', 'edge'] as const).map((route) => <button key={route} type="button"
+                  disabled={route === 'edge' && !edgeAvailable}
                   aria-pressed={mode === route} className={button + (mode === route ? ' border-purple-400 bg-purple-500/20' : '')}
-                  onClick={() => { setMode(route); setProbe(null); setError(null);
-                    if (route === 'edge' && !['manual', 'happy_hare'].includes(provider)) setProvider('manual');
-                  }}>{t('printerSetup.routes.' + route)}</button>)}
+                  onClick={() => { setMode(route); setProbe(null); setError(null); }}>{t('printerSetup.routes.' + route)}</button>)}
               </div>
+              {!edgeAvailable && <p className="text-xs text-amber-200">{t('printerSetup.edgeUnsupported')}</p>}
               {mode === 'manual' && <p className="text-xs text-gray-400">{t('printerSetup.manualHint')}</p>}
               {mode === 'edge' && <p className="text-xs text-gray-400">{t('printerSetup.edgeHint')}</p>}
               {mode === 'orca' && <div className="space-y-2 rounded-lg border border-white/10 p-3">
@@ -282,7 +288,7 @@ export function PrinterSetupWizard({
               {!selected?.material_systems.length && <>
                 <label className="block text-sm">{t('presetSlots.newSystem.system')}
                   <Dropdown value={provider} onChange={(value) => setProvider(String(value))}
-                    disabled={Boolean(probe)} options={FEED_ADAPTERS.filter((item) => mode !== 'edge' || ['manual', 'happy_hare'].includes(item.id))
+                    disabled={Boolean(probe)} options={FEED_ADAPTERS.filter((item) => mode !== 'edge' || supportsEdgeSetup(item.id))
                       .map((item) => ({ value: item.id, label: t(item.labelKey) }))} />
                 </label>
                 {count !== null && !probe?.gateCount && <label className="block text-sm">{t('presetSlots.newSystem.slotCount')}

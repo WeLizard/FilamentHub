@@ -25,13 +25,19 @@ export const safeStorage = {
     }
   },
 
-  set(key: string, value: string): void {
+  /** True only when the value survives outside this page's memory. */
+  set(key: string, value: string): boolean {
     try {
       window.localStorage.setItem(key, value);
-      memory.delete(key);
+      if (window.localStorage.getItem(key) === value) {
+        memory.delete(key);
+        return true;
+      }
     } catch {
-      memory.set(key, value);
+      // Continue with the page-local fallback.
     }
+    memory.set(key, value);
+    return false;
   },
 
   remove(key: string): void {

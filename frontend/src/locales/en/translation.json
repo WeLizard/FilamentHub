@@ -2,6 +2,8 @@
   "printerSetup": {
     "errors": {"auth":"Sign in to the plugin again: the local session lacks the required access.","setup_context":"Could not obtain setup context from the website. Check connectivity and the server update.","printer_auth":"Moonraker denied access. Check the API key or local client permissions.","unreachable":"Moonraker did not respond correctly. Check its address, network and Klipper readiness.","connection_not_found":"The connection is no longer available or belongs to another card. Refresh the list.","identity_changed":"A different device now answers at this address. Check the connection again.","expired":"The check expired. Check the connection again.","snapshot_failed":"Could not save printer observations. The printer card is saved; retry the connection."},
     "title": "Connect a printer",
+    "recoveryUnavailable": "The browser cannot retain this request for a safe retry. The request was not sent. Allow site storage or open the site in a regular browser.",
+    "edgeUnsupported": "Edge does not yet support this feeding system. Use manual tracking or the system’s supported connection method.",
     "description": "One physical printer, one card. Choose an existing printer or add a new one; automatic connectivity can be enabled later.",
     "target": "Physical printer",
     "newDevice": "Add a new physical printer",
