@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const updateMock = vi.fn();
 const setConfigurationsMock = vi.fn();
+const assignBindingMock = vi.fn();
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key, i18n: { language: 'en' } }),
@@ -29,13 +30,13 @@ vi.mock('@tanstack/react-query', () => ({
     onSuccess,
     onError,
   }: {
-    mutationFn: () => Promise<unknown>;
+    mutationFn: (value?: unknown) => Promise<unknown>;
     onSuccess?: (result: unknown) => void;
     onError?: (e: unknown) => void;
   }) => ({
-    mutate: async () => {
+    mutate: async (value?: unknown) => {
       try {
-        const result = await mutationFn();
+        const result = await mutationFn(value);
         onSuccess?.(result);
       } catch (e) {
         onError?.(e);
@@ -47,7 +48,11 @@ vi.mock('@tanstack/react-query', () => ({
 
 vi.mock('../api/client', () => ({
   authAPI: { getPreferences: vi.fn().mockResolvedValue({ currency: 'RUB' }) },
-  physicalPrintersAPI: { update: updateMock, setConfigurations: setConfigurationsMock },
+  physicalPrintersAPI: {
+    update: updateMock,
+    setConfigurations: setConfigurationsMock,
+    assignBinding: assignBindingMock,
+  },
   printerProfilesAPI: { list: vi.fn() },
   printersAPI: { list: vi.fn(), get: vi.fn() },
 }));
@@ -90,6 +95,7 @@ describe('PhysicalPrinterSettingsModal', () => {
     vi.clearAllMocks();
     updateMock.mockResolvedValue({});
     setConfigurationsMock.mockResolvedValue({});
+    assignBindingMock.mockResolvedValue(undefined);
   });
 
   it('renders name and the linked configuration', async () => {
@@ -158,6 +164,28 @@ describe('PhysicalPrinterSettingsModal', () => {
       screen.getAllByText('presetSlots.connectionProvider.octoprint · 192.168.31.200:5000'),
     ).toHaveLength(1);
     expect(screen.queryByText(/myPrinters\.localConnection/)).toBeNull();
+  });
+
+  it('moves an observed Orca connection to this physical printer explicitly', async () => {
+    await renderModal({}, [
+      {
+        id: 91,
+        physical_printer_id: 8,
+        physical_printer_name: 'Observed shell',
+        connection_ref: 'orca-local-v1:account:workshop',
+        preset_name: 'Workshop Voron 0.4',
+        provider: 'moonraker',
+        display_endpoint: null,
+        endpoint_shared: false,
+        last_seen_at: '2026-08-30T03:00:00Z',
+      },
+    ]);
+
+    fireEvent.focus(screen.getByPlaceholderText('printerSettings.connectionSelect'));
+    fireEvent.click(await screen.findByText(/Workshop Voron 0\.4/));
+    fireEvent.click(screen.getByText('printerSettings.connectionAssign'));
+
+    await waitFor(() => expect(assignBindingMock).toHaveBeenCalledWith(91, 5));
   });
 
   it('saves name and catalog model without touching configurations when unchanged', async () => {

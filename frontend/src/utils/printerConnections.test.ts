@@ -5,8 +5,11 @@ import { visiblePrinterConnections } from './printerConnections';
 const binding = (
   overrides: Partial<PrinterConnectionBinding>,
 ): PrinterConnectionBinding => ({
+  id: 1,
   physical_printer_id: 1,
+  physical_printer_name: 'Workshop printer',
   connection_ref: 'local-ref',
+  preset_name: 'Workshop preset',
   provider: 'octoprint',
   display_endpoint: null,
   endpoint_shared: false,

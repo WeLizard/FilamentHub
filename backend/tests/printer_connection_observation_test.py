@@ -8,8 +8,10 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.orca_printer_connection_observation import OrcaPrinterConnectionObservation
+from app.models.printer_connection_binding import PrinterConnectionBinding
 from app.models.printer_profile import PrinterProfile
 from app.models.user import User
+from app.models.user_printer_device import UserPrinterDevice
 from app.schemas.printer_connection_observation import PrinterConnectionObservationIn
 from app.services.printer_connection_observation_service import (
     _sanitize_host,
@@ -395,3 +397,99 @@ async def test_observation_endpoint_respects_disabled_printer_import(
     assert response.status_code == 403
     assert response.json()["detail"]["code"] == "ERR_IMPORT_PRINTER_DISABLED"
     assert await _count(db_session) == 0
+
+
+@pytest.mark.asyncio
+async def test_connection_binding_can_be_explicitly_assigned_to_owned_printer(
+    auth_client: AsyncClient,
+    db_session: AsyncSession,
+    auth_user: User,
+):
+    observed_printer = UserPrinterDevice(
+        user_id=auth_user.id,
+        name="Observed shell",
+        supports_hh=False,
+    )
+    target_printer = UserPrinterDevice(
+        user_id=auth_user.id,
+        name="Workshop Voron",
+        supports_hh=False,
+    )
+    db_session.add_all([observed_printer, target_printer])
+    await db_session.flush()
+    binding = PrinterConnectionBinding(
+        user_id=auth_user.id,
+        physical_printer_id=observed_printer.id,
+        source_instance_id="inst-1",
+        connection_ref="orca-local-v1:account:workshop",
+        normalized_endpoint="ref:workshop",
+        provider="moonraker",
+    )
+    db_session.add(binding)
+    await db_session.commit()
+    await record_observations(
+        db_session,
+        auth_user.id,
+        "inst-1",
+        [
+            _obs(
+                connection_ref=binding.connection_ref,
+                preset_name="Workshop Voron 0.4",
+                host_type="moonraker",
+            )
+        ],
+    )
+
+    listed = await auth_client.get("/api/v1/orcaslicer/printer-connections/bindings")
+    assert listed.status_code == 200
+    assert listed.json() == [
+        {
+            "id": binding.id,
+            "physical_printer_id": observed_printer.id,
+            "physical_printer_name": "Observed shell",
+            "connection_ref": binding.connection_ref,
+            "preset_name": "Workshop Voron 0.4",
+            "provider": "moonraker",
+            "display_endpoint": None,
+            "endpoint_shared": False,
+            "last_seen_at": listed.json()[0]["last_seen_at"],
+        }
+    ]
+
+    assigned = await auth_client.patch(
+        f"/api/v1/orcaslicer/printer-connections/bindings/{binding.id}",
+        json={"physical_printer_id": target_printer.id},
+    )
+    assert assigned.status_code == 204
+    await db_session.refresh(binding)
+    assert binding.physical_printer_id == target_printer.id
+
+
+@pytest.mark.asyncio
+async def test_connection_binding_rejects_unknown_target_printer(
+    auth_client: AsyncClient,
+    db_session: AsyncSession,
+    auth_user: User,
+):
+    printer = UserPrinterDevice(
+        user_id=auth_user.id,
+        name="Observed shell",
+        supports_hh=False,
+    )
+    db_session.add(printer)
+    await db_session.flush()
+    binding = PrinterConnectionBinding(
+        user_id=auth_user.id,
+        physical_printer_id=printer.id,
+        normalized_endpoint="ref:unknown-target",
+        provider="moonraker",
+    )
+    db_session.add(binding)
+    await db_session.commit()
+
+    response = await auth_client.patch(
+        f"/api/v1/orcaslicer/printer-connections/bindings/{binding.id}",
+        json={"physical_printer_id": 999999},
+    )
+    assert response.status_code == 404
+    assert response.json()["detail"]["code"] == "ERR_DEVICE_NOT_FOUND"

@@ -671,8 +671,11 @@ describe('PresetSlotsPanel', () => {
       },
     ];
     printerBindingsForQuery = [{
+      id: 71,
       physical_printer_id: 41,
+      physical_printer_name: 'Voron 2.4 350',
       connection_ref: 'local-printer-41',
+      preset_name: 'Workshop Voron 0.4',
       provider: 'moonraker',
       display_endpoint: null,
       endpoint_shared: false,

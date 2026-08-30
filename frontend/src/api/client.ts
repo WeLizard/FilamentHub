@@ -3880,8 +3880,11 @@ export interface PrinterEconomicsSuggestion {
 // Safe display view of a connection binding. The printer is identified by
 // physical_printer_id; the endpoint is a volatile label, never identity.
 export interface PrinterConnectionBinding {
+  id: number;
   physical_printer_id: number;
+  physical_printer_name: string;
   connection_ref: string | null;
+  preset_name: string | null;
   provider: string | null;
   display_endpoint: string | null;
   endpoint_shared: boolean;
@@ -4048,6 +4051,12 @@ export const physicalPrintersAPI = {
       '/orcaslicer/printer-connections/bindings',
     );
     return response.data;
+  },
+
+  assignBinding: async (bindingId: number, physicalPrinterId: number): Promise<void> => {
+    await api.patch(`/orcaslicer/printer-connections/bindings/${bindingId}`, {
+      physical_printer_id: physicalPrinterId,
+    });
   },
 
   /** The machine selected in OrcaSlicer as of the last sync, if any. */

@@ -560,7 +560,7 @@ export function MyPrintersList({
       <PhysicalPrinterSettingsModal
         isOpen
         printer={settingsPrinter}
-        bindings={bindingsByPrinter.get(settingsPrinter.id) ?? []}
+        bindings={bindings ?? []}
         onClose={() => setSettingsPrinter(null)}
         onEditConfiguration={(profile) => {
           setSettingsPrinter(null);

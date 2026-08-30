@@ -56,9 +56,16 @@ class PrinterConnectionBindingResponse(BaseModel):
     The physical printer is identified by physical_printer_id; the endpoint is a
     volatile label. No access codes / tokens / raw credentials are exposed."""
 
+    id: int
     physical_printer_id: int
+    physical_printer_name: str
     connection_ref: str | None = None
+    preset_name: str | None = None
     provider: str | None
     display_endpoint: str | None
     endpoint_shared: bool = False
     last_seen_at: datetime
+
+
+class PrinterConnectionBindingAssignRequest(BaseModel):
+    physical_printer_id: int = Field(..., gt=0)

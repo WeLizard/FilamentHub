@@ -2,20 +2,25 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Response, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_active_user, require_preset_write
 from app.core.errors import ERR_IMPORT_PRINTER_DISABLED, raise_error
 from app.db.session import get_db
 from app.models.user import User
+from app.models.user_printer_device import UserPrinterDevice
 from app.schemas.printer_connection_observation import (
+    PrinterConnectionBindingAssignRequest,
     PrinterConnectionBindingResponse,
     PrinterConnectionObserveRequest,
     PrinterConnectionObserveResponse,
 )
 from app.services.orca_import_guard import hold_account_import_lock
 from app.services.physical_printer_discovery_service import (
+    assign_user_binding,
+    binding_preset_names,
     current_printer_context,
     display_endpoint,
     list_installed_printer_candidates,
@@ -87,10 +92,27 @@ async def list_connection_bindings(
 ) -> list[PrinterConnectionBindingResponse]:
     """Safe display view of the user's connection bindings (endpoint as a label)."""
     bindings = await list_user_bindings(db, current_user.id)
+    printer_names = dict(
+        (
+            await db.execute(
+                select(UserPrinterDevice.id, UserPrinterDevice.name).where(
+                    UserPrinterDevice.user_id == current_user.id
+                )
+            )
+        ).all()
+    )
+    preset_names = await binding_preset_names(db, current_user.id)
     return [
         PrinterConnectionBindingResponse(
+            id=b.id,
             physical_printer_id=b.physical_printer_id,
+            physical_printer_name=printer_names[b.physical_printer_id],
             connection_ref=b.connection_ref,
+            preset_name=(
+                preset_names.get((b.source_instance_id, b.connection_ref))
+                if b.connection_ref
+                else None
+            ),
             provider=b.provider,
             display_endpoint=display_endpoint(b),
             endpoint_shared=bool(b.endpoint_ciphertext or b.print_host),
@@ -98,3 +120,20 @@ async def list_connection_bindings(
         )
         for b in bindings
     ]
+
+
+@router.patch("/bindings/{binding_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def assign_connection_binding(
+    binding_id: int,
+    payload: PrinterConnectionBindingAssignRequest,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> Response:
+    """Move one owned, observed connection to the selected physical printer."""
+    await assign_user_binding(
+        db,
+        user_id=current_user.id,
+        binding_id=binding_id,
+        physical_printer_id=payload.physical_printer_id,
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

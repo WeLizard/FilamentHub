@@ -127,6 +127,91 @@ async def test_several_presets_one_endpoint_one_printer(db_session: AsyncSession
 
 
 @pytest.mark.asyncio
+async def test_exact_profile_link_claims_connection_without_duplicate(
+    db_session: AsyncSession, auth_user: User
+):
+    profile = await _make_profile(db_session, auth_user, "04-linked", "Voron linked 0.4")
+    printer = UserPrinterDevice(
+        user_id=auth_user.id,
+        name="Workshop Voron",
+        supports_hh=False,
+    )
+    db_session.add(printer)
+    await db_session.flush()
+    db_session.add(
+        UserPrinterProfileLink(
+            user_id=auth_user.id,
+            physical_printer_id=printer.id,
+            printer_profile_id=profile.id,
+        )
+    )
+    await db_session.commit()
+
+    await _observe(
+        db_session,
+        auth_user,
+        [
+            _obs(
+                connection_ref="orca-local-v1:account:workshop-voron",
+                printer_settings_id=profile.setting_id,
+                preset_name=profile.name,
+                print_host=None,
+                host_type="moonraker",
+            )
+        ],
+    )
+
+    assert await reconcile_user_printers(
+        db_session, auth_user.id, source_instance_id="inst-1"
+    ) == 0
+    assert await _count(db_session, UserPrinterDevice) == 1
+    binding = (await db_session.execute(select(PrinterConnectionBinding))).scalar_one()
+    assert binding.physical_printer_id == printer.id
+
+
+@pytest.mark.asyncio
+async def test_profile_link_does_not_guess_between_two_observed_connections(
+    db_session: AsyncSession, auth_user: User
+):
+    profile = await _make_profile(db_session, auth_user, "04-shared", "Voron shared 0.4")
+    printer = UserPrinterDevice(
+        user_id=auth_user.id,
+        name="Known Voron",
+        supports_hh=False,
+    )
+    db_session.add(printer)
+    await db_session.flush()
+    db_session.add(
+        UserPrinterProfileLink(
+            user_id=auth_user.id,
+            physical_printer_id=printer.id,
+            printer_profile_id=profile.id,
+        )
+    )
+    await db_session.commit()
+
+    await _observe(
+        db_session,
+        auth_user,
+        [
+            _obs(
+                connection_ref=f"orca-local-v1:account:shared-{suffix}",
+                printer_settings_id=profile.setting_id,
+                preset_name=profile.name,
+                print_host=f"192.168.1.{host}",
+                host_type="moonraker",
+            )
+            for suffix, host in (("a", 21), ("b", 22))
+        ],
+    )
+
+    assert await reconcile_user_printers(
+        db_session, auth_user.id, source_instance_id="inst-1"
+    ) == 2
+    assert await _count(db_session, UserPrinterDevice) == 3
+
+
+@pytest.mark.asyncio
 async def test_four_ips_become_four_printers(db_session: AsyncSession, auth_user: User):
     await _observe(db_session, auth_user, [
         _obs(printer_settings_id="Voron 0.4", printer_model="Voron 2.4",
@@ -300,7 +385,7 @@ async def test_current_stock_profile_does_not_guess_between_identical_printers(
 
 
 @pytest.mark.asyncio
-async def test_same_profile_at_a_new_endpoint_is_a_second_physical_printer(
+async def test_same_profile_follows_endpoint_change_without_second_printer(
     db_session: AsyncSession, auth_user: User
 ):
     db_session.autoflush = False
@@ -317,8 +402,8 @@ async def test_same_profile_at_a_new_endpoint_is_a_second_physical_printer(
     ])
     created = await reconcile_user_printers(db_session, auth_user.id)
 
-    assert created == 1
-    assert await _count(db_session, UserPrinterDevice) == 2
+    assert created == 0
+    assert await _count(db_session, UserPrinterDevice) == 1
     bindings = list(
         (
             await db_session.execute(
@@ -326,10 +411,7 @@ async def test_same_profile_at_a_new_endpoint_is_a_second_physical_printer(
             )
         ).scalars()
     )
-    assert [display_endpoint(binding) for binding in bindings] == [
-        "192.168.1.21:7125",
-        "192.168.1.99:7125",
-    ]
+    assert [display_endpoint(binding) for binding in bindings] == ["192.168.1.99:7125"]
 
 
 @pytest.mark.asyncio

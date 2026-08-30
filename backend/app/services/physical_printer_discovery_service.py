@@ -14,6 +14,11 @@ from urllib.parse import urlsplit
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.errors import (
+    ERR_DEVICE_NOT_FOUND,
+    ERR_PRINTER_CONNECTION_NOT_FOUND,
+    raise_error,
+)
 from app.core.field_encryption import blind_index, decrypt_field, encrypt_field
 from app.models.orca_printer_connection_observation import OrcaPrinterConnectionObservation
 from app.models.physical_printer_profile import UserPrinterProfileLink
@@ -140,6 +145,51 @@ async def _unbound_catalog_printer(
     return candidates[0] if len(candidates) == 1 else None
 
 
+async def _unique_profile_printer(
+    db: AsyncSession,
+    *,
+    user_id: int,
+    profile_id: int | None,
+) -> int | None:
+    """Return the one physical machine explicitly linked to a configuration."""
+    if profile_id is None:
+        return None
+    candidates = list(
+        (
+            await db.execute(
+                select(UserPrinterProfileLink.physical_printer_id)
+                .where(
+                    UserPrinterProfileLink.user_id == user_id,
+                    UserPrinterProfileLink.printer_profile_id == profile_id,
+                )
+                .distinct()
+                .order_by(UserPrinterProfileLink.physical_printer_id)
+                .limit(2)
+            )
+        ).scalars()
+    )
+    return candidates[0] if len(candidates) == 1 else None
+
+
+def _profile_has_one_observed_connection(
+    observations: list[OrcaPrinterConnectionObservation],
+    profile_id: int | None,
+) -> bool:
+    """Do not treat a shared configuration as one machine in a multi-endpoint snapshot."""
+    if profile_id is None:
+        return False
+    identities = {
+        observation.endpoint_fingerprint
+        or (
+            f"ref:{observation.source_instance_id or ''}:"
+            f"{observation.connection_ref}"
+        )
+        for observation in observations
+        if observation.matched_printer_profile_id == profile_id
+    }
+    return len(identities) == 1
+
+
 async def _unique_legacy_binding_for_catalog(
     db: AsyncSession,
     *,
@@ -170,6 +220,33 @@ async def _unique_legacy_binding_for_catalog(
         .scalars()
     )
     return bindings[0].physical_printer_id if len(bindings) == 1 else None
+
+
+async def _unique_legacy_binding_for_printer(
+    db: AsyncSession,
+    *,
+    user_id: int,
+    physical_printer_id: int,
+    provider: str | None,
+) -> PrinterConnectionBinding | None:
+    """Return one mutable pre-ref provider binding for an exact physical machine."""
+    bindings = list(
+        (
+            await db.execute(
+                select(PrinterConnectionBinding)
+                .where(
+                    PrinterConnectionBinding.user_id == user_id,
+                    PrinterConnectionBinding.physical_printer_id
+                    == physical_printer_id,
+                    PrinterConnectionBinding.connection_ref.is_(None),
+                    PrinterConnectionBinding.provider == provider,
+                )
+                .order_by(PrinterConnectionBinding.id)
+                .limit(2)
+            )
+        ).scalars()
+    )
+    return bindings[0] if len(bindings) == 1 else None
 
 
 async def _unique_legacy_binding_for_profile(
@@ -215,6 +292,69 @@ async def list_user_bindings(db: AsyncSession, user_id: int) -> list[PrinterConn
             )
         ).scalars().all()
     )
+
+
+async def binding_preset_names(
+    db: AsyncSession, user_id: int
+) -> dict[tuple[str | None, str], str]:
+    """Latest safe Orca preset label for each stable local connection."""
+    rows = (
+        await db.execute(
+            select(
+                OrcaPrinterConnectionObservation.source_instance_id,
+                OrcaPrinterConnectionObservation.connection_ref,
+                OrcaPrinterConnectionObservation.preset_name,
+            )
+            .where(
+                OrcaPrinterConnectionObservation.owner_user_id == user_id,
+                OrcaPrinterConnectionObservation.connection_ref.is_not(None),
+                OrcaPrinterConnectionObservation.preset_name.is_not(None),
+            )
+            .order_by(
+                OrcaPrinterConnectionObservation.last_seen_at.desc(),
+                OrcaPrinterConnectionObservation.id.desc(),
+            )
+        )
+    ).all()
+    result: dict[tuple[str | None, str], str] = {}
+    for source_instance_id, connection_ref, preset_name in rows:
+        if connection_ref and preset_name:
+            result.setdefault((source_instance_id, connection_ref), preset_name)
+    return result
+
+
+async def assign_user_binding(
+    db: AsyncSession,
+    *,
+    user_id: int,
+    binding_id: int,
+    physical_printer_id: int,
+) -> None:
+    """Explicitly assign one observed connection to one owned physical printer."""
+    binding = (
+        await db.execute(
+            select(PrinterConnectionBinding)
+            .where(
+                PrinterConnectionBinding.id == binding_id,
+                PrinterConnectionBinding.user_id == user_id,
+            )
+            .with_for_update()
+        )
+    ).scalar_one_or_none()
+    if binding is None:
+        raise_error(404, ERR_PRINTER_CONNECTION_NOT_FOUND)
+
+    printer_id = await db.scalar(
+        select(UserPrinterDevice.id).where(
+            UserPrinterDevice.id == physical_printer_id,
+            UserPrinterDevice.user_id == user_id,
+        )
+    )
+    if printer_id is None:
+        raise_error(404, ERR_DEVICE_NOT_FOUND)
+
+    binding.physical_printer_id = physical_printer_id
+    await db.commit()
 
 
 async def reconcile_user_printers(
@@ -362,6 +502,27 @@ async def reconcile_user_printers(
                 if obs.matched_printer_profile_id is not None
                 else None
             )
+            profile_physical_printer_id = None
+            if (
+                endpoint_peer_physical_id is None
+                and _profile_has_one_observed_connection(
+                    observations, obs.matched_printer_profile_id
+                )
+            ):
+                profile_physical_printer_id = await _unique_profile_printer(
+                    db,
+                    user_id=user_id,
+                    profile_id=obs.matched_printer_profile_id,
+                )
+                if profile_physical_printer_id is not None and not obs.connection_ref:
+                    binding = await _unique_legacy_binding_for_printer(
+                        db,
+                        user_id=user_id,
+                        physical_printer_id=profile_physical_printer_id,
+                        provider=endpoint["provider"] if endpoint else obs.host_type,
+                    )
+                if binding is None:
+                    endpoint_peer_physical_id = profile_physical_printer_id
             if obs.connection_ref and endpoint_peer_physical_id is None:
                 endpoint_peer_physical_id = await _unique_legacy_binding_for_profile(
                     db,

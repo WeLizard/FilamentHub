@@ -49,11 +49,45 @@ export const PhysicalPrinterSettingsModal: React.FC<PhysicalPrinterSettingsModal
   const [showDiscard, setShowDiscard] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
   const [costModalOpen, setCostModalOpen] = useState(false);
+  const [selectedBindingId, setSelectedBindingId] = useState<number | null>(null);
   const pendingActionRef = useRef<(() => void) | null>(null);
   const debouncedSearch = useDebounce(printerSearch, 250);
+  const printerBindings = useMemo(
+    () => bindings.filter((binding) => binding.physical_printer_id === printer.id),
+    [bindings, printer.id],
+  );
   const visibleBindings = useMemo(
-    () => visiblePrinterConnections(bindings),
-    [bindings],
+    () => visiblePrinterConnections(printerBindings),
+    [printerBindings],
+  );
+  const assignableBindings = useMemo(
+    () =>
+      bindings
+        .filter(
+          (binding) =>
+            binding.connection_ref != null && binding.physical_printer_id !== printer.id,
+        )
+        .sort((left, right) => right.last_seen_at.localeCompare(left.last_seen_at)),
+    [bindings, printer.id],
+  );
+  const bindingOptions = useMemo(
+    () =>
+      assignableBindings.map((binding) => ({
+        value: binding.id,
+        label: [
+          binding.preset_name,
+          binding.provider
+            ? t(`presetSlots.connectionProvider.${binding.provider}`, {
+              defaultValue: binding.provider,
+            })
+            : null,
+          binding.display_endpoint ?? t('myPrinters.localConnection'),
+          t('printerSettings.connectionAssignedTo', {
+            name: binding.physical_printer_name,
+          }),
+        ].filter(Boolean).join(' · '),
+      })),
+    [assignableBindings, t],
   );
 
   const { data: catalogList } = useQuery({
@@ -190,6 +224,25 @@ export const PhysicalPrinterSettingsModal: React.FC<PhysicalPrinterSettingsModal
     onError: (err: AxiosError<{ detail: unknown }>) => {
       setShowDelete(false);
       setError(translateApiError(t, err.response?.data?.detail, t('printerSettings.deleteError')));
+    },
+  });
+
+  const assignBindingMutation = useMutation({
+    mutationFn: (bindingId: number) =>
+      physicalPrintersAPI.assignBinding(bindingId, printer.id),
+    onSuccess: () => {
+      setSelectedBindingId(null);
+      setError(null);
+      queryClient.invalidateQueries({ queryKey: ['printer-bindings'] });
+    },
+    onError: (err: AxiosError<{ detail: unknown }>) => {
+      setError(
+        translateApiError(
+          t,
+          err.response?.data?.detail,
+          t('printerSettings.connectionAssignError'),
+        ),
+      );
     },
   });
 
@@ -352,7 +405,7 @@ export const PhysicalPrinterSettingsModal: React.FC<PhysicalPrinterSettingsModal
               </button>
             </section>
 
-            {/* Подключение (read-only) */}
+            {/* Наблюдаемая связь Orca с физическим принтером */}
             <section className="space-y-2">
               <h3 className="text-xs uppercase tracking-wide text-gray-500">
                 {t('printerSettings.connection')}
@@ -384,6 +437,37 @@ export const PhysicalPrinterSettingsModal: React.FC<PhysicalPrinterSettingsModal
                 </div>
               ) : (
                 <p className="text-xs text-gray-500">{t('printerSettings.noConnection')}</p>
+              )}
+              {bindingOptions.length > 0 && (
+                <div className="space-y-2 pt-2">
+                  <p className="text-xs text-gray-500">
+                    {t('printerSettings.connectionAssignHint')}
+                  </p>
+                  <Dropdown
+                    size="sm"
+                    value={selectedBindingId ?? ''}
+                    options={bindingOptions}
+                    placeholder={t('printerSettings.connectionSelect')}
+                    onChange={(value) =>
+                      setSelectedBindingId(value === '' ? null : Number(value))
+                    }
+                  />
+                  <button
+                    type="button"
+                    disabled={selectedBindingId == null || assignBindingMutation.isPending}
+                    onClick={() => {
+                      if (selectedBindingId != null) {
+                        assignBindingMutation.mutate(selectedBindingId);
+                      }
+                    }}
+                    className="flex items-center gap-2 rounded-lg border border-purple-400/30 bg-purple-500/10 px-3 py-2 text-sm text-purple-200 transition hover:bg-purple-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {assignBindingMutation.isPending && (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    )}
+                    {t('printerSettings.connectionAssign')}
+                  </button>
+                </div>
               )}
             </section>
 
