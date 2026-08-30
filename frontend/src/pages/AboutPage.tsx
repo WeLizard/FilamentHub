@@ -18,7 +18,7 @@ export const AboutPage = () => {
 
   return (
     <>
-      <SEOHead title={t('aboutPage.title')} url="/about" type="website" />
+      <SEOHead title={t('aboutPage.title')} description={t('aboutPage.intro')} url="/about" type="website" />
       <main className="relative z-10 mx-auto max-w-4xl px-4 py-8 sm:px-6">
           <Link
             to="/"

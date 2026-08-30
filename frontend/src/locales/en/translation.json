@@ -475,8 +475,8 @@
   },
   "aboutPage": {
     "title": "About the project",
-    "intro": "FilamentHub is a catalogue of filaments and print settings. It exists for one thing: someone holding a spool should quickly find proven parameters and print, instead of dialling them in again.",
-    "free": "The catalogue, the presets and tracking your own spools are free, and they will stay free.",
+    "intro": "FilamentHub connects materials, print settings, your spools and printers. Find a filament and a suitable profile, bring settings into OrcaSlicer, track your stock and calculate printing costs.",
+    "free": "The project is in beta and continues to evolve. The catalogue, presets and basic tracking of your own spools are free, and they will stay free.",
     "roadmapTitle": "What is done and what comes next",
     "working": {
       "title": "Already working",
@@ -485,7 +485,7 @@
         "Print presets: official, published by the community, and your own",
         "OrcaSlicer plugin: the catalogue inside the slicer and preset sync",
         "Spool tracking: remaining weight, price, batch and consumption history",
-        "Feed systems: AMS slots, Happy Hare and OctoPrint",
+        "Your printers, feed systems and spool assignments to slots; automatic data exchange depends on the connection",
         "Production costing from G-code: cost, quotations and orders",
         "QR codes and a brand page for manufacturers",
         "Guides in the Wiki section"
@@ -494,9 +494,11 @@
     "progress": {
       "title": "In progress",
       "items": [
-        "Bambu printer link through OrcaSlicer",
-        "Analytics for manufacturers",
-        "RFID and NFC tags"
+        "Preset recommendations that explain matches and missing data for your printer configuration",
+        "Printer and process profile recovery in OrcaSlicer with a preview and explicit confirmation",
+        "A local bridge to connect to a printer without keeping OrcaSlicer open",
+        "Further Bambu and AMS integration through OrcaSlicer",
+        "Expanded analytics for manufacturers"
       ]
     },
     "next": {
@@ -504,14 +506,15 @@
       "items": [
         "Shops with several people working together",
         "Data exchange with external inventory systems",
+        "RFID and NFC tags",
         "More ready-made data in the catalogue"
       ]
     },
-    "roadmapNote": "No dates promised: things ship when they are ready, not to a deadline.",
+    "roadmapNote": "In progress describes ongoing development, not features already available to every user. No dates promised: things ship when they are ready.",
     "support": {
       "title": "Support the project",
       "text": "Servers, domains and mail cost money. If the project is useful to you, you can support it.",
-      "note": "This is not a purchase: everything in the service works the same for those who support it and those who do not. Thank you if you do.",
+      "note": "Support is voluntary: a donation does not buy features and is not required to use the free core of the service. Thank you if you do.",
       "action": "Support"
     }
   },
