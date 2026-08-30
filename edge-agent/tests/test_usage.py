@@ -17,8 +17,7 @@ def snapshot(
     slots = []
     if active_slot is not None:
         slots = [
-            {"provider_index": index, "active_feed": index == active_slot}
-            for index in range(2)
+            {"provider_index": index, "active_feed": index == active_slot} for index in range(2)
         ]
     return ProviderSnapshot(
         printer={"state": state},
@@ -36,6 +35,39 @@ def snapshot(
 
 
 class UsageTrackerTest(unittest.TestCase):
+    def test_resuming_after_native_usage_does_not_debit_the_suppressed_interval(self) -> None:
+        state = EdgeState(desired_snapshot={"slots": [{"index": 0, "spool": {"id": 99}}]})
+        for used in (0, 40):
+            capture_usage_events(
+                state,
+                snapshot(state="printing", filament_used=used, print_duration=used, active_slot=0),
+                observed_at="2026-08-30T00:00:00+00:00",
+            )
+        capture_usage_events(
+            state,
+            ProviderSnapshot(
+                printer={},
+                slots=[],
+                slot_topology_complete=False,
+                capabilities=["read"],
+                usage=None,
+            ),
+            observed_at="2026-08-30T00:01:00+00:00",
+        )
+        resumed = capture_usage_events(
+            state,
+            snapshot(state="printing", filament_used=900, print_duration=900, active_slot=0),
+            observed_at="2026-08-30T00:15:00+00:00",
+        )
+        self.assertEqual(resumed[0]["items"][0]["used_length_mm"], 40)
+        terminal = capture_usage_events(
+            state,
+            snapshot(state="complete", filament_used=950, print_duration=950, active_slot=0),
+            observed_at="2026-08-30T00:16:00+00:00",
+        )
+        self.assertEqual(terminal[0]["items"][0]["used_length_mm"], 50)
+        self.assertEqual(terminal[0]["job_id"], resumed[0]["job_id"])
+
     def setUp(self) -> None:
         self.state = EdgeState(
             desired_snapshot={

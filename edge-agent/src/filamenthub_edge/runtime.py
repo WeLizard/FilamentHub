@@ -6,6 +6,7 @@ import hashlib
 import hmac
 import logging
 import re
+import uuid
 from datetime import datetime, timezone
 from threading import Event
 from typing import Any
@@ -60,13 +61,23 @@ class EdgeRuntime:
         self.provider = provider
         self.store = store
         self.state = state
+        self.stop_event: Event | None = None
 
-    def run_cycle(self) -> None:
+    def run_cycle(self, *, stop_event: Event | None = None) -> None:
+        self.stop_event = stop_event
+        if self._stopping():
+            return
         self._ensure_paired()
         cloud_error: EdgeError | None = None
         try:
             self._flush_pending_observation()
+            if self.state.usage_outbox and not self._stopping():
+                # Uploading retained evidence remains a capability even when
+                # native Spoolman now owns fresh counter sampling.
+                self._heartbeat(sorted(set(self.provider.capabilities()) | {"consumption"}))
             self._flush_usage_outbox()
+            if self._stopping():
+                return
             self._pull_desired_snapshot()
         except AuthenticationError:
             raise
@@ -74,11 +85,13 @@ class EdgeRuntime:
             # Cloud outages must not stop local usage collection. Cached desired
             # assignments remain authoritative until synchronization recovers.
             cloud_error = exc
+        if self._stopping():
+            return
         try:
             snapshot = self.provider.observe()
         except ProviderUnavailable as provider_error:
             self._checkpoint_without_provider(reason="disconnect")
-            if cloud_error is None:
+            if cloud_error is None and not self._stopping():
                 try:
                     self._flush_usage_outbox()
                     self._heartbeat(self.provider.capabilities())
@@ -87,6 +100,8 @@ class EdgeRuntime:
                 except EdgeError as exc:
                     logger.warning("Disconnect checkpoint delivery delayed: %s", exc)
             raise provider_error
+        if self._stopping():
+            return
         observed_at = _now_iso()
         self._verify_snapshot_identity(snapshot, observed_at=observed_at)
         if len(self.state.usage_outbox) >= MAX_USAGE_OUTBOX_BATCHES:
@@ -102,7 +117,7 @@ class EdgeRuntime:
             # themselves durable evidence and must survive a restart.
             self.store.save(self.state)
         self._queue_observation(snapshot, observed_at=observed_at)
-        if cloud_error is None:
+        if cloud_error is None and not self._stopping():
             try:
                 self._flush_pending_observation()
                 self._flush_usage_outbox()
@@ -114,76 +129,14 @@ class EdgeRuntime:
         if cloud_error is not None:
             raise cloud_error
 
-    def run_forever(self, *, stop_event: Event | None = None) -> None:
-        stop = stop_event or Event()
-        backoff = 5
-        while not stop.is_set():
-            try:
-                self.run_cycle()
-            except AuthenticationError as exc:
-                if self._new_pairing_code_available():
-                    logger.warning("Bridge authorization changed; using the new pairing code")
-                    self.state.bridge_token = None
-                    self.store.save(self.state)
-                    backoff = 5
-                else:
-                    logger.error("%s; create a new Edge pairing code in FilamentHub", exc)
-                    backoff = 60
-            except PairingRequired as exc:
-                logger.error("%s", exc)
-                backoff = 60
-            except EdgeError as exc:
-                logger.warning("Edge synchronization delayed: %s", exc)
-                backoff = min(backoff * 2, 300)
-            else:
-                backoff = 5
-                if stop.wait(self.config.sync_interval):
-                    break
-                continue
-            stop.wait(backoff)
+    def _stopping(self) -> bool:
+        return self.stop_event is not None and self.stop_event.is_set()
 
     def shutdown(self) -> None:
-        """Best-effort durable checkpoint and delivery for SIGTERM/service stop."""
+        """Persist the last verified counters without waiting on LAN or cloud."""
         if self.state.bridge_token is None or self.state.material_system_id is None:
             return
-        try:
-            self._flush_pending_observation()
-            self._flush_usage_outbox()
-        except EdgeError as exc:
-            logger.warning("Edge shutdown started with pending cloud delivery: %s", exc)
-        if len(self.state.usage_outbox) >= MAX_USAGE_OUTBOX_BATCHES:
-            logger.error("Edge shutdown checkpoint deferred because the usage outbox is full")
-            return
-
-        observed_at = _now_iso()
-        try:
-            snapshot = self.provider.observe()
-        except ProviderUnavailable:
-            self._checkpoint_without_provider(reason="shutdown", observed_at=observed_at)
-        else:
-            try:
-                self._verify_snapshot_identity(snapshot, observed_at=observed_at)
-            except EdgeError as exc:
-                logger.warning("Shutdown ignored unverified device counters: %s", exc)
-                self._checkpoint_without_provider(reason="shutdown", observed_at=observed_at)
-                return
-            events = capture_usage_events(
-                self.state,
-                snapshot,
-                observed_at=observed_at,
-                checkpoint_reason="shutdown",
-            )
-            if events:
-                self._enqueue_usage_batch(events)
-            else:
-                self.store.save(self.state)
-            self._queue_observation(snapshot, observed_at=observed_at)
-
-        try:
-            self._flush_pending_observation()
-            self._flush_usage_outbox()
-        except EdgeError as exc:
-            logger.warning("Edge shutdown data remains safely queued: %s", exc)
+        self._checkpoint_without_provider(reason="shutdown")
 
     def reset_connection(self) -> None:
         """Explicitly revoke and clear one idle local binding before a rebind."""
@@ -198,6 +151,7 @@ class EdgeRuntime:
             except AuthenticationError:
                 # An owner-side revoke already made the local token harmless.
                 pass
+        self.state.instance_id = f"edge-{uuid.uuid4().hex}"
         self.state.bridge_token = None
         self.state.printer_discovery_key = None
         self.state.confirmed_device_identity = None
@@ -248,7 +202,7 @@ class EdgeRuntime:
         }
 
     def _ensure_paired(self) -> None:
-        if self.state.bridge_token is not None:
+        if self.state.bridge_token is not None and not self._new_pairing_code_available():
             if self.state.physical_printer_id is None or self.state.material_system_id is None:
                 raise PairingRequired("Stored Edge pairing state is incomplete")
             return
@@ -258,6 +212,7 @@ class EdgeRuntime:
             pairing_code=self.config.pairing_code,
             provider=self.config.material_provider,
             instance_id=self.state.instance_id,
+            node_instance_id=self.config.node_instance_id,
             version=__version__,
             capabilities=self.provider.capabilities(),
             previous_physical_printer_id=self.state.physical_printer_id,
@@ -288,7 +243,7 @@ class EdgeRuntime:
         }
 
     def _flush_pending_observation(self) -> None:
-        if self.state.pending_observation is None:
+        if self.state.pending_observation is None or self._stopping():
             return
         token = self._token()
         try:
@@ -323,7 +278,10 @@ class EdgeRuntime:
                 raise ProviderUnavailable("The server has not confirmed this device identity")
 
     def _flush_usage_outbox(self) -> None:
-        while self.state.usage_outbox:
+        # Keep sampling and shutdown responsive even after a long cloud outage.
+        for _ in range(4):
+            if not self.state.usage_outbox or self._stopping():
+                return
             batch = self.state.usage_outbox[0]
             self.cloud.upload_usage_batch(token=self._token(), payload=batch)
             self.state.usage_outbox.pop(0)

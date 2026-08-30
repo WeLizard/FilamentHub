@@ -3,18 +3,20 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MaterialSystem, PhysicalPrinter, PrinterBridgeStatus } from '../../../api/client';
 import { happyHareAdapter } from './happyHare';
+import { directFeedAdapter } from './direct';
 import { toast } from '../../Toast';
 
-const { issuePairingCode, status, bridgeState, requestAction } = vi.hoisted(() => ({
+const { issuePairingCode, status, revoke, bridgeState, requestAction } = vi.hoisted(() => ({
   issuePairingCode: vi.fn(),
   status: vi.fn(),
+  revoke: vi.fn(),
   bridgeState: { embedded: false },
   requestAction: vi.fn(),
 }));
 
 vi.mock('../../../api/client', () => ({
   devicesAPI: { update: vi.fn() },
-  printerBridgeAPI: { issuePairingCode, status },
+  printerBridgeAPI: { issuePairingCode, status, revoke },
 }));
 
 vi.mock('../../../utils/pluginBridge', () => ({
@@ -71,6 +73,7 @@ function bridgeStatus(overrides: Partial<PrinterBridgeStatus> = {}): PrinterBrid
     last_snapshot_sequence: null,
     last_snapshot_source_instance_id: null,
     source_instance_id: null,
+    node_instance_id: null,
     provider: 'happy_hare',
     transport: 'edge_agent',
     capabilities: [],
@@ -99,6 +102,7 @@ describe('Happy Hare Edge setup', () => {
     vi.unstubAllEnvs();
     issuePairingCode.mockReset();
     status.mockReset();
+    revoke.mockReset();
     bridgeState.embedded = false;
   });
 
@@ -106,8 +110,32 @@ describe('Happy Hare Edge setup', () => {
     status.mockResolvedValue(bridgeStatus());
     renderSetup();
 
-    expect(screen.getByText('presetSlots.happyHare.edge.title')).toBeInTheDocument();
+    expect(screen.getByText('presetSlots.edge.title')).toBeInTheDocument();
     await waitFor(() => expect(status).toHaveBeenCalledWith(10, 20, 'edge_agent'));
+  });
+
+  it('offers direct-feed setup as an optional collapsed block using the same node contract', async () => {
+    status.mockResolvedValue(bridgeStatus({ provider: 'legacy' }));
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const view = render(<QueryClientProvider client={client}>{directFeedAdapter.renderSetup?.({
+      printer, system: { ...system, provider: 'manual', kind: 'direct_feed' },
+      gates: [], spools: [], linkConfirmed: false,
+    })}</QueryClientProvider>);
+    expect(view.container.querySelector('details')).not.toHaveAttribute('open');
+    await waitFor(() => expect(status).toHaveBeenCalledWith(10, 20, 'edge_agent'));
+    expect(screen.getByText('presetSlots.edge.connectionTitle')).toBeInTheDocument();
+  });
+
+  it('shows the shared node id and revokes only the selected connection after confirmation', async () => {
+    status.mockResolvedValue(bridgeStatus({ paired: true, node_instance_id: 'edge-shared-node-12345' }));
+    revoke.mockResolvedValue(undefined);
+    renderSetup();
+    expect(await screen.findByText('edge-shared-node-12345')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('presetSlots.edge.disconnect'));
+    expect(screen.getByText('presetSlots.edge.disconnectHint')).toBeInTheDocument();
+    expect(revoke).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByText('confirmModal.confirm'));
+    await waitFor(() => expect(revoke).toHaveBeenCalledWith(10, 20, 'edge_agent'));
   });
 
   it('reports the same failed check on every click, scoped to this printer', async () => {
@@ -133,8 +161,8 @@ describe('Happy Hare Edge setup', () => {
       configured: true, paired: true, last_seen_at: new Date().toISOString(),
     }));
     renderSetup();
-    expect(await screen.findByText('presetSlots.happyHare.edge.awaitingData')).toBeInTheDocument();
-    expect(screen.queryByText('presetSlots.happyHare.edge.connected')).not.toBeInTheDocument();
+    expect(await screen.findByText('presetSlots.edge.awaitingData')).toBeInTheDocument();
+    expect(screen.queryByText('presetSlots.edge.connected')).not.toBeInTheDocument();
   });
 
   it('uses the isolated Edge transport and shows the one-time pairing code', async () => {
@@ -158,15 +186,17 @@ describe('Happy Hare Edge setup', () => {
     await waitFor(() => {
       expect(status).toHaveBeenCalledWith(10, 20, 'edge_agent');
     });
-    const createButton = await screen.findByText('presetSlots.happyHare.edge.createCode');
+    const createButton = await screen.findByText('presetSlots.edge.createCode');
     await waitFor(() => expect(createButton).not.toBeDisabled());
     fireEvent.click(createButton);
 
     expect(await screen.findByText('FH-ABCDE-12345')).toBeInTheDocument();
     expect(issuePairingCode).toHaveBeenCalledWith(10, 20, 'edge_agent');
-    expect(screen.getByText('presetSlots.happyHare.edge.codeHint')).toBeInTheDocument();
+    expect(screen.getByText('presetSlots.edge.codeHint')).toBeInTheDocument();
+    expect(screen.getByText('presetSlots.edge.addToNode')).toBeInTheDocument();
+    expect(screen.getByText(/"id": "printer-10"/)).toBeInTheDocument();
 
-    fireEvent.click(screen.getByText('presetSlots.happyHare.edge.copyCode'));
+    fireEvent.click(screen.getByText('presetSlots.edge.copyCode'));
     await waitFor(() => expect(writeText).toHaveBeenCalledWith('FH-ABCDE-12345'));
   });
 
@@ -182,8 +212,8 @@ describe('Happy Hare Edge setup', () => {
 
     renderSetup();
 
-    expect(await screen.findByText('presetSlots.happyHare.edge.connected')).toBeInTheDocument();
-    expect(screen.getByText('presetSlots.happyHare.edge.lastContact')).toBeInTheDocument();
+    expect(await screen.findByText('presetSlots.edge.connected')).toBeInTheDocument();
+    expect(screen.getByText('presetSlots.edge.lastContact')).toBeInTheDocument();
     expect(screen.queryByText(/moonraker_url|moonraker_api_key/i)).not.toBeInTheDocument();
   });
 
@@ -199,10 +229,10 @@ describe('Happy Hare Edge setup', () => {
 
     renderSetup();
 
-    const createButton = await screen.findByText('presetSlots.happyHare.edge.createCode');
+    const createButton = await screen.findByText('presetSlots.edge.createCode');
     await waitFor(() => expect(createButton).not.toBeDisabled());
     fireEvent.click(createButton);
     expect(await screen.findByText('FH-SAFE1-RETRY')).toBeInTheDocument();
-    expect(screen.getByText('presetSlots.happyHare.edge.statusUnavailable')).toBeInTheDocument();
+    expect(screen.getByText('presetSlots.edge.statusUnavailable')).toBeInTheDocument();
   });
 });

@@ -14,17 +14,20 @@ host_network: true
 image: ghcr.io/welizard/filamenthub-edge
 options:
   filamenthub_url: https://filamenthub.ru
-  pairing_code: ""
-  material_provider: happy_hare
-  moonraker_url: http://127.0.0.1:7125
-  moonraker_api_key: ""
+  connections: []
   sync_interval: 30
   allow_insecure_cloud: false
 schema:
   filamenthub_url: url
-  pairing_code: password
-  material_provider: list(happy_hare|legacy)
-  moonraker_url: url
-  moonraker_api_key: password
+  connections:
+    - id: match(^[a-z0-9][a-z0-9_-]{0,63}$)
+      name: str?
+      enabled: bool?
+      adapter: list(moonraker)?
+      pairing_code: password?
+      material_provider: list(happy_hare|legacy)
+      moonraker_url: url
+      moonraker_api_key: password?
+      sync_interval: int(15,3600)?
   sync_interval: int(15,3600)
   allow_insecure_cloud: bool

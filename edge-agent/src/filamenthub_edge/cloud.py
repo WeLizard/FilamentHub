@@ -44,6 +44,7 @@ class FilamentHubCloud:
         pairing_code: str,
         provider: str,
         instance_id: str,
+        node_instance_id: str | None,
         version: str,
         capabilities: list[str],
         previous_physical_printer_id: int | None,
@@ -57,6 +58,7 @@ class FilamentHubCloud:
                 "provider": provider,
                 "transport": "edge_agent",
                 "source_instance_id": instance_id,
+                "node_instance_id": node_instance_id,
                 "plugin_version": version,
                 "capabilities": capabilities,
                 "previous_physical_printer_id": previous_physical_printer_id,
@@ -139,8 +141,14 @@ class FilamentHubCloud:
         if (
             not isinstance(decoded, dict)
             or decoded.get("accepted") is not True
+            or type(decoded.get("ack_sequence")) is not int
             or decoded.get("ack_sequence") != payload.get("sequence")
             or not isinstance(decoded.get("events"), list)
+            or [
+                item.get("event_id") if isinstance(item, dict) else None
+                for item in decoded["events"]
+            ]
+            != [item.get("event_id") for item in payload["events"]]
         ):
             raise HttpRequestError("FilamentHub usage batch response is invalid")
 

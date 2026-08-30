@@ -87,6 +87,7 @@ async def test_edge_usage_batches_ack_replay_order_and_atomic_ledger_application
             "transport": "edge_agent",
             "source_instance_id": source_instance_id,
             "plugin_version": "0.1.0-test",
+            "node_instance_id": "edge-node-test-000001",
             "capabilities": ["read", "presence"],
         },
     )
@@ -357,6 +358,7 @@ async def test_edge_sync_keeps_desired_assignment_separate_from_observation(
             "transport": "edge_agent",
             "source_instance_id": source_instance_id,
             "plugin_version": "0.1.0-test",
+            "node_instance_id": "edge-node-test-000001",
             "capabilities": ["read", "presence", "spool_identity", "admin"],
         },
     )
@@ -476,6 +478,7 @@ async def test_edge_token_rejects_provider_or_transport_confusion(
             "transport": "edge_agent",
             "source_instance_id": source_instance_id,
             "plugin_version": "0.1.0-test",
+            "node_instance_id": "edge-node-test-000001",
         },
     )
     headers = {"X-FilamentHub-Bridge-Token": paired.json()["bridge_token"]}
@@ -528,6 +531,7 @@ async def test_edge_rotation_preserves_binding_and_owner_can_revoke(
             "transport": "edge_agent",
             "source_instance_id": source_instance_id,
             "plugin_version": "0.1.0-test",
+            "node_instance_id": "edge-node-test-000001",
         },
     )
     first_headers = {
@@ -546,6 +550,7 @@ async def test_edge_rotation_preserves_binding_and_owner_can_revoke(
             "transport": "edge_agent",
             "source_instance_id": source_instance_id,
             "plugin_version": "0.1.0-test",
+            "node_instance_id": "edge-node-test-000001",
             "previous_physical_printer_id": first_printer_id,
             "previous_material_system_id": first_system_id,
         },
@@ -596,6 +601,7 @@ async def test_edge_rotation_preserves_binding_and_owner_can_revoke(
             "transport": "edge_agent",
             "source_instance_id": source_instance_id,
             "plugin_version": "0.1.0-test",
+            "node_instance_id": "edge-node-test-000001",
             "previous_physical_printer_id": first_printer_id,
             "previous_material_system_id": first_system_id,
         },
@@ -653,6 +659,7 @@ async def test_edge_sequence_orders_snapshots_independently_from_clock_and_liven
             "transport": "edge_agent",
             "source_instance_id": source_instance_id,
             "plugin_version": "0.1.0-test",
+            "node_instance_id": "edge-node-test-000001",
         },
     )
     headers = {"X-FilamentHub-Bridge-Token": paired.json()["bridge_token"]}
@@ -748,6 +755,7 @@ async def test_edge_sequence_orders_snapshots_independently_from_clock_and_liven
             "transport": "edge_agent",
             "source_instance_id": next_source,
             "plugin_version": "0.1.0-test",
+            "node_instance_id": "edge-node-test-000001",
         },
     )
     restarted = await auth_client.post(
@@ -795,6 +803,7 @@ async def test_legacy_edge_snapshot_uses_observation_watermark_not_heartbeat(
             "transport": "edge_agent",
             "source_instance_id": source_instance_id,
             "plugin_version": "0.1.0-test",
+            "node_instance_id": "edge-node-test-000001",
         },
     )
     headers = {"X-FilamentHub-Bridge-Token": paired.json()["bridge_token"]}

@@ -3805,6 +3805,7 @@ export interface PrinterBridgeStatus {
   last_snapshot_sequence: number | null;
   last_snapshot_source_instance_id: string | null;
   source_instance_id: string | null;
+  node_instance_id: string | null;
   provider: string;
   transport: PrinterBridgeTransport;
   capabilities: string[];
@@ -4266,6 +4267,15 @@ export const octoprintBridgeAPI = {
 };
 
 export const printerBridgeAPI = {
+  revoke: async (
+    physicalPrinterId: number,
+    materialSystemId: number,
+    transport: PrinterBridgeTransport = 'edge_agent',
+  ): Promise<void> => {
+    await api.delete(`/printer-bridge/connections/${physicalPrinterId}/${materialSystemId}`,
+      { params: { transport } });
+  },
+
   status: async (
     physicalPrinterId: number,
     materialSystemId: number,

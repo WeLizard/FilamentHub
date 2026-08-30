@@ -181,6 +181,7 @@ class PhysicalPrinterConnector(Base):
     provider: Mapped[str] = mapped_column(String(50), nullable=False)
     transport: Mapped[str] = mapped_column(String(50), nullable=False)
     source_instance_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    node_instance_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
     capabilities: Mapped[list[str]] = mapped_column(
         JSON, nullable=False, default=list, server_default="[]"
     )

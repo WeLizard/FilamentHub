@@ -156,6 +156,14 @@ async def _find_bridge_connector(
     )
 
 
+def _bridge_provider(system: MaterialSystem, transport: PrinterBridgeTransport) -> str:
+    # A manually described direct feed can be explicitly connected to Moonraker.
+    # The first accepted observation adopts this existing system, not a new one.
+    if transport == EDGE_TRANSPORT and system.provider == "manual" and system.kind == "direct_feed":
+        return "legacy"
+    return system.provider
+
+
 async def issue_printer_bridge_pairing_code(
     db: AsyncSession,
     *,
@@ -176,7 +184,7 @@ async def issue_printer_bridge_pairing_code(
         user_id=user_id,
         physical_printer_id=physical_printer_id,
         material_system_id=material_system_id,
-        provider=system.provider,
+        provider=_bridge_provider(system, transport),
         transport=transport,
     )
     if connector is None:
@@ -184,7 +192,7 @@ async def issue_printer_bridge_pairing_code(
             user_id=user_id,
             physical_printer_id=physical_printer_id,
             material_system_id=material_system_id,
-            provider=system.provider,
+            provider=_bridge_provider(system, transport),
             transport=transport,
             capabilities=_safe_capabilities(system.capabilities),
             active=True,
@@ -232,7 +240,7 @@ async def get_printer_bridge_status(
         user_id=user_id,
         physical_printer_id=physical_printer_id,
         material_system_id=material_system_id,
-        provider=system.provider,
+        provider=_bridge_provider(system, transport),
         transport=transport,
     )
     if connector is None:
@@ -245,7 +253,7 @@ async def get_printer_bridge_status(
             last_snapshot_sequence=None,
             last_snapshot_source_instance_id=None,
             source_instance_id=None,
-            provider=system.provider,
+            provider=_bridge_provider(system, transport),
             transport=transport,
             capabilities=[],
         )
@@ -267,6 +275,7 @@ async def get_printer_bridge_status(
         last_snapshot_sequence=connector.last_snapshot_sequence,
         last_snapshot_source_instance_id=connector.last_snapshot_source_instance_id,
         source_instance_id=connector.source_instance_id,
+        node_instance_id=connector.node_instance_id,
         provider=connector.provider,
         transport=transport,
         capabilities=list(connector.capabilities),
@@ -316,6 +325,7 @@ async def pair_printer_bridge(
     credential.credential_generation = int(credential.credential_generation or 0) + 1
     credential.rotated_at = now if replacing_active_token else credential.rotated_at
     connector.source_instance_id = payload.source_instance_id
+    connector.node_instance_id = payload.node_instance_id
     connector.capabilities = _safe_capabilities(payload.capabilities)
     connector.active = True
     system = await db.get(MaterialSystem, connector.material_system_id)

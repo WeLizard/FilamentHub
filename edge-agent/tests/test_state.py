@@ -18,7 +18,7 @@ class StateStoreTest(unittest.TestCase):
             state_path = Path(directory) / "edge-state.json"
             store = StateStore(state_path)
 
-            with patch("filamenthub_edge.state.os.fsync", wraps=os.fsync) as fsync:
+            with patch("filamenthub_edge.storage.os.fsync", wraps=os.fsync) as fsync:
                 store.save(EdgeState())
 
             expected_calls = 2 if os.name == "posix" else 1
@@ -60,9 +60,7 @@ class StateStoreTest(unittest.TestCase):
                 )
             )
             decoded = json.loads(state_path.read_text(encoding="utf-8"))
-            decoded["usage_outbox"].append(
-                {"sequence": 1, "events": [{"event_id": "event-1"}]}
-            )
+            decoded["usage_outbox"].append({"sequence": 1, "events": [{"event_id": "event-1"}]})
             state_path.write_text(json.dumps(decoded), encoding="utf-8")
             if os.name == "posix":
                 state_path.chmod(0o600)

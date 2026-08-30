@@ -32,7 +32,7 @@ class FakeCloud:
     def pair(self, **kwargs) -> PairingResult:  # noqa: ANN003
         self.pair_calls += 1
         self.pair_payloads.append(kwargs)
-        return PairingResult("fhpb_fixture", 10, 20)
+        return PairingResult("fhpb_fixture", 10, 20, "ab" * 32)
 
     def desired_snapshot(self, **kwargs) -> DesiredResult:  # noqa: ANN003
         return DesiredResult(
@@ -140,7 +140,6 @@ class EdgeRuntimeTest(unittest.TestCase):
                     [
                         snapshot("a" * 32, 0),
                         snapshot("b" * 32, 5000),
-                        snapshot("b" * 32, 6000),
                         snapshot("a" * 32, 100),
                     ]
                 ),
@@ -464,12 +463,13 @@ class EdgeRuntimeTest(unittest.TestCase):
                 40,
             )
 
+            runtime.run_cycle()
             runtime.shutdown()
 
-            self.assertEqual(
-                cloud.usage_uploads[-1]["events"][0]["reasons"],
-                ["shutdown"],
-            )
+            self.assertEqual(store.load().usage_outbox[-1]["events"][0]["reasons"], ["shutdown"])
+            self.assertEqual(len(cloud.usage_uploads), 1)
+            runtime.provider = FakeProvider()
+            runtime.run_cycle()
             self.assertEqual(
                 cloud.usage_uploads[-1]["events"][0]["items"][0]["used_length_mm"],
                 30,

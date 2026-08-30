@@ -9,12 +9,10 @@ import signal
 from dataclasses import replace
 from threading import Event
 
-from .cloud import FilamentHubCloud
-from .config import EdgeConfig
+from .config import NodeConfig
 from .errors import EdgeError
-from .providers.moonraker import MoonrakerProvider
-from .runtime import EdgeRuntime
-from .state import StateStore
+from .node import EdgeNode
+from .storage import NodeLease
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -29,50 +27,48 @@ def _parser() -> argparse.ArgumentParser:
     mode.add_argument(
         "--reset-connection",
         action="store_true",
-        help="revoke and clear an idle binding before pairing this Edge elsewhere",
+        help="revoke and clear the selected idle printer connection",
     )
+    parser.add_argument("--connection", help="connection id for status or reset")
     return parser
 
 
 def main() -> None:
-    args = _parser().parse_args()
+    parser = _parser()
+    args = parser.parse_args()
+    if args.reset_connection and not args.connection:
+        parser.error("--reset-connection requires --connection ID")
+    if args.connection and not (args.status or args.reset_connection):
+        parser.error("--connection is only supported with --status or --reset-connection")
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
     try:
-        config = EdgeConfig.load()
+        config = NodeConfig.load()
         if args.once:
             config = replace(config, run_once=True)
-        store = StateStore(config.state_path)
-        state = store.load()
-        cloud = FilamentHubCloud(
-            config.filamenthub_url,
-            timeout=config.request_timeout,
-            allow_insecure_http=config.allow_insecure_cloud,
-        )
-        provider = MoonrakerProvider(
-            config.moonraker_url,
-            api_key=config.moonraker_api_key,
-            material_provider=config.material_provider,
-            timeout=config.request_timeout,
-            filamenthub_url=config.filamenthub_url,
-        )
-        runtime = EdgeRuntime(
-            config=config,
-            cloud=cloud,
-            provider=provider,
-            store=store,
-            state=state,
-        )
         if args.status:
-            print(json.dumps(runtime.diagnostic_status(), sort_keys=True))
-        elif args.reset_connection:
-            runtime.reset_connection()
-            logging.getLogger("filamenthub_edge").info("Edge connection was reset safely")
-        elif config.run_once:
-            runtime.run_cycle()
-        else:
+            print(
+                json.dumps(
+                    EdgeNode(config).diagnostic_status(connection_id=args.connection),
+                    sort_keys=True,
+                )
+            )
+            return
+        with NodeLease(config.state_directory):
+            node = EdgeNode(config)
+            if args.reset_connection:
+                node.reset_connection(args.connection)
+                logging.getLogger("filamenthub_edge").info("Edge connection was reset safely")
+                return
+            node.initialize()
+            if config.run_once:
+                success = node.run_once()
+                print(json.dumps(node.diagnostic_status(), sort_keys=True))
+                if not success:
+                    raise SystemExit(2)
+                return
             stop_event = Event()
 
             def request_stop(signum, frame) -> None:  # noqa: ANN001, ARG001
@@ -81,10 +77,7 @@ def main() -> None:
 
             signal.signal(signal.SIGINT, request_stop)
             signal.signal(signal.SIGTERM, request_stop)
-            try:
-                runtime.run_forever(stop_event=stop_event)
-            finally:
-                runtime.shutdown()
+            node.run_forever(stop_event)
     except EdgeError as exc:
         logging.getLogger("filamenthub_edge").error("%s", exc)
         raise SystemExit(2) from None

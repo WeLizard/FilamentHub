@@ -115,14 +115,13 @@ class MoonrakerProvider:
         usage = self._usage_snapshot(status)
         slots: list[dict[str, Any]] = []
         topology_complete = False
-        inventory_key_digest = None
+        inventory_key_digest = self._inventory_key_digest()
         if self.material_provider == "happy_hare":
             mmu = status.get("mmu")
             if not isinstance(mmu, dict):
                 raise ProviderUnavailable("Happy Hare object 'mmu' is unavailable")
             slots = self._happy_hare_slots(mmu)
             topology_complete = True
-            inventory_key_digest = self._inventory_key_digest()
             if self._native_spoolman_configured or mmu.get("spoolman_support") != "off":
                 # Moonraker's native Spoolman component owns usage for this feed.
                 # Running Edge and Orca alongside it must not debit the spool twice.
@@ -130,6 +129,12 @@ class MoonrakerProvider:
                 self._capabilities = ["read", "presence", "spool_identity"]
             else:
                 self._capabilities = ["read", "presence", "spool_identity", "consumption"]
+        else:
+            self._capabilities = ["read", "presence"]
+            if self._native_spoolman_configured:
+                usage = None
+            else:
+                self._capabilities.append("consumption")
         return ProviderSnapshot(
             printer=printer,
             slots=slots,
@@ -165,10 +170,12 @@ class MoonrakerProvider:
         except HttpRequestError:
             return None
         result = decoded.get("result", {}) if isinstance(decoded, dict) else {}
-        config = result.get("config", {}) if isinstance(result, dict) else {}
-        spoolman = config.get("spoolman", {}) if isinstance(config, dict) else {}
+        config = result.get("config") if isinstance(result, dict) else None
+        if not isinstance(config, dict):
+            return None
+        self._native_spoolman_configured = "spoolman" in config
+        spoolman = config.get("spoolman", {})
         server = spoolman.get("server") if isinstance(spoolman, dict) else None
-        self._native_spoolman_configured = bool(server)
         if not isinstance(server, str):
             return None
         try:

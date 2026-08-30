@@ -17,7 +17,7 @@ RUN pip install --no-cache-dir . \
     && adduser -S -G filamenthub -h /app filamenthub \
     && install -d -o filamenthub -g filamenthub -m 0700 /data
 
-ENV FH_EDGE_STATE_PATH=/data/edge-state.json \
+ENV FH_EDGE_STATE_DIRECTORY=/data \
     PYTHONUNBUFFERED=1
 
 VOLUME ["/data"]

@@ -20,6 +20,7 @@ class PrinterBridgePairRequest(BaseModel):
     provider: str = Field(min_length=1, max_length=50)
     transport: PrinterBridgeTransport
     source_instance_id: str = Field(min_length=16, max_length=100)
+    node_instance_id: str | None = Field(default=None, min_length=16, max_length=100)
     plugin_version: str = Field(min_length=1, max_length=50)
     capabilities: list[str] = Field(default_factory=list, max_length=32)
     previous_physical_printer_id: int | None = Field(default=None, gt=0)
@@ -29,6 +30,8 @@ class PrinterBridgePairRequest(BaseModel):
 
     @model_validator(mode="after")
     def complete_previous_binding(self) -> "PrinterBridgePairRequest":
+        if (self.transport == "edge_agent") != (self.node_instance_id is not None):
+            raise ValueError("node identity is required only for the Edge transport")
         if (self.previous_physical_printer_id is None) != (
             self.previous_material_system_id is None
         ):
@@ -52,6 +55,7 @@ class PrinterBridgeStatusResponse(BaseModel):
     last_snapshot_sequence: int | None
     last_snapshot_source_instance_id: str | None
     source_instance_id: str | None
+    node_instance_id: str | None = None
     provider: str
     transport: PrinterBridgeTransport
     capabilities: list[str]

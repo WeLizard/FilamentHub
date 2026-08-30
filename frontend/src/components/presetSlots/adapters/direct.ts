@@ -1,3 +1,5 @@
+import { createElement } from 'react';
+import { EdgeConnectionSetup } from '../EdgeConnectionSetup';
 import type { FeedAdapter } from './types';
 
 export const directFeedAdapter: FeedAdapter = {
@@ -6,4 +8,7 @@ export const directFeedAdapter: FeedAdapter = {
   fixedSlots: 1,
   capabilities: [],
   link: null,
+  renderSetup: (context) => ['manual', 'legacy'].includes(context.system.provider)
+    ? createElement(EdgeConnectionSetup, { ...context, collapsible: true })
+    : null,
 };

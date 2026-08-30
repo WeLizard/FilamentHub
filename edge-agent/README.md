@@ -19,18 +19,22 @@ Edge is intended to bridge a home, office, or printer farm to FilamentHub: one
 node serving multiple printers through supported adapters. Device resources and
 adapter capabilities determine capacity, not a one-printer-per-node product rule.
 
-The current runtime supports only one Moonraker endpoint and one printer binding
-per instance. Multi-printer configuration within one node is not implemented yet;
-the instructions below describe the current single-printer setup.
+One installation supervises independent entries in `connections`. Each entry
+has its own printer binding, revocable cloud credential, observations, and durable
+usage queue; a disconnected printer does not pause the others. This runtime
+accepts up to 32 configured connections to bound local resource use. Actual
+capacity depends on the host and adapter. The current adapter supports Moonraker
+with Happy Hare (`happy_hare`) or direct Klipper feed (`legacy`); other printer
+protocols require their own adapters.
 
 OrcaSlicer is optional. Install on the printer's Linux computer or another
 always-on computer on the same LAN. No inbound internet port, printer API key in
 FilamentHub, or separate hardware is required. Do not install into Klipper's or
 Moonraker's Python environment.
 
-1. In FilamentHub, add a physical printer and its Happy Hare material system.
+1. In FilamentHub, add each physical printer and its material system.
    Create physical spools in **My Filaments**, not just catalogue entries.
-2. Open the printer's integration settings and copy its generated Spoolman URL
+2. For Happy Hare, open the printer's integration settings and copy its generated Spoolman URL
    into Moonraker's existing `[spoolman]` section. Do not create duplicate sections:
 
    ```ini
@@ -48,8 +52,10 @@ Moonraker's Python environment.
    `pull` makes remote assignments authoritative and can replace the local map;
    `push` sends local assignments to the inventory; `readonly` only reads spool
    properties. Follow the [official Happy Hare guide](https://moggieuk.github.io/Happy-Hare-Doc/Feature-Spoolman/).
-4. Under **Connection with and without Orca**, create a one-time pairing code
-   for this material system, then use one installation option below.
+4. Open **Profile → My Filaments** and expand the printer's material-system card.
+   Open **Connection with and without Orca** for Happy Hare, or **Connect through
+   Edge (optional)** for direct feed. Create a separate one-time pairing code for
+   each system, then add its entry to the same installation below.
 
 ### Linux without Docker
 
@@ -68,10 +74,26 @@ Create `~/.config/filamenthub-edge/options.json` with permissions `600`:
 ```json
 {
   "filamenthub_url": "https://filamenthub.ru",
-  "pairing_code": "FH-XXXXX-XXXXX",
-  "material_provider": "happy_hare",
-  "moonraker_url": "http://127.0.0.1:7125",
-  "moonraker_api_key": ""
+  "connections": [
+    {
+      "id": "workshop-mmu",
+      "name": "Workshop MMU",
+      "adapter": "moonraker",
+      "pairing_code": "FH-XXXXX-XXXXX",
+      "material_provider": "happy_hare",
+      "moonraker_url": "http://192.168.1.20:7125",
+      "moonraker_api_key": ""
+    },
+    {
+      "id": "office-printer",
+      "name": "Office printer",
+      "adapter": "moonraker",
+      "pairing_code": "FH-YYYYY-YYYYY",
+      "material_provider": "legacy",
+      "moonraker_url": "http://192.168.1.21:7125",
+      "moonraker_api_key": ""
+    }
+  ]
 }
 ```
 
@@ -81,12 +103,12 @@ authentication or expose it to the internet. Test one exchange:
 
 ```sh
 FH_EDGE_OPTIONS_FILE="$HOME/.config/filamenthub-edge/options.json" \
-FH_EDGE_STATE_PATH="$HOME/.local/share/filamenthub-edge/edge-state.json" \
+FH_EDGE_STATE_DIRECTORY="$HOME/.local/share/filamenthub-edge/state" \
   "$HOME/.local/share/filamenthub-edge/venv/bin/filamenthub-edge" --once
 ```
 
-After a successful exchange, remove only the `pairing_code` option, preserving
-the state file. For continuous operation on a systemd Linux host:
+After a successful exchange, remove only the `pairing_code` from that connection,
+preserving its `id` and the state directory. For continuous operation on a systemd Linux host:
 
 ```sh
 install -d "$HOME/.config/systemd/user"
@@ -99,7 +121,7 @@ journalctl --user -u filamenthub-edge.service -n 30
 The user service normally runs while that user's session exists. For unattended
 startup after reboot, the host administrator must enable user lingering
 (`loginctl enable-linger <service-user>`). Verify startup after a reboot. Do not
-run multiple copies using the same state file.
+run multiple copies using the same state directory: Edge refuses a second writer.
 
 ### Docker
 
@@ -117,7 +139,7 @@ access without making the file world-readable. Mount it read-only; keep durable 
 in a named volume. The host-network example is for Linux:
 
 ```text
-docker run --restart unless-stopped --network host \
+docker run --restart unless-stopped --stop-timeout 210 --network host \
   --name filamenthub-edge \
   -v /absolute/path/options.json:/data/options.json:ro \
   -v filamenthub-edge-data:/data \
@@ -129,19 +151,34 @@ not container-local `127.0.0.1`. Host networking availability depends on the hos
 The Home Assistant packaging in this repository is not a published add-on feed;
 use these source-install options unless a release explicitly supplies one.
 
-The pairing code is needed only for the first successful connection. The
-revocable bridge token, cached desired state, pending observation, usage tracker,
-and bounded durable usage outbox are stored in `/data/edge-state.json`.
+The pairing code is needed only for the first successful connection. Node identity
+is stored in `/data/node.json`. Each connection's revocable bridge token, cached
+desired state, pending observation, usage tracker, and bounded durable usage outbox
+are stored separately in `/data/connections/<id>.json`.
 Clear the one-time pairing code from the container or Home Assistant options
 after pairing. Supplying a new code rotates the credential for the same printer
 binding without discarding queued evidence.
 
-`filamenthub-edge --status` prints secret-free local diagnostics, including the
-pending observation and usage backlog. `filamenthub-edge --reset-connection`
-revokes an idle binding before moving the same Edge to another printer; it
-refuses to discard an active job or durable retry data. SIGTERM and a lost
-Moonraker connection produce a final safe usage checkpoint when evidence is
-available, leaving it in the outbox if the cloud is offline.
+`filamenthub-edge --status` prints secret-free local diagnostics for the node and
+each connection, including pending observations and usage backlogs. Use
+`--status --connection workshop-mmu` to inspect one entry.
+`filamenthub-edge --reset-connection --connection workshop-mmu` revokes only the
+selected idle binding; it refuses to discard an active job or durable retry data.
+Stop the service before resetting, then restart it afterwards. SIGTERM saves a
+checkpoint from the last verified counters without starting new network requests;
+it is delivered from the outbox after restart. A lost Moonraker connection also
+checkpoints previously verified counters, with delivery retried while cloud is
+offline. The stop grace period accommodates a provider request already in flight,
+including the configurable request timeout (up to 60 seconds).
+
+To add a printer, append a connection with a new unique `id`, its LAN endpoint,
+and its pairing code, then restart the service/container. No second installation
+is needed. To pause one printer, set its `enabled` to `false` and restart. Removing
+an entry from the configuration also stops its worker but does not revoke or
+delete its saved binding and pending events. The status command continues to list
+it as unconfigured. Restore the same `id` to resume its queue. Do not rename IDs,
+reuse an ID for a different printer, copy state between nodes, or run multiple
+connections against the same endpoint.
 
 ## Verify the connection
 

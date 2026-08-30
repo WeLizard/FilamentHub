@@ -150,6 +150,10 @@ def capture_usage_events(
     """
     usage = snapshot.usage
     if not isinstance(usage, dict):
+        if state.usage_tracker is not None:
+            # An interval owned by native Spoolman (or unavailable evidence)
+            # must not be charged when local counter sampling resumes later.
+            state.usage_tracker["sampling_suspended"] = True
         return []
     raw_state = str(usage.get("state") or "").strip().lower()
     counter = _number(usage.get("filament_used_mm"))
@@ -159,6 +163,21 @@ def capture_usage_events(
     usage["filament_used_mm"] = counter
     current_route = _route(state, snapshot)
     tracker = state.usage_tracker
+
+    if tracker is not None and tracker.get("sampling_suspended"):
+        suspended_events = capture_pending_usage_event(
+            state, observed_at=observed_at, reason="disconnect"
+        )
+        if _same_job(tracker, usage):
+            tracker.pop("sampling_suspended", None)
+            tracker["last_filament_used_mm"] = counter
+            tracker["last_print_duration_s"] = float(usage.get("print_duration_s") or 0)
+            tracker["last_total_duration_s"] = float(usage.get("total_duration_s") or 0)
+            tracker["last_emitted_print_duration_s"] = tracker["last_print_duration_s"]
+            tracker["route"] = current_route
+        else:
+            state.usage_tracker = None
+        return suspended_events + capture_usage_events(state, snapshot, observed_at=observed_at)
 
     if raw_state == "standby":
         state.usage_tracker = None
@@ -257,11 +276,7 @@ def capture_usage_events(
         )
         pending = 0.0
         tracker["last_emitted_print_duration_s"] = current_print_duration
-    elif (
-        raw_state == "paused"
-        and previous_state != "paused"
-        and pending > COUNTER_EPSILON_MM
-    ):
+    elif raw_state == "paused" and previous_state != "paused" and pending > COUNTER_EPSILON_MM:
         events.append(
             _event(
                 tracker,
@@ -278,8 +293,7 @@ def capture_usage_events(
         tracker["last_emitted_print_duration_s"] = current_print_duration
     elif (
         pending > COUNTER_EPSILON_MM
-        and current_print_duration
-        - float(tracker.get("last_emitted_print_duration_s") or 0.0)
+        and current_print_duration - float(tracker.get("last_emitted_print_duration_s") or 0.0)
         >= CHECKPOINT_INTERVAL_S
     ):
         events.append(

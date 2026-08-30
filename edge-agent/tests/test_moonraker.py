@@ -13,10 +13,44 @@ class FakeHttp:
         self.response = response
 
     def request(self, method: str, path: str, **kwargs):  # noqa: ANN003, ANN201
+        if path == "/server/config":
+            return 200, {"result": {"config": {}}}, {}
         return 200, self.response, {}
 
 
 class MoonrakerProviderTest(unittest.TestCase):
+    def test_direct_feed_does_not_duplicate_native_or_unknown_spoolman_usage(self) -> None:
+        for config, allowed in (({}, True), ({"spoolman": {}}, False), (None, False)):
+
+            class ConfigHttp(FakeHttp):
+                def request(self, method, path, config=config, **kwargs):
+                    if path == "/server/config":
+                        return 200, {"result": {"config": config}}, {}
+                    return super().request(method, path, **kwargs)
+
+            with self.subTest(config=config):
+                provider = MoonrakerProvider(
+                    "http://printer.test",
+                    api_key=None,
+                    material_provider="legacy",
+                    timeout=2,
+                    http_client=ConfigHttp(
+                        {
+                            "result": {
+                                "status": {
+                                    "print_stats": {
+                                        "state": "printing",
+                                        "filament_used": 100,
+                                    }
+                                }
+                            }
+                        }
+                    ),
+                )
+                snapshot = provider.observe()
+                self.assertEqual(snapshot.usage is not None, allowed)
+                self.assertEqual("consumption" in snapshot.capabilities, allowed)
+
     def test_happy_hare_snapshot_reports_complete_topology_and_active_bypass(self) -> None:
         response = {
             "result": {
