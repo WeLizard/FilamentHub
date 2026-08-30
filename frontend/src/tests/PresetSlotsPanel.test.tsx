@@ -78,6 +78,7 @@ let octoprintBridgeStatusForQuery: OctoPrintBridgeStatus = {
   },
 };
 const createSystem = vi.fn();
+const setupConnection = vi.fn();
 const regenerateKey = vi.fn();
 const updateOctoPrintRouting = vi.fn();
 
@@ -142,7 +143,9 @@ vi.mock('@tanstack/react-query', () => ({
 
 vi.mock('../api/client', () => ({
   devicesAPI: { regenerateKey },
-  physicalPrintersAPI: { list: vi.fn(), clearSystem: vi.fn(), createSystem },
+  physicalPrintersAPI: { list: vi.fn(), clearSystem: vi.fn(), createSystem,
+    setupConnection, listBindings: vi.fn(), listInstalledCandidates: vi.fn() },
+  printersAPI: { list: vi.fn() },
   octoprintBridgeAPI: {
     status: vi.fn(),
     issuePairingCode: vi.fn(),
@@ -173,6 +176,14 @@ vi.mock('../components/Toast', () => ({
 
 describe('PresetSlotsPanel', () => {
   beforeEach(() => {
+    sessionStorage.clear();
+    setupConnection.mockReset();
+    setupConnection.mockImplementation(async (id, payload) => {
+      physicalPrintersForQuery = physicalPrintersForQuery.map((printer) => printer.id === id
+        ? { ...printer, material_systems: [{ ...physicalPrinter.material_systems[0], ...payload.material_system }] }
+        : printer);
+      return physicalPrintersForQuery.find((printer) => printer.id === id);
+    });
     physicalPrintersForQuery = [physicalPrinter];
     printerBindingsForQuery = [];
     printerBridgeStatusForQuery = {
@@ -697,17 +708,10 @@ describe('PresetSlotsPanel', () => {
       ]}
     />);
 
-    fireEvent.click(screen.getByText('presetSlots.newSystem.add'));
-    fireEvent.focus(screen.getByPlaceholderText('presetSlots.newSystem.printerPlaceholder'));
-
-    expect(
-      (screen.getByPlaceholderText(
-        'presetSlots.newSystem.printerPlaceholder',
-      ) as HTMLInputElement).value,
-    ).toContain('presetSlots.connectionProvider.moonraker · myPrinters.localConnection');
-    expect(screen.getByText(/Workshop Voron 0\.4/)).toBeInTheDocument();
-    expect(screen.getByText('Office Voron 0.4 / Office Voron 0.6')).toBeInTheDocument();
-    expect(screen.getByText('presetSlots.newSystem.printerHint')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('printerSetup.title'));
+    fireEvent.focus(screen.getByDisplayValue('printerSetup.newDevice'));
+    expect(screen.getByText('Voron 2.4 350 · #41 — Workshop Voron 0.4')).toBeInTheDocument();
+    expect(screen.getByText('Voron 2.4 350 · #42 — Office Voron 0.4 / Office Voron 0.6')).toBeInTheDocument();
   });
 
   it('uses a next step when the selected material system requires a printer link', async () => {
@@ -720,24 +724,20 @@ describe('PresetSlotsPanel', () => {
     );
 
     render(<PresetSlotsPanel spools={[]} printerProfiles={[]} />);
-    fireEvent.click(screen.getByText('presetSlots.newSystem.add'));
-
-    expect(screen.getByText('presetSlots.newSystem.create')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('printerSetup.title'));
+    fireEvent.focus(screen.getByDisplayValue('printerSetup.newDevice'));
+    fireEvent.click(screen.getByText('Manual Voron · #11'));
     fireEvent.focus(screen.getByDisplayValue('presetSlots.feedSystem.direct'));
     fireEvent.click(screen.getByText('presetSlots.feedSystem.happy_hare'));
-
-    expect(screen.getByText('presetSlots.newSystem.next')).toBeInTheDocument();
-    expect(screen.queryByText('presetSlots.newSystem.create')).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByText('presetSlots.newSystem.next'));
-
+    fireEvent.click(screen.getByText('printerSetup.save'));
     await waitFor(() => {
-      expect(createSystem).toHaveBeenCalledWith(11, expect.objectContaining({
-        provider: 'happy_hare',
+      expect(setupConnection).toHaveBeenCalledWith(11, expect.objectContaining({
+        material_system: expect.objectContaining({ provider: 'happy_hare' }),
       }));
-      expect(regenerateKey).toHaveBeenCalledWith(11);
     });
-    expect(screen.getByText('presetSlots.newSystem.keyTitle')).toBeInTheDocument();
+    expect(regenerateKey).not.toHaveBeenCalled();
+    fireEvent.click(await screen.findByText('printerSetup.issueKey'));
+    await waitFor(() => expect(regenerateKey).toHaveBeenCalledWith(11));
     expect(screen.getByText(/fresh-printer-key/)).toBeInTheDocument();
     expect(screen.getByText('presetSlots.happyHare.linkHint')).toBeInTheDocument();
     expect(screen.getByText('presetSlots.newSystem.done')).toBeInTheDocument();

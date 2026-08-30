@@ -10,6 +10,7 @@
  */
 
 import { stripLocalePrefix } from './siteLocale';
+import type { PrinterSetupConnection } from '../api/client';
 
 export const PLUGIN_MESSAGE_SOURCE = 'filamenthub-plugin';
 
@@ -774,6 +775,64 @@ export interface HappyHareAssignmentChange {
   gate: number;
   actualSpoolId: number | null;
   desiredSpoolId: number | null;
+}
+
+export interface PrinterSetupCandidate {
+  connectionRef: string;
+  label: string;
+  physicalPrinterId: number | null;
+}
+
+export interface PrinterSetupResult {
+  ok: boolean;
+  code?: string;
+  candidates?: PrinterSetupCandidate[];
+  probeId?: string;
+  connection?: PrinterSetupConnection;
+  provider?: 'happy_hare' | 'manual';
+  gateCount?: number | null;
+  printerHostname?: string | null;
+  spoolmanSupport?: string | null;
+  observed?: boolean;
+}
+
+/** The native shell owns manual LAN credentials; this request never contains them. */
+export function requestPrinterSetup(
+  operation: 'list' | 'probe' | 'activate' | 'manual',
+  payload: {
+    connectionRef?: string;
+    probeId?: string;
+    physicalPrinterId?: number;
+    copy?: Record<string, string>;
+  } = {},
+): Promise<PrinterSetupResult> {
+  if (!isPluginEmbed() || !activePluginCapabilities.has('printer-setup-v1')) {
+    return Promise.reject(new Error('printer setup unavailable'));
+  }
+  const requestId = pluginRequestId('printer-setup');
+  return new Promise((resolve, reject) => {
+    const cleanup = () => {
+      window.removeEventListener('message', onMessage);
+      window.clearTimeout(timer);
+    };
+    const onMessage = (event: MessageEvent) => {
+      if (!isTrustedPluginParentEvent(event)) return;
+      const data = event.data;
+      if (data?.source !== PLUGIN_MESSAGE_SOURCE || data.type !== 'printer-setup-result'
+          || data.requestId !== requestId) return;
+      cleanup();
+      if (typeof data.result?.ok !== 'boolean') reject(new Error('invalid setup result'));
+      else resolve(data.result as PrinterSetupResult);
+    };
+    const timer = window.setTimeout(() => {
+      cleanup();
+      reject(new Error('printer setup timeout'));
+    }, operation === 'manual' ? 600_000 : 90_000);
+    window.addEventListener('message', onMessage);
+    postToPlugin({ source: PLUGIN_MESSAGE_SOURCE,
+      type: operation === 'manual' ? 'printer-setup-manual' : 'printer-setup',
+      requestId, operation, ...payload });
+  });
 }
 
 export interface HappyHareImportChange {

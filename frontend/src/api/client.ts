@@ -4007,7 +4007,30 @@ export interface PrinterRecoveryPlan {
   process_profiles: PrinterRecoveryProfileEntry[];
 }
 
+export interface PrinterSetupConnection {
+  source_instance_id: string;
+  connection_ref: string;
+  origin: 'orca_profile' | 'local_manual';
+  provider: string;
+  endpoint_token: string;
+  device_identity?: { kind: string; token: string };
+}
+
+export interface MaterialSystemCreate {
+  name: string;
+  kind: string;
+  provider: string;
+  capabilities: Array<'read' | 'write' | 'presence' | 'spool_identity' | 'consumption' | 'local_command'>;
+  slot_count?: number;
+}
+
 export const physicalPrintersAPI = {
+  setupConnection: async (id: number, payload: {
+    connection?: PrinterSetupConnection;
+    material_system?: MaterialSystemCreate;
+  }): Promise<PhysicalPrinter> => (
+    await api.post<PhysicalPrinter>(`/physical-printers/${id}/connection-setup`, payload)
+  ).data,
   pendingConnections: async (): Promise<PendingPrinterConnection[]> => (
     await api.get<PendingPrinterConnection[]>('/orcaslicer/printer-connections/pending')
   ).data,
@@ -4124,6 +4147,9 @@ export const physicalPrintersAPI = {
     name: string;
     printer_id?: number | null;
     printer_profile_ids?: number[];
+    request_id?: string;
+    material_system?: MaterialSystemCreate;
+    connection?: PrinterSetupConnection;
   }): Promise<PhysicalPrinter> => {
     const response = await api.post<PhysicalPrinter>('/physical-printers', payload);
     return response.data;

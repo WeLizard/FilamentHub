@@ -6,6 +6,7 @@ import hashlib
 import hmac
 import json
 from datetime import datetime, timezone
+from uuid import NAMESPACE_URL, uuid5
 
 from sqlalchemy import delete, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -217,23 +218,60 @@ async def _replace_profile_links(
 async def create_physical_printer(
     db: AsyncSession, user_id: int, payload: PhysicalPrinterCreate
 ) -> UserPrinterDevice:
+    from app.services.orca_import_guard import hold_account_import_lock
+    from app.services.printer_setup_service import (
+        attach_setup_connection,
+        find_setup_printer,
+        setup_material_system,
+    )
+
+    await hold_account_import_lock(db, user_id)
+    logical_id = (
+        str(uuid5(NAMESPACE_URL, f"filamenthub:printer-create:{user_id}:{payload.request_id}"))
+        if payload.request_id else None
+    )
+    if logical_id:
+        replay_id = await db.scalar(select(UserPrinterDevice.id).where(
+            UserPrinterDevice.user_id == user_id,
+            UserPrinterDevice.logical_id == logical_id,
+        ))
+        if replay_id is not None:
+            # A retry resumes the original creation. It never rewrites changes
+            # made to that printer after the first response was lost.
+            return await require_physical_printer(db, user_id, replay_id)
     await _validate_catalog_printer_id(db, payload.printer_id)
     await _validate_profile_ids(db, user_id, payload.printer_profile_ids)
-    printer = UserPrinterDevice(
-        user_id=user_id,
-        name=payload.name,
-        printer_id=payload.printer_id,
-        device_fingerprint=None,
-        supports_hh=False,
-    )
-    db.add(printer)
-    await db.flush()
-    await _replace_profile_links(
-        db,
-        user_id=user_id,
-        physical_printer_id=printer.id,
-        profile_ids=payload.printer_profile_ids,
-    )
+    known_id = await find_setup_printer(db, user_id, payload.connection)
+    if known_id is not None:
+        printer = await require_physical_printer(db, user_id, known_id)
+        existing_profiles = set((await db.execute(select(
+            UserPrinterProfileLink.printer_profile_id,
+        ).where(UserPrinterProfileLink.physical_printer_id == known_id))).scalars())
+        db.add_all([
+            UserPrinterProfileLink(
+                user_id=user_id, physical_printer_id=known_id, printer_profile_id=profile_id,
+            )
+            for profile_id in payload.printer_profile_ids if profile_id not in existing_profiles
+        ])
+    else:
+        printer = UserPrinterDevice(
+            user_id=user_id,
+            name=payload.name,
+            printer_id=payload.printer_id,
+            device_fingerprint=None,
+            supports_hh=False,
+            **({"logical_id": logical_id} if logical_id else {}),
+        )
+        db.add(printer)
+        await db.flush()
+        await _replace_profile_links(
+            db,
+            user_id=user_id,
+            physical_printer_id=printer.id,
+            profile_ids=payload.printer_profile_ids,
+        )
+    await attach_setup_connection(db, user_id, printer.id, payload.connection)
+    await setup_material_system(db, user_id, printer.id, payload.material_system)
     await db.commit()
     return await require_physical_printer(db, user_id, printer.id)
 
@@ -288,6 +326,8 @@ async def create_material_system(
     user_id: int,
     physical_printer_id: int,
     payload: MaterialSystemCreate,
+    *,
+    commit: bool = True,
 ) -> UserPrinterDevice:
     printer = await require_physical_printer(db, user_id, physical_printer_id)
     # A printer feeds from one place. Two systems on it would mean two sources
@@ -323,7 +363,10 @@ async def create_material_system(
         for slot in slots
     ]
     db.add(system)
-    await db.commit()
+    if commit:
+        await db.commit()
+    else:
+        await db.flush()
     # The session keeps objects alive past commit, so the printer would answer
     # with the collection it loaded before this system existed.
     db.expire(printer)
@@ -861,6 +904,7 @@ async def ingest_printer_bridge_snapshot(
                     for item in payload.slots
                     if item.kind == "bypass"
                 ],
+                preserve_existing_assignments=True,
             )
 
     if commit:
@@ -883,6 +927,7 @@ async def ensure_material_topology(
     exact_gate_count: int | None = None,
     reported_routes: list[MaterialSlotCreate] | None = None,
     sync_legacy_assignments: bool = True,
+    preserve_existing_assignments: bool = False,
 ) -> None:
     """Write what a provider reports about a printer's feed into the contract.
 
@@ -1026,7 +1071,9 @@ async def ensure_material_topology(
         for state in states_result.scalars().all():
             state.material_slot_id = slots_by_index[state.gate_index].id
             if sync_legacy_assignments:
-                await sync_legacy_material_assignment(db, state)
+                await sync_legacy_material_assignment(
+                    db, state, preserve_existing=preserve_existing_assignments,
+                )
 
     connector = await db.scalar(
         select(PhysicalPrinterConnector)

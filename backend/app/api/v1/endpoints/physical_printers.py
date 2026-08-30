@@ -19,6 +19,7 @@ from app.schemas.material_contract import (
     MaterialSystemCreate,
     MaterialSystemUpdate,
     PhysicalPrinterConfigurationsUpdate,
+    PhysicalPrinterConnectionSetup,
     PhysicalPrinterConnectorCreate,
     PhysicalPrinterCreate,
     PhysicalPrinterMergeRequest,
@@ -143,6 +144,26 @@ async def get_item(
 ) -> PhysicalPrinterResponse:
     printer = await require_physical_printer(db, current_user.id, physical_printer_id)
     return PhysicalPrinterResponse.from_model(printer)
+
+
+@router.post("/{physical_printer_id}/connection-setup", response_model=PhysicalPrinterResponse)
+async def setup_connection(
+    physical_printer_id: int,
+    payload: PhysicalPrinterConnectionSetup,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> PhysicalPrinterResponse:
+    from app.services.orca_import_guard import hold_account_import_lock
+    from app.services.printer_setup_service import attach_setup_connection, setup_material_system
+
+    await hold_account_import_lock(db, current_user.id)
+    await require_physical_printer(db, current_user.id, physical_printer_id)
+    await attach_setup_connection(db, current_user.id, physical_printer_id, payload.connection)
+    await setup_material_system(db, current_user.id, physical_printer_id, payload.material_system)
+    await db.commit()
+    return PhysicalPrinterResponse.from_model(
+        await require_physical_printer(db, current_user.id, physical_printer_id)
+    )
 
 
 @router.get("/{physical_printer_id}/orcaslicer-bundle", response_model=None)

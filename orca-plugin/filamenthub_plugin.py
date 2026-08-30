@@ -3272,6 +3272,143 @@ def observe_local_moonraker_connections(observations):
     ]
 
 
+_LOCAL_SETUP_LOCK = threading.RLock()
+
+
+def _local_setup_config():
+    path = os.path.join(os.path.dirname(AUTH_FILE), ".fh_printer_connections.json")
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            value = json.loads(handle.read(1024 * 1024))
+    except FileNotFoundError:
+        value = {"version": 1, "connections": []}
+    if not isinstance(value, dict) or value.get("version") != 1 or not isinstance(
+        value.get("connections"), list,
+    ) or len(value["connections"]) > 256 or not all(
+        isinstance(item, dict) for item in value["connections"]
+    ):
+        raise ValueError("Invalid local printer connection store")
+    for item in value["connections"]:
+        identity = item.get("device_identity")
+        if (
+            not all(isinstance(item.get(key), str) and item[key] for key in (
+                "account_scope", "connection_ref", "print_host",
+            ))
+            or type(item.get("physical_printer_id")) is not int
+            or item["physical_printer_id"] < 1
+            or not isinstance(item.get("api_key", ""), str)
+            or (identity is not None and (
+                not isinstance(identity, dict)
+                or identity.get("kind") != "moonraker_instance"
+                or not isinstance(identity.get("token"), str)
+                or not re.fullmatch(r"[0-9a-f]{64}", identity["token"])
+            ))
+        ):
+            raise ValueError("Invalid local printer connection store")
+    return path, value
+
+
+def printer_setup_context(token):
+    source = plugin_source_instance_id()
+    status, value = _filamenthub_json_get(
+        "/orcaslicer/printer-connections/setup-context?source_instance_id="
+        + urllib.parse.quote(source, safe=""), token,
+    )
+    if status != 200 or not isinstance(value, dict) or value.get("source_instance_id") != source:
+        raise ValueError("auth" if status in {401, 403} else "setup_context")
+    key = value.get("discovery_key")
+    if not isinstance(key, str) or not re.fullmatch(r"[0-9a-f]{64}", key) or not isinstance(
+        value.get("bindings"), list,
+    ):
+        raise ValueError("setup_context")
+    value["account_scope"] = hashlib.sha256((SITE_URL + "\0" + key).encode()).hexdigest()
+    return value
+
+
+def local_setup_connections(context):
+    """Only this account's still-bound connections may address the local network."""
+    with _LOCAL_SETUP_LOCK:
+        _path, config = _local_setup_config()
+    owned = {
+        item.get("connection_ref"): item.get("physical_printer_id")
+        for item in context["bindings"] if isinstance(item, dict) and item.get("status") == "bound"
+    }
+    return [
+        dict(item) for item in config["connections"]
+        if isinstance(item, dict) and item.get("account_scope") == context["account_scope"]
+        and owned.get(item.get("connection_ref")) == item.get("physical_printer_id")
+        and isinstance(item.get("physical_printer_id"), int)
+    ]
+
+
+def verified_local_setup_connections(token):
+    # Nothing configured: do not add cloud requests to every existing HH action.
+    with _LOCAL_SETUP_LOCK:
+        _path, config = _local_setup_config()
+    if not config["connections"]:
+        return []
+    context = printer_setup_context(token)
+    verified = []
+    for connection in local_setup_connections(context):
+        expected = connection.get("device_identity")
+        if expected:
+            identity = _observe_moonraker_identity(connection)
+            actual = _printer_evidence_token(
+                context["discovery_key"], "device", "moonraker_instance\0" + str(identity),
+            ) if identity else None
+            if actual != expected.get("token"):
+                continue
+        verified.append(connection)
+    return verified
+
+
+def save_local_setup_connection(context, connection, physical_printer_id, evidence):
+    with _LOCAL_SETUP_LOCK:
+        path, config = _local_setup_config()
+        items = [item for item in config["connections"] if not (
+            item.get("account_scope") == context["account_scope"]
+            and item.get("connection_ref") == connection["connection_ref"]
+        )]
+        if len(items) >= 256:
+            raise ValueError("Local printer connection limit reached")
+        items.append({
+            "account_scope": context["account_scope"],
+            "connection_ref": connection["connection_ref"],
+            "physical_printer_id": physical_printer_id,
+            "print_host": connection["print_host"], "api_key": connection.get("api_key", ""),
+            "device_identity": evidence.get("device_identity"),
+            "label": connection.get("label", "Moonraker"),
+        })
+        write_json_atomic(path, {"version": 1, "connections": items}, mode=0o600)
+
+
+def probe_printer_setup(context, connection, origin):
+    """Read capabilities first; absent MMU is not inferred from a failed request."""
+    status, body, _error = _moonraker_json(connection, "/printer/objects/list")
+    result = body.get("result")
+    objects = result.get("objects") if isinstance(result, dict) else None
+    if status != 200 or not isinstance(objects, list):
+        raise ValueError("printer_auth" if status in {401, 403} else "unreachable")
+    snapshot = read_happy_hare_snapshot(connection) if "mmu" in objects else None
+    identity = _observe_moonraker_identity(connection)
+    evidence = {
+        "source_instance_id": context["source_instance_id"],
+        "connection_ref": connection["connection_ref"], "origin": origin,
+        "provider": "moonraker",
+        "endpoint_token": _connection_endpoint_token(
+            context["discovery_key"], connection["print_host"], "moonraker",
+        ),
+    }
+    if identity:
+        evidence["device_identity"] = {
+            "kind": "moonraker_instance",
+            "token": _printer_evidence_token(
+                context["discovery_key"], "device", "moonraker_instance\0" + identity,
+            ),
+        }
+    return evidence, snapshot
+
+
 def _moonraker_base_url(value):
     raw = str(value or "").strip()
     if not raw:
@@ -3650,10 +3787,15 @@ def resolve_happy_hare_connection(
         connection = local_by_ref.get(connection_ref)
         if connection is not None:
             exact.append(connection)
-    unique_exact = {
-        (item.get("connection_ref"), item.get("print_host")): item
-        for item in exact
-    }
+    # Different configuration refs can explicitly bind to the same endpoint.
+    # They are aliases of one local connection, not competing physical devices.
+    unique_exact = {}
+    for item in exact:
+        try:
+            endpoint = _moonraker_base_url(item.get("print_host"))
+        except ValueError:
+            continue
+        unique_exact[(endpoint, item.get("api_key") or "")] = item
     if len(unique_exact) == 1:
         connection = next(iter(unique_exact.values()))
         try:
@@ -5547,7 +5689,7 @@ function sendPluginCapabilities() {
         capabilities: ['printer-bundle-install', 'printer-bundle-result-v1',
                        'printer-bundle-toggle-v1', 'printer-recovery-v1',
                        'bambu-lan-bridge', 'profile-sync', 'profile-sync-scopes-v1',
-                       'bambu-material-write', 'happy-hare-moonraker', 'open-external'] },
+                       'bambu-material-write', 'happy-hare-moonraker', 'printer-setup-v1', 'open-external'] },
       SITE_ORIGIN);
   } catch (e) { /* iframe not ready */ }
 }
@@ -5560,6 +5702,9 @@ window.addEventListener('message', function (event) {
   var data = event.data;
   if (event.source !== frame.contentWindow || event.origin !== SITE_ORIGIN) return;
   if (!data || data.source !== 'filamenthub-plugin') return;
+  // Only the local shell collects a LAN address/key; the remote iframe cannot
+  // impersonate a submission of its credential form.
+  if (data.type === 'printer-setup-local') return;
   markCatalogReady();
   if (data.type === 'plugin-capabilities-request') {
     sendPluginCapabilities();
@@ -5601,6 +5746,11 @@ window.addEventListener('message', function (event) {
     showBambuOverlay(data);
     return;
   }
+  if (data.type === 'printer-setup-manual') {
+    showPrinterSetupOverlay(data);
+    return;
+  }
+  if (data.type === 'printer-setup') startSyncPolling(data.requestId || '');
   if (data.type === 'sync' || data.type === 'profile-changed' ||
       data.type === 'install-printer-bundle' ||
       data.type === 'remove-printer-bundle' ||
@@ -5715,6 +5865,67 @@ function showOAuthOverlay(url) {
 function hideBambuOverlay() {
   var overlay = document.getElementById('bambu-overlay');
   if (overlay) overlay.remove();
+}
+function showPrinterSetupOverlay(request) {
+  var previous = document.getElementById('printer-setup-overlay');
+  if (previous) return;
+  var copy = request.copy || {};
+  var overlay = document.createElement('div');
+  overlay.id = 'printer-setup-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:2147483647;display:flex;' +
+    'align-items:center;justify-content:center;background:rgba(0,0,0,.75);';
+  var form = document.createElement('form');
+  form.style.cssText = 'width:min(480px,calc(100% - 32px));padding:24px;border-radius:12px;' +
+    'background:var(--orca-bg,#1e1e2e);color:var(--orca-fg,#e0e0e0);';
+  var title = document.createElement('h3');
+  title.textContent = copy.title || 'Moonraker';
+  form.appendChild(title);
+  var hint = document.createElement('p');
+  hint.textContent = copy.hint || '';
+  form.appendChild(hint);
+  function input(labelText, type, required) {
+    var label = document.createElement('label');
+    label.textContent = labelText;
+    label.style.cssText = 'display:block;margin-top:14px;';
+    var field = document.createElement('input');
+    field.type = type;
+    field.required = required;
+    field.autocomplete = 'off';
+    field.maxLength = type === 'password' ? 1024 : 500;
+    field.style.cssText = 'display:block;width:100%;box-sizing:border-box;padding:9px;margin-top:5px;' +
+      'background:transparent;color:inherit;border:1px solid #888;border-radius:6px;';
+    label.appendChild(field);
+    form.appendChild(label);
+    return field;
+  }
+  var host = input(copy.address || uiCopy.bambuAddress, 'text', true);
+  var key = input(copy.apiKey || 'API key', 'password', false);
+  var cancel = document.createElement('button');
+  cancel.type = 'button';
+  cancel.textContent = uiCopy.cancel;
+  cancel.onclick = function () {
+    key.value = '';
+    overlay.remove();
+    frame.contentWindow.postMessage({ source:'filamenthub-plugin', type:'printer-setup-result',
+      requestId:request.requestId, result:{ok:false, code:'cancelled'} }, SITE_ORIGIN);
+  };
+  var submit = document.createElement('button');
+  submit.type = 'submit';
+  submit.textContent = copy.submit || uiCopy.bambuSave;
+  submit.style.margin = cancel.style.margin = '18px 8px 0 0';
+  form.appendChild(cancel);
+  form.appendChild(submit);
+  form.onsubmit = function (event) {
+    event.preventDefault();
+    orca.postMessage({source:'filamenthub-plugin', type:'printer-setup-local', operation:'probe',
+      requestId:request.requestId, host:host.value.trim(), apiKey:key.value});
+    key.value = '';
+    overlay.remove();
+    startSyncPolling(request.requestId);
+  };
+  overlay.appendChild(form);
+  document.body.appendChild(overlay);
+  host.focus();
 }
 function showBambuOverlay(binding) {
   hideBambuOverlay();
@@ -5859,7 +6070,7 @@ function pollSyncOnce() {
   fetch(SYNC_STATUS_PATH, { cache: 'no-store' })
     .then(function (r) { return r.json(); })
     .then(function (st) {
-      if (st.text || st.resultType === 'printer-bundle-status-result') {
+      if (st.text || st.resultType === 'printer-bundle-status-result' || st.resultType === 'printer-setup-result') {
         var resultId = st.operationId || st.requestId || '';
         if (syncExpectedOperationId && resultId !== syncExpectedOperationId) {
           syncPollTimer = setTimeout(pollSyncOnce, 500);
@@ -6063,6 +6274,10 @@ try {
             keys: data.keys || [], hook: data.hook || null },
           SITE_ORIGIN);
       } catch (e) { /* iframe not ready */ }
+    } else if (data.type === 'printer-setup-result') {
+      stopSyncPolling();
+      frame.contentWindow.postMessage({source:'filamenthub-plugin', type:data.type,
+        requestId:data.requestId, result:data.result}, SITE_ORIGIN);
     } else if (data.type === 'happy-hare-result') {
       try {
         frame.contentWindow.postMessage(
@@ -8084,6 +8299,12 @@ class FilamentHubCatalog(
         if not token:
             finish(ok=False, code="auth")
             return
+        try:
+            extra = verified_local_setup_connections(token)
+        except (ValueError, OSError):
+            finish(ok=False, code="server")
+            return
+        local_connections = list(local_connections) + extra
         connection, snapshot, device, error = resolve_happy_hare_connection(
             token,
             local_connections,
@@ -8270,6 +8491,105 @@ class FilamentHubCatalog(
             **final_common,
         )
 
+    def _do_printer_setup(self, msg, token, local_connections):
+        request_id = msg["requestId"]
+
+        def finish(**result):
+            if not self._deliver("printer-setup-result", requestId=request_id, result=result):
+                SHELL_SERVER.set_sync_result({
+                    "requestId": request_id, "resultType": "printer-setup-result", "result": result,
+                })
+
+        try:
+            context = printer_setup_context(token)
+            local = list(local_connections) + local_setup_connections(context)
+            operation = msg.get("operation")
+            if operation == "list":
+                names = msg.get("labels") or {}
+                bound = {item["connection_ref"]: item for item in context["bindings"]}
+                finish(ok=True, candidates=[{
+                    "connectionRef": item["connection_ref"],
+                    "label": str(item.get("label") or names.get(item["connection_ref"]) or "Moonraker")[:200],
+                    "physicalPrinterId": (bound.get(item["connection_ref"]) or {}).get("physical_printer_id"),
+                } for item in local])
+                return
+            pending = {
+                key: value for key, value in getattr(self, "_printer_setup_pending", {}).items()
+                if value["expires"] > time.monotonic()
+            }
+            self._printer_setup_pending = pending
+            if operation == "probe":
+                if msg.get("type") == "printer-setup-local":
+                    host = _moonraker_base_url(msg.get("host"))
+                    api_key = msg.get("apiKey", "")
+                    if not isinstance(api_key, str) or len(api_key) > 1024 or "\n" in api_key or "\r" in api_key:
+                        raise ValueError("invalid")
+                    # A repeat of the same locally-entered endpoint reuses its saved ref.
+                    found = [item for item in local_setup_connections(context)
+                             if _moonraker_base_url(item["print_host"]) == host]
+                    connection = {
+                        "connection_ref": found[0]["connection_ref"] if found else "local-" + uuid.uuid4().hex,
+                        "print_host": host, "api_key": api_key, "label": "Moonraker",
+                    }
+                    origin = "local_manual"
+                else:
+                    matches = [item for item in local if item["connection_ref"] == msg.get("connectionRef")]
+                    if len(matches) != 1:
+                        raise ValueError("connection_not_found")
+                    connection = matches[0]
+                    origin = "local_manual" if connection.get("account_scope") else "orca_profile"
+                evidence, snapshot = probe_printer_setup(context, connection, origin)
+                if len(pending) >= 16:
+                    pending.pop(next(iter(pending)))
+                probe_id = uuid.uuid4().hex
+                pending[probe_id] = {
+                    "account_scope": context["account_scope"], "connection": connection,
+                    "evidence": evidence, "expires": time.monotonic() + 600,
+                }
+                finish(ok=True, probeId=probe_id, connection=evidence,
+                       provider="happy_hare" if snapshot else "manual",
+                       gateCount=snapshot["gate_count"] if snapshot else None,
+                       printerHostname=snapshot.get("printer_hostname") if snapshot else None,
+                       spoolmanSupport=snapshot.get("spoolman_support") if snapshot else None)
+                return
+            if operation != "activate":
+                raise ValueError("invalid")
+            saved = pending.get(msg.get("probeId"))
+            if not saved or saved["account_scope"] != context["account_scope"]:
+                raise ValueError("expired")
+            printer_id = msg.get("physicalPrinterId")
+            if isinstance(printer_id, bool) or not isinstance(printer_id, int) or printer_id < 1:
+                raise ValueError("invalid")
+            evidence = saved["evidence"]
+            if not any(item.get("connection_ref") == evidence["connection_ref"]
+                       and item.get("physical_printer_id") == printer_id and item.get("status") == "bound"
+                       for item in context["bindings"]):
+                raise ValueError("connection_not_found")
+            connection = saved["connection"]
+            if evidence["origin"] == "orca_profile":
+                matches = [item for item in local_connections if item["connection_ref"] == evidence["connection_ref"]]
+                if len(matches) != 1:
+                    raise ValueError("connection_not_found")
+                connection = matches[0]
+            current, snapshot = probe_printer_setup(context, connection, evidence["origin"])
+            if current != evidence:
+                raise ValueError("identity_changed")
+            if evidence["origin"] == "local_manual":
+                save_local_setup_connection(context, connection, printer_id, evidence)
+            if snapshot is not None:
+                status, _result = upload_happy_hare_snapshot(token, printer_id, snapshot)
+                if status != 200:
+                    raise ValueError("snapshot_failed")
+            # Keep a bounded retry token until expiry: response loss is not a new setup.
+            finish(ok=True, physicalPrinterId=printer_id, observed=snapshot is not None)
+        except (OSError, RuntimeError, ValueError, TypeError, KeyError) as exc:
+            # Exceptions can carry addresses, headers or response bodies. Never relay them.
+            code = str(exc)
+            finish(ok=False, code=code if code in {
+                "auth", "setup_context", "printer_auth", "unreachable", "expired",
+                "connection_not_found", "identity_changed", "snapshot_failed",
+            } else "setup_failed")
+
     def on_message(self, msg):
         if not isinstance(msg, dict):
             return
@@ -8284,6 +8604,16 @@ class FilamentHubCatalog(
                     scope="all",
                     trigger="session-start",
                 )
+        elif msg_type in {"printer-setup", "printer-setup-local"}:
+            request_id = msg.get("requestId")
+            if not isinstance(request_id, str) or not 0 < len(request_id) <= 100:
+                return
+            observations = observe_printer_presets()
+            local = observe_local_moonraker_connections(observations)
+            msg = dict(msg)
+            msg["labels"] = {item.get("connection_ref"): item.get("preset_name") for item in observations}
+            token = (load_saved_auth() or {}).get("accessToken") or ""
+            BACKGROUND_WORKER.submit(self._do_printer_setup, msg, token, local)
         elif msg_type == "read-diagnostics":
             BACKGROUND_WORKER.submit(
                 lambda: self._deliver("diagnostics", text=read_sync_log())
@@ -9637,6 +9967,13 @@ class FilamentHubCatalog(
                         item["summary"] += ", " + ui_text("summaryConnectionReview")
                         break
             sync_happy_hare_topologies(token, moonraker_connections)
+
+        if sync_scope_includes(scope, "machine"):
+            try:
+                manual_connections = verified_local_setup_connections(token)
+                sync_happy_hare_topologies(token, manual_connections)
+            except (ValueError, OSError):
+                fh_log("Local printer connection sync unavailable")
 
         save_sync_state(state)
         if filament_report_requested:

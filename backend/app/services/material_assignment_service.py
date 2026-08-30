@@ -119,8 +119,14 @@ async def _require_material_slot(
 async def sync_legacy_material_assignment(
     db: AsyncSession,
     state: PresetGateState,
+    *,
+    preserve_existing: bool = False,
 ) -> None:
-    """Mirror a legacy gate's desired fields into its provider-neutral slot."""
+    """Mirror a legacy gate, preserving desired fields on observation-only reads.
+
+    Callers declare intent explicitly: native assignment commands also carry the
+    historical hh_snapshot source, so that label cannot distinguish a read.
+    """
     if state.material_slot_id is None:
         return
     material_slot = await db.scalar(
@@ -134,6 +140,13 @@ async def sync_legacy_material_assignment(
         return
     state.material_slot = material_slot
     assignment = material_slot.assignment
+    if preserve_existing and assignment is not None:
+        # A new HH projection has empty desired fields even when the manual
+        # physical slot is already loaded. Observation cannot clear or replace
+        # that assignment. Seed the compatibility view from the canonical slot.
+        state.preset_id = assignment.preset_id
+        state.spool_id = assignment.spool_id
+        return
     if state.preset_id is None and state.spool_id is None:
         if assignment is not None:
             material_slot.assignment = None

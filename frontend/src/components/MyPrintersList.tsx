@@ -80,6 +80,7 @@ export function MyPrintersList({
   const [settingsPrinter, setSettingsPrinter] = useState<PhysicalPrinter | null>(null);
   const [historyPrinter, setHistoryPrinter] = useState<PhysicalPrinter | null>(null);
   const [showAdd, setShowAdd] = useState(false);
+  const [setupPrinter, setSetupPrinter] = useState<PhysicalPrinter | null>(null);
   const [showRecovery, setShowRecovery] = useState(false);
   const [pluginCanRecover, setPluginCanRecover] = useState(false);
   const [bundleActionPrinterIds, setBundleActionPrinterIds] = useState<Set<number>>(
@@ -388,6 +389,10 @@ export function MyPrintersList({
                   </button>
                 </div>
 
+                <button type="button" onClick={() => setSetupPrinter(printer)}
+                  className="self-start rounded-lg border border-purple-400/25 px-2.5 py-1.5 text-xs text-purple-200 hover:bg-white/10">
+                  {t('printerSetup.connectionSettings')}
+                </button>
                 {printerBindings.length > 0 && (
                   <div className="space-y-1">
                     {printerBindings.map((binding, index) => (
@@ -551,7 +556,9 @@ export function MyPrintersList({
       )}
     </div>
 
-    <AddPhysicalPrinterModal isOpen={showAdd} onClose={() => setShowAdd(false)} />
+    <AddPhysicalPrinterModal isOpen={showAdd} onClose={() => setShowAdd(false)} printerProfiles={printerProfiles} />
+    {setupPrinter && <AddPhysicalPrinterModal isOpen physicalPrinter={setupPrinter}
+      onClose={() => setSetupPrinter(null)} />}
 
     {showRecovery && currentUserId != null && (
       <PrinterRecoveryModal

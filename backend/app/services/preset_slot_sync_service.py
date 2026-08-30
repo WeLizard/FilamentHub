@@ -546,6 +546,7 @@ async def handle_hh_snapshot(
         gate_indices={item.gate for item in payload.gates},
         exact_gate_count=payload.gate_count,
         reported_routes=reported_routes,
+        preserve_existing_assignments=True,
     )
     await db.flush()
     locked_indices = set(range(payload.gate_count))
@@ -650,6 +651,7 @@ async def handle_hh_snapshot(
         gate_indices={state.gate_index for _, state in gate_state_updates} | set(state_by_gate),
         exact_gate_count=payload.gate_count,
         reported_routes=reported_routes,
+        preserve_existing_assignments=True,
     )
     normalized_slots = [
         PrinterBridgeSlotSnapshot(

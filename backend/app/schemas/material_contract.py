@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Any, Literal
+from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -28,6 +29,9 @@ class PhysicalPrinterCreate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     printer_id: int | None = Field(default=None, ge=1)
     printer_profile_ids: list[int] = Field(default_factory=list, max_length=64)
+    request_id: UUID | None = None
+    material_system: MaterialSystemCreate | None = None
+    connection: PrinterSetupConnection | None = None
 
     model_config = {"str_strip_whitespace": True}
 
@@ -99,6 +103,24 @@ class MaterialSystemUpdate(BaseModel):
     slot_count: int | None = Field(default=None, ge=1, le=256)
 
     model_config = {"str_strip_whitespace": True}
+
+
+class PrinterSetupConnection(BaseModel):
+    """Opaque evidence from a local client; never a LAN address or credential."""
+
+    source_instance_id: str = Field(min_length=16, max_length=100, pattern=r"^[A-Za-z0-9._:-]+$")
+    connection_ref: str = Field(min_length=1, max_length=120, pattern=r"^[A-Za-z0-9._:-]+$")
+    origin: Literal["orca_profile", "local_manual"]
+    provider: str = Field(min_length=1, max_length=50, pattern=r"^[a-z][a-z0-9_]*$")
+    endpoint_token: str = Field(pattern=r"^[0-9a-f]{64}$")
+    device_identity: PrinterIdentityEvidence | None = None
+
+    model_config = {"extra": "forbid"}
+
+
+class PhysicalPrinterConnectionSetup(BaseModel):
+    connection: PrinterSetupConnection | None = None
+    material_system: MaterialSystemCreate | None = None
 
 
 class MaterialSlotAssignmentExpectation(BaseModel):

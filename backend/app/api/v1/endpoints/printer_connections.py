@@ -2,13 +2,18 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Response, status
+from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.dependencies import get_current_active_user, require_preset_write
-from app.core.errors import ERR_IMPORT_PRINTER_DISABLED, raise_error
+from app.core.dependencies import (
+    get_current_active_user,
+    require_material_topology_read,
+    require_preset_write,
+)
+from app.core.errors import ERR_IMPORT_PRINTER_DISABLED, ERR_PRINTER_SETUP_LIMIT, raise_error
 from app.db.session import get_db
+from app.models.printer_connection_binding import PrinterConnectionBinding
 from app.models.user import User
 from app.models.user_printer_device import UserPrinterDevice
 from app.schemas.printer_connection_observation import (
@@ -33,6 +38,40 @@ from app.services.physical_printer_discovery_service import (
 from app.services.printer_connection_observation_service import record_observations
 
 router = APIRouter(prefix="/orcaslicer/printer-connections", tags=["printer-connections"])
+
+
+@router.get("/setup-context")
+async def setup_context(
+    source_instance_id: Annotated[str, Query(
+        min_length=16, max_length=100, pattern=r"^[A-Za-z0-9._:-]+$",
+    )],
+    current_user: Annotated[User, Depends(require_material_topology_read)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict:
+    from app.services.printer_identity_service import discovery_key
+
+    key = await discovery_key(db, current_user.id)
+    bindings = (await db.execute(select(PrinterConnectionBinding).where(
+        PrinterConnectionBinding.user_id == current_user.id,
+        PrinterConnectionBinding.source_instance_id == source_instance_id,
+        PrinterConnectionBinding.connection_ref.is_not(None),
+    ).limit(1025))).scalars().all()
+    if len(bindings) > 1024:
+        # Never give the local client a truncated inventory as if it were complete.
+        raise_error(409, ERR_PRINTER_SETUP_LIMIT)
+    await db.commit()
+    return {
+        "discovery_key": key,
+        "source_instance_id": source_instance_id,
+        "bindings": [
+            {
+                "connection_ref": binding.connection_ref,
+                "physical_printer_id": binding.physical_printer_id,
+                "status": binding.status,
+            }
+            for binding in bindings
+        ],
+    }
 
 
 @router.post("/observe", response_model=PrinterConnectionObserveResponse)

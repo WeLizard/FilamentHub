@@ -54,6 +54,15 @@ class MoonrakerHandler(BaseHTTPRequestHandler):
             return
         if not self._authorized():
             return
+        if self.path == "/printer/objects/list":
+            self._json(200, {"result": {"objects": ["mmu", "print_stats"]}})
+            return
+        if self.path == "/server/database/item?namespace=moonraker&key=instance_id":
+            self._json(200, {"result": {
+                "namespace": "moonraker", "key": "instance_id",
+                "value": "180c0846-5920-4d68-a7eb-71d97ff632ca",
+            }})
+            return
         if self.path == "/server/config":
             self._json(200, {"result": {"config": {"spoolman": {"server": SPOOLMAN_URL}}}})
             return

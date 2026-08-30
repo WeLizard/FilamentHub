@@ -69,6 +69,141 @@ def test_pep723_and_runtime_versions_match(plugin_module):
     }
 
 
+@pytest.fixture
+def setup_flow(plugin_module, monkeypatch, tmp_path):
+    plugin = plugin_module
+    monkeypatch.setattr(plugin, "AUTH_FILE", str(tmp_path / "auth.json"))
+    context = {
+        "source_instance_id": "setup-desktop-instance", "discovery_key": "a" * 64,
+        "account_scope": "owner-1", "bindings": [],
+    }
+    monkeypatch.setattr(plugin, "printer_setup_context", lambda _token: context)
+    monkeypatch.setattr(plugin, "_moonraker_json", lambda *_args, **_kwargs: (
+        200, {"result": {"objects": ["mmu", "print_stats"]}}, "",
+    ))
+    monkeypatch.setattr(plugin, "_observe_moonraker_identity", lambda _connection: "b" * 32)
+    monkeypatch.setattr(plugin, "read_happy_hare_snapshot", lambda _connection: {
+        "gate_count": 4, "gates": [], "printer_hostname": "workshop", "spoolman_support": "pull",
+    })
+    uploads = []
+    monkeypatch.setattr(plugin, "upload_happy_hare_snapshot", lambda *args: uploads.append(args) or (200, {}))
+    results = []
+    catalog = plugin.FilamentHubCatalog()
+    monkeypatch.setattr(catalog, "_deliver", lambda _type, **data: results.append(data["result"]) or True)
+    return plugin, catalog, context, results, uploads
+
+
+def setup_manual_probe(catalog):
+    catalog._do_printer_setup({
+        "type": "printer-setup-local", "operation": "probe", "requestId": "probe",
+        "host": "http://printer.local:7125", "apiKey": "local-secret",
+    }, "token", [])
+
+
+def setup_bind_and_activate(catalog, context, probe):
+    context["bindings"] = [{"connection_ref": probe["connection"]["connection_ref"],
+                            "physical_printer_id": 7, "status": "bound"}]
+    catalog._do_printer_setup({"operation": "activate", "requestId": "activate",
+                              "physicalPrinterId": 7, "probeId": probe["probeId"]}, "token", [])
+
+
+def test_setup_keeps_secrets_local_and_requires_cloud_binding_before_activation(setup_flow):
+    plugin, catalog, context, results, uploads = setup_flow
+    setup_manual_probe(catalog)
+    probe = results[-1]
+    assert probe["ok"] and probe["gateCount"] == 4
+    assert "printer.local" not in json.dumps(probe) and "local-secret" not in json.dumps(probe)
+    assert len(probe["connection"]["device_identity"]["token"]) == 64
+    assert uploads == []
+    catalog._do_printer_setup({"operation": "activate", "requestId": "unbound",
+                              "physicalPrinterId": 7, "probeId": probe["probeId"]}, "token", [])
+    assert not results[-1]["ok"] and uploads == []
+    assert plugin._local_setup_config()[1]["connections"] == []
+    setup_bind_and_activate(catalog, context, probe)
+    assert results[-1]["ok"] and len(uploads) == 1
+    stored = plugin.local_setup_connections(context)
+    assert len(stored) == 1 and stored[0]["api_key"] == "local-secret"
+    setup_bind_and_activate(catalog, context, probe)
+    assert results[-1]["ok"] and len(plugin.local_setup_connections(context)) == 1
+    setup_manual_probe(catalog)
+    assert results[-1]["connection"]["connection_ref"] == probe["connection"]["connection_ref"]
+
+
+@pytest.mark.parametrize("changed", ["account", "identity", "expired"])
+def test_setup_revalidates_preview_before_activating(setup_flow, monkeypatch, changed):
+    plugin, catalog, context, results, uploads = setup_flow
+    setup_manual_probe(catalog)
+    probe = results[-1]
+    if changed == "account":
+        context["account_scope"] = "another-account"
+    elif changed == "identity":
+        monkeypatch.setattr(plugin, "_observe_moonraker_identity", lambda _connection: "c" * 32)
+    else:
+        catalog._printer_setup_pending[probe["probeId"]]["expires"] = 0
+    setup_bind_and_activate(catalog, context, probe)
+    assert not results[-1]["ok"] and uploads == []
+    assert plugin._local_setup_config()[1]["connections"] == []
+
+
+@pytest.mark.parametrize("status,body", [
+    (401, {}), (503, {"result": {"objects": []}}), (200, {"result": []}),
+])
+def test_setup_does_not_infer_direct_feed_from_a_failed_or_malformed_query(
+    setup_flow, monkeypatch, status, body,
+):
+    plugin, catalog, _context, results, uploads = setup_flow
+    monkeypatch.setattr(plugin, "_moonraker_json", lambda *_args, **_kwargs: (status, body, ""))
+    setup_manual_probe(catalog)
+    assert not results[-1]["ok"] and uploads == []
+
+
+def test_setup_restored_local_connections_are_account_and_binding_scoped(setup_flow, monkeypatch):
+    plugin, catalog, context, results, _uploads = setup_flow
+    setup_manual_probe(catalog)
+    setup_bind_and_activate(catalog, context, results[-1])
+    assert len(plugin.verified_local_setup_connections("token")) == 1
+    monkeypatch.setattr(plugin, "_observe_moonraker_identity", lambda _connection: "d" * 32)
+    assert plugin.verified_local_setup_connections("token") == []
+    assert plugin.local_setup_connections({**context, "account_scope": "other"}) == []
+    assert plugin.local_setup_connections({**context, "bindings": []}) == []
+    assert plugin.local_setup_connections({**context, "bindings": [
+        {**context["bindings"][0], "physical_printer_id": 8},
+    ]}) == []
+
+
+def test_setup_local_form_is_not_impersonated_by_catalog_messages(plugin_module):
+    assert "if (data.type === 'printer-setup-local') return;" in plugin_module.PAGE
+    assert "showPrinterSetupOverlay(data)" in plugin_module.PAGE
+    assert "st.resultType === 'printer-setup-result'" in plugin_module.PAGE
+    assert "key.value = '';" in plugin_module.PAGE
+
+
+def test_setup_corrupt_local_record_fails_closed(setup_flow):
+    plugin, catalog, context, results, _uploads = setup_flow
+    setup_manual_probe(catalog)
+    setup_bind_and_activate(catalog, context, results[-1])
+    path, config = plugin._local_setup_config()
+    config["connections"][0]["device_identity"] = "broken"
+    plugin.write_json_atomic(path, config, mode=0o600)
+    with pytest.raises(ValueError, match="Invalid local printer connection store"):
+        plugin.verified_local_setup_connections("token")
+
+
+def test_bound_profile_and_manual_alias_do_not_make_same_endpoint_ambiguous(plugin_module, monkeypatch):
+    monkeypatch.setattr(plugin_module, "read_happy_hare_snapshot", lambda _connection: {"gate_count": 4})
+    inventory = {"printers": [{"id": 7, "connection_refs": ["profile", "manual"]}]}
+    connections = [
+        {"connection_ref": "profile", "print_host": "printer.local:7125", "api_key": "key"},
+        {"connection_ref": "manual", "print_host": "http://printer.local:7125/", "api_key": "key"},
+    ]
+    _connection, snapshot, _device, error = plugin_module.resolve_happy_hare_connection(
+        "token", connections, 7, inventory,
+    )
+    assert error is None and snapshot["gate_count"] == 4
+    connections[1]["print_host"] = "different-printer.local:7125"
+    assert plugin_module.resolve_happy_hare_connection("token", connections, 7, inventory)[3] == "ambiguous_connection"
+
+
 def test_plugin_hub_version_rejects_prerelease_suffix(plugin_module):
     builder = _load_module(BUILD_PATH, "filamenthub_build_version_test")
     source = PLUGIN_PATH.read_text(encoding="utf-8")

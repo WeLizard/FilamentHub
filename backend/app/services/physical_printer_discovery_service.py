@@ -235,7 +235,8 @@ async def reconcile_user_printers(
         raw = _binding_endpoint(binding)
         if raw:
             binding.endpoint_token = make_endpoint_token(key, raw, binding.provider)
-        if source_instance_id and binding.source_instance_id == source_instance_id:
+        if (source_instance_id and binding.source_instance_id == source_instance_id
+                and binding.source != "local_setup"):
             present = any(
                 o.connection_ref == binding.connection_ref
                 if binding.connection_ref
