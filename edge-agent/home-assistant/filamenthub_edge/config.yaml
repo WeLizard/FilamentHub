@@ -1,7 +1,7 @@
 name: FilamentHub Edge
 version: 0.1.0
 slug: filamenthub_edge
-description: Secure local printer and spool synchronization with FilamentHub
+description: Принтеры и катушки ↔ FilamentHub / Printer & spool bridge / 打印机与料盘桥接
 url: https://filamenthub.ru
 arch:
   - amd64

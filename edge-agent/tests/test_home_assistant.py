@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import struct
 from pathlib import Path
 from unittest.mock import patch
 
@@ -59,3 +60,18 @@ def test_repository_and_settings_are_usable_by_the_common_runtime(tmp_path):
         assert fields["connections"]["fields"].keys() == config["schema"]["connections"][0].keys()
         for item in [*fields.values(), *fields["connections"]["fields"].values()]:
             assert item["name"] and item["description"]
+
+
+def test_app_presentation_is_shipped_with_all_supported_languages():
+    # A missing app-local README makes the local HA package show runtime-only instructions.
+    for name in ("README.md", "DOCS.md"):
+        content = (APP / name).read_text(encoding="utf-8")
+        for heading in ("## Русский", "## English", "## 中文"):
+            assert heading in content, (name, heading)
+    for name in ("icon.png", "logo.png"):
+        data = (APP / name).read_bytes()
+        assert data[:8] == b"\x89PNG\r\n\x1a\n", name
+        width, height = struct.unpack(">II", data[16:24])
+        assert width > 0 and height > 0, name
+        if name == "icon.png":
+            assert width >= 128 and width == height
