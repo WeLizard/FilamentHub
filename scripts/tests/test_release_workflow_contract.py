@@ -37,3 +37,14 @@ def test_owner_script_publishes_after_asset_validation_and_waits_for_oidc() -> N
     assert validate_at < publish_at < trusted_publish_at
     assert "-Event 'release'" in script
     assert "-NotBefore ([datetime]$release.publishedAt).AddSeconds(-5)" in script
+
+
+def test_owner_script_uses_the_same_trusted_release_order_for_print_farm() -> None:
+    script = (ROOT / "scripts/publish-plugin-releases.ps1").read_text(
+        encoding="utf-8"
+    )
+    print_farm_case = script.split("'print-farm' {", 1)[1].split("\n        }", 1)[0]
+
+    assert "OwnerPublishesDraft = $true" in print_farm_case
+    assert "TrustedPublishWorkflow = 'publish-orcacloud.yml'" in print_farm_case
+    assert "Publish-Component @publish" in print_farm_case

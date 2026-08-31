@@ -47,6 +47,12 @@ class ChangelogSectionTest(unittest.TestCase):
         self.assertIn("## FilamentHub Bridge for OctoPrint", bridge_notes)
         self.assertNotIn("## FilamentHub for OrcaSlicer", bridge_notes)
 
+    def test_orca_notes_cover_the_unpublished_017_delta(self) -> None:
+        notes = render_orca_release_notes()
+
+        self.assertIn("native load callback", notes)
+        self.assertIn("retry-safe bounded chunks", notes)
+
     def test_combined_notes_include_one_checksum_footer(self) -> None:
         notes = render_release_notes()
 

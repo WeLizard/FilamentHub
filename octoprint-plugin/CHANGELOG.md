@@ -2,13 +2,15 @@
 
 Newest first. The top entry is used for GitHub release notes.
 
+## 0.1.3
+- Lets users search for, assign, replace or remove the desired spool for any
+  existing FilamentHub slot directly from the OctoPrint sidebar. Concurrent
+  changes refresh the latest assignment instead of silently overwriting it.
+
 ## 0.1.2
 - Separates the manually declared loaded slot from the last `Tn` command sent
   by OctoPrint, and no longer presents a G-code command as observed hardware
   state.
-- Lets users search for, assign, replace or remove the desired spool for any
-  FilamentHub slot directly from OctoPrint. Concurrent changes refresh the
-  latest assignment instead of silently overwriting it.
 - Records long-print usage in durable, replay-safe checkpoints instead of
   waiting for the terminal event, while keeping per-command extrusion local.
 - Checkpoints only the new usage at periodic intervals and on tool, selected

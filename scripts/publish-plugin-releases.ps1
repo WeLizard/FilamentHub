@@ -637,6 +637,8 @@ foreach ($plan in @($plans | Where-Object Needed)) {
                 Repository = $plan.Repository; Tag = $plan.Tag; Workflow = $plan.Workflow
                 RequiredPatterns = @('^printers-\d+\.\d+\.\d+-.*\.whl$', '^SHA256SUMS$')
                 ForbiddenPatterns = @('^filamenthub-', '^octoprint[-_]filamenthubbridge-')
+                OwnerPublishesDraft = $true
+                TrustedPublishWorkflow = 'publish-orcacloud.yml'
             }
             Publish-Component @publish
         }
