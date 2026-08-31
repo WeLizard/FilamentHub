@@ -89,8 +89,13 @@ import urllib.request
 import uuid
 import webbrowser
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 
 import orca
+
+
+class PluginLifecycleStopped(RuntimeError):
+    """Abort a side effect from a worker generation retired by unload/reload."""
 
 
 class ReusableDaemonWorker:
@@ -126,6 +131,46 @@ class ReusableDaemonWorker:
             return True
         with self._lock:
             return not self._stopping and generation == self._generation
+
+    def current_job_has_side_effect_permit(self):
+        generation = getattr(self._local, "generation", None)
+        return (
+            generation is not None
+            and getattr(self._local, "side_effect_generation", None) == generation
+            and getattr(self._local, "side_effect_depth", 0) > 0
+        )
+
+    def begin_side_effect_transaction(self):
+        """Grant a running generation a narrow, nestable mutation transaction."""
+        generation = getattr(self._local, "generation", None)
+        if generation is None:
+            return None
+        if self.current_job_has_side_effect_permit():
+            self._local.side_effect_depth += 1
+            return generation
+        with self._lock:
+            if self._stopping or generation != self._generation:
+                raise PluginLifecycleStopped(
+                    "plugin lifecycle generation has stopped"
+                )
+            self._local.side_effect_generation = generation
+            self._local.side_effect_depth = 1
+        return generation
+
+    def end_side_effect_transaction(self, generation):
+        if generation is None:
+            return
+        if getattr(self._local, "side_effect_generation", None) != generation:
+            return
+        depth = getattr(self._local, "side_effect_depth", 0) - 1
+        if depth > 0:
+            self._local.side_effect_depth = depth
+            return
+        for name in ("side_effect_generation", "side_effect_depth"):
+            try:
+                delattr(self._local, name)
+            except AttributeError:
+                pass
 
     def submit(self, function, *args, **kwargs):
         with self._lock:
@@ -197,19 +242,67 @@ class ReusableDaemonWorker:
             try:
                 self._local.generation = generation
                 function(*args, **kwargs)
+            except PluginLifecycleStopped:
+                pass
             except Exception as exc:
                 logger = globals().get("fh_log")
                 if logger is not None:
                     logger("background job failed: %s" % exc)
             finally:
-                try:
-                    del self._local.generation
-                except AttributeError:
-                    pass
+                for name in (
+                    "generation",
+                    "side_effect_generation",
+                    "side_effect_depth",
+                ):
+                    try:
+                        delattr(self._local, name)
+                    except AttributeError:
+                        pass
                 self._jobs.task_done()
 
 
 BACKGROUND_WORKER = ReusableDaemonWorker("filamenthub-worker")
+
+
+def ensure_worker_generation_active():
+    """Fail closed when an old worker generation reaches an I/O boundary.
+
+    UI callbacks, the independent Bambu observer and other non-worker callers
+    have no worker generation and remain unaffected. A job that outlived
+    unload/reload raises before it can start another network, printer or
+    persistent-state operation.
+    """
+    worker = globals().get("BACKGROUND_WORKER")
+    is_active = getattr(worker, "current_job_is_active", None)
+    if callable(is_active) and not is_active():
+        raise PluginLifecycleStopped("plugin lifecycle generation has stopped")
+
+
+def ensure_side_effect_allowed():
+    """Allow a local mutation only for an active or already-permitted job."""
+    worker = globals().get("BACKGROUND_WORKER")
+    has_permit = getattr(worker, "current_job_has_side_effect_permit", None)
+    if callable(has_permit) and has_permit():
+        return
+    ensure_worker_generation_active()
+
+
+@contextmanager
+def side_effect_transaction():
+    """Keep one already-authorized local mutation atomic across unload."""
+    worker = globals().get("BACKGROUND_WORKER")
+    generation = None
+    begin = getattr(worker, "begin_side_effect_transaction", None)
+    end = getattr(worker, "end_side_effect_transaction", None)
+    if callable(begin):
+        generation = begin()
+    else:
+        ensure_side_effect_allowed()
+    try:
+        yield
+    finally:
+        if callable(end):
+            end(generation)
 
 
 def post_window(window, payload):
@@ -411,26 +504,27 @@ def _temporary_path(path):
 
 
 def write_bytes_atomic(path, payload, mode=None):
-    directory = os.path.dirname(path)
-    os.makedirs(directory, exist_ok=True)
-    temporary = _temporary_path(path)
-    try:
-        with open(temporary, "wb") as fh:
-            fh.write(payload)
-            fh.flush()
-            os.fsync(fh.fileno())
-        if mode is not None:
+    with side_effect_transaction():
+        directory = os.path.dirname(path)
+        os.makedirs(directory, exist_ok=True)
+        temporary = _temporary_path(path)
+        try:
+            with open(temporary, "wb") as fh:
+                fh.write(payload)
+                fh.flush()
+                os.fsync(fh.fileno())
+            if mode is not None:
+                try:
+                    os.chmod(temporary, mode)
+                except OSError:
+                    pass
+            os.replace(temporary, path)
+        except Exception:
             try:
-                os.chmod(temporary, mode)
+                os.remove(temporary)
             except OSError:
                 pass
-        os.replace(temporary, path)
-    except Exception:
-        try:
-            os.remove(temporary)
-        except OSError:
-            pass
-        raise
+            raise
 
 
 def write_json_atomic(path, payload, mode=None):
@@ -1074,10 +1168,11 @@ def save_auth(access_token, _refresh_token=""):
 
 
 def clear_auth():
-    try:
-        os.remove(AUTH_FILE)
-    except OSError:
-        pass
+    with side_effect_transaction():
+        try:
+            os.remove(AUTH_FILE)
+        except OSError:
+            pass
 
 
 def safe_filename(name):
@@ -1291,6 +1386,11 @@ def _artifact_stems(artifact):
 
 
 def _quarantine_managed_preset_artifact(artifact, reason):
+    with side_effect_transaction():
+        return _quarantine_managed_preset_artifact_transaction(artifact, reason)
+
+
+def _quarantine_managed_preset_artifact_transaction(artifact, reason):
     paths = [
         path for path in (artifact.get("json_path"), artifact.get("info_path"))
         if path and os.path.isfile(path)
@@ -1514,6 +1614,7 @@ def remove_stale_preset_files(folder, preset_id, keep_path):
     so one preset never shows up twice in the dropdown. Touches only files
     whose bundle_id or .info sync marker we own. Quarantine keeps cleanup
     recoverable without leaving the broken copy in Orca's live preset folder."""
+    ensure_side_effect_allowed()
     keep = os.path.normcase(os.path.abspath(keep_path))
     removed = 0
     for artifact in scan_managed_preset_artifacts(folder):
@@ -1525,9 +1626,24 @@ def remove_stale_preset_files(folder, preset_id, keep_path):
             and int(preset_id) not in artifact.get("claimed_ids", set())
         ):
             continue
+        ensure_side_effect_allowed()
         if _quarantine_managed_preset_artifact(artifact, "duplicate-%d" % int(preset_id)):
             removed += 1
     return removed
+
+
+def rename_managed_preset_artifact(source, target, info_payload):
+    """Atomically start a managed rename and finish its paired identity write."""
+    with side_effect_transaction():
+        try:
+            os.replace(source, target)
+        except OSError:
+            return False
+        try:
+            write_bytes_atomic(target[:-len(".json")] + ".info", info_payload)
+        except OSError:
+            pass
+        return True
 
 
 def migrate_managed_filament_display_name(folder, preset_id, local_entry, remote):
@@ -1592,6 +1708,7 @@ def quarantine_unwanted_managed_preset_files(folder, remote_ids):
     interrupted writes can lose that cache while leaving durable ownership in
     ``bundle_id`` or ``sync_info``. Unmarked files are never touched.
     """
+    ensure_side_effect_allowed()
     wanted = {int(value) for value in remote_ids}
     removed = 0
     removed_ids = set()
@@ -1602,6 +1719,7 @@ def quarantine_unwanted_managed_preset_files(folder, remote_ids):
             kept_stems.update(_artifact_stems(artifact))
             continue
         reason = "invalid-managed" if preset_id is None else "not-in-profile-%d" % preset_id
+        ensure_side_effect_allowed()
         if _quarantine_managed_preset_artifact(artifact, reason):
             removed += 1
             if preset_id is not None:
@@ -1618,6 +1736,7 @@ def quarantine_unwanted_managed_preset_files(folder, remote_ids):
             "json_path": json_path if os.path.isfile(json_path) else None,
             "info_path": info_path if os.path.isfile(info_path) else None,
         }
+        ensure_side_effect_allowed()
         if _quarantine_managed_preset_artifact(leftover, "unmarked-bundle-file"):
             removed += 1
     return removed, removed_ids
@@ -1886,6 +2005,15 @@ def write_managed_profile_info(base, kind, profile_id):
 
 
 def remove_stale_managed_profile_files(folder, profile_id, kind, keep_path):
+    with side_effect_transaction():
+        return _remove_stale_managed_profile_files_transaction(
+            folder, profile_id, kind, keep_path
+        )
+
+
+def _remove_stale_managed_profile_files_transaction(
+    folder, profile_id, kind, keep_path
+):
     try:
         names = os.listdir(folder)
     except OSError:
@@ -2346,6 +2474,17 @@ def prepare_printer_bundle_install(bundle):
 def install_printer_bundle(
     bundle, physical_printer_id=None, replace_existing_ids=False
 ):
+    with side_effect_transaction():
+        return _install_printer_bundle_transaction(
+            bundle,
+            physical_printer_id=physical_printer_id,
+            replace_existing_ids=replace_existing_ids,
+        )
+
+
+def _install_printer_bundle_transaction(
+    bundle, physical_printer_id=None, replace_existing_ids=False
+):
     profile_ids = printer_bundle_profile_ids(bundle)
     prepared = prepare_printer_bundle_install(bundle)
     ensure_bundle_metadata()
@@ -2599,6 +2738,11 @@ def _assert_recovery_install_is_owned(scope, artifacts):
 
 
 def install_printer_recovery(bundle):
+    with side_effect_transaction():
+        return _install_printer_recovery_transaction(bundle)
+
+
+def _install_printer_recovery_transaction(bundle):
     scope = _recovery_scope_from_bundle(bundle)
     if scope["source_instance_id"] != plugin_source_instance_id():
         raise ValueError("Printer recovery belongs to another Orca installation")
@@ -2731,6 +2875,11 @@ def observe_recovery_originals():
 
 
 def remove_printer_recovery_artifacts(artifact_keys):
+    with side_effect_transaction():
+        return _remove_printer_recovery_artifacts_transaction(artifact_keys)
+
+
+def _remove_printer_recovery_artifacts_transaction(artifact_keys):
     wanted = set(artifact_keys)
     removed = []
     failed = []
@@ -2848,6 +2997,7 @@ def http_get(path, token=None):
     if token:
         headers["Authorization"] = "Bearer " + token
     req = urllib.request.Request(API_BASE + path, headers=headers, method="GET")
+    ensure_worker_generation_active()
     try:
         with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT, context=_SSL_CTX) as resp:
             return resp.getcode(), _read_response_limited(resp)
@@ -2864,6 +3014,7 @@ def http_post_json(path, token, payload):
     if token:
         headers["Authorization"] = "Bearer " + token
     req = urllib.request.Request(API_BASE + path, data=data, headers=headers, method="POST")
+    ensure_worker_generation_active()
     try:
         with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT, context=_SSL_CTX) as resp:
             return resp.getcode(), _read_response_limited(resp)
@@ -3004,6 +3155,7 @@ def http_post_bridge_json(path, bridge_token, payload):
         "X-FilamentHub-Bridge-Token": bridge_token,
     }
     req = urllib.request.Request(API_BASE + path, data=data, headers=headers, method="POST")
+    ensure_worker_generation_active()
     try:
         with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT, context=_SSL_CTX) as resp:
             return resp.getcode(), _read_response_limited(resp), None
@@ -3020,6 +3172,7 @@ def http_get_bridge_json(path, bridge_token):
         "X-FilamentHub-Bridge-Token": bridge_token,
     }
     req = urllib.request.Request(API_BASE + path, headers=headers, method="GET")
+    ensure_worker_generation_active()
     try:
         with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT, context=_SSL_CTX) as resp:
             return resp.getcode(), _read_response_limited(resp)
@@ -3029,13 +3182,15 @@ def http_get_bridge_json(path, bridge_token):
         return 0, b""
 
 
-def http_delete_bridge(path, bridge_token):
+def _http_delete_bridge(path, bridge_token, allow_retired_generation=False):
     headers = {
         "Accept": "application/json",
         "User-Agent": "FilamentHub-OrcaPlugin/" + PLUGIN_VERSION,
         "X-FilamentHub-Bridge-Token": bridge_token,
     }
     req = urllib.request.Request(API_BASE + path, headers=headers, method="DELETE")
+    if not allow_retired_generation:
+        ensure_worker_generation_active()
     try:
         with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT, context=_SSL_CTX) as resp:
             return resp.getcode()
@@ -3045,12 +3200,37 @@ def http_delete_bridge(path, bridge_token):
         return 0
 
 
+def http_delete_bridge(path, bridge_token):
+    return _http_delete_bridge(path, bridge_token)
+
+
+def revoke_fresh_bridge_token(bridge_token):
+    """Compensate one just-accepted pair even if its worker was unloaded.
+
+    This bypass is deliberately limited to the fixed connection endpoint and a
+    newly returned bridge credential. Stored/user-selected connections still
+    use ``http_delete_bridge`` and cannot be removed by a retired generation.
+    """
+    if (
+        not isinstance(bridge_token, str)
+        or not bridge_token.startswith("fhpb_")
+        or len(bridge_token) > MAX_TOKEN_LENGTH
+    ):
+        return 0
+    return _http_delete_bridge(
+        "/printer-bridge/connection",
+        bridge_token,
+        allow_retired_generation=True,
+    )
+
+
 def http_post_file(path, token, file_path, field="file", file_name=""):
     """Send one file to FilamentHub the way a browser upload would.
 
     The G-code never passes through the page: it goes from this machine straight
     to the server, so a 25 MB slice costs nothing in the WebView.
     """
+    ensure_worker_generation_active()
     boundary = "----FilamentHub" + secrets.token_hex(16)
     name = file_name or os.path.basename(file_path)
     crlf = chr(13) + chr(10)
@@ -3071,6 +3251,7 @@ def http_post_file(path, token, file_path, field="file", file_name=""):
     if token:
         headers["Authorization"] = "Bearer " + token
     req = urllib.request.Request(API_BASE + path, data=body, headers=headers, method="POST")
+    ensure_worker_generation_active()
     try:
         with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT * 4, context=_SSL_CTX) as resp:
             return resp.getcode(), _read_response_limited(resp)
@@ -3556,6 +3737,7 @@ def _moonraker_json(connection, path, payload=None, timeout=None):
         headers=headers,
         method=method,
     )
+    ensure_worker_generation_active()
     try:
         with urllib.request.urlopen(
             request,
@@ -6757,6 +6939,7 @@ def _resolved_bambu_address(host):
     host = host.strip().strip("[]")
     if not host or len(host) > 253 or any(ch in host for ch in "/\\?#@"):
         raise ValueError("invalid LAN address")
+    ensure_worker_generation_active()
     addresses = socket.getaddrinfo(
         host,
         BAMBU_MQTT_PORT,
@@ -6778,10 +6961,13 @@ def _resolved_bambu_address(host):
 
 def _open_bambu_mqtt(host, access_code, timeout):
     family, socktype, proto, sockaddr = _resolved_bambu_address(host)
+    ensure_worker_generation_active()
     raw = socket.socket(family, socktype, proto)
     raw.settimeout(timeout)
     try:
+        ensure_worker_generation_active()
         raw.connect(sockaddr)
+        ensure_worker_generation_active()
         context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
         context.check_hostname = False
         context.verify_mode = ssl.CERT_NONE
@@ -6797,6 +6983,7 @@ def read_bambu_lan_snapshot(config, timeout=BAMBU_MQTT_TIMEOUT):
     The access code is used only for this local TLS connection. The returned
     payload deliberately contains no address or credential.
     """
+    ensure_worker_generation_active()
     host = config.get("host") or ""
     access_code = config.get("access_code") or ""
     serial = (config.get("serial") or "").strip()
@@ -6813,6 +7000,7 @@ def read_bambu_lan_snapshot(config, timeout=BAMBU_MQTT_TIMEOUT):
             + _mqtt_field(b"bblp")
             + _mqtt_field(access_code.encode("utf-8"))
         )
+        ensure_worker_generation_active()
         sock.sendall(b"\x10" + _mqtt_len(len(connection)) + connection)
         header, connack = _mqtt_read_packet(sock, deadline)
         if (header & 0xF0) != 0x20 or len(connack) < 2 or connack[1] != 0:
@@ -6822,6 +7010,7 @@ def read_bambu_lan_snapshot(config, timeout=BAMBU_MQTT_TIMEOUT):
             "device/%s/report" % serial if serial else "device/+/report"
         ).encode("utf-8")
         subscribe = struct.pack("!H", 1) + _mqtt_field(report_topic) + b"\x00"
+        ensure_worker_generation_active()
         sock.sendall(b"\x82" + _mqtt_len(len(subscribe)) + subscribe)
         sub_header, suback = _mqtt_read_packet(sock, deadline)
         if (
@@ -6838,6 +7027,7 @@ def read_bambu_lan_snapshot(config, timeout=BAMBU_MQTT_TIMEOUT):
                 separators=(",", ":"),
             ).encode("utf-8")
             publish = _mqtt_field(topic) + body
+            ensure_worker_generation_active()
             sock.sendall(b"\x30" + _mqtt_len(len(publish)) + publish)
 
         if serial:
@@ -6848,6 +7038,7 @@ def read_bambu_lan_snapshot(config, timeout=BAMBU_MQTT_TIMEOUT):
             header, packet = _mqtt_read_packet(sock, deadline)
             packet_type = header & 0xF0
             if packet_type == 0xC0:
+                ensure_worker_generation_active()
                 sock.sendall(b"\xD0\x00")
                 continue
             if packet_type != 0x30 or len(packet) < 2:
@@ -6904,6 +7095,7 @@ def read_bambu_lan_snapshot(config, timeout=BAMBU_MQTT_TIMEOUT):
 
 def _publish_bambu_json(config, serial, payload, timeout=BAMBU_MQTT_TIMEOUT):
     """Publish one allowlisted local Bambu command over a short TLS session."""
+    ensure_worker_generation_active()
     access_code = config.get("access_code") or ""
     if not access_code or not re.fullmatch(r"[A-Za-z0-9._-]{4,80}", serial or ""):
         raise ValueError("invalid Bambu command context")
@@ -6918,6 +7110,7 @@ def _publish_bambu_json(config, serial, payload, timeout=BAMBU_MQTT_TIMEOUT):
             + _mqtt_field(b"bblp")
             + _mqtt_field(access_code.encode("utf-8"))
         )
+        ensure_worker_generation_active()
         sock.sendall(b"\x10" + _mqtt_len(len(connection)) + connection)
         header, connack = _mqtt_read_packet(sock, deadline)
         if (header & 0xF0) != 0x20 or len(connack) < 2 or connack[1] != 0:
@@ -6925,6 +7118,7 @@ def _publish_bambu_json(config, serial, payload, timeout=BAMBU_MQTT_TIMEOUT):
         topic = ("device/%s/request" % serial).encode("utf-8")
         body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
         publish = _mqtt_field(topic) + body
+        ensure_worker_generation_active()
         sock.sendall(b"\x30" + _mqtt_len(len(publish)) + publish)
     finally:
         try:
@@ -8295,7 +8489,7 @@ class FilamentHubCatalog(
                 # Reject the newly issued credential without replacing or
                 # removing a previous local connection for this printer.
                 rejected_token, bridge_token = bridge_token, ""
-                http_delete_bridge("/printer-bridge/connection", rejected_token)
+                revoke_fresh_bridge_token(rejected_token)
                 self._deliver_notice(ui_text("bambuPairingFailed"), "error")
                 return
             device_identity = _bambu_device_identity(
@@ -8333,7 +8527,7 @@ class FilamentHubCatalog(
             )
             if snapshot_status in {401, 409}:
                 if snapshot_status == 409:
-                    http_delete_bridge("/printer-bridge/connection", bridge_token)
+                    revoke_fresh_bridge_token(bridge_token)
                 remove_bambu_bridge(physical_printer_id)
                 self._deliver_notice(ui_text("bambuPairingFailed"), "error")
                 return
@@ -8342,13 +8536,19 @@ class FilamentHubCatalog(
                 # reader will retry.  Do not claim that data was received;
                 # the site distinguishes a paired bridge from last_seen_at.
                 fh_log("Initial Bambu bridge upload failed: HTTP %s" % snapshot_status)
-        except (OSError, TypeError, ValueError, UnicodeDecodeError):
+        except (
+            OSError,
+            TypeError,
+            ValueError,
+            UnicodeDecodeError,
+            PluginLifecycleStopped,
+        ):
             # Pairing consumes the one-time code.  If local persistence fails
             # afterwards, revoke the fresh server credential so the site never
             # remains green while no local reader can possibly use it.
             if bridge_token:
                 try:
-                    http_delete_bridge("/printer-bridge/connection", bridge_token)
+                    revoke_fresh_bridge_token(bridge_token)
                 except (OSError, TypeError, ValueError):
                     pass
                 if binding_persisted:
@@ -10028,23 +10228,16 @@ class FilamentHubCatalog(
                             if os.path.normcase(os.path.abspath(canonical)) != os.path.normcase(
                                 os.path.abspath(local_entry["path"])
                             ):
-                                try:
-                                    os.replace(local_entry["path"], canonical)
-                                except OSError:
-                                    pass
-                                else:
+                                if rename_managed_preset_artifact(
+                                    local_entry["path"],
+                                    canonical,
+                                    managed_info_bytes(
+                                        preset_id,
+                                        local_entry.get("version_id")
+                                        or record.get("version_id"),
+                                    ),
+                                ):
                                     local_entry["path"] = canonical
-                                    try:
-                                        write_bytes_atomic(
-                                            canonical[:-len(".json")] + ".info",
-                                            managed_info_bytes(
-                                                preset_id,
-                                                local_entry.get("version_id")
-                                                or record.get("version_id"),
-                                            ),
-                                        )
-                                    except OSError:
-                                        pass
                                     renamed += 1
                                     changed_file_ids.add(preset_id)
                             remove_stale_preset_files(
