@@ -766,11 +766,6 @@ export function LabelStudioModal({
                       )}
                     </>
                   )}
-                </fieldset>
-                <fieldset className="space-y-3 border-t border-white/10 pt-4">
-                  <legend className="pt-4 font-semibold">
-                    {t("labelStudio.export")}
-                  </legend>
                   <div className="grid grid-cols-2 gap-3">
                     <Dropdown
                       label={t("labelStudio.file")}

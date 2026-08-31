@@ -86,6 +86,15 @@ describe("LabelStudioModal", () => {
       name: "labelStudio.download",
     });
     await waitFor(() => expect(download).not.toBeDisabled());
+    const content = screen.getByRole("group", { name: "labelStudio.content" });
+    expect(content).toContainElement(screen.getByLabelText("labelStudio.file"));
+    expect(content).toContainElement(
+      screen.getByLabelText("labelStudio.media"),
+    );
+    expect(content).toContainElement(download);
+    expect(
+      screen.queryByRole("group", { name: "labelStudio.export" }),
+    ).not.toBeInTheDocument();
     expect(screen.getByLabelText("labelStudio.brandLogo")).toBeDisabled();
     expect(screen.getByLabelText("labelStudio.brandLogo")).not.toBeChecked();
     fireEvent.click(
@@ -291,15 +300,11 @@ describe("LabelStudioModal", () => {
       screen.queryByRole("checkbox", { name: /Nozzle|Bed/ }),
     ).not.toBeInTheDocument();
     fireEvent.focus(slot(1));
-    fireEvent.click(
-      await screen.findByRole("button", { name: "Bed" }),
-    );
+    fireEvent.click(await screen.findByRole("button", { name: "Bed" }));
     expect(slot(1)).toHaveValue("Bed");
     expect(slot(2)).toHaveValue("Nozzle");
     fireEvent.focus(slot(6));
-    fireEvent.click(
-      await screen.findByRole("button", { name: "Weight" }),
-    );
+    fireEvent.click(await screen.findByRole("button", { name: "Weight" }));
     fireEvent.focus(slot(3));
     fireEvent.click(
       await screen.findByRole("button", { name: "labelStudio.fieldEmpty" }),
@@ -377,9 +382,7 @@ describe("LabelStudioModal", () => {
       ),
     );
     fireEvent.focus(screen.getByLabelText("labelStudio.file"));
-    fireEvent.click(
-      await screen.findByRole("button", { name: "SVG" }),
-    );
+    fireEvent.click(await screen.findByRole("button", { name: "SVG" }));
     expect(download).toBeDisabled();
     expect(screen.getByText("labelStudio.multiplePdf")).toBeInTheDocument();
     fireEvent.click(
