@@ -22,6 +22,7 @@ import { BrandLogoFrame } from '../components/BrandLogoFrame';
 import { FilamentPreview } from '../components/FilamentPreview';
 import { FilamentHandlingBadges } from '../components/FilamentHandlingBadges';
 import { NozzleRequirementBadge } from '../components/NozzleRequirementBadge';
+import { ProductQrButton } from '../components/ProductQrButton';
 import { externalUrl, externalUrlHost } from '../utils/externalUrl';
 import { filamentPublicPath } from '../utils/catalogUrls';
 import { hasMetaNetworkLink } from '../utils/restrictedNetworks';
@@ -32,10 +33,11 @@ interface BrandFilamentCardProps {
 }
 
 const BrandFilamentCard: React.FC<BrandFilamentCardProps> = ({ filament, onClick }) => (
+  <div className="flex flex-col rounded-xl border border-white/15 bg-white/[0.07] shadow-lg backdrop-blur-sm">
   <button
     type="button"
     onClick={onClick}
-    className="group flex min-h-36 w-full flex-col rounded-xl border border-white/15 bg-white/[0.07] p-4 text-left shadow-lg backdrop-blur-sm transition-all hover:-translate-y-0.5 hover:border-purple-300/40 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-purple-400"
+    className="group flex min-h-36 w-full flex-1 flex-col rounded-xl p-4 text-left transition-all hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-purple-400"
   >
     <div className="flex items-start justify-between gap-3">
       <div className="min-w-0 flex-1">
@@ -76,6 +78,8 @@ const BrandFilamentCard: React.FC<BrandFilamentCardProps> = ({ filament, onClick
       />
     </div>
   </button>
+  {filament.qr_code && <div className="px-4 pb-4"><ProductQrButton key={filament.id} filament={filament} /></div>}
+  </div>
 );
 
 export const BrandDetailPage: React.FC = () => {

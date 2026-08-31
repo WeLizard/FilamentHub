@@ -1,5 +1,21 @@
 {
+  "productQr": {
+    "title": "Product QR",
+    "hint": "This code identifies the product, not an individual spool. Label editing is available in My spools and the company workspace.",
+    "download": "Download {{format}}",
+    "copyLink": "Copy product link",
+    "copied": "Product link copied",
+    "copyFailed": "Could not copy the link",
+    "imageFailed": "Could not load the QR. Reopen this window or download the file."
+  },
   "labelStudio": {
+    "printLabel": "Print label",
+    "labelAction": "Label",
+    "productCodeHint": "Product QR — not linked to an individual spool. Formatting does not change the code or catalog.",
+    "spoolUnavailable": "Printing requires a catalog material with an available product QR.",
+    "workspaceTitle": "Labels and QR",
+    "workspaceHint": "Choose a product, format the label and set the number of copies for printing. The existing product QR is used.",
+    "noProducts": "None of the loaded products have an available QR. Change the search or load more products.",
     "title": "Label and QR",
     "publicHint": "Print styling only. The product code and catalog remain unchanged.",
     "personalHint": "This screen prints public labels for verified brands. It does not create or change personal spools.",

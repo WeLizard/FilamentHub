@@ -1,5 +1,21 @@
 {
+  "productQr": {
+    "title": "产品二维码",
+    "hint": "此码标识产品，而非单个线轴。请在「我的线轴」或企业工作区编辑标签。",
+    "download": "下载 {{format}}",
+    "copyLink": "复制产品链接",
+    "copied": "已复制产品链接",
+    "copyFailed": "无法复制链接",
+    "imageFailed": "无法加载二维码。请重新打开窗口或下载文件。"
+  },
   "labelStudio": {
+    "printLabel": "打印标签",
+    "labelAction": "标签",
+    "productCodeHint": "产品二维码 — 未绑定单个线轴。标签样式不会修改代码或目录。",
+    "spoolUnavailable": "打印需要关联具有可用产品二维码的目录材料。",
+    "workspaceTitle": "标签与二维码",
+    "workspaceHint": "选择产品、设置标签样式及打印份数。使用现有产品二维码。",
+    "noProducts": "已加载的产品中没有可用的二维码。请更改搜索或加载更多产品。",
     "title": "标签和二维码",
     "publicHint": "仅调整打印样式，不更改产品代码或目录。",
     "personalHint": "此页面用于打印已认证品牌的公开标签，不会创建或修改个人料卷。",

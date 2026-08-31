@@ -346,7 +346,7 @@ export function LabelStudioModal({
               {t("labelStudio.title")}
             </h2>
             <p className="mt-1 text-sm text-gray-400">
-              {t("labelStudio.publicHint")}
+              {t("labelStudio.productCodeHint")}
             </p>
           </div>
           <button
@@ -364,7 +364,7 @@ export function LabelStudioModal({
         ) : metadata.isError ? (
           <div className="space-y-3 p-6" role="alert">
             <p>{errorMessage(metadata.error)}</p>
-            <p className="text-gray-400">{t("labelStudio.personalHint")}</p>
+            <p className="text-gray-400">{t("labelStudio.productCodeHint")}</p>
           </div>
         ) : (
           metadata.data && (

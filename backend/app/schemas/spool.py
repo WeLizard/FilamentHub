@@ -63,6 +63,7 @@ class SpoolFilamentInfo(BaseModel):
     price_per_kg: float | None
     currency: str | None = None  # валюта бренда (для price_per_kg)
     required_nozzle_hrc: int | None = None
+    qr_code: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -203,9 +204,7 @@ class SpoolImportColumnMapping(BaseModel):
     """User-confirmed mapping from safe semantic fields to CSV columns."""
 
     fields: dict[SpoolImportSemanticField, str] = Field(default_factory=dict)
-    units: dict[SpoolImportSemanticField, SpoolImportUnit] = Field(
-        default_factory=dict
-    )
+    units: dict[SpoolImportSemanticField, SpoolImportUnit] = Field(default_factory=dict)
 
 
 class SpoolImportPreviewResponse(SpoolManagerPreviewResponse):

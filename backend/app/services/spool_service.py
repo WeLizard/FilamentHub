@@ -105,7 +105,7 @@ async def lock_material_slots_for_spools(
         assignment_ids = await db.scalars(
             select(MaterialSlotAssignment.material_slot_id).where(
                 MaterialSlotAssignment.user_id == user_id,
-                MaterialSlotAssignment.spool_id.in_(spool_ids)
+                MaterialSlotAssignment.spool_id.in_(spool_ids),
             )
         )
         material_slot_ids.update(assignment_ids.all())
@@ -398,6 +398,7 @@ def _build_response(spool: UserSpool, filament: Filament | None) -> SpoolRespons
             price_per_kg=filament.price_per_kg,
             currency=filament.brand.currency if filament.brand is not None else None,
             required_nozzle_hrc=filament.required_nozzle_hrc,
+            qr_code=filament.qr_code,
         )
     extra = spool.extra or {}
     raw_currency = extra.get("currency")
@@ -434,9 +435,7 @@ async def list_spools(
     if filament_id is not None:
         query = query.where(UserSpool.filament_id == filament_id)
 
-    result = await db.execute(
-        query.order_by(UserSpool.created_at.desc())
-    )
+    result = await db.execute(query.order_by(UserSpool.created_at.desc()))
     spools = list(result.scalars().all())
 
     # Batch load filaments

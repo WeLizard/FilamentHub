@@ -3,7 +3,7 @@
 import { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { InfoHint } from '../components/InfoHint';
-import { LabelStudioModal } from '../components/LabelStudioModal';
+import { ProductQrButton } from '../components/ProductQrButton';
 import { useConfiguredNozzleHrc } from '../hooks/useConfiguredNozzleHrc';
 import { isNozzleTooSoft } from '../utils/nozzleHardness';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
@@ -200,7 +200,6 @@ export const FilamentDetailPage: React.FC = () => {
   const location = useLocation();
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const [showQR, setShowQR] = useState(false);
   const [correctionRequestOpen, setCorrectionRequestOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'presets' | 'reviews'>('presets');
   const [detailPreset, setDetailPreset] = useState<Preset | null>(null);
@@ -972,14 +971,7 @@ export const FilamentDetailPage: React.FC = () => {
               {t('filamentDetailPage.noPresets')}
             </button>
           )}
-          <button
-            onClick={() => setShowQR(!showQR)}
-            className="px-6 py-4 bg-white/10 hover:bg-white/20 text-white rounded-xl transition-all border border-white/20"
-            aria-label={t('labelStudio.title')}
-            title={t('labelStudio.title')}
-          >
-            <QrCode className="w-6 h-6" />
-          </button>
+          <ProductQrButton key={filament.id} filament={filament} className="px-6 py-4" />
           {user?.email_verified && (
             <button
               type="button"
@@ -992,7 +984,6 @@ export const FilamentDetailPage: React.FC = () => {
           )}
         </div>
 
-        {showQR && <LabelStudioModal filamentId={filament.id} onClose={() => setShowQR(false)} />}
       </div>
 
 

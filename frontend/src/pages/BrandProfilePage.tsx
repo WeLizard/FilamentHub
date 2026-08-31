@@ -1001,7 +1001,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({
           {([
             { id: 'materials', label: t('brandProfile.tabs.materials'), icon: Package },
             { id: 'presets', label: t('brandProfile.tabs.presets'), icon: Settings },
-            { id: 'qr', label: t('brandProfile.tabs.qr'), icon: QrCode },
+            { id: 'qr', label: t('labelStudio.workspaceTitle'), icon: QrCode },
             { id: 'analytics', label: t('brandProfile.tabs.analytics'), icon: BarChart3 },
             { id: 'usage', label: t('brandProfile.tabs.usage'), icon: TrendingUp },
             { id: 'team', label: t('brandProfile.tabs.team'), icon: Users },
@@ -1566,7 +1566,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({
       {brandTab === 'qr' && (
         <div className="space-y-6">
           <div className="flex items-center justify-between gap-4">
-            <h3 className="text-2xl font-bold text-white">{t('brandProfile.qrCodes')}</h3>
+            <h3 className="text-2xl font-bold text-white">{t('labelStudio.workspaceTitle')}</h3>
             {canOpenEditor && brandData?.verified && filaments.some(f => !f.qr_code) && (
               <button
                 onClick={() => backfillQrMutation.mutate()}
@@ -1579,11 +1579,17 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({
             )}
           </div>
 
+          <p className="text-sm text-gray-400">{t('labelStudio.workspaceHint')}</p>
+          <input type="search" value={materialsSearch} onChange={event => setMaterialsSearch(event.target.value)}
+            aria-label={t('brandProfile.materialsSearchPlaceholder')} placeholder={t('brandProfile.materialsSearchPlaceholder')}
+            className="w-full rounded-xl border border-white/20 bg-white/10 px-4 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-400" />
           <div className="glass-panel rounded-2xl p-6 border border-white/20 shadow-xl">
-            {filaments.filter(f => f.qr_code).length > 0 ? (
+            {isLoadingFilaments ? <Loader2 className="mx-auto h-6 w-6 animate-spin text-purple-300" /> : filamentsError ? (
+              <p role="alert" className="text-sm text-red-300">{translateApiError(t, (filamentsError as AxiosError<{ detail: unknown }>).response?.data?.detail)}</p>
+            ) : filaments.some(f => f.qr_code && f.active) ? (
               <div className="space-y-3">
                 {filaments
-                  .filter(f => f.qr_code)
+                  .filter(f => f.qr_code && f.active)
                   .map((filament) => (
                     <QRCodeCard key={filament.id} filament={filament} onOpen={setShowQRFilament} />
                   ))}
@@ -1591,11 +1597,14 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({
             ) : (
               <div className="text-center py-12">
                 <QrCode className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-                <p className="text-gray-400 text-xl">{t('brandProfile.qrAutoCreated')}</p>
-                <p className="text-gray-500 text-sm mt-2">{t('brandProfile.createMaterialForQR')}</p>
+                <p className="text-gray-400">{t('labelStudio.noProducts')}</p>
               </div>
             )}
           </div>
+          {hasMoreMaterials && <button type="button" onClick={() => void fetchNextMaterialsPage()} disabled={isFetchingMoreMaterials}
+            className="mx-auto flex items-center gap-2 rounded-xl border border-white/20 px-5 py-2.5 text-sm text-white hover:bg-white/10 disabled:opacity-50">
+            {isFetchingMoreMaterials && <Loader2 size={16} className="animate-spin" />}{t('brandProfile.loadMoreMaterials')}
+          </button>}
         </div>
       )}
 
@@ -2001,7 +2010,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({
         />
       </Suspense>
 
-      {showQRFilament && <LabelStudioModal filamentId={showQRFilament.id} onClose={() => setShowQRFilament(null)} />}
+      {showQRFilament?.brand_id === user.brand_id && showQRFilament && <LabelStudioModal key={`${companyPreferenceContext}:${showQRFilament.id}`} filamentId={showQRFilament.id} onClose={() => setShowQRFilament(null)} />}
 
       {/* Add Colors (palette) Modal */}
       {addColorsFilament && user.brand_id && (
@@ -4423,7 +4432,7 @@ const QRCodeCard: React.FC<QRCodeCardProps> = ({ filament, onOpen }) => {
         type="button"
         onClick={() => onOpen(filament)}
         className="flex flex-1 items-center space-x-4 text-left min-w-0"
-        title={t('brandProfile.materialQRCode')}
+        title={t('labelStudio.printLabel')}
       >
         {/* QR Code Preview */}
         {filament.qr_code && (
@@ -4440,6 +4449,7 @@ const QRCodeCard: React.FC<QRCodeCardProps> = ({ filament, onOpen }) => {
         <div className="min-w-0">
           <p className="text-white font-medium truncate">{filament.name}</p>
           <p className="text-gray-400 text-sm font-mono truncate">{shortCode}</p>
+          <p className="mt-1 text-xs text-cyan-200">{t('labelStudio.printLabel')}</p>
         </div>
       </button>
       <div className="flex items-center space-x-4">

@@ -26,6 +26,7 @@ async def test_spool_list_filters_exact_variant_without_leaking_another_owner(
         brand=brand,
         name="Exact PLA",
         slug="exact-pla",
+        qr_code="FH-INVENTORY-EXACT",
         material_type="PLA",
         active=True,
     )
@@ -108,6 +109,7 @@ async def test_spool_list_filters_exact_variant_without_leaking_another_owner(
     filtered_data = filtered.json()
     assert {item["id"] for item in filtered_data} == {spool.id for spool in own_exact}
     assert {item["filament_id"] for item in filtered_data} == {exact.id}
+    assert {item["filament"]["qr_code"] for item in filtered_data} == {"FH-INVENTORY-EXACT"}
     assert {item["state"] for item in filtered_data} == {
         "active",
         "shelf",
@@ -124,6 +126,12 @@ async def test_spool_list_filters_exact_variant_without_leaking_another_owner(
         *(spool.id for spool in own_exact),
         other_variant.id,
     }
+    assert (
+        next(item for item in unfiltered.json() if item["id"] == other_variant.id)["filament"][
+            "qr_code"
+        ]
+        is None
+    )
 
     invalid = await auth_client.get("/api/v1/spools", params={"filament_id": 0})
     assert invalid.status_code == 422

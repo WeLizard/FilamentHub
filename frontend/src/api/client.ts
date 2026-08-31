@@ -3319,6 +3319,7 @@ export interface SpoolFilamentInfo {
   price_per_kg: number | null;
   currency: string | null; // валюта бренда (для price_per_kg)
   required_nozzle_hrc: number | null;
+  qr_code?: string | null;
 }
 
 export interface UserSpool {
