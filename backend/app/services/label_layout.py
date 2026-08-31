@@ -302,13 +302,14 @@ def _qr_composition(
     modules: int,
     measure: MeasureText,
 ) -> tuple[Box, float, LabelText, Box | None, LabelText | None]:
-    sku = f"SKU · {data.sku}"
+    sku = data.sku
     sku_width_at_one = measure(sku, 1, False)
     caption_width_at_one = measure("FilamentHub", 1, True)
 
     def dimensions(side: float) -> tuple[float, float, float, float, float]:
         quiet = side * 4 / modules
-        sku_size = max(0.85, side * 0.92 / sku_width_at_one)
+        # A short code must not grow to fill the entire width at the QR's expense.
+        sku_size = max(0.85, min(side / 6, side * 0.92 / sku_width_at_one))
         caption_size = max(0.85, side * 0.94 / (caption_width_at_one + 1.6))
         if options.attribution == "full":
             top = 2 * max(margin, quiet) + caption_size * 1.3
