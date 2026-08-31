@@ -255,4 +255,24 @@ describe('compareMaterialSlot', () => {
     expect(result.desiredSpoolId).toBeNull();
     expect(result.conflict).toBe('observed_loaded_without_spool');
   });
+
+  it('uses server receipt time when a connector clock is far behind', () => {
+    const target = slot(null, null);
+    target.observation = {
+      source: 'happy_hare_moonraker',
+      observed_at: '2001-01-01T00:00:00Z',
+      received_at: '2026-07-30T00:01:30Z',
+      present: true,
+      active_feed: false,
+      material: 'PLA',
+      color_hex: null,
+      remaining_percent: null,
+      remaining_grams: null,
+    };
+
+    const result = compareMaterialSlot(target, null, null, NOW);
+
+    expect(result.observationState).toBe('loaded');
+    expect(result.observedMaterial).toBe('PLA');
+  });
 });

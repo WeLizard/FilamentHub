@@ -4,6 +4,7 @@ import pytest
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.orca_printer_connection_observation import OrcaPrinterConnectionObservation
 from app.models.physical_printer_profile import UserPrinterProfileLink
 from app.models.printer import Printer
 from app.models.printer_connection_binding import PrinterConnectionBinding
@@ -448,6 +449,62 @@ async def test_connection_ref_survives_endpoint_change_without_new_printer(
     assert await _count(db_session, UserPrinterDevice) == 1
     binding = (await db_session.execute(select(PrinterConnectionBinding))).scalar_one()
     assert display_endpoint(binding) == "192.168.1.99:80"
+
+
+@pytest.mark.asyncio
+async def test_detached_endpoint_from_previous_install_requires_resolution(
+    db_session: AsyncSession, auth_user: User
+):
+    endpoint = "192.168.1.21:7125"
+    await record_observations(
+        db_session,
+        auth_user.id,
+        "old-orca-instance",
+        [
+            _obs(
+                connection_ref="orca-local-v1:old:machine-a",
+                preset_name="Workshop Voron",
+                print_host=endpoint,
+                host_type="moonraker",
+            )
+        ],
+    )
+    assert await reconcile_user_printers(
+        db_session, auth_user.id, source_instance_id="old-orca-instance"
+    ) == 1
+    binding = (await db_session.execute(select(PrinterConnectionBinding))).scalar_one()
+    binding.status = "detached"
+    binding.assignment_confirmed = False
+    await db_session.commit()
+
+    await record_observations(
+        db_session,
+        auth_user.id,
+        "new-orca-instance",
+        [
+            _obs(
+                connection_ref="orca-local-v1:new:machine-a",
+                preset_name="Workshop Voron",
+                print_host=endpoint,
+                host_type="moonraker",
+            )
+        ],
+    )
+    assert await reconcile_user_printers(
+        db_session, auth_user.id, source_instance_id="new-orca-instance"
+    ) == 0
+    assert await _count(db_session, UserPrinterDevice) == 1
+    assert await _count(db_session, PrinterConnectionBinding) == 1
+    observation = await db_session.scalar(
+        select(OrcaPrinterConnectionObservation).where(
+            OrcaPrinterConnectionObservation.source_instance_id == "new-orca-instance"
+        )
+    )
+    assert observation is not None
+    assert observation.sanitized_payload["resolution_status"] == "pending"
+    assert observation.sanitized_payload["candidate_printer_ids"] == [
+        binding.physical_printer_id
+    ]
 
 
 @pytest.mark.asyncio

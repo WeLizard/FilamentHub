@@ -514,10 +514,14 @@ async def handle_hh_snapshot(
         db.add(device)
         await db.flush()
     else:
+        source_instance_id = f"happy-hare-plugin-{device.logical_id}"
         newer_source = await db.scalar(
             select(PhysicalPrinterConnector.id)
             .where(
                 PhysicalPrinterConnector.physical_printer_id == device.id,
+                PhysicalPrinterConnector.provider == "happy_hare",
+                PhysicalPrinterConnector.transport == "orca_plugin_lan",
+                PhysicalPrinterConnector.source_instance_id == source_instance_id,
                 PhysicalPrinterConnector.active.is_(True),
                 PhysicalPrinterConnector.last_observation_at > _normalize_utc(payload.snapshot_ts),
             )

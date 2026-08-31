@@ -96,15 +96,20 @@ async def observe_printer_connections(
     # Serialize both the observation upsert and physical-printer reconciliation
     # per account so two requests cannot create the same selected machine twice.
     await hold_account_import_lock(db, current_user.id)
+    touched_observation_ids: list[int] = []
     accepted, matched, unmatched = await record_observations(
         db, current_user.id, payload.source_instance_id, payload.observations,
         commit=False, snapshot_complete=payload.snapshot_complete,
+        touched_observation_ids=touched_observation_ids,
     )
     await hold_account_import_lock(db, current_user.id)
     created = await reconcile_user_printers(
         db,
         current_user.id,
         source_instance_id=payload.source_instance_id,
+        observation_ids=(
+            None if payload.snapshot_complete else set(touched_observation_ids)
+        ),
     )
     return PrinterConnectionObserveResponse(
         accepted=accepted,

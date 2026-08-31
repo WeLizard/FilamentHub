@@ -839,7 +839,7 @@ async def ingest_printer_bridge_snapshot(
             PhysicalPrinterConnector.material_system_id == system.id,
             PhysicalPrinterConnector.id != connector.id,
             PhysicalPrinterConnector.active.is_(True),
-            PhysicalPrinterConnector.last_observation_at > observed_at,
+            PhysicalPrinterConnector.last_seen_at > received_at,
         ).limit(1)
     )
     topology_is_current = newer_source is None

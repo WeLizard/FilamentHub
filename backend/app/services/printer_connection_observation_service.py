@@ -319,6 +319,7 @@ async def record_observations(
     *,
     commit: bool = True,
     snapshot_complete: bool = True,
+    touched_observation_ids: list[int] | None = None,
 ) -> tuple[int, int, int]:
     """Upsert observations. Returns (accepted, matched, unmatched)."""
     observations = list(observations)
@@ -339,10 +340,11 @@ async def record_observations(
             )
         ).scalars()
     )
+    replace_current = snapshot_complete or any(obs.is_current for obs in observations)
     for row in previous_rows:
         payload = dict(row.sanitized_payload or {})
         changed = False
-        if payload.get("is_current") is True:
+        if replace_current and payload.get("is_current") is True:
             payload["is_current"] = False
             changed = True
         if snapshot_complete and payload.get("is_visible") is True:
@@ -355,6 +357,7 @@ async def record_observations(
             row.sanitized_payload = payload
 
     accepted = matched = unmatched = 0
+    touched_rows: list[OrcaPrinterConnectionObservation] = []
     for obs in observations:
         host = _sanitize_host(obs.print_host)
         endpoint_fingerprint = _endpoint_fingerprint(host, obs.host_type)
@@ -407,30 +410,35 @@ async def record_observations(
             )
         ).scalar_one_or_none()
 
+        if existing is not None and not snapshot_complete:
+            previous_payload = existing.sanitized_payload or {}
+            if not replace_current:
+                sanitized["is_current"] = bool(previous_payload.get("is_current"))
+            sanitized["is_visible"] = bool(previous_payload.get("is_visible"))
+
         now = datetime.now(timezone.utc)
         if existing is None:
-            db.add(
-                OrcaPrinterConnectionObservation(
-                    owner_user_id=owner_id,
-                    last_seen_at=now,
-                    received_at=now,
-                    source=SOURCE,
-                    source_instance_id=source_instance_id,
-                    connection_ref=obs.connection_ref,
-                    printer_settings_id=obs.printer_settings_id,
-                    preset_name=obs.preset_name,
-                    inherits=obs.inherits,
-                    printer_model=obs.printer_model,
-                    print_host=None,
-                    endpoint_ciphertext=encrypt_field(host) if host else None,
-                    endpoint_fingerprint=endpoint_fingerprint,
-                    host_type=obs.host_type,
-                    payload_version=PAYLOAD_VERSION,
-                    observation_hash=content_hash,
-                    matched_printer_profile_id=matched_id,
-                    sanitized_payload=sanitized,
-                )
+            existing = OrcaPrinterConnectionObservation(
+                owner_user_id=owner_id,
+                last_seen_at=now,
+                received_at=now,
+                source=SOURCE,
+                source_instance_id=source_instance_id,
+                connection_ref=obs.connection_ref,
+                printer_settings_id=obs.printer_settings_id,
+                preset_name=obs.preset_name,
+                inherits=obs.inherits,
+                printer_model=obs.printer_model,
+                print_host=None,
+                endpoint_ciphertext=encrypt_field(host) if host else None,
+                endpoint_fingerprint=endpoint_fingerprint,
+                host_type=obs.host_type,
+                payload_version=PAYLOAD_VERSION,
+                observation_hash=content_hash,
+                matched_printer_profile_id=matched_id,
+                sanitized_payload=sanitized,
             )
+            db.add(existing)
         else:
             # Same endpoint seen again: bump last_seen/received, refresh display
             # fields and match, never touch first_seen_at. An endpoint change
@@ -447,14 +455,17 @@ async def record_observations(
             existing.endpoint_fingerprint = endpoint_fingerprint
             existing.sanitized_payload = sanitized
 
+        touched_rows.append(existing)
+
         accepted += 1
         if matched_id is not None:
             matched += 1
         else:
             unmatched += 1
 
+    await db.flush()
+    if touched_observation_ids is not None:
+        touched_observation_ids.extend(row.id for row in touched_rows)
     if commit:
         await db.commit()
-    else:
-        await db.flush()
     return accepted, matched, unmatched

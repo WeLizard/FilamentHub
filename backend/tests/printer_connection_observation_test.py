@@ -1,6 +1,7 @@
 """Tests for the OrcaSlicer printer-connection observation staging (stage A)."""
 
 import hashlib
+from datetime import datetime
 
 import pytest
 from httpx import AsyncClient
@@ -315,6 +316,97 @@ async def test_current_and_visible_profile_state_is_replaced_within_one_orca_ins
         False,
         True,
     ]
+
+
+@pytest.mark.asyncio
+async def test_partial_recovery_preserves_current_and_only_refreshes_observed_binding(
+    auth_client: AsyncClient,
+    db_session: AsyncSession,
+    auth_user: User,
+):
+    source_instance_id = "partial-recovery-instance"
+    observations = [
+        {
+            "connection_ref": "orca-local-v1:account:printer-a",
+            "preset_name": "Printer A",
+            "print_host": "192.168.1.21:7125",
+            "host_type": "moonraker",
+            "is_current": True,
+            "is_visible": True,
+        },
+        {
+            "connection_ref": "orca-local-v1:account:printer-b",
+            "preset_name": "Printer B",
+            "print_host": "192.168.1.22:7125",
+            "host_type": "moonraker",
+            "is_current": False,
+        },
+    ]
+    first = await auth_client.post(
+        "/api/v1/orcaslicer/printer-connections/observe",
+        json={
+            "source_instance_id": source_instance_id,
+            "snapshot_complete": True,
+            "observations": observations,
+        },
+    )
+    assert first.status_code == 200
+
+    stale_at = datetime(2026, 1, 1)
+    bindings = list(
+        (
+            await db_session.execute(
+                select(PrinterConnectionBinding).where(
+                    PrinterConnectionBinding.source_instance_id == source_instance_id
+                )
+            )
+        ).scalars()
+    )
+    assert len(bindings) == 2
+    for binding in bindings:
+        binding.last_seen_at = stale_at
+    await db_session.commit()
+
+    partial = await auth_client.post(
+        "/api/v1/orcaslicer/printer-connections/observe",
+        json={
+            "source_instance_id": source_instance_id,
+            "snapshot_complete": False,
+            "observations": [{**observations[0], "is_current": False, "is_visible": False}],
+        },
+    )
+    assert partial.status_code == 200
+
+    refreshed_bindings = {
+        binding.connection_ref: binding
+        for binding in (
+            await db_session.execute(
+                select(PrinterConnectionBinding)
+                .where(PrinterConnectionBinding.source_instance_id == source_instance_id)
+                .execution_options(populate_existing=True)
+            )
+        ).scalars()
+    }
+    assert refreshed_bindings["orca-local-v1:account:printer-a"].last_seen_at > stale_at
+    assert refreshed_bindings["orca-local-v1:account:printer-b"].last_seen_at == stale_at
+
+    rows = list(
+        (
+            await db_session.execute(
+                select(OrcaPrinterConnectionObservation)
+                .where(
+                    OrcaPrinterConnectionObservation.source_instance_id
+                    == source_instance_id
+                )
+                .execution_options(populate_existing=True)
+            )
+        ).scalars()
+    )
+    current = [row for row in rows if (row.sanitized_payload or {}).get("is_current")]
+    assert [row.connection_ref for row in current] == [
+        "orca-local-v1:account:printer-a"
+    ]
+    assert (current[0].sanitized_payload or {}).get("is_visible") is True
 
 
 @pytest.mark.asyncio

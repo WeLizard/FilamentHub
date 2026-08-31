@@ -263,6 +263,7 @@ async def reconcile_user_printers(
     user_id: int,
     *,
     source_instance_id: str | None = None,
+    observation_ids: set[int] | None = None,
 ) -> int:
     """Same local connection/device -> same printer; a preset alone proves neither.
 
@@ -278,18 +279,24 @@ async def reconcile_user_printers(
         query = query.where(
             OrcaPrinterConnectionObservation.source_instance_id == source_instance_id
         )
-    observations = [
-        row
-        for row in (
-            await db.execute(
-                query.order_by(
-                    OrcaPrinterConnectionObservation.last_seen_at,
-                    OrcaPrinterConnectionObservation.id,
+    if observation_ids is not None:
+        query = query.where(OrcaPrinterConnectionObservation.id.in_(observation_ids))
+    observations = (
+        [
+            row
+            for row in (
+                await db.execute(
+                    query.order_by(
+                        OrcaPrinterConnectionObservation.last_seen_at,
+                        OrcaPrinterConnectionObservation.id,
+                    )
                 )
-            )
-        ).scalars()
-        if (row.sanitized_payload or {}).get("present_in_snapshot") is not False
-    ]
+            ).scalars()
+            if (row.sanitized_payload or {}).get("present_in_snapshot") is not False
+        ]
+        if observation_ids is None or observation_ids
+        else []
+    )
     key = await discovery_key(db, user_id)
     bindings = await list_user_bindings(db, user_id)
     for binding in bindings:
@@ -298,7 +305,8 @@ async def reconcile_user_printers(
         raw = _binding_endpoint(binding)
         if raw:
             binding.endpoint_token = make_endpoint_token(key, raw, binding.provider)
-        if (source_instance_id and binding.source_instance_id == source_instance_id
+        if (observation_ids is None and source_instance_id
+                and binding.source_instance_id == source_instance_id
                 and binding.source != "local_setup"):
             present = any(
                 o.connection_ref == binding.connection_ref
@@ -354,6 +362,10 @@ async def reconcile_user_printers(
         )
         local_peers = [b for b in bindings if token and b.endpoint_token == token
                        and b.source_instance_id == obs.source_instance_id]
+        detached_peers = [
+            b for b in bindings
+            if token and b.endpoint_token == token and b.status == "detached"
+        ]
         if binding is None and not obs.connection_ref:
             binding = next((b for b in local_peers if b.connection_ref is None), None)
         if (binding is not None and binding.status == "detached"
@@ -389,6 +401,16 @@ async def reconcile_user_printers(
         }
         identified = await identity_printer(db, user_id, evidence) if evidence else None
         identity_changed = _binding_identity_changed(binding, evidence)
+        if binding is None and detached_peers:
+            _resolution(
+                obs,
+                "pending",
+                [
+                    *(peer.physical_printer_id for peer in detached_peers),
+                    *([identified] if identified is not None else []),
+                ],
+            )
+            continue
         candidates = set(local_ids)
         if binding:
             candidates.add(binding.physical_printer_id)

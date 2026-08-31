@@ -5,6 +5,7 @@ import {
   formatLastSeen,
   getDeviceLinkState,
   latestDeviceContact,
+  latestFreshStatusConnector,
 } from './deviceLink';
 
 const NOW = Date.parse('2026-07-17T12:00:00Z');
@@ -44,6 +45,37 @@ describe('latestDeviceContact', () => {
       '2026-07-17T11:59:00Z',
     )).toBe('2026-07-17T11:59:00Z');
     expect(latestDeviceContact(null, 'invalid')).toBeNull();
+  });
+});
+
+describe('latestFreshStatusConnector', () => {
+  it('ignores stale status and picks the newest fresh active connector', () => {
+    const connectors = [
+      {
+        id: 1,
+        active: true,
+        last_seen_at: iso(1_000),
+        status_observation: {
+          state: 'printing',
+          received_at: iso(DEVICE_LINK_DELAYED_MS),
+        },
+      },
+      {
+        id: 2,
+        active: true,
+        last_seen_at: iso(60_000),
+        status_observation: { state: 'idle', received_at: iso(60_000) },
+      },
+      {
+        id: 3,
+        active: false,
+        last_seen_at: iso(1_000),
+        status_observation: { state: 'failed', received_at: iso(1_000) },
+      },
+    ];
+
+    expect(latestFreshStatusConnector(connectors, NOW)?.id).toBe(2);
+    expect(latestFreshStatusConnector([connectors[0]], NOW)).toBeNull();
   });
 });
 

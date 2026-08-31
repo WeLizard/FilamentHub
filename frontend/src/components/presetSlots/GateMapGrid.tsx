@@ -275,7 +275,7 @@ export function GateMapGrid({
                 {t('presetSlots.observation.lastSeen', {
                   detail: staleObservation.material
                     ?? t('presetSlots.observation.lastSeenSpool'),
-                  age: formatLastSeen(staleObservation.observed_at, t, i18n.language, now),
+                  age: formatLastSeen(staleObservation.received_at, t, i18n.language, now),
                 })}
               </span>
             )}

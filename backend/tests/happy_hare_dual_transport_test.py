@@ -120,19 +120,20 @@ async def test_no_orca_reads_all_gates_and_only_proven_owned_spool_ids(
 
 
 @pytest.mark.asyncio
-async def test_orca_and_edge_share_slots_and_delayed_source_cannot_shrink_topology(
+async def test_latest_server_receipt_wins_across_orca_and_edge_client_clocks(
     auth_client: AsyncClient,
     auth_user: User,
     db_session: AsyncSession,
 ):
     printer, system, spool = await setup_printer(db_session, auth_user)
-    ts = datetime.now(timezone.utc) - timedelta(seconds=60)
+    edge_clock = datetime.now(timezone.utc) + timedelta(days=365)
+    orca_clock = datetime(2001, 1, 1, tzinfo=timezone.utc)
     digest = hashlib.sha256(b"dual-transport-test-key").hexdigest()
     await ingest_printer_bridge_snapshot(
         db_session,
         auth_user.id,
         printer.id,
-        edge_snapshot(system.id, ts, digest=digest, spool_id=spool.id),
+        edge_snapshot(system.id, edge_clock, digest=digest, spool_id=spool.id, count=2),
     )
     await handle_hh_snapshot(
         db_session,
@@ -140,17 +141,11 @@ async def test_orca_and_edge_share_slots_and_delayed_source_cannot_shrink_topolo
         HHSnapshotRequest(
             physical_printer_id=printer.id,
             gate_count=4,
-            snapshot_ts=ts + timedelta(seconds=20),
+            snapshot_ts=orca_clock,
             gates=[HHGateItem(gate=index, status=0) for index in range(4)],
             spool_ids=[None] * 4,
             inventory_key_digest=digest,
         ),
-    )
-    await ingest_printer_bridge_snapshot(
-        db_session,
-        auth_user.id,
-        printer.id,
-        edge_snapshot(system.id, ts + timedelta(seconds=10), 2, digest, spool.id, count=2),
     )
     data = (await auth_client.get(f"/api/v1/physical-printers/{printer.id}")).json()
     assert len(data["material_systems"]) == 1

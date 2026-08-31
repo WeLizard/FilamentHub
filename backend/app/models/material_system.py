@@ -149,8 +149,8 @@ class MaterialSlot(Base):
                 )
 
             return (
-                utc(item.observed_at),
                 utc(item.received_at),
+                utc(item.observed_at),
                 item.id,
             )
 

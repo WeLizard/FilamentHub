@@ -37,10 +37,10 @@ function observationState(
 ): MaterialSlotObservationState {
   const normalized = slot.observation;
   if (normalized) {
-    const observedAt = new Date(normalized.observed_at).getTime();
-    const age = now - observedAt;
+    const receivedAt = new Date(normalized.received_at).getTime();
+    const age = now - receivedAt;
     if (
-      !Number.isFinite(observedAt)
+      !Number.isFinite(receivedAt)
       || age > MATERIAL_SLOT_OBSERVATION_FRESH_MS
       || age < -60_000
     ) {

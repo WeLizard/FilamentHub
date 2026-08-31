@@ -31,6 +31,7 @@ import { GuidedEmptyState } from './GuidedEmptyState';
 import { PrinterRecoveryModal } from './PrinterRecoveryModal';
 import { PrinterConnectionReview } from './PrinterConnectionReview';
 import { usePrinterContactEvents } from '../hooks/usePrinterContactEvents';
+import { latestFreshStatusConnector, useNow } from '../utils/deviceLink';
 
 const COLLAPSED_CONFIGURATION_LIMIT = 4;
 
@@ -78,6 +79,7 @@ export function MyPrintersList({
 }: MyPrintersListProps) {
   const { t, i18n } = useTranslation();
   usePrinterContactEvents(currentUserId);
+  const now = useNow();
   const pluginEmbed = isPluginEmbed();
   const [settingsPrinter, setSettingsPrinter] = useState<PhysicalPrinter | null>(null);
   const [historyPrinter, setHistoryPrinter] = useState<PhysicalPrinter | null>(null);
@@ -296,8 +298,9 @@ export function MyPrintersList({
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {list.map((printer) => {
             const printerBindings = bindingsByPrinter.get(printer.id) ?? [];
-            const liveConnector = (printer.connectors ?? []).find(
-              (connector) => connector.active && connector.status_observation,
+            const liveConnector = latestFreshStatusConnector(
+              printer.connectors ?? [],
+              now,
             );
             const live = liveConnector?.status_observation ?? null;
             const bundleAvailable = hasRestorableBundle(printer);
@@ -439,9 +442,9 @@ export function MyPrintersList({
                           })}
                         </span>
                       )}
-                      {liveConnector?.last_seen_at && (
+                      {live?.received_at && (
                         <span className="ml-auto shrink-0 text-cyan-100/45">
-                          {new Date(liveConnector.last_seen_at).toLocaleTimeString(i18n.language, {
+                          {new Date(live.received_at).toLocaleTimeString(i18n.language, {
                             hour: '2-digit',
                             minute: '2-digit',
                           })}

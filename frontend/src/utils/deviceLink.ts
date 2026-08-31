@@ -44,6 +44,31 @@ export function latestDeviceContact(
   return latest;
 }
 
+interface StatusConnectorLike {
+  active: boolean;
+  last_seen_at: string | null;
+  status_observation?: { received_at: string } | null;
+}
+
+/** Select only a genuinely fresh status, preferring the latest live connector. */
+export function latestFreshStatusConnector<T extends StatusConnectorLike>(
+  connectors: readonly T[],
+  now: number = Date.now(),
+): T | null {
+  return connectors
+    .filter(
+      (connector) =>
+        connector.active
+        && connector.status_observation != null
+        && getDeviceLinkState(connector.status_observation.received_at, now) === 'active',
+    )
+    .sort(
+      (left, right) =>
+        Date.parse(right.status_observation?.received_at ?? '')
+        - Date.parse(left.status_observation?.received_at ?? ''),
+    )[0] ?? null;
+}
+
 export function getDeviceLinkState(
   lastSeenAt: string | null,
   now: number = Date.now(),
