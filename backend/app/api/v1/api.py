@@ -47,6 +47,7 @@ from app.api.v1.endpoints import (
     saved_presets,
     spool_compat,
     spool_qr,
+    spool_tags,
     spools,
     wiki,
     wiki_authoring,
@@ -99,6 +100,7 @@ api_router.include_router(orca_sync.router)
 api_router.include_router(orca_preset_slot_sync.router)
 api_router.include_router(spools.router)
 api_router.include_router(spool_qr.router)
+api_router.include_router(spool_tags.router)
 api_router.include_router(feedback.router)
 api_router.include_router(downloads.router)
 api_router.include_router(wiki.router)

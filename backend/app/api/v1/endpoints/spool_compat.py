@@ -17,18 +17,25 @@ from fastapi import (
     HTTPException,
     Query,
     Request,
+    Response,
     WebSocket,
     WebSocketDisconnect,
     status,
 )
 from fastapi.responses import JSONResponse, RedirectResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
 
 from app.core.config import settings
 from app.core.security import device_api_key_lookup_candidates
+from app.core.tag_identity import (
+    happy_hare_tag_value,
+    normalize_tag_format,
+    normalize_tag_uid,
+    parse_happy_hare_tag_list,
+)
 from app.db.session import AsyncSessionLocal, get_db
 from app.models.brand import Brand
 from app.models.filament import Filament
@@ -54,6 +61,14 @@ from app.services.spool_service import (
     lock_spool_row,
     release_spool_location,
     shelf_spool_if_unassigned,
+)
+from app.services.spool_tag_service import (
+    SpoolTagConflict,
+    find_spool_tag,
+    link_spool_tag,
+    list_spool_tags,
+    replace_spool_tags,
+    unlink_spool_tag,
 )
 from app.services.spool_usage_service import (
     append_spoolman_usage_checkpoint,
@@ -128,6 +143,27 @@ class SpoolPatchBody(BaseModel):
     comment: str | None = Field(default=None, max_length=500)
     archived: bool | None = None
     extra: dict[str, str] | None = None
+
+
+class SpoolTagBody(BaseModel):
+    uid: str = Field(min_length=1, max_length=128)
+    format: str | None = Field(default=None, max_length=32)
+
+    @field_validator("uid")
+    @classmethod
+    def normalize_uid(cls, value: str) -> str:
+        return normalize_tag_uid(value)
+
+    @field_validator("format")
+    @classmethod
+    def normalize_format(cls, value: str | None) -> str | None:
+        return normalize_tag_format(value)
+
+
+class TagScanBody(SpoolTagBody):
+    reader_id: str | None = Field(default=None, pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$")
+    name: str | None = Field(default=None, max_length=64)
+    payload_b64: str | None = Field(default=None, max_length=8192)
 
 
 def _err(code: int, message: str) -> JSONResponse:
@@ -391,6 +427,7 @@ def _to_spool_payload(
     spool: UserSpool,
     location_map: dict[int, str],
     gate_meta_map: dict[int, tuple[str, int, str, Preset | None]] | None = None,
+    tag_map: dict[int, list] | None = None,
 ) -> dict:
     filament = spool.filament
     density = _filament_density(filament)
@@ -407,6 +444,10 @@ def _to_spool_payload(
     # Merge extra: start from stored spool.extra, then fill in HH gate fields
     # from our PresetGateState if the stored values are empty/unset.
     extra: dict = dict(spool.extra or {})
+    extra.pop("rfid_tag", None)
+    tags = list((tag_map or {}).get(spool.id, []))
+    if tags:
+        extra["rfid_tag"] = happy_hare_tag_value([tag.uid for tag in tags])
     if gate_meta_map and spool.id in gate_meta_map:
         _device_name, gate_index, printer_hostname, gate_preset = gate_meta_map[spool.id]
         temp_override = (
@@ -458,6 +499,10 @@ def _to_spool_payload(
         # makes Happy Hare offer a 0 g spool for loading.
         "archived": spool.state in {UserSpoolState.archived, UserSpoolState.empty},
         "extra": extra,
+        "tags": [
+            {"uid": tag.uid, **({"format": tag.format} if tag.format is not None else {})}
+            for tag in tags
+        ],
     }
 
 
@@ -864,6 +909,7 @@ async def list_spools_with_header_key(
     filament_vendor_name: Annotated[str | None, Query(alias="filament.vendor.name")] = None,
     filament_vendor_id: Annotated[str | None, Query(alias="filament.vendor.id")] = None,
     filament_id: Annotated[str | None, Query(alias="filament.id")] = None,
+    tag: str | None = None,
     sort: str | None = None,
     limit: int | None = Query(default=None, ge=1, le=1000),
     offset: int = Query(default=0, ge=0),
@@ -885,6 +931,7 @@ async def list_spools_with_header_key(
         filament_vendor_name=filament_vendor_name,
         filament_vendor_id=filament_vendor_id,
         filament_id=filament_id,
+        tag=tag,
         sort=sort,
         limit=limit,
         offset=offset,
@@ -909,6 +956,7 @@ async def list_spools(
     filament_vendor_name: Annotated[str | None, Query(alias="filament.vendor.name")] = None,
     filament_vendor_id: Annotated[str | None, Query(alias="filament.vendor.id")] = None,
     filament_id: Annotated[str | None, Query(alias="filament.id")] = None,
+    tag: str | None = None,
     sort: str | None = None,
     limit: int | None = Query(default=None, ge=1, le=1000),
     offset: int = Query(default=0, ge=0),
@@ -929,6 +977,7 @@ async def list_spools(
         filament_vendor_name=filament_vendor_name,
         filament_vendor_id=filament_vendor_id,
         filament_id=filament_id,
+        tag=tag,
         sort=sort,
         limit=limit,
         offset=offset,
@@ -947,6 +996,7 @@ async def _list_spools_impl(
     filament_vendor_name: str | None,
     filament_vendor_id: str | None,
     filament_id: str | None,
+    tag: str | None,
     sort: str | None,
     limit: int | None,
     offset: int,
@@ -963,6 +1013,14 @@ async def _list_spools_impl(
     )
     spools = list(result.scalars().all())
     location_map, gate_meta_map = await _build_location_map(db, user.id)
+    tag_map = await list_spool_tags(db, user_id=user.id)
+    tag_spool_id: int | None = None
+    if tag is not None:
+        try:
+            tag_binding = await find_spool_tag(db, user_id=user.id, uid=tag)
+        except ValueError as exc:
+            return _err(status.HTTP_400_BAD_REQUEST, str(exc))
+        tag_spool_id = tag_binding.spool_id if tag_binding is not None else -1
 
     # A successful Happy Hare pull proves that the adapter is alive. It does
     # not reveal the complete topology: one assignment to gate 0 says nothing
@@ -976,13 +1034,15 @@ async def _list_spools_impl(
 
     payloads: list[dict] = []
     for spool in spools:
+        if tag is not None and spool.id != tag_spool_id:
+            continue
         if not allow_archived and spool.state in {
             UserSpoolState.archived,
             UserSpoolState.empty,
         }:
             continue
 
-        payload = _to_spool_payload(spool, location_map, gate_meta_map)
+        payload = _to_spool_payload(spool, location_map, gate_meta_map, tag_map)
         fil = payload["filament"]
         vendor = fil.get("vendor") if isinstance(fil, dict) else None
 
@@ -1030,7 +1090,8 @@ async def _get_spool_impl(
         return _err(status.HTTP_404_NOT_FOUND, f"No spool with ID {spool_id} found.")
 
     location_map, gate_meta_map = await _build_location_map(db, user.id)
-    return JSONResponse(content=_to_spool_payload(spool, location_map, gate_meta_map))
+    tag_map = await list_spool_tags(db, user_id=user.id, spool_ids=[spool.id])
+    return JSONResponse(content=_to_spool_payload(spool, location_map, gate_meta_map, tag_map))
 
 
 @router.get("/v1/spool/{spool_id}")
@@ -1061,6 +1122,195 @@ async def get_spool(
     return await _get_spool_impl(db, user, spool_id)
 
 
+async def _link_tag_impl(
+    db: AsyncSession,
+    *,
+    user: User,
+    spool_id: int,
+    body: SpoolTagBody,
+) -> JSONResponse:
+    try:
+        tag = await link_spool_tag(
+            db,
+            user_id=user.id,
+            spool_id=spool_id,
+            uid=body.uid,
+            technology="unknown",
+            tag_format=body.format,
+            source="spoolman_tag_api",
+        )
+    except SpoolTagConflict as exc:
+        await db.rollback()
+        return JSONResponse(
+            status_code=status.HTTP_409_CONFLICT,
+            content={"message": str(exc), "spool_id": exc.spool_id},
+        )
+    if tag is None:
+        await db.rollback()
+        return _err(status.HTTP_404_NOT_FOUND, f"No spool with ID {spool_id} found.")
+    await db.commit()
+    updated = await _get_user_spool(db, user.id, spool_id)
+    if updated is None:
+        return _err(status.HTTP_500_INTERNAL_SERVER_ERROR, "Failed to update spool.")
+    location_map, gate_meta_map = await _build_location_map(db, user.id)
+    tag_map = await list_spool_tags(db, user_id=user.id, spool_ids=[spool_id])
+    await _broadcast_spool_event(
+        user.id,
+        "updated",
+        _to_spool_payload(updated, location_map, gate_meta_map, tag_map),
+    )
+    return JSONResponse(
+        status_code=status.HTTP_201_CREATED,
+        content={"uid": tag.uid, **({"format": tag.format} if tag.format else {})},
+    )
+
+
+@router.post("/v1/spool/{spool_id}/tag")
+@router.post("/api/v1/spool/{spool_id}/tag")
+async def link_tag_with_header_key(
+    spool_id: int,
+    body: SpoolTagBody,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    x_api_key: Annotated[str | None, Query(alias="api_key")] = None,
+    header_api_key: Annotated[str | None, Header(alias="X-API-Key")] = None,
+) -> JSONResponse:
+    user, _device = await _resolve_user_and_device(db, x_api_key or header_api_key)
+    if user is None or _device is None:
+        return _err(status.HTTP_401_UNAUTHORIZED, "Invalid or missing API key.")
+    return await _link_tag_impl(db, user=user, spool_id=spool_id, body=body)
+
+
+@router.post("/{api_key}/v1/spool/{spool_id}/tag")
+@router.post("/{api_key}/api/v1/spool/{spool_id}/tag")
+async def link_tag(
+    api_key: str,
+    spool_id: int,
+    body: SpoolTagBody,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> JSONResponse:
+    user, _device = await _resolve_user_and_device(db, api_key)
+    if user is None or _device is None:
+        return _err(status.HTTP_401_UNAUTHORIZED, "Invalid API key.")
+    return await _link_tag_impl(db, user=user, spool_id=spool_id, body=body)
+
+
+async def _unlink_tag_impl(
+    db: AsyncSession,
+    *,
+    user: User,
+    spool_id: int,
+    uid: str,
+) -> Response:
+    try:
+        removed = await unlink_spool_tag(
+            db,
+            user_id=user.id,
+            spool_id=spool_id,
+            uid=uid,
+        )
+    except ValueError as exc:
+        return _err(status.HTTP_400_BAD_REQUEST, str(exc))
+    if not removed:
+        await db.rollback()
+        return _err(status.HTTP_404_NOT_FOUND, f"Spool {spool_id} has no tag with UID {uid}.")
+    await db.commit()
+    updated = await _get_user_spool(db, user.id, spool_id)
+    if updated is not None:
+        location_map, gate_meta_map = await _build_location_map(db, user.id)
+        tag_map = await list_spool_tags(db, user_id=user.id, spool_ids=[spool_id])
+        await _broadcast_spool_event(
+            user.id,
+            "updated",
+            _to_spool_payload(updated, location_map, gate_meta_map, tag_map),
+        )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.delete("/v1/spool/{spool_id}/tag/{uid}")
+@router.delete("/api/v1/spool/{spool_id}/tag/{uid}")
+async def unlink_tag_with_header_key(
+    spool_id: int,
+    uid: str,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    x_api_key: Annotated[str | None, Query(alias="api_key")] = None,
+    header_api_key: Annotated[str | None, Header(alias="X-API-Key")] = None,
+) -> Response:
+    user, _device = await _resolve_user_and_device(db, x_api_key or header_api_key)
+    if user is None or _device is None:
+        return _err(status.HTTP_401_UNAUTHORIZED, "Invalid or missing API key.")
+    return await _unlink_tag_impl(db, user=user, spool_id=spool_id, uid=uid)
+
+
+@router.delete("/{api_key}/v1/spool/{spool_id}/tag/{uid}")
+@router.delete("/{api_key}/api/v1/spool/{spool_id}/tag/{uid}")
+async def unlink_tag(
+    api_key: str,
+    spool_id: int,
+    uid: str,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> Response:
+    user, _device = await _resolve_user_and_device(db, api_key)
+    if user is None or _device is None:
+        return _err(status.HTTP_401_UNAUTHORIZED, "Invalid API key.")
+    return await _unlink_tag_impl(db, user=user, spool_id=spool_id, uid=uid)
+
+
+async def _scan_tag_impl(
+    db: AsyncSession,
+    *,
+    user: User,
+    device: UserPrinterDevice,
+    body: TagScanBody,
+) -> JSONResponse:
+    binding = await find_spool_tag(db, user_id=user.id, uid=body.uid)
+    spool_payload = None
+    if binding is not None:
+        spool = await _get_user_spool(db, user.id, binding.spool_id)
+        if spool is not None:
+            location_map, gate_meta_map = await _build_location_map(db, user.id)
+            tag_map = await list_spool_tags(db, user_id=user.id, spool_ids=[spool.id])
+            spool_payload = _to_spool_payload(spool, location_map, gate_meta_map, tag_map)
+    reader_id = body.reader_id or f"device-{device.id}"
+    return JSONResponse(
+        content={
+            "uid": body.uid,
+            "reader_id": reader_id,
+            **({"name": body.name} if body.name else {}),
+            **({"format": body.format} if body.format else {}),
+            **({"payload_b64": body.payload_b64} if body.payload_b64 else {}),
+            "matched_spool_id": binding.spool_id if binding is not None else None,
+            **({"spool": spool_payload} if spool_payload is not None else {}),
+        }
+    )
+
+
+@router.post("/v1/tag/scan")
+@router.post("/api/v1/tag/scan")
+async def scan_tag_with_header_key(
+    body: TagScanBody,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    x_api_key: Annotated[str | None, Query(alias="api_key")] = None,
+    header_api_key: Annotated[str | None, Header(alias="X-API-Key")] = None,
+) -> JSONResponse:
+    user, device = await _resolve_user_and_device(db, x_api_key or header_api_key)
+    if user is None or device is None:
+        return _err(status.HTTP_401_UNAUTHORIZED, "Invalid or missing API key.")
+    return await _scan_tag_impl(db, user=user, device=device, body=body)
+
+
+@router.post("/{api_key}/v1/tag/scan")
+@router.post("/{api_key}/api/v1/tag/scan")
+async def scan_tag(
+    api_key: str,
+    body: TagScanBody,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> JSONResponse:
+    user, device = await _resolve_user_and_device(db, api_key)
+    if user is None or device is None:
+        return _err(status.HTTP_401_UNAUTHORIZED, "Invalid API key.")
+    return await _scan_tag_impl(db, user=user, device=device, body=body)
+
+
 @router.post("/{api_key}/v1/spool")
 @router.post("/{api_key}/api/v1/spool")
 async def create_spool(
@@ -1074,6 +1324,16 @@ async def create_spool(
 
     if body.remaining_weight is not None and body.used_weight is not None:
         return _err(status.HTTP_400_BAD_REQUEST, "Only specify either remaining_weight or used_weight.")
+    try:
+        tag_uids = (
+            parse_happy_hare_tag_list(body.extra.get("rfid_tag"))
+            if body.extra is not None and "rfid_tag" in body.extra
+            else []
+        )
+    except ValueError as exc:
+        return _err(status.HTTP_400_BAD_REQUEST, str(exc))
+    stored_extra = dict(body.extra or {})
+    stored_extra.pop("rfid_tag", None)
 
     filament_result = await db.execute(select(Filament).where(Filament.id == body.filament_id))
     filament = filament_result.scalar_one_or_none()
@@ -1107,10 +1367,25 @@ async def create_spool(
         source="spool_compat",
         lot_nr=body.lot_nr,
         comment=body.comment,
-        extra=body.extra or {},
+        extra=stored_extra,
     )
     db.add(spool)
     await db.flush()
+    try:
+        await replace_spool_tags(
+            db,
+            user_id=user.id,
+            spool_id=spool.id,
+            uids=tag_uids,
+            technology="unknown",
+            source="happy_hare_extra",
+        )
+    except SpoolTagConflict as exc:
+        await db.rollback()
+        return JSONResponse(
+            status_code=status.HTTP_409_CONFLICT,
+            content={"message": str(exc), "spool_id": exc.spool_id},
+        )
 
     ok, err = await _apply_location_assignment(db, user, spool, body.location, device_from_key=_device)
     if not ok:
@@ -1122,7 +1397,8 @@ async def create_spool(
     if created is None:
         return _err(status.HTTP_500_INTERNAL_SERVER_ERROR, "Failed to create spool.")
     location_map, gate_meta_map = await _build_location_map(db, user.id)
-    payload = _to_spool_payload(created, location_map, gate_meta_map)
+    tag_map = await list_spool_tags(db, user_id=user.id, spool_ids=[created.id])
+    payload = _to_spool_payload(created, location_map, gate_meta_map, tag_map)
     await _broadcast_spool_event(user.id, "added", payload)
     return JSONResponse(content=payload)
 
@@ -1147,6 +1423,12 @@ async def patch_spool(
         return _err(status.HTTP_400_BAD_REQUEST, "Only specify either remaining_weight or used_weight.")
 
     fields_set = body.model_fields_set
+    requested_tag_uids: list[str] | None = None
+    if "extra" in fields_set and body.extra is not None and "rfid_tag" in body.extra:
+        try:
+            requested_tag_uids = parse_happy_hare_tag_list(body.extra["rfid_tag"])
+        except ValueError as exc:
+            return _err(status.HTTP_400_BAD_REQUEST, str(exc))
 
     if body.filament_id is not None:
         filament_result = await db.execute(select(Filament).where(Filament.id == body.filament_id))
@@ -1195,8 +1477,28 @@ async def patch_spool(
             spool.extra = {}
         else:
             merged_extra = dict(spool.extra or {})
-            merged_extra.update(body.extra)
+            incoming_extra = dict(body.extra)
+            incoming_extra.pop("rfid_tag", None)
+            merged_extra.update(incoming_extra)
+            merged_extra.pop("rfid_tag", None)
             spool.extra = merged_extra
+
+    if requested_tag_uids is not None:
+        try:
+            await replace_spool_tags(
+                db,
+                user_id=user.id,
+                spool_id=spool.id,
+                uids=requested_tag_uids,
+                technology="unknown",
+                source="happy_hare_extra",
+            )
+        except SpoolTagConflict as exc:
+            await db.rollback()
+            return JSONResponse(
+                status_code=status.HTTP_409_CONFLICT,
+                content={"message": str(exc), "spool_id": exc.spool_id},
+            )
 
     # Sync HH extra fields (printer_name, mmu_gate_map) to PresetGateState
     # so gate assignments from Happy Hare are reflected in our internal model.
@@ -1216,7 +1518,8 @@ async def patch_spool(
     if updated is None:
         return _err(status.HTTP_500_INTERNAL_SERVER_ERROR, "Failed to update spool.")
     location_map, gate_meta_map = await _build_location_map(db, user.id)
-    payload = _to_spool_payload(updated, location_map, gate_meta_map)
+    tag_map = await list_spool_tags(db, user_id=user.id, spool_ids=[updated.id])
+    payload = _to_spool_payload(updated, location_map, gate_meta_map, tag_map)
     await _broadcast_spool_event(user.id, "updated", payload)
     return JSONResponse(content=payload)
 
@@ -1294,7 +1597,8 @@ async def _use_spool_impl(
         if updated is None:
             return _err(status.HTTP_500_INTERNAL_SERVER_ERROR, "Failed to use spool.")
         location_map, gate_meta_map = await _build_location_map(db, user.id)
-        payload = _to_spool_payload(updated, location_map, gate_meta_map)
+        tag_map = await list_spool_tags(db, user_id=user.id, spool_ids=[updated.id])
+        payload = _to_spool_payload(updated, location_map, gate_meta_map, tag_map)
         return JSONResponse(
             content=payload,
             headers={"X-FilamentHub-Deduplicated": "true"},
@@ -1371,7 +1675,8 @@ async def _use_spool_impl(
     if updated is None:
         return _err(status.HTTP_500_INTERNAL_SERVER_ERROR, "Failed to use spool.")
     location_map, gate_meta_map = await _build_location_map(db, user.id)
-    payload = _to_spool_payload(updated, location_map, gate_meta_map)
+    tag_map = await list_spool_tags(db, user_id=user.id, spool_ids=[updated.id])
+    payload = _to_spool_payload(updated, location_map, gate_meta_map, tag_map)
     if checkpoint is None:
         await _broadcast_spool_event(user.id, "updated", payload)
     return JSONResponse(
@@ -1482,7 +1787,8 @@ async def measure_spool(
     if updated is None:
         return _err(status.HTTP_500_INTERNAL_SERVER_ERROR, "Failed to update spool measurement.")
     location_map, gate_meta_map = await _build_location_map(db, user.id)
-    payload = _to_spool_payload(updated, location_map, gate_meta_map)
+    tag_map = await list_spool_tags(db, user_id=user.id, spool_ids=[updated.id])
+    payload = _to_spool_payload(updated, location_map, gate_meta_map, tag_map)
     await _broadcast_spool_event(user.id, "updated", payload)
     return JSONResponse(content=payload)
 

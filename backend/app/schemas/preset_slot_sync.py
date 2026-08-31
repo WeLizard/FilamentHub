@@ -139,6 +139,7 @@ class HHGateItem(BaseModel):
     material: str = Field(default="", max_length=50)
     color_hex: str = Field(default="", max_length=7)
     temperature: int = Field(default=0, ge=0)
+    rfid_uid: str | None = Field(default=None, min_length=2, max_length=64, pattern=r"^[0-9A-F]+$")
 
     @field_validator("color_hex")
     @classmethod
@@ -167,6 +168,7 @@ class HHSnapshotRequest(BaseModel):
     inventory_key_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     selected_gate: int | None = Field(default=None, ge=-2, le=255)
     filament_loaded: bool | None = None
+    tag_read_capable: bool = False
 
     @field_validator("gates")
     @classmethod

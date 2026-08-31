@@ -660,6 +660,8 @@ async def handle_hh_snapshot(
             color_hex=item.color_hex or None,
             spool_id=payload.spool_ids[item.gate] if payload.spool_ids is not None else None,
             spool_identity_known=payload.spool_ids is not None,
+            tag_uid=item.rfid_uid,
+            tag_technology="unknown" if item.rfid_uid is not None else None,
         )
         for item in payload.gates
     ]
@@ -696,6 +698,12 @@ async def handle_hh_snapshot(
             provider="happy_hare",
             transport="orca_plugin_lan",
             source_instance_id=f"happy-hare-plugin-{device.logical_id}",
+            capabilities=[
+                "read",
+                "presence",
+                "spool_identity",
+                *(["tag_read"] if payload.tag_read_capable else []),
+            ],
             observed_at=payload.snapshot_ts,
             slots=normalized_slots,
             inventory_key_digest=payload.inventory_key_digest,

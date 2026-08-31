@@ -53,6 +53,8 @@ BRIDGE_CAPABILITIES = {
     "spool_identity",
     "consumption",
     "local_command",
+    "tag_read",
+    "tag_write",
 }
 BATCH_RECEIPT_KIND = "usage_batch"
 PRINT_JOB_SOURCE = "printer_bridge"

@@ -8,6 +8,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from app.core.tag_identity import normalize_tag_format, normalize_tag_uid
 from app.schemas.printer_connection_observation import PrinterIdentityEvidence
 
 CapabilityName = Literal[
@@ -17,6 +18,8 @@ CapabilityName = Literal[
     "spool_identity",
     "consumption",
     "local_command",
+    "tag_read",
+    "tag_write",
 ]
 
 
@@ -218,6 +221,10 @@ class MaterialSlotObservationResponse(BaseModel):
     active_feed: bool | None
     spool_id: int | None = None
     spool_identity_known: bool = False
+    tag_uid: str | None = None
+    tag_technology: Literal["unknown", "nfc", "uhf_rfid"] | None = None
+    tag_format: str | None = None
+    tag_match_status: Literal["matched", "unlinked", "conflict"] | None = None
     material: str | None
     color_hex: str | None
     remaining_percent: int | None
@@ -429,10 +436,31 @@ class PrinterBridgeSlotSnapshot(BaseModel):
     active_feed: bool | None = None
     spool_id: int | None = Field(default=None, ge=1)
     spool_identity_known: bool = False
+    tag_uid: str | None = Field(default=None, min_length=1, max_length=128)
+    tag_technology: Literal["unknown", "nfc", "uhf_rfid"] | None = None
+    tag_format: str | None = Field(default=None, max_length=32)
     material: str | None = Field(default=None, max_length=80)
     color_hex: str | None = Field(default=None, pattern=r"^[0-9A-Fa-f]{6}$")
     remaining_percent: int | None = Field(default=None, ge=0, le=100)
     remaining_grams: int | None = Field(default=None, ge=0, le=100_000)
+
+    @field_validator("tag_uid")
+    @classmethod
+    def normalize_uid(cls, value: str | None) -> str | None:
+        return normalize_tag_uid(value) if value is not None else None
+
+    @field_validator("tag_format")
+    @classmethod
+    def normalize_format(cls, value: str | None) -> str | None:
+        return normalize_tag_format(value)
+
+    @model_validator(mode="after")
+    def tag_metadata_requires_uid(self) -> "PrinterBridgeSlotSnapshot":
+        if self.tag_uid is None and (self.tag_technology is not None or self.tag_format is not None):
+            raise ValueError("tag metadata requires tag_uid")
+        if self.tag_uid is not None and self.tag_technology is None:
+            self.tag_technology = "unknown"
+        return self
 
     model_config = {"str_strip_whitespace": True, "extra": "forbid"}
 
@@ -443,6 +471,7 @@ class PrinterBridgeSnapshotRequest(BaseModel):
     provider: str = Field(min_length=1, max_length=50)
     transport: Literal["orca_plugin_lan", "edge_agent"]
     source_instance_id: str = Field(min_length=16, max_length=100)
+    capabilities: list[CapabilityName] | None = Field(default=None, max_length=16)
     sequence: int | None = Field(default=None, ge=1, le=9_223_372_036_854_775_807)
     observed_at: datetime
     printer: PrinterBridgeStatusSnapshot | None = None
@@ -458,6 +487,15 @@ class PrinterBridgeSnapshotRequest(BaseModel):
         if self.printer is None and not self.slots:
             raise ValueError("a bridge snapshot must contain printer or slot facts")
         return self
+
+    @field_validator("capabilities")
+    @classmethod
+    def unique_snapshot_capabilities(
+        cls, value: list[CapabilityName] | None
+    ) -> list[CapabilityName] | None:
+        if value is not None and len(value) != len(set(value)):
+            raise ValueError("capabilities must be unique")
+        return value
 
     model_config = {"extra": "forbid"}
 

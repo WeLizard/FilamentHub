@@ -81,6 +81,10 @@ class MaterialSlotObservation(Base):
     spool_identity_known: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
     )
+    tag_uid: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    tag_technology: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    tag_format: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    tag_match_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
     material: Mapped[str | None] = mapped_column(String(80), nullable=True)
     color_hex: Mapped[str | None] = mapped_column(String(6), nullable=True)
     remaining_percent: Mapped[int | None] = mapped_column(Integer, nullable=True)

@@ -58,6 +58,7 @@ def test_moonraker_fixture_requires_key_and_returns_hh_bypass():
         mmu = body["result"]["status"]["mmu"]
         assert mmu["num_gates"] == 4
         assert mmu["gate_spool_id"] == [101, 102, 103, -1]
+        assert mmu["gate_spool_rfid"] == ["04A1B2C3", "01020304", "", ""]
         assert mmu["has_bypass"] is True
         assert mmu["tool"] == -2
         assert mmu["filament_pos"] > 0

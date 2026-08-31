@@ -72,6 +72,7 @@ class MoonrakerProviderTest(unittest.TestCase):
                         "gate_material": ["PLA", ""],
                         "gate_color": ["ff6a13", "invalid"],
                         "gate_spool_id": [101, -1],
+                        "gate_spool_rfid": ["04:a1-b2:c3", ""],
                         "has_bypass": True,
                         "tool": -2,
                         "filament_pos": 8.0,
@@ -93,12 +94,15 @@ class MoonrakerProviderTest(unittest.TestCase):
         self.assertEqual(snapshot.printer["progress_percent"], 42)
         self.assertTrue(snapshot.slot_topology_complete)
         self.assertEqual(
-            snapshot.capabilities, ["read", "presence", "spool_identity", "consumption"]
+            snapshot.capabilities,
+            ["read", "presence", "spool_identity", "consumption", "tag_read"],
         )
         self.assertEqual(snapshot.usage["filament_used_mm"], 123.5)
         self.assertEqual(snapshot.usage["print_duration_s"], 360.0)
         self.assertEqual(snapshot.slots[0]["material"], "PLA")
         self.assertEqual(snapshot.slots[0]["color_hex"], "FF6A13")
+        self.assertEqual(snapshot.slots[0]["tag_uid"], "04A1B2C3")
+        self.assertEqual(snapshot.slots[0]["tag_technology"], "unknown")
         self.assertTrue(snapshot.slots[0]["present"])
         self.assertFalse(snapshot.slots[1]["present"])
         bypass = snapshot.slots[-1]
@@ -129,6 +133,37 @@ class MoonrakerProviderTest(unittest.TestCase):
 
         with self.assertRaises(ProviderUnavailable):
             provider.observe()
+
+    def test_invalid_happy_hare_tag_is_ignored_without_hiding_the_gate(self) -> None:
+        response = {
+            "result": {
+                "status": {
+                    "print_stats": {"state": "standby"},
+                    "mmu": {
+                        "num_gates": 1,
+                        "gate_status": [1],
+                        "gate_spool_rfid": ["not-a-tag"],
+                        "spoolman_support": "off",
+                    },
+                }
+            }
+        }
+        provider = MoonrakerProvider(
+            "http://moonraker.local:7125",
+            api_key=None,
+            material_provider="happy_hare",
+            timeout=2,
+            http_client=FakeHttp(response),
+        )
+
+        snapshot = provider.observe()
+
+        self.assertEqual(len(snapshot.slots), 1)
+        self.assertTrue(snapshot.slots[0]["present"])
+        self.assertNotIn("tag_uid", snapshot.slots[0])
+        # Array presence advertises reader support even when one individual
+        # value is malformed and must not be trusted as identity.
+        self.assertIn("tag_read", snapshot.capabilities)
 
     def test_native_spoolman_owns_usage_and_tool_mapping_is_not_a_gate(self) -> None:
         class NativeHttp:

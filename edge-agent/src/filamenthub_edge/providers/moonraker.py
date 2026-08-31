@@ -19,6 +19,7 @@ HAPPY_HARE_FIELDS = [
     "gate_material",
     "gate_color",
     "gate_spool_id",
+    "gate_spool_rfid",
     "has_bypass",
     "gate",
     "tool",
@@ -26,6 +27,7 @@ HAPPY_HARE_FIELDS = [
     "spoolman_support",
 ]
 COLOR_PATTERN = re.compile(r"^[0-9A-F]{6}$")
+TAG_UID_PATTERN = re.compile(r"^[0-9A-F]{2,64}$")
 BYPASS_PROVIDER_INDEX = 1023
 
 
@@ -36,6 +38,15 @@ def _integer(value: Any) -> int | None:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def _tag_uid(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = re.sub(r"[\s:_.-]+", "", value).strip().upper().removeprefix("0X")
+    if len(normalized) % 2 or TAG_UID_PATTERN.fullmatch(normalized) is None:
+        return None
+    return normalized
 
 
 def _number(value: Any) -> float | None:
@@ -122,6 +133,7 @@ class MoonrakerProvider:
                 raise ProviderUnavailable("Happy Hare object 'mmu' is unavailable")
             slots = self._happy_hare_slots(mmu)
             topology_complete = True
+            tag_read_capable = isinstance(mmu.get("gate_spool_rfid"), list)
             if self._native_spoolman_configured or mmu.get("spoolman_support") != "off":
                 # Moonraker's native Spoolman component owns usage for this feed.
                 # Running Edge and Orca alongside it must not debit the spool twice.
@@ -129,6 +141,8 @@ class MoonrakerProvider:
                 self._capabilities = ["read", "presence", "spool_identity"]
             else:
                 self._capabilities = ["read", "presence", "spool_identity", "consumption"]
+            if tag_read_capable:
+                self._capabilities.append("tag_read")
         else:
             self._capabilities = ["read", "presence"]
             if self._native_spoolman_configured:
@@ -257,7 +271,13 @@ class MoonrakerProvider:
     def _happy_hare_slots(mmu: dict[str, Any]) -> list[dict[str, Any]]:
         arrays: dict[str, list[Any] | None] = {}
         lengths: set[int] = set()
-        for name in ("gate_status", "gate_material", "gate_color", "gate_spool_id"):
+        for name in (
+            "gate_status",
+            "gate_material",
+            "gate_color",
+            "gate_spool_id",
+            "gate_spool_rfid",
+        ):
             value = mmu.get(name)
             if value is None:
                 arrays[name] = None
@@ -290,6 +310,7 @@ class MoonrakerProvider:
             present = None if status not in {0, 1, 2} else status in {1, 2}
             material = str(value_at("gate_material", index, "") or "").strip()[:80]
             color = str(value_at("gate_color", index, "") or "").lstrip("#").upper()
+            tag_uid = _tag_uid(value_at("gate_spool_rfid", index, ""))
             slot: dict[str, Any] = {
                 "provider_index": index,
                 "label": f"Gate {index}",
@@ -305,6 +326,11 @@ class MoonrakerProvider:
                 slot["material"] = material
             if COLOR_PATTERN.fullmatch(color):
                 slot["color_hex"] = color
+            if tag_uid is not None:
+                slot["tag_uid"] = tag_uid
+                # Happy Hare exposes a UID but does not identify whether the
+                # reader used NFC or another RFID transport.
+                slot["tag_technology"] = "unknown"
             slots.append(slot)
 
         has_bypass = mmu.get("has_bypass") is True or selected_gate == -2 or mmu.get("tool") == -2

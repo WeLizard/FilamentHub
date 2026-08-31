@@ -40,6 +40,7 @@ from app.models.printer_bridge_observation import (
     PhysicalPrinterStatusObservation,
 )
 from app.models.printer_profile import PrinterProfile
+from app.models.spool_tag import SpoolTag
 from app.models.user_printer_device import UserPrinterDevice
 from app.models.user_spool import UserSpool
 from app.schemas.material_contract import (
@@ -804,6 +805,8 @@ async def ingest_printer_bridge_snapshot(
 
     connector.last_seen_at = received_at
     connector.active = True
+    if payload.capabilities is not None:
+        connector.capabilities = list(payload.capabilities)
     printer.last_seen_at = received_at
     printer.reports_feed = True
 
@@ -876,6 +879,22 @@ async def ingest_printer_bridge_snapshot(
         )
         if inventory_matches and reported_spool_ids
         else set()
+    )
+    reported_tag_uids = {item.tag_uid for item in payload.slots if item.tag_uid is not None}
+    tag_bindings = (
+        {
+            tag.uid: tag
+            for tag in (
+                await db.scalars(
+                    select(SpoolTag).where(
+                        SpoolTag.user_id == user_id,
+                        SpoolTag.uid.in_(reported_tag_uids),
+                    )
+                )
+            ).all()
+        }
+        if reported_tag_uids
+        else {}
     )
 
     status_observation = await db.scalar(
@@ -956,12 +975,29 @@ async def ingest_printer_bridge_snapshot(
             )
             db.add(observation)
         values = item.model_dump(exclude={"provider_index", "label", "kind"})
-        values["spool_identity_known"] = (
+        provider_identity_known = (
             inventory_matches
             and item.spool_identity_known
             and (item.spool_id is None or item.spool_id in owned_spool_ids)
         )
-        values["spool_id"] = item.spool_id if values["spool_identity_known"] else None
+        provider_spool_id = item.spool_id if provider_identity_known else None
+        tag_binding = tag_bindings.get(item.tag_uid) if item.tag_uid is not None else None
+        values["tag_match_status"] = None
+        if item.tag_uid is None:
+            values["spool_identity_known"] = provider_identity_known
+            values["spool_id"] = provider_spool_id
+        elif tag_binding is None:
+            values["tag_match_status"] = "unlinked"
+            values["spool_identity_known"] = provider_identity_known
+            values["spool_id"] = provider_spool_id
+        elif provider_spool_id is not None and provider_spool_id != tag_binding.spool_id:
+            values["tag_match_status"] = "conflict"
+            values["spool_identity_known"] = False
+            values["spool_id"] = None
+        else:
+            values["tag_match_status"] = "matched"
+            values["spool_identity_known"] = True
+            values["spool_id"] = tag_binding.spool_id
         values["color_hex"] = values["color_hex"].upper() if values["color_hex"] else None
         for field_name, value in values.items():
             setattr(observation, field_name, value)

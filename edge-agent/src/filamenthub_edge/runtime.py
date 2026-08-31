@@ -318,6 +318,7 @@ class EdgeRuntime:
         self.state.last_snapshot_sequence += 1
         payload = {
             **self._context_payload(),
+            "capabilities": snapshot.capabilities,
             "sequence": self.state.last_snapshot_sequence,
             "observed_at": observed_at,
             "printer": snapshot.printer,

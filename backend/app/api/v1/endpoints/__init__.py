@@ -17,6 +17,7 @@ from . import (
     qr,
     saved_presets,
     spool_compat,
+    spool_tags,
 )
 
 __all__ = [
@@ -28,6 +29,7 @@ __all__ = [
     "crm",
     "downloads",
     "spool_compat",
+    "spool_tags",
     "filaments",
     "octoprint_bridge",
     "presets",

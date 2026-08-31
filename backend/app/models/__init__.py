@@ -99,6 +99,7 @@ from app.models.qr_identity import (
 from app.models.refresh_session import RefreshSession
 from app.models.revoked_token import RevokedToken
 from app.models.shared_quote import SharedQuote
+from app.models.spool_tag import SpoolTag
 from app.models.subscription import Subscription, SubscriptionStatus
 from app.models.sync_device import SyncDevice
 from app.models.sync_history import SyncHistory, SyncOperation, SyncPresetType, SyncStatus
@@ -241,6 +242,7 @@ __all__ = [
     "PrintProfilePrinter",
     "PrintProfileFilament",
     "SharedQuote",
+    "SpoolTag",
     "Subscription",
     "SubscriptionStatus",
     "SyncDevice",

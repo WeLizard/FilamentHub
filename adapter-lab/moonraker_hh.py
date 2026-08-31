@@ -25,6 +25,7 @@ MMU_STATE = {
     "gate_color": ["FF6A13", "1F8A70", "3366CC", ""],
     "gate_temperature": [215, 245, 255, 0],
     "gate_spool_id": [101, 102, 103, -1],
+    "gate_spool_rfid": ["04A1B2C3", "01020304", "", ""],
     "spoolman_support": "pull",
     "has_bypass": True,
     "tool": -2,

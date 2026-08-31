@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -1303,3 +1304,133 @@ async def test_unpaired_cards_do_not_collide_on_an_empty_hostname(
 
     assert second.printer_hostname is None
     await db_session.commit()
+
+
+@pytest.mark.asyncio
+async def test_spoolman_tag_api_and_happy_hare_extra_share_one_binding(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    _, spool, device = await _seed_spool_context(db_session)
+
+    linked = await client.post(
+        f"/api/v1/spool_compat/{device.api_key}/v1/spool/{spool.id}/tag",
+        json={"uid": "04:a1-b2:c3", "format": "NTAG-215"},
+    )
+    assert linked.status_code == 201
+    assert linked.json() == {"uid": "04A1B2C3", "format": "ntag-215"}
+
+    by_tag = await client.get(
+        f"/api/v1/spool_compat/{device.api_key}/v1/spool?tag=04A1B2C3"
+    )
+    assert by_tag.status_code == 200
+    assert len(by_tag.json()) == 1
+    assert by_tag.json()[0]["id"] == spool.id
+    assert by_tag.json()[0]["tags"] == [
+        {"uid": "04A1B2C3", "format": "ntag-215"}
+    ]
+    assert json.loads(by_tag.json()[0]["extra"]["rfid_tag"]) == "04A1B2C3"
+
+    updated_by_hh = await client.patch(
+        f"/api/v1/spool_compat/{device.api_key}/v1/spool/{spool.id}",
+        json={"extra": {"rfid_tag": json.dumps("01020304, AABBCCDD")}},
+    )
+    assert updated_by_hh.status_code == 200
+    assert [tag["uid"] for tag in updated_by_hh.json()["tags"]] == [
+        "01020304",
+        "AABBCCDD",
+    ]
+
+    old_tag = await client.get(
+        f"/api/v1/spool_compat/{device.api_key}/v1/spool?tag=04A1B2C3"
+    )
+    assert old_tag.status_code == 200
+    assert old_tag.json() == []
+
+
+@pytest.mark.asyncio
+async def test_spoolman_tag_conflict_does_not_reassign_existing_tag(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    user, first, device = await _seed_spool_context(db_session)
+    second = UserSpool(
+        user_id=user.id,
+        initial_weight_g=1000.0,
+        source="manual",
+    )
+    db_session.add(second)
+    await db_session.commit()
+    await db_session.refresh(second)
+    api_key = device.api_key
+    first_id = first.id
+    second_id = second.id
+
+    initial = await client.post(
+        f"/api/v1/spool_compat/{api_key}/v1/spool/{first_id}/tag",
+        json={"uid": "AABBCCDD"},
+    )
+    conflict = await client.post(
+        f"/api/v1/spool_compat/{api_key}/v1/spool/{second_id}/tag",
+        json={"uid": "aa-bb-cc-dd"},
+    )
+    resolved = await client.get(
+        f"/api/v1/spool_compat/{api_key}/v1/spool?tag=AABBCCDD"
+    )
+
+    assert initial.status_code == 201
+    assert conflict.status_code == 409
+    assert conflict.json()["spool_id"] == first_id
+    assert [item["id"] for item in resolved.json()] == [first_id]
+
+
+@pytest.mark.asyncio
+async def test_tag_scan_is_read_only_for_known_and_unknown_uids(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    _, spool, device = await _seed_spool_context(db_session)
+    linked = await client.post(
+        f"/api/v1/spool_compat/{device.api_key}/v1/spool/{spool.id}/tag",
+        json={"uid": "01020304"},
+    )
+    assert linked.status_code == 201
+
+    known = await client.post(
+        f"/api/v1/spool_compat/{device.api_key}/v1/tag/scan",
+        json={"uid": "01:02:03:04", "reader_id": "edge-reader-1"},
+    )
+    unknown = await client.post(
+        f"/api/v1/spool_compat/{device.api_key}/v1/tag/scan",
+        json={"uid": "DEADBEEF", "reader_id": "edge-reader-1"},
+    )
+    all_spools = await client.get(
+        f"/api/v1/spool_compat/{device.api_key}/v1/spool?allow_archived=true"
+    )
+
+    assert known.status_code == 200
+    assert known.json()["matched_spool_id"] == spool.id
+    assert known.json()["spool"]["id"] == spool.id
+    assert unknown.status_code == 200
+    assert unknown.json()["matched_spool_id"] is None
+    assert "spool" not in unknown.json()
+    assert [item["id"] for item in all_spools.json()] == [spool.id]
+
+
+@pytest.mark.asyncio
+async def test_tag_filter_rejects_invalid_uid_instead_of_ignoring_it(
+    client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    _, _, device = await _seed_spool_context(db_session)
+
+    invalid = await client.get(
+        f"/api/v1/spool_compat/{device.api_key}/v1/spool?tag=not-a-uid"
+    )
+    unknown = await client.get(
+        f"/api/v1/spool_compat/{device.api_key}/v1/spool?tag=DEADBEEF"
+    )
+
+    assert invalid.status_code == 400
+    assert unknown.status_code == 200
+    assert unknown.json() == []

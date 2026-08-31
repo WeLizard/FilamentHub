@@ -48,15 +48,40 @@ class ExtraFieldResponse(ExtraFieldParams):
 
 
 _extra_fields_cache: dict[tuple[int, str], list[dict]] = {}
+_BUILTIN_FIELDS: dict[EntityType, list[dict]] = {
+    EntityType.spool: [
+        {
+            "key": "rfid_tag",
+            "entity_type": EntityType.spool.value,
+            "name": "RFID",
+            "field_type": ExtraFieldType.text.value,
+            "default_value": '""',
+            "choices": None,
+            "multi_choice": None,
+            "order": 0,
+            "unit": None,
+        }
+    ]
+}
 
 
 def _get_entity_fields(user_id: int, entity_type: EntityType) -> list[dict]:
-    return list(_extra_fields_cache.get((user_id, entity_type.value), []))
+    builtins = list(_BUILTIN_FIELDS.get(entity_type, []))
+    builtin_keys = {field["key"] for field in builtins}
+    custom = [
+        field
+        for field in _extra_fields_cache.get((user_id, entity_type.value), [])
+        if field.get("key") not in builtin_keys
+    ]
+    return builtins + custom
 
 
 def _set_entity_fields(user_id: int, entity_type: EntityType, fields: list[dict]) -> list[dict]:
-    _extra_fields_cache[(user_id, entity_type.value)] = fields
-    return fields
+    builtin_keys = {field["key"] for field in _BUILTIN_FIELDS.get(entity_type, [])}
+    _extra_fields_cache[(user_id, entity_type.value)] = [
+        field for field in fields if field.get("key") not in builtin_keys
+    ]
+    return _get_entity_fields(user_id, entity_type)
 
 
 async def _resolve_user_id(db: AsyncSession, api_key: str | None) -> int | None:
