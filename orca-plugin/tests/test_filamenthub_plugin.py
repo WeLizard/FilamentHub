@@ -6052,12 +6052,19 @@ def test_bambu_material_preview_never_invents_an_unloaded_preset(plugin_module):
 def test_bambu_local_binding_is_private_and_replaceable(plugin_module, tmp_path, monkeypatch):
     target = tmp_path / ".fh_bambu.json"
     monkeypatch.setattr(plugin_module, "BAMBU_CONFIG_FILE", str(target))
+    identity = {"kind": "bambu_serial", "token": "a" * 64}
 
     plugin_module.configure_bambu_bridge(
         3, 4, "192.168.1.42", "local-secret", "SERIAL-1", "fhpb_first"
     )
     plugin_module.configure_bambu_bridge(
-        3, 5, "192.168.1.43", "new-secret", "SERIAL-2", "fhpb_second"
+        3,
+        5,
+        "192.168.1.43",
+        "new-secret",
+        "SERIAL-2",
+        "fhpb_second",
+        identity,
     )
 
     stored = plugin_module.load_bambu_config()
@@ -6065,7 +6072,22 @@ def test_bambu_local_binding_is_private_and_replaceable(plugin_module, tmp_path,
     assert stored["printers"][0]["material_system_id"] == 5
     assert stored["printers"][0]["access_code"] == "new-secret"
     assert stored["printers"][0]["bridge_token"] == "fhpb_second"
+    assert stored["printers"][0]["device_identity"] == identity
     assert len(stored["source_instance_id"]) >= 16
+    with pytest.raises(ValueError, match="already linked"):
+        plugin_module.configure_bambu_bridge(
+            8, 9, "192.168.1.44", "secret", "serial-2", "fhpb_duplicate"
+        )
+    with pytest.raises(ValueError, match="already linked"):
+        plugin_module.configure_bambu_bridge(
+            8,
+            9,
+            "192.168.1.44",
+            "secret",
+            "OTHER-SERIAL",
+            "fhpb_duplicate",
+            identity,
+        )
     with pytest.raises(ValueError, match="invalid serial"):
         plugin_module.configure_bambu_bridge(
             9, 9, "192.168.1.44", "secret", "device/+/report", "fhpb_bad"
@@ -6092,6 +6114,7 @@ def test_bambu_runtime_removes_local_secrets_after_server_rejects_binding(
         "http_post_bridge_json",
         lambda _path, _token, _payload: (401, b"", None),
     )
+    monkeypatch.setattr(plugin_module, "http_get_bridge_json", lambda *_args: (404, b""))
 
     runtime = plugin_module.BambuBridgeRuntime()
     monkeypatch.setattr(runtime._wake, "wait", lambda _timeout: True)
@@ -6125,13 +6148,144 @@ def test_bambu_runtime_deduplicates_stable_snapshots_and_uses_heartbeat(
         "http_post_bridge_json",
         lambda path, _token, _payload: posts.append(path) or (200, b"", None),
     )
-    monkeypatch.setattr(plugin_module, "_persist_discovered_bambu_serial", lambda *_: None)
+    monkeypatch.setattr(
+        plugin_module,
+        "_prepare_bambu_observation",
+        lambda config, serial: (
+            {**config, "serial": serial},
+            active["source_instance_id"],
+        ),
+    )
 
     runtime = plugin_module.BambuBridgeRuntime()
     monkeypatch.setattr(runtime._wake, "wait", lambda _timeout: False)
     runtime._run()
 
     assert posts == ["/printer-bridge/snapshot", "/printer-bridge/heartbeat"]
+
+
+def test_bambu_runtime_fails_closed_when_the_printer_serial_changes(
+    plugin_module, tmp_path, monkeypatch
+):
+    target = tmp_path / ".fh_bambu.json"
+    monkeypatch.setattr(plugin_module, "BAMBU_CONFIG_FILE", str(target))
+    identity = plugin_module._bambu_device_identity("1" * 64, "EXPECTED-SERIAL")
+    plugin_module.configure_bambu_bridge(
+        3,
+        5,
+        "192.168.1.43",
+        "local-secret",
+        "EXPECTED-SERIAL",
+        "fhpb_live",
+        identity,
+    )
+    monkeypatch.setattr(
+        plugin_module,
+        "read_bambu_lan_snapshot",
+        lambda _config: ("OTHER-SERIAL", _bambu_report()),
+    )
+    posts = []
+    monkeypatch.setattr(
+        plugin_module,
+        "http_post_bridge_json",
+        lambda path, _token, _payload: posts.append(path) or (200, b"", None),
+    )
+
+    runtime = plugin_module.BambuBridgeRuntime()
+    waits = 0
+
+    def wait(_timeout):
+        nonlocal waits
+        waits += 1
+        if waits > 1:
+            runtime._stop.set()
+        return False
+
+    monkeypatch.setattr(runtime._wake, "wait", wait)
+    runtime._run()
+
+    assert posts == []
+    assert plugin_module.load_bambu_config()["printers"][0]["serial"] == "EXPECTED-SERIAL"
+
+
+def test_bambu_legacy_binding_learns_unique_serial_without_new_server_endpoint(
+    plugin_module, tmp_path, monkeypatch
+):
+    target = tmp_path / ".fh_bambu.json"
+    monkeypatch.setattr(plugin_module, "BAMBU_CONFIG_FILE", str(target))
+    plugin_module.configure_bambu_bridge(
+        3, 5, "192.168.1.43", "local-secret", "", "fhpb_legacy"
+    )
+    monkeypatch.setattr(plugin_module, "http_get_bridge_json", lambda *_args: (404, b""))
+
+    binding = plugin_module.load_bambu_config()["printers"][0]
+    prepared, source_instance_id = plugin_module._prepare_bambu_observation(
+        binding,
+        "DISCOVERED-SERIAL",
+    )
+
+    assert prepared["serial"] == "DISCOVERED-SERIAL"
+    assert "device_identity" not in prepared
+    assert len(source_instance_id) >= 16
+    assert plugin_module.load_bambu_config()["printers"][0] == prepared
+
+
+def test_bambu_observation_persists_private_identity_without_uploading_serial(
+    plugin_module, tmp_path, monkeypatch
+):
+    target = tmp_path / ".fh_bambu.json"
+    monkeypatch.setattr(plugin_module, "BAMBU_CONFIG_FILE", str(target))
+    plugin_module.configure_bambu_bridge(
+        3, 5, "192.168.1.43", "local-secret", "", "fhpb_live"
+    )
+    discovery_key = "2" * 64
+    monkeypatch.setattr(
+        plugin_module,
+        "http_get_bridge_json",
+        lambda path, token: (
+            200,
+            json.dumps({"printer_discovery_key": discovery_key}).encode("utf-8"),
+        ),
+    )
+
+    binding = plugin_module.load_bambu_config()["printers"][0]
+    prepared, source_instance_id = plugin_module._prepare_bambu_observation(
+        binding,
+        "PRIVATE-SERIAL",
+    )
+    snapshot = plugin_module.build_bambu_bridge_snapshot(
+        prepared,
+        source_instance_id,
+        _bambu_report(),
+    )
+
+    assert snapshot["device_identity"] == plugin_module._bambu_device_identity(
+        discovery_key,
+        "PRIVATE-SERIAL",
+    )
+    assert "PRIVATE-SERIAL" not in json.dumps(snapshot)
+    assert "PRIVATE-SERIAL" not in json.dumps(snapshot["device_identity"])
+
+
+def test_bambu_discovered_serial_cannot_claim_an_existing_local_printer(
+    plugin_module, tmp_path, monkeypatch
+):
+    target = tmp_path / ".fh_bambu.json"
+    monkeypatch.setattr(plugin_module, "BAMBU_CONFIG_FILE", str(target))
+    plugin_module.configure_bambu_bridge(
+        3, 5, "192.168.1.43", "first-secret", "SERIAL-1", "fhpb_first"
+    )
+    plugin_module.configure_bambu_bridge(
+        4, 6, "192.168.1.44", "second-secret", "", "fhpb_second"
+    )
+    monkeypatch.setattr(plugin_module, "http_get_bridge_json", lambda *_args: (404, b""))
+
+    second = plugin_module.load_bambu_config()["printers"][1]
+    with pytest.raises(ValueError, match="already linked"):
+        plugin_module._prepare_bambu_observation(second, "serial-1")
+
+    stored = plugin_module.load_bambu_config()["printers"]
+    assert stored[1]["serial"] == ""
 
 
 def test_bambu_runtime_spreads_automatic_startup_but_wake_interrupts_it(
@@ -6327,7 +6481,7 @@ def test_bambu_pair_is_revoked_when_local_binding_cannot_be_persisted(
     catalog._do_configure_bambu(3, 5, "printer.local", "secret", "", "pair-code")
 
     assert revoked == [("/printer-bridge/connection", "fhpb_fresh-token")]
-    assert removed == [3]
+    assert removed == []
     assert delivered == [("bambuInvalid", "error")]
 
 
@@ -6344,13 +6498,23 @@ def test_fresh_bambu_pair_and_first_snapshot_share_one_source_identity(
         lambda _config: ("SERIAL-2", _bambu_report()),
     )
     captured = {}
+    discovery_key = "3" * 64
 
     def pair(_path, _token, payload):
         captured["pair_source"] = payload["source_instance_id"]
-        return 200, json.dumps({"bridge_token": "fhpb_fresh-token", "physical_printer_id": paired_printer, "material_system_id": paired_system}).encode("utf-8")
+        captured["pair_payload"] = payload
+        return 200, json.dumps(
+            {
+                "bridge_token": "fhpb_fresh-token",
+                "physical_printer_id": paired_printer,
+                "material_system_id": paired_system,
+                "printer_discovery_key": discovery_key,
+            }
+        ).encode("utf-8")
 
     def snapshot(_path, _token, payload):
         captured["snapshot_source"] = payload["source_instance_id"]
+        captured["snapshot_payload"] = payload
         return 200, b"{}", None
 
     monkeypatch.setattr(plugin_module, "http_post_json", pair)
@@ -6381,10 +6545,71 @@ def test_fresh_bambu_pair_and_first_snapshot_share_one_source_identity(
         return
     assert revoked == []
     assert captured["pair_source"] == captured["snapshot_source"]
+    assert "SERIAL-2" not in json.dumps(captured["pair_payload"])
+    assert "SERIAL-2" not in json.dumps(captured["snapshot_payload"])
+    assert captured["snapshot_payload"]["device_identity"] == (
+        plugin_module._bambu_device_identity(discovery_key, "SERIAL-2")
+    )
     stored = plugin_module.load_bambu_config()
     assert stored["source_instance_id"] == captured["pair_source"]
     assert len(stored["printers"]) == 1
+    assert stored["printers"][0]["device_identity"] == (
+        captured["snapshot_payload"]["device_identity"]
+    )
     assert delivered == [("bambuSaved", "success")]
+
+
+def test_bambu_pair_identity_conflict_revokes_the_new_connection(
+    plugin_module, tmp_path, monkeypatch
+):
+    target = tmp_path / ".fh_bambu.json"
+    monkeypatch.setattr(plugin_module, "BAMBU_CONFIG_FILE", str(target))
+    monkeypatch.setattr(plugin_module, "_resolved_bambu_address", lambda _host: "192.168.1.42")
+    monkeypatch.setattr(
+        plugin_module,
+        "read_bambu_lan_snapshot",
+        lambda _config: ("SERIAL-2", _bambu_report()),
+    )
+    monkeypatch.setattr(
+        plugin_module,
+        "http_post_json",
+        lambda *_args: (
+            200,
+            json.dumps(
+                {
+                    "bridge_token": "fhpb_conflict",
+                    "physical_printer_id": 3,
+                    "material_system_id": 5,
+                    "printer_discovery_key": "4" * 64,
+                }
+            ).encode("utf-8"),
+        ),
+    )
+    monkeypatch.setattr(
+        plugin_module,
+        "http_post_bridge_json",
+        lambda *_args: (409, b"{}", None),
+    )
+    revoked = []
+    monkeypatch.setattr(
+        plugin_module,
+        "http_delete_bridge",
+        lambda path, token: revoked.append((path, token)) or 204,
+    )
+    monkeypatch.setattr(plugin_module, "ui_text", lambda key: key)
+    delivered = []
+    catalog = plugin_module.FilamentHubCatalog()
+    monkeypatch.setattr(
+        catalog,
+        "_deliver_notice",
+        lambda text, status="info": delivered.append((text, status)),
+    )
+
+    catalog._do_configure_bambu(3, 5, "printer.local", "secret", "", "pair-code")
+
+    assert revoked == [("/printer-bridge/connection", "fhpb_conflict")]
+    assert plugin_module.load_bambu_config()["printers"] == []
+    assert delivered == [("bambuPairingFailed", "error")]
 
 
 def test_bambu_address_must_resolve_to_the_lan(plugin_module, monkeypatch):

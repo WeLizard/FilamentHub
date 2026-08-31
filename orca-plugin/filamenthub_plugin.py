@@ -1649,6 +1649,59 @@ def _managed_profile_id_from_info(path, kind):
 
 
 MAX_BAMBU_BRIDGES = 8
+_BAMBU_CONFIG_LOCK = threading.RLock()
+
+
+def _normalized_bambu_serial(serial):
+    value = str(serial or "").strip()
+    if not re.fullmatch(r"[A-Za-z0-9._-]{4,80}", value):
+        return ""
+    return value.upper()
+
+
+def _valid_bambu_device_identity(identity):
+    if not isinstance(identity, dict):
+        return None
+    kind = identity.get("kind")
+    token = identity.get("token")
+    if kind != "bambu_serial" or not re.fullmatch(r"[0-9a-f]{64}", str(token or "")):
+        return None
+    return {"kind": kind, "token": token}
+
+
+def _bambu_device_identity(discovery_key, serial):
+    canonical_serial = _normalized_bambu_serial(serial)
+    if not canonical_serial:
+        return None
+    token = _printer_evidence_token(
+        discovery_key,
+        "device",
+        "bambu_serial\0" + canonical_serial,
+    )
+    if token is None:
+        return None
+    return {"kind": "bambu_serial", "token": token}
+
+
+def _assert_bambu_binding_available(
+    payload,
+    physical_printer_id,
+    serial,
+    device_identity=None,
+):
+    canonical_serial = _normalized_bambu_serial(serial)
+    if serial and not canonical_serial:
+        raise ValueError("invalid serial")
+    identity = _valid_bambu_device_identity(device_identity)
+    for item in payload.get("printers") or []:
+        if item.get("physical_printer_id") == physical_printer_id:
+            continue
+        existing_serial = _normalized_bambu_serial(item.get("serial"))
+        if canonical_serial and existing_serial == canonical_serial:
+            raise ValueError("Bambu printer is already linked")
+        existing_identity = _valid_bambu_device_identity(item.get("device_identity"))
+        if identity and existing_identity == identity:
+            raise ValueError("Bambu printer is already linked")
 
 
 def _empty_bambu_config():
@@ -1681,6 +1734,7 @@ def load_bambu_config():
         access_code = item.get("access_code")
         serial = item.get("serial") or ""
         bridge_token = item.get("bridge_token") or ""
+        device_identity = _valid_bambu_device_identity(item.get("device_identity"))
         if (
             isinstance(serial, str)
             and serial
@@ -1699,16 +1753,17 @@ def load_bambu_config():
             and isinstance(serial, str)
             and isinstance(bridge_token, str)
         ):
-            printers.append(
-                {
-                    "physical_printer_id": physical_id,
-                    "material_system_id": system_id,
-                    "host": host[:253],
-                    "access_code": access_code[:128],
-                    "serial": serial[:80],
-                    "bridge_token": bridge_token[:256],
-                }
-            )
+            printer = {
+                "physical_printer_id": physical_id,
+                "material_system_id": system_id,
+                "host": host[:253],
+                "access_code": access_code[:128],
+                "serial": serial[:80],
+                "bridge_token": bridge_token[:256],
+            }
+            if device_identity is not None:
+                printer["device_identity"] = device_identity
+            printers.append(printer)
         if len(printers) >= MAX_BAMBU_BRIDGES:
             break
     return {
@@ -1729,6 +1784,7 @@ def configure_bambu_bridge(
     access_code,
     serial="",
     bridge_token="",
+    device_identity=None,
 ):
     """Create or replace one local-only Bambu LAN binding."""
     if not isinstance(physical_printer_id, int) or physical_printer_id <= 0:
@@ -1747,15 +1803,24 @@ def configure_bambu_bridge(
         raise ValueError("invalid serial")
     if bridge_token and (not bridge_token.startswith("fhpb_") or len(bridge_token) > 256):
         raise ValueError("invalid bridge token")
+    identity = _valid_bambu_device_identity(device_identity)
+    if device_identity is not None and identity is None:
+        raise ValueError("invalid Bambu device identity")
 
-    payload = load_bambu_config()
-    printers = [
-        item
-        for item in payload["printers"]
-        if item["physical_printer_id"] != physical_printer_id
-    ]
-    printers.append(
-        {
+    with _BAMBU_CONFIG_LOCK:
+        payload = load_bambu_config()
+        _assert_bambu_binding_available(
+            payload,
+            physical_printer_id,
+            serial,
+            identity,
+        )
+        printers = [
+            item
+            for item in payload["printers"]
+            if item["physical_printer_id"] != physical_printer_id
+        ]
+        printer = {
             "physical_printer_id": physical_printer_id,
             "material_system_id": material_system_id,
             "host": host,
@@ -1763,26 +1828,29 @@ def configure_bambu_bridge(
             "serial": serial,
             "bridge_token": bridge_token,
         }
-    )
-    if len(printers) > MAX_BAMBU_BRIDGES:
-        raise ValueError("too many Bambu bridges")
-    payload["printers"] = printers
-    save_bambu_config(payload)
-    return payload
+        if identity is not None:
+            printer["device_identity"] = identity
+        printers.append(printer)
+        if len(printers) > MAX_BAMBU_BRIDGES:
+            raise ValueError("too many Bambu bridges")
+        payload["printers"] = printers
+        save_bambu_config(payload)
+        return payload
 
 
 def remove_bambu_bridge(physical_printer_id):
-    payload = load_bambu_config()
-    before = len(payload["printers"])
-    payload["printers"] = [
-        item
-        for item in payload["printers"]
-        if item["physical_printer_id"] != physical_printer_id
-    ]
-    if len(payload["printers"]) != before:
-        save_bambu_config(payload)
-        return True
-    return False
+    with _BAMBU_CONFIG_LOCK:
+        payload = load_bambu_config()
+        before = len(payload["printers"])
+        payload["printers"] = [
+            item
+            for item in payload["printers"]
+            if item["physical_printer_id"] != physical_printer_id
+        ]
+        if len(payload["printers"]) != before:
+            save_bambu_config(payload)
+            return True
+        return False
 
 
 def managed_profile_id(json_path, profile, kind):
@@ -2943,6 +3011,22 @@ def http_post_bridge_json(path, bridge_token, payload):
         return exc.code, exc.read(MAX_RESPONSE_BYTES), _bridge_retry_after_seconds(exc.headers)
     except (OSError, ValueError, urllib.error.URLError):
         return 0, b"", None
+
+
+def http_get_bridge_json(path, bridge_token):
+    headers = {
+        "Accept": "application/json",
+        "User-Agent": "FilamentHub-OrcaPlugin/" + PLUGIN_VERSION,
+        "X-FilamentHub-Bridge-Token": bridge_token,
+    }
+    req = urllib.request.Request(API_BASE + path, headers=headers, method="GET")
+    try:
+        with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT, context=_SSL_CTX) as resp:
+            return resp.getcode(), _read_response_limited(resp)
+    except urllib.error.HTTPError as exc:
+        return exc.code, exc.read(MAX_RESPONSE_BYTES)
+    except (OSError, ValueError, urllib.error.URLError):
+        return 0, b""
 
 
 def http_delete_bridge(path, bridge_token):
@@ -7086,7 +7170,7 @@ def build_bambu_bridge_snapshot(config, source_instance_id, report):
             # The LAN report proves an identifier, not the RF technology.
             item["tag_technology"] = "unknown"
         slots.append(item)
-    return {
+    snapshot = {
         "material_system_id": config["material_system_id"],
         "provider": "bambu",
         "transport": "orca_plugin_lan",
@@ -7097,19 +7181,78 @@ def build_bambu_bridge_snapshot(config, source_instance_id, report):
         "slots": slots,
         "slot_topology_complete": feed is not None,
     }
+    device_identity = _valid_bambu_device_identity(config.get("device_identity"))
+    if device_identity is not None:
+        snapshot["device_identity"] = device_identity
+    return snapshot
 
 
-def _persist_discovered_bambu_serial(physical_printer_id, serial):
-    if not serial:
-        return
-    payload = load_bambu_config()
-    changed = False
-    for item in payload["printers"]:
-        if item["physical_printer_id"] == physical_printer_id and not item.get("serial"):
-            item["serial"] = serial[:80]
+def _fetch_bambu_device_identity(bridge_token, serial):
+    status, body = http_get_bridge_json("/printer-bridge/identity-context", bridge_token)
+    if status != 200:
+        return None
+    try:
+        payload = json.loads(body.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    return _bambu_device_identity(payload.get("printer_discovery_key"), serial)
+
+
+def _prepare_bambu_observation(config, observed_serial):
+    """Pin an observation to its local printer before any cloud request."""
+    canonical_observed = _normalized_bambu_serial(observed_serial)
+    if not canonical_observed:
+        raise ValueError("invalid observed Bambu serial")
+    canonical_expected = _normalized_bambu_serial(config.get("serial"))
+    if canonical_expected and canonical_expected != canonical_observed:
+        raise ValueError("Bambu serial mismatch")
+
+    identity = _valid_bambu_device_identity(config.get("device_identity"))
+    if identity is None:
+        identity = _fetch_bambu_device_identity(
+            config.get("bridge_token") or "",
+            observed_serial,
+        )
+
+    with _BAMBU_CONFIG_LOCK:
+        payload = load_bambu_config()
+        current = next(
+            (
+                item
+                for item in payload["printers"]
+                if item.get("physical_printer_id") == config.get("physical_printer_id")
+                and item.get("material_system_id") == config.get("material_system_id")
+                and item.get("bridge_token") == config.get("bridge_token")
+            ),
+            None,
+        )
+        if current is None:
+            raise ValueError("Bambu binding changed during observation")
+        current_expected = _normalized_bambu_serial(current.get("serial"))
+        if current_expected and current_expected != canonical_observed:
+            raise ValueError("Bambu serial mismatch")
+        current_identity = _valid_bambu_device_identity(current.get("device_identity"))
+        if current_identity is not None:
+            identity = current_identity
+        _assert_bambu_binding_available(
+            payload,
+            current["physical_printer_id"],
+            observed_serial,
+            identity,
+        )
+
+        changed = False
+        if not current_expected:
+            current["serial"] = str(observed_serial).strip()[:80]
             changed = True
-    if changed:
-        save_bambu_config(payload)
+        if identity is not None and current_identity is None:
+            current["device_identity"] = identity
+            changed = True
+        if changed:
+            save_bambu_config(payload)
+        return dict(current), payload["source_instance_id"]
 
 
 def _bambu_local_binding(physical_printer_id, material_system_id):
@@ -7312,8 +7455,12 @@ class BambuBridgeRuntime:
                     serial, report = read_bambu_lan_snapshot(config)
                     if self._stop.is_set():
                         break
+                    config, source_instance_id = _prepare_bambu_observation(
+                        config,
+                        serial,
+                    )
                     snapshot = build_bambu_bridge_snapshot(
-                        config, local["source_instance_id"], report
+                        config, source_instance_id, report
                     )
                     digest_payload = dict(snapshot)
                     digest_payload.pop("observed_at", None)
@@ -7361,7 +7508,7 @@ class BambuBridgeRuntime:
                                 "material_system_id": config["material_system_id"],
                                 "provider": "bambu",
                                 "transport": "orca_plugin_lan",
-                                "source_instance_id": local["source_instance_id"],
+                                "source_instance_id": source_instance_id,
                                 "observed_at": datetime.datetime.now(
                                     datetime.timezone.utc
                                 ).isoformat(),
@@ -7387,9 +7534,6 @@ class BambuBridgeRuntime:
                     if status == 200:
                         self._failure_count.pop(binding_key, None)
                         self._retry_at.pop(binding_key, None)
-                        _persist_discovered_bambu_serial(
-                            config["physical_printer_id"], serial
-                        )
                     else:
                         failures = self._failure_count.get(binding_key, 0) + 1
                         self._failure_count[binding_key] = failures
@@ -8103,6 +8247,7 @@ class FilamentHubCatalog(
         pairing_code,
     ):
         bridge_token = ""
+        binding_persisted = False
         try:
             _resolved_bambu_address(host)
             pending = {
@@ -8114,6 +8259,11 @@ class FilamentHubCatalog(
             }
             discovered_serial, report = read_bambu_lan_snapshot(pending)
             local = load_bambu_config()
+            _assert_bambu_binding_available(
+                local,
+                physical_printer_id,
+                discovered_serial or serial,
+            )
             # A missing config produces a fresh source id. Persist it before
             # pairing so configure_bambu_bridge() cannot generate a second id
             # and make the immediately following snapshot fail its binding.
@@ -8148,6 +8298,10 @@ class FilamentHubCatalog(
                 http_delete_bridge("/printer-bridge/connection", rejected_token)
                 self._deliver_notice(ui_text("bambuPairingFailed"), "error")
                 return
+            device_identity = _bambu_device_identity(
+                paired.get("printer_discovery_key"),
+                discovered_serial or serial,
+            )
             configure_bambu_bridge(
                 physical_printer_id,
                 material_system_id,
@@ -8155,7 +8309,9 @@ class FilamentHubCatalog(
                 access_code,
                 discovered_serial or serial,
                 bridge_token,
+                device_identity,
             )
+            binding_persisted = True
             configured = load_bambu_config()
             stored = next(
                 (
@@ -8175,7 +8331,9 @@ class FilamentHubCatalog(
             snapshot_status, _, _ = http_post_bridge_json(
                 "/printer-bridge/snapshot", bridge_token, snapshot
             )
-            if snapshot_status == 401:
+            if snapshot_status in {401, 409}:
+                if snapshot_status == 409:
+                    http_delete_bridge("/printer-bridge/connection", bridge_token)
                 remove_bambu_bridge(physical_printer_id)
                 self._deliver_notice(ui_text("bambuPairingFailed"), "error")
                 return
@@ -8193,7 +8351,8 @@ class FilamentHubCatalog(
                     http_delete_bridge("/printer-bridge/connection", bridge_token)
                 except (OSError, TypeError, ValueError):
                     pass
-                remove_bambu_bridge(physical_printer_id)
+                if binding_persisted:
+                    remove_bambu_bridge(physical_printer_id)
             self._deliver_notice(ui_text("bambuInvalid"), "error")
             return
         BAMBU_BRIDGE_RUNTIME.wake()
