@@ -14,6 +14,9 @@ from app.schemas.label import LabelExportOptions, LabelOptions
 
 MeasureText = Callable[[str, float, bool], float]
 SHEET_MEDIA = {"a4": (210.0, 297.0), "letter": (215.9, 279.4)}
+LABEL_BORDER_MM = 0.15
+CROP_MARK_OFFSET_MM = 1.0
+CROP_MARK_LENGTH_MM = 2.0
 
 
 class LabelDoesNotFit(ValueError):
@@ -35,6 +38,8 @@ def compose_sheet(options: LabelExportOptions) -> LabelSheet:
         return LabelSheet(options.label.width_mm, options.label.height_mm, 1, 1, 1, 1)
     width, height = SHEET_MEDIA[options.media]
     margin, gap = options.page_margin_mm, options.gap_mm
+    if options.crop_marks and margin < CROP_MARK_OFFSET_MM + CROP_MARK_LENGTH_MM:
+        raise LabelDoesNotFit("Crop marks require at least 3 mm of sheet margin")
     columns = math.floor((width - margin * 2 + gap) / (options.label.width_mm + gap) + 1e-9)
     rows = math.floor((height - margin * 2 + gap) / (options.label.height_mm + gap) + 1e-9)
     capacity = columns * rows
@@ -125,10 +130,25 @@ class LabelScene:
     body_size_mm: float = 0
     dots_per_module: float = 0
     corner_radius_mm: float = 0
+    border_width_mm: float = 0
 
 
 def rule_stroke_mm(margin_mm: float) -> float:
     return max(0.06, margin_mm * 0.06)
+
+
+def _inside_border(box: Box, options: LabelOptions) -> bool:
+    if not options.border:
+        return True
+    radius = min(options.width_mm, options.height_mm) * 0.04
+    inner_radius = radius - LABEL_BORDER_MM
+    for x in (box.x, box.right):
+        for y in (box.y, box.bottom):
+            dx = max(radius - x, 0, x - (options.width_mm - radius))
+            dy = max(radius - y, 0, y - (options.height_mm - radius))
+            if math.hypot(dx, dy) > inner_radius + 1e-9:
+                return False
+    return True
 
 
 def _wrap(
@@ -353,11 +373,32 @@ def _qr_composition(
         bottom = margin + quiet + sku_size * 1.2
         return quiet, sku_size, caption_size, top, bottom
 
+    def fitted_dimensions(side: float) -> tuple[float, float, float, float, float]:
+        *_, min_top, min_bottom = dimensions(side)
+        *_, preferred_top, preferred_bottom = dimensions(side, 1)
+        remaining = max(0, zone.height - side - min_top - min_bottom)
+        growth = preferred_top + preferred_bottom - min_top - min_bottom
+        expansion = min(1, remaining / growth) if growth > 0 else 1
+        return dimensions(side, expansion)
+
+    def qr_box(side: float, top: float, bottom: float) -> Box:
+        return Box(
+            zone.x + (zone.width - side) / 2,
+            zone.y + top + (zone.height - top - side - bottom) / 2,
+            side,
+            side,
+        )
+
     low, high = 0.0, zone.width * modules / (modules + 8)
     for _ in range(22):
         side = (low + high) / 2
         _, _, _, top, bottom = dimensions(side)
-        if top + side + bottom <= zone.height:
+        quiet, _, _, fitted_top, fitted_bottom = fitted_dimensions(side)
+        candidate = qr_box(side, fitted_top, fitted_bottom)
+        protected = Box(
+            candidate.x - quiet, candidate.y - quiet, side + 2 * quiet, side + 2 * quiet
+        )
+        if top + side + bottom <= zone.height and _inside_border(protected, options):
             low = side
         else:
             high = side
@@ -368,12 +409,7 @@ def _qr_composition(
     dot_mm = 25.4 / options.dpi
     dots = math.floor(low / modules / dot_mm + 1e-6)
     side = dots * dot_mm * modules if dots == 2 else low
-    *_, min_top, min_bottom = dimensions(side)
-    *_, preferred_top, preferred_bottom = dimensions(side, 1)
-    remaining = max(0, zone.height - side - min_top - min_bottom)
-    growth = preferred_top + preferred_bottom - min_top - min_bottom
-    expansion = min(1, remaining / growth) if growth > 0 else 1
-    quiet, sku_size, caption_size, top, bottom = dimensions(side, expansion)
+    quiet, sku_size, caption_size, top, bottom = fitted_dimensions(side)
     if sku_width_at_one * sku_size > zone.width - 2 * margin:
         raise LabelDoesNotFit("The complete SKU does not fit")
     if (
@@ -381,12 +417,7 @@ def _qr_composition(
         and caption_size * (caption_width_at_one + 1.6) > zone.width - 2 * margin
     ):
         raise LabelDoesNotFit("The attribution does not fit")
-    qr = Box(
-        zone.x + (zone.width - side) / 2,
-        zone.y + top + (zone.height - top - side - bottom) / 2,
-        side,
-        side,
-    )
+    qr = qr_box(side, top, bottom)
     sku_width = sku_width_at_one * sku_size
     sku_height = sku_size * 1.2
     sku_y = max(
@@ -439,8 +470,10 @@ def compose_label(
     width, height = options.width_mm, options.height_mm
     margin = max(0.6, min(width, height) * 0.035)
     corner_radius = min(width, height) * 0.04
+    border = LABEL_BORDER_MM if options.border else 0
     if options.kind == "classic":
-        module = min(width / (modules + 8), (width - 2 * margin) / modules)
+        inset = border + (corner_radius - border) * (1 - 1 / math.sqrt(2)) if border else 0
+        module = min((width - 2 * inset) / (modules + 8), (width - 2 * margin) / modules)
         side = modules * module
         return LabelScene(
             width,
@@ -450,6 +483,7 @@ def compose_label(
             module * 4,
             dots_per_module=module * options.dpi / 25.4,
             corner_radius_mm=corner_radius,
+            border_width_mm=border,
         )
 
     if width < height:
@@ -464,7 +498,7 @@ def compose_label(
     for fraction in fractions:
         divider = width * (1 - fraction)
         qr_left = divider + rule_stroke_mm(margin) / 2
-        qr_zone = Box(qr_left, 0, width - qr_left, height)
+        qr_zone = Box(qr_left, border, width - border - qr_left, height - 2 * border)
         body = Box(margin, margin, divider - 2 * margin, height - 2 * margin)
         if body.width <= 0 or body.height <= 0:
             continue
@@ -501,6 +535,7 @@ def compose_label(
             body_size_mm=low,
             dots_per_module=qr.width / modules * options.dpi / 25.4,
             corner_radius_mm=corner_radius,
+            border_width_mm=border,
         )
         scene.rules.append(Box(divider, 0, 0, height))
         scene.texts.append(sku_text)
@@ -521,7 +556,8 @@ def _compose_vertical(
     corner_radius: float,
 ) -> LabelScene:
     width, height = options.width_mm, options.height_mm
-    max_qr_side = width * modules / (modules + 8)
+    border = LABEL_BORDER_MM if options.border else 0
+    max_qr_side = (width - 2 * border) * modules / (modules + 8)
     body_top = margin
     if options.attribution == "mark":
         # The corner mark is outside the QR stack. Reserve its largest possible
@@ -537,7 +573,7 @@ def _compose_vertical(
         )
         divider = body_bottom + margin
         qr_top = divider + rule_stroke_mm(margin) / 2
-        qr_zone = Box(0, qr_top, width, height - qr_top)
+        qr_zone = Box(border, qr_top, width - 2 * border, height - border - qr_top)
         if qr_zone.height <= 0:
             raise LabelDoesNotFit("No room for the QR stack")
         qr, quiet, sku_text, attribution, caption = _qr_composition(
@@ -573,6 +609,7 @@ def _compose_vertical(
             body_size_mm=size,
             dots_per_module=qr.width / modules * options.dpi / 25.4,
             corner_radius_mm=corner_radius,
+            border_width_mm=border,
         )
 
     low, high = 0.95, width * 0.3

@@ -21,6 +21,7 @@ class LabelOptions(BaseModel):
     attribution: Literal["full", "mark", "none"] = "full"
     qr_mark: bool = False
     brand_logo: bool = True
+    border: bool = False
     fields: list[LabelField] = Field(
         default_factory=lambda: ["nozzle", "bed", "drying", "abrasiveness", "diameter", "density"],
         max_length=6,
@@ -56,9 +57,12 @@ class LabelExportOptions(BaseModel):
     start_position: int = Field(default=1, ge=1, le=500)
     page_margin_mm: float = Field(default=5, ge=0, le=25, allow_inf_nan=False)
     gap_mm: float = Field(default=2, ge=0, le=10, allow_inf_nan=False)
+    crop_marks: bool = False
 
     @model_validator(mode="after")
     def validate_media(self) -> "LabelExportOptions":
         if self.media == "single" and (self.copies != 1 or self.start_position != 1):
             raise ValueError("Single media contains exactly one label")
+        if self.media == "single" and self.crop_marks:
+            raise ValueError("Crop marks require sheet media")
         return self

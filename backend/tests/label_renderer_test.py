@@ -1,5 +1,6 @@
 """Print outputs must resolve the same SKU and keep physical dimensions."""
 
+import math
 import re
 import zlib
 from dataclasses import replace
@@ -55,14 +56,19 @@ def label_data():
 @pytest.mark.parametrize("rotate", [False, True])
 @pytest.mark.parametrize("attribution", ["full", "mark", "none"])
 @pytest.mark.parametrize("dpi", [203, 300, 600])
-def test_label_png_decodes_actual_scene(label_data, dimensions, rotate, attribution, dpi):
+@pytest.mark.parametrize("border", [False, True])
+def test_label_png_decodes_actual_scene(label_data, dimensions, rotate, attribution, dpi, border):
     width, height = dimensions[::-1] if rotate else dimensions
-    options = LabelOptions(width_mm=width, height_mm=height, attribution=attribution, dpi=dpi)
+    options = LabelOptions(
+        width_mm=width, height_mm=height, attribution=attribution, dpi=dpi, border=border
+    )
     result = render_label(label_data, options)
     scene = result["scene"]
     qr = scene["qr"]
     quiet = 4 * qr["width"] / result["modules"]
     root = ET.fromstring(result["svg"])
+    if border:
+        assert_border_clearance(result)
     strokes = root.findall(".//{http://www.w3.org/2000/svg}path[@stroke]")
     for rule, path in zip(scene["rules"], strokes, strict=True):
         half = float(path.attrib["stroke-width"]) / 2
@@ -97,9 +103,14 @@ def test_label_png_decodes_actual_scene(label_data, dimensions, rotate, attribut
 @pytest.mark.parametrize("branded", [False, True])
 @pytest.mark.parametrize("sku", ["FH-001", "FH-P7C41A", "FH-SHOW-CARBON-PETG-GRAPHITE"])
 @pytest.mark.parametrize("size,dpi", [(20, 203), (30, 300), (40, 600)])
-def test_label_classic_mark_remains_decodable(label_data, branded, sku, size, dpi):
+@pytest.mark.parametrize("border", [False, True])
+def test_label_classic_mark_remains_decodable(label_data, branded, sku, size, dpi, border):
     label_data = replace(label_data, sku=sku)
-    options = LabelOptions(kind="classic", width_mm=size, height_mm=size, qr_mark=branded, dpi=dpi)
+    options = LabelOptions(
+        kind="classic", width_mm=size, height_mm=size, qr_mark=branded, dpi=dpi, border=border
+    )
+    if border:
+        assert_border_clearance(render_label(label_data, options))
     png = export_label(label_data, LabelExportOptions(label=options, format="png"))
     image = np.array(Image.open(BytesIO(png)).convert("RGB"))
     # The contour detector misses the same unbranded H matrix for long SKUs
@@ -133,8 +144,32 @@ def test_classic_uses_special_round_mark_with_one_module_white_frame(label_data)
     assert not result["scene"]["texts"]
 
 
-def test_label_corner_shape_is_shared_by_svg_and_png(label_data):
-    options = LabelOptions()
+def assert_border_clearance(result):
+    root = ET.fromstring(result["svg"])
+    frame = root.find(".//{http://www.w3.org/2000/svg}rect[@data-role='label-border']")
+    stroke = float(frame.attrib["stroke-width"])
+    x, y, width, height, radius = (
+        float(frame.attrib[key]) for key in ("x", "y", "width", "height", "rx")
+    )
+    # The outside of the stroke is exactly the physical label, including its arcs.
+    scene = result["scene"]
+    assert (x - stroke / 2, y - stroke / 2) == pytest.approx((0, 0))
+    assert (width + stroke, height + stroke) == pytest.approx(
+        (scene["width_mm"], scene["height_mm"])
+    )
+    assert radius + stroke / 2 == pytest.approx(scene["corner_radius_mm"])
+    qr, quiet = scene["qr"], scene["quiet_zone_mm"]
+    inner_radius = radius - stroke / 2
+    for px in (qr["x"] - quiet, qr["x"] + qr["width"] + quiet):
+        for py in (qr["y"] - quiet, qr["y"] + qr["height"] + quiet):
+            dx = max(x + radius - px, 0, px - (x + width - radius))
+            dy = max(y + radius - py, 0, py - (y + height - radius))
+            assert math.hypot(dx, dy) <= inner_radius + 1e-6
+
+
+@pytest.mark.parametrize("border", [False, True])
+def test_label_corner_shape_is_shared_by_svg_and_png(label_data, border):
+    options = LabelOptions(border=border)
     result = render_label(label_data, options)
     root = ET.fromstring(result["svg"])
     outline = root.find(".//{http://www.w3.org/2000/svg}clipPath/{http://www.w3.org/2000/svg}rect")
@@ -143,7 +178,8 @@ def test_label_corner_shape_is_shared_by_svg_and_png(label_data):
         BytesIO(export_label(label_data, LabelExportOptions(label=options, format="png")))
     ).convert("RGBA")
     assert png.getpixel((0, 0))[3] == 0
-    assert png.getpixel((png.width // 2, 0)) == (255, 255, 255, 255)
+    expected = (17, 17, 17, 255) if border else (255, 255, 255, 255)
+    assert png.getpixel((png.width // 2, 0)) == expected
 
 
 @pytest.mark.parametrize("media,dimensions", [("a4", (210, 297)), ("letter", (215.9, 279.4))])

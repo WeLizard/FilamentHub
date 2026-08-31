@@ -74,10 +74,18 @@ def pdf_streams(pdf):
 
 
 @pytest.mark.parametrize("copies,start,pages", [(27, 1, 1), (28, 1, 2), (28, 27, 2), (50, 27, 3)])
+@pytest.mark.parametrize("crop_marks", [False, True])
 def test_vector_pdf_contains_every_copy_without_a_trailing_blank_page(
-    sheet_data, copies, start, pages
+    sheet_data, copies, start, pages, crop_marks
 ):
-    options = LabelExportOptions(media="a4", copies=copies, start_position=start, format="pdf")
+    options = LabelExportOptions(
+        media="a4",
+        copies=copies,
+        start_position=start,
+        format="pdf",
+        crop_marks=crop_marks,
+        label=LabelOptions(border=crop_marks),
+    )
     pdf = export_label(sheet_data, options)
     streams = pdf_streams(pdf)
     content = pdf + b"\n".join(streams)
@@ -120,6 +128,50 @@ def test_sheet_rejects_nonexistent_first_cells_and_oversized_labels():
     for options in (
         LabelExportOptions(media="a4", start_position=28),
         LabelExportOptions(media="a4", label=LabelOptions(width_mm=220, height_mm=220)),
+        LabelExportOptions(media="a4", crop_marks=True, page_margin_mm=2.99),
     ):
         with pytest.raises(LabelDoesNotFit):
             compose_sheet(options)
+
+
+@pytest.mark.parametrize("media", ["a4", "letter"])
+@pytest.mark.parametrize("gap", [0, 2])
+def test_crop_guides_mark_printed_edges_without_changing_grid_or_entering_labels(
+    sheet_data, media, gap
+):
+    plain = LabelExportOptions(
+        media=media, copies=50, start_position=27, page_margin_mm=3, gap_mm=gap
+    )
+    options = plain.model_copy(update={"crop_marks": True})
+    sheet = compose_sheet(options)
+    assert sheet == compose_sheet(plain)
+    rendered = render_label(sheet_data, options.label)
+    for page in range(1, sheet.page_count + 1):
+        positions = sheet_positions(options, sheet, page)
+        assert positions == sheet_positions(plain, sheet, page)
+        svg, width, height, _ = sheet_svg(rendered, options, page)
+        root = ET.fromstring(svg)
+        path = root.find("{http://www.w3.org/2000/svg}path[@data-role='crop-marks']")
+        assert path is not None
+        marks = re.findall(r"M([\d.]+) ([\d.]+) ([hv])([\d.]+)", path.attrib["d"])
+        assert marks
+        marked_x, marked_y = set(), set()
+        stroke = float(path.attrib["stroke-width"])
+        for sx, sy, direction, distance in marks:
+            x, y, length = float(sx), float(sy), float(distance)
+            right = x + (length if direction == "h" else 0)
+            bottom = y + (length if direction == "v" else 0)
+            assert 0 <= x <= right <= width
+            assert 0 <= y <= bottom <= height
+            (marked_x if direction == "v" else marked_y).add(x if direction == "v" else y)
+            for cx, cy in positions:
+                assert (
+                    right + stroke / 2 <= cx
+                    or x - stroke / 2 >= cx + options.label.width_mm
+                    or bottom + stroke / 2 <= cy
+                    or y - stroke / 2 >= cy + options.label.height_mm
+                )
+        assert marked_x == {edge for x, _ in positions for edge in (x, x + options.label.width_mm)}
+        assert marked_y == {edge for _, y in positions for edge in (y, y + options.label.height_mm)}
+        plain_svg = sheet_svg(rendered, plain, page)[0]
+        assert "crop-marks" not in plain_svg

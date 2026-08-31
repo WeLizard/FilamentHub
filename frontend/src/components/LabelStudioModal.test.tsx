@@ -459,4 +459,69 @@ describe("LabelStudioModal", () => {
       ).not.toBeDisabled(),
     );
   });
+
+  it("exports the chosen edge frame and sheet-only cut guides without shifting the grid", async () => {
+    open();
+    fireEvent.click(await screen.findByLabelText("labelStudio.border"));
+    fireEvent.focus(screen.getByLabelText("labelStudio.media"));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "labelStudio.a4" }),
+    );
+    expect(screen.getByText("labelStudio.startHint")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("labelStudio.margin"), {
+      target: { value: "2" },
+    });
+    expect(screen.getByLabelText("labelStudio.cropMarks")).toBeDisabled();
+    fireEvent.change(screen.getByLabelText("labelStudio.margin"), {
+      target: { value: "3" },
+    });
+    const quantity = screen.getByLabelText("labelStudio.copies");
+    const originalQuantity = quantity.getAttribute("value");
+    fireEvent.click(screen.getByLabelText("labelStudio.cropMarks"));
+    expect(quantity).toHaveAttribute("value", originalQuantity);
+    expect(screen.getByLabelText("labelStudio.margin")).toHaveAttribute(
+      "min",
+      "3",
+    );
+    await waitFor(() =>
+      expect(mocks.preview.mock.lastCall?.[1]).toEqual(
+        expect.objectContaining({
+          label: expect.objectContaining({ border: true }),
+          media: "a4",
+          crop_marks: true,
+          page_margin_mm: 3,
+        }),
+      ),
+    );
+    const download = screen.getByRole("button", {
+      name: "labelStudio.download",
+    });
+    await waitFor(() => expect(download).not.toBeDisabled());
+    fireEvent.click(download);
+    await waitFor(() =>
+      expect(mocks.download).toHaveBeenCalledWith(
+        12,
+        expect.objectContaining({
+          label: expect.objectContaining({ border: true }),
+          crop_marks: true,
+        }),
+      ),
+    );
+    fireEvent.focus(screen.getByLabelText("labelStudio.media"));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "labelStudio.single" }),
+    );
+    expect(
+      screen.queryByLabelText("labelStudio.cropMarks"),
+    ).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(mocks.preview.mock.lastCall?.[1]).toEqual(
+        expect.objectContaining({
+          label: expect.objectContaining({ border: true }),
+          media: "single",
+          crop_marks: false,
+        }),
+      ),
+    );
+  });
 });

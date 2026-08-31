@@ -35,6 +35,7 @@ const initialLabel: LabelDraft = {
   attribution: "full",
   qr_mark: true,
   brand_logo: true,
+  border: false,
   fields: ["nozzle", "bed", "drying", "abrasiveness", "diameter", "density"],
   comment: "",
 };
@@ -88,6 +89,7 @@ export function LabelStudioModal({
   const [requestedStart, setRequestedStart] = useState(1);
   const [margin, setMargin] = useState(5);
   const [gap, setGap] = useState(2);
+  const [cropMarks, setCropMarks] = useState(false);
   const [showSheet, setShowSheet] = useState(false);
   const [selectedPage, setSelectedPage] = useState({ key: "", number: 1 });
   const [downloading, setDownloading] = useState(false);
@@ -143,6 +145,7 @@ export function LabelStudioModal({
       start_position: media === "single" ? 1 : start,
       page_margin_mm: margin,
       gap_mm: gap,
+      crop_marks: media !== "single" && cropMarks,
     }),
     [
       label,
@@ -157,6 +160,7 @@ export function LabelStudioModal({
       start,
       margin,
       gap,
+      cropMarks,
     ],
   );
   const optionsKey = JSON.stringify({ ...options, format: "svg" });
@@ -766,6 +770,20 @@ export function LabelStudioModal({
                       )}
                     </>
                   )}
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 accent-cyan-400"
+                      checked={label.border}
+                      onChange={(event) =>
+                        setLabel((previous) => ({
+                          ...previous,
+                          border: event.target.checked,
+                        }))
+                      }
+                    />
+                    {t("labelStudio.border")}
+                  </label>
                   <div className="grid grid-cols-2 gap-3">
                     <Dropdown
                       label={t("labelStudio.file")}
@@ -818,7 +836,7 @@ export function LabelStudioModal({
                           t("labelStudio.margin"),
                           margin,
                           setMargin,
-                          0,
+                          cropMarks ? 3 : 0,
                           25,
                         )}
                         {numberControl(
@@ -829,6 +847,28 @@ export function LabelStudioModal({
                           10,
                         )}
                       </div>
+                      <p className="text-xs text-gray-400">
+                        {t("labelStudio.startHint")}
+                      </p>
+                      <label className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 accent-cyan-400"
+                          checked={cropMarks}
+                          disabled={margin < 3}
+                          onChange={(event) =>
+                            setCropMarks(event.target.checked)
+                          }
+                          aria-describedby="label-crop-marks-hint"
+                        />
+                        {t("labelStudio.cropMarks")}
+                      </label>
+                      <p
+                        id="label-crop-marks-hint"
+                        className="text-xs text-gray-400"
+                      >
+                        {t("labelStudio.cropMarksHint")}
+                      </p>
                       <button
                         className={buttonClass}
                         disabled={!validSheet}

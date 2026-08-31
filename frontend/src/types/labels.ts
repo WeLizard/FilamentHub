@@ -18,6 +18,7 @@ export interface LabelOptions {
   attribution: "full" | "mark" | "none";
   qr_mark: boolean;
   brand_logo: boolean;
+  border: boolean;
   fields: LabelField[];
   comment: string;
 }
@@ -30,6 +31,7 @@ export interface LabelExportOptions {
   start_position: number;
   page_margin_mm: number;
   gap_mm: number;
+  crop_marks: boolean;
 }
 
 export interface LabelMetadata {
