@@ -4,9 +4,10 @@ FilamentHub Bridge is the native outbound connector between a local OctoPrint
 instance and a FilamentHub material system. It synchronizes the slots and spool
 assignments the user selected in FilamentHub, reports the locally selected slot,
 and sends measured extrusion through durable, replay-safe usage checkpoints.
-Assigned spools are also shown in OctoPrint's sidebar. In the main Bridge tab,
-the user can explicitly assign an existing FilamentHub spool to a slot or remove
-it. This updates the same desired assignment shown on the site; it does not claim
+Assigned spools are also shown in OctoPrint's sidebar. Both the sidebar and main
+Bridge tab let the user search for, assign, replace or remove an existing
+FilamentHub spool without leaving the current view. This updates the same
+desired assignment shown on the site; it does not claim
 that OctoPrint changed the physical hardware.
 
 The Bridge does not expose OctoPrint to the public internet. It initiates HTTPS
@@ -29,12 +30,16 @@ Spoolman or SpoolManager and does not copy their local databases.
      number. By default, tools follow the visible slot order (`T0 -> #1`,
      `T1 -> #2`, ...); an optional custom table handles non-standard layouts.
      Extrusion position is tracked separately for every tool.
-5. Use **Change spool** on a slot to search the account's usable physical
+5. Use **Change spool** on a slot (the pencil button in the sidebar) to search the account's usable physical
    spools and update its desired assignment. If that spool is assigned
    elsewhere, the Bridge names the current location before confirmation.
    FilamentHub moves the desired assignment atomically; the user still installs
    the physical spool unless a separate provider capability explicitly supports
    hardware commands.
+   The sidebar keeps empty slots under **Empty slots**, or shows them directly
+   when no spools are assigned. Removing the last spool never hides the way to
+   assign another one. Changing a spool does not select the active slot or alter
+   G-code tool routing.
 
 If a print selects an unmapped `Tn`, the Bridge leaves that extrusion
 unassigned and displays a warning instead of charging it to an unrelated spool.

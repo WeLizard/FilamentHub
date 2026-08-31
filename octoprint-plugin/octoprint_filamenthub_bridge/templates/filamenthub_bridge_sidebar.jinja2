@@ -4,24 +4,38 @@
   <span data-bind="visible: commandedToolText, text: commandedToolText"></span>
 </div>
 <div class="fhb-sidebar-empty-state" data-bind="visible: assignedSlots().length === 0">
-  No spools are assigned in FilamentHub.
+  {{ _('No spools are assigned in FilamentHub.') }}
 </div>
-<div class="fhb-sidebar-spools" data-bind="foreach: assignedSlots">
-  <button type="button" class="fhb-sidebar-slot" data-bind="
+<div class="fhb-sidebar-spools" data-bind="foreach: sidebarSlots">
+  <article class="fhb-sidebar-slot" data-bind="css: { active: index === $parent.activeSlot() }">
+    <button type="button" class="fhb-sidebar-slot-main" data-bind="
       click: $parent.selectSlot,
-      enable: $parent.isManualRouting,
-      css: { active: index === $parent.activeSlot(), readonly: $parent.isToolRouting() },
+      enable: $parent.isManualRouting() && !$parent.busy(),
       attr: { 'aria-current': index === $parent.activeSlot() ? 'true' : null }">
-    <span class="fhb-sidebar-swatch" data-bind="style: { backgroundColor: spool.color_hex || '#64748b' }"></span>
-    <span class="fhb-sidebar-copy">
-      <strong data-bind="text: $parent.slotIdentity($data)"></strong>
-      <span data-bind="text: $parent.spoolTitle($data)"></span>
-    </span>
-    <span class="fhb-sidebar-meta">
-      <strong data-bind="visible: $parent.mappedToolsForSlot($data), text: $parent.mappedToolsForSlot($data)"></strong>
-      <span data-bind="text: $parent.spoolMaterial($data)"></span>
-      <span data-bind="text: $parent.spoolRemaining($data)"></span>
-    </span>
-  </button>
+      <span class="fhb-sidebar-swatch" data-bind="style: { backgroundColor: spool && spool.color_hex || '#64748b' }, css: { empty: !spool }"></span>
+      <span class="fhb-sidebar-copy">
+        <strong data-bind="text: $parent.slotIdentity($data)"></strong>
+        <span data-bind="text: $parent.spoolTitle($data) || gettext('No spool assigned')"></span>
+      </span>
+      <span class="fhb-sidebar-meta">
+        <strong data-bind="visible: $parent.mappedToolsForSlot($data), text: $parent.mappedToolsForSlot($data)"></strong>
+        <span data-bind="text: $parent.spoolMaterial($data)"></span>
+        <span data-bind="text: $parent.spoolRemaining($data)"></span>
+      </span>
+    </button>
+    <button type="button" class="btn btn-mini fhb-sidebar-change" title="{{ _('Change spool') }}" aria-label="{{ _('Change spool') }}" data-bind="click: $parent.openSidebarSpoolPicker, disable: $parent.busy">
+      <i class="fas fa-pencil-alt" aria-hidden="true"></i>
+    </button>
+  </article>
+</div>
+<button type="button" class="btn btn-link fhb-sidebar-empty-toggle" data-bind="
+    visible: emptySlotCount() > 0 && assignedSlots().length > 0,
+    click: function () { showEmptySlots(!showEmptySlots()); },
+    attr: { 'aria-expanded': showEmptySlots() ? 'true' : 'false' }">
+  <i class="fas" aria-hidden="true" data-bind="css: { 'fa-chevron-down': !showEmptySlots(), 'fa-chevron-up': showEmptySlots() }"></i>
+  {{ _('Empty slots') }} (<span data-bind="text: emptySlotCount"></span>)
+</button>
+<div class="fhb-sidebar-picker" data-bind="if: editingSlot() && spoolPickerSurface() === 'sidebar'">
+  {% include 'filamenthub_bridge_spool_picker.jinja2' %}
 </div>
 <div class="alert alert-warning fhb-sidebar-warning" data-bind="visible: unmappedToolsText, text: unmappedToolsText"></div>

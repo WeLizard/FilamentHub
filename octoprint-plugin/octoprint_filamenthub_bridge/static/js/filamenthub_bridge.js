@@ -21,6 +21,8 @@ $(function () {
     self.lastError = ko.observable(null);
     self.busy = ko.observable(false);
     self.editingSlotId = ko.observable(null);
+    self.spoolPickerSurface = ko.observable(null);
+    self.showEmptySlots = ko.observable(false);
     self.spoolQuery = ko.observable("");
     self.spoolOptions = ko.observableArray([]);
     self.nextSpoolOffset = ko.observable(null);
@@ -105,6 +107,14 @@ $(function () {
 
     self.assignedSlots = ko.pureComputed(function () {
       return self.slots().filter(function (slot) { return Boolean(slot.spool); });
+    });
+    self.emptySlotCount = ko.pureComputed(function () {
+      return self.slots().length - self.assignedSlots().length;
+    });
+    self.sidebarSlots = ko.pureComputed(function () {
+      return self.showEmptySlots() || !self.assignedSlots().length
+        ? self.slots()
+        : self.assignedSlots();
     });
     self.isManualRouting = ko.pureComputed(function () {
       return self.routingMode() === "manual";
@@ -205,7 +215,7 @@ $(function () {
       self.lastSyncAt(state.last_sync_at || null);
       self.lastError(state.last_error || null);
       if (self.editingSlotId() !== null && !self.editingSlot()) {
-        self.editingSlotId(null);
+        self.cancelSpoolPicker();
       }
     };
 
@@ -231,7 +241,7 @@ $(function () {
     };
     self.sync = function () { self.command({ command: "sync" }); };
     self.selectSlot = function (slot) {
-      if (!self.isManualRouting()) return;
+      if (!self.isManualRouting() || self.busy()) return;
       self.command({ command: "select_slot", slot_index: slot.index });
     };
     self.searchSpools = function (reset) {
@@ -248,16 +258,35 @@ $(function () {
         self.nextSpoolOffset(page.next_offset === undefined ? null : page.next_offset);
       });
     };
-    self.openSpoolPicker = function (slot) {
+    self.onSpoolSearchKeydown = function (_, event) {
+      if (event.key !== "Enter") return true;
+      event.preventDefault();
+      if (!self.busy()) {
+        self.spoolQuery(event.target.value);
+        self.searchSpools(true);
+      }
+      return false;
+    };
+    self.startSpoolPicker = function (slot, surface) {
+      if (self.busy()) return;
+      self.spoolPickerSurface(null);
       self.editingSlotId(Number(slot.material_slot_id));
       self.spoolQuery("");
       self.spoolOptions([]);
       self.nextSpoolOffset(null);
       self.selectedSpoolId(slot.spool ? Number(slot.spool.id) : null);
       self.lastError(null);
+      self.spoolPickerSurface(surface);
       self.searchSpools(true);
     };
+    self.openSpoolPicker = function (slot) {
+      self.startSpoolPicker(slot, "tab");
+    };
+    self.openSidebarSpoolPicker = function (slot) {
+      self.startSpoolPicker(slot, "sidebar");
+    };
     self.cancelSpoolPicker = function () {
+      self.spoolPickerSurface(null);
       self.editingSlotId(null);
       self.spoolOptions([]);
       self.nextSpoolOffset(null);
