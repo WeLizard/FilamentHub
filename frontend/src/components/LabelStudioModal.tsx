@@ -612,7 +612,7 @@ export function LabelStudioModal({
                     )}
                   </div>
                 </fieldset>
-                <fieldset className="space-y-4 border-t border-white/10 pt-4">
+                <fieldset className="@container space-y-4 border-t border-white/10 pt-4">
                   <legend className="pt-4 font-semibold">
                     {t("labelStudio.content")}
                   </legend>
@@ -771,20 +771,6 @@ export function LabelStudioModal({
                       )}
                     </>
                   )}
-                  <label className="flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      className="h-4 w-4 accent-cyan-400"
-                      checked={label.border}
-                      onChange={(event) =>
-                        setLabel((previous) => ({
-                          ...previous,
-                          border: event.target.checked,
-                        }))
-                      }
-                    />
-                    {t("labelStudio.border")}
-                  </label>
                   <div className="grid grid-cols-2 gap-3">
                     <Dropdown
                       label={t("labelStudio.file")}
@@ -816,7 +802,7 @@ export function LabelStudioModal({
                   </div>
                   {media !== "single" && (
                     <>
-                      <div className="grid grid-cols-2 gap-3">
+                      <div className="grid grid-cols-2 gap-3 @min-[32rem]:grid-cols-4">
                         {numberControl(
                           t("labelStudio.copies"),
                           copies,
@@ -851,10 +837,28 @@ export function LabelStudioModal({
                       <p className="text-xs text-gray-400">
                         {t("labelStudio.startHint")}
                       </p>
+                    </>
+                  )}
+                  <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 shrink-0 accent-cyan-400"
+                        checked={label.border}
+                        onChange={(event) =>
+                          setLabel((previous) => ({
+                            ...previous,
+                            border: event.target.checked,
+                          }))
+                        }
+                      />
+                      {t("labelStudio.border")}
+                    </label>
+                    {media !== "single" && (
                       <label className="flex items-center gap-2 text-sm">
                         <input
                           type="checkbox"
-                          className="h-4 w-4 accent-cyan-400"
+                          className="h-4 w-4 shrink-0 accent-cyan-400"
                           checked={cropMarks}
                           disabled={!cutGuideLimits.allowed}
                           onChange={(event) =>
@@ -864,6 +868,10 @@ export function LabelStudioModal({
                         />
                         {t("labelStudio.cropMarks")}
                       </label>
+                    )}
+                  </div>
+                  {media !== "single" && (
+                    <>
                       <p
                         id="label-crop-marks-hint"
                         className="text-xs text-gray-400"

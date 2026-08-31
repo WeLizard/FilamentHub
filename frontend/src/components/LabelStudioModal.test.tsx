@@ -468,6 +468,11 @@ describe("LabelStudioModal", () => {
       await screen.findByRole("button", { name: "labelStudio.a4" }),
     );
     expect(screen.getByText("labelStudio.startHint")).toBeInTheDocument();
+    const frameControl = screen.getByLabelText("labelStudio.border");
+    const cutControl = screen.getByLabelText("labelStudio.cropMarks");
+    expect(frameControl.closest("label")?.parentElement).toBe(
+      cutControl.closest("label")?.parentElement,
+    );
     fireEvent.change(screen.getByLabelText("labelStudio.margin"), {
       target: { value: "1" },
     });
@@ -535,6 +540,7 @@ describe("LabelStudioModal", () => {
       screen.queryByLabelText("labelStudio.cropMarks"),
     ).not.toBeInTheDocument();
     expect(screen.queryByText(/^labelStudio.cutSize/)).not.toBeInTheDocument();
+    expect(screen.getByLabelText("labelStudio.border")).toBeChecked();
     await waitFor(() =>
       expect(mocks.preview.mock.lastCall?.[1]).toEqual(
         expect.objectContaining({
