@@ -4,6 +4,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -95,15 +96,22 @@ describe("LabelStudioModal", () => {
     expect(
       screen.queryByRole("group", { name: "labelStudio.export" }),
     ).not.toBeInTheDocument();
-    expect(screen.getByLabelText("labelStudio.brandLogo")).toBeDisabled();
-    expect(screen.getByLabelText("labelStudio.brandLogo")).not.toBeChecked();
+    const brand = within(
+      screen.getByRole("group", { name: "labelStudio.brand" }),
+    );
+    expect(
+      brand.getByRole("radio", { name: "labelStudio.branding_mark" }),
+    ).toBeDisabled();
+    expect(
+      brand.getByRole("radio", { name: "labelStudio.branding_full" }),
+    ).toBeChecked();
     fireEvent.click(
       screen.getByRole("button", { name: "labelStudio.classic" }),
     );
     expect(download).toBeDisabled();
     expect(screen.getByLabelText("labelStudio.centerMark")).toBeChecked();
     expect(
-      screen.queryByText("labelStudio.attribution"),
+      screen.queryByRole("group", { name: "labelStudio.attribution" }),
     ).not.toBeInTheDocument();
     await waitFor(() => expect(download).not.toBeDisabled());
     fireEvent.click(download);
@@ -219,9 +227,14 @@ describe("LabelStudioModal", () => {
     open();
     await screen.findByRole("button", { name: "40 × 12" });
     fireEvent.click(screen.getByRole("button", { name: "40 × 12" }));
+    const attribution = within(
+      screen.getByRole("group", { name: "labelStudio.attribution" }),
+    );
     expect(
-      screen.queryByText("labelStudio.attribution"),
-    ).not.toBeInTheDocument();
+      attribution.getByRole("radio", { name: "labelStudio.branding_none" }),
+    ).toBeChecked();
+    for (const radio of attribution.getAllByRole("radio"))
+      expect(radio).toBeDisabled();
     expect(
       screen.getByText("labelStudio.microAttribution"),
     ).toBeInTheDocument();
@@ -259,7 +272,12 @@ describe("LabelStudioModal", () => {
       target: { value: "30" },
     });
     fireEvent.click(screen.getByRole("button", { name: "labelStudio.apply" }));
-    expect(screen.getByText("labelStudio.attribution")).toBeInTheDocument();
+    expect(
+      attribution.getByRole("radio", { name: "labelStudio.branding_full" }),
+    ).toBeChecked();
+    expect(
+      attribution.getByRole("radio", { name: "labelStudio.branding_full" }),
+    ).not.toBeDisabled();
     await waitFor(() =>
       expect(mocks.preview).toHaveBeenLastCalledWith(
         12,
@@ -274,6 +292,63 @@ describe("LabelStudioModal", () => {
       expect(
         screen.getByRole("button", { name: "labelStudio.download" }),
       ).not.toBeDisabled(),
+    );
+  });
+
+  it("changes the brand and site signatures independently and exports both choices", async () => {
+    mocks.metadata.mockResolvedValue({
+      ...(await mocks.metadata()),
+      brand_logo_available: true,
+    });
+    open();
+    const brand = within(
+      await screen.findByRole("group", { name: "labelStudio.brand" }),
+    );
+    const site = within(
+      screen.getByRole("group", { name: "labelStudio.attribution" }),
+    );
+    for (const [brandMode, siteMode] of [
+      ["none", "full"],
+      ["mark", "none"],
+      ["full", "mark"],
+    ]) {
+      fireEvent.click(
+        brand.getByRole("radio", { name: `labelStudio.branding_${brandMode}` }),
+      );
+      fireEvent.click(
+        site.getByRole("radio", { name: `labelStudio.branding_${siteMode}` }),
+      );
+      await waitFor(() =>
+        expect(mocks.preview.mock.lastCall?.[1].label).toEqual(
+          expect.objectContaining({
+            brand_mode: brandMode,
+            attribution: siteMode,
+            qr_mark: true,
+          }),
+        ),
+      );
+      expect(
+        brand.getByRole("radio", { name: `labelStudio.branding_${brandMode}` }),
+      ).toBeChecked();
+      expect(
+        site.getByRole("radio", { name: `labelStudio.branding_${siteMode}` }),
+      ).toBeChecked();
+    }
+    const download = screen.getByRole("button", {
+      name: "labelStudio.download",
+    });
+    await waitFor(() => expect(download).not.toBeDisabled());
+    fireEvent.click(download);
+    await waitFor(() =>
+      expect(mocks.download).toHaveBeenCalledWith(
+        12,
+        expect.objectContaining({
+          label: expect.objectContaining({
+            brand_mode: "full",
+            attribution: "mark",
+          }),
+        }),
+      ),
     );
   });
 

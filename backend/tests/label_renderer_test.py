@@ -232,6 +232,31 @@ def test_label_unicode_and_logo_are_self_contained(label_data):
             _fetch_embedded(uri, "image")
 
 
+@pytest.mark.parametrize("mode", ["none", "mark", "full"])
+@pytest.mark.parametrize("dimensions", [(40, 12), (50, 30), (30, 50)])
+def test_brand_modes_preserve_printed_identity_and_characteristics(label_data, mode, dimensions):
+    output = BytesIO()
+    Image.new("RGB", (120, 40), "black").save(output, format="PNG")
+    options = LabelOptions(
+        width_mm=dimensions[0],
+        height_mm=dimensions[1],
+        brand_mode=mode,
+        brand_logo=False,
+        attribution="none",
+        dpi=300,
+    )
+    rendered = render_label(label_data, options, output.getvalue())
+    roles = {text["role"] for text in rendered["scene"]["texts"]}
+    assert ("brand" in roles) == (mode == "full")
+    assert ("data:image/png;base64," in rendered["svg"]) == (mode != "none")
+    assert set(options.fields) <= roles
+    png = export_label(
+        label_data, LabelExportOptions(label=options, format="png"), output.getvalue()
+    )
+    pixels = np.array(Image.open(BytesIO(png)).convert("RGB"))
+    assert cv2.QRCodeDetectorAruco().detectAndDecode(pixels)[0] == _qr_target_url(label_data.sku)
+
+
 def test_label_rejects_unsafe_density_and_overfull_sheet(label_data):
     with pytest.raises(LabelDoesNotFit):
         export_label(label_data, LabelExportOptions(label=LabelOptions(width_mm=40, height_mm=12)))
@@ -283,6 +308,12 @@ async def test_label_public_endpoints_are_read_only_and_cannot_override_identity
     response = await client.get(endpoint)
     assert response.status_code == 200
     assert response.json()["sheet_media"]["a4"] == {"width_mm": 210, "height_mm": 297}
+    for action in ("preview", "export"):
+        missing_logo = await client.post(
+            f"{endpoint}/{action}", json={"label": {"brand_mode": "mark"}}
+        )
+        assert missing_logo.status_code == 422
+        assert missing_logo.json()["detail"]["code"] == "ERR_LABEL_BRAND_LOGO_UNAVAILABLE"
     sheet_request = {"label": {}, "media": "a4", "copies": 50, "start_position": 27}
     for page, count in ((1, 1), (2, 27), (3, 22)):
         response = await client.post(f"{endpoint}/preview?page={page}", json=sheet_request)

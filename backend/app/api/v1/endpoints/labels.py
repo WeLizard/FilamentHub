@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.capacity import Gate
 from app.core.errors import (
+    ERR_LABEL_BRAND_LOGO_UNAVAILABLE,
     ERR_LABEL_DOES_NOT_FIT,
     ERR_LABEL_RENDER_FAILED,
     ERR_LABEL_UNSUPPORTED_TEXT,
@@ -20,7 +21,12 @@ from app.schemas.label import LabelExportOptions
 from app.services.label_catalog import catalog_label_data, public_brand_logo, public_label_filament
 from app.services.label_fonts import UnsupportedLabelText
 from app.services.label_layout import SHEET_MEDIA, LabelDoesNotFit, compose_sheet, sheet_positions
-from app.services.label_renderer import export_label, render_label, sheet_svg
+from app.services.label_renderer import (
+    LabelBrandLogoUnavailable,
+    export_label,
+    render_label,
+    sheet_svg,
+)
 
 router = APIRouter(prefix="/labels", tags=["labels"])
 logger = logging.getLogger(__name__)
@@ -54,7 +60,7 @@ async def label_metadata(
 
 def _render(data, options, logo_url, download, page=1):
     try:
-        logo = public_brand_logo(logo_url) if options.label.brand_logo else None
+        logo = public_brand_logo(logo_url) if options.label.show_brand_logo else None
         if download:
             return export_label(data, options, logo)
         rendered = render_label(data, options.label, logo)
@@ -68,6 +74,8 @@ def _render(data, options, logo_url, download, page=1):
         )
         rendered.pop("content")
         return rendered
+    except LabelBrandLogoUnavailable:
+        raise_error(422, ERR_LABEL_BRAND_LOGO_UNAVAILABLE)
     except LabelDoesNotFit:
         raise_error(422, ERR_LABEL_DOES_NOT_FIT)
     except UnsupportedLabelText:

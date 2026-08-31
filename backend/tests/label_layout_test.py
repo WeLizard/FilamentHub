@@ -68,13 +68,22 @@ def overlaps(a: Box, b: Box) -> bool:
 )
 @pytest.mark.parametrize("rotated", [False, True])
 @pytest.mark.parametrize("attribution", ["full", "mark", "none"])
-@pytest.mark.parametrize("brand_logo", [False, True])
+@pytest.mark.parametrize(
+    "brand_options",
+    [
+        {"brand_logo": False},
+        {"brand_logo": True},
+        {"brand_mode": "none"},
+        {"brand_mode": "mark"},
+        {"brand_mode": "full"},
+    ],
+)
 def test_selected_content_and_qr_stay_inside_their_zones(
-    material, measure_text, dimensions, rotated, attribution, brand_logo
+    material, measure_text, dimensions, rotated, attribution, brand_options
 ):
     width, height = dimensions[::-1] if rotated else dimensions
     options = LabelOptions(
-        width_mm=width, height_mm=height, attribution=attribution, brand_logo=brand_logo
+        width_mm=width, height_mm=height, attribution=attribution, **brand_options
     )
     scene = compose_label(material, options, 33, measure_text)
     assert scene.qr.width > 0
@@ -88,6 +97,11 @@ def test_selected_content_and_qr_stay_inside_their_zones(
     assert protected.x >= -1e-6 and protected.y >= -1e-6
     assert protected.right <= width + 1e-6 and protected.bottom <= height + 1e-6
     roles = {text.role for text in scene.texts}
+    assert ("brand" in roles) == options.show_brand_name
+    assert (scene.brand_logo is not None) == options.show_brand_logo
+    if scene.brand_logo:
+        assert not overlaps(scene.brand_logo, protected)
+        assert not any(overlaps(scene.brand_logo, text.box) for text in scene.texts)
     assert set(options.fields) <= roles
     for text in scene.texts:
         assert text.box.x >= scene.margin_mm - 1e-6

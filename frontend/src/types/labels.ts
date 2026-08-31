@@ -8,6 +8,8 @@ export type LabelField =
   | "weight"
   | "chamber";
 
+export type LabelBrandingMode = "none" | "mark" | "full";
+
 export interface LabelOptions {
   width_mm: number;
   height_mm: number;
@@ -15,9 +17,9 @@ export interface LabelOptions {
   color_mode: "mono" | "color";
   dpi: 203 | 300 | 600;
   locale: "ru" | "en" | "zh";
-  attribution: "full" | "mark" | "none";
+  attribution: LabelBrandingMode;
   qr_mark: boolean;
-  brand_logo: boolean;
+  brand_mode: LabelBrandingMode;
   border: boolean;
   fields: LabelField[];
   comment: string;

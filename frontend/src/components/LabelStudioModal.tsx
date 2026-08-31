@@ -19,6 +19,7 @@ import type {
 import { translateApiError } from "../utils/translateApiError";
 import { labelCutGuideLimits, labelSheetGrid } from "../utils/labelSheet";
 import { ModalOverlay } from "./ModalOverlay";
+import { LabelBrandingControl } from "./LabelBrandingControl";
 import { Dropdown } from "./Dropdown";
 import { toast } from "./Toast";
 
@@ -34,7 +35,7 @@ const initialLabel: LabelDraft = {
   locale: "ru",
   attribution: "full",
   qr_mark: true,
-  brand_logo: true,
+  brand_mode: "full",
   border: false,
   fields: ["nozzle", "bed", "drying", "abrasiveness", "diameter", "density"],
   comment: "",
@@ -650,58 +651,63 @@ export function LabelStudioModal({
                   </div>
                   {label.kind === "full" && (
                     <>
-                      <div className="rounded-xl border border-white/10 p-3">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <span className="font-medium">
-                            {metadata.data.data.brand}
-                          </span>
-                          <label className="flex items-center gap-2 text-sm">
-                            <input
-                              type="checkbox"
-                              className="h-4 w-4 accent-cyan-400"
-                              checked={
-                                label.brand_logo &&
-                                metadata.data.brand_logo_available
-                              }
-                              disabled={!metadata.data.brand_logo_available}
-                              onChange={(event) =>
+                      <div>
+                        <div className="grid grid-cols-2 divide-x divide-white/10 overflow-hidden rounded-xl border border-white/10">
+                          <div className="flex min-w-0 flex-col gap-3 p-3">
+                            <div className="flex-1 space-y-1 break-words">
+                              <p className="font-medium">
+                                {metadata.data.data.brand}
+                              </p>
+                              <p className="text-xs text-gray-400">
+                                {metadata.data.data.material} ·{" "}
+                                {metadata.data.data.name}
+                              </p>
+                            </div>
+                            <LabelBrandingControl
+                              label={t("labelStudio.brand")}
+                              value={label.brand_mode}
+                              markAvailable={metadata.data.brand_logo_available}
+                              onChange={(brand_mode) =>
                                 setLabel((previous) => ({
                                   ...previous,
-                                  brand_logo: event.target.checked,
+                                  brand_mode,
                                 }))
                               }
                             />
-                            {t("labelStudio.brandLogo")}
-                          </label>
+                          </div>
+                          <div className="flex min-w-0 flex-col gap-3 p-3">
+                            <div className="flex-1 space-y-1">
+                              <p className="font-medium">
+                                {t("labelStudio.siteName")}
+                              </p>
+                              <p className="text-xs text-gray-400">
+                                {t("labelStudio.outsideQr")}
+                              </p>
+                            </div>
+                            <LabelBrandingControl
+                              label={t("labelStudio.attribution")}
+                              value={microLabel ? "none" : label.attribution}
+                              disabled={microLabel}
+                              onChange={(attribution) =>
+                                setLabel((previous) => ({
+                                  ...previous,
+                                  attribution,
+                                }))
+                              }
+                            />
+                          </div>
                         </div>
-                        <p className="mt-2 text-sm text-gray-400">
-                          {metadata.data.data.material} ·{" "}
-                          {metadata.data.data.name}
-                        </p>
+                        {!metadata.data.brand_logo_available && (
+                          <p className="mt-2 text-xs text-gray-400">
+                            {t("labelStudio.brandLogoUnavailable")}
+                          </p>
+                        )}
+                        {microLabel && (
+                          <p className="mt-2 text-xs text-gray-400">
+                            {t("labelStudio.microAttribution")}
+                          </p>
+                        )}
                       </div>
-                      {microLabel ? (
-                        <p className="text-sm text-gray-400">
-                          {t("labelStudio.microAttribution")}
-                        </p>
-                      ) : (
-                        <Dropdown
-                          label={t("labelStudio.attribution")}
-                          value={label.attribution}
-                          clearable={false}
-                          options={(["full", "mark", "none"] as const).map(
-                            (value) => ({
-                              value,
-                              label: t(`labelStudio.attribution_${value}`),
-                            }),
-                          )}
-                          onChange={(value) =>
-                            setLabel((previous) => ({
-                              ...previous,
-                              attribution: value as LabelOptions["attribution"],
-                            }))
-                          }
-                        />
-                      )}
                       <div>
                         <p className="mb-2 text-sm text-gray-300">
                           {t("labelStudio.fields")}

@@ -299,27 +299,30 @@ def _body(
             y += font_size * 1.2
         return len(lines) * font_size * 1.2
 
-    logo_size = size * 1.35 if options.brand_logo and data.has_brand_logo else 0
-    brand_width = measure(data.brand, size, True) + (logo_size + gap if logo_size else 0)
+    brand_name = data.brand if options.show_brand_name else ""
+    name_width = measure(brand_name, size, True) if brand_name else 0
+    logo_size = size * 1.35 if options.show_brand_logo and data.has_brand_logo else 0
+    brand_width = name_width + logo_size + (gap if logo_size and brand_name else 0)
     material_width = measure(data.material, size, True) + size * 0.5
     compact = options.width_mm / options.height_mm >= 2.5
-    if compact and brand_width + material_width + gap < box.width:
+    if compact and brand_width and brand_width + material_width + gap < box.width:
         if logo_size:
             logo = Box(box.right - brand_width, y, logo_size, logo_size)
-        brand_x = box.right - measure(data.brand, size, True)
-        texts.append(
-            LabelText(
-                data.brand, Box(brand_x, y, box.right - brand_x, size * 1.2), size, "brand", True
+        if brand_name:
+            brand_x = box.right - name_width
+            texts.append(
+                LabelText(brand_name, Box(brand_x, y, name_width, size * 1.2), size, "brand", True)
             )
-        )
         text_block(data.material, box.x, material_width, size, "material", True)
     else:
         if logo_size:
             logo = Box(box.x, y, logo_size, logo_size)
-        brand_x = box.x + (logo_size + gap if logo_size else 0)
-        brand_y = y
-        text_block(data.brand, brand_x, box.right - brand_x, size, "brand", True)
-        y = max(y, brand_y + logo_size) + gap
+        if brand_width:
+            brand_x = box.x + (logo_size + gap if logo_size else 0)
+            brand_y = y
+            if brand_name:
+                text_block(brand_name, brand_x, box.right - brand_x, size, "brand", True)
+            y = max(y, brand_y + logo_size) + gap
         text_block(data.material, box.x, box.width, size, "material", True)
     y += gap
     text_block(data.name, box.x, box.width, size * 1.65, "name", True)

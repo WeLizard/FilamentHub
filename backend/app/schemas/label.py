@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 LabelField = Literal[
     "nozzle", "bed", "drying", "abrasiveness", "diameter", "density", "weight", "chamber"
 ]
+BrandingMode = Literal["none", "mark", "full"]
 
 
 class LabelOptions(BaseModel):
@@ -18,8 +19,9 @@ class LabelOptions(BaseModel):
     color_mode: Literal["mono", "color"] = "mono"
     dpi: Literal[203, 300, 600] = 203
     locale: Literal["ru", "en", "zh"] = "ru"
-    attribution: Literal["full", "mark", "none"] = "full"
+    attribution: BrandingMode = "full"
     qr_mark: bool = False
+    brand_mode: BrandingMode | None = None
     brand_logo: bool = True
     border: bool = False
     fields: list[LabelField] = Field(
@@ -45,6 +47,15 @@ class LabelOptions(BaseModel):
             and min(self.width_mm, self.height_mm) >= 50
             and self.width_mm * self.height_mm >= 6000
         )
+
+    @property
+    def show_brand_name(self) -> bool:
+        return self.brand_mode not in {"none", "mark"}
+
+    @property
+    def show_brand_logo(self) -> bool:
+        # Requests without a mode retain the former logo checkbox semantics.
+        return self.brand_logo if self.brand_mode is None else self.brand_mode != "none"
 
 
 class LabelExportOptions(BaseModel):

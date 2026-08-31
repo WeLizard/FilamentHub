@@ -26,9 +26,13 @@ from app.services.label_layout import (
 from app.services.qr_mark import MARK_VIEWBOX, mark_paths
 from app.services.qr_service import _qr_target_url
 
-RENDERER_REVISION = "label-scene-5"
+RENDERER_REVISION = "label-scene-6"
 MAX_OUTPUT_PIXELS = 36_000_000
 MAX_SVG_BYTES = 4_000_000
+
+
+class LabelBrandLogoUnavailable(ValueError):
+    """A mark-only brand signature requires an actual printable logo."""
 
 
 @lru_cache(maxsize=1)
@@ -129,6 +133,8 @@ def _matrix_path(matrix: list[list[bool]], window: int) -> str:
 
 
 def render_label(data: LabelData, options: LabelOptions, logo: bytes | None = None) -> dict:
+    if options.kind == "full" and options.brand_mode == "mark" and not logo:
+        raise LabelBrandLogoUnavailable("Brand mark is unavailable")
     branded = options.kind == "classic" and options.qr_mark
     matrix = _matrix(data.sku, branded)
     modules = len(matrix)
