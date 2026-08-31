@@ -213,6 +213,25 @@ async def test_label_public_endpoints_are_read_only_and_cannot_override_identity
     endpoint = f"/api/v1/labels/filaments/{filament.id}"
     response = await client.get(endpoint)
     assert response.status_code == 200
+    assert response.json()["sheet_media"]["a4"] == {"width_mm": 210, "height_mm": 297}
+    sheet_request = {"label": {}, "media": "a4", "copies": 50, "start_position": 27}
+    for page, count in ((1, 1), (2, 27), (3, 22)):
+        response = await client.post(f"{endpoint}/preview?page={page}", json=sheet_request)
+        assert response.status_code == 200
+        assert response.json()["page_copies"] == count
+        assert response.json()["sheet"]["page_count"] == 3
+    assert (await client.post(f"{endpoint}/preview?page=4", json=sheet_request)).status_code == 422
+    assert (await client.post(f"{endpoint}/preview?page=51", json=sheet_request)).status_code == 422
+    response = await client.post(f"{endpoint}/export", json={**sheet_request, "format": "pdf"})
+    assert response.status_code == 200
+    pdf_objects = response.content + b"\n".join(
+        zlib.decompress(match[1])
+        for match in re.finditer(rb"stream\n(.*?)\nendstream", response.content, re.S)
+    )
+    assert len(re.findall(rb"/Type /Page\b", pdf_objects)) == 3
+    assert (
+        await client.post(f"{endpoint}/export", json={**sheet_request, "format": "svg"})
+    ).status_code == 422
     request = {"label": {"width_mm": 150, "height_mm": 100, "comment": "My local print"}}
     response = await client.post(f"{endpoint}/preview", json=request)
     assert response.status_code == 200 and response.json()["printable"]

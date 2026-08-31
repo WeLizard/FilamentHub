@@ -9,13 +9,65 @@ import re
 from dataclasses import dataclass, field
 from typing import Callable
 
-from app.schemas.label import LabelOptions
+from app.schemas.label import LabelExportOptions, LabelOptions
 
 MeasureText = Callable[[str, float, bool], float]
+SHEET_MEDIA = {"a4": (210.0, 297.0), "letter": (215.9, 279.4)}
 
 
 class LabelDoesNotFit(ValueError):
     """No readable layout exists for the selected content and media."""
+
+
+@dataclass(frozen=True)
+class LabelSheet:
+    width_mm: float
+    height_mm: float
+    columns: int
+    rows: int
+    capacity: int
+    page_count: int
+
+
+def compose_sheet(options: LabelExportOptions) -> LabelSheet:
+    if options.media == "single":
+        return LabelSheet(options.label.width_mm, options.label.height_mm, 1, 1, 1, 1)
+    width, height = SHEET_MEDIA[options.media]
+    margin, gap = options.page_margin_mm, options.gap_mm
+    columns = math.floor((width - margin * 2 + gap) / (options.label.width_mm + gap) + 1e-9)
+    rows = math.floor((height - margin * 2 + gap) / (options.label.height_mm + gap) + 1e-9)
+    capacity = columns * rows
+    if columns < 1 or rows < 1 or options.start_position > capacity:
+        raise LabelDoesNotFit("The label or starting position exceeds the sheet")
+    return LabelSheet(
+        width,
+        height,
+        columns,
+        rows,
+        capacity,
+        math.ceil((options.start_position - 1 + options.copies) / capacity),
+    )
+
+
+def sheet_positions(
+    options: LabelExportOptions, sheet: LabelSheet, page: int
+) -> list[tuple[float, float]]:
+    if not 1 <= page <= sheet.page_count:
+        raise LabelDoesNotFit("The requested preview page does not exist")
+    if options.media == "single":
+        return [(0, 0)]
+    first = max(options.start_position - 1, (page - 1) * sheet.capacity)
+    last = min(options.start_position - 1 + options.copies, page * sheet.capacity)
+    return [
+        (
+            options.page_margin_mm
+            + (index % sheet.capacity % sheet.columns) * (options.label.width_mm + options.gap_mm),
+            options.page_margin_mm
+            + (index % sheet.capacity // sheet.columns)
+            * (options.label.height_mm + options.gap_mm),
+        )
+        for index in range(first, last)
+    ]
 
 
 @dataclass(frozen=True)

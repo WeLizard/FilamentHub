@@ -1,7 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { Download, X } from "lucide-react";
+import {
+  ArrowLeftRight,
+  ChevronLeft,
+  ChevronRight,
+  Download,
+  X,
+} from "lucide-react";
 import type { AxiosError } from "axios";
 import { labelsAPI } from "../api/client";
 import { useDebounce } from "../hooks/useDebounce";
@@ -11,11 +17,15 @@ import type {
   LabelOptions,
 } from "../types/labels";
 import { translateApiError } from "../utils/translateApiError";
+import { labelSheetGrid } from "../utils/labelSheet";
 import { ModalOverlay } from "./ModalOverlay";
 import { Dropdown } from "./Dropdown";
 import { toast } from "./Toast";
 
-const initialLabel: LabelOptions = {
+type LabelDraft = Omit<LabelOptions, "fields"> & {
+  fields: (LabelField | "")[];
+};
+const initialLabel: LabelDraft = {
   width_mm: 50,
   height_mm: 30,
   kind: "full",
@@ -23,13 +33,13 @@ const initialLabel: LabelOptions = {
   dpi: 203,
   locale: "ru",
   attribution: "full",
-  qr_mark: false,
+  qr_mark: true,
   brand_logo: true,
   fields: ["nozzle", "bed", "drying", "abrasiveness", "diameter", "density"],
   comment: "",
 };
 const inputClass =
-  "w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-white focus:border-cyan-300 focus:outline-none";
+  "min-w-0 w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-white focus:border-cyan-300 focus:outline-none";
 const buttonClass =
   "rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40";
 type Orientation = "landscape" | "portrait";
@@ -74,11 +84,12 @@ export function LabelStudioModal({
   const [comment, setComment] = useState("");
   const [media, setMedia] = useState<LabelExportOptions["media"]>("single");
   const [format, setFormat] = useState<LabelExportOptions["format"]>("pdf");
-  const [copies, setCopies] = useState(1);
-  const [start, setStart] = useState(1);
+  const [requestedCopies, setRequestedCopies] = useState<number | null>(null);
+  const [requestedStart, setRequestedStart] = useState(1);
   const [margin, setMargin] = useState(5);
   const [gap, setGap] = useState(2);
   const [showSheet, setShowSheet] = useState(false);
+  const [selectedPage, setSelectedPage] = useState({ key: "", number: 1 });
   const [downloading, setDownloading] = useState(false);
   useEffect(() => {
     try {
@@ -98,6 +109,21 @@ export function LabelStudioModal({
     label.width_mm * label.height_mm >= 6000;
   const microLabel =
     label.kind === "full" && Math.min(label.width_mm, label.height_mm) <= 12;
+  const grid = labelSheetGrid(
+    media === "single" ? undefined : metadata.data?.sheet_media[media],
+    label,
+    margin,
+    gap,
+  );
+  const validSheet = media === "single" || grid.capacity > 0;
+  const start = Math.max(1, Math.min(requestedStart, grid.capacity));
+  const copies =
+    requestedCopies ?? Math.max(1, Math.min(50, grid.capacity - start + 1));
+  const pageCount =
+    media === "single" || !grid.capacity
+      ? 1
+      : Math.ceil((start - 1 + copies) / grid.capacity);
+  const requiresPdf = media !== "single" && pageCount > 1 && format !== "pdf";
   const options = useMemo<LabelExportOptions>(
     () => ({
       label: {
@@ -105,8 +131,10 @@ export function LabelStudioModal({
         locale,
         attribution: microLabel ? "none" : label.attribution,
         comment: supportsComment ? comment : "",
-        fields: label.fields.filter((key) =>
-          metadata.data?.data.fields.some((field) => field[0] === key),
+        fields: label.fields.filter(
+          (key): key is LabelField =>
+            key !== "" &&
+            !!metadata.data?.data.fields.some((field) => field[0] === key),
         ),
       },
       format,
@@ -132,6 +160,10 @@ export function LabelStudioModal({
     ],
   );
   const optionsKey = JSON.stringify({ ...options, format: "svg" });
+  const previewPage =
+    selectedPage.key === optionsKey
+      ? Math.min(selectedPage.number, pageCount)
+      : 1;
   const debouncedComment = useDebounce(options.label.comment, 180);
   const previewKey = JSON.stringify({
     ...options,
@@ -142,10 +174,15 @@ export function LabelStudioModal({
     format: "svg",
   });
   const preview = useQuery({
-    queryKey: ["label-preview", filamentId, previewKey],
+    queryKey: ["label-preview", filamentId, previewKey, previewPage],
     queryFn: ({ signal }) =>
-      labelsAPI.preview(filamentId, JSON.parse(previewKey), signal),
-    enabled: !!metadata.data,
+      labelsAPI.preview(
+        filamentId,
+        JSON.parse(previewKey),
+        signal,
+        previewPage,
+      ),
+    enabled: !!metadata.data && validSheet,
     placeholderData: keepPreviousData,
     retry: false,
     gcTime: 0,
@@ -187,6 +224,7 @@ export function LabelStudioModal({
     [image],
   );
   const current =
+    validSheet &&
     previewKey === optionsKey &&
     preview.isSuccess &&
     !preview.isFetching &&
@@ -238,18 +276,18 @@ export function LabelStudioModal({
       setDimensions(side, side);
     }
   };
-  const chooseField = (key: LabelField) =>
-    setLabel((previous) => ({
-      ...previous,
-      fields: previous.fields.includes(key)
-        ? previous.fields.filter((field) => field !== key)
-        : [
-            ...previous.fields.filter((field) =>
-              metadata.data?.data.fields.some((entry) => entry[0] === field),
-            ),
-            key,
-          ].slice(0, 6),
-    }));
+  const chooseField = (position: number, key: LabelField | "") =>
+    setLabel((previous) => {
+      const fields = previous.fields.map((field) =>
+        metadata.data?.data.fields.some((entry) => entry[0] === field)
+          ? field
+          : "",
+      );
+      const other = key ? fields.indexOf(key) : -1;
+      if (other >= 0 && other !== position) fields[other] = fields[position];
+      fields[position] = key;
+      return { ...previous, fields };
+    });
   const download = async () => {
     setDownloading(true);
     try {
@@ -266,18 +304,23 @@ export function LabelStudioModal({
     update: (value: number) => void,
     min: number,
     max: number,
+    integer = false,
   ) => (
-    <label className="space-y-1 text-sm text-gray-300">
+    <label className="min-w-0 space-y-1 text-sm text-gray-300">
       {caption}
       <input
         className={inputClass}
         type="number"
         min={min}
         max={max}
+        step={integer ? 1 : 0.1}
         value={value}
         onChange={(event) => {
           const next = Number(event.target.value);
-          if (Number.isFinite(next)) update(Math.min(max, Math.max(min, next)));
+          if (Number.isFinite(next))
+            update(
+              Math.min(max, Math.max(min, integer ? Math.floor(next) : next)),
+            );
         }}
       />
     </label>
@@ -371,14 +414,52 @@ export function LabelStudioModal({
                     role={preview.isError || imageError ? "alert" : "status"}
                     className="min-h-7 px-4 py-1 text-xs text-amber-200"
                   >
-                    {preview.isError
-                      ? errorMessage(preview.error)
-                      : imageError
-                        ? t("labelStudio.failed")
-                        : !current && image
-                          ? t("labelStudio.updating")
-                          : ""}
+                    {!validSheet
+                      ? t("labelStudio.sheetDoesNotFit")
+                      : preview.isError
+                        ? errorMessage(preview.error)
+                        : imageError
+                          ? t("labelStudio.failed")
+                          : !current && image
+                            ? t("labelStudio.updating")
+                            : ""}
                   </p>
+                  {showSheet && media !== "single" && validSheet && (
+                    <div className="flex items-center justify-center gap-3 border-t border-white/10 p-2 text-sm">
+                      <button
+                        className={buttonClass}
+                        aria-label={t("labelStudio.previousPage")}
+                        disabled={previewPage <= 1}
+                        onClick={() =>
+                          setSelectedPage({
+                            key: optionsKey,
+                            number: previewPage - 1,
+                          })
+                        }
+                      >
+                        <ChevronLeft size={16} />
+                      </button>
+                      <span>
+                        {t("labelStudio.pageNumber", {
+                          page: previewPage,
+                          total: pageCount,
+                        })}
+                      </span>
+                      <button
+                        className={buttonClass}
+                        aria-label={t("labelStudio.nextPage")}
+                        disabled={previewPage >= pageCount}
+                        onClick={() =>
+                          setSelectedPage({
+                            key: optionsKey,
+                            number: previewPage + 1,
+                          })
+                        }
+                      >
+                        <ChevronRight size={16} />
+                      </button>
+                    </div>
+                  )}
                   {preview.data && (
                     <div className="grid grid-cols-2 gap-3 border-t border-white/10 p-4 text-xs text-gray-300">
                       <p>
@@ -438,7 +519,9 @@ export function LabelStudioModal({
                   <legend className="pt-4 font-semibold">
                     {t("labelStudio.size")}
                   </legend>
-                  <div className="grid grid-cols-3 gap-2">
+                  <div
+                    className={`grid gap-2 ${label.kind === "classic" ? "grid-cols-4" : "grid-cols-6"}`}
+                  >
                     {(label.kind === "classic"
                       ? metadata.data.classic_presets_mm.map((side) => ({
                           width_mm: side,
@@ -454,19 +537,24 @@ export function LabelStudioModal({
                       return (
                         <button
                           key={`${size.width_mm}-${size.height_mm}`}
-                          className={buttonClass}
+                          className={`${buttonClass} min-h-12 min-w-0 !px-1 !py-2.5 !text-sm ${label.width_mm === w && label.height_mm === h ? "!border-cyan-300/70 !bg-cyan-300/10" : ""}`}
+                          aria-label={`${w} × ${h}`}
                           aria-pressed={
                             label.width_mm === w && label.height_mm === h
                           }
                           onClick={() => setDimensions(w, h)}
                         >
-                          {w} × {h}
+                          <span className="inline-block">{w}×</span>
+                          <wbr />
+                          <span className="inline-block">{h}</span>
                         </button>
                       );
                     })}
                   </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <label className="space-y-1 text-sm text-gray-300">
+                  <div
+                    className={`grid items-end gap-2 ${label.kind === "full" ? "grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto_auto]" : "grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]"}`}
+                  >
+                    <label className="min-w-0 space-y-1 text-xs text-gray-300 sm:text-sm">
                       {t("labelStudio.width")}
                       <input
                         className={inputClass}
@@ -475,7 +563,7 @@ export function LabelStudioModal({
                         onChange={(event) => setWidth(event.target.value)}
                       />
                     </label>
-                    <label className="space-y-1 text-sm text-gray-300">
+                    <label className="min-w-0 space-y-1 text-xs text-gray-300 sm:text-sm">
                       {t("labelStudio.height")}
                       <input
                         className={inputClass}
@@ -484,30 +572,40 @@ export function LabelStudioModal({
                         onChange={(event) => setHeight(event.target.value)}
                       />
                     </label>
-                  </div>
-                  <div className="flex gap-2">
-                    <button className={buttonClass} onClick={applyDimensions}>
-                      {t("labelStudio.apply")}
-                    </button>
-                  </div>
-                  {label.kind === "full" && (
-                    <div
-                      role="group"
-                      aria-label={t("labelStudio.orientation")}
-                      className="grid grid-cols-2 gap-2"
+                    <button
+                      className={buttonClass}
+                      onClick={applyDimensions}
+                      aria-label={t("labelStudio.apply")}
                     >
-                      {(["landscape", "portrait"] as const).map((value) => (
-                        <button
-                          key={value}
-                          onClick={() => chooseOrientation(value)}
-                          aria-pressed={orientation === value}
-                          className={`${buttonClass} ${orientation === value ? "!border-cyan-300/70 !bg-cyan-300/10" : ""}`}
-                        >
-                          {t(`labelStudio.${value}`)}
-                        </button>
-                      ))}
-                    </div>
-                  )}
+                      {t("labelStudio.applyShort")}
+                    </button>
+                    {label.kind === "full" && (
+                      <button
+                        type="button"
+                        aria-label={t("labelStudio.orientation")}
+                        aria-pressed={orientation === "portrait"}
+                        title={`${t("labelStudio.orientation")}: ${t(`labelStudio.${orientation}`)}`}
+                        onClick={() =>
+                          chooseOrientation(
+                            orientation === "portrait"
+                              ? "landscape"
+                              : "portrait",
+                          )
+                        }
+                        className={`${buttonClass} flex min-h-10 items-center gap-2 !px-2 sm:!px-3`}
+                      >
+                        <ArrowLeftRight
+                          size={16}
+                          className={
+                            orientation === "portrait" ? "rotate-90" : ""
+                          }
+                        />
+                        <span className="hidden sm:inline">
+                          {t(`labelStudio.${orientation}`)}
+                        </span>
+                      </button>
+                    )}
+                  </div>
                 </fieldset>
                 <fieldset className="space-y-4 border-t border-white/10 pt-4">
                   <legend className="pt-4 font-semibold">
@@ -604,32 +702,48 @@ export function LabelStudioModal({
                           {t("labelStudio.fields")}
                         </p>
                         <div className="grid grid-cols-2 gap-3">
-                          {metadata.data.data.fields.map(
-                            ([key, heading, value]) => (
-                              <label
-                                key={key}
-                                className="flex items-start gap-2 text-sm"
-                              >
-                                <input
-                                  type="checkbox"
-                                  className="mt-1 h-4 w-4 shrink-0 accent-cyan-400"
-                                  checked={label.fields.includes(key)}
-                                  disabled={
-                                    !label.fields.includes(key) &&
-                                    options.label.fields.length >= 6
+                          {label.fields.map((key, position) => {
+                            const field = metadata.data.data.fields.find(
+                              (entry) => entry[0] === key,
+                            );
+                            return (
+                              <div key={position} className="min-w-0">
+                                <Dropdown
+                                  size="sm"
+                                  label={t("labelStudio.fieldPosition", {
+                                    position: position + 1,
+                                  })}
+                                  value={field ? key : ""}
+                                  clearable={false}
+                                  options={[
+                                    {
+                                      value: "",
+                                      label: t("labelStudio.fieldEmpty"),
+                                    },
+                                    ...metadata.data.data.fields.map(
+                                      ([value, heading]) => ({
+                                        value,
+                                        label: heading,
+                                      }),
+                                    ),
+                                  ]}
+                                  onChange={(value) =>
+                                    chooseField(
+                                      position,
+                                      value as LabelField | "",
+                                    )
                                   }
-                                  onChange={() => chooseField(key)}
                                 />
-                                <span>
-                                  {heading}
-                                  <small className="block text-gray-400">
-                                    {value}
-                                  </small>
-                                </span>
-                              </label>
-                            ),
-                          )}
+                                <p className="mt-1 min-h-4 text-xs text-gray-400">
+                                  {field?.[2]}
+                                </p>
+                              </div>
+                            );
+                          })}
                         </div>
+                        <p className="mt-2 text-xs text-gray-400">
+                          {t("labelStudio.fieldsHint")}
+                        </p>
                       </div>
                       {supportsComment && (
                         <label className="block space-y-2 text-sm text-gray-300">
@@ -680,9 +794,10 @@ export function LabelStudioModal({
                           label: t(`labelStudio.${value}`),
                         }),
                       )}
-                      onChange={(value) =>
-                        setMedia(value as LabelExportOptions["media"])
-                      }
+                      onChange={(value) => {
+                        setMedia(value as LabelExportOptions["media"]);
+                        setShowSheet(value !== "single");
+                      }}
                     />
                   </div>
                   {media !== "single" && (
@@ -691,16 +806,18 @@ export function LabelStudioModal({
                         {numberControl(
                           t("labelStudio.copies"),
                           copies,
-                          setCopies,
+                          setRequestedCopies,
                           1,
                           50,
+                          true,
                         )}
                         {numberControl(
                           t("labelStudio.start"),
                           start,
-                          setStart,
+                          setRequestedStart,
                           1,
-                          500,
+                          Math.max(1, Math.min(500, grid.capacity)),
+                          true,
                         )}
                         {numberControl(
                           t("labelStudio.margin"),
@@ -717,14 +834,53 @@ export function LabelStudioModal({
                           10,
                         )}
                       </div>
-                      <p className="text-xs text-gray-400">
-                        {t("labelStudio.oneSheet")}
-                      </p>
+                      <button
+                        className={buttonClass}
+                        disabled={!validSheet}
+                        onClick={() => setRequestedCopies(null)}
+                      >
+                        {t("labelStudio.fillSheet")}
+                      </button>
+                      <div
+                        role="status"
+                        className="space-y-1 rounded-xl border border-white/10 p-3 text-sm"
+                      >
+                        {validSheet ? (
+                          <>
+                            <p>
+                              {t("labelStudio.sheetGrid", {
+                                columns: grid.columns,
+                                rows: grid.rows,
+                                capacity: grid.capacity,
+                              })}
+                            </p>
+                            <p>
+                              {t("labelStudio.sheetCount", {
+                                copies,
+                                pages: pageCount,
+                              })}
+                            </p>
+                          </>
+                        ) : (
+                          <p className="text-amber-200">
+                            {t("labelStudio.sheetDoesNotFit")}
+                          </p>
+                        )}
+                        <p className="text-xs text-gray-400">
+                          {t("labelStudio.sheetHint")}
+                        </p>
+                      </div>
+                      {requiresPdf && (
+                        <p role="alert" className="text-sm text-amber-200">
+                          {t("labelStudio.multiplePdf")}
+                        </p>
+                      )}
                     </>
                   )}
                   <button
                     disabled={
                       !current ||
+                      requiresPdf ||
                       !preview.data?.printable ||
                       preview.isError ||
                       downloading

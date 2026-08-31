@@ -1,7 +1,6 @@
 """Trusted SVG scenes with bounded PNG/PDF conversion and no network resources."""
 
 import base64
-import math
 from dataclasses import asdict, replace
 from functools import lru_cache
 from io import BytesIO
@@ -13,7 +12,15 @@ from PIL import Image, ImageOps
 
 from app.schemas.label import LabelExportOptions, LabelOptions
 from app.services.label_fonts import measure_text, text_paths
-from app.services.label_layout import Box, LabelData, LabelDoesNotFit, compose_label
+from app.services.label_layout import (
+    Box,
+    LabelData,
+    LabelDoesNotFit,
+    LabelSheet,
+    compose_label,
+    compose_sheet,
+    sheet_positions,
+)
 from app.services.qr_mark import MARK_VIEWBOX, mark_paths
 from app.services.qr_service import _qr_target_url
 
@@ -179,26 +186,47 @@ def _svg(width: float, height: float, content: str) -> str:
     return svg
 
 
-def sheet_svg(rendered: dict, options: LabelExportOptions) -> tuple[str, float, float, int]:
+def sheet_svg(
+    rendered: dict, options: LabelExportOptions, page: int = 1
+) -> tuple[str, float, float, int]:
+    sheet = compose_sheet(options)
+    positions = sheet_positions(options, sheet, page)
     if options.media == "single":
         return rendered["svg"], options.label.width_mm, options.label.height_mm, 1
-    width, height = (210, 297) if options.media == "a4" else (215.9, 279.4)
-    margin, gap = options.page_margin_mm, options.gap_mm
-    label_w, label_h = options.label.width_mm, options.label.height_mm
-    columns = math.floor((width - margin * 2 + gap) / (label_w + gap))
-    rows = math.floor((height - margin * 2 + gap) / (label_h + gap))
-    capacity = columns * rows
-    if columns < 1 or rows < 1 or options.start_position + options.copies - 1 > capacity:
-        raise LabelDoesNotFit("The selected labels exceed one sheet")
+    width, height = sheet.width_mm, sheet.height_mm
     content = [
         f'<rect width="{width}" height="{height}" fill="white"/>',
         f'<defs><g id="label">{rendered["content"]}</g></defs>',
     ]
-    for index in range(options.start_position - 1, options.start_position - 1 + options.copies):
-        x = margin + (index % columns) * (label_w + gap)
-        y = margin + (index // columns) * (label_h + gap)
+    for x, y in positions:
         content.append(f'<use xlink:href="#label" x="{x}" y="{y}"/>')
-    return _svg(width, height, "".join(content)), width, height, capacity
+    return _svg(width, height, "".join(content)), width, height, sheet.capacity
+
+
+def _sheet_pdf(rendered: dict, options: LabelExportOptions, sheet: LabelSheet) -> bytes:
+    from cairosvg.parser import Tree
+    from cairosvg.surface import Surface, cairo
+
+    output = BytesIO()
+    points = 72 / 25.4
+    document = cairo.PDFSurface(output, sheet.width_mm * points, sheet.height_mm * points)
+
+    class SheetPage(Surface):
+        def _create_surface(self, width, height):
+            return document, width, height
+
+    # Draw the exact preview SVG onto each physical PDF page. Drawing directly
+    # avoids Cairo's raster fallback for translated, clipped recording surfaces.
+    try:
+        for page in range(1, sheet.page_count + 1):
+            svg = sheet_svg(rendered, options, page)[0]
+            surface = SheetPage(
+                Tree(bytestring=svg.encode(), url_fetcher=_fetch_embedded), None, 96
+            )
+            surface.context.show_page()
+    finally:
+        document.finish()
+    return output.getvalue()
 
 
 def _fetch_embedded(url: str, resource_type: str) -> bytes:
@@ -216,6 +244,11 @@ def export_label(data: LabelData, options: LabelExportOptions, logo: bytes | Non
     rendered = render_label(data, options.label, logo)
     if not rendered["printable"]:
         raise LabelDoesNotFit("QR modules require a larger label or higher print resolution")
+    sheet = compose_sheet(options)
+    if options.format == "pdf" and options.media != "single":
+        return _sheet_pdf(rendered, options, sheet)
+    if sheet.page_count > 1:
+        raise LabelDoesNotFit("Multiple sheets require PDF output")
     svg, width, height, _ = sheet_svg(rendered, options)
     if options.format == "svg":
         return svg.encode()

@@ -1174,8 +1174,8 @@ export const labelsAPI = {
     const response = await api.get(`/labels/filaments/${filamentId}`, { params: { locale } });
     return response.data;
   },
-  preview: async (filamentId: number, options: LabelExportOptions, signal?: AbortSignal): Promise<LabelPreview> => {
-    const response = await api.post(`/labels/filaments/${filamentId}/preview`, options, { signal });
+  preview: async (filamentId: number, options: LabelExportOptions, signal?: AbortSignal, page = 1): Promise<LabelPreview> => {
+    const response = await api.post(`/labels/filaments/${filamentId}/preview`, options, { signal, params: { page } });
     return response.data;
   },
   download: async (filamentId: number, options: LabelExportOptions): Promise<void> => {

@@ -1,0 +1,125 @@
+"""Sheet count, preview placement and vector PDF must describe the same copies."""
+
+import re
+import zlib
+from xml.etree import ElementTree as ET
+
+import pytest
+from pydantic import ValidationError
+
+from app.api.v1.endpoints.labels import _render
+from app.schemas.label import LabelExportOptions, LabelOptions
+from app.services.label_layout import LabelData, LabelDoesNotFit, compose_sheet, sheet_positions
+from app.services.label_renderer import export_label, render_label, sheet_svg
+
+
+@pytest.fixture
+def sheet_data():
+    return LabelData("FH-001", "OlgaCraft", "PETG-CF", "Arctic Graphite", ())
+
+
+@pytest.mark.parametrize(
+    "media,width,height,margin,gap,columns,rows",
+    [
+        ("a4", 50, 30, 5, 2, 3, 9),
+        ("letter", 50, 30, 5, 2, 3, 8),
+        ("a4", 30, 50, 5, 2, 6, 5),
+        ("a4", 40, 12, 5, 2, 4, 20),
+        ("letter", 63.5, 38.1, 5, 2, 3, 6),
+        ("a4", 8, 8, 0, 0, 26, 37),
+    ],
+)
+def test_sheet_grid_matches_client_contract(media, width, height, margin, gap, columns, rows):
+    sheet = compose_sheet(
+        LabelExportOptions(
+            media=media,
+            label=LabelOptions(width_mm=width, height_mm=height),
+            page_margin_mm=margin,
+            gap_mm=gap,
+        )
+    )
+    assert (sheet.columns, sheet.rows, sheet.capacity) == (columns, rows, columns * rows)
+
+
+@pytest.mark.parametrize(
+    "media,capacity,expected_counts", [("a4", 27, [1, 27, 22]), ("letter", 24, [1, 24, 24, 1])]
+)
+def test_partial_first_sheet_is_not_repeated_on_later_pages(
+    sheet_data, media, capacity, expected_counts
+):
+    options = LabelExportOptions(media=media, copies=50, start_position=capacity)
+    sheet = compose_sheet(options)
+    assert sheet.page_count == len(expected_counts)
+    rendered = render_label(sheet_data, options.label)
+    for page, count in enumerate(expected_counts, start=1):
+        positions = sheet_positions(options, sheet, page)
+        assert len(positions) == count
+        assert positions[0] == ((109, 5 + (sheet.rows - 1) * 32) if page == 1 else (5, 5))
+        svg = sheet_svg(rendered, options, page)[0]
+        cells = ET.fromstring(svg).findall("{http://www.w3.org/2000/svg}use")
+        assert [(float(cell.attrib["x"]), float(cell.attrib["y"])) for cell in cells] == positions
+        preview = _render(sheet_data, options, None, False, page)
+        assert preview["sheet"]["page_count"] == len(expected_counts)
+        assert (preview["page_number"], preview["page_copies"]) == (page, count)
+        assert preview["page_svg"] == svg
+        assert "pages" not in preview  # Never duplicate every page's vector payload in a response.
+    with pytest.raises(LabelDoesNotFit):
+        sheet_svg(rendered, options, sheet.page_count + 1)
+
+
+def pdf_streams(pdf):
+    return [
+        zlib.decompress(match[1]) for match in re.finditer(rb"stream\n(.*?)\nendstream", pdf, re.S)
+    ]
+
+
+@pytest.mark.parametrize("copies,start,pages", [(27, 1, 1), (28, 1, 2), (28, 27, 2), (50, 27, 3)])
+def test_vector_pdf_contains_every_copy_without_a_trailing_blank_page(
+    sheet_data, copies, start, pages
+):
+    options = LabelExportOptions(media="a4", copies=copies, start_position=start, format="pdf")
+    pdf = export_label(sheet_data, options)
+    streams = pdf_streams(pdf)
+    content = pdf + b"\n".join(streams)
+    assert len(re.findall(rb"/Type /Page\b", content)) == pages
+    assert b"/Subtype /Image" not in content
+    from cairosvg.surface import PDFSurface
+
+    rendered = render_label(sheet_data, options.label)
+    sheet = compose_sheet(options)
+    # Compare every drawing stream with the standalone conversion of that
+    # page's preview: coordinates, path sizes and copy counts must all match.
+    drawing_streams = [stream for stream in streams if b" cm\n" in stream]
+    assert len(drawing_streams) == pages
+    for page, drawing in enumerate(drawing_streams, start=1):
+        svg = sheet_svg(rendered, options, page)[0]
+        expected = PDFSurface.convert(bytestring=svg.encode(), dpi=96)
+        assert drawing in pdf_streams(expected)
+    assert sum(len(sheet_positions(options, sheet, page)) for page in range(1, pages + 1)) == copies
+
+
+def test_pdf_is_bounded_to_fifty_total_copies_even_at_one_label_per_page(sheet_data):
+    options = LabelExportOptions(
+        media="a4", copies=50, format="pdf", label=LabelOptions(width_mm=150, height_mm=150)
+    )
+    assert compose_sheet(options).page_count == 50
+    pdf = export_label(sheet_data, options)
+    assert len(re.findall(rb"/Type /Page\b", pdf + b"\n".join(pdf_streams(pdf)))) == 50
+    with pytest.raises(ValidationError):
+        LabelExportOptions(media="a4", copies=51)
+
+
+@pytest.mark.parametrize("format", ["svg", "png"])
+def test_single_page_formats_reject_multi_page_exports_without_losing_copies(sheet_data, format):
+    options = LabelExportOptions(media="a4", copies=28, format=format)
+    with pytest.raises(LabelDoesNotFit, match="Multiple sheets require PDF"):
+        export_label(sheet_data, options)
+
+
+def test_sheet_rejects_nonexistent_first_cells_and_oversized_labels():
+    for options in (
+        LabelExportOptions(media="a4", start_position=28),
+        LabelExportOptions(media="a4", label=LabelOptions(width_mm=220, height_mm=220)),
+    ):
+        with pytest.raises(LabelDoesNotFit):
+            compose_sheet(options)

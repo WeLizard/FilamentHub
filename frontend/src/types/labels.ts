@@ -43,7 +43,17 @@ export interface LabelMetadata {
   };
   media_presets: { width_mm: number; height_mm: number }[];
   classic_presets_mm: number[];
+  sheet_media: Record<"a4" | "letter", { width_mm: number; height_mm: number }>;
   brand_logo_available: boolean;
+}
+
+export interface LabelSheet {
+  width_mm: number;
+  height_mm: number;
+  columns: number;
+  rows: number;
+  capacity: number;
+  page_count: number;
 }
 
 export interface LabelPreview {
@@ -52,6 +62,9 @@ export interface LabelPreview {
   page_width_mm: number;
   page_height_mm: number;
   capacity: number;
+  sheet: LabelSheet;
+  page_number: number;
+  page_copies: number;
   scene: {
     dots_per_module: number;
     body_size_mm: number;

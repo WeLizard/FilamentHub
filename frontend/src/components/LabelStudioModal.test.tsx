@@ -18,13 +18,17 @@ const mocks = vi.hoisted(() => ({
 }));
 vi.mock("../api/client", () => ({ labelsAPI: mocks }));
 vi.mock("react-i18next", () => ({
-  useTranslation: () => ({ t: (key: string) => key, i18n: { language: "ru" } }),
+  useTranslation: () => ({
+    t: (key: string, options?: Record<string, unknown>) =>
+      options ? `${key} ${JSON.stringify(options)}` : key,
+    i18n: { language: "ru" },
+  }),
 }));
 vi.mock("./Toast", () => ({ toast: { error: mocks.error } }));
 
 describe("LabelStudioModal", () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     sessionStorage.clear();
     let imageId = 0;
     URL.createObjectURL = vi.fn(() => `blob:label-preview-${++imageId}`);
@@ -47,6 +51,10 @@ describe("LabelStudioModal", () => {
       },
       media_presets: [{ width_mm: 40, height_mm: 12 }],
       classic_presets_mm: [20, 30],
+      sheet_media: {
+        a4: { width_mm: 210, height_mm: 297 },
+        letter: { width_mm: 215.9, height_mm: 279.4 },
+      },
       brand_logo_available: false,
     });
     mocks.preview.mockResolvedValue({
@@ -84,7 +92,7 @@ describe("LabelStudioModal", () => {
       screen.getByRole("button", { name: "labelStudio.classic" }),
     );
     expect(download).toBeDisabled();
-    fireEvent.click(screen.getByLabelText("labelStudio.centerMark"));
+    expect(screen.getByLabelText("labelStudio.centerMark")).toBeChecked();
     expect(
       screen.queryByText("labelStudio.attribution"),
     ).not.toBeInTheDocument();
@@ -142,6 +150,7 @@ describe("LabelStudioModal", () => {
           }),
         }),
         expect.any(AbortSignal),
+        1,
       ),
     );
   });
@@ -168,7 +177,12 @@ describe("LabelStudioModal", () => {
           decoded = resolve;
         }),
     );
-    fireEvent.click(screen.getByLabelText(/Nozzle/));
+    fireEvent.focus(
+      screen.getByLabelText('labelStudio.fieldPosition {"position":1}'),
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: "labelStudio.fieldEmpty" }),
+    );
     await waitFor(() => expect(mocks.preview).toHaveBeenCalledTimes(2));
     expect(screen.getByAltText("labelStudio.preview")).toBe(image);
     expect(image).toHaveAttribute("src", original);
@@ -209,10 +223,11 @@ describe("LabelStudioModal", () => {
           label: expect.objectContaining({ attribution: "none" }),
         }),
         expect.any(AbortSignal),
+        1,
       ),
     );
     fireEvent.click(
-      screen.getByRole("button", { name: "labelStudio.portrait" }),
+      screen.getByRole("button", { name: "labelStudio.orientation" }),
     );
     await waitFor(() =>
       expect(mocks.preview).toHaveBeenLastCalledWith(
@@ -225,6 +240,7 @@ describe("LabelStudioModal", () => {
           }),
         }),
         expect.any(AbortSignal),
+        1,
       ),
     );
     fireEvent.change(screen.getByLabelText("labelStudio.width"), {
@@ -242,6 +258,7 @@ describe("LabelStudioModal", () => {
           label: expect.objectContaining({ attribution: "full" }),
         }),
         expect.any(AbortSignal),
+        1,
       ),
     );
     await waitFor(() =>
@@ -251,10 +268,161 @@ describe("LabelStudioModal", () => {
     );
   });
 
+  it("supports six configurable positions, swaps occupied fields and removes fields without inventing values", async () => {
+    const metadata = await mocks.metadata();
+    metadata.data.fields.push(
+      ["bed", "Bed", "75–90 °C"],
+      ["drying", "Drying", "65 °C · 6 h"],
+      ["abrasiveness", "Hardness", "≥55 HRC"],
+      ["diameter", "Diameter", "1.75 mm"],
+      ["density", "Density", "1.25 g/cm³"],
+      ["weight", "Weight", "1000 g"],
+    );
+    open();
+    const slot = (position: number) =>
+      screen.getByLabelText(
+        `labelStudio.fieldPosition {"position":${position}}`,
+      );
+    await screen.findByLabelText('labelStudio.fieldPosition {"position":1}');
+    expect(
+      screen.getAllByRole("textbox", { name: /labelStudio.fieldPosition/ }),
+    ).toHaveLength(6);
+    expect(
+      screen.queryByRole("checkbox", { name: /Nozzle|Bed/ }),
+    ).not.toBeInTheDocument();
+    fireEvent.focus(slot(1));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Bed" }),
+    );
+    expect(slot(1)).toHaveValue("Bed");
+    expect(slot(2)).toHaveValue("Nozzle");
+    fireEvent.focus(slot(6));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Weight" }),
+    );
+    fireEvent.focus(slot(3));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "labelStudio.fieldEmpty" }),
+    );
+    await waitFor(() =>
+      expect(mocks.preview.mock.lastCall?.[1].label.fields).toEqual([
+        "bed",
+        "nozzle",
+        "abrasiveness",
+        "diameter",
+        "weight",
+      ]),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "labelStudio.classic" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "labelStudio.full" }));
+    expect(slot(6)).toHaveValue("Weight");
+    expect(slot(3)).toHaveValue("labelStudio.fieldEmpty");
+  });
+
+  it("prefills an A4 grid and exports the full multi-page quantity from a partial first sheet", async () => {
+    open();
+    fireEvent.focus(await screen.findByLabelText("labelStudio.media"));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "labelStudio.a4" }),
+    );
+    expect(screen.getByLabelText("labelStudio.copies")).toHaveValue(27);
+    expect(
+      screen.getByText(
+        'labelStudio.sheetGrid {"columns":3,"rows":9,"capacity":27}',
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "labelStudio.showLabel" }),
+    ).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("labelStudio.copies"), {
+      target: { value: "50" },
+    });
+    fireEvent.change(screen.getByLabelText("labelStudio.start"), {
+      target: { value: "27" },
+    });
+    expect(
+      screen.getByText('labelStudio.sheetCount {"copies":50,"pages":3}'),
+    ).toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("button", { name: "labelStudio.nextPage" }),
+    );
+    await waitFor(() =>
+      expect(mocks.preview).toHaveBeenLastCalledWith(
+        12,
+        expect.objectContaining({
+          media: "a4",
+          copies: 50,
+          start_position: 27,
+        }),
+        expect.any(AbortSignal),
+        2,
+      ),
+    );
+    const download = screen.getByRole("button", {
+      name: "labelStudio.download",
+    });
+    await waitFor(() => expect(download).not.toBeDisabled());
+    fireEvent.click(download);
+    await waitFor(() =>
+      expect(mocks.download).toHaveBeenCalledWith(
+        12,
+        expect.objectContaining({
+          format: "pdf",
+          media: "a4",
+          copies: 50,
+          start_position: 27,
+        }),
+      ),
+    );
+    fireEvent.focus(screen.getByLabelText("labelStudio.file"));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "SVG" }),
+    );
+    expect(download).toBeDisabled();
+    expect(screen.getByText("labelStudio.multiplePdf")).toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("button", { name: "labelStudio.fillSheet" }),
+    );
+    expect(screen.getByLabelText("labelStudio.copies")).toHaveValue(1);
+    expect(
+      screen.getByText('labelStudio.pageNumber {"page":1,"total":1}'),
+    ).toBeInTheDocument();
+    await waitFor(() => expect(download).not.toBeDisabled());
+  });
+
+  it("keeps the automatic quantity bounded and blocks media that cannot fit the label", async () => {
+    open();
+    fireEvent.focus(await screen.findByLabelText("labelStudio.media"));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "labelStudio.letter" }),
+    );
+    expect(screen.getByLabelText("labelStudio.copies")).toHaveValue(24);
+    fireEvent.click(screen.getByRole("button", { name: "40 × 12" }));
+    expect(screen.getByLabelText("labelStudio.copies")).toHaveValue(50);
+    fireEvent.change(screen.getByLabelText("labelStudio.width"), {
+      target: { value: "220" },
+    });
+    fireEvent.change(screen.getByLabelText("labelStudio.height"), {
+      target: { value: "220" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "labelStudio.apply" }));
+    expect(
+      screen.getByRole("button", { name: "labelStudio.download" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "labelStudio.fillSheet" }),
+    ).toBeDisabled();
+    expect(
+      screen.getAllByText("labelStudio.sheetDoesNotFit").length,
+    ).toBeGreaterThan(0);
+  });
+
   it("remembers orientation for the tab session and applies it to each preset", async () => {
     const first = open();
     fireEvent.click(
-      await screen.findByRole("button", { name: "labelStudio.portrait" }),
+      await screen.findByRole("button", { name: "labelStudio.orientation" }),
     );
     expect(screen.getByLabelText("labelStudio.width")).toHaveValue("30");
     expect(screen.getByLabelText("labelStudio.height")).toHaveValue("50");
@@ -263,21 +431,21 @@ describe("LabelStudioModal", () => {
     first.unmount();
     open();
     expect(
-      await screen.findByRole("button", { name: "labelStudio.portrait" }),
+      await screen.findByRole("button", { name: "labelStudio.orientation" }),
     ).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByLabelText("labelStudio.width")).toHaveValue("30");
     fireEvent.click(
       screen.getByRole("button", { name: "labelStudio.classic" }),
     );
     expect(
-      screen.queryByRole("group", { name: "labelStudio.orientation" }),
+      screen.queryByRole("button", { name: "labelStudio.orientation" }),
     ).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "labelStudio.full" }));
     expect(
-      screen.getByRole("button", { name: "labelStudio.portrait" }),
+      screen.getByRole("button", { name: "labelStudio.orientation" }),
     ).toHaveAttribute("aria-pressed", "true");
     fireEvent.click(
-      screen.getByRole("button", { name: "labelStudio.landscape" }),
+      screen.getByRole("button", { name: "labelStudio.orientation" }),
     );
     fireEvent.click(screen.getByRole("button", { name: "40 × 12" }));
     expect(screen.getByLabelText("labelStudio.width")).toHaveValue("40");

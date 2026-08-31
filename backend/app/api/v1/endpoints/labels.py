@@ -19,7 +19,7 @@ from app.db.session import get_db
 from app.schemas.label import LabelExportOptions
 from app.services.label_catalog import catalog_label_data, public_brand_logo, public_label_filament
 from app.services.label_fonts import UnsupportedLabelText
-from app.services.label_layout import LabelDoesNotFit
+from app.services.label_layout import SHEET_MEDIA, LabelDoesNotFit, compose_sheet, sheet_positions
 from app.services.label_renderer import export_label, render_label, sheet_svg
 
 router = APIRouter(prefix="/labels", tags=["labels"])
@@ -43,20 +43,29 @@ async def label_metadata(
         "data": asdict(catalog_label_data(filament, locale)),
         "media_presets": MEDIA_PRESETS,
         "classic_presets_mm": [20, 25, 30, 40],
+        "sheet_media": {
+            key: {"width_mm": size[0], "height_mm": size[1]} for key, size in SHEET_MEDIA.items()
+        },
         "brand_logo_available": bool(
             filament.brand.logo_url and filament.brand.logo_url.startswith("/uploads/brand_logos/")
         ),
     }
 
 
-def _render(data, options, logo_url, download):
+def _render(data, options, logo_url, download, page=1):
     try:
         logo = public_brand_logo(logo_url) if options.label.brand_logo else None
         if download:
             return export_label(data, options, logo)
         rendered = render_label(data, options.label, logo)
-        svg, width, height, capacity = sheet_svg(rendered, options)
+        svg, width, height, capacity = sheet_svg(rendered, options, page)
         rendered.update(page_svg=svg, page_width_mm=width, page_height_mm=height, capacity=capacity)
+        sheet = compose_sheet(options)
+        rendered.update(
+            sheet=asdict(sheet),
+            page_number=page,
+            page_copies=len(sheet_positions(options, sheet, page)),
+        )
         rendered.pop("content")
         return rendered
     except LabelDoesNotFit:
@@ -75,6 +84,7 @@ async def label_preview(
     filament_id: int,
     options: LabelExportOptions,
     db: Annotated[AsyncSession, Depends(get_db)],
+    page: int = Query(1, ge=1, le=50),
 ) -> dict:
     filament = await public_label_filament(db, filament_id)
     return await label_gate.run(
@@ -83,6 +93,7 @@ async def label_preview(
         options,
         filament.brand.logo_url,
         False,
+        page,
     )
 
 
