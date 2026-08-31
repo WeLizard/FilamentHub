@@ -3498,7 +3498,25 @@ _HH_ARRAY_FIELDS = (
     "gate_color",
     "gate_temperature",
     "gate_spool_id",
+    "gate_spool_rfid",
 )
+
+
+def _physical_tag_uid(value):
+    """Normalize raw provider evidence without assigning provider ownership."""
+    if not isinstance(value, str):
+        return None
+    normalized = re.sub(r"[\s:_.-]+", "", value).strip().upper()
+    if normalized.startswith("0X"):
+        normalized = normalized[2:]
+    if (
+        len(normalized) < 2
+        or len(normalized) > 64
+        or len(normalized) % 2
+        or re.fullmatch(r"[0-9A-F]+", normalized) is None
+    ):
+        return None
+    return normalized
 
 
 def _happy_hare_inventory_digest(connection):
@@ -3536,6 +3554,7 @@ def read_happy_hare_snapshot(connection):
                     "gate_color",
                     "gate_temperature",
                     "gate_spool_id",
+                    "gate_spool_rfid",
                     "spoolman_support",
                     "has_bypass",
                     "tool",
@@ -3608,13 +3627,17 @@ def read_happy_hare_snapshot(connection):
         except (TypeError, ValueError):
             spool_id = -1
         actual_spool_ids.append(spool_id if spool_id > 0 else None)
-        gates.append({
+        rfid_uid = _physical_tag_uid(value_at("gate_spool_rfid", gate, ""))
+        gate_item = {
             "gate": gate,
             "status": hh_status,
             "material": material,
             "color_hex": color,
             "temperature": temperature,
-        })
+        }
+        if rfid_uid is not None:
+            gate_item["rfid_uid"] = rfid_uid
+        gates.append(gate_item)
 
     info_status, info, _info_error = _moonraker_json(
         connection, "/printer/info"
@@ -3666,6 +3689,7 @@ def read_happy_hare_snapshot(connection):
         "gates": gates,
         "actual_spool_ids": actual_spool_ids,
         "spool_ids_known": arrays.get("gate_spool_id") is not None,
+        "tag_read_capable": arrays.get("gate_spool_rfid") is not None,
         "spoolman_support": str(mmu.get("spoolman_support") or "").strip().lower(),
         "print_state": print_state,
         "printer_hostname": hostname,
@@ -3687,6 +3711,7 @@ def upload_happy_hare_snapshot(token, physical_printer_id, snapshot):
         "inventory_key_digest": snapshot.get("inventory_key_digest"),
         "selected_gate": snapshot.get("selected_gate"),
         "filament_loaded": snapshot.get("filament_loaded"),
+        "tag_read_capable": bool(snapshot.get("tag_read_capable")),
     }
     if isinstance(snapshot.get("has_bypass"), bool):
         payload["has_bypass"] = snapshot["has_bypass"]
@@ -6461,6 +6486,32 @@ def _bambu_slot(tray, index, present):
     }
 
 
+def _bambu_tag_read_capable(report):
+    if not isinstance(report, dict):
+        return False
+    feed = report.get("ams")
+    units = feed.get("ams") if isinstance(feed, dict) else None
+    trays = []
+    for unit in units or []:
+        if isinstance(unit, dict):
+            trays.extend(item for item in (unit.get("tray") or []) if isinstance(item, dict))
+    holders = report.get("vir_slot")
+    if isinstance(holders, list):
+        trays.extend(item for item in holders if isinstance(item, dict))
+    else:
+        holder = report.get("vt_tray")
+        if isinstance(holder, dict):
+            trays.append(holder)
+    return any("tray_uuid" in tray or "tag_uid" in tray for tray in trays)
+
+
+def _bambu_capabilities(report):
+    capabilities = ["read", "write", "presence"]
+    if _bambu_tag_read_capable(report):
+        capabilities.append("tag_read")
+    return capabilities
+
+
 def _bambu_slot_locator(report, provider_index):
     feed = report.get("ams") if isinstance(report, dict) else None
     units = feed.get("ams") if isinstance(feed, dict) else None
@@ -7018,25 +7069,30 @@ def build_bambu_bridge_snapshot(config, source_instance_id, report):
     slots = []
     for slot in (feed or {}).get("slots") or []:
         index = slot["index"]
-        slots.append(
-            {
-                "provider_index": index,
-                "label": _bambu_slot_label(index),
-                "kind": "external" if index in {254, 255} else "slot",
-                "present": slot.get("present"),
-                "active_feed": index == active_index if active_index is not None else None,
-                "material": slot.get("material"),
-                "color_hex": slot.get("color_hex"),
-                "remaining_percent": slot.get("remaining_pct"),
-                "remaining_grams": slot.get("remaining_g"),
-            }
-        )
+        item = {
+            "provider_index": index,
+            "label": _bambu_slot_label(index),
+            "kind": "external" if index in {254, 255} else "slot",
+            "present": slot.get("present"),
+            "active_feed": index == active_index if active_index is not None else None,
+            "material": slot.get("material"),
+            "color_hex": slot.get("color_hex"),
+            "remaining_percent": slot.get("remaining_pct"),
+            "remaining_grams": slot.get("remaining_g"),
+        }
+        tag_uid = _physical_tag_uid(slot.get("provider_uid"))
+        if tag_uid is not None:
+            item["tag_uid"] = tag_uid
+            # The LAN report proves an identifier, not the RF technology.
+            item["tag_technology"] = "unknown"
+        slots.append(item)
     return {
         "material_system_id": config["material_system_id"],
         "provider": "bambu",
         "transport": "orca_plugin_lan",
         "source_instance_id": source_instance_id,
         "observed_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "capabilities": _bambu_capabilities(report),
         "printer": printer,
         "slots": slots,
         "slot_topology_complete": feed is not None,
@@ -7309,6 +7365,7 @@ class BambuBridgeRuntime:
                                 "observed_at": datetime.datetime.now(
                                     datetime.timezone.utc
                                 ).isoformat(),
+                                "capabilities": snapshot["capabilities"],
                             },
                         )
                         if self._stop.is_set():
@@ -8072,7 +8129,7 @@ class FilamentHubCatalog(
                     "transport": "orca_plugin_lan",
                     "source_instance_id": local["source_instance_id"],
                     "plugin_version": PLUGIN_VERSION,
-                    "capabilities": ["read", "write", "presence"],
+                    "capabilities": _bambu_capabilities(report),
                 },
             )
             if pair_status != 200:

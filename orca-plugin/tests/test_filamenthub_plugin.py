@@ -3003,6 +3003,57 @@ def test_happy_hare_snapshot_reports_selected_bypass_without_a_fake_gate(
     assert snapshot["bypass"] == {"selected": True, "present": True}
 
 
+def test_happy_hare_snapshot_and_upload_preserve_generic_tag_evidence(
+    plugin_module, monkeypatch
+):
+    requested_mmu_fields = []
+
+    def moonraker(_connection, path, payload=None):
+        if path == "/server/config":
+            return 200, {"result": {"config": {}}}, ""
+        if path == "/printer/info":
+            return 200, {"result": {"hostname": "voron"}}, ""
+        requested_mmu_fields.extend(payload["objects"]["mmu"])
+        return 200, {
+            "result": {
+                "status": {
+                    "mmu": {
+                        "num_gates": 2,
+                        "gate_status": [1, 1],
+                        "gate_spool_rfid": ["04A1B2C3", "not-a-tag"],
+                        "spoolman_support": "off",
+                    },
+                    "print_stats": {"state": "standby"},
+                }
+            }
+        }, ""
+
+    monkeypatch.setattr(plugin_module, "_moonraker_json", moonraker)
+    snapshot = plugin_module.read_happy_hare_snapshot(
+        {"print_host": "voron:7125"}
+    )
+
+    assert "gate_spool_rfid" in requested_mmu_fields
+    assert snapshot["tag_read_capable"] is True
+    assert snapshot["gates"][0]["rfid_uid"] == "04A1B2C3"
+    assert "rfid_uid" not in snapshot["gates"][1]
+
+    sent = {}
+
+    def post(path, token, payload):
+        sent.update({"path": path, "token": token, "payload": payload})
+        return 200, b"{}"
+
+    monkeypatch.setattr(plugin_module, "http_post_json", post)
+    status, _ = plugin_module.upload_happy_hare_snapshot(
+        "plugin-token", 17, snapshot
+    )
+
+    assert status == 200
+    assert sent["payload"]["tag_read_capable"] is True
+    assert sent["payload"]["gates"][0]["rfid_uid"] == "04A1B2C3"
+
+
 def test_happy_hare_snapshot_keeps_unselected_bypass_presence_unknown(
     plugin_module, monkeypatch
 ):
@@ -5690,7 +5741,7 @@ def test_bambu_ht_presence_uses_bit_position_without_renumbering_identity(plugin
     assert feed["slots"][0]["present"] is True
 
 
-def test_bambu_snapshot_keeps_tag_identity_local(plugin_module):
+def test_bambu_snapshot_reports_tag_evidence_without_provider_specific_fields(plugin_module):
     report = _bambu_report(
         gcode_state="RUNNING",
         mc_percent="42",
@@ -5713,9 +5764,11 @@ def test_bambu_snapshot_keeps_tag_identity_local(plugin_module):
     assert snapshot["printer"]["current_layer"] == 17
     assert snapshot["slot_topology_complete"] is True
     assert snapshot["slots"][0]["remaining_grams"] == 812
+    assert snapshot["slots"][0]["tag_uid"] == "D1E2F3"
+    assert snapshot["slots"][0]["tag_technology"] == "unknown"
+    assert "tag_read" in snapshot["capabilities"]
     serialized = json.dumps(snapshot)
     assert "provider_uid" not in serialized
-    assert "D1E2F3" not in serialized
     assert "access_code" not in serialized
     assert "serial" not in serialized
 

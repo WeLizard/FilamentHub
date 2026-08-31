@@ -53,6 +53,11 @@ class ChangelogSectionTest(unittest.TestCase):
         self.assertIn("native load callback", notes)
         self.assertIn("retry-safe bounded chunks", notes)
 
+    def test_orca_notes_include_provider_neutral_tag_evidence(self) -> None:
+        notes = render_orca_release_notes()
+
+        self.assertIn("provider-neutral identifier", notes)
+
     def test_combined_notes_include_one_checksum_footer(self) -> None:
         notes = render_release_notes()
 
