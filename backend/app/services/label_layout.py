@@ -6,6 +6,7 @@ scene is shared by preview and every export backend.
 
 import math
 import re
+import unicodedata
 from dataclasses import dataclass, field
 from typing import Callable
 
@@ -126,8 +127,18 @@ class LabelScene:
     corner_radius_mm: float = 0
 
 
+def rule_stroke_mm(margin_mm: float) -> float:
+    return max(0.06, margin_mm * 0.06)
+
+
 def _wrap(
-    text: str, width: float, size: float, measure: MeasureText, bold: bool = False
+    text: str,
+    width: float,
+    size: float,
+    measure: MeasureText,
+    bold: bool = False,
+    *,
+    break_long_words: bool = False,
 ) -> list[str]:
     # Keep Latin words and numeric/unit groups intact; CJK can break by character.
     tokens = re.findall(
@@ -150,7 +161,22 @@ def _wrap(
                 lines.append(current.rstrip())
             current = token.lstrip()
             if measure(current, size, bold) > width:
-                raise LabelDoesNotFit("Unbreakable text exceeds its zone")
+                if not break_long_words:
+                    raise LabelDoesNotFit("Unbreakable text exceeds its zone")
+                clusters: list[str] = []
+                for character in current:
+                    if clusters and unicodedata.combining(character):
+                        clusters[-1] += character
+                    else:
+                        clusters.append(character)
+                current = ""
+                for cluster in clusters:
+                    if measure(cluster, size, bold) > width:
+                        raise LabelDoesNotFit("A comment character exceeds its zone")
+                    if current and measure(current + cluster, size, bold) > width:
+                        lines.append(current)
+                        current = ""
+                    current += cluster
     if current.strip():
         lines.append(current.rstrip())
     return lines or [""]
@@ -183,7 +209,7 @@ def _body(
         if role == "material":
             x += font_size * 0.15
             width -= font_size * 0.3
-        lines = _wrap(text, width, font_size, measure, bold)
+        lines = _wrap(text, width, font_size, measure, bold, break_long_words=role == "comment")
         for line in lines:
             texts.append(
                 LabelText(
@@ -301,26 +327,33 @@ def _qr_composition(
     margin: float,
     modules: int,
     measure: MeasureText,
+    body_size: float,
 ) -> tuple[Box, float, LabelText, Box | None, LabelText | None]:
     sku = data.sku
     sku_width_at_one = measure(sku, 1, False)
     caption_width_at_one = measure("FilamentHub", 1, True)
 
-    def dimensions(side: float) -> tuple[float, float, float, float, float]:
+    def dimensions(side: float, expansion: float = 0) -> tuple[float, float, float, float, float]:
         quiet = side * 4 / modules
         # A short code must not grow to fill the entire width at the QR's expense.
-        sku_size = max(0.85, min(side / 6, side * 0.92 / sku_width_at_one))
-        caption_size = max(0.85, side * 0.94 / (caption_width_at_one + 1.6))
+        sku_target = max(0.85, min(side / 6, side * 0.92 / sku_width_at_one))
+        caption_target = max(0.85, side * 0.94 / (caption_width_at_one + 1.6))
+        # Supporting type may use the characteristics' readable scale. Its
+        # preferred larger size is fitted only after the QR size is fixed.
+        sku_min = min(sku_target, max(0.85, body_size))
+        caption_min = min(caption_target, max(0.85, body_size))
+        sku_size = sku_min + expansion * (sku_target - sku_min)
+        caption_size = caption_min + expansion * (caption_target - caption_min)
         if options.attribution == "full":
-            top = 2 * max(margin, quiet) + caption_size * 1.3
+            top = margin + quiet + caption_size * 1.3
         elif options.attribution == "mark" and options.width_mm >= options.height_mm:
             top = margin + max(1.1, side * 0.15) + quiet
         else:
-            top = max(margin, quiet)
-        bottom = 2 * max(margin, quiet) + sku_size * 1.2
+            top = quiet
+        bottom = margin + quiet + sku_size * 1.2
         return quiet, sku_size, caption_size, top, bottom
 
-    low, high = 0.0, min(zone.width - 2 * margin, zone.width * modules / (modules + 8))
+    low, high = 0.0, zone.width * modules / (modules + 8)
     for _ in range(22):
         side = (low + high) / 2
         _, _, _, top, bottom = dimensions(side)
@@ -335,7 +368,12 @@ def _qr_composition(
     dot_mm = 25.4 / options.dpi
     dots = math.floor(low / modules / dot_mm + 1e-6)
     side = dots * dot_mm * modules if dots == 2 else low
-    quiet, sku_size, caption_size, top, bottom = dimensions(side)
+    *_, min_top, min_bottom = dimensions(side)
+    *_, preferred_top, preferred_bottom = dimensions(side, 1)
+    remaining = max(0, zone.height - side - min_top - min_bottom)
+    growth = preferred_top + preferred_bottom - min_top - min_bottom
+    expansion = min(1, remaining / growth) if growth > 0 else 1
+    quiet, sku_size, caption_size, top, bottom = dimensions(side, expansion)
     if sku_width_at_one * sku_size > zone.width - 2 * margin:
         raise LabelDoesNotFit("The complete SKU does not fit")
     if (
@@ -350,13 +388,18 @@ def _qr_composition(
         side,
     )
     sku_width = sku_width_at_one * sku_size
+    sku_height = sku_size * 1.2
+    sku_y = max(
+        qr.bottom + quiet,
+        min((qr.bottom + zone.bottom - sku_height) / 2, zone.bottom - margin - sku_height),
+    )
     sku_text = LabelText(
         sku,
         Box(
             qr.x + (side - sku_width) / 2,
-            (qr.bottom + zone.bottom) / 2 - sku_size * 0.6,
+            sku_y,
             sku_width,
-            sku_size * 1.2,
+            sku_height,
         ),
         sku_size,
         "sku",
@@ -375,7 +418,10 @@ def _qr_composition(
         mark_size = caption_size * 1.3
         total_width = caption_size * (caption_width_at_one + 1.6)
         x = qr.x + (side - total_width) / 2
-        y = (zone.y + qr.y) / 2 - mark_size / 2
+        y = min(
+            qr.y - quiet - mark_size,
+            max((zone.y + qr.y - mark_size) / 2, zone.y + margin),
+        )
         mark = Box(x, y, mark_size, mark_size)
         caption = LabelText(
             "FilamentHub",
@@ -416,19 +462,10 @@ def compose_label(
         (0.25, 0.28, 0.32, 0.36) if max(width, height) / short >= 2.5 else (0.44, 0.48, 0.52, 0.56)
     )
     for fraction in fractions:
-        qr_zone = Box(width * (1 - fraction), 0, width * fraction, height)
-        body = Box(margin, margin, qr_zone.x - 2 * margin, height - 2 * margin)
-        try:
-            qr, quiet, sku_text, attribution, caption = _qr_composition(
-                data,
-                options,
-                qr_zone,
-                margin,
-                modules,
-                measure,
-            )
-        except LabelDoesNotFit:
-            continue
+        divider = width * (1 - fraction)
+        qr_left = divider + rule_stroke_mm(margin) / 2
+        qr_zone = Box(qr_left, 0, width - qr_left, height)
+        body = Box(margin, margin, divider - 2 * margin, height - 2 * margin)
         if body.width <= 0 or body.height <= 0:
             continue
         low, high = 0.95, short * 0.3
@@ -442,6 +479,12 @@ def compose_label(
             else:
                 low, best = size, best_trial
         if best is None:
+            continue
+        try:
+            qr, quiet, sku_text, attribution, caption = _qr_composition(
+                data, options, qr_zone, margin, modules, measure, low
+            )
+        except LabelDoesNotFit:
             continue
         texts, rules, logo, swatch = best
         scene = LabelScene(
@@ -459,7 +502,7 @@ def compose_label(
             dots_per_module=qr.width / modules * options.dpi / 25.4,
             corner_radius_mm=corner_radius,
         )
-        scene.rules.append(Box(qr_zone.x, 0, 0, height))
+        scene.rules.append(Box(divider, 0, 0, height))
         scene.texts.append(sku_text)
         if caption:
             scene.texts.append(caption)
@@ -478,7 +521,7 @@ def _compose_vertical(
     corner_radius: float,
 ) -> LabelScene:
     width, height = options.width_mm, options.height_mm
-    max_qr_side = min(width - 2 * margin, width * modules / (modules + 8))
+    max_qr_side = width * modules / (modules + 8)
     body_top = margin
     if options.attribution == "mark":
         # The corner mark is outside the QR stack. Reserve its largest possible
@@ -493,11 +536,12 @@ def _compose_vertical(
             + [box.bottom for box in (logo, swatch) if box is not None]
         )
         divider = body_bottom + margin
-        qr_zone = Box(0, divider, width, height - divider)
+        qr_top = divider + rule_stroke_mm(margin) / 2
+        qr_zone = Box(0, qr_top, width, height - qr_top)
         if qr_zone.height <= 0:
             raise LabelDoesNotFit("No room for the QR stack")
         qr, quiet, sku_text, attribution, caption = _qr_composition(
-            data, options, qr_zone, margin, modules, measure
+            data, options, qr_zone, margin, modules, measure, size
         )
         # One modular scale for both blocks: a QR spans twelve body ems until
         # the physical width caps it. Maximising text alone starves the QR;

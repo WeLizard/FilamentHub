@@ -19,7 +19,13 @@ from app.models.user_spool import UserSpool
 from app.schemas.label import LabelExportOptions, LabelOptions
 from app.services.label_fonts import measure_text
 from app.services.label_layout import LabelData, LabelDoesNotFit
-from app.services.label_renderer import _fetch_embedded, export_label, render_label, sheet_svg
+from app.services.label_renderer import (
+    _fetch_embedded,
+    _matrix,
+    export_label,
+    render_label,
+    sheet_svg,
+)
 from app.services.qr_mark import mark_paths
 from app.services.qr_service import _qr_target_url
 
@@ -53,6 +59,20 @@ def test_label_png_decodes_actual_scene(label_data, dimensions, rotate, attribut
     width, height = dimensions[::-1] if rotate else dimensions
     options = LabelOptions(width_mm=width, height_mm=height, attribution=attribution, dpi=dpi)
     result = render_label(label_data, options)
+    scene = result["scene"]
+    qr = scene["qr"]
+    quiet = 4 * qr["width"] / result["modules"]
+    root = ET.fromstring(result["svg"])
+    strokes = root.findall(".//{http://www.w3.org/2000/svg}path[@stroke]")
+    for rule, path in zip(scene["rules"], strokes, strict=True):
+        half = float(path.attrib["stroke-width"]) / 2
+        gap = max(
+            rule["x"] - half - qr["x"] - qr["width"],
+            qr["x"] - rule["x"] - rule["width"] - half,
+            rule["y"] - half - qr["y"] - qr["height"],
+            qr["y"] - rule["y"] - rule["height"] - half,
+        )
+        assert gap >= quiet - 1e-6
     if not result["printable"]:
         assert result["scene"]["dots_per_module"] < 2
         with pytest.raises(LabelDoesNotFit):
@@ -62,7 +82,14 @@ def test_label_png_decodes_actual_scene(label_data, dimensions, rotate, attribut
     image = Image.open(BytesIO(png))
     assert image.size == (round(width * dpi / 25.4), round(height * dpi / 25.4))
     assert image.info["dpi"][0] == pytest.approx(dpi, abs=0.1)
-    decoded = cv2.QRCodeDetectorAruco().detectAndDecode(np.array(image.convert("RGB")))[0]
+    pixels = np.array(image.convert("RGB"))
+    module = qr["width"] / result["modules"]
+    centers = np.arange(result["modules"]) + 0.5
+    xs = ((qr["x"] + centers * module) * image.width / width).astype(int)
+    ys = ((qr["y"] + centers * module) * image.height / height).astype(int)
+    # Error correction must not conceal holes or lost modules in the vector contours.
+    assert np.array_equal(pixels[ys[:, None], xs, 0] < 128, _matrix(label_data.sku, False))
+    decoded = cv2.QRCodeDetectorAruco().detectAndDecode(pixels)[0]
     assert decoded == _qr_target_url(label_data.sku)
     assert "<text" not in result["svg"]
 

@@ -1,12 +1,13 @@
 """Guard physical regressions observed while designing printed labels."""
 
+import unicodedata
 from functools import lru_cache
 
 import pytest
 from PIL import ImageFont
 
 from app.schemas.label import LabelOptions
-from app.services.label_layout import Box, LabelData, LabelDoesNotFit, compose_label
+from app.services.label_layout import Box, LabelData, LabelDoesNotFit, compose_label, rule_stroke_mm
 
 
 @pytest.fixture(scope="module")
@@ -97,9 +98,27 @@ def test_selected_content_and_qr_stay_inside_their_zones(
         assert measure_text(text.text, text.size, text.bold) <= text.box.width + 1e-6
     for index, text in enumerate(scene.texts):
         assert not any(overlaps(text.box, other.box) for other in scene.texts[index + 1 :])
+    half_stroke = rule_stroke_mm(scene.margin_mm) / 2
+    for rule in scene.rules:
+        ink = Box(
+            rule.x - half_stroke,
+            rule.y - half_stroke,
+            rule.width + 2 * half_stroke,
+            rule.height + 2 * half_stroke,
+        )
+        assert not overlaps(ink, protected)
     sku = next(text for text in scene.texts if text.role == "sku")
     assert sku.text == material.sku
-    assert sku.box.y + sku.box.height / 2 == pytest.approx((scene.qr.bottom + height) / 2)
+    assert sku.box.x + sku.box.width / 2 == pytest.approx(scene.qr.x + scene.qr.width / 2)
+    # Centre in the gap when possible; otherwise the QR's white field wins.
+    assert any(
+        abs(actual - expected) < 1e-5
+        for actual, expected in (
+            (sku.box.y + sku.box.height / 2, (scene.qr.bottom + height) / 2),
+            (sku.box.y, protected.bottom),
+            (sku.box.bottom, height - scene.margin_mm),
+        )
+    )
     if attribution == "mark":
         mark = scene.attribution
         assert mark is not None
@@ -110,8 +129,19 @@ def test_selected_content_and_qr_stay_inside_their_zones(
     elif attribution == "full":
         mark = scene.attribution
         assert mark is not None
-        qr_zone_top = 0 if width >= height else next(rule.y for rule in scene.rules if rule.x == 0)
-        assert mark.y + mark.height / 2 == pytest.approx((qr_zone_top + scene.qr.y) / 2)
+        qr_zone_top = (
+            0
+            if width >= height
+            else next(rule.y for rule in scene.rules if rule.x == 0) + half_stroke
+        )
+        assert any(
+            abs(actual - expected) < 1e-5
+            for actual, expected in (
+                (mark.y + mark.height / 2, (qr_zone_top + scene.qr.y) / 2),
+                (mark.bottom, protected.y),
+                (mark.y, qr_zone_top + scene.margin_mm),
+            )
+        )
         assert not overlaps(mark, protected)
     else:
         assert scene.attribution is None
@@ -128,6 +158,24 @@ def test_comment_and_characteristics_share_size_without_truncation(material, mea
     assert {text.size for text in scene.texts if text.role in options.fields} == {
         scene.body_size_mm
     }
+
+
+@pytest.mark.parametrize("comment", ["W" * 200, "Ш" * 200, "и\u0306" * 100])
+@pytest.mark.parametrize("dimensions", [(150, 100), (100, 150), (220, 220)])
+def test_long_comment_wraps_without_losing_characters_or_splitting_accents(
+    material, measure_text, comment, dimensions
+):
+    width, height = dimensions
+    scene = compose_label(
+        material, LabelOptions(width_mm=width, height_mm=height, comment=comment), 33, measure_text
+    )
+    lines = [text for text in scene.texts if text.role == "comment"]
+    assert len(lines) > 1
+    assert "".join(text.text for text in lines) == comment
+    assert all(not unicodedata.combining(text.text[0]) for text in lines)
+    assert all(measure_text(text.text, text.size, text.bold) <= text.box.width for text in lines)
+    assert {text.size for text in lines} == {scene.body_size_mm}
+    assert set(LabelOptions().fields) <= {text.role for text in scene.texts}
 
 
 def test_fewer_fields_increase_available_type_size(material, measure_text):
@@ -174,8 +222,10 @@ def test_qr_fills_existing_zone_with_shared_side_clearance(
     divider = next(rule for rule in scene.rules if rule.width == 0)
     # Expanding the QR must not move the original text/QR division.
     assert divider.x == pytest.approx(40 * (1 - 0.44))
-    clearance = max(scene.margin_mm, scene.quiet_zone_mm)
-    assert scene.qr.x - divider.x == pytest.approx(clearance, abs=1e-5)
+    clearance = scene.quiet_zone_mm
+    assert scene.qr.x - divider.x - rule_stroke_mm(scene.margin_mm) / 2 == pytest.approx(
+        clearance, abs=1e-5
+    )
     assert 40 - scene.qr.right == pytest.approx(clearance, abs=1e-5)
     assert scene.qr.width > 13.7
     sku = next(text for text in scene.texts if text.role == "sku")
@@ -245,7 +295,32 @@ def test_vertical_qr_is_not_starved_by_the_information_block(width, height, min_
     assert sku.size <= scene.qr.width / 6 + 1e-6
     assert scene.attribution is not None
     caption = next(text for text in scene.texts if text.role == "attribution")
-    assert caption.box.right - scene.attribution.x == pytest.approx(scene.qr.width * 0.94)
+    assert caption.box.right - scene.attribution.x <= scene.qr.width * 0.94 + 1e-6
+
+
+@pytest.mark.parametrize("dimensions", [(50, 30), (62, 29), (54, 25), (63.5, 38.1)])
+def test_qr_takes_available_space_before_enlarging_supporting_type(
+    material, measure_text, dimensions
+):
+    width, height = dimensions
+    scene = compose_label(
+        material, LabelOptions(width_mm=width, height_mm=height), 29, measure_text
+    )
+    divider = next(rule for rule in scene.rules if rule.width == 0)
+    available_width = width - divider.x - rule_stroke_mm(scene.margin_mm) / 2
+    sku = next(text for text in scene.texts if text.role == "sku")
+    caption = next(text for text in scene.texts if text.role == "attribution")
+    if scene.qr.width + 2 * scene.quiet_zone_mm < available_width - 1e-5:
+        assert (
+            scene.qr.height
+            + 2 * scene.quiet_zone_mm
+            + 2 * scene.margin_mm
+            + sku.box.height
+            + scene.attribution.height
+            == pytest.approx(height, abs=1e-5)
+        )
+        assert sku.size <= scene.body_size_mm + 1e-5
+        assert caption.size <= scene.body_size_mm + 1e-5
 
 
 @pytest.mark.parametrize("attribution", ["full", "mark", "none"])

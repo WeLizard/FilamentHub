@@ -19,12 +19,13 @@ from app.services.label_layout import (
     LabelSheet,
     compose_label,
     compose_sheet,
+    rule_stroke_mm,
     sheet_positions,
 )
 from app.services.qr_mark import MARK_VIEWBOX, mark_paths
 from app.services.qr_service import _qr_target_url
 
-RENDERER_REVISION = "label-scene-2"
+RENDERER_REVISION = "label-scene-3"
 MAX_OUTPUT_PIXELS = 36_000_000
 MAX_SVG_BYTES = 4_000_000
 
@@ -74,6 +75,58 @@ def _matrix(sku: str, branded: bool):
     return qr.get_matrix()
 
 
+def _matrix_path(matrix: list[list[bool]], window: int) -> str:
+    """Trace filled regions without internal cell edges that can rasterize as seams."""
+    size = len(matrix)
+    start = (size - window) // 2
+
+    def filled(x: int, y: int) -> bool:
+        return (
+            0 <= x < size
+            and 0 <= y < size
+            and matrix[y][x]
+            and not (window and start <= x < start + window and start <= y < start + window)
+        )
+
+    # Clockwise edges keep black on their right; hole boundaries run the other way.
+    edges: dict[tuple[int, int, int], None] = {}
+    directions = ((1, 0), (0, 1), (-1, 0), (0, -1))
+    for y in range(size):
+        for x in range(size):
+            if not filled(x, y):
+                continue
+            for nx, ny, edge in (
+                (x, y - 1, (x, y, 0)),
+                (x + 1, y, (x + 1, y, 1)),
+                (x, y + 1, (x + 1, y + 1, 2)),
+                (x - 1, y, (x, y + 1, 3)),
+            ):
+                if not filled(nx, ny):
+                    edges[edge] = None
+
+    paths = []
+    for x, y, direction in tuple(edges):
+        if (x, y, direction) not in edges:
+            continue
+        origin = (x, y)
+        path = [f"M{x} {y}"]
+        while True:
+            del edges[x, y, direction]
+            dx, dy = directions[direction]
+            x, y = x + dx, y + dy
+            if (x, y) == origin:
+                break
+            path.append(f"L{x} {y}")
+            # At diagonal contacts, turn right to keep the contours separate.
+            direction = next(
+                turn
+                for turn in ((direction + 1) % 4, direction, (direction - 1) % 4)
+                if (x, y, turn) in edges
+            )
+        paths.append("".join(path) + "z")
+    return "".join(paths)
+
+
 def render_label(data: LabelData, options: LabelOptions, logo: bytes | None = None) -> dict:
     branded = options.kind == "classic" and options.qr_mark
     matrix = _matrix(data.sku, branded)
@@ -91,7 +144,7 @@ def render_label(data: LabelData, options: LabelOptions, logo: bytes | None = No
     ]
     for rule in scene.rules:
         content.append(
-            f'<path d="M {rule.x} {rule.y} h {rule.width} v {rule.height}" stroke="#aaaaaa" stroke-width="{max(0.06, scene.margin_mm * 0.06)}"/>'
+            f'<path d="M {rule.x} {rule.y} h {rule.width} v {rule.height}" stroke="#aaaaaa" stroke-width="{rule_stroke_mm(scene.margin_mm)}"/>'
         )
     for text in scene.texts:
         box = text.box
@@ -137,15 +190,8 @@ def render_label(data: LabelData, options: LabelOptions, logo: bytes | None = No
         mark_window += 1
     window = mark_window + 4 if branded else 0
     start = (modules - window) // 2
-    paths = []
-    for row, values in enumerate(matrix):
-        for column, black in enumerate(values):
-            if black and not (
-                branded and start <= row < start + window and start <= column < start + window
-            ):
-                paths.append(f"M{column} {row}h1v1h-1z")
     content.append(
-        f'<path fill="black" shape-rendering="crispEdges" transform="translate({scene.qr.x:.6f} {scene.qr.y:.6f}) scale({module:.9f})" d="{"".join(paths)}"/>'
+        f'<path fill="black" shape-rendering="crispEdges" transform="translate({scene.qr.x:.6f} {scene.qr.y:.6f}) scale({module:.9f})" d="{_matrix_path(matrix, window)}"/>'
     )
     if branded:
         side = window * module
