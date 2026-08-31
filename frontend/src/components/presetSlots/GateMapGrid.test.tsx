@@ -176,6 +176,52 @@ describe('GateMapGrid material slots', () => {
     expect(onGateClick).toHaveBeenCalledWith(gate, slot);
   });
 
+  it('shows provider-neutral tag evidence without turning it into desired state', () => {
+    const slot: MaterialSlot = {
+      id: 11,
+      provider_index: 0,
+      label: 'Gate 0',
+      kind: 'gate',
+      active: true,
+      assignment_revision: 0,
+      assignment: null,
+      legacy_projection: null,
+      observation: {
+        source: 'edge_happy_hare',
+        observed_at: FRESH_SOURCE_TS,
+        received_at: FRESH_SOURCE_TS,
+        present: true,
+        active_feed: false,
+        spool_id: null,
+        spool_identity_known: false,
+        tag_uid: 'DEADBEEF',
+        tag_technology: 'unknown',
+        tag_format: null,
+        tag_match_status: 'unlinked',
+        material: null,
+        color_hex: null,
+        remaining_percent: null,
+        remaining_grams: null,
+      },
+    };
+
+    render(
+      <GateMapGrid
+        slots={[slot]}
+        gates={[]}
+        presets={{}}
+        spools={[]}
+        onGateClick={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText(/spoolTags\.observation\.unlinked/).closest('[title]')).toHaveAttribute(
+      'title',
+      'DEADBEEF',
+    );
+    expect(slot.assignment).toBeNull();
+  });
+
   it('shows a printer-reported empty state without hiding the desired spool', () => {
     const onGateClick = vi.fn();
     const observedEmptyGate: GateState = {

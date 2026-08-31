@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Radio } from 'lucide-react';
 import type { GateState, MaterialSlot, UserSpool } from '../../api/client';
 import type { Preset } from '../../types/api';
 import { isUnidentifiedHHFilament } from '../../utils/hhGateState';
@@ -285,6 +285,25 @@ export function GateMapGrid({
                 {t('presetSlots.happyHare.observedSpool', {
                   name: observedSpool.filament?.name ?? `#${observedSpool.id}`,
                 })}
+              </span>
+            )}
+
+            {slot.observation?.tag_uid && (
+              <span
+                title={slot.observation.tag_uid}
+                className={[
+                  'inline-flex max-w-full items-center gap-1 rounded px-1.5 py-0.5 text-[9px]',
+                  slot.observation.tag_match_status === 'matched'
+                    ? 'bg-emerald-500/10 text-emerald-200/80'
+                    : 'bg-amber-500/10 text-amber-200/80',
+                ].join(' ')}
+              >
+                <Radio className="h-2.5 w-2.5 shrink-0" />
+                <span className="truncate">
+                  {t(`spoolTags.observation.${slot.observation.tag_match_status ?? 'unlinked'}`)}
+                  {' · '}
+                  {slot.observation.tag_uid}
+                </span>
               </span>
             )}
 

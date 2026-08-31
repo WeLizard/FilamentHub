@@ -684,9 +684,10 @@ async def retire_user_spool_qr(
     binding.retirement_started_at = current_time
     binding.purge_after = current_time + timedelta(days=QR_USER_RECOVERY_DAYS)
     binding.revision += 1
+    await db.flush()
+    response = _user_binding_response(binding)
     await db.commit()
-    await db.refresh(binding)
-    return _user_binding_response(binding)
+    return response
 
 
 async def restore_user_spool_qr(
@@ -713,9 +714,10 @@ async def restore_user_spool_qr(
     binding.retirement_started_at = None
     binding.purge_after = None
     binding.revision += 1
+    await db.flush()
+    response = _user_binding_response(binding)
     await db.commit()
-    await db.refresh(binding)
-    return _user_binding_response(binding)
+    return response
 
 
 async def rotate_user_spool_qr(

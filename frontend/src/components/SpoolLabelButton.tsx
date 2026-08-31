@@ -3,7 +3,7 @@ import { Printer } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { UserSpool } from "../api/client";
 import { useAuth } from "../contexts/AuthContext";
-import { LabelStudioModal } from "./LabelStudioModal";
+import { SpoolLabelFlowModal } from "./SpoolLabelFlowModal";
 
 export function SpoolLabelButton({
   spool,
@@ -39,9 +39,9 @@ export function SpoolLabelButton({
         {!compact && t("labelStudio.labelAction")}
       </button>
       {open && available && (
-        <LabelStudioModal
+        <SpoolLabelFlowModal
           key={spool.id}
-          filamentId={spool.filament_id!}
+          spool={spool}
           onClose={() => setOpen(false)}
         />
       )}

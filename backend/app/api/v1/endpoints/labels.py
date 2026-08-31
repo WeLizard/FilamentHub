@@ -1,22 +1,25 @@
 """Read-only, bounded exports of public SKU labels."""
 
 import logging
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Query, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.capacity import Gate
+from app.core.dependencies import get_current_active_user
 from app.core.errors import (
     ERR_LABEL_BRAND_LOGO_UNAVAILABLE,
     ERR_LABEL_DOES_NOT_FIT,
     ERR_LABEL_RENDER_FAILED,
     ERR_LABEL_UNSUPPORTED_TEXT,
+    ERR_QR_BINDING_STATE_CONFLICT,
     raise_error,
 )
 from app.core.limiter import limiter
 from app.db.session import get_db
+from app.models.user import User
 from app.schemas.label import LabelExportOptions
 from app.services.label_catalog import catalog_label_data, public_brand_logo, public_label_filament
 from app.services.label_fonts import UnsupportedLabelText
@@ -27,6 +30,7 @@ from app.services.label_renderer import (
     render_label,
     sheet_svg,
 )
+from app.services.qr_identity_service import get_user_spool_qr
 
 router = APIRouter(prefix="/labels", tags=["labels"])
 logger = logging.getLogger(__name__)
@@ -38,15 +42,13 @@ MEDIA_PRESETS = [
 ]
 
 
-@router.get("/filaments/{filament_id}")
-async def label_metadata(
-    filament_id: int,
-    db: Annotated[AsyncSession, Depends(get_db)],
-    locale: Literal["ru", "en", "zh"] = Query("ru"),
-) -> dict:
-    filament = await public_label_filament(db, filament_id)
+def _metadata(filament, locale: str) -> dict:
+    data = asdict(catalog_label_data(filament, locale))
+    # qr_payload is a renderer input, not a second human-readable metadata
+    # field. Keep the established public response shape stable.
+    data.pop("qr_payload", None)
     return {
-        "data": asdict(catalog_label_data(filament, locale)),
+        "data": data,
         "media_presets": MEDIA_PRESETS,
         "classic_presets_mm": [20, 25, 30, 40],
         "sheet_media": {
@@ -56,6 +58,41 @@ async def label_metadata(
             filament.brand.logo_url and filament.brand.logo_url.startswith("/uploads/brand_logos/")
         ),
     }
+
+
+async def _spool_label_context(
+    db: AsyncSession,
+    user: User,
+    spool_id: int,
+    locale: str,
+):
+    qr = await get_user_spool_qr(db, user=user, spool_id=spool_id)
+    if qr.state not in {"active", "linked"}:
+        raise_error(409, ERR_QR_BINDING_STATE_CONFLICT)
+    filament = await public_label_filament(db, qr.filament_id)
+    data = replace(catalog_label_data(filament, locale), qr_payload=qr.short_code)
+    return filament, data
+
+
+@router.get("/filaments/{filament_id}")
+async def label_metadata(
+    filament_id: int,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    locale: Literal["ru", "en", "zh"] = Query("ru"),
+) -> dict:
+    filament = await public_label_filament(db, filament_id)
+    return _metadata(filament, locale)
+
+
+@router.get("/spools/{spool_id}")
+async def spool_label_metadata(
+    spool_id: int,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    locale: Literal["ru", "en", "zh"] = Query("ru"),
+) -> dict:
+    filament, _data = await _spool_label_context(db, current_user, spool_id, locale)
+    return _metadata(filament, locale)
 
 
 def _render(data, options, logo_url, download, page=1):
@@ -105,6 +142,27 @@ async def label_preview(
     )
 
 
+@router.post("/spools/{spool_id}/preview")
+@limiter.limit("120/minute")
+async def spool_label_preview(
+    request: Request,
+    spool_id: int,
+    options: LabelExportOptions,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    page: int = Query(1, ge=1, le=50),
+) -> dict:
+    filament, data = await _spool_label_context(db, current_user, spool_id, options.label.locale)
+    return await label_gate.run(
+        _render,
+        data,
+        options,
+        filament.brand.logo_url,
+        False,
+        page,
+    )
+
+
 @router.post("/filaments/{filament_id}/export")
 @limiter.limit("20/minute")
 async def label_export(
@@ -128,5 +186,33 @@ async def label_export(
         headers={
             "Cache-Control": "no-store",
             "Content-Disposition": f'attachment; filename="label-{filament.id}.{options.format}"',
+        },
+    )
+
+
+@router.post("/spools/{spool_id}/export")
+@limiter.limit("20/minute")
+async def spool_label_export(
+    request: Request,
+    spool_id: int,
+    options: LabelExportOptions,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> Response:
+    filament, data = await _spool_label_context(db, current_user, spool_id, options.label.locale)
+    content = await label_gate.run(
+        _render,
+        data,
+        options,
+        filament.brand.logo_url,
+        True,
+    )
+    mime = {"svg": "image/svg+xml", "png": "image/png", "pdf": "application/pdf"}[options.format]
+    return Response(
+        content=content,
+        media_type=mime,
+        headers={
+            "Cache-Control": "private, no-store",
+            "Content-Disposition": f'attachment; filename="spool-label-{spool_id}.{options.format}"',
         },
     )

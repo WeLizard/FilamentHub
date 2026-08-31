@@ -96,6 +96,7 @@ import type { ViewMode } from '../components/ViewModeToggle';
 import { useStoredViewMode } from '../hooks/useStoredViewMode';
 import { SpoolUsageModal } from '../components/SpoolUsageModal';
 import { SpoolLabelButton } from '../components/SpoolLabelButton';
+import { SpoolTagsButton } from '../components/SpoolTagsButton';
 import type {
   AchievementCode,
   AchievementOverview,
@@ -2128,6 +2129,7 @@ const SpoolCard: React.FC<SpoolCardProps> = ({
 
         <div className="flex flex-shrink-0 items-center gap-1">
           <SpoolLabelButton spool={spool} compact busy={isBusy} />
+          <SpoolTagsButton spool={spool} compact busy={isBusy} />
           {spool.used_weight_g > 0 && (
             <button
               type="button"
@@ -2318,8 +2320,9 @@ const SpoolCard: React.FC<SpoolCardProps> = ({
           </button>
         )}
 
-        <div className="grid grid-cols-3 gap-2 pt-1">
+        <div className="grid grid-cols-4 gap-2 pt-1">
           <SpoolLabelButton spool={spool} busy={isBusy} />
+          <SpoolTagsButton spool={spool} busy={isBusy} />
           <button
             type="button"
             onClick={onEdit}
@@ -2342,7 +2345,7 @@ const SpoolCard: React.FC<SpoolCardProps> = ({
             value={spool.state}
             onChange={(e) => onStateChange?.(e.target.value as SpoolState)}
             disabled={!onStateChange || isBusy}
-            className="col-span-2 w-full rounded-lg border border-white/20 bg-white/5 px-2 py-1 text-[11px] text-gray-200 focus:border-purple-500 focus:outline-none disabled:opacity-50"
+            className="col-span-3 w-full rounded-lg border border-white/20 bg-white/5 px-2 py-1 text-[11px] text-gray-200 focus:border-purple-500 focus:outline-none disabled:opacity-50"
           >
             {(['shelf', 'active', 'archived', 'empty'] as const).map(s => (
               <option key={s} value={s}>{t(`profilePage.spoolState.${s}`)}</option>

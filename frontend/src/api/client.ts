@@ -1189,6 +1189,25 @@ export const labelsAPI = {
       throw error;
     }
   },
+  spoolMetadata: async (spoolId: number, locale: string): Promise<LabelMetadata> => {
+    const response = await api.get(`/labels/spools/${spoolId}`, { params: { locale } });
+    return response.data;
+  },
+  spoolPreview: async (spoolId: number, options: LabelExportOptions, signal?: AbortSignal, page = 1): Promise<LabelPreview> => {
+    const response = await api.post(`/labels/spools/${spoolId}/preview`, options, { signal, params: { page } });
+    return response.data;
+  },
+  spoolDownload: async (spoolId: number, options: LabelExportOptions): Promise<void> => {
+    try {
+      const response = await api.post(`/labels/spools/${spoolId}/export`, options, { responseType: 'blob' });
+      downloadBlob(response.data, `spool-label-${spoolId}.${options.format}`);
+    } catch (error) {
+      if (axios.isAxiosError(error) && error.response?.data instanceof Blob) {
+        try { error.response.data = JSON.parse(await error.response.data.text()); } catch { /* Keep the original response when it is not JSON. */ }
+      }
+      throw error;
+    }
+  },
 };
 
 export const qrAPI = {
@@ -3343,6 +3362,36 @@ export interface UserSpool {
   extra: Record<string, string> | null;
 }
 
+export interface UserSpoolQrIdentity {
+  spool_id: number;
+  filament_id: number;
+  issuer: 'user' | 'manufacturer';
+  state: 'active' | 'pending_retirement' | 'linked';
+  revision: number;
+  short_code: string;
+  target_url: string;
+  retirement_started_at: string | null;
+  purge_after: string | null;
+}
+
+export type SpoolTagTechnology = 'unknown' | 'nfc' | 'uhf_rfid';
+
+export interface SpoolTag {
+  id: number;
+  spool_id: number;
+  uid: string;
+  technology: SpoolTagTechnology;
+  format: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SpoolTagCreatePayload {
+  uid: string;
+  technology: SpoolTagTechnology;
+  format?: string | null;
+}
+
 export interface SpoolCreatePayload {
   filament_id?: number | null;
   initial_weight_g: number;
@@ -3617,6 +3666,67 @@ export const spoolsAPI = {
   },
 };
 
+export const spoolQrAPI = {
+  get: async (spoolId: number): Promise<UserSpoolQrIdentity> => {
+    const response = await api.get<UserSpoolQrIdentity>(`/spools/${spoolId}/qr`);
+    return response.data;
+  },
+
+  issue: async (spoolId: number): Promise<UserSpoolQrIdentity> => {
+    const response = await api.post<UserSpoolQrIdentity>(`/spools/${spoolId}/qr/issue`);
+    return response.data;
+  },
+
+  retire: async (spoolId: number, revision: number): Promise<UserSpoolQrIdentity> => {
+    const response = await api.post<UserSpoolQrIdentity>(`/spools/${spoolId}/qr/retire`, { revision });
+    return response.data;
+  },
+
+  restore: async (spoolId: number, revision: number): Promise<UserSpoolQrIdentity> => {
+    const response = await api.post<UserSpoolQrIdentity>(`/spools/${spoolId}/qr/restore`, { revision });
+    return response.data;
+  },
+
+  rotate: async (
+    spoolId: number,
+    revision: number,
+    idempotencyKey: string,
+  ): Promise<UserSpoolQrIdentity> => {
+    const response = await api.post<UserSpoolQrIdentity>(`/spools/${spoolId}/qr/rotate`, {
+      revision,
+      idempotency_key: idempotencyKey,
+    });
+    return response.data;
+  },
+};
+
+export const spoolTagsAPI = {
+  list: async (spoolId?: number): Promise<SpoolTag[]> => {
+    const response = await api.get<SpoolTag[]>('/spool-tags', {
+      params: spoolId == null ? undefined : { spool_id: spoolId },
+    });
+    return response.data;
+  },
+
+  link: async (spoolId: number, payload: SpoolTagCreatePayload): Promise<SpoolTag> => {
+    const response = await api.post<SpoolTag>(`/spool-tags/${spoolId}`, payload);
+    return response.data;
+  },
+
+  unlink: async (spoolId: number, uid: string): Promise<void> => {
+    await api.delete(`/spool-tags/${spoolId}/${encodeURIComponent(uid)}`);
+  },
+
+  resolve: async (uid: string): Promise<{
+    uid: string;
+    status: 'matched' | 'unlinked';
+    spool_id: number | null;
+  }> => {
+    const response = await api.get('/spool-tags/resolve', { params: { uid } });
+    return response.data;
+  },
+};
+
 // ── Devices API ──────────────────────────────────────────────────────────────
 
 export interface UserPrinterDevice {
@@ -3727,6 +3837,10 @@ export interface MaterialSlotObservation {
   active_feed: boolean | null;
   spool_id?: number | null;
   spool_identity_known?: boolean;
+  tag_uid?: string | null;
+  tag_technology?: SpoolTagTechnology | null;
+  tag_format?: string | null;
+  tag_match_status?: 'matched' | 'unlinked' | 'conflict' | null;
   material: string | null;
   color_hex: string | null;
   remaining_percent: number | null;

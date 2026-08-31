@@ -8,7 +8,7 @@ import pytest
 from fastapi import HTTPException
 from httpx import AsyncClient
 from sqlalchemy import event, func, select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.security import create_access_token
 from app.models.brand import Brand
@@ -36,6 +36,8 @@ from app.services.qr_identity_service import (
     list_manufacturer_qr_batches,
     parse_qr_envelope,
     purge_expired_user_qr_bindings,
+    restore_user_spool_qr,
+    retire_user_spool_qr,
 )
 from app.services.spoolmanager_import_service import link_imported_spools_to_preset
 from tests.conftest import accepted_legal
@@ -290,6 +292,43 @@ async def test_user_qr_retirement_restores_then_purges_without_reusing_token(
     reissued_response = await auth_client.post(f"/api/v1/spools/{spool.id}/qr/issue")
     assert reissued_response.status_code == 200
     assert reissued_response.json()["short_code"] != retired_again["short_code"]
+
+
+@pytest.mark.asyncio
+async def test_retire_and_restore_return_loaded_responses_with_expire_on_commit(
+    auth_client: AsyncClient,
+    auth_user: User,
+    db_session: AsyncSession,
+):
+    _filament, spool = await _catalog_spool(db_session, user=auth_user, suffix="EXPIRING-SESSION")
+    issued = (await auth_client.post(f"/api/v1/spools/{spool.id}/qr/issue")).json()
+    sessions = async_sessionmaker(
+        db_session.bind,
+        class_=AsyncSession,
+        expire_on_commit=True,
+    )
+
+    async with sessions() as session:
+        user = await session.get(User, auth_user.id)
+        retired = await retire_user_spool_qr(
+            session,
+            user=user,
+            spool_id=spool.id,
+            revision=issued["revision"],
+        )
+    assert retired.state == "pending_retirement"
+    assert retired.short_code == issued["short_code"]
+
+    async with sessions() as session:
+        user = await session.get(User, auth_user.id)
+        restored = await restore_user_spool_qr(
+            session,
+            user=user,
+            spool_id=spool.id,
+            revision=retired.revision,
+        )
+    assert restored.state == "active"
+    assert restored.short_code == issued["short_code"]
 
 
 @pytest.mark.asyncio

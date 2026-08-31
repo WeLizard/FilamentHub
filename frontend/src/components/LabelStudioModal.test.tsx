@@ -14,6 +14,9 @@ const mocks = vi.hoisted(() => ({
   metadata: vi.fn(),
   preview: vi.fn(),
   download: vi.fn(),
+  spoolMetadata: vi.fn(),
+  spoolPreview: vi.fn(),
+  spoolDownload: vi.fn(),
   error: vi.fn(),
   decode: vi.fn(),
 }));
@@ -42,7 +45,7 @@ describe("LabelStudioModal", () => {
         decode = mocks.decode;
       },
     );
-    mocks.metadata.mockResolvedValue({
+    const metadata = {
       data: {
         sku: "FH-001",
         brand: "Brand",
@@ -57,16 +60,21 @@ describe("LabelStudioModal", () => {
         letter: { width_mm: 215.9, height_mm: 279.4 },
       },
       brand_logo_available: false,
-    });
-    mocks.preview.mockResolvedValue({
+    };
+    const preview = {
       svg: "<svg/>",
       page_svg: "<svg/>",
       modules: 33,
       scene: { dots_per_module: 4, body_size_mm: 2 },
       printable: true,
       proof_required: false,
-    });
+    };
+    mocks.metadata.mockResolvedValue(metadata);
+    mocks.spoolMetadata.mockResolvedValue(metadata);
+    mocks.preview.mockResolvedValue(preview);
+    mocks.spoolPreview.mockResolvedValue(preview);
     mocks.download.mockResolvedValue(undefined);
+    mocks.spoolDownload.mockResolvedValue(undefined);
   });
   afterEach(() => vi.unstubAllGlobals());
 
@@ -80,6 +88,37 @@ describe("LabelStudioModal", () => {
       </QueryClientProvider>,
     );
   }
+
+  function openSpool() {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    return render(
+      <QueryClientProvider client={client}>
+        <LabelStudioModal spoolId={101} onClose={vi.fn()} />
+      </QueryClientProvider>,
+    );
+  }
+
+  it("uses owner spool label endpoints for an already-issued instance", async () => {
+    openSpool();
+    expect(screen.getByText("labelStudio.instanceCodeHint")).toBeInTheDocument();
+    const download = await screen.findByRole("button", {
+      name: "labelStudio.download",
+    });
+    await waitFor(() => expect(download).not.toBeDisabled());
+    expect(mocks.spoolMetadata).toHaveBeenCalledWith(101, "ru");
+    expect(mocks.spoolPreview).toHaveBeenCalledWith(
+      101,
+      expect.any(Object),
+      expect.any(AbortSignal),
+      1,
+    );
+    fireEvent.click(download);
+    await waitFor(() => expect(mocks.spoolDownload).toHaveBeenCalledWith(101, expect.any(Object)));
+    expect(mocks.metadata).not.toHaveBeenCalled();
+    expect(mocks.download).not.toHaveBeenCalled();
+  });
 
   it("exports only the current preview and keeps classic mark independent from external attribution", async () => {
     open();

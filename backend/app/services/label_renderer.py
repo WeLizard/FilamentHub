@@ -26,7 +26,7 @@ from app.services.label_layout import (
 from app.services.qr_mark import MARK_VIEWBOX, mark_paths
 from app.services.qr_service import _qr_target_url
 
-RENDERER_REVISION = "label-scene-6"
+RENDERER_REVISION = "label-scene-7"
 MAX_OUTPUT_PIXELS = 36_000_000
 MAX_SVG_BYTES = 4_000_000
 
@@ -136,7 +136,7 @@ def render_label(data: LabelData, options: LabelOptions, logo: bytes | None = No
     if options.kind == "full" and options.brand_mode == "mark" and not logo:
         raise LabelBrandLogoUnavailable("Brand mark is unavailable")
     branded = options.kind == "classic" and options.qr_mark
-    matrix = _matrix(data.sku, branded)
+    matrix = _matrix(data.qr_payload or data.sku, branded)
     modules = len(matrix)
     data = replace(data, has_brand_logo=bool(logo))
     scene = compose_label(data, options, modules, measure_text)

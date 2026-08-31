@@ -168,6 +168,9 @@ class LabelData:
     color_hex: str = ""
     comment_heading: str = ""
     has_brand_logo: bool = False
+    # The human caption stays the stable product SKU while a private spool
+    # label may encode an already-issued instance identity in the QR itself.
+    qr_payload: str | None = None
 
 
 @dataclass

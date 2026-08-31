@@ -8,16 +8,17 @@ vi.mock("../contexts/AuthContext", () => ({ useAuth: () => auth }));
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
-vi.mock("./LabelStudioModal", () => ({
-  LabelStudioModal: ({
-    filamentId,
+vi.mock("./SpoolLabelFlowModal", () => ({
+  SpoolLabelFlowModal: ({
+    spool,
     onClose,
   }: {
-    filamentId: number;
+    spool: { id: number; filament_id: number | null };
     onClose: () => void;
   }) => (
     <div role="dialog" aria-label="Label">
-      <span>{filamentId}</span>
+      <span>{`spool-${spool.id}`}</span>
+      <span>{`filament-${spool.filament_id}`}</span>
       <button onClick={onClose}>Close</button>
     </div>
   ),
@@ -45,7 +46,7 @@ describe("spool label entry", () => {
     auth.user = { id: 7 };
   });
   it.each([false, true])(
-    "opens the shared editor for the catalog product, not the spool id (compact=%s)",
+    "opens the spool label chooser without preselecting one identity mode (compact=%s)",
     (compact) => {
       render(<SpoolLabelButton spool={spool} compact={compact} />);
       if (compact) {
@@ -56,8 +57,8 @@ describe("spool label entry", () => {
       fireEvent.click(
         screen.getByRole("button", { name: "labelStudio.printLabel" }),
       );
-      expect(screen.getByRole("dialog")).toHaveTextContent("41");
-      expect(screen.getByRole("dialog")).not.toHaveTextContent("101");
+      expect(screen.getByRole("dialog")).toHaveTextContent("spool-101");
+      expect(screen.getByRole("dialog")).toHaveTextContent("filament-41");
       fireEvent.click(screen.getByText("Close"));
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     },

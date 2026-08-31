@@ -65,9 +65,15 @@ function orientSize(width: number, height: number, orientation: Orientation) {
 
 export function LabelStudioModal({
   filamentId,
+  spoolId,
   onClose,
-}: {
+}: ({
   filamentId: number;
+  spoolId?: never;
+} | {
+  filamentId?: never;
+  spoolId: number;
+}) & {
   onClose: () => void;
 }) {
   const { t, i18n } = useTranslation();
@@ -94,6 +100,10 @@ export function LabelStudioModal({
   const [showSheet, setShowSheet] = useState(false);
   const [selectedPage, setSelectedPage] = useState({ key: "", number: 1 });
   const [downloading, setDownloading] = useState(false);
+  const sourceKey = spoolId === undefined ? `filament-${filamentId}` : `spool-${spoolId}`;
+  const codeHint = t(
+    spoolId === undefined ? "labelStudio.productCodeHint" : "labelStudio.instanceCodeHint",
+  );
   useEffect(() => {
     try {
       sessionStorage.setItem(orientationKey, orientation);
@@ -102,8 +112,11 @@ export function LabelStudioModal({
     }
   }, [orientation]);
   const metadata = useQuery({
-    queryKey: ["label-metadata", filamentId, locale],
-    queryFn: () => labelsAPI.metadata(filamentId, locale),
+    queryKey: ["label-metadata", sourceKey, locale],
+    queryFn: () =>
+      spoolId === undefined
+        ? labelsAPI.metadata(filamentId, locale)
+        : labelsAPI.spoolMetadata(spoolId, locale),
     retry: false,
   });
   const supportsComment =
@@ -180,14 +193,21 @@ export function LabelStudioModal({
     format: "svg",
   });
   const preview = useQuery({
-    queryKey: ["label-preview", filamentId, previewKey, previewPage],
+    queryKey: ["label-preview", sourceKey, previewKey, previewPage],
     queryFn: ({ signal }) =>
-      labelsAPI.preview(
-        filamentId,
-        JSON.parse(previewKey),
-        signal,
-        previewPage,
-      ),
+      spoolId === undefined
+        ? labelsAPI.preview(
+            filamentId,
+            JSON.parse(previewKey),
+            signal,
+            previewPage,
+          )
+        : labelsAPI.spoolPreview(
+            spoolId,
+            JSON.parse(previewKey),
+            signal,
+            previewPage,
+          ),
     enabled: !!metadata.data && validSheet,
     placeholderData: keepPreviousData,
     retry: false,
@@ -297,7 +317,11 @@ export function LabelStudioModal({
   const download = async () => {
     setDownloading(true);
     try {
-      await labelsAPI.download(filamentId, options);
+      if (spoolId === undefined) {
+        await labelsAPI.download(filamentId, options);
+      } else {
+        await labelsAPI.spoolDownload(spoolId, options);
+      }
     } catch (error) {
       toast.error(errorMessage(error));
     } finally {
@@ -346,7 +370,7 @@ export function LabelStudioModal({
               {t("labelStudio.title")}
             </h2>
             <p className="mt-1 text-sm text-gray-400">
-              {t("labelStudio.productCodeHint")}
+              {codeHint}
             </p>
           </div>
           <button
@@ -364,7 +388,7 @@ export function LabelStudioModal({
         ) : metadata.isError ? (
           <div className="space-y-3 p-6" role="alert">
             <p>{errorMessage(metadata.error)}</p>
-            <p className="text-gray-400">{t("labelStudio.productCodeHint")}</p>
+            <p className="text-gray-400">{codeHint}</p>
           </div>
         ) : (
           metadata.data && (

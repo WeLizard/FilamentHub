@@ -16,7 +16,8 @@ from sqlalchemy import func, select
 
 from app.models.brand import Brand
 from app.models.filament import Filament
-from app.models.user_spool import UserSpool
+from app.models.qr_identity import QrUserSpoolBinding
+from app.models.user_spool import UserSpool, UserSpoolState
 from app.schemas.label import LabelExportOptions, LabelOptions
 from app.services.label_fonts import measure_text
 from app.services.label_layout import LabelData, LabelDoesNotFit
@@ -27,6 +28,7 @@ from app.services.label_renderer import (
     render_label,
     sheet_svg,
 )
+from app.services.qr_identity_service import encode_qr_envelope
 from app.services.qr_mark import mark_paths
 from app.services.qr_service import _qr_target_url
 
@@ -117,6 +119,22 @@ def test_label_classic_mark_remains_decodable(label_data, branded, sku, size, dp
     # at these larger raster sizes. ArUco detects its finders without changing
     # the image, payload, mask or strict decode assertion.
     assert cv2.QRCodeDetectorAruco().detectAndDecode(image)[0] == _qr_target_url(label_data.sku)
+
+
+def test_instance_payload_keeps_product_sku_as_the_human_caption(label_data):
+    instance_code = encode_qr_envelope("FH-001", "U", "A" * 22)
+    data = replace(label_data, qr_payload=instance_code)
+    options = LabelOptions(width_mm=50, height_mm=30, dpi=300)
+    rendered = render_label(data, options)
+
+    assert [text["text"] for text in rendered["scene"]["texts"] if text["role"] == "sku"] == [
+        "FH-001"
+    ]
+    png = export_label(data, LabelExportOptions(label=options, format="png"))
+    decoded = cv2.QRCodeDetectorAruco().detectAndDecode(
+        np.array(Image.open(BytesIO(png)).convert("RGB"))
+    )[0]
+    assert decoded == _qr_target_url(instance_code)
 
 
 def test_classic_uses_special_round_mark_with_one_module_white_frame(label_data):
@@ -350,3 +368,75 @@ async def test_label_public_endpoints_are_read_only_and_cannot_override_identity
     filament.qr_code = None
     await db_session.commit()
     assert (await client.get(endpoint)).status_code == 403
+
+
+async def test_spool_label_endpoints_are_owner_only_read_existing_identity_and_block_retired(
+    client, auth_client, auth_user, db_session
+):
+    brand = Brand(name="Private label", slug="private-label", verified=True, active=True)
+    db_session.add(brand)
+    await db_session.flush()
+    filament = Filament(
+        brand_id=brand.id,
+        name="Owned graphite",
+        slug="owned-graphite",
+        material_type="PETG",
+        active=True,
+        qr_code="FH-OWNED-LABEL",
+    )
+    db_session.add(filament)
+    await db_session.flush()
+    spool = UserSpool(
+        user_id=auth_user.id,
+        filament_id=filament.id,
+        initial_weight_g=1000,
+        used_weight_g=0,
+        state=UserSpoolState.shelf,
+        source="manual",
+    )
+    db_session.add(spool)
+    await db_session.commit()
+    endpoint = f"/api/v1/labels/spools/{spool.id}"
+
+    assert (await client.get(endpoint, headers={"Authorization": ""})).status_code == 401
+    missing = await auth_client.get(endpoint)
+    assert missing.status_code == 404
+    assert await db_session.scalar(select(func.count()).select_from(QrUserSpoolBinding)) == 0
+
+    issued = await auth_client.post(f"/api/v1/spools/{spool.id}/qr/issue")
+    assert issued.status_code == 200
+    identity = issued.json()
+    metadata = await auth_client.get(endpoint)
+    assert metadata.status_code == 200
+    assert metadata.json()["data"]["sku"] == filament.qr_code
+    assert "qr_payload" not in metadata.json()["data"]
+
+    exported = await auth_client.post(
+        f"{endpoint}/export",
+        json={
+            "label": {"width_mm": 50, "height_mm": 30, "dpi": 300},
+            "format": "png",
+        },
+    )
+    assert exported.status_code == 200
+    assert exported.headers["cache-control"] == "private, no-store"
+    decoded = cv2.QRCodeDetectorAruco().detectAndDecode(
+        np.array(Image.open(BytesIO(exported.content)).convert("RGB"))
+    )[0]
+    assert decoded == _qr_target_url(identity["short_code"])
+
+    retired = await auth_client.post(
+        f"/api/v1/spools/{spool.id}/qr/retire",
+        json={"revision": identity["revision"]},
+    )
+    assert retired.status_code == 200
+    blocked = await auth_client.post(f"{endpoint}/preview", json={"label": {}})
+    assert blocked.status_code == 409
+    assert blocked.json()["detail"]["code"] == "ERR_QR_BINDING_STATE_CONFLICT"
+    restored = await auth_client.post(
+        f"/api/v1/spools/{spool.id}/qr/restore",
+        json={"revision": retired.json()["revision"]},
+    )
+    assert restored.status_code == 200
+    assert restored.json()["short_code"] == identity["short_code"]
+    assert (await auth_client.post(f"{endpoint}/preview", json={"label": {}})).status_code == 200
