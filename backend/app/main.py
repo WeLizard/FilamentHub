@@ -34,6 +34,9 @@ async def _lifespan(application: FastAPI) -> AsyncIterator[None]:
         await _start_background_tasks(application)
         yield
     finally:
+        from app.services.printer_contact_events import broker
+
+        await broker.close()
         await _stop_background_tasks(application)
 
 

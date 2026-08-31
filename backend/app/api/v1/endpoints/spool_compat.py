@@ -45,6 +45,7 @@ from app.services.preset_slot_sync_service import (
     claim_printer_hostname,
     touch_device_last_seen,
 )
+from app.services.printer_contact_events import publish_committed_contacts
 from app.services.spool_material_service import set_spool_filament_with_qr_guard
 from app.services.spool_service import (
     assign_spool_to_gate,
@@ -828,6 +829,7 @@ async def spool_ws_scoped(websocket: WebSocket, api_key: str) -> None:
             # touch — persist it, unlike HTTP paths this session has no get_db
             # commit behind it.
             await db.commit()
+            await publish_committed_contacts(db)
 
     if user is None:
         await websocket.accept()

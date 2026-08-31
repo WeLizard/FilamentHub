@@ -25,6 +25,7 @@ from app.api.v1.endpoints import (
     filament_lines,
     filament_reviews,
     filaments,
+    labels,
     manufacturer_qr,
     notification_campaigns,
     notifications,
@@ -76,6 +77,7 @@ api_router.include_router(presets.router)
 api_router.include_router(preset_versions.router)
 api_router.include_router(print_jobs.router)
 api_router.include_router(qr.router)
+api_router.include_router(labels.router)
 api_router.include_router(manufacturer_qr.router)
 api_router.include_router(printers.router)
 api_router.include_router(printer_profiles.router)

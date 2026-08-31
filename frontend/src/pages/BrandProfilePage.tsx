@@ -49,6 +49,7 @@ import { PERSONAL_EMAIL_DOMAINS } from '../data/personalEmailDomains';
 import { currencySymbol, currencyCodes } from '../utils/currency';
 import { filamentImportAPI, filamentLinesAPI } from '../api/client';
 import { ModalOverlay } from '../components/ModalOverlay';
+import { LabelStudioModal } from '../components/LabelStudioModal';
 import { COUNTRY_CODES, countryName } from '../utils/countries';
 import { HSLColorPicker } from '../components/HSLColorPicker';
 import { SocialIcon } from '../components/socialIcons';
@@ -256,8 +257,6 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({
   const [deletingFilamentId, setDeletingFilamentId] = useState<number | null>(null);
   const [deletingLine, setDeletingLine] = useState<{ id: number; name: string } | null>(null);
   const [showQRFilament, setShowQRFilament] = useState<Filament | null>(null);
-  // Выбор делается один раз при подготовке макета и не хранится в профиле.
-  const [qrBranded, setQrBranded] = useState(false);
   const [presetFilterFilament, setPresetFilterFilament] = useState<Filament | null>(null);
   const [addColorsFilament, setAddColorsFilament] = useState<Filament | null>(null);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
@@ -2002,109 +2001,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({
         />
       </Suspense>
 
-      {/* QR Code Modal */}
-      {showQRFilament && showQRFilament.qr_code && (
-        <ModalOverlay onClose={() => setShowQRFilament(null)}>
-          <div className="bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 rounded-2xl w-full max-w-lg overflow-hidden flex flex-col border border-white/20 shadow-2xl">
-            {/* Header */}
-            <div className="flex items-center justify-between p-6 border-b border-white/10">
-              <div className="flex items-center space-x-3">
-                <QrCode className="w-6 h-6 text-green-400" />
-                <h2 className="text-2xl font-bold text-white">{t('brandProfile.materialQRCode')}</h2>
-              </div>
-              <button
-                onClick={() => setShowQRFilament(null)}
-                className="p-2 hover:bg-white/10 rounded-lg text-white transition-all"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Content */}
-            <div className="p-6 bg-gradient-to-br from-green-500/20 to-emerald-500/20 border border-green-500/30 rounded-xl m-6">
-              <div className="flex flex-col items-center space-y-4">
-                {/* QR Code */}
-                <div className="p-4 bg-white rounded-xl">
-                  <img
-                    src={qrAPI.getQRCodeURL(showQRFilament.id, 256, qrBranded)}
-                    alt={`QR Code ${showQRFilament.qr_code}`}
-                    className="w-64 h-64"
-                  />
-                </div>
-
-                {/* Знак необязателен: у части производителей упаковка проходит
-                    согласование, где он станет препятствием. */}
-                <label className="flex cursor-pointer items-center gap-3 text-sm text-gray-200">
-                  <input
-                    type="checkbox"
-                    checked={qrBranded}
-                    onChange={(event) => setQrBranded(event.target.checked)}
-                    className="peer sr-only"
-                  />
-                  <span className="relative h-6 w-11 shrink-0 rounded-full border border-white/15 bg-white/10 transition-colors after:absolute after:left-0.5 after:top-0.5 after:h-[18px] after:w-[18px] after:rounded-full after:bg-gray-300 after:shadow-sm after:transition-transform peer-checked:border-cyan-300/40 peer-checked:bg-cyan-400/25 peer-checked:after:translate-x-5 peer-checked:after:bg-cyan-100 peer-focus-visible:ring-2 peer-focus-visible:ring-cyan-300/60" />
-                  <span>{t('brandProfile.qrBranded')}</span>
-                </label>
-                <p className="-mt-2 max-w-md text-center text-xs leading-5 text-gray-400">
-                  {t('brandProfile.qrBrandedHint')}
-                </p>
-                
-                {/* QR Code Info */}
-                <div className="text-center">
-                  <p className="text-gray-300 text-sm mb-2">{t('brandProfile.code')}:</p>
-                  <p className="text-white font-mono text-lg font-bold">{showQRFilament.qr_code}</p>
-                  <p className="text-gray-400 text-sm mt-2">{showQRFilament.name}</p>
-                </div>
-                
-                {/* Download Buttons */}
-                <div className="flex flex-wrap gap-3 justify-center">
-                  {[300, 600, 1200].map((qrSize) => (
-                    <button
-                      key={qrSize}
-                      onClick={() => qrAPI.downloadQRCode(showQRFilament.id, qrSize, { branded: qrBranded })}
-                      className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg transition-all flex items-center space-x-2"
-                    >
-                      <Download className="w-4 h-4" />
-                      <span>{qrSize}x{qrSize}</span>
-                    </button>
-                  ))}
-                  {/* На упаковку идёт вектор: размер там выбирает типография. */}
-                  <button
-                    onClick={() => qrAPI.downloadQRCode(showQRFilament.id, 1200, { branded: qrBranded, format: 'svg' })}
-                    className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg transition-all flex items-center space-x-2"
-                  >
-                    <Download className="w-4 h-4" />
-                    <span>{t('brandProfile.qrVector')}</span>
-                  </button>
-                </div>
-                
-                {/* Copy Button */}
-                <button
-                  onClick={() => {
-                    if (showQRFilament.qr_code) {
-                      navigator.clipboard.writeText(showQRFilament.qr_code);
-                      alert(t('brandProfile.codeCopied'));
-                    }
-                  }}
-                  className="px-6 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-all flex items-center space-x-2"
-                >
-                  <Check className="w-4 h-4" />
-                  <span>{t('brandProfile.copyCode')}</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Close Button */}
-            <div className="p-6 border-t border-white/10">
-              <button
-                onClick={() => setShowQRFilament(null)}
-                className="w-full px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white rounded-xl transition-all shadow-lg shadow-purple-500/25 hover:shadow-purple-500/40"
-              >
-                {t('brandProfile.close')}
-              </button>
-            </div>
-          </div>
-        </ModalOverlay>
-      )}
+      {showQRFilament && <LabelStudioModal filamentId={showQRFilament.id} onClose={() => setShowQRFilament(null)} />}
 
       {/* Add Colors (palette) Modal */}
       {addColorsFilament && user.brand_id && (

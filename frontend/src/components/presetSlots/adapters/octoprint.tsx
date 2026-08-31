@@ -618,6 +618,8 @@ export const octoprintAdapter: FeedAdapter = {
   // Manual/tool routing selects a feed path; it does not observe physical presence.
   capabilities: ['read', 'write', 'spool_identity', 'consumption'],
   contactMode: 'periodic',
+  // Bridge heartbeats are 120s +/-20%; allow network/scheduling headroom too.
+  contactFreshness: { activeMs: 180_000, inactiveMs: 300_000 },
   slotCountLabelKey: 'presetSlots.octoprint.slotCount',
   slotCountSummaryKey: 'presetSlots.gates',
   link: null,

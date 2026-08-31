@@ -3,6 +3,8 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MyPrintersList } from './MyPrintersList';
 
+vi.mock('../hooks/usePrinterContactEvents', () => ({ usePrinterContactEvents: vi.fn() }));
+
 const mocks = vi.hoisted(() => ({
   downloadBundle: vi.fn(),
   downloadBlob: vi.fn(),

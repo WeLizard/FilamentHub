@@ -9,6 +9,7 @@ import { getCsrfToken, getRefreshToken, getToken, isCookieAuthMode, isJwtAuthMod
 import { isPluginEmbed, reportPluginSessionToPlugin } from '../utils/pluginBridge';
 import { downloadBlob } from '../utils/download';
 import { currentRequestLanguage } from '../utils/requestLanguage';
+import type { LabelExportOptions, LabelMetadata, LabelPreview } from '../types/labels';
 
 const API_BASE_URL = '/api/v1';
 const COOKIE_AUTH_MODE = isCookieAuthMode();
@@ -1167,6 +1168,28 @@ export interface QrScanResponse {
   /** Present only when the authenticated user already saved this preset. */
   preset_sync_enabled: boolean | null;
 }
+
+export const labelsAPI = {
+  metadata: async (filamentId: number, locale: string): Promise<LabelMetadata> => {
+    const response = await api.get(`/labels/filaments/${filamentId}`, { params: { locale } });
+    return response.data;
+  },
+  preview: async (filamentId: number, options: LabelExportOptions, signal?: AbortSignal): Promise<LabelPreview> => {
+    const response = await api.post(`/labels/filaments/${filamentId}/preview`, options, { signal });
+    return response.data;
+  },
+  download: async (filamentId: number, options: LabelExportOptions): Promise<void> => {
+    try {
+      const response = await api.post(`/labels/filaments/${filamentId}/export`, options, { responseType: 'blob' });
+      downloadBlob(response.data, `label-${filamentId}.${options.format}`);
+    } catch (error) {
+      if (axios.isAxiosError(error) && error.response?.data instanceof Blob) {
+        try { error.response.data = JSON.parse(await error.response.data.text()); } catch { /* Keep the original response when it is not JSON. */ }
+      }
+      throw error;
+    }
+  },
+};
 
 export const qrAPI = {
   // Получить QR-код изображение (URL)
@@ -4035,6 +4058,13 @@ export interface MaterialSystemUpdate {
 }
 
 export const physicalPrintersAPI = {
+  contactEvents: async (signal: AbortSignal): Promise<WebSocket> => {
+    const { data } = await api.post<{ ticket: string }>('/physical-printers/contact-ticket', {}, { signal });
+    if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
+    const url = new URL(`${API_BASE_URL}/physical-printers/contact-events`, window.location.href);
+    url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+    return new WebSocket(url, ['fh-contact-v1', `fh-ticket.${data.ticket}`]);
+  },
   setupConnection: async (id: number, payload: {
     connection?: PrinterSetupConnection;
     material_system?: MaterialSystemCreate;

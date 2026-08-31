@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
   OctoPrintBridgeStatus,
@@ -81,6 +81,8 @@ const createSystem = vi.fn();
 const setupConnection = vi.fn();
 const regenerateKey = vi.fn();
 const updateOctoPrintRouting = vi.fn();
+
+vi.mock('../hooks/usePrinterContactEvents', () => ({ usePrinterContactEvents: vi.fn() }));
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -559,45 +561,10 @@ describe('PresetSlotsPanel', () => {
 
   it('shows a manual physical printer and resolves exact linked profile ids', async () => {
     const {
-      adapterContactPollIntervalMs,
       PresetSlotsPanel,
-      shouldContinueAdapterContactPolling,
-      shouldPollForAdapterContact,
     } = await import(
       '../components/presetSlots/PresetSlotsPanel'
     );
-
-    expect(shouldPollForAdapterContact([
-      {
-        ...physicalPrinter,
-        has_api_key: true,
-        reports_feed: false,
-      },
-    ])).toBe(true);
-    expect(shouldPollForAdapterContact([
-      {
-        ...physicalPrinter,
-        has_api_key: true,
-        reports_feed: true,
-      },
-    ])).toBe(false);
-    expect(shouldContinueAdapterContactPolling([
-      {
-        ...physicalPrinter,
-        has_api_key: true,
-        reports_feed: false,
-      },
-    ], 70_000, 20_000)).toBe(true);
-    expect(shouldContinueAdapterContactPolling([
-      {
-        ...physicalPrinter,
-        has_api_key: true,
-        reports_feed: false,
-      },
-    ], 70_000, 70_000)).toBe(false);
-    expect(adapterContactPollIntervalMs(0)).toBe(15_000);
-    expect(adapterContactPollIntervalMs(0.5)).toBe(20_000);
-    expect(adapterContactPollIntervalMs(1)).toBe(25_000);
 
     render(
       <PresetSlotsPanel
@@ -668,6 +635,33 @@ describe('PresetSlotsPanel', () => {
     expect(screen.queryByTestId('gate-map')).not.toBeInTheDocument();
     fireEvent.click(screen.getByTitle('presetSlots.expandSystem'));
     expect(screen.getByTestId('gate-map')).toBeInTheDocument();
+  });
+
+  it('allows normal native heartbeat jitter but still ages a silent connection', async () => {
+    const { PresetSlotsPanel } = await import(
+      '../components/presetSlots/PresetSlotsPanel'
+    );
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-31T12:00:00Z'));
+    physicalPrintersForQuery = [{
+      ...physicalPrinter,
+      last_seen_at: new Date(Date.now() - 144_000).toISOString(),
+      material_systems: [{
+        ...physicalPrinter.material_systems[0],
+        provider: 'octoprint',
+      }],
+    }];
+    try {
+      const view = render(<PresetSlotsPanel spools={[]} printerProfiles={[]} />);
+      expect(screen.getByText('deviceLink.active')).toBeInTheDocument();
+      act(() => vi.advanceTimersByTime(60_000));
+      expect(screen.getByText('deviceLink.delayed')).toBeInTheDocument();
+      act(() => vi.advanceTimersByTime(120_000));
+      expect(screen.getByText('deviceLink.inactive')).toBeInTheDocument();
+      view.unmount();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('makes same-named physical printers distinguishable before adding a material system', async () => {

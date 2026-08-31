@@ -25,6 +25,7 @@ import { formatLastSeen, getDeviceLinkState, latestDeviceContact, useNow } from 
 import { configuredNozzleHrc } from '../../utils/nozzleHardness';
 import { useAuth } from '../../contexts/AuthContext';
 import { safeStorage } from '../../utils/storage';
+import { usePrinterContactEvents } from '../../hooks/usePrinterContactEvents';
 
 interface MaterialSystemSectionProps {
   printer: PhysicalPrinter;
@@ -113,7 +114,7 @@ function MaterialSystemSection({ printer, system, presetsSeedMap, spools, spoolC
   // The key belongs to the printer, so a system without its own connector still
   // hears from it; falling back keeps a reporting printer from looking silent.
   const lastSeenAt = latestDeviceContact(connector?.last_seen_at, printer.last_seen_at);
-  const linkState = getDeviceLinkState(lastSeenAt, now, adapter.contactMode);
+  const linkState = getDeviceLinkState(lastSeenAt, now, adapter.contactMode, adapter.contactFreshness);
   const linkConfirmed = printer.reports_feed;
   const providerLabel = t(`presetSlots.provider.${system.provider}`, {
     defaultValue: system.provider,
@@ -547,32 +548,6 @@ interface PresetSlotsPanelProps {
   printerProfiles?: Array<{ id: number; name: string }>;
 }
 
-export function shouldPollForAdapterContact(printers: PhysicalPrinter[]): boolean {
-  return printers.some(
-    (printer) => printer.has_api_key
-      && printer.material_systems.some((system) => system.active)
-      && !printer.reports_feed,
-  );
-}
-
-const ADAPTER_CONTACT_POLL_WINDOW_MS = 60_000;
-const ADAPTER_CONTACT_POLL_INTERVAL_MIN_MS = 15_000;
-const ADAPTER_CONTACT_POLL_INTERVAL_RANGE_MS = 10_000;
-
-export function adapterContactPollIntervalMs(randomValue = Math.random()): number {
-  const boundedRandomValue = Math.min(Math.max(randomValue, 0), 1);
-  return ADAPTER_CONTACT_POLL_INTERVAL_MIN_MS
-    + Math.floor(boundedRandomValue * ADAPTER_CONTACT_POLL_INTERVAL_RANGE_MS);
-}
-
-export function shouldContinueAdapterContactPolling(
-  printers: PhysicalPrinter[],
-  pollingUntilMs: number,
-  nowMs = Date.now(),
-): boolean {
-  return nowMs < pollingUntilMs && shouldPollForAdapterContact(printers);
-}
-
 export function PresetSlotsPanel({
   compact = false,
   spools: externalSpools,
@@ -581,6 +556,7 @@ export function PresetSlotsPanel({
   const { t } = useTranslation();
   const { user } = useAuth();
   const queryClient = useQueryClient();
+  usePrinterContactEvents(user?.id);
 
   const [modalState, setModalState] = useState<{
     open: boolean;
@@ -590,27 +566,12 @@ export function PresetSlotsPanel({
     system: MaterialSystem | null;
   }>({ open: false, gate: null, slot: null, printer: null, system: null });
   const [addingSystem, setAddingSystem] = useState(false);
-  const [adapterContactPollingUntil, setAdapterContactPollingUntil] = useState(
-    () => Date.now() + ADAPTER_CONTACT_POLL_WINDOW_MS,
-  );
-  const [adapterContactPollInterval] = useState(
-    () => adapterContactPollIntervalMs(),
-  );
 
   const { data: physicalPrinters = [], isLoading: loadingPrinters } = useQuery({
     queryKey: ['physical-printers'],
     queryFn: physicalPrintersAPI.list,
     staleTime: 10_000,
     refetchOnWindowFocus: true,
-    // Someone who just pasted the key sits and waits for the printer to answer;
-    // they have no reason to guess that the page needs reloading.
-    refetchInterval: (query) => {
-      const printers = query.state.data ?? [];
-      return shouldContinueAdapterContactPolling(
-        printers,
-        adapterContactPollingUntil,
-      ) ? adapterContactPollInterval : false;
-    },
   });
 
 
@@ -687,7 +648,6 @@ export function PresetSlotsPanel({
 
   const handleSystemAdded = () => {
     setAddingSystem(false);
-    setAdapterContactPollingUntil(Date.now() + ADAPTER_CONTACT_POLL_WINDOW_MS);
     void queryClient.invalidateQueries({ queryKey: ['physical-printers'] });
     void queryClient.invalidateQueries({ queryKey: ['devices'] });
   };

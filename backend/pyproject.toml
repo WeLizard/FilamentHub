@@ -29,6 +29,8 @@ dependencies = [
     "qrcode[pil]~=7.4.2",  # Генерация QR-кодов
     "better-profanity~=0.7.0",  # Проверка плохих слов
     "weasyprint~=63.0",  # HTML-to-PDF for quote generation
+    "CairoSVG~=2.9.0",  # Physical labels: one SVG scene for PNG/PDF
+    "fonttools>=4.59,<5",  # Bundled Unicode font metrics and vector outlines
     "cryptography>=46.0.5",  # CVE-2026-26007
     "jinja2>=3.1.6",  # CVE-2025-27516
     "nh3~=0.3.6",  # Allowlist-based sanitization for admin-authored email HTML
@@ -109,3 +111,6 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
 packages = ["app"]
+
+[tool.setuptools.package-data]
+app = ["assets/labels/*.svg", "assets/labels/fonts/*"]

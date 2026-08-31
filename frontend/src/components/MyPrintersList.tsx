@@ -30,6 +30,7 @@ import { visiblePrinterConnections } from '../utils/printerConnections';
 import { GuidedEmptyState } from './GuidedEmptyState';
 import { PrinterRecoveryModal } from './PrinterRecoveryModal';
 import { PrinterConnectionReview } from './PrinterConnectionReview';
+import { usePrinterContactEvents } from '../hooks/usePrinterContactEvents';
 
 const COLLAPSED_CONFIGURATION_LIMIT = 4;
 
@@ -76,6 +77,7 @@ export function MyPrintersList({
   onDownloadPrintProfile,
 }: MyPrintersListProps) {
   const { t, i18n } = useTranslation();
+  usePrinterContactEvents(currentUserId);
   const pluginEmbed = isPluginEmbed();
   const [settingsPrinter, setSettingsPrinter] = useState<PhysicalPrinter | null>(null);
   const [historyPrinter, setHistoryPrinter] = useState<PhysicalPrinter | null>(null);

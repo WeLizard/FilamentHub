@@ -35,6 +35,13 @@ from app.services.weighted_preset_reconciliation import (  # noqa: E402
 
 install_weighted_preset_reconciliation()
 
+from app.services.printer_contact_events import (  # noqa: E402
+    install_contact_events,
+    publish_committed_contacts,
+)
+
+install_contact_events()
+
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     """
@@ -49,6 +56,7 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
         try:
             yield session
             await session.commit()
+            await publish_committed_contacts(session)
             from app.services.weighted_preset_reconciliation import (
                 process_weighted_preset_refreshes_best_effort,
                 take_committed_weighted_refresh_ids,

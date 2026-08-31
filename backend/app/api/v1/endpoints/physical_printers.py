@@ -1,15 +1,22 @@
 """Endpoints for physical printers, Orca configurations, and material systems."""
 
+import asyncio
+import random
+import time
+from contextlib import suppress
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Response, status
+from fastapi import APIRouter, Depends, Request, Response, WebSocket, WebSocketDisconnect, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.dependencies import get_current_active_user, require_printer_bundle_read
 from app.core.errors import (
     ERR_EXPORT_PRINTER_DISABLED,
+    ERR_SERVER_BUSY,
     raise_error,
 )
+from app.core.security import decode_access_token, token_fingerprint
 from app.db.session import get_db
 from app.models.user import User
 from app.models.user_printer_device import UserPrinterDevice
@@ -53,6 +60,13 @@ from app.services.orca_printer_bundle_service import (
     build_orca_printer_bundle,
     build_orca_printer_recovery_bundle,
 )
+from app.services.printer_contact_events import (
+    CONTACT_PROTOCOL,
+    STREAM_SECONDS,
+    StreamLimitReached,
+    StreamUnavailable,
+    broker,
+)
 from app.services.printer_economics_service import (
     DEFAULT_USAGE,
     USAGE_LIFE_HOURS,
@@ -61,6 +75,91 @@ from app.services.printer_economics_service import (
 )
 
 router = APIRouter(prefix="/physical-printers", tags=["physical-printers"])
+
+
+@router.post("/contact-ticket")
+async def contact_ticket(
+    request: Request,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    response: Response,
+) -> dict:
+    user_id = current_user.id
+    authorization = request.headers.get("authorization", "")
+    token = (
+        authorization.split(" ", 1)[1]
+        if authorization.lower().startswith("bearer ")
+        else request.cookies.get(settings.AUTH_ACCESS_COOKIE_NAME, "")
+    )
+    # Authentication above is authoritative. This second decode only bounds the
+    # connection by the authenticated token's expiry. The one-use ticket travels
+    # in the WebSocket subprotocol header, never a URL or persistent storage.
+    payload = decode_access_token(token) or {}
+    lifetime = max(0, min(random.uniform(STREAM_SECONDS * 0.8, STREAM_SECONDS), float(payload.get("exp", 0)) - time.time()))
+    expires_at = time.time() + lifetime
+    # The socket has no database dependency at all. Release this short auth
+    # transaction before Redis; even a waiting ticket request holds no DB slot.
+    await db.close()
+    try:
+        ticket = await broker.issue_ticket(user_id, token_fingerprint(token), expires_at)
+    except StreamLimitReached:
+        raise_error(429, ERR_SERVER_BUSY, headers={"Retry-After": "15"})
+    except StreamUnavailable:
+        raise_error(503, ERR_SERVER_BUSY, headers={"Retry-After": "30"})
+    response.headers["Cache-Control"] = "private, no-store"
+    return {"ticket": ticket}
+
+
+@router.websocket("/contact-events")
+async def contact_events(websocket: WebSocket) -> None:
+    origin = websocket.headers.get("origin")
+    protocols = websocket.scope.get("subprotocols", [])
+    tickets = [value.removeprefix("fh-ticket.") for value in protocols if value.startswith("fh-ticket.")]
+    if (origin and origin not in settings.CORS_ORIGINS) or CONTACT_PROTOCOL not in protocols or len(tickets) != 1:
+        await websocket.close(code=1008)
+        return
+    try:
+        session = await broker.consume_ticket(tickets[0])
+        if not session or session["expires_at"] <= time.time():
+            await websocket.close(code=1008)
+            return
+        async with broker.subscribe(session["user_id"], session["token_id"]) as subscription:
+            if session["expires_at"] <= time.time() or not subscription.can_deliver():
+                return
+            await websocket.accept(subprotocol=CONTACT_PROTOCOL)
+            # Uvicorn closes WebSockets with 1012 before draining requests on
+            # shutdown. An HTTP event stream would instead delay a reload.
+            disconnected = asyncio.create_task(websocket.receive())
+            next_event = None
+            try:
+                async with asyncio.timeout(5):
+                    await websocket.send_json({"type": "ready"})
+                while (remaining := session["expires_at"] - time.time()) > 0:
+                    next_event = asyncio.create_task(subscription.queue.get())
+                    done, _ = await asyncio.wait(
+                        {disconnected, next_event}, timeout=remaining,
+                        return_when=asyncio.FIRST_COMPLETED,
+                    )
+                    # This is a server-to-screen channel, not a command API:
+                    # both disconnect and unsolicited client data end it.
+                    if disconnected in done or next_event not in done:
+                        break
+                    update = next_event.result()
+                    if update is None or not subscription.can_deliver():
+                        break
+                    async with asyncio.timeout(5):
+                        await websocket.send_json(update)
+            finally:
+                tasks = [disconnected] + ([next_event] if next_event is not None else [])
+                for task in tasks:
+                    task.cancel()
+                await asyncio.gather(*tasks, return_exceptions=True)
+    except (StreamUnavailable, WebSocketDisconnect, TimeoutError):
+        # Expected disconnect/overload: reconnect uses backoff and fresh auth.
+        return
+    finally:
+        with suppress(WebSocketDisconnect, RuntimeError):
+            await websocket.close(code=1000)
 
 
 @router.get("/{physical_printer_id}/merge-preview")

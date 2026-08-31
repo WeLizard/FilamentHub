@@ -5,7 +5,7 @@ import type {
   PhysicalPrinter,
   UserSpool,
 } from '../../../api/client';
-import type { DeviceContactMode } from '../../../utils/deviceLink';
+import type { DeviceContactFreshness, DeviceContactMode } from '../../../utils/deviceLink';
 import type { Printer as CatalogPrinter } from '../../../types/api';
 
 export type PrinterConnectionMethod = 'orca' | 'edge' | 'native';
@@ -77,6 +77,8 @@ export interface FeedAdapter {
   edgeKinds?: string[];
   /** Whether silence between provider requests is expected. */
   contactMode?: DeviceContactMode;
+  /** Link freshness must allow for this provider's normal heartbeat and jitter. */
+  contactFreshness?: DeviceContactFreshness;
   /** Provider-specific wording for the topology field and its saved summary. */
   slotCountLabelKey?: string;
   slotCountSummaryKey?: string;

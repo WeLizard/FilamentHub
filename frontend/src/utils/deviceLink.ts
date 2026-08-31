@@ -12,13 +12,20 @@ import { useEffect, useState } from 'react';
 export type DeviceLinkState = 'active' | 'delayed' | 'inactive' | 'never' | 'ready';
 export type DeviceContactMode = 'periodic' | 'on_demand';
 
+export interface DeviceContactFreshness {
+  activeMs: number;
+  inactiveMs: number;
+}
+
 // The real touch source is the adapter's own request cadence (Moonraker's
 // Spoolman polling, plugin sync), not a fixed heartbeat — thresholds are
 // deliberately generous.
-// Native OctoPrint Bridge sends every 45 seconds. Keep enough headroom for a
-// delayed scheduler/network cycle so a healthy link does not flicker to delayed.
 export const DEVICE_LINK_ACTIVE_MS = 120_000;
 export const DEVICE_LINK_DELAYED_MS = 300_000;
+const DEFAULT_CONTACT_FRESHNESS: DeviceContactFreshness = {
+  activeMs: DEVICE_LINK_ACTIVE_MS,
+  inactiveMs: DEVICE_LINK_DELAYED_MS,
+};
 
 /** Pick the freshest contact when both the printer and its connector report one. */
 export function latestDeviceContact(
@@ -41,6 +48,7 @@ export function getDeviceLinkState(
   lastSeenAt: string | null,
   now: number = Date.now(),
   contactMode: DeviceContactMode = 'periodic',
+  freshness: DeviceContactFreshness = DEFAULT_CONTACT_FRESHNESS,
 ): DeviceLinkState {
   if (!lastSeenAt) return 'never';
   // Some providers contact FH only when their local UI requests the spool list
@@ -48,8 +56,8 @@ export function getDeviceLinkState(
   // not delayed data.
   if (contactMode === 'on_demand') return 'ready';
   const diff = now - new Date(lastSeenAt).getTime();
-  if (diff < DEVICE_LINK_ACTIVE_MS) return 'active';
-  if (diff < DEVICE_LINK_DELAYED_MS) return 'delayed';
+  if (diff < freshness.activeMs) return 'active';
+  if (diff < freshness.inactiveMs) return 'delayed';
   return 'inactive';
 }
 

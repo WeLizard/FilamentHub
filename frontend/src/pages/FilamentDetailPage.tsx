@@ -3,6 +3,7 @@
 import { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { InfoHint } from '../components/InfoHint';
+import { LabelStudioModal } from '../components/LabelStudioModal';
 import { useConfiguredNozzleHrc } from '../hooks/useConfiguredNozzleHrc';
 import { isNozzleTooSoft } from '../utils/nozzleHardness';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
@@ -33,7 +34,7 @@ import {
   Layers,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { filamentsAPI, brandsAPI, savedPresetsAPI, filamentReviewsAPI, qrAPI, physicalPrintersAPI } from '../api/client';
+import { filamentsAPI, brandsAPI, savedPresetsAPI, filamentReviewsAPI, physicalPrintersAPI } from '../api/client';
 import { translateApiError } from '../utils/translateApiError';
 import { currencySymbol } from '../utils/currency';
 import { DEFAULT_DIAMETER, spoolLengthMeters } from '../utils/materialDensity';
@@ -974,7 +975,8 @@ export const FilamentDetailPage: React.FC = () => {
           <button
             onClick={() => setShowQR(!showQR)}
             className="px-6 py-4 bg-white/10 hover:bg-white/20 text-white rounded-xl transition-all border border-white/20"
-            aria-label={t('filamentDetailPage.qrCode')}
+            aria-label={t('labelStudio.title')}
+            title={t('labelStudio.title')}
           >
             <QrCode className="w-6 h-6" />
           </button>
@@ -990,67 +992,7 @@ export const FilamentDetailPage: React.FC = () => {
           )}
         </div>
 
-        {/* QR Code */}
-        {showQR && (
-          <div className="mt-6 p-6 bg-white/5 rounded-xl border border-white/10">
-            <div className="text-center">
-              {filament.qr_code || brandData?.verified ? (
-                <>
-                  <img
-                    src={qrAPI.getQRCodeURL(filament.id, 256)}
-                    alt={t('filamentDetailPage.qrCodeAlt', { name: filament.name })}
-                    className="w-64 h-64 mx-auto mb-4 rounded-lg bg-white p-3"
-                    onLoad={() => {
-                      if (!filament.qr_code) {
-                        void queryClient.invalidateQueries({ queryKey: ['filament', resourceKey] });
-                      }
-                    }}
-                  />
-                  {filament.qr_code && (
-                    <p className="text-gray-300 text-base font-medium mb-1">{t('filamentDetailPage.qrCode')}: {filament.qr_code}</p>
-                  )}
-                  <p className="text-gray-400 text-sm mb-2">{t('filamentDetailPage.scanForImport')}</p>
-                  <div className="flex items-center justify-center gap-2 text-gray-500 text-xs">
-                    <QrCode className="w-4 h-4" />
-                    <span>{t('filamentDetailPage.scans')}: {filament.scans_count || 0}</span>
-                  </div>
-                  <div className="mt-4 flex gap-2 justify-center">
-                    <button
-                      onClick={() => qrAPI.downloadQRCode(filament.id, 300)}
-                      className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg text-sm transition-all border border-white/20"
-                    >
-                      {t('filamentDetailPage.download')} 300px
-                    </button>
-                    <button
-                      onClick={() => qrAPI.downloadQRCode(filament.id, 600)}
-                      className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg text-sm transition-all border border-white/20"
-                    >
-                      {t('filamentDetailPage.download')} 600px
-                    </button>
-                    <button
-                      onClick={() => qrAPI.downloadQRCode(filament.id, 1200)}
-                      className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg text-sm transition-all border border-white/20"
-                    >
-                      {t('filamentDetailPage.download')} 1200px
-                    </button>
-                  </div>
-                </>
-              ) : (
-                <div className="py-8">
-                  <QrCode className="w-20 h-20 mx-auto mb-3 text-gray-500" />
-                  <p className="text-gray-400 text-sm mb-1">
-                    {t('filamentDetailPage.qrVerifiedOnly')}
-                  </p>
-                  {brandData && (
-                    <p className="text-gray-500 text-xs">
-                      {t('filamentDetailPage.brand')}: {brandData.name} {brandData.verified ? '✓' : t('filamentDetailPage.notVerified')}
-                    </p>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-        )}
+        {showQR && <LabelStudioModal filamentId={filament.id} onClose={() => setShowQR(false)} />}
       </div>
 
 
