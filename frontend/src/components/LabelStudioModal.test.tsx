@@ -469,11 +469,18 @@ describe("LabelStudioModal", () => {
     );
     expect(screen.getByText("labelStudio.startHint")).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("labelStudio.margin"), {
-      target: { value: "2" },
+      target: { value: "1" },
     });
     expect(screen.getByLabelText("labelStudio.cropMarks")).toBeDisabled();
     fireEvent.change(screen.getByLabelText("labelStudio.margin"), {
       target: { value: "3" },
+    });
+    fireEvent.change(screen.getByLabelText("labelStudio.gap"), {
+      target: { value: "0" },
+    });
+    expect(screen.getByLabelText("labelStudio.cropMarks")).toBeDisabled();
+    fireEvent.change(screen.getByLabelText("labelStudio.gap"), {
+      target: { value: "2" },
     });
     const quantity = screen.getByLabelText("labelStudio.copies");
     const originalQuantity = quantity.getAttribute("value");
@@ -481,8 +488,21 @@ describe("LabelStudioModal", () => {
     expect(quantity).toHaveAttribute("value", originalQuantity);
     expect(screen.getByLabelText("labelStudio.margin")).toHaveAttribute(
       "min",
-      "3",
+      "1.5",
     );
+    expect(screen.getByLabelText("labelStudio.gap")).toHaveAttribute(
+      "min",
+      "0.5",
+    );
+    expect(screen.getByLabelText("labelStudio.gap")).toHaveAttribute(
+      "max",
+      "5",
+    );
+    expect(
+      screen.getByText(
+        'labelStudio.cutSize {"width":52,"height":32,"allowance":1}',
+      ),
+    ).toBeInTheDocument();
     await waitFor(() =>
       expect(mocks.preview.mock.lastCall?.[1]).toEqual(
         expect.objectContaining({
@@ -514,6 +534,7 @@ describe("LabelStudioModal", () => {
     expect(
       screen.queryByLabelText("labelStudio.cropMarks"),
     ).not.toBeInTheDocument();
+    expect(screen.queryByText(/^labelStudio.cutSize/)).not.toBeInTheDocument();
     await waitFor(() =>
       expect(mocks.preview.mock.lastCall?.[1]).toEqual(
         expect.objectContaining({

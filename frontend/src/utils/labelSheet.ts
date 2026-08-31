@@ -20,3 +20,15 @@ export function labelSheetGrid(
   );
   return { columns, rows, capacity: columns * rows };
 }
+
+/** Keep guides outside labels, with their axes at least 0.5 mm inside the page. */
+export function labelCutGuideLimits(margin: number, gap: number) {
+  const minGap = 0.5;
+  const minMargin = gap / 2 + 0.5;
+  return {
+    minGap,
+    minMargin,
+    maxGap: Math.min(10, Math.max(0, 2 * (margin - 0.5))),
+    allowed: gap >= minGap && margin >= minMargin,
+  };
+}

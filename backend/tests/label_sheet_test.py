@@ -128,20 +128,22 @@ def test_sheet_rejects_nonexistent_first_cells_and_oversized_labels():
     for options in (
         LabelExportOptions(media="a4", start_position=28),
         LabelExportOptions(media="a4", label=LabelOptions(width_mm=220, height_mm=220)),
-        LabelExportOptions(media="a4", crop_marks=True, page_margin_mm=2.99),
+        LabelExportOptions(media="a4", crop_marks=True, page_margin_mm=1.49),
+        LabelExportOptions(media="a4", crop_marks=True, gap_mm=0),
+        LabelExportOptions(media="letter", crop_marks=True, gap_mm=10, page_margin_mm=5.49),
     ):
         with pytest.raises(LabelDoesNotFit):
             compose_sheet(options)
 
 
 @pytest.mark.parametrize("media", ["a4", "letter"])
-@pytest.mark.parametrize("gap", [0, 2])
-def test_crop_guides_mark_printed_edges_without_changing_grid_or_entering_labels(
+@pytest.mark.parametrize("gap", [0.5, 2, 10])
+def test_cut_guides_share_gap_centers_without_changing_grid_or_entering_labels(
     sheet_data, media, gap
 ):
-    plain = LabelExportOptions(
-        media=media, copies=50, start_position=27, page_margin_mm=3, gap_mm=gap
-    )
+    plain = LabelExportOptions(media=media, copies=50, page_margin_mm=gap / 2 + 0.5, gap_mm=gap)
+    # Exercise a nearly empty first page, complete sheets, and a partial last page.
+    plain.start_position = compose_sheet(plain).capacity
     options = plain.model_copy(update={"crop_marks": True})
     sheet = compose_sheet(options)
     assert sheet == compose_sheet(plain)
@@ -153,9 +155,12 @@ def test_crop_guides_mark_printed_edges_without_changing_grid_or_entering_labels
         root = ET.fromstring(svg)
         path = root.find("{http://www.w3.org/2000/svg}path[@data-role='crop-marks']")
         assert path is not None
+        assert path.attrib["stroke"] == "#888888"
+        assert path.attrib["stroke-dasharray"] == "2 0.75 0.25 0.75"
         marks = re.findall(r"M([\d.]+) ([\d.]+) ([hv])([\d.]+)", path.attrib["d"])
         assert marks
         marked_x, marked_y = set(), set()
+        actual_edges = set()
         stroke = float(path.attrib["stroke-width"])
         for sx, sy, direction, distance in marks:
             x, y, length = float(sx), float(sy), float(distance)
@@ -164,6 +169,21 @@ def test_crop_guides_mark_printed_edges_without_changing_grid_or_entering_labels
             assert 0 <= x <= right <= width
             assert 0 <= y <= bottom <= height
             (marked_x if direction == "v" else marked_y).add(x if direction == "v" else y)
+            # Split merged lines back into cell edges to prove that shared edges
+            # are printed once and empty cells do not acquire an extra grid.
+            pitch = (
+                options.label.width_mm + gap if direction == "h" else options.label.height_mm + gap
+            )
+            count = round(length / pitch)
+            assert length == pytest.approx(count * pitch)
+            for step in range(count):
+                edge = (
+                    round(x + (step * pitch if direction == "h" else 0), 6),
+                    round(y + (step * pitch if direction == "v" else 0), 6),
+                    direction,
+                )
+                assert edge not in actual_edges
+                actual_edges.add(edge)
             for cx, cy in positions:
                 assert (
                     right + stroke / 2 <= cx
@@ -171,7 +191,30 @@ def test_crop_guides_mark_printed_edges_without_changing_grid_or_entering_labels
                     or bottom + stroke / 2 <= cy
                     or y - stroke / 2 >= cy + options.label.height_mm
                 )
-        assert marked_x == {edge for x, _ in positions for edge in (x, x + options.label.width_mm)}
-        assert marked_y == {edge for _, y in positions for edge in (y, y + options.label.height_mm)}
+        expected_edges = set()
+        for x, y in positions:
+            left, top = x - gap / 2, y - gap / 2
+            right, bottom = (
+                x + options.label.width_mm + gap / 2,
+                y + options.label.height_mm + gap / 2,
+            )
+            for ex, ey, direction in (
+                (left, top, "h"),
+                (left, bottom, "h"),
+                (left, top, "v"),
+                (right, top, "v"),
+            ):
+                expected_edges.add((round(ex, 6), round(ey, 6), direction))
+        assert actual_edges == expected_edges
+        assert marked_x == {
+            edge
+            for x, _ in positions
+            for edge in (x - gap / 2, x + options.label.width_mm + gap / 2)
+        }
+        assert marked_y == {
+            edge
+            for _, y in positions
+            for edge in (y - gap / 2, y + options.label.height_mm + gap / 2)
+        }
         plain_svg = sheet_svg(rendered, plain, page)[0]
         assert "crop-marks" not in plain_svg

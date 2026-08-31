@@ -13,8 +13,6 @@ from PIL import Image, ImageOps
 from app.schemas.label import LabelExportOptions, LabelOptions
 from app.services.label_fonts import measure_text, text_paths
 from app.services.label_layout import (
-    CROP_MARK_LENGTH_MM,
-    CROP_MARK_OFFSET_MM,
     Box,
     LabelData,
     LabelDoesNotFit,
@@ -22,12 +20,13 @@ from app.services.label_layout import (
     compose_label,
     compose_sheet,
     rule_stroke_mm,
+    sheet_cut_lines,
     sheet_positions,
 )
 from app.services.qr_mark import MARK_VIEWBOX, mark_paths
 from app.services.qr_service import _qr_target_url
 
-RENDERER_REVISION = "label-scene-4"
+RENDERER_REVISION = "label-scene-5"
 MAX_OUTPUT_PIXELS = 36_000_000
 MAX_SVG_BYTES = 4_000_000
 
@@ -139,11 +138,23 @@ def render_label(data: LabelData, options: LabelOptions, logo: bytes | None = No
         f'<rect width="{scene.width_mm}" height="{scene.height_mm}" '
         f'rx="{scene.corner_radius_mm}"/>'
     )
-    content = [
-        f'<defs><clipPath id="label-outline">{outline}</clipPath></defs>',
-        '<g clip-path="url(#label-outline)">',
-        f'<rect width="{scene.width_mm}" height="{scene.height_mm}" fill="white"/>',
-    ]
+    content = [f'<defs><clipPath id="label-outline">{outline}</clipPath></defs>']
+    # Paint the background and edge together, outside the content clip. A white
+    # background beneath a separately clipped stroke leaves a pale corner halo.
+    if scene.border_width_mm:
+        stroke = scene.border_width_mm
+        content.append(
+            f'<rect data-role="label-border" x="{stroke / 2}" y="{stroke / 2}" '
+            f'width="{scene.width_mm - stroke}" height="{scene.height_mm - stroke}" '
+            f'rx="{scene.corner_radius_mm - stroke / 2}" fill="white" '
+            f'stroke="#111111" stroke-width="{stroke}"/>'
+        )
+    else:
+        content.append(
+            f'<rect width="{scene.width_mm}" height="{scene.height_mm}" '
+            f'rx="{scene.corner_radius_mm}" fill="white"/>'
+        )
+    content.append('<g clip-path="url(#label-outline)">')
     for rule in scene.rules:
         content.append(
             f'<path d="M {rule.x} {rule.y} h {rule.width} v {rule.height}" stroke="#aaaaaa" stroke-width="{rule_stroke_mm(scene.margin_mm)}"/>'
@@ -213,14 +224,6 @@ def render_label(data: LabelData, options: LabelOptions, logo: bytes | None = No
             + "".join(f'<path d="{path}"/>' for path in mark_paths())
             + "</g>"
         )
-    if scene.border_width_mm:
-        stroke = scene.border_width_mm
-        content.append(
-            f'<rect data-role="label-border" x="{stroke / 2}" y="{stroke / 2}" '
-            f'width="{scene.width_mm - stroke}" height="{scene.height_mm - stroke}" '
-            f'rx="{scene.corner_radius_mm - stroke / 2}" fill="none" '
-            f'stroke="#111111" stroke-width="{stroke}"/>'
-        )
     content.append("</g>")
     body = "".join(content)
     svg = _svg(scene.width_mm, scene.height_mm, body)
@@ -257,25 +260,14 @@ def sheet_svg(
     for x, y in positions:
         content.append(f'<use xlink:href="#label" x="{x}" y="{y}"/>')
     if options.crop_marks:
-        # Gang-cut guides stay in the sheet margins, never inside label cells.
-        left = top = options.page_margin_mm
-        right = left + sheet.columns * (options.label.width_mm + options.gap_mm) - options.gap_mm
-        bottom = top + sheet.rows * (options.label.height_mm + options.gap_mm) - options.gap_mm
-        offset, length = CROP_MARK_OFFSET_MM, CROP_MARK_LENGTH_MM
-        edges_x = sorted({edge for x, _ in positions for edge in (x, x + options.label.width_mm)})
-        edges_y = sorted({edge for _, y in positions for edge in (y, y + options.label.height_mm)})
-        marks = []
-        for x in edges_x:
-            marks.extend(
-                (f"M{x} {top - offset - length} v{length}", f"M{x} {bottom + offset} v{length}")
-            )
-        for y in edges_y:
-            marks.extend(
-                (f"M{left - offset - length} {y} h{length}", f"M{right + offset} {y} h{length}")
-            )
+        marks = [
+            f"M{line.x} {line.y} " + (f"h{line.width}" if line.width else f"v{line.height}")
+            for line in sheet_cut_lines(options, sheet, page)
+        ]
         content.append(
             f'<path data-role="crop-marks" d="{" ".join(marks)}" fill="none" '
-            'stroke="#111111" stroke-width="0.15" stroke-linecap="butt"/>'
+            'stroke="#888888" stroke-width="0.15" stroke-linecap="butt" '
+            'stroke-dasharray="2 0.75 0.25 0.75"/>'
         )
     return _svg(width, height, "".join(content)), width, height, sheet.capacity
 

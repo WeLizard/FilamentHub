@@ -15,8 +15,8 @@ from app.schemas.label import LabelExportOptions, LabelOptions
 MeasureText = Callable[[str, float, bool], float]
 SHEET_MEDIA = {"a4": (210.0, 297.0), "letter": (215.9, 279.4)}
 LABEL_BORDER_MM = 0.15
-CROP_MARK_OFFSET_MM = 1.0
-CROP_MARK_LENGTH_MM = 2.0
+CUT_GUIDE_MIN_GAP_MM = 0.5
+CUT_GUIDE_PAGE_CLEARANCE_MM = 0.5
 
 
 class LabelDoesNotFit(ValueError):
@@ -38,8 +38,10 @@ def compose_sheet(options: LabelExportOptions) -> LabelSheet:
         return LabelSheet(options.label.width_mm, options.label.height_mm, 1, 1, 1, 1)
     width, height = SHEET_MEDIA[options.media]
     margin, gap = options.page_margin_mm, options.gap_mm
-    if options.crop_marks and margin < CROP_MARK_OFFSET_MM + CROP_MARK_LENGTH_MM:
-        raise LabelDoesNotFit("Crop marks require at least 3 mm of sheet margin")
+    if options.crop_marks and (
+        gap < CUT_GUIDE_MIN_GAP_MM or margin < gap / 2 + CUT_GUIDE_PAGE_CLEARANCE_MM
+    ):
+        raise LabelDoesNotFit("Cut guides require clearance between labels and from page edges")
     columns = math.floor((width - margin * 2 + gap) / (options.label.width_mm + gap) + 1e-9)
     rows = math.floor((height - margin * 2 + gap) / (options.label.height_mm + gap) + 1e-9)
     capacity = columns * rows
@@ -55,15 +57,20 @@ def compose_sheet(options: LabelExportOptions) -> LabelSheet:
     )
 
 
+def _sheet_cells(options: LabelExportOptions, sheet: LabelSheet, page: int) -> range:
+    if not 1 <= page <= sheet.page_count:
+        raise LabelDoesNotFit("The requested preview page does not exist")
+    first = max(options.start_position - 1, (page - 1) * sheet.capacity)
+    last = min(options.start_position - 1 + options.copies, page * sheet.capacity)
+    return range(first, last)
+
+
 def sheet_positions(
     options: LabelExportOptions, sheet: LabelSheet, page: int
 ) -> list[tuple[float, float]]:
-    if not 1 <= page <= sheet.page_count:
-        raise LabelDoesNotFit("The requested preview page does not exist")
+    cells = _sheet_cells(options, sheet, page)
     if options.media == "single":
         return [(0, 0)]
-    first = max(options.start_position - 1, (page - 1) * sheet.capacity)
-    last = min(options.start_position - 1 + options.copies, page * sheet.capacity)
     return [
         (
             options.page_margin_mm
@@ -72,7 +79,7 @@ def sheet_positions(
             + (index % sheet.capacity // sheet.columns)
             * (options.label.height_mm + options.gap_mm),
         )
-        for index in range(first, last)
+        for index in cells
     ]
 
 
@@ -90,6 +97,54 @@ class Box:
     @property
     def bottom(self) -> float:
         return self.y + self.height
+
+
+def sheet_cut_lines(options: LabelExportOptions, sheet: LabelSheet, page: int) -> list[Box]:
+    """One shared cut per boundary, with equal half-gap allowance on every side."""
+    cells = _sheet_cells(options, sheet, page)
+    if not options.crop_marks or options.media == "single":
+        return []
+    vertical: dict[int, set[int]] = {}
+    horizontal: dict[int, set[int]] = {}
+    for index in cells:
+        row, column = divmod(index % sheet.capacity, sheet.columns)
+        for boundary in (column, column + 1):
+            vertical.setdefault(boundary, set()).add(row)
+        for boundary in (row, row + 1):
+            horizontal.setdefault(boundary, set()).add(column)
+    origin = options.page_margin_mm - options.gap_mm / 2
+    pitch_x = options.label.width_mm + options.gap_mm
+    pitch_y = options.label.height_mm + options.gap_mm
+    lines = []
+    for boundaries, is_vertical in ((vertical, True), (horizontal, False)):
+        for boundary, occupied in sorted(boundaries.items()):
+            # Merge adjacent occupied edges, never bridge unused label cells.
+            pending = sorted(occupied)
+            start = end = pending[0]
+            for cell in pending[1:] + [pending[-1] + 2]:
+                if cell == end + 1:
+                    end = cell
+                    continue
+                if is_vertical:
+                    lines.append(
+                        Box(
+                            origin + boundary * pitch_x,
+                            origin + start * pitch_y,
+                            0,
+                            (end - start + 1) * pitch_y,
+                        )
+                    )
+                else:
+                    lines.append(
+                        Box(
+                            origin + start * pitch_x,
+                            origin + boundary * pitch_y,
+                            (end - start + 1) * pitch_x,
+                            0,
+                        )
+                    )
+                start = end = cell
+    return lines
 
 
 @dataclass(frozen=True)

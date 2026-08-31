@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { labelSheetGrid } from "./labelSheet";
+import { labelCutGuideLimits, labelSheetGrid } from "./labelSheet";
 
 describe("physical label sheet grid", () => {
   it.each([
@@ -19,5 +19,16 @@ describe("physical label sheet grid", () => {
         gap,
       ),
     ).toEqual({ columns, rows, capacity: columns * rows });
+  });
+
+  it.each([
+    [0.75, 0.5, true],
+    [1.49, 2, false],
+    [1.5, 2, true],
+    [5, 0, false],
+    [5.49, 10, false],
+    [5.5, 10, true],
+  ])("cut allowance fits margin %s and gap %s: %s", (margin, gap, allowed) => {
+    expect(labelCutGuideLimits(margin, gap).allowed).toBe(allowed);
   });
 });

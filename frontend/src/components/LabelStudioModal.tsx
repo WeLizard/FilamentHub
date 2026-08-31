@@ -17,7 +17,7 @@ import type {
   LabelOptions,
 } from "../types/labels";
 import { translateApiError } from "../utils/translateApiError";
-import { labelSheetGrid } from "../utils/labelSheet";
+import { labelCutGuideLimits, labelSheetGrid } from "../utils/labelSheet";
 import { ModalOverlay } from "./ModalOverlay";
 import { Dropdown } from "./Dropdown";
 import { toast } from "./Toast";
@@ -118,6 +118,7 @@ export function LabelStudioModal({
     gap,
   );
   const validSheet = media === "single" || grid.capacity > 0;
+  const cutGuideLimits = labelCutGuideLimits(margin, gap);
   const start = Math.max(1, Math.min(requestedStart, grid.capacity));
   const copies =
     requestedCopies ?? Math.max(1, Math.min(50, grid.capacity - start + 1));
@@ -836,15 +837,15 @@ export function LabelStudioModal({
                           t("labelStudio.margin"),
                           margin,
                           setMargin,
-                          cropMarks ? 3 : 0,
+                          cropMarks ? cutGuideLimits.minMargin : 0,
                           25,
                         )}
                         {numberControl(
                           t("labelStudio.gap"),
                           gap,
                           setGap,
-                          0,
-                          10,
+                          cropMarks ? cutGuideLimits.minGap : 0,
+                          cropMarks ? cutGuideLimits.maxGap : 10,
                         )}
                       </div>
                       <p className="text-xs text-gray-400">
@@ -855,7 +856,7 @@ export function LabelStudioModal({
                           type="checkbox"
                           className="h-4 w-4 accent-cyan-400"
                           checked={cropMarks}
-                          disabled={margin < 3}
+                          disabled={!cutGuideLimits.allowed}
                           onChange={(event) =>
                             setCropMarks(event.target.checked)
                           }
@@ -867,8 +868,20 @@ export function LabelStudioModal({
                         id="label-crop-marks-hint"
                         className="text-xs text-gray-400"
                       >
-                        {t("labelStudio.cropMarksHint")}
+                        {t("labelStudio.cropMarksHint", {
+                          gap: cutGuideLimits.minGap,
+                          margin: cutGuideLimits.minMargin,
+                        })}
                       </p>
+                      {cropMarks && (
+                        <p className="text-sm text-gray-300">
+                          {t("labelStudio.cutSize", {
+                            width: Number((label.width_mm + gap).toFixed(2)),
+                            height: Number((label.height_mm + gap).toFixed(2)),
+                            allowance: gap / 2,
+                          })}
+                        </p>
+                      )}
                       <button
                         className={buttonClass}
                         disabled={!validSheet}

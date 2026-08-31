@@ -180,6 +180,12 @@ def test_label_corner_shape_is_shared_by_svg_and_png(label_data, border):
     assert png.getpixel((0, 0))[3] == 0
     expected = (17, 17, 17, 255) if border else (255, 255, 255, 255)
     assert png.getpixel((png.width // 2, 0)) == expected
+    if border:
+        # Partly covered edge pixels must remain dark, not a white halo from
+        # painting and clipping the background independently of its border.
+        edge_pixels = [pixel for pixel in png.get_flattened_data() if 16 <= pixel[3] <= 240]
+        assert edge_pixels
+        assert max(pixel[0] for pixel in edge_pixels) < 80
 
 
 @pytest.mark.parametrize("media,dimensions", [("a4", (210, 297)), ("letter", (215.9, 279.4))])
