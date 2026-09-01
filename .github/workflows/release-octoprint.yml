@@ -85,16 +85,18 @@ jobs:
 
       - name: Build package and release notes
         run: |
-          python -m build --wheel --sdist --outdir "$RUNNER_TEMP/release/package" octoprint-plugin
-          python scripts/render_plugin_release_notes.py \
-            --component bridge \
-            --output "$RUNNER_TEMP/release/RELEASE_NOTES.md"
+          python octoprint-plugin/build_package.py \
+            --output "$RUNNER_TEMP/release/bridge"
+          cp "$RUNNER_TEMP/release/bridge/RELEASE_NOTES.md" \
+            "$RUNNER_TEMP/release/RELEASE_NOTES.md"
+          cd "$RUNNER_TEMP/release/bridge"
+          sha256sum --check SHA256SUMS
 
       - name: Collect release assets and checksums
         shell: bash
         run: |
           mkdir -p "$RUNNER_TEMP/release/assets"
-          cp "$RUNNER_TEMP"/release/package/octoprint_filamenthubbridge-* \
+          cp "$RUNNER_TEMP"/release/bridge/octoprint_filamenthubbridge-* \
             "$RUNNER_TEMP/release/assets/"
           cd "$RUNNER_TEMP/release/assets"
           test "$(find . -maxdepth 1 -name 'octoprint_filamenthubbridge-*.whl' | wc -l)" -eq 1
@@ -126,11 +128,3 @@ jobs:
           gh release upload "$RELEASE_TAG" "$RUNNER_TEMP"/release/assets/* \
             --repo "$GITHUB_REPOSITORY" \
             --clobber
-
-      - name: Publish tag-triggered release
-        if: github.event_name == 'push'
-        shell: bash
-        run: |
-          gh release edit "$RELEASE_TAG" \
-            --repo "$GITHUB_REPOSITORY" \
-            --draft=false

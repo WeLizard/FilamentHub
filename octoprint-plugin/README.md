@@ -54,3 +54,16 @@ The bridge token is stored in OctoPrint's local plugin settings and is filtered
 from OctoPrint's settings API. Usage checkpoints are kept in a local outbox until
 FilamentHub acknowledges them, including across transient network failures and
 plugin restarts.
+
+## Release candidate
+
+Build the exact versioned candidate that will be compared with the GitHub
+Release asset before publication:
+
+```text
+python octoprint-plugin/build_package.py
+```
+
+The wheel, source archive, release notes and `SHA256SUMS` are written together
+under `octoprint-plugin/dist/release-X.Y.Z/`. Building a newer version therefore
+cannot be confused with artifacts from an older release.

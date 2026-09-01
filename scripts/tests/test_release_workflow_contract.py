@@ -12,6 +12,19 @@ def test_filamenthub_build_leaves_a_draft_for_owner_validation() -> None:
     assert "--draft" in workflow
     assert "--draft=false" not in workflow
     assert "gh workflow run publish-orcacloud.yml" not in workflow
+    assert "sha256sum --check SHA256SUMS" in workflow
+    assert 'filamenthub/RELEASE_NOTES.md' in workflow
+
+
+def test_octoprint_build_leaves_the_exact_candidate_as_a_draft() -> None:
+    workflow = (ROOT / ".github/workflows/release-octoprint.yml").read_text(
+        encoding="utf-8"
+    )
+
+    assert "octoprint-plugin/build_package.py" in workflow
+    assert "sha256sum --check SHA256SUMS" in workflow
+    assert "--draft" in workflow
+    assert "--draft=false" not in workflow
 
 
 def test_legacy_bundle_release_cannot_publish() -> None:
@@ -38,6 +51,10 @@ def test_orcacloud_publish_uses_only_the_release_oidc_event() -> None:
     assert "github.event.release.tag_name" in workflow
     assert '--form-string "metadata=$metadata"' in workflow
     assert '-F "metadata=$metadata"' not in workflow
+    assert '--pattern "SHA256SUMS"' in workflow
+    assert "GitHub wheel does not match SHA256SUMS" in workflow
+    assert "Runtime plugin version does not match the GitHub release" in workflow
+    assert "Wheel metadata version does not match the GitHub release" in workflow
 
 
 def test_owner_script_publishes_after_asset_validation_and_waits_for_oidc() -> None:
@@ -46,10 +63,11 @@ def test_owner_script_publishes_after_asset_validation_and_waits_for_oidc() -> N
     )
 
     validate_at = script.index("Assert-ReleaseAssets `")
+    checksum_at = script.index("Assert-ReleaseChecksums `")
     publish_at = script.index("'--draft=false'")
     trusted_publish_at = script.index("Wait-ForWorkflowRun `")
 
-    assert validate_at < publish_at < trusted_publish_at
+    assert validate_at < checksum_at < publish_at < trusted_publish_at
     assert "-Event 'release'" in script
     assert "-NotBefore ([datetime]$release.publishedAt).AddSeconds(-5)" in script
 
@@ -62,6 +80,24 @@ def test_owner_script_preflights_literal_orcacloud_metadata() -> None:
     assert "Assert-OrcaCloudPublishWorkflow" in script
     assert '--form-string "metadata=$metadata"' in script
     assert '-F "metadata=$metadata"' in script
+
+
+def test_owner_script_requires_the_exact_owner_tested_wheel_before_push() -> None:
+    script = (ROOT / "scripts/publish-plugin-releases.ps1").read_text(
+        encoding="utf-8"
+    )
+
+    approval_gate = script.index("Get-LocalCandidateSha256 `")
+    branch_push = script.index("'push', $Remote, $Branch")
+    publish_call = script.index("Publish-Component @publish", approval_gate)
+
+    assert approval_gate < branch_push
+    assert approval_gate < publish_call
+    assert "orca-plugin/dist/release-$version/wheels/filamenthub-$version" in script
+    assert "octoprint-plugin/dist/release-$version/octoprint_filamenthubbridge-$version" in script
+    assert "plugins/printers/dist/release-$version/wheels/printers-$version" in script
+    assert script.count("OwnerPublishesDraft = $true") == 3
+    assert "отличается от локального wheel, проверенного владельцем" in script
 
 
 def test_owner_script_repairs_only_tags_with_a_safe_trusted_workflow() -> None:

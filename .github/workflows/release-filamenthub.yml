@@ -81,9 +81,10 @@ jobs:
       - name: Build FilamentHub and release notes
         run: |
           python orca-plugin/build_package.py --output "$RUNNER_TEMP/release/filamenthub"
-          python scripts/render_plugin_release_notes.py \
-            --component orca \
-            --output "$RUNNER_TEMP/release/RELEASE_NOTES.md"
+          cp "$RUNNER_TEMP/release/filamenthub/RELEASE_NOTES.md" \
+            "$RUNNER_TEMP/release/RELEASE_NOTES.md"
+          cd "$RUNNER_TEMP/release/filamenthub"
+          sha256sum --check SHA256SUMS
 
       - name: Collect release assets and checksums
         shell: bash

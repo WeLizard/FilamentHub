@@ -209,15 +209,23 @@ python -m pytest orca-plugin/tests -q
 Output:
 
 ```text
-orca-plugin/dist/filamenthub-0.1.4/
-  filamenthub_plugin.py       # install this file
-  package-metadata.json       # build provenance
-  SHA256SUMS                  # integrity check
-orca-plugin/dist/filamenthub-0.1.4-dev/
-  filamenthub_plugin.py       # localhost development copy
-orca-plugin/dist/wheels/
-  filamenthub-0.1.4-py3-none-any.whl
+orca-plugin/dist/release-X.Y.Z/
+  filamenthub-X.Y.Z/
+    filamenthub_plugin.py       # production single-file copy
+    package-metadata.json       # build provenance
+    SHA256SUMS                  # single-file and locale integrity
+  filamenthub-X.Y.Z-dev/
+    filamenthub_plugin.py       # localhost development copy
+  wheels/
+    filamenthub-X.Y.Z-py3-none-any.whl
+  RELEASE_NOTES.md
+  SHA256SUMS                    # release wheel integrity
 ```
+
+The default output directory is derived from the validated plugin version, so
+each local candidate is self-contained and a newer build cannot be confused
+with wheels left by older versions. CI and disposable verification runs may
+still pass `--output` explicitly.
 
 The legacy `--dev-source` flag remains a compatibility alias. It still stages
 both copies so a development build can never silently drift from the release
@@ -227,9 +235,10 @@ source. Add `--no-wheel` when only the two single-file artifacts are needed:
 python orca-plugin/build_package.py --dev-source --no-wheel
 ```
 
-Install `orca-plugin/dist/filamenthub-0.1.4-dev/filamenthub_plugin.py` in the
-isolated OrcaSlicer data directory. It keeps the localhost default and embeds
-the same locale catalogs as the release package.
+Install
+`orca-plugin/dist/release-X.Y.Z/filamenthub-X.Y.Z-dev/filamenthub_plugin.py`
+in the isolated OrcaSlicer data directory. It keeps the localhost default and
+embeds the same locale catalogs as the release package.
 
 ---
 

@@ -5280,6 +5280,11 @@ def test_build_packages_locale_catalogs_and_checksums(
         top_level = archive.read(
             f"filamenthub-{plugin_module.PLUGIN_VERSION}.dist-info/top_level.txt"
         )
+        wheel_metadata = archive.read(
+            f"filamenthub-{plugin_module.PLUGIN_VERSION}.dist-info/WHEEL"
+        )
+        compression_types = {entry.compress_type for entry in archive.infolist()}
+        timestamps = {entry.date_time for entry in archive.infolist()}
     assert b"\r" not in wheel_source
     assert b"_EMBEDDED_UI_COPY = {}" not in wheel_source
     assert b'os.environ.get("FILAMENTHUB_SITE_URL", "https://filamenthub.ru")' in wheel_source
@@ -5293,7 +5298,15 @@ def test_build_packages_locale_catalogs_and_checksums(
     assert metadata_row[1] == f"sha256={expected_metadata_digest}"
     assert metadata_row[2] == str(len(metadata_bytes))
     assert top_level == b"filamenthub_plugin\n"
+    assert b"Generator: filamenthub build_package.py\n" in wheel_metadata
+    assert compression_types == {zipfile.ZIP_STORED}
+    assert timestamps == {(1980, 1, 1, 0, 0, 0)}
     assert not any(name.startswith("filamenthub_locales/") for name in names)
+
+    second_root = tmp_path / "second-build"
+    builder.build(second_root)
+    second_wheel = second_root / "wheels" / wheel.name
+    assert second_wheel.read_bytes() == wheel.read_bytes()
 
     standalone = tmp_path / "standalone_filamenthub_plugin.py"
     standalone.write_bytes(package.read_bytes())
@@ -5338,6 +5351,42 @@ def test_combined_build_keeps_dev_and_prod_in_parity(plugin_module, tmp_path):
     assert (
         dev_source.replace(builder.DEV_SITE_DEFAULT, builder.PROD_SITE_DEFAULT)
         == prod_source
+    )
+
+
+def test_default_build_output_is_one_versioned_release_bundle(
+    plugin_module, monkeypatch, tmp_path
+):
+    builder = _load_module(BUILD_PATH, "filamenthub_default_output_test")
+    monkeypatch.setattr(builder, "ROOT", tmp_path / "orca-plugin")
+
+    assert builder.default_release_output_root() == (
+        tmp_path
+        / "orca-plugin"
+        / "dist"
+        / f"release-{plugin_module.PLUGIN_VERSION}"
+    )
+
+
+def test_release_bundle_metadata_covers_exact_wheel(plugin_module, tmp_path):
+    builder = _load_module(BUILD_PATH, "filamenthub_release_metadata_test")
+    output_root = tmp_path / f"release-{plugin_module.PLUGIN_VERSION}"
+    wheel_path = output_root / "wheels" / (
+        f"filamenthub-{plugin_module.PLUGIN_VERSION}-py3-none-any.whl"
+    )
+    wheel_path.parent.mkdir(parents=True)
+    wheel_path.write_bytes(b"owner-test-candidate")
+
+    notes_path, checksum_path = builder.stage_release_metadata(
+        output_root, wheel_path
+    )
+
+    assert notes_path.read_text(encoding="utf-8").startswith(
+        f"## FilamentHub for OrcaSlicer {plugin_module.PLUGIN_VERSION}\n"
+    )
+    expected_digest = hashlib.sha256(wheel_path.read_bytes()).hexdigest()
+    assert checksum_path.read_text(encoding="utf-8") == (
+        f"{expected_digest}  wheels/{wheel_path.name}\n"
     )
 
 

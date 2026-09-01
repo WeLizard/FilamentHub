@@ -39,6 +39,7 @@ jobs:
           gh release download "$RELEASE_TAG" \
             --repo "$GITHUB_REPOSITORY" \
             --pattern "filamenthub-${version}-py3-none-any.whl" \
+            --pattern "SHA256SUMS" \
             --dir "$release_dir"
 
           mapfile -t plugin_files < <(
@@ -50,18 +51,83 @@ jobs:
             exit 1
           fi
 
-          python - "$release_dir/release.json" "$release_dir/metadata.json" "$version" <<'PY'
+          python - \
+            "$release_dir/release.json" \
+            "$release_dir/metadata.json" \
+            "${plugin_files[0]}" \
+            "$release_dir/SHA256SUMS" \
+            "$version" <<'PY'
+          import ast
+          import csv
+          import hashlib
+          import io
           import json
           import sys
+          import zipfile
           from pathlib import Path
 
-          release_path, metadata_path, version = sys.argv[1:]
+          release_path, metadata_path, wheel_path, checksum_path, version = sys.argv[1:]
           release = json.loads(Path(release_path).read_text(encoding="utf-8"))
           expected_tag = f"v{version}"
           if release["tagName"] != expected_tag:
               raise SystemExit(f"Release tag mismatch: expected {expected_tag!r}")
           if release["isDraft"] or release["isPrerelease"]:
               raise SystemExit("Only a published non-prerelease GitHub release can be published")
+
+          wheel = Path(wheel_path)
+          checksum_lines = [
+              line.split(maxsplit=1)
+              for line in Path(checksum_path).read_text(encoding="utf-8").splitlines()
+              if line.strip()
+          ]
+          matching_checksums = [
+              digest
+              for digest, name in checksum_lines
+              if Path(name.removeprefix("*").removeprefix("./")).name == wheel.name
+          ]
+          if len(matching_checksums) != 1:
+              raise SystemExit("SHA256SUMS must contain exactly one entry for the plugin wheel")
+          actual_digest = hashlib.sha256(wheel.read_bytes()).hexdigest()
+          if matching_checksums[0].lower() != actual_digest:
+              raise SystemExit("GitHub wheel does not match SHA256SUMS")
+
+          dist_info = f"filamenthub-{version}.dist-info"
+          expected_entries = {
+              "filamenthub_plugin.py",
+              f"{dist_info}/METADATA",
+              f"{dist_info}/WHEEL",
+              f"{dist_info}/top_level.txt",
+              f"{dist_info}/RECORD",
+          }
+          with zipfile.ZipFile(wheel) as archive:
+              if set(archive.namelist()) != expected_entries:
+                  raise SystemExit("FilamentHub wheel contents do not match the release contract")
+              core_metadata = archive.read(f"{dist_info}/METADATA").decode("utf-8")
+              wheel_metadata = archive.read(f"{dist_info}/WHEEL").decode("utf-8")
+              plugin_source = archive.read("filamenthub_plugin.py").decode("utf-8")
+              record_rows = list(csv.reader(io.StringIO(
+                  archive.read(f"{dist_info}/RECORD").decode("utf-8")
+              )))
+          if f"Version: {version}\n" not in core_metadata:
+              raise SystemExit("Wheel metadata version does not match the GitHub release")
+          if "Tag: py3-none-any\n" not in wheel_metadata:
+              raise SystemExit("Wheel compatibility tag is not py3-none-any")
+          if {row[0] for row in record_rows} != expected_entries:
+              raise SystemExit("Wheel RECORD does not cover the exact package contents")
+          module = ast.parse(plugin_source, filename="filamenthub_plugin.py")
+          runtime_versions = [
+              node.value.value
+              for node in module.body
+              if isinstance(node, ast.Assign)
+              and any(
+                  isinstance(target, ast.Name) and target.id == "PLUGIN_VERSION"
+                  for target in node.targets
+              )
+              and isinstance(node.value, ast.Constant)
+              and isinstance(node.value.value, str)
+          ]
+          if runtime_versions != [version]:
+              raise SystemExit("Runtime plugin version does not match the GitHub release")
 
           heading = f"## FilamentHub for OrcaSlicer {version}"
           lines = release["body"].splitlines()

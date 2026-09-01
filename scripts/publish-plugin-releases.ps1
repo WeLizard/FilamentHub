@@ -509,6 +509,104 @@ function Assert-ReleaseAssets {
     }
 }
 
+function Get-LocalCandidateSha256 {
+    param(
+        [Parameter(Mandatory)][string]$Name,
+        [Parameter(Mandatory)][string]$WheelPath,
+        [string]$ChecksumPath
+    )
+
+    if (-not (Test-Path -LiteralPath $WheelPath -PathType Leaf)) {
+        throw "${Name}: не найден локальный release candidate '$WheelPath'. Сначала собери и проверь его в целевом приложении."
+    }
+    $actual = (Get-FileHash -LiteralPath $WheelPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($ChecksumPath) {
+        if (-not (Test-Path -LiteralPath $ChecksumPath -PathType Leaf)) {
+            throw "${Name}: рядом с release candidate отсутствует SHA256SUMS."
+        }
+        $wheelName = Split-Path -Leaf $WheelPath
+        $matching = @(
+            Get-Content -LiteralPath $ChecksumPath | Where-Object {
+                $_ -match '^(?<hash>[0-9a-fA-F]{64})\s+\*?(?:\./)?(?:wheels/)?(?<name>[^/\\]+)$' -and
+                $Matches.name -eq $wheelName
+            }
+        )
+        if ($matching.Count -ne 1) {
+            throw "${Name}: SHA256SUMS должен содержать ровно одну запись для '$wheelName'."
+        }
+        $null = $matching[0] -match '^(?<hash>[0-9a-fA-F]{64})'
+        if ($Matches.hash.ToLowerInvariant() -ne $actual) {
+            throw "${Name}: локальный wheel не совпадает с SHA256SUMS."
+        }
+    }
+    return $actual
+}
+
+function Assert-ReleaseChecksums {
+    param(
+        [Parameter(Mandatory)][string]$Repository,
+        [Parameter(Mandatory)][string]$Tag,
+        [string]$ExpectedSha256,
+        [string]$ExpectedAssetPattern
+    )
+
+    $systemTemp = [System.IO.Path]::GetFullPath([System.IO.Path]::GetTempPath())
+    $verifyDir = Join-Path $systemTemp ("filamenthub-release-verify-" + [guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Path $verifyDir | Out-Null
+    try {
+        Invoke-Checked gh @(
+            'release', 'download', $Tag, '--repo', $Repository,
+            '--dir', $verifyDir
+        )
+        $checksumPath = Join-Path $verifyDir 'SHA256SUMS'
+        if (-not (Test-Path -LiteralPath $checksumPath -PathType Leaf)) {
+            throw "Релиз '$Tag' не содержит SHA256SUMS."
+        }
+
+        $assetHashes = @{}
+        foreach ($line in Get-Content -LiteralPath $checksumPath) {
+            if ([string]::IsNullOrWhiteSpace($line)) {
+                continue
+            }
+            if ($line -notmatch '^(?<hash>[0-9a-fA-F]{64})\s+\*?(?:\./)?(?<name>[^/\\]+)$') {
+                throw "Некорректная строка SHA256SUMS в релизе '$Tag': $line"
+            }
+            $assetName = $Matches.name
+            $assetPath = Join-Path $verifyDir $assetName
+            if (-not (Test-Path -LiteralPath $assetPath -PathType Leaf)) {
+                throw "SHA256SUMS ссылается на отсутствующий asset '$assetName'."
+            }
+            $actual = (Get-FileHash -LiteralPath $assetPath -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($actual -ne $Matches.hash.ToLowerInvariant()) {
+                throw "Asset '$assetName' не совпадает с SHA256SUMS."
+            }
+            $assetHashes[$assetName] = $actual
+        }
+
+        if ($ExpectedSha256 -or $ExpectedAssetPattern) {
+            if (-not $ExpectedSha256 -or -not $ExpectedAssetPattern) {
+                throw "Для сравнения release candidate нужны и SHA-256, и asset pattern."
+            }
+            $approvedAssets = @(
+                $assetHashes.Keys | Where-Object { $_ -match $ExpectedAssetPattern }
+            )
+            if ($approvedAssets.Count -ne 1) {
+                throw "Релиз '$Tag' должен иметь ровно один проверяемый wheel '$ExpectedAssetPattern'."
+            }
+            $approvedName = $approvedAssets[0]
+            if ($assetHashes[$approvedName] -ne $ExpectedSha256.ToLowerInvariant()) {
+                throw "GitHub asset '$approvedName' отличается от локального wheel, проверенного владельцем."
+            }
+        }
+    } finally {
+        $resolvedVerifyDir = [System.IO.Path]::GetFullPath($verifyDir)
+        if (-not $resolvedVerifyDir.StartsWith($systemTemp, [System.StringComparison]::OrdinalIgnoreCase)) {
+            throw "Отказ удалять временный каталог вне системного temp: $resolvedVerifyDir"
+        }
+        Remove-Item -LiteralPath $resolvedVerifyDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
 function Publish-Component {
     param(
         [Parameter(Mandatory)][string]$Name,
@@ -518,6 +616,8 @@ function Publish-Component {
         [Parameter(Mandatory)][string]$Workflow,
         [Parameter(Mandatory)][string[]]$RequiredPatterns,
         [Parameter(Mandatory)][string[]]$ForbiddenPatterns,
+        [Parameter(Mandatory)][string]$ExpectedSha256,
+        [Parameter(Mandatory)][string]$ExpectedAssetPattern,
         [switch]$OwnerPublishesDraft,
         [string]$TrustedPublishWorkflow
     )
@@ -548,6 +648,9 @@ function Publish-Component {
         -AllowDraft:$OwnerPublishesDraft -RequireWorkflow:$tagWasPushed
     Assert-ReleaseAssets `
         -Release $release -RequiredPatterns $RequiredPatterns -ForbiddenPatterns $ForbiddenPatterns
+    Assert-ReleaseChecksums `
+        -Repository $Repository -Tag $Tag `
+        -ExpectedSha256 $ExpectedSha256 -ExpectedAssetPattern $ExpectedAssetPattern
     if ($OwnerPublishesDraft -and $release.isDraft) {
         Write-Host "Файлы проверены. Публикую GitHub Release через авторизованную сессию владельца."
         Invoke-Checked gh @('release', 'edit', $Tag, '--repo', $Repository, '--draft=false')
@@ -585,6 +688,8 @@ function Repair-TrustedPublishComponent {
     }
     Assert-ReleaseAssets `
         -Release $release -RequiredPatterns $RequiredPatterns -ForbiddenPatterns $ForbiddenPatterns
+    Assert-ReleaseChecksums `
+        -Repository $Repository -Tag $Tag
     Ensure-LocalTag -RepositoryPath $RepositoryPath -RemoteName $Remote -Tag $Tag
     Assert-TrustedPublishRepairable `
         -Name $Name -RepositoryPath $RepositoryPath -Tag $Tag `
@@ -678,6 +783,9 @@ if ($selected -contains 'orcaslicer') {
         Tag = "v$version"; Needed = $needed; Repair = $repair; Published = $published
         RepositoryPath = $script:MainRepositoryRoot; Repository = $mainRepository
         Workflow = 'release-filamenthub.yml'; TrustedPublishWorkflow = 'publish-orcacloud.yml'
+        CandidateWheel = Join-Path $script:MainRepositoryRoot "orca-plugin/dist/release-$version/wheels/filamenthub-$version-py3-none-any.whl"
+        CandidateChecksums = Join-Path $script:MainRepositoryRoot "orca-plugin/dist/release-$version/SHA256SUMS"
+        CandidateAssetPattern = '^filamenthub-\d+\.\d+\.\d+-py3-none-any\.whl$'
     }
 }
 if ($selected -contains 'octoprint') {
@@ -694,6 +802,9 @@ if ($selected -contains 'octoprint') {
         Tag = "octoprint-v$version"; Needed = $needed; Repair = $false; Published = $published
         RepositoryPath = $script:MainRepositoryRoot; Repository = $mainRepository
         Workflow = 'release-octoprint.yml'; TrustedPublishWorkflow = $null
+        CandidateWheel = Join-Path $script:MainRepositoryRoot "octoprint-plugin/dist/release-$version/octoprint_filamenthubbridge-$version-py3-none-any.whl"
+        CandidateChecksums = Join-Path $script:MainRepositoryRoot "octoprint-plugin/dist/release-$version/SHA256SUMS"
+        CandidateAssetPattern = '^octoprint_filamenthubbridge-\d+\.\d+\.\d+-py3-none-any\.whl$'
     }
 }
 if ($selected -contains 'print-farm') {
@@ -721,6 +832,9 @@ if ($selected -contains 'print-farm') {
         Tag = "v$version"; Needed = $needed; Repair = $repair; Published = $published
         RepositoryPath = $printFarmRepositoryRoot; Repository = $printFarmRepository
         Workflow = 'release-printers.yml'; TrustedPublishWorkflow = 'publish-orcacloud.yml'
+        CandidateWheel = Join-Path $printFarmRepositoryRoot "plugins/printers/dist/release-$version/wheels/printers-$version-py3-none-any.whl"
+        CandidateChecksums = Join-Path $printFarmRepositoryRoot "plugins/printers/dist/release-$version/SHA256SUMS"
+        CandidateAssetPattern = '^printers-\d+\.\d+\.\d+-py3-none-any\.whl$'
     }
 }
 
@@ -792,6 +906,16 @@ if ($DryRun) {
     return
 }
 
+foreach ($plan in @($plans | Where-Object { $_.Needed -or $_.Repair })) {
+    if ($plan.Needed) {
+        $plan | Add-Member -NotePropertyName CandidateSha256 -NotePropertyValue (
+            Get-LocalCandidateSha256 `
+                -Name $plan.Name -WheelPath $plan.CandidateWheel `
+                -ChecksumPath $plan.CandidateChecksums
+        )
+    }
+}
+
 $mainPlans = @($plans | Where-Object {
     $_.RepositoryPath -eq $script:MainRepositoryRoot -and ($_.Needed -or $_.Repair)
 })
@@ -847,6 +971,8 @@ foreach ($plan in @($plans | Where-Object { $_.Needed -or $_.Repair })) {
                 ForbiddenPatterns = @(
                     '^octoprint[-_]filamenthubbridge-', '^printers-'
                 )
+                ExpectedSha256 = $plan.CandidateSha256
+                ExpectedAssetPattern = $plan.CandidateAssetPattern
                 OwnerPublishesDraft = $true
                 TrustedPublishWorkflow = 'publish-orcacloud.yml'
             }
@@ -862,6 +988,9 @@ foreach ($plan in @($plans | Where-Object { $_.Needed -or $_.Repair })) {
                     '^SHA256SUMS$'
                 )
                 ForbiddenPatterns = @('^filamenthub-', '^printers-')
+                ExpectedSha256 = $plan.CandidateSha256
+                ExpectedAssetPattern = $plan.CandidateAssetPattern
+                OwnerPublishesDraft = $true
             }
             Publish-Component @publish
         }
@@ -871,6 +1000,8 @@ foreach ($plan in @($plans | Where-Object { $_.Needed -or $_.Repair })) {
                 Repository = $plan.Repository; Tag = $plan.Tag; Workflow = $plan.Workflow
                 RequiredPatterns = @('^printers-\d+\.\d+\.\d+-.*\.whl$', '^SHA256SUMS$')
                 ForbiddenPatterns = @('^filamenthub-', '^octoprint[-_]filamenthubbridge-')
+                ExpectedSha256 = $plan.CandidateSha256
+                ExpectedAssetPattern = $plan.CandidateAssetPattern
                 OwnerPublishesDraft = $true
                 TrustedPublishWorkflow = 'publish-orcacloud.yml'
             }
