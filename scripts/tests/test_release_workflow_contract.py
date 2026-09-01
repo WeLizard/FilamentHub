@@ -14,6 +14,19 @@ def test_filamenthub_build_leaves_a_draft_for_owner_validation() -> None:
     assert "gh workflow run publish-orcacloud.yml" not in workflow
 
 
+def test_legacy_bundle_release_cannot_publish() -> None:
+    workflow = (ROOT / ".github/workflows/release-plugins.yml").read_text(
+        encoding="utf-8"
+    )
+
+    assert "push:" not in workflow
+    assert "permissions: {}" in workflow
+    assert "Mixed plugins-v* releases are disabled" in workflow
+    assert "scripts/publish-plugin-releases.ps1" in workflow
+    assert "actions/checkout" not in workflow
+    assert "gh release" not in workflow
+
+
 def test_orcacloud_publish_uses_only_the_release_oidc_event() -> None:
     workflow = (ROOT / ".github/workflows/publish-orcacloud.yml").read_text(
         encoding="utf-8"
