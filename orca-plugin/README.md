@@ -99,8 +99,10 @@ endpoint the fork's panel used.
 The Bambu adapter is a separate, narrower trust boundary from preset sync:
 
 1. the authenticated embed requests a ten-minute, single-use pairing code;
-2. the shell opens the plugin-owned local form, where the user enters the LAN
-   address and access code (the iframe never receives either value);
+2. the shell first reuses the LAN address from the exact bound Orca printer
+   preset, or from the currently selected preset as a local-only fallback; the
+   user can still expand the manual address field, and enters the access code
+   in the plugin-owned form (the iframe never receives either value);
 3. Python verifies that the address resolves only to a private/link-local host
    and confirms MQTT-over-TLS access to the printer on port 8883;
 4. after the printer answers, the pairing code is exchanged for a revocable

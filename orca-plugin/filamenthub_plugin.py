@@ -3963,6 +3963,71 @@ def observe_printer_presets():
     return observed_connections
 
 
+def _bambu_host_hint(value):
+    """Return only a host name/IP from Orca's local print_host setting."""
+    raw = _preset_scalar(value).strip()
+    if not raw or len(raw) > 500 or any(ch in raw for ch in "\\\r\n?#@"):
+        return ""
+    try:
+        parsed = urllib.parse.urlsplit(
+            raw if "://" in raw else "//" + raw,
+            allow_fragments=False,
+        )
+        if parsed.username or parsed.password or parsed.path not in {"", "/"}:
+            return ""
+        host = parsed.hostname or ""
+    except (TypeError, ValueError):
+        return ""
+    host = host.strip().strip("[]").rstrip(".")
+    if not host or len(host) > 253 or any(ch in host for ch in "/\\?#@"):
+        return ""
+    return host
+
+
+def bambu_host_candidates(observations, context, physical_printer_id):
+    """Select bounded, local-only Bambu address hints for one physical printer.
+
+    A server binding may identify the exact Orca preset. If it cannot, only the
+    currently selected printer preset is offered as a convenience. Addresses
+    remain inside the plugin shell and are never posted to FilamentHub.
+    """
+    bindings = context.get("bindings") if isinstance(context, dict) else []
+    bound_refs = {
+        item.get("connection_ref")
+        for item in bindings or []
+        if isinstance(item, dict)
+        and item.get("status") == "bound"
+        and item.get("physical_printer_id") == physical_printer_id
+        and isinstance(item.get("connection_ref"), str)
+    }
+    observations = [item for item in observations or [] if isinstance(item, dict)]
+    selected = [
+        item for item in observations
+        if item.get("connection_ref") in bound_refs and _bambu_host_hint(item.get("print_host"))
+    ]
+    if not selected:
+        selected = [
+            item for item in observations
+            if item.get("is_current") is True and _bambu_host_hint(item.get("print_host"))
+        ]
+    candidates = []
+    seen = set()
+    for item in selected:
+        host = _bambu_host_hint(item.get("print_host"))
+        if not host or host.lower() in seen:
+            continue
+        seen.add(host.lower())
+        candidates.append({
+            "host": host,
+            "label": str(
+                item.get("preset_name") or item.get("printer_model") or host
+            )[:200],
+        })
+        if len(candidates) >= 16:
+            break
+    return candidates
+
+
 def observe_local_moonraker_connections(observations):
     """Collect local-only Moonraker access for observed user machine presets.
 
@@ -6352,6 +6417,8 @@ var oauthPollTimer = null;
 var oauthDeadline = 0;
 var catalogReady = false;
 var catalogReadyTimer = null;
+var pendingBambuSetup = null;
+var bambuSetupTimer = null;
 var UI_COPY = __UI_COPY__;
 var hostLanguage = '__HOST_UI_LANGUAGE__';
 function normalizeUiLocale(value) {
@@ -6539,7 +6606,24 @@ window.addEventListener('message', function (event) {
     return;
   }
   if (data.type === 'configure-bambu') {
-    showBambuOverlay(data);
+    pendingBambuSetup = data;
+    if (bambuSetupTimer) clearTimeout(bambuSetupTimer);
+    try {
+      orca.postMessage({ source:'filamenthub-plugin', type:'prepare-bambu-local',
+        physicalPrinterId:data.physicalPrinterId, materialSystemId:data.materialSystemId,
+        printerName:data.printerName || '', pairingCode:data.pairingCode || '' });
+      // Older plugin hosts cannot push the candidate response. Preserve the
+      // explicit manual form as a compatibility fallback.
+      bambuSetupTimer = setTimeout(function () {
+        if (!pendingBambuSetup) return;
+        var fallback = pendingBambuSetup;
+        pendingBambuSetup = null;
+        showBambuOverlay(fallback);
+      }, 2500);
+    } catch (e) {
+      pendingBambuSetup = null;
+      showBambuOverlay(data);
+    }
     return;
   }
   if (data.type === 'printer-setup-manual') {
@@ -6724,6 +6808,8 @@ function showPrinterSetupOverlay(request) {
   host.focus();
 }
 function showBambuOverlay(binding) {
+  if (bambuSetupTimer) { clearTimeout(bambuSetupTimer); bambuSetupTimer = null; }
+  pendingBambuSetup = null;
   hideBambuOverlay();
   var printerId = Number(binding.physicalPrinterId);
   var systemId = Number(binding.materialSystemId);
@@ -6765,7 +6851,44 @@ function showBambuOverlay(binding) {
   }
   box.appendChild(title);
   box.appendChild(hint);
+  var candidates = Array.isArray(binding.candidates) ? binding.candidates.filter(function (item) {
+    return item && typeof item.host === 'string' && item.host &&
+      typeof item.label === 'string';
+  }).slice(0, 16) : [];
+  var candidateSelect = null;
+  if (candidates.length) {
+    var candidateWrap = document.createElement('label');
+    candidateWrap.style.cssText = 'display:block;margin-top:11px;color:var(--orca-muted,#a0a0a0);';
+    var candidateLabel = document.createElement('span');
+    candidateLabel.textContent = uiCopy.bambuAddress;
+    candidateLabel.style.cssText = 'display:block;margin-bottom:5px;';
+    candidateSelect = document.createElement('select');
+    candidateSelect.style.cssText = 'width:100%;box-sizing:border-box;padding:9px 10px;border-radius:7px;' +
+      'background:var(--orca-bg,#1e1e2e);color:inherit;' +
+      'border:1px solid var(--orca-border,#3c3c4c);font:inherit;';
+    candidates.forEach(function (item) {
+      var option = document.createElement('option');
+      option.value = item.host;
+      option.textContent = item.label + ' · ' + item.host;
+      candidateSelect.appendChild(option);
+    });
+    candidateWrap.appendChild(candidateLabel);
+    candidateWrap.appendChild(candidateSelect);
+    box.appendChild(candidateWrap);
+  }
   var host = field(uiCopy.bambuAddress, 'text', uiCopy.bambuAddressPlaceholder, true);
+  if (candidateSelect) {
+    host.value = candidateSelect.value;
+    candidateSelect.addEventListener('change', function () { host.value = candidateSelect.value; });
+    var hostDetails = document.createElement('details');
+    hostDetails.style.marginTop = '12px';
+    var hostSummary = document.createElement('summary');
+    hostSummary.textContent = uiCopy.bambuAddress;
+    hostSummary.style.cursor = 'pointer';
+    hostDetails.appendChild(hostSummary);
+    hostDetails.appendChild(host.parentElement);
+    box.appendChild(hostDetails);
+  }
   var code = field(uiCopy.bambuCode, 'password', '', true);
   var serial = field(uiCopy.bambuSerial, 'text', uiCopy.bambuSerialHint, false);
   var serialDetails = document.createElement('details');
@@ -6828,7 +6951,7 @@ function showBambuOverlay(binding) {
   });
   overlay.appendChild(box);
   document.body.appendChild(overlay);
-  host.focus();
+  (candidateSelect ? code : host).focus();
 }
 
 // Toolbar -> catalog: SPA navigation inside the iframe (no page reload).
@@ -7096,6 +7219,16 @@ try {
             requestId: data.requestId || '', result: data.result || {} },
           SITE_ORIGIN);
       } catch (e) { /* iframe not ready */ }
+    } else if (data.type === 'bambu-setup-candidates') {
+      if (pendingBambuSetup) {
+        var pending = pendingBambuSetup;
+        if (Number(pending.physicalPrinterId) === Number(data.physicalPrinterId) &&
+            Number(pending.materialSystemId) === Number(data.materialSystemId) &&
+            pending.pairingCode === data.pairingCode) {
+          pending.candidates = Array.isArray(data.candidates) ? data.candidates : [];
+          showBambuOverlay(pending);
+        }
+      }
     } else if (data.type === 'diagnostics') {
       copyDiagnostics(data.text || '');
     }
@@ -8969,6 +9102,27 @@ class FilamentHubCatalog(
             result=result,
         )
 
+    def _do_prepare_bambu(self, binding, observations, token):
+        context = {}
+        if token:
+            try:
+                context = printer_setup_context(token)
+            except (OSError, RuntimeError, ValueError, TypeError, KeyError):
+                # The selected Orca profile is still a useful local-only hint
+                # when an old account token cannot resolve the exact binding.
+                context = {}
+        self._deliver(
+            "bambu-setup-candidates",
+            physicalPrinterId=binding["physicalPrinterId"],
+            materialSystemId=binding["materialSystemId"],
+            pairingCode=binding["pairingCode"],
+            candidates=bambu_host_candidates(
+                observations,
+                context,
+                binding["physicalPrinterId"],
+            ),
+        )
+
     def _do_check_slices(self, wanted, hook):
         alive = [key for key in wanted if slice_path_for_key(key)]
         if not self._deliver("slices-alive", keys=alive, hook=hook):
@@ -9751,6 +9905,31 @@ class FilamentHubCatalog(
                 self._do_printer_bundle_status,
                 request_id,
                 list(dict.fromkeys(physical_printer_ids)),
+                token,
+            )
+        elif msg_type == "prepare-bambu-local":
+            physical_printer_id = msg.get("physicalPrinterId")
+            material_system_id = msg.get("materialSystemId")
+            pairing_code = msg.get("pairingCode") or ""
+            if not (
+                type(physical_printer_id) is int
+                and physical_printer_id > 0
+                and type(material_system_id) is int
+                and material_system_id > 0
+                and isinstance(pairing_code, str)
+                and 8 <= len(pairing_code) <= 32
+            ):
+                return
+            observations = observe_printer_presets()
+            token = (load_saved_auth() or {}).get("accessToken") or ""
+            BACKGROUND_WORKER.submit(
+                self._do_prepare_bambu,
+                {
+                    "physicalPrinterId": physical_printer_id,
+                    "materialSystemId": material_system_id,
+                    "pairingCode": pairing_code,
+                },
+                observations,
                 token,
             )
         elif msg_type == "configure-bambu-local":

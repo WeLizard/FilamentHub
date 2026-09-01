@@ -51,7 +51,7 @@ function chooseMoonraker() {
   fireEvent.click(screen.getByText('printerSetup.connections.moonraker'));
 }
 function savePrinter() {
-  fireEvent.click(screen.getByRole('button', { name: /^printerSetup\.(save|connect)$/ }));
+  fireEvent.click(screen.getByRole('button', { name: /^printerSetup\.(save|connect|saveAndConnect)$/ }));
 }
 
 describe('PrinterSetupWizard', () => {
@@ -273,6 +273,7 @@ describe('PrinterSetupWizard', () => {
     expect(screen.queryByText('printerSetup.connections.octoprint')).not.toBeInTheDocument();
     expect(screen.getByLabelText('printerSetup.feed.label')).toHaveValue('printerSetup.feed.noAms');
     fireEvent.click(screen.getByText('printerSetup.routes.manual'));
+    expect(screen.getByLabelText('printerSetup.feed.label')).toHaveValue('printerSetup.feed.noAms');
     savePrinter(); await screen.findByText('printerSetup.saved');
     expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({ material_system: expect.objectContaining({
       provider: 'bambu', kind: 'direct_feed', slots: [{ provider_index: 255, kind: 'external' }],
@@ -356,6 +357,7 @@ describe('PrinterSetupWizard', () => {
     fireEvent.click(screen.getByText('printerSetup.connectionOptional'));
     expect(screen.getByLabelText('printerSetup.connectionType')).toHaveValue('printerSetup.connections.bambu');
     expect(screen.queryByText('printerSetup.routes.edge')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'printerSetup.saveAndConnect' })).toBeInTheDocument();
   });
 
   it('restores a zero-slot Happy Hare card manually instead of sending an empty map', async () => {

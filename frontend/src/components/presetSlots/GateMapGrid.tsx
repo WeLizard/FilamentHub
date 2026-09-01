@@ -146,7 +146,9 @@ export function GateMapGrid({
   return (
     <div className={[
       'grid grid-cols-2 gap-1.5 sm:grid-cols-4',
-      sortedSlots.length > 4 ? 'xl:grid-cols-8' : '',
+      sortedSlots.length > 8
+        ? 'xl:grid-cols-9'
+        : sortedSlots.length > 4 ? 'xl:grid-cols-8' : '',
     ].join(' ')}>
       {sortedSlots.map((slot) => {
         const slotLabel = slot.kind === 'bypass'
@@ -280,7 +282,7 @@ export function GateMapGrid({
               </span>
             )}
 
-            {observedSpool && (
+            {observedSpool && observedSpool.id !== desiredSpoolId && (
               <span className="max-w-full truncate text-[10px] text-emerald-200/80">
                 {t('presetSlots.happyHare.observedSpool', {
                   name: observedSpool.filament?.name ?? `#${observedSpool.id}`,

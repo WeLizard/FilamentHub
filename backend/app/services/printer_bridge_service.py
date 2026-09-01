@@ -115,6 +115,28 @@ def _safe_capabilities(values: list[str]) -> list[str]:
     return sorted(set(values).intersection(BRIDGE_CAPABILITIES))
 
 
+async def _refresh_system_capabilities(
+    db: AsyncSession,
+    material_system_id: int,
+) -> None:
+    """Project all active connector capabilities onto the shared material system."""
+    await db.flush()
+    system = await db.get(MaterialSystem, material_system_id)
+    if system is None:
+        return
+    capability_sets = await db.scalars(
+        select(PhysicalPrinterConnector.capabilities).where(
+            PhysicalPrinterConnector.material_system_id == material_system_id,
+            PhysicalPrinterConnector.active.is_(True),
+        )
+    )
+    system.capabilities = _safe_capabilities([
+        capability
+        for capabilities in capability_sets.all()
+        for capability in (capabilities or [])
+    ])
+
+
 async def _require_bridge_system(
     db: AsyncSession,
     *,
@@ -330,9 +352,7 @@ async def pair_printer_bridge(
     connector.node_instance_id = payload.node_instance_id
     connector.capabilities = _safe_capabilities(payload.capabilities)
     connector.active = True
-    system = await db.get(MaterialSystem, connector.material_system_id)
-    if system is not None:
-        system.capabilities = list(connector.capabilities)
+    await _refresh_system_capabilities(db, connector.material_system_id)
     await db.commit()
     return PrinterBridgePairResponse(
         bridge_token=token,
@@ -475,6 +495,8 @@ async def revoke_printer_bridge(
     context: PrinterBridgeContext,
 ) -> None:
     _mark_bridge_revoked(context.credential, context.connector)
+    if context.connector.material_system_id is not None:
+        await _refresh_system_capabilities(db, context.connector.material_system_id)
     await db.commit()
 
 
@@ -524,6 +546,7 @@ async def revoke_printer_bridge_for_user(
         _mark_bridge_revoked(credential, connector)
     else:
         connector.active = False
+    await _refresh_system_capabilities(db, material_system_id)
     await db.commit()
 
 
@@ -579,9 +602,7 @@ async def record_printer_bridge_heartbeat(
     context.connector.active = True
     if payload.capabilities is not None:
         context.connector.capabilities = _safe_capabilities(payload.capabilities)
-        system = await db.get(MaterialSystem, payload.material_system_id)
-        if system is not None:
-            system.capabilities = list(context.connector.capabilities)
+        await _refresh_system_capabilities(db, payload.material_system_id)
     printer.last_seen_at = received_at
     printer.reports_feed = True
     await db.commit()

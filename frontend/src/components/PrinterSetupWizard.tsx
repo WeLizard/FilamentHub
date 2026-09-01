@@ -387,7 +387,11 @@ export function PrinterSetupWizard({
     if (busyRef.current || pending) return;
     setTargetId(0); setProbe(null); setError(null); setStep('choose');
   };
-  const submitLabel = pending ? 'printerSetup.resumeButton' : targetId ? 'printerSetup.connect' : 'printerSetup.save';
+  const submitLabel = pending
+    ? 'printerSetup.resumeButton'
+    : provider === 'bambu' && mode === 'orca'
+      ? 'printerSetup.saveAndConnect'
+      : targetId ? 'printerSetup.connect' : 'printerSetup.save';
 
   return <ModalOverlay onClose={close} closeOnOverlayClick={!busy && !confirmKey} closeOnEscape={!busy && !confirmKey}>
     <div role="dialog" aria-modal="true" aria-labelledby="printer-setup-title"
@@ -406,7 +410,15 @@ export function PrinterSetupWizard({
               ? supportsEdgeSetup(system.provider, system.kind)
                 ? <EdgeConnectionSetup printer={current} system={system} />
                 : <p role="alert" className="text-sm text-amber-200">{t('printerSetup.edgeUnsupported')}</p>
-              : system && mode !== 'manual' && !savedAdapter.link && savedAdapter.renderSetup?.({ printer: current, system, gates: [], spools: [], linkConfirmed: current.reports_feed })}
+              : system && mode !== 'manual' && !savedAdapter.link && savedAdapter.renderSetup?.({
+                printer: current,
+                system,
+                gates: [],
+                spools: [],
+                linkConfirmed: current.reports_feed,
+                autoConnect: Boolean(saved && mode === 'orca' && system.provider === 'bambu'),
+                onConnectionObserved: () => setObserved(true),
+              })}
             {savedAdapter.link && mode !== 'manual' && <div className="space-y-3 rounded-lg border border-white/10 p-3">
               <p className="text-sm">{t(inventoryLinked ? 'printerSetup.inventoryReady' : 'printerSetup.inventoryIncomplete')}</p>
               {!inventoryLinked && !finishInventory && mode !== 'native' && <button type="button" className={button}
@@ -562,7 +574,6 @@ export function PrinterSetupWizard({
                   <p className="text-xs text-gray-400">{t('printerSetup.feed.manualHint')}</p>
                 </div>
               </details>}
-              {(targetId > 0 || name.trim()) && <p className="break-words rounded-lg bg-white/5 p-3 text-sm text-gray-300">{t(targetId ? 'printerSetup.confirmExisting' : 'printerSetup.confirmNew', { name: selected?.name ?? name.trim() })}</p>}
             </fieldset>
           </>}
           {busy && <p role="status" className="flex items-center gap-2 text-sm text-purple-200"><Loader2 className="h-4 w-4 animate-spin" />{t('printerSetup.working')}</p>}

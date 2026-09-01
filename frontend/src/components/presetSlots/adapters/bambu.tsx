@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Activity,
@@ -35,7 +35,12 @@ function BambuCreateHelp() {
   );
 }
 
-function BambuSetup({ printer, system }: Parameters<NonNullable<FeedAdapter['renderSetup']>>[0]) {
+function BambuSetup({
+  printer,
+  system,
+  autoConnect = false,
+  onConnectionObserved,
+}: Parameters<NonNullable<FeedAdapter['renderSetup']>>[0]) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const pluginEmbed = isPluginEmbed();
@@ -44,8 +49,11 @@ function BambuSetup({ printer, system }: Parameters<NonNullable<FeedAdapter['ren
   const [pairingStarted, setPairingStarted] = useState(false);
   const [dataPollDeadline, setDataPollDeadline] = useState(() => Date.now() + 60_000);
   const [pairingBaselineLastSeen, setPairingBaselineLastSeen] = useState<string | null>(null);
+  const autoConnectAttempted = useRef(false);
   const connector = (printer.connectors ?? []).find(
-    (item) => item.provider === 'bambu' && item.material_system_id === system.id,
+    (item) => item.provider === 'bambu'
+      && item.transport === 'orca_plugin_lan'
+      && item.material_system_id === system.id,
   ) ?? null;
   const observation = connector?.status_observation ?? null;
 
@@ -110,6 +118,10 @@ function BambuSetup({ printer, system }: Parameters<NonNullable<FeedAdapter['ren
   ]);
 
   useEffect(() => {
+    if (hasReceivedData) onConnectionObserved?.();
+  }, [hasReceivedData, onConnectionObserved]);
+
+  useEffect(() => {
     if (!pairingStarted) return undefined;
     const remaining = dataPollDeadline - Date.now();
     if (remaining <= 0) {
@@ -127,8 +139,8 @@ function BambuSetup({ printer, system }: Parameters<NonNullable<FeedAdapter['ren
       // Observe the pending code before opening the local form. This makes the
       // later transition back to `null` an unambiguous successful pairing even
       // when an older bridge was already connected.
-      await statusQuery.refetch();
-      setPairingBaselineLastSeen(bridgeStatus?.last_seen_at ?? null);
+      const refreshed = await statusQuery.refetch();
+      setPairingBaselineLastSeen(refreshed.data?.last_seen_at ?? null);
       setPairingStarted(true);
       setDataPollDeadline(Date.parse(pairing.expires_at));
       configureBambuBridgeInPlugin(
@@ -143,6 +155,20 @@ function BambuSetup({ printer, system }: Parameters<NonNullable<FeedAdapter['ren
       setIssuing(false);
     }
   };
+
+  useEffect(() => {
+    if (
+      !autoConnect
+      || autoConnectAttempted.current
+      || !pluginEmbed
+      || !supported
+      || statusQuery.isLoading
+      || !needsConnection
+      || issuing
+    ) return;
+    autoConnectAttempted.current = true;
+    void configure();
+  }, [autoConnect, issuing, needsConnection, pluginEmbed, statusQuery.isLoading, supported]);
 
   return (
     <div className={[

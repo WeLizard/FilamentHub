@@ -3470,6 +3470,62 @@ def test_connection_only_machine_child_is_observed_but_not_imported(
     assert observation["connection_ref"].startswith("orca-local-v1:")
 
 
+def test_bambu_candidates_prefer_the_exact_bound_orca_profile(plugin_module):
+    observations = [
+        {
+            "connection_ref": "other-ref",
+            "preset_name": "Wrong printer",
+            "print_host": "192.168.1.90:8883",
+            "is_current": True,
+        },
+        {
+            "connection_ref": "bound-ref",
+            "preset_name": "Workshop P2S",
+            "print_host": "https://192.168.1.42:8883/",
+            "is_current": False,
+        },
+    ]
+    context = {
+        "bindings": [
+            {
+                "connection_ref": "bound-ref",
+                "physical_printer_id": 7,
+                "status": "bound",
+            }
+        ]
+    }
+
+    assert plugin_module.bambu_host_candidates(observations, context, 7) == [
+        {"host": "192.168.1.42", "label": "Workshop P2S"}
+    ]
+
+
+def test_bambu_candidates_use_only_the_current_profile_as_unbound_fallback(
+    plugin_module,
+):
+    observations = [
+        {
+            "preset_name": "Not selected",
+            "print_host": "192.168.1.60",
+            "is_current": False,
+        },
+        {
+            "preset_name": "Selected P2S",
+            "print_host": "p2s.local:8883",
+            "is_current": True,
+        },
+        {
+            "preset_name": "Unsafe",
+            "print_host": "https://user@192.168.1.61/private",
+            "is_current": True,
+        },
+    ]
+
+    assert plugin_module.bambu_host_candidates(observations, {}, 7) == [
+        {"host": "p2s.local", "label": "Selected P2S"}
+    ]
+
+
 def test_printer_endpoint_sync_is_local_only_until_opt_in(plugin_module):
     observations = [
         {

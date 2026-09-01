@@ -47,6 +47,10 @@ export interface AdapterViewContext {
   gates: GateState[];
   spools: UserSpool[];
   linkConfirmed: boolean;
+  /** Start the adapter's local pairing once after a just-saved wizard step. */
+  autoConnect?: boolean;
+  /** Notify the wizard when the first authenticated printer snapshot exists. */
+  onConnectionObserved?: () => void;
 }
 
 export interface FeedAdapterLink {

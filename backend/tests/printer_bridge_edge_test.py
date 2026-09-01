@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.material_slot_assignment import MaterialSlotAssignment
-from app.models.material_system import MaterialSlot, PhysicalPrinterConnector
+from app.models.material_system import MaterialSlot, MaterialSystem, PhysicalPrinterConnector
 from app.models.preset_usage_event import PresetUsageEvent
 from app.models.print_job import PrintJob
 from app.models.printer_bridge_credential import PrinterBridgeCredential
@@ -20,6 +20,76 @@ from app.models.printer_bridge_observation import (
 from app.models.printer_bridge_receipt import PrinterBridgeReceipt
 from app.models.user import User
 from app.models.user_spool import UserSpool, UserSpoolState
+
+
+@pytest.mark.asyncio
+async def test_one_bambu_system_keeps_independent_orca_and_edge_connectors(
+    auth_client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    printer_response = await auth_client.post(
+        "/api/v1/physical-printers",
+        json={"name": "Shared Bambu P2S"},
+    )
+    printer_id = printer_response.json()["id"]
+    system_response = await auth_client.post(
+        f"/api/v1/physical-printers/{printer_id}/material-systems",
+        json={
+            "name": "AMS",
+            "kind": "mmu",
+            "provider": "bambu",
+            "capabilities": ["read", "write", "presence"],
+            "slot_count": 4,
+        },
+    )
+    system_id = system_response.json()["material_systems"][0]["id"]
+
+    async def pair(transport: str, capabilities: list[str], suffix: str) -> None:
+        pairing = await auth_client.post(
+            f"/api/v1/printer-bridge/connections/{printer_id}/{system_id}/pairing-code",
+            params={"transport": transport},
+        )
+        payload = {
+            "pairing_code": pairing.json()["pairing_code"],
+            "provider": "bambu",
+            "transport": transport,
+            "source_instance_id": f"bambu-source-{suffix}-0001",
+            "plugin_version": "0.1.0-test",
+            "capabilities": capabilities,
+        }
+        if transport == "edge_agent":
+            payload["node_instance_id"] = "bambu-edge-node-0001"
+        response = await auth_client.post("/api/v1/printer-bridge/pair", json=payload)
+        assert response.status_code == 200
+
+    await pair("orca_plugin_lan", ["read", "presence"], "orca")
+    await pair("edge_agent", ["read", "consumption"], "edge")
+
+    connectors = (await db_session.scalars(
+        select(PhysicalPrinterConnector).where(
+            PhysicalPrinterConnector.physical_printer_id == printer_id,
+            PhysicalPrinterConnector.material_system_id == system_id,
+        )
+    )).all()
+    assert {(item.provider, item.transport) for item in connectors} == {
+        ("bambu", "orca_plugin_lan"),
+        ("bambu", "edge_agent"),
+    }
+    assert all(item.active for item in connectors)
+    system = await db_session.get(MaterialSystem, system_id)
+    await db_session.refresh(system)
+    assert system.capabilities == ["consumption", "presence", "read"]
+
+    revoked = await auth_client.delete(
+        f"/api/v1/printer-bridge/connections/{printer_id}/{system_id}",
+        params={"transport": "orca_plugin_lan"},
+    )
+    assert revoked.status_code == 204
+    await db_session.refresh(system)
+    assert system.capabilities == ["consumption", "read"]
+    edge = next(item for item in connectors if item.transport == "edge_agent")
+    await db_session.refresh(edge)
+    assert edge.active is True
 
 
 @pytest.mark.asyncio

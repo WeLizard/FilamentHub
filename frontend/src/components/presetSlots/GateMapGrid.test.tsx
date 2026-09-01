@@ -86,6 +86,41 @@ function observedSlot(
 }
 
 describe('GateMapGrid material slots', () => {
+  it('keeps eight gates and bypass in one wide row', () => {
+    const slots = Array.from({ length: 8 }, (_, provider_index): MaterialSlot => ({
+      id: provider_index + 1,
+      provider_index,
+      label: null,
+      kind: 'gate',
+      active: true,
+      assignment_revision: 0,
+      assignment: null,
+      legacy_projection: null,
+    }));
+    slots.push({
+      id: 99,
+      provider_index: 1023,
+      label: null,
+      kind: 'bypass',
+      active: true,
+      assignment_revision: 0,
+      assignment: null,
+      legacy_projection: null,
+    });
+
+    const { container } = render(
+      <GateMapGrid
+        slots={slots}
+        gates={[]}
+        presets={{}}
+        spools={[]}
+        onGateClick={vi.fn()}
+      />,
+    );
+
+    expect(container.firstElementChild).toHaveClass('xl:grid-cols-9');
+  });
+
   it('shows Happy Hare bypass as a named observed route instead of gate 1023', () => {
     const onGateClick = vi.fn();
     const bypass: MaterialSlot = {
@@ -174,6 +209,98 @@ describe('GateMapGrid material slots', () => {
     expect(screen.queryByText('presetSlots.observation.noData')).not.toBeInTheDocument();
     fireEvent.click(screen.getByText('PLA'));
     expect(onGateClick).toHaveBeenCalledWith(gate, slot);
+  });
+
+  it('does not repeat a printer-reported spool that is already the desired spool', () => {
+    const slot: MaterialSlot = {
+      id: 10,
+      provider_index: 0,
+      label: null,
+      kind: 'gate',
+      active: true,
+      assignment_revision: 0,
+      assignment: {
+        id: 20,
+        preset_id: null,
+        spool_id: 40,
+        source: 'web_manual',
+        source_ts: FRESH_SOURCE_TS,
+        active: true,
+      },
+      observation: {
+        source: 'happy_hare_moonraker',
+        observed_at: FRESH_SOURCE_TS,
+        received_at: FRESH_SOURCE_TS,
+        present: true,
+        active_feed: true,
+        spool_id: 40,
+        spool_identity_known: true,
+        material: 'PLA',
+        color_hex: 'FF0000',
+        remaining_percent: null,
+        remaining_grams: null,
+      },
+      legacy_projection: null,
+    };
+
+    render(
+      <GateMapGrid
+        slots={[slot]}
+        gates={[]}
+        presets={{}}
+        spools={[assignedSpool]}
+        onGateClick={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText('Example Signal Red')).toBeInTheDocument();
+    expect(screen.queryByText('presetSlots.happyHare.observedSpool')).not.toBeInTheDocument();
+  });
+
+  it('keeps a different identified printer spool visible as conflict evidence', () => {
+    const observedSpool = { ...assignedSpool, id: 41 };
+    const slot: MaterialSlot = {
+      id: 10,
+      provider_index: 0,
+      label: null,
+      kind: 'gate',
+      active: true,
+      assignment_revision: 0,
+      assignment: {
+        id: 20,
+        preset_id: null,
+        spool_id: 40,
+        source: 'web_manual',
+        source_ts: FRESH_SOURCE_TS,
+        active: true,
+      },
+      observation: {
+        source: 'happy_hare_moonraker',
+        observed_at: FRESH_SOURCE_TS,
+        received_at: FRESH_SOURCE_TS,
+        present: true,
+        active_feed: true,
+        spool_id: 41,
+        spool_identity_known: true,
+        material: 'PLA',
+        color_hex: 'FF0000',
+        remaining_percent: null,
+        remaining_grams: null,
+      },
+      legacy_projection: null,
+    };
+
+    render(
+      <GateMapGrid
+        slots={[slot]}
+        gates={[]}
+        presets={{}}
+        spools={[assignedSpool, observedSpool]}
+        onGateClick={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText('presetSlots.happyHare.observedSpool')).toBeInTheDocument();
   });
 
   it('shows provider-neutral tag evidence without turning it into desired state', () => {
