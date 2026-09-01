@@ -71,6 +71,14 @@ def test_owner_script_repairs_a_failed_trusted_release_without_a_version_bump() 
     assert "-NotBefore $triggerStartedAt.AddSeconds(-5)" in repair
 
 
+def test_print_farm_publish_contract_test_does_not_force_a_plugin_version() -> None:
+    script = (ROOT / "scripts/publish-plugin-releases.ps1").read_text(
+        encoding="utf-8"
+    )
+
+    assert "-IgnoredPaths @('plugins/printers/test_release_workflow.py')" in script
+
+
 def test_owner_script_uses_the_same_trusted_release_order_for_print_farm() -> None:
     script = (ROOT / "scripts/publish-plugin-releases.ps1").read_text(
         encoding="utf-8"

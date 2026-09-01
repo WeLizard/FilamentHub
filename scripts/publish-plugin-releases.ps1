@@ -231,7 +231,8 @@ function Test-ComponentNeedsRelease {
         $Published,
         [Parameter(Mandatory)][string]$RepositoryPath,
         [Parameter(Mandatory)][string]$RemoteName,
-        [Parameter(Mandatory)][string[]]$SourcePaths
+        [Parameter(Mandatory)][string[]]$SourcePaths,
+        [string[]]$IgnoredPaths = @()
     )
 
     if (-not $Published) {
@@ -249,8 +250,13 @@ function Test-ComponentNeedsRelease {
     Ensure-LocalTag -RepositoryPath $RepositoryPath -RemoteName $RemoteName -Tag $Published.Tag
     $arguments = @('-C', $RepositoryPath, 'diff', '--name-only', "$($Published.Tag)..HEAD", '--') + $SourcePaths
     $changed = Invoke-Checked git $arguments -Capture
-    if (-not [string]::IsNullOrWhiteSpace($changed)) {
-        throw "$Name изменён после $($Published.Tag), но версия осталась $CurrentVersion. Обнови версию и changelog:`n$changed"
+    $changedPaths = @(
+        @($changed -split "`r?`n") | Where-Object {
+            -not [string]::IsNullOrWhiteSpace($_) -and $_ -notin $IgnoredPaths
+        }
+    )
+    if ($changedPaths.Count -gt 0) {
+        throw "$Name изменён после $($Published.Tag), но версия осталась $CurrentVersion. Обнови версию и changelog:`n$($changedPaths -join "`n")"
     }
     return $false
 }
@@ -663,7 +669,9 @@ if ($selected -contains 'print-farm') {
         -TagPatterns @('^v\d+\.\d+\.\d+$', '^printers-v\d+\.\d+\.\d+$')
     $needed = Test-ComponentNeedsRelease `
         -Name 'Print Farm' -CurrentVersion $version -Published $published `
-        -RepositoryPath $printFarmRepositoryRoot -RemoteName $Remote -SourcePaths @('plugins/printers')
+        -RepositoryPath $printFarmRepositoryRoot -RemoteName $Remote `
+        -SourcePaths @('plugins/printers') `
+        -IgnoredPaths @('plugins/printers/test_release_workflow.py')
     $repair = if (-not $needed -and $published) {
         Test-TrustedPublishNeedsRepair `
             -Name 'Print Farm' `
