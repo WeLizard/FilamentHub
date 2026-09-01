@@ -1300,6 +1300,7 @@
       "requests": "Verification Requests",
       "brands": "Brands",
       "materials": "Materials",
+      "catalogImport": "Catalog Import",
       "presets": "Preset Moderation",
       "printers": "Printers",
       "printer-requests": "Printer Requests",
@@ -1319,6 +1320,7 @@
       "requests": "Verification",
       "brands": "Brands",
       "materials": "Materials",
+      "catalogImport": "Import",
       "presets": "Presets",
       "printers": "Printers",
       "printer-requests": "Requests",
@@ -6012,10 +6014,46 @@
       }
     }
   },
+  "adminCatalogImport": {
+    "eyebrow": "Managed catalog intake",
+    "title": "Catalog import",
+    "description": "Upload an XLSX workbook, correct rows in the preview, and then confirm one atomic apply. The catalog is unchanged before confirmation.",
+    "downloadTemplate": "Download XLSX template",
+    "templateHint": "Brands and filaments are required; markets and presets are optional.",
+    "templateError": "Could not download the template",
+    "upload": "Upload completed XLSX",
+    "uploadHint": "Up to 5 MB and 5,000 rows, without formulas.",
+    "previewError": "Could not validate the workbook",
+    "applyError": "Could not apply the import",
+    "applied": "Import #{{id}} applied",
+    "noWriteBeforeApply": "Preview only: no persistent catalog records exist yet.",
+    "result": "Result",
+    "emptySheet": "This sheet is empty and will be skipped.",
+    "cancel": "Cancel import",
+    "revalidate": "Validate corrections",
+    "apply": "Apply",
+    "history": "Applied import history",
+    "noHistory": "No imports have been applied yet.",
+    "sheets": {
+      "brands": "Brands",
+      "filaments": "Filaments",
+      "brandMarkets": "Brand markets",
+      "filamentMarkets": "Filament markets",
+      "presets": "Presets"
+    },
+    "status": {
+      "create": "Create",
+      "update": "Update",
+      "noop": "No changes",
+      "skipped": "Skip",
+      "error": "Error"
+    }
+  },
   "adminCommunications": {
     "eyebrow": "Communication center",
     "title": "Communications",
     "description": "Brand replies, user feedback, and in-app broadcasts share one workspace while keeping their own delivery channels and statuses.",
+    "openItems": "Open work items: {{count}}",
     "sections": {
       "inbox": "Email",
       "feedback": "Feedback",
@@ -6159,6 +6197,43 @@
     "syncActive7d": "active (7 days): {{count}}",
     "notificationsSection": "Notifications",
     "unreadNotifications": "Unread",
+    "operations": {
+      "title": "Needs attention",
+      "unreadEmail": "new email threads",
+      "unreadFeedback": "feedback with new messages",
+      "openFeedback": "open feedback",
+      "pendingPresets": "presets awaiting review",
+      "pendingBrands": "brand requests",
+      "pendingPrinters": "printer requests",
+      "newOrcaFields": "new Orca fields",
+      "oldest": "oldest: {{date}}"
+    },
+    "activation": {
+      "title": "Activation",
+      "total": "users activated",
+      "definition": "added at least one spool",
+      "recent": "activation, registrations in 30 days",
+      "recentDetail": "{{activated}} of {{registered}} added a spool"
+    },
+    "countries": {
+      "title": "Current profile country",
+      "all": "All users",
+      "registered30d": "Registered in 30 days",
+      "unknown": "not specified"
+    },
+    "catalogQuality": {
+      "title": "Catalog completeness",
+      "activeFilaments": "active filaments",
+      "density": "with density",
+      "nozzleRange": "with nozzle range",
+      "bedRange": "with bed range",
+      "countryCell": "with country cells",
+      "publicPreset": "with a public preset",
+      "coverage": "{{percent}}% of active",
+      "imports": "confirmed imports",
+      "lastImport": "last: {{date}}",
+      "noImports": "no confirmed imports"
+    },
     "calculator": {
       "title": "Calculator",
       "estimates24h": "estimates today",

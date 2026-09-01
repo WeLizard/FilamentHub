@@ -35,6 +35,7 @@ dependencies = [
     "jinja2>=3.1.6",  # CVE-2025-27516
     "nh3~=0.3.6",  # Allowlist-based sanitization for admin-authored email HTML
     "urllib3>=2.6.0",  # CVE-2025-66418, CVE-2026-21441
+    "openpyxl~=3.1.5",  # Human-editable catalog master-import workbooks
 ]
 
 [project.optional-dependencies]

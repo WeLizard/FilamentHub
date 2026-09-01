@@ -1300,6 +1300,7 @@
       "requests": "认证请求",
       "brands": "品牌",
       "materials": "耗材",
+      "catalogImport": "目录导入",
       "presets": "预设审核",
       "printers": "打印机",
       "printer-requests": "打印机请求",
@@ -1319,6 +1320,7 @@
       "requests": "认证",
       "brands": "品牌",
       "materials": "耗材",
+      "catalogImport": "导入",
       "presets": "预设",
       "printers": "打印机",
       "printer-requests": "请求",
@@ -6006,10 +6008,46 @@
       }
     }
   },
+  "adminCatalogImport": {
+    "eyebrow": "受控目录录入",
+    "title": "目录导入",
+    "description": "上传 XLSX，在预览中修正行，然后一次性确认应用。确认前目录不会发生变化。",
+    "downloadTemplate": "下载 XLSX 模板",
+    "templateHint": "品牌和耗材为必填；市场和预设可选。",
+    "templateError": "无法下载模板",
+    "upload": "上传已填写的 XLSX",
+    "uploadHint": "最大 5 MB、5000 行且不得包含公式。",
+    "previewError": "无法验证工作簿",
+    "applyError": "无法应用导入",
+    "applied": "已应用导入 #{{id}}",
+    "noWriteBeforeApply": "仅预览：尚未写入任何持久目录记录。",
+    "result": "结果",
+    "emptySheet": "此工作表为空，将被跳过。",
+    "cancel": "取消导入",
+    "revalidate": "验证修改",
+    "apply": "应用",
+    "history": "已应用导入历史",
+    "noHistory": "尚未应用任何导入。",
+    "sheets": {
+      "brands": "品牌",
+      "filaments": "耗材",
+      "brandMarkets": "品牌市场",
+      "filamentMarkets": "耗材市场",
+      "presets": "预设"
+    },
+    "status": {
+      "create": "创建",
+      "update": "更新",
+      "noop": "无变化",
+      "skipped": "跳过",
+      "error": "错误"
+    }
+  },
   "adminCommunications": {
     "eyebrow": "沟通中心",
     "title": "沟通",
     "description": "品牌回复、用户反馈和站内广播集中在一个工作区中，同时保留各自的发送渠道和状态。",
+    "openItems": "待处理项目：{{count}}",
     "sections": {
       "inbox": "邮件",
       "feedback": "反馈",
@@ -6153,6 +6191,43 @@
     "syncActive7d": "活跃（7天）：{{count}}",
     "notificationsSection": "通知",
     "unreadNotifications": "未读",
+    "operations": {
+      "title": "需要关注",
+      "unreadEmail": "新邮件会话",
+      "unreadFeedback": "有新消息的反馈",
+      "openFeedback": "开放反馈",
+      "pendingPresets": "待审核预设",
+      "pendingBrands": "品牌申请",
+      "pendingPrinters": "打印机申请",
+      "newOrcaFields": "新的 Orca 字段",
+      "oldest": "最早：{{date}}"
+    },
+    "activation": {
+      "title": "激活",
+      "total": "已激活用户",
+      "definition": "至少添加了一个线轴",
+      "recent": "30 天注册用户激活率",
+      "recentDetail": "{{activated}} / {{registered}} 已添加线轴"
+    },
+    "countries": {
+      "title": "当前个人资料国家",
+      "all": "所有用户",
+      "registered30d": "30 天内注册",
+      "unknown": "未指定"
+    },
+    "catalogQuality": {
+      "title": "目录完整度",
+      "activeFilaments": "活跃耗材",
+      "density": "有密度",
+      "nozzleRange": "有喷嘴温度范围",
+      "bedRange": "有热床温度范围",
+      "countryCell": "有国家单元",
+      "publicPreset": "有公开预设",
+      "coverage": "占活跃耗材 {{percent}}%",
+      "imports": "已确认导入",
+      "lastImport": "最近：{{date}}",
+      "noImports": "暂无已确认导入"
+    },
     "calculator": {
       "title": "计算器",
       "estimates24h": "24 小时内计算次数",

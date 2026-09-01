@@ -14,24 +14,31 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import func, select, text
+from sqlalchemy import String, cast, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.models.brand import Brand
+from app.models.brand_request import BrandRequest, BrandRequestStatus
 from app.models.calculator_history_entry import CalculatorHistoryEntry
 from app.models.calculator_profile import UserCalculatorProfile
+from app.models.catalog_import import CatalogImportBatch
 from app.models.crm import CrmQuote
+from app.models.email_communication import EmailThread
+from app.models.feedback import Feedback, FeedbackStatus
 from app.models.filament import Filament
+from app.models.filament_country_cell import FilamentCountryCell
 from app.models.filament_review import FilamentReview
 from app.models.material_system import MaterialSlot, MaterialSystem
 from app.models.notification import Notification
+from app.models.orca_schema_observation import OrcaSchemaObservation
 from app.models.preset import Preset, PresetModerationStatus
 from app.models.preset_gate_state import PresetGateState
 from app.models.printer import Printer
 from app.models.printer_profile import PrinterProfile
+from app.models.printer_request import PrinterRequest, PrinterRequestStatus
 from app.models.sync_device import SyncDevice
 from app.models.user import User, UserRole
 from app.models.user_printer_device import UserPrinterDevice
@@ -42,7 +49,7 @@ from app.services.usage_metrics_service import calculator_usage
 
 logger = logging.getLogger(__name__)
 
-STATS_CACHE_KEY = "admin:stats:v1"
+STATS_CACHE_KEY = "admin:stats:v2"
 STATS_CACHE_TTL = 120  # seconds — a dashboard does not need per-second accuracy
 # Below this row count an exact COUNT is instant, so use it and stay correct;
 # only above it is the (analyze-dependent) estimate worth trusting over a scan.
@@ -52,8 +59,18 @@ PRICING_METHODS = tuple(method.value for method in PricingMethod)
 
 # Plain totals served from Postgres estimates (no WHERE clause needed).
 _TOTAL_MODELS = [
-    User, Brand, Preset, Filament, Printer, PrinterProfile, FilamentReview,
-    UserPrinterDevice, UserSpool, PresetGateState, SyncDevice, WikiArticle,
+    User,
+    Brand,
+    Preset,
+    Filament,
+    Printer,
+    PrinterProfile,
+    FilamentReview,
+    UserPrinterDevice,
+    UserSpool,
+    PresetGateState,
+    SyncDevice,
+    WikiArticle,
 ]
 
 
@@ -109,13 +126,84 @@ async def _group_counts(db: AsyncSession, column, *conditions) -> dict[str, int]
     return {str(value): count for value, count in rows.all() if value is not None}
 
 
+async def _oldest_at(db: AsyncSession, column, *conditions) -> str | None:
+    stmt = select(func.min(column))
+    for condition in conditions:
+        stmt = stmt.where(condition)
+    value = await db.scalar(stmt)
+    return value.isoformat() if value is not None else None
+
+
+async def _profile_countries(
+    db: AsyncSession, *, created_since: datetime | None = None, limit: int = 10
+) -> list[dict[str, int | str]]:
+    """Top current profile countries. This is deliberately not registration
+    history: changing the profile moves the user to the newly selected country."""
+    country = func.coalesce(func.nullif(func.upper(User.country), ""), "UNKNOWN")
+    stmt = select(country.label("country"), func.count(User.id).label("count"))
+    if created_since is not None:
+        stmt = stmt.where(User.created_at >= created_since)
+    rows = await db.execute(
+        stmt.group_by(country).order_by(func.count(User.id).desc(), country.asc()).limit(limit)
+    )
+    return [{"country": value, "count": count} for value, count in rows.all()]
+
+
 async def _compute(db: AsyncSession) -> dict:
-    now = datetime.utcnow()
+    now = datetime.now(UTC)
     day_ago = now - timedelta(days=1)
     week_ago = now - timedelta(days=7)
     month_ago = now - timedelta(days=30)
 
     total = await _totals(db)
+
+    activated_users = (
+        await db.scalar(
+            select(func.count(User.id)).where(
+                select(UserSpool.id).where(UserSpool.user_id == User.id).exists()
+            )
+        )
+        or 0
+    )
+    activated_registered_30d = (
+        await db.scalar(
+            select(func.count(User.id)).where(
+                User.created_at >= month_ago,
+                select(UserSpool.id).where(UserSpool.user_id == User.id).exists(),
+            )
+        )
+        or 0
+    )
+    registered_30d = await _count(db, User, User.created_at >= month_ago)
+
+    active_filaments = await _count(db, Filament, Filament.active == True)  # noqa: E712
+    public_preset_filaments = (
+        await db.scalar(
+            select(func.count(func.distinct(Preset.filament_id)))
+            .join(Filament, Filament.id == Preset.filament_id)
+            .where(
+                Preset.filament_id.isnot(None),
+                Filament.active == True,  # noqa: E712
+                Preset.active == True,  # noqa: E712
+                Preset.moderation_status.in_(
+                    (PresetModerationStatus.APPROVED, PresetModerationStatus.AUTO_GENERATED)
+                ),
+            )
+        )
+        or 0
+    )
+    country_cell_filaments = (
+        await db.scalar(
+            select(func.count(func.distinct(FilamentCountryCell.filament_id)))
+            .join(Filament, Filament.id == FilamentCountryCell.filament_id)
+            .where(Filament.active == True)  # noqa: E712
+        )
+        or 0
+    )
+    last_import_at = await db.scalar(select(func.max(CatalogImportBatch.applied_at)))
+    pending_printer_request = (
+        cast(PrinterRequest.status, String) == PrinterRequestStatus.PENDING.value
+    )
 
     return {
         "users": {
@@ -124,7 +212,7 @@ async def _compute(db: AsyncSession) -> dict:
             "admins": await _count(db, User, User.role == UserRole.ADMIN),
             "registered_24h": await _count(db, User, User.created_at >= day_ago),
             "registered_7d": await _count(db, User, User.created_at >= week_ago),
-            "registered_30d": await _count(db, User, User.created_at >= month_ago),
+            "registered_30d": registered_30d,
             "active_24h": await _count(db, User, User.last_login >= day_ago),
             "active_7d": await _count(db, User, User.last_login >= week_ago),
         },
@@ -174,7 +262,8 @@ async def _compute(db: AsyncSession) -> dict:
             ),
             "saved_by_users": await db.scalar(
                 select(func.count(func.distinct(CalculatorHistoryEntry.user_id)))
-            ) or 0,
+            )
+            or 0,
             "quotes": await _count(db, CrmQuote),
             "quotes_30d": await _count(db, CrmQuote, CrmQuote.created_at >= month_ago),
         },
@@ -186,7 +275,8 @@ async def _compute(db: AsyncSession) -> dict:
             "slots": await _count(db, MaterialSlot),
             "printers_with_system": await db.scalar(
                 select(func.count(func.distinct(MaterialSystem.physical_printer_id)))
-            ) or 0,
+            )
+            or 0,
             "devices_happy_hare": await _count(
                 db, UserPrinterDevice, UserPrinterDevice.supports_hh == True  # noqa: E712
             ),
@@ -202,6 +292,102 @@ async def _compute(db: AsyncSession) -> dict:
         },
         "notifications": {
             "unread": await _count(db, Notification, Notification.read == False),  # noqa: E712
+        },
+        "operations": {
+            "unread_email_threads": {
+                "count": await _count(db, EmailThread, EmailThread.unread_count > 0),
+                "oldest_at": await _oldest_at(
+                    db, EmailThread.last_message_at, EmailThread.unread_count > 0
+                ),
+            },
+            "unread_feedback_threads": {
+                "count": await _count(db, Feedback, Feedback.admin_unread_count > 0),
+                "oldest_at": await _oldest_at(
+                    db, Feedback.updated_at, Feedback.admin_unread_count > 0
+                ),
+            },
+            "open_feedback": {
+                "count": await _count(db, Feedback, Feedback.status == FeedbackStatus.OPEN),
+                "oldest_at": await _oldest_at(
+                    db, Feedback.created_at, Feedback.status == FeedbackStatus.OPEN
+                ),
+            },
+            "pending_presets": {
+                "count": await _count(
+                    db, Preset, Preset.moderation_status == PresetModerationStatus.PENDING
+                ),
+                "oldest_at": await _oldest_at(
+                    db,
+                    Preset.created_at,
+                    Preset.moderation_status == PresetModerationStatus.PENDING,
+                ),
+            },
+            "pending_brand_requests": {
+                "count": await _count(
+                    db, BrandRequest, BrandRequest.status == BrandRequestStatus.PENDING
+                ),
+                "oldest_at": await _oldest_at(
+                    db,
+                    BrandRequest.created_at,
+                    BrandRequest.status == BrandRequestStatus.PENDING,
+                ),
+            },
+            "pending_printer_requests": {
+                "count": await _count(db, PrinterRequest, pending_printer_request),
+                "oldest_at": await _oldest_at(
+                    db,
+                    PrinterRequest.created_at,
+                    pending_printer_request,
+                ),
+            },
+            "new_orca_fields": {
+                "count": await _count(
+                    db, OrcaSchemaObservation, OrcaSchemaObservation.status == "new"
+                ),
+                "oldest_at": await _oldest_at(
+                    db,
+                    OrcaSchemaObservation.first_seen_at,
+                    OrcaSchemaObservation.status == "new",
+                ),
+            },
+        },
+        "catalog_quality": {
+            "active_filaments": active_filaments,
+            "with_density": await _count(
+                db, Filament, Filament.active == True, Filament.density.isnot(None)  # noqa: E712
+            ),
+            "with_nozzle_range": await _count(
+                db,
+                Filament,
+                Filament.active == True,  # noqa: E712
+                Filament.recommended_nozzle_temp_min.isnot(None),
+                Filament.recommended_nozzle_temp_max.isnot(None),
+            ),
+            "with_bed_range": await _count(
+                db,
+                Filament,
+                Filament.active == True,  # noqa: E712
+                Filament.recommended_bed_temp_min.isnot(None),
+                Filament.recommended_bed_temp_max.isnot(None),
+            ),
+            "with_country_cell": country_cell_filaments,
+            "with_public_preset": public_preset_filaments,
+            "import_batches": await _count(db, CatalogImportBatch),
+            "last_import_at": last_import_at.isoformat() if last_import_at else None,
+        },
+        "activation": {
+            "definition": "first_spool",
+            "activated_total": activated_users,
+            "registered_30d": registered_30d,
+            "activated_registered_30d": activated_registered_30d,
+            "rate_30d": (
+                round(activated_registered_30d * 100 / registered_30d, 1) if registered_30d else 0.0
+            ),
+        },
+        "profile_countries": {
+            "basis": "current_profile",
+            "all": await _profile_countries(db),
+            "registered_30d": await _profile_countries(db, created_since=month_ago),
         },
     }
 

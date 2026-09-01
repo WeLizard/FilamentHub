@@ -43,9 +43,7 @@ class Feedback(Base):
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
 
     # Foreign keys
-    user_id: Mapped[int | None] = mapped_column(
-        ForeignKey("users.id"), index=True, nullable=True
-    )
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), index=True, nullable=True)
     # user_id: может быть None для анонимных сообщений
 
     # Feedback data
@@ -77,14 +75,19 @@ class Feedback(Base):
         index=True,
     )
 
+    # Shared admin-inbox counter. It is intentionally independent from the
+    # workflow status: an old OPEN case can have nothing new, while a fresh
+    # user reply must be visible even before anyone changes its status.
+    admin_unread_count: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0", nullable=False
+    )
+
     # Admin response (опционально)
     admin_response: Mapped[str | None] = mapped_column(Text, nullable=True)
     admin_response_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
-    responded_by: Mapped[int | None] = mapped_column(
-        ForeignKey("users.id"), nullable=True
-    )
+    responded_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     # responded_by: ID админа, который ответил на сообщение
 
     # Timestamps
@@ -102,9 +105,7 @@ class Feedback(Base):
     user: Mapped["User | None"] = relationship(
         "User", foreign_keys=[user_id], back_populates="feedback_messages"
     )
-    responder: Mapped["User | None"] = relationship(
-        "User", foreign_keys=[responded_by]
-    )
+    responder: Mapped["User | None"] = relationship("User", foreign_keys=[responded_by])
     messages: Mapped[list["FeedbackMessage"]] = relationship(
         "FeedbackMessage",
         back_populates="feedback",
@@ -158,5 +159,3 @@ class FeedbackMessage(Base):
             f"<FeedbackMessage(id={self.id}, feedback_id={self.feedback_id}, "
             f"author_type={self.author_type})>"
         )
-
-

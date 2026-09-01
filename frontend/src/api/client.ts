@@ -4,7 +4,7 @@ import axios from 'axios';
 import type { InternalAxiosRequestConfig } from 'axios';
 import type { BrandAnalytics } from '../types/api';
 import type { AdminAchievementOverview } from '../types/api';
-import type { AccessibleBrand, AdminUserListResponse, AuthMethods, Brand, BrandUsage, BrandCountryCell, BrandRepresentative, BrandRepresentativeInvite, BrandRequest, BrandRequestStatus, BrandTeamInvite, BrandTeamRole, BrandTeamWorkspace, Filament, FilamentAdditive, FilamentPropertyClaim, FilamentLine, FilamentImportPreviewResult, FilamentImportResult, FilamentListResponse, FilamentPalettePayload, BrandInvitePublic, BrandInviteAdmin, BrandInviteAcceptResult, BrandInviteBatchPreview, BrandInviteBatchSendResult, FilamentAvailability, CountryAvailability, FilamentCountryCell, FilamentVisualSettings, FilamentReview, FilamentRatingStats, Notification, NotificationListResponse, Preset, RecommendedPreset, RecommendedForPrinterResponse, Printer, PrinterProfile, PrintProfile, PrinterRequest, User, Token, RefreshTokenRequest, RefreshTokenResponse, ListResponse, AccountDeletionStats, UserSavedPreset, CalculatorEstimateRequest, CalculatorEstimateResponse, CalculatorProfileResponse, CalculatorProfileUpdate, Feedback, FeedbackDetail, FeedbackListResponse, FeedbackType, PluginDownloadsResponse, WikiCategory, WikiCategoryListResponse, WikiArticle, WikiArticleListResponse, WikiArticleTranslation, WikiFeedbackStats, WikiFeedbackCreate, WikiFeedback, WikiGuideProgressResponse, WikiLanguage, WikiMediaAsset, WikiReviewVerdict, WikiRevision, WikiRevisionListResponse, WikiPublicRevisionListResponse, WikiRevisionStatus, WikiSpace, WikiSpaceKey, EmailThreadDetail, EmailThreadListResponse, EmailThreadStatus, EmailMessage, EmailSenderProfile, EmailLanguage, NotificationCampaignAudience, NotificationCampaignHistoryResponse, NotificationCampaignPreview, NotificationCampaignSendResult, LegalAcceptancePayload, LegalDocument, LegalDocumentType, LegalPack, LegalRequirements, RegistrationPayload, SpoolUsageEvent, OrcaSliceReport, OrcaPresetScope, OrcaSchemaObservation, OrcaSchemaObservationListResponse, OrcaSchemaObservationStatus, UnreadCommunicationsCount } from '../types/api';
+import type { AccessibleBrand, AdminUserListResponse, AuthMethods, Brand, BrandUsage, BrandCountryCell, BrandRepresentative, BrandRepresentativeInvite, BrandRequest, BrandRequestStatus, BrandTeamInvite, BrandTeamRole, BrandTeamWorkspace, Filament, FilamentAdditive, FilamentPropertyClaim, FilamentLine, FilamentImportPreviewResult, FilamentImportResult, FilamentListResponse, FilamentPalettePayload, BrandInvitePublic, BrandInviteAdmin, BrandInviteAcceptResult, BrandInviteBatchPreview, BrandInviteBatchSendResult, FilamentAvailability, CountryAvailability, FilamentCountryCell, FilamentVisualSettings, FilamentReview, FilamentRatingStats, Notification, NotificationListResponse, Preset, RecommendedPreset, RecommendedForPrinterResponse, Printer, PrinterProfile, PrintProfile, PrinterRequest, User, Token, RefreshTokenRequest, RefreshTokenResponse, ListResponse, AccountDeletionStats, UserSavedPreset, CalculatorEstimateRequest, CalculatorEstimateResponse, CalculatorProfileResponse, CalculatorProfileUpdate, Feedback, FeedbackDetail, FeedbackListResponse, FeedbackType, PluginDownloadsResponse, WikiCategory, WikiCategoryListResponse, WikiArticle, WikiArticleListResponse, WikiArticleTranslation, WikiFeedbackStats, WikiFeedbackCreate, WikiFeedback, WikiGuideProgressResponse, WikiLanguage, WikiMediaAsset, WikiReviewVerdict, WikiRevision, WikiRevisionListResponse, WikiPublicRevisionListResponse, WikiRevisionStatus, WikiSpace, WikiSpaceKey, EmailThreadDetail, EmailThreadListResponse, EmailThreadStatus, EmailMessage, EmailSenderProfile, EmailLanguage, NotificationCampaignAudience, NotificationCampaignHistoryResponse, NotificationCampaignPreview, NotificationCampaignSendResult, LegalAcceptancePayload, LegalDocument, LegalDocumentType, LegalPack, LegalRequirements, RegistrationPayload, SpoolUsageEvent, OrcaSliceReport, OrcaPresetScope, OrcaSchemaObservation, OrcaSchemaObservationListResponse, OrcaSchemaObservationStatus, UnreadCommunicationsCount, CatalogImportDraft, CatalogImportPreview, CatalogImportApplyResponse, CatalogImportHistory } from '../types/api';
 import { getCsrfToken, getRefreshToken, getToken, isCookieAuthMode, isJwtAuthMode, isOrcaEmbedded, removeToken, setRefreshToken, setToken, shouldPersistTokensLocally } from '../utils/auth';
 import { isPluginEmbed, reportPluginSessionToPlugin } from '../utils/pluginBridge';
 import { downloadBlob } from '../utils/download';
@@ -2501,6 +2501,22 @@ export const adminAPI = {
       devices_seen_7d: number; devices_seen_30d: number;
     };
     notifications: { unread: number };
+    operations: Record<string, { count: number; oldest_at: string | null }>;
+    catalog_quality: {
+      active_filaments: number; with_density: number;
+      with_nozzle_range: number; with_bed_range: number;
+      with_country_cell: number; with_public_preset: number;
+      import_batches: number; last_import_at: string | null;
+    };
+    activation: {
+      definition: 'first_spool'; activated_total: number;
+      registered_30d: number; activated_registered_30d: number; rate_30d: number;
+    };
+    profile_countries: {
+      basis: 'current_profile';
+      all: Array<{ country: string; count: number }>;
+      registered_30d: Array<{ country: string; count: number }>;
+    };
   }> => {
     const response = await api.get('/admin/stats', refresh ? { params: { refresh: true } } : undefined);
     return response.data;
@@ -2912,6 +2928,50 @@ export const feedbackAPI = {
   },
 };
 
+export const adminCatalogImportAPI = {
+  downloadTemplate: async (): Promise<Blob> => {
+    const response = await api.get('/admin/catalog/master-import/template', {
+      responseType: 'blob',
+    });
+    return response.data;
+  },
+
+  previewWorkbook: async (file: File): Promise<CatalogImportPreview> => {
+    const form = new FormData();
+    form.append('file', file);
+    const response = await api.post<CatalogImportPreview>(
+      '/admin/catalog/master-import/preview',
+      form,
+      { headers: { 'Content-Type': 'multipart/form-data' } },
+    );
+    return response.data;
+  },
+
+  previewDraft: async (draft: CatalogImportDraft): Promise<CatalogImportPreview> => {
+    const response = await api.post<CatalogImportPreview>(
+      '/admin/catalog/master-import/preview-draft',
+      draft,
+    );
+    return response.data;
+  },
+
+  apply: async (
+    draft: CatalogImportDraft,
+    confirmationToken: string,
+  ): Promise<CatalogImportApplyResponse> => {
+    const response = await api.post<CatalogImportApplyResponse>(
+      '/admin/catalog/master-import/apply',
+      { draft, confirmation_token: confirmationToken },
+    );
+    return response.data;
+  },
+
+  history: async (): Promise<CatalogImportHistory> => {
+    const response = await api.get<CatalogImportHistory>('/admin/catalog/master-import/history');
+    return response.data;
+  },
+};
+
 // Admin Feedback API (только для админов)
 export const adminFeedbackAPI = {
   // Получить список всей обратной связи
@@ -2929,6 +2989,13 @@ export const adminFeedbackAPI = {
   // Получить обратную связь по ID
   get: async (feedbackId: number): Promise<FeedbackDetail> => {
     const response = await api.get<FeedbackDetail>(`/feedback/${feedbackId}`);
+    return response.data;
+  },
+
+  markRead: async (feedbackId: number, throughMessageId: number): Promise<FeedbackDetail> => {
+    const response = await api.post<FeedbackDetail>(`/feedback/${feedbackId}/read`, {
+      through_message_id: throughMessageId,
+    });
     return response.data;
   },
 

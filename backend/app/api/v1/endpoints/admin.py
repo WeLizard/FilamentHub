@@ -517,15 +517,24 @@ async def count_unread_communications(
     должно быть понятно, куда идти.
     """
     del admin
-    emails = await db.scalar(
-        select(func.coalesce(func.sum(EmailThread.unread_count), 0)).where(
-            EmailThread.unread_count > 0
-        )
+    unread_email_threads = await db.scalar(
+        select(func.count()).select_from(EmailThread).where(EmailThread.unread_count > 0)
     )
-    feedback = await db.scalar(
+    open_email_threads = await db.scalar(
+        select(func.count()).select_from(EmailThread).where(EmailThread.status == "open")
+    )
+    unread_feedback_threads = await db.scalar(
+        select(func.count()).select_from(Feedback).where(Feedback.admin_unread_count > 0)
+    )
+    open_feedback = await db.scalar(
         select(func.count()).select_from(Feedback).where(Feedback.status == FeedbackStatus.OPEN)
     )
-    return {"unread_emails": int(emails or 0), "new_feedback": int(feedback or 0)}
+    return {
+        "unread_email_threads": int(unread_email_threads or 0),
+        "open_email_threads": int(open_email_threads or 0),
+        "unread_feedback_threads": int(unread_feedback_threads or 0),
+        "open_feedback": int(open_feedback or 0),
+    }
 
 
 # ==================== Preset Moderation ====================
@@ -2469,9 +2478,11 @@ async def import_catalog_source_orca(
     except BundleServiceError as exc:
         await db.commit()  # persist audit row created before failure
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT
-            if exc.code == "ERR_BUNDLE_NOT_VALIDATED"
-            else status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=(
+                status.HTTP_409_CONFLICT
+                if exc.code == "ERR_BUNDLE_NOT_VALIDATED"
+                else status.HTTP_500_INTERNAL_SERVER_ERROR
+            ),
             detail={"code": exc.code, "params": exc.params},
         ) from exc
 

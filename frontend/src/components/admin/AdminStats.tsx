@@ -8,7 +8,7 @@ import {
   Package, HardDrive, BookOpen, Star,
   Bell, RefreshCw, Globe, Search, Server,
   Activity, Gauge, Loader2, Calculator, FileText,
-  Layers, Wifi,
+  Layers, Wifi, Inbox, MapPin, Database, CheckCircle2,
 } from 'lucide-react';
 import { adminAPI } from '../../api/client';
 import { Printer3DIcon } from '../icons/Printer3DIcon';
@@ -418,6 +418,20 @@ export function AdminStats() {
   }
 
   const updatedAt = dataUpdatedAt ? new Date(dataUpdatedAt).toLocaleTimeString() : '';
+  const oldest = (value: string | null) => value
+    ? t('adminStats.operations.oldest', { date: new Date(value).toLocaleDateString() })
+    : undefined;
+  const coverage = (value: number) => t('adminStats.catalogQuality.coverage', {
+    percent: stats.catalog_quality.active_filaments
+      ? Math.round(value * 100 / stats.catalog_quality.active_filaments)
+      : 0,
+  });
+  const allCountries = Object.fromEntries(
+    stats.profile_countries.all.map(({ country, count }) => [country, count]),
+  );
+  const recentCountries = Object.fromEntries(
+    stats.profile_countries.registered_30d.map(({ country, count }) => [country, count]),
+  );
 
   return (
     <div className="space-y-5">
@@ -436,6 +450,37 @@ export function AdminStats() {
         </div>
       </div>
 
+      <Section icon={Inbox} title={t('adminStats.operations.title')}>
+        <Stat icon={Inbox} label={t('adminStats.operations.unreadEmail')}
+          value={stats.operations.unread_email_threads.count}
+          sub={oldest(stats.operations.unread_email_threads.oldest_at)}
+          accent={stats.operations.unread_email_threads.count ? 'text-cyan-400' : undefined} />
+        <Stat icon={Bell} label={t('adminStats.operations.unreadFeedback')}
+          value={stats.operations.unread_feedback_threads.count}
+          sub={oldest(stats.operations.unread_feedback_threads.oldest_at)}
+          accent={stats.operations.unread_feedback_threads.count ? 'text-cyan-400' : undefined} />
+        <Stat icon={FileText} label={t('adminStats.operations.openFeedback')}
+          value={stats.operations.open_feedback.count}
+          sub={oldest(stats.operations.open_feedback.oldest_at)}
+          accent={stats.operations.open_feedback.count ? 'text-yellow-400' : undefined} />
+        <Stat icon={Settings} label={t('adminStats.operations.pendingPresets')}
+          value={stats.operations.pending_presets.count}
+          sub={oldest(stats.operations.pending_presets.oldest_at)}
+          accent={stats.operations.pending_presets.count ? 'text-yellow-400' : undefined} />
+        <Stat icon={Building2} label={t('adminStats.operations.pendingBrands')}
+          value={stats.operations.pending_brand_requests.count}
+          sub={oldest(stats.operations.pending_brand_requests.oldest_at)}
+          accent={stats.operations.pending_brand_requests.count ? 'text-yellow-400' : undefined} />
+        <Stat icon={Printer3DIcon} label={t('adminStats.operations.pendingPrinters')}
+          value={stats.operations.pending_printer_requests.count}
+          sub={oldest(stats.operations.pending_printer_requests.oldest_at)}
+          accent={stats.operations.pending_printer_requests.count ? 'text-yellow-400' : undefined} />
+        <Stat icon={Database} label={t('adminStats.operations.newOrcaFields')}
+          value={stats.operations.new_orca_fields.count}
+          sub={oldest(stats.operations.new_orca_fields.oldest_at)}
+          accent={stats.operations.new_orca_fields.count ? 'text-orange-400' : undefined} />
+      </Section>
+
       {/* Users */}
       <Section icon={Users} title={t('adminStats.users')}>
         <Stat icon={Users} label={t('adminStats.totalUsers')} value={stats.users.total} />
@@ -447,6 +492,26 @@ export function AdminStats() {
         <Stat icon={Building2} label={t('adminStats.brandReps')} value={stats.users.brands} />
         <Stat icon={BarChart3} label={t('adminStats.admins')} value={stats.users.admins} />
       </Section>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        <Section icon={CheckCircle2} title={t('adminStats.activation.title')} cols="grid grid-cols-2 gap-2">
+          <Stat icon={CheckCircle2} label={t('adminStats.activation.total')}
+            value={stats.activation.activated_total}
+            sub={t('adminStats.activation.definition')} accent="text-green-400" />
+          <Stat icon={TrendingUp} label={t('adminStats.activation.recent')}
+            value={`${stats.activation.rate_30d}%`}
+            sub={t('adminStats.activation.recentDetail', {
+              activated: stats.activation.activated_registered_30d,
+              registered: stats.activation.registered_30d,
+            })} accent="text-green-400" />
+        </Section>
+        <Section icon={MapPin} title={t('adminStats.countries.title')} cols="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <Breakdown title={t('adminStats.countries.all')} counts={allCountries}
+            labelFor={key => key === 'UNKNOWN' ? t('adminStats.countries.unknown') : key} />
+          <Breakdown title={t('adminStats.countries.registered30d')} counts={recentCountries}
+            labelFor={key => key === 'UNKNOWN' ? t('adminStats.countries.unknown') : key} />
+        </Section>
+      </div>
 
       {/* Brands + Presets (combined row) */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
@@ -472,6 +537,33 @@ export function AdminStats() {
         <Stat icon={Star} label={t('adminStats.reviewsTotal')} value={stats.content.reviews_total}
           sub={t('adminStats.reviewsWeek', { count: stats.content.reviews_7d })} />
         <Stat icon={BookOpen} label={t('adminStats.wikiArticles')} value={stats.content.wiki_articles} />
+      </Section>
+
+      <Section icon={Database} title={t('adminStats.catalogQuality.title')}>
+        <Stat icon={Package} label={t('adminStats.catalogQuality.activeFilaments')}
+          value={stats.catalog_quality.active_filaments} />
+        <Stat icon={Gauge} label={t('adminStats.catalogQuality.density')}
+          value={stats.catalog_quality.with_density}
+          sub={coverage(stats.catalog_quality.with_density)} />
+        <Stat icon={Gauge} label={t('adminStats.catalogQuality.nozzleRange')}
+          value={stats.catalog_quality.with_nozzle_range}
+          sub={coverage(stats.catalog_quality.with_nozzle_range)} />
+        <Stat icon={Gauge} label={t('adminStats.catalogQuality.bedRange')}
+          value={stats.catalog_quality.with_bed_range}
+          sub={coverage(stats.catalog_quality.with_bed_range)} />
+        <Stat icon={Globe} label={t('adminStats.catalogQuality.countryCell')}
+          value={stats.catalog_quality.with_country_cell}
+          sub={coverage(stats.catalog_quality.with_country_cell)} />
+        <Stat icon={Settings} label={t('adminStats.catalogQuality.publicPreset')}
+          value={stats.catalog_quality.with_public_preset}
+          sub={coverage(stats.catalog_quality.with_public_preset)} />
+        <Stat icon={Database} label={t('adminStats.catalogQuality.imports')}
+          value={stats.catalog_quality.import_batches}
+          sub={stats.catalog_quality.last_import_at
+            ? t('adminStats.catalogQuality.lastImport', {
+                date: new Date(stats.catalog_quality.last_import_at).toLocaleDateString(),
+              })
+            : t('adminStats.catalogQuality.noImports')} />
       </Section>
 
       {/* Hardware + Notifications (combined) */}

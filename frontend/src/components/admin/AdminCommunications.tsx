@@ -1031,15 +1031,17 @@ export function AdminCommunications() {
       id: 'inbox' as const,
       icon: Inbox,
       label: t('adminCommunications.sections.inbox'),
-      count: unreadQuery.data?.unread_emails || 0,
+      newCount: unreadQuery.data?.unread_email_threads || 0,
+      openCount: unreadQuery.data?.open_email_threads || 0,
     },
     {
       id: 'feedback' as const,
       icon: MessageCircle,
       label: t('adminCommunications.sections.feedback'),
-      count: unreadQuery.data?.new_feedback || 0,
+      newCount: unreadQuery.data?.unread_feedback_threads || 0,
+      openCount: unreadQuery.data?.open_feedback || 0,
     },
-    { id: 'broadcasts' as const, icon: Send, label: t('adminCommunications.sections.broadcasts'), count: 0 },
+    { id: 'broadcasts' as const, icon: Send, label: t('adminCommunications.sections.broadcasts'), newCount: 0, openCount: 0 },
   ];
 
   return (
@@ -1054,7 +1056,7 @@ export function AdminCommunications() {
           <p className="mt-1 max-w-2xl text-sm leading-6 text-gray-400">{t('adminCommunications.description')}</p>
         </div>
         <nav className="flex w-full gap-1 rounded-xl border border-white/10 bg-black/15 p-1 md:w-auto" aria-label={t('adminCommunications.title')}>
-          {sections.map(({ id, icon: Icon, label, count }) => (
+          {sections.map(({ id, icon: Icon, label, newCount, openCount }) => (
             <button
               key={id}
               type="button"
@@ -1065,13 +1067,23 @@ export function AdminCommunications() {
             >
               <Icon className="h-4 w-4 shrink-0" />
               <span className="truncate">{label}</span>
-              {count > 0 && (
+              {newCount > 0 && (
                 <span
                   className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${
                     section === id ? 'bg-slate-950/20 text-slate-950' : 'bg-cyan-400 text-slate-950'
                   }`}
                 >
-                  {count}
+                  +{newCount}
+                </span>
+              )}
+              {openCount > 0 && (
+                <span
+                  title={t('adminCommunications.openItems', { count: openCount })}
+                  className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${
+                    section === id ? 'bg-amber-950/20 text-amber-950' : 'bg-amber-400/15 text-amber-300'
+                  }`}
+                >
+                  {openCount}
                 </span>
               )}
             </button>

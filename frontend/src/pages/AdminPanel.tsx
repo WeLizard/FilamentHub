@@ -4,7 +4,7 @@ import { lazy, Suspense, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Shield, FileText, Building2, Users, BarChart3, CheckCircle, Home, Package, User, LogOut, Database, Mail, Settings, BookOpen, Sparkles, ScanSearch, Layers, Loader2, Calculator } from 'lucide-react';
+import { Shield, FileText, Building2, Users, BarChart3, CheckCircle, Home, Package, User, LogOut, Database, Mail, MessageCircle, Settings, BookOpen, Sparkles, ScanSearch, Layers, Loader2, Calculator, FileSpreadsheet } from 'lucide-react';
 import { Printer3DIcon } from '../components/icons/Printer3DIcon';
 import { useAuth } from '../contexts/AuthContext';
 import { adminAPI } from '../api/client';
@@ -25,8 +25,9 @@ const AdminWiki = lazy(() => import('../components/admin/AdminWiki').then((modul
 const AdminSubscriptions = lazy(() => import('../components/admin/AdminSubscriptions').then((module) => ({ default: module.AdminSubscriptions })));
 const AdminCalculatorDefaults = lazy(() => import('../components/admin/AdminCalculatorDefaults').then((module) => ({ default: module.AdminCalculatorDefaults })));
 const AdminOrcaSchemaObservations = lazy(() => import('../components/admin/AdminOrcaSchemaObservations').then((module) => ({ default: module.AdminOrcaSchemaObservations })));
+const AdminCatalogImport = lazy(() => import('../components/admin/AdminCatalogImport').then((module) => ({ default: module.AdminCatalogImport })));
 
-type AdminTab = 'requests' | 'brands' | 'materials' | 'presets' | 'users' | 'stats' | 'printers' | 'printer-requests' | 'communications' | 'database' | 'maintenance' | 'wiki' | 'subscriptions' | 'calculator' | 'orca-schema';
+type AdminTab = 'requests' | 'brands' | 'materials' | 'catalog-import' | 'presets' | 'users' | 'stats' | 'printers' | 'printer-requests' | 'communications' | 'database' | 'maintenance' | 'wiki' | 'subscriptions' | 'calculator' | 'orca-schema';
 
 export function AdminPanel() {
   const { t } = useTranslation();
@@ -52,9 +53,8 @@ export function AdminPanel() {
     queryFn: () => adminAPI.countUnreadCommunications(),
     enabled: user?.role === 'admin',
   });
-  const unreadCommunications =
-    (unreadCommunicationsQuery.data?.unread_emails || 0) +
-    (unreadCommunicationsQuery.data?.new_feedback || 0);
+  const unreadEmailThreads = unreadCommunicationsQuery.data?.unread_email_threads || 0;
+  const unreadFeedbackThreads = unreadCommunicationsQuery.data?.unread_feedback_threads || 0;
 
   const handleLogout = () => {
     logout();
@@ -77,11 +77,22 @@ export function AdminPanel() {
     { id: 'requests' as AdminTab, label: t('adminPanel.tabs.requests'), shortLabel: t('adminPanel.shortTabs.requests'), icon: FileText, count: null },
     { id: 'brands' as AdminTab, label: t('adminPanel.tabs.brands'), shortLabel: t('adminPanel.shortTabs.brands'), icon: Building2, count: null },
     { id: 'materials' as AdminTab, label: t('adminPanel.tabs.materials'), shortLabel: t('adminPanel.shortTabs.materials'), icon: Layers, count: null },
+    { id: 'catalog-import' as AdminTab, label: t('adminPanel.tabs.catalogImport'), shortLabel: t('adminPanel.shortTabs.catalogImport'), icon: FileSpreadsheet, count: null },
     { id: 'presets' as AdminTab, label: t('adminPanel.tabs.presets'), shortLabel: t('adminPanel.shortTabs.presets'), icon: CheckCircle, count: pendingPresetsQuery.data?.pending_count || null },
     { id: 'printers' as AdminTab, label: t('adminPanel.tabs.printers'), shortLabel: t('adminPanel.shortTabs.printers'), icon: Printer3DIcon, count: null },
     { id: 'printer-requests' as AdminTab, label: t('adminPanel.tabs.printer-requests'), shortLabel: t('adminPanel.shortTabs.printer-requests'), icon: Package, count: null },
     { id: 'users' as AdminTab, label: t('adminPanel.tabs.users'), shortLabel: t('adminPanel.shortTabs.users'), icon: Users, count: null },
-    { id: 'communications' as AdminTab, label: t('adminPanel.tabs.communications'), shortLabel: t('adminPanel.shortTabs.communications'), icon: Mail, count: unreadCommunications || null },
+    {
+      id: 'communications' as AdminTab,
+      label: t('adminPanel.tabs.communications'),
+      shortLabel: t('adminPanel.shortTabs.communications'),
+      icon: Mail,
+      count: null,
+      activityBadges: [
+        { icon: Mail, count: unreadEmailThreads },
+        { icon: MessageCircle, count: unreadFeedbackThreads },
+      ],
+    },
     { id: 'wiki' as AdminTab, label: t('adminPanel.tabs.wiki'), shortLabel: t('adminPanel.shortTabs.wiki'), icon: BookOpen, count: null },
     { id: 'stats' as AdminTab, label: t('adminPanel.tabs.stats'), shortLabel: t('adminPanel.shortTabs.stats'), icon: BarChart3, count: null },
     { id: 'database' as AdminTab, label: t('adminPanel.tabs.database'), shortLabel: t('adminPanel.shortTabs.database'), icon: Database, count: null },
@@ -156,6 +167,14 @@ export function AdminPanel() {
                     {tab.count}
                   </span>
                 )}
+                {'activityBadges' in tab && tab.activityBadges?.map(({ icon: BadgeIcon, count }, index) => count > 0 && (
+                  <span
+                    key={index}
+                    className="ml-0.5 inline-flex items-center gap-0.5 rounded-full bg-cyan-400 px-1.5 py-0.5 text-[10px] font-bold text-slate-950"
+                  >
+                    <BadgeIcon className="h-2.5 w-2.5" />+{count}
+                  </span>
+                ))}
               </button>
             );
           })}
@@ -167,6 +186,7 @@ export function AdminPanel() {
             {activeTab === 'requests' && <AdminBrandRequests />}
             {activeTab === 'brands' && <AdminBrands />}
             {activeTab === 'materials' && <AdminMaterials />}
+            {activeTab === 'catalog-import' && <AdminCatalogImport />}
             {activeTab === 'presets' && <AdminPresets />}
             {activeTab === 'printers' && <AdminPrinters />}
             {activeTab === 'printer-requests' && <AdminPrinterRequests />}

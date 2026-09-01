@@ -1182,6 +1182,7 @@ export interface Feedback {
   source_url: string | null; // URL страницы, откуда отправили
   source_id: number | null; // ID связанного объекта
   status: FeedbackStatus;
+  admin_unread_count?: number;
   admin_response: string | null;
   admin_response_at: string | null;
   responded_by: number | null;
@@ -1211,8 +1212,57 @@ export interface SimilarFilamentCandidate {
 }
 
 export interface UnreadCommunicationsCount {
-  unread_emails: number;
-  new_feedback: number;
+  unread_email_threads: number;
+  open_email_threads: number;
+  unread_feedback_threads: number;
+  open_feedback: number;
+}
+
+export type CatalogImportSheet = 'brands' | 'filaments' | 'brand_markets' | 'filament_markets' | 'presets';
+
+export interface CatalogImportDraft {
+  filename: string;
+  brands: Record<string, unknown>[];
+  filaments: Record<string, unknown>[];
+  brand_markets: Record<string, unknown>[];
+  filament_markets: Record<string, unknown>[];
+  presets: Record<string, unknown>[];
+}
+
+export interface CatalogImportPlanRow {
+  sheet: 'Brands' | 'Filaments' | 'BrandMarkets' | 'FilamentMarkets' | 'Presets';
+  row: number;
+  key: string | null;
+  status: 'create' | 'update' | 'noop' | 'skipped' | 'error';
+  message: string | null;
+  changes: Record<string, { before: unknown; after: unknown }>;
+}
+
+export interface CatalogImportPreview {
+  draft: CatalogImportDraft;
+  rows: CatalogImportPlanRow[];
+  summary: Record<'create' | 'update' | 'noop' | 'skipped' | 'error', number>;
+  confirmation_token: string | null;
+  confirmation_expires_at: string | null;
+}
+
+export interface CatalogImportApplyResponse {
+  batch_id: number;
+  summary: Record<string, number>;
+}
+
+export interface CatalogImportBatch {
+  id: number;
+  filename: string;
+  source_sha256: string;
+  applied_by_user_id: number | null;
+  summary: Record<string, number>;
+  applied_at: string;
+}
+
+export interface CatalogImportHistory {
+  items: CatalogImportBatch[];
+  total: number;
 }
 
 export interface FeedbackListResponse {

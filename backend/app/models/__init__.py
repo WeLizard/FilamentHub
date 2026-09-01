@@ -21,6 +21,7 @@ from app.models.bundle import (
 )
 from app.models.calculator_history_entry import CalculatorHistoryEntry
 from app.models.calculator_profile import UserCalculatorProfile
+from app.models.catalog_import import CatalogImportBatch
 from app.models.crm import (
     CrmCustomer,
     CrmCustomerSearchToken,
@@ -152,6 +153,7 @@ __all__ = [
     "BundleStatus",
     "AppSetting",
     "CalculatorHistoryEntry",
+    "CatalogImportBatch",
     "UserCalculatorProfile",
     "CrmCustomer",
     "CrmCustomerSearchToken",

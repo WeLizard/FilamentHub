@@ -28,6 +28,7 @@ from app.schemas.feedback import (
     FeedbackCreate,
     FeedbackDetailResponse,
     FeedbackListResponse,
+    FeedbackMarkRead,
     FeedbackMessageCreate,
     FeedbackResponse,
     FeedbackUpdate,
@@ -41,9 +42,7 @@ async def _load_feedback_thread(
     feedback_id: int,
 ) -> Feedback:
     result = await db.execute(
-        select(Feedback)
-        .options(selectinload(Feedback.messages))
-        .where(Feedback.id == feedback_id)
+        select(Feedback).options(selectinload(Feedback.messages)).where(Feedback.id == feedback_id)
     )
     feedback = result.scalar_one_or_none()
     if not feedback:
@@ -85,6 +84,7 @@ async def create_feedback(
         message=feedback_data.message,
         email=None,  # Email не нужен для авторизованных пользователей
         status=FeedbackStatus.OPEN,
+        admin_unread_count=1,
         # Source context
         source=feedback_data.source,
         source_url=feedback_data.source_url,
@@ -113,9 +113,13 @@ async def list_feedback(
     db: Annotated[AsyncSession, Depends(get_db)],
     page: int = Query(1, ge=1),
     size: int = Query(50, ge=1, le=100),
-    status_filter: FeedbackStatus | None = Query(None, alias="status", description="Фильтр по статусу"),
+    status_filter: FeedbackStatus | None = Query(
+        None, alias="status", description="Фильтр по статусу"
+    ),
     type_filter: FeedbackType | None = Query(None, alias="type", description="Фильтр по типу"),
-    source_filter: str | None = Query(None, alias="source", description="Фильтр по источнику (wiki_article, preset, general)"),
+    source_filter: str | None = Query(
+        None, alias="source", description="Фильтр по источнику (wiki_article, preset, general)"
+    ),
 ) -> FeedbackListResponse:
     """Получить список обратной связи (только для админов)."""
     query = select(Feedback)
@@ -144,7 +148,9 @@ async def list_feedback(
     # Paginate
     pages = (total + size - 1) // size if total > 0 else 0
     offset = (page - 1) * size
-    query = query.order_by(Feedback.updated_at.desc(), Feedback.id.desc()).offset(offset).limit(size)
+    query = (
+        query.order_by(Feedback.updated_at.desc(), Feedback.id.desc()).offset(offset).limit(size)
+    )
 
     result = await db.execute(query)
     feedback_list = result.scalars().all()
@@ -171,6 +177,37 @@ async def get_feedback(
     return FeedbackDetailResponse.model_validate(feedback)
 
 
+@router.post("/{feedback_id}/read", response_model=FeedbackDetailResponse)
+async def mark_feedback_read(
+    feedback_id: int,
+    payload: FeedbackMarkRead,
+    admin: Annotated[User, Depends(get_current_admin_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> FeedbackDetailResponse:
+    """Clear only user messages already shown to the shared admin inbox."""
+    del admin
+    feedback = await _load_feedback_thread(db, feedback_id)
+    latest_visible_user_message = max(
+        (
+            message.id
+            for message in feedback.messages
+            if message.author_type == "user" and message.id <= payload.through_message_id
+        ),
+        default=None,
+    )
+    if latest_visible_user_message is None:
+        raise_error(status.HTTP_400_BAD_REQUEST, ERR_FEEDBACK_NOT_FOUND)
+
+    feedback.admin_unread_count = sum(
+        1
+        for message in feedback.messages
+        if message.author_type == "user" and message.id > latest_visible_user_message
+    )
+    await db.commit()
+    feedback = await _load_feedback_thread(db, feedback.id)
+    return FeedbackDetailResponse.model_validate(feedback)
+
+
 @router.patch("/{feedback_id}", response_model=FeedbackDetailResponse)
 async def update_feedback(
     feedback_id: int,
@@ -190,9 +227,7 @@ async def update_feedback(
     if update_data.admin_response is not None:
         response_text = update_data.admin_response.strip()
         reply_key = (
-            str(update_data.reply_idempotency_key)
-            if update_data.reply_idempotency_key
-            else None
+            str(update_data.reply_idempotency_key) if update_data.reply_idempotency_key else None
         )
         existing_reply = None
         if reply_key:
@@ -277,6 +312,7 @@ async def add_feedback_message(
             idempotency_key=idempotency_key,
         )
     )
+    feedback.admin_unread_count += 1
     feedback.status = FeedbackStatus.OPEN
     feedback.updated_at = datetime.now(timezone.utc)
     await db.commit()
@@ -314,8 +350,8 @@ async def list_my_feedback(
     query = select(Feedback).where(Feedback.user_id == current_user.id)
 
     # Count total
-    count_query = select(func.count()).select_from(Feedback).where(
-        Feedback.user_id == current_user.id
+    count_query = (
+        select(func.count()).select_from(Feedback).where(Feedback.user_id == current_user.id)
     )
 
     total_result = await db.execute(count_query)
@@ -324,7 +360,9 @@ async def list_my_feedback(
     # Paginate
     pages = (total + size - 1) // size if total > 0 else 0
     offset = (page - 1) * size
-    query = query.order_by(Feedback.updated_at.desc(), Feedback.id.desc()).offset(offset).limit(size)
+    query = (
+        query.order_by(Feedback.updated_at.desc(), Feedback.id.desc()).offset(offset).limit(size)
+    )
 
     result = await db.execute(query)
     feedback_list = result.scalars().all()

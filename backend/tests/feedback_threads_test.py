@@ -85,6 +85,43 @@ async def test_feedback_owner_and_admin_can_read_the_thread(
     assert forbidden.status_code == 404
 
 
+async def test_admin_unread_is_independent_from_open_workflow_status(
+    client: AsyncClient,
+    auth_user: User,
+    admin_user: User,
+) -> None:
+    feedback_id = await _create_feedback(client, auth_user)
+
+    counters = await client.get(
+        "/api/v1/admin/communications/unread/count",
+        headers=_headers(admin_user),
+    )
+    assert counters.status_code == 200
+    assert counters.json()["unread_feedback_threads"] == 1
+    assert counters.json()["open_feedback"] == 1
+
+    detail = await client.get(
+        f"/api/v1/feedback/{feedback_id}",
+        headers=_headers(admin_user),
+    )
+    last_visible_message_id = detail.json()["messages"][-1]["id"]
+    marked = await client.post(
+        f"/api/v1/feedback/{feedback_id}/read",
+        headers=_headers(admin_user),
+        json={"through_message_id": last_visible_message_id},
+    )
+    assert marked.status_code == 200
+    assert marked.json()["admin_unread_count"] == 0
+    assert marked.json()["status"] == "open"
+
+    refreshed = await client.get(
+        "/api/v1/admin/communications/unread/count",
+        headers=_headers(admin_user),
+    )
+    assert refreshed.json()["unread_feedback_threads"] == 0
+    assert refreshed.json()["open_feedback"] == 1
+
+
 async def test_feedback_thread_is_ordered_idempotent_and_locked_by_final_status(
     client: AsyncClient,
     db_session: AsyncSession,
@@ -122,10 +159,10 @@ async def test_feedback_thread_is_ordered_idempotent_and_locked_by_final_status(
     assert len(repeated_admin_reply.json()["messages"]) == 2
 
     notifications = (
-        await db_session.execute(
-            select(Notification).where(Notification.user_id == auth_user.id)
-        )
-    ).scalars().all()
+        (await db_session.execute(select(Notification).where(Notification.user_id == auth_user.id)))
+        .scalars()
+        .all()
+    )
     assert len(notifications) == 1
     assert notifications[0].link == f"/feedback/{feedback_id}"
 

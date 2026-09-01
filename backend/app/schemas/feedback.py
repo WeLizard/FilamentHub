@@ -34,24 +34,27 @@ class FeedbackBase(BaseModel):
     email: str | None = Field(None, description="Email для ответа (для анонимных сообщений)")
     # Source context
     source: str | None = Field(None, description="Источник: wiki_article, preset, catalog, general")
-    source_url: str | None = Field(None, max_length=500, description="URL страницы откуда отправили")
+    source_url: str | None = Field(
+        None, max_length=500, description="URL страницы откуда отправили"
+    )
     source_id: int | None = Field(None, description="ID связанного объекта")
 
-    @field_validator('email')
+    @field_validator("email")
     @classmethod
     def validate_email(cls, v: str | None) -> str | None:
         """Валидация email: пустая строка конвертируется в None, валидация формата только если есть значение."""
         if v is None:
             return None
         v = v.strip() if isinstance(v, str) else v
-        if not v or v == '':
+        if not v or v == "":
             return None
 
         # Простая валидация формата email
         import re
-        email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+
+        email_pattern = r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"
         if not re.match(email_pattern, v):
-            raise ValueError('Invalid email format')
+            raise ValueError("Invalid email format")
         return v
 
 
@@ -84,6 +87,12 @@ class FeedbackMessageCreate(BaseModel):
         return value
 
 
+class FeedbackMarkRead(BaseModel):
+    """Mark only the user messages visible to the administrator as read."""
+
+    through_message_id: int = Field(..., gt=0)
+
+
 class FeedbackMessageResponse(BaseModel):
     """One message in a feedback conversation."""
 
@@ -94,6 +103,7 @@ class FeedbackMessageResponse(BaseModel):
     author_type: str
     message: str
     created_at: datetime
+
 
 class FeedbackResponse(BaseModel):
     """Схема ответа с обратной связью."""
@@ -112,11 +122,13 @@ class FeedbackResponse(BaseModel):
     source_id: int | None = None
     # Status
     status: str
+    admin_unread_count: int = 0
     admin_response: str | None
     admin_response_at: datetime | None
     responded_by: int | None
     created_at: datetime
     updated_at: datetime
+
 
 class FeedbackDetailResponse(FeedbackResponse):
     """Feedback with its ordered conversation."""

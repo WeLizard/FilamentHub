@@ -66,6 +66,30 @@ export function AdminFeedback() {
     enabled: selectedFeedback !== null,
   });
 
+  const markReadMutation = useMutation({
+    mutationFn: ({ id, throughMessageId }: { id: number; throughMessageId: number }) =>
+      adminFeedbackAPI.markRead(id, throughMessageId),
+    onSuccess: (updatedFeedback) => {
+      queryClient.setQueryData(['admin-feedback-detail', updatedFeedback.id], updatedFeedback);
+      queryClient.invalidateQueries({ queryKey: ['admin-feedback'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-communications-unread-count'] });
+    },
+  });
+
+  useEffect(() => {
+    const detail = selectedFeedbackQuery.data;
+    if (!detail || (detail.admin_unread_count ?? 0) <= 0 || markReadMutation.isPending) return;
+    const throughMessageId = Math.max(
+      0,
+      ...detail.messages
+        .filter((message) => message.author_type === 'user')
+        .map((message) => message.id),
+    );
+    if (throughMessageId > 0) {
+      markReadMutation.mutate({ id: detail.id, throughMessageId });
+    }
+  }, [selectedFeedbackQuery.data, markReadMutation.isPending]);
+
   // Обновление обратной связи (ответ админа)
   const updateMutation = useMutation({
     mutationFn: ({
@@ -342,6 +366,11 @@ export function AdminFeedback() {
                         <TypeIcon className="w-4 h-4 text-gray-400" />
                         <span className="text-xs text-gray-400">{getTypeLabel(feedback.type)}</span>
                         {getStatusBadge(feedback.status)}
+                        {(feedback.admin_unread_count ?? 0) > 0 && (
+                          <span className="rounded-full bg-cyan-400 px-2 py-0.5 text-[10px] font-bold text-slate-950">
+                            +{feedback.admin_unread_count ?? 0}
+                          </span>
+                        )}
                         {feedback.user_id ? (
                           <span className="text-xs text-gray-400">• {t('adminFeedback.user_id', { id: feedback.user_id })}</span>
                         ) : (
