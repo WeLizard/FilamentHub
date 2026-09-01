@@ -74,15 +74,21 @@ function orientSize(width: number, height: number, orientation: Orientation) {
 export function LabelStudioModal({
   filamentId,
   spoolId,
+  organizationPreset,
   onClose,
 }: (
   | {
       filamentId: number;
       spoolId?: never;
+      organizationPreset?: {
+        organizationId: number;
+        brandId: number;
+      };
     }
   | {
       filamentId?: never;
       spoolId: number;
+      organizationPreset?: never;
     }
 ) & {
   onClose: () => void;
@@ -118,6 +124,16 @@ export function LabelStudioModal({
   const [presetApplied, setPresetApplied] = useState(false);
   const sourceKey =
     spoolId === undefined ? `filament-${filamentId}` : `spool-${spoolId}`;
+  const presetQueryKey =
+    organizationPreset === undefined
+      ? (["label-preset", "personal", "default"] as const)
+      : ([
+          "label-preset",
+          "organization",
+          organizationPreset.organizationId,
+          organizationPreset.brandId,
+          "default",
+        ] as const);
   const codeHint = t(
     spoolId === undefined
       ? "labelStudio.productCodeHint"
@@ -139,8 +155,14 @@ export function LabelStudioModal({
     retry: false,
   });
   const preset = useQuery({
-    queryKey: ["label-preset", "default"],
-    queryFn: labelsAPI.getDefaultPreset,
+    queryKey: presetQueryKey,
+    queryFn: () =>
+      organizationPreset === undefined
+        ? labelsAPI.getDefaultPreset()
+        : labelsAPI.getOrganizationDefaultPreset(
+            organizationPreset.organizationId,
+            organizationPreset.brandId,
+          ),
     retry: false,
     staleTime: Infinity,
   });
@@ -446,16 +468,21 @@ export function LabelStudioModal({
   const save = async () => {
     setSaving(true);
     try {
-      const saved = await labelsAPI.saveDefaultPreset(
-        savedRevision,
-        presetSettings,
-      );
+      const saved =
+        organizationPreset === undefined
+          ? await labelsAPI.saveDefaultPreset(savedRevision, presetSettings)
+          : await labelsAPI.saveOrganizationDefaultPreset(
+              organizationPreset.organizationId,
+              organizationPreset.brandId,
+              savedRevision,
+              presetSettings,
+            );
       setSavedRevision(saved.revision);
-      queryClient.setQueryData(["label-preset", "default"], saved);
+      queryClient.setQueryData(presetQueryKey, saved);
       toast.success(t("labelStudio.saved"));
     } catch (error) {
       void queryClient.invalidateQueries({
-        queryKey: ["label-preset", "default"],
+        queryKey: presetQueryKey,
         refetchType: "none",
       });
       toast.error(

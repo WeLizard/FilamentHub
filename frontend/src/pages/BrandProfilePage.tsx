@@ -2010,7 +2010,20 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({
         />
       </Suspense>
 
-      {showQRFilament?.brand_id === user.brand_id && showQRFilament && <LabelStudioModal key={`${companyPreferenceContext}:${showQRFilament.id}`} filamentId={showQRFilament.id} onClose={() => setShowQRFilament(null)} />}
+      {showQRFilament?.brand_id === user.brand_id &&
+        showQRFilament &&
+        user.active_organization_id !== null &&
+        user.brand_id !== null && (
+          <LabelStudioModal
+            key={`${companyPreferenceContext}:${showQRFilament.id}`}
+            filamentId={showQRFilament.id}
+            organizationPreset={{
+              organizationId: user.active_organization_id,
+              brandId: user.brand_id,
+            }}
+            onClose={() => setShowQRFilament(null)}
+          />
+        )}
 
       {/* Add Colors (palette) Modal */}
       {addColorsFilament && user.brand_id && (

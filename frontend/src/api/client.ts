@@ -1197,6 +1197,27 @@ export const labelsAPI = {
     const response = await api.put('/labels/presets/default', { revision, settings });
     return response.data;
   },
+  getOrganizationDefaultPreset: async (
+    organizationId: number,
+    brandId: number,
+  ): Promise<LabelPreset | null> => {
+    const response = await api.get(
+      `/labels/organizations/${organizationId}/brands/${brandId}/presets/default`,
+    );
+    return response.data;
+  },
+  saveOrganizationDefaultPreset: async (
+    organizationId: number,
+    brandId: number,
+    revision: number | null,
+    settings: LabelPresetSettings,
+  ): Promise<LabelPreset> => {
+    const response = await api.put(
+      `/labels/organizations/${organizationId}/brands/${brandId}/presets/default`,
+      { revision, settings },
+    );
+    return response.data;
+  },
   metadata: async (filamentId: number, locale: string): Promise<LabelMetadata> => {
     const response = await api.get(`/labels/filaments/${filamentId}`, { params: { locale } });
     return response.data;

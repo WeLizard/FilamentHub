@@ -61,6 +61,7 @@ from app.models.organization import (
     OrganizationMemberRole,
     OrganizationMembership,
 )
+from app.models.organization_label_preset import OrganizationLabelPreset
 from app.models.physical_printer_profile import UserPrinterProfileLink
 from app.models.preset import Preset, PresetModerationStatus
 from app.models.preset_funnel_event import PresetFunnelEvent
@@ -204,6 +205,7 @@ __all__ = [
     "OrganizationBrandAccess",
     "OrganizationMembership",
     "OrganizationMemberRole",
+    "OrganizationLabelPreset",
     "Preset",
     "PresetFunnelEvent",
     "PresetGateState",

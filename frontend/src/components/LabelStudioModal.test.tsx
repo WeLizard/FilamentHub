@@ -21,6 +21,8 @@ const mocks = vi.hoisted(() => ({
   spoolExportBlob: vi.fn(),
   getDefaultPreset: vi.fn(),
   saveDefaultPreset: vi.fn(),
+  getOrganizationDefaultPreset: vi.fn(),
+  saveOrganizationDefaultPreset: vi.fn(),
   printPdfBlob: vi.fn(),
   error: vi.fn(),
   success: vi.fn(),
@@ -91,10 +93,26 @@ describe("LabelStudioModal", () => {
       new Blob(["pdf"], { type: "application/pdf" }),
     );
     mocks.getDefaultPreset.mockResolvedValue(null);
+    mocks.getOrganizationDefaultPreset.mockResolvedValue(null);
     mocks.saveDefaultPreset.mockImplementation(
       (revision: number | null, settings: unknown) =>
         Promise.resolve({
           id: 1,
+          name: "default",
+          revision: (revision ?? 0) + 1,
+          settings,
+          updated_at: "2026-09-01T00:00:00Z",
+        }),
+    );
+    mocks.saveOrganizationDefaultPreset.mockImplementation(
+      (
+        _organizationId: number,
+        _brandId: number,
+        revision: number | null,
+        settings: unknown,
+      ) =>
+        Promise.resolve({
+          id: 2,
           name: "default",
           revision: (revision ?? 0) + 1,
           settings,
@@ -123,6 +141,21 @@ describe("LabelStudioModal", () => {
     return render(
       <QueryClientProvider client={client}>
         <LabelStudioModal spoolId={101} onClose={vi.fn()} />
+      </QueryClientProvider>,
+    );
+  }
+
+  function openOrganization() {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    return render(
+      <QueryClientProvider client={client}>
+        <LabelStudioModal
+          filamentId={12}
+          organizationPreset={{ organizationId: 7, brandId: 9 }}
+          onClose={vi.fn()}
+        />
       </QueryClientProvider>,
     );
   }
@@ -187,6 +220,27 @@ describe("LabelStudioModal", () => {
     expect(settings).not.toHaveProperty("copies");
     expect(settings).not.toHaveProperty("start_position");
     expect(mocks.success).toHaveBeenCalledWith("labelStudio.saved");
+  });
+
+  it("uses only the shared organization preset in a company workspace", async () => {
+    openOrganization();
+    const save = await screen.findByRole("button", {
+      name: "labelStudio.save",
+    });
+    await waitFor(() => expect(save).not.toBeDisabled());
+    expect(mocks.getOrganizationDefaultPreset).toHaveBeenCalledWith(7, 9);
+    expect(mocks.getDefaultPreset).not.toHaveBeenCalled();
+
+    fireEvent.click(save);
+    await waitFor(() =>
+      expect(mocks.saveOrganizationDefaultPreset).toHaveBeenCalledWith(
+        7,
+        9,
+        null,
+        expect.any(Object),
+      ),
+    );
+    expect(mocks.saveDefaultPreset).not.toHaveBeenCalled();
   });
 
   it("restores the saved layout without carrying unavailable fields or a missing brand mark", async () => {

@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.capacity import Gate
 from app.core.dependencies import get_current_active_user
 from app.core.errors import (
+    ERR_ACCESS_DENIED,
     ERR_LABEL_BRAND_LOGO_UNAVAILABLE,
     ERR_LABEL_DOES_NOT_FIT,
     ERR_LABEL_RENDER_FAILED,
@@ -26,7 +27,9 @@ from app.services.label_fonts import UnsupportedLabelText
 from app.services.label_layout import SHEET_MEDIA, LabelDoesNotFit, compose_sheet, sheet_positions
 from app.services.label_preset_service import (
     get_default_label_preset,
+    get_organization_default_label_preset,
     save_default_label_preset,
+    save_organization_default_label_preset,
 )
 from app.services.label_renderer import (
     LabelBrandLogoUnavailable,
@@ -34,6 +37,7 @@ from app.services.label_renderer import (
     render_label,
     sheet_svg,
 )
+from app.services.organization_access import get_workspace_membership
 from app.services.qr_identity_service import get_user_spool_qr
 
 router = APIRouter(prefix="/labels", tags=["labels"])
@@ -71,6 +75,80 @@ async def update_default_label_preset(
     return await save_default_label_preset(
         db,
         user_id=current_user.id,
+        payload=payload,
+    )
+
+
+async def _require_organization_label_workspace(
+    db: AsyncSession,
+    user: User,
+    *,
+    organization_id: int,
+    brand_id: int,
+) -> None:
+    membership = await get_workspace_membership(
+        db,
+        user,
+        organization_id=organization_id,
+        brand_id=brand_id,
+    )
+    if membership is None:
+        raise_error(403, ERR_ACCESS_DENIED)
+
+
+@router.get(
+    "/organizations/{organization_id}/brands/{brand_id}/presets/default",
+    response_model=LabelPresetResponse | None,
+)
+@limiter.limit("60/minute")
+async def organization_default_label_preset(
+    request: Request,
+    response: Response,
+    organization_id: int,
+    brand_id: int,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> LabelPresetResponse | None:
+    await _require_organization_label_workspace(
+        db,
+        current_user,
+        organization_id=organization_id,
+        brand_id=brand_id,
+    )
+    response.headers["Cache-Control"] = "private, no-store"
+    return await get_organization_default_label_preset(
+        db,
+        organization_id=organization_id,
+        brand_id=brand_id,
+    )
+
+
+@router.put(
+    "/organizations/{organization_id}/brands/{brand_id}/presets/default",
+    response_model=LabelPresetResponse,
+)
+@limiter.limit("30/minute")
+async def update_organization_default_label_preset(
+    request: Request,
+    response: Response,
+    organization_id: int,
+    brand_id: int,
+    payload: LabelPresetSave,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> LabelPresetResponse:
+    await _require_organization_label_workspace(
+        db,
+        current_user,
+        organization_id=organization_id,
+        brand_id=brand_id,
+    )
+    response.headers["Cache-Control"] = "private, no-store"
+    return await save_organization_default_label_preset(
+        db,
+        organization_id=organization_id,
+        brand_id=brand_id,
+        actor_id=current_user.id,
         payload=payload,
     )
 
