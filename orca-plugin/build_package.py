@@ -26,6 +26,14 @@ LOCALES = ROOT / "filamenthub_locales"
 DEV_SITE_DEFAULT = '"http://localhost:3000"'
 PROD_SITE_DEFAULT = '"https://filamenthub.ru"'
 EMBEDDED_UI_COPY_TOKEN = "_EMBEDDED_UI_COPY = {}"
+PACKAGE_COPY_IGNORE = shutil.ignore_patterns("__pycache__", "*.py[cod]")
+
+
+def _reset_output_dir(path: Path) -> None:
+    """Remove stale generated files before staging one release artifact."""
+    if path.exists():
+        shutil.rmtree(path)
+    path.mkdir(parents=True)
 
 
 def _wheel_record_digest(payload: bytes) -> str:
@@ -182,7 +190,7 @@ def build_dev(output_root: Path) -> Path:
         )
 
     dev_dir = output_root / f"filamenthub-{version}-dev"
-    dev_dir.mkdir(parents=True, exist_ok=True)
+    _reset_output_dir(dev_dir)
     dev_path = dev_dir / "filamenthub_plugin.py"
     dev_path.write_text(dev_source(source), encoding="utf-8", newline="\n")
     return dev_path
@@ -224,13 +232,13 @@ def build(output_root: Path, wheel: bool = True) -> Path:
     prod_bytes = prod_source(source).encode("utf-8")
 
     package_dir = output_root / f"filamenthub-{version}"
-    package_dir.mkdir(parents=True, exist_ok=True)
+    _reset_output_dir(package_dir)
     package_path = package_dir / "filamenthub_plugin.py"
     package_path.write_bytes(prod_bytes)
     package_locales = package_dir / LOCALES.name
     if package_locales.exists():
         shutil.rmtree(package_locales)
-    shutil.copytree(LOCALES, package_locales)
+    shutil.copytree(LOCALES, package_locales, ignore=PACKAGE_COPY_IGNORE)
 
     digest = hashlib.sha256(prod_bytes).hexdigest()
     checksum_lines = [f"{digest}  filamenthub_plugin.py"]

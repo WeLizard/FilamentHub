@@ -5223,8 +5223,24 @@ def test_recovery_scans_all_profile_kinds_and_live_copy_wins(
     }
 
 
-def test_build_packages_locale_catalogs_and_checksums(plugin_module, tmp_path):
+def test_build_packages_locale_catalogs_and_checksums(
+    plugin_module, monkeypatch, tmp_path
+):
     builder = _load_module(BUILD_PATH, "filamenthub_build_package_test")
+    locale_source = tmp_path / "locale-source" / "filamenthub_locales"
+    locale_source.mkdir(parents=True)
+    for source_path in builder.LOCALES.glob("*.json"):
+        (locale_source / source_path.name).write_bytes(source_path.read_bytes())
+    cache_dir = locale_source / "__pycache__"
+    cache_dir.mkdir()
+    (cache_dir / "catalog.cpython-313.pyc").write_bytes(b"stale")
+    (locale_source / "catalog.pyc").write_bytes(b"stale")
+    monkeypatch.setattr(builder, "LOCALES", locale_source)
+
+    stale_package = tmp_path / f"filamenthub-{plugin_module.PLUGIN_VERSION}"
+    (stale_package / "__pycache__").mkdir(parents=True)
+    (stale_package / "__pycache__" / "plugin.pyc").write_bytes(b"stale")
+    (stale_package / "stale.txt").write_text("stale", encoding="utf-8")
     package_dir = builder.build(tmp_path)
     package = package_dir / "filamenthub_plugin.py"
     metadata = json.loads((package_dir / "package-metadata.json").read_text(encoding="utf-8"))
@@ -5241,6 +5257,9 @@ def test_build_packages_locale_catalogs_and_checksums(plugin_module, tmp_path):
     checksums = (package_dir / "SHA256SUMS").read_text(encoding="utf-8")
     assert f"{digest}  filamenthub_plugin.py\n" in checksums
     assert "filamenthub_locales/ru.json" in checksums
+    assert not (package_dir / "stale.txt").exists()
+    assert not any(path.name == "__pycache__" for path in package_dir.rglob("*"))
+    assert not any(path.suffix in {".pyc", ".pyo"} for path in package_dir.rglob("*"))
 
     wheel = tmp_path / "wheels" / (
         f"filamenthub-{plugin_module.PLUGIN_VERSION}-py3-none-any.whl"
@@ -5286,10 +5305,14 @@ def test_build_packages_locale_catalogs_and_checksums(plugin_module, tmp_path):
 
 def test_dev_build_is_single_file_with_localhost_and_embedded_locales(plugin_module, tmp_path):
     builder = _load_module(BUILD_PATH, "filamenthub_dev_build_package_test")
+    dev_dir = tmp_path / f"filamenthub-{plugin_module.PLUGIN_VERSION}-dev"
+    dev_dir.mkdir()
+    (dev_dir / "stale.txt").write_text("stale", encoding="utf-8")
 
     dev_plugin = builder.build_dev(tmp_path)
     source = dev_plugin.read_text(encoding="utf-8")
 
+    assert not (dev_dir / "stale.txt").exists()
     assert 'os.environ.get("FILAMENTHUB_SITE_URL", "http://localhost:3000")' in source
     assert "_EMBEDDED_UI_COPY = {}" not in source
     standalone_module = _load_module(dev_plugin, "filamenthub_dev_standalone_smoke")
