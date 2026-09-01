@@ -111,7 +111,7 @@ class ReusableDaemonWorker:
         self._name = name
         self._idle_timeout = idle_timeout
         self._jobs = queue.Queue()
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         self._thread = None
         self._generation = 0
         self._stopping = False
@@ -131,6 +131,51 @@ class ReusableDaemonWorker:
             return True
         with self._lock:
             return not self._stopping and generation == self._generation
+
+    def current_job_generation(self):
+        return getattr(self._local, "generation", None)
+
+    def authorize_external_operation(self):
+        """Linearize one actual I/O start against lifecycle stop()."""
+        generation = self.current_job_generation()
+        if generation is None:
+            return None
+        with self._lock:
+            if self._stopping or generation != self._generation:
+                raise PluginLifecycleStopped(
+                    "plugin lifecycle generation has stopped"
+                )
+            return generation
+
+    def run_if_current(self, function, *args, **kwargs):
+        """Run one short lifecycle transition while stop() cannot pass it."""
+        generation = self.current_job_generation()
+        if generation is None:
+            return function(*args, **kwargs)
+        with self._lock:
+            if self._stopping or generation != self._generation:
+                raise PluginLifecycleStopped(
+                    "plugin lifecycle generation has stopped"
+                )
+            return function(*args, **kwargs)
+
+    def run_in_generation(self, generation, function, *args, **kwargs):
+        """Propagate a parent job generation into a bounded helper thread."""
+        if generation is None:
+            return function(*args, **kwargs)
+        marker = object()
+        previous = getattr(self._local, "generation", marker)
+        self._local.generation = generation
+        try:
+            return function(*args, **kwargs)
+        finally:
+            if previous is marker:
+                try:
+                    del self._local.generation
+                except AttributeError:
+                    pass
+            else:
+                self._local.generation = previous
 
     def current_job_has_side_effect_permit(self):
         generation = getattr(self._local, "generation", None)
@@ -262,6 +307,33 @@ class ReusableDaemonWorker:
 
 
 BACKGROUND_WORKER = ReusableDaemonWorker("filamenthub-worker")
+_BOUND_LIFECYCLE = threading.local()
+
+
+@contextmanager
+def bind_lifecycle_generation(authority, generation):
+    """Bind a non-worker runtime generation to its own thread's I/O."""
+    marker = object()
+    previous = getattr(_BOUND_LIFECYCLE, "binding", marker)
+    _BOUND_LIFECYCLE.binding = (authority, generation)
+    try:
+        yield
+    finally:
+        if previous is marker:
+            try:
+                del _BOUND_LIFECYCLE.binding
+            except AttributeError:
+                pass
+        else:
+            _BOUND_LIFECYCLE.binding = previous
+
+
+def authorize_bound_lifecycle_operation():
+    binding = getattr(_BOUND_LIFECYCLE, "binding", None)
+    if binding is None:
+        return
+    authority, generation = binding
+    authority.authorize_external_operation(generation)
 
 
 def ensure_worker_generation_active():
@@ -278,13 +350,26 @@ def ensure_worker_generation_active():
         raise PluginLifecycleStopped("plugin lifecycle generation has stopped")
 
 
+@contextmanager
+def external_operation():
+    """Authorize exactly one I/O operation under the worker lifecycle lock."""
+    worker = globals().get("BACKGROUND_WORKER")
+    authorize = getattr(worker, "authorize_external_operation", None)
+    if callable(authorize):
+        authorize()
+    else:
+        ensure_worker_generation_active()
+    authorize_bound_lifecycle_operation()
+    yield
+
+
 def ensure_side_effect_allowed():
     """Allow a local mutation only for an active or already-permitted job."""
     worker = globals().get("BACKGROUND_WORKER")
     has_permit = getattr(worker, "current_job_has_side_effect_permit", None)
-    if callable(has_permit) and has_permit():
-        return
-    ensure_worker_generation_active()
+    if not (callable(has_permit) and has_permit()):
+        ensure_worker_generation_active()
+    authorize_bound_lifecycle_operation()
 
 
 @contextmanager
@@ -299,6 +384,7 @@ def side_effect_transaction():
     else:
         ensure_side_effect_allowed()
     try:
+        authorize_bound_lifecycle_operation()
         yield
     finally:
         if callable(end):
@@ -308,15 +394,41 @@ def side_effect_transaction():
 def post_window(window, payload):
     """Best-effort host push, safe against a window closing during a worker job."""
     worker = globals().get("BACKGROUND_WORKER")
-    if worker is not None and not worker.current_job_is_active():
-        return False
-    try:
+
+    def push():
         post = getattr(window, "post", None)
         if window is None or not window.is_open() or not callable(post):
             return False
         post(payload)
         return True
+
+    try:
+        run_if_current = getattr(worker, "run_if_current", None)
+        if callable(run_if_current):
+            return run_if_current(push)
+        ensure_worker_generation_active()
+        return push()
+    except PluginLifecycleStopped:
+        return False
     except Exception:
+        return False
+
+
+def show_host_message(*args, **kwargs):
+    """Show a native notice only from the lifecycle that requested it."""
+    message = getattr(getattr(getattr(orca, "host", None), "ui", None), "message", None)
+    if not callable(message):
+        return False
+    worker = globals().get("BACKGROUND_WORKER")
+    run_if_current = getattr(worker, "run_if_current", None)
+    try:
+        if callable(run_if_current):
+            run_if_current(message, *args, **kwargs)
+        else:
+            ensure_worker_generation_active()
+            message(*args, **kwargs)
+        return True
+    except PluginLifecycleStopped:
         return False
 
 
@@ -345,6 +457,7 @@ MAX_PROCESS_BUNDLE_PROFILES = 200
 SYNC_REPORT_CHUNK_SIZE = 500
 SYNC_REPORT_CHUNK_RETRIES = 3
 SYNC_REPORT_RETRY_SECONDS = 0.25
+BAMBU_REVOKE_ATTEMPTS = 3
 _SSL_CTX = ssl.create_default_context()
 
 
@@ -503,33 +616,42 @@ def _temporary_path(path):
     return "%s.tmp.%d.%d" % (path, os.getpid(), threading.get_ident())
 
 
-def write_bytes_atomic(path, payload, mode=None):
-    with side_effect_transaction():
-        directory = os.path.dirname(path)
-        os.makedirs(directory, exist_ok=True)
-        temporary = _temporary_path(path)
-        try:
-            with open(temporary, "wb") as fh:
-                fh.write(payload)
-                fh.flush()
-                os.fsync(fh.fileno())
-            if mode is not None:
-                try:
-                    os.chmod(temporary, mode)
-                except OSError:
-                    pass
-            os.replace(temporary, path)
-        except Exception:
+def _write_bytes_atomic_unchecked(path, payload, mode=None):
+    directory = os.path.dirname(path)
+    os.makedirs(directory, exist_ok=True)
+    temporary = _temporary_path(path)
+    try:
+        with open(temporary, "wb") as fh:
+            fh.write(payload)
+            fh.flush()
+            os.fsync(fh.fileno())
+        if mode is not None:
             try:
-                os.remove(temporary)
+                os.chmod(temporary, mode)
             except OSError:
                 pass
-            raise
+        os.replace(temporary, path)
+    except Exception:
+        try:
+            os.remove(temporary)
+        except OSError:
+            pass
+        raise
+
+
+def write_bytes_atomic(path, payload, mode=None):
+    with side_effect_transaction():
+        _write_bytes_atomic_unchecked(path, payload, mode=mode)
 
 
 def write_json_atomic(path, payload, mode=None):
     encoded = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
     write_bytes_atomic(path, encoded, mode=mode)
+
+
+def ensure_directory(path, mode=0o777):
+    with side_effect_transaction():
+        os.makedirs(path, mode=mode, exist_ok=True)
 
 
 def _read_response_limited(response):
@@ -665,13 +787,24 @@ def reload_managed_local_bundle_if_available():
     )
     if not callable(reload_bundle):
         return False
+    def reload_bundle_now():
+        try:
+            reload_bundle(BUNDLE_ID)
+        except Exception as exc:
+            fh_log("managed local-bundle reload failed: %s" % type(exc).__name__)
+            return False
+        fh_log("managed local bundle reloaded")
+        return True
+
+    worker = globals().get("BACKGROUND_WORKER")
+    run_if_current = getattr(worker, "run_if_current", None)
     try:
-        reload_bundle(BUNDLE_ID)
-    except Exception as exc:
-        fh_log("managed local-bundle reload failed: %s" % type(exc).__name__)
+        if callable(run_if_current):
+            return run_if_current(reload_bundle_now)
+        ensure_worker_generation_active()
+        return reload_bundle_now()
+    except PluginLifecycleStopped:
         return False
-    fh_log("managed local bundle reloaded")
-    return True
 
 
 def resolve_plugin_dir():
@@ -1684,20 +1817,21 @@ def migrate_managed_filament_display_name(folder, preset_id, local_entry, remote
     if os.path.normcase(os.path.abspath(target)) == os.path.normcase(os.path.abspath(path)):
         return False
 
-    migrated_profile = dict(profile)
-    name = apply_managed_filename_identity(migrated_profile, target)
-    validate_filament_profile(migrated_profile)
-    write_json_atomic(target, migrated_profile)
-    write_bytes_atomic(
-        target[:-len(".json")] + ".info",
-        managed_info_bytes(preset_id, local_entry.get("version_id")),
-    )
-    remove_stale_preset_files(folder, preset_id, target)
-    local_entry.update({
-        "path": target,
-        "profile": migrated_profile,
-        "hash": preset_content_hash(migrated_profile),
-    })
+    with side_effect_transaction():
+        migrated_profile = dict(profile)
+        name = apply_managed_filename_identity(migrated_profile, target)
+        validate_filament_profile(migrated_profile)
+        write_json_atomic(target, migrated_profile)
+        write_bytes_atomic(
+            target[:-len(".json")] + ".info",
+            managed_info_bytes(preset_id, local_entry.get("version_id")),
+        )
+        remove_stale_preset_files(folder, preset_id, target)
+        local_entry.update({
+            "path": target,
+            "profile": migrated_profile,
+            "hash": preset_content_hash(migrated_profile),
+        })
     return name
 
 
@@ -1970,6 +2104,58 @@ def remove_bambu_bridge(physical_printer_id):
             save_bambu_config(payload)
             return True
         return False
+
+
+def rollback_fresh_bambu_binding(
+    physical_printer_id, fresh_bridge_token, previous_payload
+):
+    """Restore only the binding replaced by this interrupted pair transaction.
+
+    The lifecycle bypass is intentionally scoped by both physical printer id
+    and the exact fresh token. If a new lifecycle has already changed that
+    binding, compensation refuses to overwrite it.
+    """
+    if (
+        not isinstance(physical_printer_id, int)
+        or physical_printer_id <= 0
+        or not isinstance(fresh_bridge_token, str)
+        or not fresh_bridge_token.startswith("fhpb_")
+        or not isinstance(previous_payload, dict)
+    ):
+        return False
+    previous_binding = next(
+        (
+            dict(item)
+            for item in previous_payload.get("printers") or []
+            if item.get("physical_printer_id") == physical_printer_id
+        ),
+        None,
+    )
+    with _BAMBU_CONFIG_LOCK:
+        current = load_bambu_config()
+        current_binding = next(
+            (
+                item
+                for item in current["printers"]
+                if item.get("physical_printer_id") == physical_printer_id
+            ),
+            None,
+        )
+        if (
+            current_binding is None
+            or current_binding.get("bridge_token") != fresh_bridge_token
+        ):
+            return False
+        current["printers"] = [
+            item
+            for item in current["printers"]
+            if item.get("physical_printer_id") != physical_printer_id
+        ]
+        if previous_binding is not None:
+            current["printers"].append(previous_binding)
+        encoded = json.dumps(current, ensure_ascii=False, indent=2).encode("utf-8")
+        _write_bytes_atomic_unchecked(BAMBU_CONFIG_FILE, encoded, mode=0o600)
+        return True
 
 
 def managed_profile_id(json_path, profile, kind):
@@ -2378,6 +2564,11 @@ def printer_bundle_profiles_present(profile_ids):
 
 
 def remove_installed_printer_bundle(physical_printer_id):
+    with side_effect_transaction():
+        return _remove_installed_printer_bundle_transaction(physical_printer_id)
+
+
+def _remove_installed_printer_bundle_transaction(physical_printer_id):
     """Quarantine only FH-owned profiles no other installed printer needs."""
     state = load_printer_bundle_state()
     current = next(
@@ -2992,14 +3183,18 @@ def ensure_filament_colour(profile):
 # --------------------------------------------------------------------------- #
 # HTTP (stdlib only). Returns (status, bytes).
 # --------------------------------------------------------------------------- #
+def _urlopen_authorized(request, timeout):
+    with external_operation():
+        return urllib.request.urlopen(request, timeout=timeout, context=_SSL_CTX)
+
+
 def http_get(path, token=None):
     headers = {"Accept": "application/json", "User-Agent": "FilamentHub-OrcaPlugin/" + PLUGIN_VERSION}
     if token:
         headers["Authorization"] = "Bearer " + token
     req = urllib.request.Request(API_BASE + path, headers=headers, method="GET")
-    ensure_worker_generation_active()
     try:
-        with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT, context=_SSL_CTX) as resp:
+        with _urlopen_authorized(req, HTTP_TIMEOUT) as resp:
             return resp.getcode(), _read_response_limited(resp)
     except urllib.error.HTTPError as exc:
         return exc.code, exc.read(MAX_RESPONSE_BYTES)
@@ -3014,9 +3209,8 @@ def http_post_json(path, token, payload):
     if token:
         headers["Authorization"] = "Bearer " + token
     req = urllib.request.Request(API_BASE + path, data=data, headers=headers, method="POST")
-    ensure_worker_generation_active()
     try:
-        with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT, context=_SSL_CTX) as resp:
+        with _urlopen_authorized(req, HTTP_TIMEOUT) as resp:
             return resp.getcode(), _read_response_limited(resp)
     except urllib.error.HTTPError as exc:
         return exc.code, exc.read(MAX_RESPONSE_BYTES)
@@ -3155,9 +3349,8 @@ def http_post_bridge_json(path, bridge_token, payload):
         "X-FilamentHub-Bridge-Token": bridge_token,
     }
     req = urllib.request.Request(API_BASE + path, data=data, headers=headers, method="POST")
-    ensure_worker_generation_active()
     try:
-        with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT, context=_SSL_CTX) as resp:
+        with _urlopen_authorized(req, HTTP_TIMEOUT) as resp:
             return resp.getcode(), _read_response_limited(resp), None
     except urllib.error.HTTPError as exc:
         return exc.code, exc.read(MAX_RESPONSE_BYTES), _bridge_retry_after_seconds(exc.headers)
@@ -3172,9 +3365,8 @@ def http_get_bridge_json(path, bridge_token):
         "X-FilamentHub-Bridge-Token": bridge_token,
     }
     req = urllib.request.Request(API_BASE + path, headers=headers, method="GET")
-    ensure_worker_generation_active()
     try:
-        with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT, context=_SSL_CTX) as resp:
+        with _urlopen_authorized(req, HTTP_TIMEOUT) as resp:
             return resp.getcode(), _read_response_limited(resp)
     except urllib.error.HTTPError as exc:
         return exc.code, exc.read(MAX_RESPONSE_BYTES)
@@ -3189,10 +3381,13 @@ def _http_delete_bridge(path, bridge_token, allow_retired_generation=False):
         "X-FilamentHub-Bridge-Token": bridge_token,
     }
     req = urllib.request.Request(API_BASE + path, headers=headers, method="DELETE")
-    if not allow_retired_generation:
-        ensure_worker_generation_active()
     try:
-        with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT, context=_SSL_CTX) as resp:
+        opener = (
+            urllib.request.urlopen(req, timeout=HTTP_TIMEOUT, context=_SSL_CTX)
+            if allow_retired_generation
+            else _urlopen_authorized(req, HTTP_TIMEOUT)
+        )
+        with opener as resp:
             return resp.getcode()
     except urllib.error.HTTPError as exc:
         return exc.code
@@ -3217,11 +3412,16 @@ def revoke_fresh_bridge_token(bridge_token):
         or len(bridge_token) > MAX_TOKEN_LENGTH
     ):
         return 0
-    return _http_delete_bridge(
-        "/printer-bridge/connection",
-        bridge_token,
-        allow_retired_generation=True,
-    )
+    status = 0
+    for _attempt in range(BAMBU_REVOKE_ATTEMPTS):
+        status = _http_delete_bridge(
+            "/printer-bridge/connection",
+            bridge_token,
+            allow_retired_generation=True,
+        )
+        if status in {204, 401}:
+            break
+    return status
 
 
 def http_post_file(path, token, file_path, field="file", file_name=""):
@@ -3251,9 +3451,8 @@ def http_post_file(path, token, file_path, field="file", file_name=""):
     if token:
         headers["Authorization"] = "Bearer " + token
     req = urllib.request.Request(API_BASE + path, data=body, headers=headers, method="POST")
-    ensure_worker_generation_active()
     try:
-        with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT * 4, context=_SSL_CTX) as resp:
+        with _urlopen_authorized(req, HTTP_TIMEOUT * 4) as resp:
             return resp.getcode(), _read_response_limited(resp)
     except urllib.error.HTTPError as exc:
         return exc.code, exc.read(MAX_RESPONSE_BYTES)
@@ -3737,12 +3936,10 @@ def _moonraker_json(connection, path, payload=None, timeout=None):
         headers=headers,
         method=method,
     )
-    ensure_worker_generation_active()
     try:
-        with urllib.request.urlopen(
+        with _urlopen_authorized(
             request,
-            timeout=min(HTTP_TIMEOUT, timeout if timeout is not None else 10),
-            context=_SSL_CTX,
+            min(HTTP_TIMEOUT, timeout if timeout is not None else 10),
         ) as response:
             status = response.getcode()
             body = _read_response_limited(response)
@@ -4792,8 +4989,20 @@ def _observations_for_sync(observations, share_endpoints=False, discovery_key=""
     connections = {str(c.get("print_host")): c for c in local_connections or []}
     if discovery_key and connections:
         # No LAN I/O on Orca's UI thread; one bounded read per configured host.
+        worker = globals().get("BACKGROUND_WORKER")
+        current_generation = getattr(worker, "current_job_generation", None)
+        run_in_generation = getattr(worker, "run_in_generation", None)
+        generation = current_generation() if callable(current_generation) else None
+
+        def observe_identity(connection):
+            if callable(run_in_generation):
+                return run_in_generation(
+                    generation, _observe_moonraker_identity, connection
+                )
+            return _observe_moonraker_identity(connection)
+
         with ThreadPoolExecutor(max_workers=4) as pool:
-            values = pool.map(_observe_moonraker_identity, connections.values())
+            values = pool.map(observe_identity, connections.values())
             identities = dict(zip(connections, values))
     for observation in observations or []:
         item = dict(observation)
@@ -6911,7 +7120,8 @@ def _recv_exact(sock, length, deadline):
         if remaining <= 0:
             raise TimeoutError("Bambu MQTT timed out")
         sock.settimeout(max(0.1, remaining))
-        chunk = sock.recv(length - len(chunks))
+        with external_operation():
+            chunk = sock.recv(length - len(chunks))
         if not chunk:
             raise ConnectionError("Bambu MQTT connection closed")
         chunks.extend(chunk)
@@ -6939,13 +7149,13 @@ def _resolved_bambu_address(host):
     host = host.strip().strip("[]")
     if not host or len(host) > 253 or any(ch in host for ch in "/\\?#@"):
         raise ValueError("invalid LAN address")
-    ensure_worker_generation_active()
-    addresses = socket.getaddrinfo(
-        host,
-        BAMBU_MQTT_PORT,
-        type=socket.SOCK_STREAM,
-        proto=socket.IPPROTO_TCP,
-    )
+    with external_operation():
+        addresses = socket.getaddrinfo(
+            host,
+            BAMBU_MQTT_PORT,
+            type=socket.SOCK_STREAM,
+            proto=socket.IPPROTO_TCP,
+        )
     for family, socktype, proto, _, sockaddr in addresses:
         try:
             address = ipaddress.ip_address(sockaddr[0])
@@ -6965,13 +7175,13 @@ def _open_bambu_mqtt(host, access_code, timeout):
     raw = socket.socket(family, socktype, proto)
     raw.settimeout(timeout)
     try:
-        ensure_worker_generation_active()
-        raw.connect(sockaddr)
-        ensure_worker_generation_active()
-        context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-        context.check_hostname = False
-        context.verify_mode = ssl.CERT_NONE
-        return context.wrap_socket(raw, server_hostname=None)
+        with external_operation():
+            raw.connect(sockaddr)
+        with external_operation():
+            context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+            context.check_hostname = False
+            context.verify_mode = ssl.CERT_NONE
+            return context.wrap_socket(raw, server_hostname=None)
     except Exception:
         raw.close()
         raise
@@ -7000,8 +7210,8 @@ def read_bambu_lan_snapshot(config, timeout=BAMBU_MQTT_TIMEOUT):
             + _mqtt_field(b"bblp")
             + _mqtt_field(access_code.encode("utf-8"))
         )
-        ensure_worker_generation_active()
-        sock.sendall(b"\x10" + _mqtt_len(len(connection)) + connection)
+        with external_operation():
+            sock.sendall(b"\x10" + _mqtt_len(len(connection)) + connection)
         header, connack = _mqtt_read_packet(sock, deadline)
         if (header & 0xF0) != 0x20 or len(connack) < 2 or connack[1] != 0:
             raise PermissionError("Bambu MQTT authentication rejected")
@@ -7010,8 +7220,8 @@ def read_bambu_lan_snapshot(config, timeout=BAMBU_MQTT_TIMEOUT):
             "device/%s/report" % serial if serial else "device/+/report"
         ).encode("utf-8")
         subscribe = struct.pack("!H", 1) + _mqtt_field(report_topic) + b"\x00"
-        ensure_worker_generation_active()
-        sock.sendall(b"\x82" + _mqtt_len(len(subscribe)) + subscribe)
+        with external_operation():
+            sock.sendall(b"\x82" + _mqtt_len(len(subscribe)) + subscribe)
         sub_header, suback = _mqtt_read_packet(sock, deadline)
         if (
             (sub_header & 0xF0) != 0x90
@@ -7027,8 +7237,8 @@ def read_bambu_lan_snapshot(config, timeout=BAMBU_MQTT_TIMEOUT):
                 separators=(",", ":"),
             ).encode("utf-8")
             publish = _mqtt_field(topic) + body
-            ensure_worker_generation_active()
-            sock.sendall(b"\x30" + _mqtt_len(len(publish)) + publish)
+            with external_operation():
+                sock.sendall(b"\x30" + _mqtt_len(len(publish)) + publish)
 
         if serial:
             request_full_snapshot(serial)
@@ -7038,8 +7248,8 @@ def read_bambu_lan_snapshot(config, timeout=BAMBU_MQTT_TIMEOUT):
             header, packet = _mqtt_read_packet(sock, deadline)
             packet_type = header & 0xF0
             if packet_type == 0xC0:
-                ensure_worker_generation_active()
-                sock.sendall(b"\xD0\x00")
+                with external_operation():
+                    sock.sendall(b"\xD0\x00")
                 continue
             if packet_type != 0x30 or len(packet) < 2:
                 continue
@@ -7110,16 +7320,16 @@ def _publish_bambu_json(config, serial, payload, timeout=BAMBU_MQTT_TIMEOUT):
             + _mqtt_field(b"bblp")
             + _mqtt_field(access_code.encode("utf-8"))
         )
-        ensure_worker_generation_active()
-        sock.sendall(b"\x10" + _mqtt_len(len(connection)) + connection)
+        with external_operation():
+            sock.sendall(b"\x10" + _mqtt_len(len(connection)) + connection)
         header, connack = _mqtt_read_packet(sock, deadline)
         if (header & 0xF0) != 0x20 or len(connack) < 2 or connack[1] != 0:
             raise PermissionError("Bambu MQTT authentication rejected")
         topic = ("device/%s/request" % serial).encode("utf-8")
         body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
         publish = _mqtt_field(topic) + body
-        ensure_worker_generation_active()
-        sock.sendall(b"\x30" + _mqtt_len(len(publish)) + publish)
+        with external_operation():
+            sock.sendall(b"\x30" + _mqtt_len(len(publish)) + publish)
     finally:
         try:
             sock.sendall(b"\xE0\x00")
@@ -7565,6 +7775,7 @@ class BambuBridgeRuntime:
         self._wake = threading.Event()
         self._stop = threading.Event()
         self._restart_requested = False
+        self._generation = 0
         self._last_snapshot_digest = {}
         self._last_snapshot_at = {}
         self._last_heartbeat_at = {}
@@ -7573,12 +7784,23 @@ class BambuBridgeRuntime:
 
     def _start_locked(self):
         self._stop.clear()
+        self._generation += 1
+        generation = self._generation
         self._thread = threading.Thread(
             target=self._run,
+            args=(generation,),
             name="filamenthub-bambu-bridge",
             daemon=True,
         )
         self._thread.start()
+
+    def authorize_external_operation(self, generation):
+        """Linearize one observer I/O start against stop()."""
+        with self._lock:
+            if self._stop.is_set() or generation != self._generation:
+                raise PluginLifecycleStopped(
+                    "Bambu observer lifecycle generation has stopped"
+                )
 
     def start(self):
         with self._lock:
@@ -7619,7 +7841,13 @@ class BambuBridgeRuntime:
                     self._restart_requested = False
                     self._start_locked()
 
-    def _run(self):
+    def _run(self, generation=None):
+        if generation is not None:
+            with bind_lifecycle_generation(self, generation):
+                return self._run_loop()
+        return self._run_loop()
+
+    def _run_loop(self):
         # A slicer update or workstation power recovery can start many plugin
         # instances at once. Spread their first automatic LAN read/upload over
         # two minutes so a fleet restart cannot become an origin request wave.
@@ -7776,6 +8004,16 @@ class BambuBridgeRuntime:
 
 
 BAMBU_BRIDGE_RUNTIME = BambuBridgeRuntime()
+
+
+def wake_bambu_bridge_runtime():
+    """Wake the observer only from the currently loaded worker generation."""
+    worker = globals().get("BACKGROUND_WORKER")
+    run_if_current = getattr(worker, "run_if_current", None)
+    if callable(run_if_current):
+        return run_if_current(BAMBU_BRIDGE_RUNTIME.wake)
+    ensure_worker_generation_active()
+    return BAMBU_BRIDGE_RUNTIME.wake()
 
 
 _PLUGIN_RUNTIME_LOCK = threading.Lock()
@@ -8441,7 +8679,7 @@ class FilamentHubCatalog(
         pairing_code,
     ):
         bridge_token = ""
-        binding_persisted = False
+        previous_local = None
         try:
             _resolved_bambu_address(host)
             pending = {
@@ -8464,6 +8702,7 @@ class FilamentHubCatalog(
             # This also proves local durability before the one-time code is
             # consumed on the server.
             save_bambu_config(local)
+            previous_local = json.loads(json.dumps(local))
             pair_status, pair_body = http_post_json(
                 "/printer-bridge/pair",
                 "",
@@ -8505,7 +8744,6 @@ class FilamentHubCatalog(
                 bridge_token,
                 device_identity,
             )
-            binding_persisted = True
             configured = load_bambu_config()
             stored = next(
                 (
@@ -8551,11 +8789,15 @@ class FilamentHubCatalog(
                     revoke_fresh_bridge_token(bridge_token)
                 except (OSError, TypeError, ValueError):
                     pass
-                if binding_persisted:
-                    remove_bambu_bridge(physical_printer_id)
+                if previous_local is not None:
+                    rollback_fresh_bambu_binding(
+                        physical_printer_id,
+                        bridge_token,
+                        previous_local,
+                    )
             self._deliver_notice(ui_text("bambuInvalid"), "error")
             return
-        BAMBU_BRIDGE_RUNTIME.wake()
+        wake_bambu_bridge_runtime()
         self._deliver_notice(ui_text("bambuSaved"), "success")
 
     def _do_remove_bambu(self, physical_printer_id):
@@ -8575,7 +8817,7 @@ class FilamentHubCatalog(
                 self._deliver_notice(ui_text("bambuRemoveFailed"), "error")
                 return
         remove_bambu_bridge(physical_printer_id)
-        BAMBU_BRIDGE_RUNTIME.wake()
+        wake_bambu_bridge_runtime()
         self._deliver_notice(ui_text("bambuRemoved"), "success")
 
     def _do_bambu_material_action(
@@ -8694,7 +8936,7 @@ class FilamentHubCatalog(
                 "unknown",
             ),
         )
-        BAMBU_BRIDGE_RUNTIME.wake()
+        wake_bambu_bridge_runtime()
 
     # on_message runs on the UI thread — offload network + disk work to a worker.
     def _do_parse_slice(self, key, token, file_name=""):
@@ -9372,7 +9614,7 @@ class FilamentHubCatalog(
             access = msg.get("accessToken") or ""
             if isinstance(access, str) and 0 < len(access) <= MAX_TOKEN_LENGTH:
                 save_auth(access)
-                BAMBU_BRIDGE_RUNTIME.wake()
+                wake_bambu_bridge_runtime()
                 if not getattr(self, "_session_sync_started", False):
                     self._session_sync_started = self._auto_sync(
                         announce=True,
@@ -9708,7 +9950,7 @@ class FilamentHubCatalog(
         except (TypeError, ValueError):
             return
         if not token:
-            orca.host.ui.message(
+            show_host_message(
                 ui_text("importSignIn"),
                 title="FilamentHub", icon="warning")
             return
@@ -9716,13 +9958,15 @@ class FilamentHubCatalog(
             status, body = http_get("/presets/%d/export/orcaslicer.json" % preset_id, token=token)
             if status == 401:
                 clear_auth()
-                orca.host.ui.message(
+                show_host_message(
                     ui_text("sessionExpired"),
                     title="FilamentHub", icon="warning")
                 return
             if status != 200:
-                orca.host.ui.message(ui_text("exportFailed", status=status),
-                                     title="FilamentHub", icon="error")
+                show_host_message(
+                    ui_text("exportFailed", status=status),
+                    title="FilamentHub", icon="error",
+                )
                 return
 
             profile = validate_filament_profile(json.loads(body.decode("utf-8")))
@@ -9739,19 +9983,24 @@ class FilamentHubCatalog(
             name = apply_managed_filename_identity(profile, profile_path)
             base = profile_path[:-len(".json")]
             validate_filament_profile(profile)
-            write_managed_info(base, preset_id, token)
-            write_json_atomic(profile_path, profile)
-            remove_stale_preset_files(target_dir, preset_id, profile_path)
+            with side_effect_transaction():
+                write_managed_info(base, preset_id, token)
+                write_json_atomic(profile_path, profile)
+                remove_stale_preset_files(target_dir, preset_id, profile_path)
             if reload_managed_local_bundle_if_available():
                 fh_log("import %d written and reloaded: %s" % (preset_id, name))
                 message_key = "importedLive"
             else:
                 fh_log("import %d written, pending restart: %s" % (preset_id, name))
                 message_key = "importedRestart"
-            orca.host.ui.message(ui_text(message_key, name=name),
-                                 title="FilamentHub", icon="info")
+            show_host_message(
+                ui_text(message_key, name=name),
+                title="FilamentHub", icon="info",
+            )
+        except PluginLifecycleStopped:
+            return
         except Exception as exc:
-            orca.host.ui.message(
+            show_host_message(
                 ui_text("importFailed", error=exc), title="FilamentHub", icon="error")
 
     def _log_managed_preset_state(self, folder, remote_ids, loaded_preset_ids, failed_ids):
@@ -9810,12 +10059,13 @@ class FilamentHubCatalog(
             fh_log("pull %d FAILED: profile Orca would reject: %r" % (pid, exc))
             return None
         try:
-            write_managed_info(base, pid, token, version_id)
-            write_json_atomic(profile_path, profile)
+            with side_effect_transaction():
+                write_managed_info(base, pid, token, version_id)
+                write_json_atomic(profile_path, profile)
+                remove_stale_preset_files(folder, pid, profile_path)
         except OSError as exc:
             fh_log("pull %d FAILED: write error at %s: %r" % (pid, profile_path, exc))
             return None
-        remove_stale_preset_files(folder, pid, profile_path)
         return {"updated_at": (remote or {}).get("updated_at") or "",
                 "version_id": version_id,
                 "hash": preset_content_hash(profile), "name": name}
@@ -9907,21 +10157,22 @@ class FilamentHubCatalog(
             )
             apply_managed_filename_identity(fork_profile, fork_path)
             try:
-                write_managed_info(
-                    fork_path[:-len(".json")], server_id, token, server_version_id
-                )
-                write_json_atomic(fork_path, fork_profile)
+                with side_effect_transaction():
+                    write_managed_info(
+                        fork_path[:-len(".json")], server_id, token, server_version_id
+                    )
+                    write_json_atomic(fork_path, fork_profile)
+                    old_artifact = {
+                        "json_path": local_entry["path"],
+                        "info_path": local_entry["path"][:-len(".json")] + ".info",
+                    }
+                    if not _quarantine_managed_preset_artifact(
+                        old_artifact, "forked-from-%d" % pid
+                    ):
+                        fh_log("push %d fork kept both marker pairs for recovery" % pid)
+                        return None
             except OSError as exc:
                 fh_log("push %d fork identity write FAILED: %r" % (pid, exc))
-                return None
-            old_artifact = {
-                "json_path": local_entry["path"],
-                "info_path": local_entry["path"][:-len(".json")] + ".info",
-            }
-            if not _quarantine_managed_preset_artifact(
-                old_artifact, "forked-from-%d" % pid
-            ):
-                fh_log("push %d fork kept both marker pairs for recovery" % pid)
                 return None
             result_path = fork_path
             result_hash = preset_content_hash(fork_profile)
@@ -10017,7 +10268,7 @@ class FilamentHubCatalog(
             if allow_pull:
                 ensure_bundle_metadata()
                 try:
-                    os.makedirs(folder, exist_ok=True)
+                    ensure_directory(folder)
                 except OSError:
                     pass
                 if source_instance_id and operation_id:

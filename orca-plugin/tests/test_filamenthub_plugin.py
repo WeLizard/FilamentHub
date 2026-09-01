@@ -362,6 +362,34 @@ def _retire_running_job_before_side_effect(plugin_module, monkeypatch, action):
     worker.stop()
 
 
+def _retire_running_job_during_action(
+    plugin_module, monkeypatch, action, entered, release
+):
+    worker = plugin_module.ReusableDaemonWorker(
+        "filamenthub-mid-transaction-worker", idle_timeout=0.2
+    )
+    monkeypatch.setattr(plugin_module, "BACKGROUND_WORKER", worker)
+    finished = threading.Event()
+    errors = []
+
+    def job():
+        try:
+            action()
+        except Exception as exc:
+            errors.append(exc)
+        finally:
+            finished.set()
+
+    assert worker.submit(job)
+    assert entered.wait(2)
+    worker.stop(wait_timeout=0)
+    worker.activate()
+    release.set()
+    assert finished.wait(2)
+    worker.stop()
+    return errors
+
+
 def test_retired_worker_generation_cannot_start_http_file_upload(
     plugin_module, monkeypatch, tmp_path
 ):
@@ -406,6 +434,393 @@ def test_retired_worker_generation_cannot_start_happy_hare_command(
     )
 
     assert requests == []
+
+
+def test_external_operation_authorized_before_stop_finishes_once(
+    plugin_module, monkeypatch
+):
+    worker = plugin_module.ReusableDaemonWorker(
+        "filamenthub-authorized-operation-worker", idle_timeout=0.2
+    )
+    monkeypatch.setattr(plugin_module, "BACKGROUND_WORKER", worker)
+    authorized = threading.Event()
+    release = threading.Event()
+    finished = threading.Event()
+    calls = []
+
+    def job():
+        try:
+            with plugin_module.external_operation():
+                authorized.set()
+                assert release.wait(2)
+                calls.append("io")
+        finally:
+            finished.set()
+
+    assert worker.submit(job)
+    assert authorized.wait(2)
+    worker.stop(wait_timeout=0)
+    worker.activate()
+    release.set()
+
+    assert finished.wait(2)
+    assert calls == ["io"]
+    worker.stop()
+
+
+def test_retired_worker_generation_cannot_create_sync_directory(
+    plugin_module, monkeypatch, tmp_path
+):
+    target = tmp_path / "retired-sync"
+
+    _retire_running_job_before_side_effect(
+        plugin_module,
+        monkeypatch,
+        lambda: plugin_module.ensure_directory(str(target)),
+    )
+
+    assert not target.exists()
+
+
+def test_threadpool_probe_inherits_retired_worker_generation(
+    plugin_module, monkeypatch
+):
+    worker = plugin_module.ReusableDaemonWorker(
+        "filamenthub-probe-generation-worker", idle_timeout=0.2
+    )
+    monkeypatch.setattr(plugin_module, "BACKGROUND_WORKER", worker)
+    child_started = threading.Event()
+    child_release = threading.Event()
+    finished = threading.Event()
+    requests = []
+
+    def observe(connection):
+        child_started.set()
+        assert child_release.wait(2)
+        return plugin_module._moonraker_json(
+            connection,
+            "/server/database/item?namespace=moonraker&key=instance_id",
+            timeout=3,
+        )
+
+    monkeypatch.setattr(plugin_module, "_observe_moonraker_identity", observe)
+    monkeypatch.setattr(
+        plugin_module.urllib.request,
+        "urlopen",
+        lambda *args, **kwargs: requests.append((args, kwargs)),
+    )
+
+    def job():
+        try:
+            plugin_module._observations_for_sync(
+                [{"print_host": "printer.local:7125", "host_type": "moonraker"}],
+                discovery_key="ab" * 32,
+                local_connections=[{"print_host": "printer.local:7125"}],
+            )
+        finally:
+            finished.set()
+
+    assert worker.submit(job)
+    assert child_started.wait(2)
+    worker.stop(wait_timeout=0)
+    worker.activate()
+    child_release.set()
+
+    assert finished.wait(2)
+    assert requests == []
+    worker.stop()
+
+
+def test_import_finishes_authorized_artifact_but_skips_stale_host_effects(
+    plugin_module, monkeypatch, tmp_path
+):
+    entered = threading.Event()
+    release = threading.Event()
+    mutations = []
+    reloads = []
+    messages = []
+    target = tmp_path / "PLA Brand Fixture.json"
+
+    monkeypatch.setattr(
+        plugin_module,
+        "http_get",
+        lambda *_args, **_kwargs: (200, b'{"name":"Fixture"}'),
+    )
+    monkeypatch.setattr(plugin_module, "validate_filament_profile", lambda value: value)
+    monkeypatch.setattr(plugin_module, "ensure_parent_exists", lambda *_args: None)
+    monkeypatch.setattr(plugin_module, "ensure_filament_colour", lambda *_args: None)
+    monkeypatch.setattr(plugin_module, "filament_display_name", lambda *_args: "PLA Brand Fixture")
+    monkeypatch.setattr(plugin_module, "ensure_bundle_metadata", lambda: None)
+    monkeypatch.setattr(plugin_module, "user_filament_dir", lambda: str(tmp_path))
+    monkeypatch.setattr(plugin_module, "preset_file_path", lambda *_args: str(target))
+
+    def write_info(*_args, **_kwargs):
+        plugin_module.ensure_side_effect_allowed()
+        mutations.append("info")
+        entered.set()
+        assert release.wait(2)
+
+    def write_json(*_args, **_kwargs):
+        plugin_module.ensure_side_effect_allowed()
+        mutations.append("json")
+
+    def cleanup(*_args, **_kwargs):
+        plugin_module.ensure_side_effect_allowed()
+        mutations.append("cleanup")
+        return 0
+
+    monkeypatch.setattr(plugin_module, "write_managed_info", write_info)
+    monkeypatch.setattr(plugin_module, "write_json_atomic", write_json)
+    monkeypatch.setattr(plugin_module, "remove_stale_preset_files", cleanup)
+    monkeypatch.setattr(
+        plugin_module.orca.host,
+        "reload_local_bundle",
+        lambda *_args: reloads.append(True),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        plugin_module.orca.host.ui,
+        "message",
+        lambda *_args, **_kwargs: messages.append(True),
+        raising=False,
+    )
+    catalog = plugin_module.FilamentHubCatalog()
+
+    errors = _retire_running_job_during_action(
+        plugin_module,
+        monkeypatch,
+        lambda: catalog._do_import(7, "token", set()),
+        entered,
+        release,
+    )
+
+    assert errors == []
+    assert mutations == ["info", "json", "cleanup"]
+    assert reloads == []
+    assert messages == []
+
+
+def test_display_name_migration_keeps_one_authorized_mutation_transaction(
+    plugin_module, monkeypatch, tmp_path
+):
+    entered = threading.Event()
+    release = threading.Event()
+    mutations = []
+    source = tmp_path / "Fixture.json"
+    target = tmp_path / "PLA Brand Fixture.json"
+    profile = {"name": "Fixture", "filament_type": ["PLA"]}
+    local_entry = {
+        "path": str(source),
+        "profile": profile,
+        "version_id": 11,
+    }
+
+    monkeypatch.setattr(plugin_module, "preset_file_path", lambda *_args: str(target))
+    monkeypatch.setattr(plugin_module, "filament_display_name", lambda *_args: target.stem)
+    monkeypatch.setattr(plugin_module, "validate_filament_profile", lambda value: value)
+
+    def write_json(*_args, **_kwargs):
+        plugin_module.ensure_side_effect_allowed()
+        mutations.append("json")
+        entered.set()
+        assert release.wait(2)
+
+    def write_info(*_args, **_kwargs):
+        plugin_module.ensure_side_effect_allowed()
+        mutations.append("info")
+
+    def cleanup(*_args, **_kwargs):
+        plugin_module.ensure_side_effect_allowed()
+        mutations.append("cleanup")
+        return 1
+
+    monkeypatch.setattr(plugin_module, "write_json_atomic", write_json)
+    monkeypatch.setattr(plugin_module, "write_bytes_atomic", write_info)
+    monkeypatch.setattr(plugin_module, "remove_stale_preset_files", cleanup)
+
+    errors = _retire_running_job_during_action(
+        plugin_module,
+        monkeypatch,
+        lambda: plugin_module.migrate_managed_filament_display_name(
+            str(tmp_path), 7, local_entry, {"name": "Fixture"}
+        ),
+        entered,
+        release,
+    )
+
+    assert errors == []
+    assert mutations == ["json", "info", "cleanup"]
+    assert local_entry["path"] == str(target)
+
+
+def test_pull_keeps_marker_profile_and_cleanup_in_one_transaction(
+    plugin_module, monkeypatch, tmp_path
+):
+    entered = threading.Event()
+    release = threading.Event()
+    mutations = []
+    target = tmp_path / "Fixture.json"
+
+    monkeypatch.setattr(
+        plugin_module,
+        "http_get",
+        lambda *_args, **_kwargs: (200, b'{"name":"Fixture"}'),
+    )
+    monkeypatch.setattr(plugin_module, "validate_filament_profile", lambda value: value)
+    monkeypatch.setattr(plugin_module, "ensure_parent_exists", lambda *_args: None)
+    monkeypatch.setattr(plugin_module, "ensure_filament_colour", lambda *_args: None)
+    monkeypatch.setattr(plugin_module, "filament_display_name", lambda *_args: "Fixture")
+    monkeypatch.setattr(plugin_module, "preset_file_path", lambda *_args: str(target))
+
+    def write_info(*_args, **_kwargs):
+        plugin_module.ensure_side_effect_allowed()
+        mutations.append("info")
+        entered.set()
+        assert release.wait(2)
+
+    def write_json(*_args, **_kwargs):
+        plugin_module.ensure_side_effect_allowed()
+        mutations.append("json")
+
+    def cleanup(*_args, **_kwargs):
+        plugin_module.ensure_side_effect_allowed()
+        mutations.append("cleanup")
+        return 0
+
+    monkeypatch.setattr(plugin_module, "write_managed_info", write_info)
+    monkeypatch.setattr(plugin_module, "write_json_atomic", write_json)
+    monkeypatch.setattr(plugin_module, "remove_stale_preset_files", cleanup)
+    catalog = plugin_module.FilamentHubCatalog()
+
+    errors = _retire_running_job_during_action(
+        plugin_module,
+        monkeypatch,
+        lambda: catalog._pull_one(7, "token", set(), str(tmp_path), {}),
+        entered,
+        release,
+    )
+
+    assert errors == []
+    assert mutations == ["info", "json", "cleanup"]
+
+
+def test_fork_keeps_new_identity_and_old_quarantine_in_one_transaction(
+    plugin_module, monkeypatch, tmp_path
+):
+    entered = threading.Event()
+    release = threading.Event()
+    mutations = []
+    source = tmp_path / "Source.json"
+    target = tmp_path / "Fork.json"
+    profile = {"name": "Source", "bundle_id": "filamenthub:7"}
+    local_entry = {
+        "path": str(source),
+        "profile": profile,
+        "hash": "old-hash",
+        "version_id": 2,
+    }
+
+    monkeypatch.setattr(plugin_module, "restore_remote_parent_for_upload", lambda value, *_args: dict(value))
+    monkeypatch.setattr(
+        plugin_module,
+        "http_post_json",
+        lambda *_args, **_kwargs: (
+            200,
+            b'{"results":[{"fhub_id":8,"version_id":3}]}',
+        ),
+    )
+    monkeypatch.setattr(plugin_module, "preset_file_path", lambda *_args: str(target))
+
+    def write_info(*_args, **_kwargs):
+        plugin_module.ensure_side_effect_allowed()
+        mutations.append("info")
+        entered.set()
+        assert release.wait(2)
+
+    def write_json(*_args, **_kwargs):
+        plugin_module.ensure_side_effect_allowed()
+        mutations.append("json")
+
+    def quarantine(*_args, **_kwargs):
+        plugin_module.ensure_side_effect_allowed()
+        mutations.append("quarantine")
+        return True
+
+    monkeypatch.setattr(plugin_module, "write_managed_info", write_info)
+    monkeypatch.setattr(plugin_module, "write_json_atomic", write_json)
+    monkeypatch.setattr(plugin_module, "_quarantine_managed_preset_artifact", quarantine)
+    catalog = plugin_module.FilamentHubCatalog()
+
+    errors = _retire_running_job_during_action(
+        plugin_module,
+        monkeypatch,
+        lambda: catalog._push_one(7, "token", local_entry, {"name": "Source"}),
+        entered,
+        release,
+    )
+
+    assert errors == []
+    assert mutations == ["info", "json", "quarantine"]
+
+
+def test_printer_bundle_removal_keeps_quarantine_and_state_in_one_transaction(
+    plugin_module, monkeypatch
+):
+    entered = threading.Event()
+    release = threading.Event()
+    mutations = []
+    state = {
+        "printers": [
+            {
+                "physical_printer_id": 3,
+                "machine_profile_ids": [10],
+                "process_profile_ids": [20],
+            }
+        ]
+    }
+    artifacts = {
+        "machine": [{"profile_id": 10}],
+        "process": [{"profile_id": 20}],
+    }
+
+    monkeypatch.setattr(plugin_module, "load_printer_bundle_state", lambda: state)
+    monkeypatch.setattr(plugin_module, "user_machine_dir", lambda: "machine")
+    monkeypatch.setattr(plugin_module, "user_process_dir", lambda: "process")
+    monkeypatch.setattr(
+        plugin_module,
+        "_managed_profile_artifacts",
+        lambda _folder, kind: artifacts[kind],
+    )
+
+    def quarantine(artifact, *_args):
+        plugin_module.ensure_side_effect_allowed()
+        mutations.append(("quarantine", artifact["profile_id"]))
+        if len(mutations) == 1:
+            entered.set()
+            assert release.wait(2)
+        return True
+
+    def save(_state):
+        plugin_module.ensure_side_effect_allowed()
+        mutations.append(("state", 0))
+
+    monkeypatch.setattr(plugin_module, "_quarantine_managed_preset_artifact", quarantine)
+    monkeypatch.setattr(plugin_module, "save_printer_bundle_state", save)
+
+    errors = _retire_running_job_during_action(
+        plugin_module,
+        monkeypatch,
+        lambda: plugin_module.remove_installed_printer_bundle(3),
+        entered,
+        release,
+    )
+
+    assert errors == []
+    assert mutations == [
+        ("quarantine", 10),
+        ("quarantine", 20),
+        ("state", 0),
+    ]
 
 
 def test_side_effect_guard_does_not_block_non_worker_runtime_threads(
@@ -6618,6 +7033,70 @@ def test_bambu_runtime_does_not_upload_after_stop_during_lan_read(
     assert runtime._thread is None
 
 
+def test_bambu_runtime_stop_during_connect_prevents_tls_and_mqtt(
+    plugin_module, monkeypatch
+):
+    runtime = plugin_module.BambuBridgeRuntime()
+    connect_started = threading.Event()
+    connect_release = threading.Event()
+    tls_started = []
+    binding = {
+        "physical_printer_id": 3,
+        "material_system_id": 5,
+        "host": "printer.local",
+        "access_code": "local-secret",
+        "serial": "SERIAL-2",
+        "bridge_token": "fhpb_live",
+    }
+
+    class RawSocket:
+        closed = False
+
+        def settimeout(self, _timeout):
+            return None
+
+        def connect(self, _sockaddr):
+            connect_started.set()
+            assert connect_release.wait(2)
+
+        def close(self):
+            self.closed = True
+
+    class TlsContext:
+        check_hostname = False
+        verify_mode = None
+
+        def wrap_socket(self, *_args, **_kwargs):
+            tls_started.append(True)
+            raise AssertionError("retired observer started TLS")
+
+    raw = RawSocket()
+    monkeypatch.setattr(runtime._wake, "wait", lambda _timeout: False)
+    monkeypatch.setattr(plugin_module.random, "uniform", lambda lower, _upper: lower)
+    monkeypatch.setattr(
+        plugin_module,
+        "load_bambu_config",
+        lambda: {"source_instance_id": "fixture-instance-0001", "printers": [binding]},
+    )
+    monkeypatch.setattr(
+        plugin_module,
+        "_resolved_bambu_address",
+        lambda _host: (2, 1, 6, ("192.168.1.42", 8883)),
+    )
+    monkeypatch.setattr(plugin_module.socket, "socket", lambda *_args: raw)
+    monkeypatch.setattr(plugin_module.ssl, "SSLContext", lambda *_args: TlsContext())
+
+    runtime.start()
+    assert connect_started.wait(2)
+    runtime.stop(wait_timeout=0)
+    connect_release.set()
+    runtime.stop(wait_timeout=2)
+
+    assert tls_started == []
+    assert raw.closed is True
+    assert runtime._thread is None
+
+
 def test_bambu_runtime_restarts_after_previous_generation_finishes(
     plugin_module, monkeypatch
 ):
@@ -6711,6 +7190,32 @@ def test_bambu_pair_is_revoked_when_local_binding_cannot_be_persisted(
     assert revoked == [("/printer-bridge/connection", "fhpb_fresh-token")]
     assert removed == []
     assert delivered == [("bambuInvalid", "error")]
+
+
+@pytest.mark.parametrize(
+    "statuses,expected,attempts",
+    [
+        ([0, 0, 204], 204, 3),
+        ([0, 0, 0], 0, 3),
+        ([401], 401, 1),
+    ],
+)
+def test_fresh_bambu_token_revoke_has_bounded_retry(
+    plugin_module, monkeypatch, statuses, expected, attempts
+):
+    remaining = iter(statuses)
+    calls = []
+
+    def delete(path, token, allow_retired_generation=False):
+        calls.append((path, token, allow_retired_generation))
+        return next(remaining)
+
+    monkeypatch.setattr(plugin_module, "_http_delete_bridge", delete)
+
+    assert plugin_module.revoke_fresh_bridge_token("fhpb_fresh") == expected
+    assert calls == [
+        ("/printer-bridge/connection", "fhpb_fresh", True)
+    ] * attempts
 
 
 def test_bambu_pair_is_revoked_after_unload_before_local_persist(
@@ -6814,6 +7319,200 @@ def test_bambu_pair_is_revoked_after_unload_before_local_persist(
         )
     ]
     assert plugin_module.load_bambu_config()["printers"] == existing
+    worker.stop()
+
+
+def test_bambu_pair_restores_previous_binding_when_unload_follows_atomic_write(
+    plugin_module, tmp_path, monkeypatch
+):
+    target = tmp_path / ".fh_bambu.json"
+    monkeypatch.setattr(plugin_module, "BAMBU_CONFIG_FILE", str(target))
+    plugin_module.configure_bambu_bridge(
+        3,
+        4,
+        "old.local",
+        "old-secret",
+        "OLD-SERIAL",
+        "fhpb_old",
+    )
+    previous = plugin_module.load_bambu_config()["printers"]
+    monkeypatch.setattr(
+        plugin_module, "_resolved_bambu_address", lambda _host: "192.168.1.42"
+    )
+    monkeypatch.setattr(
+        plugin_module,
+        "read_bambu_lan_snapshot",
+        lambda _config: ("NEW-SERIAL", _bambu_report()),
+    )
+    monkeypatch.setattr(
+        plugin_module,
+        "http_post_json",
+        lambda *_args, **_kwargs: (
+            200,
+            json.dumps(
+                {
+                    "bridge_token": "fhpb_fresh-token",
+                    "physical_printer_id": 3,
+                    "material_system_id": 5,
+                    "printer_discovery_key": "1" * 64,
+                }
+            ).encode("utf-8"),
+        ),
+    )
+    persist_entered = threading.Event()
+    persist_release = threading.Event()
+    original_replace = plugin_module.os.replace
+
+    def replace(source, destination):
+        payload = Path(source).read_bytes()
+        if (
+            Path(destination) == target
+            and b"fhpb_fresh-token" in payload
+            and not persist_entered.is_set()
+        ):
+            persist_entered.set()
+            assert persist_release.wait(2)
+        return original_replace(source, destination)
+
+    monkeypatch.setattr(plugin_module.os, "replace", replace)
+    revoked = []
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def getcode(self):
+            return 204
+
+    def urlopen(request, **_kwargs):
+        revoked.append(
+            (
+                request.full_url,
+                request.get_header("X-filamenthub-bridge-token"),
+                request.get_method(),
+            )
+        )
+        return Response()
+
+    monkeypatch.setattr(plugin_module.urllib.request, "urlopen", urlopen)
+    worker = plugin_module.ReusableDaemonWorker(
+        "filamenthub-bambu-atomic-pair-worker", idle_timeout=0.2
+    )
+    monkeypatch.setattr(plugin_module, "BACKGROUND_WORKER", worker)
+    finished = threading.Event()
+    catalog = plugin_module.FilamentHubCatalog()
+    monkeypatch.setattr(catalog, "_deliver_notice", lambda *_args, **_kwargs: None)
+
+    def configure_job():
+        try:
+            catalog._do_configure_bambu(
+                3, 5, "new.local", "new-secret", "", "pair-code"
+            )
+        finally:
+            finished.set()
+
+    assert worker.submit(configure_job)
+    assert persist_entered.wait(2)
+    worker.stop(wait_timeout=0)
+    worker.activate()
+    persist_release.set()
+
+    assert finished.wait(2)
+    assert revoked == [
+        (
+            plugin_module.API_BASE + "/printer-bridge/connection",
+            "fhpb_fresh-token",
+            "DELETE",
+        )
+    ]
+    assert plugin_module.load_bambu_config()["printers"] == previous
+    worker.stop()
+
+
+def test_bambu_pair_response_after_unload_cannot_restart_observer(
+    plugin_module, tmp_path, monkeypatch
+):
+    target = tmp_path / ".fh_bambu.json"
+    monkeypatch.setattr(plugin_module, "BAMBU_CONFIG_FILE", str(target))
+    monkeypatch.setattr(
+        plugin_module, "_resolved_bambu_address", lambda _host: "192.168.1.42"
+    )
+    monkeypatch.setattr(
+        plugin_module,
+        "read_bambu_lan_snapshot",
+        lambda _config: ("SERIAL-2", _bambu_report()),
+    )
+    monkeypatch.setattr(
+        plugin_module,
+        "http_post_json",
+        lambda *_args, **_kwargs: (
+            200,
+            json.dumps(
+                {
+                    "bridge_token": "fhpb_fresh-token",
+                    "physical_printer_id": 3,
+                    "material_system_id": 5,
+                    "printer_discovery_key": "2" * 64,
+                }
+            ).encode("utf-8"),
+        ),
+    )
+    snapshot_started = threading.Event()
+    snapshot_release = threading.Event()
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def getcode(self):
+            return 200
+
+        def read(self, _size=-1):
+            snapshot_started.set()
+            assert snapshot_release.wait(2)
+            return b"{}"
+
+    monkeypatch.setattr(
+        plugin_module.urllib.request,
+        "urlopen",
+        lambda *_args, **_kwargs: Response(),
+    )
+    wakes = []
+    monkeypatch.setattr(
+        plugin_module.BAMBU_BRIDGE_RUNTIME,
+        "wake",
+        lambda: wakes.append(True),
+    )
+    worker = plugin_module.ReusableDaemonWorker(
+        "filamenthub-bambu-response-worker", idle_timeout=0.2
+    )
+    monkeypatch.setattr(plugin_module, "BACKGROUND_WORKER", worker)
+    finished = threading.Event()
+    catalog = plugin_module.FilamentHubCatalog()
+    monkeypatch.setattr(catalog, "_deliver_notice", lambda *_args, **_kwargs: None)
+
+    def configure_job():
+        try:
+            catalog._do_configure_bambu(
+                3, 5, "printer.local", "secret", "", "pair-code"
+            )
+        finally:
+            finished.set()
+
+    assert worker.submit(configure_job)
+    assert snapshot_started.wait(2)
+    worker.stop(wait_timeout=0)
+    worker.activate()
+    snapshot_release.set()
+
+    assert finished.wait(2)
+    assert wakes == []
     worker.stop()
 
 
