@@ -844,6 +844,49 @@ def test_side_effect_guard_does_not_block_non_worker_runtime_threads(
     assert results == ["allowed"]
 
 
+def test_blocked_host_callback_does_not_block_worker_stop(
+    plugin_module, monkeypatch
+):
+    worker = plugin_module.ReusableDaemonWorker(
+        "filamenthub-blocked-host-callback-worker", idle_timeout=0.2
+    )
+    monkeypatch.setattr(plugin_module, "BACKGROUND_WORKER", worker)
+    callback_started = threading.Event()
+    callback_release = threading.Event()
+    callback_finished = threading.Event()
+    stop_finished = threading.Event()
+
+    def message(*_args, **_kwargs):
+        callback_started.set()
+        assert callback_release.wait(2)
+
+    monkeypatch.setattr(
+        plugin_module.orca.host.ui,
+        "message",
+        message,
+        raising=False,
+    )
+
+    def job():
+        try:
+            plugin_module.show_host_message("fixture")
+        finally:
+            callback_finished.set()
+
+    assert worker.submit(job)
+    assert callback_started.wait(2)
+    stopper = threading.Thread(
+        target=lambda: (worker.stop(wait_timeout=0), stop_finished.set())
+    )
+    stopper.start()
+
+    assert stop_finished.wait(0.5)
+    callback_release.set()
+    assert callback_finished.wait(2)
+    stopper.join(2)
+    worker.stop()
+
+
 def test_retired_unauthorized_response_cannot_clear_new_lifecycle_auth(
     plugin_module, tmp_path, monkeypatch
 ):
@@ -6083,10 +6126,52 @@ def test_runtime_stop_closes_every_owned_resource(plugin_module, monkeypatch):
         SimpleNamespace(stop=lambda: stopped.append("loopback")),
     )
     monkeypatch.setattr(plugin_module, "_PLUGIN_RUNTIME_ACTIVE", True)
+    monkeypatch.setattr(plugin_module, "_PLUGIN_RUNTIME_EPOCH", 1)
 
     assert plugin_module.stop_plugin_runtime() is True
     assert stopped == ["worker", "bambu", "loopback"]
     assert plugin_module._PLUGIN_RUNTIME_ACTIVE is False
+
+
+def test_runtime_load_schedules_pending_bambu_revoke_retry(
+    plugin_module, monkeypatch
+):
+    calls = []
+
+    class Worker:
+        def activate(self):
+            calls.append("activate")
+
+        def submit(self, function, *args):
+            calls.append(("submit", function, args))
+            return True
+
+        def stop(self):
+            calls.append("stop")
+
+    monkeypatch.setattr(plugin_module, "BACKGROUND_WORKER", Worker())
+    monkeypatch.setattr(
+        plugin_module,
+        "BAMBU_BRIDGE_RUNTIME",
+        SimpleNamespace(start=lambda: calls.append("bambu-start"), stop=lambda: None),
+    )
+    monkeypatch.setattr(plugin_module, "SHELL_SERVER", SimpleNamespace(stop=lambda: None))
+    monkeypatch.setattr(plugin_module, "refresh_ui_language", lambda: None)
+    monkeypatch.setattr(
+        plugin_module,
+        "load_bambu_config",
+        lambda: {"source_instance_id": "fixture", "printers": []},
+    )
+    monkeypatch.setattr(plugin_module, "repair_local_bundle_parents", lambda: 0)
+    monkeypatch.setattr(plugin_module, "_PLUGIN_RUNTIME_ACTIVE", False)
+    monkeypatch.setattr(plugin_module, "_PLUGIN_RUNTIME_EPOCH", 0)
+
+    assert plugin_module.start_plugin_runtime(storage_initialized=True) is True
+    assert calls[:2] == [
+        "activate",
+        ("submit", plugin_module.retry_pending_bambu_revokes, ()),
+    ]
+    assert plugin_module.stop_plugin_runtime() is True
 
 
 def test_pages_host_delivers_plugin_messages_through_post_message():
@@ -6149,6 +6234,9 @@ def test_host_storage_migrates_mutable_state_without_deleting_legacy(
         '{"version":1,"source_instance_id":"fixture-instance-0001","printers":[]}',
         encoding="utf-8",
     )
+    (legacy / ".fh_bambu_revoke.json").write_text(
+        '{"version":1,"pending":[]}', encoding="utf-8"
+    )
     (legacy / ".fh_sync.json").write_text('{"known":true}', encoding="utf-8")
     (legacy / "slices").mkdir()
     (legacy / "slices" / "fixture.gcode").write_text("G28", encoding="utf-8")
@@ -6158,6 +6246,11 @@ def test_host_storage_migrates_mutable_state_without_deleting_legacy(
     monkeypatch.setattr(plugin_module, "SYNC_LOG_FILE", str(legacy / ".fh_sync.log"))
     monkeypatch.setattr(plugin_module, "AUTH_FILE", str(legacy / ".auth.json"))
     monkeypatch.setattr(plugin_module, "BAMBU_CONFIG_FILE", str(legacy / ".fh_bambu.json"))
+    monkeypatch.setattr(
+        plugin_module,
+        "BAMBU_REVOKE_FILE",
+        str(legacy / ".fh_bambu_revoke.json"),
+    )
     monkeypatch.setattr(
         plugin_module,
         "PRINTER_BUNDLE_STATE_FILE",
@@ -6182,6 +6275,9 @@ def test_host_storage_migrates_mutable_state_without_deleting_legacy(
     assert plugin_module.PLUGIN_STORAGE_DIR == str(storage)
     assert plugin_module.AUTH_FILE == str(storage / ".auth.json")
     assert plugin_module.BAMBU_CONFIG_FILE == str(storage / ".fh_bambu.json")
+    assert plugin_module.BAMBU_REVOKE_FILE == str(
+        storage / ".fh_bambu_revoke.json"
+    )
     assert plugin_module.PRINTER_BUNDLE_STATE_FILE == str(
         storage / ".fh_printer_bundles.json"
     )
@@ -6191,8 +6287,10 @@ def test_host_storage_migrates_mutable_state_without_deleting_legacy(
         '{"accessToken":"fixture"}'
     )
     assert (storage / ".fh_bambu.json").exists()
+    assert (storage / ".fh_bambu_revoke.json").exists()
     assert (storage / "slices" / "fixture.gcode").read_text(encoding="utf-8") == "G28"
     assert (legacy / ".auth.json").exists()
+    assert (legacy / ".fh_bambu_revoke.json").exists()
     assert (legacy / "slices" / "fixture.gcode").exists()
 
 
@@ -6216,6 +6314,11 @@ def test_host_without_storage_uses_data_root_outside_replaceable_plugin_dir(
     monkeypatch.setattr(plugin_module, "BAMBU_CONFIG_FILE", str(legacy / ".fh_bambu.json"))
     monkeypatch.setattr(
         plugin_module,
+        "BAMBU_REVOKE_FILE",
+        str(legacy / ".fh_bambu_revoke.json"),
+    )
+    monkeypatch.setattr(
+        plugin_module,
         "PRINTER_BUNDLE_STATE_FILE",
         str(legacy / ".fh_printer_bundles.json"),
     )
@@ -6237,6 +6340,9 @@ def test_host_without_storage_uses_data_root_outside_replaceable_plugin_dir(
     assert plugin_module.PLUGIN_STORAGE_DIR == str(stable)
     assert plugin_module.AUTH_FILE == str(stable / ".auth.json")
     assert plugin_module.BAMBU_CONFIG_FILE == str(stable / ".fh_bambu.json")
+    assert plugin_module.BAMBU_REVOKE_FILE == str(
+        stable / ".fh_bambu_revoke.json"
+    )
     assert plugin_module.PRINTER_BUNDLE_STATE_FILE == str(
         stable / ".fh_printer_bundles.json"
     )
@@ -7201,8 +7307,10 @@ def test_bambu_pair_is_revoked_when_local_binding_cannot_be_persisted(
     ],
 )
 def test_fresh_bambu_token_revoke_has_bounded_retry(
-    plugin_module, monkeypatch, statuses, expected, attempts
+    plugin_module, monkeypatch, tmp_path, statuses, expected, attempts
 ):
+    state_path = tmp_path / ".fh_bambu_revoke.json"
+    monkeypatch.setattr(plugin_module, "BAMBU_REVOKE_FILE", str(state_path))
     remaining = iter(statuses)
     calls = []
 
@@ -7216,6 +7324,144 @@ def test_fresh_bambu_token_revoke_has_bounded_retry(
     assert calls == [
         ("/printer-bridge/connection", "fhpb_fresh", True)
     ] * attempts
+    pending = plugin_module._load_pending_bambu_revokes()
+    if expected in {204, 401}:
+        assert pending == []
+    else:
+        assert len(pending) == 1
+        assert pending[0]["token"] == "fhpb_fresh"
+        assert set(pending[0]) == {
+            "token",
+            "created_at",
+            "next_retry_at",
+            "attempts",
+        }
+
+
+@pytest.mark.parametrize("success_status", [204, 401])
+def test_pending_bambu_revoke_retries_fixed_endpoint_and_clears_on_success(
+    plugin_module, monkeypatch, tmp_path, success_status
+):
+    state_path = tmp_path / ".fh_bambu_revoke.json"
+    config_path = tmp_path / ".fh_bambu.json"
+    monkeypatch.setattr(plugin_module, "BAMBU_REVOKE_FILE", str(state_path))
+    monkeypatch.setattr(plugin_module, "BAMBU_CONFIG_FILE", str(config_path))
+    now = 2_000_000_000.0
+    assert plugin_module.queue_fresh_bambu_revoke(
+        "fhpb_retired", now=now, attempts=3
+    )
+    plugin_module.configure_bambu_bridge(
+        3, 5, "current.local", "current-secret", "SERIAL-2", "fhpb_current"
+    )
+    current = plugin_module.load_bambu_config()
+    calls = []
+
+    def delete(path, token, allow_retired_generation=False):
+        calls.append((path, token, allow_retired_generation))
+        return success_status
+
+    monkeypatch.setattr(plugin_module, "_http_delete_bridge", delete)
+
+    outcome = plugin_module.retry_pending_bambu_revokes(
+        now=now + plugin_module.BAMBU_REVOKE_BACKOFF_INITIAL_SECONDS
+    )
+
+    assert outcome == {"retried": 1, "remaining": 0}
+    assert calls == [
+        ("/printer-bridge/connection", "fhpb_retired", True)
+    ]
+    assert plugin_module._load_pending_bambu_revokes(now=now + 61) == []
+    assert plugin_module.load_bambu_config() == current
+
+
+@pytest.mark.parametrize("state_kind", ["corrupt", "oversized", "expired"])
+def test_pending_bambu_revoke_state_fails_closed_and_is_sanitized(
+    plugin_module, monkeypatch, tmp_path, state_kind
+):
+    state_path = tmp_path / ".fh_bambu_revoke.json"
+    monkeypatch.setattr(plugin_module, "BAMBU_REVOKE_FILE", str(state_path))
+    now = 2_000_000_000.0
+    if state_kind == "corrupt":
+        state_path.write_text("{broken", encoding="utf-8")
+    elif state_kind == "oversized":
+        state_path.write_bytes(
+            b"x" * (plugin_module.BAMBU_REVOKE_STATE_MAX_BYTES + 1)
+        )
+    else:
+        state_path.write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "pending": [
+                        {
+                            "token": "fhpb_expired",
+                            "created_at": now
+                            - plugin_module.BAMBU_REVOKE_RETENTION_SECONDS,
+                            "next_retry_at": now - 1,
+                            "attempts": 3,
+                        }
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+    calls = []
+    monkeypatch.setattr(
+        plugin_module,
+        "_http_delete_bridge",
+        lambda *_args, **_kwargs: calls.append(True) or 204,
+    )
+
+    assert plugin_module.retry_pending_bambu_revokes(now=now) == {
+        "retried": 0,
+        "remaining": 0,
+    }
+    assert calls == []
+    assert json.loads(state_path.read_text(encoding="utf-8")) == {
+        "version": 1,
+        "pending": [],
+    }
+
+
+def test_pending_bambu_revoke_rejects_unbounded_or_non_bridge_tokens(
+    plugin_module, monkeypatch, tmp_path
+):
+    state_path = tmp_path / ".fh_bambu_revoke.json"
+    monkeypatch.setattr(plugin_module, "BAMBU_REVOKE_FILE", str(state_path))
+
+    assert not plugin_module.queue_fresh_bambu_revoke("account-token")
+    assert not plugin_module.queue_fresh_bambu_revoke("fhpb_" + "x" * 300)
+    assert not state_path.exists()
+
+
+def test_pending_bambu_revoke_state_is_written_private_and_minimal(
+    plugin_module, monkeypatch, tmp_path
+):
+    state_path = tmp_path / ".fh_bambu_revoke.json"
+    monkeypatch.setattr(plugin_module, "BAMBU_REVOKE_FILE", str(state_path))
+    writes = []
+    original_write = plugin_module._write_bytes_atomic_unchecked
+
+    def write(path, payload, mode=None):
+        writes.append((path, json.loads(payload.decode("utf-8")), mode))
+        return original_write(path, payload, mode=mode)
+
+    monkeypatch.setattr(plugin_module, "_write_bytes_atomic_unchecked", write)
+
+    assert plugin_module.queue_fresh_bambu_revoke(
+        "fhpb_private", now=2_000_000_000.0
+    )
+    assert len(writes) == 1
+    path, payload, mode = writes[0]
+    assert path == str(state_path)
+    assert mode == 0o600
+    assert set(payload) == {"version", "pending"}
+    assert set(payload["pending"][0]) == {
+        "token",
+        "created_at",
+        "next_retry_at",
+        "attempts",
+    }
 
 
 def test_bambu_pair_is_revoked_after_unload_before_local_persist(

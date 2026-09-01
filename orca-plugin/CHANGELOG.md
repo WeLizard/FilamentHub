@@ -10,7 +10,7 @@ Newest first. The top entry is the text pasted into the Plugin Hub on release.
 - Happy Hare and Bambu LAN can now report read-only NFC/RFID tag evidence through a provider-neutral identifier without changing assignments or creating inventory.
 - Bambu LAN observations are now pinned to the responding printer with an account-scoped identity token, preventing an address change or duplicate local binding from updating the wrong printer without uploading its serial number.
 - Plugin storage is now initialized from OrcaSlicer's native load callback, and unload fully retires the background worker, Bambu observer and loopback server without sending a delayed Bambu update afterward.
-- Every server upload, printer command and persistent-state write is now tied to the plugin lifecycle that started it. Unload also retires fan-out printer probes and in-flight Bambu observations before they can begin another operation, while an interrupted fresh Bambu pair restores the previous local binding after revoking the new token.
+- Every server upload, printer command and persistent-state write is now tied to the plugin lifecycle that started it. Unload also retires fan-out printer probes and in-flight Bambu observations before they can begin another operation, while an interrupted fresh Bambu pair restores the previous local binding and durably retries revoking its exact new token after a temporary network failure.
 - Large device-status reports are now delivered in retry-safe bounded chunks, and an interrupted report is shown as a warning instead of being mistaken for a completed sync.
 
 ## 0.1.6

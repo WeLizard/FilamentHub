@@ -148,16 +148,9 @@ class ReusableDaemonWorker:
             return generation
 
     def run_if_current(self, function, *args, **kwargs):
-        """Run one short lifecycle transition while stop() cannot pass it."""
-        generation = self.current_job_generation()
-        if generation is None:
-            return function(*args, **kwargs)
-        with self._lock:
-            if self._stopping or generation != self._generation:
-                raise PluginLifecycleStopped(
-                    "plugin lifecycle generation has stopped"
-                )
-            return function(*args, **kwargs)
+        """Authorize one host transition, then call it without holding the lock."""
+        self.authorize_external_operation()
+        return function(*args, **kwargs)
 
     def run_in_generation(self, generation, function, *args, **kwargs):
         """Propagate a parent job generation into a bounded helper thread."""
@@ -458,6 +451,11 @@ SYNC_REPORT_CHUNK_SIZE = 500
 SYNC_REPORT_CHUNK_RETRIES = 3
 SYNC_REPORT_RETRY_SECONDS = 0.25
 BAMBU_REVOKE_ATTEMPTS = 3
+BAMBU_REVOKE_STATE_MAX_BYTES = 32 * 1024
+BAMBU_REVOKE_MAX_PENDING = 16
+BAMBU_REVOKE_RETENTION_SECONDS = 7 * 24 * 60 * 60
+BAMBU_REVOKE_BACKOFF_INITIAL_SECONDS = 60
+BAMBU_REVOKE_BACKOFF_MAX_SECONDS = 6 * 60 * 60
 _SSL_CTX = ssl.create_default_context()
 
 
@@ -869,7 +867,8 @@ def configure_plugin_storage():
     rollback fallback.
     """
     global PLUGIN_STORAGE_DIR
-    global SYNC_LOG_FILE, AUTH_FILE, BAMBU_CONFIG_FILE, IMPORTED_DRAFTS_FILE, SYNC_STATE_FILE
+    global SYNC_LOG_FILE, AUTH_FILE, BAMBU_CONFIG_FILE, BAMBU_REVOKE_FILE
+    global IMPORTED_DRAFTS_FILE, SYNC_STATE_FILE
     global PRINTER_BUNDLE_STATE_FILE
     global _SLICE_INDEX_FILE, _SLICE_CACHE_DIR
 
@@ -902,6 +901,7 @@ def configure_plugin_storage():
         ".fh_sync.json",
         ".fh_slices.json",
         ".fh_bambu.json",
+        ".fh_bambu_revoke.json",
         ".fh_printer_bundles.json",
     )
     source_roots = []
@@ -938,6 +938,7 @@ def configure_plugin_storage():
     SYNC_LOG_FILE = os.path.join(target_root, ".fh_sync.log")
     AUTH_FILE = os.path.join(target_root, ".auth.json")
     BAMBU_CONFIG_FILE = os.path.join(target_root, ".fh_bambu.json")
+    BAMBU_REVOKE_FILE = os.path.join(target_root, ".fh_bambu_revoke.json")
     IMPORTED_DRAFTS_FILE = os.path.join(target_root, ".fh_imported.json")
     SYNC_STATE_FILE = os.path.join(target_root, ".fh_sync.json")
     PRINTER_BUNDLE_STATE_FILE = os.path.join(target_root, ".fh_printer_bundles.json")
@@ -975,12 +976,13 @@ def trim_sync_log():
 def fh_log(msg):
     """Append one timestamped diagnostic line. Best-effort, never raises."""
     try:
-        import datetime
-        trim_sync_log()
-        stamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        with open(SYNC_LOG_FILE, "a", encoding="utf-8") as fh:
-            fh.write("%s %s\n" % (stamp, redact_home(str(msg))))
-    except OSError:
+        with side_effect_transaction():
+            import datetime
+            trim_sync_log()
+            stamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            with open(SYNC_LOG_FILE, "a", encoding="utf-8") as fh:
+                fh.write("%s %s\n" % (stamp, redact_home(str(msg))))
+    except (OSError, PluginLifecycleStopped):
         pass
 
 
@@ -998,6 +1000,7 @@ def read_sync_log():
 # own storage is partitioned and dies with the window.
 AUTH_FILE = os.path.join(PLUGIN_DIR, ".auth.json")
 BAMBU_CONFIG_FILE = os.path.join(PLUGIN_DIR, ".fh_bambu.json")
+BAMBU_REVOKE_FILE = os.path.join(PLUGIN_DIR, ".fh_bambu_revoke.json")
 PRINTER_BUNDLE_STATE_FILE = os.path.join(PLUGIN_DIR, ".fh_printer_bundles.json")
 
 
@@ -3399,19 +3402,123 @@ def http_delete_bridge(path, bridge_token):
     return _http_delete_bridge(path, bridge_token)
 
 
-def revoke_fresh_bridge_token(bridge_token):
-    """Compensate one just-accepted pair even if its worker was unloaded.
+_BAMBU_REVOKE_LOCK = threading.RLock()
 
-    This bypass is deliberately limited to the fixed connection endpoint and a
-    newly returned bridge credential. Stored/user-selected connections still
-    use ``http_delete_bridge`` and cannot be removed by a retired generation.
+
+def _valid_fresh_bridge_token(bridge_token):
+    return (
+        isinstance(bridge_token, str)
+        and bridge_token.startswith("fhpb_")
+        and len(bridge_token) <= 256
+    )
+
+
+def _load_pending_bambu_revokes(now=None):
+    """Read bounded compensation state without exposing tokens to diagnostics."""
+    now = time.time() if now is None else float(now)
+    try:
+        if os.path.getsize(BAMBU_REVOKE_FILE) > BAMBU_REVOKE_STATE_MAX_BYTES:
+            return []
+        with open(BAMBU_REVOKE_FILE, "r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+    except (OSError, TypeError, ValueError):
+        return []
+    if not isinstance(payload, dict) or payload.get("version") != 1:
+        return []
+    entries = []
+    seen = set()
+    for raw in payload.get("pending") or []:
+        if not isinstance(raw, dict):
+            continue
+        token = raw.get("token")
+        created_at = raw.get("created_at")
+        next_retry_at = raw.get("next_retry_at")
+        attempts = raw.get("attempts")
+        if (
+            not _valid_fresh_bridge_token(token)
+            or token in seen
+            or isinstance(created_at, bool)
+            or not isinstance(created_at, (int, float))
+            or not 0 < created_at <= now + 300
+            or now - created_at >= BAMBU_REVOKE_RETENTION_SECONDS
+            or isinstance(next_retry_at, bool)
+            or not isinstance(next_retry_at, (int, float))
+            or not 0 <= next_retry_at <= created_at + BAMBU_REVOKE_RETENTION_SECONDS
+            or isinstance(attempts, bool)
+            or not isinstance(attempts, int)
+            or not 0 <= attempts <= 10000
+        ):
+            continue
+        seen.add(token)
+        entries.append({
+            "token": token,
+            "created_at": float(created_at),
+            "next_retry_at": float(next_retry_at),
+            "attempts": attempts,
+        })
+        if len(entries) >= BAMBU_REVOKE_MAX_PENDING:
+            break
+    return entries
+
+
+def _write_pending_bambu_revokes(entries):
+    """Persist only exact fresh tokens plus bounded retry metadata.
+
+    This is a narrow lifecycle compensation, so it intentionally uses the
+    unchecked atomic writer after validating every field above. It never stores
+    a caller-supplied endpoint, printer address, access code or account token.
     """
-    if (
-        not isinstance(bridge_token, str)
-        or not bridge_token.startswith("fhpb_")
-        or len(bridge_token) > MAX_TOKEN_LENGTH
-    ):
-        return 0
+    payload = {"version": 1, "pending": entries[:BAMBU_REVOKE_MAX_PENDING]}
+    encoded = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
+    _write_bytes_atomic_unchecked(BAMBU_REVOKE_FILE, encoded, mode=0o600)
+
+
+def queue_fresh_bambu_revoke(bridge_token, now=None, attempts=None):
+    if not _valid_fresh_bridge_token(bridge_token):
+        return False
+    now = time.time() if now is None else float(now)
+    attempt_count = BAMBU_REVOKE_ATTEMPTS if attempts is None else int(attempts)
+    attempt_count = min(max(attempt_count, 0), 10000)
+    with _BAMBU_REVOKE_LOCK:
+        entries = _load_pending_bambu_revokes(now)
+        existing = next(
+            (item for item in entries if item["token"] == bridge_token), None
+        )
+        if existing is None:
+            existing = {
+                "token": bridge_token,
+                "created_at": now,
+                "next_retry_at": now + BAMBU_REVOKE_BACKOFF_INITIAL_SECONDS,
+                "attempts": attempt_count,
+            }
+            entries.append(existing)
+        else:
+            existing["attempts"] = max(existing["attempts"], attempt_count)
+        entries = entries[-BAMBU_REVOKE_MAX_PENDING:]
+        try:
+            _write_pending_bambu_revokes(entries)
+        except OSError:
+            return False
+    return True
+
+
+def discard_pending_bambu_revoke(bridge_token, now=None):
+    if not _valid_fresh_bridge_token(bridge_token):
+        return False
+    now = time.time() if now is None else float(now)
+    with _BAMBU_REVOKE_LOCK:
+        entries = _load_pending_bambu_revokes(now)
+        kept = [item for item in entries if item["token"] != bridge_token]
+        if len(kept) == len(entries):
+            return False
+        try:
+            _write_pending_bambu_revokes(kept)
+        except OSError:
+            return False
+    return True
+
+
+def _try_revoke_fresh_bridge_token(bridge_token):
     status = 0
     for _attempt in range(BAMBU_REVOKE_ATTEMPTS):
         status = _http_delete_bridge(
@@ -3422,6 +3529,67 @@ def revoke_fresh_bridge_token(bridge_token):
         if status in {204, 401}:
             break
     return status
+
+
+def revoke_fresh_bridge_token(bridge_token):
+    """Compensate one just-accepted pair even if its worker was unloaded.
+
+    This bypass is deliberately limited to the fixed connection endpoint and a
+    newly returned bridge credential. Stored/user-selected connections still
+    use ``http_delete_bridge`` and cannot be removed by a retired generation.
+    A failed bounded attempt is retained in private state for a later lifecycle.
+    """
+    if not _valid_fresh_bridge_token(bridge_token):
+        return 0
+    status = _try_revoke_fresh_bridge_token(bridge_token)
+    if status in {204, 401}:
+        discard_pending_bambu_revoke(bridge_token)
+    else:
+        queue_fresh_bambu_revoke(bridge_token)
+    return status
+
+
+def retry_pending_bambu_revokes(now=None):
+    """Retry due exact-token compensations and merge concurrent queue writes."""
+    now = time.time() if now is None else float(now)
+    with _BAMBU_REVOKE_LOCK:
+        snapshot = _load_pending_bambu_revokes(now)
+    updates = {}
+    for entry in snapshot:
+        if entry["next_retry_at"] > now:
+            continue
+        status = _try_revoke_fresh_bridge_token(entry["token"])
+        if status in {204, 401}:
+            updates[entry["token"]] = None
+            continue
+        attempts = min(entry["attempts"] + BAMBU_REVOKE_ATTEMPTS, 10000)
+        exponent = min(attempts // BAMBU_REVOKE_ATTEMPTS, 12)
+        delay = min(
+            BAMBU_REVOKE_BACKOFF_INITIAL_SECONDS * (2 ** exponent),
+            BAMBU_REVOKE_BACKOFF_MAX_SECONDS,
+        )
+        updates[entry["token"]] = {
+            **entry,
+            "attempts": attempts,
+            "next_retry_at": min(
+                now + delay,
+                entry["created_at"] + BAMBU_REVOKE_RETENTION_SECONDS,
+            ),
+        }
+    with _BAMBU_REVOKE_LOCK:
+        current = _load_pending_bambu_revokes(now)
+        merged = {item["token"]: item for item in current}
+        for token, update in updates.items():
+            if update is None:
+                merged.pop(token, None)
+            elif token in merged:
+                merged[token] = update
+        entries = list(merged.values())[-BAMBU_REVOKE_MAX_PENDING:]
+        try:
+            _write_pending_bambu_revokes(entries)
+        except OSError:
+            return {"retried": len(updates), "remaining": len(current)}
+    return {"retried": len(updates), "remaining": len(entries)}
 
 
 def http_post_file(path, token, file_path, field="file", file_name=""):
@@ -8008,29 +8176,46 @@ BAMBU_BRIDGE_RUNTIME = BambuBridgeRuntime()
 
 def wake_bambu_bridge_runtime():
     """Wake the observer only from the currently loaded worker generation."""
+    with _PLUGIN_RUNTIME_LOCK:
+        expected_epoch = _PLUGIN_RUNTIME_EPOCH
     worker = globals().get("BACKGROUND_WORKER")
-    run_if_current = getattr(worker, "run_if_current", None)
-    if callable(run_if_current):
-        return run_if_current(BAMBU_BRIDGE_RUNTIME.wake)
-    ensure_worker_generation_active()
-    return BAMBU_BRIDGE_RUNTIME.wake()
+    authorize = getattr(worker, "authorize_external_operation", None)
+    if callable(authorize):
+        authorize()
+    else:
+        ensure_worker_generation_active()
+    # Do not hold the worker lock across thread creation. The runtime epoch is
+    # the second half of the hand-off: unload either follows this short wake and
+    # stops it, or wins first and makes this callback a no-op. A later reload has
+    # a different epoch and cannot be revived by the old callback.
+    with _PLUGIN_RUNTIME_LOCK:
+        if (
+            not _PLUGIN_RUNTIME_ACTIVE
+            or _PLUGIN_RUNTIME_EPOCH != expected_epoch
+        ):
+            return False
+        BAMBU_BRIDGE_RUNTIME.wake()
+        return True
 
 
 _PLUGIN_RUNTIME_LOCK = threading.Lock()
 _PLUGIN_RUNTIME_ACTIVE = False
+_PLUGIN_RUNTIME_EPOCH = 0
 
 
 def start_plugin_runtime(storage_initialized=False):
     """Start process-wide resources once after a host lifecycle load."""
-    global _PLUGIN_RUNTIME_ACTIVE
+    global _PLUGIN_RUNTIME_ACTIVE, _PLUGIN_RUNTIME_EPOCH
     with _PLUGIN_RUNTIME_LOCK:
         if _PLUGIN_RUNTIME_ACTIVE:
             return False
         _PLUGIN_RUNTIME_ACTIVE = True
+        _PLUGIN_RUNTIME_EPOCH += 1
     try:
         if not storage_initialized:
             configure_plugin_storage()
         BACKGROUND_WORKER.activate()
+        BACKGROUND_WORKER.submit(retry_pending_bambu_revokes)
         refresh_ui_language()
         if any(item.get("bridge_token") for item in load_bambu_config()["printers"]):
             BAMBU_BRIDGE_RUNTIME.start()
@@ -8045,11 +8230,12 @@ def start_plugin_runtime(storage_initialized=False):
 
 def stop_plugin_runtime():
     """Cooperatively stop plugin-owned work before the host releases Python."""
-    global _PLUGIN_RUNTIME_ACTIVE
+    global _PLUGIN_RUNTIME_ACTIVE, _PLUGIN_RUNTIME_EPOCH
     with _PLUGIN_RUNTIME_LOCK:
         if not _PLUGIN_RUNTIME_ACTIVE:
             return False
         _PLUGIN_RUNTIME_ACTIVE = False
+        _PLUGIN_RUNTIME_EPOCH += 1
     BACKGROUND_WORKER.stop()
     BAMBU_BRIDGE_RUNTIME.stop()
     SHELL_SERVER.stop()
