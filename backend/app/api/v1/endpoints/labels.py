@@ -20,10 +20,14 @@ from app.core.errors import (
 from app.core.limiter import limiter
 from app.db.session import get_db
 from app.models.user import User
-from app.schemas.label import LabelExportOptions
+from app.schemas.label import LabelExportOptions, LabelPresetResponse, LabelPresetSave
 from app.services.label_catalog import catalog_label_data, public_brand_logo, public_label_filament
 from app.services.label_fonts import UnsupportedLabelText
 from app.services.label_layout import SHEET_MEDIA, LabelDoesNotFit, compose_sheet, sheet_positions
+from app.services.label_preset_service import (
+    get_default_label_preset,
+    save_default_label_preset,
+)
 from app.services.label_renderer import (
     LabelBrandLogoUnavailable,
     export_label,
@@ -40,6 +44,35 @@ MEDIA_PRESETS = [
     {"width_mm": width, "height_mm": height}
     for width, height in ((40, 30), (50, 30), (62, 29), (54, 25), (63.5, 38.1), (40, 12))
 ]
+
+
+@router.get("/presets/default", response_model=LabelPresetResponse | None)
+@limiter.limit("60/minute")
+async def default_label_preset(
+    request: Request,
+    response: Response,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> LabelPresetResponse | None:
+    response.headers["Cache-Control"] = "private, no-store"
+    return await get_default_label_preset(db, user_id=current_user.id)
+
+
+@router.put("/presets/default", response_model=LabelPresetResponse)
+@limiter.limit("30/minute")
+async def update_default_label_preset(
+    request: Request,
+    response: Response,
+    payload: LabelPresetSave,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> LabelPresetResponse:
+    response.headers["Cache-Control"] = "private, no-store"
+    return await save_default_label_preset(
+        db,
+        user_id=current_user.id,
+        payload=payload,
+    )
 
 
 def _metadata(filament, locale: str) -> dict:

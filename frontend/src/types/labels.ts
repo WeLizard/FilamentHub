@@ -36,6 +36,25 @@ export interface LabelExportOptions {
   crop_marks: boolean;
 }
 
+export type LabelPresetLabelOptions = Omit<LabelOptions, "locale" | "comment">;
+
+export interface LabelPresetSettings {
+  label: LabelPresetLabelOptions;
+  format: LabelExportOptions["format"];
+  media: LabelExportOptions["media"];
+  page_margin_mm: number;
+  gap_mm: number;
+  crop_marks: boolean;
+}
+
+export interface LabelPreset {
+  id: number;
+  name: string;
+  revision: number;
+  settings: LabelPresetSettings;
+  updated_at: string;
+}
+
 export interface LabelMetadata {
   data: {
     sku: string;

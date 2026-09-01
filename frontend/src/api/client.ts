@@ -9,7 +9,7 @@ import { getCsrfToken, getRefreshToken, getToken, isCookieAuthMode, isJwtAuthMod
 import { isPluginEmbed, reportPluginSessionToPlugin } from '../utils/pluginBridge';
 import { downloadBlob } from '../utils/download';
 import { currentRequestLanguage } from '../utils/requestLanguage';
-import type { LabelExportOptions, LabelMetadata, LabelPreview } from '../types/labels';
+import type { LabelExportOptions, LabelMetadata, LabelPreset, LabelPresetSettings, LabelPreview } from '../types/labels';
 
 const API_BASE_URL = '/api/v1';
 const COOKIE_AUTH_MODE = isCookieAuthMode();
@@ -1169,7 +1169,34 @@ export interface QrScanResponse {
   preset_sync_enabled: boolean | null;
 }
 
+const fetchLabelExport = async (path: string, options: LabelExportOptions): Promise<Blob> => {
+  try {
+    const response = await api.post(path, options, { responseType: 'blob' });
+    return response.data;
+  } catch (error) {
+    if (axios.isAxiosError(error) && error.response?.data instanceof Blob) {
+      try {
+        error.response.data = JSON.parse(await error.response.data.text());
+      } catch {
+        /* Keep the original response when it is not JSON. */
+      }
+    }
+    throw error;
+  }
+};
+
 export const labelsAPI = {
+  getDefaultPreset: async (): Promise<LabelPreset | null> => {
+    const response = await api.get('/labels/presets/default');
+    return response.data;
+  },
+  saveDefaultPreset: async (
+    revision: number | null,
+    settings: LabelPresetSettings,
+  ): Promise<LabelPreset> => {
+    const response = await api.put('/labels/presets/default', { revision, settings });
+    return response.data;
+  },
   metadata: async (filamentId: number, locale: string): Promise<LabelMetadata> => {
     const response = await api.get(`/labels/filaments/${filamentId}`, { params: { locale } });
     return response.data;
@@ -1179,15 +1206,13 @@ export const labelsAPI = {
     return response.data;
   },
   download: async (filamentId: number, options: LabelExportOptions): Promise<void> => {
-    try {
-      const response = await api.post(`/labels/filaments/${filamentId}/export`, options, { responseType: 'blob' });
-      downloadBlob(response.data, `label-${filamentId}.${options.format}`);
-    } catch (error) {
-      if (axios.isAxiosError(error) && error.response?.data instanceof Blob) {
-        try { error.response.data = JSON.parse(await error.response.data.text()); } catch { /* Keep the original response when it is not JSON. */ }
-      }
-      throw error;
-    }
+    downloadBlob(
+      await fetchLabelExport(`/labels/filaments/${filamentId}/export`, options),
+      `label-${filamentId}.${options.format}`,
+    );
+  },
+  exportBlob: async (filamentId: number, options: LabelExportOptions): Promise<Blob> => {
+    return fetchLabelExport(`/labels/filaments/${filamentId}/export`, options);
   },
   spoolMetadata: async (spoolId: number, locale: string): Promise<LabelMetadata> => {
     const response = await api.get(`/labels/spools/${spoolId}`, { params: { locale } });
@@ -1198,15 +1223,13 @@ export const labelsAPI = {
     return response.data;
   },
   spoolDownload: async (spoolId: number, options: LabelExportOptions): Promise<void> => {
-    try {
-      const response = await api.post(`/labels/spools/${spoolId}/export`, options, { responseType: 'blob' });
-      downloadBlob(response.data, `spool-label-${spoolId}.${options.format}`);
-    } catch (error) {
-      if (axios.isAxiosError(error) && error.response?.data instanceof Blob) {
-        try { error.response.data = JSON.parse(await error.response.data.text()); } catch { /* Keep the original response when it is not JSON. */ }
-      }
-      throw error;
-    }
+    downloadBlob(
+      await fetchLabelExport(`/labels/spools/${spoolId}/export`, options),
+      `spool-label-${spoolId}.${options.format}`,
+    );
+  },
+  spoolExportBlob: async (spoolId: number, options: LabelExportOptions): Promise<Blob> => {
+    return fetchLabelExport(`/labels/spools/${spoolId}/export`, options);
   },
 };
 

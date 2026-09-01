@@ -107,6 +107,7 @@ from app.models.sync_preset_state import SyncPresetState
 from app.models.sync_report import SyncReport, SyncReportChunk, SyncReportItem
 from app.models.user import User, UserRole
 from app.models.user_achievement import UserAchievement
+from app.models.user_label_preset import UserLabelPreset
 from app.models.user_legal_acceptance import UserLegalAcceptance
 from app.models.user_printer_device import UserPrinterDevice
 from app.models.user_saved_preset import UserSavedPreset, UserSavedPresetTarget
@@ -257,6 +258,7 @@ __all__ = [
     "User",
     "UserAchievement",
     "UserLegalAcceptance",
+    "UserLabelPreset",
     "UserPrinterDevice",
     "UserRole",
     "UserSavedPreset",

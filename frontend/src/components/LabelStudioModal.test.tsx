@@ -14,13 +14,20 @@ const mocks = vi.hoisted(() => ({
   metadata: vi.fn(),
   preview: vi.fn(),
   download: vi.fn(),
+  exportBlob: vi.fn(),
   spoolMetadata: vi.fn(),
   spoolPreview: vi.fn(),
   spoolDownload: vi.fn(),
+  spoolExportBlob: vi.fn(),
+  getDefaultPreset: vi.fn(),
+  saveDefaultPreset: vi.fn(),
+  printPdfBlob: vi.fn(),
   error: vi.fn(),
+  success: vi.fn(),
   decode: vi.fn(),
 }));
 vi.mock("../api/client", () => ({ labelsAPI: mocks }));
+vi.mock("../utils/download", () => ({ printPdfBlob: mocks.printPdfBlob }));
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
     t: (key: string, options?: Record<string, unknown>) =>
@@ -28,7 +35,9 @@ vi.mock("react-i18next", () => ({
     i18n: { language: "ru" },
   }),
 }));
-vi.mock("./Toast", () => ({ toast: { error: mocks.error } }));
+vi.mock("./Toast", () => ({
+  toast: { error: mocks.error, success: mocks.success },
+}));
 
 describe("LabelStudioModal", () => {
   beforeEach(() => {
@@ -74,7 +83,25 @@ describe("LabelStudioModal", () => {
     mocks.preview.mockResolvedValue(preview);
     mocks.spoolPreview.mockResolvedValue(preview);
     mocks.download.mockResolvedValue(undefined);
+    mocks.exportBlob.mockResolvedValue(
+      new Blob(["pdf"], { type: "application/pdf" }),
+    );
     mocks.spoolDownload.mockResolvedValue(undefined);
+    mocks.spoolExportBlob.mockResolvedValue(
+      new Blob(["pdf"], { type: "application/pdf" }),
+    );
+    mocks.getDefaultPreset.mockResolvedValue(null);
+    mocks.saveDefaultPreset.mockImplementation(
+      (revision: number | null, settings: unknown) =>
+        Promise.resolve({
+          id: 1,
+          name: "default",
+          revision: (revision ?? 0) + 1,
+          settings,
+          updated_at: "2026-09-01T00:00:00Z",
+        }),
+    );
+    mocks.printPdfBlob.mockResolvedValue(undefined);
   });
   afterEach(() => vi.unstubAllGlobals());
 
@@ -102,7 +129,9 @@ describe("LabelStudioModal", () => {
 
   it("uses owner spool label endpoints for an already-issued instance", async () => {
     openSpool();
-    expect(screen.getByText("labelStudio.instanceCodeHint")).toBeInTheDocument();
+    expect(
+      screen.getByText("labelStudio.instanceCodeHint"),
+    ).toBeInTheDocument();
     const download = await screen.findByRole("button", {
       name: "labelStudio.download",
     });
@@ -115,9 +144,102 @@ describe("LabelStudioModal", () => {
       1,
     );
     fireEvent.click(download);
-    await waitFor(() => expect(mocks.spoolDownload).toHaveBeenCalledWith(101, expect.any(Object)));
+    await waitFor(() =>
+      expect(mocks.spoolDownload).toHaveBeenCalledWith(101, expect.any(Object)),
+    );
     expect(mocks.metadata).not.toHaveBeenCalled();
     expect(mocks.download).not.toHaveBeenCalled();
+  });
+
+  it("offers compact download, print and persistent-save actions with separate semantics", async () => {
+    open();
+    const download = await screen.findByRole("button", {
+      name: "labelStudio.download",
+    });
+    const print = screen.getByRole("button", { name: "labelStudio.print" });
+    const save = screen.getByRole("button", { name: "labelStudio.save" });
+    await waitFor(() => expect(download).not.toBeDisabled());
+    expect(download.parentElement).toContainElement(print);
+    expect(download.parentElement).toContainElement(save);
+
+    fireEvent.click(print);
+    await waitFor(() =>
+      expect(mocks.exportBlob).toHaveBeenCalledWith(
+        12,
+        expect.objectContaining({ format: "pdf" }),
+      ),
+    );
+    expect(mocks.printPdfBlob).toHaveBeenCalledWith(expect.any(Blob));
+
+    fireEvent.click(save);
+    await waitFor(() =>
+      expect(mocks.saveDefaultPreset).toHaveBeenCalledWith(
+        null,
+        expect.objectContaining({
+          label: expect.not.objectContaining({
+            locale: expect.anything(),
+            comment: expect.anything(),
+          }),
+        }),
+      ),
+    );
+    const settings = mocks.saveDefaultPreset.mock.calls[0][1];
+    expect(settings).not.toHaveProperty("copies");
+    expect(settings).not.toHaveProperty("start_position");
+    expect(mocks.success).toHaveBeenCalledWith("labelStudio.saved");
+  });
+
+  it("restores the saved layout without carrying unavailable fields or a missing brand mark", async () => {
+    mocks.getDefaultPreset.mockResolvedValue({
+      id: 9,
+      name: "default",
+      revision: 4,
+      updated_at: "2026-09-01T00:00:00Z",
+      settings: {
+        label: {
+          width_mm: 30,
+          height_mm: 50,
+          kind: "full",
+          color_mode: "mono",
+          dpi: 300,
+          attribution: "mark",
+          qr_mark: true,
+          brand_mode: "mark",
+          border: true,
+          fields: ["nozzle", "bed"],
+        },
+        format: "png",
+        media: "single",
+        page_margin_mm: 4,
+        gap_mm: 1,
+        crop_marks: false,
+      },
+    });
+    open();
+    await waitFor(() =>
+      expect(screen.getByLabelText("labelStudio.width")).toHaveValue("30"),
+    );
+    expect(screen.getByLabelText("labelStudio.height")).toHaveValue("50");
+    await waitFor(() =>
+      expect(mocks.preview.mock.lastCall?.[1]).toEqual(
+        expect.objectContaining({
+          label: expect.objectContaining({
+            dpi: 300,
+            brand_mode: "full",
+            fields: ["nozzle"],
+          }),
+        }),
+      ),
+    );
+    const save = screen.getByRole("button", { name: "labelStudio.save" });
+    await waitFor(() => expect(save).not.toBeDisabled());
+    fireEvent.click(save);
+    await waitFor(() =>
+      expect(mocks.saveDefaultPreset).toHaveBeenCalledWith(
+        4,
+        expect.objectContaining({ format: "png" }),
+      ),
+    );
   });
 
   it("exports only the current preview and keeps classic mark independent from external attribution", async () => {

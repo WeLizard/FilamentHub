@@ -69,7 +69,7 @@
     "fieldsHint": "Up to six fields in this order. Choosing an assigned field swaps positions. Values come from the material's catalog entry.",
     "comment": "Print comment",
     "commentUnavailable": "The comment remains in the editor but is not printed at this size. It is available on larger labels.",
-    "export": "Download",
+    "export": "Output",
     "file": "File",
     "media": "Media",
     "single": "Single label / roll",
@@ -93,7 +93,12 @@
     "pageNumber": "Sheet {{page}} of {{total}}",
     "previousPage": "Previous sheet",
     "nextPage": "Next sheet",
-    "download": "Download file"
+    "download": "Download",
+    "print": "Print",
+    "save": "Save",
+    "saved": "Layout saved",
+    "saveFailed": "Could not save the layout.",
+    "printFailed": "Could not open printing."
   },
   "spoolQr": {
     "title": "Spool label",
@@ -6941,6 +6946,7 @@
     "ERR_LABEL_UNSUPPORTED_TEXT": "Some characters are not supported by the print font. Replace them and try again.",
     "ERR_LABEL_RENDER_FAILED": "Could not render the label. Check the brand image or try without it.",
     "ERR_LABEL_BRAND_LOGO_UNAVAILABLE": "The brand logo is unavailable. Select None or Mark + name.",
+    "ERR_LABEL_PRESET_CONFLICT": "The layout changed in another tab. Reopen the editor and try again.",
     "ERR_PRINTER_IDENTITY_CONFLICT": "The device identity conflicts with the saved connection. Review connections in My printers; do not merge distinct devices.",
     "ERR_PRINTER_MERGE_CONFLICT": "The cards changed or contain incompatible data. Review the merge again.",
     "UNKNOWN_ERROR": "An unexpected error occurred",

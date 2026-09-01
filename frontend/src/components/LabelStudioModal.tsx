@@ -1,11 +1,17 @@
 import { useEffect, useMemo, useState } from "react";
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import {
+  keepPreviousData,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import {
   ArrowLeftRight,
   ChevronLeft,
   ChevronRight,
   Download,
+  Printer,
+  Save,
   X,
 } from "lucide-react";
 import type { AxiosError } from "axios";
@@ -15,7 +21,9 @@ import type {
   LabelExportOptions,
   LabelField,
   LabelOptions,
+  LabelPresetSettings,
 } from "../types/labels";
+import { printPdfBlob } from "../utils/download";
 import { translateApiError } from "../utils/translateApiError";
 import { labelCutGuideLimits, labelSheetGrid } from "../utils/labelSheet";
 import { ModalOverlay } from "./ModalOverlay";
@@ -67,16 +75,20 @@ export function LabelStudioModal({
   filamentId,
   spoolId,
   onClose,
-}: ({
-  filamentId: number;
-  spoolId?: never;
-} | {
-  filamentId?: never;
-  spoolId: number;
-}) & {
+}: (
+  | {
+      filamentId: number;
+      spoolId?: never;
+    }
+  | {
+      filamentId?: never;
+      spoolId: number;
+    }
+) & {
   onClose: () => void;
 }) {
   const { t, i18n } = useTranslation();
+  const queryClient = useQueryClient();
   const locale: LabelOptions["locale"] = i18n.language.startsWith("ru")
     ? "ru"
     : i18n.language.startsWith("zh")
@@ -100,9 +112,16 @@ export function LabelStudioModal({
   const [showSheet, setShowSheet] = useState(false);
   const [selectedPage, setSelectedPage] = useState({ key: "", number: 1 });
   const [downloading, setDownloading] = useState(false);
-  const sourceKey = spoolId === undefined ? `filament-${filamentId}` : `spool-${spoolId}`;
+  const [printing, setPrinting] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [savedRevision, setSavedRevision] = useState<number | null>(null);
+  const [presetApplied, setPresetApplied] = useState(false);
+  const sourceKey =
+    spoolId === undefined ? `filament-${filamentId}` : `spool-${spoolId}`;
   const codeHint = t(
-    spoolId === undefined ? "labelStudio.productCodeHint" : "labelStudio.instanceCodeHint",
+    spoolId === undefined
+      ? "labelStudio.productCodeHint"
+      : "labelStudio.instanceCodeHint",
   );
   useEffect(() => {
     try {
@@ -119,6 +138,59 @@ export function LabelStudioModal({
         : labelsAPI.spoolMetadata(spoolId, locale),
     retry: false,
   });
+  const preset = useQuery({
+    queryKey: ["label-preset", "default"],
+    queryFn: labelsAPI.getDefaultPreset,
+    retry: false,
+    staleTime: Infinity,
+  });
+  useEffect(() => {
+    if (presetApplied || preset.isPending || !metadata.data) return;
+    if (preset.data) {
+      const settings = preset.data.settings;
+      const available = new Set(
+        metadata.data.data.fields.map(([field]) => field),
+      );
+      const fields = settings.label.fields.filter((field) =>
+        available.has(field),
+      );
+      const paddedFields: (LabelField | "")[] = [
+        ...fields,
+        ...Array(Math.max(0, 6 - fields.length)).fill(""),
+      ].slice(0, 6) as (LabelField | "")[];
+      const brand_mode =
+        settings.label.brand_mode === "mark" &&
+        !metadata.data.brand_logo_available
+          ? "full"
+          : settings.label.brand_mode;
+      setLabel((previous) => ({
+        ...previous,
+        ...settings.label,
+        brand_mode,
+        fields: paddedFields,
+        locale,
+        comment: "",
+      }));
+      setWidth(String(settings.label.width_mm));
+      setHeight(String(settings.label.height_mm));
+      if (settings.label.width_mm !== settings.label.height_mm) {
+        setOrientation(
+          settings.label.width_mm > settings.label.height_mm
+            ? "landscape"
+            : "portrait",
+        );
+      }
+      setFormat(settings.format);
+      setMedia(settings.media);
+      setMargin(settings.page_margin_mm);
+      setGap(settings.gap_mm);
+      setCropMarks(settings.media !== "single" && settings.crop_marks);
+      setRequestedCopies(null);
+      setRequestedStart(1);
+      setSavedRevision(preset.data.revision);
+    }
+    setPresetApplied(true);
+  }, [locale, metadata.data, preset.data, preset.isPending, presetApplied]);
   const supportsComment =
     label.kind === "full" &&
     Math.min(label.width_mm, label.height_mm) >= 50 &&
@@ -208,7 +280,7 @@ export function LabelStudioModal({
             signal,
             previewPage,
           ),
-    enabled: !!metadata.data && validSheet,
+    enabled: !!metadata.data && presetApplied && validSheet,
     placeholderData: keepPreviousData,
     retry: false,
     gcTime: 0,
@@ -328,6 +400,75 @@ export function LabelStudioModal({
       setDownloading(false);
     }
   };
+  const presetSettings = useMemo<LabelPresetSettings>(
+    () => ({
+      label: {
+        width_mm: options.label.width_mm,
+        height_mm: options.label.height_mm,
+        kind: options.label.kind,
+        color_mode: options.label.color_mode,
+        dpi: options.label.dpi,
+        attribution: options.label.attribution,
+        qr_mark: options.label.qr_mark,
+        brand_mode: options.label.brand_mode,
+        border: options.label.border,
+        fields: options.label.fields,
+      },
+      format: options.format,
+      media: options.media,
+      page_margin_mm: options.page_margin_mm,
+      gap_mm: options.gap_mm,
+      crop_marks: options.crop_marks,
+    }),
+    [options],
+  );
+  const print = async () => {
+    setPrinting(true);
+    try {
+      const printOptions = { ...options, format: "pdf" as const };
+      const blob =
+        spoolId === undefined
+          ? await labelsAPI.exportBlob(filamentId, printOptions)
+          : await labelsAPI.spoolExportBlob(spoolId, printOptions);
+      await printPdfBlob(blob);
+    } catch (error) {
+      toast.error(
+        translateApiError(
+          t,
+          (error as AxiosError<{ detail: unknown }>)?.response?.data?.detail,
+          t("labelStudio.printFailed"),
+        ),
+      );
+    } finally {
+      setPrinting(false);
+    }
+  };
+  const save = async () => {
+    setSaving(true);
+    try {
+      const saved = await labelsAPI.saveDefaultPreset(
+        savedRevision,
+        presetSettings,
+      );
+      setSavedRevision(saved.revision);
+      queryClient.setQueryData(["label-preset", "default"], saved);
+      toast.success(t("labelStudio.saved"));
+    } catch (error) {
+      void queryClient.invalidateQueries({
+        queryKey: ["label-preset", "default"],
+        refetchType: "none",
+      });
+      toast.error(
+        translateApiError(
+          t,
+          (error as AxiosError<{ detail: unknown }>)?.response?.data?.detail,
+          t("labelStudio.saveFailed"),
+        ),
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
   const numberControl = (
     caption: string,
     value: number,
@@ -369,9 +510,7 @@ export function LabelStudioModal({
             <h2 id="label-studio-title" className="text-xl font-semibold">
               {t("labelStudio.title")}
             </h2>
-            <p className="mt-1 text-sm text-gray-400">
-              {codeHint}
-            </p>
+            <p className="mt-1 text-sm text-gray-400">{codeHint}</p>
           </div>
           <button
             className={buttonClass}
@@ -381,7 +520,9 @@ export function LabelStudioModal({
             <X size={20} />
           </button>
         </header>
-        {metadata.isPending ? (
+        {metadata.isPending ||
+        preset.isPending ||
+        (!presetApplied && !!metadata.data) ? (
           <p className="p-6" role="status">
             {t("common.loading")}
           </p>
@@ -963,20 +1104,64 @@ export function LabelStudioModal({
                       )}
                     </>
                   )}
-                  <button
-                    disabled={
-                      !current ||
-                      requiresPdf ||
-                      !preview.data?.printable ||
-                      preview.isError ||
-                      downloading
-                    }
-                    onClick={() => void download()}
-                    className="flex w-full items-center justify-center gap-2 rounded-xl bg-cyan-300 px-4 py-3 font-semibold text-slate-950 hover:bg-cyan-200 disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    <Download size={18} />
-                    {t(downloading ? "common.loading" : "labelStudio.download")}
-                  </button>
+                  <div className="grid grid-cols-3 gap-2">
+                    <button
+                      disabled={
+                        !current ||
+                        requiresPdf ||
+                        !preview.data?.printable ||
+                        preview.isError ||
+                        downloading ||
+                        printing ||
+                        saving
+                      }
+                      onClick={() => void download()}
+                      className="flex min-w-0 items-center justify-center gap-1.5 rounded-xl bg-cyan-300 px-2 py-3 text-xs font-semibold leading-tight text-slate-950 hover:bg-cyan-200 disabled:cursor-not-allowed disabled:opacity-40 sm:text-sm"
+                    >
+                      <Download className="shrink-0" size={17} />
+                      <span>
+                        {t(
+                          downloading
+                            ? "common.loading"
+                            : "labelStudio.download",
+                        )}
+                      </span>
+                    </button>
+                    <button
+                      disabled={
+                        !current ||
+                        !preview.data?.printable ||
+                        preview.isError ||
+                        downloading ||
+                        printing ||
+                        saving
+                      }
+                      onClick={() => void print()}
+                      className="flex min-w-0 items-center justify-center gap-1.5 rounded-xl border border-cyan-300/60 bg-cyan-300/10 px-2 py-3 text-xs font-semibold leading-tight text-cyan-100 hover:bg-cyan-300/20 disabled:cursor-not-allowed disabled:opacity-40 sm:text-sm"
+                    >
+                      <Printer className="shrink-0" size={17} />
+                      <span>
+                        {t(printing ? "common.loading" : "labelStudio.print")}
+                      </span>
+                    </button>
+                    <button
+                      disabled={
+                        !current ||
+                        !preview.data?.printable ||
+                        preview.isError ||
+                        downloading ||
+                        printing ||
+                        saving
+                      }
+                      onClick={() => void save()}
+                      className="flex min-w-0 items-center justify-center gap-1.5 rounded-xl border border-white/20 bg-white/5 px-2 py-3 text-xs font-semibold leading-tight text-white hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40 sm:text-sm"
+                    >
+                      <Save className="shrink-0" size={17} />
+                      <span>
+                        {t(saving ? "common.loading" : "labelStudio.save")}
+                      </span>
+                    </button>
+                  </div>
                   <p className="text-xs leading-relaxed text-gray-400">
                     {t("labelStudio.printHint")}
                   </p>
