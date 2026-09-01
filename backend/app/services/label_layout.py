@@ -674,7 +674,7 @@ def _compose_vertical(
         )
 
     low, high = 0.95, width * 0.3
-    best = trial(low)
+    candidates = [trial(low)]
     for _ in range(17):
         size = (low + high) / 2
         try:
@@ -682,5 +682,19 @@ def _compose_vertical(
         except LabelDoesNotFit:
             high = size
         else:
-            low, best = size, candidate
-    return best
+            low = size
+            candidates.append(candidate)
+
+    # Text wrapping changes the field grid in discrete steps. Maximising only
+    # the body size can therefore add a row for a tiny type increase and make
+    # the QR smaller even when fields were removed. Choose the best joint use
+    # of the two readable areas from the already bounded search candidates;
+    # on an equal score the QR keeps priority over supporting type.
+    return max(
+        candidates,
+        key=lambda candidate: (
+            candidate.body_size_mm * candidate.qr.width,
+            candidate.qr.width,
+            candidate.body_size_mm,
+        ),
+    )
