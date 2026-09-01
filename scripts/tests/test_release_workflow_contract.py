@@ -51,24 +51,37 @@ def test_owner_script_preflights_literal_orcacloud_metadata() -> None:
     assert '-F "metadata=$metadata"' in script
 
 
-def test_owner_script_repairs_a_failed_trusted_release_without_a_version_bump() -> None:
+def test_owner_script_repairs_only_tags_with_a_safe_trusted_workflow() -> None:
     script = (ROOT / "scripts/publish-plugin-releases.ps1").read_text(
         encoding="utf-8"
     )
 
     assert "Test-TrustedPublishNeedsRepair" in script
     assert "Repair-TrustedPublishComponent" in script
+    assert "Assert-TrustedPublishRepairable" in script
+    assert (
+        'git @(\n            \'-C\', $RepositoryPath, \'show\', '
+        '"${Tag}:$WorkflowPath"'
+    ) in script
     assert "ПОВТОРИТЬ ORCACLOUD" in script
     repair = script.split("function Repair-TrustedPublishComponent", 1)[1].split(
         "\nAssert-Command git", 1
     )[0]
     validate_at = repair.index("Assert-ReleaseAssets `")
+    tagged_workflow_at = repair.index("Assert-TrustedPublishRepairable `")
     draft_at = repair.index("'--draft'")
     republish_at = repair.index("'--draft=false'")
     wait_at = repair.index("Wait-ForWorkflowRun `")
 
-    assert validate_at < draft_at < republish_at < wait_at
+    assert validate_at < tagged_workflow_at < draft_at < republish_at < wait_at
     assert "-NotBefore $triggerStartedAt.AddSeconds(-5)" in repair
+
+    classification = script.split("function Test-TrustedPublishNeedsRepair", 1)[
+        1
+    ].split("\nfunction Assert-CleanPaths", 1)[0]
+    assert classification.index("$needsRepair") < classification.index(
+        "Assert-TrustedPublishRepairable `"
+    )
 
 
 def test_print_farm_publish_contract_test_does_not_force_a_plugin_version() -> None:

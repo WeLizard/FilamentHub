@@ -35,19 +35,18 @@ function Assert-Command {
     }
 }
 
-function Assert-OrcaCloudPublishWorkflow {
+function Assert-OrcaCloudPublishWorkflowContent {
     param(
-        [Parameter(Mandatory)][string]$Path,
+        [Parameter(Mandatory)][string]$Workflow,
         [Parameter(Mandatory)][string]$Name
     )
 
-    $workflow = Get-Content -LiteralPath $Path -Raw
     $safeMetadataForm = '--form-string "metadata=$metadata"'
     $unsafeMetadataForm = '-F "metadata=$metadata"'
-    if (-not $workflow.Contains($safeMetadataForm)) {
+    if (-not $Workflow.Contains($safeMetadataForm)) {
         throw "$Name не передаёт metadata через curl --form-string; JSON с ';', '@' или ',' может быть искажён."
     }
-    if ($workflow.Contains($unsafeMetadataForm)) {
+    if ($Workflow.Contains($unsafeMetadataForm)) {
         throw "$Name использует небезопасный curl -F для JSON metadata."
     }
     foreach ($required in @(
@@ -56,10 +55,20 @@ function Assert-OrcaCloudPublishWorkflow {
         'audience=orcacloud',
         '-F "files=@$PLUGIN_FILE"'
     )) {
-        if (-not $workflow.Contains($required)) {
+        if (-not $Workflow.Contains($required)) {
             throw "$Name не соответствует OrcaCloud publish contract: отсутствует '$required'."
         }
     }
+}
+
+function Assert-OrcaCloudPublishWorkflow {
+    param(
+        [Parameter(Mandatory)][string]$Path,
+        [Parameter(Mandatory)][string]$Name
+    )
+
+    Assert-OrcaCloudPublishWorkflowContent `
+        -Workflow (Get-Content -LiteralPath $Path -Raw) -Name $Name
 }
 
 function Invoke-Checked {
@@ -224,6 +233,25 @@ function Ensure-LocalTag {
     )
 }
 
+function Assert-TrustedPublishRepairable {
+    param(
+        [Parameter(Mandatory)][string]$Name,
+        [Parameter(Mandatory)][string]$RepositoryPath,
+        [Parameter(Mandatory)][string]$Tag,
+        [Parameter(Mandatory)][string]$WorkflowPath
+    )
+
+    try {
+        $taggedWorkflow = Invoke-Checked git @(
+            '-C', $RepositoryPath, 'show', "${Tag}:$WorkflowPath"
+        ) -Capture
+        Assert-OrcaCloudPublishWorkflowContent `
+            -Workflow $taggedWorkflow -Name "$Name workflow в immutable-теге $Tag"
+    } catch {
+        throw "${Name}: нельзя безопасно повторить OrcaCloud для '$Tag'. Trusted release event всегда выполняет workflow из immutable-тега, а этот workflow устарел. Подготовь новую версию и новый тег вместо перепубликации старого release.`n$($_.Exception.Message)"
+    }
+}
+
 function Test-ComponentNeedsRelease {
     param(
         [Parameter(Mandatory)][string]$Name,
@@ -280,13 +308,17 @@ function Test-TrustedPublishNeedsRepair {
         -Repository $Repository -Workflow $Workflow -Tag $Published.Tag `
         -TagCommit $tagCommit `
         -NotBefore $Published.PublishedAt.AddSeconds(-5)
-    if (-not $run) {
-        return $true
-    }
-    if ([string]$run.status -ne 'completed') {
+    if ($run -and [string]$run.status -ne 'completed') {
         throw "${Name}: trusted publishing ещё выполняется: $($run.url)"
     }
-    return [string]$run.conclusion -ne 'success'
+    $needsRepair = -not $run -or [string]$run.conclusion -ne 'success'
+    if (-not $needsRepair) {
+        return $false
+    }
+    Assert-TrustedPublishRepairable `
+        -Name $Name -RepositoryPath $RepositoryPath -Tag $Published.Tag `
+        -WorkflowPath ".github/workflows/$Workflow"
+    return $true
 }
 
 function Assert-CleanPaths {
@@ -554,6 +586,9 @@ function Repair-TrustedPublishComponent {
     Assert-ReleaseAssets `
         -Release $release -RequiredPatterns $RequiredPatterns -ForbiddenPatterns $ForbiddenPatterns
     Ensure-LocalTag -RepositoryPath $RepositoryPath -RemoteName $Remote -Tag $Tag
+    Assert-TrustedPublishRepairable `
+        -Name $Name -RepositoryPath $RepositoryPath -Tag $Tag `
+        -WorkflowPath ".github/workflows/$TrustedPublishWorkflow"
     $tagCommit = Invoke-Checked git @(
         '-C', $RepositoryPath, 'rev-list', '-n', '1', $Tag
     ) -Capture
