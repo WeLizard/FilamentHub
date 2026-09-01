@@ -453,7 +453,6 @@ SYNC_REPORT_RETRY_SECONDS = 0.25
 BAMBU_REVOKE_ATTEMPTS = 3
 BAMBU_REVOKE_STATE_MAX_BYTES = 32 * 1024
 BAMBU_REVOKE_MAX_PENDING = 16
-BAMBU_REVOKE_RETENTION_SECONDS = 7 * 24 * 60 * 60
 BAMBU_REVOKE_BACKOFF_INITIAL_SECONDS = 60
 BAMBU_REVOKE_BACKOFF_MAX_SECONDS = 6 * 60 * 60
 _SSL_CTX = ssl.create_default_context()
@@ -2109,14 +2108,16 @@ def remove_bambu_bridge(physical_printer_id):
         return False
 
 
-def rollback_fresh_bambu_binding(
+def remove_interrupted_bambu_binding(
     physical_printer_id, fresh_bridge_token, previous_payload
 ):
-    """Restore only the binding replaced by this interrupted pair transaction.
+    """Remove only local credentials invalidated by an interrupted server pair.
 
-    The lifecycle bypass is intentionally scoped by both physical printer id
-    and the exact fresh token. If a new lifecycle has already changed that
-    binding, compensation refuses to overwrite it.
+    A successful pair replaces the server-side token hash, so restoring the
+    previous local token would only manufacture a dead "paired" connection.
+    The lifecycle bypass removes the exact fresh binding, or the byte-for-byte
+    previous binding when persistence had not started yet. A later lifecycle's
+    different binding is never touched.
     """
     if (
         not isinstance(physical_printer_id, int)
@@ -2144,9 +2145,11 @@ def rollback_fresh_bambu_binding(
             ),
             None,
         )
+        if current_binding is None:
+            return False
         if (
-            current_binding is None
-            or current_binding.get("bridge_token") != fresh_bridge_token
+            current_binding.get("bridge_token") != fresh_bridge_token
+            and current_binding != previous_binding
         ):
             return False
         current["printers"] = [
@@ -2154,8 +2157,6 @@ def rollback_fresh_bambu_binding(
             for item in current["printers"]
             if item.get("physical_printer_id") != physical_printer_id
         ]
-        if previous_binding is not None:
-            current["printers"].append(previous_binding)
         encoded = json.dumps(current, ensure_ascii=False, indent=2).encode("utf-8")
         _write_bytes_atomic_unchecked(BAMBU_CONFIG_FILE, encoded, mode=0o600)
         return True
@@ -3439,11 +3440,10 @@ def _load_pending_bambu_revokes(now=None):
             or token in seen
             or isinstance(created_at, bool)
             or not isinstance(created_at, (int, float))
-            or not 0 < created_at <= now + 300
-            or now - created_at >= BAMBU_REVOKE_RETENTION_SECONDS
+            or not 0 < created_at < float("inf")
             or isinstance(next_retry_at, bool)
             or not isinstance(next_retry_at, (int, float))
-            or not 0 <= next_retry_at <= created_at + BAMBU_REVOKE_RETENTION_SECONDS
+            or not 0 <= next_retry_at < float("inf")
             or isinstance(attempts, bool)
             or not isinstance(attempts, int)
             or not 0 <= attempts <= 10000
@@ -3485,6 +3485,8 @@ def queue_fresh_bambu_revoke(bridge_token, now=None, attempts=None):
             (item for item in entries if item["token"] == bridge_token), None
         )
         if existing is None:
+            if len(entries) >= BAMBU_REVOKE_MAX_PENDING:
+                return False
             existing = {
                 "token": bridge_token,
                 "created_at": now,
@@ -3494,12 +3496,18 @@ def queue_fresh_bambu_revoke(bridge_token, now=None, attempts=None):
             entries.append(existing)
         else:
             existing["attempts"] = max(existing["attempts"], attempt_count)
-        entries = entries[-BAMBU_REVOKE_MAX_PENDING:]
         try:
             _write_pending_bambu_revokes(entries)
         except OSError:
             return False
+    wake_pending_bambu_revoke_scheduler()
     return True
+
+
+def can_queue_fresh_bambu_revoke(now=None):
+    now = time.time() if now is None else float(now)
+    with _BAMBU_REVOKE_LOCK:
+        return len(_load_pending_bambu_revokes(now)) < BAMBU_REVOKE_MAX_PENDING
 
 
 def discard_pending_bambu_revoke(bridge_token, now=None):
@@ -3571,10 +3579,7 @@ def retry_pending_bambu_revokes(now=None):
         updates[entry["token"]] = {
             **entry,
             "attempts": attempts,
-            "next_retry_at": min(
-                now + delay,
-                entry["created_at"] + BAMBU_REVOKE_RETENTION_SECONDS,
-            ),
+            "next_retry_at": now + delay,
         }
     with _BAMBU_REVOKE_LOCK:
         current = _load_pending_bambu_revokes(now)
@@ -3584,12 +3589,108 @@ def retry_pending_bambu_revokes(now=None):
                 merged.pop(token, None)
             elif token in merged:
                 merged[token] = update
-        entries = list(merged.values())[-BAMBU_REVOKE_MAX_PENDING:]
+        entries = list(merged.values())
         try:
             _write_pending_bambu_revokes(entries)
         except OSError:
             return {"retried": len(updates), "remaining": len(current)}
     return {"retried": len(updates), "remaining": len(entries)}
+
+
+def _next_pending_bambu_revoke_at(now=None):
+    now = time.time() if now is None else float(now)
+    with _BAMBU_REVOKE_LOCK:
+        entries = _load_pending_bambu_revokes(now)
+    if not entries:
+        return None
+    return min(item["next_retry_at"] for item in entries)
+
+
+class BambuRevokeScheduler:
+    """Own one cancellable timer for the nearest durable compensation retry."""
+
+    def __init__(self):
+        self._lock = threading.RLock()
+        self._timer = None
+        self._generation = 0
+        self._active = False
+        self._running = False
+
+    def _schedule_locked(self):
+        if self._timer is not None:
+            self._timer.cancel()
+            self._timer = None
+        if not self._active or self._running:
+            return
+        retry_at = _next_pending_bambu_revoke_at()
+        if retry_at is None:
+            return
+        generation = self._generation
+        timer = threading.Timer(
+            min(
+                max(0.0, retry_at - time.time()),
+                BAMBU_REVOKE_BACKOFF_MAX_SECONDS,
+            ),
+            self._fire,
+            args=(generation,),
+        )
+        timer.name = "filamenthub-bambu-revoke"
+        timer.daemon = True
+        self._timer = timer
+        timer.start()
+
+    def start(self):
+        with self._lock:
+            if self._active:
+                self._schedule_locked()
+                return False
+            self._active = True
+            self._generation += 1
+            self._schedule_locked()
+            return True
+
+    def stop(self):
+        with self._lock:
+            self._active = False
+            self._generation += 1
+            timer, self._timer = self._timer, None
+        if timer is not None:
+            timer.cancel()
+
+    def wake(self):
+        with self._lock:
+            if not self._active:
+                return False
+            self._schedule_locked()
+            return True
+
+    def _fire(self, generation):
+        with self._lock:
+            if not self._active or generation != self._generation:
+                return
+            self._timer = None
+            self._running = True
+        try:
+            retry_pending_bambu_revokes()
+        finally:
+            with self._lock:
+                self._running = False
+                if self._active:
+                    self._schedule_locked()
+
+
+BAMBU_REVOKE_SCHEDULER = BambuRevokeScheduler()
+
+
+def wake_pending_bambu_revoke_scheduler():
+    """Reschedule only while this plugin lifecycle remains loaded."""
+    runtime_lock = globals().get("_PLUGIN_RUNTIME_LOCK")
+    if runtime_lock is None:
+        return False
+    with runtime_lock:
+        if not globals().get("_PLUGIN_RUNTIME_ACTIVE", False):
+            return False
+        return BAMBU_REVOKE_SCHEDULER.wake()
 
 
 def http_post_file(path, token, file_path, field="file", file_name=""):
@@ -8215,7 +8316,7 @@ def start_plugin_runtime(storage_initialized=False):
         if not storage_initialized:
             configure_plugin_storage()
         BACKGROUND_WORKER.activate()
-        BACKGROUND_WORKER.submit(retry_pending_bambu_revokes)
+        BAMBU_REVOKE_SCHEDULER.start()
         refresh_ui_language()
         if any(item.get("bridge_token") for item in load_bambu_config()["printers"]):
             BAMBU_BRIDGE_RUNTIME.start()
@@ -8236,6 +8337,7 @@ def stop_plugin_runtime():
             return False
         _PLUGIN_RUNTIME_ACTIVE = False
         _PLUGIN_RUNTIME_EPOCH += 1
+    BAMBU_REVOKE_SCHEDULER.stop()
     BACKGROUND_WORKER.stop()
     BAMBU_BRIDGE_RUNTIME.stop()
     SHELL_SERVER.stop()
@@ -8889,6 +8991,12 @@ class FilamentHubCatalog(
             # consumed on the server.
             save_bambu_config(local)
             previous_local = json.loads(json.dumps(local))
+            # Pairing rotates the server credential immediately. Reserve one
+            # durable compensation slot before consuming the one-time code so
+            # a later network failure can never evict an older pending token.
+            if not can_queue_fresh_bambu_revoke():
+                self._deliver_notice(ui_text("bambuPairingFailed"), "error")
+                return
             pair_status, pair_body = http_post_json(
                 "/printer-bridge/pair",
                 "",
@@ -8976,7 +9084,7 @@ class FilamentHubCatalog(
                 except (OSError, TypeError, ValueError):
                     pass
                 if previous_local is not None:
-                    rollback_fresh_bambu_binding(
+                    remove_interrupted_bambu_binding(
                         physical_printer_id,
                         bridge_token,
                         previous_local,

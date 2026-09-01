@@ -9,6 +9,7 @@ import io
 import json
 import sys
 import threading
+import time
 import tomllib
 import urllib.request
 import zipfile
@@ -6122,6 +6123,11 @@ def test_runtime_stop_closes_every_owned_resource(plugin_module, monkeypatch):
     )
     monkeypatch.setattr(
         plugin_module,
+        "BAMBU_REVOKE_SCHEDULER",
+        SimpleNamespace(stop=lambda: stopped.append("revoke-scheduler")),
+    )
+    monkeypatch.setattr(
+        plugin_module,
         "SHELL_SERVER",
         SimpleNamespace(stop=lambda: stopped.append("loopback")),
     )
@@ -6129,11 +6135,11 @@ def test_runtime_stop_closes_every_owned_resource(plugin_module, monkeypatch):
     monkeypatch.setattr(plugin_module, "_PLUGIN_RUNTIME_EPOCH", 1)
 
     assert plugin_module.stop_plugin_runtime() is True
-    assert stopped == ["worker", "bambu", "loopback"]
+    assert stopped == ["revoke-scheduler", "worker", "bambu", "loopback"]
     assert plugin_module._PLUGIN_RUNTIME_ACTIVE is False
 
 
-def test_runtime_load_schedules_pending_bambu_revoke_retry(
+def test_runtime_load_starts_pending_bambu_revoke_scheduler(
     plugin_module, monkeypatch
 ):
     calls = []
@@ -6141,10 +6147,6 @@ def test_runtime_load_schedules_pending_bambu_revoke_retry(
     class Worker:
         def activate(self):
             calls.append("activate")
-
-        def submit(self, function, *args):
-            calls.append(("submit", function, args))
-            return True
 
         def stop(self):
             calls.append("stop")
@@ -6154,6 +6156,14 @@ def test_runtime_load_schedules_pending_bambu_revoke_retry(
         plugin_module,
         "BAMBU_BRIDGE_RUNTIME",
         SimpleNamespace(start=lambda: calls.append("bambu-start"), stop=lambda: None),
+    )
+    monkeypatch.setattr(
+        plugin_module,
+        "BAMBU_REVOKE_SCHEDULER",
+        SimpleNamespace(
+            start=lambda: calls.append("revoke-start"),
+            stop=lambda: calls.append("revoke-stop"),
+        ),
     )
     monkeypatch.setattr(plugin_module, "SHELL_SERVER", SimpleNamespace(stop=lambda: None))
     monkeypatch.setattr(plugin_module, "refresh_ui_language", lambda: None)
@@ -6167,10 +6177,7 @@ def test_runtime_load_schedules_pending_bambu_revoke_retry(
     monkeypatch.setattr(plugin_module, "_PLUGIN_RUNTIME_EPOCH", 0)
 
     assert plugin_module.start_plugin_runtime(storage_initialized=True) is True
-    assert calls[:2] == [
-        "activate",
-        ("submit", plugin_module.retry_pending_bambu_revokes, ()),
-    ]
+    assert calls[:2] == ["activate", "revoke-start"]
     assert plugin_module.stop_plugin_runtime() is True
 
 
@@ -7374,7 +7381,7 @@ def test_pending_bambu_revoke_retries_fixed_endpoint_and_clears_on_success(
     assert plugin_module.load_bambu_config() == current
 
 
-@pytest.mark.parametrize("state_kind", ["corrupt", "oversized", "expired"])
+@pytest.mark.parametrize("state_kind", ["corrupt", "oversized"])
 def test_pending_bambu_revoke_state_fails_closed_and_is_sanitized(
     plugin_module, monkeypatch, tmp_path, state_kind
 ):
@@ -7383,27 +7390,9 @@ def test_pending_bambu_revoke_state_fails_closed_and_is_sanitized(
     now = 2_000_000_000.0
     if state_kind == "corrupt":
         state_path.write_text("{broken", encoding="utf-8")
-    elif state_kind == "oversized":
+    else:
         state_path.write_bytes(
             b"x" * (plugin_module.BAMBU_REVOKE_STATE_MAX_BYTES + 1)
-        )
-    else:
-        state_path.write_text(
-            json.dumps(
-                {
-                    "version": 1,
-                    "pending": [
-                        {
-                            "token": "fhpb_expired",
-                            "created_at": now
-                            - plugin_module.BAMBU_REVOKE_RETENTION_SECONDS,
-                            "next_retry_at": now - 1,
-                            "attempts": 3,
-                        }
-                    ],
-                }
-            ),
-            encoding="utf-8",
         )
     calls = []
     monkeypatch.setattr(
@@ -7421,6 +7410,48 @@ def test_pending_bambu_revoke_state_fails_closed_and_is_sanitized(
         "version": 1,
         "pending": [],
     }
+
+
+def test_old_pending_bambu_revoke_is_not_dropped_without_server_expiry(
+    plugin_module, monkeypatch, tmp_path
+):
+    state_path = tmp_path / ".fh_bambu_revoke.json"
+    monkeypatch.setattr(plugin_module, "BAMBU_REVOKE_FILE", str(state_path))
+    now = 2_000_000_000.0
+    state_path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "pending": [
+                    {
+                        "token": "fhpb_old-pending",
+                        "created_at": now - 10 * 365 * 24 * 60 * 60,
+                        "next_retry_at": now - 1,
+                        "attempts": 300,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    calls = []
+    monkeypatch.setattr(
+        plugin_module,
+        "_http_delete_bridge",
+        lambda path, token, allow_retired_generation=False: calls.append(
+            (path, token, allow_retired_generation)
+        )
+        or 204,
+    )
+
+    assert len(plugin_module._load_pending_bambu_revokes(now=now)) == 1
+    assert plugin_module.retry_pending_bambu_revokes(now=now) == {
+        "retried": 1,
+        "remaining": 0,
+    }
+    assert calls == [
+        ("/printer-bridge/connection", "fhpb_old-pending", True)
+    ]
 
 
 def test_pending_bambu_revoke_rejects_unbounded_or_non_bridge_tokens(
@@ -7462,6 +7493,196 @@ def test_pending_bambu_revoke_state_is_written_private_and_minimal(
         "next_retry_at",
         "attempts",
     }
+
+
+def test_pending_bambu_revoke_queue_never_evicts_when_full(
+    plugin_module, monkeypatch, tmp_path
+):
+    state_path = tmp_path / ".fh_bambu_revoke.json"
+    monkeypatch.setattr(plugin_module, "BAMBU_REVOKE_FILE", str(state_path))
+    now = 2_000_000_000.0
+    tokens = [
+        "fhpb_pending-%02d" % index
+        for index in range(plugin_module.BAMBU_REVOKE_MAX_PENDING)
+    ]
+    for token in tokens:
+        assert plugin_module.queue_fresh_bambu_revoke(token, now=now)
+
+    assert not plugin_module.can_queue_fresh_bambu_revoke(now=now)
+    assert not plugin_module.queue_fresh_bambu_revoke(
+        "fhpb_would-be-lost", now=now
+    )
+    assert [
+        item["token"]
+        for item in plugin_module._load_pending_bambu_revokes(now=now)
+    ] == tokens
+
+
+def test_full_revoke_queue_rejects_pair_before_consuming_code(
+    plugin_module, monkeypatch, tmp_path
+):
+    state_path = tmp_path / ".fh_bambu_revoke.json"
+    config_path = tmp_path / ".fh_bambu.json"
+    monkeypatch.setattr(plugin_module, "BAMBU_REVOKE_FILE", str(state_path))
+    monkeypatch.setattr(plugin_module, "BAMBU_CONFIG_FILE", str(config_path))
+    now = time.time()
+    for index in range(plugin_module.BAMBU_REVOKE_MAX_PENDING):
+        assert plugin_module.queue_fresh_bambu_revoke(
+            "fhpb_pending-%02d" % index, now=now
+        )
+    monkeypatch.setattr(
+        plugin_module, "_resolved_bambu_address", lambda _host: "192.168.1.42"
+    )
+    monkeypatch.setattr(
+        plugin_module,
+        "read_bambu_lan_snapshot",
+        lambda _config: ("SERIAL-2", _bambu_report()),
+    )
+    pair_calls = []
+    monkeypatch.setattr(
+        plugin_module,
+        "http_post_json",
+        lambda *_args, **_kwargs: pair_calls.append(True) or (500, b""),
+    )
+    notices = []
+    catalog = plugin_module.FilamentHubCatalog()
+    monkeypatch.setattr(
+        catalog,
+        "_deliver_notice",
+        lambda text, status="info": notices.append((text, status)),
+    )
+
+    catalog._do_configure_bambu(
+        3, 5, "printer.local", "secret", "", "one-time-code"
+    )
+
+    assert pair_calls == []
+    assert len(plugin_module._load_pending_bambu_revokes(now=now)) == (
+        plugin_module.BAMBU_REVOKE_MAX_PENDING
+    )
+    assert notices[-1][1] == "error"
+
+
+def _active_revoke_scheduler(plugin_module, monkeypatch, tmp_path):
+    state_path = tmp_path / ".fh_bambu_revoke.json"
+    scheduler = plugin_module.BambuRevokeScheduler()
+    monkeypatch.setattr(plugin_module, "BAMBU_REVOKE_FILE", str(state_path))
+    monkeypatch.setattr(plugin_module, "BAMBU_REVOKE_SCHEDULER", scheduler)
+    monkeypatch.setattr(plugin_module, "_PLUGIN_RUNTIME_ACTIVE", True)
+    monkeypatch.setattr(plugin_module, "_PLUGIN_RUNTIME_EPOCH", 1)
+    return scheduler
+
+
+def test_enqueue_during_lifecycle_retries_without_reload(
+    plugin_module, monkeypatch, tmp_path
+):
+    scheduler = _active_revoke_scheduler(
+        plugin_module, monkeypatch, tmp_path
+    )
+    monkeypatch.setattr(
+        plugin_module, "BAMBU_REVOKE_BACKOFF_INITIAL_SECONDS", 0.02
+    )
+    revoked = threading.Event()
+    monkeypatch.setattr(
+        plugin_module,
+        "_http_delete_bridge",
+        lambda *_args, **_kwargs: revoked.set() or 204,
+    )
+    scheduler.start()
+    try:
+        assert plugin_module.queue_fresh_bambu_revoke("fhpb_live-enqueue")
+        assert revoked.wait(2)
+        deadline = time.time() + 2
+        while plugin_module._load_pending_bambu_revokes() and time.time() < deadline:
+            time.sleep(0.01)
+        assert plugin_module._load_pending_bambu_revokes() == []
+    finally:
+        scheduler.stop()
+
+
+def test_failed_scheduled_revoke_reschedules_with_backoff(
+    plugin_module, monkeypatch, tmp_path
+):
+    scheduler = _active_revoke_scheduler(
+        plugin_module, monkeypatch, tmp_path
+    )
+    monkeypatch.setattr(
+        plugin_module, "BAMBU_REVOKE_BACKOFF_INITIAL_SECONDS", 0.01
+    )
+    monkeypatch.setattr(plugin_module, "BAMBU_REVOKE_BACKOFF_MAX_SECONDS", 0.03)
+    calls = []
+    revoked = threading.Event()
+
+    def delete(*_args, **_kwargs):
+        calls.append(time.monotonic())
+        if len(calls) <= plugin_module.BAMBU_REVOKE_ATTEMPTS:
+            return 0
+        revoked.set()
+        return 204
+
+    monkeypatch.setattr(plugin_module, "_http_delete_bridge", delete)
+    scheduler.start()
+    try:
+        assert plugin_module.queue_fresh_bambu_revoke("fhpb_retry-backoff")
+        assert revoked.wait(2)
+        assert len(calls) == plugin_module.BAMBU_REVOKE_ATTEMPTS + 1
+        assert calls[-1] > calls[plugin_module.BAMBU_REVOKE_ATTEMPTS - 1]
+    finally:
+        scheduler.stop()
+
+
+def test_revoke_scheduler_stop_cancels_waiting_retry(
+    plugin_module, monkeypatch, tmp_path
+):
+    scheduler = _active_revoke_scheduler(
+        plugin_module, monkeypatch, tmp_path
+    )
+    monkeypatch.setattr(
+        plugin_module, "BAMBU_REVOKE_BACKOFF_INITIAL_SECONDS", 0.25
+    )
+    calls = []
+    monkeypatch.setattr(
+        plugin_module,
+        "_http_delete_bridge",
+        lambda *_args, **_kwargs: calls.append(True) or 204,
+    )
+    scheduler.start()
+    assert plugin_module.queue_fresh_bambu_revoke("fhpb_cancel-on-unload")
+    scheduler.stop()
+    time.sleep(0.35)
+
+    assert calls == []
+    assert len(plugin_module._load_pending_bambu_revokes()) == 1
+
+
+def test_revoke_scheduler_restores_pending_retry_on_reload(
+    plugin_module, monkeypatch, tmp_path
+):
+    scheduler = _active_revoke_scheduler(
+        plugin_module, monkeypatch, tmp_path
+    )
+    monkeypatch.setattr(
+        plugin_module, "BAMBU_REVOKE_BACKOFF_INITIAL_SECONDS", 0.02
+    )
+    monkeypatch.setattr(plugin_module, "_PLUGIN_RUNTIME_ACTIVE", False)
+    assert plugin_module.queue_fresh_bambu_revoke("fhpb_restore-on-load")
+    revoked = threading.Event()
+    monkeypatch.setattr(
+        plugin_module,
+        "_http_delete_bridge",
+        lambda *_args, **_kwargs: revoked.set() or 204,
+    )
+    monkeypatch.setattr(plugin_module, "_PLUGIN_RUNTIME_ACTIVE", True)
+
+    scheduler.start()
+    try:
+        assert revoked.wait(2)
+        deadline = time.time() + 2
+        while plugin_module._load_pending_bambu_revokes() and time.time() < deadline:
+            time.sleep(0.01)
+        assert plugin_module._load_pending_bambu_revokes() == []
+    finally:
+        scheduler.stop()
 
 
 def test_bambu_pair_is_revoked_after_unload_before_local_persist(
@@ -7568,7 +7789,7 @@ def test_bambu_pair_is_revoked_after_unload_before_local_persist(
     worker.stop()
 
 
-def test_bambu_pair_restores_previous_binding_when_unload_follows_atomic_write(
+def test_bambu_pair_removes_invalidated_binding_when_unload_follows_atomic_write(
     plugin_module, tmp_path, monkeypatch
 ):
     target = tmp_path / ".fh_bambu.json"
@@ -7674,7 +7895,8 @@ def test_bambu_pair_restores_previous_binding_when_unload_follows_atomic_write(
             "DELETE",
         )
     ]
-    assert plugin_module.load_bambu_config()["printers"] == previous
+    assert previous[0]["bridge_token"] == "fhpb_old"
+    assert plugin_module.load_bambu_config()["printers"] == []
     worker.stop()
 
 
