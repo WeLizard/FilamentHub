@@ -3526,9 +3526,11 @@ def discard_pending_bambu_revoke(bridge_token, now=None):
     return True
 
 
-def _try_revoke_fresh_bridge_token(bridge_token):
+def _try_revoke_fresh_bridge_token(bridge_token, authorize=None):
     status = 0
     for _attempt in range(BAMBU_REVOKE_ATTEMPTS):
+        if authorize is not None:
+            authorize()
         status = _http_delete_bridge(
             "/printer-bridge/connection",
             bridge_token,
@@ -3557,7 +3559,7 @@ def revoke_fresh_bridge_token(bridge_token):
     return status
 
 
-def retry_pending_bambu_revokes(now=None):
+def retry_pending_bambu_revokes(now=None, authorize=None):
     """Retry due exact-token compensations and merge concurrent queue writes."""
     now = time.time() if now is None else float(now)
     with _BAMBU_REVOKE_LOCK:
@@ -3566,7 +3568,12 @@ def retry_pending_bambu_revokes(now=None):
     for entry in snapshot:
         if entry["next_retry_at"] > now:
             continue
-        status = _try_revoke_fresh_bridge_token(entry["token"])
+        try:
+            status = _try_revoke_fresh_bridge_token(
+                entry["token"], authorize=authorize
+            )
+        except PluginLifecycleStopped:
+            break
         if status in {204, 401}:
             updates[entry["token"]] = None
             continue
@@ -3671,12 +3678,22 @@ class BambuRevokeScheduler:
             self._timer = None
             self._running = True
         try:
-            retry_pending_bambu_revokes()
+            retry_pending_bambu_revokes(
+                authorize=lambda: self._authorize_retry(generation)
+            )
         finally:
             with self._lock:
                 self._running = False
                 if self._active:
                     self._schedule_locked()
+
+    def _authorize_retry(self, generation):
+        """Authorize one DELETE start without holding the lock during I/O."""
+        with self._lock:
+            if not self._active or generation != self._generation:
+                raise PluginLifecycleStopped(
+                    "Bambu revoke scheduler generation has stopped"
+                )
 
 
 BAMBU_REVOKE_SCHEDULER = BambuRevokeScheduler()

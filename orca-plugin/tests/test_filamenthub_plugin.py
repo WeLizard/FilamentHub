@@ -856,6 +856,8 @@ def test_blocked_host_callback_does_not_block_worker_stop(
     callback_release = threading.Event()
     callback_finished = threading.Event()
     stop_finished = threading.Event()
+    late_callbacks = []
+    late_errors = []
 
     def message(*_args, **_kwargs):
         callback_started.set()
@@ -871,6 +873,10 @@ def test_blocked_host_callback_does_not_block_worker_stop(
     def job():
         try:
             plugin_module.show_host_message("fixture")
+            try:
+                worker.run_if_current(lambda: late_callbacks.append(True))
+            except Exception as exc:  # noqa: BLE001 - assert exact lifecycle error below
+                late_errors.append(exc)
         finally:
             callback_finished.set()
 
@@ -885,6 +891,9 @@ def test_blocked_host_callback_does_not_block_worker_stop(
     callback_release.set()
     assert callback_finished.wait(2)
     stopper.join(2)
+    assert late_callbacks == []
+    assert len(late_errors) == 1
+    assert isinstance(late_errors[0], plugin_module.PluginLifecycleStopped)
     worker.stop()
 
 
@@ -7653,6 +7662,63 @@ def test_revoke_scheduler_stop_cancels_waiting_retry(
 
     assert calls == []
     assert len(plugin_module._load_pending_bambu_revokes()) == 1
+
+
+def test_revoke_scheduler_stop_during_delete_does_not_start_next_token(
+    plugin_module, monkeypatch, tmp_path
+):
+    scheduler = _active_revoke_scheduler(
+        plugin_module, monkeypatch, tmp_path
+    )
+    now = time.time()
+    state_path = Path(plugin_module.BAMBU_REVOKE_FILE)
+    state_path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "pending": [
+                    {
+                        "token": "fhpb_first-due",
+                        "created_at": now - 10,
+                        "next_retry_at": now - 1,
+                        "attempts": 3,
+                    },
+                    {
+                        "token": "fhpb_second-due",
+                        "created_at": now - 10,
+                        "next_retry_at": now - 1,
+                        "attempts": 3,
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    first_started = threading.Event()
+    first_release = threading.Event()
+    calls = []
+
+    def delete(_path, token, allow_retired_generation=False):
+        calls.append((token, allow_retired_generation))
+        if token == "fhpb_first-due":
+            first_started.set()
+            assert first_release.wait(2)
+            return 204
+        raise AssertionError("scheduler started a new token after stop")
+
+    monkeypatch.setattr(plugin_module, "_http_delete_bridge", delete)
+    scheduler.start()
+    assert first_started.wait(2)
+    scheduler.stop()
+    first_release.set()
+    deadline = time.time() + 2
+    while scheduler._running and time.time() < deadline:
+        time.sleep(0.01)
+
+    assert scheduler._running is False
+    assert calls == [("fhpb_first-due", True)]
+    pending = plugin_module._load_pending_bambu_revokes()
+    assert [item["token"] for item in pending] == ["fhpb_second-due"]
 
 
 def test_revoke_scheduler_restores_pending_retry_on_reload(
