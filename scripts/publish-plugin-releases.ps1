@@ -35,6 +35,33 @@ function Assert-Command {
     }
 }
 
+function Assert-OrcaCloudPublishWorkflow {
+    param(
+        [Parameter(Mandatory)][string]$Path,
+        [Parameter(Mandatory)][string]$Name
+    )
+
+    $workflow = Get-Content -LiteralPath $Path -Raw
+    $safeMetadataForm = '--form-string "metadata=$metadata"'
+    $unsafeMetadataForm = '-F "metadata=$metadata"'
+    if (-not $workflow.Contains($safeMetadataForm)) {
+        throw "$Name не передаёт metadata через curl --form-string; JSON с ';', '@' или ',' может быть искажён."
+    }
+    if ($workflow.Contains($unsafeMetadataForm)) {
+        throw "$Name использует небезопасный curl -F для JSON metadata."
+    }
+    foreach ($required in @(
+        'types: [published]',
+        'id-token: write',
+        'audience=orcacloud',
+        '-F "files=@$PLUGIN_FILE"'
+    )) {
+        if (-not $workflow.Contains($required)) {
+            throw "$Name не соответствует OrcaCloud publish contract: отсутствует '$required'."
+        }
+    }
+}
+
 function Invoke-Checked {
     param(
         [Parameter(Mandatory)][string]$FilePath,
@@ -86,6 +113,30 @@ function Get-Release {
     return ($json | ConvertFrom-Json)
 }
 
+function Get-TrustedPublishRun {
+    param(
+        [Parameter(Mandatory)][string]$Repository,
+        [Parameter(Mandatory)][string]$Workflow,
+        [Parameter(Mandatory)][string]$Tag,
+        [Parameter(Mandatory)][string]$TagCommit,
+        [Parameter(Mandatory)][datetime]$NotBefore
+    )
+
+    $json = Invoke-Checked gh @(
+        'run', 'list', '--repo', $Repository, '--workflow', $Workflow,
+        '--event', 'release', '--limit', '50',
+        '--json', 'databaseId,headBranch,headSha,createdAt,status,conclusion,url'
+    ) -Capture
+    return @($json | ConvertFrom-Json) |
+        Where-Object {
+            $_.headBranch -eq $Tag -and
+            $_.headSha -eq $TagCommit -and
+            [datetime]$_.createdAt -ge $NotBefore
+        } |
+        Sort-Object { [datetime]$_.createdAt } -Descending |
+        Select-Object -First 1
+}
+
 function Get-PublishedComponent {
     param(
         [Parameter(Mandatory)][string]$Repository,
@@ -120,6 +171,7 @@ function Get-PublishedComponent {
                 Tag = [string]$release.tagName
                 Version = $match.Groups['version'].Value
                 Url = [string]$release.url
+                PublishedAt = [datetime]$release.publishedAt
             }
         }
     }
@@ -201,6 +253,34 @@ function Test-ComponentNeedsRelease {
         throw "$Name изменён после $($Published.Tag), но версия осталась $CurrentVersion. Обнови версию и changelog:`n$changed"
     }
     return $false
+}
+
+function Test-TrustedPublishNeedsRepair {
+    param(
+        [Parameter(Mandatory)][string]$Name,
+        [Parameter(Mandatory)][string]$RepositoryPath,
+        [Parameter(Mandatory)][string]$RemoteName,
+        [Parameter(Mandatory)][string]$Repository,
+        [Parameter(Mandatory)][string]$Workflow,
+        [Parameter(Mandatory)]$Published
+    )
+
+    Ensure-LocalTag `
+        -RepositoryPath $RepositoryPath -RemoteName $RemoteName -Tag $Published.Tag
+    $tagCommit = Invoke-Checked git @(
+        '-C', $RepositoryPath, 'rev-list', '-n', '1', $Published.Tag
+    ) -Capture
+    $run = Get-TrustedPublishRun `
+        -Repository $Repository -Workflow $Workflow -Tag $Published.Tag `
+        -TagCommit $tagCommit `
+        -NotBefore $Published.PublishedAt.AddSeconds(-5)
+    if (-not $run) {
+        return $true
+    }
+    if ([string]$run.status -ne 'completed') {
+        throw "${Name}: trusted publishing ещё выполняется: $($run.url)"
+    }
+    return [string]$run.conclusion -ne 'success'
 }
 
 function Assert-CleanPaths {
@@ -310,10 +390,10 @@ function Wait-ForRelease {
         $json = Invoke-Checked gh @(
             'run', 'list', '--repo', $Repository, '--workflow', $Workflow,
             '--event', 'push', '--limit', '20',
-            '--json', 'databaseId,headSha,createdAt,url'
+            '--json', 'databaseId,headBranch,headSha,createdAt,url'
         ) -Capture
         $run = @($json | ConvertFrom-Json) |
-            Where-Object { $_.headSha -eq $TagCommit } |
+            Where-Object { $_.headBranch -eq $Tag -and $_.headSha -eq $TagCommit } |
             Sort-Object { [datetime]$_.createdAt } -Descending |
             Select-Object -First 1
         if (-not $run) {
@@ -349,10 +429,11 @@ function Wait-ForWorkflowRun {
         $json = Invoke-Checked gh @(
             'run', 'list', '--repo', $Repository, '--workflow', $Workflow,
             '--event', $Event, '--limit', '20',
-            '--json', 'databaseId,headSha,createdAt,url'
+            '--json', 'databaseId,headBranch,headSha,createdAt,url'
         ) -Capture
         $run = @($json | ConvertFrom-Json) |
             Where-Object {
+                $_.headBranch -eq $Tag -and
                 $_.headSha -eq $TagCommit -and
                 [datetime]$_.createdAt -ge $NotBefore
             } |
@@ -449,6 +530,47 @@ function Publish-Component {
     Write-Host "$Name опубликован: $($release.url)" -ForegroundColor Green
 }
 
+function Repair-TrustedPublishComponent {
+    param(
+        [Parameter(Mandatory)][string]$Name,
+        [Parameter(Mandatory)][string]$RepositoryPath,
+        [Parameter(Mandatory)][string]$Repository,
+        [Parameter(Mandatory)][string]$Tag,
+        [Parameter(Mandatory)][string]$TrustedPublishWorkflow,
+        [Parameter(Mandatory)][string[]]$RequiredPatterns,
+        [Parameter(Mandatory)][string[]]$ForbiddenPatterns
+    )
+
+    $release = Get-Release -Repository $Repository -Tag $Tag
+    if (-not $release -or $release.isDraft -or $release.isPrerelease) {
+        throw "Для восстановления trusted publishing нужен опубликованный release '$Tag'."
+    }
+    Assert-ReleaseAssets `
+        -Release $release -RequiredPatterns $RequiredPatterns -ForbiddenPatterns $ForbiddenPatterns
+    Ensure-LocalTag -RepositoryPath $RepositoryPath -RemoteName $Remote -Tag $Tag
+    $tagCommit = Invoke-Checked git @(
+        '-C', $RepositoryPath, 'rev-list', '-n', '1', $Tag
+    ) -Capture
+
+    Write-Host "${Name}: повторно публикую проверенный GitHub Release, чтобы создать новый trusted release event."
+    Invoke-Checked gh @('release', 'edit', $Tag, '--repo', $Repository, '--draft')
+    $draft = Get-Release -Repository $Repository -Tag $Tag
+    if (-not $draft -or -not $draft.isDraft) {
+        throw "Релиз '$Tag' не перешёл во временное draft-состояние."
+    }
+
+    $triggerStartedAt = Get-Date
+    Invoke-Checked gh @('release', 'edit', $Tag, '--repo', $Repository, '--draft=false')
+    $release = Get-Release -Repository $Repository -Tag $Tag
+    if (-not $release -or $release.isDraft -or $release.isPrerelease) {
+        throw "Релиз '$Tag' не вернулся в опубликованное состояние."
+    }
+    Wait-ForWorkflowRun `
+        -Repository $Repository -Workflow $TrustedPublishWorkflow -Event 'release' `
+        -TagCommit $tagCommit -Tag $Tag -NotBefore $triggerStartedAt.AddSeconds(-5)
+    Write-Host "$Name опубликован в OrcaCloud: $($release.url)" -ForegroundColor Green
+}
+
 Assert-Command git
 Assert-Command gh
 Assert-Command python
@@ -467,6 +589,17 @@ $printFarmRepository = $null
 if ($selected -contains 'print-farm') {
     $printFarmRepositoryRoot = Resolve-PrintFarmRepository -RequestedPath $PrintFarmPath
     $printFarmRepository = Get-RepositoryName -RepositoryPath $printFarmRepositoryRoot
+}
+
+if ($selected -contains 'orcaslicer') {
+    Assert-OrcaCloudPublishWorkflow `
+        -Path (Join-Path $script:MainRepositoryRoot '.github/workflows/publish-orcacloud.yml') `
+        -Name 'FilamentHub OrcaCloud workflow'
+}
+if ($selected -contains 'print-farm') {
+    Assert-OrcaCloudPublishWorkflow `
+        -Path (Join-Path $printFarmRepositoryRoot '.github/workflows/publish-orcacloud.yml') `
+        -Name 'Print Farm OrcaCloud workflow'
 }
 
 Invoke-Checked git @(
@@ -490,11 +623,20 @@ if ($selected -contains 'orcaslicer') {
     $needed = Test-ComponentNeedsRelease `
         -Name 'FilamentHub for OrcaSlicer' -CurrentVersion $version -Published $published `
         -RepositoryPath $script:MainRepositoryRoot -RemoteName $Remote -SourcePaths @('orca-plugin')
+    $repair = if (-not $needed -and $published) {
+        Test-TrustedPublishNeedsRepair `
+            -Name 'FilamentHub for OrcaSlicer' `
+            -RepositoryPath $script:MainRepositoryRoot -RemoteName $Remote `
+            -Repository $mainRepository -Workflow 'publish-orcacloud.yml' `
+            -Published $published
+    } else {
+        $false
+    }
     $plans += [pscustomobject]@{
         Id = 'orcaslicer'; Name = 'FilamentHub for OrcaSlicer'; Version = $version
-        Tag = "v$version"; Needed = $needed; Published = $published
+        Tag = "v$version"; Needed = $needed; Repair = $repair; Published = $published
         RepositoryPath = $script:MainRepositoryRoot; Repository = $mainRepository
-        Workflow = 'release-filamenthub.yml'
+        Workflow = 'release-filamenthub.yml'; TrustedPublishWorkflow = 'publish-orcacloud.yml'
     }
 }
 if ($selected -contains 'octoprint') {
@@ -508,9 +650,9 @@ if ($selected -contains 'octoprint') {
         -RepositoryPath $script:MainRepositoryRoot -RemoteName $Remote -SourcePaths @('octoprint-plugin')
     $plans += [pscustomobject]@{
         Id = 'octoprint'; Name = 'FilamentHub Bridge for OctoPrint'; Version = $version
-        Tag = "octoprint-v$version"; Needed = $needed; Published = $published
+        Tag = "octoprint-v$version"; Needed = $needed; Repair = $false; Published = $published
         RepositoryPath = $script:MainRepositoryRoot; Repository = $mainRepository
-        Workflow = 'release-octoprint.yml'
+        Workflow = 'release-octoprint.yml'; TrustedPublishWorkflow = $null
     }
 }
 if ($selected -contains 'print-farm') {
@@ -522,11 +664,20 @@ if ($selected -contains 'print-farm') {
     $needed = Test-ComponentNeedsRelease `
         -Name 'Print Farm' -CurrentVersion $version -Published $published `
         -RepositoryPath $printFarmRepositoryRoot -RemoteName $Remote -SourcePaths @('plugins/printers')
+    $repair = if (-not $needed -and $published) {
+        Test-TrustedPublishNeedsRepair `
+            -Name 'Print Farm' `
+            -RepositoryPath $printFarmRepositoryRoot -RemoteName $Remote `
+            -Repository $printFarmRepository -Workflow 'publish-orcacloud.yml' `
+            -Published $published
+    } else {
+        $false
+    }
     $plans += [pscustomobject]@{
         Id = 'print-farm'; Name = 'Print Farm'; Version = $version
-        Tag = "v$version"; Needed = $needed; Published = $published
+        Tag = "v$version"; Needed = $needed; Repair = $repair; Published = $published
         RepositoryPath = $printFarmRepositoryRoot; Repository = $printFarmRepository
-        Workflow = 'release-printers.yml'
+        Workflow = 'release-printers.yml'; TrustedPublishWorkflow = 'publish-orcacloud.yml'
     }
 }
 
@@ -538,7 +689,13 @@ foreach ($plan in $plans) {
     } else {
         'не найден'
     }
-    $action = if ($plan.Needed) { "ВЫПУСТИТЬ $($plan.Tag)" } else { 'пропустить' }
+    $action = if ($plan.Needed) {
+        "ВЫПУСТИТЬ $($plan.Tag)"
+    } elseif ($plan.Repair) {
+        "ПОВТОРИТЬ ORCACLOUD $($plan.Published.Tag)"
+    } else {
+        'пропустить'
+    }
     Write-Host "  $($plan.Name): исходник $($plan.Version); опубликован $publishedText; $action"
 }
 $printFarmAhead = 0
@@ -572,7 +729,9 @@ $mainReleasePaths = @(
     'scripts/render_plugin_release_notes.py',
     'scripts/publish-plugin-releases.ps1'
 )
-if ($plans | Where-Object { $_.RepositoryPath -eq $script:MainRepositoryRoot -and $_.Needed }) {
+if ($plans | Where-Object {
+    $_.RepositoryPath -eq $script:MainRepositoryRoot -and ($_.Needed -or $_.Repair)
+}) {
     Assert-Branch -RepositoryPath $script:MainRepositoryRoot -ExpectedBranch $Branch
     Assert-CleanPaths `
         -RepositoryPath $script:MainRepositoryRoot -Paths $mainReleasePaths -Name 'основных плагинов'
@@ -590,7 +749,9 @@ if ($DryRun) {
     return
 }
 
-$mainPlans = @($plans | Where-Object { $_.RepositoryPath -eq $script:MainRepositoryRoot -and $_.Needed })
+$mainPlans = @($plans | Where-Object {
+    $_.RepositoryPath -eq $script:MainRepositoryRoot -and ($_.Needed -or $_.Repair)
+})
 if ($mainPlans.Count -gt 0) {
     Invoke-Checked git @('-C', $script:MainRepositoryRoot, 'push', $Remote, $Branch)
 }
@@ -601,7 +762,37 @@ if ($selected -contains 'print-farm') {
     }
 }
 
-foreach ($plan in @($plans | Where-Object Needed)) {
+foreach ($plan in @($plans | Where-Object { $_.Needed -or $_.Repair })) {
+    if ($plan.Repair) {
+        $repair = @{
+            Name = $plan.Name; RepositoryPath = $plan.RepositoryPath
+            Repository = $plan.Repository; Tag = $plan.Published.Tag
+            TrustedPublishWorkflow = $plan.TrustedPublishWorkflow
+        }
+        switch ($plan.Id) {
+            'orcaslicer' {
+                $repair.RequiredPatterns = @(
+                    '^filamenthub-\d+\.\d+\.\d+-.*\.whl$', '^SHA256SUMS$'
+                )
+                $repair.ForbiddenPatterns = @(
+                    '^octoprint[-_]filamenthubbridge-', '^printers-'
+                )
+            }
+            'print-farm' {
+                $repair.RequiredPatterns = @(
+                    '^printers-\d+\.\d+\.\d+-.*\.whl$', '^SHA256SUMS$'
+                )
+                $repair.ForbiddenPatterns = @(
+                    '^filamenthub-', '^octoprint[-_]filamenthubbridge-'
+                )
+            }
+            default {
+                throw "$($plan.Name) не поддерживает восстановление trusted publishing."
+            }
+        }
+        Repair-TrustedPublishComponent @repair
+        continue
+    }
     switch ($plan.Id) {
         'orcaslicer' {
             $publish = @{
@@ -645,6 +836,6 @@ foreach ($plan in @($plans | Where-Object Needed)) {
     }
 }
 
-if (-not ($plans | Where-Object Needed)) {
+if (-not ($plans | Where-Object { $_.Needed -or $_.Repair })) {
     Write-Host 'Новых версий плагинов нет; GitHub Releases не создавались.' -ForegroundColor Green
 }

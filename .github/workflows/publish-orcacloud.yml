@@ -102,7 +102,7 @@ jobs:
           metadata="$(cat "$METADATA_FILE")"
           status="$(curl -sS -o response.json -w '%{http_code}' \
             -H "Authorization: Bearer $oidc_token" \
-            -F "metadata=$metadata" \
+            --form-string "metadata=$metadata" \
             -F "files=@$PLUGIN_FILE" \
             https://api.orcaslicer.com/api/v1/plugin-publish/releases)"
           cat response.json
