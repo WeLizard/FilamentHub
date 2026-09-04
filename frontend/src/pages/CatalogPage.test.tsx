@@ -12,6 +12,9 @@ const { listFilamentsMock, listBrandsMock, listPrintersMock } = vi.hoisted(() =>
 vi.mock('react-router-dom', () => ({
   useNavigate: () => vi.fn(),
   useLocation: () => ({ pathname: '/', search: '', hash: '', state: null, key: 'test' }),
+  Link: ({ to, children, ...props }: { to: string; children: React.ReactNode }) => (
+    <a href={to} {...props}>{children}</a>
+  ),
 }));
 
 vi.mock('react-i18next', () => ({
@@ -54,13 +57,73 @@ vi.mock('../api/client', () => ({
   },
   qrAPI: {
     generate: vi.fn(),
+    getQRCodeURL: vi.fn((id: number) => `/api/v1/qr/filament/${id}`),
   },
 }));
+
+const catalogFilament = {
+  id: 17,
+  brand_id: 3,
+  brand_name: 'FiberLab',
+  brand_slug: 'fiberlab',
+  brand_verified: true,
+  name: 'PETG CF',
+  material_type: 'PETG',
+  color_name: 'Graphite',
+  color_hex: '#303238',
+  ral_code: null,
+  visual_settings: { filler: 'carbon', effects: ['carbon'] },
+  additives: [{ code: 'carbon_fiber', content_percent: 15, content_basis: 'weight' }],
+  property_claims: [{ code: 'wear_resistant' }],
+  diameter: 1.75,
+  density: 1.24,
+  price_per_kg: null,
+  spool_weight: 750,
+  empty_spool_weight_g: 210,
+  recommended_nozzle_temp_min: 235,
+  recommended_nozzle_temp_max: 255,
+  recommended_bed_temp_min: 70,
+  recommended_bed_temp_max: 85,
+  required_nozzle_hrc: 50,
+  description: null,
+  views_count: 0,
+  scans_count: 0,
+  qr_code: null,
+  active: true,
+  availability: 'available',
+  created_at: '2026-08-01T00:00:00Z',
+  updated_at: '2026-08-01T00:00:00Z',
+  preset_summaries: [],
+} as const;
+
+const catalogResponse = (items: unknown[]) => ({
+  items,
+  total: items.length,
+  page: 1,
+  size: 24,
+  pages: 1,
+  printer_matched_ids: [],
+});
+
+function stubDesktopLayout(matches: boolean) {
+  vi.stubGlobal('matchMedia', vi.fn().mockImplementation((query: string) => ({
+    matches,
+    media: query,
+    onchange: null,
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    dispatchEvent: vi.fn(),
+  })));
+}
 
 describe('CatalogPage', () => {
   let intersectionCallback: ((entries: Array<{ isIntersecting: boolean }>) => void) | null;
 
   beforeEach(() => {
+    window.localStorage.clear();
+    stubDesktopLayout(false);
     intersectionCallback = null;
     class FakeIntersectionObserver {
       observe = vi.fn();
@@ -172,47 +235,7 @@ describe('CatalogPage', () => {
   });
 
   it('shows catalog-level buying facts without promoting standard diameter or density', async () => {
-    listFilamentsMock.mockResolvedValue({
-      items: [{
-        id: 17,
-        brand_id: 3,
-        brand_name: 'FiberLab',
-        brand_slug: 'fiberlab',
-        brand_verified: true,
-        name: 'PETG CF',
-        material_type: 'PETG',
-        color_name: 'Graphite',
-        color_hex: '#303238',
-        ral_code: null,
-        visual_settings: { filler: 'carbon', effects: ['carbon'] },
-        additives: [{ code: 'carbon_fiber', content_percent: 15, content_basis: 'weight' }],
-        property_claims: [{ code: 'wear_resistant' }],
-        diameter: 1.75,
-        density: 1.24,
-        price_per_kg: null,
-        spool_weight: 750,
-        empty_spool_weight_g: 210,
-        recommended_nozzle_temp_min: 235,
-        recommended_nozzle_temp_max: 255,
-        recommended_bed_temp_min: 70,
-        recommended_bed_temp_max: 85,
-        required_nozzle_hrc: 50,
-        description: null,
-        views_count: 0,
-        scans_count: 0,
-        qr_code: null,
-        active: true,
-        availability: 'available',
-        created_at: '2026-08-01T00:00:00Z',
-        updated_at: '2026-08-01T00:00:00Z',
-        preset_summaries: [],
-      }],
-      total: 1,
-      page: 1,
-      size: 24,
-      pages: 1,
-      printer_matched_ids: [],
-    });
+    listFilamentsMock.mockResolvedValue(catalogResponse([catalogFilament]));
 
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false } },
@@ -231,5 +254,62 @@ describe('CatalogPage', () => {
     expect(screen.getByText('filamentFeatures.claims.wear_resistant')).toBeInTheDocument();
     expect(screen.queryByText('1.75 catalogPage.units.mm')).not.toBeInTheDocument();
     expect(screen.queryByText('1.24 catalogPage.units.gcm3')).not.toBeInTheDocument();
+  });
+
+  it('switches to the table without refetching and restores the remembered view', async () => {
+    stubDesktopLayout(true);
+    listFilamentsMock.mockResolvedValue(catalogResponse([catalogFilament]));
+
+    const renderCatalog = () => {
+      const queryClient = new QueryClient({
+        defaultOptions: { queries: { retry: false } },
+      });
+      return render(
+        <QueryClientProvider client={queryClient}>
+          <CatalogPage />
+        </QueryClientProvider>,
+      );
+    };
+
+    const firstRender = renderCatalog();
+    expect(await screen.findByText('PETG CF')).toBeInTheDocument();
+    expect(screen.queryByRole('table', { name: 'catalogPage.tableCaption' })).not.toBeInTheDocument();
+    const callsBeforeSwitch = listFilamentsMock.mock.calls.length;
+
+    fireEvent.click(screen.getByRole('button', { name: 'catalogPage.tableView' }));
+
+    expect(await screen.findByRole('table', { name: 'catalogPage.tableCaption' })).toBeInTheDocument();
+    expect(listFilamentsMock).toHaveBeenCalledTimes(callsBeforeSwitch);
+    expect(JSON.parse(window.localStorage.getItem('filamenthub.ui-state') ?? '{}')).toMatchObject({
+      anonymous: { 'catalog.resultsView': 'list' },
+    });
+
+    firstRender.unmount();
+    renderCatalog();
+
+    expect(await screen.findByRole('table', { name: 'catalogPage.tableCaption' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'catalogPage.tableView' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('keeps the saved table preference while rendering cards on a narrow screen', async () => {
+    window.localStorage.setItem('filamenthub.ui-state', JSON.stringify({
+      anonymous: { 'catalog.resultsView': 'list' },
+    }));
+    listFilamentsMock.mockResolvedValue(catalogResponse([catalogFilament]));
+
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <CatalogPage />
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByText('PETG CF')).toBeInTheDocument();
+    expect(screen.queryByRole('table', { name: 'catalogPage.tableCaption' })).not.toBeInTheDocument();
+    expect(JSON.parse(window.localStorage.getItem('filamenthub.ui-state') ?? '{}')).toMatchObject({
+      anonymous: { 'catalog.resultsView': 'list' },
+    });
   });
 });

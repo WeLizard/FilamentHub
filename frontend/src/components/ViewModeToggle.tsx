@@ -8,34 +8,54 @@ interface ViewModeToggleProps {
   value: ViewMode;
   onChange: (mode: ViewMode) => void;
   className?: string;
+  gridLabel?: string;
+  listLabel?: string;
+  ariaLabel?: string;
+  showLabels?: boolean;
 }
 
-export const ViewModeToggle: React.FC<ViewModeToggleProps> = ({ value, onChange, className = '' }) => {
+export const ViewModeToggle: React.FC<ViewModeToggleProps> = ({
+  value,
+  onChange,
+  className = '',
+  gridLabel,
+  listLabel,
+  ariaLabel,
+  showLabels = false,
+}) => {
   const { t } = useTranslation();
+  const resolvedGridLabel = gridLabel ?? t('common.gridView');
+  const resolvedListLabel = listLabel ?? t('common.listView');
 
-  const buttonClass = (mode: ViewMode) => `p-2 rounded transition-all ${
+  const buttonClass = (mode: ViewMode) => `${showLabels ? 'inline-flex items-center gap-2 px-3 py-2' : 'p-2'} rounded transition-all ${
     value === mode ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'
   }`;
 
   return (
-    <div className={`flex items-center rounded-lg border border-white/20 bg-white/10 p-1 ${className}`}>
+    <div
+      className={`flex items-center rounded-lg border border-white/20 bg-white/10 p-1 ${className}`}
+      role="group"
+      aria-label={ariaLabel}
+    >
       <button
         type="button"
         onClick={() => onChange('grid')}
         className={buttonClass('grid')}
-        title={t('common.gridView')}
+        title={resolvedGridLabel}
         aria-pressed={value === 'grid'}
       >
-        <Grid3x3 className="w-4 h-4" />
+        <Grid3x3 className="w-4 h-4" aria-hidden />
+        {showLabels && <span>{resolvedGridLabel}</span>}
       </button>
       <button
         type="button"
         onClick={() => onChange('list')}
         className={buttonClass('list')}
-        title={t('common.listView')}
+        title={resolvedListLabel}
         aria-pressed={value === 'list'}
       >
-        <List className="w-4 h-4" />
+        <List className="w-4 h-4" aria-hidden />
+        {showLabels && <span>{resolvedListLabel}</span>}
       </button>
     </div>
   );

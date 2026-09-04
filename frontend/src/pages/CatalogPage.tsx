@@ -2,7 +2,7 @@
 
 import { memo, useCallback, useState, useEffect, useMemo, useRef } from 'react';
 import { useInfiniteQuery, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
   Search,
@@ -27,8 +27,11 @@ import { Dropdown } from '../components/Dropdown';
 import { FilamentPreview } from '../components/FilamentPreview';
 import { NozzleRequirementBadge } from '../components/NozzleRequirementBadge';
 import { OffscreenSection } from '../components/OffscreenSection';
+import { CatalogFilamentTable } from '../components/CatalogFilamentTable';
+import { ViewModeToggle } from '../components/ViewModeToggle';
 import { useConfiguredNozzleHrc } from '../hooks/useConfiguredNozzleHrc';
 import { useDebounce } from '../hooks/useDebounce';
+import { useStoredViewMode } from '../hooks/useStoredViewMode';
 import { SEOHead } from '../components/SEOHead';
 import {
   formatTemperatureRange,
@@ -47,6 +50,7 @@ import { FILAMENT_COLOR_GROUPS } from '../utils/filamentColorGroups';
 import type { FilamentColorGroup } from '../types/api';
 
 const CATALOG_PAGE_SIZE = 24;
+const DESKTOP_TABLE_MEDIA_QUERY = '(min-width: 1024px)';
 
 export const CatalogPage: React.FC = () => {
   const { t, i18n } = useTranslation();
@@ -54,6 +58,9 @@ export const CatalogPage: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { user } = useAuth();
+  const [viewMode, setViewMode] = useStoredViewMode('catalog.resultsView', user?.id);
+  const canUseTableView = useDesktopCatalogTable();
+  const effectiveViewMode = canUseTableView ? viewMode : 'grid';
   const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = useState('');
   const debouncedSearchQuery = useDebounce(searchQuery.trim(), 250);
@@ -449,11 +456,28 @@ export const CatalogPage: React.FC = () => {
               className="col-span-2 lg:col-span-1"
             />
           </div>
+
+          <div className="flex items-center justify-between gap-3 border-t border-white/10 pt-3">
+            <p className="text-xs text-gray-400 sm:text-sm" aria-live="polite">
+              {total > 0
+                ? t('catalogPage.resultsRange', { start: 1, end: filaments.length, total })
+                : t('catalogPage.resultsCount', { count: 0 })}
+            </p>
+            <ViewModeToggle
+              value={viewMode}
+              onChange={setViewMode}
+              gridLabel={t('catalogPage.cardsView')}
+              listLabel={t('catalogPage.tableView')}
+              ariaLabel={t('catalogPage.viewMode')}
+              showLabels
+              className="hidden lg:flex"
+            />
+          </div>
         </div>
       </div>
 
-      {/* Material Grid. One section per loaded page: a section far off screen
-          drops its cards and holds its measured height instead. */}
+      {/* One section per loaded page: a section far off screen drops its rows
+          or cards and holds its measured height instead. */}
       <div
         className={`space-y-6 transition-opacity ${
           isFetchingFilaments ? 'opacity-60' : 'opacity-100'
@@ -462,23 +486,35 @@ export const CatalogPage: React.FC = () => {
       >
         {(filamentsData?.pages ?? []).map((catalogPage, pageIndex) => (
           <OffscreenSection
-            key={catalogPage.items[0]?.id ?? pageIndex}
-            className="grid grid-cols-1 lg:grid-cols-2 gap-6"
+            key={`${effectiveViewMode}:${catalogPage.items[0]?.id ?? pageIndex}`}
+            className={effectiveViewMode === 'grid' ? 'grid grid-cols-1 lg:grid-cols-2 gap-6' : undefined}
           >
-            {catalogPage.items.map((filament) => (
-              <CatalogFilamentCard
-                key={filament.id}
-                filament={filament}
-                isSelected={selectedFilament === filament.id}
+            {effectiveViewMode === 'grid' ? (
+              catalogPage.items.map((filament) => (
+                <CatalogFilamentCard
+                  key={filament.id}
+                  filament={filament}
+                  isSelected={selectedFilament === filament.id}
+                  onSelect={handleSavePreset}
+                  onShowQR={handleToggleQr}
+                  showQR={showQR === filament.id}
+                  onClick={handleOpenFilament}
+                  savedPresetIds={savedPresetIds}
+                  configuredNozzleHrc={configuredNozzleHrc}
+                  fitsPrinter={printerMatchedIds.has(filament.id)}
+                />
+              ))
+            ) : (
+              <CatalogFilamentTable
+                filaments={catalogPage.items}
                 onSelect={handleSavePreset}
                 onShowQR={handleToggleQr}
-                showQR={showQR === filament.id}
-                onClick={handleOpenFilament}
+                showQR={showQR}
                 savedPresetIds={savedPresetIds}
                 configuredNozzleHrc={configuredNozzleHrc}
-                fitsPrinter={printerMatchedIds.has(filament.id)}
+                printerMatchedIds={printerMatchedIds}
               />
-            ))}
+            )}
           </OffscreenSection>
         ))}
       </div>
@@ -555,7 +591,6 @@ export const CatalogFilamentCard = memo(function CatalogFilamentCard({
   fitsPrinter = false,
 }: MaterialCardProps) {
   const { t } = useTranslation();
-  const navigate = useNavigate();
   const [currentPresetIndex, setCurrentPresetIndex] = useState(0);
   const presetSummaries = filament.preset_summaries && filament.preset_summaries.length > 0
     ? filament.preset_summaries
@@ -601,9 +636,9 @@ export const CatalogFilamentCard = memo(function CatalogFilamentCard({
   // Это решает проблему с сотнями запросов при загрузке каталога
 
   const handleCardClick = (e: React.MouseEvent) => {
-    // Не открываем детальную страницу, если кликнули на кнопку или внутри кнопки
+    // Не открываем детальную страницу, если кликнули на отдельное действие или ссылку.
     const target = e.target as HTMLElement;
-    if (target.closest('button')) {
+    if (target.closest('button, a')) {
       return;
     }
     onClick(filament);
@@ -680,23 +715,25 @@ export const CatalogFilamentCard = memo(function CatalogFilamentCard({
             <div className="flex items-center gap-2 flex-wrap">
             {brand && (
               <>
-                <span
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    navigate(`/brands/${brand.slug}`);
-                  }}
-                    className={`${brand.verified ? "text-green-400" : "text-purple-300"} font-semibold hover:underline cursor-pointer transition-colors text-sm sm:text-base`}
+                <Link
+                  to={`/brands/${brand.slug}`}
+                  className={`${brand.verified ? "text-green-400" : "text-purple-300"} font-semibold hover:underline transition-colors text-sm sm:text-base`}
                 >
                   {brand.name}
-                </span>
+                </Link>
                 {brand.verified && (
                     <Shield className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-green-400"/>
                 )}
               </>
             )}
             </div>
-            <h3 className="min-w-0 text-lg sm:text-xl font-bold text-white group-hover:text-purple-300 transition-colors truncate">
-              {filament.name}
+            <h3 className="min-w-0 truncate text-lg font-bold sm:text-xl">
+              <Link
+                to={filamentPublicPath(filament)}
+                className="text-white transition-colors group-hover:text-purple-300 hover:underline"
+              >
+                {filament.name}
+              </Link>
             </h3>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
@@ -743,6 +780,8 @@ export const CatalogFilamentCard = memo(function CatalogFilamentCard({
                   onClick={() => onShowQR?.(filament.id)}
                   className="flex-shrink-0 rounded-lg border border-white/20 bg-white/10 p-2 text-white transition-all hover:bg-white/20"
                   aria-label={t('catalogPage.qrCode')}
+                  aria-expanded={showQR}
+                  aria-controls={`catalog-card-qr-${filament.id}`}
                   title={t('catalogPage.qrCode')}
                 >
                   <QrCode className="h-4 w-4" />
@@ -906,11 +945,13 @@ export const CatalogFilamentCard = memo(function CatalogFilamentCard({
               {hasCarousel && (
                 <div className="flex items-center gap-1 sm:gap-2">
                   <button
+                    type="button"
                     onClick={(e) => {
                       e.stopPropagation();
                       handleCyclePreset('prev');
                     }}
                     className="p-1.5 sm:p-2 rounded-full border border-white/20 text-white hover:bg-white/10 transition-colors"
+                    aria-label={t('catalogPage.previousPreset')}
                   >
                     <ChevronLeft className="w-3 h-3 sm:w-4 sm:h-4" />
                   </button>
@@ -918,17 +959,20 @@ export const CatalogFilamentCard = memo(function CatalogFilamentCard({
                     {currentPresetIndex + 1}/{presetSummaries.length}
                   </span>
                   <button
+                    type="button"
                     onClick={(e) => {
                       e.stopPropagation();
                       handleCyclePreset('next');
                     }}
                     className="p-1.5 sm:p-2 rounded-full border border-white/20 text-white hover:bg-white/10 transition-colors"
+                    aria-label={t('catalogPage.nextPreset')}
                   >
                     <ChevronRight className="w-3 h-3 sm:w-4 sm:h-4" />
                   </button>
                 </div>
               )}
               {onSelect && <button
+                type="button"
                 onClick={handleSavePreset}
                 className="px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg border border-white/20 text-xs sm:text-sm text-white hover:bg-white/10 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                 disabled={isPresetSaved}
@@ -949,7 +993,7 @@ export const CatalogFilamentCard = memo(function CatalogFilamentCard({
       
       {/* QR Code */}
       {canShowQR && showQR && (
-        <div className="mt-4 p-4 bg-white/5 rounded-xl border border-white/10">
+        <div id={`catalog-card-qr-${filament.id}`} className="mt-4 p-4 bg-white/5 rounded-xl border border-white/10">
           <div className="text-center">
             <img
               src={qrAPI.getQRCodeURL(filament.id, 200)}
@@ -967,3 +1011,28 @@ export const CatalogFilamentCard = memo(function CatalogFilamentCard({
     </div>
   );
 });
+
+function useDesktopCatalogTable() {
+  const [matches, setMatches] = useState(() => (
+    typeof window !== 'undefined'
+    && typeof window.matchMedia === 'function'
+    && window.matchMedia(DESKTOP_TABLE_MEDIA_QUERY).matches
+  ));
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
+    const mediaQuery = window.matchMedia(DESKTOP_TABLE_MEDIA_QUERY);
+    const update = (event: MediaQueryListEvent) => setMatches(event.matches);
+
+    setMatches(mediaQuery.matches);
+    if (typeof mediaQuery.addEventListener === 'function') {
+      mediaQuery.addEventListener('change', update);
+      return () => mediaQuery.removeEventListener('change', update);
+    }
+
+    mediaQuery.addListener(update);
+    return () => mediaQuery.removeListener(update);
+  }, []);
+
+  return matches;
+}
