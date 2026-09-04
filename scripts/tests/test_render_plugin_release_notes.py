@@ -47,16 +47,42 @@ class ChangelogSectionTest(unittest.TestCase):
         self.assertIn("## FilamentHub Bridge for OctoPrint", bridge_notes)
         self.assertNotIn("## FilamentHub for OrcaSlicer", bridge_notes)
 
-    def test_orca_notes_cover_the_unpublished_017_delta(self) -> None:
-        notes = render_orca_release_notes()
+    def test_orca_notes_follow_source_version_and_exclude_previous_release(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            plugin = root / "orca-plugin"
+            plugin.mkdir()
+            (plugin / "filamenthub_plugin.py").write_text(
+                'PLUGIN_VERSION = "2.3.4"\n', encoding="utf-8"
+            )
+            (plugin / "CHANGELOG.md").write_text(
+                "# Changelog\n\n## Unreleased\n\n"
+                "## 2.3.4\n- Current printer connection fix.\n\n"
+                "## 2.3.3\n- Previous connection change.\n",
+                encoding="utf-8",
+            )
 
-        self.assertIn("native load callback", notes)
-        self.assertIn("retry-safe bounded chunks", notes)
+            notes = render_orca_release_notes(root)
 
-    def test_orca_notes_include_provider_neutral_tag_evidence(self) -> None:
-        notes = render_orca_release_notes()
+            self.assertIn("## FilamentHub for OrcaSlicer 2.3.4", notes)
+            self.assertIn("Current printer connection fix.", notes)
+            self.assertNotIn("Previous connection change.", notes)
 
-        self.assertIn("provider-neutral identifier", notes)
+    def test_orca_notes_reject_a_changelog_for_another_source_version(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            plugin = root / "orca-plugin"
+            plugin.mkdir()
+            (plugin / "filamenthub_plugin.py").write_text(
+                'PLUGIN_VERSION = "2.3.4"\n', encoding="utf-8"
+            )
+            (plugin / "CHANGELOG.md").write_text(
+                "# Changelog\n\n## 2.3.3\n- Previous connection change.\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "expected 2.3.4"):
+                render_orca_release_notes(root)
 
     def test_combined_notes_include_one_checksum_footer(self) -> None:
         notes = render_release_notes()

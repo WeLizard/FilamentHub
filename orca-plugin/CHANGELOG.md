@@ -4,6 +4,10 @@ Newest first. The top entry is the text pasted into the Plugin Hub on release.
 
 ## Unreleased
 
+## 0.1.9
+- Bambu LAN readings now preserve received printer status when waiting for a later report times out. Missing AMS information is kept separate from an explicitly empty feed system.
+- Bambu LAN setup can suggest local addresses from matching or currently selected OrcaSlicer printer profiles, while keeping those addresses on the computer and allowing manual entry.
+
 ## 0.1.8
 - Printers can now be connected or reattached through one verified setup flow without requiring a saved OrcaSlicer printer preset, while unlinking preserves the physical printer and its assignments.
 - Happy Hare reports exact observed spools separately from saved assignments and shares one printer map with connections running without OrcaSlicer. Applying a map requires the printer's matching FilamentHub inventory.
