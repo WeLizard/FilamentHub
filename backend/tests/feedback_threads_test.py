@@ -230,3 +230,58 @@ async def test_feedback_thread_is_ordered_idempotent_and_locked_by_final_status(
         },
     )
     assert blocked_after_close.status_code == 409
+
+
+async def test_stale_admin_read_cannot_restore_unread_or_clear_a_new_reply(
+    client: AsyncClient,
+    auth_user: User,
+    admin_user: User,
+) -> None:
+    feedback_id = await _create_feedback(client, auth_user)
+    detail = await client.get(f"/api/v1/feedback/{feedback_id}", headers=_headers(admin_user))
+    stale_boundary = detail.json()["messages"][-1]["id"]
+    reply = await client.post(
+        f"/api/v1/feedback/{feedback_id}/messages",
+        headers=_headers(auth_user),
+        json={
+            "message": "Here is another detail.",
+            "idempotency_key": "916320f9-67ce-4e60-8c48-8d0d341ed1a5",
+        },
+    )
+    assert reply.status_code == 200
+    latest_boundary = reply.json()["messages"][-1]["id"]
+    marked = await client.post(
+        f"/api/v1/feedback/{feedback_id}/read",
+        headers=_headers(admin_user),
+        json={"through_message_id": latest_boundary},
+    )
+    assert marked.status_code == 200
+    assert marked.json()["admin_unread_count"] == 0
+
+    # A second admin still has the older conversation snapshot open.
+    stale_marked = await client.post(
+        f"/api/v1/feedback/{feedback_id}/read",
+        headers=_headers(admin_user),
+        json={"through_message_id": stale_boundary},
+    )
+    assert stale_marked.status_code == 200
+    assert stale_marked.json()["admin_unread_count"] == 0
+
+    new_reply = await client.post(
+        f"/api/v1/feedback/{feedback_id}/messages",
+        headers=_headers(auth_user),
+        json={
+            "message": "This detail arrived after the read acknowledgement.",
+            "idempotency_key": "ab5b2d8d-d357-4c93-87ce-e1ee27f27d9b",
+        },
+    )
+    assert new_reply.status_code == 200
+    assert new_reply.json()["admin_unread_count"] == 1
+    for boundary in (stale_boundary, latest_boundary):
+        stale_marked = await client.post(
+            f"/api/v1/feedback/{feedback_id}/read",
+            headers=_headers(admin_user),
+            json={"through_message_id": boundary},
+        )
+        assert stale_marked.status_code == 200
+        assert stale_marked.json()["admin_unread_count"] == 1

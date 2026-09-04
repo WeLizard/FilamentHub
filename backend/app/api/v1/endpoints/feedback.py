@@ -40,10 +40,17 @@ router = APIRouter(prefix="/feedback", tags=["feedback"])
 async def _load_feedback_thread(
     db: AsyncSession,
     feedback_id: int,
+    *,
+    for_update: bool = False,
 ) -> Feedback:
-    result = await db.execute(
+    statement = (
         select(Feedback).options(selectinload(Feedback.messages)).where(Feedback.id == feedback_id)
     )
+    if for_update:
+        # Lock the thread before loading messages so replies and read acknowledgements
+        # use the same committed counter and message suffix.
+        statement = statement.with_for_update().execution_options(populate_existing=True)
+    result = await db.execute(statement)
     feedback = result.scalar_one_or_none()
     if not feedback:
         raise_error(status.HTTP_404_NOT_FOUND, ERR_FEEDBACK_NOT_FOUND)
@@ -186,7 +193,7 @@ async def mark_feedback_read(
 ) -> FeedbackDetailResponse:
     """Clear only user messages already shown to the shared admin inbox."""
     del admin
-    feedback = await _load_feedback_thread(db, feedback_id)
+    feedback = await _load_feedback_thread(db, feedback_id, for_update=True)
     latest_visible_user_message = max(
         (
             message.id
@@ -198,11 +205,14 @@ async def mark_feedback_read(
     if latest_visible_user_message is None:
         raise_error(status.HTTP_400_BAD_REQUEST, ERR_FEEDBACK_NOT_FOUND)
 
-    feedback.admin_unread_count = sum(
+    remaining_user_messages = sum(
         1
         for message in feedback.messages
         if message.author_type == "user" and message.id > latest_visible_user_message
     )
+    # Unread messages form a suffix. An older admin snapshot cannot move the
+    # shared read boundary backwards, including after a new user reply.
+    feedback.admin_unread_count = min(feedback.admin_unread_count, remaining_user_messages)
     await db.commit()
     feedback = await _load_feedback_thread(db, feedback.id)
     return FeedbackDetailResponse.model_validate(feedback)
@@ -216,7 +226,7 @@ async def update_feedback(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> FeedbackDetailResponse:
     """Обновить обратную связь (ответить, изменить статус) - только для админов."""
-    feedback = await _load_feedback_thread(db, feedback_id)
+    feedback = await _load_feedback_thread(db, feedback_id, for_update=True)
 
     if update_data.status:
         try:
@@ -286,7 +296,7 @@ async def add_feedback_message(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> FeedbackDetailResponse:
     """Add an owner reply while the conversation remains open."""
-    feedback = await _load_feedback_thread(db, feedback_id)
+    feedback = await _load_feedback_thread(db, feedback_id, for_update=True)
     if feedback.user_id != current_user.id:
         raise_error(status.HTTP_404_NOT_FOUND, ERR_FEEDBACK_NOT_FOUND)
 
