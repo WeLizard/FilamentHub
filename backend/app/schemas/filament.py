@@ -157,6 +157,8 @@ class FilamentTechnicalDataContract(BaseModel):
     drying_required: bool | None = None
     drying_temperature_c: float | None = Field(None, ge=0, le=200)
     drying_duration_hours: float | None = Field(None, ge=0.25, le=336)
+    enclosure_requirement: Literal["none", "passive", "active"] | None = None
+    chamber_temperature_c: float | None = Field(None, ge=0, le=150)
     storage_temperature_min_c: float | None = Field(None, ge=-100, le=200)
     storage_temperature_max_c: float | None = Field(None, ge=-100, le=200)
     storage_relative_humidity_max_percent: float | None = Field(None, ge=0, le=100)
@@ -181,6 +183,8 @@ class FilamentTechnicalDataContract(BaseModel):
             raise ValueError("drying temperature and duration are required")
         if self.drying_required is False and drying_pair[0] is not None:
             raise ValueError("drying parameters contradict an explicit not-required declaration")
+        if self.enclosure_requirement == "active" and self.chamber_temperature_c is None:
+            raise ValueError("chamber temperature is required for an actively heated chamber")
 
         storage_pair = (self.storage_temperature_min_c, self.storage_temperature_max_c)
         if (storage_pair[0] is None) != (storage_pair[1] is None):
@@ -389,8 +393,6 @@ class FilamentCreate(FilamentBase):
     @model_validator(mode="after")
     def validate_handling_parameters(self) -> FilamentCreate:
         FilamentTechnicalDataContract.model_validate(self.model_dump())
-        if self.enclosure_requirement == "active" and self.chamber_temperature_c is None:
-            raise ValueError("chamber temperature is required for an actively heated chamber")
         return self
 
 

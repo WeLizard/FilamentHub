@@ -7,6 +7,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import Response
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_admin_user
@@ -137,6 +138,18 @@ async def apply_master_import(
     except CatalogMasterImportError as exc:
         await db.rollback()
         _raise_service_error(exc)
+    except IntegrityError as exc:
+        await db.rollback()
+        if getattr(exc.orig, "sqlstate", None) != "23505":
+            raise
+        # A new identity cannot be row-locked before it exists. A concurrent
+        # create is resolved by the unique constraint and requires a new preview.
+        _raise_service_error(
+            CatalogMasterImportError(
+                "ERR_CATALOG_IMPORT_STALE",
+                "Catalog changed while applying; review a fresh preview",
+            )
+        )
 
 
 @router.get("/history", response_model=CatalogImportHistoryResponse)

@@ -30,14 +30,15 @@ from app.models import (
     PresetPrinter,
     Printer,
 )
-from app.models.preset import PresetModerationStatus
+from app.models.preset import PUBLIC_PRESET_STATUSES, PresetModerationStatus
 from app.schemas.catalog_import import CatalogImportDraft, CatalogImportPlanRow
 from app.schemas.country_cell import BrandCountryCellBase, FilamentCountryCellBase
-from app.schemas.filament import FilamentBase
+from app.schemas.filament import FilamentBase, FilamentTechnicalDataContract
 from app.schemas.preset import PresetBase
 from app.services.brand_slug_service import canonicalize_brand_slug, suggest_brand_slug
 from app.services.catalog_color_groups import classify_color_group
 from app.services.catalog_url_service import choose_filament_slug
+from app.services.orcaslicer_preset_contract import apply_structured_filament_updates
 
 MAX_WORKBOOK_BYTES = 5 * 1024 * 1024
 MAX_ROWS = 5_000
@@ -314,6 +315,7 @@ def build_template() -> bytes:
     readme.append(["FilamentHub catalog master-import"])
     readme.append(["Fill Brands and Filaments. Markets and Presets are optional."])
     readme.append(["mode: auto/create/update; enabled and overwrite: true/false."])
+    readme.append(["Presets: use mode=fork with existing_preset to create a personal copy."])
     readme.append(["Lists may be JSON arrays or values separated with semicolons."])
     readme.append(["Nothing is written before the final Apply confirmation."])
     for name, columns in SHEET_COLUMNS.items():
@@ -405,10 +407,13 @@ def _overwrite(row: dict[str, Any]) -> bool:
     return bool(_bool(row.get("overwrite"), default=False))
 
 
-def _mode(row: dict[str, Any]) -> str:
+def _mode(row: dict[str, Any], *, allow_fork: bool = False) -> str:
     value = (_text(row.get("mode")) or "auto").casefold()
-    if value not in {"auto", "create", "update"}:
-        raise ValueError("mode must be auto, create or update")
+    allowed = {"auto", "create", "update"}
+    if allow_fork:
+        allowed.add("fork")
+    if value not in allowed:
+        raise ValueError("mode must be " + ", ".join(sorted(allowed)))
     return value
 
 
@@ -418,6 +423,25 @@ def _jsonable(value: Any) -> Any:
     if hasattr(value, "value"):
         return value.value
     return value
+
+
+def _record_snapshot(target: Any) -> dict[str, Any]:
+    snapshot = {
+        column.key: _jsonable(getattr(target, column.key)) for column in target.__table__.columns
+    }
+    if isinstance(target, Preset):
+        snapshot["printer_links"] = sorted(
+            [
+                {"printer_id": link.printer_id, "is_primary": link.is_primary}
+                for link in target.printer_links
+            ],
+            key=lambda link: link["printer_id"],
+        )
+    return json.loads(_canonical(snapshot))
+
+
+def _snapshot_digest(target: Any) -> str:
+    return hashlib.sha256(_canonical(_record_snapshot(target))).hexdigest()
 
 
 def _changes(
@@ -462,6 +486,7 @@ def _public_rows(plan: list[dict[str, Any]]) -> list[CatalogImportPlanRow]:
             status=item["status"],
             message=item.get("message"),
             changes=item.get("changes", {}),
+            derived_from_preset_id=item.get("derived_from_preset_id"),
         )
         for item in plan
     ]
@@ -481,7 +506,9 @@ async def build_plan(
     brands_by_key: dict[str, dict[str, Any]] = {}
     filaments_by_key: dict[str, dict[str, Any]] = {}
 
-    brands = (await db.execute(select(Brand))).scalars().all()
+    brands = (
+        (await db.execute(select(Brand).execution_options(populate_existing=True))).scalars().all()
+    )
     brands_by_id = {brand.id: brand for brand in brands}
     brands_by_slug = {brand.slug.casefold(): brand for brand in brands}
     brands_by_name = {brand.name.strip().casefold(): brand for brand in brands}
@@ -572,6 +599,7 @@ async def build_plan(
                     status="update" if changes else "noop",
                     payload={field: change["after"] for field, change in changes.items()},
                     target_id=target.id,
+                    target_snapshot=_snapshot_digest(target),
                     target_updated_at=target.updated_at.isoformat() if target.updated_at else None,
                     changes=changes,
                 )
@@ -593,6 +621,7 @@ async def build_plan(
                     select(Filament)
                     .options(selectinload(Filament.line))
                     .where(Filament.brand_id.in_(existing_brand_ids))
+                    .execution_options(populate_existing=True)
                 )
             )
             .scalars()
@@ -612,6 +641,7 @@ async def build_plan(
         for filament in existing_filaments
     }
     seen_filament_identity: set[tuple[str, str, str, str]] = set()
+    seen_filament_targets: set[int] = set()
 
     for index, row in enumerate(draft.filaments, start=2):
         row_number = _row_number(row, index)
@@ -670,6 +700,10 @@ async def build_plan(
                 raise ValueError("Filament already exists; choose update or auto")
             if mode == "update" and target is None:
                 raise ValueError("Existing filament was not found")
+            if target is not None:
+                if target.id in seen_filament_targets:
+                    raise ValueError("Multiple rows cannot update the same existing filament")
+                seen_filament_targets.add(target.id)
 
             raw: dict[str, Any] = {"name": name, "material_type": material_type}
             text_fields = (
@@ -739,7 +773,14 @@ async def build_plan(
                 raw["color_group"] = classify_color_group(raw["color_hex"])
                 raw["color_group_source"] = "auto"
 
-            validated = FilamentBase(**raw).model_dump(mode="json")
+            effective = (
+                {field: getattr(target, field) for field in FilamentBase.model_fields}
+                if target is not None
+                else {}
+            )
+            effective.update(raw)
+            validated = FilamentBase(**effective).model_dump(mode="json")
+            FilamentTechnicalDataContract.model_validate(validated)
             explicit_fields = set(raw)
             payload = (
                 validated
@@ -774,6 +815,8 @@ async def build_plan(
                     status="update" if changes else "noop",
                     payload={field: change["after"] for field, change in changes.items()},
                     target_id=target.id,
+                    target_snapshot=_snapshot_digest(target),
+                    target_line_id=target.line_id,
                     target_updated_at=target.updated_at.isoformat() if target.updated_at else None,
                     parent_key=brand_key,
                     changes=changes,
@@ -842,10 +885,12 @@ async def _plan_markets(
                 target = None
                 if parent_id is not None:
                     target = await db.scalar(
-                        select(model).where(
+                        select(model)
+                        .where(
                             getattr(model, parent_id_field) == parent_id,
                             model.country == country,
                         )
+                        .execution_options(populate_existing=True)
                     )
                 raw: dict[str, Any] = {"country": country}
                 if sheet == "BrandMarkets":
@@ -905,6 +950,7 @@ async def _plan_markets(
                         status="update" if changes else "noop",
                         payload={field: change["after"] for field, change in changes.items()},
                         target_id=target.id,
+                        target_snapshot=_snapshot_digest(target),
                         parent_key=parent_key,
                         country=country,
                         target_updated_at=(
@@ -944,8 +990,9 @@ async def _plan_presets(
             parent = filaments_by_key.get(filament_key)
             if parent is None or parent["status"] in {"error", "skipped"}:
                 raise ValueError("Referenced filament is missing or invalid")
-            mode = _mode(row)
+            mode = _mode(row, allow_fork=True)
             target = None
+            source = None
             existing_ref = _text(row.get("existing_preset"))
             external_id = _text(row.get("external_id")) or f"catalog-master:{key}"
             if existing_ref:
@@ -955,8 +1002,25 @@ async def _plan_presets(
                     select(Preset)
                     .options(selectinload(Preset.printer_links))
                     .where(Preset.id == int(existing_ref))
+                    .execution_options(populate_existing=True)
                 )
-            if target is None and parent.get("target_id") is not None:
+                if target is None:
+                    raise ValueError("Existing preset was not found")
+            if mode == "fork":
+                if target is None:
+                    raise ValueError("mode=fork requires existing_preset")
+                if target.user_id != admin_user_id and not (
+                    target.is_official
+                    or (target.active and target.moderation_status in PUBLIC_PRESET_STATUSES)
+                ):
+                    raise ValueError("Only public presets can be copied from another owner")
+                source = target
+                target = None
+            elif target is not None and (
+                target.user_id != admin_user_id or target.is_official or target.is_weighted
+            ):
+                raise ValueError("This preset cannot be overwritten; choose mode=fork")
+            if target is None and (source is not None or parent.get("target_id") is not None):
                 target = await db.scalar(
                     select(Preset)
                     .options(selectinload(Preset.printer_links))
@@ -964,19 +1028,37 @@ async def _plan_presets(
                         Preset.user_id == admin_user_id,
                         Preset.external_id == external_id,
                     )
+                    .execution_options(populate_existing=True)
                 )
+            if source is not None and target is not None:
+                raise ValueError(
+                    "A preset with this external_id already exists; use a new preset_key"
+                )
+            if target is not None and (target.is_official or target.is_weighted):
+                raise ValueError("This preset cannot be overwritten; choose mode=fork")
             if mode == "create" and target is not None:
                 raise ValueError("Preset already exists; choose update or auto")
             if mode == "update" and target is None:
                 raise ValueError("Existing preset was not found")
 
-            raw: dict[str, Any] = {
-                "name": _text(row.get("name")),
-                "extruder_temp": _number(row.get("extruder_temp")),
-                "bed_temp": _number(row.get("bed_temp")),
-                "is_official": False,
-                "is_weighted": False,
+            allowed = {
+                "name",
+                "description",
+                "extruder_temp",
+                "bed_temp",
+                "flow_rate",
+                "fan_speed",
+                "retraction_length",
+                "retraction_speed",
+                "orcaslicer_settings",
             }
+            raw = {field: getattr(source, field) for field in allowed} if source else {}
+            raw.update(is_official=False, is_weighted=False)
+            if source is None or _present(row.get("name")):
+                raw["name"] = _text(row.get("name"))
+            for field in ("extruder_temp", "bed_temp"):
+                if source is None or _present(row.get(field)):
+                    raw[field] = _number(row.get(field))
             for field in ("description",):
                 value = _text(row.get(field))
                 if value is not None:
@@ -989,22 +1071,32 @@ async def _plan_presets(
             if _present(row.get("orcaslicer_settings")):
                 raw["orcaslicer_settings"] = _json(row.get("orcaslicer_settings"), dict)
             validated = PresetBase(**raw).model_dump(mode="json")
-            allowed = {
-                "name",
-                "description",
-                "extruder_temp",
-                "bed_temp",
-                "flow_rate",
-                "fan_speed",
-                "retraction_length",
-                "retraction_speed",
-                "orcaslicer_settings",
-            }
             payload = {field: value for field, value in validated.items() if field in allowed}
             payload["external_id"] = external_id
+            if source is not None:
+                payload["compat_context"] = source.compat_context
+                payload["active"] = False
+                structured_changes = {
+                    field: payload[field]
+                    for field in (
+                        "extruder_temp",
+                        "bed_temp",
+                        "flow_rate",
+                        "fan_speed",
+                        "retraction_length",
+                        "retraction_speed",
+                    )
+                    if _present(row.get(field))
+                }
+                if structured_changes:
+                    payload["orcaslicer_settings"] = apply_structured_filament_updates(
+                        payload["orcaslicer_settings"], structured_changes
+                    )
             if _present(row.get("active")):
                 payload["active"] = _bool(row.get("active"))
-            printer_ids = [int(value) for value in (_list(row.get("printer_ids")) or [])]
+            printer_ids = list(
+                dict.fromkeys(int(value) for value in (_list(row.get("printer_ids")) or []))
+            )
             unknown_printers = sorted(set(printer_ids) - all_printer_ids)
             if unknown_printers:
                 raise ValueError("Unknown printer IDs: " + ", ".join(map(str, unknown_printers)))
@@ -1017,6 +1109,18 @@ async def _plan_presets(
                     printer_ids=printer_ids,
                     changes={},
                 )
+                if source is not None:
+                    snapshot = _record_snapshot(source)
+                    item.update(
+                        derived_from_preset_id=source.id,
+                        source_snapshot=snapshot,
+                        message=f"Create a personal fork of preset {source.id}",
+                    )
+                    if not _present(row.get("printer_ids")):
+                        item["printer_links"] = snapshot["printer_links"]
+                        item["printer_ids"] = [
+                            link["printer_id"] for link in snapshot["printer_links"]
+                        ]
             else:
                 if (
                     parent.get("target_id") is not None
@@ -1044,6 +1148,7 @@ async def _plan_presets(
                         if field != "printer_ids"
                     },
                     target_id=target.id,
+                    target_snapshot=_snapshot_digest(target),
                     target_updated_at=target.updated_at.isoformat() if target.updated_at else None,
                     parent_key=filament_key,
                     printer_ids=printer_ids if "printer_ids" in changes else None,
@@ -1052,6 +1157,52 @@ async def _plan_presets(
         except (ValueError, TypeError, json.JSONDecodeError, ValidationError) as exc:
             item.update(status="error", message=_error_message(exc), changes={})
         plan.append(item)
+
+
+async def _lock_plan_targets(db: AsyncSession, plan: list[dict[str, Any]]) -> None:
+    targets = {
+        "Brands": Brand,
+        "Filaments": Filament,
+        "BrandMarkets": BrandCountryCell,
+        "FilamentMarkets": FilamentCountryCell,
+        "Presets": Preset,
+    }
+    # All imports lock parent rows before children, then primary keys in order.
+    # Existing parents also serialize competing inserts into the same catalog.
+    for sheet, model in targets.items():
+        ids = {
+            item["target_id"]
+            for item in plan
+            if item["sheet"] == sheet and item.get("target_id") is not None
+        }
+        if model is Preset:
+            ids.update(
+                item["derived_from_preset_id"]
+                for item in plan
+                if item.get("derived_from_preset_id") is not None
+            )
+        if ids:
+            await db.execute(
+                select(model.id).where(model.id.in_(ids)).order_by(model.id).with_for_update()
+            )
+        if model is Filament:
+            line_ids = {
+                item["target_line_id"] for item in plan if item.get("target_line_id") is not None
+            }
+            if line_ids:
+                await db.execute(
+                    select(FilamentLine.id)
+                    .where(FilamentLine.id.in_(line_ids))
+                    .order_by(FilamentLine.id)
+                    .with_for_update()
+                )
+        if model is Preset and ids:
+            await db.execute(
+                select(PresetPrinter.id)
+                .where(PresetPrinter.preset_id.in_(ids))
+                .order_by(PresetPrinter.id)
+                .with_for_update()
+            )
 
 
 async def apply_plan(
@@ -1065,6 +1216,12 @@ async def apply_plan(
     if summary["error"]:
         raise CatalogMasterImportError(
             "ERR_CATALOG_IMPORT_HAS_ERRORS", "Fix or disable every invalid row before applying"
+        )
+    await _lock_plan_targets(db, plan)
+    current_plan = await build_plan(db, draft, admin_user_id=admin_user_id)
+    if not hmac.compare_digest(plan_digest(plan), plan_digest(current_plan)):
+        raise CatalogMasterImportError(
+            "ERR_CATALOG_IMPORT_STALE", "Catalog changed after preview; review a fresh preview"
         )
     batch = CatalogImportBatch(
         filename=draft.filename,
@@ -1175,16 +1332,25 @@ async def apply_plan(
         filament = filament_objects[item["parent_key"]]
         payload = dict(item.get("payload", {}))
         if item["status"] == "create":
+            source_id = item.get("derived_from_preset_id")
+            evidence = {"type": "admin_master_import", "batch_id": batch.id}
+            if source_id is not None:
+                evidence["source_snapshot"] = item["source_snapshot"]
             preset = Preset(
                 filament_id=filament.id,
                 user_id=admin_user_id,
                 created_by_user_id=admin_user_id,
+                derived_from_preset_id=source_id,
                 name=payload.pop("name"),
                 source="admin_master_import",
-                import_evidence={"type": "admin_master_import", "batch_id": batch.id},
+                import_evidence=evidence,
                 is_official=False,
                 is_weighted=False,
-                moderation_status=PresetModerationStatus.APPROVED,
+                moderation_status=(
+                    PresetModerationStatus.PENDING
+                    if source_id is not None
+                    else PresetModerationStatus.APPROVED
+                ),
                 **payload,
             )
             db.add(preset)
@@ -1198,12 +1364,18 @@ async def apply_plan(
             preset.filament_id = filament.id
         if item.get("printer_ids") is not None:
             await db.execute(delete(PresetPrinter).where(PresetPrinter.preset_id == preset.id))
-            for index, printer_id in enumerate(item["printer_ids"]):
+            printer_links = item.get(
+                "printer_links",
+                [
+                    {"printer_id": printer_id, "is_primary": index == 0}
+                    for index, printer_id in enumerate(item["printer_ids"])
+                ],
+            )
+            for link in printer_links:
                 db.add(
                     PresetPrinter(
                         preset_id=preset.id,
-                        printer_id=printer_id,
-                        is_primary=index == 0,
+                        **link,
                     )
                 )
     await db.flush()

@@ -22,6 +22,7 @@ class CatalogImportPlanRow(BaseModel):
     status: Literal["create", "update", "noop", "skipped", "error"]
     message: str | None = None
     changes: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    derived_from_preset_id: int | None = None
 
 
 class CatalogImportPreview(BaseModel):
