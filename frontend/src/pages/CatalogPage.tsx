@@ -50,7 +50,7 @@ import { FILAMENT_COLOR_GROUPS } from '../utils/filamentColorGroups';
 import type { FilamentColorGroup } from '../types/api';
 
 const CATALOG_PAGE_SIZE = 24;
-const DESKTOP_TABLE_MEDIA_QUERY = '(min-width: 1024px)';
+const DESKTOP_TABLE_MEDIA_QUERY = '(min-width: 1280px)';
 
 export const CatalogPage: React.FC = () => {
   const { t, i18n } = useTranslation();
@@ -370,15 +370,26 @@ export const CatalogPage: React.FC = () => {
       {/* Search Bar */}
       <div className="glass-panel rounded-xl sm:rounded-2xl p-4 sm:p-6 border border-white/20 shadow-xl">
         <div className="flex flex-col gap-3 sm:gap-4">
-          {/* Search Input */}
-          <div className="relative">
-            <Search className="absolute left-3 sm:left-4 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-            <input
-              type="text"
-              placeholder={t('catalogPage.searchPlaceholder')}
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 sm:pl-12 pr-4 py-3 sm:py-4 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all text-sm sm:text-base"
+          <div className="flex items-center gap-3">
+            {/* Search Input */}
+            <div className="relative min-w-0 flex-1">
+              <Search className="absolute left-3 sm:left-4 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+              <input
+                type="text"
+                placeholder={t('catalogPage.searchPlaceholder')}
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full rounded-xl border border-white/20 bg-white/10 py-3 pl-10 pr-4 text-sm text-white placeholder-gray-400 transition-all focus:border-transparent focus:outline-none focus:ring-2 focus:ring-purple-500 sm:pl-12 sm:text-base"
+              />
+            </div>
+            <ViewModeToggle
+              value={viewMode}
+              onChange={setViewMode}
+              gridLabel={t('catalogPage.cardsView')}
+              listLabel={t('catalogPage.tableView')}
+              ariaLabel={t('catalogPage.viewMode')}
+              showLabels
+              className="hidden shrink-0 xl:flex"
             />
           </div>
 
@@ -457,21 +468,12 @@ export const CatalogPage: React.FC = () => {
             />
           </div>
 
-          <div className="flex items-center justify-between gap-3 border-t border-white/10 pt-3">
+          <div className="pt-1">
             <p className="text-xs text-gray-400 sm:text-sm" aria-live="polite">
               {total > 0
                 ? t('catalogPage.resultsRange', { start: 1, end: filaments.length, total })
                 : t('catalogPage.resultsCount', { count: 0 })}
             </p>
-            <ViewModeToggle
-              value={viewMode}
-              onChange={setViewMode}
-              gridLabel={t('catalogPage.cardsView')}
-              listLabel={t('catalogPage.tableView')}
-              ariaLabel={t('catalogPage.viewMode')}
-              showLabels
-              className="hidden lg:flex"
-            />
           </div>
         </div>
       </div>

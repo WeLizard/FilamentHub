@@ -3,14 +3,15 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CatalogPage } from './CatalogPage';
 
-const { listFilamentsMock, listBrandsMock, listPrintersMock } = vi.hoisted(() => ({
+const { listFilamentsMock, listBrandsMock, listPrintersMock, navigateMock } = vi.hoisted(() => ({
   listFilamentsMock: vi.fn(),
   listBrandsMock: vi.fn(),
   listPrintersMock: vi.fn(),
+  navigateMock: vi.fn(),
 }));
 
 vi.mock('react-router-dom', () => ({
-  useNavigate: () => vi.fn(),
+  useNavigate: () => navigateMock,
   useLocation: () => ({ pathname: '/', search: '', hash: '', state: null, key: 'test' }),
   Link: ({ to, children, ...props }: { to: string; children: React.ReactNode }) => (
     <a href={to} {...props}>{children}</a>
@@ -105,6 +106,27 @@ const catalogResponse = (items: unknown[]) => ({
   printer_matched_ids: [],
 });
 
+const interactiveTableFilament = {
+  ...catalogFilament,
+  slug: 'petg-cf',
+  ral_code: '7024',
+  qr_code: 'FHUB-17',
+  preset_summaries: [{
+    id: 101,
+    name: 'Balanced PETG CF',
+    is_official: true,
+    is_weighted: false,
+    extruder_temp: 245,
+    bed_temp: 80,
+    fan_speed: 40,
+    flow_rate: 98,
+    rating: 4.8,
+    success_rate: 96,
+    updated_at: '2026-08-01T00:00:00Z',
+    preset_type: 'official',
+  }],
+} as const;
+
 function stubDesktopLayout(matches: boolean) {
   vi.stubGlobal('matchMedia', vi.fn().mockImplementation((query: string) => ({
     matches,
@@ -124,6 +146,7 @@ describe('CatalogPage', () => {
   beforeEach(() => {
     window.localStorage.clear();
     stubDesktopLayout(false);
+    navigateMock.mockReset();
     intersectionCallback = null;
     class FakeIntersectionObserver {
       observe = vi.fn();
@@ -258,7 +281,7 @@ describe('CatalogPage', () => {
 
   it('switches to the table without refetching and restores the remembered view', async () => {
     stubDesktopLayout(true);
-    listFilamentsMock.mockResolvedValue(catalogResponse([catalogFilament]));
+    listFilamentsMock.mockResolvedValue(catalogResponse([interactiveTableFilament]));
 
     const renderCatalog = () => {
       const queryClient = new QueryClient({
@@ -274,15 +297,42 @@ describe('CatalogPage', () => {
     const firstRender = renderCatalog();
     expect(await screen.findByText('PETG CF')).toBeInTheDocument();
     expect(screen.queryByRole('table', { name: 'catalogPage.tableCaption' })).not.toBeInTheDocument();
+    const searchPanel = screen.getByPlaceholderText('catalogPage.searchPlaceholder').closest('.glass-panel');
+    expect(searchPanel).toContainElement(screen.getByRole('group', { name: 'catalogPage.viewMode' }));
+    expect(searchPanel).toHaveTextContent('catalogPage.resultsRange');
     const callsBeforeSwitch = listFilamentsMock.mock.calls.length;
 
     fireEvent.click(screen.getByRole('button', { name: 'catalogPage.tableView' }));
 
-    expect(await screen.findByRole('table', { name: 'catalogPage.tableCaption' })).toBeInTheDocument();
+    const table = await screen.findByRole('table', { name: 'catalogPage.tableCaption' });
+    expect(table).toBeInTheDocument();
+    expect(table.parentElement).toHaveClass('overflow-hidden');
+    expect(table.className).not.toContain('min-w-');
     expect(listFilamentsMock).toHaveBeenCalledTimes(callsBeforeSwitch);
     expect(JSON.parse(window.localStorage.getItem('filamenthub.ui-state') ?? '{}')).toMatchObject({
       anonymous: { 'catalog.resultsView': 'list' },
     });
+
+    const row = screen.getByText('PETG CF').closest('tr');
+    expect(row).not.toBeNull();
+    expect(row?.children[0]).toHaveTextContent('Graphite');
+    expect(row?.children[0]).toHaveTextContent('RAL 7024');
+    expect(row?.children[2]).not.toHaveTextContent('Graphite');
+    expect(screen.queryByRole('link', { name: 'catalogPage.openMaterial' })).not.toBeInTheDocument();
+
+    const addButton = screen.getByRole('button', { name: 'catalogPage.addToProfile' });
+    const qrButton = screen.getByRole('button', { name: 'catalogPage.qrCode' });
+    for (const button of [addButton, qrButton]) {
+      expect(button).toHaveClass('size-10', 'shrink-0');
+      expect(button.querySelector('svg')).not.toBeNull();
+    }
+
+    fireEvent.click(qrButton);
+    expect(navigateMock).not.toHaveBeenCalled();
+    expect(await screen.findByRole('img', { name: 'QR PETG CF' })).toBeInTheDocument();
+
+    fireEvent.click(row!);
+    expect(navigateMock).toHaveBeenCalledWith('/brands/fiberlab/filaments/petg-cf');
 
     firstRender.unmount();
     renderCatalog();

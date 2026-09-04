@@ -1,12 +1,13 @@
-import { Fragment, memo, useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Fragment, memo, useEffect, useState, type MouseEvent } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
   ChevronLeft,
   ChevronRight,
+  Check,
   Droplet,
-  ExternalLink,
   Fan,
+  Plus,
   QrCode,
   Shield,
   Thermometer,
@@ -39,6 +40,7 @@ interface CatalogFilamentTableProps {
 }
 
 const EMPTY_IDS = new Set<number>();
+const TABLE_ACTION_BUTTON_CLASS = 'inline-flex size-10 shrink-0 items-center justify-center rounded-lg border transition';
 
 export function CatalogFilamentTable({
   filaments,
@@ -52,21 +54,21 @@ export function CatalogFilamentTable({
   const { t } = useTranslation();
 
   return (
-    <div className="overflow-x-auto rounded-2xl border border-white/15 bg-white/[0.06] shadow-xl">
-      <table className="w-full min-w-[1180px] table-fixed border-collapse text-left">
+    <div className="overflow-hidden rounded-2xl border border-white/15 bg-white/[0.06] shadow-xl">
+      <table className="w-full table-fixed border-collapse text-left">
         <caption className="sr-only">{t('catalogPage.tableCaption')}</caption>
         <colgroup>
-          <col className="w-[72px]" />
-          <col className="w-[220px]" />
-          <col className="w-[210px]" />
-          <col className="w-[205px]" />
-          <col className="w-[145px]" />
-          <col className="w-[225px]" />
-          <col className="w-[115px]" />
+          <col style={{ width: '13%' }} />
+          <col style={{ width: '18%' }} />
+          <col style={{ width: '15%' }} />
+          <col style={{ width: '15%' }} />
+          <col style={{ width: '11%' }} />
+          <col style={{ width: '18%' }} />
+          <col style={{ width: '10%' }} />
         </colgroup>
         <thead className="bg-black/20 text-[11px] uppercase tracking-[0.12em] text-gray-400">
           <tr>
-            <th scope="col" className="px-3 py-3 text-center">{t('catalogPage.tableColor')}</th>
+            <th scope="col" className="px-3 py-3">{t('catalogPage.tableColor')}</th>
             <th scope="col" className="px-3 py-3">{t('catalogPage.tableMaterial')}</th>
             <th scope="col" className="px-3 py-3">{t('catalogPage.tableProperties')}</th>
             <th scope="col" className="px-3 py-3">{t('catalogPage.tablePrinting')}</th>
@@ -114,6 +116,7 @@ const CatalogFilamentTableRow = memo(function CatalogFilamentTableRow({
   fitsPrinter,
 }: CatalogFilamentTableRowProps) {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const [currentPresetIndex, setCurrentPresetIndex] = useState(0);
   const presetSummaries = filament.preset_summaries && filament.preset_summaries.length > 0
     ? filament.preset_summaries
@@ -156,6 +159,12 @@ const CatalogFilamentTableRow = memo(function CatalogFilamentTableRow({
       : (current + 1) % presetSummaries.length);
   };
 
+  const openFilament = (event: MouseEvent<HTMLTableRowElement>) => {
+    const target = event.target as HTMLElement;
+    if (target.closest('a, button')) return;
+    navigate(materialPath);
+  };
+
   const presetBadge = currentPreset
     ? getPresetTypeBadge(
         currentPreset.preset_type,
@@ -167,19 +176,34 @@ const CatalogFilamentTableRow = memo(function CatalogFilamentTableRow({
 
   return (
     <Fragment>
-      <tr className="align-top text-sm text-gray-300 transition-colors hover:bg-white/[0.05]">
-        <td className="px-2 py-4 text-center">
-          {(filament.color_hex || filament.visual_settings) && (
-            <div className="mx-auto h-12 w-12 overflow-visible" aria-hidden>
-              <div style={{ transform: 'scale(0.32)', transformOrigin: 'top left' }}>
-                <FilamentPreview
-                  colorHex={filament.color_hex || '#FFFFFF'}
-                  visualSettings={filament.visual_settings}
-                  size="medium"
-                />
+      <tr
+        onClick={openFilament}
+        className="cursor-pointer align-top text-sm text-gray-300 transition-colors hover:bg-white/[0.05]"
+      >
+        <td className="px-3 py-4">
+          <div className="min-w-0">
+            {(filament.color_hex || filament.visual_settings) && (
+              <div className="h-6 w-[70px] overflow-visible" aria-hidden>
+                <div style={{ transform: 'scale(0.45)', transformOrigin: 'top left' }}>
+                  <FilamentPreview
+                    colorHex={filament.color_hex || '#FFFFFF'}
+                    visualSettings={filament.visual_settings}
+                    size="small"
+                  />
+                </div>
               </div>
+            )}
+            <div className={`${filament.color_hex || filament.visual_settings ? 'mt-1' : ''} min-w-0 text-xs text-gray-300`}>
+              <p className="truncate" title={filament.color_name || filament.color_hex || undefined}>
+                {filament.color_name || filament.color_hex || '—'}
+              </p>
+              {filament.ral_code && (
+                <p className="mt-0.5 truncate font-mono text-[10px] text-gray-500">
+                  RAL {filament.ral_code}
+                </p>
+              )}
             </div>
-          )}
+          </div>
         </td>
         <th scope="row" className="px-3 py-4 font-normal">
           <Link
@@ -216,11 +240,6 @@ const CatalogFilamentTableRow = memo(function CatalogFilamentTableRow({
           <span className="inline-flex rounded-full border border-purple-500/30 bg-purple-500/20 px-2 py-0.5 text-xs text-purple-200">
             {filament.material_type}
           </span>
-          {(filament.color_name || filament.ral_code) && (
-            <p className="mt-2 truncate text-xs text-gray-300" title={[filament.color_name, filament.ral_code ? `RAL ${filament.ral_code}` : null].filter(Boolean).join(' · ')}>
-              {[filament.color_name, filament.ral_code ? `RAL ${filament.ral_code}` : null].filter(Boolean).join(' · ')}
-            </p>
-          )}
           {compositionLabels.length > 0 && (
             <p className="mt-2 line-clamp-2 text-xs text-gray-400" title={compositionLabels.join(', ')}>
               {compositionLabels.join(' · ')}
@@ -296,7 +315,10 @@ const CatalogFilamentTableRow = memo(function CatalogFilamentTableRow({
                   <div className="flex items-center gap-1">
                     <button
                       type="button"
-                      onClick={() => cyclePreset('prev')}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        cyclePreset('prev');
+                      }}
                       className="rounded border border-white/15 p-1 text-gray-300 hover:bg-white/10 hover:text-white"
                       aria-label={t('catalogPage.previousPreset')}
                     >
@@ -307,7 +329,10 @@ const CatalogFilamentTableRow = memo(function CatalogFilamentTableRow({
                     </span>
                     <button
                       type="button"
-                      onClick={() => cyclePreset('next')}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        cyclePreset('next');
+                      }}
                       className="rounded border border-white/15 p-1 text-gray-300 hover:bg-white/10 hover:text-white"
                       aria-label={t('catalogPage.nextPreset')}
                     >
@@ -322,13 +347,16 @@ const CatalogFilamentTableRow = memo(function CatalogFilamentTableRow({
           )}
         </td>
         <td className="px-3 py-4">
-          <div className="flex justify-end gap-1.5">
+          <div className="flex justify-end gap-2">
             {currentPreset && onSelect && (
               <button
                 type="button"
-                onClick={() => onSelect(currentPreset.id)}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onSelect(currentPreset.id);
+                }}
                 disabled={isPresetSaved}
-                className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-white/20 bg-white/5 text-base text-white transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
+                className={`${TABLE_ACTION_BUTTON_CLASS} border-white/20 bg-white/5 text-white hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60`}
                 aria-label={isPresetSaved
                   ? t('catalogPage.addedToProfile')
                   : isPluginEmbed()
@@ -340,14 +368,19 @@ const CatalogFilamentTableRow = memo(function CatalogFilamentTableRow({
                     ? t('catalogPage.importToOrca')
                     : t('catalogPage.addToProfile')}
               >
-                {isPresetSaved ? '✓' : '+'}
+                {isPresetSaved
+                  ? <Check className="h-4 w-4" aria-hidden />
+                  : <Plus className="h-4 w-4" aria-hidden />}
               </button>
             )}
             {canShowQR && (
               <button
                 type="button"
-                onClick={() => onShowQR?.(filament.id)}
-                className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-white/20 bg-white/5 text-white transition hover:bg-white/10"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onShowQR?.(filament.id);
+                }}
+                className={`${TABLE_ACTION_BUTTON_CLASS} border-white/20 bg-white/5 text-white hover:bg-white/10`}
                 aria-label={t('catalogPage.qrCode')}
                 aria-expanded={showQR}
                 aria-controls={`catalog-table-qr-${filament.id}`}
@@ -356,14 +389,6 @@ const CatalogFilamentTableRow = memo(function CatalogFilamentTableRow({
                 <QrCode className="h-4 w-4" aria-hidden />
               </button>
             )}
-            <Link
-              to={materialPath}
-              className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-purple-400/25 bg-purple-500/10 text-purple-200 transition hover:bg-purple-500/20"
-              aria-label={t('catalogPage.openMaterial')}
-              title={t('catalogPage.openMaterial')}
-            >
-              <ExternalLink className="h-4 w-4" aria-hidden />
-            </Link>
           </div>
         </td>
       </tr>

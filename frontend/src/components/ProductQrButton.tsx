@@ -17,9 +17,11 @@ type Product = Pick<
 export function ProductQrButton({
   filament,
   className = "",
+  iconOnly = false,
 }: {
   filament: Product;
   className?: string;
+  iconOnly?: boolean;
 }) {
   const { t, i18n } = useTranslation();
   const titleId = useId();
@@ -63,10 +65,14 @@ export function ProductQrButton({
           setImageFailed(false);
           setOpen(true);
         }}
-        className={`inline-flex items-center justify-center gap-2 rounded-xl border border-white/20 bg-white/10 px-4 py-2 text-sm text-white transition hover:bg-white/20 ${className}`}
+        className={`inline-flex items-center justify-center rounded-xl border border-white/20 bg-white/10 text-sm text-white transition hover:bg-white/20 ${
+          iconOnly ? "size-10 shrink-0 p-0" : "gap-2 px-4 py-2"
+        } ${className}`}
+        aria-label={iconOnly ? t("productQr.title") : undefined}
+        title={iconOnly ? t("productQr.title") : undefined}
       >
-        <QrCode className="h-4 w-4 shrink-0" />
-        {t("productQr.title")}
+        <QrCode className="h-4 w-4 shrink-0" aria-hidden />
+        {!iconOnly && t("productQr.title")}
       </button>
       {open && (
         <ModalOverlay onClose={() => setOpen(false)}>

@@ -33,7 +33,7 @@ interface BrandFilamentCardProps {
 }
 
 const BrandFilamentCard: React.FC<BrandFilamentCardProps> = ({ filament, onClick }) => (
-  <div className="flex flex-col rounded-xl border border-white/15 bg-white/[0.07] shadow-lg backdrop-blur-sm">
+  <div className="relative flex flex-col rounded-xl border border-white/15 bg-white/[0.07] shadow-lg backdrop-blur-sm">
   <button
     type="button"
     onClick={onClick}
@@ -64,7 +64,7 @@ const BrandFilamentCard: React.FC<BrandFilamentCardProps> = ({ filament, onClick
       />
     </div>
 
-    <div className="mt-auto flex min-w-0 items-end justify-between gap-3 pt-3">
+    <div className={`mt-auto flex min-w-0 items-end justify-between gap-3 pt-3 ${filament.qr_code ? 'pr-12' : ''}`}>
       <div className="min-w-0 text-xs text-gray-300">
         <p className="truncate">{filament.color_name || filament.color_hex || '—'}</p>
         {filament.ral_code && (
@@ -78,7 +78,14 @@ const BrandFilamentCard: React.FC<BrandFilamentCardProps> = ({ filament, onClick
       />
     </div>
   </button>
-  {filament.qr_code && <div className="px-4 pb-4"><ProductQrButton key={filament.id} filament={filament} /></div>}
+  {filament.qr_code && (
+    <ProductQrButton
+      key={filament.id}
+      filament={filament}
+      iconOnly
+      className="absolute bottom-4 right-4 z-10"
+    />
+  )}
   </div>
 );
 

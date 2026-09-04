@@ -87,4 +87,15 @@ describe("public product QR", () => {
       expect(mocks.download).toHaveBeenCalledWith(41, 600, { format: "svg" }),
     );
   });
+
+  it("can render a compact icon-only trigger without changing the dialog", () => {
+    render(<ProductQrButton filament={filament} iconOnly />);
+
+    const trigger = screen.getByRole("button", { name: "productQr.title" });
+    expect(trigger).toHaveClass("size-10", "shrink-0");
+    expect(trigger).not.toHaveTextContent("productQr.title");
+
+    fireEvent.click(trigger);
+    expect(screen.getByRole("dialog", { name: "productQr.title" })).toBeInTheDocument();
+  });
 });
