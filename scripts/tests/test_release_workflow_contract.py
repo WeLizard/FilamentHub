@@ -1,7 +1,307 @@
 from pathlib import Path
+import hashlib
+import json
+import os
+import shutil
+import subprocess
+
+import pytest
 
 
 ROOT = Path(__file__).resolve().parents[2]
+
+
+def run_offline_publication(tmp_path: Path, mode: str, scenario: str) -> dict:
+    """Exercise the release functions with local assets and no external commands."""
+    shell = shutil.which("pwsh") or shutil.which("powershell")
+    if not shell:
+        pytest.skip("PowerShell is required for the offline publication contract")
+    wheel_name = "filamenthub-1.2.3-py3-none-any.whl"
+    approved_bytes = b"approved candidate fixture"
+    expected_sha = hashlib.sha256(approved_bytes).hexdigest()
+    assets = {wheel_name: approved_bytes}
+    if scenario == "replaced_wheel_and_checksums":
+        assets[wheel_name] = b"replacement candidate fixture"
+    elif scenario == "wrong_version":
+        assets = {"filamenthub-9.9.9-py3-none-any.whl": approved_bytes}
+    elif scenario == "wrong_platform":
+        assets = {"filamenthub-1.2.3-py2-none-any.whl": approved_bytes}
+    elif scenario == "extra_matching_wheel":
+        assets["filamenthub-1.2.3-py2-none-any.whl"] = approved_bytes
+    elif scenario in {"extra_wheel", "unlisted_extra_wheel"}:
+        assets["unrelated-1.2.3-py3-none-any.whl"] = approved_bytes
+    fixture_dir = tmp_path / "release-assets"
+    fixture_dir.mkdir()
+    checksums = []
+    for name, content in assets.items():
+        (fixture_dir / name).write_bytes(content)
+        if scenario == "unlisted_extra_wheel" and name.startswith("unrelated-"):
+            continue
+        checksums.append(f"{hashlib.sha256(content).hexdigest()}  {name}")
+    (fixture_dir / "SHA256SUMS").write_text("\n".join(checksums), encoding="utf-8")
+    runner = tmp_path / "exercise-release.ps1"
+    runner.write_text(
+        r"""
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+$script:Remote = 'origin'
+$tokens = $null
+$parseErrors = $null
+$ast = [System.Management.Automation.Language.Parser]::ParseFile(
+    $env:RELEASE_SCRIPT, [ref]$tokens, [ref]$parseErrors
+)
+if ($parseErrors.Count) { throw ($parseErrors | Out-String) }
+# Load function definitions only: the owner-run entry point must never execute.
+foreach ($statement in $ast.EndBlock.Statements) {
+    if ($statement -is [System.Management.Automation.Language.FunctionDefinitionAst]) {
+        . ([scriptblock]::Create($statement.Extent.Text))
+    }
+}
+$script:edits = [System.Collections.Generic.List[string]]::new()
+$global:offlinePrompts = [System.Collections.Generic.List[string]]::new()
+$global:menuCalls = [System.Collections.Generic.List[object]]::new()
+$script:waits = 0
+$script:release = [pscustomobject]@{
+    tagName = 'v1.2.3'; isDraft = ($env:RELEASE_MODE -eq 'normal')
+    isPrerelease = $false; publishedAt = '2026-01-01T00:00:00Z'
+    url = 'https://example.invalid/release'
+    assets = @(Get-ChildItem -LiteralPath $env:RELEASE_FIXTURES | ForEach-Object {
+        [pscustomobject]@{ name = $_.Name }
+    })
+}
+function Invoke-Checked {
+    param($FilePath, $Arguments, $WorkingDirectory, [switch]$Capture)
+    if ($FilePath -eq 'gh' -and $Arguments[0] -eq 'release') {
+        if ($Arguments[1] -eq 'download') {
+            $destination = $Arguments[[array]::IndexOf($Arguments, '--dir') + 1]
+            Get-ChildItem -LiteralPath $env:RELEASE_FIXTURES | Copy-Item -Destination $destination
+            return
+        }
+        if ($Arguments[1] -eq 'edit') {
+            $script:edits.Add($Arguments[-1])
+            $script:release.isDraft = $Arguments[-1] -eq '--draft'
+            return
+        }
+    }
+    if ($FilePath -eq 'git') {
+        if ($Arguments -contains 'rev-parse' -or $Arguments -contains 'rev-list') {
+            return 'approved-commit'
+        }
+        if ($Arguments -contains '--list') { return 'v1.2.3' }
+    }
+    throw "Unexpected external command: $FilePath $Arguments"
+}
+function Get-Release { param($Repository, $Tag) return $script:release }
+function Wait-ForRelease {
+    param($Repository, $Workflow, $TagCommit, $Tag, [switch]$AllowDraft, [switch]$RequireWorkflow)
+    return $script:release
+}
+function Get-RemoteTagCommit { param($RepositoryPath, $RemoteName, $Tag) return 'approved-commit' }
+function Ensure-LocalTag { param($RepositoryPath, $RemoteName, $Tag) }
+function Assert-TrustedPublishRepairable { param($Name, $RepositoryPath, $Tag, $WorkflowPath) }
+function Wait-ForWorkflowRun {
+    param($Repository, $Workflow, $Event, $TagCommit, $Tag, $NotBefore)
+    $script:waits += 1
+}
+# Retain temporary verification data under pytest's directory for inspection.
+function Remove-Item { param($LiteralPath, [switch]$Recurse, [switch]$Force, $ErrorAction) }
+function Read-Host {
+    param($Prompt)
+    $global:offlinePrompts.Add($Prompt)
+    switch ($env:RELEASE_SCENARIO) {
+        'wrong_approval' { return ('0' * 64) }
+        'malformed_approval' { return 'yes' }
+        'empty_approval' { return '' }
+        default { return $env:RELEASE_EXPECTED_SHA }
+    }
+}
+$parameters = @{
+    Name = 'Offline fixture'; RepositoryPath = $env:RELEASE_FIXTURES
+    Repository = 'offline/fixture'; Tag = 'v1.2.3'
+    TrustedPublishWorkflow = 'publish-orcacloud.yml'
+    RequiredPatterns = @('^filamenthub-\d+\.\d+\.\d+-.*\.whl$', '^SHA256SUMS$')
+    ForbiddenPatterns = @('^printers-', '^octoprint[-_]filamenthubbridge-')
+}
+if ($env:RELEASE_SCENARIO -ne 'missing_approval') {
+    $parameters.ExpectedSha256 = $env:RELEASE_EXPECTED_SHA
+    $parameters.ExpectedAssetPattern = '^filamenthub-1\.2\.3-py3-none-any\.whl$'
+}
+$failure = $null
+$script:candidates = @()
+try {
+    if ($env:RELEASE_MODE -in @('preflight', 'menu')) {
+        $script:candidates = @(
+            [pscustomobject]@{
+                Id = 'orcaslicer'; Name = 'Normal fixture'; Needed = $true; Repair = $false
+                CandidateWheel = Join-Path $env:RELEASE_FIXTURES 'filamenthub-1.2.3-py3-none-any.whl'
+                CandidateChecksums = Join-Path $env:RELEASE_FIXTURES 'SHA256SUMS'
+            },
+            [pscustomobject]@{
+                Id = 'print-farm'; Name = 'Repair fixture'; Needed = $false; Repair = $true
+                CandidateWheel = Join-Path $env:RELEASE_FIXTURES 'filamenthub-1.2.3-py3-none-any.whl'
+                CandidateChecksums = Join-Path $env:RELEASE_FIXTURES 'SHA256SUMS'
+            }
+        )
+        $approvals = @{ orcaslicer = $env:RELEASE_EXPECTED_SHA; 'print-farm' = $env:RELEASE_EXPECTED_SHA }
+        switch ($env:RELEASE_SCENARIO) {
+            'missing_approval' { $approvals = @{} }
+            'missing_repair_approval' { $approvals.Remove('print-farm') }
+            'wrong_approval' { $approvals['print-farm'] = '0' * 64 }
+            'malformed_approval' { $approvals['print-farm'] = 'not-a-sha256' }
+            'empty_approval' { $approvals['print-farm'] = '' }
+            'noop' {
+                foreach ($candidate in $script:candidates) {
+                    $candidate.Needed = $false
+                    $candidate.Repair = $false
+                }
+            }
+        }
+        if ($env:RELEASE_MODE -eq 'menu') {
+            # Use the real parameter and approval entry-point statements, omitting
+            # unrelated repository discovery, network calls and publication.
+            $approvalStatement = @($ast.EndBlock.Statements | Where-Object {
+                $_.Extent.Text -like 'Assert-OwnerApprovedCandidates -Plans*'
+            })
+            if ($approvalStatement.Count -ne 1) { throw 'Missing canonical approval entry point' }
+            $dryRunStatement = @($ast.EndBlock.Statements | Where-Object {
+                $_.Extent.Text.StartsWith('if ($DryRun)')
+            })
+            $global:offlineCandidates = $script:candidates
+            $entryPoint = $ast.ParamBlock.Extent.Text + @'
+
+$global:menuCalls.Add([pscustomobject]@{
+    dryRun = [bool]$DryRun
+    prompt = [bool]$PSBoundParameters['PromptForOwnerApproval']
+    components = @($Component)
+})
+$plans = $global:offlineCandidates
+
+'@ + $dryRunStatement[0].Extent.Text + "`n" + $approvalStatement[0].Extent.Text
+            $entryPath = Join-Path $PSScriptRoot 'publish-plugin-releases.ps1'
+            [System.IO.File]::WriteAllText($entryPath, $entryPoint, [System.Text.UTF8Encoding]::new($true))
+            $menuAst = [System.Management.Automation.Language.Parser]::ParseFile(
+                $env:MENU_SCRIPT, [ref]$tokens, [ref]$parseErrors
+            )
+            if ($parseErrors.Count) { throw ($parseErrors | Out-String) }
+            $menuFunction = $menuAst.EndBlock.Statements | Where-Object {
+                $_ -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+                $_.Name -eq 'Invoke-PluginReleasePreparation'
+            }
+            $menuSlicePath = Join-Path $PSScriptRoot 'menu-slice.ps1'
+            [System.IO.File]::WriteAllText($menuSlicePath, $menuFunction.Extent.Text, [System.Text.UTF8Encoding]::new($true))
+            . $menuSlicePath
+            function Confirm-Action { param($Question) return $true }
+            function Test-DownloadPageRelease { return $true }
+            Invoke-PluginReleasePreparation
+        } else {
+            Assert-OwnerApprovedCandidates -Plans $script:candidates -ApprovedSha256 $approvals
+        }
+    } elseif ($env:RELEASE_MODE -eq 'repair') {
+        Repair-TrustedPublishComponent @parameters
+    } else {
+        $parameters.Workflow = 'release-filamenthub.yml'
+        $parameters.OwnerPublishesDraft = $true
+        Publish-Component @parameters
+    }
+} catch {
+    $failure = $_.Exception.Message
+}
+[pscustomobject]@{
+    error = $failure; edits = @($script:edits.ToArray()); waits = $script:waits
+    candidates = @($script:candidates)
+    prompts = @($global:offlinePrompts.ToArray()); menuCalls = @($global:menuCalls.ToArray())
+} | ConvertTo-Json -Compress -Depth 4
+""",
+        encoding="utf-8-sig",
+    )
+    env = dict(os.environ)
+    env.update(
+        RELEASE_SCRIPT=str(ROOT / "scripts/publish-plugin-releases.ps1"),
+        MENU_SCRIPT=str(ROOT / "scripts/deploy-server.ps1"),
+        RELEASE_FIXTURES=str(fixture_dir),
+        RELEASE_MODE=mode,
+        RELEASE_SCENARIO=scenario,
+        RELEASE_EXPECTED_SHA=expected_sha,
+        TEMP=str(tmp_path),
+        TMP=str(tmp_path),
+        TMPDIR=str(tmp_path),
+    )
+    result = subprocess.run(
+        [shell, "-NoProfile", "-NonInteractive", "-File", str(runner)],
+        capture_output=True, text=True, encoding="utf-8", env=env, timeout=30,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    return json.loads(result.stdout.strip().splitlines()[-1])
+
+
+@pytest.mark.parametrize("mode", ["normal", "repair"])
+def test_owner_publication_accepts_only_the_unchanged_approved_wheel(tmp_path, mode):
+    result = run_offline_publication(tmp_path, mode, "approved")
+
+    assert result["error"] is None, result
+    assert result["edits"] == (["--draft", "--draft=false"] if mode == "repair" else ["--draft=false"])
+    assert result["waits"] == 1
+
+
+@pytest.mark.parametrize("mode", ["normal", "repair"])
+@pytest.mark.parametrize("scenario", [
+    "replaced_wheel_and_checksums", "wrong_version", "wrong_platform",
+    "extra_matching_wheel", "extra_wheel", "unlisted_extra_wheel", "missing_approval",
+])
+def test_owner_publication_rejects_unapproved_artifacts_before_release_edits(tmp_path, mode, scenario):
+    result = run_offline_publication(tmp_path, mode, scenario)
+
+    assert result["error"], result
+    assert result["edits"] == [], result
+    assert result["waits"] == 0, result
+
+
+def test_owner_preflight_binds_normal_and_repair_to_approved_hash_and_filename(tmp_path):
+    result = run_offline_publication(tmp_path, "preflight", "approved")
+
+    assert result["error"] is None, result
+    assert len(result["candidates"]) == 2
+    for candidate in result["candidates"]:
+        assert candidate["CandidateSha256"] == hashlib.sha256(b"approved candidate fixture").hexdigest()
+        assert candidate["CandidateAssetPattern"] == r"^filamenthub-1\.2\.3-py3-none-any\.whl$"
+    assert result["edits"] == []
+    assert result["waits"] == 0
+
+
+@pytest.mark.parametrize("scenario", [
+    "missing_approval", "missing_repair_approval", "wrong_approval",
+    "malformed_approval", "empty_approval", "replaced_wheel_and_checksums",
+])
+def test_owner_preflight_rejects_missing_or_changed_approval(tmp_path, scenario):
+    result = run_offline_publication(tmp_path, "preflight", scenario)
+
+    assert result["error"], result
+    assert result["edits"] == []
+    assert result["waits"] == 0
+
+
+@pytest.mark.parametrize("scenario", ["approved", "noop"])
+def test_release_menu_requests_explicit_hashes_only_for_actionable_plans(tmp_path, scenario):
+    result = run_offline_publication(tmp_path, "menu", scenario)
+
+    assert result["error"] is None, result
+    assert result["menuCalls"] == [
+        {"dryRun": True, "prompt": False, "components": ["all"]},
+        {"dryRun": False, "prompt": True, "components": ["all"]},
+    ]
+    assert len(result["prompts"]) == (2 if scenario == "approved" else 0)
+    assert result["edits"] == []
+    assert result["waits"] == 0
+
+
+@pytest.mark.parametrize("scenario", ["wrong_approval", "malformed_approval", "empty_approval"])
+def test_release_menu_does_not_replace_invalid_owner_input_with_a_local_hash(tmp_path, scenario):
+    result = run_offline_publication(tmp_path, "menu", scenario)
+
+    assert result["error"], result
+    assert len(result["prompts"]) == 1, result
+    assert result["edits"] == []
+    assert result["waits"] == 0
 
 
 def test_filamenthub_build_leaves_a_draft_for_owner_validation() -> None:
@@ -87,12 +387,13 @@ def test_owner_script_requires_the_exact_owner_tested_wheel_before_push() -> Non
         encoding="utf-8"
     )
 
-    approval_gate = script.index("Get-LocalCandidateSha256 `")
+    approval_gate = script.index("Assert-OwnerApprovedCandidates -Plans $plans")
     branch_push = script.index("'push', $Remote, $Branch")
     publish_call = script.index("Publish-Component @publish", approval_gate)
 
     assert approval_gate < branch_push
     assert approval_gate < publish_call
+    assert script.index("if ($DryRun)") < approval_gate
     assert "orca-plugin/dist/release-$version/wheels/filamenthub-$version" in script
     assert "octoprint-plugin/dist/release-$version/octoprint_filamenthubbridge-$version" in script
     assert "plugins/printers/dist/release-$version/wheels/printers-$version" in script
@@ -117,12 +418,14 @@ def test_owner_script_repairs_only_tags_with_a_safe_trusted_workflow() -> None:
         "\nAssert-Command git", 1
     )[0]
     validate_at = repair.index("Assert-ReleaseAssets `")
+    checksum_at = repair.index("Assert-ReleaseChecksums `")
     tagged_workflow_at = repair.index("Assert-TrustedPublishRepairable `")
     draft_at = repair.index("'--draft'")
     republish_at = repair.index("'--draft=false'")
     wait_at = repair.index("Wait-ForWorkflowRun `")
 
-    assert validate_at < tagged_workflow_at < draft_at < republish_at < wait_at
+    assert validate_at < checksum_at < tagged_workflow_at < draft_at < republish_at < wait_at
+    assert "-ExpectedSha256 $ExpectedSha256 -ExpectedAssetPattern $ExpectedAssetPattern" in repair
     assert "-NotBefore $triggerStartedAt.AddSeconds(-5)" in repair
 
     classification = script.split("function Test-TrustedPublishNeedsRepair", 1)[

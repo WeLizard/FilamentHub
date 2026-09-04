@@ -710,7 +710,7 @@ function Invoke-PluginReleasePreparation {
         throw 'Публикация релиза отменена.'
     }
 
-    & $scriptPath -Component $components -HideReleaseNotes
+    & $scriptPath -Component $components -HideReleaseNotes -PromptForOwnerApproval
     if (-not $?) {
         throw 'Скрипт публикации плагинов завершился с ошибкой.'
     }

@@ -20,6 +20,12 @@ param(
     [Parameter()]
     [switch]$HideReleaseNotes,
 
+    [Parameter(HelpMessage = 'Owner-tested wheel SHA-256 by component ID: orcaslicer, octoprint, print-farm.')]
+    [hashtable]$OwnerApprovedSha256 = @{},
+
+    [Parameter()]
+    [switch]$PromptForOwnerApproval,
+
     [Parameter()]
     [switch]$DryRun
 )
@@ -513,6 +519,7 @@ function Get-LocalCandidateSha256 {
     param(
         [Parameter(Mandatory)][string]$Name,
         [Parameter(Mandatory)][string]$WheelPath,
+        [Parameter(Mandatory)][ValidatePattern('^[0-9a-fA-F]{64}$')][string]$ExpectedSha256,
         [string]$ChecksumPath
     )
 
@@ -520,6 +527,9 @@ function Get-LocalCandidateSha256 {
         throw "${Name}: не найден локальный release candidate '$WheelPath'. Сначала собери и проверь его в целевом приложении."
     }
     $actual = (Get-FileHash -LiteralPath $WheelPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($actual -ne $ExpectedSha256.ToLowerInvariant()) {
+        throw "${Name}: local candidate differs from the owner-approved SHA-256. Test and approve the exact wheel before publication."
+    }
     if ($ChecksumPath) {
         if (-not (Test-Path -LiteralPath $ChecksumPath -PathType Leaf)) {
             throw "${Name}: рядом с release candidate отсутствует SHA256SUMS."
@@ -542,12 +552,39 @@ function Get-LocalCandidateSha256 {
     return $actual
 }
 
+function Assert-OwnerApprovedCandidates {
+    param(
+        [Parameter(Mandatory)][AllowEmptyCollection()][object[]]$Plans,
+        [Parameter(Mandatory)][hashtable]$ApprovedSha256,
+        [switch]$PromptForOwnerApproval
+    )
+
+    foreach ($plan in @($Plans | Where-Object { $_.Needed -or $_.Repair })) {
+        $approvedHash = if ($ApprovedSha256.ContainsKey($plan.Id)) {
+            $ApprovedSha256[$plan.Id]
+        } elseif ($PromptForOwnerApproval) {
+            $wheelName = Split-Path -Leaf $plan.CandidateWheel
+            (Read-Host "$($plan.Name): enter the SHA-256 of '$wheelName' tested and accepted by the owner (leave blank to cancel)").Trim()
+        } else {
+            throw "$($plan.Name): provide -OwnerApprovedSha256 with the exact SHA-256 tested and accepted by the owner for '$($plan.Id)' before publication or repair."
+        }
+        $plan | Add-Member -NotePropertyName CandidateSha256 -NotePropertyValue (
+            Get-LocalCandidateSha256 `
+                -Name $plan.Name -WheelPath $plan.CandidateWheel `
+                -ChecksumPath $plan.CandidateChecksums -ExpectedSha256 $approvedHash
+        )
+        $plan | Add-Member -NotePropertyName CandidateAssetPattern -NotePropertyValue (
+            '^' + [regex]::Escape((Split-Path -Leaf $plan.CandidateWheel)) + '$'
+        )
+    }
+}
+
 function Assert-ReleaseChecksums {
     param(
         [Parameter(Mandatory)][string]$Repository,
         [Parameter(Mandatory)][string]$Tag,
-        [string]$ExpectedSha256,
-        [string]$ExpectedAssetPattern
+        [Parameter(Mandatory)][ValidatePattern('^[0-9a-fA-F]{64}$')][string]$ExpectedSha256,
+        [Parameter(Mandatory)][string]$ExpectedAssetPattern
     )
 
     $systemTemp = [System.IO.Path]::GetFullPath([System.IO.Path]::GetTempPath())
@@ -583,20 +620,16 @@ function Assert-ReleaseChecksums {
             $assetHashes[$assetName] = $actual
         }
 
-        if ($ExpectedSha256 -or $ExpectedAssetPattern) {
-            if (-not $ExpectedSha256 -or -not $ExpectedAssetPattern) {
-                throw "Для сравнения release candidate нужны и SHA-256, и asset pattern."
-            }
-            $approvedAssets = @(
-                $assetHashes.Keys | Where-Object { $_ -match $ExpectedAssetPattern }
-            )
-            if ($approvedAssets.Count -ne 1) {
-                throw "Релиз '$Tag' должен иметь ровно один проверяемый wheel '$ExpectedAssetPattern'."
-            }
-            $approvedName = $approvedAssets[0]
-            if ($assetHashes[$approvedName] -ne $ExpectedSha256.ToLowerInvariant()) {
-                throw "GitHub asset '$approvedName' отличается от локального wheel, проверенного владельцем."
-            }
+        $wheels = @(Get-ChildItem -LiteralPath $verifyDir -File -Filter '*.whl')
+        if ($wheels.Count -ne 1 -or $wheels[0].Name -notmatch $ExpectedAssetPattern) {
+            throw "Release '$Tag' must contain exactly the owner-approved wheel '$ExpectedAssetPattern'."
+        }
+        $approvedName = $wheels[0].Name
+        if (-not $assetHashes.ContainsKey($approvedName)) {
+            throw "SHA256SUMS must include the owner-approved wheel '$approvedName'."
+        }
+        if ($assetHashes[$approvedName] -ne $ExpectedSha256.ToLowerInvariant()) {
+            throw "GitHub asset '$approvedName' отличается от локального wheel, проверенного владельцем."
         }
     } finally {
         $resolvedVerifyDir = [System.IO.Path]::GetFullPath($verifyDir)
@@ -616,7 +649,7 @@ function Publish-Component {
         [Parameter(Mandatory)][string]$Workflow,
         [Parameter(Mandatory)][string[]]$RequiredPatterns,
         [Parameter(Mandatory)][string[]]$ForbiddenPatterns,
-        [Parameter(Mandatory)][string]$ExpectedSha256,
+        [Parameter(Mandatory)][ValidatePattern('^[0-9a-fA-F]{64}$')][string]$ExpectedSha256,
         [Parameter(Mandatory)][string]$ExpectedAssetPattern,
         [switch]$OwnerPublishesDraft,
         [string]$TrustedPublishWorkflow
@@ -679,7 +712,9 @@ function Repair-TrustedPublishComponent {
         [Parameter(Mandatory)][string]$Tag,
         [Parameter(Mandatory)][string]$TrustedPublishWorkflow,
         [Parameter(Mandatory)][string[]]$RequiredPatterns,
-        [Parameter(Mandatory)][string[]]$ForbiddenPatterns
+        [Parameter(Mandatory)][string[]]$ForbiddenPatterns,
+        [Parameter(Mandatory)][ValidatePattern('^[0-9a-fA-F]{64}$')][string]$ExpectedSha256,
+        [Parameter(Mandatory)][string]$ExpectedAssetPattern
     )
 
     $release = Get-Release -Repository $Repository -Tag $Tag
@@ -689,7 +724,8 @@ function Repair-TrustedPublishComponent {
     Assert-ReleaseAssets `
         -Release $release -RequiredPatterns $RequiredPatterns -ForbiddenPatterns $ForbiddenPatterns
     Assert-ReleaseChecksums `
-        -Repository $Repository -Tag $Tag
+        -Repository $Repository -Tag $Tag `
+        -ExpectedSha256 $ExpectedSha256 -ExpectedAssetPattern $ExpectedAssetPattern
     Ensure-LocalTag -RepositoryPath $RepositoryPath -RemoteName $Remote -Tag $Tag
     Assert-TrustedPublishRepairable `
         -Name $Name -RepositoryPath $RepositoryPath -Tag $Tag `
@@ -785,7 +821,6 @@ if ($selected -contains 'orcaslicer') {
         Workflow = 'release-filamenthub.yml'; TrustedPublishWorkflow = 'publish-orcacloud.yml'
         CandidateWheel = Join-Path $script:MainRepositoryRoot "orca-plugin/dist/release-$version/wheels/filamenthub-$version-py3-none-any.whl"
         CandidateChecksums = Join-Path $script:MainRepositoryRoot "orca-plugin/dist/release-$version/SHA256SUMS"
-        CandidateAssetPattern = '^filamenthub-\d+\.\d+\.\d+-py3-none-any\.whl$'
     }
 }
 if ($selected -contains 'octoprint') {
@@ -804,7 +839,6 @@ if ($selected -contains 'octoprint') {
         Workflow = 'release-octoprint.yml'; TrustedPublishWorkflow = $null
         CandidateWheel = Join-Path $script:MainRepositoryRoot "octoprint-plugin/dist/release-$version/octoprint_filamenthubbridge-$version-py3-none-any.whl"
         CandidateChecksums = Join-Path $script:MainRepositoryRoot "octoprint-plugin/dist/release-$version/SHA256SUMS"
-        CandidateAssetPattern = '^octoprint_filamenthubbridge-\d+\.\d+\.\d+-py3-none-any\.whl$'
     }
 }
 if ($selected -contains 'print-farm') {
@@ -834,7 +868,6 @@ if ($selected -contains 'print-farm') {
         Workflow = 'release-printers.yml'; TrustedPublishWorkflow = 'publish-orcacloud.yml'
         CandidateWheel = Join-Path $printFarmRepositoryRoot "plugins/printers/dist/release-$version/wheels/printers-$version-py3-none-any.whl"
         CandidateChecksums = Join-Path $printFarmRepositoryRoot "plugins/printers/dist/release-$version/SHA256SUMS"
-        CandidateAssetPattern = '^printers-\d+\.\d+\.\d+-py3-none-any\.whl$'
     }
 }
 
@@ -903,18 +936,12 @@ if ($selected -contains 'print-farm') {
 
 if ($DryRun) {
     Write-Host 'Dry-run завершён. Push, теги и GitHub Releases не создавались.' -ForegroundColor Green
+    Write-Host 'Owner approval and release asset identity were not verified.'
     return
 }
 
-foreach ($plan in @($plans | Where-Object { $_.Needed -or $_.Repair })) {
-    if ($plan.Needed) {
-        $plan | Add-Member -NotePropertyName CandidateSha256 -NotePropertyValue (
-            Get-LocalCandidateSha256 `
-                -Name $plan.Name -WheelPath $plan.CandidateWheel `
-                -ChecksumPath $plan.CandidateChecksums
-        )
-    }
-}
+Assert-OwnerApprovedCandidates -Plans $plans -ApprovedSha256 $OwnerApprovedSha256 `
+    -PromptForOwnerApproval:$PromptForOwnerApproval
 
 $mainPlans = @($plans | Where-Object {
     $_.RepositoryPath -eq $script:MainRepositoryRoot -and ($_.Needed -or $_.Repair)
@@ -935,6 +962,8 @@ foreach ($plan in @($plans | Where-Object { $_.Needed -or $_.Repair })) {
             Name = $plan.Name; RepositoryPath = $plan.RepositoryPath
             Repository = $plan.Repository; Tag = $plan.Published.Tag
             TrustedPublishWorkflow = $plan.TrustedPublishWorkflow
+            ExpectedSha256 = $plan.CandidateSha256
+            ExpectedAssetPattern = $plan.CandidateAssetPattern
         }
         switch ($plan.Id) {
             'orcaslicer' {
