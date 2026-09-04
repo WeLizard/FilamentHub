@@ -6571,6 +6571,205 @@ def test_bambu_partial_push_does_not_erase_the_feed(plugin_module):
     assert plugin_module.parse_bambu_feed(None) is None
 
 
+class _BambuMqttSocket:
+    def __init__(self, packets, terminal_error=None):
+        self._incoming = bytearray().join(packets)
+        self._terminal_error = terminal_error or TimeoutError("inert Bambu socket")
+        self.sent = []
+        self.timeouts = []
+        self.closed = False
+
+    def settimeout(self, timeout):
+        self.timeouts.append(timeout)
+
+    def recv(self, length):
+        if not self._incoming:
+            raise self._terminal_error
+        chunk = self._incoming[:length]
+        del self._incoming[:length]
+        return bytes(chunk)
+
+    def sendall(self, payload):
+        self.sent.append(payload)
+
+    def close(self):
+        self.closed = True
+
+
+def _bambu_mqtt_packet(plugin_module, header, body=b""):
+    return bytes([header]) + plugin_module._mqtt_len(len(body)) + body
+
+
+def _bambu_mqtt_report(plugin_module, serial, payload, topic_suffix="report"):
+    topic = f"device/{serial}/{topic_suffix}".encode("utf-8")
+    body = plugin_module._mqtt_field(topic) + payload
+    return _bambu_mqtt_packet(plugin_module, 0x30, body)
+
+
+def _bambu_snapshot_socket(plugin_module, *reports, terminal_error=None, connack_code=0):
+    packets = [
+        _bambu_mqtt_packet(plugin_module, 0x20, bytes([0, connack_code])),
+        _bambu_mqtt_packet(plugin_module, 0x90, b"\x00\x01\x00"),
+        *reports,
+    ]
+    return _BambuMqttSocket(packets, terminal_error=terminal_error)
+
+
+@pytest.mark.parametrize("configured_serial", ["SERIAL-2", ""], ids=["configured", "discovered"])
+def test_bambu_snapshot_preserves_useful_partial_report_on_read_timeout(
+    plugin_module, monkeypatch, configured_serial
+):
+    serial = "SERIAL-2"
+    partial_report = {"print": {"gcode_state": "IDLE", "nozzle_temper": 24}}
+    report_packet = _bambu_mqtt_report(
+        plugin_module,
+        serial,
+        json.dumps(partial_report).encode("utf-8"),
+    )
+    sock = _bambu_snapshot_socket(plugin_module, report_packet)
+    monkeypatch.setattr(plugin_module, "_open_bambu_mqtt", lambda *_args: sock)
+
+    observed_serial, report = plugin_module.read_bambu_lan_snapshot(
+        {
+            "host": "printer.local",
+            "access_code": "local-secret",
+            "serial": configured_serial,
+            "material_system_id": 12,
+        },
+        timeout=1,
+    )
+
+    assert observed_serial == serial
+    assert report == partial_report["print"]
+    assert plugin_module.parse_bambu_feed(report) is None
+    snapshot = plugin_module.build_bambu_bridge_snapshot(
+        {"material_system_id": 12}, "fixture-plugin-instance-0001", report
+    )
+    assert snapshot["printer"]["state"] == "idle"
+    assert snapshot["printer"]["nozzle_temperature"] == 24.0
+    assert snapshot["slots"] == []
+    assert snapshot["slot_topology_complete"] is False
+    assert sock.timeouts and max(sock.timeouts) <= 1
+    assert sock.sent[-1] == b"\xE0\x00"
+    assert sock.closed is True
+
+
+def test_bambu_snapshot_prefers_complete_report_after_partial_report(
+    plugin_module, monkeypatch
+):
+    serial = "SERIAL-2"
+    partial = {"print": {"gcode_state": "IDLE", "nozzle_temper": 24}}
+    complete = {"print": _bambu_report(gcode_state="IDLE", nozzle_temper=25)}
+    sock = _bambu_snapshot_socket(
+        plugin_module,
+        _bambu_mqtt_report(
+            plugin_module, serial, json.dumps(partial).encode("utf-8")
+        ),
+        _bambu_mqtt_report(
+            plugin_module, serial, json.dumps(complete).encode("utf-8")
+        ),
+    )
+    monkeypatch.setattr(plugin_module, "_open_bambu_mqtt", lambda *_args: sock)
+
+    observed_serial, report = plugin_module.read_bambu_lan_snapshot(
+        {"host": "printer.local", "access_code": "local-secret", "serial": serial},
+        timeout=1,
+    )
+
+    assert observed_serial == serial
+    assert report == complete["print"]
+    assert plugin_module.parse_bambu_feed(report) is not None
+    assert sock.closed is True
+
+
+@pytest.mark.parametrize(
+    "report_packet",
+    [
+        None,
+        ("report", b'{"print":{}}'),
+        ("report", b'{"print":'),
+        ("request", b'{"print":{"gcode_state":"IDLE"}}'),
+    ],
+    ids=["no-report", "empty-print", "malformed-json", "wrong-topic"],
+)
+def test_bambu_snapshot_timeout_without_useful_telemetry_stays_a_failure(
+    plugin_module, monkeypatch, report_packet
+):
+    serial = "SERIAL-2"
+    reports = []
+    if report_packet is not None:
+        topic_suffix, payload = report_packet
+        reports.append(
+            _bambu_mqtt_report(plugin_module, serial, payload, topic_suffix=topic_suffix)
+        )
+    sock = _bambu_snapshot_socket(plugin_module, *reports)
+    monkeypatch.setattr(plugin_module, "_open_bambu_mqtt", lambda *_args: sock)
+
+    with pytest.raises(TimeoutError, match="inert Bambu socket"):
+        plugin_module.read_bambu_lan_snapshot(
+            {"host": "printer.local", "access_code": "local-secret", "serial": serial},
+            timeout=1,
+        )
+
+    assert sock.sent[-1] == b"\xE0\x00"
+    assert sock.closed is True
+
+
+def test_bambu_snapshot_does_not_hide_transport_failure_after_partial_report(
+    plugin_module, monkeypatch
+):
+    serial = "SERIAL-2"
+    report_packet = _bambu_mqtt_report(
+        plugin_module,
+        serial,
+        b'{"print":{"gcode_state":"IDLE","nozzle_temper":24}}',
+    )
+    sock = _bambu_snapshot_socket(
+        plugin_module,
+        report_packet,
+        terminal_error=ConnectionError("Bambu connection reset"),
+    )
+    monkeypatch.setattr(plugin_module, "_open_bambu_mqtt", lambda *_args: sock)
+
+    with pytest.raises(ConnectionError, match="connection reset"):
+        plugin_module.read_bambu_lan_snapshot(
+            {"host": "printer.local", "access_code": "local-secret", "serial": serial},
+            timeout=1,
+        )
+
+    assert sock.closed is True
+
+
+def test_bambu_snapshot_keeps_authentication_rejection_truthful(plugin_module, monkeypatch):
+    sock = _bambu_snapshot_socket(plugin_module, connack_code=5)
+    monkeypatch.setattr(plugin_module, "_open_bambu_mqtt", lambda *_args: sock)
+
+    with pytest.raises(PermissionError, match="authentication rejected"):
+        plugin_module.read_bambu_lan_snapshot(
+            {
+                "host": "printer.local",
+                "access_code": "wrong-local-secret",
+                "serial": "SERIAL-2",
+            },
+            timeout=1,
+        )
+
+    assert sock.closed is True
+
+
+def test_bambu_explicit_no_ams_report_is_complete_empty_topology(plugin_module):
+    report = {"gcode_state": "IDLE", "ams": {"ams": []}}
+
+    feed = plugin_module.parse_bambu_feed(report)
+    snapshot = plugin_module.build_bambu_bridge_snapshot(
+        {"material_system_id": 12}, "fixture-plugin-instance-0001", report
+    )
+
+    assert feed == {"slots": [], "active_index": None}
+    assert snapshot["slots"] == []
+    assert snapshot["slot_topology_complete"] is True
+
+
 def test_bambu_slot_numbers_stay_the_printers_own(plugin_module):
     assert plugin_module.bambu_slot_index(0, 3) == 3
     assert plugin_module.bambu_slot_index(2, 1) == 9

@@ -7664,7 +7664,12 @@ def read_bambu_lan_snapshot(config, timeout=BAMBU_MQTT_TIMEOUT):
 
         fallback = None
         while time.monotonic() < deadline:
-            header, packet = _mqtt_read_packet(sock, deadline)
+            try:
+                header, packet = _mqtt_read_packet(sock, deadline)
+            except TimeoutError:
+                if fallback is not None:
+                    return serial, fallback
+                raise
             packet_type = header & 0xF0
             if packet_type == 0xC0:
                 with external_operation():
