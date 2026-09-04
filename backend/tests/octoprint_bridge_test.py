@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.brand import Brand
 from app.models.filament import Filament
 from app.models.material_slot_assignment import MaterialSlotAssignment
+from app.models.material_system import MaterialSystem, PhysicalPrinterConnector
 from app.models.preset import Preset, PresetModerationStatus
 from app.models.preset_usage_event import PresetUsageEvent
 from app.models.print_job import PrintJob, PrintJobEvent, PrintJobMaterial
@@ -803,6 +804,128 @@ async def test_issuing_a_new_pairing_code_keeps_the_live_bridge_connected(
     )
 
     assert still_connected.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_native_octoprint_and_edge_pairing_and_revokes_are_independent(
+    auth_client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    printer_id, system_id = await _create_octoprint_system(auth_client)
+    edge_code = await auth_client.post(
+        f"/api/v1/printer-bridge/connections/{printer_id}/{system_id}/pairing-code",
+        params={"transport": "edge_agent"},
+    )
+    edge_pair = await auth_client.post(
+        "/api/v1/printer-bridge/pair",
+        json={
+            "pairing_code": edge_code.json()["pairing_code"],
+            "provider": "octoprint",
+            "transport": "edge_agent",
+            "source_instance_id": "octoprint-edge-source-0001",
+            "node_instance_id": "octoprint-edge-node-0001",
+            "plugin_version": "0.1.0-test",
+            "capabilities": ["read", "presence"],
+        },
+    )
+    assert edge_pair.status_code == 200
+    edge_headers = {"X-FilamentHub-Bridge-Token": edge_pair.json()["bridge_token"]}
+
+    native_code = await auth_client.post(
+        f"/api/v1/octoprint-bridge/connections/{printer_id}/{system_id}/pairing-code"
+    )
+    assert native_code.status_code == 200
+    edge_connector = await db_session.scalar(
+        select(PhysicalPrinterConnector).where(
+            PhysicalPrinterConnector.material_system_id == system_id,
+            PhysicalPrinterConnector.transport == "edge_agent",
+        )
+    )
+    await db_session.refresh(edge_connector)
+    assert edge_connector.active is True
+    assert (
+        await auth_client.get("/api/v1/printer-bridge/snapshot", headers=edge_headers)
+    ).status_code == 200
+
+    native_pair = await auth_client.post(
+        "/api/v1/octoprint-bridge/pair",
+        json={
+            "pairing_code": native_code.json()["pairing_code"],
+            "instance_id": "octoprint-native-instance",
+            "plugin_version": "0.1.0-test",
+            "octoprint_version": "1.11.8",
+            "capabilities": ["read", "write"],
+        },
+    )
+    assert native_pair.status_code == 200
+    native_headers = {"X-FilamentHub-Bridge-Token": native_pair.json()["bridge_token"]}
+    await db_session.refresh(edge_connector)
+    assert edge_connector.active is True
+    system = await db_session.get(MaterialSystem, system_id)
+    await db_session.refresh(system)
+    assert system.capabilities == ["presence", "read", "write"]
+
+    native_revoke = await auth_client.delete(
+        f"/api/v1/octoprint-bridge/connections/{printer_id}/{system_id}"
+    )
+    assert native_revoke.status_code == 204
+    await db_session.refresh(edge_connector)
+    await db_session.refresh(system)
+    assert edge_connector.active is True
+    assert system.capabilities == ["presence", "read"]
+    assert (
+        await auth_client.get("/api/v1/printer-bridge/snapshot", headers=edge_headers)
+    ).status_code == 200
+    assert (
+        await auth_client.get("/api/v1/octoprint-bridge/snapshot", headers=native_headers)
+    ).status_code == 401
+
+    replacement_code = await auth_client.post(
+        f"/api/v1/octoprint-bridge/connections/{printer_id}/{system_id}/pairing-code"
+    )
+    replacement_pair = await auth_client.post(
+        "/api/v1/octoprint-bridge/pair",
+        json={
+            "pairing_code": replacement_code.json()["pairing_code"],
+            "instance_id": "octoprint-native-instance-2",
+            "plugin_version": "0.1.0-test",
+            "octoprint_version": "1.11.8",
+            "capabilities": ["write"],
+        },
+    )
+    assert replacement_pair.status_code == 200
+    replacement_headers = {
+        "X-FilamentHub-Bridge-Token": replacement_pair.json()["bridge_token"]
+    }
+    edge_revoke = await auth_client.delete(
+        f"/api/v1/printer-bridge/connections/{printer_id}/{system_id}",
+        params={"transport": "edge_agent"},
+    )
+    assert edge_revoke.status_code == 204
+    await db_session.refresh(edge_connector)
+    await db_session.refresh(system)
+    assert edge_connector.active is False
+    assert system.capabilities == ["write"]
+    assert (
+        await auth_client.get(
+            "/api/v1/octoprint-bridge/snapshot", headers=replacement_headers
+        )
+    ).status_code == 200
+    assert (
+        await auth_client.get("/api/v1/printer-bridge/snapshot", headers=edge_headers)
+    ).status_code == 401
+
+    final_native_revoke = await auth_client.delete(
+        f"/api/v1/octoprint-bridge/connections/{printer_id}/{system_id}"
+    )
+    assert final_native_revoke.status_code == 204
+    await db_session.refresh(system)
+    assert system.capabilities == []
+    assert (
+        await auth_client.get(
+            "/api/v1/octoprint-bridge/snapshot", headers=replacement_headers
+        )
+    ).status_code == 401
 
 
 @pytest.mark.asyncio

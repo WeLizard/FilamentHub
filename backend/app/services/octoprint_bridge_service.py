@@ -57,6 +57,7 @@ from app.services.material_contract_service import (
     build_printer_bridge_desired_snapshot,
     require_physical_printer,
 )
+from app.services.printer_bridge_service import refresh_material_system_capabilities
 from app.services.printer_usage_service import process_printer_usage_event
 
 OCTOPRINT_PROVIDER = "octoprint"
@@ -114,14 +115,12 @@ async def _record_capabilities(
     connector: PhysicalPrinterConnector,
     reported: list[str],
 ) -> None:
-    """Keep the OctoPrint system aligned with the live bridge contract."""
+    """Update this connector and the shared system capability projection."""
     capabilities = _safe_capabilities(reported)
     connector.capabilities = capabilities
     if connector.material_system_id is None:
         return
-    system = await db.get(MaterialSystem, connector.material_system_id)
-    if system is not None and system.provider == OCTOPRINT_PROVIDER:
-        system.capabilities = list(capabilities)
+    await refresh_material_system_capabilities(db, connector.material_system_id)
 
 
 def _normalized_tool_slot_map(values: list | None) -> list[dict[str, int]]:
@@ -287,6 +286,7 @@ async def issue_pairing_code(
                 PhysicalPrinterConnector.user_id == user_id,
                 PhysicalPrinterConnector.physical_printer_id == physical_printer_id,
                 PhysicalPrinterConnector.provider == OCTOPRINT_PROVIDER,
+                PhysicalPrinterConnector.transport == OCTOPRINT_TRANSPORT,
                 PhysicalPrinterConnector.id != connector.id,
                 PhysicalPrinterConnector.active.is_(True),
             )
@@ -308,6 +308,7 @@ async def issue_pairing_code(
     expires_at = _now() + PAIRING_TTL
     connection.pairing_code_hash = _digest(_normalize_pairing_code(code))
     connection.pairing_expires_at = expires_at
+    await refresh_material_system_capabilities(db, material_system_id)
     await db.commit()
     return OctoPrintPairingCodeResponse(pairing_code=code, expires_at=expires_at)
 
@@ -519,6 +520,8 @@ async def revoke_bridge_context(
     connection.pairing_expires_at = None
     connection.revoked_at = _now()
     connector.active = False
+    if connector.material_system_id is not None:
+        await refresh_material_system_capabilities(db, connector.material_system_id)
     await db.commit()
 
 

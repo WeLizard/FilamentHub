@@ -93,6 +93,79 @@ async def test_one_bambu_system_keeps_independent_orca_and_edge_connectors(
 
 
 @pytest.mark.asyncio
+async def test_unpaired_connectors_never_contribute_system_capabilities(
+    auth_client: AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    printer_response = await auth_client.post(
+        "/api/v1/physical-printers",
+        json={"name": "Pending Bambu Edge"},
+    )
+    printer_id = printer_response.json()["id"]
+    system_response = await auth_client.post(
+        f"/api/v1/physical-printers/{printer_id}/material-systems",
+        json={
+            "name": "AMS",
+            "kind": "mmu",
+            "provider": "bambu",
+            "capabilities": ["read", "presence"],
+            "slot_count": 4,
+        },
+    )
+    system_id = system_response.json()["material_systems"][0]["id"]
+    orca_code = await auth_client.post(
+        f"/api/v1/printer-bridge/connections/{printer_id}/{system_id}/pairing-code",
+        params={"transport": "orca_plugin_lan"},
+    )
+    fresh_pending = await auth_client.get(f"/api/v1/physical-printers/{printer_id}")
+    assert fresh_pending.json()["material_systems"][0]["capabilities"] == []
+    paired = await auth_client.post(
+        "/api/v1/printer-bridge/pair",
+        json={
+            "pairing_code": orca_code.json()["pairing_code"],
+            "provider": "bambu",
+            "transport": "orca_plugin_lan",
+            "source_instance_id": "bambu-pending-orca-0001",
+            "plugin_version": "0.1.0-test",
+            "capabilities": ["read", "presence"],
+        },
+    )
+    assert paired.status_code == 200
+
+    pending_edge = await auth_client.post(
+        f"/api/v1/printer-bridge/connections/{printer_id}/{system_id}/pairing-code",
+        params={"transport": "edge_agent"},
+    )
+    assert pending_edge.status_code == 200
+    pending_status = await auth_client.get(
+        f"/api/v1/printer-bridge/connections/{printer_id}/{system_id}",
+        params={"transport": "edge_agent"},
+    )
+    assert pending_status.status_code == 200
+    assert pending_status.json()["paired"] is False
+    revoked = await auth_client.delete(
+        f"/api/v1/printer-bridge/connections/{printer_id}/{system_id}",
+        params={"transport": "orca_plugin_lan"},
+    )
+    assert revoked.status_code == 204
+
+    credentials = (await db_session.scalars(
+        select(PrinterBridgeCredential)
+        .join(PhysicalPrinterConnector)
+        .where(PhysicalPrinterConnector.material_system_id == system_id)
+    )).all()
+    assert sum(
+        credential.token_hash is not None and credential.revoked_at is None
+        for credential in credentials
+    ) == 0
+    system = await db_session.get(MaterialSystem, system_id)
+    await db_session.refresh(system)
+    assert system.capabilities == []
+    printer = await auth_client.get(f"/api/v1/physical-printers/{printer_id}")
+    assert printer.json()["material_systems"][0]["capabilities"] == []
+
+
+@pytest.mark.asyncio
 async def test_edge_usage_batches_ack_replay_order_and_atomic_ledger_application(
     auth_client: AsyncClient,
     auth_user: User,
