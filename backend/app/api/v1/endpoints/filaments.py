@@ -1,9 +1,12 @@
 """Filament endpoints."""
 
 import logging
+from datetime import datetime, timezone
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.exceptions import RequestValidationError
+from pydantic import ValidationError
 from sqlalchemy import String, and_, case, cast, false, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -49,6 +52,7 @@ from app.schemas.filament import (
     FilamentCreate,
     FilamentListResponse,
     FilamentResponse,
+    FilamentTechnicalDataContract,
     FilamentUpdate,
     normalize_ral_code,
 )
@@ -81,17 +85,70 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/filaments", tags=["filaments"])
 
+TECHNICAL_DATA_FACT_FIELDS = frozenset(
+    {
+        "density",
+        "drying_required",
+        "drying_temperature_c",
+        "drying_duration_hours",
+        "storage_temperature_min_c",
+        "storage_temperature_max_c",
+        "storage_relative_humidity_max_percent",
+        "storage_relative_humidity_target_percent",
+        "storage_airtight_required",
+        "storage_desiccant_recommended",
+        "storage_light_protection_required",
+        "storage_after_opening_guidance",
+        "unopened_shelf_life_months",
+        "enclosure_requirement",
+        "chamber_temperature_c",
+        "bed_adhesives",
+        "post_processing_chemicals",
+        "recommended_nozzle_temp_min",
+        "recommended_nozzle_temp_max",
+        "recommended_bed_temp_min",
+        "recommended_bed_temp_max",
+        "required_nozzle_hrc",
+        "spool_weight",
+        "empty_spool_weight_g",
+        "spool_outer_diameter_mm",
+        "spool_width_mm",
+        "spool_core_diameter_mm",
+        "packaged_gross_weight_g",
+    }
+)
+TECHNICAL_DATA_SOURCE_FIELDS = frozenset(
+    {
+        "technical_data_source_ref",
+        "technical_data_version",
+        "technical_data_effective_date",
+    }
+)
 REPRESENTATIVE_ONLY_FILAMENT_FACTS = frozenset(
     {
         "density",
         "drying_required",
         "drying_temperature_c",
         "drying_duration_hours",
+        "storage_temperature_min_c",
+        "storage_temperature_max_c",
+        "storage_relative_humidity_max_percent",
+        "storage_relative_humidity_target_percent",
+        "storage_airtight_required",
+        "storage_desiccant_recommended",
+        "storage_light_protection_required",
+        "storage_after_opening_guidance",
+        "unopened_shelf_life_months",
         "enclosure_requirement",
         "chamber_temperature_c",
         "bed_adhesives",
         "post_processing_chemicals",
+        "spool_outer_diameter_mm",
+        "spool_width_mm",
+        "spool_core_diameter_mm",
+        "packaged_gross_weight_g",
     }
+    | TECHNICAL_DATA_SOURCE_FIELDS
 )
 
 
@@ -113,6 +170,7 @@ async def _validate_handling_guidance(
     bed_adhesives: object,
     post_processing_chemicals: object,
     db: AsyncSession,
+    storage_after_opening_guidance: object = None,
 ) -> None:
     """Moderate free-form handling guidance before it reaches public catalogue pages."""
     from app.services.preset_moderation import validate_text_field
@@ -130,11 +188,42 @@ async def _validate_handling_guidance(
             value = values.get(key)
             if not value:
                 continue
-            is_valid, error_msg = await validate_text_field(
-                str(value), db, f"chemical_{key}"
-            )
+            is_valid, error_msg = await validate_text_field(str(value), db, f"chemical_{key}")
             if not is_valid:
                 raise HTTPException(status_code=400, detail=error_msg)
+
+    if storage_after_opening_guidance:
+        is_valid, error_msg = await validate_text_field(
+            str(storage_after_opening_guidance), db, "storage_after_opening_guidance"
+        )
+        if not is_valid:
+            raise HTTPException(status_code=400, detail=error_msg)
+
+
+def _validate_technical_data_update(
+    filament: Filament,
+    update_data: dict[str, object],
+) -> None:
+    if not TECHNICAL_DATA_FACT_FIELDS.intersection(update_data):
+        return
+    merged = {
+        field: getattr(filament, field) for field in FilamentTechnicalDataContract.model_fields
+    }
+    merged.update(update_data)
+    try:
+        FilamentTechnicalDataContract.model_validate(merged)
+    except ValidationError as exc:
+        raise RequestValidationError(exc.errors()) from exc
+
+
+def _mark_technical_data_verified(
+    payload: dict[str, object],
+    current_user: User,
+) -> None:
+    payload["technical_data_last_verified_by"] = (
+        "administrator" if current_user.role == UserRole.ADMIN else "manufacturer_representative"
+    )
+    payload["technical_data_last_verified_at"] = datetime.now(timezone.utc)
 
 
 async def _active_brand_organization_members(
@@ -245,9 +334,11 @@ async def _validate_material_features(
     if current_user.role != UserRole.ADMIN and not (brand and brand.verified):
         raise_error(
             403,
-            ERR_CUSTOM_FILLER_VERIFIED_ONLY
-            if has_custom_visual
-            else ERR_CUSTOM_MATERIAL_FEATURE_VERIFIED_ONLY,
+            (
+                ERR_CUSTOM_FILLER_VERIFIED_ONLY
+                if has_custom_visual
+                else ERR_CUSTOM_MATERIAL_FEATURE_VERIFIED_ONLY
+            ),
         )
 
     from app.services.preset_moderation import validate_text_field
@@ -785,12 +876,14 @@ async def create_filament(
     if not brand:
         raise_error(404, ERR_BRAND_NOT_FOUND)
 
-    requested_representative_fact = bool(
-        REPRESENTATIVE_ONLY_FILAMENT_FACTS & data.model_fields_set
+    requested_technical_data = bool(
+        (TECHNICAL_DATA_FACT_FIELDS | TECHNICAL_DATA_SOURCE_FIELDS) & data.model_fields_set
     )
-    if requested_representative_fact and not await can_represent_brand(
+    may_verify_technical_data = requested_technical_data and await can_represent_brand(
         db, current_user, data.brand_id
-    ):
+    )
+    requested_representative_fact = bool(REPRESENTATIVE_ONLY_FILAMENT_FACTS & data.model_fields_set)
+    if requested_representative_fact and not may_verify_technical_data:
         # The catalogue remains open: a community member may add the missing
         # product shell, but cannot publish authoritative physical or safety
         # guidance on behalf of its manufacturer.
@@ -836,6 +929,7 @@ async def create_filament(
         data.bed_adhesives,
         data.post_processing_chemicals,
         db,
+        data.storage_after_opening_guidance,
     )
 
     if data.line_id is not None:
@@ -860,9 +954,12 @@ async def create_filament(
             func.lower(func.trim(Filament.material_type)) == normalized_material_type.lower(),
             or_(
                 func.lower(func.trim(Filament.name)) == normalized_name.lower(),
-                func.lower(func.trim(Filament.color_name)) == (normalized_color_name or "").lower()
-                if normalized_color_name
-                else false(),
+                (
+                    func.lower(func.trim(Filament.color_name))
+                    == (normalized_color_name or "").lower()
+                    if normalized_color_name
+                    else false()
+                ),
                 Filament.color_hex == normalized_color_hex if normalized_color_hex else false(),
             ),
         )
@@ -955,6 +1052,8 @@ async def create_filament(
     filament_payload["color_group"] = color_group
     filament_payload["color_group_source"] = color_group_source
     filament_payload["availability"] = FilamentAvailability(filament_payload["availability"])
+    if requested_technical_data and may_verify_technical_data:
+        _mark_technical_data_verified(filament_payload, current_user)
     # Вклад организации, если человек работает от неё и вправе заводить записи;
     # иначе это вклад сообщества.
     contributor_id = None
@@ -1161,7 +1260,7 @@ async def update_filament(
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> FilamentResponse:
     """Обновить материал."""
-    result = await db.execute(select(Filament).where(Filament.id == filament_id))
+    result = await db.execute(select(Filament).where(Filament.id == filament_id).with_for_update())
     filament = result.scalar_one_or_none()
 
     if not filament:
@@ -1185,31 +1284,20 @@ async def update_filament(
         # A territorial representative may enrich genuinely missing shared
         # technical facts. Assigning a still-ungrouped item to its first line is
         # also enrichment; changing an existing line remains protected.
-        fillable_fields = {
-            "color_name",
-            "color_hex",
-            "ral_code",
-            "visual_settings",
-            "additives",
-            "property_claims",
-            "density",
-            "drying_required",
-            "drying_temperature_c",
-            "drying_duration_hours",
-            "enclosure_requirement",
-            "chamber_temperature_c",
-            "bed_adhesives",
-            "post_processing_chemicals",
-            "spool_weight",
-            "empty_spool_weight_g",
-            "recommended_nozzle_temp_min",
-            "recommended_nozzle_temp_max",
-            "recommended_bed_temp_min",
-            "recommended_bed_temp_max",
-            "required_nozzle_hrc",
-            "description",
-            "line_id",
-        }
+        fillable_fields = (
+            TECHNICAL_DATA_FACT_FIELDS
+            | TECHNICAL_DATA_SOURCE_FIELDS
+            | {
+                "color_name",
+                "color_hex",
+                "ral_code",
+                "visual_settings",
+                "additives",
+                "property_claims",
+                "description",
+                "line_id",
+            }
+        )
         for field, value in list(update_data.items()):
             current = getattr(filament, field, None)
             if (
@@ -1220,6 +1308,8 @@ async def update_filament(
                 update_data.pop(field)
         if not update_data:
             raise_error(403, ERR_NO_PERMISSION_EDIT_FILAMENT)
+
+    _validate_technical_data_update(filament, update_data)
 
     if "name" in update_data:
         is_valid, error_msg = await validate_text_field(update_data["name"], db, "filament_name")
@@ -1259,11 +1349,13 @@ async def update_filament(
     if (
         data.bed_adhesives is not None
         or data.post_processing_chemicals is not None
+        or data.storage_after_opening_guidance is not None
     ):
         await _validate_handling_guidance(
             data.bed_adhesives,
             data.post_processing_chemicals,
             db,
+            data.storage_after_opening_guidance,
         )
 
     if update_data.get("line_id") is not None:
@@ -1291,6 +1383,9 @@ async def update_filament(
         )
         update_data["color_group"] = color_group
         update_data["color_group_source"] = color_group_source
+
+    if (TECHNICAL_DATA_FACT_FIELDS | TECHNICAL_DATA_SOURCE_FIELDS).intersection(update_data):
+        _mark_technical_data_verified(update_data, current_user)
 
     # Update fields
     for field, value in update_data.items():

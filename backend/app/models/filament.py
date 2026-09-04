@@ -1,13 +1,14 @@
 """Filament (материал) model."""
 
 import enum
-from datetime import datetime
+from datetime import date, datetime
 from typing import TYPE_CHECKING
 
 from sqlalchemy import (
     JSON,
     Boolean,
     CheckConstraint,
+    Date,
     DateTime,
     Enum,
     Float,
@@ -59,6 +60,101 @@ class Filament(Base):
         CheckConstraint(
             "color_group_source IN ('auto','manual')",
             name="ck_filaments_color_group_source",
+        ),
+        CheckConstraint(
+            "(drying_temperature_c IS NULL) = (drying_duration_hours IS NULL)",
+            name="ck_filaments_drying_parameters_pair",
+        ),
+        CheckConstraint(
+            "drying_required IS NULL OR NOT drying_required OR " "drying_temperature_c IS NOT NULL",
+            name="ck_filaments_drying_required_values",
+        ),
+        CheckConstraint(
+            "drying_required IS NULL OR drying_required OR " "drying_temperature_c IS NULL",
+            name="ck_filaments_drying_not_required",
+        ),
+        CheckConstraint(
+            "(storage_temperature_min_c IS NULL) = "
+            "(storage_temperature_max_c IS NULL) AND "
+            "(storage_temperature_min_c IS NULL OR "
+            "storage_temperature_min_c BETWEEN -100 AND 200 AND "
+            "storage_temperature_max_c BETWEEN -100 AND 200 AND "
+            "storage_temperature_min_c <= storage_temperature_max_c)",
+            name="ck_filaments_storage_temperature",
+        ),
+        CheckConstraint(
+            "storage_relative_humidity_max_percent IS NULL OR "
+            "storage_relative_humidity_max_percent BETWEEN 0 AND 100",
+            name="ck_filaments_storage_humidity_max",
+        ),
+        CheckConstraint(
+            "storage_relative_humidity_target_percent IS NULL OR "
+            "storage_relative_humidity_target_percent BETWEEN 0 AND 100",
+            name="ck_filaments_storage_humidity_target",
+        ),
+        CheckConstraint(
+            "storage_relative_humidity_max_percent IS NULL OR "
+            "storage_relative_humidity_target_percent IS NULL OR "
+            "storage_relative_humidity_target_percent <= "
+            "storage_relative_humidity_max_percent",
+            name="ck_filaments_storage_humidity_order",
+        ),
+        CheckConstraint(
+            "unopened_shelf_life_months IS NULL OR "
+            "unopened_shelf_life_months BETWEEN 1 AND 1200",
+            name="ck_filaments_shelf_life",
+        ),
+        CheckConstraint(
+            "spool_outer_diameter_mm IS NULL OR "
+            "spool_outer_diameter_mm > 0 AND spool_outer_diameter_mm <= 2000",
+            name="ck_filaments_spool_outer_diameter",
+        ),
+        CheckConstraint(
+            "spool_width_mm IS NULL OR spool_width_mm > 0 AND spool_width_mm <= 2000",
+            name="ck_filaments_spool_width",
+        ),
+        CheckConstraint(
+            "spool_core_diameter_mm IS NULL OR "
+            "spool_core_diameter_mm > 0 AND spool_core_diameter_mm <= 2000",
+            name="ck_filaments_spool_core_diameter",
+        ),
+        CheckConstraint(
+            "spool_outer_diameter_mm IS NULL OR spool_core_diameter_mm IS NULL OR "
+            "spool_core_diameter_mm <= spool_outer_diameter_mm",
+            name="ck_filaments_spool_diameter_order",
+        ),
+        CheckConstraint(
+            "packaged_gross_weight_g IS NULL OR "
+            "packaged_gross_weight_g > 0 AND packaged_gross_weight_g <= 100000",
+            name="ck_filaments_packaged_weight",
+        ),
+        CheckConstraint(
+            "(packaged_gross_weight_g IS NULL OR spool_weight IS NULL OR "
+            "packaged_gross_weight_g >= spool_weight) AND "
+            "(packaged_gross_weight_g IS NULL OR empty_spool_weight_g IS NULL OR "
+            "packaged_gross_weight_g >= empty_spool_weight_g) AND "
+            "(packaged_gross_weight_g IS NULL OR spool_weight IS NULL OR "
+            "empty_spool_weight_g IS NULL OR "
+            "packaged_gross_weight_g >= spool_weight + empty_spool_weight_g)",
+            name="ck_filaments_packaged_weight_total",
+        ),
+        CheckConstraint(
+            "technical_data_last_verified_by IS NULL OR "
+            "technical_data_last_verified_by IN "
+            "('manufacturer_representative','administrator','legacy_catalog')",
+            name="ck_filaments_technical_verifier",
+        ),
+        CheckConstraint(
+            "recommended_nozzle_temp_min IS NULL OR "
+            "recommended_nozzle_temp_max IS NULL OR "
+            "recommended_nozzle_temp_min <= recommended_nozzle_temp_max",
+            name="ck_filaments_nozzle_temp_order",
+        ),
+        CheckConstraint(
+            "recommended_bed_temp_min IS NULL OR "
+            "recommended_bed_temp_max IS NULL OR "
+            "recommended_bed_temp_min <= recommended_bed_temp_max",
+            name="ck_filaments_bed_temp_order",
         ),
     )
 
@@ -129,6 +225,19 @@ class Filament(Base):
     drying_required: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     drying_temperature_c: Mapped[float | None] = mapped_column(Float, nullable=True)
     drying_duration_hours: Mapped[float | None] = mapped_column(Float, nullable=True)
+    storage_temperature_min_c: Mapped[float | None] = mapped_column(Float, nullable=True)
+    storage_temperature_max_c: Mapped[float | None] = mapped_column(Float, nullable=True)
+    storage_relative_humidity_max_percent: Mapped[float | None] = mapped_column(
+        Float, nullable=True
+    )
+    storage_relative_humidity_target_percent: Mapped[float | None] = mapped_column(
+        Float, nullable=True
+    )
+    storage_airtight_required: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    storage_desiccant_recommended: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    storage_light_protection_required: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    storage_after_opening_guidance: Mapped[str | None] = mapped_column(Text, nullable=True)
+    unopened_shelf_life_months: Mapped[int | None] = mapped_column(Integer, nullable=True)
     enclosure_requirement: Mapped[str | None] = mapped_column(String(16), nullable=True)
     chamber_temperature_c: Mapped[float | None] = mapped_column(Float, nullable=True)
     bed_adhesives: Mapped[list[str]] = mapped_column(
@@ -157,6 +266,17 @@ class Filament(Base):
     # spool_weight: вес нетто филамента в граммах (обычно 1000г)
     empty_spool_weight_g: Mapped[float | None] = mapped_column(Float, nullable=True)
     # empty_spool_weight_g: вес пустой катушки (тара) в граммах, для взвешивания
+    spool_outer_diameter_mm: Mapped[float | None] = mapped_column(Float, nullable=True)
+    spool_width_mm: Mapped[float | None] = mapped_column(Float, nullable=True)
+    spool_core_diameter_mm: Mapped[float | None] = mapped_column(Float, nullable=True)
+    packaged_gross_weight_g: Mapped[float | None] = mapped_column(Float, nullable=True)
+    technical_data_source_ref: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    technical_data_version: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    technical_data_effective_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    technical_data_last_verified_by: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    technical_data_last_verified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     price_display_unit: Mapped[str] = mapped_column(
         String(10), default="per_kg", server_default="per_kg", nullable=False
     )

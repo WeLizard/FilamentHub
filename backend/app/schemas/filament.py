@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -103,6 +103,13 @@ def normalize_ral_code(value: object) -> object:
     return match.group(1) if match else stripped.upper()
 
 
+def normalize_optional_text(value: object) -> object:
+    if not isinstance(value, str):
+        return value
+    normalized = value.strip()
+    return normalized or None
+
+
 class FilamentAdditive(BaseModel):
     """A physical additive or reinforcement declared for a filament."""
 
@@ -143,6 +150,77 @@ class FilamentChemicalGuidance(BaseModel):
     def _require_hazard_note(self) -> "FilamentChemicalGuidance":
         if self.hazardous and not self.safety_note:
             raise ValueError("safety_note is required for hazardous chemicals")
+        return self
+
+
+class FilamentTechnicalDataContract(BaseModel):
+    drying_required: bool | None = None
+    drying_temperature_c: float | None = Field(None, ge=0, le=200)
+    drying_duration_hours: float | None = Field(None, ge=0.25, le=336)
+    storage_temperature_min_c: float | None = Field(None, ge=-100, le=200)
+    storage_temperature_max_c: float | None = Field(None, ge=-100, le=200)
+    storage_relative_humidity_max_percent: float | None = Field(None, ge=0, le=100)
+    storage_relative_humidity_target_percent: float | None = Field(None, ge=0, le=100)
+    spool_weight: float | None = Field(None, gt=0)
+    empty_spool_weight_g: float | None = Field(None, ge=0)
+    spool_outer_diameter_mm: float | None = Field(None, gt=0, le=2000)
+    spool_width_mm: float | None = Field(None, gt=0, le=2000)
+    spool_core_diameter_mm: float | None = Field(None, gt=0, le=2000)
+    packaged_gross_weight_g: float | None = Field(None, gt=0, le=100000)
+    recommended_nozzle_temp_min: int | None = Field(None, ge=0, le=600)
+    recommended_nozzle_temp_max: int | None = Field(None, ge=0, le=600)
+    recommended_bed_temp_min: int | None = Field(None, ge=0, le=300)
+    recommended_bed_temp_max: int | None = Field(None, ge=0, le=300)
+
+    @model_validator(mode="after")
+    def validate_consistency(self) -> "FilamentTechnicalDataContract":
+        drying_pair = (self.drying_temperature_c, self.drying_duration_hours)
+        if (drying_pair[0] is None) != (drying_pair[1] is None):
+            raise ValueError("drying temperature and duration must be provided together")
+        if self.drying_required is True and drying_pair[0] is None:
+            raise ValueError("drying temperature and duration are required")
+        if self.drying_required is False and drying_pair[0] is not None:
+            raise ValueError("drying parameters contradict an explicit not-required declaration")
+
+        storage_pair = (self.storage_temperature_min_c, self.storage_temperature_max_c)
+        if (storage_pair[0] is None) != (storage_pair[1] is None):
+            raise ValueError("storage temperature range requires both bounds")
+        if storage_pair[0] is not None and storage_pair[0] > storage_pair[1]:
+            raise ValueError("storage temperature minimum exceeds maximum")
+        if (
+            self.storage_relative_humidity_max_percent is not None
+            and self.storage_relative_humidity_target_percent is not None
+            and self.storage_relative_humidity_target_percent
+            > self.storage_relative_humidity_max_percent
+        ):
+            raise ValueError("storage humidity target exceeds maximum")
+        if (
+            self.spool_outer_diameter_mm is not None
+            and self.spool_core_diameter_mm is not None
+            and self.spool_core_diameter_mm > self.spool_outer_diameter_mm
+        ):
+            raise ValueError("spool core diameter exceeds outer diameter")
+        if (
+            self.recommended_nozzle_temp_min is not None
+            and self.recommended_nozzle_temp_max is not None
+            and self.recommended_nozzle_temp_min > self.recommended_nozzle_temp_max
+        ):
+            raise ValueError("recommended nozzle temperature minimum exceeds maximum")
+        if (
+            self.recommended_bed_temp_min is not None
+            and self.recommended_bed_temp_max is not None
+            and self.recommended_bed_temp_min > self.recommended_bed_temp_max
+        ):
+            raise ValueError("recommended bed temperature minimum exceeds maximum")
+        known_contents_weight = sum(
+            value for value in (self.spool_weight, self.empty_spool_weight_g) if value is not None
+        )
+        if (
+            self.packaged_gross_weight_g is not None
+            and known_contents_weight
+            and self.packaged_gross_weight_g < known_contents_weight
+        ):
+            raise ValueError("packaged gross weight is below known spool contents")
         return self
 
 
@@ -249,6 +327,15 @@ class FilamentBase(BaseModel):
     drying_required: bool | None = None
     drying_temperature_c: float | None = Field(None, ge=0, le=200)
     drying_duration_hours: float | None = Field(None, ge=0.25, le=336)
+    storage_temperature_min_c: float | None = Field(None, ge=-100, le=200)
+    storage_temperature_max_c: float | None = Field(None, ge=-100, le=200)
+    storage_relative_humidity_max_percent: float | None = Field(None, ge=0, le=100)
+    storage_relative_humidity_target_percent: float | None = Field(None, ge=0, le=100)
+    storage_airtight_required: bool | None = None
+    storage_desiccant_recommended: bool | None = None
+    storage_light_protection_required: bool | None = None
+    storage_after_opening_guidance: str | None = Field(None, max_length=1000)
+    unopened_shelf_life_months: int | None = Field(None, ge=1, le=1200)
     enclosure_requirement: Literal["none", "passive", "active"] | None = None
     chamber_temperature_c: float | None = Field(None, ge=0, le=150)
     bed_adhesives: list[str] = Field(default_factory=list, max_length=12)
@@ -258,6 +345,13 @@ class FilamentBase(BaseModel):
     price_per_kg: float | None = Field(None, ge=0)
     spool_weight: float | None = Field(None, gt=0)
     empty_spool_weight_g: float | None = Field(None, ge=0)
+    spool_outer_diameter_mm: float | None = Field(None, gt=0, le=2000)
+    spool_width_mm: float | None = Field(None, gt=0, le=2000)
+    spool_core_diameter_mm: float | None = Field(None, gt=0, le=2000)
+    packaged_gross_weight_g: float | None = Field(None, gt=0, le=100000)
+    technical_data_source_ref: str | None = Field(None, max_length=500)
+    technical_data_version: str | None = Field(None, max_length=100)
+    technical_data_effective_date: date | None = None
     # Рекомендованные вендором диапазоны печати (спека материала), не значения профиля
     recommended_nozzle_temp_min: int | None = Field(None, ge=0, le=600)
     recommended_nozzle_temp_max: int | None = Field(None, ge=0, le=600)
@@ -275,6 +369,12 @@ class FilamentBase(BaseModel):
     _normalize_bed_adhesives = field_validator("bed_adhesives", mode="before")(
         normalize_bed_adhesives
     )
+    _normalize_technical_text = field_validator(
+        "storage_after_opening_guidance",
+        "technical_data_source_ref",
+        "technical_data_version",
+        mode="before",
+    )(normalize_optional_text)
 
 
 class FilamentCreate(FilamentBase):
@@ -288,10 +388,7 @@ class FilamentCreate(FilamentBase):
 
     @model_validator(mode="after")
     def validate_handling_parameters(self) -> FilamentCreate:
-        if self.drying_required is True and (
-            self.drying_temperature_c is None or self.drying_duration_hours is None
-        ):
-            raise ValueError("drying temperature and duration are required")
+        FilamentTechnicalDataContract.model_validate(self.model_dump())
         if self.enclosure_requirement == "active" and self.chamber_temperature_c is None:
             raise ValueError("chamber temperature is required for an actively heated chamber")
         return self
@@ -315,6 +412,15 @@ class FilamentUpdate(BaseModel):
     drying_required: bool | None = None
     drying_temperature_c: float | None = Field(None, ge=0, le=200)
     drying_duration_hours: float | None = Field(None, ge=0.25, le=336)
+    storage_temperature_min_c: float | None = Field(None, ge=-100, le=200)
+    storage_temperature_max_c: float | None = Field(None, ge=-100, le=200)
+    storage_relative_humidity_max_percent: float | None = Field(None, ge=0, le=100)
+    storage_relative_humidity_target_percent: float | None = Field(None, ge=0, le=100)
+    storage_airtight_required: bool | None = None
+    storage_desiccant_recommended: bool | None = None
+    storage_light_protection_required: bool | None = None
+    storage_after_opening_guidance: str | None = Field(None, max_length=1000)
+    unopened_shelf_life_months: int | None = Field(None, ge=1, le=1200)
     enclosure_requirement: Literal["none", "passive", "active"] | None = None
     chamber_temperature_c: float | None = Field(None, ge=0, le=150)
     bed_adhesives: list[str] | None = Field(None, max_length=12)
@@ -322,6 +428,13 @@ class FilamentUpdate(BaseModel):
     price_per_kg: float | None = Field(None, ge=0)
     spool_weight: float | None = Field(None, gt=0)
     empty_spool_weight_g: float | None = Field(None, ge=0)
+    spool_outer_diameter_mm: float | None = Field(None, gt=0, le=2000)
+    spool_width_mm: float | None = Field(None, gt=0, le=2000)
+    spool_core_diameter_mm: float | None = Field(None, gt=0, le=2000)
+    packaged_gross_weight_g: float | None = Field(None, gt=0, le=100000)
+    technical_data_source_ref: str | None = Field(None, max_length=500)
+    technical_data_version: str | None = Field(None, max_length=100)
+    technical_data_effective_date: date | None = None
     recommended_nozzle_temp_min: int | None = Field(None, ge=0, le=600)
     recommended_nozzle_temp_max: int | None = Field(None, ge=0, le=600)
     recommended_bed_temp_min: int | None = Field(None, ge=0, le=300)
@@ -337,13 +450,15 @@ class FilamentUpdate(BaseModel):
     _normalize_bed_adhesives = field_validator("bed_adhesives", mode="before")(
         normalize_bed_adhesives
     )
+    _normalize_technical_text = field_validator(
+        "storage_after_opening_guidance",
+        "technical_data_source_ref",
+        "technical_data_version",
+        mode="before",
+    )(normalize_optional_text)
 
     @model_validator(mode="after")
     def validate_handling_parameters(self) -> FilamentUpdate:
-        if self.drying_required is True and (
-            self.drying_temperature_c is None or self.drying_duration_hours is None
-        ):
-            raise ValueError("drying temperature and duration are required")
         if self.enclosure_requirement == "active" and self.chamber_temperature_c is None:
             raise ValueError("chamber temperature is required for an actively heated chamber")
         return self
@@ -384,6 +499,10 @@ class FilamentResponse(FilamentBase):
     views_count: int | None = 0
     scans_count: int | None = 0
     qr_code: str | None = Field(None)  # Короткий код для QR-кода (например: "FHUB-ABC123")
+    technical_data_last_verified_by: (
+        Literal["manufacturer_representative", "administrator", "legacy_catalog"] | None
+    ) = None
+    technical_data_last_verified_at: datetime | None = None
     active: bool
     created_at: datetime
     updated_at: datetime
