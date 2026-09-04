@@ -4,7 +4,17 @@ from datetime import datetime
 from enum import Enum
 from typing import TYPE_CHECKING
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Index, Integer, String, text
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    text,
+)
 from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
@@ -45,6 +55,10 @@ class User(Base):
     __table_args__ = (
         Index("ix_users_email_lower", text("lower(email)"), unique=True),
         Index("ix_users_username_lower", text("lower(username)"), unique=True),
+        CheckConstraint(
+            "auth_version >= 0",
+            name="ck_users_auth_version_nonnegative",
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
@@ -53,6 +67,12 @@ class User(Base):
     # unique regardless of letter case.
     username: Mapped[str] = mapped_column(String(100), unique=True, index=True, nullable=False)
     password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    auth_version: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        server_default="0",
+        nullable=False,
+    )
     oauth_provider: Mapped[str | None] = mapped_column(String(32), nullable=True)
     oauth_provider_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     role: Mapped[UserRole] = mapped_column(

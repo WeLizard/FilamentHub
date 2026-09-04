@@ -101,7 +101,12 @@ async def contact_ticket(
     # transaction before Redis; even a waiting ticket request holds no DB slot.
     await db.close()
     try:
-        ticket = await broker.issue_ticket(user_id, token_fingerprint(token), expires_at)
+        ticket = await broker.issue_ticket(
+            user_id,
+            token_fingerprint(token),
+            expires_at,
+            current_user.auth_version,
+        )
     except StreamLimitReached:
         raise_error(429, ERR_SERVER_BUSY, headers={"Retry-After": "15"})
     except StreamUnavailable:
@@ -123,7 +128,11 @@ async def contact_events(websocket: WebSocket) -> None:
         if not session or session["expires_at"] <= time.time():
             await websocket.close(code=1008)
             return
-        async with broker.subscribe(session["user_id"], session["token_id"]) as subscription:
+        async with broker.subscribe(
+            session["user_id"],
+            session["token_id"],
+            session.get("auth_version", 0),
+        ) as subscription:
             if session["expires_at"] <= time.time() or not subscription.can_deliver():
                 return
             await websocket.accept(subprotocol=CONTACT_PROTOCOL)

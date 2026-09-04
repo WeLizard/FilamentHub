@@ -44,8 +44,8 @@ from app.core.security import (
     decode_refresh_token,
     generate_email_change_token,
     generate_email_verification_token,
-    generate_password_reset_token,
     password_hash_is_outdated,
+    token_auth_version_matches,
     token_fingerprint,
 )
 from app.core.utils import normalize_email
@@ -89,6 +89,14 @@ from app.schemas.user import (
     UserSettingsUpdate,
     UserUpdate,
     UserUsernameUpdate,
+)
+from app.services.account_auth_service import (
+    InvalidPasswordResetError,
+    issue_password_reset_grant,
+    lock_user_auth_state,
+    replace_password_and_revoke_auth,
+    reset_password_with_grant,
+    token_data_for_user,
 )
 from app.services.calculator_defaults_service import (
     calculator_profile_default_values,
@@ -135,7 +143,6 @@ logger = logging.getLogger(__name__)
 # Импортируем limiter из core
 from app.core.errors import (
     ERR_ACCESS_DENIED,
-    ERR_ACCOUNT_BLOCKED,
     ERR_ACCOUNT_INACTIVE,
     ERR_BRAND_NOT_FOUND,
     ERR_DEVICE_NOT_FOUND,
@@ -487,6 +494,13 @@ async def register(
             source="registration",
             legal_pack=legal_pack,
         )
+        token_data = token_data_for_user(user)
+        access_token = create_access_token(data=token_data)
+        refresh_token = await issue_refresh_session(
+            db,
+            user_id=user.id,
+            token_data=token_data,
+        )
         await db.commit()
         await db.refresh(user)
         # Trial is opt-in: the user starts it explicitly via POST /calculator/start-trial,
@@ -512,14 +526,6 @@ async def register(
         raise_error(status.HTTP_500_INTERNAL_SERVER_ERROR, ERR_USER_CREATE_ERROR)
 
     try:
-        token_data = {"sub": user.email, "user_id": user.id, "role": user.role.value}
-        access_token = create_access_token(data=token_data)
-        refresh_token = await issue_refresh_session(
-            db,
-            user_id=user.id,
-            token_data=token_data,
-        )
-
         if _cookie_auth_enabled():
             _set_auth_cookies(response, access_token, refresh_token)
 
@@ -629,11 +635,18 @@ async def login(
 
     # Email takes precedence over username so the two identifier namespaces
     # cannot make one login value ambiguous. Both lookups ignore letter case.
-    result = await db.execute(select(User).where(func.lower(User.email) == login_value))
+    result = await db.execute(
+        select(User)
+        .where(func.lower(User.email) == login_value)
+        .with_for_update()
+    )
     user = result.scalar_one_or_none()
     if user is None:
         username_result = await db.execute(
-            select(User).where(func.lower(User.username) == login_value).limit(2)
+            select(User)
+            .where(func.lower(User.username) == login_value)
+            .limit(2)
+            .with_for_update()
         )
         username_matches = username_result.scalars().all()
         if len(username_matches) == 1:
@@ -666,18 +679,18 @@ async def login(
         except Exception:  # noqa: BLE001
             logger.warning("Could not rewrite the password hash on sign-in", exc_info=True)
 
-    # Update last login
+    # Keep credential verification, hash upgrades, and refresh-family issuance
+    # in one account-locked transaction. A concurrent password replacement can
+    # therefore only happen wholly before or wholly after this login.
     user.last_login = datetime.now(timezone.utc)
-    await db.commit()
-
-    # Create tokens
-    token_data = {"sub": user.email, "user_id": user.id, "role": user.role.value}
+    token_data = token_data_for_user(user)
     access_token = create_access_token(data=token_data)
     refresh_token = await issue_refresh_session(
         db,
         user_id=user.id,
         token_data=token_data,
     )
+    await db.commit()
 
     if _cookie_auth_enabled():
         _set_auth_cookies(response, access_token, refresh_token)
@@ -747,10 +760,14 @@ async def refresh_token(
         )
 
     if isinstance(payload_user_id, int):
-        result = await db.execute(select(User).where(User.id == payload_user_id))
+        result = await db.execute(
+            select(User).where(User.id == payload_user_id).with_for_update()
+        )
     else:
         result = await db.execute(
-            select(User).where(func.lower(User.email) == normalize_email(email or ""))
+            select(User)
+            .where(func.lower(User.email) == normalize_email(email or ""))
+            .with_for_update()
         )
     user = result.scalar_one_or_none()
 
@@ -761,6 +778,13 @@ async def refresh_token(
 
     if not user.active:
         raise_error(status.HTTP_403_FORBIDDEN, ERR_ACCOUNT_INACTIVE)
+
+    if not token_auth_version_matches(payload, user.auth_version):
+        raise_error(
+            status.HTTP_401_UNAUTHORIZED,
+            ERR_INVALID_REFRESH_TOKEN,
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
     try:
         rotated_refresh_token = await rotate_refresh_session(
@@ -776,7 +800,7 @@ async def refresh_token(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    token_data = {"sub": user.email, "user_id": user.id, "role": user.role.value}
+    token_data = token_data_for_user(user)
     access_token = create_access_token(data=token_data)
 
     if _cookie_auth_enabled():
@@ -803,6 +827,8 @@ async def logout(
     access_token = None
     if authorization and authorization.startswith("Bearer "):
         access_token = authorization.split(" ", 1)[1]
+    elif _cookie_auth_enabled():
+        access_token = request.cookies.get(settings.AUTH_ACCESS_COOKIE_NAME)
 
     if access_token:
         access_payload = decode_access_token(access_token)
@@ -851,6 +877,7 @@ async def logout(
         if not session_revoked:
             await _revoke_token_if_valid(refresh_token, refresh_payload, db)
 
+    await db.commit()
     if _cookie_auth_enabled():
         _clear_auth_cookies(response)
 
@@ -1134,6 +1161,7 @@ async def create_plugin_session(
         data={
             "sub": current_user.email,
             "user_id": current_user.id,
+            "auth_version": current_user.auth_version,
         },
         scopes=[
             "presets:read",
@@ -1154,20 +1182,23 @@ async def create_plugin_session(
 
 @router.patch("/me", response_model=UserResponse)
 async def update_current_user(
+    request: Request,
     data: UserUpdate,
     current_user: Annotated[User, Depends(get_current_active_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> UserResponse:
     """Обновить профиль текущего пользователя."""
+    raw_data = await request.json()
+    if isinstance(raw_data, dict) and "password" in raw_data:
+        # Keep password out of the profile schema and reject the legacy input
+        # without reflecting its plaintext value through validation details.
+        raise_error(status.HTTP_401_UNAUTHORIZED, ERR_WRONG_PASSWORD)
+
     # Обновляем поля пользователя
     update_data = data.model_dump(exclude_unset=True)
 
     # email changes only via the verified flow (/me/email + /confirm-email-change)
     update_data.pop("email", None)
-
-    # Если обновляется пароль, хешируем его
-    if "password" in update_data and update_data["password"]:
-        update_data["password_hash"] = await hash_password(update_data.pop("password"))
 
     if "username" in update_data and update_data["username"]:
         result = await db.execute(
@@ -1226,9 +1257,7 @@ async def update_current_user(
 
     # Применяем обновления
     for key, value in update_data.items():
-        if key == "password_hash":
-            current_user.password_hash = value
-        elif hasattr(current_user, key):
+        if hasattr(current_user, key):
             setattr(current_user, key, value)
 
     try:
@@ -1420,12 +1449,25 @@ async def forgot_password(
 
     # Ищем пользователя по email
     result = await db.execute(
-        select(User).where(func.lower(User.email) == normalize_email(data.email))
+        select(User)
+        .where(func.lower(User.email) == normalize_email(data.email))
+        .with_for_update()
     )
     user = result.scalar_one_or_none()
 
     if user and user.active:
-        reset_token = generate_password_reset_token(user.id, user.email)
+        user_id = user.id
+        try:
+            reset_token = await issue_password_reset_grant(db, user=user)
+            await db.commit()
+        except Exception:
+            await db.rollback()
+            logger.warning(
+                "Could not persist password reset grant: user_id=%d",
+                user_id,
+                exc_info=True,
+            )
+            return ForgotPasswordResponse()
         reset_url = f"{settings.BASE_URL}/reset-password?token={reset_token}"
         sent = send_password_reset_email(
             to=user.email,
@@ -1443,6 +1485,7 @@ async def forgot_password(
 @limiter.limit("5/hour")  # Rate limiting: 5 попыток в час
 async def reset_password(
     request: Request,
+    response: Response,
     data: ResetPasswordRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> ResetPasswordResponse:
@@ -1460,27 +1503,6 @@ async def reset_password(
     if not payload:
         raise_error(status.HTTP_400_BAD_REQUEST, ERR_INVALID_RESET_TOKEN)
 
-    user_id: int | None = payload.get("user_id")
-    email: str | None = payload.get("email")
-
-    if not user_id or not email:
-        raise_error(status.HTTP_400_BAD_REQUEST, ERR_INVALID_RESET_TOKEN)
-
-    # Получаем пользователя
-    result = await db.execute(select(User).where(User.id == user_id))
-    user = result.scalar_one_or_none()
-
-    if not user:
-        raise_error(status.HTTP_404_NOT_FOUND, ERR_USER_NOT_FOUND)
-
-    # Проверяем, что email совпадает
-    if user.email != email:
-        raise_error(status.HTTP_400_BAD_REQUEST, ERR_EMAIL_MISMATCH)
-
-    # Проверяем, что аккаунт активен
-    if not user.active:
-        raise_error(status.HTTP_403_FORBIDDEN, ERR_ACCOUNT_BLOCKED)
-
     # Хешируем новый пароль
     try:
         password_hash = await hash_password(data.new_password)
@@ -1490,9 +1512,16 @@ async def reset_password(
         logger.error(f"Error hashing password: {str(e)}", exc_info=True)
         raise_error(status.HTTP_500_INTERNAL_SERVER_ERROR, ERR_PASSWORD_HASH_ERROR)
 
-    # Обновляем пароль
-    user.password_hash = password_hash
+    try:
+        user = await reset_password_with_grant(
+            db,
+            token=data.token,
+            password_hash=password_hash,
+        )
+    except InvalidPasswordResetError:
+        raise_error(status.HTTP_400_BAD_REQUEST, ERR_INVALID_RESET_TOKEN)
     await db.commit()
+    _clear_auth_cookies(response)
 
     logger.info("Password reset successful: user_id=%d", user.id)
 
@@ -1562,15 +1591,17 @@ async def update_user_preferences(
 @router.patch("/me/password", response_model=UserResponse)
 async def update_user_password(
     data: UserPasswordUpdate,
+    response: Response,
     current_user: Annotated[User, Depends(get_current_active_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> UserResponse:
     """Изменить пароль текущего пользователя."""
-    if current_user.password_hash:
+    expected_password_hash = current_user.password_hash
+    if expected_password_hash:
         # Обычный пользователь — требуем текущий пароль
         if not data.current_password:
             raise_error(status.HTTP_401_UNAUTHORIZED, ERR_WRONG_PASSWORD)
-        if not await check_password(data.current_password, current_user.password_hash):
+        if not await check_password(data.current_password, expected_password_hash):
             raise_error(status.HTTP_401_UNAUTHORIZED, ERR_WRONG_PASSWORD)
     # OAuth-пользователь без пароля — current_password не нужен, просто устанавливаем
 
@@ -1586,12 +1617,30 @@ async def update_user_password(
         logger.error(f"Error hashing password: {str(e)}", exc_info=True)
         raise_error(status.HTTP_500_INTERNAL_SERVER_ERROR, ERR_PASSWORD_HASH_ERROR)
 
-    # Обновляем пароль
-    current_user.password_hash = password_hash
-    await db.commit()
-    await db.refresh(current_user)
+    locked_user = await lock_user_auth_state(db, current_user.id)
+    if locked_user is None or not locked_user.active:
+        raise_error(status.HTTP_403_FORBIDDEN, ERR_ACCOUNT_INACTIVE)
+    if locked_user.password_hash != expected_password_hash:
+        if (
+            not data.current_password
+            or not locked_user.password_hash
+            or not await check_password(
+                data.current_password,
+                locked_user.password_hash,
+            )
+        ):
+            raise_error(status.HTTP_401_UNAUTHORIZED, ERR_WRONG_PASSWORD)
 
-    return UserResponse.model_validate(current_user)
+    await replace_password_and_revoke_auth(
+        db,
+        user=locked_user,
+        password_hash=password_hash,
+    )
+    await db.commit()
+    await db.refresh(locked_user)
+    _clear_auth_cookies(response)
+
+    return UserResponse.model_validate(locked_user)
 
 
 @router.patch("/me/username", response_model=UserResponse)
@@ -1954,14 +2003,19 @@ async def oauth_callback(
         _oauth_logger.warning("Provisional account sweep failed", exc_info=True)
         await db.rollback()
 
-    # Create JWT tokens
-    token_data = {"sub": user.email, "user_id": user.id, "role": user.role.value}
+    # Serialize session issuance with password reset/change and account blocking.
+    locked_user = await lock_user_auth_state(db, user.id)
+    if locked_user is None or not locked_user.active:
+        raise_error(status.HTTP_403_FORBIDDEN, ERR_ACCOUNT_INACTIVE)
+    user = locked_user
+    token_data = token_data_for_user(user)
     access_token = create_access_token(data=token_data)
     refresh_token = await issue_refresh_session(
         db,
         user_id=user.id,
         token_data=token_data,
     )
+    await db.commit()
 
     if _cookie_auth_enabled():
         _set_auth_cookies(response, access_token, refresh_token)

@@ -95,6 +95,10 @@ from app.schemas.printer_request import (
     PrinterRequestUpdate,
 )
 from app.schemas.user import AccountDeletionStats, UserListResponse, UserResponse
+from app.services.account_auth_service import (
+    lock_user_auth_state,
+    revoke_all_account_auth,
+)
 from app.services.achievement_service import (
     ManualAchievementError,
     grant_manual_achievement,
@@ -740,13 +744,13 @@ async def deactivate_user(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> UserResponse:
     """Деактивировать пользователя."""
-    result = await db.execute(select(User).where(User.id == user_id))
-    user = result.scalar_one_or_none()
+    user = await lock_user_auth_state(db, user_id)
 
     if not user:
         raise_error(status.HTTP_404_NOT_FOUND, ERR_USER_NOT_FOUND)
 
     user.active = False
+    await revoke_all_account_auth(db, user=user)
     await db.commit()
     await db.refresh(user)
 

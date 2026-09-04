@@ -72,6 +72,7 @@ class StreamLimitReached(StreamUnavailable):
 class ContactSubscription:
     user_id: int
     token_id: str
+    auth_version: int = 0
     lease_id: str = field(default_factory=lambda: uuid4().hex)
     queue: asyncio.Queue = field(
         default_factory=lambda: asyncio.Queue(maxsize=MAX_PENDING_EVENTS)
@@ -156,7 +157,13 @@ class PrinterContactBroker:
         except (RedisError, OSError, TimeoutError, ValueError):
             self._warn()
 
-    async def issue_ticket(self, user_id: int, token_id: str, expires_at: float) -> str:
+    async def issue_ticket(
+        self,
+        user_id: int,
+        token_id: str,
+        expires_at: float,
+        auth_version: int = 0,
+    ) -> str:
         try:
             async with asyncio.timeout(1):
                 key = f"{_NAMESPACE}:ticket-rate:{user_id}"
@@ -169,7 +176,10 @@ class PrinterContactBroker:
                 ticket = secrets.token_urlsafe(32)
                 key = f"{_NAMESPACE}:ticket:{hashlib.sha256(ticket.encode()).hexdigest()}"
                 await self.redis.set(key, json.dumps({
-                    "user_id": user_id, "token_id": token_id, "expires_at": expires_at,
+                    "user_id": user_id,
+                    "token_id": token_id,
+                    "auth_version": auth_version,
+                    "expires_at": expires_at,
                 }), ex=TICKET_SECONDS)
                 return ticket
         except (RedisError, OSError, TimeoutError, ValueError) as exc:
@@ -206,7 +216,7 @@ class PrinterContactBroker:
         checked_at = time.monotonic()
         try:
             async with asyncio.timeout(AUTH_CHECK_TIMEOUT):
-                active_users, revoked_tokens = await _load_authorizations(subscriptions)
+                active_versions, revoked_tokens = await _load_authorizations(subscriptions)
         except Exception:
             self._warn()
             for subscription in subscriptions:
@@ -215,7 +225,10 @@ class PrinterContactBroker:
         for subscription in subscriptions:
             if subscription.closed:
                 continue
-            if subscription.user_id not in active_users or subscription.token_id in revoked_tokens:
+            if (
+                active_versions.get(subscription.user_id) != subscription.auth_version
+                or subscription.token_id in revoked_tokens
+            ):
                 subscription.stop()
                 continue
             subscription.auth_valid_until = checked_at + AUTH_LEASE_SECONDS
@@ -290,8 +303,8 @@ class PrinterContactBroker:
                     subscription.stop()
 
     @asynccontextmanager
-    async def subscribe(self, user_id: int, token_id: str):
-        subscription = ContactSubscription(user_id, token_id)
+    async def subscribe(self, user_id: int, token_id: str, auth_version: int = 0):
+        subscription = ContactSubscription(user_id, token_id, auth_version)
         acquired = False
         try:
             async with asyncio.timeout(3):
@@ -385,20 +398,28 @@ class PrinterContactBroker:
 broker = PrinterContactBroker()
 
 
-async def _load_authorizations(subscriptions: list[ContactSubscription]) -> tuple[set[int], set[str]]:
+async def _load_authorizations(
+    subscriptions: list[ContactSubscription],
+) -> tuple[dict[int, int], set[str]]:
     # Lazy import avoids the ORM hook registration cycle in db.session.
     from app.db.session import AsyncSessionLocal
 
     # At most two indexed queries per worker batch, never a session per socket
     # or a query for every contact. No connection is held between checks.
     async with AsyncSessionLocal() as db:
-        active_users = set((await db.scalars(select(User.id).where(
-            User.id.in_({item.user_id for item in subscriptions}), User.active.is_(True),
-        ))).all())
+        active_rows = (
+            await db.execute(
+                select(User.id, User.auth_version).where(
+                    User.id.in_({item.user_id for item in subscriptions}),
+                    User.active.is_(True),
+                )
+            )
+        ).tuples().all()
+        active_versions: dict[int, int] = dict(active_rows)
         revoked_tokens = set((await db.scalars(select(RevokedToken.jti).where(
             RevokedToken.jti.in_({item.token_id for item in subscriptions}),
         ))).all())
-    return active_users, revoked_tokens
+    return active_versions, revoked_tokens
 
 
 def _collect_contacts(session: Session, _flush_context: Any) -> None:
@@ -407,8 +428,12 @@ def _collect_contacts(session: Session, _flush_context: Any) -> None:
     for row in session.new | session.dirty:
         if isinstance(row, RevokedToken) and row in session.new:
             pending[(None, "auth", row.jti)] = {"type": "revoke", "token_id": row.jti}
-        elif isinstance(row, User) and inspect(row).attrs.active.history.has_changes():
-            if not row.active and row.id is not None:
+        elif isinstance(row, User):
+            active_changed = inspect(row).attrs.active.history.has_changes()
+            auth_version_changed = inspect(row).attrs.auth_version.history.has_changes()
+            if row.id is not None and (
+                (active_changed and not row.active) or auth_version_changed
+            ):
                 pending[(row.id, "auth", row.id)] = {"type": "disconnect"}
         elif isinstance(row, (UserPrinterDevice, PhysicalPrinterConnector)):
             state = inspect(row)

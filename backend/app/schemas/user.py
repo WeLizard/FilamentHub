@@ -4,7 +4,13 @@ import re
 from datetime import date, datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    EmailStr,
+    Field,
+    field_validator,
+)
 
 from app.models.organization import OrganizationMemberRole
 from app.models.user import UserRole
@@ -47,14 +53,6 @@ class UserUpdate(BaseModel):
     username: str | None = Field(None, min_length=3, max_length=100)
     full_name: str | None = Field(None, max_length=255)
     country: str | None = Field(None, pattern=r"^[A-Z]{2}$")
-    password: str | None = Field(None, min_length=8, max_length=100)
-
-    @field_validator('password')
-    @classmethod
-    def password_strength(cls, v: str | None) -> str | None:
-        if v is not None:
-            return validate_password_strength(v)
-        return v
     printer_id: int | None = Field(None, gt=0, description="ID выбранного принтера из каталога. Передайте null чтобы сбросить выбор.")
     recommend_physical_printer_id: int | None = Field(None, gt=0, description="Выбранный физический принтер для рекомендаций каталога. null — сброс.")
     recommend_printer_profile_id: int | None = Field(None, gt=0, description="Выбранная конфигурация для рекомендаций каталога. null — сброс.")

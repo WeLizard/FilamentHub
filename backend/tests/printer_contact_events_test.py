@@ -75,10 +75,11 @@ async def test_only_committed_contacts_escape_including_savepoints(db_session, a
 async def test_ticket_authenticates_and_releases_database(auth_client, client, db_session, auth_user, monkeypatch):
     from app.api.v1.endpoints import physical_printers
 
-    async def issue_ticket(user_id, token_id, expires_at):
+    async def issue_ticket(user_id, token_id, expires_at, auth_version):
         assert not db_session.in_transaction()
         assert user_id == auth_user.id
         assert len(token_id) == 64
+        assert auth_version == auth_user.auth_version
         return "a" * 43
 
     issue = AsyncMock(side_effect=issue_ticket)
@@ -96,17 +97,23 @@ async def test_ticket_authenticates_and_releases_database(auth_client, client, d
 def test_socket_checks_origin_and_single_use_ticket_before_subscribing(monkeypatch):
     from app.api.v1.endpoints import physical_printers
 
-    tickets = {"a" * 43: {"user_id": 7, "token_id": "fingerprint", "expires_at": datetime.now(timezone.utc).timestamp() + 20}}
+    tickets = {"a" * 43: {
+        "user_id": 7,
+        "token_id": "fingerprint",
+        "auth_version": 3,
+        "expires_at": datetime.now(timezone.utc).timestamp() + 20,
+    }}
     visited = []
 
     async def consume(ticket):
         return tickets.pop(ticket, None)
 
     @asynccontextmanager
-    async def subscribe(user_id, token_id):
+    async def subscribe(user_id, token_id, auth_version):
         assert user_id == 7
+        assert auth_version == 3
         visited.append("open")
-        subscription = contacts.ContactSubscription(user_id, token_id)
+        subscription = contacts.ContactSubscription(user_id, token_id, auth_version)
         subscription.auth_valid_until = float("inf")
         subscription.queue.put_nowait({
             "type": "contact", "printer_id": 42, "connector_id": None,
@@ -273,7 +280,7 @@ def _subscription_redis():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("change", ["revoke", "deactivate", "delete"])
+@pytest.mark.parametrize("change", ["revoke", "deactivate", "auth-version", "delete"])
 async def test_durable_auth_closes_other_worker_after_lost_publish(db_session, auth_user, monkeypatch, change):
     from app.db import session as sessions
 
@@ -300,6 +307,8 @@ async def test_durable_auth_closes_other_worker_after_lost_publish(db_session, a
         db_session.add(RevokedToken(jti=target.token_id, expires_at=datetime.now(timezone.utc) + timedelta(minutes=5)))
     elif change == "deactivate":
         auth_user.active = False
+    elif change == "auth-version":
+        auth_user.auth_version += 1
     else:
         await db_session.delete(auth_user)
     await db_session.commit()
@@ -362,7 +371,7 @@ def test_expired_or_revoked_lease_rejects_an_already_dequeued_contact(monkeypatc
 
 @pytest.mark.asyncio
 async def test_initial_auth_is_batched_and_guard_stops_with_last_subscriber(monkeypatch):
-    load = AsyncMock(return_value=(set(range(1, 17)), set()))
+    load = AsyncMock(return_value=({index: 0 for index in range(1, 17)}, set()))
     monkeypatch.setattr(contacts, "_load_authorizations", load)
     local = contacts.PrinterContactBroker(_subscription_redis())
     async with AsyncExitStack() as stack:
@@ -388,8 +397,8 @@ async def test_subscriber_added_during_auth_batch_needs_its_own_result(monkeypat
         if len(calls) == 1:
             started.set()
             await release.wait()
-            return {7}, set()
-        return {7}, {"revoked"}
+            return {7: 0}, set()
+        return {7: 0}, {"revoked"}
 
     monkeypatch.setattr(contacts, "_load_authorizations", load)
     local = contacts.PrinterContactBroker(_subscription_redis())

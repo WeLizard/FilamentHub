@@ -27,6 +27,7 @@ from app.core.security import (
     decode_access_token,
     decode_plugin_token,
     get_unverified_token_type,
+    token_auth_version_matches,
     token_fingerprint,
 )
 from app.db.session import get_db
@@ -120,6 +121,12 @@ async def get_current_user_for_legal_onboarding(
     if not user.active:
         logger.warning("Inactive account tried to authenticate: user_id=%d", user.id)
         raise_error(status.HTTP_403_FORBIDDEN, ERR_USER_INACTIVE)
+    if not token_auth_version_matches(payload, user.auth_version):
+        raise_error(
+            status.HTTP_401_UNAUTHORIZED,
+            ERR_COULD_NOT_VALIDATE,
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
     return user
 
@@ -201,6 +208,12 @@ async def _get_current_user_or_plugin_scope(
         )
     if not user.active:
         raise_error(status.HTTP_403_FORBIDDEN, ERR_USER_INACTIVE)
+    if not token_auth_version_matches(payload, user.auth_version):
+        raise_error(
+            status.HTTP_401_UNAUTHORIZED,
+            ERR_COULD_NOT_VALIDATE,
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     if requires_current_legal_acceptance(user):
         raise_error(status.HTTP_403_FORBIDDEN, ERR_LEGAL_ACCEPTANCE_REQUIRED)
     return user
@@ -368,6 +381,7 @@ async def get_current_active_user_optional(
     if (
         user is None
         or not user.active
+        or not token_auth_version_matches(payload, user.auth_version)
         or requires_current_legal_acceptance(user)
     ):
         return None

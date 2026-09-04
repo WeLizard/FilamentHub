@@ -87,6 +87,17 @@ def token_fingerprint(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
+def token_auth_version_matches(payload: dict[str, Any], expected: int) -> bool:
+    """Match a token to the account state that existed when it was issued.
+
+    Tokens created before this claim existed belong to version zero. This keeps
+    an additive rollout compatible while the first credential change still
+    invalidates every legacy token immediately.
+    """
+    claimed = payload.get("auth_version", 0)
+    return type(claimed) is int and claimed >= 0 and claimed == expected
+
+
 def device_api_key_verifier(api_key: str) -> str:
     """Return the indexed verifier stored for a high-entropy device API key."""
     digest = hashlib.sha256(api_key.encode("utf-8")).digest()
@@ -303,13 +314,21 @@ def decode_email_verification_token(token: str) -> dict[str, Any] | None:
         return None
 
 
-def generate_password_reset_token(user_id: int, email: str) -> str:
+def generate_password_reset_token(
+    user_id: int,
+    email: str,
+    *,
+    auth_version: int = 0,
+    expires_at: datetime | None = None,
+) -> str:
     """Generate a password reset token."""
-    expire = datetime.now(timezone.utc) + timedelta(hours=1)
+    expire = expires_at or (datetime.now(timezone.utc) + timedelta(hours=1))
     expire_timestamp = calendar.timegm(expire.utctimetuple())
     payload = {
         "user_id": user_id,
         "email": email,
+        "auth_version": auth_version,
+        "jti": secrets.token_urlsafe(24),
         "type": "password_reset",
         "exp": expire_timestamp,
     }

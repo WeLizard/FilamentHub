@@ -13,6 +13,7 @@ from starlette.responses import Response
 from app.api.v1.endpoints.auth import _set_auth_cookies
 from app.core.config import settings
 from app.core.security import create_refresh_token, decode_refresh_token
+from app.models.password_reset_token import PasswordResetToken
 from app.models.refresh_session import RefreshSession
 from app.models.revoked_token import RevokedToken
 from app.services.legal_acceptance_service import (
@@ -354,6 +355,7 @@ async def test_invalid_refresh_input_creates_no_auth_state(
 @pytest.mark.asyncio
 async def test_cleanup_is_bounded_and_keeps_clock_skew_window(
     db_session: AsyncSession,
+    auth_user,
 ) -> None:
     now = datetime.now(timezone.utc)
     for number, expires_at in enumerate(
@@ -377,18 +379,30 @@ async def test_cleanup_is_bounded_and_keeps_clock_skew_window(
                 created_at=now,
             )
         )
+        db_session.add(
+            PasswordResetToken(
+                grant_hash=f"{number + 200:064x}",
+                user_id=auth_user.id,
+                expires_at=expires_at,
+                created_at=now,
+            )
+        )
     await db_session.commit()
 
     removed = await cleanup_expired_auth_state(db_session, now=now, batch_size=1)
     await db_session.commit()
     assert removed.revoked_tokens == 1
     assert removed.refresh_sessions == 1
+    assert removed.password_reset_tokens == 1
     assert await db_session.scalar(select(func.count(RevokedToken.id))) == 3
     assert await db_session.scalar(select(func.count(RefreshSession.id))) == 3
+    assert await db_session.scalar(select(func.count(PasswordResetToken.grant_hash))) == 3
 
     removed_again = await cleanup_expired_auth_state(db_session, now=now, batch_size=10)
     await db_session.commit()
     assert removed_again.revoked_tokens == 1
     assert removed_again.refresh_sessions == 1
+    assert removed_again.password_reset_tokens == 1
     assert await db_session.scalar(select(func.count(RevokedToken.id))) == 2
     assert await db_session.scalar(select(func.count(RefreshSession.id))) == 2
+    assert await db_session.scalar(select(func.count(PasswordResetToken.grant_hash))) == 2

@@ -11,12 +11,13 @@ import secrets
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import settings
 from app.core.security import create_refresh_token, token_fingerprint
+from app.models.password_reset_token import PasswordResetToken
 from app.models.refresh_session import RefreshSession
 from app.models.revoked_token import RevokedToken
 
@@ -40,6 +41,7 @@ class RefreshTokenReuseError(InvalidRefreshSessionError):
 class AuthCleanupResult:
     revoked_tokens: int
     refresh_sessions: int
+    password_reset_tokens: int
 
 
 def _as_utc(value: datetime) -> datetime:
@@ -59,7 +61,7 @@ def _payload_expiry(payload: dict) -> datetime:
 def _subject_claims(payload: dict) -> dict[str, object]:
     """Keep the signed identity stable so an idempotent retry is byte-identical."""
     claims: dict[str, object] = {}
-    for name in ("sub", "user_id", "role"):
+    for name in ("sub", "user_id", "role", "auth_version"):
         value = payload.get(name)
         if value is not None:
             claims[name] = value
@@ -254,6 +256,25 @@ async def revoke_refresh_session(
     return True
 
 
+async def revoke_all_refresh_sessions(
+    db: AsyncSession,
+    *,
+    user_id: int,
+    now: datetime | None = None,
+) -> int:
+    """Revoke every live refresh family belonging to one account."""
+    revoked_at = _as_utc(now or datetime.now(timezone.utc))
+    result = await db.execute(
+        update(RefreshSession)
+        .where(
+            RefreshSession.user_id == user_id,
+            RefreshSession.revoked_at.is_(None),
+        )
+        .values(revoked_at=revoked_at)
+    )
+    return max(result.rowcount or 0, 0)
+
+
 async def cleanup_expired_auth_state(
     db: AsyncSession,
     *,
@@ -279,15 +300,30 @@ async def cleanup_expired_auth_state(
         .order_by(RefreshSession.expires_at, RefreshSession.id)
         .limit(batch_size)
     )
+    password_reset_ids = (
+        select(PasswordResetToken.grant_hash)
+        .where(PasswordResetToken.expires_at < cutoff)
+        .order_by(
+            PasswordResetToken.expires_at,
+            PasswordResetToken.grant_hash,
+        )
+        .limit(batch_size)
+    )
     revoked_result = await db.execute(
         delete(RevokedToken).where(RevokedToken.id.in_(revoked_ids))
     )
     refresh_result = await db.execute(
         delete(RefreshSession).where(RefreshSession.id.in_(refresh_ids))
     )
+    password_reset_result = await db.execute(
+        delete(PasswordResetToken).where(
+            PasswordResetToken.grant_hash.in_(password_reset_ids)
+        )
+    )
     return AuthCleanupResult(
         revoked_tokens=max(revoked_result.rowcount or 0, 0),
         refresh_sessions=max(refresh_result.rowcount or 0, 0),
+        password_reset_tokens=max(password_reset_result.rowcount or 0, 0),
     )
 
 
@@ -301,11 +337,17 @@ async def run_auth_state_sweeper(
             async with session_factory() as db:
                 removed = await cleanup_expired_auth_state(db)
                 await db.commit()
-            if removed.revoked_tokens or removed.refresh_sessions:
+            if (
+                removed.revoked_tokens
+                or removed.refresh_sessions
+                or removed.password_reset_tokens
+            ):
                 logger.info(
-                    "Removed expired auth state: revoked_tokens=%s refresh_sessions=%s",
+                    "Removed expired auth state: revoked_tokens=%s "
+                    "refresh_sessions=%s password_reset_tokens=%s",
                     removed.revoked_tokens,
                     removed.refresh_sessions,
+                    removed.password_reset_tokens,
                 )
         except asyncio.CancelledError:
             raise
