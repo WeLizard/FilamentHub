@@ -487,7 +487,7 @@ describe('pluginBridge inbound messages', () => {
     }
   });
 
-  it('passes local credential copy and keeps a Moonraker probe open for user input', async () => {
+  it('negotiates discovery and keeps a Moonraker probe open for local credential input', async () => {
     const originalParent = window.parent;
     const postMessage = vi.fn();
     const parent = { postMessage };
@@ -497,6 +497,22 @@ describe('pluginBridge inbound messages', () => {
     vi.useFakeTimers();
 
     try {
+      for (const discovery of [false, true]) {
+        window.dispatchEvent(new MessageEvent('message', {
+          data: { source: PLUGIN_MESSAGE_SOURCE, type: 'plugin-capabilities',
+            capabilities: ['printer-setup-v1', ...(discovery ? ['printer-discovery-v1'] : [])] },
+          origin: window.location.origin, source: parent as unknown as Window,
+        }));
+        const listing = requestPrinterSetup('list');
+        const request = postMessage.mock.calls.at(-1)?.[0];
+        expect(request.discovery).toBe(discovery ? true : undefined);
+        window.dispatchEvent(new MessageEvent('message', {
+          data: { source: PLUGIN_MESSAGE_SOURCE, type: 'printer-setup-result',
+            requestId: request.requestId, result: { ok: true, candidates: [] } },
+          origin: window.location.origin, source: parent as unknown as Window,
+        }));
+        await expect(listing).resolves.toEqual({ ok: true, candidates: [] });
+      }
       window.dispatchEvent(new MessageEvent('message', {
         data: {
           source: PLUGIN_MESSAGE_SOURCE,

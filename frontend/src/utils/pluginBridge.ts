@@ -838,6 +838,7 @@ export function requestPrinterSetup(
     window.addEventListener('message', onMessage);
     postToPlugin({ source: PLUGIN_MESSAGE_SOURCE,
       type: operation === 'manual' ? 'printer-setup-manual' : 'printer-setup',
+      ...(operation === 'list' && activePluginCapabilities.has('printer-discovery-v1') ? { discovery: true } : {}),
       requestId, operation, ...payload });
   });
 }

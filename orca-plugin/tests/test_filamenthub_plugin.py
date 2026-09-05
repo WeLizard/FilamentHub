@@ -122,7 +122,11 @@ def test_lan_candidates_are_local_hints_and_cannot_cross_accounts(setup_flow, mo
                 {"provider": "bambu", "host": "192.168.1.43", "serial": "SERIAL-43",
                  "label": "Workshop P2S", "source": "network"}], False
     monkeypatch.setattr(plugin, "discover_lan_printers", search)
-    catalog._do_printer_setup({"operation": "list", "requestId": "list"}, "token", [])
+    catalog._do_printer_setup({"operation": "list", "requestId": "legacy-list"}, "token", [
+        {"connection_ref": "legacy-moonraker", "print_host": "192.168.1.80:7125"},
+    ])
+    assert not calls and [item["provider"] for item in results[-1]["candidates"]] == ["moonraker"]
+    catalog._do_printer_setup({"operation": "list", "discovery": True, "requestId": "list"}, "token", [])
     listed = results[-1]
     assert listed["ok"] and not listed["discoveryComplete"]
     assert len(listed["candidates"]) == 2
@@ -133,7 +137,7 @@ def test_lan_candidates_are_local_hints_and_cannot_cross_accounts(setup_flow, mo
     context.update(account_scope="owner-2", discovery_key="b" * 64)
     catalog._do_printer_setup({"operation": "probe", "requestId": "probe", "connectionRef": old_ref}, "token", [])
     assert results[-1]["code"] == "connection_not_found"
-    catalog._do_printer_setup({"operation": "list", "requestId": "list-2"}, "token", [])
+    catalog._do_printer_setup({"operation": "list", "discovery": True, "requestId": "list-2"}, "token", [])
     assert len(calls) == 2 and results[-1]["candidates"][0]["connectionRef"] != old_ref
 
 
@@ -143,7 +147,7 @@ def test_discovered_moonraker_uses_existing_probe_binding_and_activation(setup_f
         "provider": "moonraker", "host": "192.168.1.50", "label": "Workshop",
         "print_host": "http://192.168.1.50:7125/printer-a", "source": "network",
     }], True))
-    catalog._do_printer_setup({"operation": "list", "requestId": "list"}, "token", [])
+    catalog._do_printer_setup({"operation": "list", "discovery": True, "requestId": "list"}, "token", [])
     ref = results[-1]["candidates"][0]["connectionRef"]
     native = []
     probe_setup = plugin.probe_printer_setup
@@ -200,7 +204,7 @@ def test_native_bambu_setup_keeps_the_selected_device_and_refresh_request(setup_
                 {"provider": "bambu", "host": "192.168.1.43", "serial": "B",
                  "label": "Same model", "source": "network"}], True
     monkeypatch.setattr(plugin, "discover_lan_printers", search)
-    catalog._do_printer_setup({"operation": "list", "requestId": "list"}, "token", [])
+    catalog._do_printer_setup({"operation": "list", "discovery": True, "requestId": "list"}, "token", [])
     ref = results[-1]["candidates"][1]["connectionRef"]
     native = []
     monkeypatch.setattr(catalog, "_deliver_native_setup", lambda kind, **data: native.append((kind, data)))

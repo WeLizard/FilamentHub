@@ -10084,7 +10084,8 @@ class FilamentHubCatalog(
             operation = msg.get("operation")
             discovery = None
             if operation == "list":
-                discovery = self._setup_discovery(context, observations, refresh=True)
+                discovery = (self._setup_discovery(context, observations, refresh=True)
+                             if msg.get("discovery") is True else {"items": [], "complete": True})
             else:
                 cached = getattr(self, "_printer_discovery", {})
                 if cached.get("account_scope") == context["account_scope"] and cached.get("expires", 0) > time.monotonic():
