@@ -9,11 +9,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import device_api_key_verifier, device_inventory_digest
-from app.models.material_system import MaterialSystem, PhysicalPrinterConnector
+from app.models.material_system import MaterialSlot, MaterialSystem, PhysicalPrinterConnector
 from app.models.user import User
 from app.models.user_printer_device import UserPrinterDevice
 from app.models.user_spool import UserSpool, UserSpoolState
-from app.schemas.material_contract import PrinterBridgeSnapshotRequest
+from app.schemas.material_contract import PrinterBridgeSlotSnapshot, PrinterBridgeSnapshotRequest
 from app.schemas.preset_slot_sync import HHGateItem, HHSnapshotRequest
 from app.services.material_contract_service import (
     ensure_material_topology,
@@ -56,7 +56,15 @@ def test_inventory_identity_survives_key_verifier_migration():
     assert device_inventory_digest("fhk1:invalid") is None
 
 
-def edge_snapshot(system_id, ts, sequence=1, digest=None, spool_id=None, count=4):
+def edge_snapshot(
+    system_id,
+    ts,
+    sequence=1,
+    digest=None,
+    spool_id=None,
+    count=4,
+    capabilities=None,
+):
     return PrinterBridgeSnapshotRequest(
         material_system_id=system_id,
         provider="happy_hare",
@@ -64,6 +72,7 @@ def edge_snapshot(system_id, ts, sequence=1, digest=None, spool_id=None, count=4
         source_instance_id="edge-dual-transport",
         observed_at=ts,
         sequence=sequence,
+        capabilities=capabilities,
         inventory_key_digest=digest,
         slot_topology_complete=True,
         slots=[
@@ -120,20 +129,96 @@ async def test_no_orca_reads_all_gates_and_only_proven_owned_spool_ids(
 
 
 @pytest.mark.asyncio
-async def test_latest_server_receipt_wins_across_orca_and_edge_client_clocks(
+async def test_observation_fallback_uses_source_time_before_server_receipt(
     auth_client: AsyncClient,
     auth_user: User,
     db_session: AsyncSession,
+):
+    printer, system, _spool = await setup_printer(db_session, auth_user)
+    db_session.add(
+        MaterialSlot(
+            user_id=auth_user.id,
+            material_system_id=system.id,
+            provider_index=0,
+            kind="gate",
+        )
+    )
+    await db_session.commit()
+    now = datetime.now(timezone.utc)
+    for transport, source, observed_at, material in (
+        ("edge_agent", "edge-observation-clock", now - timedelta(seconds=30), "RECENT"),
+        (
+            "orca_plugin_lan",
+            "orca-delayed-observation",
+            now - timedelta(days=1),
+            "DELAYED",
+        ),
+    ):
+        result = await ingest_printer_bridge_snapshot(
+            db_session,
+            auth_user.id,
+            printer.id,
+            PrinterBridgeSnapshotRequest(
+                material_system_id=system.id,
+                provider="happy_hare",
+                transport=transport,
+                source_instance_id=source,
+                observed_at=observed_at,
+                slots=[
+                    PrinterBridgeSlotSnapshot(
+                        provider_index=0,
+                        kind="gate",
+                        present=True,
+                        material=material,
+                    )
+                ],
+                slot_topology_complete=False,
+            ),
+        )
+        assert result.accepted is True
+
+    data = (await auth_client.get(f"/api/v1/physical-printers/{printer.id}")).json()
+    observation = data["material_systems"][0]["slots"][0]["observation"]
+    assert observation["source"] == "happy_hare_edge"
+    assert observation["material"] == "RECENT"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("owner_loss", ["inactive", "stale"])
+async def test_topology_owner_is_sticky_until_ineligible_then_fails_over(
+    auth_client: AsyncClient,
+    auth_user: User,
+    db_session: AsyncSession,
+    owner_loss: str,
 ):
     printer, system, spool = await setup_printer(db_session, auth_user)
     edge_clock = datetime.now(timezone.utc) + timedelta(days=365)
     orca_clock = datetime(2001, 1, 1, tzinfo=timezone.utc)
     digest = hashlib.sha256(b"dual-transport-test-key").hexdigest()
+    edge_report = edge_snapshot(
+        system.id,
+        edge_clock,
+        digest=digest,
+        spool_id=spool.id,
+        count=2,
+    )
+    edge_report = edge_report.model_copy(
+        update={
+            "slots": [
+                *edge_report.slots,
+                PrinterBridgeSlotSnapshot(
+                    provider_index=1023,
+                    kind="bypass",
+                    present=False,
+                ),
+            ]
+        }
+    )
     await ingest_printer_bridge_snapshot(
         db_session,
         auth_user.id,
         printer.id,
-        edge_snapshot(system.id, edge_clock, digest=digest, spool_id=spool.id, count=2),
+        edge_report,
     )
     await handle_hh_snapshot(
         db_session,
@@ -150,10 +235,10 @@ async def test_latest_server_receipt_wins_across_orca_and_edge_client_clocks(
     data = (await auth_client.get(f"/api/v1/physical-printers/{printer.id}")).json()
     assert len(data["material_systems"]) == 1
     slots = data["material_systems"][0]["slots"]
-    assert len(slots) == 4 and all(slot["active"] for slot in slots)
-    assert data["material_systems"][0]["declared_slot_count"] == 4
-    assert slots[0]["observation"]["source"] == "happy_hare_moonraker"
-    assert slots[0]["observation"]["present"] is False
+    assert len(slots) == 3 and all(slot["active"] for slot in slots)
+    assert data["material_systems"][0]["declared_slot_count"] == 2
+    assert slots[0]["observation"]["source"] == "happy_hare_edge"
+    assert slots[0]["observation"]["spool_id"] == spool.id
     assert all(slot["assignment"] is None for slot in slots)
     edge = await db_session.scalar(
         select(PhysicalPrinterConnector).where(
@@ -161,7 +246,195 @@ async def test_latest_server_receipt_wins_across_orca_and_edge_client_clocks(
             PhysicalPrinterConnector.transport == "edge_agent",
         )
     )
+    orca = await db_session.scalar(
+        select(PhysicalPrinterConnector).where(
+            PhysicalPrinterConnector.physical_printer_id == printer.id,
+            PhysicalPrinterConnector.transport == "orca_plugin_lan",
+        )
+    )
+    assert edge.topology_authority is True
+    assert orca is not None and orca.topology_authority is False
     assert "write" not in edge.capabilities
+
+    if owner_loss == "inactive":
+        edge.active = False
+    else:
+        edge.last_topology_at = datetime.now(timezone.utc) - timedelta(seconds=301)
+    await db_session.commit()
+    await handle_hh_snapshot(
+        db_session,
+        auth_user,
+        HHSnapshotRequest(
+            physical_printer_id=printer.id,
+            gate_count=4,
+            snapshot_ts=orca_clock + timedelta(seconds=1),
+            gates=[HHGateItem(gate=index, status=0) for index in range(4)],
+            spool_ids=[None] * 4,
+            inventory_key_digest=digest,
+        ),
+    )
+    await db_session.refresh(orca)
+    assert orca.topology_authority is False
+    retained = (await auth_client.get(f"/api/v1/physical-printers/{printer.id}")).json()
+    assert len(retained["material_systems"][0]["slots"]) == 3
+
+    await handle_hh_snapshot(
+        db_session,
+        auth_user,
+        HHSnapshotRequest(
+            physical_printer_id=printer.id,
+            gate_count=4,
+            snapshot_ts=datetime.now(timezone.utc),
+            gates=[HHGateItem(gate=0, status=0)],
+            spool_ids=[None] * 4,
+            inventory_key_digest=digest,
+        ),
+    )
+    failed_over = (await auth_client.get(f"/api/v1/physical-printers/{printer.id}")).json()
+    slots = failed_over["material_systems"][0]["slots"]
+    assert [slot["provider_index"] for slot in slots] == [0, 1, 2, 3, 1023]
+    assert all(slot["active"] for slot in slots)
+    assert slots[0]["observation"]["source"] == "happy_hare_moonraker"
+    assert slots[2]["observation"] is None
+    await db_session.refresh(edge)
+    await db_session.refresh(orca)
+    assert edge.topology_authority is False
+    assert orca.topology_authority is True
+
+
+@pytest.mark.asyncio
+async def test_non_topology_reports_preserve_owned_map_and_desired_assignment(
+    auth_client: AsyncClient,
+    auth_user: User,
+    db_session: AsyncSession,
+):
+    printer, system, spool = await setup_printer(db_session, auth_user)
+    now = datetime.now(timezone.utc) - timedelta(minutes=1)
+    first = edge_snapshot(
+        system.id,
+        now,
+        sequence=5,
+        count=4,
+        capabilities=["read", "presence"],
+    )
+    await ingest_printer_bridge_snapshot(
+        db_session,
+        auth_user.id,
+        printer.id,
+        first,
+    )
+    initial = (await auth_client.get(f"/api/v1/physical-printers/{printer.id}")).json()
+    initial_slots = initial["material_systems"][0]["slots"]
+    target = next(slot for slot in initial_slots if slot["provider_index"] == 3)
+    assigned = await auth_client.patch(
+        f"/api/v1/physical-printers/{printer.id}/material-slots/{target['id']}",
+        json={
+            "expected_revision": target["assignment_revision"],
+            "expected_spool_id": None,
+            "spool_id": spool.id,
+        },
+    )
+    assert assigned.status_code == 200, assigned.text
+    committed = next(
+        slot
+        for slot in assigned.json()["material_systems"][0]["slots"]
+        if slot["id"] == target["id"]
+    )
+    owner = await db_session.scalar(
+        select(PhysicalPrinterConnector).where(
+            PhysicalPrinterConnector.physical_printer_id == printer.id,
+            PhysicalPrinterConnector.transport == "edge_agent",
+        )
+    )
+    assert owner is not None and owner.topology_authority is True
+    topology_received_at = owner.last_topology_at
+
+    partial = first.model_copy(
+        update={
+            "sequence": 6,
+            "observed_at": now + timedelta(seconds=1),
+            "capabilities": ["presence"],
+            "slot_topology_complete": False,
+            "slots": [
+                first.slots[0].model_copy(
+                    update={"label": "partial", "kind": "bypass", "present": False}
+                )
+            ],
+        }
+    )
+    await ingest_printer_bridge_snapshot(
+        db_session,
+        auth_user.id,
+        printer.id,
+        partial,
+    )
+    empty = PrinterBridgeSnapshotRequest(
+        material_system_id=system.id,
+        provider="happy_hare",
+        transport="edge_agent",
+        source_instance_id="edge-dual-transport",
+        capabilities=["presence"],
+        sequence=7,
+        observed_at=now + timedelta(seconds=2),
+        printer={"state": "idle"},
+        slots=[],
+        slot_topology_complete=True,
+    )
+    await ingest_printer_bridge_snapshot(
+        db_session,
+        auth_user.id,
+        printer.id,
+        empty,
+    )
+    stale = first.model_copy(
+        update={
+            "sequence": 6,
+            "observed_at": now + timedelta(seconds=3),
+            "capabilities": ["presence"],
+            "slots": [first.slots[0]],
+        }
+    )
+    stale_result = await ingest_printer_bridge_snapshot(
+        db_session,
+        auth_user.id,
+        printer.id,
+        stale,
+    )
+    assert stale_result.stale is True
+
+    ineligible = PrinterBridgeSnapshotRequest(
+        material_system_id=system.id,
+        provider="happy_hare",
+        transport="orca_plugin_lan",
+        source_instance_id="ineligible-orca-source",
+        capabilities=["presence"],
+        sequence=1,
+        observed_at=now + timedelta(seconds=4),
+        slot_topology_complete=True,
+        slots=[{"provider_index": 9, "kind": "bypass", "present": True}],
+    )
+    await ingest_printer_bridge_snapshot(
+        db_session,
+        auth_user.id,
+        printer.id,
+        ineligible,
+    )
+
+    current = (await auth_client.get(f"/api/v1/physical-printers/{printer.id}")).json()
+    current_slots = current["material_systems"][0]["slots"]
+    assert [
+        (slot["id"], slot["provider_index"], slot["kind"], slot["active"]) for slot in current_slots
+    ] == [
+        (slot["id"], slot["provider_index"], slot["kind"], slot["active"]) for slot in initial_slots
+    ]
+    retained = next(slot for slot in current_slots if slot["id"] == target["id"])
+    assert current_slots[0]["observation"]["present"] is True
+    assert retained["assignment"] == committed["assignment"]
+    assert retained["assignment_revision"] == committed["assignment_revision"]
+    await db_session.refresh(owner)
+    assert owner.topology_authority is True
+    assert owner.last_topology_at == topology_received_at
+    assert owner.capabilities == ["read", "presence"]
 
 
 @pytest.mark.asyncio
@@ -251,6 +524,7 @@ async def test_any_bridge_provider_resolves_tags_without_changing_desired_assign
             sequence=sequence,
             capabilities=["read", "presence", "tag_read"],
             inventory_key_digest=digest,
+            slot_topology_complete=True,
             slots=[
                 {
                     "provider_index": 0,

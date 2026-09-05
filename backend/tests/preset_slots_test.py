@@ -1,6 +1,7 @@
 """Tests for preset-slot assignment behavior."""
 
 import json
+from datetime import datetime, timezone
 
 import pytest
 from httpx import AsyncClient
@@ -640,7 +641,7 @@ async def test_plugin_context_exposes_bambu_assignment_only_to_paired_install(
             "provider": "bambu",
             "transport": "orca_plugin_lan",
             "source_instance_id": source_instance_id,
-            "observed_at": "2026-08-14T00:00:00Z",
+            "observed_at": datetime.now(timezone.utc).isoformat(),
             "slots": [{"provider_index": 0, "present": True}],
             "slot_topology_complete": True,
         },

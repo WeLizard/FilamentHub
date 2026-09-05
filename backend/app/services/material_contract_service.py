@@ -27,6 +27,7 @@ from app.core.security import device_inventory_digest
 from app.models.filament import Filament
 from app.models.material_slot_assignment import MaterialSlotAssignment
 from app.models.material_system import (
+    TOPOLOGY_EVIDENCE_FRESHNESS,
     MaterialSlot,
     MaterialSystem,
     PhysicalPrinterConnector,
@@ -51,6 +52,7 @@ from app.schemas.material_contract import (
     PhysicalPrinterConnectorCreate,
     PhysicalPrinterCreate,
     PhysicalPrinterUpdate,
+    PrinterBridgeSlotSnapshot,
     PrinterBridgeSnapshotRequest,
     PrinterBridgeSnapshotResponse,
 )
@@ -421,12 +423,59 @@ async def _lock_system_slots(db: AsyncSession, system_id: int) -> list[MaterialS
     # Slot writers must not wait for a parent while a topology writer holds that
     # parent and waits for the slot. Call before changing the system or printer.
     with db.no_autoflush:
-        return list((await db.scalars(
-            select(MaterialSlot).where(MaterialSlot.material_system_id == system_id)
-            .order_by(MaterialSlot.id)
-            .options(selectinload(MaterialSlot.assignment), selectinload(MaterialSlot.legacy_gate_state))
-            .with_for_update().execution_options(populate_existing=True)
-        )).all())
+        return list(
+            (
+                await db.scalars(
+                    select(MaterialSlot)
+                    .where(MaterialSlot.material_system_id == system_id)
+                    .order_by(MaterialSlot.id)
+                    .options(
+                        selectinload(MaterialSlot.assignment),
+                        selectinload(MaterialSlot.legacy_gate_state),
+                    )
+                    .with_for_update()
+                    .execution_options(populate_existing=True)
+                )
+            ).all()
+        )
+
+
+async def _lock_snapshot_connectors(
+    db: AsyncSession,
+    *,
+    user_id: int,
+    physical_printer_id: int,
+    material_system_id: int,
+    provider: str,
+    transport: str,
+) -> list[PhysicalPrinterConnector]:
+    """Lock topology peers before any slot or system row is locked."""
+    with db.no_autoflush:
+        return list(
+            (
+                await db.scalars(
+                    select(PhysicalPrinterConnector)
+                    .where(
+                        PhysicalPrinterConnector.user_id == user_id,
+                        or_(
+                            (PhysicalPrinterConnector.material_system_id == material_system_id)
+                            & PhysicalPrinterConnector.topology_authority.is_(True),
+                            (
+                                (
+                                    PhysicalPrinterConnector.physical_printer_id
+                                    == physical_printer_id
+                                )
+                                & (PhysicalPrinterConnector.provider == provider)
+                                & (PhysicalPrinterConnector.transport == transport)
+                            ),
+                        ),
+                    )
+                    .order_by(PhysicalPrinterConnector.id)
+                    .with_for_update()
+                    .execution_options(populate_existing=True)
+                )
+            ).all()
+        )
 
 
 def _route_meaning(kind: str, system_kind: str, single_route: bool) -> str:
@@ -437,15 +486,23 @@ def _route_meaning(kind: str, system_kind: str, single_route: bool) -> str:
 
 
 async def _guard_route_reinterpretation(
-    db: AsyncSession, system: MaterialSystem, slots: list[MaterialSlot],
-    routes: list[MaterialSlotCreate], next_kind: str,
-    *, retain_missing: bool = False,
+    db: AsyncSession,
+    system: MaterialSystem,
+    slots: list[MaterialSlot],
+    routes: list[MaterialSlotCreate],
+    next_kind: str,
+    *,
+    retain_missing: bool = False,
 ) -> None:
     by_index = {item.provider_index: item.kind for item in slots} if retain_missing else {}
     by_index.update({item.provider_index: item.kind for item in routes})
-    changed = [slot for slot in slots if slot.provider_index in by_index
-               if _route_meaning(slot.kind, system.kind, len(slots) == 1)
-               != _route_meaning(by_index[slot.provider_index], next_kind, len(by_index) == 1)]
+    changed = [
+        slot
+        for slot in slots
+        if slot.provider_index in by_index
+        if _route_meaning(slot.kind, system.kind, len(slots) == 1)
+        != _route_meaning(by_index[slot.provider_index], next_kind, len(by_index) == 1)
+    ]
     busy = await _first_occupied_slot_index(db, changed)
     if busy is not None:
         raise_error(409, ERR_MATERIAL_SLOT_IN_USE, params={"index": busy + 1})
@@ -477,7 +534,8 @@ async def update_material_system(
         by_index = {slot.provider_index: slot for slot in slots}
         if payload.slots is not None:
             unchanged = (
-                payload.kind in {None, system.kind} and payload.provider in {None, system.provider}
+                payload.kind in {None, system.kind}
+                and payload.provider in {None, system.provider}
                 and {(item.provider_index, item.kind, item.label) for item in payload.slots}
                 == {(slot.provider_index, slot.kind, slot.label) for slot in slots if slot.active}
             )
@@ -490,48 +548,80 @@ async def update_material_system(
                     await db.flush()
                 return await require_physical_printer(db, user_id, physical_printer_id)
             expected = {item.material_slot_id: item for item in payload.expected_slots or []}
-            if len(expected) != len(payload.expected_slots or []) or set(expected) != {slot.id for slot in slots}:
+            if len(expected) != len(payload.expected_slots or []) or set(expected) != {
+                slot.id for slot in slots
+            }:
                 raise_error(409, ERR_MATERIAL_ASSIGNMENT_CONFLICT)
             for slot in slots:
                 assignment = slot.assignment or slot.legacy_gate_state
-                if (slot.assignment_revision != expected[slot.id].expected_revision
-                    or (assignment.spool_id if assignment else None) != expected[slot.id].expected_spool_id):
+                if (
+                    slot.assignment_revision != expected[slot.id].expected_revision
+                    or (assignment.spool_id if assignment else None)
+                    != expected[slot.id].expected_spool_id
+                ):
                     raise_error(409, ERR_MATERIAL_ASSIGNMENT_CONFLICT)
             requested = payload.slots
         else:
             # Count describes ordinary routes only. External holders and bypass
             # are not the tail of a contiguous array of gates.
             assert payload.slot_count is not None
-            requested = [MaterialSlotCreate(provider_index=index,
-                         kind=by_index[index].kind if index in by_index else "slot",
-                         label=by_index[index].label if index in by_index else None)
-                         for index in range(payload.slot_count)]
-            requested += [MaterialSlotCreate(provider_index=slot.provider_index, kind=slot.kind, label=slot.label)
-                          for slot in slots if slot.kind not in {"slot", "gate"}]
+            requested = [
+                MaterialSlotCreate(
+                    provider_index=index,
+                    kind=by_index[index].kind if index in by_index else "slot",
+                    label=by_index[index].label if index in by_index else None,
+                )
+                for index in range(payload.slot_count)
+            ]
+            requested += [
+                MaterialSlotCreate(
+                    provider_index=slot.provider_index, kind=slot.kind, label=slot.label
+                )
+                for slot in slots
+                if slot.kind not in {"slot", "gate"}
+            ]
             if len({item.provider_index for item in requested}) != len(requested):
                 raise_error(409, ERR_MATERIAL_ASSIGNMENT_CONFLICT)
         requested_indices = {item.provider_index for item in requested}
         doomed = [slot for slot in slots if slot.provider_index not in requested_indices]
-        await _guard_route_reinterpretation(db, system, slots, requested, payload.kind or system.kind)
+        await _guard_route_reinterpretation(
+            db, system, slots, requested, payload.kind or system.kind
+        )
         busy = await _first_occupied_slot_index(db, doomed)
         if busy is not None:
             raise_error(409, ERR_MATERIAL_SLOT_IN_USE, params={"index": busy + 1})
         if payload.provider is not None and payload.provider != system.provider:
-            connected = await db.scalar(select(PhysicalPrinterConnector.id).where(
-                PhysicalPrinterConnector.material_system_id == system.id,
-                PhysicalPrinterConnector.active.is_(True),
-            ).limit(1))
+            connected = await db.scalar(
+                select(PhysicalPrinterConnector.id)
+                .where(
+                    PhysicalPrinterConnector.material_system_id == system.id,
+                    PhysicalPrinterConnector.active.is_(True),
+                )
+                .limit(1)
+            )
             if system.provider != "manual" or connected is not None:
                 raise_error(409, ERR_MATERIAL_SYSTEM_EXISTS)
             system.provider = payload.provider
         for item in requested:
             slot = by_index.get(item.provider_index)
             if slot is None:
-                db.add(MaterialSlot(user_id=user_id, material_system_id=system.id,
-                                    provider_index=item.provider_index, kind=item.kind, label=item.label))
+                db.add(
+                    MaterialSlot(
+                        user_id=user_id,
+                        material_system_id=system.id,
+                        provider_index=item.provider_index,
+                        kind=item.kind,
+                        label=item.label,
+                    )
+                )
             else:
-                if (slot.kind != item.kind or slot.label != item.label or not slot.active
-                    or payload.kind is not None and payload.kind != system.kind):
+                if (
+                    slot.kind != item.kind
+                    or slot.label != item.label
+                    or not slot.active
+                    or payload.kind is not None
+                    and payload.kind != system.kind
+                ):
                     slot.assignment_revision += 1
                 slot.kind, slot.label, slot.active = item.kind, item.label, True
         if doomed:
@@ -539,7 +629,9 @@ async def update_material_system(
                 delete(MaterialSlot).where(MaterialSlot.id.in_([slot.id for slot in doomed]))
             )
         ordinary = {item.provider_index for item in requested if item.kind in {"slot", "gate"}}
-        declared_count = len(ordinary) if ordinary and ordinary == set(range(len(ordinary))) else None
+        declared_count = (
+            len(ordinary) if ordinary and ordinary == set(range(len(ordinary))) else None
+        )
         system.declared_slot_count = declared_count
         if payload.kind is not None:
             system.kind = payload.kind
@@ -638,6 +730,67 @@ def _snapshot_is_current(
     return (
         connector.last_snapshot_sequence is None
         or payload.sequence > connector.last_snapshot_sequence
+    )
+
+
+def _connector_can_report_topology(
+    connector: PhysicalPrinterConnector,
+    material_system_id: int,
+) -> bool:
+    capabilities = set(connector.capabilities or [])
+    return bool(
+        connector.active
+        and connector.material_system_id == material_system_id
+        and ("read" in capabilities or not capabilities)
+    )
+
+
+def _topology_evidence_is_fresh(observed_at: datetime, received_at: datetime) -> bool:
+    return received_at - observed_at <= TOPOLOGY_EVIDENCE_FRESHNESS
+
+
+def _topology_owner_is_current(
+    connector: PhysicalPrinterConnector,
+    material_system_id: int,
+    received_at: datetime,
+) -> bool:
+    return bool(
+        _connector_can_report_topology(connector, material_system_id)
+        and connector.last_topology_at is not None
+        and received_at - _utc_datetime(connector.last_topology_at) <= TOPOLOGY_EVIDENCE_FRESHNESS
+    )
+
+
+def _snapshot_has_eligible_topology(
+    connector: PhysicalPrinterConnector,
+    payload: PrinterBridgeSnapshotRequest,
+    observed_at: datetime,
+    received_at: datetime,
+) -> bool:
+    if (
+        not payload.slot_topology_complete
+        or not payload.slots
+        or not _topology_evidence_is_fresh(observed_at, received_at)
+    ):
+        return False
+    if payload.capabilities is not None:
+        return "read" in payload.capabilities
+    return _connector_can_report_topology(connector, payload.material_system_id)
+
+
+def _slot_has_observation_facts(item: PrinterBridgeSlotSnapshot) -> bool:
+    return bool(
+        item.present is not None
+        or item.active_feed is not None
+        or item.spool_id is not None
+        or item.spool_identity_known
+        or item.tag_uid is not None
+        or item.tag_technology is not None
+        or item.tag_format is not None
+        or item.material is not None
+        or item.color_hex is not None
+        or item.remaining_percent is not None
+        or item.remaining_grams is not None
     )
 
 
@@ -771,7 +924,6 @@ async def ingest_printer_bridge_snapshot(
     )
     if system.provider not in {"manual", payload.provider}:
         raise_error(409, ERR_MATERIAL_SYSTEM_EXISTS)
-    existing_slots = await _lock_system_slots(db, system.id)
 
     received_at = datetime.now(timezone.utc)
     observed_at = min(_utc_datetime(payload.observed_at), received_at)
@@ -780,16 +932,23 @@ async def ingest_printer_bridge_snapshot(
         payload.transport,
     )
 
-    connector = await db.scalar(
-        select(PhysicalPrinterConnector)
-        .where(
-            PhysicalPrinterConnector.user_id == user_id,
-            PhysicalPrinterConnector.physical_printer_id == physical_printer_id,
-            PhysicalPrinterConnector.provider == payload.provider,
-            PhysicalPrinterConnector.transport == payload.transport,
-        )
-        .with_for_update()
-        .execution_options(populate_existing=True)
+    locked_connectors = await _lock_snapshot_connectors(
+        db,
+        user_id=user_id,
+        physical_printer_id=physical_printer_id,
+        material_system_id=system.id,
+        provider=payload.provider,
+        transport=payload.transport,
+    )
+    connector = next(
+        (
+            item
+            for item in locked_connectors
+            if item.physical_printer_id == physical_printer_id
+            and item.provider == payload.provider
+            and item.transport == payload.transport
+        ),
+        None,
     )
     if connector is None:
         connector = PhysicalPrinterConnector(
@@ -803,10 +962,24 @@ async def ingest_printer_bridge_snapshot(
     elif connector.source_instance_id != payload.source_instance_id:
         raise_error(401, ERR_PRINTER_BRIDGE_UNAUTHORIZED)
 
+    existing_slots = await _lock_system_slots(db, system.id)
+    system = await db.scalar(
+        select(MaterialSystem)
+        .where(
+            MaterialSystem.id == system.id,
+            MaterialSystem.user_id == user_id,
+            MaterialSystem.physical_printer_id == physical_printer_id,
+        )
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    if system is None:
+        raise_error(404, ERR_MATERIAL_SYSTEM_NOT_FOUND)
+    if system.provider not in {"manual", payload.provider}:
+        raise_error(409, ERR_MATERIAL_SYSTEM_EXISTS)
+
     connector.last_seen_at = received_at
     connector.active = True
-    if payload.capabilities is not None:
-        connector.capabilities = list(payload.capabilities)
     printer.last_seen_at = received_at
     printer.reports_feed = True
 
@@ -822,8 +995,19 @@ async def ingest_printer_bridge_snapshot(
             slots_seen=len(payload.slots),
         )
 
+    topology_report = payload.slot_topology_complete and bool(payload.slots)
+    topology_evidence_is_fresh = topology_report and _topology_evidence_is_fresh(
+        observed_at,
+        received_at,
+    )
+    if topology_evidence_is_fresh and payload.capabilities is not None:
+        connector.capabilities = list(payload.capabilities)
+
     if payload.device_identity and not await remember_identity(
-        db, user_id, physical_printer_id, payload.device_identity,
+        db,
+        user_id,
+        physical_printer_id,
+        payload.device_identity,
     ):
         raise_error(409, ERR_PRINTER_IDENTITY_CONFLICT)
 
@@ -834,27 +1018,68 @@ async def ingest_printer_bridge_snapshot(
     if payload.sequence is not None:
         connector.last_snapshot_sequence = payload.sequence
         connector.last_snapshot_source_instance_id = payload.source_instance_id
-    newer_source = await db.scalar(
-        select(PhysicalPrinterConnector.id).where(
-            PhysicalPrinterConnector.material_system_id == system.id,
-            PhysicalPrinterConnector.id != connector.id,
-            PhysicalPrinterConnector.active.is_(True),
-            PhysicalPrinterConnector.last_seen_at > received_at,
-        ).limit(1)
+
+    topology_candidate = _snapshot_has_eligible_topology(
+        connector,
+        payload,
+        observed_at,
+        received_at,
     )
-    topology_is_current = newer_source is None
+    topology_owner = next(
+        (
+            item
+            for item in locked_connectors
+            if item.material_system_id == system.id and item.topology_authority
+        ),
+        None,
+    )
+    owner_is_eligible = topology_owner is not None and _topology_owner_is_current(
+        topology_owner,
+        system.id,
+        received_at,
+    )
+    if (
+        owner_is_eligible
+        and topology_owner.id == connector.id
+        and topology_evidence_is_fresh
+        and payload.capabilities is not None
+    ):
+        owner_is_eligible = "read" in payload.capabilities
+    if topology_owner is not None and not owner_is_eligible:
+        topology_owner.topology_authority = False
+        topology_owner = None
+
+    topology_is_current = False
+    if topology_candidate:
+        connector.last_topology_at = received_at
+        if topology_owner is None or topology_owner.id == connector.id:
+            if topology_owner is None:
+                await db.flush()
+                connector.topology_authority = True
+            topology_is_current = True
+
     next_kind = "mmu" if payload.provider == "happy_hare" and payload.slots else system.kind
     if topology_is_current:
-        await _guard_route_reinterpretation(db, system, existing_slots, [
-            MaterialSlotCreate(provider_index=item.provider_index, kind=item.kind, label=item.label)
-            for item in payload.slots
-        ], next_kind, retain_missing=True)
+        await _guard_route_reinterpretation(
+            db,
+            system,
+            existing_slots,
+            [
+                MaterialSlotCreate(
+                    provider_index=item.provider_index, kind=item.kind, label=item.label
+                )
+                for item in payload.slots
+            ],
+            next_kind,
+            retain_missing=True,
+        )
         if system.kind != next_kind:
             for slot in existing_slots:
                 slot.assignment_revision += 1
         system.kind = next_kind
-    system.provider = payload.provider
-    system.capabilities = sorted(set(system.capabilities) | set(connector.capabilities))
+        system.provider = payload.provider
+    if topology_evidence_is_fresh:
+        system.capabilities = sorted(set(system.capabilities) | set(connector.capabilities))
     system.active = True
 
     accepted = True
@@ -938,8 +1163,19 @@ async def ingest_printer_bridge_snapshot(
                 slot.active = False
     for item in payload.slots:
         slot = slots_by_index.get(item.provider_index)
-        if not topology_is_current and (slot is None or not slot.active):
-            continue
+        if not topology_is_current:
+            if slot is None or not slot.active:
+                continue
+            if _route_meaning(
+                slot.kind,
+                system.kind,
+                len(existing_slots) == 1,
+            ) != _route_meaning(
+                item.kind,
+                system.kind,
+                len(existing_slots) == 1,
+            ):
+                continue
         if slot is None:
             slot = MaterialSlot(
                 user_id=user_id,
@@ -958,6 +1194,9 @@ async def ingest_printer_bridge_snapshot(
                 slot.label = item.label
             slot.kind = item.kind
             slot.active = True
+
+        if not _slot_has_observation_facts(item):
+            continue
 
         observation = await db.scalar(
             select(MaterialSlotObservation).where(

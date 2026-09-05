@@ -181,25 +181,50 @@ async def test_occupied_single_spool_is_never_reinterpreted_as_gate_zero(
     })
     assert assigned.status_code == 200, assigned.text
     if path == "edit":
-        response = await auth_client.patch(f"{PATH}/{printer_id}/material-systems/{system['id']}", json={
-            "kind": "mmu", "slots": [{"provider_index": 0, "kind": "gate"}],
-            "expected_slots": [{"material_slot_id": slot["id"], "expected_spool_id": spool_id, "expected_revision": 1}],
-        })
+        response = await auth_client.patch(
+            f"{PATH}/{printer_id}/material-systems/{system['id']}",
+            json={
+                "kind": "mmu",
+                "slots": [{"provider_index": 0, "kind": "gate"}],
+                "expected_slots": [
+                    {
+                        "material_slot_id": slot["id"],
+                        "expected_spool_id": spool_id,
+                        "expected_revision": 1,
+                    }
+                ],
+            },
+        )
     elif path == "legacy":
-        response = await auth_client.post('/api/v1/orcaslicer/preset-slot-sync/hh/snapshot', json={
-            "physical_printer_id": printer_id, "gate_count": 4,
-            "snapshot_ts": datetime.now(timezone.utc).isoformat(),
-            "gates": [{"gate": index, "status": 0} for index in range(4)],
-        })
+        response = await auth_client.post(
+            "/api/v1/orcaslicer/preset-slot-sync/hh/snapshot",
+            json={
+                "physical_printer_id": printer_id,
+                "gate_count": 4,
+                "snapshot_ts": datetime.now(timezone.utc).isoformat(),
+                "gates": [{"gate": index, "status": 0} for index in range(4)],
+            },
+        )
     else:
-        with pytest.raises(HTTPException) as error:
-            await ingest_printer_bridge_snapshot(db_session, user_id, printer_id, PrinterBridgeSnapshotRequest(
-                material_system_id=system["id"], provider="happy_hare", transport="orca_plugin_lan",
-                source_instance_id="test-route-reinterpretation", observed_at=datetime.now(timezone.utc),
-                slots=[{"provider_index": 1 if path == "partial_bridge" else 0, "kind": "gate"}],
-                slot_topology_complete=path != "partial_bridge",
-            ))
-        assert error.value.status_code == 409 and "ERR_MATERIAL_SLOT_IN_USE" in str(error.value.detail)
+        snapshot = PrinterBridgeSnapshotRequest(
+            material_system_id=system["id"],
+            provider="happy_hare",
+            transport="orca_plugin_lan",
+            source_instance_id="test-route-reinterpretation",
+            observed_at=datetime.now(timezone.utc),
+            slots=[{"provider_index": 1 if path == "partial_bridge" else 0, "kind": "gate"}],
+            slot_topology_complete=path != "partial_bridge",
+        )
+        if path == "partial_bridge":
+            accepted = await ingest_printer_bridge_snapshot(
+                db_session, user_id, printer_id, snapshot
+            )
+            assert accepted.accepted is True
+        else:
+            with pytest.raises(HTTPException) as error:
+                await ingest_printer_bridge_snapshot(db_session, user_id, printer_id, snapshot)
+            assert error.value.status_code == 409
+            assert "ERR_MATERIAL_SLOT_IN_USE" in str(error.value.detail)
     if path in {"edit", "legacy"}:
         assert response.status_code == 409 and "ERR_MATERIAL_SLOT_IN_USE" in response.text
     await db_session.rollback()
@@ -212,9 +237,19 @@ async def test_occupied_single_spool_is_never_reinterpreted_as_gate_zero(
 
 
 async def test_provider_topology_change_invalidates_open_editor(auth_client, db_session, auth_user):
-    created = (await auth_client.post(PATH, json={"name": "Open editor", "material_system": {
-        "name": "Slots", "kind": "mmu", "slot_count": 2,
-    }})).json()
+    created = (
+        await auth_client.post(
+            PATH,
+            json={
+                "name": "Open editor",
+                "material_system": {
+                    "name": "Slots",
+                    "kind": "mmu",
+                    "slot_count": 2,
+                },
+            },
+        )
+    ).json()
     system = created["material_systems"][0]
     await ingest_printer_bridge_snapshot(db_session, auth_user.id, created["id"], PrinterBridgeSnapshotRequest(
         material_system_id=system["id"], provider="happy_hare", transport="orca_plugin_lan",

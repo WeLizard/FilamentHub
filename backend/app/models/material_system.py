@@ -1,6 +1,6 @@
 """Provider-neutral material systems, slots, and connector capabilities."""
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING
 
 from sqlalchemy import (
@@ -13,11 +13,14 @@ from sqlalchemy import (
     Integer,
     String,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
 from app.db.base import Base
+
+TOPOLOGY_EVIDENCE_FRESHNESS = timedelta(seconds=300)
 
 if TYPE_CHECKING:
     from app.models.material_slot_assignment import MaterialSlotAssignment
@@ -149,16 +152,27 @@ class MaterialSlot(Base):
                 )
 
             return (
-                utc(item.received_at),
                 utc(item.observed_at),
+                utc(item.received_at),
                 item.id,
             )
 
-        return max(
-            (item for item in self.observations if item.connector.active),
-            key=freshness,
-            default=None,
-        )
+        active = [item for item in self.observations if item.connector.active]
+        now = datetime.now(timezone.utc)
+        authoritative = [
+            item
+            for item in active
+            if item.connector.topology_authority
+            and item.connector.last_topology_at is not None
+            and now
+            - (
+                item.connector.last_topology_at.astimezone(timezone.utc)
+                if item.connector.last_topology_at.tzinfo
+                else item.connector.last_topology_at.replace(tzinfo=timezone.utc)
+            )
+            <= TOPOLOGY_EVIDENCE_FRESHNESS
+        ]
+        return max(authoritative or active, key=freshness, default=None)
 
 
 class PhysicalPrinterConnector(Base):
@@ -192,6 +206,12 @@ class PhysicalPrinterConnector(Base):
     )
     last_snapshot_sequence: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     last_snapshot_source_instance_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    topology_authority: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    last_topology_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -208,6 +228,13 @@ class PhysicalPrinterConnector(Base):
             "provider",
             "transport",
             name="uq_physical_printer_connector",
+        ),
+        Index(
+            "uq_material_system_topology_authority",
+            "material_system_id",
+            unique=True,
+            postgresql_where=text("topology_authority"),
+            sqlite_where=text("topology_authority = 1"),
         ),
     )
 

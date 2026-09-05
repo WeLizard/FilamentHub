@@ -530,23 +530,116 @@ async def handle_hh_snapshot(
         if newer_source is not None:
             return device, 0, []
         device.supports_hh = True
-        device.gate_count = payload.gate_count
     device.reports_feed = True
     touch_device_last_seen(device)
+
+    reported_routes = _hh_reported_routes(payload)
+    gate_observations = {item.gate: item for item in payload.gates}
+    normalized_slots = []
+    for index in range(payload.gate_count):
+        item = gate_observations.get(index)
+        if item is None:
+            normalized_slots.append(PrinterBridgeSlotSnapshot(provider_index=index, kind="gate"))
+            continue
+        normalized_slots.append(
+            PrinterBridgeSlotSnapshot(
+                provider_index=item.gate,
+                kind="gate",
+                present=None if item.status == -1 else item.status in (1, 2),
+                active_feed=(
+                    payload.selected_gate == item.gate and payload.filament_loaded
+                    if payload.selected_gate is not None and payload.filament_loaded is not None
+                    else None
+                ),
+                material=item.material or None,
+                color_hex=item.color_hex or None,
+                spool_id=payload.spool_ids[item.gate] if payload.spool_ids is not None else None,
+                spool_identity_known=payload.spool_ids is not None,
+                tag_uid=item.rfid_uid,
+                tag_technology="unknown" if item.rfid_uid is not None else None,
+            )
+        )
+
+    system_id = await db.scalar(
+        select(MaterialSystem.id).where(
+            MaterialSystem.physical_printer_id == device.id,
+            MaterialSystem.user_id == user.id,
+        )
+    )
+    if system_id is None:
+        await ensure_material_topology(db, device)
+        system_id = await db.scalar(
+            select(MaterialSystem.id).where(
+                MaterialSystem.physical_printer_id == device.id,
+                MaterialSystem.user_id == user.id,
+            )
+        )
+    if system_id is None:
+        raise RuntimeError("Happy Hare material system was not created")
+    if reported_routes is None:
+        retained_routes = await db.scalars(
+            select(MaterialSlot).where(
+                MaterialSlot.material_system_id == system_id,
+                MaterialSlot.kind.not_in(["slot", "gate"]),
+                MaterialSlot.active.is_(True),
+            )
+        )
+        normalized_slots.extend(
+            PrinterBridgeSlotSnapshot(
+                provider_index=slot.provider_index,
+                kind=slot.kind,
+                label=slot.label,
+            )
+            for slot in retained_routes.all()
+            if all(item.provider_index != slot.provider_index for item in normalized_slots)
+        )
+    elif reported_routes:
+        route = reported_routes[0]
+        normalized_slots.append(
+            PrinterBridgeSlotSnapshot(
+                provider_index=route.provider_index,
+                kind=route.kind,
+                label=route.label,
+                present=payload.bypass.present if payload.bypass is not None else None,
+                active_feed=payload.bypass.selected if payload.bypass is not None else None,
+            )
+        )
+    bridge_result = await ingest_printer_bridge_snapshot(
+        db,
+        user.id,
+        device.id,
+        PrinterBridgeSnapshotRequest(
+            material_system_id=system_id,
+            provider="happy_hare",
+            transport="orca_plugin_lan",
+            source_instance_id=f"happy-hare-plugin-{device.logical_id}",
+            capabilities=[
+                "read",
+                "presence",
+                "spool_identity",
+                *(["tag_read"] if payload.tag_read_capable else []),
+            ],
+            observed_at=payload.snapshot_ts,
+            slots=normalized_slots,
+            slot_topology_complete=True,
+            inventory_key_digest=payload.inventory_key_digest,
+        ),
+        commit=False,
+    )
+    owns_topology = await db.scalar(
+        select(PhysicalPrinterConnector.topology_authority).where(
+            PhysicalPrinterConnector.id == bridge_result.connector_id
+        )
+    )
+    if not owns_topology:
+        await db.commit()
+        await db.refresh(device)
+        return device, 0, []
 
     # Desired assignment writers lock stable slots before touching the legacy
     # gate row.  Establish and lock the complete topology first so an HH
     # observation cannot deadlock with a concurrent user assignment while it
     # updates the observation fields on that same legacy row.
-    reported_routes = _hh_reported_routes(payload)
-    await ensure_material_topology(
-        db,
-        device,
-        gate_indices={item.gate for item in payload.gates},
-        exact_gate_count=payload.gate_count,
-        reported_routes=reported_routes,
-        preserve_existing_assignments=True,
-    )
     await db.flush()
     locked_indices = set(range(payload.gate_count))
     if reported_routes is not None:
@@ -644,76 +737,6 @@ async def handle_hh_snapshot(
         if preset_material and hh_material and preset_material != hh_material:
             mismatches.append(gate_index)
 
-    await ensure_material_topology(
-        db,
-        device,
-        gate_indices={state.gate_index for _, state in gate_state_updates} | set(state_by_gate),
-        exact_gate_count=payload.gate_count,
-        reported_routes=reported_routes,
-        preserve_existing_assignments=True,
-    )
-    normalized_slots = [
-        PrinterBridgeSlotSnapshot(
-            provider_index=item.gate,
-            kind="gate",
-            present=None if item.status == -1 else item.status in (1, 2),
-            active_feed=payload.selected_gate == item.gate and payload.filament_loaded
-            if payload.selected_gate is not None and payload.filament_loaded is not None
-            else None,
-            material=item.material or None,
-            color_hex=item.color_hex or None,
-            spool_id=payload.spool_ids[item.gate] if payload.spool_ids is not None else None,
-            spool_identity_known=payload.spool_ids is not None,
-            tag_uid=item.rfid_uid,
-            tag_technology="unknown" if item.rfid_uid is not None else None,
-        )
-        for item in payload.gates
-    ]
-    if not payload.gates:
-        normalized_slots = [
-            PrinterBridgeSlotSnapshot(
-                provider_index=index,
-                kind="gate",
-                present=False,
-            )
-            for index in range(payload.gate_count)
-        ]
-    if payload.bypass is not None:
-        normalized_slots.append(
-            PrinterBridgeSlotSnapshot(
-                provider_index=HAPPY_HARE_BYPASS_PROVIDER_INDEX,
-                kind="bypass",
-                present=payload.bypass.present,
-                active_feed=payload.bypass.selected,
-            )
-        )
-    await ingest_printer_bridge_snapshot(
-        db,
-        user.id,
-        device.id,
-        PrinterBridgeSnapshotRequest(
-            material_system_id=await db.scalar(
-                select(MaterialSystem.id).where(
-                    MaterialSystem.physical_printer_id == device.id,
-                    MaterialSystem.user_id == user.id,
-                    MaterialSystem.provider == "happy_hare",
-                )
-            ),
-            provider="happy_hare",
-            transport="orca_plugin_lan",
-            source_instance_id=f"happy-hare-plugin-{device.logical_id}",
-            capabilities=[
-                "read",
-                "presence",
-                "spool_identity",
-                *(["tag_read"] if payload.tag_read_capable else []),
-            ],
-            observed_at=payload.snapshot_ts,
-            slots=normalized_slots,
-            inventory_key_digest=payload.inventory_key_digest,
-        ),
-        commit=False,
-    )
     await db.commit()
     await db.refresh(device)
     return device, updated, mismatches

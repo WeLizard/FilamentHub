@@ -372,6 +372,8 @@ async def pair_printer_bridge(
     connector.source_instance_id = payload.source_instance_id
     connector.node_instance_id = payload.node_instance_id
     connector.capabilities = _safe_capabilities(payload.capabilities)
+    if "read" not in connector.capabilities:
+        connector.topology_authority = False
     connector.active = True
     await refresh_material_system_capabilities(db, connector.material_system_id)
     await db.commit()
@@ -623,6 +625,8 @@ async def record_printer_bridge_heartbeat(
     context.connector.active = True
     if payload.capabilities is not None:
         context.connector.capabilities = _safe_capabilities(payload.capabilities)
+        if "read" not in context.connector.capabilities:
+            context.connector.topology_authority = False
         await refresh_material_system_capabilities(db, payload.material_system_id)
     printer.last_seen_at = received_at
     printer.reports_feed = True
