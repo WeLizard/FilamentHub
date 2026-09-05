@@ -507,13 +507,27 @@ async def test_admin_deactivation_invalidates_tokens_after_reactivation(
         username="deactivation_target",
     )
     admin_access, _ = await _tokens(db_session, admin)
-    old_access, old_refresh_tokens = await _tokens(db_session, target)
+    old_access, old_refresh_tokens = await _tokens(db_session, target, refresh_families=2)
+
+    assert (await client.get("/api/v1/auth/me", headers=_bearer(old_access))).status_code == 200
 
     deactivated = await client.post(
         f"/api/v1/admin/users/{target.id}/deactivate",
         headers=_bearer(admin_access),
     )
     assert deactivated.status_code == 200, deactivated.text
+
+    blocked_access = await client.get("/api/v1/auth/me", headers=_bearer(old_access))
+    assert blocked_access.status_code == 403
+    assert blocked_access.json()["detail"]["code"] == "ERR_USER_INACTIVE"
+    for refresh_token in old_refresh_tokens:
+        blocked_refresh = await client.post(
+            "/api/v1/auth/refresh",
+            json={"refresh_token": refresh_token},
+        )
+        assert blocked_refresh.status_code == 403
+        assert blocked_refresh.json()["detail"]["code"] == "ERR_ACCOUNT_INACTIVE"
+
     reactivated = await client.post(
         f"/api/v1/admin/users/{target.id}/activate",
         headers=_bearer(admin_access),
@@ -521,12 +535,25 @@ async def test_admin_deactivation_invalidates_tokens_after_reactivation(
     assert reactivated.status_code == 200, reactivated.text
 
     assert (await client.get("/api/v1/auth/me", headers=_bearer(old_access))).status_code == 401
+    for refresh_token in old_refresh_tokens:
+        assert (
+            await client.post(
+                "/api/v1/auth/refresh",
+                json={"refresh_token": refresh_token},
+            )
+        ).status_code == 401
+
+    new_login = await client.post(
+        "/api/v1/auth/login",
+        json={"email": target.email, "password": OLD_PASSWORD},
+    )
+    assert new_login.status_code == 200, new_login.text
     assert (
-        await client.post(
-            "/api/v1/auth/refresh",
-            json={"refresh_token": old_refresh_tokens[0]},
+        await client.get(
+            "/api/v1/auth/me",
+            headers=_bearer(new_login.json()["access_token"]),
         )
-    ).status_code == 401
+    ).status_code == 200
 
 
 @pytest.mark.asyncio
