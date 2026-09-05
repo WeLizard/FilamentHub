@@ -8,6 +8,8 @@ export interface PendingPrinterSetup {
   targetId: number;
   probe: PrinterSetupResult | null;
   route?: PrinterSetupRoute;
+  /** Opaque local-shell selection; it contains no address or credential. */
+  connectionRef?: string;
 }
 
 const historyKey = 'fhPrinterSetup';
@@ -21,6 +23,7 @@ function parseIntent(value: string | null): PendingPrinterSetup | null {
       && /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(item.payload.request_id)
       && Number.isSafeInteger(item.targetId) && item.targetId >= 0
       && (item.route === undefined || ['manual', 'orca', 'edge', 'native'].includes(item.route))
+      && (item.connectionRef === undefined || typeof item.connectionRef === 'string')
       ? item : null;
   } catch { return null; }
 }

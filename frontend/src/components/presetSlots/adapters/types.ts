@@ -49,6 +49,8 @@ export interface AdapterViewContext {
   linkConfirmed: boolean;
   /** Start the adapter's local pairing once after a just-saved wizard step. */
   autoConnect?: boolean;
+  /** Opaque local-shell selection used to preselect a discovered device. */
+  connectionRef?: string;
   /** Notify the wizard when the first authenticated printer snapshot exists. */
   onConnectionObserved?: () => void;
 }

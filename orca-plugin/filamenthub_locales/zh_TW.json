@@ -87,5 +87,14 @@
   "syncCompleteTitle": "同步完成",
   "dropdownCurrent": "耗材下拉選單已更新。",
   "dropdownRestart": "請重啟 OrcaSlicer，以應用耗材下拉選單中的更改。",
-  "syncComplete": "同步完成：{summary}。{note}"
+  "syncComplete": "同步完成：{summary}。{note}",
+  "bambuSearchAgain": "重新搜尋",
+  "bambuSearching": "正在此網路中尋找印表機…",
+  "bambuChoosePrinter": "印表機",
+  "bambuFound": "選擇印表機並輸入其區域網路存取碼。連線後將讀取供料系統。",
+  "bambuNotFound": "此次搜尋未找到印表機。您可以重試或在下方輸入位址。現有印表機設定已保留。",
+  "bambuSearchIncomplete": "未能完成網路搜尋。您可以重試、使用已儲存的位址或手動輸入位址。",
+  "bambuManual": "手動輸入位址",
+  "bambuSetupTimeout": "尚未收到回應。印表機設定已保留。您可以關閉此視窗檢查連線，或重試。",
+  "bambuConnecting": "正在連線至印表機…"
 }

@@ -43,7 +43,7 @@ class ChangelogSectionTest(unittest.TestCase):
         bridge_notes = render_bridge_release_notes()
 
         self.assertIn("## FilamentHub for OrcaSlicer", orca_notes)
-        self.assertNotIn("OctoPrint", orca_notes)
+        self.assertNotIn("## FilamentHub Bridge for OctoPrint", orca_notes)
         self.assertIn("## FilamentHub Bridge for OctoPrint", bridge_notes)
         self.assertNotIn("## FilamentHub for OrcaSlicer", bridge_notes)
 

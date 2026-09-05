@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import {
+  configureBambuBridgeInPlugin,
   importPresetToPlugin,
   installPrinterBundleInPlugin,
   removePrinterBundleFromPlugin,
@@ -10,6 +11,7 @@ import {
   requestHappyHareAction,
   requestPluginProfileSync,
   requestPluginCapabilities,
+  requestPrinterSetup,
   requestInstalledPrinterBundles,
   subscribeToPluginCapabilities,
   subscribeToPluginNavigation,
@@ -416,6 +418,20 @@ describe('pluginBridge inbound messages', () => {
         origin: window.location.origin,
         source: parent as unknown as Window,
       }));
+      configureBambuBridgeInPlugin(12, 34, 'Workshop X1C', 'FH-ABCDE-12345', 'opaque-bambu-ref');
+      expect(postMessage.mock.calls.at(-1)?.[0]).toEqual({
+        source: PLUGIN_MESSAGE_SOURCE,
+        type: 'configure-bambu',
+        physicalPrinterId: 12,
+        materialSystemId: 34,
+        printerName: 'Workshop X1C',
+        pairingCode: 'FH-ABCDE-12345',
+        connectionRef: 'opaque-bambu-ref',
+      });
+      expect(postMessage.mock.calls.at(-1)?.[0]).not.toHaveProperty('host');
+      expect(postMessage.mock.calls.at(-1)?.[0]).not.toHaveProperty('accessCode');
+      expect(postMessage.mock.calls.at(-1)?.[0]).not.toHaveProperty('serial');
+
       const expectedDesiredAssignments = [{
         slot: 0,
         preset_id: 41,
@@ -467,6 +483,74 @@ describe('pluginBridge inbound messages', () => {
         configurable: true,
         value: originalParent,
       });
+      window.history.pushState({}, '', '/');
+    }
+  });
+
+  it('passes local credential copy and keeps a Moonraker probe open for user input', async () => {
+    const originalParent = window.parent;
+    const postMessage = vi.fn();
+    const parent = { postMessage };
+    Object.defineProperty(window, 'parent', { configurable: true, value: parent });
+    window.history.pushState({}, '', '/embed/profile');
+    const unsubscribe = subscribeToPluginCapabilities(() => undefined);
+    vi.useFakeTimers();
+
+    try {
+      window.dispatchEvent(new MessageEvent('message', {
+        data: {
+          source: PLUGIN_MESSAGE_SOURCE,
+          type: 'plugin-capabilities',
+          capabilities: ['printer-setup-v1'],
+        },
+        origin: window.location.origin,
+        source: parent as unknown as Window,
+      }));
+
+      const pending = requestPrinterSetup('probe', {
+        connectionRef: 'opaque-moonraker-ref',
+        copy: {
+          title: 'Connect Moonraker',
+          hint: 'Enter the missing API key',
+          address: 'Address',
+          apiKey: 'API key',
+          submit: 'Check',
+        },
+      });
+      const request = postMessage.mock.calls.at(-1)?.[0];
+      expect(request).toMatchObject({
+        type: 'printer-setup',
+        operation: 'probe',
+        connectionRef: 'opaque-moonraker-ref',
+        copy: {
+          title: 'Connect Moonraker',
+          hint: 'Enter the missing API key',
+          address: 'Address',
+          apiKey: 'API key',
+          submit: 'Check',
+        },
+      });
+
+      let settled = false;
+      void pending.then(() => { settled = true; }, () => { settled = true; });
+      await vi.advanceTimersByTimeAsync(599_999);
+      expect(settled).toBe(false);
+
+      window.dispatchEvent(new MessageEvent('message', {
+        data: {
+          source: PLUGIN_MESSAGE_SOURCE,
+          type: 'printer-setup-result',
+          requestId: request.requestId,
+          result: { ok: false, code: 'cancelled' },
+        },
+        origin: window.location.origin,
+        source: parent as unknown as Window,
+      }));
+      await expect(pending).resolves.toEqual({ ok: false, code: 'cancelled' });
+    } finally {
+      vi.useRealTimers();
+      unsubscribe();
+      Object.defineProperty(window, 'parent', { configurable: true, value: originalParent });
       window.history.pushState({}, '', '/');
     }
   });

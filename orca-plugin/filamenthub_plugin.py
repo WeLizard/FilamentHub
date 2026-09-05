@@ -76,6 +76,7 @@ import queue
 import random
 import re
 import secrets
+import select
 import shutil
 import socket
 import ssl
@@ -4000,7 +4001,8 @@ def bambu_host_candidates(observations, context, physical_printer_id):
         and item.get("physical_printer_id") == physical_printer_id
         and isinstance(item.get("connection_ref"), str)
     }
-    observations = [item for item in observations or [] if isinstance(item, dict)]
+    observations = [item for item in observations or [] if isinstance(item, dict)
+                    and (not item.get("host_type") or item.get("host_type") == "bambu")]
     selected = [
         item for item in observations
         if item.get("connection_ref") in bound_refs and _bambu_host_hint(item.get("print_host"))
@@ -4026,6 +4028,278 @@ def bambu_host_candidates(observations, context, physical_printer_id):
         if len(candidates) >= 16:
             break
     return candidates
+
+
+_DISCOVERY_SERVICES = {"_moonraker._tcp.local": "moonraker", "_octoprint._tcp.local": "octoprint"}
+_DISCOVERY_LIMIT = 64
+
+
+def _discovery_address(value):
+    try:
+        address = ipaddress.ip_address(value)
+        lan = ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "169.254.0.0/16")
+        if address.version == 4 and any(address in ipaddress.ip_network(net) for net in lan) and not (
+            address.is_multicast or address.is_unspecified or address.is_loopback
+        ):
+            return str(address)
+    except ValueError:
+        pass
+    return ""
+
+
+def _bambu_announcement(packet, sender):
+    """Advertisements are local hints, never authenticated device identity."""
+    if len(packet) > 8192 or not _discovery_address(sender):
+        return None
+    text = packet.decode("utf-8", errors="replace")
+    if not text.splitlines() or text.splitlines()[0].upper() not in {"NOTIFY * HTTP/1.1", "HTTP/1.1 200 OK"}:
+        return None
+    headers = {}
+    for line in text.splitlines()[1:]:
+        key, separator, value = line.partition(":")
+        if separator:
+            key = key.strip().lower()
+            if key in headers:
+                return None
+            headers[key] = value.strip()
+    if not (headers.get("devname.bambu.com") or "bambulab" in headers.get("nt", "").lower()
+            or "bambulab" in headers.get("st", "").lower()):
+        return None
+    marker = headers.get("nt", headers.get("st", "")).lower()
+    if marker and marker != "urn:bambulab-com:device:3dprinter:1":
+        return None
+    host = _bambu_host_hint(headers.get("location", sender))
+    # Never follow a Location advertised on behalf of another host.
+    if host != sender:
+        return None
+    serial = _normalized_bambu_serial(headers.get("usn", "").removeprefix("uuid:").split("::")[0])
+    name = headers.get("devname.bambu.com", "Bambu Lab")
+    if any(ord(ch) < 32 for ch in name):
+        return None
+    return {"provider": "bambu", "host": host, "serial": serial,
+            "label": name[:200], "source": "network"}
+
+
+def _dns_name(packet, offset):
+    labels, visited, end = [], set(), None
+    for _ in range(128):
+        if offset >= len(packet) or offset in visited:
+            raise ValueError("invalid DNS name")
+        visited.add(offset)
+        length = packet[offset]
+        if length & 0xC0 == 0xC0:
+            if offset + 1 >= len(packet):
+                raise ValueError("invalid DNS pointer")
+            end = end or offset + 2
+            offset = ((length & 63) << 8) | packet[offset + 1]
+            continue
+        if length > 63 or offset + length + 1 > len(packet):
+            raise ValueError("invalid DNS label")
+        offset += 1
+        if not length:
+            name = ".".join(labels)
+            if len(name) > 253:
+                raise ValueError("DNS name too long")
+            return name, end or offset
+        label = packet[offset:offset + length].decode("utf-8", errors="strict")
+        if any(ord(ch) < 32 for ch in label):
+            raise ValueError("invalid DNS text")
+        labels.append(label)
+        offset += length
+    raise ValueError("DNS compression limit")
+
+
+def _mdns_records(packet):
+    if not 12 <= len(packet) <= 9000:
+        return []
+    try:
+        _id, flags, questions, answers, authority, additional = struct.unpack("!6H", packet[:12])
+        if not flags & 0x8000 or flags & 0x000F or questions > 64 or answers + authority + additional > 256:
+            return []
+        offset, records = 12, []
+        for _ in range(questions):
+            _name, offset = _dns_name(packet, offset)
+            offset += 4
+        for _ in range(answers + authority + additional):
+            name, offset = _dns_name(packet, offset)
+            kind, klass, ttl, size = struct.unpack_from("!HHIH", packet, offset)
+            offset += 10
+            end = offset + size
+            if end > len(packet):
+                return []
+            value = None
+            if klass & 0x7FFF == 1 and ttl:
+                if kind == 12:
+                    value, consumed = _dns_name(packet, offset)
+                    if consumed > end:
+                        return []
+                elif kind == 33 and size >= 7:
+                    _priority, _weight, port = struct.unpack_from("!HHH", packet, offset)
+                    target, consumed = _dns_name(packet, offset + 6)
+                    if consumed > end:
+                        return []
+                    value = (target.lower(), port)
+                elif kind == 1 and size == 4:
+                    value = socket.inet_ntoa(packet[offset:end])
+                elif kind == 16:
+                    value, cursor = {}, offset
+                    while cursor < end:
+                        length = packet[cursor]
+                        cursor += 1
+                        if cursor + length > end:
+                            return []
+                        item = packet[cursor:cursor + length].decode("utf-8", errors="replace")
+                        key, separator, val = item.partition("=")
+                        if separator:
+                            value[key.lower()] = val
+                        cursor += length
+            if value is not None:
+                records.append((name.lower(), kind, value))
+            offset = end
+        return records
+    except (ValueError, UnicodeError, struct.error, OSError):
+        return []
+
+
+def _mdns_query(names):
+    questions = []
+    for name, kind in names:
+        labels = name.rstrip(".").split(".")
+        encoded = [label.encode("utf-8") for label in labels]
+        if not encoded or any(not label or len(label) > 63 for label in encoded):
+            continue
+        questions.append(b"".join(bytes([len(label)]) + label for label in encoded)
+                         + b"\0" + struct.pack("!HH", kind, 0x8001))
+    return struct.pack("!6H", 0, 0, len(questions), 0, 0, 0) + b"".join(questions)
+
+
+def _mdns_candidates(records):
+    services, targets, addresses, texts = {}, {}, {}, {}
+    for name, kind, value in records:
+        if kind == 12 and name in _DISCOVERY_SERVICES:
+            services[value.lower()] = _DISCOVERY_SERVICES[name]
+        elif kind == 33:
+            targets[name] = value
+        elif kind == 1 and _discovery_address(value):
+            addresses[name] = value
+        elif kind == 16:
+            texts[name] = value
+    candidates = []
+    for name, provider in services.items():
+        target, port = targets.get(name, ("", 0))
+        host = addresses.get(target)
+        if not host or not 0 < port <= 65535:
+            continue
+        txt = texts.get(name, {})
+        path = txt.get("route_prefix" if provider == "moonraker" else "path", "/") or "/"
+        if provider == "moonraker" and not path.startswith("/"):
+            path = "/" + path
+        if not path.startswith("/") or path.startswith("//") or any(ch in path for ch in "\\?#@") or any(ord(ch) < 32 for ch in path):
+            path = "/"
+        scheme = "http"
+        https_port = txt.get("https_port", "")
+        if provider == "moonraker" and https_port.isdigit() and 0 < int(https_port) <= 65535:
+            scheme, port = "https", int(https_port)
+        label = name.split("._", 1)[0][:200]
+        candidates.append({"provider": provider, "host": host, "hostname": target,
+                           "print_host": "%s://%s:%s%s" % (scheme, host, port, path),
+                           "label": label, "source": "network"})
+    return candidates[:_DISCOVERY_LIMIT]
+
+
+def discover_lan_printers(duration=4.0):
+    """One bounded local search; no subnet sweep, credentials or device commands."""
+    sockets, records, found = [], {}, {}
+    record_count = 0
+    complete = True
+    deadline = time.monotonic() + min(5.0, max(0.1, duration))
+    try:
+        ensure_worker_generation_active()
+        try:
+            with external_operation():
+                sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                sockets.append((sock, "bambu"))
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                sock.bind(("", 2021))
+                sock.setblocking(False)
+        except OSError:
+            complete = False
+            if sockets:
+                sockets.pop()[0].close()
+        try:
+            with external_operation():
+                interfaces = sorted({item[4][0] for item in socket.getaddrinfo(
+                    socket.gethostname(), None, socket.AF_INET, socket.SOCK_DGRAM,
+                ) if _discovery_address(item[4][0])})[:8]
+        except OSError:
+            interfaces = []
+        for interface in interfaces or ["0.0.0.0"]:
+            sock = None
+            try:
+                with external_operation():
+                    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                    sock.bind((interface, 0))
+                    sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 1)
+                    sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_IF, socket.inet_aton(interface))
+                    sock.setblocking(False)
+                    sock.sendto(_mdns_query([(name, 12) for name in _DISCOVERY_SERVICES]), ("224.0.0.251", 5353))
+                sockets.append((sock, "mdns"))
+            except OSError:
+                complete = False
+                if sock is not None:
+                    sock.close()
+        asked, packets = set(), 0
+        while sockets and time.monotonic() < deadline and packets < 512:
+            ensure_worker_generation_active()
+            ready, _, _ = select.select([item[0] for item in sockets], [], [], min(0.2, max(0, deadline - time.monotonic())))
+            for sock in ready:
+                packets += 1
+                try:
+                    with external_operation():
+                        packet, sender = sock.recvfrom(9001)
+                except BlockingIOError:
+                    continue
+                if not _discovery_address(sender[0]):
+                    continue
+                if next(kind for candidate, kind in sockets if candidate is sock) == "bambu":
+                    item = _bambu_announcement(packet, sender[0])
+                    if item and len(found) < _DISCOVERY_LIMIT:
+                        found[(item["provider"], item["serial"] or item["host"])] = item
+                else:
+                    if sender[1] != 5353:
+                        continue
+                    new_records = _mdns_records(packet)
+                    accepted = new_records[:max(0, 1024 - record_count)]
+                    records.setdefault((sock, sender[0]), []).extend(accepted)
+                    record_count += len(accepted)
+                    follow = []
+                    for name, kind, value in new_records:
+                        wanted = []
+                        if kind == 12 and name in _DISCOVERY_SERVICES:
+                            wanted = [(value, 33), (value, 16)]
+                        elif kind == 33 and any(name.endswith("." + service) for service in _DISCOVERY_SERVICES):
+                            wanted = [(value[0], 1)]
+                        for question in wanted:
+                            if (sock, question) not in asked and len(asked) < 64:
+                                asked.add((sock, question))
+                                follow.append(question)
+                    if follow:
+                        with external_operation():
+                            sock.sendto(_mdns_query(follow), ("224.0.0.251", 5353))
+        for batch in records.values():
+            for item in _mdns_candidates(batch):
+                if len(found) < _DISCOVERY_LIMIT:
+                    found[(item["provider"], item["print_host"])] = item
+        return list(found.values()), complete and packets < 512 and len(found) < _DISCOVERY_LIMIT and record_count < 1024
+    except OSError:
+        for batch in records.values():
+            for item in _mdns_candidates(batch):
+                if len(found) < _DISCOVERY_LIMIT:
+                    found[(item["provider"], item["print_host"])] = item
+        return list(found.values()), False
+    finally:
+        for sock, _kind in sockets:
+            sock.close()
 
 
 def observe_local_moonraker_connections(observations):
@@ -4176,18 +4450,21 @@ def verified_local_setup_connections(token):
     verified = []
     for connection in local_setup_connections(context):
         expected = connection.get("device_identity")
-        if expected:
-            identity = _observe_moonraker_identity(connection)
-            actual = _printer_evidence_token(
-                context["discovery_key"], "device", "moonraker_instance\0" + str(identity),
-            ) if identity else None
-            if actual != expected.get("token"):
-                continue
+        if not expected:
+            continue
+        identity = _observe_moonraker_identity(connection)
+        actual = _printer_evidence_token(
+            context["discovery_key"], "device", "moonraker_instance\0" + str(identity),
+        ) if identity else None
+        if actual != expected.get("token"):
+            continue
         verified.append(connection)
     return verified
 
 
 def save_local_setup_connection(context, connection, physical_printer_id, evidence):
+    if not evidence.get("device_identity"):
+        raise ValueError("identity_unavailable")
     with _LOCAL_SETUP_LOCK:
         path, config = _local_setup_config()
         items = [item for item in config["connections"] if not (
@@ -4216,6 +4493,8 @@ def probe_printer_setup(context, connection, origin):
         raise ValueError("printer_auth" if status in {401, 403} else "unreachable")
     snapshot = read_happy_hare_snapshot(connection) if "mmu" in objects else None
     identity = _observe_moonraker_identity(connection)
+    if origin == "local_manual" and not identity:
+        raise ValueError("identity_unavailable")
     evidence = {
         "source_instance_id": context["source_instance_id"],
         "connection_ref": connection["connection_ref"], "origin": origin,
@@ -4248,9 +4527,10 @@ def _moonraker_base_url(value):
         or parsed.password is not None
         or parsed.query
         or parsed.fragment
-        or parsed.path not in {"", "/"}
+        or not re.fullmatch(r"(?:/[A-Za-z0-9._~-]+)*/?", parsed.path)
+        or any(part in {".", ".."} for part in parsed.path.split("/"))
     ):
-        raise ValueError("Moonraker address is not a plain HTTP(S) origin")
+        raise ValueError("Moonraker address or route prefix is invalid")
     try:
         port = parsed.port
     except ValueError as exc:
@@ -4258,10 +4538,11 @@ def _moonraker_base_url(value):
     host = parsed.hostname
     if ":" in host:
         host = "[" + host + "]"
-    return "%s://%s%s" % (
+    return "%s://%s%s%s" % (
         parsed.scheme,
         host,
         (":" + str(port)) if port is not None else "",
+        parsed.path.rstrip("/"),
     )
 
 
@@ -6418,7 +6699,9 @@ var oauthDeadline = 0;
 var catalogReady = false;
 var catalogReadyTimer = null;
 var pendingBambuSetup = null;
+var activeBambuResult = null;
 var bambuSetupTimer = null;
+var bambuAttemptTimer = null;
 var UI_COPY = __UI_COPY__;
 var hostLanguage = '__HOST_UI_LANGUAGE__';
 function normalizeUiLocale(value) {
@@ -6552,7 +6835,7 @@ function sendPluginCapabilities() {
         capabilities: ['printer-bundle-install', 'printer-bundle-result-v1',
                        'printer-bundle-toggle-v1', 'printer-recovery-v1',
                        'bambu-lan-bridge', 'profile-sync', 'profile-sync-scopes-v1',
-                       'bambu-material-write', 'happy-hare-moonraker', 'printer-setup-v1', 'open-external'] },
+                       'bambu-material-write', 'happy-hare-moonraker', 'printer-setup-v1', 'printer-discovery-v1', 'open-external'] },
       SITE_ORIGIN);
   } catch (e) { /* iframe not ready */ }
 }
@@ -6567,7 +6850,7 @@ window.addEventListener('message', function (event) {
   if (!data || data.source !== 'filamenthub-plugin') return;
   // Only the local shell collects a LAN address/key; the remote iframe cannot
   // impersonate a submission of its credential form.
-  if (data.type === 'printer-setup-local') return;
+  if (['printer-setup-local', 'prepare-bambu-local', 'configure-bambu-local'].indexOf(data.type) !== -1) return;
   markCatalogReady();
   if (data.type === 'plugin-capabilities-request') {
     sendPluginCapabilities();
@@ -6606,24 +6889,7 @@ window.addEventListener('message', function (event) {
     return;
   }
   if (data.type === 'configure-bambu') {
-    pendingBambuSetup = data;
-    if (bambuSetupTimer) clearTimeout(bambuSetupTimer);
-    try {
-      orca.postMessage({ source:'filamenthub-plugin', type:'prepare-bambu-local',
-        physicalPrinterId:data.physicalPrinterId, materialSystemId:data.materialSystemId,
-        printerName:data.printerName || '', pairingCode:data.pairingCode || '' });
-      // Older plugin hosts cannot push the candidate response. Preserve the
-      // explicit manual form as a compatibility fallback.
-      bambuSetupTimer = setTimeout(function () {
-        if (!pendingBambuSetup) return;
-        var fallback = pendingBambuSetup;
-        pendingBambuSetup = null;
-        showBambuOverlay(fallback);
-      }, 2500);
-    } catch (e) {
-      pendingBambuSetup = null;
-      showBambuOverlay(data);
-    }
+    prepareBambuOverlay(data);
     return;
   }
   if (data.type === 'printer-setup-manual') {
@@ -6743,6 +7009,10 @@ function showOAuthOverlay(url) {
 }
 
 function hideBambuOverlay() {
+  activeBambuResult = null;
+  pendingBambuSetup = null;
+  if (bambuSetupTimer) { clearTimeout(bambuSetupTimer); bambuSetupTimer = null; }
+  if (bambuAttemptTimer) { clearTimeout(bambuAttemptTimer); bambuAttemptTimer = null; }
   var overlay = document.getElementById('bambu-overlay');
   if (overlay) overlay.remove();
 }
@@ -6779,11 +7049,14 @@ function showPrinterSetupOverlay(request) {
     return field;
   }
   var host = input(copy.address || uiCopy.bambuAddress, 'text', true);
+  host.value = request.host || '';
+  if (request.connectionRef) host.readOnly = true;
   var key = input(copy.apiKey || 'API key', 'password', false);
   var cancel = document.createElement('button');
   cancel.type = 'button';
   cancel.textContent = uiCopy.cancel;
   cancel.onclick = function () {
+    stopSyncPolling();
     key.value = '';
     overlay.remove();
     frame.contentWindow.postMessage({ source:'filamenthub-plugin', type:'printer-setup-result',
@@ -6798,14 +7071,49 @@ function showPrinterSetupOverlay(request) {
   form.onsubmit = function (event) {
     event.preventDefault();
     orca.postMessage({source:'filamenthub-plugin', type:'printer-setup-local', operation:'probe',
-      requestId:request.requestId, host:host.value.trim(), apiKey:key.value});
+      requestId:request.requestId, host:host.value.trim(), apiKey:key.value, connectionRef:request.connectionRef || ''});
     key.value = '';
     overlay.remove();
     startSyncPolling(request.requestId);
   };
   overlay.appendChild(form);
   document.body.appendChild(overlay);
-  host.focus();
+  (request.connectionRef ? key : host).focus();
+}
+function prepareBambuOverlay(binding) {
+  binding = Object.assign({}, binding, { requestId: 'bambu-search-' + Date.now() + '-' + Math.random().toString(16).slice(2) });
+  showBambuOverlay(Object.assign({}, binding, { searching: true }));
+  pendingBambuSetup = binding;
+  try {
+    orca.postMessage({ source:'filamenthub-plugin', type:'prepare-bambu-local',
+      requestId:binding.requestId,
+      refresh:binding.refresh === true,
+      physicalPrinterId:binding.physicalPrinterId, materialSystemId:binding.materialSystemId,
+      connectionRef:binding.connectionRef || '', pairingCode:binding.pairingCode || '' });
+    startSyncPolling(binding.requestId);
+  } catch (e) {
+    showBambuOverlay(Object.assign({}, binding, { discoveryComplete: false }));
+    return;
+  }
+  bambuSetupTimer = setTimeout(function () {
+    if (pendingBambuSetup === binding) showBambuOverlay(Object.assign({}, binding, { discoveryComplete: false }));
+  }, 30000);
+}
+function handleLocalPrinterSetup(data) {
+  var type = data.type || data.resultType;
+  if (type === 'printer-setup-auth-required') { showPrinterSetupOverlay(data); return true; }
+  if (type === 'bambu-setup-result') {
+    if (activeBambuResult) activeBambuResult(data);
+    return true;
+  }
+  if (type !== 'bambu-setup-candidates') return false;
+  var pending = pendingBambuSetup;
+  if (pending && pending.requestId === data.requestId && Number(pending.physicalPrinterId) === Number(data.physicalPrinterId) &&
+      Number(pending.materialSystemId) === Number(data.materialSystemId) && pending.pairingCode === data.pairingCode) {
+    showBambuOverlay(Object.assign({}, pending, { candidates: data.candidates || [], discoveryComplete: data.discoveryComplete,
+      hasSavedConnection: data.hasSavedConnection === true }));
+  }
+  return true;
 }
 function showBambuOverlay(binding) {
   if (bambuSetupTimer) { clearTimeout(bambuSetupTimer); bambuSetupTimer = null; }
@@ -6822,10 +7130,15 @@ function showBambuOverlay(binding) {
     'align-items:center;justify-content:center;background:rgba(0,0,0,0.72);';
   var box = document.createElement('form');
   box.style.cssText = 'width:min(520px,calc(100% - 32px));padding:22px;box-sizing:border-box;' +
+    'max-height:calc(100dvh - 32px);overflow-y:auto;' +
     'border-radius:12px;background:var(--orca-bg,#1e1e2e);color:var(--orca-fg,#e0e0e0);' +
     'border:1px solid var(--orca-border,#3c3c4c);font-size:13px;';
   var title = document.createElement('div');
   title.textContent = uiCopy.bambuTitle + (binding.printerName ? ' · ' + binding.printerName : '');
+  title.id = 'bambu-setup-title';
+  box.setAttribute('role', 'dialog');
+  box.setAttribute('aria-modal', 'true');
+  box.setAttribute('aria-labelledby', title.id);
   title.style.cssText = 'font-weight:650;font-size:16px;margin-bottom:7px;';
   var hint = document.createElement('div');
   hint.textContent = uiCopy.bambuHint;
@@ -6851,6 +7164,14 @@ function showBambuOverlay(binding) {
   }
   box.appendChild(title);
   box.appendChild(hint);
+  if (binding.searching) {
+    hint.textContent = uiCopy.bambuSearching;
+    var stop = document.createElement('button');
+    stop.type = 'button'; stop.textContent = uiCopy.cancel;
+    stop.addEventListener('click', hideBambuOverlay);
+    box.appendChild(stop); overlay.appendChild(box); document.body.appendChild(overlay);
+    return;
+  }
   var candidates = Array.isArray(binding.candidates) ? binding.candidates.filter(function (item) {
     return item && typeof item.host === 'string' && item.host &&
       typeof item.label === 'string';
@@ -6860,15 +7181,15 @@ function showBambuOverlay(binding) {
     var candidateWrap = document.createElement('label');
     candidateWrap.style.cssText = 'display:block;margin-top:11px;color:var(--orca-muted,#a0a0a0);';
     var candidateLabel = document.createElement('span');
-    candidateLabel.textContent = uiCopy.bambuAddress;
+    candidateLabel.textContent = uiCopy.bambuChoosePrinter;
     candidateLabel.style.cssText = 'display:block;margin-bottom:5px;';
     candidateSelect = document.createElement('select');
     candidateSelect.style.cssText = 'width:100%;box-sizing:border-box;padding:9px 10px;border-radius:7px;' +
       'background:var(--orca-bg,#1e1e2e);color:inherit;' +
       'border:1px solid var(--orca-border,#3c3c4c);font:inherit;';
-    candidates.forEach(function (item) {
+    candidates.forEach(function (item, index) {
       var option = document.createElement('option');
-      option.value = item.host;
+      option.value = String(index);
       option.textContent = item.label + ' · ' + item.host;
       candidateSelect.appendChild(option);
     });
@@ -6877,13 +7198,14 @@ function showBambuOverlay(binding) {
     box.appendChild(candidateWrap);
   }
   var host = field(uiCopy.bambuAddress, 'text', uiCopy.bambuAddressPlaceholder, true);
+  hint.textContent = candidates.some(function (item) { return item.source === 'network'; })
+    ? uiCopy.bambuFound : binding.discoveryComplete === false ? uiCopy.bambuSearchIncomplete : uiCopy.bambuNotFound;
   if (candidateSelect) {
-    host.value = candidateSelect.value;
-    candidateSelect.addEventListener('change', function () { host.value = candidateSelect.value; });
+    host.value = candidates[0].host;
     var hostDetails = document.createElement('details');
     hostDetails.style.marginTop = '12px';
     var hostSummary = document.createElement('summary');
-    hostSummary.textContent = uiCopy.bambuAddress;
+    hostSummary.textContent = uiCopy.bambuManual;
     hostSummary.style.cursor = 'pointer';
     hostDetails.appendChild(hostSummary);
     hostDetails.appendChild(host.parentElement);
@@ -6891,6 +7213,14 @@ function showBambuOverlay(binding) {
   }
   var code = field(uiCopy.bambuCode, 'password', '', true);
   var serial = field(uiCopy.bambuSerial, 'text', uiCopy.bambuSerialHint, false);
+  if (candidateSelect) {
+    serial.value = candidates[0].serial || '';
+    candidateSelect.addEventListener('change', function () {
+      var item = candidates[Number(candidateSelect.value)];
+      host.value = item.host; serial.value = item.serial || ''; code.value = '';
+    });
+  }
+  host.addEventListener('input', function () { serial.value = ''; });
   var serialDetails = document.createElement('details');
   serialDetails.style.marginTop = '12px';
   var serialSummary = document.createElement('summary');
@@ -6928,26 +7258,44 @@ function showBambuOverlay(binding) {
   var cancel = button(uiCopy.cancel, false);
   cancel.addEventListener('click', hideBambuOverlay);
   var save = button(uiCopy.bambuSave, true);
+  var refresh = button(uiCopy.bambuSearchAgain, false);
+  refresh.addEventListener('click', function () { prepareBambuOverlay(Object.assign({}, binding, { refresh:true })); });
   save.type = 'submit';
-  row.appendChild(remove);
+  if (binding.hasSavedConnection) row.appendChild(remove);
+  row.appendChild(refresh);
   row.appendChild(cancel);
   row.appendChild(save);
   box.appendChild(row);
+  var setupRequestId = '';
+  activeBambuResult = function (data) {
+    if (!setupRequestId || data.requestId !== setupRequestId) return;
+    if (bambuAttemptTimer) { clearTimeout(bambuAttemptTimer); bambuAttemptTimer = null; }
+    if (data.ok) { hideBambuOverlay(); return; }
+    save.disabled = false; cancel.disabled = false; refresh.disabled = false; remove.disabled = false;
+    hint.textContent = uiCopy[data.code] || uiCopy.bambuInvalid;
+    code.focus();
+  };
   box.addEventListener('submit', function (event) {
     event.preventDefault();
     if (!host.value.trim() || !code.value.trim()) return;
+    setupRequestId = 'bambu-setup-' + Date.now() + '-' + Math.random().toString(16).slice(2);
+    save.disabled = true; cancel.disabled = true; refresh.disabled = true; remove.disabled = true;
+    hint.textContent = uiCopy.bambuConnecting;
+    bambuAttemptTimer = setTimeout(function () {
+      if (activeBambuResult) activeBambuResult({ requestId:setupRequestId, ok:false, code:'bambuSetupTimeout' });
+    }, 120000);
     try {
       orca.postMessage({ source:'filamenthub-plugin', type:'configure-bambu-local',
+        requestId:setupRequestId,
         physicalPrinterId:printerId, materialSystemId:systemId,
         host:host.value.trim(), accessCode:code.value.trim(), serial:serial.value.trim(),
         pairingCode:pairingCode });
-      startSyncPolling();
-    } catch (e) {}
+      startSyncPolling(setupRequestId, 120000);
+    } catch (e) { activeBambuResult({ requestId:setupRequestId, ok:false, code:'bambuInvalid' }); }
     code.value = '';
-    hideBambuOverlay();
   });
   overlay.addEventListener('click', function (event) {
-    if (event.target === overlay) hideBambuOverlay();
+    if (event.target === overlay && !save.disabled) hideBambuOverlay();
   });
   overlay.appendChild(box);
   document.body.appendChild(overlay);
@@ -6985,11 +7333,11 @@ var syncExpectedOperationId = '';
 function stopSyncPolling() {
   if (syncPollTimer) { clearTimeout(syncPollTimer); syncPollTimer = null; }
 }
-function startSyncPolling(operationId) {
+function startSyncPolling(operationId, timeoutMs) {
   if (hostPush) return;
   stopSyncPolling();
   syncExpectedOperationId = operationId || '';
-  syncDeadline = Date.now() + 30 * 1000;
+  syncDeadline = Date.now() + (timeoutMs || 30000);
   pollSyncOnce();
 }
 function pollSyncOnce() {
@@ -6997,6 +7345,11 @@ function pollSyncOnce() {
   fetch(SYNC_STATUS_PATH, { cache: 'no-store' })
     .then(function (r) { return r.json(); })
     .then(function (st) {
+      if (syncExpectedOperationId && (st.operationId || st.requestId || '') !== syncExpectedOperationId) {
+        syncPollTimer = setTimeout(pollSyncOnce, 500);
+        return;
+      }
+      if (handleLocalPrinterSetup(st)) { stopSyncPolling(); return; }
       if (st.text || st.resultType === 'printer-bundle-status-result' || st.resultType === 'printer-setup-result') {
         var resultId = st.operationId || st.requestId || '';
         if (syncExpectedOperationId && resultId !== syncExpectedOperationId) {
@@ -7160,6 +7513,7 @@ try {
   orca.onMessage(function (data) {
     if (!data || data.source !== 'filamenthub-host') return;
     hostPush = true;
+    if (handleLocalPrinterSetup(data)) return;
     if (data.type === 'transport') return;
     if (data.type === 'sync-result') {
       stopSyncPolling();
@@ -7219,16 +7573,6 @@ try {
             requestId: data.requestId || '', result: data.result || {} },
           SITE_ORIGIN);
       } catch (e) { /* iframe not ready */ }
-    } else if (data.type === 'bambu-setup-candidates') {
-      if (pendingBambuSetup) {
-        var pending = pendingBambuSetup;
-        if (Number(pending.physicalPrinterId) === Number(data.physicalPrinterId) &&
-            Number(pending.materialSystemId) === Number(data.materialSystemId) &&
-            pending.pairingCode === data.pairingCode) {
-          pending.candidates = Array.isArray(data.candidates) ? data.candidates : [];
-          showBambuOverlay(pending);
-        }
-      }
     } else if (data.type === 'diagnostics') {
       copyDiagnostics(data.text || '');
     }
@@ -9107,6 +9451,58 @@ class FilamentHubCatalog(
             result=result,
         )
 
+    def _setup_discovery(self, context, observations=(), refresh=False):
+        cached = getattr(self, "_printer_discovery", {})
+        now = time.monotonic()
+        same_account = cached.get("account_scope") == context["account_scope"]
+        if same_account and now < cached.get("expires", 0) and (
+            not refresh or now - cached.get("scanned", 0) < 5
+        ):
+            return cached
+        network, complete = discover_lan_printers()
+        known_bambu = [item for item in load_bambu_config()["printers"]
+                       if item.get("device_identity") and item["device_identity"] ==
+                       _bambu_device_identity(context["discovery_key"], item.get("serial"))]
+        bound = {item["connection_ref"]: item for item in context["bindings"]
+                 if item.get("status") == "bound"}
+        items = {}
+        for candidate in network:
+            item = dict(candidate)
+            identity = item.get("serial") or item.get("print_host") or item["host"]
+            ref = "lan-" + _printer_evidence_token(context["discovery_key"], "discovery", item["provider"] + "\0" + identity)
+            item.update(connection_ref=ref, account_scope=context["account_scope"])
+            item["physical_printer_id"] = (bound.get(ref) or {}).get("physical_printer_id")
+            if item["provider"] == "bambu":
+                matches = [known for known in known_bambu if _normalized_bambu_serial(known.get("serial")) == item.get("serial")]
+                if len(matches) == 1:
+                    item["physical_printer_id"] = matches[0]["physical_printer_id"]
+            items[ref] = item
+        # Saved access remains useful while the device is quiet. Never call it found.
+        for known in known_bambu:
+            if any(item.get("physical_printer_id") == known["physical_printer_id"] for item in items.values()):
+                continue
+            ref = "lan-" + _printer_evidence_token(context["discovery_key"], "discovery", "bambu\0" + known["serial"])
+            items[ref] = {"provider": "bambu", "connection_ref": ref, "host": known["host"],
+                          "serial": known["serial"], "label": "Bambu Lab", "source": "saved",
+                          "physical_printer_id": known["physical_printer_id"], "account_scope": context["account_scope"]}
+        for observation in observations:
+            model = str(observation.get("printer_model") or "")
+            if not model.lower().startswith("bambu") and observation.get("host_type") != "bambu":
+                continue
+            host = _bambu_host_hint(observation.get("print_host"))
+            if not host or any(item.get("host") == host for item in items.values()):
+                continue
+            ref = observation.get("connection_ref") or "lan-" + _printer_evidence_token(context["discovery_key"], "discovery", "bambu\0" + host)
+            items[ref] = {"provider": "bambu", "connection_ref": ref, "host": host,
+                          "label": str(observation.get("preset_name") or model or "Bambu Lab")[:200],
+                          "printer_model": model[:200], "source": "profile",
+                          "physical_printer_id": (bound.get(ref) or {}).get("physical_printer_id"),
+                          "account_scope": context["account_scope"]}
+        cached = {"account_scope": context["account_scope"], "scanned": now,
+                  "expires": now + 300, "items": list(items.values())[:_DISCOVERY_LIMIT], "complete": complete}
+        self._printer_discovery = cached
+        return cached
+
     def _do_prepare_bambu(self, binding, observations, token):
         context = {}
         if token:
@@ -9116,17 +9512,37 @@ class FilamentHubCatalog(
                 # The selected Orca profile is still a useful local-only hint
                 # when an old account token cannot resolve the exact binding.
                 context = {}
-        self._deliver(
+        candidates = []
+        if context:
+            discovery = self._setup_discovery(context, observations, refresh=binding.get("refresh") is True)
+            candidates = [dict(item) for item in discovery["items"] if item["provider"] == "bambu"
+                          and item.get("physical_printer_id") in {None, binding["physicalPrinterId"]}]
+            selected_ref = binding.get("connectionRef")
+            candidates.sort(key=lambda item: (item["connection_ref"] != selected_ref,
+                            item.get("physical_printer_id") != binding["physicalPrinterId"], item["source"] != "network"))
+        seen = {item["host"].lower() for item in candidates}
+        candidates.extend(dict(item, source="profile") for item in bambu_host_candidates(
+            observations, context, binding["physicalPrinterId"],
+        ) if item["host"].lower() not in seen)
+        # Only the native shell receives addresses/serials. The web gets opaque refs.
+        self._deliver_native_setup(
             "bambu-setup-candidates",
+            requestId=binding.get("requestId", ""),
             physicalPrinterId=binding["physicalPrinterId"],
             materialSystemId=binding["materialSystemId"],
             pairingCode=binding["pairingCode"],
-            candidates=bambu_host_candidates(
-                observations,
-                context,
-                binding["physicalPrinterId"],
-            ),
+            candidates=[{key: item.get(key, "") for key in ("host", "label", "serial", "source", "connection_ref")}
+                        for item in candidates[:_DISCOVERY_LIMIT]],
+            discoveryComplete=bool(context) and discovery["complete"],
+            hasSavedConnection=bool(context) and any(
+                item.get("physical_printer_id") == binding["physicalPrinterId"]
+                and item.get("device_identity") == _bambu_device_identity(context["discovery_key"], item.get("serial"))
+                for item in load_bambu_config()["printers"]),
         )
+
+    def _deliver_native_setup(self, message_type, **payload):
+        if not self._deliver(message_type, **payload):
+            SHELL_SERVER.set_sync_result(dict(payload, resultType=message_type))
 
     def _do_check_slices(self, wanted, hook):
         alive = [key for key in wanted if slice_path_for_key(key)]
@@ -9141,7 +9557,14 @@ class FilamentHubCatalog(
         access_code,
         serial,
         pairing_code,
+        request_id="",
     ):
+        def finish(key, status):
+            if request_id:
+                self._deliver_native_setup("bambu-setup-result", requestId=request_id, ok=status == "success", code=key)
+            else:
+                self._deliver_notice(ui_text(key), status)
+
         bridge_token = ""
         previous_local = None
         try:
@@ -9171,7 +9594,7 @@ class FilamentHubCatalog(
             # durable compensation slot before consuming the one-time code so
             # a later network failure can never evict an older pending token.
             if not can_queue_fresh_bambu_revoke():
-                self._deliver_notice(ui_text("bambuPairingFailed"), "error")
+                finish("bambuPairingFailed", "error")
                 return
             pair_status, pair_body = http_post_json(
                 "/printer-bridge/pair",
@@ -9186,12 +9609,12 @@ class FilamentHubCatalog(
                 },
             )
             if pair_status != 200:
-                self._deliver_notice(ui_text("bambuPairingFailed"), "error")
+                finish("bambuPairingFailed", "error")
                 return
             paired = json.loads(pair_body.decode("utf-8"))
             bridge_token = paired.get("bridge_token") if isinstance(paired, dict) else ""
             if not isinstance(bridge_token, str) or not bridge_token.startswith("fhpb_"):
-                self._deliver_notice(ui_text("bambuPairingFailed"), "error")
+                finish("bambuPairingFailed", "error")
                 return
             if (paired.get("physical_printer_id") != physical_printer_id
                     or paired.get("material_system_id") != material_system_id):
@@ -9199,7 +9622,7 @@ class FilamentHubCatalog(
                 # removing a previous local connection for this printer.
                 rejected_token, bridge_token = bridge_token, ""
                 revoke_fresh_bridge_token(rejected_token)
-                self._deliver_notice(ui_text("bambuPairingFailed"), "error")
+                finish("bambuPairingFailed", "error")
                 return
             device_identity = _bambu_device_identity(
                 paired.get("printer_discovery_key"),
@@ -9237,7 +9660,7 @@ class FilamentHubCatalog(
                 if snapshot_status == 409:
                     revoke_fresh_bridge_token(bridge_token)
                 remove_bambu_bridge(physical_printer_id)
-                self._deliver_notice(ui_text("bambuPairingFailed"), "error")
+                finish("bambuPairingFailed", "error")
                 return
             if snapshot_status != 200:
                 # The durable local binding is valid and the background
@@ -9265,10 +9688,10 @@ class FilamentHubCatalog(
                         bridge_token,
                         previous_local,
                     )
-            self._deliver_notice(ui_text("bambuInvalid"), "error")
+            finish("bambuInvalid", "error")
             return
         wake_bambu_bridge_runtime()
-        self._deliver_notice(ui_text("bambuSaved"), "success")
+        finish("bambuSaved", "success")
 
     def _do_remove_bambu(self, physical_printer_id):
         local = load_bambu_config()
@@ -9645,7 +10068,7 @@ class FilamentHubCatalog(
             **final_common,
         )
 
-    def _do_printer_setup(self, msg, token, local_connections):
+    def _do_printer_setup(self, msg, token, local_connections, observations=()):
         request_id = msg["requestId"]
 
         def finish(**result):
@@ -9656,19 +10079,41 @@ class FilamentHubCatalog(
 
         try:
             context = printer_setup_context(token)
-            local = list(local_connections) + local_setup_connections(context)
+            local = list({item["connection_ref"]: item for item in
+                          list(local_connections) + local_setup_connections(context)}.values())
             operation = msg.get("operation")
+            discovery = None
+            if operation == "list":
+                discovery = self._setup_discovery(context, observations, refresh=True)
+            else:
+                cached = getattr(self, "_printer_discovery", {})
+                if cached.get("account_scope") == context["account_scope"] and cached.get("expires", 0) > time.monotonic():
+                    discovery = cached
+            if discovery:
+                endpoints = {_connection_endpoint_token(context["discovery_key"], item.get("print_host"), "moonraker")
+                             for item in local}
+                for item in discovery["items"]:
+                    if item["provider"] == "moonraker" and _connection_endpoint_token(
+                        context["discovery_key"], item.get("print_host"), "moonraker",
+                    ) not in endpoints:
+                        local.append(item)
             if operation == "list":
                 names = msg.get("labels") or {}
                 bound = {item["connection_ref"]: item for item in context["bindings"]
                          if item.get("status") == "bound"}
                 detached = {item["connection_ref"] for item in context["bindings"]
                             if item.get("status") == "detached"}
-                finish(ok=True, candidates=[{
+                candidates = [{
                     "connectionRef": item["connection_ref"],
                     "label": str(item.get("label") or names.get(item["connection_ref"]) or "Moonraker")[:200],
                     "physicalPrinterId": (bound.get(item["connection_ref"]) or {}).get("physical_printer_id"),
-                } for item in local if item["connection_ref"] not in detached])
+                    "provider": "moonraker", "source": item.get("source") or ("saved" if item.get("account_scope") else "profile"),
+                } for item in local if item["connection_ref"] not in detached]
+                candidates.extend({"connectionRef": item["connection_ref"], "label": item["label"],
+                    "physicalPrinterId": item.get("physical_printer_id"), "provider": item["provider"],
+                    "source": item["source"], "printerModel": item.get("printer_model", ""),
+                } for item in discovery["items"] if item["provider"] != "moonraker" and item["connection_ref"] not in detached)
+                finish(ok=True, candidates=candidates[:256], discoveryComplete=discovery["complete"])
                 return
             pending = {
                 key: value for key, value in getattr(self, "_printer_setup_pending", {}).items()
@@ -9684,6 +10129,12 @@ class FilamentHubCatalog(
                     # A repeat of the same locally-entered endpoint reuses its saved ref.
                     found = [item for item in local_setup_connections(context)
                              if _moonraker_base_url(item["print_host"]) == host]
+                    requested_ref = msg.get("connectionRef")
+                    if requested_ref:
+                        found = [item for item in local if item["connection_ref"] == requested_ref
+                                 and _moonraker_base_url(item["print_host"]) == host]
+                        if len(found) != 1:
+                            raise ValueError("connection_not_found")
                     connection = {
                         "connection_ref": found[0]["connection_ref"] if found else "local-" + uuid.uuid4().hex,
                         "print_host": host, "api_key": api_key, "label": "Moonraker",
@@ -9695,7 +10146,16 @@ class FilamentHubCatalog(
                         raise ValueError("connection_not_found")
                     connection = matches[0]
                     origin = "local_manual" if connection.get("account_scope") else "orca_profile"
-                evidence, snapshot = probe_printer_setup(context, connection, origin)
+                try:
+                    evidence, snapshot = probe_printer_setup(context, connection, origin)
+                except ValueError as exc:
+                    if str(exc) == "printer_auth" and msg.get("type") != "printer-setup-local":
+                        if discovery:
+                            discovery["expires"] = time.monotonic() + 600
+                        self._deliver_native_setup("printer-setup-auth-required", requestId=request_id,
+                            connectionRef=connection["connection_ref"], host=connection["print_host"], copy=msg.get("copy") or {})
+                        return
+                    raise
                 if len(pending) >= 16:
                     pending.pop(next(iter(pending)))
                 probe_id = uuid.uuid4().hex
@@ -9746,7 +10206,7 @@ class FilamentHubCatalog(
             code = str(exc)
             finish(ok=False, code=code if code in {
                 "auth", "setup_context", "printer_auth", "unreachable", "expired",
-                "connection_not_found", "identity_changed", "snapshot_failed",
+                "connection_not_found", "identity_changed", "identity_unavailable", "snapshot_failed",
             } else "setup_failed")
 
     def on_message(self, msg):
@@ -9772,7 +10232,7 @@ class FilamentHubCatalog(
             msg = dict(msg)
             msg["labels"] = {item.get("connection_ref"): item.get("preset_name") for item in observations}
             token = (load_saved_auth() or {}).get("accessToken") or ""
-            BACKGROUND_WORKER.submit(self._do_printer_setup, msg, token, local)
+            BACKGROUND_WORKER.submit(self._do_printer_setup, msg, token, local, observations)
         elif msg_type == "read-diagnostics":
             BACKGROUND_WORKER.submit(
                 lambda: self._deliver("diagnostics", text=read_sync_log())
@@ -9933,6 +10393,9 @@ class FilamentHubCatalog(
                     "physicalPrinterId": physical_printer_id,
                     "materialSystemId": material_system_id,
                     "pairingCode": pairing_code,
+                    "connectionRef": str(msg.get("connectionRef") or "")[:120],
+                    "requestId": str(msg.get("requestId") or "")[:120],
+                    "refresh": msg.get("refresh") is True,
                 },
                 observations,
                 token,
@@ -9962,6 +10425,7 @@ class FilamentHubCatalog(
                 access_code,
                 serial,
                 pairing_code,
+                str(msg.get("requestId") or "")[:120],
             )
         elif msg_type == "remove-bambu-local":
             physical_printer_id = msg.get("physicalPrinterId")

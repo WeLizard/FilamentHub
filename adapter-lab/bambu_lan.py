@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import copy
+import ipaddress
 import json
 import os
+import socket
 import socketserver
 import ssl
 import struct
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 
@@ -17,6 +20,8 @@ SERIAL = os.environ.get("BAMBU_SERIAL", "FH-BAMBU-LAB")
 CERT_FILE = "/run/adapter-lab/bambu.crt"
 KEY_FILE = "/run/adapter-lab/bambu.key"
 MAX_PACKET_BYTES = 1024 * 1024
+DISCOVERY_PORT = 2021
+DISCOVERY_INTERVAL_SECONDS = 0.5
 
 _state_lock = threading.Lock()
 _report = {
@@ -102,6 +107,63 @@ _report = {
 def snapshot() -> dict:
     with _state_lock:
         return copy.deepcopy(_report)
+
+
+def discovery_announcement(host: str) -> bytes:
+    return (
+        "NOTIFY * HTTP/1.1\r\n"
+        "NT: urn:bambulab-com:device:3dprinter:1\r\n"
+        "NTS: ssdp:alive\r\n"
+        "DevName.bambu.com: FilamentHub Bambu Lab\r\n"
+        f"USN: {SERIAL}\r\n"
+        f"Location: {host}\r\n"
+        "\r\n"
+    ).encode("utf-8")
+
+
+def _lan_ipv4() -> str:
+    candidates = []
+    try:
+        candidates.extend(
+            item[4][0]
+            for item in socket.getaddrinfo(
+                socket.gethostname(), None, socket.AF_INET, socket.SOCK_DGRAM
+            )
+        )
+    except OSError:
+        pass
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+            probe.connect(("192.0.2.1", 9))
+            candidates.append(probe.getsockname()[0])
+    except OSError:
+        pass
+    for candidate in candidates:
+        try:
+            address = ipaddress.ip_address(candidate)
+        except ValueError:
+            continue
+        if address.version == 4 and (address.is_private or address.is_link_local):
+            if not address.is_loopback and not address.is_unspecified:
+                return str(address)
+    raise OSError("no private LAN address available for Bambu discovery")
+
+
+def announce_discovery() -> None:
+    while True:
+        try:
+            host = _lan_ipv4()
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sender:
+                sender.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+                sender.bind((host, 0))
+                while True:
+                    sender.sendto(
+                        discovery_announcement(host),
+                        ("255.255.255.255", DISCOVERY_PORT),
+                    )
+                    time.sleep(DISCOVERY_INTERVAL_SECONDS)
+        except OSError:
+            time.sleep(DISCOVERY_INTERVAL_SECONDS)
 
 
 def apply_request(payload: object) -> bool:
@@ -309,6 +371,7 @@ class HealthHandler(BaseHTTPRequestHandler):
 def main() -> None:
     health = ThreadingHTTPServer(("0.0.0.0", 8884), HealthHandler)
     threading.Thread(target=health.serve_forever, daemon=True).start()
+    threading.Thread(target=announce_discovery, daemon=True).start()
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     context.load_cert_chain(CERT_FILE, KEY_FILE)
     server = ThreadingTlsServer(("0.0.0.0", 8883), BambuMqttHandler, context)

@@ -76,11 +76,15 @@ export function PrinterSetupWizard({
   ));
   const [search, setSearch] = useState('');
   const [pluginReady, setPluginReady] = useState(false);
+  const [discoveryReady, setDiscoveryReady] = useState(false);
   const [candidates, setCandidates] = useState<PrinterSetupCandidate[] | null>(null);
   const [loadingConnections, setLoadingConnections] = useState(false);
-  const [scanError, setScanError] = useState<string | null>(null);
+  const [scanNotice, setScanNotice] = useState<string | null>(null);
+  const [hideSetupCandidates, setHideSetupCandidates] = useState(false);
   const scanBusy = useRef(false);
   const [probe, setProbe] = useState<PrinterSetupResult | null>(pending?.probe ?? null);
+  const [connectionRef, setConnectionRef] = useState(pending?.connectionRef);
+  const [candidateModelHint, setCandidateModelHint] = useState<string | null>(null);
   const [saved, setSaved] = useState<PhysicalPrinter | null>(null);
   const [activated, setActivated] = useState(false);
   const [observed, setObserved] = useState(false);
@@ -132,6 +136,18 @@ export function PrinterSetupWizard({
       }
     }
   }, [modelDetail, modelLookupId, selectedModel?.id, connectionChosen, existingSystem, manualSettings]);
+  useEffect(() => {
+    if (!candidateModelHint || targetId || modelId || !installed?.length || customized.current) return;
+    const normalizedHint = candidateModelHint.trim().toLowerCase();
+    const matches = installed.filter((item) => (
+      item.model.trim().toLowerCase() === normalizedHint
+      || item.catalog_name?.trim().toLowerCase() === normalizedHint
+    ));
+    if (matches.length !== 1) return;
+    const match = matches[0];
+    setModelId(match.printer_id ?? 0);
+    setProfileIds(match.printer_profile_id ? [match.printer_profile_id] : []);
+  }, [candidateModelHint, installed, modelId, targetId]);
   const adapter = feedAdapterFor(provider);
   const connectionAdapter = connectionAdapterFor(provider);
   const system = current?.material_systems[0];
@@ -155,7 +171,34 @@ export function PrinterSetupWizard({
     return { printer: item, detail };
   });
   const newCandidates = (candidates ?? []).filter((candidate) => !printers.some((item) => item.id === candidate.physicalPrinterId));
-  const knownCandidates = (candidates ?? []).filter((candidate) => targetId > 0 && candidate.physicalPrinterId === targetId);
+  const exactCandidates = (candidates ?? []).filter((candidate) => targetId > 0 && candidate.physicalPrinterId === targetId);
+  const candidateAdapter = (candidate: PrinterSetupCandidate) => adapterForConnection(candidate.provider ?? 'moonraker');
+  const isCompatibleCandidate = (candidate: PrinterSetupCandidate) => {
+    if (candidate.physicalPrinterId != null) return candidate.physicalPrinterId === targetId;
+    const discoveredAdapter = candidateAdapter(candidate);
+    if (!discoveredAdapter) return false;
+    const knownConnections = new Set(bindings
+      .filter((binding) => binding.physical_printer_id === targetId && binding.status !== 'conflict')
+      .map((binding) => adapterForConnection(binding.provider)?.id).filter(Boolean));
+    if (existingSystem && existingSystem.provider !== 'manual') {
+      knownConnections.add(connectionAdapterFor(existingSystem.provider).id);
+    }
+    if (knownConnections.size > 0) return knownConnections.has(discoveredAdapter.id);
+    const knownModel = selectedModel ?? modelDetail;
+    const modelMatches = knownModel
+      ? setupAdaptersFor(knownModel, true).filter((item) => item.onboarding?.matchesModel?.(knownModel))
+      : [];
+    return modelMatches.length === 0 || modelMatches.some((item) => item.id === discoveredAdapter.id);
+  };
+  const compatibleUnboundCandidates = (candidates ?? []).filter(
+    (candidate) => candidate.physicalPrinterId == null && isCompatibleCandidate(candidate),
+  );
+  // A server-owned physical binding outranks model compatibility. Unbound
+  // discoveries are always presented for an explicit choice.
+  const setupCandidates = targetId > 0
+    ? (exactCandidates.length > 0 ? exactCandidates : compatibleUnboundCandidates)
+    : newCandidates;
+  const visibleSetupCandidates = hideSetupCandidates ? [] : setupCandidates;
   useEffect(() => {
     if (!targetId || !selected || pending || saved || customized.current || autoPrepared.current === targetId) return;
     const existingAdapter = existingSystem && existingSystem.provider !== 'manual' ? feedAdapterFor(existingSystem.provider) : undefined;
@@ -177,7 +220,10 @@ export function PrinterSetupWizard({
   }, []);
   useEffect(() => {
     if (!isPluginEmbed()) return;
-    const unsubscribe = subscribeToPluginCapabilities((caps) => setPluginReady(caps.has('printer-setup-v1')));
+    const unsubscribe = subscribeToPluginCapabilities((caps) => {
+      setPluginReady(caps.has('printer-setup-v1'));
+      setDiscoveryReady(caps.has('printer-discovery-v1'));
+    });
     requestPluginCapabilities();
     return unsubscribe;
   }, []);
@@ -202,14 +248,22 @@ export function PrinterSetupWizard({
   const scan = async () => {
     if (scanBusy.current) return;
     scanBusy.current = true;
-    setLoadingConnections(true); setScanError(null);
+    setLoadingConnections(true); setScanNotice(null);
     try {
       const result = await requestPrinterSetup('list');
       if (!alive.current) return;
-      if (!result.ok) setScanError(t('printerSetup.errors.' + result.code, { defaultValue: t('printerSetup.failed') }));
-      else setCandidates(result.candidates ?? []);
+      setCandidates(result.candidates ?? []);
+      if (!result.ok) {
+        setScanNotice(result.code === 'cancelled'
+          ? t('printerSetup.searchCancelled')
+          : result.code === 'auth'
+            ? t('printerSetup.errors.auth')
+            : t('printerSetup.searchFailed'));
+      } else if (result.discoveryComplete === false) {
+        setScanNotice(t('printerSetup.searchIncomplete'));
+      }
     } catch {
-      if (alive.current) setScanError(t('printerSetup.failed'));
+      if (alive.current) setScanNotice(t('printerSetup.searchFailed'));
     } finally {
       scanBusy.current = false;
       if (alive.current) setLoadingConnections(false);
@@ -226,10 +280,11 @@ export function PrinterSetupWizard({
     if (candidate?.physicalPrinterId && targetId && candidate.physicalPrinterId !== targetId) {
       setError(t('printerSetup.otherCard')); return;
     }
-    const result = await requestPrinterSetup(candidate ? 'probe' : 'manual', candidate
-      ? { connectionRef: candidate.connectionRef }
-      : { copy: { title: t('printerSetup.localTitle'), hint: t('printerSetup.localHint'),
-        address: t('printerSetup.address'), apiKey: t('printerSetup.apiKey'), submit: t('printerSetup.check') } });
+    const copy = { title: t('printerSetup.localTitle'), hint: t('printerSetup.localHint'),
+      address: t('printerSetup.address'), apiKey: t('printerSetup.apiKey'), submit: t('printerSetup.check') };
+    const result = await requestPrinterSetup(candidate ? 'probe' : 'manual', {
+      ...(candidate ? { connectionRef: candidate.connectionRef } : {}), copy,
+    });
     if (!alive.current || result.code === 'cancelled') return;
     if (!result.ok) {
       setError(t('printerSetup.errors.' + result.code, { defaultValue: t('printerSetup.failed') }));
@@ -268,6 +323,7 @@ export function PrinterSetupWizard({
     const generatedNames = [oldAdapter.labelKey, ...(oldAdapter.onboarding?.topologies.map((item) => item.labelKey) ?? [])].map((key) => t(key));
     const intent: PendingPrinterSetup = pending ?? {
       targetId, probe, route: mode,
+      ...(connectionRef ? { connectionRef } : {}),
       payload: {
         request_id: crypto.randomUUID(), name: name.trim() || selected?.name || 'Printer',
         printer_id: modelId || null, printer_profile_ids: profileIds,
@@ -328,10 +384,14 @@ export function PrinterSetupWizard({
     setTopology(topologyFromSystem(setupTopologiesFor(printer?.material_systems[0]?.provider ?? 'manual', false), printer?.material_systems[0]));
     setSelectedModel(undefined); setOtherConnection(false); setEditTopology(false); setTopologyBase(null);
     setConnectionChosen(Boolean(printer?.material_systems[0]?.provider && printer.material_systems[0].provider !== 'manual'));
-    setProbe(null); setMode('manual'); setError(null); setStep('setup');
+    setProbe(null); setConnectionRef(undefined); setCandidateModelHint(null);
+    setHideSetupCandidates(false);
+    setMode('manual'); setError(null); setStep('setup');
   };
-  const changeProvider = (value: string) => {
-    setProvider(value); setProbe(null); setError(null);
+  const changeProvider = (value: string, preserveConnectionRef = false) => {
+    setProvider(value); setProbe(null);
+    if (!preserveConnectionRef) setConnectionRef(undefined);
+    setError(null);
     setTopology(topologyFromSystem(setupTopologiesFor(value, false), existingSystem));
   };
   const changeTopology = (value: TopologySelection) => {
@@ -349,25 +409,46 @@ export function PrinterSetupWizard({
     setSelectedModel(model); setModelId(model?.id ?? 0); setProfileIds(initialProfileIds);
     setOtherConnection(false); setMode('manual');
     const suggested = setupAdaptersFor(model).find((item) => item.onboarding?.matchesModel?.(model!));
-    changeProvider(suggested?.id ?? 'manual');
+    const nextProvider = suggested?.id ?? 'manual';
+    changeProvider(nextProvider, Boolean(connectionRef)
+      && connectionAdapterFor(nextProvider).id === connectionAdapter.id);
     if (suggested && !manualSettings) setMode(suggested.onboarding?.methods[0] ?? 'manual');
     setConnectionChosen(Boolean(suggested));
     if (model && (!name.trim() || name === selectedModel?.name)) setName(model.name);
   };
-  const chooseCandidate = (candidate: PrinterSetupCandidate) => {
-    choose(printers.find((item) => item.id === candidate.physicalPrinterId));
-    // A known binding still names the same printer if its probe fails.
-    setTargetId(candidate.physicalPrinterId ?? 0);
-    setName(printers.find((item) => item.id === candidate.physicalPrinterId)?.name ?? candidate.label);
-    setMode('orca');
+  const chooseCandidate = (candidate: PrinterSetupCandidate, fromPicker = false) => {
+    const linkedPrinter = printers.find((item) => item.id === candidate.physicalPrinterId);
+    if (fromPicker) choose(linkedPrinter);
+    const discoveredAdapter = candidateAdapter(candidate);
+    if (!discoveredAdapter?.onboarding) return;
+    const nextTargetId = candidate.physicalPrinterId ?? (fromPicker ? 0 : targetId);
+    setTargetId(nextTargetId);
+    setName(fromPicker ? (linkedPrinter?.name ?? candidate.label) : (name.trim() || candidate.label));
+    setCandidateModelHint(candidate.printerModel ?? null);
+    setProvider(discoveredAdapter.id);
+    const candidateSystem = linkedPrinter?.material_systems[0] ?? existingSystem;
+    setTopology(topologyFromSystem(setupTopologiesFor(discoveredAdapter.id, false), candidateSystem));
     setConnectionChosen(true);
-    void inspect(candidate);
+    setError(null);
+    if (fromPicker) setHideSetupCandidates(true);
+    if (candidateSystem && connectionAdapterFor(candidateSystem.provider).id !== discoveredAdapter.id) {
+      setEditTopology(true); setTopologyBase(candidateSystem);
+    }
+    if (discoveredAdapter.onboarding.orcaProbe) {
+      setConnectionRef(undefined);
+      setMode('orca');
+      void inspect(candidate);
+      return;
+    }
+    setProbe(null);
+    setConnectionRef(candidate.connectionRef);
+    setMode(discoveredAdapter.onboarding.methods[0] ?? 'manual');
   };
   useEffect(() => {
-    if (step !== 'setup' || customized.current || pending || saved || probe || !pluginReady || busyRef.current || knownCandidates.length !== 1
+    if (step !== 'setup' || customized.current || pending || saved || probe || !pluginReady || busyRef.current || exactCandidates.length !== 1
       || existingSystem && connectionAdapterFor(existingSystem.provider).id !== 'manual') return;
-    const candidate = knownCandidates[0];
-    if (!candidate) return;
+    const candidate = exactCandidates[0];
+    if (!candidate || candidateAdapter(candidate)?.onboarding?.orcaProbe !== true) return;
     const key = `${targetId}:${candidate.connectionRef}`;
     if (autoProbes.current.has(key)) return;
     autoProbes.current.add(key);
@@ -385,8 +466,32 @@ export function PrinterSetupWizard({
   });
   const back = () => {
     if (busyRef.current || pending) return;
-    setTargetId(0); setProbe(null); setError(null); setStep('choose');
+    setTargetId(0); setProbe(null); setConnectionRef(undefined); setCandidateModelHint(null);
+    setHideSetupCandidates(false); setError(null); setStep('choose');
   };
+  const continueManually = () => {
+    if (step === 'choose') {
+      choose();
+      setHideSetupCandidates(true);
+      return;
+    }
+    setMode('manual'); setProbe(null); setConnectionRef(undefined); setError(null);
+  };
+  const candidateDetails = (candidate: PrinterSetupCandidate) => {
+    const source = candidate.source ?? (discoveryReady ? 'profile' : 'orca');
+    const sourceLabel = t(`printerSetup.sources.${source}`);
+    const discoveredAdapter = candidateAdapter(candidate);
+    const providerLabel = discoveredAdapter?.onboarding
+      ? t(discoveredAdapter.onboarding.connectionLabelKey)
+      : null;
+    return [...new Set([sourceLabel, providerLabel, candidate.printerModel].filter(Boolean))].join(' · ');
+  };
+  const searchActions = <div className="flex flex-wrap gap-2">
+    <button type="button" disabled={loadingConnections} className={button} onClick={() => void scan()}>
+      <RefreshCw className="mr-1 inline h-4 w-4" />{t('printerSetup.retrySearch')}
+    </button>
+    <button type="button" className={button} onClick={continueManually}>{t('printerSetup.manualFallback')}</button>
+  </div>;
   const submitLabel = pending
     ? 'printerSetup.resumeButton'
     : provider === 'bambu' && mode === 'orca'
@@ -417,6 +522,7 @@ export function PrinterSetupWizard({
                 spools: [],
                 linkConfirmed: current.reports_feed,
                 autoConnect: Boolean(saved && mode === 'orca' && system.provider === 'bambu'),
+                connectionRef: saved && mode === 'orca' && system.provider === 'bambu' ? connectionRef : undefined,
                 onConnectionObserved: () => setObserved(true),
               })}
             {savedAdapter.link && mode !== 'manual' && <div className="space-y-3 rounded-lg border border-white/10 p-3">
@@ -459,18 +565,24 @@ export function PrinterSetupWizard({
             </div>}
             {pluginReady && <div className="space-y-2">
               <div className="flex items-center justify-between gap-2">
-                <p className="text-xs font-medium text-gray-400">{t('printerSetup.fromOrca')}</p>
+                <p className="text-xs font-medium text-gray-400">{t(discoveryReady ? 'printerSetup.discoveryTitle' : 'printerSetup.fromOrca')}</p>
                 <button type="button" disabled={loadingConnections} className="rounded p-1 text-gray-400 hover:text-white disabled:opacity-40" onClick={() => void scan()} aria-label={t('printerSetup.refresh')}><RefreshCw className="h-4 w-4" /></button>
               </div>
-              {loadingConnections && <p role="status" className="text-sm text-gray-400">{t('printerSetup.loadingConnections')}</p>}
-              {scanError && <p role="alert" className="text-sm text-amber-200">{scanError}</p>}
+              {loadingConnections && <p role="status" className="text-sm text-gray-400">{t(discoveryReady ? 'printerSetup.searchingPrinters' : 'printerSetup.loadingConnections')}</p>}
+              {scanNotice && <p role="status" className="text-sm text-amber-100">{scanNotice}</p>}
               {newCandidates.map((candidate) => <button key={candidate.connectionRef} type="button"
-                className={button + ' flex w-full items-center gap-3 text-left'} onClick={() => chooseCandidate(candidate)}>
+                className={button + ' flex w-full items-center gap-3 text-left'} onClick={() => chooseCandidate(candidate, true)}>
                 <LayeredPrinterIcon className="h-5 w-5 shrink-0 text-purple-300" />
-                <span className="min-w-0 flex-1 truncate" title={candidate.label}>{candidate.label}</span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate" title={candidate.label}>{candidate.label}</span>
+                  <span className="block truncate text-xs text-gray-400" title={candidateDetails(candidate)}>{candidateDetails(candidate)}</span>
+                </span>
                 <ChevronRight className="h-4 w-4 shrink-0 text-gray-400" />
               </button>)}
-              {candidates !== null && newCandidates.length === 0 && <p className="text-sm text-gray-400">{t('printerSetup.noNewConnections')}</p>}
+              {candidates !== null && newCandidates.length === 0 && !scanNotice && !loadingConnections && <p className="text-sm text-gray-400">
+                {t(discoveryReady ? 'printerSetup.noDiscoveredPrinters' : 'printerSetup.noNewConnections')}
+              </p>}
+              {candidates !== null && !loadingConnections && (scanNotice || newCandidates.length === 0) && searchActions}
             </div>}
             {!loadingPrinters && !printersFailed && printers.length === 0 && !pluginReady && <p className="text-sm text-gray-400">{t('printerSetup.emptyPrinters')}</p>}
           </fieldset> : <>
@@ -503,14 +615,20 @@ export function PrinterSetupWizard({
                   {probe.provider === 'happy_hare' && <p className="mt-1 text-xs text-gray-300">{t('printerSetup.inventoryNext')}</p>}
                 </div> : <>
                   {connectionChosen && connectionAdapter.onboarding && <p className="text-sm text-gray-300">{t(connectionAdapter.onboarding.connectionHintKey)}</p>}
-                  {loadingConnections && <p role="status" className="text-xs text-gray-400">{t('printerSetup.loadingConnections')}</p>}
-                  {pluginReady && knownCandidates.length > 1 && knownCandidates.map((candidate) => <button key={candidate.connectionRef}
-                    type="button" className={button + ' w-full truncate text-left'} title={candidate.label}
-                    onClick={() => { setMode('orca'); setConnectionChosen(true); void inspect(candidate); }}>{candidate.label}</button>)}
-                  {pluginReady && knownCandidates.length < 2 && (adapter.onboarding?.orcaProbe || !connectionChosen) && <button type="button" className={button} disabled={busy}
-                    onClick={() => { setMode('orca'); setConnectionChosen(true); void inspect(knownCandidates[0]); }}>
-                    {t(knownCandidates.length ? 'printerSetup.checkKnown' : 'printerSetup.enterAddress')}
+                  {!hideSetupCandidates && loadingConnections && <p role="status" className="text-xs text-gray-400">{t(discoveryReady ? 'printerSetup.searchingPrinters' : 'printerSetup.loadingConnections')}</p>}
+                  {!hideSetupCandidates && scanNotice && <p role="status" className="text-xs text-amber-100">{scanNotice}</p>}
+                  {pluginReady && visibleSetupCandidates.map((candidate) => <button key={candidate.connectionRef}
+                    type="button" aria-pressed={connectionRef === candidate.connectionRef}
+                    className={button + ' w-full text-left' + (connectionRef === candidate.connectionRef ? ' border-purple-400 bg-purple-500/20' : '')} title={candidate.label}
+                    onClick={() => chooseCandidate(candidate)}>
+                    <span className="block truncate">{candidate.label}</span>
+                    <span className="block truncate text-xs text-gray-400">{candidateDetails(candidate)}</span>
+                  </button>)}
+                  {pluginReady && visibleSetupCandidates.length === 0 && (adapter.onboarding?.orcaProbe || !connectionChosen) && <button type="button" className={button} disabled={busy}
+                    onClick={() => { setMode('orca'); setConnectionChosen(true); void inspect(); }}>
+                    {t('printerSetup.enterAddress')}
                   </button>}
+                  {pluginReady && !hideSetupCandidates && !loadingConnections && scanNotice && searchActions}
                   {!pluginReady && connectionChosen && adapter.onboarding?.orcaProbe && <p className="text-xs text-gray-400">{t('printerSetup.withoutLocalAccess')}</p>}
                   {!connectionChosen && <p className="text-xs text-gray-400">{t('printerSetup.manualStart')}</p>}
                 </>}
@@ -538,7 +656,8 @@ export function PrinterSetupWizard({
                     {(['manual', ...methods] as const).map((route) => <button key={route} type="button"
                       disabled={route === 'edge' && !edgeAvailable}
                       aria-pressed={mode === route} className={button + (mode === route ? ' border-purple-400 bg-purple-500/20' : '')}
-                      onClick={() => { customized.current = true; setMode(route); setProbe(null); setError(null); }}>{t('printerSetup.routes.' + route)}</button>)}
+                      onClick={() => { customized.current = true; setMode(route); setProbe(null);
+                        if (route !== 'orca') setConnectionRef(undefined); setError(null); }}>{t('printerSetup.routes.' + route)}</button>)}
                   </div>
                   {mode === 'manual' && <p className="text-xs text-gray-400">{t('printerSetup.manualHint')}</p>}
                   {mode === 'edge' && <p className="text-xs text-gray-400">{t('printerSetup.edgeHint')}</p>}
@@ -546,15 +665,19 @@ export function PrinterSetupWizard({
                   {mode === 'orca' && adapter.onboarding?.orcaProbe && <div className="space-y-2 rounded-lg border border-white/10 p-3">
                     {!pluginReady ? <p className="text-sm text-amber-200">{t('printerSetup.pluginUnavailable')}</p> : <>
                       <p className="text-xs text-gray-400">{t('printerSetup.orcaHint')}</p>
-                      {loadingConnections && <p role="status" className="text-xs text-gray-400">{t('printerSetup.loadingConnections')}</p>}
-                      {scanError && <p role="alert" className="text-sm text-amber-200">{scanError}</p>}
-                      {(candidates ?? []).map((candidate) => <button key={candidate.connectionRef} type="button"
-                        className={button + ' w-full break-words text-left'} onClick={() => void inspect(candidate)}>
-                        {candidate.label}{candidate.physicalPrinterId ? ' · #' + candidate.physicalPrinterId : ''}
+                      {!hideSetupCandidates && loadingConnections && <p role="status" className="text-xs text-gray-400">{t(discoveryReady ? 'printerSetup.searchingPrinters' : 'printerSetup.loadingConnections')}</p>}
+                      {!hideSetupCandidates && scanNotice && <p role="status" className="text-xs text-amber-100">{scanNotice}</p>}
+                      {visibleSetupCandidates.map((candidate) => <button key={candidate.connectionRef} type="button"
+                        aria-pressed={connectionRef === candidate.connectionRef}
+                        className={button + ' w-full break-words text-left' + (connectionRef === candidate.connectionRef ? ' border-purple-400 bg-purple-500/20' : '')}
+                        onClick={() => chooseCandidate(candidate)}>
+                        <span className="block">{candidate.label}</span>
+                        <span className="block text-xs text-gray-400">{candidateDetails(candidate)}</span>
                       </button>)}
-                      {candidates?.length === 0 && <p className="text-xs text-gray-400">{t('printerSetup.noConnections')}</p>}
+                      {!hideSetupCandidates && candidates !== null && visibleSetupCandidates.length === 0 && !scanNotice && !loadingConnections && <p className="text-xs text-gray-400">{t('printerSetup.noConnections')}</p>}
                       <div className="flex flex-wrap gap-2"><button type="button" className={button} onClick={() => void inspect()}>{t('printerSetup.enterAddress')}</button>
                         <button type="button" disabled={loadingConnections} className={button} onClick={() => void scan()} aria-label={t('printerSetup.refresh')}><RefreshCw className="h-4 w-4" /></button></div>
+                      {!hideSetupCandidates && scanNotice && searchActions}
                     </>}
                     {probe?.ok && manualSettings && <div role="status" className="text-sm text-emerald-300">
                       {t(probe.gateCount ? 'printerSetup.probeGates' : 'printerSetup.probeConnected', { count: probe.gateCount ?? undefined })}

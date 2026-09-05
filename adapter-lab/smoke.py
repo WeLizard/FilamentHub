@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import json
+import subprocess
 import sys
 import urllib.request
 from pathlib import Path
@@ -15,6 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 ORCA_PLUGIN = ROOT / "orca-plugin" / "filamenthub_plugin.py"
 OCTOPRINT_API_KEY = "FHLAB00000000000000000000000000000000001"
 TARGETS = ("octoprint", "moonraker", "bambu")
+COMPOSE_FILE = ROOT / "docker-compose.adapter-lab.yml"
 
 
 def _load_orca_plugin():
@@ -89,7 +91,20 @@ def smoke_moonraker(plugin) -> str:
 
 
 def smoke_bambu(plugin) -> str:
-    config = {"host": "127.0.0.1", "access_code": "adapterlab", "serial": ""}
+    discovered, _complete = plugin.discover_lan_printers(duration=3.0)
+    candidates = [
+        item
+        for item in discovered
+        if item.get("provider") == "bambu"
+        and item.get("serial") == "FH-BAMBU-LAB"
+        and item.get("source") == "network"
+    ]
+    if len(candidates) != 1:
+        raise RuntimeError(
+            f"expected one Bambu UDP discovery result, found {len(candidates)}"
+        )
+    host = candidates[0].get("host")
+    config = {"host": host, "access_code": "adapterlab", "serial": ""}
     serial, report = plugin.read_bambu_lan_snapshot(config, timeout=5)
     if serial != "FH-BAMBU-LAB":
         raise RuntimeError(f"unexpected Bambu serial: {serial}")
@@ -127,21 +142,59 @@ def smoke_bambu(plugin) -> str:
     }
     if slots.get(1, {}).get("setting_id") != "LAB-PETG-SETTING":
         raise RuntimeError("Bambu material write was not visible on the next snapshot")
-    return "Bambu LAN: discovery, TLS/MQTT snapshot and verified material write"
+    return (
+        f"Bambu LAN at {host}: UDP discovery, TLS/MQTT snapshot and "
+        "verified material write"
+    )
+
+
+def smoke_bambu_in_lab() -> str:
+    completed = subprocess.run(
+        [
+            "docker",
+            "compose",
+            "--project-name",
+            "filamenthub-adapter-lab",
+            "--file",
+            str(COMPOSE_FILE),
+            "exec",
+            "--no-TTY",
+            "bambu-lan",
+            "python",
+            "/source/adapter-lab/smoke.py",
+            "bambu",
+            "--inside-lab",
+        ],
+        cwd=ROOT,
+        check=True,
+        stdout=subprocess.PIPE,
+        text=True,
+    )
+    output = completed.stdout.strip()
+    if not output.startswith("ok: "):
+        raise RuntimeError("Bambu in-network smoke returned an invalid result")
+    return output.removeprefix("ok: ")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("target", choices=(*TARGETS, "current"))
+    parser.add_argument("--inside-lab", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args()
+    if args.inside_lab and args.target != "bambu":
+        parser.error("--inside-lab is only valid with bambu")
     targets = TARGETS if args.target == "current" else (args.target,)
     plugin = (
-        _load_orca_plugin() if any(item != "octoprint" for item in targets) else None
+        _load_orca_plugin()
+        if "moonraker" in targets or ("bambu" in targets and args.inside_lab)
+        else None
     )
     checks = {
         "octoprint": lambda: smoke_octoprint(),
         "moonraker": lambda: smoke_moonraker(plugin),
-        "bambu": lambda: smoke_bambu(plugin),
+        "bambu": lambda: (
+            smoke_bambu(plugin) if args.inside_lab else smoke_bambu_in_lab()
+        ),
     }
     for target in targets:
         print(f"ok: {checks[target]()}")

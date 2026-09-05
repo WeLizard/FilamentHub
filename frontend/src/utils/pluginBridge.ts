@@ -645,15 +645,16 @@ export function requestInstalledPrinterBundles(
 }
 
 /**
- * Open the plugin-owned Bambu LAN form. The site sends only FilamentHub IDs and
- * a display label; IP, serial and access code are entered in the local shell and
- * never cross into this iframe or the FilamentHub API.
+ * Open the plugin-owned Bambu LAN form. The site sends FilamentHub IDs, the
+ * one-time pairing code and an optional opaque local discovery reference. IP,
+ * serial and access code stay in the local shell.
  */
 export function configureBambuBridgeInPlugin(
   physicalPrinterId: number,
   materialSystemId: number,
   printerName: string,
   pairingCode: string,
+  connectionRef?: string,
 ): void {
   postToPlugin({
     source: PLUGIN_MESSAGE_SOURCE,
@@ -662,6 +663,7 @@ export function configureBambuBridgeInPlugin(
     materialSystemId,
     printerName,
     pairingCode,
+    ...(connectionRef ? { connectionRef } : {}),
   });
 }
 
@@ -781,12 +783,16 @@ export interface PrinterSetupCandidate {
   connectionRef: string;
   label: string;
   physicalPrinterId: number | null;
+  provider?: 'bambu' | 'moonraker' | 'octoprint';
+  printerModel?: string;
+  source?: 'network' | 'profile' | 'saved';
 }
 
 export interface PrinterSetupResult {
   ok: boolean;
   code?: string;
   candidates?: PrinterSetupCandidate[];
+  discoveryComplete?: boolean;
   probeId?: string;
   connection?: PrinterSetupConnection;
   provider?: 'happy_hare' | 'manual';
@@ -828,7 +834,7 @@ export function requestPrinterSetup(
     const timer = window.setTimeout(() => {
       cleanup();
       reject(new Error('printer setup timeout'));
-    }, operation === 'manual' ? 600_000 : 90_000);
+    }, operation === 'manual' || operation === 'probe' ? 600_000 : 90_000);
     window.addEventListener('message', onMessage);
     postToPlugin({ source: PLUGIN_MESSAGE_SOURCE,
       type: operation === 'manual' ? 'printer-setup-manual' : 'printer-setup',

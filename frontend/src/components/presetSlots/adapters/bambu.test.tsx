@@ -52,11 +52,11 @@ const context = {
   linkConfirmed: false,
 } as any;
 
-function show(autoConnect: boolean) {
+function show(autoConnect: boolean, connectionRef?: string) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
-      {bambuAdapter.renderSetup?.({ ...context, autoConnect })}
+      {bambuAdapter.renderSetup?.({ ...context, autoConnect, connectionRef })}
     </QueryClientProvider>,
   );
 }
@@ -80,7 +80,7 @@ describe('Bambu setup', () => {
   });
 
   it('starts local pairing once immediately after the wizard saves a Bambu printer', async () => {
-    show(true);
+    show(true, 'opaque-bambu-ref');
 
     await waitFor(() => expect(mocks.issuePairingCode).toHaveBeenCalledTimes(1));
     expect(mocks.issuePairingCode).toHaveBeenCalledWith(11, 21);
@@ -89,6 +89,7 @@ describe('Bambu setup', () => {
       21,
       'Bambu Lab P2S',
       'FH-ABCDE-12345',
+      'opaque-bambu-ref',
     ));
   });
 

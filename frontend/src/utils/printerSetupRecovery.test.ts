@@ -3,6 +3,7 @@ import type { PendingPrinterSetup } from './printerSetupRecovery';
 
 const intent: PendingPrinterSetup = {
   targetId: 0, probe: null, route: 'edge',
+  connectionRef: 'opaque-local-ref',
   payload: { name: 'Workshop', request_id: '67c89b41-510d-4f52-ab77-fc7bb9dc9411',
     printer_profile_ids: [], material_system: { name: 'Direct', provider: 'manual',
       kind: 'direct_feed', capabilities: [], slot_count: 1 } },

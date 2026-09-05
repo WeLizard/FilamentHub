@@ -78,6 +78,9 @@ services:
       BAMBU_SERIAL: FH-BAMBU-LAB
     ports:
       - "127.0.0.1:8883:8883"
+    volumes:
+      - ./orca-plugin:/source/orca-plugin:ro
+      - ./adapter-lab:/source/adapter-lab:ro
     healthcheck:
       test:
         [

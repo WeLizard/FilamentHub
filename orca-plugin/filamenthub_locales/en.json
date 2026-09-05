@@ -87,5 +87,14 @@
   "syncCompleteTitle": "Sync complete",
   "dropdownCurrent": "The filament dropdown is up to date.",
   "dropdownRestart": "Restart OrcaSlicer to apply the changes in the filament dropdown.",
-  "syncComplete": "Sync complete: {summary}. {note}"
+  "syncComplete": "Sync complete: {summary}. {note}",
+  "bambuSearchAgain": "Search again",
+  "bambuSearching": "Looking for printers on this network…",
+  "bambuChoosePrinter": "Printer",
+  "bambuFound": "Choose your printer and enter its LAN access code. Its feeding system will be read after connection.",
+  "bambuNotFound": "No printer was found during this search. You can try again or enter its address below. Existing printer settings are kept.",
+  "bambuSearchIncomplete": "The network search could not finish. You can try again or use a saved or manually entered address.",
+  "bambuManual": "Enter an address manually",
+  "bambuSetupTimeout": "No response yet. Your printer settings are kept. You can close this window and check the connection, or try again.",
+  "bambuConnecting": "Connecting to the printer…"
 }

@@ -106,6 +106,23 @@ def test_bambu_fixture_material_write_changes_only_target_slot():
     assert trays[3]["tray_type"] == ""
 
 
+def test_bambu_fixture_announcement_matches_plugin_discovery_contract():
+    bambu = _load("adapter-lab/bambu_lan.py", "bambu_discovery_lab_test")
+    smoke = _load("adapter-lab/smoke.py", "bambu_discovery_smoke_test")
+    plugin = smoke._load_orca_plugin()
+    host = "172.20.0.2"
+
+    discovered = plugin._bambu_announcement(bambu.discovery_announcement(host), host)
+
+    assert discovered == {
+        "provider": "bambu",
+        "host": host,
+        "serial": "FH-BAMBU-LAB",
+        "label": "FilamentHub Bambu Lab",
+        "source": "network",
+    }
+
+
 def test_compose_profiles_are_loopback_only_and_octoprint_is_persistent():
     compose = (ROOT / "docker-compose.adapter-lab.yml").read_text(encoding="utf-8")
 
@@ -119,3 +136,5 @@ def test_compose_profiles_are_loopback_only_and_octoprint_is_persistent():
     assert "filamenthub-adapter-lab-octoprint:local" in compose
     assert "octoprint_adapter_lab:/octoprint" in compose
     assert ".filamenthub-adapter-lab-config-v2" in compose
+    assert "./orca-plugin:/source/orca-plugin:ro" in compose
+    assert "./adapter-lab:/source/adapter-lab:ro" in compose

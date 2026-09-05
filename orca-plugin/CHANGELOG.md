@@ -6,7 +6,9 @@ Newest first. The top entry is the text pasted into the Plugin Hub on release.
 
 ## 0.1.9
 - Bambu LAN readings now preserve received printer status when waiting for a later report times out. Missing AMS information is kept separate from an explicitly empty feed system.
-- Bambu LAN setup can suggest local addresses from matching or currently selected OrcaSlicer printer profiles, while keeping those addresses on the computer and allowing manual entry.
+- Printer setup now searches the local IPv4 network for Bambu LAN, Moonraker and OctoPrint announcements. Saved connections and OrcaSlicer profiles remain available as clearly identified hints.
+- A discovered printer can be added or attached to an existing card. Bambu setup fills its local address and serial number, then asks for the LAN code; Moonraker asks for a local API key when required. Addresses and credentials stay on the computer.
+- Going back, selecting another printer or retrying a connection preserves the selected device and saved printer settings. Interrupted searches offer a calm retry and manual setup.
 
 ## 0.1.8
 - Printers can now be connected or reattached through one verified setup flow without requiring a saved OrcaSlicer printer preset, while unlinking preserves the physical printer and its assignments.

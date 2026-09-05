@@ -39,6 +39,7 @@ function BambuSetup({
   printer,
   system,
   autoConnect = false,
+  connectionRef,
   onConnectionObserved,
 }: Parameters<NonNullable<FeedAdapter['renderSetup']>>[0]) {
   const { t } = useTranslation();
@@ -148,6 +149,7 @@ function BambuSetup({
         system.id,
         printer.name,
         pairing.pairing_code,
+        connectionRef,
       );
     } catch (err: any) {
       toast.error(translateApiError(t, err?.response?.data?.detail, t('common.error')));

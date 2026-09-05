@@ -7,6 +7,7 @@ import type { PhysicalPrinter } from '../api/client';
 const mocks = vi.hoisted(() => ({
   create: vi.fn(), setup: vi.fn(), plugin: vi.fn(), key: vi.fn(), embed: false,
   printers: vi.fn(), models: vi.fn(), model: vi.fn(), installed: vi.fn(),
+  capabilities: ['printer-setup-v1'], adapterSetup: vi.fn(),
 }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('../contexts/AuthContext', () => ({ useAuth: () => ({ user: { id: 1 } }) }));
@@ -19,13 +20,13 @@ vi.mock('../utils/pluginBridge', () => ({
   isPluginEmbed: () => mocks.embed, requestPrinterSetup: mocks.plugin,
   requestPluginCapabilities: vi.fn(),
   subscribeToPluginCapabilities: (cb: (caps: Set<string>) => void) => {
-    cb(new Set(['printer-setup-v1'])); return () => {};
+    cb(new Set(mocks.capabilities)); return () => {};
   },
 }));
 vi.mock('../components/presetSlots/adapters', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../components/presetSlots/adapters')>();
   return { ...actual, feedAdapterFor: (id: string) => ({ ...actual.feedAdapterFor(id),
-    renderSetup: () => <div data-testid="adapter-setup">{id}</div> }) };
+    renderSetup: (context: unknown) => { mocks.adapterSetup(context); return <div data-testid="adapter-setup">{id}</div>; } }) };
 });
 vi.mock('../components/presetSlots/EdgeConnectionSetup', () => ({ EdgeConnectionSetup: () => <div>edge-setup</div> }));
 
@@ -57,6 +58,7 @@ function savePrinter() {
 describe('PrinterSetupWizard', () => {
   beforeEach(() => {
     vi.clearAllMocks(); localStorage.clear(); sessionStorage.clear(); mocks.embed = false;
+    mocks.capabilities = ['printer-setup-v1'];
     window.history.replaceState({}, '');
     mocks.create.mockResolvedValue(saved); mocks.setup.mockResolvedValue(saved);
     mocks.printers.mockResolvedValue([]); mocks.models.mockResolvedValue({ items: [] }); mocks.installed.mockResolvedValue([]);
@@ -181,13 +183,13 @@ describe('PrinterSetupWizard', () => {
     expect(mocks.create).toHaveBeenCalledTimes(1);
     expect(mocks.plugin).toHaveBeenLastCalledWith('activate', { probeId: 'probe-1', physicalPrinterId: 7 });
   });
-  it('rejects a local connection already belonging to another selected card', async () => {
+  it('does not offer a local connection already belonging to another selected card', async () => {
     mocks.embed = true;
     mocks.plugin.mockResolvedValue({ ok: true, candidates: [{ label: 'Other', connectionRef: 'ref-2', physicalPrinterId: 9 }] });
     show(saved); chooseMoonraker(); fireEvent.click(screen.getByText('printerSetup.routes.orca'));
-    fireEvent.click(await screen.findByText('Other · #9'));
-    await waitFor(() => expect(screen.getByText('printerSetup.otherCard')).toBeInTheDocument());
-    expect(mocks.plugin).toHaveBeenCalledTimes(1); expect(mocks.setup).not.toHaveBeenCalled();
+    await waitFor(() => expect(mocks.plugin).toHaveBeenCalledTimes(1));
+    expect(screen.queryByText('Other')).not.toBeInTheDocument();
+    expect(mocks.setup).not.toHaveBeenCalled();
   });
   it('selects an already added printer without presenting its Orca connection as another printer', async () => {
     mocks.embed = true;
@@ -201,7 +203,10 @@ describe('PrinterSetupWizard', () => {
     expect(screen.queryByText('Same Workshop connection')).not.toBeInTheDocument();
     fireEvent.click(existing);
     await screen.findByText('printerSetup.detectedHappyHare');
-    expect(mocks.plugin).toHaveBeenCalledWith('probe', { connectionRef: 'ref-1' });
+    expect(mocks.plugin).toHaveBeenCalledWith('probe', expect.objectContaining({
+      connectionRef: 'ref-1',
+      copy: expect.objectContaining({ apiKey: 'printerSetup.apiKey', submit: 'printerSetup.check' }),
+    }));
     expect(screen.getByText('printerSetup.connectionOptional').closest('details')).not.toHaveAttribute('open');
     savePrinter();
     await screen.findByText('printerSetup.observed');
@@ -261,6 +266,161 @@ describe('PrinterSetupWizard', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     savePrinter(); await screen.findByText('printerSetup.saved');
     expect(mocks.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps partial discovery results and offers a bounded retry or manual path', async () => {
+    mocks.embed = true;
+    mocks.capabilities = ['printer-setup-v1', 'printer-discovery-v1'];
+    mocks.plugin.mockResolvedValue({
+      ok: true,
+      discoveryComplete: false,
+      candidates: [{
+        label: 'Bambu Lab X1C nearby', connectionRef: 'opaque-bambu-ref', physicalPrinterId: null,
+        provider: 'bambu', printerModel: 'Bambu Lab X1C', source: 'network',
+      }, {
+        label: 'Voron profile', connectionRef: 'profile-moonraker-ref', physicalPrinterId: null,
+        provider: 'moonraker', printerModel: 'Voron 2.4', source: 'profile',
+      }],
+    });
+
+    show();
+
+    expect(await screen.findByText('Bambu Lab X1C nearby')).toBeInTheDocument();
+    expect(screen.getByText(/printerSetup\.sources\.network/)).toBeInTheDocument();
+    expect(screen.getByText(/printerSetup\.sources\.profile/)).toBeInTheDocument();
+    expect(screen.getByText('printerSetup.searchIncomplete')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /printerSetup.retrySearch/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'printerSetup.manualFallback' })).toBeInTheDocument();
+    expect(screen.queryByText('printerSetup.noDiscoveredPrinters')).not.toBeInTheDocument();
+  });
+
+  it('shows a calm manual fallback when local discovery is cancelled', async () => {
+    mocks.embed = true;
+    mocks.capabilities = ['printer-setup-v1', 'printer-discovery-v1'];
+    mocks.plugin.mockResolvedValue({ ok: false, code: 'cancelled', discoveryComplete: false, candidates: [] });
+
+    show();
+
+    expect(await screen.findByText('printerSetup.searchCancelled')).toHaveAttribute('role', 'status');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'printerSetup.manualFallback' }));
+    expect(screen.getByLabelText('printerSetup.name')).toBeInTheDocument();
+  });
+
+  it('routes a selected network Bambu reference to local pairing without a Moonraker probe', async () => {
+    const connected = { ...saved, printer_id: 10, material_systems: [{
+      id: 21, name: 'Bambu Lab', provider: 'bambu', kind: 'mmu', slots: [], capabilities: [],
+    }] } as unknown as PhysicalPrinter;
+    mocks.embed = true;
+    mocks.capabilities = ['printer-setup-v1', 'printer-discovery-v1'];
+    mocks.create.mockResolvedValue(connected);
+    mocks.installed.mockResolvedValue([{
+      model: 'Bambu Lab X1C', printer_id: 10, printer_profile_id: 101,
+      catalog_name: 'Bambu Lab X1C', last_seen_at: '2026-09-05T00:00:00Z',
+    }]);
+    mocks.plugin.mockResolvedValue({
+      ok: true,
+      discoveryComplete: true,
+      candidates: [{
+        label: 'Workshop X1C', connectionRef: 'opaque-bambu-ref', physicalPrinterId: null,
+        provider: 'bambu', printerModel: 'Bambu Lab X1C', source: 'network',
+      }],
+    });
+
+    show();
+    fireEvent.click(await screen.findByText('Workshop X1C'));
+    await screen.findByText('printerSetup.savedModels');
+    await act(async () => undefined);
+    expect(screen.getByText('printerSetup.routes.orca')).toHaveAttribute('aria-pressed', 'true');
+    savePrinter();
+
+    await screen.findByTestId('adapter-setup');
+    expect(mocks.plugin.mock.calls.map((call) => call[0])).toEqual(['list']);
+    expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({
+      printer_id: 10,
+      printer_profile_ids: [101],
+      material_system: expect.objectContaining({ provider: 'bambu' }),
+    }));
+    expect(mocks.create.mock.calls[0][0]).not.toHaveProperty('connectionRef');
+    expect(mocks.adapterSetup).toHaveBeenCalledWith(expect.objectContaining({
+      autoConnect: true,
+      connectionRef: 'opaque-bambu-ref',
+    }));
+  });
+
+  it('keeps discovered choices across Back and carries the newly selected Bambu reference through model selection', async () => {
+    const connected = { ...saved, printer_id: 10, material_systems: [{
+      id: 21, name: 'Bambu Lab', provider: 'bambu', kind: 'mmu', slots: [], capabilities: [],
+    }] } as unknown as PhysicalPrinter;
+    mocks.embed = true;
+    mocks.capabilities = ['printer-setup-v1', 'printer-discovery-v1'];
+    mocks.create.mockResolvedValue(connected);
+    mocks.models.mockResolvedValue({ items: [{
+      id: 10, name: 'Bambu Lab X1 Carbon', manufacturer: 'Bambu Lab',
+    }] });
+    mocks.plugin.mockResolvedValue({
+      ok: true,
+      discoveryComplete: true,
+      candidates: [{
+        label: 'Workshop X1C A', connectionRef: 'opaque-bambu-a', physicalPrinterId: null,
+        provider: 'bambu', printerModel: 'Bambu Lab X1 Carbon', source: 'network',
+      }, {
+        label: 'Workshop X1C B', connectionRef: 'opaque-bambu-b', physicalPrinterId: null,
+        provider: 'bambu', printerModel: 'Bambu Lab X1 Carbon', source: 'network',
+      }],
+    });
+
+    show();
+    fireEvent.click(await screen.findByText('Workshop X1C A'));
+    fireEvent.click(screen.getByText('printerSetup.back'));
+
+    expect(await screen.findByText('Workshop X1C A')).toBeInTheDocument();
+    expect(screen.getByText('Workshop X1C B')).toBeInTheDocument();
+    expect(mocks.plugin.mock.calls.map((call) => call[0])).toEqual(['list']);
+
+    fireEvent.click(screen.getByText('Workshop X1C B'));
+    expect(screen.getByLabelText('printerSetup.name')).toHaveValue('Workshop X1C B');
+    fireEvent.focus(screen.getByLabelText('printerSetup.model'));
+    fireEvent.click(await screen.findByRole('button', { name: 'Bambu Lab X1 Carbon' }));
+    savePrinter();
+
+    await screen.findByTestId('adapter-setup');
+    expect(mocks.plugin.mock.calls.map((call) => call[0])).toEqual(['list']);
+    expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'Workshop X1C B',
+      printer_id: 10,
+      material_system: expect.objectContaining({ provider: 'bambu' }),
+    }));
+    expect(mocks.create.mock.calls[0][0]).not.toHaveProperty('connectionRef');
+    expect(mocks.adapterSetup).toHaveBeenCalledWith(expect.objectContaining({
+      autoConnect: true,
+      connectionRef: 'opaque-bambu-b',
+    }));
+  });
+
+  it('routes a discovered OctoPrint device to its native onboarding without a probe', async () => {
+    const connected = { ...saved, material_systems: [{
+      id: 22, name: 'OctoPrint', provider: 'octoprint', kind: 'direct_feed', slots: [], capabilities: [],
+    }] } as unknown as PhysicalPrinter;
+    mocks.embed = true;
+    mocks.capabilities = ['printer-setup-v1', 'printer-discovery-v1'];
+    mocks.create.mockResolvedValue(connected);
+    mocks.plugin.mockResolvedValue({ ok: true, discoveryComplete: true, candidates: [{
+      label: 'Workshop OctoPrint', connectionRef: 'opaque-octo-ref', physicalPrinterId: null,
+      provider: 'octoprint', source: 'network',
+    }] });
+
+    show();
+    fireEvent.click(await screen.findByText('Workshop OctoPrint'));
+
+    expect(screen.getByText('printerSetup.routes.native')).toHaveAttribute('aria-pressed', 'true');
+    savePrinter();
+    await screen.findByTestId('adapter-setup');
+    expect(mocks.plugin.mock.calls.map((call) => call[0])).toEqual(['list']);
+    expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({
+      material_system: expect.objectContaining({ provider: 'octoprint' }),
+    }));
+    expect(mocks.adapterSetup).toHaveBeenCalledWith(expect.objectContaining({ autoConnect: false }));
   });
 
   it('uses Bambu equipment choices without offering unrelated connections or requiring AMS', async () => {
@@ -405,10 +565,45 @@ describe('PrinterSetupWizard', () => {
       { label: 'Back port', connectionRef: 'ref-2', physicalPrinterId: 7 },
     ] });
     show(saved);
-    await screen.findByRole('button', { name: 'Front port' });
-    expect(screen.getByRole('button', { name: 'Back port' })).toBeInTheDocument();
+    await screen.findByRole('button', { name: /Front port/ });
+    expect(screen.getByRole('button', { name: /Back port/ })).toBeInTheDocument();
     expect(mocks.plugin).toHaveBeenCalledTimes(1);
     expect(mocks.plugin).toHaveBeenLastCalledWith('list');
+  });
+
+  it('keeps an existing card and requires a choice between compatible unbound devices', async () => {
+    const card = { ...saved, printer_id: 10 } as unknown as PhysicalPrinter;
+    const connected = { ...card, material_systems: [{
+      id: 21, name: 'Bambu Lab', provider: 'bambu', kind: 'mmu', slots: [], capabilities: [],
+    }] } as unknown as PhysicalPrinter;
+    mocks.embed = true;
+    mocks.capabilities = ['printer-setup-v1', 'printer-discovery-v1'];
+    mocks.model.mockResolvedValue({ id: 10, name: 'Bambu Lab X1C', manufacturer: 'Bambu Lab' });
+    mocks.setup.mockResolvedValue(connected);
+    mocks.plugin.mockResolvedValue({ ok: true, discoveryComplete: true, candidates: [
+      { label: 'X1C by the window', connectionRef: 'bambu-window', physicalPrinterId: null,
+        provider: 'bambu', printerModel: 'Bambu Lab X1C', source: 'network' },
+      { label: 'X1C by the door', connectionRef: 'bambu-door', physicalPrinterId: null,
+        provider: 'bambu', printerModel: 'Bambu Lab X1C', source: 'network' },
+    ] });
+
+    show(card);
+
+    expect(await screen.findByRole('button', { name: /X1C by the window/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /X1C by the door/ })).toBeInTheDocument();
+    expect(mocks.plugin).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('button', { name: /X1C by the door/ }));
+    expect(mocks.plugin).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('button', { name: /X1C by the door/ })).toHaveAttribute('aria-pressed', 'true');
+    savePrinter();
+
+    await screen.findByTestId('adapter-setup');
+    expect(mocks.setup).toHaveBeenCalledWith(7, expect.any(Object));
+    expect(mocks.create).not.toHaveBeenCalled();
+    expect(mocks.adapterSetup).toHaveBeenCalledWith(expect.objectContaining({
+      autoConnect: true,
+      connectionRef: 'bambu-door',
+    }));
   });
 
   it('keeps feed layout editable after Moonraker reports no HH', async () => {
