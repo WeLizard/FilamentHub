@@ -13,8 +13,10 @@ from app.core.security import (
     token_auth_version_matches,
     token_fingerprint,
 )
+from app.models.audit_event import AuditAction, AuditReason
 from app.models.password_reset_token import PasswordResetToken
 from app.models.user import User
+from app.services.audit_service import record_audit_event
 from app.services.refresh_session_service import revoke_all_refresh_sessions
 
 PASSWORD_RESET_LIFETIME = timedelta(hours=1)
@@ -157,5 +159,13 @@ async def reset_password_with_grant(
         user=user,
         password_hash=password_hash,
         now=reset_at,
+    )
+    await record_audit_event(
+        db,
+        action=AuditAction.PASSWORD_RESET,
+        actor_user_id=None,
+        target_user_id=user.id,
+        reason=AuditReason.RECOVERY_GRANT,
+        occurred_at=reset_at,
     )
     return user

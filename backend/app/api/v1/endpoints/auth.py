@@ -50,6 +50,7 @@ from app.core.security import (
 )
 from app.core.utils import normalize_email
 from app.db.session import get_db
+from app.models.audit_event import AuditAction, AuditReason
 from app.models.brand import Brand
 from app.models.calculator_profile import UserCalculatorProfile
 from app.models.preset import Preset
@@ -98,6 +99,7 @@ from app.services.account_auth_service import (
     reset_password_with_grant,
     token_data_for_user,
 )
+from app.services.audit_service import record_audit_event
 from app.services.calculator_defaults_service import (
     calculator_profile_default_values,
     starting_defaults_for_user,
@@ -821,11 +823,9 @@ async def logout(
     data: LogoutRequest | None = Body(default=None),
 ) -> None:
     """Инвалидировать текущие access/refresh токены (server-side blacklist)."""
-    _ = current_user  # авторизация обязательна, даже если объект пользователя дальше не нужен
-
     authorization = request.headers.get("Authorization")
     access_token = None
-    if authorization and authorization.startswith("Bearer "):
+    if authorization and authorization.lower().startswith("bearer "):
         access_token = authorization.split(" ", 1)[1]
     elif _cookie_auth_enabled():
         access_token = request.cookies.get(settings.AUTH_ACCESS_COOKIE_NAME)
@@ -877,6 +877,13 @@ async def logout(
         if not session_revoked:
             await _revoke_token_if_valid(refresh_token, refresh_payload, db)
 
+    await record_audit_event(
+        db,
+        action=AuditAction.AUTH_REVOKED,
+        actor_user_id=current_user.id,
+        target_user_id=current_user.id,
+        reason=AuditReason.LOGOUT,
+    )
     await db.commit()
     if _cookie_auth_enabled():
         _clear_auth_cookies(response)
@@ -1635,6 +1642,13 @@ async def update_user_password(
         db,
         user=locked_user,
         password_hash=password_hash,
+    )
+    await record_audit_event(
+        db,
+        action=AuditAction.PASSWORD_CHANGE,
+        actor_user_id=current_user.id,
+        target_user_id=locked_user.id,
+        reason=AuditReason.AUTHENTICATED_CHANGE,
     )
     await db.commit()
     await db.refresh(locked_user)

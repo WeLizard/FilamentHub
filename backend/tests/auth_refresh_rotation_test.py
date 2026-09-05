@@ -13,6 +13,7 @@ from starlette.responses import Response
 from app.api.v1.endpoints.auth import _set_auth_cookies
 from app.core.config import settings
 from app.core.security import create_refresh_token, decode_refresh_token
+from app.models.audit_event import AuditEvent
 from app.models.password_reset_token import PasswordResetToken
 from app.models.refresh_session import RefreshSession
 from app.models.revoked_token import RevokedToken
@@ -198,6 +199,12 @@ async def test_reuse_after_grace_revokes_only_that_refresh_family(
         json={"refresh_token": second},
     )
     assert descendant.status_code == 401
+    audit = (await db_session.scalars(select(AuditEvent))).one()
+    assert (audit.action, audit.reason, audit.result) == (
+        "auth_revoked", "refresh_reuse", "success"
+    )
+    assert audit.actor_user_id is None
+    assert audit.target_user_id == session.user_id
 
     independent = await client.post(
         "/api/v1/auth/refresh",

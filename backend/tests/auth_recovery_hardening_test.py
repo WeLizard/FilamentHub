@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.password_hashing import hash_password
 from app.core.security import create_access_token, token_fingerprint
+from app.models.audit_event import AuditEvent
 from app.models.password_reset_token import PasswordResetToken
 from app.models.refresh_session import RefreshSession
 from app.models.revoked_token import RevokedToken
@@ -129,14 +130,22 @@ async def test_password_change_requires_reauthentication_and_revokes_every_sessi
     )
     assert missing.status_code == 401
     assert wrong.status_code == 401
+    assert (await db_session.scalars(select(AuditEvent))).all() == []
     assert (await client.get("/api/v1/auth/me", headers=_bearer(old_access))).status_code == 200
 
     changed = await client.patch(
         "/api/v1/auth/me/password",
         json={"current_password": OLD_PASSWORD, "new_password": NEW_PASSWORD},
-        headers=_bearer(old_access),
+        headers={**_bearer(old_access), "X-Correlation-ID": "f4285989-f4b5-499b-a622-61dcb3bc964d"},
     )
     assert changed.status_code == 200, changed.text
+
+    audit = (await db_session.scalars(select(AuditEvent))).one()
+    assert (audit.action, audit.reason, audit.result) == (
+        "password_change", "authenticated_change", "success"
+    )
+    assert audit.actor_user_id == audit.target_user_id == user.id
+    assert str(audit.correlation_id) != "f4285989-f4b5-499b-a622-61dcb3bc964d"
 
     await db_session.refresh(user)
     assert user.auth_version == 1
@@ -251,6 +260,12 @@ async def test_password_reset_is_durable_one_time_and_revokes_sibling_grants_and
     )
     assert replay.status_code == 400
     assert sibling.status_code == 400
+    audit = (await db_session.scalars(select(AuditEvent))).one()
+    assert (audit.action, audit.reason, audit.result) == (
+        "password_reset", "recovery_grant", "success"
+    )
+    assert audit.actor_user_id is None
+    assert audit.target_user_id == user.id
 
     grants = (
         await db_session.scalars(
@@ -442,6 +457,9 @@ async def test_cookie_logout_revokes_access_cookie_and_refresh_family(
     )
 
     assert logout.status_code == 204
+    audit = (await db_session.scalars(select(AuditEvent))).one()
+    assert (audit.action, audit.reason) == ("auth_revoked", "logout")
+    assert audit.actor_user_id == audit.target_user_id == user.id
     assert await db_session.scalar(
         select(RevokedToken.id).where(
             RevokedToken.jti == token_fingerprint(old_access)
@@ -456,9 +474,11 @@ async def test_cookie_logout_revokes_access_cookie_and_refresh_family(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("bearer_scheme", ["Bearer", "bearer"])
 async def test_bearer_logout_without_refresh_body_durably_revokes_access(
     client: AsyncClient,
     db_session: AsyncSession,
+    bearer_scheme: str,
 ) -> None:
     user = await _create_user(
         db_session,
@@ -473,10 +493,13 @@ async def test_bearer_logout_without_refresh_body_durably_revokes_access(
 
     logout = await client.post(
         "/api/v1/auth/logout",
-        headers=_bearer(access_token),
+        headers={"Authorization": f"{bearer_scheme} {access_token}"},
     )
 
     assert logout.status_code == 204
+    audit = (await db_session.scalars(select(AuditEvent))).one()
+    assert (audit.action, audit.reason) == ("auth_revoked", "logout")
+    assert audit.actor_user_id == audit.target_user_id == user.id
     assert await db_session.scalar(
         select(RevokedToken.id).where(
             RevokedToken.jti == token_fingerprint(access_token)
@@ -516,6 +539,10 @@ async def test_admin_deactivation_invalidates_tokens_after_reactivation(
         headers=_bearer(admin_access),
     )
     assert deactivated.status_code == 200, deactivated.text
+    audit = (await db_session.scalars(select(AuditEvent))).one()
+    assert (audit.action, audit.reason) == ("auth_revoked", "admin_block")
+    assert audit.actor_user_id == admin.id
+    assert audit.target_user_id == target.id
 
     blocked_access = await client.get("/api/v1/auth/me", headers=_bearer(old_access))
     assert blocked_access.status_code == 403

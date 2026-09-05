@@ -17,9 +17,11 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import settings
 from app.core.security import create_refresh_token, token_fingerprint
+from app.models.audit_event import AuditAction, AuditReason
 from app.models.password_reset_token import PasswordResetToken
 from app.models.refresh_session import RefreshSession
 from app.models.revoked_token import RevokedToken
+from app.services.audit_service import record_audit_event
 
 logger = logging.getLogger(__name__)
 
@@ -221,6 +223,14 @@ async def rotate_refresh_session(
         return successor
 
     session.revoked_at = rotated_at
+    await record_audit_event(
+        db,
+        action=AuditAction.AUTH_REVOKED,
+        actor_user_id=None,
+        target_user_id=user_id,
+        reason=AuditReason.REFRESH_REUSE,
+        occurred_at=rotated_at,
+    )
     await db.commit()
     logger.warning(
         "Refresh-token reuse revoked session family: user_id=%s session_id=%s",
@@ -252,7 +262,8 @@ async def revoke_refresh_session(
         raise InvalidRefreshSessionError
     if session.revoked_at is None:
         session.revoked_at = revoked_at
-        await db.commit()
+        # Logout commits this revocation together with the access blacklist and audit.
+        await db.flush()
     return True
 
 

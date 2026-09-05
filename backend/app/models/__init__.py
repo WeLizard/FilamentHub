@@ -1,6 +1,7 @@
 """SQLAlchemy models."""
 
 from app.models.app_setting import AppSetting
+from app.models.audit_event import AuditEvent
 from app.models.bad_word import BadWord
 from app.models.brand import Brand
 from app.models.brand_country_cell import BrandCountryCell
@@ -136,6 +137,7 @@ from app.models.wiki_revision import (
 from app.models.wiki_space import WikiSpace
 
 __all__ = [
+    "AuditEvent",
     "BadWord",
     "Currency",
     "Brand",

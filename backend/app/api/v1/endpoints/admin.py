@@ -45,6 +45,7 @@ from app.core.errors import (
 )
 from app.core.utils import like_pattern
 from app.db.session import get_db
+from app.models.audit_event import AuditAction, AuditReason
 
 # BadWord импортируется лениво в функциях, где используется
 from app.models.brand import Brand
@@ -105,6 +106,7 @@ from app.services.achievement_service import (
     read_admin_achievement_overview,
     revoke_manual_achievement,
 )
+from app.services.audit_service import record_audit_event
 from app.services.brand_slug_service import apply_brand_slug_rename, choose_brand_slug
 from app.services.calculator_defaults_service import (
     get_calculator_country_defaults,
@@ -751,6 +753,13 @@ async def deactivate_user(
 
     user.active = False
     await revoke_all_account_auth(db, user=user)
+    await record_audit_event(
+        db,
+        action=AuditAction.AUTH_REVOKED,
+        actor_user_id=admin.id,
+        target_user_id=user.id,
+        reason=AuditReason.ADMIN_BLOCK,
+    )
     await db.commit()
     await db.refresh(user)
 
