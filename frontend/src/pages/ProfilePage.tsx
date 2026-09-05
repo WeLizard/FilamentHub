@@ -543,7 +543,7 @@ export const ProfilePage: React.FC = () => {
 
   const { data: myPhysicalPrinters } = useQuery({
     queryKey: ['physical-printers'],
-    queryFn: physicalPrintersAPI.list,
+    queryFn: ({ signal }) => physicalPrintersAPI.list(signal),
     enabled: !!user?.id && !showBrandCabinet && userTab === 'printer-profiles',
     staleTime: 60_000,
   });
@@ -864,7 +864,7 @@ export const ProfilePage: React.FC = () => {
 
   const { data: spoolsData = [], refetch: refetchSpools } = useQuery({
     queryKey: ['user-spools', user?.id],
-    queryFn: () => spoolsAPI.list(),
+    queryFn: ({ signal }) => spoolsAPI.list(signal),
     enabled: !!user?.id && needsSpoolData,
     staleTime: 60_000,
   });
@@ -2505,7 +2505,7 @@ export const SpoolForm: React.FC<SpoolFormProps> = ({
 
   const printersQuery = useQuery<PhysicalPrinter[]>({
     queryKey: ['physical-printers'],
-    queryFn: physicalPrintersAPI.list,
+    queryFn: ({ signal }) => physicalPrintersAPI.list(signal),
     enabled: mode === 'create',
     staleTime: 10_000,
   });

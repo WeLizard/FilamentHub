@@ -104,7 +104,7 @@ export function PrinterSetupWizard({
   const [confirmKey, setConfirmKey] = useState(false);
   const debouncedSearch = useDebounce(search, 250);
   const { data: printers = [], isPending: loadingPrinters, isError: printersFailed, refetch: reloadPrinters } = useQuery({
-    queryKey: ['physical-printers'], queryFn: physicalPrintersAPI.list,
+    queryKey: ['physical-printers'], queryFn: ({ signal }) => physicalPrintersAPI.list(signal),
   });
   const { data: bindings = [] } = useQuery({
     queryKey: ['printer-bindings'], queryFn: physicalPrintersAPI.listBindings,

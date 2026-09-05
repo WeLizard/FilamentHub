@@ -92,6 +92,20 @@ function renderList(
 }
 
 describe('MyPrintersList Orca bundle action', () => {
+  it('passes a cancellable signal to the printer list and aborts on unmount', async () => {
+    mocks.listPrinters.mockImplementation(() => new Promise(() => {}));
+    const view = renderList();
+    try {
+      await waitFor(() => expect(mocks.listPrinters).toHaveBeenCalled());
+      const signal = mocks.listPrinters.mock.calls[0][0];
+      expect(signal).toBeInstanceOf(AbortSignal);
+      view.unmount();
+      expect(signal.aborted).toBe(true);
+    } finally {
+      view.unmount();
+    }
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.capabilityListener = null;

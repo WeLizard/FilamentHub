@@ -108,7 +108,7 @@ export function MyPrintersList({
 
   const { data: printers, isLoading, isError } = useQuery({
     queryKey: ['physical-printers'],
-    queryFn: physicalPrintersAPI.list,
+    queryFn: ({ signal }) => physicalPrintersAPI.list(signal),
   });
   const { data: bindings } = useQuery({
     queryKey: ['printer-bindings'],

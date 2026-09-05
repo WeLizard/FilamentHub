@@ -295,7 +295,7 @@ export const FilamentDetailPage: React.FC = () => {
   // narrow the list: the filter asks the server about that model.
   const { data: physicalPrinters } = useQuery({
     queryKey: ['physical-printers-for-filter', user?.id],
-    queryFn: () => physicalPrintersAPI.list(),
+    queryFn: ({ signal }) => physicalPrintersAPI.list(signal),
     enabled: !!user?.id,
   });
   const myPrinters = (physicalPrinters ?? [])

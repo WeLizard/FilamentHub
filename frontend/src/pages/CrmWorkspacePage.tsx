@@ -210,7 +210,7 @@ export const CrmWorkspacePage: React.FC<CrmWorkspacePageProps> = ({
   });
   const spoolsQuery = useQuery({
     queryKey: ['crm', 'reservation-spools'],
-    queryFn: spoolsAPI.list,
+    queryFn: ({ signal }) => spoolsAPI.list(signal),
     enabled: hasAccess && reservationOrder !== null,
   });
 

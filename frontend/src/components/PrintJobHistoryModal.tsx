@@ -131,7 +131,7 @@ export function PrintJobHistoryModal({ printer, onClose }: PrintJobHistoryModalP
   });
   const spoolsQuery = useQuery({
     queryKey: ['spools'],
-    queryFn: spoolsAPI.list,
+    queryFn: ({ signal }) => spoolsAPI.list(signal),
     enabled: creating,
     staleTime: 30_000,
   });

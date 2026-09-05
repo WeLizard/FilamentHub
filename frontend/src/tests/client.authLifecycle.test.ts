@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AxiosError, CanceledError, type AxiosInstance, type InternalAxiosRequestConfig } from 'axios';
+import { QueryClient, QueryObserver } from '@tanstack/react-query';
 
 const state = vi.hoisted(() => ({
   api: null as AxiosInstance | null,
@@ -56,6 +57,41 @@ describe('account request lifecycle', () => {
     state.adapter.mockReset(); state.post.mockReset();
     state.access = 'access-a'; state.refresh = 'refresh-a';
     state.cookie = false; state.csrf = null; state.plugin = false;
+  });
+
+  it.each([
+    ['spools', 'logout'], ['spools', 'unmount'],
+    ['printers', 'logout'], ['printers', 'unmount'],
+  ])('aborts the %s HTTP transport on %s', async (resource, boundary) => {
+    const { spoolsAPI, physicalPrintersAPI } = await load();
+    const aborted = vi.fn();
+    state.adapter.mockImplementation((config) => new Promise((_, reject) => {
+      config.signal?.addEventListener('abort', () => {
+        aborted();
+        reject(new CanceledError(undefined, config));
+      }, { once: true });
+    }));
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const observer = new QueryObserver<unknown>(client, {
+      queryKey: [resource],
+      queryFn: ({ signal }) => resource === 'spools'
+        ? spoolsAPI.list(signal) : physicalPrintersAPI.list(signal),
+    });
+    const unsubscribe = observer.subscribe(() => {});
+    try {
+      await until(() => state.adapter.mock.calls.length === 1);
+      const request = state.adapter.mock.calls[0][0];
+      expect(request.signal).toBeInstanceOf(AbortSignal);
+      if (boundary === 'logout') await client.cancelQueries();
+      else unsubscribe();
+      expect(request.signal.aborted).toBe(true);
+      expect(aborted).toHaveBeenCalledOnce();
+      expect(state.post).not.toHaveBeenCalled();
+      expect(state.remove).not.toHaveBeenCalled();
+    } finally {
+      unsubscribe();
+      client.clear();
+    }
   });
 
   it('returns wrong-password business rejection without refresh or repeated mutation', async () => {

@@ -1741,7 +1741,7 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
 
   const spoolsQuery = useQuery({
     queryKey: ['calculator-pro', 'spools'],
-    queryFn: spoolsAPI.list,
+    queryFn: ({ signal }) => spoolsAPI.list(signal),
     staleTime: 30_000,
     enabled: hasCalculatorAccess,
   });
@@ -2134,7 +2134,7 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
 
   const printersQuery = useQuery({
     queryKey: ['calculator', 'physical-printers'],
-    queryFn: () => physicalPrintersAPI.list(),
+    queryFn: ({ signal }) => physicalPrintersAPI.list(signal),
     staleTime: 60_000,
     enabled: hasCalculatorAccess,
   });

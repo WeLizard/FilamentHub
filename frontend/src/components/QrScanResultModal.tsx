@@ -118,7 +118,7 @@ export function QrScanResultModal({
   });
   const printerLocationsQuery = useQuery({
     queryKey: ['qr-inventory-locations', userId],
-    queryFn: physicalPrintersAPI.list,
+    queryFn: ({ signal }) => physicalPrintersAPI.list(signal),
     enabled: isAuthenticated,
     staleTime: 30_000,
   });

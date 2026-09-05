@@ -104,7 +104,7 @@ export const CatalogPage: React.FC = () => {
   });
   const { data: ownedPrinters } = useQuery({
     queryKey: ['physical-printers'],
-    queryFn: physicalPrintersAPI.list,
+    queryFn: ({ signal }) => physicalPrintersAPI.list(signal),
     enabled: !!user,
   });
 

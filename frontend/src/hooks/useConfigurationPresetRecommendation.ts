@@ -48,7 +48,7 @@ export function useConfigurationPresetRecommendation(
 
   const printersQuery = useQuery({
     queryKey: ['physical-printers'],
-    queryFn: physicalPrintersAPI.list,
+    queryFn: ({ signal }) => physicalPrintersAPI.list(signal),
     enabled: userId !== null,
     staleTime: 30_000,
   });

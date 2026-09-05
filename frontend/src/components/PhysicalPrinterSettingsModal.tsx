@@ -57,7 +57,7 @@ export const PhysicalPrinterSettingsModal: React.FC<PhysicalPrinterSettingsModal
   const [mergeTarget, setMergeTarget] = useState<number | null>(null);
   const [mergePreview, setMergePreview] = useState<PrinterMergePreview | null>(null);
   const { data: allPrinters = [] } = useQuery({
-    queryKey: ['physical-printers'], queryFn: physicalPrintersAPI.list, enabled: isOpen,
+    queryKey: ['physical-printers'], queryFn: ({ signal }) => physicalPrintersAPI.list(signal), enabled: isOpen,
   });
   const previewMerge = useMutation({
     mutationFn: () => physicalPrintersAPI.previewMerge(printer.id, mergeTarget!),

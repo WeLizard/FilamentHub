@@ -3749,8 +3749,8 @@ export const printJobsAPI = {
 };
 
 export const spoolsAPI = {
-  list: async (): Promise<UserSpool[]> => {
-    const response = await api.get<UserSpool[]>('/spools');
+  list: async (signal?: AbortSignal): Promise<UserSpool[]> => {
+    const response = await api.get<UserSpool[]>('/spools', { signal });
     return response.data;
   },
 
@@ -4390,8 +4390,8 @@ export const physicalPrintersAPI = {
   merge: async (sourceId: number, targetId: number, revision: string): Promise<void> => {
     await api.post(`/physical-printers/${sourceId}/merge`, { target_id: targetId, revision });
   },
-  list: async (): Promise<PhysicalPrinter[]> => {
-    const response = await api.get<PhysicalPrinter[]>('/physical-printers');
+  list: async (signal?: AbortSignal): Promise<PhysicalPrinter[]> => {
+    const response = await api.get<PhysicalPrinter[]>('/physical-printers', { signal });
     return response.data;
   },
 

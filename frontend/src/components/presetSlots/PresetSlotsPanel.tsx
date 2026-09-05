@@ -556,7 +556,7 @@ export function PresetSlotsPanel({
 
   const { data: physicalPrinters = [], isLoading: loadingPrinters } = useQuery({
     queryKey: ['physical-printers'],
-    queryFn: physicalPrintersAPI.list,
+    queryFn: ({ signal }) => physicalPrintersAPI.list(signal),
     staleTime: 10_000,
     refetchOnWindowFocus: true,
   });
@@ -572,7 +572,7 @@ export function PresetSlotsPanel({
   const shouldFetchSpools = externalSpools == null;
   const { data: fetchedSpools = [] } = useQuery({
     queryKey: ['spools'],
-    queryFn: spoolsAPI.list,
+    queryFn: ({ signal }) => spoolsAPI.list(signal),
     staleTime: 60_000,
     enabled: physicalPrinters.length > 0 && shouldFetchSpools,
   });
