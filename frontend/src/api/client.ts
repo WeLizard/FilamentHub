@@ -38,6 +38,11 @@ const notifyCppLogout = () => {
 
 // Добавляем токен в запросы
 api.interceptors.request.use((config) => {
+  const request = config as RetryableAxiosConfig;
+  if (request._authGeneration !== undefined && request._authGeneration !== authGeneration) {
+    throw new StaleRefreshResponseError();
+  }
+  request._authGeneration = authGeneration;
   const token = getToken();
   if (token && JWT_AUTH_MODE) {
     config.headers.Authorization = `Bearer ${token}`;
@@ -57,18 +62,30 @@ api.interceptors.request.use((config) => {
 
 interface RetryableAxiosConfig extends InternalAxiosRequestConfig {
   _retry?: boolean;
+  _authGeneration?: number;
 }
 
 // Переменная для предотвращения множественных запросов refresh
-let isRefreshing = false;
+let refreshingGeneration: number | null = null;
+let authGeneration = 0;
 let failedQueue: Array<{
   resolve: (value?: unknown) => void;
   reject: (reason?: unknown) => void;
   config: RetryableAxiosConfig;
+  cleanup?: () => void;
 }> = [];
 
 const processQueue = (error: unknown, token: string | null = null) => {
   failedQueue.forEach((prom) => {
+    prom.cleanup?.();
+    if (prom.config._authGeneration !== authGeneration) {
+      prom.reject(new StaleRefreshResponseError());
+      return;
+    }
+    if (prom.config.signal?.aborted) {
+      prom.reject(new axios.CanceledError());
+      return;
+    }
     if (error) {
       prom.reject(error);
     } else {
@@ -93,6 +110,12 @@ export class StaleRefreshResponseError extends Error {
   }
 }
 
+/** Invalidate responses/retries belonging to the preceding account lifecycle. */
+export function beginAuthSessionTransition(): void {
+  authGeneration += 1;
+  processQueue(new StaleRefreshResponseError());
+}
+
 async function withCrossTabRefreshLock<T>(operation: () => Promise<T>): Promise<T> {
   if (typeof navigator === 'undefined' || !navigator.locks?.request) {
     return operation();
@@ -100,7 +123,7 @@ async function withCrossTabRefreshLock<T>(operation: () => Promise<T>): Promise<
   return navigator.locks.request(AUTH_REFRESH_LOCK_NAME, operation);
 }
 
-function withAuthSessionLock<T>(operation: () => Promise<T>): Promise<T> {
+export function withAuthSessionLock<T>(operation: () => Promise<T>): Promise<T> {
   const result = localAuthOperationTail.then(
     () => withCrossTabRefreshLock(operation),
     () => withCrossTabRefreshLock(operation),
@@ -120,7 +143,7 @@ async function performSessionRefresh(
   // Re-read storage only after acquiring the cross-tab lock.  Another tab may
   // have rotated the family while this caller was waiting.
   const refreshToken = persistedRefreshToken || requestedRefreshToken || null;
-  if (!refreshToken && !cookieSessionAvailable) {
+  if (!refreshToken && !(cookieSessionAvailable && getCsrfToken())) {
     throw new Error('No refresh token available');
   }
 
@@ -188,11 +211,24 @@ export async function refreshAuthSession(
 
 // Обработка ошибок ответа
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    const request = response.config as RetryableAxiosConfig;
+    if (request._authGeneration !== undefined && request._authGeneration !== authGeneration) {
+      throw new StaleRefreshResponseError();
+    }
+    return response;
+  },
   async (error) => {
+    if (error.code === 'ERR_CANCELED' || error.config?.signal?.aborted) {
+      return Promise.reject(error);
+    }
+    const originalRequest = error.config as RetryableAxiosConfig | undefined;
+    if (originalRequest?._authGeneration !== undefined && originalRequest._authGeneration !== authGeneration) {
+      return Promise.reject(new StaleRefreshResponseError());
+    }
     // Network error — no response received (internet down, server unreachable, DNS failure)
     if (!error.response) {
-      const isTimeout = error.code === 'ECONNABORTED' || error.code === 'ERR_CANCELED';
+      const isTimeout = error.code === 'ECONNABORTED';
       const code = isTimeout ? 'ERR_REQUEST_TIMEOUT' : 'ERR_NETWORK';
       // Inject structured error so translateApiError can handle it uniformly
       error.response = {
@@ -216,8 +252,14 @@ api.interceptors.response.use(
       }));
     }
     
-    const originalRequest = error.config as RetryableAxiosConfig | undefined;
     if (!originalRequest) return Promise.reject(error);
+    originalRequest._authGeneration ??= authGeneration;
+    const requestGeneration = originalRequest._authGeneration;
+    const path = originalRequest.url?.split('?')[0];
+    if (path === '/auth/me/password' && error.response?.status === 401
+      && error.response?.data?.detail?.code === 'ERR_WRONG_PASSWORD') {
+      return Promise.reject(error);
+    }
     
     // Если токен истек или невалидный (401), пытаемся обновить
     // НО: не обрабатываем ошибки авторизации (login/register) - они должны обрабатываться в компонентах
@@ -229,9 +271,9 @@ api.interceptors.response.use(
     
     // Для /auth/me: если токена нет, это нормально (пользователь не авторизован)
     // Не показываем ошибку в консоли и не пытаемся обновить токен
-    const isMeEndpoint = originalRequest?.url?.includes('/auth/me');
+    const isMeEndpoint = path === '/auth/me';
     const hasToken = Boolean(getToken());
-    const cookieSessionAvailable = canUseCookieSession();
+    const cookieSessionAvailable = canUseCookieSession() && Boolean(getCsrfToken());
     
     if (isMeEndpoint && !hasToken && !cookieSessionAvailable) {
       // Токена нет - это нормально, просто возвращаем ошибку без логирования
@@ -242,15 +284,22 @@ api.interceptors.response.use(
 
     // Не обрабатываем повторно запросы, которые уже были повторены
     if (error.response?.status === 401 && !originalRequest._retry && !isAuthEndpoint && (!isMeEndpoint || shouldTryRefreshForMe)) {
-      if (isRefreshing) {
+      originalRequest._retry = true;
+      if (refreshingGeneration === requestGeneration) {
         // Если уже обновляем токен, ждем результата
         return new Promise((resolve, reject) => {
-          failedQueue.push({ resolve, reject, config: originalRequest });
+          const entry = { resolve, reject, config: originalRequest, cleanup: () => {} };
+          const cancel = () => {
+            failedQueue = failedQueue.filter((item) => item !== entry);
+            reject(new axios.CanceledError());
+          };
+          originalRequest.signal?.addEventListener?.('abort', cancel, { once: true });
+          entry.cleanup = () => originalRequest.signal?.removeEventListener?.('abort', cancel);
+          failedQueue.push(entry);
         });
       }
 
-      originalRequest._retry = true;
-      isRefreshing = true;
+      refreshingGeneration = requestGeneration;
 
       const refreshToken = getRefreshToken();
       
@@ -265,12 +314,14 @@ api.interceptors.response.use(
           window.location.reload();
         }
         processQueue(error, null);
-        isRefreshing = false;
+        refreshingGeneration = null;
         return Promise.reject(error);
       }
 
       try {
         const { access_token } = await refreshAuthSession(refreshToken);
+        if (requestGeneration !== authGeneration) throw new StaleRefreshResponseError();
+        if (originalRequest.signal?.aborted) throw new axios.CanceledError();
         
         if (!access_token) {
           throw new Error('No access token received from refresh endpoint');
@@ -289,7 +340,9 @@ api.interceptors.response.use(
                   headers: { Authorization: `Bearer ${access_token}` },
                 },
               );
-              reportPluginSessionToPlugin(pluginSession.data.plugin_token);
+              if (requestGeneration === authGeneration) {
+                reportPluginSessionToPlugin(pluginSession.data.plugin_token);
+              }
             } catch {
               // Browser auth remains valid; plugin actions will request sign-in.
             }
@@ -298,16 +351,25 @@ api.interceptors.response.use(
           delete originalRequest.headers.Authorization;
         }
         
+        if (requestGeneration !== authGeneration) throw new StaleRefreshResponseError();
         // Обрабатываем очередь запросов
         processQueue(null, JWT_AUTH_MODE && shouldPersistTokensLocally() ? access_token : null);
-        isRefreshing = false;
+        refreshingGeneration = null;
         
         // Повторяем оригинальный запрос
         return api(originalRequest);
       } catch (refreshError: unknown) {
+        if (requestGeneration !== authGeneration) {
+          return Promise.reject(new StaleRefreshResponseError());
+        }
+        if ((refreshError as { code?: string })?.code === 'ERR_CANCELED') {
+          processQueue(null, getToken());
+          refreshingGeneration = null;
+          return Promise.reject(refreshError);
+        }
         if (refreshError instanceof StaleRefreshResponseError) {
           processQueue(refreshError, null);
-          isRefreshing = false;
+          refreshingGeneration = null;
           return Promise.reject(refreshError);
         }
         const currentRefreshToken = getRefreshToken();
@@ -322,8 +384,14 @@ api.interceptors.response.use(
           const currentAccessToken = getToken();
           originalRequest.headers.Authorization = `Bearer ${currentAccessToken}`;
           processQueue(null, currentAccessToken);
-          isRefreshing = false;
+          refreshingGeneration = null;
           return api(originalRequest);
+        }
+
+        if ((refreshError as { response?: { status?: number } })?.response?.status !== 401) {
+          processQueue(refreshError, null);
+          refreshingGeneration = null;
+          return Promise.reject(refreshError);
         }
 
         // Refresh token невалидный, удаляем только ту локальную сессию,
@@ -332,7 +400,7 @@ api.interceptors.response.use(
         // Уведомляем C++ о logout (refresh failed)
         notifyCppLogout();
         processQueue(refreshError, null);
-        isRefreshing = false;
+        refreshingGeneration = null;
         
         // Не перезагружаем страницу если мы в админке или на странице авторизации
         // И не делаем reload для /auth/me, иначе возникает вечный цикл на гостевой сессии.
@@ -351,13 +419,17 @@ api.interceptors.response.use(
 // Auth API
 export const authAPI = {
   register: async (data: RegistrationPayload) => {
-    const response = await api.post<Token>('/auth/register', data);
-    return response.data;
+    return withAuthSessionLock(async () => {
+      const response = await api.post<Token>('/auth/register', data);
+      return response.data;
+    });
   },
 
   login: async (data: { email: string; password: string }) => {
-    const response = await api.post<Token>('/auth/login', data);
-    return response.data;
+    return withAuthSessionLock(async () => {
+      const response = await api.post<Token>('/auth/login', data);
+      return response.data;
+    });
   },
 
   createPluginSession: async (): Promise<{ plugin_token: string; expires_in: number; token_type: string }> => {

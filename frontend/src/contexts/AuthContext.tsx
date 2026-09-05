@@ -1,8 +1,9 @@
 /** Context для управления аутентификацией */
 
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { authAPI } from '../api/client';
-import { getRefreshToken, getToken, isCookieAuthMode, isOrcaEmbedded, removeToken, setRefreshToken, setToken, setUserId, shouldPersistTokensLocally } from '../utils/auth';
+import React, { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { authAPI, beginAuthSessionTransition, withAuthSessionLock } from '../api/client';
+import { getRefreshToken, getToken, hasSessionCandidate, isOrcaEmbedded, removeToken, setRefreshToken, setToken, setUserId, shouldPersistTokensLocally } from '../utils/auth';
 import { isPluginEmbed, reportLogoutToPlugin, reportPluginSessionToPlugin, subscribeToPluginAuthRestore, subscribeToPluginLogout } from '../utils/pluginBridge';
 import type { LegalAcceptancePayload, RegistrationPayload, Token, User } from '../types/api';
 
@@ -34,12 +35,13 @@ export const useAuth = () => {
 const PLUGIN_SESSION_RETRY_MS = 60_000;
 const PLUGIN_SESSION_REFRESH_MARGIN_SECONDS = 60;
 
-async function authorizePluginSession(): Promise<number | null> {
+async function authorizePluginSession(isCurrent: () => boolean): Promise<number | null> {
   if (!isPluginEmbed()) {
     return null;
   }
   try {
     const pluginSession = await authAPI.createPluginSession();
+    if (!isCurrent()) return null;
     reportPluginSessionToPlugin(pluginSession.plugin_token);
     return pluginSession.expires_in;
   } catch {
@@ -54,10 +56,58 @@ interface AuthProviderProps {
 }
 
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
+  const queryClient = useQueryClient();
+  const epoch = useRef(0);
+  const mounted = useRef(true);
+  const currentUser = useRef<User | null>(null);
+  const queriesNeedRefetch = useRef(false);
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isMaintenanceMode, setIsMaintenanceMode] = useState(false);
   const [maintenanceMessage, setMaintenanceMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; epoch.current += 1; };
+  }, []);
+
+  const clearAccountQueries = () => {
+    void queryClient.cancelQueries();
+    // Reset observed queries so public views keep their subscriptions. Refetch
+    // only after the new identity has updated private queries' enabled guards.
+    queryClient.getQueryCache().getAll().forEach((query) => query.reset());
+    queryClient.removeQueries({ predicate: (query) => query.getObserversCount() === 0 });
+    queryClient.getMutationCache().clear();
+    queriesNeedRefetch.current = true;
+  };
+  const updateUser = (nextUser: User | null) => {
+    if (currentUser.current?.id !== nextUser?.id) {
+      if (currentUser.current && nextUser) {
+        epoch.current += 1;
+        beginAuthSessionTransition();
+      }
+      clearAccountQueries();
+    }
+    currentUser.current = nextUser;
+    setUser(nextUser);
+  };
+  const beginIdentityChange = () => {
+    epoch.current += 1;
+    beginAuthSessionTransition();
+    updateUser(null);
+    setIsLoading(false);
+    return epoch.current;
+  };
+  const requireCurrent = (operation: number) => {
+    if (!mounted.current || operation !== epoch.current) throw new Error('Authentication operation was superseded');
+  };
+
+  useEffect(() => {
+    if (queriesNeedRefetch.current) {
+      queriesNeedRefetch.current = false;
+      void queryClient.refetchQueries({ type: 'active' });
+    }
+  }, [queryClient, user?.id]);
 
   // Слушаем глобальное событие maintenance mode от API interceptor
   useEffect(() => {
@@ -77,9 +127,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   // Загружаем пользователя при монтировании (если есть токен)
   // Используем небольшую задержку чтобы C++ успел инжектировать токен в localStorage
   useEffect(() => {
+    let cancelled = false;
+    const operation = epoch.current;
+    const isCurrent = () => !cancelled && operation === epoch.current;
     const loadUser = async () => {
       const embeddedOrca = isOrcaEmbedded();
-      const cookieSessionAvailable = isCookieAuthMode() && !embeddedOrca;
       const waitForEmbeddedToken = async (): Promise<string | null> => {
         if (!embeddedOrca) {
           return getToken();
@@ -91,7 +143,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         }
 
         const deadline = Date.now() + 2500;
-        while (Date.now() < deadline) {
+        while (Date.now() < deadline && isCurrent()) {
           await new Promise((resolve) => setTimeout(resolve, 100));
           const token = getToken();
           if (token) {
@@ -105,38 +157,43 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       // Небольшая задержка — C++ инжектирует токен через RunScript в OnLoaded,
       // который может выполниться чуть позже React mount
       const token = await waitForEmbeddedToken();
-      const hasSessionCandidate = Boolean(token) || cookieSessionAvailable;
-      if (hasSessionCandidate) {
+      if (!isCurrent()) return;
+      if (token || hasSessionCandidate()) {
         try {
           const userData = await authAPI.me();
-          setUser(userData);
+          if (!isCurrent()) return;
+          updateUser(userData);
           // Если успешно загрузили - сбрасываем maintenance mode
           setIsMaintenanceMode(false);
           setMaintenanceMessage(null);
         } catch (error: any) {
+          if (!isCurrent()) return;
           // Проверяем на maintenance mode (503)
           if (error.response?.status === 503 && error.response?.data?.maintenance_mode) {
             setIsMaintenanceMode(true);
             setMaintenanceMessage(error.response?.data?.message || null);
+          } else if (error.response?.status === 401) {
+            // Токен/сессия невалидны или истекли
+            removeToken();
+            updateUser(null);
           } else {
-          // Токен/сессия невалидны или истекли
-          removeToken();
-          setUser(null);
+            console.error('Account session check failed', { status: error.response?.status });
           }
-          // Не логируем ошибку - это нормально при первом заходе или истекшем токене
         }
       } else {
         // Нет токена - проверяем maintenance mode через публичный health endpoint
         try {
           const maintenanceStatus = await authAPI.getMaintenanceStatus();
+          if (!isCurrent()) return;
           setIsMaintenanceMode(maintenanceStatus.maintenance_mode);
           setMaintenanceMessage(maintenanceStatus.maintenance_mode ? maintenanceStatus.message : null);
         } catch {
+          if (!isCurrent()) return;
           // Если health endpoint недоступен, не блокируем приложение
           setIsMaintenanceMode(false);
           setMaintenanceMessage(null);
         }
-        setUser(null);
+        updateUser(null);
       }
       setIsLoading(false);
     };
@@ -144,7 +201,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     // Задержка 100ms — даёт C++ время инжектировать токен через RunScript
     // В обычном браузере токен уже в localStorage, задержка незаметна
     const timer = setTimeout(loadUser, 100);
-    return () => clearTimeout(timer);
+    return () => { cancelled = true; clearTimeout(timer); };
   }, []);
 
   // Слушаем изменения localStorage (C++ может инжектировать токен после загрузки)
@@ -156,7 +213,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           refreshUser();
         } else if (!e.newValue && user) {
           // Токен удалён — logout
-          setUser(null);
+          beginIdentityChange();
         }
       }
     };
@@ -197,11 +254,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
 
     let cancelled = false;
+    const operation = epoch.current;
     let refreshTimer: ReturnType<typeof setTimeout> | undefined;
 
     const refreshPluginSession = async () => {
-      const expiresIn = await authorizePluginSession();
-      if (cancelled) {
+      const expiresIn = await authorizePluginSession(() => !cancelled && operation === epoch.current);
+      if (cancelled || operation !== epoch.current) {
         return;
       }
       const delay = expiresIn
@@ -224,7 +282,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   // Вход и регистрация заканчиваются одинаково: сервер выдал сессию, дальше её
   // нужно сохранить и представиться. Общее место, чтобы не разошлись.
-  const establishSession = async (tokenData: Token) => {
+  const establishSession = async (tokenData: Token, operation: number) => {
+    requireCurrent(operation);
     const persistLocally = shouldPersistTokensLocally();
     if (persistLocally) {
       setToken(tokenData.access_token);
@@ -237,7 +296,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
     // Загружаем данные пользователя
     const userData = await authAPI.me();
-    setUser(userData);
+    requireCurrent(operation);
+    updateUser(userData);
 
     // Сохраняем user_id в localStorage
     if (userData.id && persistLocally) {
@@ -251,46 +311,53 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   };
 
   const login = async (email: string, password: string) => {
+    const operation = beginIdentityChange();
     try {
-      await establishSession(await authAPI.login({ email, password }));
+      await establishSession(await authAPI.login({ email, password }), operation);
     } catch (error: any) {
       // Удаляем токен если логин не удался
-      removeToken();
+      if (operation === epoch.current) removeToken();
       throw error; // Пробрасываем ошибку дальше для обработки в компоненте
     }
   };
 
   const loginWithToken = async (accessToken: string, refreshToken?: string | null) => {
+    const operation = beginIdentityChange();
     try {
       const persistLocally = shouldPersistTokensLocally();
-      if (persistLocally) {
-        setToken(accessToken);
-      }
-      if (refreshToken && persistLocally) {
-        setRefreshToken(refreshToken);
-      }
+      // Wait for a pending logout before restoring externally supplied credentials.
+      // Do not hold the lock during /me, which may itself need session refresh.
+      await withAuthSessionLock(async () => {
+        requireCurrent(operation);
+        if (persistLocally) setToken(accessToken);
+        if (refreshToken && persistLocally) setRefreshToken(refreshToken);
+      });
+      requireCurrent(operation);
       const userData = await authAPI.me();
-      setUser(userData);
+      requireCurrent(operation);
+      updateUser(userData);
       if (userData.id && persistLocally) {
         setUserId(userData.id);
       }
       return userData;
     } catch (error: any) {
-      removeToken();
+      if (operation === epoch.current) removeToken();
       throw error;
     }
   };
 
   const register = async (data: RegistrationPayload) => {
+    const operation = beginIdentityChange();
     try {
       // Регистрация сразу отдаёт сессию: отдельный вход следом заставлял сервер
       // второй раз проверять тот же пароль.
       const tokenData = await authAPI.register(data);
 
       try {
-        await establishSession(tokenData);
+        await establishSession(tokenData, operation);
       } catch (sessionError: any) {
-        console.warn('Session after registration failed:', sessionError);
+        if (operation !== epoch.current) throw sessionError;
+        console.warn('Session after registration failed', { status: sessionError.response?.status });
         removeToken();
         const error = new Error('Registration succeeded but the session could not be opened') as Error & {
           registrationSucceeded: true;
@@ -309,12 +376,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   };
 
   const acceptLegalDocuments = async (data: LegalAcceptancePayload): Promise<User> => {
+    const operation = epoch.current;
     const userData = await authAPI.acceptLegalDocuments(data);
-    setUser(userData);
+    requireCurrent(operation);
+    updateUser(userData);
     return userData;
   };
 
   const logout = async () => {
+    const operation = beginIdentityChange();
     // Серверная инвалидация токенов (best-effort — не блокируем UI при ошибке)
     try {
       const refreshToken = getRefreshToken();
@@ -322,8 +392,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     } catch {
       // Сервер недоступен или токен уже истёк — всё равно выходим локально
     }
+    if (operation !== epoch.current) return;
     removeToken();
-    setUser(null);
     // Уведомляем C++ (OrcaSlicer) о logout — очистить токен в AppConfig
     try {
       if (typeof window !== 'undefined' && window.wx?.postMessage) {
@@ -337,21 +407,26 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   };
 
   const refreshUser = async () => {
-    const cookieSessionAvailable = isCookieAuthMode() && !isOrcaEmbedded();
-    if (getToken() || cookieSessionAvailable) {
+    const operation = epoch.current;
+    if (hasSessionCandidate()) {
       try {
         const userData = await authAPI.me();
-        setUser(userData);
+        if (operation !== epoch.current) return;
+        updateUser(userData);
         // Успешно загрузили - сбрасываем maintenance mode
         setIsMaintenanceMode(false);
         setMaintenanceMessage(null);
       } catch (error: any) {
+        if (operation !== epoch.current) return;
         // Проверяем на maintenance mode (503)
         if (error.response?.status === 503 && error.response?.data?.maintenance_mode) {
           setIsMaintenanceMode(true);
           setMaintenanceMessage(error.response?.data?.message || null);
+        } else if (error.response?.status === 401) {
+          beginIdentityChange();
+          removeToken();
         } else {
-          logout();
+          console.error('Account session check failed', { status: error.response?.status });
         }
       }
     }

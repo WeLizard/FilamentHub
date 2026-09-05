@@ -133,6 +133,11 @@ export const getCsrfToken = (): string | null => {
   return getCookieValue(import.meta.env.VITE_AUTH_CSRF_COOKIE_NAME || 'fh_csrf_token');
 };
 
+/** Scheduling hint only; account identity still requires the server's /auth/me. */
+export const hasSessionCandidate = (): boolean => Boolean(getToken()) || (
+  isCookieAuthMode() && !isOrcaEmbedded() && Boolean(getCsrfToken())
+);
+
 export const clearLegacyLocalAuthStateIfNeeded = (): void => {
   if (isCookieAuthMode() && !isOrcaEmbedded()) {
     removeToken();

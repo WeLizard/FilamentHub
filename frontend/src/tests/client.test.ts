@@ -264,7 +264,9 @@ describe('api/client interceptors', () => {
 
     await loadClientModule();
 
-    axiosState.post.mockRejectedValueOnce(new Error('refresh failed'));
+    axiosState.post.mockRejectedValueOnce(Object.assign(new Error('refresh failed'), {
+      response: { status: 401 },
+    }));
 
     const responseRejected = axiosState.responseRejected;
 
