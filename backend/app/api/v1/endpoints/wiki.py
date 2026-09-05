@@ -533,7 +533,10 @@ async def get_article_translation(
         raise_error(404, ERR_ARTICLE_NOT_FOUND)
     source_key = (
         await db.execute(
-            select(WikiArticle.content_key).where(WikiArticle.slug == article_slug)
+            select(WikiArticle.content_key).where(
+                WikiArticle.slug == article_slug,
+                WikiArticle.status == WikiArticleStatus.PUBLISHED,
+            )
         )
     ).scalar_one_or_none()
     if source_key is None:
@@ -878,7 +881,10 @@ async def get_article_feedback_stats(
     """
     # Проверяем что статья существует
     result = await db.execute(
-        select(WikiArticle.id).where(WikiArticle.slug == article_slug)
+        select(WikiArticle.id).where(
+            WikiArticle.slug == article_slug,
+            WikiArticle.status == WikiArticleStatus.PUBLISHED,
+        )
     )
     article_id = result.scalar_one_or_none()
     if not article_id:
@@ -1028,7 +1034,10 @@ async def remove_helpful_mark(
     """
     # Проверяем что статья существует
     result = await db.execute(
-        select(WikiArticle.id).where(WikiArticle.slug == article_slug)
+        select(WikiArticle.id).where(
+            WikiArticle.slug == article_slug,
+            WikiArticle.status == WikiArticleStatus.PUBLISHED,
+        )
     )
     article_id = result.scalar_one_or_none()
     if not article_id:
@@ -1077,7 +1086,10 @@ async def list_article_feedback(
     """
     # Проверяем что статья существует
     result = await db.execute(
-        select(WikiArticle.id).where(WikiArticle.slug == article_slug)
+        select(WikiArticle.id).where(
+            WikiArticle.slug == article_slug,
+            WikiArticle.status == WikiArticleStatus.PUBLISHED,
+        )
     )
     article_id = result.scalar_one_or_none()
     if not article_id:

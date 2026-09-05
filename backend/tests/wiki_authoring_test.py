@@ -7,8 +7,9 @@ from sqlalchemy import func, select
 
 from app.core.security import create_access_token
 from app.models.user import UserRole
-from app.models.wiki_article import WikiArticle, WikiArticleProvenance
+from app.models.wiki_article import WikiArticle, WikiArticleProvenance, WikiArticleStatus
 from app.models.wiki_category import WikiCategory
+from app.models.wiki_feedback import WikiArticleFeedback, WikiFeedbackType
 from app.models.wiki_revision import WikiRevision, WikiRevisionStatus
 from app.models.wiki_space import WikiSpace
 from app.services.account_deletion import delete_user_account
@@ -134,6 +135,115 @@ async def test_public_article_list_never_exposes_private_drafts(
         headers=_auth_headers(admin_user),
     )
     assert editor.status_code == 200
+
+
+@pytest.mark.parametrize(
+    ("private_status", "legacy_published"),
+    [
+        (WikiArticleStatus.DRAFT, False),
+        (WikiArticleStatus.PENDING_REVIEW, True),
+        (WikiArticleStatus.REJECTED, True),
+    ],
+)
+async def test_unpublished_article_hides_feedback_and_translation_metadata(
+    client,
+    admin_user,
+    auth_user,
+    db_session,
+    private_status,
+    legacy_published,
+):
+    category = await _seed_wiki(db_session)
+    admin_headers = _auth_headers(admin_user)
+    reader_headers = _auth_headers(auth_user)
+    created = await client.post(
+        "/api/v1/wiki/author/articles",
+        headers=admin_headers,
+        json={
+            "category_id": category.id,
+            "title": "Withdrawn article",
+            "slug": "withdrawn-article",
+            "content_key": "withdrawn-material",
+            "summary": "Article summary",
+            "content": "Article body",
+            "publish": True,
+        },
+    )
+    assert created.status_code == 201, created.text
+    article_id = created.json()["article_id"]
+    translation = await client.post(
+        "/api/v1/wiki/author/articles",
+        headers=admin_headers,
+        json={
+            "category_id": category.id,
+            "title": "English article",
+            "slug": "english-article",
+            "content_key": "withdrawn-material",
+            "language": "en",
+            "summary": "English summary",
+            "content": "English body",
+            "publish": True,
+        },
+    )
+    assert translation.status_code == 201, translation.text
+    # Existing comments predate the move to the separate feedback API.
+    db_session.add(WikiArticleFeedback(
+        article_id=article_id,
+        user_id=admin_user.id,
+        feedback_type=WikiFeedbackType.FEEDBACK,
+        comment="Legacy feedback body",
+    ))
+    await db_session.commit()
+    article_url = "/api/v1/wiki/articles/withdrawn-article"
+    for headers in ({}, reader_headers):
+        marked = await client.post(
+            f"{article_url}/feedback", headers=headers,
+            json={"feedback_type": "helpful"},
+        )
+        assert marked.status_code == 200, marked.text
+        feedback = await client.get(f"{article_url}/feedback", headers=headers)
+        assert feedback.status_code == 200
+        assert feedback.json()[0]["comment"] == "Legacy feedback body"
+        stats = await client.get(f"{article_url}/feedback/stats", headers=headers)
+        assert stats.status_code == 200
+        assert stats.json()["user_marked_helpful"] is True
+        translated = await client.get(f"{article_url}/translation/en", headers=headers)
+        assert translated.status_code == 200
+        assert translated.json()["slug"] == "english-article"
+
+    hidden = await client.patch(
+        f"/api/v1/wiki/articles/{article_id}",
+        headers=admin_headers,
+        json={"published": False, "content": "Private replacement body"},
+    )
+    assert hidden.status_code == 200, hidden.text
+    article = await db_session.get(WikiArticle, article_id)
+    article.status = private_status
+    # The legacy flag must not override the canonical publication state.
+    article.published = legacy_published
+    await db_session.commit()
+    responses = {}
+    for actor, headers in (("guest", {}), ("unrelated", reader_headers)):
+        for suffix in ("/feedback", "/feedback/stats", "/translation/en"):
+            response = await client.get(f"{article_url}{suffix}", headers=headers)
+            responses[(actor, suffix)] = (response.status_code, response.json())
+        removed = await client.delete(f"{article_url}/feedback/helpful", headers=headers)
+        responses[(actor, "delete-helpful")] = (removed.status_code, removed.json())
+    assert all(
+        code == 404 and body["detail"]["code"] == "ERR_ARTICLE_NOT_FOUND"
+        for code, body in responses.values()
+    ), responses
+    editor = await client.get(article_url, headers=admin_headers)
+    assert editor.status_code == 200
+    assert editor.json()["content"] == "Private replacement body"
+    assert (await client.get("/api/v1/wiki/articles/english-article")).status_code == 200
+    helpful_count = await db_session.scalar(
+        select(func.count(WikiArticleFeedback.id)).where(
+            WikiArticleFeedback.article_id == article_id,
+            WikiArticleFeedback.feedback_type == WikiFeedbackType.HELPFUL,
+        )
+    )
+    assert helpful_count == 2
 
 
 async def test_public_history_excludes_moderation_and_peer_review_data(
