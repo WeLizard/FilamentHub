@@ -16,6 +16,7 @@ from urllib.request import Request, urlopen
 
 import flask
 import octoprint.plugin
+from flask_babel import gettext
 from octoprint.events import Events
 
 from .tracker import ExtrusionTracker
@@ -87,6 +88,7 @@ class FilamentHubBridgePlugin(
 ):
     def __init__(self) -> None:
         self._lock = threading.RLock()
+        self._connection_lock = threading.RLock()
         self._wake_worker = threading.Event()
         self._stop_worker = threading.Event()
         self._worker: Optional[threading.Thread] = None
@@ -97,6 +99,7 @@ class FilamentHubBridgePlugin(
         self._job_file: Optional[str] = None
         self._job_started_at: Optional[str] = None
         self._job_spools: Dict[int, int] = {}
+        self._job_binding: Optional[dict] = None
         self._usage_event_sequence = 0
         self._last_usage_checkpoint_monotonic: Optional[float] = None
         self._last_retry_after_seconds: Optional[float] = None
@@ -113,6 +116,7 @@ class FilamentHubBridgePlugin(
             "map_tools_to_slots": False,
             "tool_slot_map": {},
             "routing_revision": 0,
+            "binding": None,
             "outbox": [],
             "last_sync_at": None,
             "last_error": None,
@@ -123,6 +127,7 @@ class FilamentHubBridgePlugin(
             "never": [
                 ["bridge_token"],
                 ["snapshot"],
+                ["binding"],
                 ["outbox"],
             ]
         }
@@ -192,6 +197,10 @@ class FilamentHubBridgePlugin(
         return flask.jsonify(self._public_state())
 
     def on_api_command(self, command, data):
+        with self._connection_lock:
+            return self._on_api_command_locked(command, data)
+
+    def _on_api_command_locked(self, command, data):
         try:
             extra_state = {}
             if command == "pair":
@@ -323,6 +332,7 @@ class FilamentHubBridgePlugin(
 
     def _public_state(self):
         snapshot = self._settings.get(["snapshot"])
+        retained_outbox_size = self._retained_outbox_size()
         commanded_tool = (
             self._tracker.active_tool
             if self._printing and self._settings.get_boolean(["map_tools_to_slots"])
@@ -355,8 +365,12 @@ class FilamentHubBridgePlugin(
             ),
             "printing": self._printing,
             "outbox_size": len(self._settings.get(["outbox"]) or []),
+            "retained_outbox_size": retained_outbox_size,
             "last_sync_at": self._settings.get(["last_sync_at"]),
-            "last_error": self._settings.get(["last_error"]),
+            "last_error": (
+                self._retained_usage_error(retained_outbox_size)
+                or self._settings.get(["last_error"])
+            ),
         }
 
     @staticmethod
@@ -394,7 +408,9 @@ class FilamentHubBridgePlugin(
         server_url: Optional[str] = None,
         include_token: bool = True,
     ):
-        server_url = server_url or self._settings.get(["server_url"])
+        with self._lock:
+            server_url = server_url or self._settings.get(["server_url"])
+            token = self._settings.get(["bridge_token"]) if include_token else None
         if not server_url:
             raise RuntimeError("FilamentHub address is not configured.")
         headers = {
@@ -405,7 +421,6 @@ class FilamentHubBridgePlugin(
         if payload is not None:
             body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
             headers["Content-Type"] = "application/json"
-        token = self._settings.get(["bridge_token"]) if include_token else None
         if token:
             headers["X-FilamentHub-Bridge-Token"] = token
         headers.update(extra_headers or {})
@@ -433,10 +448,23 @@ class FilamentHubBridgePlugin(
             raise BridgeRequestError(f"Cannot reach FilamentHub: {exc.reason}") from exc
 
     def _pair(self, server_url: str, pairing_code: str) -> None:
+        with self._connection_lock:
+            self._pair_locked(server_url, pairing_code)
+
+    def _pair_locked(self, server_url: str, pairing_code: str) -> None:
         normalized_server_url = self._normalize_server_url(server_url)
         normalized_pairing_code = str(pairing_code or "").strip().upper()
         if not normalized_pairing_code:
             raise ValueError("Enter the FilamentHub pairing code.")
+        with self._lock:
+            if self._printing:
+                raise ValueError(
+                    gettext(
+                        "Wait for the active print to finish before changing the "
+                        "FilamentHub connection."
+                    )
+                )
+            previous_binding = self._current_binding()
         instance_id = self._settings.get(["instance_id"]) or str(uuid.uuid4())
         _, _, response = self._request(
             "POST",
@@ -451,24 +479,170 @@ class FilamentHubBridgePlugin(
             server_url=normalized_server_url,
             include_token=False,
         )
-        self._settings.set(["server_url"], normalized_server_url)
-        self._settings.set(["instance_id"], instance_id)
-        self._settings.set(["bridge_token"], response["bridge_token"])
-        self._settings.set(["last_error"], None)
-        self._settings.save()
+        if not isinstance(response, dict):
+            raise ValueError("FilamentHub returned an invalid pairing response.")
+        token = response.get("bridge_token")
+        binding = self._binding_for_identity(
+            response,
+            server_url=normalized_server_url,
+            instance_id=instance_id,
+        )
+        if not isinstance(token, str) or not token:
+            raise ValueError("FilamentHub returned an invalid pairing response.")
+        if binding is None:
+            raise ValueError("FilamentHub returned an invalid printer identity.")
+        with self._lock:
+            if self._printing:
+                raise ValueError(
+                    gettext(
+                        "Pairing completed remotely while a print started. Local "
+                        "settings and pending usage were retained, but remote "
+                        "credentials may have changed. Wait for the print to finish, "
+                        "verify the selected printer, then connect again with a new "
+                        "pairing code."
+                    )
+                )
+            self._settings.set(["server_url"], normalized_server_url)
+            self._settings.set(["instance_id"], instance_id)
+            self._settings.set(["bridge_token"], token)
+            self._settings.set(["binding"], binding)
+            if previous_binding != binding:
+                self._settings.set(["snapshot"], {})
+                self._settings.set(["snapshot_etag"], None)
+                self._settings.set(["active_slot"], None)
+                self._settings.set(["map_tools_to_slots"], False)
+                self._settings.set(["tool_slot_map"], {})
+                self._settings.set(["routing_revision"], 0)
+            self._settings.set(
+                ["last_error"], self._retained_usage_error(self._retained_outbox_size())
+            )
+            self._settings.save()
 
     def _unpair(self) -> None:
+        with self._connection_lock:
+            self._unpair_locked()
+
+    def _unpair_locked(self) -> None:
         self._request("DELETE", "/connection")
-        self._settings.set(["bridge_token"], None)
-        self._settings.set(["snapshot"], {})
-        self._settings.set(["snapshot_etag"], None)
-        self._settings.set(["active_slot"], None)
-        self._settings.set(["map_tools_to_slots"], False)
-        self._settings.set(["tool_slot_map"], {})
-        self._settings.set(["routing_revision"], 0)
-        self._settings.set(["last_sync_at"], None)
-        self._settings.set(["last_error"], None)
-        self._settings.save()
+        with self._lock:
+            self._settings.set(["bridge_token"], None)
+            self._settings.set(["binding"], None)
+            self._settings.set(["snapshot"], {})
+            self._settings.set(["snapshot_etag"], None)
+            self._settings.set(["active_slot"], None)
+            self._settings.set(["map_tools_to_slots"], False)
+            self._settings.set(["tool_slot_map"], {})
+            self._settings.set(["routing_revision"], 0)
+            self._settings.set(["last_sync_at"], None)
+            self._settings.set(
+                ["last_error"], self._retained_usage_error(self._retained_outbox_size())
+            )
+            self._settings.save()
+
+    @staticmethod
+    def _service_origin(server_url: str) -> Optional[str]:
+        try:
+            parsed = urlparse(server_url)
+            hostname = (parsed.hostname or "").lower()
+            port = parsed.port
+        except (TypeError, ValueError):
+            return None
+        if parsed.scheme not in {"http", "https"} or not hostname:
+            return None
+        rendered_host = f"[{hostname}]" if ":" in hostname else hostname
+        if port is not None and not (
+            (parsed.scheme == "https" and port == 443)
+            or (parsed.scheme == "http" and port == 80)
+        ):
+            rendered_host = f"{rendered_host}:{port}"
+        return f"{parsed.scheme.lower()}://{rendered_host}"
+
+    @classmethod
+    def _binding_for_identity(
+        cls,
+        payload,
+        *,
+        server_url: str,
+        instance_id: str,
+    ) -> Optional[dict]:
+        if not isinstance(payload, dict):
+            return None
+        try:
+            physical_printer_id = int(payload["physical_printer_id"])
+            material_system_id = int(payload["material_system_id"])
+        except (KeyError, TypeError, ValueError):
+            return None
+        service_origin = cls._service_origin(server_url)
+        normalized_instance_id = str(instance_id or "").strip()
+        if (
+            physical_printer_id < 1
+            or material_system_id < 1
+            or service_origin is None
+            or not normalized_instance_id
+        ):
+            return None
+        return {
+            "service_origin": service_origin,
+            "instance_id": normalized_instance_id,
+            "physical_printer_id": physical_printer_id,
+            "material_system_id": material_system_id,
+        }
+
+    @classmethod
+    def _normalize_binding(cls, payload) -> Optional[dict]:
+        if not isinstance(payload, dict):
+            return None
+        return cls._binding_for_identity(
+            payload,
+            server_url=str(payload.get("service_origin") or ""),
+            instance_id=str(payload.get("instance_id") or ""),
+        )
+
+    def _current_binding(self) -> Optional[dict]:
+        if not self._settings.get(["bridge_token"]):
+            return None
+        server_url = self._settings.get(["server_url"]) or ""
+        instance_id = str(self._settings.get(["instance_id"]) or "").strip()
+        stored_payload = self._settings.get(["binding"])
+        if stored_payload is not None:
+            stored = self._normalize_binding(stored_payload)
+            if (
+                stored is None
+                or stored["service_origin"] != self._service_origin(server_url)
+                or stored["instance_id"] != instance_id
+            ):
+                return None
+            return stored
+        return self._binding_for_identity(
+            self._settings.get(["snapshot"]) or {},
+            server_url=server_url,
+            instance_id=instance_id,
+        )
+
+    @classmethod
+    def _event_matches_binding(cls, event: dict, binding: Optional[dict]) -> bool:
+        return binding is not None and cls._normalize_binding(event.get("_binding")) == binding
+
+    def _retained_outbox_size(self) -> int:
+        binding = self._current_binding()
+        return sum(
+            1
+            for event in self._settings.get(["outbox"]) or []
+            if not self._event_matches_binding(event, binding)
+        )
+
+    @staticmethod
+    def _retained_usage_error(count: int) -> Optional[str]:
+        if count < 1:
+            return None
+        return gettext(
+            "Retained %(count)d pending usage report(s) for another or unknown "
+            "FilamentHub printer connection. They will not be sent to the current "
+            "connection. Reports with a recorded identity resume only after the "
+            "original Bridge instance and printer connection are restored; legacy "
+            "reports require manual recovery.",
+            count=count,
+        )
 
     def _available_slots(self) -> Set[int]:
         snapshot = self._settings.get(["snapshot"]) or {}
@@ -734,6 +908,7 @@ class FilamentHubBridgePlugin(
             self._job_file = payload.get("name") or payload.get("path")
             self._job_started_at = datetime.now(timezone.utc).isoformat()
             self._job_spools = self._snapshot_spools()
+            self._job_binding = self._current_binding()
             self._usage_event_sequence = 0
             self._last_usage_checkpoint_monotonic = time.monotonic()
             available = self._available_slots()
@@ -845,6 +1020,7 @@ class FilamentHubBridgePlugin(
                 "observed_at": observed_at,
                 "duration_s": None,
                 "items": items,
+                "_binding": self._job_binding,
             }
         elif event_type == "terminal":
             event = {
@@ -858,6 +1034,7 @@ class FilamentHubBridgePlugin(
                 "observed_at": observed_at,
                 "duration_s": duration_s,
                 "items": items,
+                "_binding": self._job_binding,
             }
         else:
             raise ValueError(f"Unsupported usage event type: {event_type}")
@@ -890,11 +1067,19 @@ class FilamentHubBridgePlugin(
             self._job_file = None
             self._job_started_at = None
             self._job_spools = {}
+            self._job_binding = None
             self._last_usage_checkpoint_monotonic = None
         self._wake_worker.set()
 
     def _apply_snapshot(self, payload: dict, etag: Optional[str]) -> None:
         with self._lock:
+            binding = self._binding_for_identity(
+                payload,
+                server_url=self._settings.get(["server_url"]) or "",
+                instance_id=self._settings.get(["instance_id"]) or "",
+            )
+            if binding is not None:
+                self._settings.set(["binding"], binding)
             next_job_spools = self._spools_from_snapshot(payload)
             changed_slots = {
                 slot_index
@@ -959,16 +1144,29 @@ class FilamentHubBridgePlugin(
         if isinstance(response, dict):
             self._apply_server_routing(response.get("routing"))
 
-    def _flush_outbox(self) -> None:
+    def _flush_outbox(self) -> int:
+        with self._connection_lock:
+            return self._flush_outbox_locked()
+
+    def _flush_outbox_locked(self) -> int:
         while True:
             with self._lock:
                 outbox = list(self._settings.get(["outbox"]) or [])
-                if not outbox:
-                    return
-                event = dict(outbox[0])
+                binding = self._current_binding()
+                event_index = next(
+                    (
+                        index
+                        for index, candidate in enumerate(outbox)
+                        if self._event_matches_binding(candidate, binding)
+                    ),
+                    None,
+                )
+                if event_index is None:
+                    return len(outbox)
+                event = dict(outbox[event_index])
                 if not event.get("_sealed", False):
                     event["_sealed"] = True
-                    outbox[0] = event
+                    outbox[event_index] = event
                     self._settings.set(["outbox"], outbox)
                     self._settings.save()
                 request_payload = {
@@ -984,8 +1182,11 @@ class FilamentHubBridgePlugin(
             with self._lock:
                 current = list(self._settings.get(["outbox"]) or [])
                 for index, pending in enumerate(current):
-                    if pending.get("event_id") == event.get("event_id") and pending.get(
-                        "_sealed", False
+                    if (
+                        pending.get("event_id") == event.get("event_id")
+                        and pending.get("_sealed", False)
+                        and self._normalize_binding(pending.get("_binding"))
+                        == binding
                     ):
                         current.pop(index)
                         self._settings.set(["outbox"], current)
@@ -993,6 +1194,10 @@ class FilamentHubBridgePlugin(
                         break
 
     def _sync_once(self, *, force_snapshot: bool = False) -> bool:
+        with self._connection_lock:
+            return self._sync_once_locked(force_snapshot=force_snapshot)
+
+    def _sync_once_locked(self, *, force_snapshot: bool = False) -> bool:
         if not self._settings.get(["bridge_token"]):
             return True
         try:
@@ -1017,9 +1222,11 @@ class FilamentHubBridgePlugin(
                 self._sync_snapshot()
                 self._last_snapshot_monotonic = now_monotonic
             self._send_heartbeat()
-            self._flush_outbox()
+            retained_outbox_size = self._flush_outbox()
             self._settings.set(["last_sync_at"], datetime.now(timezone.utc).isoformat())
-            self._settings.set(["last_error"], None)
+            self._settings.set(
+                ["last_error"], self._retained_usage_error(retained_outbox_size)
+            )
             self._settings.save()
             self._plugin_manager.send_plugin_message(
                 self._identifier, self._public_state()

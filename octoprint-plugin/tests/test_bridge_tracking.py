@@ -1,4 +1,5 @@
 import logging
+import threading
 from pathlib import Path
 
 import octoprint_filamenthub_bridge
@@ -13,6 +14,13 @@ from octoprint_filamenthub_bridge import (
     _retry_delay,
 )
 
+BINDING = {
+    "service_origin": "https://filamenthub.ru",
+    "instance_id": "existing-instance",
+    "physical_printer_id": 11,
+    "material_system_id": 12,
+}
+
 
 def test_declares_only_capabilities_the_bridge_actually_provides():
     assert CAPABILITIES == ["read", "write", "spool_identity", "consumption"]
@@ -26,6 +34,8 @@ class FakeSettings:
             "bridge_token": "existing-token",
             "instance_id": "existing-instance",
             "snapshot": {
+                "physical_printer_id": 11,
+                "material_system_id": 12,
                 "slots": [
                     {
                         "material_slot_id": 17,
@@ -39,6 +49,7 @@ class FakeSettings:
             "map_tools_to_slots": False,
             "tool_slot_map": {},
             "routing_revision": 0,
+            "binding": dict(BINDING),
             "outbox": [],
         }
 
@@ -268,14 +279,22 @@ def test_outbox_flush_preserves_event_appended_during_request():
     plugin = FilamentHubBridgePlugin()
     plugin._settings = FakeSettings()
     plugin._logger = logging.getLogger("filamenthub-bridge-test")
-    first = {"event_id": "first", "items": [{"spool_id": 41}]}
-    second = {"event_id": "second", "items": [{"spool_id": 42}]}
+    first = {
+        "event_id": "first",
+        "items": [{"spool_id": 41}],
+        "_binding": dict(BINDING),
+    }
+    second = {
+        "event_id": "second",
+        "items": [{"spool_id": 42}],
+        "_binding": dict(BINDING),
+    }
     plugin._settings.set(["outbox"], [first])
     sent = []
 
     def request(method, path, payload):
         sent.append(payload)
-        if payload == first:
+        if payload["event_id"] == first["event_id"]:
             current = list(plugin._settings.get(["outbox"]) or [])
             current.append(second)
             plugin._settings.set(["outbox"], current)
@@ -284,7 +303,10 @@ def test_outbox_flush_preserves_event_appended_during_request():
     plugin._request = request
     plugin._flush_outbox()
 
-    assert sent == [first, second]
+    assert sent == [
+        {"event_id": "first", "items": [{"spool_id": 41}]},
+        {"event_id": "second", "items": [{"spool_id": 42}]},
+    ]
     assert plugin._settings.get(["outbox"]) == []
 
 
@@ -316,6 +338,7 @@ def test_failed_send_seals_event_before_network_and_prevents_mutation():
     sealed = plugin._settings.get(["outbox"])[0]
     assert sealed["_sealed"] is True
     assert "_sealed" not in sent[0]
+    assert "_binding" not in sent[0]
     first_event_id = sealed["event_id"]
 
     plugin.on_gcode_sent(comm, "sent", "G1 E5", None, "G1")
@@ -431,7 +454,11 @@ def test_successful_pairing_replaces_connection_atomically():
 
     def successful_request(method, path, payload, **kwargs):
         calls.append((method, path, payload, kwargs))
-        return 200, {}, {"bridge_token": "replacement-token"}
+        return 200, {}, {
+            "bridge_token": "replacement-token",
+            "physical_printer_id": 21,
+            "material_system_id": 22,
+        }
 
     plugin._request = successful_request
     plugin._pair("https://new.example/", "  fh-success  ")
@@ -444,6 +471,76 @@ def test_successful_pairing_replaces_connection_atomically():
     assert plugin._settings.get(["server_url"]) == "https://new.example"
     assert plugin._settings.get(["bridge_token"]) == "replacement-token"
     assert plugin._settings.get(["instance_id"]) == "existing-instance"
+    assert plugin._settings.get(["binding"]) == {
+        "service_origin": "https://new.example",
+        "instance_id": "existing-instance",
+        "physical_printer_id": 21,
+        "material_system_id": 22,
+    }
+    assert plugin._settings.get(["snapshot"]) == {}
+    assert plugin._settings.get(["active_slot"]) is None
+    assert plugin._settings.get(["routing_revision"]) == 0
+
+
+def test_changed_pairing_cannot_route_cached_spools_after_snapshot_failure():
+    plugin = FilamentHubBridgePlugin()
+    plugin._settings = FakeSettings()
+    plugin._printer = FakePrinter()
+    plugin._logger = logging.getLogger("filamenthub-bridge-test")
+
+    def request(method, path, payload=None, **kwargs):
+        assert path == "/pair"
+        return 200, {}, {
+            "bridge_token": "new-token",
+            "physical_printer_id": 21,
+            "material_system_id": 22,
+        }
+
+    plugin._request = request
+    plugin._pair("https://new.example", "FH-NEW")
+    plugin._sync_snapshot = lambda: (_ for _ in ()).throw(
+        RuntimeError("new snapshot unavailable")
+    )
+
+    assert plugin._sync_once(force_snapshot=True) is False
+    plugin._begin_print({"name": "new-printer.gcode"})
+    plugin.on_gcode_sent(PrintingComm(), "sent", "M83", None, "M83")
+    plugin.on_gcode_sent(PrintingComm(), "sent", "G1 E10", None, "G1")
+    plugin._finish_print("completed", {"time": 1.0})
+
+    event = plugin._settings.get(["outbox"])[0]
+    assert event["items"] == []
+    assert event["_binding"] == {
+        "service_origin": "https://new.example",
+        "instance_id": "existing-instance",
+        "physical_printer_id": 21,
+        "material_system_id": 22,
+    }
+
+
+def test_same_binding_credential_recovery_preserves_compatible_snapshot():
+    plugin = FilamentHubBridgePlugin()
+    plugin._settings = FakeSettings()
+    original_snapshot = plugin._settings.get(["snapshot"])
+    plugin._settings.set_boolean(["map_tools_to_slots"], True)
+    plugin._settings.set(["tool_slot_map"], {"0": 0})
+    plugin._settings.set(["routing_revision"], 4)
+    plugin._request = lambda *args, **kwargs: (
+        200,
+        {},
+        {
+            "bridge_token": "recovered-token",
+            "physical_printer_id": 11,
+            "material_system_id": 12,
+        },
+    )
+
+    plugin._pair("https://filamenthub.ru/", "FH-RECOVER")
+
+    assert plugin._settings.get(["snapshot"]) == original_snapshot
+    assert plugin._settings.get_boolean(["map_tools_to_slots"]) is True
+    assert plugin._settings.get(["tool_slot_map"]) == {"0": 0}
+    assert plugin._settings.get(["routing_revision"]) == 4
 
 
 def test_empty_pairing_code_is_rejected_before_network_request():
@@ -502,6 +599,336 @@ def test_failed_remote_revocation_preserves_local_connection():
     assert plugin._settings.get(["bridge_token"]) == "existing-token"
     assert plugin._settings.get(["snapshot"]) is not None
     assert plugin._settings.get(["active_slot"]) == 0
+
+
+def test_offline_usage_is_isolated_across_unpair_and_rebind_then_recovers():
+    plugin = FilamentHubBridgePlugin()
+    plugin._settings = FakeSettings()
+    plugin._printer = FakePrinter()
+    plugin._logger = logging.getLogger("filamenthub-bridge-test")
+    usage_requests = []
+
+    def request(method, path, payload=None, **kwargs):
+        if path == "/connection":
+            return 204, {}, None
+        if path == "/pair":
+            if kwargs["server_url"] == "https://other.example":
+                return 200, {}, {
+                    "bridge_token": "other-token",
+                    "physical_printer_id": 11,
+                    "material_system_id": 12,
+                }
+            return 200, {}, {
+                "bridge_token": "recovery-token",
+                "physical_printer_id": 11,
+                "material_system_id": 12,
+            }
+        if path == "/usage":
+            usage_requests.append(payload)
+            return 200, {}, {"accepted": True}
+        raise AssertionError(f"Unexpected request: {method} {path}")
+
+    plugin._request = request
+    plugin._begin_print({"name": "offline-old.gcode"})
+    plugin.on_gcode_sent(PrintingComm(), "sent", "M83", None, "M83")
+    plugin.on_gcode_sent(PrintingComm(), "sent", "G1 E10", None, "G1")
+    plugin._finish_print("completed", {"time": 1.0})
+    old_event = dict(plugin._settings.get(["outbox"])[0])
+
+    plugin._unpair()
+    plugin._pair("https://other.example", "FH-OTHER")
+    plugin._apply_snapshot(
+        {
+            "physical_printer_id": 11,
+            "material_system_id": 12,
+            "slots": [
+                {"material_slot_id": 27, "index": 0, "spool": {"id": 52}}
+            ],
+        },
+        None,
+    )
+    plugin._begin_print({"name": "new-binding.gcode"})
+    plugin.on_gcode_sent(PrintingComm(), "sent", "M83", None, "M83")
+    plugin.on_gcode_sent(PrintingComm(), "sent", "G1 E5", None, "G1")
+    plugin._finish_print("completed", {"time": 1.0})
+
+    assert plugin._flush_outbox() == 1
+    assert [request["file_name"] for request in usage_requests] == [
+        "new-binding.gcode"
+    ]
+    retained = plugin._settings.get(["outbox"])
+    assert len(retained) == 1
+    assert retained[0]["event_id"] == old_event["event_id"]
+    assert retained[0]["_binding"] == old_event["_binding"]
+    assert plugin._public_state()["retained_outbox_size"] == 1
+    assert "original Bridge instance" in plugin._settings.get(["last_error"])
+
+    plugin._pair("https://filamenthub.ru", "FH-RECOVER")
+    assert plugin._flush_outbox() == 0
+    assert [request["file_name"] for request in usage_requests] == [
+        "new-binding.gcode",
+        "offline-old.gcode",
+    ]
+    assert usage_requests[-1]["event_id"] == old_event["event_id"]
+    assert plugin._settings.get(["outbox"]) == []
+
+
+def test_unpair_during_print_keeps_the_job_bound_to_the_revoked_connection():
+    plugin = FilamentHubBridgePlugin()
+    plugin._settings = FakeSettings()
+    plugin._printer = FakePrinter()
+    plugin._logger = logging.getLogger("filamenthub-bridge-test")
+    plugin._request = lambda method, path: (204, {}, None)
+
+    plugin._begin_print({"name": "disconnect.gcode"})
+    plugin.on_gcode_sent(PrintingComm(), "sent", "M83", None, "M83")
+    plugin.on_gcode_sent(PrintingComm(), "sent", "G1 E7", None, "G1")
+    plugin._unpair()
+    plugin._finish_print("completed", {"time": 1.0})
+
+    event = plugin._settings.get(["outbox"])[0]
+    assert event["_binding"] == BINDING
+    assert event["items"] == [
+        {"slot_index": 0, "spool_id": 41, "used_length_mm": 7.0}
+    ]
+    assert plugin._public_state()["retained_outbox_size"] == 1
+
+
+def test_pairing_change_is_rejected_while_a_print_is_active():
+    plugin = FilamentHubBridgePlugin()
+    plugin._settings = FakeSettings()
+    plugin._printer = FakePrinter()
+    plugin._logger = logging.getLogger("filamenthub-bridge-test")
+    plugin._request = lambda *args, **kwargs: (_ for _ in ()).throw(
+        AssertionError("An active print must block pairing before the request")
+    )
+    plugin._begin_print({"name": "active.gcode"})
+
+    try:
+        plugin._pair("https://other.example", "FH-ACTIVE")
+    except ValueError as exc:
+        assert "active print" in str(exc)
+    else:
+        raise AssertionError("Pairing must not change during an active print")
+
+    assert plugin._settings.get(["bridge_token"]) == "existing-token"
+    assert plugin._settings.get(["binding"]) == BINDING
+
+
+def test_print_start_during_remote_pair_reports_uncertain_remote_credentials():
+    plugin = FilamentHubBridgePlugin()
+    plugin._settings = FakeSettings()
+    plugin._printer = FakePrinter()
+    plugin._logger = logging.getLogger("filamenthub-bridge-test")
+
+    def pair_then_start_print(method, path, payload, **kwargs):
+        plugin._begin_print({"name": "race.gcode"})
+        return 200, {}, {
+            "bridge_token": "remote-token",
+            "physical_printer_id": 21,
+            "material_system_id": 22,
+        }
+
+    plugin._request = pair_then_start_print
+
+    try:
+        plugin._pair("https://new.example", "FH-RACE")
+    except ValueError as exc:
+        assert "remote credentials may have changed" in str(exc)
+        assert "Wait for the print to finish" in str(exc)
+    else:
+        raise AssertionError("A concurrent print must leave pairing state uncertain")
+
+    assert plugin._settings.get(["bridge_token"]) == "existing-token"
+    assert plugin._settings.get(["binding"]) == BINDING
+
+
+def test_retained_usage_message_uses_request_translation(monkeypatch):
+    plugin = FilamentHubBridgePlugin()
+    plugin._settings = FakeSettings()
+    plugin._settings.set(
+        ["outbox"],
+        [{"event_id": "legacy", "event_type": "terminal", "items": []}],
+    )
+
+    def translated(message, **values):
+        assert values == {"count": 1}
+        return "translated retained usage"
+
+    monkeypatch.setattr(octoprint_filamenthub_bridge, "gettext", translated)
+
+    assert plugin._public_state()["last_error"] == "translated retained usage"
+
+
+def test_legacy_unbound_usage_is_quarantined_instead_of_guessed():
+    plugin = FilamentHubBridgePlugin()
+    plugin._settings = FakeSettings()
+    plugin._logger = logging.getLogger("filamenthub-bridge-test")
+    plugin._settings.set(
+        ["outbox"],
+        [{"event_id": "legacy", "event_type": "terminal", "items": []}],
+    )
+    plugin._request = lambda *args, **kwargs: (_ for _ in ()).throw(
+        AssertionError("Legacy usage must not be sent under the current token")
+    )
+
+    assert plugin._flush_outbox() == 1
+    assert plugin._settings.get(["outbox"])[0]["event_id"] == "legacy"
+    assert plugin._public_state()["retained_outbox_size"] == 1
+
+
+def test_changed_local_instance_cannot_replay_an_old_instance_event():
+    plugin = FilamentHubBridgePlugin()
+    plugin._settings = FakeSettings()
+    plugin._logger = logging.getLogger("filamenthub-bridge-test")
+    plugin._settings.set(
+        ["outbox"],
+        [
+            {
+                "event_id": "old-instance",
+                "event_type": "terminal",
+                "items": [],
+                "_binding": dict(BINDING),
+            }
+        ],
+    )
+    plugin._settings.set(["instance_id"], "replacement-instance")
+    plugin._request = lambda *args, **kwargs: (_ for _ in ()).throw(
+        AssertionError("Old-instance usage must remain quarantined")
+    )
+
+    assert plugin._flush_outbox() == 1
+    assert plugin._settings.get(["outbox"])[0]["event_id"] == "old-instance"
+
+
+def test_pair_waits_for_an_inflight_usage_send_before_switching_credentials():
+    plugin = FilamentHubBridgePlugin()
+    plugin._settings = FakeSettings()
+    plugin._logger = logging.getLogger("filamenthub-bridge-test")
+    event = {
+        "event_id": "old-binding-event",
+        "event_type": "terminal",
+        "items": [],
+        "_binding": dict(BINDING),
+    }
+    plugin._settings.set(["outbox"], [event])
+    usage_started = threading.Event()
+    allow_usage_ack = threading.Event()
+    pair_started = threading.Event()
+    pair_finished = threading.Event()
+    request_contexts = []
+
+    def request(method, path, payload=None, **kwargs):
+        if path == "/usage":
+            request_contexts.append(
+                (
+                    plugin._settings.get(["server_url"]),
+                    plugin._settings.get(["bridge_token"]),
+                    dict(plugin._settings.get(["binding"])),
+                )
+            )
+            usage_started.set()
+            assert allow_usage_ack.wait(timeout=2)
+            return 200, {}, {"accepted": True}
+        if path == "/pair":
+            return 200, {}, {
+                "bridge_token": "new-token",
+                "physical_printer_id": 21,
+                "material_system_id": 22,
+            }
+        raise AssertionError(f"Unexpected request: {method} {path}")
+
+    plugin._request = request
+    flush_thread = threading.Thread(target=plugin._flush_outbox)
+
+    def pair_connection():
+        pair_started.set()
+        plugin._pair("https://new.example", "FH-NEW")
+        pair_finished.set()
+
+    pair_thread = threading.Thread(target=pair_connection)
+    flush_thread.start()
+    assert usage_started.wait(timeout=2)
+    pair_thread.start()
+    assert pair_started.wait(timeout=2)
+    assert not pair_finished.wait(timeout=0.05)
+    allow_usage_ack.set()
+    flush_thread.join(timeout=2)
+    pair_thread.join(timeout=2)
+
+    assert not flush_thread.is_alive()
+    assert not pair_thread.is_alive()
+    assert request_contexts == [
+        ("https://filamenthub.ru", "existing-token", BINDING)
+    ]
+    assert plugin._settings.get(["bridge_token"]) == "new-token"
+    assert plugin._settings.get(["outbox"]) == []
+
+
+def test_pair_waits_for_delayed_snapshot_apply_and_remains_final_identity():
+    plugin = FilamentHubBridgePlugin()
+    plugin._settings = FakeSettings()
+    plugin._logger = logging.getLogger("filamenthub-bridge-test")
+    snapshot_started = threading.Event()
+    allow_snapshot = threading.Event()
+    pair_finished = threading.Event()
+
+    class PluginManager:
+        def send_plugin_message(self, identifier, state):
+            return None
+
+    plugin._plugin_manager = PluginManager()
+    plugin._identifier = "filamenthub_bridge"
+
+    def delayed_snapshot():
+        snapshot_started.set()
+        assert allow_snapshot.wait(timeout=2)
+        plugin._apply_snapshot(
+            {
+                "physical_printer_id": 11,
+                "material_system_id": 12,
+                "slots": [],
+            },
+            None,
+        )
+
+    def request(method, path, payload=None, **kwargs):
+        assert path == "/pair"
+        return 200, {}, {
+            "bridge_token": "new-token",
+            "physical_printer_id": 21,
+            "material_system_id": 22,
+        }
+
+    plugin._sync_snapshot = delayed_snapshot
+    plugin._send_heartbeat = lambda: None
+    plugin._flush_outbox = lambda: 0
+    plugin._request = request
+    sync_thread = threading.Thread(
+        target=lambda: plugin._sync_once(force_snapshot=True)
+    )
+
+    def pair_connection():
+        plugin._pair("https://new.example", "FH-NEW")
+        pair_finished.set()
+
+    pair_thread = threading.Thread(target=pair_connection)
+    sync_thread.start()
+    assert snapshot_started.wait(timeout=2)
+    pair_thread.start()
+    assert not pair_finished.wait(timeout=0.05)
+    allow_snapshot.set()
+    sync_thread.join(timeout=2)
+    pair_thread.join(timeout=2)
+
+    assert not sync_thread.is_alive()
+    assert not pair_thread.is_alive()
+    assert plugin._settings.get(["binding"]) == {
+        "service_origin": "https://new.example",
+        "instance_id": "existing-instance",
+        "physical_printer_id": 21,
+        "material_system_id": 22,
+    }
 
 
 def test_retry_delay_grows_but_stays_bounded(monkeypatch):
@@ -726,6 +1153,7 @@ def test_sensitive_settings_are_never_exposed_by_settings_api():
         "never": [
             ["bridge_token"],
             ["snapshot"],
+            ["binding"],
             ["outbox"],
         ]
     }

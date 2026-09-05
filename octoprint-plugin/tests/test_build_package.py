@@ -49,6 +49,10 @@ def test_bridge_wheel_is_reproducible_and_self_consistent(tmp_path: Path) -> Non
     assert f"Version: {version}\n".encode() in metadata
     assert b"Tag: py3-none-any\n" in wheel_metadata
     assert {row[0] for row in record} == names
+    assert {
+        "octoprint_filamenthub_bridge/translations/ru/LC_MESSAGES/messages.mo",
+        "octoprint_filamenthub_bridge/translations/zh_CN/LC_MESSAGES/messages.mo",
+    }.issubset(names)
 
 
 def test_bridge_release_bundle_has_versioned_path_notes_and_hashes(

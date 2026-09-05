@@ -24,6 +24,7 @@ octoprint_filamenthub_bridge = [
     "static/css/*.css",
     "static/js/*.js",
     "templates/*.jinja2",
+    "translations/*/LC_MESSAGES/*.mo",
 ]
 
 [tool.pytest.ini_options]

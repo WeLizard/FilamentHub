@@ -1,0 +1,16 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: OctoPrint-FilamentHubBridge 0.1.3\n"
+"Language: zh_CN\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+msgid "Wait for the active print to finish before changing the FilamentHub connection."
+msgstr "请等待当前打印完成后再更改 FilamentHub 连接。"
+
+msgid "Pairing completed remotely while a print started. Local settings and pending usage were retained, but remote credentials may have changed. Wait for the print to finish, verify the selected printer, then connect again with a new pairing code."
+msgstr "远程配对完成时打印已经开始。本地设置和待发送的耗材用量记录已保留，但远程凭据可能已经更改。请等待打印完成，确认所选打印机，然后使用新的配对码重新连接。"
+
+msgid "Retained %(count)d pending usage report(s) for another or unknown FilamentHub printer connection. They will not be sent to the current connection. Reports with a recorded identity resume only after the original Bridge instance and printer connection are restored; legacy reports require manual recovery."
+msgstr "已保留属于其他或未知 FilamentHub 打印机连接的待发送耗材用量记录 %(count)d 条。这些记录不会发送到当前连接。具有已记录身份的报告只有在恢复原来的 Bridge 实例和打印机连接后才会继续发送；旧版报告需要手动恢复。"
