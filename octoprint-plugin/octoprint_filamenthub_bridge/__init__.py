@@ -98,7 +98,7 @@ class FilamentHubBridgePlugin(
         self._job_id: Optional[str] = None
         self._job_file: Optional[str] = None
         self._job_started_at: Optional[str] = None
-        self._job_spools: Dict[int, int] = {}
+        self._job_routes: Dict[int, dict] = {}
         self._job_binding: Optional[dict] = None
         self._usage_event_sequence = 0
         self._last_usage_checkpoint_monotonic: Optional[float] = None
@@ -893,6 +893,20 @@ class FilamentHubBridgePlugin(
                 result[int(slot["index"])] = int(spool["id"])
         return result
 
+    @staticmethod
+    def _usage_routes_from_snapshot(snapshot: dict) -> Dict[int, dict]:
+        routes = {}
+        for slot in snapshot.get("slots", []):
+            spool = slot.get("spool")
+            if not spool:
+                continue
+            route = {"spool_id": int(spool["id"])}
+            for key in ("usage_route_proof", "assignment_revision"):
+                if slot.get(key) is not None:
+                    route[key] = slot[key]
+            routes[int(slot["index"])] = route
+        return routes
+
     def _begin_print(self, payload) -> None:
         with self._lock:
             # OctoPrint dispatches events asynchronously. On very short files the
@@ -907,7 +921,9 @@ class FilamentHubBridgePlugin(
             self._job_id = str(uuid.uuid4())
             self._job_file = payload.get("name") or payload.get("path")
             self._job_started_at = datetime.now(timezone.utc).isoformat()
-            self._job_spools = self._snapshot_spools()
+            self._job_routes = self._usage_routes_from_snapshot(
+                self._settings.get(["snapshot"]) or {}
+            )
             self._job_binding = self._current_binding()
             self._usage_event_sequence = 0
             self._last_usage_checkpoint_monotonic = time.monotonic()
@@ -917,13 +933,13 @@ class FilamentHubBridgePlugin(
                 not self._settings.get_boolean(["map_tools_to_slots"])
                 and manual_slot not in available
             ):
-                assigned = sorted(self._job_spools)
+                assigned = sorted(self._job_routes)
                 if assigned:
                     self._settings.set(["active_slot"], assigned[0])
             self._logger.info(
                 "Tracking print %s with %d assigned FilamentHub spool(s)",
                 self._job_file or self._job_id,
-                len(self._job_spools),
+                len(self._job_routes),
             )
 
     def _checkpoint_usage(self, reason: str) -> None:
@@ -951,19 +967,21 @@ class FilamentHubBridgePlugin(
         items = []
         unattributed_slots = []
         for slot_index, used_length in sorted(usage.items()):
-            spool_id = self._job_spools.get(slot_index)
+            route = self._job_routes.get(slot_index)
             if used_length <= 0:
                 continue
-            if spool_id is None:
+            if route is None:
                 unattributed_slots.append(slot_index)
                 continue
             items.append(
                 {
                     "slot_index": slot_index,
-                    "spool_id": spool_id,
+                    "spool_id": route["spool_id"],
                     "used_length_mm": used_length,
                 }
             )
+            if route.get("usage_route_proof") is not None:
+                items[-1]["usage_route_proof"] = route["usage_route_proof"]
         if unattributed_slots:
             self._logger.warning(
                 "Skipped unattributed usage in FilamentHub slot(s): %s",
@@ -980,6 +998,16 @@ class FilamentHubBridgePlugin(
                     if event.get("event_type") == "checkpoint"
                     and event.get("job_id") == self._job_id
                     and not event.get("_sealed", False)
+                    and event.get("_binding") == self._job_binding
+                    and all(
+                        item.get("spool_id")
+                        == self._job_routes.get(item.get("slot_index"), {}).get("spool_id")
+                        and item.get("usage_route_proof")
+                        == self._job_routes.get(item.get("slot_index"), {}).get(
+                            "usage_route_proof"
+                        )
+                        for item in event.get("items", [])
+                    )
                 ),
                 None,
             )
@@ -1066,7 +1094,7 @@ class FilamentHubBridgePlugin(
             self._job_id = None
             self._job_file = None
             self._job_started_at = None
-            self._job_spools = {}
+            self._job_routes = {}
             self._job_binding = None
             self._last_usage_checkpoint_monotonic = None
         self._wake_worker.set()
@@ -1080,11 +1108,11 @@ class FilamentHubBridgePlugin(
             )
             if binding is not None:
                 self._settings.set(["binding"], binding)
-            next_job_spools = self._spools_from_snapshot(payload)
+            next_job_routes = self._usage_routes_from_snapshot(payload)
             changed_slots = {
                 slot_index
-                for slot_index in set(self._job_spools) | set(next_job_spools)
-                if self._job_spools.get(slot_index) != next_job_spools.get(slot_index)
+                for slot_index in set(self._job_routes) | set(next_job_routes)
+                if self._job_routes.get(slot_index) != next_job_routes.get(slot_index)
             }
             if self._printing and changed_slots.intersection(
                 self._tracker.used_length_by_slot
@@ -1093,10 +1121,17 @@ class FilamentHubBridgePlugin(
                     event_type="checkpoint",
                     reason="spool_change",
                 )
+            if self._printing and changed_slots:
+                outbox = list(self._settings.get(["outbox"]) or [])
+                for event in outbox:
+                    if event.get("job_id") == self._job_id:
+                        event["_sealed"] = True
+                self._settings.set(["outbox"], outbox)
+                self._settings.save()
             self._settings.set(["snapshot"], payload)
             self._settings.set(["snapshot_etag"], etag)
             if self._printing:
-                self._job_spools = next_job_spools
+                self._job_routes = next_job_routes
             available = self._available_slots()
             manual_slot = self._manual_slot()
             if manual_slot not in available:

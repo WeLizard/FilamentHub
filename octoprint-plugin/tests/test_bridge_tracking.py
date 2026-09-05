@@ -1,6 +1,9 @@
 import logging
+import json
 import threading
 from pathlib import Path
+
+import pytest
 
 import octoprint_filamenthub_bridge
 from octoprint.events import Events
@@ -20,6 +23,115 @@ BINDING = {
     "physical_printer_id": 11,
     "material_system_id": 12,
 }
+
+
+@pytest.mark.parametrize("initial_proof", [None, "route-a"])
+@pytest.mark.parametrize("next_spool", [41, 52])
+def test_offline_route_generations_survive_lost_ack_and_restart(initial_proof, next_spool):
+    plugin = FilamentHubBridgePlugin()
+    plugin._settings = FakeSettings()
+    plugin._printer = FakePrinter()
+    plugin._logger = logging.getLogger("filamenthub-bridge-test")
+    plugin._settings.values["snapshot"]["slots"][0]["usage_route_proof"] = initial_proof
+    plugin._begin_print({"name": "offline.gcode"})
+    plugin.on_gcode_sent(PrintingComm(), "sent", "M83", None, "M83")
+    plugin.on_gcode_sent(PrintingComm(), "sent", "G1 E10", None, "G1")
+    plugin._checkpoint_usage("periodic")
+    previous = json.loads(json.dumps(plugin._settings.get(["outbox"])[0]))
+
+    next_snapshot = json.loads(json.dumps(plugin._settings.get(["snapshot"])))
+    next_snapshot["slots"][0].update(
+        spool={"id": next_spool}, assignment_revision=4, usage_route_proof="route-b"
+    )
+    plugin._apply_snapshot(next_snapshot, '"new-revision"')
+    plugin.on_gcode_sent(PrintingComm(), "sent", "G1 E5", None, "G1")
+    plugin._checkpoint_usage("periodic")
+    outbox = plugin._settings.get(["outbox"])
+    assert len(outbox) == 2
+    assert outbox[0]["items"] == previous["items"]
+    assert outbox[0]["event_id"] == previous["event_id"]
+    assert outbox[0]["_sealed"] is True
+    assert outbox[0]["_binding"] == BINDING
+    if initial_proof is None:
+        assert "usage_route_proof" not in outbox[0]["items"][0]
+    else:
+        assert outbox[0]["items"][0]["usage_route_proof"] == initial_proof
+    assert outbox[1]["items"] == [{
+        "slot_index": 0, "spool_id": next_spool, "used_length_mm": 5,
+        "usage_route_proof": "route-b",
+    }]
+
+    attempted = []
+
+    def lose_ack(method, path, payload):
+        attempted.append(json.loads(json.dumps(payload)))
+        raise RuntimeError("acknowledgement lost")
+
+    plugin._request = lose_ack
+    with pytest.raises(RuntimeError, match="acknowledgement lost"):
+        plugin._flush_outbox()
+    restarted = FilamentHubBridgePlugin()
+    restarted._settings = FakeSettings()
+    restarted._settings.values = json.loads(json.dumps(plugin._settings.values))
+    delivered = []
+
+    def accept(method, path, payload):
+        delivered.append(payload)
+        return 200, {}, {"accepted": True}
+
+    restarted._request = accept
+    restarted._flush_outbox()
+    restarted._flush_outbox()
+    assert delivered[0] == attempted[0]
+    assert len(delivered) == 2
+    assert delivered[1]["event_id"] != delivered[0]["event_id"]
+    assert restarted._settings.get(["outbox"]) == []
+
+
+def test_route_refresh_checkpoints_accumulated_usage_before_replacing_proof():
+    plugin = FilamentHubBridgePlugin()
+    plugin._settings = FakeSettings()
+    plugin._printer = FakePrinter()
+    plugin._logger = logging.getLogger("filamenthub-bridge-test")
+    plugin._settings.values["snapshot"]["slots"][0]["usage_route_proof"] = "route-a"
+    plugin._begin_print({"name": "refresh.gcode"})
+    plugin.on_gcode_sent(PrintingComm(), "sent", "M83", None, "M83")
+    plugin.on_gcode_sent(PrintingComm(), "sent", "G1 E10", None, "G1")
+    next_snapshot = json.loads(json.dumps(plugin._settings.get(["snapshot"])))
+    next_snapshot["slots"][0].update(assignment_revision=4, usage_route_proof="route-b")
+    plugin._apply_snapshot(next_snapshot, '"new-revision"')
+    plugin.on_gcode_sent(PrintingComm(), "sent", "G1 E5", None, "G1")
+    plugin._finish_print("completed", {"time": 20})
+    first, terminal = plugin._settings.get(["outbox"])
+    assert first["items"][0]["usage_route_proof"] == "route-a"
+    assert first["items"][0]["used_length_mm"] == 10
+    assert terminal["items"][0]["usage_route_proof"] == "route-b"
+    assert terminal["items"][0]["used_length_mm"] == 5
+
+
+def test_rejected_legacy_event_is_retained_without_substituting_new_proof():
+    plugin = FilamentHubBridgePlugin()
+    plugin._settings = FakeSettings()
+    plugin._printer = FakePrinter()
+    plugin._logger = logging.getLogger("filamenthub-bridge-test")
+    plugin._begin_print({"name": "legacy.gcode"})
+    plugin.on_gcode_sent(PrintingComm(), "sent", "M83", None, "M83")
+    plugin.on_gcode_sent(PrintingComm(), "sent", "G1 E10", None, "G1")
+    plugin._checkpoint_usage("periodic")
+    plugin._settings.get(["outbox"])[0]["_sealed"] = True
+    original = json.loads(json.dumps(plugin._settings.get(["outbox"])))
+    next_snapshot = json.loads(json.dumps(plugin._settings.get(["snapshot"])))
+    next_snapshot["slots"][0].update(spool={"id": 52}, usage_route_proof="route-b")
+    plugin._apply_snapshot(next_snapshot, '"new-revision"')
+
+    def reject(method, path, payload):
+        assert "usage_route_proof" not in payload["items"][0]
+        raise BridgeRequestError("unproven historical route", status_code=409)
+
+    plugin._request = reject
+    with pytest.raises(BridgeRequestError):
+        plugin._flush_outbox()
+    assert plugin._settings.get(["outbox"]) == original
 
 
 def test_declares_only_capabilities_the_bridge_actually_provides():

@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field, model_validator
 class PrinterUsageItem(BaseModel):
     slot_index: int = Field(ge=0, le=1023)
     spool_id: int = Field(ge=1)
+    usage_route_proof: str | None = Field(default=None, min_length=1, max_length=128)
     used_length_mm: float | None = Field(default=None, gt=0)
     used_weight_g: float | None = Field(default=None, gt=0)
 

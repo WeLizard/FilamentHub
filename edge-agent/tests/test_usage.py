@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import tempfile
 import unittest
+from pathlib import Path
 
 from filamenthub_edge.providers.base import ProviderSnapshot
-from filamenthub_edge.state import EdgeState
+from filamenthub_edge.state import EdgeState, StateStore
 from filamenthub_edge.usage import capture_pending_usage_event, capture_usage_events
 
 
@@ -35,6 +37,88 @@ def snapshot(
 
 
 class UsageTrackerTest(unittest.TestCase):
+    def test_route_generation_survives_restart_and_separates_same_spool_intervals(self) -> None:
+        state = EdgeState(
+            desired_snapshot={
+                "slots": [
+                    {
+                        "index": 0,
+                        "spool": {"id": 99},
+                        "assignment_revision": 1,
+                        "usage_route_proof": "route-a",
+                    }
+                ]
+            }
+        )
+        for used in (0, 40):
+            capture_usage_events(
+                state,
+                snapshot(state="printing", filament_used=used, print_duration=used, active_slot=0),
+                observed_at="2026-09-05T00:00:00+00:00",
+            )
+        with tempfile.TemporaryDirectory() as directory:
+            store = StateStore(Path(directory) / "state.json")
+            store.save(state)
+            state = store.load()
+        state.desired_snapshot["slots"][0].update(
+            assignment_revision=2, usage_route_proof="route-a-new-generation"
+        )
+        events = capture_usage_events(
+            state,
+            snapshot(state="printing", filament_used=60, print_duration=60, active_slot=0),
+            observed_at="2026-09-05T00:01:00+00:00",
+        )
+        self.assertEqual(
+            events[0]["items"],
+            [
+                {
+                    "slot_index": 0,
+                    "spool_id": 99,
+                    "used_length_mm": 40,
+                    "usage_route_proof": "route-a",
+                }
+            ],
+        )
+        terminal = capture_usage_events(
+            state,
+            snapshot(state="complete", filament_used=80, print_duration=80, active_slot=0),
+            observed_at="2026-09-05T00:02:00+00:00",
+        )
+        self.assertEqual(
+            terminal[0]["items"],
+            [
+                {
+                    "slot_index": 0,
+                    "spool_id": 99,
+                    "used_length_mm": 20,
+                    "usage_route_proof": "route-a-new-generation",
+                }
+            ],
+        )
+
+    def test_new_snapshot_does_not_retrofit_proof_onto_legacy_pending_usage(self) -> None:
+        state = EdgeState(desired_snapshot={"slots": [{"index": 0, "spool": {"id": 99}}]})
+        for used in (0, 40):
+            capture_usage_events(
+                state,
+                snapshot(state="printing", filament_used=used, print_duration=used, active_slot=0),
+                observed_at="2026-09-05T00:00:00+00:00",
+            )
+        state.desired_snapshot["slots"][0]["usage_route_proof"] = "new-proof"
+        event = capture_pending_usage_event(
+            state, observed_at="2026-09-05T00:01:00+00:00", reason="shutdown"
+        )[0]
+        self.assertEqual(
+            event["items"],
+            [
+                {
+                    "slot_index": 0,
+                    "spool_id": 99,
+                    "used_length_mm": 40,
+                }
+            ],
+        )
+
     def test_resuming_after_native_usage_does_not_debit_the_suppressed_interval(self) -> None:
         state = EdgeState(desired_snapshot={"slots": [{"index": 0, "spool": {"id": 99}}]})
         for used in (0, 40):

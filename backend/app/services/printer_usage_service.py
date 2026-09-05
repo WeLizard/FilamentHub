@@ -23,6 +23,7 @@ from app.core.errors import (
 from app.models.filament import Filament
 from app.models.material_slot_assignment import MaterialSlotAssignment
 from app.models.material_system import MaterialSlot, PhysicalPrinterConnector
+from app.models.preset import Preset
 from app.models.preset_gate_state import PresetGateStateSource
 from app.models.preset_usage_event import PresetUsageEventType
 from app.models.print_job import PrintJobStatus
@@ -34,6 +35,7 @@ from app.services.print_job_service import (
     confirmed_consumption_for_job,
     ensure_provider_job_event,
 )
+from app.services.printer_usage_route_service import identity_timestamp, resolve_usage_routes
 from app.services.spool_service import clear_spool_gate_assignments, clear_spool_location_projection
 from app.services.spool_usage_service import (
     record_spool_usage,
@@ -60,8 +62,16 @@ def _as_utc(value: datetime) -> datetime:
     return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
 
 
-def usage_payload_hash(payload: PrinterUsageEvent) -> str:
+def usage_payload_data(payload: PrinterUsageEvent) -> dict:
     payload_data = payload.model_dump(mode="json")
+    for item in payload_data["items"]:
+        if item.get("usage_route_proof") is None:
+            item.pop("usage_route_proof", None)
+    return payload_data
+
+
+def usage_payload_hash(payload: PrinterUsageEvent) -> str:
+    payload_data = usage_payload_data(payload)
     if payload.event_type == "terminal":
         # Preserve hashes written by the native OctoPrint Bridge before the
         # provider-neutral contract was extracted.
@@ -83,7 +93,7 @@ def usage_payload_hash(payload: PrinterUsageEvent) -> str:
 
 
 def _terminal_payload_hash(payload: PrinterUsageEvent) -> str:
-    payload_data = payload.model_dump(mode="json")
+    payload_data = usage_payload_data(payload)
     payload_data.pop("event_id", None)
     payload_data.pop("event_type", None)
     if not payload.reasons:
@@ -154,29 +164,18 @@ async def process_printer_usage_event(
         db, connector.user_id, connector.physical_printer_id
     )
 
-    slot_rows = (
-        await db.execute(
-            select(MaterialSlot.provider_index, MaterialSlotAssignment.spool_id)
-            .outerjoin(
-                MaterialSlotAssignment,
-                MaterialSlotAssignment.material_slot_id == MaterialSlot.id,
-            )
-            .where(MaterialSlot.material_system_id == connector.material_system_id)
-        )
-    ).all()
-    assigned_spools = {int(index): spool_id for index, spool_id in slot_rows}
-    if any(item.slot_index not in assigned_spools for item in payload.items):
-        raise_error(404, ERR_MATERIAL_SLOT_NOT_FOUND)
-    if any(assigned_spools[item.slot_index] != item.spool_id for item in payload.items):
-        raise_error(409, ERR_MATERIAL_ASSIGNMENT_CONFLICT)
-
+    routes = await resolve_usage_routes(
+        db, connector=connector, source_instance_id=source_instance_id, items=payload.items
+    )
     spool_ids = {item.spool_id for item in payload.items}
     spools = list(
         (
             await db.execute(
                 select(UserSpool)
                 .where(UserSpool.id.in_(spool_ids), UserSpool.user_id == connector.user_id)
+                .order_by(UserSpool.id)
                 .options(selectinload(UserSpool.filament).selectinload(Filament.brand))
+                .execution_options(populate_existing=True)
                 .with_for_update()
             )
         ).scalars()
@@ -184,6 +183,39 @@ async def process_printer_usage_event(
     spools_by_id = {spool.id: spool for spool in spools}
     if set(spools_by_id) != spool_ids:
         raise_error(404, ERR_ACCESS_DENIED)
+    for item in payload.items:
+        route = routes.get(item.slot_index)
+        if route is not None and route["spool_created_at"] != identity_timestamp(
+            spools_by_id[item.spool_id].created_at
+        ):
+            raise_error(409, ERR_MATERIAL_ASSIGNMENT_CONFLICT)
+
+    legacy_items = [item for item in payload.items if item.usage_route_proof is None]
+    if legacy_items:
+        slot_rows = (
+            await db.execute(
+                select(MaterialSlot.provider_index, MaterialSlotAssignment.spool_id)
+                .outerjoin(
+                    MaterialSlotAssignment,
+                    MaterialSlotAssignment.material_slot_id == MaterialSlot.id,
+                )
+                .where(MaterialSlot.material_system_id == connector.material_system_id)
+            )
+        ).all()
+        assigned_spools = {int(index): spool_id for index, spool_id in slot_rows}
+        if any(item.slot_index not in assigned_spools for item in legacy_items):
+            raise_error(404, ERR_MATERIAL_SLOT_NOT_FOUND)
+        if any(assigned_spools[item.slot_index] != item.spool_id for item in legacy_items):
+            raise_error(409, ERR_MATERIAL_ASSIGNMENT_CONFLICT)
+
+    route_preset_ids = {route["preset_id"] for route in routes.values()} - {None}
+    existing_presets = dict(
+        (
+            await db.execute(
+                select(Preset.id, Preset.created_at).where(Preset.id.in_(route_preset_ids))
+            )
+        ).all()
+    ) if route_preset_ids else {}
 
     received_at = _now()
     occurred_at = _received_source_time(payload.observed_at, received_at)
@@ -237,6 +269,7 @@ async def process_printer_usage_event(
     total_consumed = 0.0
     for item in payload.items:
         spool = spools_by_id[item.spool_id]
+        route = routes.get(item.slot_index)
         filament = spool.filament
         density = (
             filament.density
@@ -248,6 +281,9 @@ async def process_printer_usage_event(
             if filament is not None and filament.diameter and filament.diameter > 0
             else DEFAULT_DIAMETER_MM
         )
+        if route is not None:
+            density = route["density_g_cm3"]
+            diameter = route["diameter_mm"]
         reported_weight = (
             item.used_weight_g
             if item.used_weight_g is not None
@@ -260,14 +296,20 @@ async def process_printer_usage_event(
         spool.last_used_at = received_at
         if spool.first_used_at is None:
             spool.first_used_at = received_at
-        preset_id = await resolve_assigned_preset_id(
-            db,
-            user_id=spool.user_id,
-            spool_id=spool.id,
-            physical_printer_id=connector.physical_printer_id,
-            material_system_id=connector.material_system_id,
-            slot_index=item.slot_index,
-        )
+        if route is None:
+            preset_id = await resolve_assigned_preset_id(
+                db,
+                user_id=spool.user_id,
+                spool_id=spool.id,
+                physical_printer_id=connector.physical_printer_id,
+                material_system_id=connector.material_system_id,
+                slot_index=item.slot_index,
+            )
+        else:
+            preset_id = route["preset_id"]
+            created_at = existing_presets.get(preset_id)
+            if created_at is None or identity_timestamp(created_at) != route["preset_created_at"]:
+                preset_id = None
         await record_spool_usage(
             db,
             spool=spool,
@@ -290,6 +332,7 @@ async def process_printer_usage_event(
                 "duration_s": payload.duration_s,
                 "used_length_mm": item.used_length_mm,
                 "source_instance_id": source_instance_id,
+                **({"usage_route": route} if route is not None else {}),
             },
         )
         if spool.remaining_weight_g <= 0:

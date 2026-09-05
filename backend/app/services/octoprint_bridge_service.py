@@ -513,8 +513,24 @@ async def revoke_bridge_context(
     db: AsyncSession,
     context: OctoPrintBridgeContext,
 ) -> None:
-    connection = context.connection
-    connector = context.connector
+    # Snapshot issuance and usage take these locks in this same order. Relying
+    # on ORM flush order here would update the connector before the connection.
+    connection = await db.scalar(
+        select(OctoPrintBridgeConnection)
+        .where(OctoPrintBridgeConnection.id == context.connection.id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    if connection is None:
+        return
+    connector = await db.scalar(
+        select(PhysicalPrinterConnector)
+        .where(PhysicalPrinterConnector.id == connection.connector_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    if connector is None:
+        return
     connection.token_hash = None
     connection.pairing_code_hash = None
     connection.pairing_expires_at = None
@@ -672,10 +688,39 @@ async def record_heartbeat(
     )
 
 
+async def _lock_usage_connection(
+    db: AsyncSession, context: OctoPrintBridgeContext
+) -> OctoPrintBridgeConnection:
+    expected = (
+        context.connection.token_hash,
+        context.connection.instance_id,
+        context.connection.connector_id,
+    )
+    connection = await db.scalar(
+        select(OctoPrintBridgeConnection)
+        .where(OctoPrintBridgeConnection.id == context.connection.id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    if (
+        connection is None
+        or connection.revoked_at is not None
+        or connection.token_hash is None
+        or (connection.token_hash, connection.instance_id, connection.connector_id) != expected
+    ):
+        raise_error(401, ERR_OCTOPRINT_BRIDGE_UNAUTHORIZED)
+    return connection
+
+
 async def build_snapshot(
     db: AsyncSession, context: OctoPrintBridgeContext
 ) -> OctoPrintBridgeSnapshotResponse:
-    snapshot = await build_printer_bridge_desired_snapshot(db, context.connector)
+    connection = await _lock_usage_connection(db, context)
+    snapshot = await build_printer_bridge_desired_snapshot(
+        db,
+        context.connector,
+        source_instance_id=connection.instance_id or f"octoprint-connection-{connection.id}",
+    )
     return OctoPrintBridgeSnapshotResponse.model_validate(snapshot.model_dump())
 
 
@@ -804,6 +849,9 @@ async def update_bridge_spool_assignment(
         ),
         source=PresetGateStateSource.web_manual,
     )
+    # An idempotent assignment returns with spool/slot locks still held. Release
+    # them before taking connection/connector locks to issue the next snapshot.
+    await db.commit()
     return await build_snapshot(db, context)
 
 
@@ -812,16 +860,17 @@ async def record_usage_event(
     context: OctoPrintBridgeContext,
     payload: OctoPrintBridgeUsageRequest,
 ) -> OctoPrintBridgeUsageResponse:
-    connector = context.connector
     # Serialize usage events per Bridge connection. This closes the replay
     # race even when two conflicting retries mention different spools and would
     # therefore not contend on the same inventory rows.
-    connection = await db.scalar(
-        select(OctoPrintBridgeConnection)
-        .where(OctoPrintBridgeConnection.id == context.connection.id)
+    connection = await _lock_usage_connection(db, context)
+    connector = await db.scalar(
+        select(PhysicalPrinterConnector)
+        .where(PhysicalPrinterConnector.id == connection.connector_id)
         .with_for_update()
+        .execution_options(populate_existing=True)
     )
-    if connection is None:
+    if connector is None or not connector.active:
         raise_error(401, ERR_OCTOPRINT_BRIDGE_UNAUTHORIZED)
     source_instance_id = connection.instance_id or f"octoprint-connection-{connection.id}"
     result = await process_printer_usage_event(

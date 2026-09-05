@@ -40,7 +40,7 @@ from app.schemas.printer_bridge import (
 from app.schemas.printer_usage import PrinterUsageEventResult
 from app.services.material_contract_service import require_physical_printer
 from app.services.printer_identity_service import discovery_key
-from app.services.printer_usage_service import process_printer_usage_event
+from app.services.printer_usage_service import process_printer_usage_event, usage_payload_data
 
 PAIRING_TTL = timedelta(minutes=10)
 BAMBU_PROVIDER = "bambu"
@@ -421,11 +421,24 @@ async def record_printer_bridge_usage_batch(
         .with_for_update()
         .execution_options(populate_existing=True)
     )
-    if connector is None or connector.source_instance_id != payload.source_instance_id:
+    if (
+        connector is None
+        or not connector.active
+        or connector.source_instance_id != payload.source_instance_id
+    ):
         raise_error(401, ERR_PRINTER_BRIDGE_UNAUTHORIZED)
+    validate_snapshot_context(
+        PrinterBridgeContext(context.credential, connector),
+        material_system_id=payload.material_system_id,
+        source_instance_id=payload.source_instance_id,
+        provider=payload.provider,
+        transport=payload.transport,
+    )
 
     receipt_id = str(payload.sequence)
-    payload_hash = _payload_digest(payload.model_dump(mode="json"))
+    payload_data = payload.model_dump(mode="json")
+    payload_data["events"] = [usage_payload_data(event) for event in payload.events]
+    payload_hash = _payload_digest(payload_data)
     existing = await db.scalar(
         select(PrinterBridgeReceipt).where(
             PrinterBridgeReceipt.connector_id == connector.id,

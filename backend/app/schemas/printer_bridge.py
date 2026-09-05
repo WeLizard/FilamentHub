@@ -126,6 +126,7 @@ class PrinterBridgeDesiredSlotSnapshot(BaseModel):
     label: str | None
     kind: str
     assignment_revision: int = Field(ge=0)
+    usage_route_proof: str | None = None
     spool: PrinterBridgeDesiredSpoolSnapshot | None
     preset: PrinterBridgeDesiredPresetSnapshot | None
 

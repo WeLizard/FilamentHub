@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+from copy import deepcopy
 from dataclasses import replace
 from pathlib import Path
 
@@ -95,6 +96,83 @@ class SequenceProvider:
 
 
 class EdgeRuntimeTest(unittest.TestCase):
+    def test_offline_proof_replay_after_reassignment_keeps_lost_ack_payload_and_next_batch(self):
+        class RouteCloud(FakeCloud):
+            assigned_spool = 99
+            proof = "route-a"
+            lose_ack = False
+
+            def desired_snapshot(self, **kwargs):
+                result = super().desired_snapshot(**kwargs)
+                result.snapshot["slots"][0].update(
+                    spool={"id": self.assigned_spool}, usage_route_proof=self.proof
+                )
+                return result
+
+            def upload_usage_batch(self, **kwargs):
+                super().upload_usage_batch(**kwargs)
+                if self.lose_ack:
+                    self.lose_ack = False
+                    raise HttpRequestError("acknowledgement lost")
+
+        def observed(state, used, duration):
+            return ProviderSnapshot(
+                printer={"state": state},
+                slots=[{"provider_index": 0, "active_feed": True}],
+                slot_topology_complete=True,
+                capabilities=["read", "presence", "consumption"],
+                usage={
+                    "state": state,
+                    "file_name": "offline.gcode",
+                    "filament_used_mm": used,
+                    "print_duration_s": duration,
+                },
+            )
+
+        with tempfile.TemporaryDirectory() as directory:
+            store = StateStore(Path(directory) / "state.json")
+            config = self._config(store.path)
+            cloud = RouteCloud()
+            cloud.fail_upload = False
+            provider = SequenceProvider(
+                [
+                    observed("printing", 0, 0),
+                    observed("printing", 120, 300),
+                    observed("complete", 150, 330),
+                    observed("complete", 150, 330),
+                    observed("complete", 150, 330),
+                ]
+            )
+            runtime = EdgeRuntime(
+                config=config, cloud=cloud, provider=provider, store=store, state=store.load()
+            )
+            runtime.run_cycle()
+            cloud.fail_upload = True
+            for _ in range(2):
+                with self.assertRaises(HttpRequestError):
+                    runtime.run_cycle()
+            original = deepcopy(store.load().usage_outbox)
+            cloud.assigned_spool, cloud.proof = 100, "route-b"
+            cloud.fail_upload = False
+            cloud.lose_ack = True
+            runtime = EdgeRuntime(
+                config=config, cloud=cloud, provider=provider, store=store, state=store.load()
+            )
+            with self.assertRaises(HttpRequestError):
+                runtime.run_cycle()
+            self.assertEqual(store.load().usage_outbox, original)
+            runtime = EdgeRuntime(
+                config=config, cloud=cloud, provider=provider, store=store, state=store.load()
+            )
+            runtime.run_cycle()
+            self.assertEqual(cloud.usage_uploads, [original[0], original[0], original[1]])
+            self.assertEqual(store.load().usage_outbox, [])
+            self.assertEqual(store.load().desired_snapshot["slots"][0]["spool"]["id"], 100)
+            self.assertEqual(
+                [batch["events"][0]["items"][0]["usage_route_proof"] for batch in original],
+                ["route-a", "route-a"],
+            )
+
     def test_replaced_device_cannot_debit_usage_and_rejected_queue_recovers(self) -> None:
         class IdentityCloud(FakeCloud):
             def upload_observation(self, **kwargs):

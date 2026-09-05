@@ -1,4 +1,4 @@
-"""Durable transport receipts for provider-neutral printer bridge events."""
+"""Durable issued routes and delivery receipts for printer bridges."""
 
 from datetime import datetime
 
@@ -20,7 +20,11 @@ from app.db.base import Base
 
 
 class PrinterBridgeReceipt(Base):
-    """Prove that one connector event or batch was applied at most once."""
+    """Retain issued route evidence or the result of one connector delivery.
+
+    A usage_route row authorizes an exact historical route, not an amount.
+    Usage event and batch rows separately prevent repeated ledger application.
+    """
 
     __tablename__ = "printer_bridge_receipts"
 

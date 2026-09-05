@@ -10,7 +10,7 @@ from uuid import NAMESPACE_URL, uuid5
 
 from sqlalchemy import delete, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import joinedload, selectinload
 
 from app.core.errors import (
     ERR_DEVICE_NOT_FOUND,
@@ -63,6 +63,7 @@ from app.schemas.printer_bridge import (
     PrinterBridgeDesiredSpoolSnapshot,
 )
 from app.services.material_assignment_service import sync_legacy_material_assignment
+from app.services.printer_usage_route_service import issue_usage_route_proofs
 
 # Happy Hare and the plain Klipper adapter describe the same feed, so they share
 # one system on the printer instead of each creating its own.
@@ -803,10 +804,23 @@ def _printer_bridge_observation_source(provider: str, transport: str) -> str:
 async def build_printer_bridge_desired_snapshot(
     db: AsyncSession,
     connector: PhysicalPrinterConnector,
+    *,
+    source_instance_id: str | None = None,
 ) -> PrinterBridgeDesiredSnapshotResponse:
     """Build the provider-neutral desired spool and preset state for one connector."""
+    connector = await db.scalar(
+        select(PhysicalPrinterConnector)
+        .where(PhysicalPrinterConnector.id == connector.id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    if connector is None or not connector.active:
+        raise_error(401, ERR_PRINTER_BRIDGE_UNAUTHORIZED)
+    source_instance_id = source_instance_id or connector.source_instance_id
     if connector.material_system_id is None:
         raise_error(404, ERR_MATERIAL_SYSTEM_NOT_FOUND)
+    # One statement captures a consistent assignment, revision and inventory
+    # identity. Separate relationship queries could mix two concurrent routes.
     system = await db.scalar(
         select(MaterialSystem)
         .where(
@@ -815,14 +829,14 @@ async def build_printer_bridge_desired_snapshot(
             MaterialSystem.physical_printer_id == connector.physical_printer_id,
         )
         .options(
-            selectinload(MaterialSystem.slots)
-            .selectinload(MaterialSlot.assignment)
-            .selectinload(MaterialSlotAssignment.spool)
-            .selectinload(UserSpool.filament)
-            .selectinload(Filament.brand),
-            selectinload(MaterialSystem.slots)
-            .selectinload(MaterialSlot.assignment)
-            .selectinload(MaterialSlotAssignment.preset),
+            joinedload(MaterialSystem.slots)
+            .joinedload(MaterialSlot.assignment)
+            .joinedload(MaterialSlotAssignment.spool)
+            .joinedload(UserSpool.filament)
+            .joinedload(Filament.brand),
+            joinedload(MaterialSystem.slots)
+            .joinedload(MaterialSlot.assignment)
+            .joinedload(MaterialSlotAssignment.preset),
         )
         .execution_options(populate_existing=True)
     )
@@ -878,6 +892,15 @@ async def build_printer_bridge_desired_snapshot(
             )
         )
 
+    if system.active and source_instance_id and "consumption" in connector.capabilities:
+        await issue_usage_route_proofs(
+            db,
+            connector=connector,
+            source_instance_id=source_instance_id,
+            system=system,
+            slots=system.slots,
+            snapshots=slots,
+        )
     revision_payload = {
         "physical_printer_id": connector.physical_printer_id,
         "material_system_id": system.id,
@@ -893,6 +916,8 @@ async def build_printer_bridge_desired_snapshot(
             ensure_ascii=False,
         ).encode("utf-8")
     ).hexdigest()
+    # Persist issued evidence before returning it, including conditional reads.
+    await db.commit()
     return PrinterBridgeDesiredSnapshotResponse(revision=revision, **revision_payload)
 
 

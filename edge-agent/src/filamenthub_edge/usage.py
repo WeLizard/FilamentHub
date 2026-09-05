@@ -28,12 +28,12 @@ def _number(value: Any) -> float | None:
         return None
 
 
-def _route(state: EdgeState, snapshot: ProviderSnapshot) -> dict[str, int] | None:
+def _route(state: EdgeState, snapshot: ProviderSnapshot) -> dict[str, Any] | None:
     desired = state.desired_snapshot or {}
     desired_slots = desired.get("slots")
     if not isinstance(desired_slots, list):
         return None
-    assignments: dict[int, int] = {}
+    assignments: dict[int, dict[str, Any]] = {}
     for slot in desired_slots:
         if not isinstance(slot, dict):
             continue
@@ -41,7 +41,11 @@ def _route(state: EdgeState, snapshot: ProviderSnapshot) -> dict[str, int] | Non
         spool = slot.get("spool")
         spool_id = spool.get("id") if isinstance(spool, dict) else None
         if isinstance(index, int) and isinstance(spool_id, int) and spool_id > 0:
-            assignments[index] = spool_id
+            route = {"slot_index": index, "spool_id": spool_id}
+            for key in ("usage_route_proof", "assignment_revision"):
+                if slot.get(key) is not None:
+                    route[key] = slot[key]
+            assignments[index] = route
 
     active_indices: list[int] = []
     for slot in snapshot.slots:
@@ -52,21 +56,19 @@ def _route(state: EdgeState, snapshot: ProviderSnapshot) -> dict[str, int] | Non
             active_indices.append(provider_index)
     if len(active_indices) == 1:
         index = active_indices[0]
-        spool_id = assignments.get(index)
-        return {"slot_index": index, "spool_id": spool_id} if spool_id is not None else None
+        return assignments.get(index)
 
     # A provider without slot topology is still a complete bridge when the
     # material system has one unambiguous desired feed.
     if not snapshot.slots and len(assignments) == 1:
-        index, spool_id = next(iter(assignments.items()))
-        return {"slot_index": index, "spool_id": spool_id}
+        return next(iter(assignments.values()))
     return None
 
 
 def _new_tracker(
     state: EdgeState,
     usage: dict[str, Any],
-    route: dict[str, int] | None,
+    route: dict[str, Any] | None,
     observed_at: str,
     *,
     terminal_emitted: bool = False,
@@ -103,7 +105,7 @@ def _event(
     *,
     event_type: str,
     observed_at: str,
-    route: dict[str, int] | None,
+    route: dict[str, Any] | None,
     length_mm: float,
     reasons: list[str],
     outcome: str | None,
@@ -118,6 +120,8 @@ def _event(
                 "used_length_mm": length_mm,
             }
         )
+        if route.get("usage_route_proof") is not None:
+            items[-1]["usage_route_proof"] = route["usage_route_proof"]
     result: dict[str, Any] = {
         "job_id": tracker["job_id"],
         "event_type": event_type,
