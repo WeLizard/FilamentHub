@@ -115,7 +115,7 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
     refetch,
   } = useQuery({
     queryKey: ['notifications', user?.id],
-    queryFn: () => notificationsAPI.list({ page: 1, size: 50 }),
+    queryFn: ({ signal }) => notificationsAPI.list({ page: 1, size: 50 }, signal),
     enabled: !!user,
     staleTime: 30_000,
     refetchInterval: 120_000,

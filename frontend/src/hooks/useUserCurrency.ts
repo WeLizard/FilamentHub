@@ -26,7 +26,7 @@ export function useUserCurrency() {
   const country = useReaderCountry();
   const query = useQuery({
     queryKey: USER_PREFERENCES_QUERY_KEY,
-    queryFn: authAPI.getPreferences,
+    queryFn: ({ signal }) => authAPI.getPreferences(signal),
     enabled: isAuthenticated,
     staleTime: 300_000,
   });

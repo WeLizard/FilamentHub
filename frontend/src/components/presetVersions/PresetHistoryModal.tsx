@@ -57,7 +57,7 @@ export const PresetHistoryModal: React.FC<Props> = ({ presetId, canRestore = fal
   const versions = versionsQuery.data?.items ?? [];
   const savedPresetsQuery = useQuery({
     queryKey: ['saved-presets', user?.id],
-    queryFn: () => savedPresetsAPI.list(),
+    queryFn: ({ signal }) => savedPresetsAPI.list(signal),
     enabled: !!user,
   });
   const savedPreset = savedPresetsQuery.data?.items.find(

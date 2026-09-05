@@ -131,7 +131,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
   // (тот же /auth/me/presets-stats, что использовала форковая панель)
   const { data: pluginPresetStats } = useQuery({
     queryKey: ['presets-stats', user?.id],
-    queryFn: () => authAPI.getPresetsStats(),
+    queryFn: ({ signal }) => authAPI.getPresetsStats(signal),
     enabled: pluginEmbed && !!user,
   });
   useEffect(() => {

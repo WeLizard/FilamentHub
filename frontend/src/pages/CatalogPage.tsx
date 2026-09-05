@@ -86,7 +86,7 @@ export const CatalogPage: React.FC = () => {
   // Загружаем список сохранённых пресетов
   const { data: savedPresets } = useQuery({
     queryKey: ['saved-presets', user?.id],
-    queryFn: () => savedPresetsAPI.list(),
+    queryFn: ({ signal }) => savedPresetsAPI.list(signal),
     enabled: !!user?.id,
   });
 

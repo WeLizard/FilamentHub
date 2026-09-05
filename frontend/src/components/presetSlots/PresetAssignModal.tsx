@@ -110,7 +110,7 @@ export function PresetAssignModal({
   // The user's saved library — reuses the app-wide cache key so no extra fetch.
   const { data: savedPresets } = useQuery({
     queryKey: ['saved-presets', user?.id],
-    queryFn: () => savedPresetsAPI.list(),
+    queryFn: ({ signal }) => savedPresetsAPI.list(signal),
     enabled: isOpen && !!user?.id,
     staleTime: 30_000,
   });

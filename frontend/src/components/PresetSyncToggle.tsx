@@ -32,7 +32,7 @@ export const PresetSyncToggle: React.FC<PresetSyncToggleProps> = ({
   // Загружаем user_saved_preset, чтобы получить sync_enabled для этого пользователя
   const { data: savedPresets } = useQuery({
     queryKey: ['saved-presets', user?.id],
-    queryFn: () => savedPresetsAPI.list(),
+    queryFn: ({ signal }) => savedPresetsAPI.list(signal),
     enabled: !!user?.id,
   });
   

@@ -330,7 +330,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({
 
   const accessibleBrandsQuery = useQuery({
     queryKey: ['auth', 'accessible-brands', user?.id, user?.brand_id, user?.active_organization_id],
-    queryFn: authAPI.getAccessibleBrands,
+    queryFn: ({ signal }) => authAPI.getAccessibleBrands(signal),
     enabled: Boolean(user?.id),
   });
   const setActiveBrandMutation = useMutation({
@@ -2291,7 +2291,7 @@ const BrandSelectionForm: React.FC<BrandSelectionFormProps> = ({ onClose, initia
 
   const { data: accessibleBrands = [] } = useQuery({
     queryKey: ['auth', 'accessible-brands', user?.id, user?.brand_id],
-    queryFn: authAPI.getAccessibleBrands,
+    queryFn: ({ signal }) => authAPI.getAccessibleBrands(signal),
     enabled: Boolean(user?.id),
   });
 

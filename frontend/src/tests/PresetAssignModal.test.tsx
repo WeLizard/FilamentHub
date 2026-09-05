@@ -15,8 +15,8 @@ vi.mock('@tanstack/react-query', () => ({
   useQueryClient: () => ({
     invalidateQueries: invalidateQueriesMock,
   }),
-  useQuery: ({ queryFn }: { queryFn: () => Promise<unknown> }) => {
-    void queryFn();
+  useQuery: ({ queryFn }: { queryFn: (context: { signal: AbortSignal }) => Promise<unknown> }) => {
+    void queryFn({ signal: new AbortController().signal });
     return { data: { items: [] }, isLoading: false };
   },
 }));

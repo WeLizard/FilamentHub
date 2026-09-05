@@ -45,7 +45,7 @@ export const DeleteAccountModal: React.FC<DeleteAccountModalProps> = ({ isOpen, 
   // Загружаем статистику удаления
   const { data: stats, isLoading: isLoadingStats } = useQuery({
     queryKey: ['deletion-stats'],
-    queryFn: () => authAPI.getDeletionStats(),
+    queryFn: ({ signal }) => authAPI.getDeletionStats(signal),
     enabled: isOpen && !!user,
   });
 

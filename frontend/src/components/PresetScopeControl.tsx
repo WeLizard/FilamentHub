@@ -42,7 +42,7 @@ export const PresetScopeControl: React.FC<PresetScopeControlProps> = ({ preset, 
   // Запись user_saved_preset несёт scope/цели текущего пользователя
   const { data: savedPresets } = useQuery({
     queryKey: ['saved-presets', user?.id],
-    queryFn: () => savedPresetsAPI.list(),
+    queryFn: ({ signal }) => savedPresetsAPI.list(signal),
     enabled: !!user?.id,
   });
   const savedPreset = savedPresets?.items.find(sp => sp.preset_id === preset.id);

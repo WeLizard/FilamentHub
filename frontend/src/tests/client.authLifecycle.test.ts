@@ -94,6 +94,52 @@ describe('account request lifecycle', () => {
     }
   });
 
+  it.each([
+    'preferences',
+    'accessible-brands',
+    'deletion-stats',
+    'preset-stats',
+    'notifications',
+    'saved-presets',
+  ])('aborts the %s account read transport when queries are cancelled', async (resource) => {
+    const { authAPI, notificationsAPI, savedPresetsAPI } = await load();
+    const aborted = vi.fn();
+    state.adapter.mockImplementation((config) => new Promise((_, reject) => {
+      config.signal?.addEventListener('abort', () => {
+        aborted();
+        reject(new CanceledError(undefined, config));
+      }, { once: true });
+    }));
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const observer = new QueryObserver<unknown>(client, {
+      queryKey: ['account-read', resource],
+      queryFn: ({ signal }) => {
+        if (resource === 'preferences') return authAPI.getPreferences(signal);
+        if (resource === 'accessible-brands') return authAPI.getAccessibleBrands(signal);
+        if (resource === 'deletion-stats') return authAPI.getDeletionStats(signal);
+        if (resource === 'preset-stats') return authAPI.getPresetsStats(signal);
+        if (resource === 'notifications') {
+          return notificationsAPI.list({ page: 1, size: 50 }, signal);
+        }
+        return savedPresetsAPI.list(signal);
+      },
+    });
+    const unsubscribe = observer.subscribe(() => {});
+    try {
+      await until(() => state.adapter.mock.calls.length === 1);
+      const request = state.adapter.mock.calls[0][0];
+      expect(request.signal).toBeInstanceOf(AbortSignal);
+      await client.cancelQueries();
+      expect(request.signal.aborted).toBe(true);
+      expect(aborted).toHaveBeenCalledOnce();
+      expect(state.post).not.toHaveBeenCalled();
+      expect(state.remove).not.toHaveBeenCalled();
+    } finally {
+      unsubscribe();
+      client.clear();
+    }
+  });
+
   it('returns wrong-password business rejection without refresh or repeated mutation', async () => {
     await load();
     state.adapter.mockImplementation(async (config) => { throw failure(config, 401, 'ERR_WRONG_PASSWORD'); });

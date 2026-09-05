@@ -551,8 +551,8 @@ export const authAPI = {
     return response.data;
   },
 
-  getPreferences: async () => {
-    const response = await api.get<import('../types/api').UserPreferences>('/auth/me/preferences');
+  getPreferences: async (signal?: AbortSignal) => {
+    const response = await api.get<import('../types/api').UserPreferences>('/auth/me/preferences', { signal });
     return response.data;
   },
 
@@ -561,8 +561,8 @@ export const authAPI = {
     return response.data;
   },
 
-  getAccessibleBrands: async (): Promise<AccessibleBrand[]> => {
-    const response = await api.get<AccessibleBrand[]>('/auth/me/brands');
+  getAccessibleBrands: async (signal?: AbortSignal): Promise<AccessibleBrand[]> => {
+    const response = await api.get<AccessibleBrand[]>('/auth/me/brands', { signal });
     return response.data;
   },
 
@@ -585,13 +585,13 @@ export const authAPI = {
     return response.data;
   },
 
-  getDeletionStats: async (): Promise<AccountDeletionStats> => {
-    const response = await api.get<AccountDeletionStats>('/auth/deletion-stats');
+  getDeletionStats: async (signal?: AbortSignal): Promise<AccountDeletionStats> => {
+    const response = await api.get<AccountDeletionStats>('/auth/deletion-stats', { signal });
     return response.data;
   },
 
-  getPresetsStats: async (): Promise<{ total_presets: number; synced_presets: number }> => {
-    const response = await api.get<{ total_presets: number; synced_presets: number }>('/auth/me/presets-stats');
+  getPresetsStats: async (signal?: AbortSignal): Promise<{ total_presets: number; synced_presets: number }> => {
+    const response = await api.get<{ total_presets: number; synced_presets: number }>('/auth/me/presets-stats', { signal });
     return response.data;
   },
 
@@ -1550,8 +1550,8 @@ export const achievementsAPI = {
 
 // Saved Presets API
 export const savedPresetsAPI = {
-  list: async () => {
-    const response = await api.get<{ items: UserSavedPreset[]; total: number }>('/saved-presets/');
+  list: async (signal?: AbortSignal) => {
+    const response = await api.get<{ items: UserSavedPreset[]; total: number }>('/saved-presets/', { signal });
     return response.data;
   },
 
@@ -2892,8 +2892,8 @@ export const adminAPI = {
 // Notifications API
 export const notificationsAPI = {
   // Получить список уведомлений
-  list: async (params?: { page?: number; size?: number; unread_only?: boolean }): Promise<NotificationListResponse> => {
-    const response = await api.get('/notifications/', { params });
+  list: async (params?: { page?: number; size?: number; unread_only?: boolean }, signal?: AbortSignal): Promise<NotificationListResponse> => {
+    const response = await api.get('/notifications/', { params, signal });
     return response.data;
   },
 

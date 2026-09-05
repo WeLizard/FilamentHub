@@ -44,7 +44,7 @@ export const DeletedPresetsModal: React.FC<DeletedPresetsModalProps> = ({
   // Используем useQuery для получения актуальных данных
   const { data: notificationsData } = useQuery({
     queryKey: ['notifications', initialNotification.user_id],
-    queryFn: () => notificationsAPI.list({ page: 1, size: 50 }),
+    queryFn: ({ signal }) => notificationsAPI.list({ page: 1, size: 50 }, signal),
     enabled: isOpen && !!initialNotification.user_id,
     refetchInterval: false,
   });

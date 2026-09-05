@@ -406,7 +406,7 @@ export const ProfilePage: React.FC = () => {
   // Загружаем сохранённые пресеты
   const { data: savedPresetsData } = useQuery({
     queryKey: ['saved-presets', user?.id],
-    queryFn: () => savedPresetsAPI.list(),
+    queryFn: ({ signal }) => savedPresetsAPI.list(signal),
     enabled: !!user?.id && needsPresetData,
     staleTime: 60_000,
   });
@@ -796,7 +796,7 @@ export const ProfilePage: React.FC = () => {
   // Загружаем статистику пресетов
   const { data: presetsStats } = useQuery({
     queryKey: ['presets-stats', user?.id],
-    queryFn: () => authAPI.getPresetsStats(),
+    queryFn: ({ signal }) => authAPI.getPresetsStats(signal),
     enabled: !!user?.id && needsDashboardData,
     staleTime: 60_000,
   });
