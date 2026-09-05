@@ -5562,6 +5562,9 @@
     "newEmailPlaceholder": "New email",
     "emailConfirmationHint": "A confirmation code will be sent to the new email",
     "emailConfirmationSent": "A confirmation link has been sent to your new email address",
+    "adminEmailConfirmationHint": "Administrators first confirm with a code sent to the current verified email. A confirmation link is then sent to the new email.",
+    "adminEmailConfirmationTitle": "Confirm administrator email change",
+    "adminEmailConfirmationMessage": "Send a code to your current verified email before requesting a confirmation link for {{email}}.",
     "password": "Password",
     "currentPassword": "Current password",
     "currentPasswordPlaceholder": "Enter current password",
@@ -7059,6 +7062,14 @@
     "ERR_LABEL_PRESET_CONFLICT": "The layout changed in another tab. Reopen the editor and try again.",
     "ERR_PRINTER_IDENTITY_CONFLICT": "The device identity conflicts with the saved connection. Review connections in My printers; do not merge distinct devices.",
     "ERR_PRINTER_MERGE_CONFLICT": "The cards changed or contain incompatible data. Review the merge again.",
+    "ERR_ADMIN_CONFIRMATION_REQUIRED": "Confirm this administrator action with the code sent to your email.",
+    "ERR_ADMIN_CONFIRMATION_EMAIL_REQUIRED": "A verified email is required to confirm this administrator action.",
+    "ERR_ADMIN_CONFIRMATION_SESSION_REQUIRED": "Sign in again before requesting a confirmation code.",
+    "ERR_ADMIN_CONFIRMATION_INVALID": "The confirmation code is incorrect. Check it and try again.",
+    "ERR_ADMIN_CONFIRMATION_EXPIRED": "The confirmation code has expired. Request a new code.",
+    "ERR_ADMIN_CONFIRMATION_ATTEMPTS_EXCEEDED": "Too many incorrect attempts. Request a new code.",
+    "ERR_ADMIN_CONFIRMATION_RATE_LIMITED": "Too many code requests. Please wait and try again.",
+    "ERR_ADMIN_CONFIRMATION_DELIVERY_FAILED": "The confirmation email could not be delivered. Try again later.",
     "UNKNOWN_ERROR": "An unexpected error occurred",
     "ERR_NETWORK": "No connection to the server. Check your internet and try again.",
     "ERR_REQUEST_TIMEOUT": "The server is not responding. Please try again later.",
@@ -7943,13 +7954,27 @@
       "routingTopologyNote": "Tool routing does not create, remove or resize physical material slots. Several tools may point to the same slot."
     }
   },
+  "adminConfirmation": {
+    "sendHint": "We’ll send a one-time code to the verified email for this administrator account.",
+    "sentTo": "Code sent to {{email}}.",
+    "expiresAt": "Valid until {{time}}.",
+    "codeLabel": "6-digit confirmation code",
+    "codeHint": "Enter all six digits from the email.",
+    "sendCode": "Send code",
+    "sending": "Sending...",
+    "resend": "Send a new code",
+    "confirming": "Confirming...",
+    "errorFallback": "The action could not be confirmed. Check the code or request a new one."
+  },
   "confirmEmailChange": {
     "loading": "Confirming email change...",
     "successTitle": "Email updated!",
     "successMessage": "Your email has been successfully changed. Use it to sign in.",
+    "adminSuccessMessage": "Your email was changed and all administrator sessions were ended. Sign in again with the new email.",
     "errorTitle": "Link is invalid",
     "errorFallback": "The link has expired or already been used. Please request an email change again.",
-    "goHome": "Go to home"
+    "goHome": "Go to home",
+    "signInAgain": "Sign in again"
   },
   "verifyEmail": {
     "loading": "Checking the link…",

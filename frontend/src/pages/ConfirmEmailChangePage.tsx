@@ -7,15 +7,22 @@ import { CheckCircle, XCircle, Loader } from 'lucide-react';
 import { authAPI } from '../api/client';
 import { translateApiError } from '../utils/translateApiError';
 import { PageBackground } from '../components/PageBackground';
+import { useAuth } from '../contexts/AuthContext';
 
 export function ConfirmEmailChangePage() {
   const { t } = useTranslation();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const calledRef = useRef(false);
+  const { user, refreshUser } = useAuth();
+  const userRef = useRef(user);
+  const refreshUserRef = useRef(refreshUser);
+  userRef.current = user;
+  refreshUserRef.current = refreshUser;
 
   const [state, setState] = useState<'loading' | 'success' | 'error'>('loading');
   const [errorMessage, setErrorMessage] = useState('');
+  const [reauthRequired, setReauthRequired] = useState(false);
 
   useEffect(() => {
     if (calledRef.current) return;
@@ -28,7 +35,17 @@ export function ConfirmEmailChangePage() {
     }
 
     authAPI.confirmEmailChange(token)
-      .then(() => setState('success'))
+      .then(async (result) => {
+        const currentUser = userRef.current;
+        const affectsCurrentIdentity = result.session_revoked
+          && result.user_id !== null
+          && (currentUser === null || currentUser.id === result.user_id);
+        if (affectsCurrentIdentity && currentUser !== null) {
+          await refreshUserRef.current();
+        }
+        setReauthRequired(affectsCurrentIdentity);
+        setState('success');
+      })
       .catch((err: any) => {
         const detail = err.response?.data?.detail;
         setErrorMessage(translateApiError(t, detail, t('confirmEmailChange.errorFallback')));
@@ -52,12 +69,18 @@ export function ConfirmEmailChangePage() {
           <>
             <CheckCircle className="w-14 h-14 text-green-400 mx-auto mb-4" />
             <h2 className="text-2xl font-bold text-white mb-2">{t('confirmEmailChange.successTitle')}</h2>
-            <p className="text-gray-300 mb-6">{t('confirmEmailChange.successMessage')}</p>
+            <p className="text-gray-300 mb-6">
+              {t(reauthRequired
+                ? 'confirmEmailChange.adminSuccessMessage'
+                : 'confirmEmailChange.successMessage')}
+            </p>
             <Link
-              to="/"
+              to={reauthRequired ? '/?auth=login' : '/'}
               className="inline-block px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white rounded-xl transition-all"
             >
-              {t('confirmEmailChange.goHome')}
+              {t(reauthRequired
+                ? 'confirmEmailChange.signInAgain'
+                : 'confirmEmailChange.goHome')}
             </Link>
           </>
         )}

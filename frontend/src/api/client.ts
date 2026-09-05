@@ -708,6 +708,7 @@ export const authAPI = {
 
   updateEmail: async (data: {
     new_email: string;
+    confirmation?: AdminReauthConfirmation;
   }) => {
     const response = await api.patch<{ message: string }>('/auth/me/email', {
       ...data,
@@ -732,7 +733,7 @@ export const authAPI = {
   },
 
   confirmEmailChange: async (token: string) => {
-    const response = await api.post<{ message: string }>(`/auth/confirm-email-change?token=${encodeURIComponent(token)}`);
+    const response = await api.post<ConfirmEmailChangeResponse>(`/auth/confirm-email-change?token=${encodeURIComponent(token)}`);
     return response.data;
   },
 
@@ -743,6 +744,38 @@ export const authAPI = {
     return response.data;
   },
 };
+
+export type AdminReauthAction =
+  | 'block_user'
+  | 'promote_admin'
+  | 'demote_admin'
+  | 'delete_user'
+  | 'change_admin_email';
+
+export interface AdminReauthConfirmation {
+  challenge_id: string;
+  code: string;
+}
+
+export interface AdminReauthChallenge {
+  challenge_id: string;
+  expires_at: string;
+  masked_email: string;
+}
+
+export interface AdminReauthChallengeRequest {
+  action: AdminReauthAction;
+  target_user_id: number;
+  delete_reviews?: boolean;
+  new_email?: string;
+  language?: 'ru' | 'en' | 'zh';
+}
+
+export interface ConfirmEmailChangeResponse {
+  message: string;
+  session_revoked: boolean;
+  user_id: number | null;
+}
 
 export const brandTeamAPI = {
   get: async (brandId: number): Promise<BrandTeamWorkspace> => {
@@ -2225,6 +2258,25 @@ export interface AdminCalculatorSettings {
 }
 
 export const adminAPI = {
+  createReauthChallenge: async (
+    data: AdminReauthChallengeRequest,
+  ): Promise<AdminReauthChallenge> => {
+    const request = () => api.post<AdminReauthChallenge>('/admin/reauth/challenges', {
+      ...data,
+      language: data.language ?? currentRequestLanguage(),
+    }).then((response) => response.data);
+    try {
+      return await request();
+    } catch (error) {
+      const code = (error as {
+        response?: { data?: { detail?: { code?: string } } };
+      })?.response?.data?.detail?.code;
+      if (code !== 'ERR_ADMIN_CONFIRMATION_SESSION_REQUIRED') throw error;
+      await authAPI.refresh();
+      return request();
+    }
+  },
+
   getMaintenance: async (): Promise<AdminMaintenanceInfo> => {
     const response = await api.get<AdminMaintenanceInfo>('/admin/maintenance');
     return response.data;
@@ -2498,25 +2550,29 @@ export const adminAPI = {
     return response.data;
   },
 
-  deleteUserAccount: async (userId: number, deleteReviews: boolean): Promise<{ deleted: boolean }> => {
+  deleteUserAccount: async (
+    userId: number,
+    deleteReviews: boolean,
+    confirmation: AdminReauthConfirmation,
+  ): Promise<{ deleted: boolean }> => {
     const response = await api.delete<{ deleted: boolean }>(`/admin/users/${userId}`, {
-      data: { delete_reviews: deleteReviews },
+      data: { delete_reviews: deleteReviews, confirmation },
     });
     return response.data;
   },
 
-  deactivateUser: async (userId: number): Promise<User> => {
-    const response = await api.post<User>(`/admin/users/${userId}/deactivate`);
+  deactivateUser: async (userId: number, confirmation: AdminReauthConfirmation): Promise<User> => {
+    const response = await api.post<User>(`/admin/users/${userId}/deactivate`, { confirmation });
     return response.data;
   },
   
-  promoteToAdmin: async (userId: number): Promise<User> => {
-    const response = await api.post<User>(`/admin/users/${userId}/promote-admin`);
+  promoteToAdmin: async (userId: number, confirmation: AdminReauthConfirmation): Promise<User> => {
+    const response = await api.post<User>(`/admin/users/${userId}/promote-admin`, { confirmation });
     return response.data;
   },
 
-  demoteToUser: async (userId: number): Promise<User> => {
-    const response = await api.post<User>(`/admin/users/${userId}/demote-to-user`);
+  demoteToUser: async (userId: number, confirmation: AdminReauthConfirmation): Promise<User> => {
+    const response = await api.post<User>(`/admin/users/${userId}/demote-to-user`, { confirmation });
     return response.data;
   },
 

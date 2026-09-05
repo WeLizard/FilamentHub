@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { User } from '../types/api';
 import { SettingsTab } from './SettingsTab';
@@ -7,6 +7,8 @@ import { SettingsTab } from './SettingsTab';
 const mocks = vi.hoisted(() => ({
   refreshUser: vi.fn(),
   updateSettings: vi.fn(),
+  updateEmail: vi.fn(),
+  createReauthChallenge: vi.fn(),
 }));
 
 vi.mock('react-i18next', () => ({
@@ -22,8 +24,11 @@ vi.mock('../api/client', () => ({
     updateUsername: vi.fn(),
     updateProfile: vi.fn(),
     updatePassword: vi.fn(),
-    updateEmail: vi.fn(),
+    updateEmail: (...args: unknown[]) => mocks.updateEmail(...args),
     updatePreferences: vi.fn(),
+  },
+  adminAPI: {
+    createReauthChallenge: (...args: unknown[]) => mocks.createReauthChallenge(...args),
   },
 }));
 
@@ -75,14 +80,14 @@ const user = {
   sync_printer_endpoints: false,
 } satisfies User;
 
-function renderSettings() {
+function renderSettings(currentUser: User = user) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
 
   render(
     <QueryClientProvider client={queryClient}>
-      <SettingsTab user={user} onUserUpdate={vi.fn()} />
+      <SettingsTab user={currentUser} onUserUpdate={vi.fn()} />
     </QueryClientProvider>,
   );
 }
@@ -91,6 +96,12 @@ describe('SettingsTab printer sync settings', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.updateSettings.mockResolvedValue(user);
+    mocks.updateEmail.mockResolvedValue({ message: 'sent' });
+    mocks.createReauthChallenge.mockResolvedValue({
+      challenge_id: 'challenge-1',
+      expires_at: '2026-09-05T20:10:00Z',
+      masked_email: 'u***@example.com',
+    });
   });
 
   it('turns both printer profile permissions off in each direction and saves false values', async () => {
@@ -117,5 +128,47 @@ describe('SettingsTab printer sync settings', () => {
       allow_printer_profiles_export: false,
       allow_print_profiles_export: false,
     }));
+  });
+
+  it('keeps the ordinary user email change as a direct request', async () => {
+    renderSettings();
+    const emailRow = screen.getByText('user@example.com').closest<HTMLElement>('.p-4')!;
+    fireEvent.click(within(emailRow).getByRole('button', { name: 'settings.edit' }));
+    const input = within(emailRow).getByPlaceholderText('settings.newEmailPlaceholder');
+    fireEvent.change(input, { target: { value: 'next@example.com' } });
+    fireEvent.submit(input.closest('form')!);
+
+    await waitFor(() => expect(mocks.updateEmail).toHaveBeenCalled());
+    expect(mocks.updateEmail.mock.calls[0][0]).toEqual({
+      new_email: 'next@example.com',
+    });
+    expect(mocks.createReauthChallenge).not.toHaveBeenCalled();
+  });
+
+  it('binds an administrator challenge to the new email before changing it', async () => {
+    renderSettings({ ...user, role: 'admin' });
+    const emailRow = screen.getByText('user@example.com').closest<HTMLElement>('.p-4')!;
+    fireEvent.click(within(emailRow).getByRole('button', { name: 'settings.edit' }));
+    const input = within(emailRow).getByPlaceholderText('settings.newEmailPlaceholder');
+    fireEvent.change(input, { target: { value: 'admin-next@example.com' } });
+    fireEvent.submit(input.closest('form')!);
+
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'adminConfirmation.sendCode' }));
+    await waitFor(() => expect(mocks.createReauthChallenge).toHaveBeenCalledWith({
+      action: 'change_admin_email',
+      target_user_id: 1,
+      new_email: 'admin-next@example.com',
+    }));
+    fireEvent.change(within(dialog).getByRole('textbox', { name: /adminConfirmation\.codeLabel/ }), {
+      target: { value: '654321' },
+    });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'settings.save' }));
+
+    await waitFor(() => expect(mocks.updateEmail).toHaveBeenCalled());
+    expect(mocks.updateEmail.mock.calls[0][0]).toEqual({
+      new_email: 'admin-next@example.com',
+      confirmation: { challenge_id: 'challenge-1', code: '654321' },
+    });
   });
 });

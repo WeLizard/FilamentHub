@@ -281,6 +281,119 @@ describe('api/client interceptors', () => {
   });
 });
 
+describe('admin action confirmation requests', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    vi.clearAllMocks();
+    authMocks.getRefreshToken.mockReturnValue('refresh-token');
+  });
+
+  it('binds a challenge to the action target and changed email', async () => {
+    const { adminAPI } = await loadClientModule();
+    axiosState.apiInstance.post.mockResolvedValueOnce({
+      data: {
+        challenge_id: 'challenge-1',
+        expires_at: '2026-09-05T20:10:00Z',
+        masked_email: 'a***@example.com',
+      },
+    });
+
+    await adminAPI.createReauthChallenge({
+      action: 'change_admin_email',
+      target_user_id: 17,
+      new_email: 'next@example.com',
+    });
+
+    expect(axiosState.apiInstance.post).toHaveBeenCalledWith(
+      '/admin/reauth/challenges',
+      expect.objectContaining({
+        action: 'change_admin_email',
+        target_user_id: 17,
+        new_email: 'next@example.com',
+        language: expect.any(String),
+      }),
+    );
+  });
+
+  it('refreshes once and retries challenge issuance once for a legacy session', async () => {
+    const { adminAPI } = await loadClientModule();
+    axiosState.apiInstance.post
+      .mockRejectedValueOnce({
+        response: { data: { detail: { code: 'ERR_ADMIN_CONFIRMATION_SESSION_REQUIRED' } } },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          challenge_id: 'challenge-2',
+          expires_at: '2026-09-05T20:10:00Z',
+          masked_email: 'a***@example.com',
+        },
+      });
+    axiosState.post.mockResolvedValueOnce({
+      data: { access_token: 'fresh-access', refresh_token: 'fresh-refresh' },
+    });
+
+    await adminAPI.createReauthChallenge({ action: 'block_user', target_user_id: 23 });
+
+    expect(axiosState.post).toHaveBeenCalledTimes(1);
+    expect(axiosState.apiInstance.post).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not loop when the refreshed session still cannot issue a challenge', async () => {
+    const { adminAPI } = await loadClientModule();
+    const sessionRequired = {
+      response: { data: { detail: { code: 'ERR_ADMIN_CONFIRMATION_SESSION_REQUIRED' } } },
+    };
+    axiosState.apiInstance.post.mockRejectedValue(sessionRequired);
+    axiosState.post.mockResolvedValueOnce({
+      data: { access_token: 'fresh-access', refresh_token: 'fresh-refresh' },
+    });
+
+    await expect(adminAPI.createReauthChallenge({
+      action: 'block_user',
+      target_user_id: 23,
+    })).rejects.toBe(sessionRequired);
+
+    expect(axiosState.post).toHaveBeenCalledTimes(1);
+    expect(axiosState.apiInstance.post).toHaveBeenCalledTimes(2);
+  });
+
+  it('forwards the proof in protected admin mutations', async () => {
+    const { adminAPI } = await loadClientModule();
+    const confirmation = { challenge_id: 'challenge-3', code: '123456' };
+    axiosState.apiInstance.post.mockResolvedValue({ data: {} });
+    axiosState.apiInstance.delete.mockResolvedValue({ data: { deleted: true } });
+
+    await adminAPI.deactivateUser(31, confirmation);
+    await adminAPI.promoteToAdmin(32, confirmation);
+    await adminAPI.demoteToUser(33, confirmation);
+    await adminAPI.deleteUserAccount(34, true, confirmation);
+
+    expect(axiosState.apiInstance.post).toHaveBeenNthCalledWith(
+      1, '/admin/users/31/deactivate', { confirmation },
+    );
+    expect(axiosState.apiInstance.post).toHaveBeenNthCalledWith(
+      2, '/admin/users/32/promote-admin', { confirmation },
+    );
+    expect(axiosState.apiInstance.post).toHaveBeenNthCalledWith(
+      3, '/admin/users/33/demote-to-user', { confirmation },
+    );
+    expect(axiosState.apiInstance.delete).toHaveBeenCalledWith('/admin/users/34', {
+      data: { delete_reviews: true, confirmation },
+    });
+  });
+
+  it('adds the proof to an administrator email change payload', async () => {
+    const { authAPI } = await loadClientModule();
+    const confirmation = { challenge_id: 'challenge-4', code: '654321' };
+    axiosState.apiInstance.patch.mockResolvedValueOnce({ data: { message: 'sent' } });
+
+    await authAPI.updateEmail({ new_email: 'next@example.com', confirmation });
+
+    expect(axiosState.apiInstance.patch).toHaveBeenCalledWith('/auth/me/email',
+      expect.objectContaining({ new_email: 'next@example.com', confirmation }));
+  });
+});
+
 describe('admin email uploads', () => {
   beforeEach(() => {
     localStorage.clear();

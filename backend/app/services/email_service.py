@@ -307,6 +307,29 @@ def send_password_reset_email(*, to: str, reset_url: str, language: str | None =
     return send_email(to=to, subject=subject, html=html)
 
 
+def send_admin_confirmation_email(
+    *,
+    to: str,
+    code: str,
+    action: str,
+    target_user_id: int,
+    new_email: str | None = None,
+    language: str | None = None,
+) -> bool:
+    """Send a bounded operation description with its one-time code."""
+    subject = translate("adminConfirmation.subject", language)
+    html = _render(
+        "admin_confirmation.html",
+        language=language,
+        subject=subject,
+        code=code,
+        action=translate(f"adminConfirmation.actions.{action}", language),
+        target_user_id=target_user_id,
+        new_email=new_email,
+    )
+    return send_email(to=to, subject=subject, html=html)
+
+
 def send_email_verification_email(
     *, to: str, verify_url: str, reject_url: str, language: str | None = None
 ) -> bool:

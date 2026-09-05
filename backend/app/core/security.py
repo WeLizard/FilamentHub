@@ -146,6 +146,16 @@ def create_access_token(data: dict[str, Any], expires_delta: timedelta | None = 
     return encoded_jwt
 
 
+def create_session_access_token(data: dict[str, Any], refresh_token: str) -> str:
+    """Carry the existing refresh-family identity into a normal access token."""
+    payload = decode_refresh_token(refresh_token)
+    if not payload or not isinstance(payload.get("sid"), str):
+        raise ValueError("A session access token requires a refresh family")
+    if payload.get("user_id") != data.get("user_id"):
+        raise ValueError("Access and refresh identities must match")
+    return create_access_token({**data, "sid": payload["sid"]})
+
+
 def create_refresh_token(
     data: dict[str, Any],
     *,
@@ -346,7 +356,9 @@ def decode_password_reset_token(token: str) -> dict[str, Any] | None:
         return None
 
 
-def generate_email_change_token(user_id: int, new_email: str) -> str:
+def generate_email_change_token(
+    user_id: int, new_email: str, *, admin_confirmation_id: str | None = None
+) -> str:
     """Generate a token to confirm email change. Valid for 24 hours."""
     expire = datetime.now(timezone.utc) + timedelta(hours=24)
     expire_timestamp = calendar.timegm(expire.utctimetuple())
@@ -356,6 +368,8 @@ def generate_email_change_token(user_id: int, new_email: str) -> str:
         "type": "email_change",
         "exp": expire_timestamp,
     }
+    if admin_confirmation_id is not None:
+        payload["admin_confirmation_id"] = admin_confirmation_id
     return jwt.encode(payload, settings.SECRET_KEY, algorithm=ALGORITHM)
 
 

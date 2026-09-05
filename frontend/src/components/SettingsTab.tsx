@@ -4,7 +4,8 @@ import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Settings, Lock, Mail, Save, CheckCircle, XCircle, Loader2, User as UserIcon, Eye, EyeOff, AlertTriangle, Trash2, Globe, Pencil } from 'lucide-react';
-import { authAPI } from '../api/client';
+import { adminAPI, authAPI } from '../api/client';
+import type { AdminReauthConfirmation } from '../api/client';
 import { currencySymbol, currencyCodes } from '../utils/currency';
 import { sortedCountries } from '../utils/countries';
 import { translateApiError } from '../utils/translateApiError';
@@ -14,6 +15,7 @@ import { USER_PREFERENCES_QUERY_KEY, useUserCurrency } from '../hooks/useUserCur
 import { DeleteAccountModal } from './DeleteAccountModal';
 import { LanguageSwitcher } from './LanguageSwitcher';
 import type { AxiosError } from 'axios';
+import { AdminConfirmationDialog } from './AdminConfirmationDialog';
 
 interface SettingsTabProps {
   user: User;
@@ -148,6 +150,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
   const [emailError, setEmailError] = useState<string | null>(null);
   const [emailSuccess, setEmailSuccess] = useState(false);
   const [isEmailEditing, setIsEmailEditing] = useState(false);
+  const [pendingAdminEmail, setPendingAdminEmail] = useState<string | null>(null);
 
   // Мутация для обновления настроек
   const updateSettingsMutation = useMutation({
@@ -331,19 +334,25 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
     setEmailSuccess(false);
 
     // Валидация
-    if (!emailForm.new_email || !emailForm.new_email.includes('@')) {
+    const nextEmail = emailForm.new_email.trim();
+    if (!nextEmail || !nextEmail.includes('@')) {
       setEmailError(t('settings.invalidEmail'));
       return;
     }
 
-    if (emailForm.new_email === user.email) {
+    if (nextEmail === user.email) {
       setEmailError(t('settings.emailMustDiffer'));
+      return;
+    }
+
+    if (user.role === 'admin') {
+      setPendingAdminEmail(nextEmail);
       return;
     }
 
     try {
       await updateEmailMutation.mutateAsync({
-        new_email: emailForm.new_email,
+        new_email: nextEmail,
       });
     } catch (error) {
       // Ошибка обрабатывается в onError мутации
@@ -621,7 +630,11 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
                   className="w-full rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-sm text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
                   placeholder={t('settings.newEmailPlaceholder')}
                 />
-                <p className="text-xs text-blue-300/80">{t('settings.emailConfirmationHint')}</p>
+                <p className="text-xs text-blue-300/80">
+                  {t(user.role === 'admin'
+                    ? 'settings.adminEmailConfirmationHint'
+                    : 'settings.emailConfirmationHint')}
+                </p>
                 {emailError && (
                   <div className="flex items-center gap-2 text-xs text-red-400">
                     <XCircle className="h-3 w-3" />
@@ -957,6 +970,24 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
           <span>{t('settings.deleteAccountButton')}</span>
         </button>
       </section>
+
+      <AdminConfirmationDialog
+        isOpen={pendingAdminEmail !== null}
+        challengeKey={`change_admin_email:${user.id}:${pendingAdminEmail ?? ''}`}
+        title={t('settings.adminEmailConfirmationTitle')}
+        message={t('settings.adminEmailConfirmationMessage', { email: pendingAdminEmail })}
+        confirmText={t('settings.save')}
+        requestChallenge={() => adminAPI.createReauthChallenge({
+          action: 'change_admin_email',
+          target_user_id: user.id,
+          new_email: pendingAdminEmail!,
+        })}
+        onConfirm={(confirmation: AdminReauthConfirmation) => updateEmailMutation.mutateAsync({
+          new_email: pendingAdminEmail!,
+          confirmation,
+        })}
+        onClose={() => setPendingAdminEmail(null)}
+      />
 
       <DeleteAccountModal isOpen={showDeleteModal} onClose={() => setShowDeleteModal(false)} />
     </div>

@@ -14,6 +14,10 @@ class AuditAction(str, Enum):
     PASSWORD_RESET = "password_reset"
     PASSWORD_CHANGE = "password_change"
     AUTH_REVOKED = "auth_revoked"
+    ADMIN_ROLE_CHANGED = "admin_role_changed"
+    ACCOUNT_DELETED = "account_deleted"
+    EMAIL_CHANGE_REQUESTED = "email_change_requested"
+    EMAIL_CHANGED = "email_changed"
 
 
 class AuditResult(str, Enum):
@@ -26,6 +30,10 @@ class AuditReason(str, Enum):
     LOGOUT = "logout"
     REFRESH_REUSE = "refresh_reuse"
     ADMIN_BLOCK = "admin_block"
+    ADMIN_PROMOTE = "admin_promote"
+    ADMIN_DEMOTE = "admin_demote"
+    ADMIN_DELETE = "admin_delete"
+    ADMIN_EMAIL_CODE = "admin_email_code"
 
 
 class AuditEvent(Base):
@@ -34,13 +42,15 @@ class AuditEvent(Base):
     __tablename__ = "audit_events"
     __table_args__ = (
         CheckConstraint(
-            "action IN ('password_reset', 'password_change', 'auth_revoked')",
+            "action IN ('password_reset', 'password_change', 'auth_revoked', "
+            "'admin_role_changed', 'account_deleted', 'email_change_requested', 'email_changed')",
             name="ck_audit_events_action",
         ),
         CheckConstraint("result IN ('success')", name="ck_audit_events_result"),
         CheckConstraint(
             "reason IN ('recovery_grant', 'authenticated_change', 'logout', "
-            "'refresh_reuse', 'admin_block')",
+            "'refresh_reuse', 'admin_block', 'admin_promote', 'admin_demote', "
+            "'admin_delete', 'admin_email_code')",
             name="ck_audit_events_reason",
         ),
         Index("ix_audit_events_actor_time", "actor_user_id", "occurred_at"),

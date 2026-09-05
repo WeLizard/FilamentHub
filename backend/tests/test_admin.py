@@ -35,6 +35,7 @@ async def _make_admin(db: AsyncSession, user_id: int) -> None:
     result = await db.execute(__import__("sqlalchemy").select(User).where(User.id == user_id))
     user = result.scalar_one()
     user.role = UserRole.ADMIN
+    user.email_verified = True
     await db.commit()
 
 
@@ -83,6 +84,7 @@ async def _create_preset(db: AsyncSession, filament_id: int, user_id: int,
 # ---------------------------------------------------------------------------
 # Access control
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_admin_endpoints_require_auth(client: AsyncClient):
@@ -175,6 +177,7 @@ async def test_admin_reject_preset(client: AsyncClient, db_session: AsyncSession
 # User management
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_admin_list_users(client: AsyncClient, db_session: AsyncSession):
     """Admin user list applies filters and returns a paginated contract."""
@@ -212,13 +215,22 @@ async def test_admin_list_users(client: AsyncClient, db_session: AsyncSession):
 
 
 @pytest.mark.asyncio
-async def test_admin_deactivate_and_activate_user(client: AsyncClient, db_session: AsyncSession):
+async def test_admin_deactivate_and_activate_user(
+    client: AsyncClient, db_session: AsyncSession, monkeypatch
+):
     """Admin can deactivate and then reactivate a user."""
     admin_headers, admin_id = await _register_and_login(client, "admin-deact")
     await _make_admin(db_session, admin_id)
     _, target_id = await _register_and_login(client, "admin-target-deact")
 
-    deact = await client.post(f"/api/v1/admin/users/{target_id}/deactivate", headers=admin_headers)
+    from tests.admin_confirmation_helpers import issue_confirmation
+
+    proof = await issue_confirmation(client, monkeypatch, admin_headers, "block_user", target_id)
+    deact = await client.post(
+        f"/api/v1/admin/users/{target_id}/deactivate",
+        headers=admin_headers,
+        json={"confirmation": proof},
+    )
     assert deact.status_code == 200
     assert deact.json()["active"] is False
 
@@ -228,17 +240,31 @@ async def test_admin_deactivate_and_activate_user(client: AsyncClient, db_sessio
 
 
 @pytest.mark.asyncio
-async def test_admin_promote_and_demote_user(client: AsyncClient, db_session: AsyncSession):
+async def test_admin_promote_and_demote_user(
+    client: AsyncClient, db_session: AsyncSession, monkeypatch
+):
     """Admin can promote user to admin and demote back."""
     admin_headers, admin_id = await _register_and_login(client, "admin-promote")
     await _make_admin(db_session, admin_id)
     _, target_id = await _register_and_login(client, "admin-target-promote")
 
-    promote = await client.post(f"/api/v1/admin/users/{target_id}/promote-admin", headers=admin_headers)
+    from tests.admin_confirmation_helpers import issue_confirmation
+
+    proof = await issue_confirmation(client, monkeypatch, admin_headers, "promote_admin", target_id)
+    promote = await client.post(
+        f"/api/v1/admin/users/{target_id}/promote-admin",
+        headers=admin_headers,
+        json={"confirmation": proof},
+    )
     assert promote.status_code == 200
     assert promote.json()["role"] == "admin"
 
-    demote = await client.post(f"/api/v1/admin/users/{target_id}/demote-to-user", headers=admin_headers)
+    proof = await issue_confirmation(client, monkeypatch, admin_headers, "demote_admin", target_id)
+    demote = await client.post(
+        f"/api/v1/admin/users/{target_id}/demote-to-user",
+        headers=admin_headers,
+        json={"confirmation": proof},
+    )
     assert demote.status_code == 200
     assert demote.json()["role"] == "user"
 

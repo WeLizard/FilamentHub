@@ -14,6 +14,7 @@ from pydantic import (
 
 from app.models.organization import OrganizationMemberRole
 from app.models.user import UserRole
+from app.schemas.admin_confirmation import AdminConfirmationProof
 
 
 def validate_password_strength(password: str) -> str:
@@ -42,6 +43,7 @@ class UserCreate(UserBase):
     @classmethod
     def password_strength(cls, v: str) -> str:
         return validate_password_strength(v)
+
     # Роль всегда "user" при создании - роль "brand" присваивается только через процесс верификации
     role: Literal["user"] = Field(default="user")
 
@@ -108,6 +110,7 @@ class UserEmailUpdate(BaseModel):
     """Schema for updating user email."""
 
     new_email: EmailStr = Field(..., description="Новый email")
+    confirmation: AdminConfirmationProof | None = None
     language: str | None = Field(
         default=None,
         pattern=r"^[a-z]{2}$",
@@ -178,6 +181,7 @@ class UserResponse(UserBase):
         # Effective calculator (Pro) access + subscription summary (see subscription_service).
         if hasattr(obj, "role"):
             from app.services.subscription_service import pro_active, subscription_summary
+
             instance.has_calculator_access = pro_active(obj)
             instance.subscription_info = subscription_summary(obj)
         if hasattr(obj, "terms_version_accepted"):
@@ -454,5 +458,8 @@ class EmailChangeResponse(BaseModel):
 
 class ConfirmEmailChangeResponse(BaseModel):
     """Response after confirming email change."""
+
+    session_revoked: bool = False
+    user_id: int | None = None
 
     message: str = Field(default="Email успешно изменён", description="Сообщение о результате")

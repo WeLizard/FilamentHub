@@ -5,8 +5,11 @@ from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.security import create_access_token
+from app.core.security import create_access_token, create_session_access_token
 from app.models.user import User, UserRole
+from app.services.account_auth_service import token_data_for_user
+from app.services.refresh_session_service import issue_refresh_session
+from tests.admin_confirmation_helpers import issue_confirmation
 
 
 async def _account(db: AsyncSession, *, name: str, role: UserRole = UserRole.USER) -> User:
@@ -36,9 +39,16 @@ def _as(user: User) -> dict[str, str]:
     return {"Authorization": f"Bearer {create_access_token({'sub': user.email})}"}
 
 
+async def _session_as(db: AsyncSession, user: User) -> dict[str, str]:
+    claims = token_data_for_user(user)
+    refresh = await issue_refresh_session(db, user_id=user.id, token_data=claims)
+    await db.commit()
+    return {"Authorization": f"Bearer {create_session_access_token(claims, refresh)}"}
+
+
 @pytest.mark.asyncio
 async def test_admin_can_carry_out_an_erasure_request(
-    client: AsyncClient, db_session: AsyncSession
+    client: AsyncClient, db_session: AsyncSession, monkeypatch
 ):
     admin = await _account(db_session, name="erasure_admin", role=UserRole.ADMIN)
     person = await _account(db_session, name="asked_to_be_erased")
@@ -50,11 +60,16 @@ async def test_admin_can_carry_out_an_erasure_request(
     )
     assert preview.status_code == 200
 
+    headers = await _session_as(db_session, admin)
+    proof = await issue_confirmation(
+        client, monkeypatch, headers, "delete_user", person_id, delete_reviews=True
+    )
+
     erased = await client.request(
         "DELETE",
         f"/api/v1/admin/users/{person_id}",
-        headers=_as(admin),
-        json={"delete_reviews": True},
+        headers=headers,
+        json={"delete_reviews": True, "confirmation": proof},
     )
 
     assert erased.status_code == 200
@@ -63,20 +78,32 @@ async def test_admin_can_carry_out_an_erasure_request(
 
 @pytest.mark.asyncio
 async def test_an_admin_cannot_erase_themselves_or_another_admin(
-    client: AsyncClient, db_session: AsyncSession
+    client: AsyncClient, db_session: AsyncSession, monkeypatch
 ):
     admin = await _account(db_session, name="careful_admin", role=UserRole.ADMIN)
-    colleague = await _account(db_session, name="other_admin", role=UserRole.ADMIN)
+    colleague = await _account(db_session, name="other_admin")
+    await db_session.commit()
+    headers = await _session_as(db_session, admin)
+    proof = await issue_confirmation(client, monkeypatch, headers, "delete_user", colleague.id)
+    colleague.role = UserRole.ADMIN
     await db_session.commit()
 
+    for target_id in (admin.id, colleague.id):
+        challenge = await client.post(
+            "/api/v1/admin/reauth/challenges", headers=headers,
+            json={"action": "delete_user", "target_user_id": target_id},
+        )
+        assert challenge.status_code == 400
+
     itself = await client.request(
-        "DELETE", f"/api/v1/admin/users/{admin.id}", headers=_as(admin), json={}
+        "DELETE", f"/api/v1/admin/users/{admin.id}", headers=headers, json={}
     )
     colleague_attempt = await client.request(
-        "DELETE", f"/api/v1/admin/users/{colleague.id}", headers=_as(admin), json={}
+        "DELETE", f"/api/v1/admin/users/{colleague.id}", headers=headers,
+        json={"confirmation": proof},
     )
 
-    assert itself.status_code == 400
+    assert itself.status_code == 403
     assert colleague_attempt.status_code == 400
     assert await db_session.scalar(select(User).where(User.id == admin.id)) is not None
     assert await db_session.scalar(select(User).where(User.id == colleague.id)) is not None
@@ -100,7 +127,7 @@ async def test_an_ordinary_account_cannot_erase_anyone(
 
 @pytest.mark.asyncio
 async def test_erasure_removes_private_drafts_and_keeps_what_others_rely_on(
-    client: AsyncClient, db_session: AsyncSession
+    client: AsyncClient, db_session: AsyncSession, monkeypatch
 ):
     """A draft nobody could reach is deleted; a published preset survives without its author."""
     from app.models.brand import Brand
@@ -144,12 +171,16 @@ async def test_erasure_removes_private_drafts_and_keeps_what_others_rely_on(
     db_session.add_all([draft, published])
     await db_session.commit()
     draft_id, published_id = draft.id, published.id
+    headers = await _session_as(db_session, admin)
+    proof = await issue_confirmation(
+        client, monkeypatch, headers, "delete_user", person.id, delete_reviews=True
+    )
 
     erased = await client.request(
         "DELETE",
         f"/api/v1/admin/users/{person.id}",
-        headers=_as(admin),
-        json={"delete_reviews": True},
+        headers=headers,
+        json={"delete_reviews": True, "confirmation": proof},
     )
     assert erased.status_code == 200
 

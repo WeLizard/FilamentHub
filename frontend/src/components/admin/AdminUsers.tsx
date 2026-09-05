@@ -26,8 +26,10 @@ import { adminAPI, brandsAPI } from '../../api/client';
 import { translateApiError } from '../../utils/translateApiError';
 import { Dropdown } from '../Dropdown';
 import { ConfirmModal } from '../ConfirmModal';
+import { AdminConfirmationDialog } from '../AdminConfirmationDialog';
 import { ACHIEVEMENT_CONFIG, AchievementBadge } from '../Badge';
 import { toast } from '../Toast';
+import type { AdminReauthConfirmation } from '../../api/client';
 import type { AchievementCode, Brand } from '../../types/api';
 import type { AxiosError } from 'axios';
 import { useDebounce } from '../../hooks/useDebounce';
@@ -98,7 +100,8 @@ export function AdminUsers() {
 
   // Деактивация пользователя
   const deactivateMutation = useMutation({
-    mutationFn: (userId: number) => adminAPI.deactivateUser(userId),
+    mutationFn: ({ userId, confirmation }: { userId: number; confirmation: AdminReauthConfirmation }) =>
+      adminAPI.deactivateUser(userId, confirmation),
     onSuccess: (updatedUser) => {
       queryClient.invalidateQueries({ queryKey: ['admin-users'] });
       showActionSuccess(t('adminUsers.feedback.deactivateSuccess', { username: updatedUser.username }));
@@ -110,7 +113,8 @@ export function AdminUsers() {
   // Удаление аккаунта по требованию человека: закон обязывает его исполнить,
   // а отключение аккаунта ничего не стирает.
   const eraseMutation = useMutation({
-    mutationFn: (userId: number) => adminAPI.deleteUserAccount(userId, true),
+    mutationFn: ({ userId, confirmation }: { userId: number; confirmation: AdminReauthConfirmation }) =>
+      adminAPI.deleteUserAccount(userId, true, confirmation),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-users'] });
       showActionSuccess(t('adminUsers.feedback.eraseSuccess'));
@@ -144,7 +148,8 @@ export function AdminUsers() {
 
   // Назначение администратором
   const promoteMutation = useMutation({
-    mutationFn: (userId: number) => adminAPI.promoteToAdmin(userId),
+    mutationFn: ({ userId, confirmation }: { userId: number; confirmation: AdminReauthConfirmation }) =>
+      adminAPI.promoteToAdmin(userId, confirmation),
     onSuccess: (updatedUser) => {
       queryClient.invalidateQueries({ queryKey: ['admin-users'] });
       showActionSuccess(t('adminUsers.feedback.promoteSuccess', { username: updatedUser.username }));
@@ -155,7 +160,8 @@ export function AdminUsers() {
 
   // Отзыв прав администратора
   const demoteMutation = useMutation({
-    mutationFn: (userId: number) => adminAPI.demoteToUser(userId),
+    mutationFn: ({ userId, confirmation }: { userId: number; confirmation: AdminReauthConfirmation }) =>
+      adminAPI.demoteToUser(userId, confirmation),
     onSuccess: (updatedUser) => {
       queryClient.invalidateQueries({ queryKey: ['admin-users'] });
       showActionSuccess(t('adminUsers.feedback.demoteSuccess', { username: updatedUser.username }));
@@ -647,15 +653,19 @@ export function AdminUsers() {
         icon={<CheckCircle className="w-5 h-5" />}
       />
 
-      <ConfirmModal
+      <AdminConfirmationDialog
         isOpen={!!confirmErase}
+        challengeKey={`delete_user:${confirmErase?.userId ?? ''}:true`}
         onClose={() => setConfirmErase(null)}
-        onConfirm={() => {
-          if (confirmErase) {
-            eraseMutation.mutate(confirmErase.userId);
-            setConfirmErase(null);
-          }
-        }}
+        requestChallenge={() => adminAPI.createReauthChallenge({
+          action: 'delete_user',
+          target_user_id: confirmErase!.userId,
+          delete_reviews: true,
+        })}
+        onConfirm={(confirmation) => eraseMutation.mutateAsync({
+          userId: confirmErase!.userId,
+          confirmation,
+        })}
         title={t('adminUsers.eraseTitle')}
         message={t('adminUsers.confirmErase', {
           username: confirmErase?.username,
@@ -664,58 +674,63 @@ export function AdminUsers() {
           reviews: erasePreview?.reviews_count ?? '…',
         })}
         confirmText={t('adminUsers.erase')}
-        isLoading={eraseMutation.isPending}
         variant="danger"
         icon={<Trash2 className="w-5 h-5" />}
       />
 
-      <ConfirmModal
+      <AdminConfirmationDialog
         isOpen={!!confirmDeactivate}
+        challengeKey={`block_user:${confirmDeactivate?.userId ?? ''}`}
         onClose={() => setConfirmDeactivate(null)}
-        onConfirm={() => {
-          if (confirmDeactivate) {
-            deactivateMutation.mutate(confirmDeactivate.userId);
-            setConfirmDeactivate(null);
-          }
-        }}
+        requestChallenge={() => adminAPI.createReauthChallenge({
+          action: 'block_user',
+          target_user_id: confirmDeactivate!.userId,
+        })}
+        onConfirm={(confirmation) => deactivateMutation.mutateAsync({
+          userId: confirmDeactivate!.userId,
+          confirmation,
+        })}
         title={t('adminUsers.deactivateTitle')}
         message={t('adminUsers.confirmDeactivate', { username: confirmDeactivate?.username })}
         confirmText={t('adminUsers.deactivate')}
-        isLoading={deactivateMutation.isPending}
         variant="danger"
         icon={<XCircle className="w-5 h-5" />}
       />
 
-      <ConfirmModal
+      <AdminConfirmationDialog
         isOpen={!!confirmPromote}
+        challengeKey={`promote_admin:${confirmPromote?.userId ?? ''}`}
         onClose={() => setConfirmPromote(null)}
-        onConfirm={() => {
-          if (confirmPromote) {
-            promoteMutation.mutate(confirmPromote.userId);
-            setConfirmPromote(null);
-          }
-        }}
+        requestChallenge={() => adminAPI.createReauthChallenge({
+          action: 'promote_admin',
+          target_user_id: confirmPromote!.userId,
+        })}
+        onConfirm={(confirmation) => promoteMutation.mutateAsync({
+          userId: confirmPromote!.userId,
+          confirmation,
+        })}
         title={t('adminUsers.promoteTitle')}
         message={t('adminUsers.confirmPromote', { username: confirmPromote?.username })}
         confirmText={t('adminUsers.promote')}
-        isLoading={promoteMutation.isPending}
         variant="warning"
         icon={<Shield className="w-5 h-5" />}
       />
 
-      <ConfirmModal
+      <AdminConfirmationDialog
         isOpen={!!confirmDemote}
+        challengeKey={`demote_admin:${confirmDemote?.userId ?? ''}`}
         onClose={() => setConfirmDemote(null)}
-        onConfirm={() => {
-          if (confirmDemote) {
-            demoteMutation.mutate(confirmDemote.userId);
-            setConfirmDemote(null);
-          }
-        }}
+        requestChallenge={() => adminAPI.createReauthChallenge({
+          action: 'demote_admin',
+          target_user_id: confirmDemote!.userId,
+        })}
+        onConfirm={(confirmation) => demoteMutation.mutateAsync({
+          userId: confirmDemote!.userId,
+          confirmation,
+        })}
         title={t('adminUsers.demoteTitle')}
         message={t('adminUsers.confirmDemote', { username: confirmDemote?.username })}
         confirmText={t('adminUsers.demoteConfirm')}
-        isLoading={demoteMutation.isPending}
         variant="warning"
         icon={<Shield className="w-5 h-5" />}
       />

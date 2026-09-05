@@ -1,4 +1,18 @@
 {
+  "adminConfirmation": {
+    "subject": "确认管理员操作 — FilamentHub",
+    "heading": "确认操作",
+    "account": "账户 #{id}",
+    "newEmail": "新电子邮箱地址",
+    "note": "请在确认窗口中输入此验证码。验证码有效期为10分钟，仅限一次操作。如果您未请求此操作，请勿分享验证码。",
+    "actions": {
+      "block_user": "停用账户并撤销其会话",
+      "promote_admin": "授予管理员权限",
+      "demote_admin": "撤销管理员权限",
+      "delete_user": "删除账户",
+      "change_admin_email": "更改管理员电子邮箱地址"
+    }
+  },
   "passwordReset": {
     "subject": "重置您的 FilamentHub 密码",
     "heading": "重置密码",

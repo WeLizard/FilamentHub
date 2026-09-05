@@ -41,7 +41,14 @@ async def test_audit_insert_failure_rolls_back_the_actual_http_mutation(
         db_session, email="audit-admin@example.com", username="audit_admin", role=UserRole.ADMIN
     )
     access, refresh_tokens = await _tokens(db_session, user)
-    admin_access, _ = await _tokens(db_session, admin, refresh_families=0)
+    admin_access, _ = await _tokens(db_session, admin, session_bound=True)
+    from tests.admin_confirmation_helpers import issue_confirmation
+
+    proof = (
+        await issue_confirmation(client, monkeypatch, _bearer(admin_access), "block_user", user.id)
+        if operation == "admin_block"
+        else None
+    )
     grant = await issue_password_reset_grant(db_session, user=user)
     await db_session.commit()
     user_id, original_hash = user.id, user.password_hash
@@ -81,7 +88,9 @@ async def test_audit_insert_failure_rolls_back_the_actual_http_mutation(
                 )
             elif operation == "admin_block":
                 await client.post(
-                    f"/api/v1/admin/users/{user_id}/deactivate", headers=_bearer(admin_access)
+                    f"/api/v1/admin/users/{user_id}/deactivate",
+                    headers=_bearer(admin_access),
+                    json={"confirmation": proof},
                 )
             elif operation == "logout":
                 await client.post(

@@ -6,7 +6,17 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Annotated, Literal, Optional
 
-from fastapi import APIRouter, Body, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi import (
+    APIRouter,
+    Body,
+    Depends,
+    File,
+    HTTPException,
+    Query,
+    Request,
+    UploadFile,
+    status,
+)
 from fastapi.responses import FileResponse
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -43,8 +53,10 @@ from app.core.errors import (
     ERR_USER_NOT_IN_BRAND,
     raise_error,
 )
+from app.core.limiter import limiter
 from app.core.utils import like_pattern
 from app.db.session import get_db
+from app.models.admin_action_confirmation import AdminConfirmationAction
 from app.models.audit_event import AuditAction, AuditReason
 
 # BadWord импортируется лениво в функциях, где используется
@@ -64,6 +76,11 @@ from app.schemas.achievement import (
     AdminAchievementOverviewResponse,
     ManualAchievementGrantRequest,
     ManualAchievementRevokeRequest,
+)
+from app.schemas.admin_confirmation import (
+    AdminConfirmationProof,
+    AdminConfirmationRequest,
+    AdminConfirmationResponse,
 )
 from app.schemas.bad_word import BadWordCreate, BadWordListResponse, BadWordResponse, BadWordUpdate
 from app.schemas.brand import BrandListResponse, BrandResponse, BrandSlugRename, BrandUpdate
@@ -97,7 +114,6 @@ from app.schemas.printer_request import (
 )
 from app.schemas.user import AccountDeletionStats, UserListResponse, UserResponse
 from app.services.account_auth_service import (
-    lock_user_auth_state,
     revoke_all_account_auth,
 )
 from app.services.achievement_service import (
@@ -105,6 +121,10 @@ from app.services.achievement_service import (
     grant_manual_achievement,
     read_admin_achievement_overview,
     revoke_manual_achievement,
+)
+from app.services.admin_confirmation_service import (
+    consume_admin_confirmation,
+    issue_admin_confirmation,
 )
 from app.services.audit_service import record_audit_event
 from app.services.brand_slug_service import apply_brand_slug_rename, choose_brand_slug
@@ -161,6 +181,17 @@ from app.services.subscription_service import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/admin", tags=["admin"])
+
+
+@router.post("/reauth/challenges", response_model=AdminConfirmationResponse)
+@limiter.limit("5/minute")
+async def create_admin_confirmation(
+    request: Request,
+    data: AdminConfirmationRequest,
+    admin: Annotated[User, Depends(get_current_admin_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> AdminConfirmationResponse:
+    return await issue_admin_confirmation(db, request=request, actor_id=admin.id, data=data)
 
 
 @router.get(
@@ -741,15 +772,21 @@ async def activate_user(
 
 @router.post("/users/{user_id}/deactivate", response_model=UserResponse)
 async def deactivate_user(
+    request: Request,
     user_id: int,
     admin: Annotated[User, Depends(get_current_admin_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
+    confirmation: AdminConfirmationProof | None = Body(default=None, embed=True),
 ) -> UserResponse:
     """Деактивировать пользователя."""
-    user = await lock_user_auth_state(db, user_id)
-
-    if not user:
-        raise_error(status.HTTP_404_NOT_FOUND, ERR_USER_NOT_FOUND)
+    admin, user, _ = await consume_admin_confirmation(
+        db,
+        request=request,
+        actor_id=admin.id,
+        target_id=user_id,
+        action=AdminConfirmationAction.BLOCK_USER,
+        proof=confirmation,
+    )
 
     user.active = False
     await revoke_all_account_auth(db, user=user)
@@ -768,19 +805,31 @@ async def deactivate_user(
 
 @router.post("/users/{user_id}/promote-admin", response_model=UserResponse)
 async def promote_to_admin(
+    request: Request,
     user_id: int,
     admin: Annotated[User, Depends(get_current_admin_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
+    confirmation: AdminConfirmationProof | None = Body(default=None, embed=True),
 ) -> UserResponse:
     """Назначить пользователя администратором."""
-    result = await db.execute(select(User).where(User.id == user_id))
-    user = result.scalar_one_or_none()
-
-    if not user:
-        raise_error(status.HTTP_404_NOT_FOUND, ERR_USER_NOT_FOUND)
+    admin, user, _ = await consume_admin_confirmation(
+        db,
+        request=request,
+        actor_id=admin.id,
+        target_id=user_id,
+        action=AdminConfirmationAction.PROMOTE_ADMIN,
+        proof=confirmation,
+    )
 
     # Админ может оставаться привязанным к бренду, поэтому brand_id не обнуляем
     user.role = UserRole.ADMIN
+    await record_audit_event(
+        db,
+        action=AuditAction.ADMIN_ROLE_CHANGED,
+        actor_user_id=admin.id,
+        target_user_id=user.id,
+        reason=AuditReason.ADMIN_PROMOTE,
+    )
     await db.commit()
     await db.refresh(user)
 
@@ -789,19 +838,32 @@ async def promote_to_admin(
 
 @router.post("/users/{user_id}/demote-to-user", response_model=UserResponse)
 async def demote_to_user(
+    request: Request,
     user_id: int,
     admin: Annotated[User, Depends(get_current_admin_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
+    confirmation: AdminConfirmationProof | None = Body(default=None, embed=True),
 ) -> UserResponse:
     """Изменить роль пользователя на USER."""
-    result = await db.execute(select(User).where(User.id == user_id))
-    user = result.scalar_one_or_none()
-
-    if not user:
-        raise_error(status.HTTP_404_NOT_FOUND, ERR_USER_NOT_FOUND)
+    admin, user, _ = await consume_admin_confirmation(
+        db,
+        request=request,
+        actor_id=admin.id,
+        target_id=user_id,
+        action=AdminConfirmationAction.DEMOTE_ADMIN,
+        proof=confirmation,
+    )
 
     # Меняем только роль, привязка к бренду остается без изменений
     user.role = UserRole.USER
+    await revoke_all_account_auth(db, user=user)
+    await record_audit_event(
+        db,
+        action=AuditAction.ADMIN_ROLE_CHANGED,
+        actor_user_id=admin.id,
+        target_user_id=user.id,
+        reason=AuditReason.ADMIN_DEMOTE,
+    )
     await db.commit()
     await db.refresh(user)
 
@@ -2096,6 +2158,7 @@ async def preview_user_deletion(
 
 @router.delete("/users/{user_id}", status_code=status.HTTP_200_OK)
 async def delete_user_as_admin(
+    request: Request,
     user_id: int,
     admin: Annotated[User, Depends(get_current_admin_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -2104,6 +2167,7 @@ async def delete_user_as_admin(
         embed=True,
         description="Удалить отзывы полностью (true) или обезличить их (false)",
     ),
+    confirmation: AdminConfirmationProof | None = Body(default=None, embed=True),
 ) -> dict[str, bool]:
     """Erase an account on the person's request.
 
@@ -2112,9 +2176,15 @@ async def delete_user_as_admin(
     same routine the person's own profile runs, so related data is handled the
     same way rather than left as broken references.
     """
-    user = await db.scalar(select(User).where(User.id == user_id))
-    if user is None:
-        raise_error(status.HTTP_404_NOT_FOUND, ERR_USER_NOT_FOUND)
+    admin, user, _ = await consume_admin_confirmation(
+        db,
+        request=request,
+        actor_id=admin.id,
+        target_id=user_id,
+        action=AdminConfirmationAction.DELETE_USER,
+        proof=confirmation,
+        delete_reviews=delete_reviews,
+    )
     if user.id == admin.id:
         # Deleting yourself from the panel leaves the project without an owner.
         raise_error(status.HTTP_400_BAD_REQUEST, ERR_ACCESS_DENIED)
@@ -2125,6 +2195,13 @@ async def delete_user_as_admin(
 
     # Written before the row disappears: this is the record that the request was
     # carried out, and afterwards there is nothing left to point at.
+    await record_audit_event(
+        db,
+        action=AuditAction.ACCOUNT_DELETED,
+        actor_user_id=admin.id,
+        target_user_id=user.id,
+        reason=AuditReason.ADMIN_DELETE,
+    )
     logger.info(
         "Account erased by admin: admin_id=%d target_user_id=%d reviews_deleted=%s",
         admin.id,

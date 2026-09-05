@@ -1,0 +1,9 @@
+{% extends "_layout.html" %}
+
+{% block content %}
+<h2 style="margin:0 0 16px;color:#f1f5f9;font-size:20px;">{{ t('adminConfirmation.heading') }}</h2>
+<p style="color:#94a3b8;line-height:1.6;">{{ action }} · {{ t('adminConfirmation.account', id=target_user_id) }}</p>
+{% if new_email %}<p style="color:#94a3b8;">{{ t('adminConfirmation.newEmail') }}: {{ new_email }}</p>{% endif %}
+<p style="font-size:32px;font-family:monospace;letter-spacing:6px;color:#f1f5f9;">{{ code }}</p>
+<p style="color:#94a3b8;line-height:1.6;">{{ t('adminConfirmation.note') }}</p>
+{% endblock %}

@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import settings
 from app.core.security import create_refresh_token, token_fingerprint
+from app.models.admin_action_confirmation import AdminActionConfirmation
 from app.models.audit_event import AuditAction, AuditReason
 from app.models.password_reset_token import PasswordResetToken
 from app.models.refresh_session import RefreshSession
@@ -44,6 +45,7 @@ class AuthCleanupResult:
     revoked_tokens: int
     refresh_sessions: int
     password_reset_tokens: int
+    admin_confirmations: int = 0
 
 
 def _as_utc(value: datetime) -> datetime:
@@ -331,10 +333,20 @@ async def cleanup_expired_auth_state(
             PasswordResetToken.grant_hash.in_(password_reset_ids)
         )
     )
+    confirmation_ids = (
+        select(AdminActionConfirmation.id)
+        .where(AdminActionConfirmation.created_at < cutoff - timedelta(days=2))
+        .order_by(AdminActionConfirmation.created_at, AdminActionConfirmation.id)
+        .limit(batch_size)
+    )
+    confirmation_result = await db.execute(
+        delete(AdminActionConfirmation).where(AdminActionConfirmation.id.in_(confirmation_ids))
+    )
     return AuthCleanupResult(
         revoked_tokens=max(revoked_result.rowcount or 0, 0),
         refresh_sessions=max(refresh_result.rowcount or 0, 0),
         password_reset_tokens=max(password_reset_result.rowcount or 0, 0),
+        admin_confirmations=max(confirmation_result.rowcount or 0, 0),
     )
 
 
@@ -352,13 +364,15 @@ async def run_auth_state_sweeper(
                 removed.revoked_tokens
                 or removed.refresh_sessions
                 or removed.password_reset_tokens
+                or removed.admin_confirmations
             ):
                 logger.info(
                     "Removed expired auth state: revoked_tokens=%s "
-                    "refresh_sessions=%s password_reset_tokens=%s",
+                    "refresh_sessions=%s password_reset_tokens=%s admin_confirmations=%s",
                     removed.revoked_tokens,
                     removed.refresh_sessions,
                     removed.password_reset_tokens,
+                    removed.admin_confirmations,
                 )
         except asyncio.CancelledError:
             raise

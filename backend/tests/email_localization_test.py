@@ -44,6 +44,15 @@ def test_every_template_renders_in_the_recipient_language(language):
     cases = [
         ("password_reset.html", {"reset_url": "https://filamenthub.ru/r"}),
         ("email_change.html", {"confirm_url": "https://filamenthub.ru/c"}),
+        (
+            "admin_confirmation.html",
+            {
+                "code": "012345",
+                "action": "Action",
+                "target_user_id": 7,
+                "new_email": "new@example.com",
+            },
+        ),
         ("brand_status.html", {"brand_name": "Acme", "approved": True, "reason": None}),
         (
             "brand_team_invite.html",

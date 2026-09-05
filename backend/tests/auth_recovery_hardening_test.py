@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.password_hashing import hash_password
-from app.core.security import create_access_token, token_fingerprint
+from app.core.security import create_access_token, create_session_access_token, token_fingerprint
 from app.models.audit_event import AuditEvent
 from app.models.password_reset_token import PasswordResetToken
 from app.models.refresh_session import RefreshSession
@@ -60,6 +60,7 @@ async def _tokens(
     user: User,
     *,
     refresh_families: int = 1,
+    session_bound: bool = False,
 ) -> tuple[str, list[str]]:
     claims = token_data_for_user(user)
     access_token = create_access_token(claims)
@@ -67,6 +68,8 @@ async def _tokens(
         await issue_refresh_session(db, user_id=user.id, token_data=claims)
         for _ in range(refresh_families)
     ]
+    if session_bound:
+        access_token = create_session_access_token(claims, refresh_tokens[0])
     await db.commit()
     return access_token, refresh_tokens
 
@@ -517,6 +520,7 @@ async def test_bearer_logout_without_refresh_body_durably_revokes_access(
 async def test_admin_deactivation_invalidates_tokens_after_reactivation(
     client: AsyncClient,
     db_session: AsyncSession,
+    monkeypatch,
 ) -> None:
     admin = await _create_user(
         db_session,
@@ -529,14 +533,20 @@ async def test_admin_deactivation_invalidates_tokens_after_reactivation(
         email="deactivation-target@example.com",
         username="deactivation_target",
     )
-    admin_access, _ = await _tokens(db_session, admin)
+    admin_access, _ = await _tokens(db_session, admin, session_bound=True)
     old_access, old_refresh_tokens = await _tokens(db_session, target, refresh_families=2)
 
     assert (await client.get("/api/v1/auth/me", headers=_bearer(old_access))).status_code == 200
 
+    from tests.admin_confirmation_helpers import issue_confirmation
+
+    proof = await issue_confirmation(
+        client, monkeypatch, _bearer(admin_access), "block_user", target.id
+    )
     deactivated = await client.post(
         f"/api/v1/admin/users/{target.id}/deactivate",
         headers=_bearer(admin_access),
+        json={"confirmation": proof},
     )
     assert deactivated.status_code == 200, deactivated.text
     audit = (await db_session.scalars(select(AuditEvent))).one()

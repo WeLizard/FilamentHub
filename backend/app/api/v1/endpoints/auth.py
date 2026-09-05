@@ -1,5 +1,6 @@
 """Authentication endpoints."""
 
+import asyncio
 import logging
 import math
 import secrets
@@ -35,8 +36,8 @@ from app.core.dependencies import (
 from app.core.i18n import resolve_language
 from app.core.password_hashing import check_password, hash_password
 from app.core.security import (
-    create_access_token,
     create_plugin_token,
+    create_session_access_token,
     decode_access_token,
     decode_email_change_token,
     decode_email_verification_token,
@@ -50,6 +51,7 @@ from app.core.security import (
 )
 from app.core.utils import normalize_email
 from app.db.session import get_db
+from app.models.admin_action_confirmation import AdminConfirmationAction
 from app.models.audit_event import AuditAction, AuditReason
 from app.models.brand import Brand
 from app.models.calculator_profile import UserCalculatorProfile
@@ -97,7 +99,13 @@ from app.services.account_auth_service import (
     lock_user_auth_state,
     replace_password_and_revoke_auth,
     reset_password_with_grant,
+    revoke_all_account_auth,
     token_data_for_user,
+)
+from app.services.admin_confirmation_service import (
+    consume_admin_confirmation,
+    consume_admin_email_change_link,
+    invalidate_admin_confirmations,
 )
 from app.services.audit_service import record_audit_event
 from app.services.calculator_defaults_service import (
@@ -497,12 +505,12 @@ async def register(
             legal_pack=legal_pack,
         )
         token_data = token_data_for_user(user)
-        access_token = create_access_token(data=token_data)
         refresh_token = await issue_refresh_session(
             db,
             user_id=user.id,
             token_data=token_data,
         )
+        access_token = create_session_access_token(token_data, refresh_token)
         await db.commit()
         await db.refresh(user)
         # Trial is opt-in: the user starts it explicitly via POST /calculator/start-trial,
@@ -686,12 +694,12 @@ async def login(
     # therefore only happen wholly before or wholly after this login.
     user.last_login = datetime.now(timezone.utc)
     token_data = token_data_for_user(user)
-    access_token = create_access_token(data=token_data)
     refresh_token = await issue_refresh_session(
         db,
         user_id=user.id,
         token_data=token_data,
     )
+    access_token = create_session_access_token(token_data, refresh_token)
     await db.commit()
 
     if _cookie_auth_enabled():
@@ -803,7 +811,7 @@ async def refresh_token(
         )
 
     token_data = token_data_for_user(user)
-    access_token = create_access_token(data=token_data)
+    access_token = create_session_access_token(token_data, rotated_refresh_token)
 
     if _cookie_auth_enabled():
         _set_auth_cookies(response, access_token, rotated_refresh_token)
@@ -823,6 +831,11 @@ async def logout(
     data: LogoutRequest | None = Body(default=None),
 ) -> None:
     """Инвалидировать текущие access/refresh токены (server-side blacklist)."""
+    # Match refresh/confirmation lock order before touching a family or its audit FK.
+    locked_user = await lock_user_auth_state(db, current_user.id)
+    if locked_user is None:
+        raise_error(status.HTTP_401_UNAUTHORIZED, ERR_USER_NOT_FOUND)
+    current_user = locked_user
     authorization = request.headers.get("Authorization")
     access_token = None
     if authorization and authorization.lower().startswith("bearer "):
@@ -833,6 +846,10 @@ async def logout(
     if access_token:
         access_payload = decode_access_token(access_token)
         await _revoke_token_if_valid(access_token, access_payload, db)
+        if access_payload:
+            await invalidate_admin_confirmations(
+                db, actor_id=current_user.id, session_id=access_payload.get("sid")
+            )
 
     refresh_token = data.refresh_token if data and data.refresh_token else None
     if not refresh_token and _cookie_auth_enabled():
@@ -1706,15 +1723,47 @@ async def update_user_email(
     if existing_user:
         raise_error(status.HTTP_400_BAD_REQUEST, ERR_EMAIL_EXISTS)
 
-    token = generate_email_change_token(current_user.id, data.new_email)
+    confirmation_id = None
+    if current_user.role == UserRole.ADMIN:
+        current_user, _, confirmation = await consume_admin_confirmation(
+            db,
+            request=request,
+            actor_id=current_user.id,
+            target_id=current_user.id,
+            action=AdminConfirmationAction.CHANGE_ADMIN_EMAIL,
+            proof=data.confirmation,
+            new_email=requested_email,
+        )
+        confirmation_id = confirmation.id
+        await record_audit_event(
+            db,
+            action=AuditAction.EMAIL_CHANGE_REQUESTED,
+            actor_user_id=current_user.id,
+            target_user_id=current_user.id,
+            reason=AuditReason.ADMIN_EMAIL_CODE,
+        )
+    token = generate_email_change_token(
+        current_user.id, data.new_email, admin_confirmation_id=confirmation_id
+    )
     confirm_url = f"{settings.BASE_URL}/confirm-email-change?token={token}"
-    sent = send_email_change_email(
-        to=data.new_email,
-        confirm_url=confirm_url,
-        language=resolve_language(data.language, current_user.legal_acceptance_language),
+    mail_arguments = {
+        "to": data.new_email,
+        "confirm_url": confirm_url,
+        "language": resolve_language(data.language, current_user.legal_acceptance_language),
+    }
+    sent = (
+        await asyncio.to_thread(send_email_change_email, **mail_arguments)
+        if confirmation_id
+        else send_email_change_email(**mail_arguments)
     )
     if not sent:
+        if confirmation_id:
+            from app.core.errors import ERR_ADMIN_CONFIRMATION_DELIVERY_FAILED
+
+            raise_error(503, ERR_ADMIN_CONFIRMATION_DELIVERY_FAILED)
         logger.info(f"Email change confirmation link (email not sent): {confirm_url}")
+    if confirmation_id:
+        await db.commit()
 
     return EmailChangeResponse()
 
@@ -1738,8 +1787,7 @@ async def confirm_email_change(
     if not user_id or not new_email:
         raise_error(status.HTTP_400_BAD_REQUEST, ERR_INVALID_RESET_TOKEN)
 
-    result = await db.execute(select(User).where(User.id == user_id))
-    user = result.scalar_one_or_none()
+    user = await lock_user_auth_state(db, user_id)
     if not user or not user.active:
         raise_error(status.HTTP_404_NOT_FOUND, ERR_USER_NOT_FOUND)
 
@@ -1750,12 +1798,25 @@ async def confirm_email_change(
     if taken.scalar_one_or_none():
         raise_error(status.HTTP_400_BAD_REQUEST, ERR_EMAIL_EXISTS)
 
+    protected_change = user.role == UserRole.ADMIN or "admin_confirmation_id" in payload
+    if protected_change:
+        await consume_admin_email_change_link(db, user=user, payload=payload)
+        await revoke_all_account_auth(db, user=user)
+        await record_audit_event(
+            db,
+            action=AuditAction.EMAIL_CHANGED,
+            actor_user_id=user.id,
+            target_user_id=user.id,
+            reason=AuditReason.ADMIN_EMAIL_CODE,
+        )
     user.email = new_email
     user.email_verified = True
     await db.commit()
     logger.info("Email changed: user_id=%s", user_id)
 
-    return ConfirmEmailChangeResponse()
+    return ConfirmEmailChangeResponse(
+        session_revoked=protected_change, user_id=user.id if protected_change else None
+    )
 
 
 # ── OAuth endpoints ──────────────────────────────────────────────────
@@ -2023,12 +2084,12 @@ async def oauth_callback(
         raise_error(status.HTTP_403_FORBIDDEN, ERR_ACCOUNT_INACTIVE)
     user = locked_user
     token_data = token_data_for_user(user)
-    access_token = create_access_token(data=token_data)
     refresh_token = await issue_refresh_session(
         db,
         user_id=user.id,
         token_data=token_data,
     )
+    access_token = create_session_access_token(token_data, refresh_token)
     await db.commit()
 
     if _cookie_auth_enabled():

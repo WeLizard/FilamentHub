@@ -5556,6 +5556,9 @@
     "newEmailPlaceholder": "新邮箱",
     "emailConfirmationHint": "确认码将发送到新邮箱",
     "emailConfirmationSent": "确认链接已发送到您的新邮箱地址",
+    "adminEmailConfirmationHint": "管理员需先输入发送到当前已验证邮箱的验证码，然后新邮箱会收到确认链接。",
+    "adminEmailConfirmationTitle": "确认更改管理员邮箱",
+    "adminEmailConfirmationMessage": "请先向当前已验证邮箱发送验证码，再为 {{email}} 请求确认链接。",
     "password": "密码",
     "currentPassword": "当前密码",
     "currentPasswordPlaceholder": "输入当前密码",
@@ -7053,6 +7056,14 @@
     "ERR_LABEL_PRESET_CONFLICT": "该版式已在其他标签页中更改。请重新打开编辑器后再试。",
     "ERR_PRINTER_IDENTITY_CONFLICT": "设备标识与已保存的连接冲突。请在“我的打印机”中检查连接；不要合并不同设备。",
     "ERR_PRINTER_MERGE_CONFLICT": "卡片已更改或包含不兼容的数据。请重新检查合并。",
+    "ERR_ADMIN_CONFIRMATION_REQUIRED": "请输入发送到您邮箱的验证码以确认此管理员操作。",
+    "ERR_ADMIN_CONFIRMATION_EMAIL_REQUIRED": "确认此管理员操作需要已验证的邮箱。",
+    "ERR_ADMIN_CONFIRMATION_SESSION_REQUIRED": "请重新登录后再请求验证码。",
+    "ERR_ADMIN_CONFIRMATION_INVALID": "验证码不正确，请检查后重试。",
+    "ERR_ADMIN_CONFIRMATION_EXPIRED": "验证码已过期，请申请新验证码。",
+    "ERR_ADMIN_CONFIRMATION_ATTEMPTS_EXCEEDED": "错误尝试次数过多，请申请新验证码。",
+    "ERR_ADMIN_CONFIRMATION_RATE_LIMITED": "验证码请求过多，请稍后重试。",
+    "ERR_ADMIN_CONFIRMATION_DELIVERY_FAILED": "确认邮件发送失败，请稍后重试。",
     "UNKNOWN_ERROR": "发生了意外错误",
     "ERR_NETWORK": "无法连接到服务器。检查您的网络连接并重试。",
     "ERR_REQUEST_TIMEOUT": "服务器未响应。请稍后重试。",
@@ -7932,13 +7943,27 @@
       "routingTopologyNote": "工具路由不会创建、删除或调整实际材料槽位数量。多个工具可以指向同一槽位。"
     }
   },
+  "adminConfirmation": {
+    "sendHint": "一次性验证码将发送到此管理员账户的已验证邮箱。",
+    "sentTo": "验证码已发送至 {{email}}。",
+    "expiresAt": "有效期至 {{time}}。",
+    "codeLabel": "6 位确认码",
+    "codeHint": "请输入邮件中的全部六位数字。",
+    "sendCode": "发送验证码",
+    "sending": "正在发送...",
+    "resend": "发送新验证码",
+    "confirming": "正在确认...",
+    "errorFallback": "无法确认此操作。请检查验证码或申请新验证码。"
+  },
   "confirmEmailChange": {
     "loading": "正在确认邮箱变更...",
     "successTitle": "邮箱已更新!",
     "successMessage": "您的邮箱已成功更改。用它来登录。",
+    "adminSuccessMessage": "邮箱已更改，所有管理员会话均已结束。请使用新邮箱重新登录。",
     "errorTitle": "链接无效",
     "errorFallback": "链接已过期或已被使用。请重新请求更改邮箱。",
-    "goHome": "返回首页"
+    "goHome": "返回首页",
+    "signInAgain": "重新登录"
   },
   "verifyEmail": {
     "loading": "正在验证链接…",
