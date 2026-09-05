@@ -44,6 +44,8 @@ api.interceptors.request.use((config) => {
   }
   request._authGeneration = authGeneration;
   const token = getToken();
+  request._hadSessionCandidate ??= Boolean(token || getRefreshToken()
+    || (canUseCookieSession() && getCsrfToken()));
   if (token && JWT_AUTH_MODE) {
     config.headers.Authorization = `Bearer ${token}`;
   }
@@ -63,11 +65,13 @@ api.interceptors.request.use((config) => {
 interface RetryableAxiosConfig extends InternalAxiosRequestConfig {
   _retry?: boolean;
   _authGeneration?: number;
+  _hadSessionCandidate?: boolean;
 }
 
 // Переменная для предотвращения множественных запросов refresh
 let refreshingGeneration: number | null = null;
 let authGeneration = 0;
+let lastExpiredGeneration: number | null = null;
 let failedQueue: Array<{
   resolve: (value?: unknown) => void;
   reject: (reason?: unknown) => void;
@@ -101,6 +105,7 @@ const processQueue = (error: unknown, token: string | null = null) => {
 
 const AUTH_REFRESH_LOCK_NAME = 'filamenthub-auth-refresh';
 let refreshRequestPromise: Promise<RefreshTokenResponse> | null = null;
+let refreshRequestGeneration: number | null = null;
 let localAuthOperationTail: Promise<void> = Promise.resolve();
 
 export class StaleRefreshResponseError extends Error {
@@ -114,6 +119,19 @@ export class StaleRefreshResponseError extends Error {
 export function beginAuthSessionTransition(): void {
   authGeneration += 1;
   processQueue(new StaleRefreshResponseError());
+}
+
+export const AUTH_SESSION_EXPIRED_EVENT = 'authSessionExpired';
+
+function expireAuthSession(generation: number, hadSessionCandidate: boolean): void {
+  if (generation !== authGeneration) return;
+  lastExpiredGeneration = generation;
+  removeToken();
+  notifyCppLogout();
+  beginAuthSessionTransition();
+  window.dispatchEvent(new CustomEvent(AUTH_SESSION_EXPIRED_EVENT, {
+    detail: { hadSessionCandidate },
+  }));
 }
 
 async function withCrossTabRefreshLock<T>(operation: () => Promise<T>): Promise<T> {
@@ -137,6 +155,7 @@ export function withAuthSessionLock<T>(operation: () => Promise<T>): Promise<T> 
 
 async function performSessionRefresh(
   requestedRefreshToken?: string | null,
+  generation = authGeneration,
 ): Promise<RefreshTokenResponse> {
   const cookieSessionAvailable = canUseCookieSession();
   const persistedRefreshToken = getRefreshToken();
@@ -163,7 +182,14 @@ async function performSessionRefresh(
           })()
         : undefined,
     },
-  );
+  ).catch((error: unknown) => {
+    const sameLocalSession = !JWT_AUTH_MODE || !shouldPersistTokensLocally()
+      || getRefreshToken() === refreshToken;
+    if ((error as { response?: { status?: number } })?.response?.status === 401 && sameLocalSession) {
+      expireAuthSession(generation, true);
+    }
+    throw error;
+  });
 
   const { access_token, refresh_token: rotatedRefreshToken } = response.data;
   if (!access_token) {
@@ -195,17 +221,23 @@ async function performSessionRefresh(
 export async function refreshAuthSession(
   requestedRefreshToken?: string | null,
 ): Promise<RefreshTokenResponse> {
-  if (refreshRequestPromise) {
+  if (refreshRequestPromise && refreshRequestGeneration === authGeneration) {
     return refreshRequestPromise;
   }
 
-  refreshRequestPromise = withAuthSessionLock(() =>
-    performSessionRefresh(requestedRefreshToken),
+  const generation = authGeneration;
+  const requestPromise = withAuthSessionLock(() =>
+    performSessionRefresh(requestedRefreshToken, generation),
   );
+  refreshRequestPromise = requestPromise;
+  refreshRequestGeneration = generation;
   try {
-    return await refreshRequestPromise;
+    return await requestPromise;
   } finally {
-    refreshRequestPromise = null;
+    if (refreshRequestPromise === requestPromise) {
+      refreshRequestPromise = null;
+      refreshRequestGeneration = null;
+    }
   }
 }
 
@@ -282,6 +314,11 @@ api.interceptors.response.use(
     
     const shouldTryRefreshForMe = isMeEndpoint && (hasToken || cookieSessionAvailable);
 
+    if (error.response?.status === 401 && originalRequest._retry && !isAuthEndpoint) {
+      expireAuthSession(requestGeneration, originalRequest._hadSessionCandidate ?? (hasToken || cookieSessionAvailable));
+      return Promise.reject(error);
+    }
+
     // Не обрабатываем повторно запросы, которые уже были повторены
     if (error.response?.status === 401 && !originalRequest._retry && !isAuthEndpoint && (!isMeEndpoint || shouldTryRefreshForMe)) {
       originalRequest._retry = true;
@@ -304,16 +341,7 @@ api.interceptors.response.use(
       const refreshToken = getRefreshToken();
       
       if (!refreshToken && !cookieSessionAvailable) {
-        // Нет refresh token, удаляем токены и перенаправляем
-        // Только если это не запрос авторизации и не админ панель
-        removeToken();
-        // Уведомляем C++ о logout (401 без refresh token)
-        notifyCppLogout();
-        const isAdminPage = window.location.pathname.includes('/admin');
-        if (!isMeEndpoint && !window.location.pathname.includes('/auth') && !isAdminPage) {
-          window.location.reload();
-        }
-        processQueue(error, null);
+        expireAuthSession(requestGeneration, originalRequest._hadSessionCandidate ?? hasToken);
         refreshingGeneration = null;
         return Promise.reject(error);
       }
@@ -360,7 +388,8 @@ api.interceptors.response.use(
         return api(originalRequest);
       } catch (refreshError: unknown) {
         if (requestGeneration !== authGeneration) {
-          return Promise.reject(new StaleRefreshResponseError());
+          return Promise.reject(lastExpiredGeneration === requestGeneration
+            ? refreshError : new StaleRefreshResponseError());
         }
         if ((refreshError as { code?: string })?.code === 'ERR_CANCELED') {
           processQueue(null, getToken());
@@ -394,20 +423,8 @@ api.interceptors.response.use(
           return Promise.reject(refreshError);
         }
 
-        // Refresh token невалидный, удаляем только ту локальную сессию,
-        // которая действительно делала этот запрос.
-        removeToken();
-        // Уведомляем C++ о logout (refresh failed)
-        notifyCppLogout();
-        processQueue(refreshError, null);
+        expireAuthSession(requestGeneration, originalRequest._hadSessionCandidate ?? true);
         refreshingGeneration = null;
-        
-        // Не перезагружаем страницу если мы в админке или на странице авторизации
-        // И не делаем reload для /auth/me, иначе возникает вечный цикл на гостевой сессии.
-        const isAdminPage = window.location.pathname.includes('/admin');
-        if (!isMeEndpoint && !window.location.pathname.includes('/auth') && !isAdminPage) {
-          window.location.reload();
-        }
         return Promise.reject(refreshError);
       }
     }

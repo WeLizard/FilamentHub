@@ -103,6 +103,74 @@ describe('account request lifecycle', () => {
     expect(state.remove).not.toHaveBeenCalled();
   });
 
+  it('propagates a definitive scheduled refresh rejection as an expiry event', async () => {
+    const { authAPI } = await load();
+    const expired = vi.fn();
+    window.addEventListener('authSessionExpired', expired);
+    try {
+      state.post.mockRejectedValue({ response: { status: 401 } });
+      await expect(authAPI.refresh()).rejects.toMatchObject({ response: { status: 401 } });
+      expect(expired).toHaveBeenCalledOnce();
+      expect(state.remove).toHaveBeenCalledOnce();
+    } finally { window.removeEventListener('authSessionExpired', expired); }
+  });
+
+  it.each([403, 500])('does not expire a scheduled refresh on status %s', async (status) => {
+    const { authAPI } = await load();
+    const expired = vi.fn();
+    window.addEventListener('authSessionExpired', expired);
+    try {
+      state.post.mockRejectedValue({ response: { status } });
+      await expect(authAPI.refresh()).rejects.toMatchObject({ response: { status } });
+      expect(expired).not.toHaveBeenCalled();
+      expect(state.remove).not.toHaveBeenCalled();
+    } finally { window.removeEventListener('authSessionExpired', expired); }
+  });
+
+  it('does not expire a replacement account on an old scheduled refresh rejection', async () => {
+    const { authAPI, beginAuthSessionTransition } = await load();
+    const expired = vi.fn();
+    window.addEventListener('authSessionExpired', expired);
+    try {
+      const response = deferred<never>();
+      state.post.mockReturnValue(response.promise);
+      const request = authAPI.refresh().catch((error) => error);
+      await until(() => state.post.mock.calls.length === 1);
+      beginAuthSessionTransition();
+      state.access = 'access-b'; state.refresh = 'refresh-b';
+      response.reject({ response: { status: 401 } });
+      await request;
+      expect(expired).not.toHaveBeenCalled();
+      expect(state.access).toBe('access-b');
+    } finally { window.removeEventListener('authSessionExpired', expired); }
+  });
+
+  it('gives a replacement account its own refresh instead of inheriting an older rejection', async () => {
+    const { beginAuthSessionTransition } = await load();
+    const oldRefresh = deferred<never>();
+    state.post.mockReturnValueOnce(oldRefresh.promise).mockResolvedValueOnce({
+      data: { access_token: 'access-b-new', refresh_token: 'refresh-b-new' },
+    });
+    state.adapter.mockImplementation(async (config) => {
+      if (config.url === '/private-b' && config._retry) {
+        return { data: { owner: 'b' }, status: 200, headers: {}, config };
+      }
+      throw failure(config);
+    });
+    const oldRequest = state.api!.get('/auth/me').catch((error) => error);
+    await until(() => state.post.mock.calls.length === 1);
+    beginAuthSessionTransition();
+    state.access = 'access-b'; state.refresh = 'refresh-b';
+    const newRequest = state.api!.get('/private-b').catch((error) => error);
+    await until(() => state.adapter.mock.calls.length === 2);
+    oldRefresh.reject({ response: { status: 401 } });
+    await oldRequest;
+    expect(await newRequest).toMatchObject({ data: { owner: 'b' } });
+    expect(state.post).toHaveBeenCalledTimes(2);
+    expect(state.access).toBe('access-b-new');
+    expect(state.remove).not.toHaveBeenCalled();
+  });
+
   it('bounds every concurrent unauthorized request to one retry', async () => {
     await load();
     const refresh = deferred<typeof refreshed>();

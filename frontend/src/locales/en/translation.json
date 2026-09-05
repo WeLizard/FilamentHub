@@ -593,6 +593,8 @@
   "protectedRoute": {
     "loading": "Loading...",
     "auth_required_title": "Sign in to continue",
+    "session_expired_title": "Your session has expired",
+    "session_expired_subtitle": "Sign in again to continue using this page.",
     "auth_required_subtitle": "After signing in, you will be able to continue with this section and return to the page you originally opened.",
     "auth_required_tip": "After logging in, you will be able to create presets, manage materials, and use all the features of the platform.",
     "feature_presets": "Save your presets and working settings",

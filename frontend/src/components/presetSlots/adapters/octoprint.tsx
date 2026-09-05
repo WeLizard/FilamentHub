@@ -30,6 +30,23 @@ import { toast } from '../../Toast';
 import { translateApiError } from '../../../utils/translateApiError';
 import type { AdapterViewContext, FeedAdapter } from './types';
 import { ordinaryTopologies } from './topology';
+import { isPairingAccessDenied, retryPairingStatusQuery } from '../pairingPolling';
+
+export function octoPrintPairingRefetchInterval(
+  error: unknown,
+  status: { paired?: boolean } | undefined,
+  pairingCode: string | null,
+  pairingExpiresAt: string | null,
+  now = Date.now(),
+): 5_000 | false {
+  if (isPairingAccessDenied(error)) return false;
+  const expiresAtMs = pairingExpiresAt ? Date.parse(pairingExpiresAt) : Number.NaN;
+  return pairingCode
+    && !status?.paired
+    && (Number.isNaN(expiresAtMs) || now < expiresAtMs)
+    ? 5_000
+    : false;
+}
 
 interface RoutingEditorProps {
   printer: AdapterViewContext['printer'];
@@ -400,20 +417,15 @@ function BridgeSetup({ printer, system }: AdapterViewContext) {
     queryFn: () => octoprintBridgeAPI.status(printer.id, system.id),
     staleTime: 10_000,
     refetchOnWindowFocus: true,
+    retry: retryPairingStatusQuery,
     // Fast only while the user is visibly pairing. Once paired, focus/manual
     // invalidation is enough; an idle open tab must not poll forever.
-    refetchInterval: (query) => {
-      const status = query.state.data;
-      const expiresAtMs = pairingExpiresAt ? Date.parse(pairingExpiresAt) : Number.NaN;
-      if (
-        pairingCode
-        && !status?.paired
-        && (Number.isNaN(expiresAtMs) || Date.now() < expiresAtMs)
-      ) {
-        return 5_000;
-      }
-      return false;
-    },
+    refetchInterval: (query) => octoPrintPairingRefetchInterval(
+      query.state.error,
+      query.state.data,
+      pairingCode,
+      pairingExpiresAt,
+    ),
   });
   const status = statusQuery.data;
 

@@ -593,6 +593,8 @@
   "protectedRoute": {
     "loading": "加载中...",
     "auth_required_title": "登录以继续",
+    "session_expired_title": "登录会话已过期",
+    "session_expired_subtitle": "请重新登录以继续使用此页面。",
     "auth_required_subtitle": "登录后，您将能够继续此部分并返回您最初打开的页面。",
     "auth_required_tip": "登录后，您将能够创建预设、管理材料和使用该平台的所有功能。",
     "feature_presets": "保存您的预设和工作设置",

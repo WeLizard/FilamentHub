@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { authAPI, beginAuthSessionTransition, withAuthSessionLock } from '../api/client';
+import { AUTH_SESSION_EXPIRED_EVENT, authAPI, beginAuthSessionTransition, withAuthSessionLock } from '../api/client';
 import { getRefreshToken, getToken, hasSessionCandidate, isOrcaEmbedded, removeToken, setRefreshToken, setToken, setUserId, shouldPersistTokensLocally } from '../utils/auth';
 import { isPluginEmbed, reportLogoutToPlugin, reportPluginSessionToPlugin, subscribeToPluginAuthRestore, subscribeToPluginLogout } from '../utils/pluginBridge';
 import type { LegalAcceptancePayload, RegistrationPayload, Token, User } from '../types/api';
@@ -11,6 +11,7 @@ interface AuthContextType {
   user: User | null;
   isLoading: boolean;
   isAuthenticated: boolean;
+  unauthenticatedReason: 'session_expired' | null;
   isMaintenanceMode: boolean;
   maintenanceMessage: string | null;
   login: (email: string, password: string) => Promise<void>;
@@ -62,6 +63,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const currentUser = useRef<User | null>(null);
   const queriesNeedRefetch = useRef(false);
   const [user, setUser] = useState<User | null>(null);
+  const [unauthenticatedReason, setUnauthenticatedReason] = useState<'session_expired' | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isMaintenanceMode, setIsMaintenanceMode] = useState(false);
   const [maintenanceMessage, setMaintenanceMessage] = useState<string | null>(null);
@@ -89,6 +91,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       clearAccountQueries();
     }
     currentUser.current = nextUser;
+    if (nextUser) setUnauthenticatedReason(null);
     setUser(nextUser);
   };
   const beginIdentityChange = () => {
@@ -101,6 +104,21 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const requireCurrent = (operation: number) => {
     if (!mounted.current || operation !== epoch.current) throw new Error('Authentication operation was superseded');
   };
+
+  const markSessionExpired = () => {
+    beginIdentityChange();
+    setUnauthenticatedReason('session_expired');
+  };
+
+  useEffect(() => {
+    const onSessionExpired = (event: Event) => {
+      const hadSessionCandidate = (event as CustomEvent<{ hadSessionCandidate: boolean }>).detail?.hadSessionCandidate;
+      if (!hadSessionCandidate && !currentUser.current) return;
+      markSessionExpired();
+    };
+    window.addEventListener(AUTH_SESSION_EXPIRED_EVENT, onSessionExpired);
+    return () => window.removeEventListener(AUTH_SESSION_EXPIRED_EVENT, onSessionExpired);
+  }, []);
 
   useEffect(() => {
     if (queriesNeedRefetch.current) {
@@ -175,7 +193,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           } else if (error.response?.status === 401) {
             // Токен/сессия невалидны или истекли
             removeToken();
-            updateUser(null);
+            markSessionExpired();
           } else {
             console.error('Account session check failed', { status: error.response?.status });
           }
@@ -384,6 +402,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   };
 
   const logout = async () => {
+    setUnauthenticatedReason(null);
     const operation = beginIdentityChange();
     // Серверная инвалидация токенов (best-effort — не блокируем UI при ошибке)
     try {
@@ -423,7 +442,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           setIsMaintenanceMode(true);
           setMaintenanceMessage(error.response?.data?.message || null);
         } else if (error.response?.status === 401) {
-          beginIdentityChange();
+          markSessionExpired();
           removeToken();
         } else {
           console.error('Account session check failed', { status: error.response?.status });
@@ -441,6 +460,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     user,
     isLoading,
     isAuthenticated: !!user,
+    unauthenticatedReason,
     isMaintenanceMode,
     maintenanceMessage,
     login,

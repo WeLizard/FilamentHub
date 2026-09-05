@@ -28,6 +28,7 @@ const authUtilsMocks = vi.hoisted(() => ({
 
 vi.mock('../api/client', () => ({
   authAPI: authApiMocks,
+  AUTH_SESSION_EXPIRED_EVENT: 'authSessionExpired',
   beginAuthSessionTransition: vi.fn(),
   withAuthSessionLock: (operation: () => Promise<unknown>) => operation(),
 }));
@@ -332,6 +333,41 @@ describe('AuthContext', () => {
     await waitFor(() => expect(currentAuth.isLoading).toBe(false));
     expect(authApiMocks.me).not.toHaveBeenCalled();
     expect(authApiMocks.getMaintenanceStatus).toHaveBeenCalledOnce();
+  });
+
+  it('records an expired session when a bootstrap candidate is definitively rejected', async () => {
+    authUtilsMocks.hasSessionCandidate.mockReturnValue(true);
+    authApiMocks.me.mockRejectedValue({ response: { status: 401 } });
+    render(<AuthProvider><AuthProbe /></AuthProvider>);
+    await waitFor(() => expect(currentAuth.isLoading).toBe(false));
+    expect(currentAuth.unauthenticatedReason).toBe('session_expired');
+    expect(currentAuth.isAuthenticated).toBe(false);
+  });
+
+  it('invalidates the current admin and cached data on expiry, then clears the reason after sign-in', async () => {
+    authUtilsMocks.hasSessionCandidate.mockReturnValue(true);
+    authApiMocks.me.mockResolvedValue({ id: 7, role: 'admin', email: 'admin@example.com' });
+    render(<AuthProvider><AuthProbe /></AuthProvider>);
+    await waitFor(() => expect(currentAuth.user?.id).toBe(7));
+    queryClient.setQueryData(['admin-users'], ['private']);
+    act(() => window.dispatchEvent(new CustomEvent('authSessionExpired', { detail: { hadSessionCandidate: true } })));
+    expect(currentAuth.user).toBeNull();
+    expect(currentAuth.unauthenticatedReason).toBe('session_expired');
+    expect(queryClient.getQueryData(['admin-users'])).toBeUndefined();
+    await act(async () => { await currentAuth.logout(); });
+    expect(currentAuth.unauthenticatedReason).toBeNull();
+    act(() => window.dispatchEvent(new CustomEvent('authSessionExpired', { detail: { hadSessionCandidate: true } })));
+    await act(async () => { await currentAuth.loginWithToken('new-session'); });
+    expect(currentAuth.unauthenticatedReason).toBeNull();
+  });
+
+  it('does not label a guest or rejected sign-in as expired', async () => {
+    render(<AuthProvider><AuthProbe /></AuthProvider>);
+    await waitFor(() => expect(currentAuth.isLoading).toBe(false));
+    act(() => window.dispatchEvent(new CustomEvent('authSessionExpired', { detail: { hadSessionCandidate: false } })));
+    authApiMocks.login.mockRejectedValue({ response: { status: 401 } });
+    await act(async () => { await currentAuth.login('guest@example.com', 'wrong').catch(() => {}); });
+    expect(currentAuth.unauthenticatedReason).toBeNull();
   });
 
   it('cannot restore a delayed bootstrap response after logout', async () => {

@@ -18,10 +18,11 @@ import { GoogleOAuthIcon, YandexOAuthIcon } from './serviceIcons';
 interface AuthModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onAuthenticated?: () => void;
   initialMode?: 'login' | 'register';
 }
 
-export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMode = 'login' }) => {
+export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onAuthenticated, initialMode = 'login' }) => {
   const { t, i18n } = useTranslation();
   const [authMode, setAuthMode] = useState<'login' | 'register'>(initialMode);
   const [oauthLoading, setOauthLoading] = useState<'google' | 'yandex' | null>(null);
@@ -122,9 +123,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
   // Внешний OAuth завершился успехом (auth-restore → вход) — закрываем модалку.
   useEffect(() => {
     if (oauthExternalPending && user) {
-      onClose();
+      (onAuthenticated ?? onClose)();
     }
-  }, [oauthExternalPending, user, onClose]);
+  }, [oauthExternalPending, user, onClose, onAuthenticated]);
 
   if (!isOpen) return null;
 
@@ -137,7 +138,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
       if (authMode === 'login') {
         await login(email, password);
         // Закрываем модалку только при успешном логине
-        onClose();
+        (onAuthenticated ?? onClose)();
         setEmail('');
         setPassword('');
         setIsLoading(false);
@@ -200,7 +201,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
         });
         
         // Успешная регистрация - закрываем модальное окно
-        onClose();
+        (onAuthenticated ?? onClose)();
         
         // Очищаем поля только после успешной регистрации
         setEmail('');

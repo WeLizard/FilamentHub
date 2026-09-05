@@ -14,7 +14,8 @@ interface ProtectedRouteProps {
 
 export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, requiredRole }) => {
   const { t } = useTranslation();
-  const { isAuthenticated, isLoading, user } = useAuth();
+  const { isAuthenticated, isLoading, user, unauthenticatedReason } = useAuth();
+  const sessionExpired = unauthenticatedReason === 'session_expired';
   const navigate = useNavigate();
   const location = useLocation();
   const [countdown, setCountdown] = useState(5);
@@ -30,22 +31,21 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, requir
 
   // Автоматическая переадресация на главную
   useEffect(() => {
-    if (!isAuthenticated && !isLoading) {
+    if (!isAuthenticated && !isLoading && !sessionExpired) {
       setCountdown(5);
+      let remaining = 5;
       const timer = setInterval(() => {
-        setCountdown((prev) => {
-          if (prev <= 1) {
-            clearInterval(timer);
-            navigate('/');
-            return 0;
-          }
-          return prev - 1;
-        });
+        remaining -= 1;
+        setCountdown(remaining);
+        if (remaining <= 0) {
+          clearInterval(timer);
+          navigate('/');
+        }
       }, 1000);
 
       return () => clearInterval(timer);
     }
-  }, [isAuthenticated, isLoading, navigate, location.pathname, location.search, location.hash]);
+  }, [isAuthenticated, isLoading, sessionExpired, navigate, location.pathname, location.search, location.hash]);
 
   if (isLoading) {
     return (
@@ -69,9 +69,9 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, requir
               <Lock className="w-10 h-10 text-white" />
             </div>
             <div className="text-center">
-              <h2 className="text-3xl font-bold text-white mb-3">{t('protectedRoute.auth_required_title')}</h2>
+              <h2 className="text-3xl font-bold text-white mb-3">{t(sessionExpired ? 'protectedRoute.session_expired_title' : 'protectedRoute.auth_required_title')}</h2>
               <p className="text-gray-300 mb-6">
-                {t('protectedRoute.auth_required_subtitle')}
+                {t(sessionExpired ? 'protectedRoute.session_expired_subtitle' : 'protectedRoute.auth_required_subtitle')}
               </p>
             </div>
 
@@ -102,12 +102,12 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, requir
               </div>
             </div>
 
-            <div className="mb-6 rounded-2xl border border-purple-400/20 bg-purple-500/10 p-4">
+            {!sessionExpired && <div className="mb-6 rounded-2xl border border-purple-400/20 bg-purple-500/10 p-4">
               <div className="flex items-center justify-center gap-2 text-sm text-purple-100">
                 <Clock3 className="h-4 w-4" />
                 <span>{t('protectedRoute.redirect_countdown', { count: countdown })}</span>
               </div>
-            </div>
+            </div>}
 
             <div className="flex flex-col sm:flex-row gap-3 justify-center mb-4">
               <button

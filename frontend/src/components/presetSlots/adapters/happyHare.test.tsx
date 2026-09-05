@@ -224,6 +224,7 @@ describe('Happy Hare Edge setup', () => {
     vi.stubEnv('VITE_ENABLE_EDGE_UI', 'true');
     status
       .mockResolvedValueOnce(bridgeStatus())
+      .mockRejectedValueOnce(new Error('status unavailable'))
       .mockRejectedValueOnce(new Error('status unavailable'));
     issuePairingCode.mockResolvedValue({
       pairing_code: 'FH-SAFE1-RETRY',
@@ -236,6 +237,10 @@ describe('Happy Hare Edge setup', () => {
     await waitFor(() => expect(createButton).not.toBeDisabled());
     fireEvent.click(createButton);
     expect(await screen.findByText('FH-SAFE1-RETRY')).toBeInTheDocument();
-    expect(screen.getByText('presetSlots.edge.statusUnavailable')).toBeInTheDocument();
+    expect(await screen.findByText(
+      'presetSlots.edge.statusUnavailable',
+      undefined,
+      { timeout: 2_500 },
+    )).toBeInTheDocument();
   });
 });

@@ -7,8 +7,23 @@ import { translateApiError } from '../../utils/translateApiError';
 import { toast } from '../Toast';
 import { ConfirmModal } from '../ConfirmModal';
 import type { AdapterViewContext } from './adapters/types';
+import { isPairingAccessDenied, retryPairingStatusQuery } from './pairingPolling';
 
 const EDGE_TRANSPORT = 'edge_agent' as const;
+
+export function edgePairingRefetchInterval(
+  error: unknown,
+  status: { pairing_expires_at?: string | null; paired?: boolean; last_observation_at?: string | null } | undefined,
+  pollDeadline: number,
+  now = Date.now(),
+): 5_000 | false {
+  if (isPairingAccessDenied(error)) return false;
+  const pairingPending = Boolean(
+    status?.pairing_expires_at && Date.parse(status.pairing_expires_at) > now,
+  );
+  const awaitingFirstData = Boolean(status?.paired && !status.last_observation_at);
+  return (pairingPending || awaitingFirstData) && now < pollDeadline ? 5_000 : false;
+}
 
 export function EdgeConnectionSetup({
   printer,
@@ -30,17 +45,12 @@ export function EdgeConnectionSetup({
     queryFn: () => printerBridgeAPI.status(printer.id, system.id, EDGE_TRANSPORT),
     staleTime: 10_000,
     refetchOnWindowFocus: true,
-    refetchInterval: (query) => {
-      const status = query.state.data;
-      const pairingPending = Boolean(
-        status?.pairing_expires_at
-          && Date.parse(status.pairing_expires_at) > Date.now(),
-      );
-      const awaitingFirstData = Boolean(status?.paired && !status.last_observation_at);
-      return (pairingPending || awaitingFirstData) && Date.now() < pollDeadline
-        ? 5_000
-        : false;
-    },
+    retry: retryPairingStatusQuery,
+    refetchInterval: (query) => edgePairingRefetchInterval(
+      query.state.error,
+      query.state.data,
+      pollDeadline,
+    ),
   });
   const status = statusQuery.data;
   const pairingPending = Boolean(

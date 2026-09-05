@@ -24,6 +24,19 @@ import { translateApiError } from '../../../utils/translateApiError';
 import { formatLastSeen, getDeviceLinkState, latestDeviceContact, useNow } from '../../../utils/deviceLink';
 import { toast } from '../../Toast';
 import type { AdapterViewContext, FeedAdapter } from './types';
+import { isPairingAccessDenied, retryPairingStatusQuery } from '../pairingPolling';
+
+export function bambuPairingRefetchInterval(
+  error: unknown,
+  status: { paired?: boolean; last_seen_at?: string | null } | undefined,
+  pairingStarted: boolean,
+  pollDeadline: number,
+  now = Date.now(),
+): 5_000 | false {
+  if (isPairingAccessDenied(error)) return false;
+  if (pairingStarted && now < pollDeadline) return 5_000;
+  return status?.paired && !status.last_seen_at && now < pollDeadline ? 5_000 : false;
+}
 
 function BambuCreateHelp() {
   const { t } = useTranslation();
@@ -63,17 +76,15 @@ function BambuSetup({
     queryFn: () => printerBridgeAPI.status(printer.id, system.id),
     staleTime: 10_000,
     refetchOnWindowFocus: true,
+    retry: retryPairingStatusQuery,
     // Pairing is the only fast-polling state. Once it succeeds or the one-time
     // code expires, the normal focus/user-action refresh policy takes over.
-    refetchInterval: (query) => {
-      if (pairingStarted && Date.now() < dataPollDeadline) {
-        return 5_000;
-      }
-      const status = query.state.data;
-      return status?.paired && !status.last_seen_at && Date.now() < dataPollDeadline
-        ? 5_000
-        : false;
-    },
+    refetchInterval: (query) => bambuPairingRefetchInterval(
+      query.state.error,
+      query.state.data,
+      pairingStarted,
+      dataPollDeadline,
+    ),
   });
   const bridgeStatus = statusQuery.data;
   const pairingPending = Boolean(

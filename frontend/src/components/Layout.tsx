@@ -531,9 +531,11 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
             onClose={() => {
               setIsAuthModalOpen(false);
               hasOpenedLoginModalRef.current = false; // Сбрасываем флаг при закрытии
-              if (!user) {
-                pendingReturnUrlRef.current = null;
-              }
+              pendingReturnUrlRef.current = null;
+            }}
+            onAuthenticated={() => {
+              setIsAuthModalOpen(false);
+              hasOpenedLoginModalRef.current = false;
             }}
             initialMode="login"
           />
