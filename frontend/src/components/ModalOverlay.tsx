@@ -16,6 +16,8 @@ interface ModalOverlayProps {
   className?: string;
   /** Classes for the inner content container (default centers the modal; override for drawers) */
   contentClassName?: string;
+  /** Keep the current step mounted while a local credential dialog owns input. */
+  suspended?: boolean;
 }
 
 export const ModalOverlay: React.FC<ModalOverlayProps> = ({
@@ -25,6 +27,7 @@ export const ModalOverlay: React.FC<ModalOverlayProps> = ({
   closeOnEscape = true,
   className = '',
   contentClassName = 'min-h-full flex items-center justify-center p-4',
+  suspended = false,
 }) => {
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
@@ -34,10 +37,10 @@ export const ModalOverlay: React.FC<ModalOverlayProps> = ({
   );
 
   useEffect(() => {
-    if (!closeOnEscape) return;
+    if (!closeOnEscape || suspended) return;
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [closeOnEscape, handleKeyDown]);
+  }, [closeOnEscape, handleKeyDown, suspended]);
 
   useEffect(() => {
     scrollLockCount++;
@@ -71,7 +74,9 @@ export const ModalOverlay: React.FC<ModalOverlayProps> = ({
   };
 
   return createPortal(
-    <div className={`fixed inset-0 bg-black/50 backdrop-blur-sm z-[9999] overflow-y-auto ${className}`}>
+    <div className={`fixed inset-0 bg-black/50 backdrop-blur-sm z-[9999] overflow-y-auto ${className}`}
+      style={suspended ? { visibility: 'hidden' } : undefined}
+      aria-hidden={suspended || undefined} inert={suspended || undefined}>
       <div
         className={contentClassName}
         onMouseDown={handleOverlayMouseDown}

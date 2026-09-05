@@ -649,6 +649,43 @@ export function requestInstalledPrinterBundles(
  * one-time pairing code and an optional opaque local discovery reference. IP,
  * serial and access code stay in the local shell.
  */
+export interface LocalPrinterSetupState {
+  open: boolean;
+  provider: 'bambu' | 'moonraker';
+  physicalPrinterId?: number;
+  materialSystemId?: number;
+  outcome?: 'saved' | 'cancelled' | 'removed';
+}
+
+/** Local credential dialogs expose only their lifecycle, never their fields. */
+export function subscribeToLocalPrinterSetup(
+  onState: (state: LocalPrinterSetupState) => void,
+): () => void {
+  const handler = (event: MessageEvent) => {
+    if (!isTrustedPluginParentEvent(event)) return;
+    const data = event.data;
+    if (!data || data.source !== PLUGIN_MESSAGE_SOURCE
+      || data.type !== 'local-printer-setup-state' || typeof data.open !== 'boolean'
+      || !['bambu', 'moonraker'].includes(data.provider)) return;
+    if (data.provider === 'bambu' && (
+      !Number.isSafeInteger(data.physicalPrinterId) || data.physicalPrinterId < 1
+      || !Number.isSafeInteger(data.materialSystemId) || data.materialSystemId < 1
+    )) return;
+    onState({
+      open: data.open,
+      provider: data.provider,
+      ...(data.provider === 'bambu' ? {
+        physicalPrinterId: data.physicalPrinterId,
+        materialSystemId: data.materialSystemId,
+      } : {}),
+      ...(!data.open && ['saved', 'cancelled', 'removed'].includes(data.outcome)
+        ? { outcome: data.outcome } : {}),
+    });
+  };
+  window.addEventListener('message', handler);
+  return () => window.removeEventListener('message', handler);
+}
+
 export function configureBambuBridgeInPlugin(
   physicalPrinterId: number,
   materialSystemId: number,
@@ -716,6 +753,130 @@ export interface BambuMaterialActionResult {
   desiredAssignments?: BambuExpectedAssignment[];
   remainingChanges?: BambuMaterialChange[];
   applied?: boolean;
+}
+
+export interface MaterialAssignmentCommit {
+  materialSlotId: number;
+  providerIndex: number;
+  assignmentRevision: number;
+  desired: {
+    presetId: number | null;
+    spoolId: number | null;
+    sourceTs: string | null;
+  } | null;
+}
+
+export interface ImmediateMaterialResult {
+  ok: boolean;
+  operation: 'assign' | 'refresh';
+  code?: string | null;
+  physicalPrinterId: number;
+  materialSystemId: number;
+  applied?: boolean;
+  observationUploaded?: boolean;
+}
+
+function requestImmediateMaterialOperation(
+  provider: 'bambu' | 'happy-hare',
+  operation: 'assign' | 'refresh',
+  physicalPrinterId: number,
+  materialSystemId: number,
+  commit?: MaterialAssignmentCommit,
+): Promise<ImmediateMaterialResult> {
+  const capability = operation === 'assign'
+    ? 'material-assignment-v1'
+    : 'material-observation-refresh-v1';
+  if (!isPluginEmbed() || !activePluginCapabilities.has(capability)) {
+    return Promise.reject(new Error(`${capability} unavailable`));
+  }
+  const requestId = pluginRequestId(`${provider}-material-${operation}`);
+  const resultType = provider === 'bambu' ? 'bambu-material-result' : 'happy-hare-result';
+
+  return new Promise((resolve, reject) => {
+    let timeoutId: number | null = null;
+    const cleanup = () => {
+      window.removeEventListener('message', onMessage);
+      if (timeoutId !== null) window.clearTimeout(timeoutId);
+    };
+    const onMessage = (event: MessageEvent) => {
+      if (!isTrustedPluginParentEvent(event)) return;
+      const data = event.data as Partial<PluginMessage> | undefined;
+      if (!data || data.source !== PLUGIN_MESSAGE_SOURCE || data.type !== resultType) return;
+      if ((data as { requestId?: unknown }).requestId !== requestId) return;
+      const result = (data as { result?: unknown }).result;
+      cleanup();
+      const value = result as Partial<ImmediateMaterialResult> | null;
+      if (
+        !value
+        || typeof value !== 'object'
+        || typeof value.ok !== 'boolean'
+        || value.operation !== operation
+        || value.physicalPrinterId !== physicalPrinterId
+        || value.materialSystemId !== materialSystemId
+        || (value.code !== undefined && value.code !== null && typeof value.code !== 'string')
+        || (value.applied !== undefined && typeof value.applied !== 'boolean')
+        || (
+          value.observationUploaded !== undefined
+          && typeof value.observationUploaded !== 'boolean'
+        )
+      ) {
+        reject(new Error('invalid material operation result'));
+        return;
+      }
+      resolve(value as ImmediateMaterialResult);
+    };
+    window.addEventListener('message', onMessage);
+    timeoutId = window.setTimeout(() => {
+      cleanup();
+      reject(new Error('material operation timeout'));
+    }, 45_000);
+    postToPlugin({
+      source: PLUGIN_MESSAGE_SOURCE,
+      type: `${provider}-material-${operation}`,
+      requestId,
+      physicalPrinterId,
+      materialSystemId,
+      ...(commit ? { commit } : {}),
+    });
+  });
+}
+
+export function requestBambuSlotAssignment(
+  physicalPrinterId: number,
+  materialSystemId: number,
+  commit: MaterialAssignmentCommit,
+): Promise<ImmediateMaterialResult> {
+  return requestImmediateMaterialOperation(
+    'bambu', 'assign', physicalPrinterId, materialSystemId, commit,
+  );
+}
+
+export function requestBambuObservationRefresh(
+  physicalPrinterId: number,
+  materialSystemId: number,
+): Promise<ImmediateMaterialResult> {
+  return requestImmediateMaterialOperation(
+    'bambu', 'refresh', physicalPrinterId, materialSystemId,
+  );
+}
+
+export function requestHappyHareSlotAssignment(
+  physicalPrinterId: number,
+  materialSystemId: number,
+  commit: MaterialAssignmentCommit,
+): Promise<ImmediateMaterialResult> {
+  return requestImmediateMaterialOperation(
+    'happy-hare', 'assign', physicalPrinterId, materialSystemId, commit,
+  );
+}
+
+export function requestHappyHareObservationRefresh(
+  physicalPrinterId: number,
+  materialSystemId: number,
+): Promise<ImmediateMaterialResult> {
+  return requestImmediateMaterialOperation(
+    'happy-hare', 'refresh', physicalPrinterId, materialSystemId,
+  );
 }
 
 /**

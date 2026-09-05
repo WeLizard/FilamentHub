@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import type {
   GateState,
+  MaterialSlot,
   MaterialSystem,
   PhysicalPrinter,
   UserSpool,
@@ -64,6 +65,21 @@ export interface FeedAdapterLink {
   apiKeyHeader?: string;
 }
 
+export type MaterialDeliveryStatus = 'delivered' | 'saved_only' | 'unsupported';
+
+export interface MaterialDeliveryResult {
+  status: MaterialDeliveryStatus;
+  code?: string | null;
+  /** The physical change completed but its mandatory observation upload failed. */
+  physicallyApplied?: boolean;
+}
+
+export interface AssignmentCommitContext {
+  printer: PhysicalPrinter;
+  system: MaterialSystem;
+  slot: MaterialSlot;
+}
+
 export interface FeedAdapter {
   /** Stored on the system as its provider. */
   id: string;
@@ -90,6 +106,8 @@ export interface FeedAdapter {
   slotCountSummaryKey?: string;
   /** How the printer is pointed at us; null when nothing is linked at all. */
   link: FeedAdapterLink | null;
+  /** Best-effort immediate delivery of one already committed server assignment. */
+  deliverAssignment?: (context: AssignmentCommitContext) => Promise<MaterialDeliveryResult>;
   /** Provider-specific guidance shown while its system is being created. */
   renderCreateHelp?: () => ReactNode;
   /** Extra controls this system needs and no other one does. */

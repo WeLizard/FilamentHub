@@ -8,6 +8,7 @@ import { formatLastSeen, useNow } from '../../utils/deviceLink';
 import { NozzleRequirementBadge } from '../NozzleRequirementBadge';
 
 interface GateMapGridProps {
+  provider?: string;
   slots: MaterialSlot[];
   gates: GateState[];
   presets: Record<number, Pick<Preset, 'id' | 'name' | 'extruder_temp' | 'bed_temp'>>;
@@ -40,7 +41,7 @@ function SpoolIcon({
 
   if (isEmpty) {
     return (
-      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="h-auto max-w-full">
         <circle cx={center} cy={center} r={outerR} fill="none" stroke="rgba(255,255,255,0.07)" strokeWidth="1" strokeDasharray="3 3" />
         <circle cx={center} cy={center} r={filamentR} fill="none" stroke="rgba(255,255,255,0.04)" strokeWidth="7" strokeDasharray="3 3" />
         <circle cx={center} cy={center} r={innerR} fill="rgba(255,255,255,0.02)" stroke="rgba(255,255,255,0.07)" strokeWidth="0.75" />
@@ -49,7 +50,7 @@ function SpoolIcon({
   }
 
   return (
-    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="drop-shadow">
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="h-auto max-w-full drop-shadow">
       {/* Outer flange */}
       <circle cx={center} cy={center} r={outerR} fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth="1.5" />
       {/* Filament track background */}
@@ -86,6 +87,19 @@ function SpoolIcon({
       )}
     </svg>
   );
+}
+
+function FeedRouteIcon({ kind }: { kind: 'external' | 'bypass' }) {
+  return <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+    stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"
+    aria-hidden="true" className="h-auto max-w-full">
+    {kind === 'external' ? <>
+      <circle cx="12" cy="9" r="6" /><circle cx="12" cy="9" r="2" />
+      <path d="M7 13 5 21h14l-2-8M3 21h18" />
+    </> : <>
+      <path d="M3 5h4a4 4 0 0 1 4 4v6a4 4 0 0 0 4 4h6M17 15l4 4-4 4M3 19h3" />
+    </>}
+  </svg>;
 }
 
 function observationLabel(
@@ -126,6 +140,7 @@ function observationTooltip(
 }
 
 export function GateMapGrid({
+  provider,
   slots,
   gates,
   presets,
@@ -142,18 +157,32 @@ export function GateMapGrid({
   const sortedSlots = [...slots].sort(
     (left, right) => left.provider_index - right.provider_index || left.id - right.id,
   );
+  const columnCount = Math.min(Math.max(sortedSlots.length, 1), 9);
+  const lastRowCount = sortedSlots.length % columnCount;
+  const centeredLastRowStart = lastRowCount > 0
+    ? Math.floor((columnCount - lastRowCount) / 2) + 1
+    : 1;
 
   return (
-    <div className={[
-      'grid grid-cols-2 gap-1.5 sm:grid-cols-4',
-      sortedSlots.length > 8
-        ? 'xl:grid-cols-9'
-        : sortedSlots.length > 4 ? 'xl:grid-cols-8' : '',
-    ].join(' ')}>
-      {sortedSlots.map((slot) => {
+    <div className="min-w-0 pb-1">
+      <div
+        className="grid min-w-0 justify-center gap-1.5"
+        style={{
+          gridTemplateColumns: `repeat(${columnCount}, minmax(0, 7rem))`,
+        }}
+      >
+        {sortedSlots.map((slot, index) => {
         const slotLabel = slot.kind === 'bypass'
           ? t('presetSlots.route.bypass')
-          : slot.label ?? String(slot.provider_index);
+          : slot.kind === 'external' && (!slot.label || /^External spool(?: \d+)?$/.test(slot.label))
+            ? t('presetSlots.route.external')
+            : slot.label ?? String(slot.provider_index);
+        const routeKind = slot.kind === 'external' || slot.kind === 'bypass' ? slot.kind : null;
+        const externalSlots = sortedSlots.filter((item) => item.kind === 'external');
+        const displaySlotLabel = provider === 'bambu' && slot.kind === 'slot'
+          && /^AMS\s+\d+\s*[·-]\s*\d+$/.test(slotLabel)
+          ? String(sortedSlots.filter((item) => item.kind === 'slot').findIndex((item) => item.id === slot.id) + 1)
+          : slotLabel;
         const gate = gateMap.get(slot.provider_index) ?? null;
         const desiredSpoolId = slot.assignment?.spool_id ?? gate?.spool_id ?? null;
         const spool = desiredSpoolId != null ? spoolMap.get(desiredSpoolId) ?? null : null;
@@ -194,22 +223,32 @@ export function GateMapGrid({
             type="button"
             onClick={() => onGateClick(gate, slot)}
             title={slotLabel}
+            aria-label={slotLabel}
+            style={index === sortedSlots.length - lastRowCount && lastRowCount > 0
+              ? { gridColumnStart: centeredLastRowStart }
+              : undefined}
             className={[
-              'group relative flex h-full flex-col items-center gap-1 rounded-xl border px-2 py-2 text-center transition',
+              '@container group relative flex h-full min-w-0 flex-col items-center gap-1 overflow-hidden rounded-xl border p-1.5 text-center transition',
               'hover:border-purple-500/50 hover:bg-purple-500/8 focus:outline-none focus:ring-2 focus:ring-purple-500/40',
               hasContent
                 ? 'border-purple-500/25 bg-purple-500/[0.04]'
                 : 'border-white/[0.06] bg-white/[0.015]',
             ].join(' ')}
           >
-            <div className="flex w-full items-center justify-between">
+            <div className="flex min-h-5 w-full min-w-0 items-start justify-between gap-1">
               <span
                 className={[
-                  'flex h-5 min-w-[20px] items-center justify-center rounded-md px-1.5 text-[11px] font-bold',
+                  'flex min-h-5 min-w-0 max-w-full items-center justify-start rounded-[5px] px-1.5 text-left text-[11px] font-bold @max-[3rem]:px-0',
                   hasContent ? 'bg-purple-500/20 text-purple-300' : 'bg-white/8 text-gray-400',
                 ].join(' ')}
               >
-                {slotLabel}
+                {routeKind ? <span className="inline-flex min-w-0 max-w-full items-center gap-0.5">
+                  <FeedRouteIcon kind={routeKind} />
+                  {routeKind === 'external' && externalSlots.length > 1
+                    && <span>{externalSlots.findIndex((item) => item.id === slot.id) + 1}</span>}
+                </span> : <span className="line-clamp-2 whitespace-normal break-words leading-tight @max-[5rem]:line-clamp-1">
+                  {displaySlotLabel}
+                </span>}
               </span>
               {hasObservation ? (
                 <span
@@ -220,7 +259,7 @@ export function GateMapGrid({
                     observationTooltip(slot, comparison.observationState, t),
                   ].filter(Boolean).join(' ')}
                   className={[
-                    'inline-flex min-w-0 max-w-[7rem] items-center gap-1 rounded-full px-1.5 py-0.5 text-[9px]',
+                    'inline-flex min-h-5 min-w-0 max-w-full items-center justify-center gap-1 rounded-[5px] px-1.5 text-[9px] @max-[5rem]:hidden',
                     hasConflict
                       ? 'bg-amber-500/[0.08] text-amber-200/80'
                       : 'bg-emerald-500/[0.08] text-emerald-200/80',
@@ -245,13 +284,13 @@ export function GateMapGrid({
                   </span>
                 </span>
               ) : displayMaterial ? (
-                <span className="max-w-[7rem] truncate text-[9px] font-medium uppercase tracking-wide text-gray-400">
+                <span className="max-w-[7rem] truncate text-[9px] font-medium uppercase tracking-wide text-gray-400 @max-[5rem]:hidden">
                   {displayMaterial}
                 </span>
-              ) : null}
+              ) : <span aria-hidden="true" className="h-3 @max-[5rem]:hidden" />}
             </div>
 
-            <div className="py-0.5">
+            <div className="w-14 max-w-full py-0.5">
               <SpoolIcon
                 color={displayColor}
                 remainingPct={spool?.remaining_pct ?? slot.observation?.remaining_percent}
@@ -265,7 +304,7 @@ export function GateMapGrid({
             </div>
 
             {!hasContent && (isUnidentified || !displayMaterial) && (
-              <span className="text-[10px] leading-tight text-gray-400">
+              <span className="text-[10px] leading-tight text-gray-400 @max-[5rem]:hidden">
                 {t(isUnidentified
                   ? 'presetSlots.assignment.unknownSpool'
                   : 'presetSlots.assignment.empty')}
@@ -273,7 +312,7 @@ export function GateMapGrid({
             )}
 
             {staleObservation && (
-              <span className="max-w-full truncate text-[9px] leading-tight text-gray-500">
+              <span className="max-w-full truncate text-[9px] leading-tight text-gray-500 @max-[5rem]:hidden">
                 {t('presetSlots.observation.lastSeen', {
                   detail: staleObservation.material
                     ?? t('presetSlots.observation.lastSeenSpool'),
@@ -283,7 +322,7 @@ export function GateMapGrid({
             )}
 
             {observedSpool && observedSpool.id !== desiredSpoolId && (
-              <span className="max-w-full truncate text-[10px] text-emerald-200/80">
+              <span className="max-w-full truncate text-[10px] text-emerald-200/80 @max-[5rem]:hidden">
                 {t('presetSlots.happyHare.observedSpool', {
                   name: observedSpool.filament?.name ?? `#${observedSpool.id}`,
                 })}
@@ -294,7 +333,7 @@ export function GateMapGrid({
               <span
                 title={slot.observation.tag_uid}
                 className={[
-                  'inline-flex max-w-full items-center gap-1 rounded px-1.5 py-0.5 text-[9px]',
+                  'inline-flex max-w-full items-center gap-1 rounded px-1.5 py-0.5 text-[9px] @max-[5rem]:hidden',
                   slot.observation.tag_match_status === 'matched'
                     ? 'bg-emerald-500/10 text-emerald-200/80'
                     : 'bg-amber-500/10 text-amber-200/80',
@@ -310,32 +349,34 @@ export function GateMapGrid({
             )}
 
             {spool?.filament && (
-              <p className="max-w-full truncate text-[10px] leading-tight text-gray-300">
+              <p className="max-w-full truncate text-[10px] leading-tight text-gray-300 @max-[5rem]:hidden">
                 {[spool.filament.brand_name, spool.filament.name].filter(Boolean).join(' ')}
               </p>
             )}
 
-            <NozzleRequirementBadge
-              requiredHrc={spool?.filament?.required_nozzle_hrc}
-              configuredHrc={nozzleHrc}
-              size="tight"
-              compact
-            />
+            <span className="@max-[5rem]:hidden">
+              <NozzleRequirementBadge
+                requiredHrc={spool?.filament?.required_nozzle_hrc}
+                configuredHrc={nozzleHrc}
+                size="tight"
+                compact
+              />
+            </span>
 
             {spool && (
-              <span className="text-[10px] tabular-nums text-gray-300">
+              <span className="text-[10px] tabular-nums text-gray-300 @max-[5rem]:hidden">
                 {spool.remaining_weight_g.toFixed(0)}g &middot; {spool.remaining_pct.toFixed(0)}%
               </span>
             )}
 
             {!spool && slot.observation?.remaining_grams != null && (
-              <span className="text-[10px] tabular-nums text-cyan-200/75">
+              <span className="text-[10px] tabular-nums text-cyan-200/75 @max-[5rem]:hidden">
                 {slot.observation.remaining_grams.toFixed(0)}g
               </span>
             )}
 
             {preset && (
-              <div className="w-full min-w-0 border-t border-white/5 pt-1">
+              <div className="w-full min-w-0 border-t border-white/5 pt-1 @max-[5rem]:hidden">
                 <p className="truncate text-[10px] font-medium text-purple-300">{preset.name}</p>
                 <p className="text-[9px] tabular-nums text-gray-400">
                   {preset.extruder_temp}&deg;C / {preset.bed_temp}&deg;C
@@ -345,7 +386,8 @@ export function GateMapGrid({
 
           </button>
         );
-      })}
+        })}
+      </div>
     </div>
   );
 }

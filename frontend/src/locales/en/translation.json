@@ -7557,6 +7557,12 @@
     "mappedPrinter": "Printer: {{name}}",
     "noSystems": "No material systems yet",
     "noSystemsDesc": "Add a system — direct feed, MMU, AMS or CFS — and bind it to one of your printers.",
+    "delivery": {
+      "delivered": "Assignment saved and sent to the printer.",
+      "savedOnly": "Assignment saved. Delivery to the printer could not be confirmed yet.",
+      "clearUnsupported": "Assignment cleared in FilamentHub. This printer does not provide a safe physical clear operation.",
+      "observationUploadFailed": "Assignment was sent to the printer, but its updated state could not be loaded into FilamentHub."
+    },
     "newSystem": {
       "add": "Add material system",
       "title": "New material system",
@@ -7625,6 +7631,7 @@
       "unknownSpool": "Unknown spool"
     },
     "route": {
+      "external": "External spool",
       "bypass": "Bypass",
       "bypassSelected": "Selected",
       "bypassSelectedLoaded": "Selected · filament detected",
@@ -7737,7 +7744,8 @@
       "refresh": {
         "title": "Happy Hare slot map",
         "localOnly": "the connection stays in OrcaSlicer",
-        "description": "The plugin safely reads the real gate count and compares the printer assignments with FilamentHub. Nothing changes until you confirm.",
+        "description": "Read the current Happy Hare slot map and load the observation into FilamentHub.",
+        "refreshed": "The current Happy Hare slot map was loaded into FilamentHub.",
         "fallback": "Open this page in OrcaSlicer to preview changes. Without the plugin, you can only copy Happy Hare's official refresh command.",
         "check": "Check printer",
         "copyCommand": "Copy command",
@@ -7769,6 +7777,9 @@
           "unreachable": "Moonraker did not respond or rejected the local API key.",
           "device_not_ready": "The printer link is not ready yet. Run the full Sync in OrcaSlicer.",
           "material_system_not_found": "This printer no longer has that Happy Hare system. Refresh the page.",
+          "stale_assignment": "The assignment changed before it reached the printer. The saved newer assignment was left untouched.",
+          "expired": "The local action expired before it could reach the printer.",
+          "snapshot_failed": "The printer answered, but its current slot map could not be loaded into FilamentHub.",
           "spool_ids_unavailable": "This Happy Hare version did not expose its spool ID map, so assignments cannot be applied blindly.",
           "pull_required": "Enable spoolman_support: pull before applying assignments.",
           "printer_busy": "The command is blocked while the printer is printing or paused.",
@@ -7799,7 +7810,7 @@
     },
     "bambu": {
       "title": "Local Bambu data",
-      "description": "The local OrcaSlicer plugin currently reads the data. It does not lock the printer to OrcaSlicer: other compatible local adapters can connect to the same printer record.",
+      "description": "Slots and status appear after connection. Spools and assignments stay saved while disconnected.",
       "createDescription": "You do not need to enter slot numbers or a slot count. The plugin reads the actual AMS, AMS HT and external-spool topology directly from the printer.",
       "connect": "Find and connect",
       "changeConnection": "Change connection",
@@ -7808,8 +7819,8 @@
       "checking": "Checking connection…",
       "connected": "Printer data received",
       "awaitingFirstData": "Waiting for printer data",
-      "awaitingFirstDataDescription": "The server accepted the connection, but the printer has not sent a snapshot yet. Keep OrcaSlicer open on the same local network, or reconnect if this persists.",
-      "waiting": "Waiting for a local adapter",
+      "awaitingFirstDataDescription": "The connection is saved. Waiting for the first printer response; there is no need to add it again.",
+      "waiting": "Setting up the connection…",
       "notConnected": "Not connected yet",
       "localOnly": "The IP address, serial number and access code stay in the plugin's private local storage and are never sent to FilamentHub.",
       "stateLabel": "State",
@@ -7820,7 +7831,8 @@
       "slots_other": "{{count}} printer slots",
       "materials": {
         "check": "Check materials",
-        "description": "Compare saved assignments with the actual AMS slots.",
+        "description": "Read the current AMS materials and load the observation into FilamentHub.",
+        "refreshed": "Current AMS materials were loaded into FilamentHub.",
         "previewTitle": "Send the selected materials to AMS?",
         "previewDescription": "The plugin will change only the material parameters in these slots. Exact spool assignments stay in FilamentHub.",
         "slot": "Slot {{slot}}",
@@ -7843,6 +7855,12 @@
           "server": "FilamentHub material assignments could not be loaded.",
           "connection_not_found": "No unambiguous local Bambu connection was found for this printer.",
           "material_system_not_found": "The AMS system is no longer available.",
+          "stale_assignment": "The assignment changed before it reached the printer. The saved newer assignment was left untouched.",
+          "expired": "The local action expired before it could reach the printer.",
+          "preset_not_loaded": "The selected preset is not loaded in OrcaSlicer yet.",
+          "spool_facts_unavailable": "The saved spool has no valid material or color for a safe printer update.",
+          "material_mismatch": "The selected preset material does not match the assigned spool.",
+          "snapshot_failed": "The printer answered, but its current state could not be loaded into FilamentHub.",
           "stale_preview": "Assignments changed after the check. Run the check again.",
           "unreachable": "The Bambu printer is not reachable on the local network.",
           "printer_changed": "A different printer answered on the local connection.",

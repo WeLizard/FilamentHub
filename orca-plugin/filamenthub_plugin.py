@@ -4837,8 +4837,9 @@ def _filamenthub_json_get(path, token):
     return status, decoded
 
 
-def _plugin_material_server_inventory(token):
-    source_instance_id = plugin_source_instance_id()
+def _plugin_material_server_inventory(token, source_instance_id=None):
+    if source_instance_id is None:
+        source_instance_id = plugin_source_instance_id()
     status, context = _filamenthub_json_get(
         "/orcaslicer/preset-slot-sync/plugin-context?source_instance_id="
         + urllib.parse.quote(source_instance_id, safe=""),
@@ -4862,6 +4863,104 @@ def _plugin_material_server_inventory(token):
             item for item in context["printers"] if isinstance(item, dict)
         ],
     }, None
+
+
+def _material_commit_context(
+    token,
+    source_instance_id,
+    provider,
+    physical_printer_id,
+    material_system_id,
+    commit,
+):
+    """Re-read and match one committed slot before a local device operation."""
+    inventory, error = _plugin_material_server_inventory(
+        token, source_instance_id=source_instance_id
+    )
+    if error or inventory is None:
+        return None, None, None, error or "server"
+    device = next(
+        (item for item in inventory["printers"]
+         if item.get("id") == physical_printer_id),
+        None,
+    )
+    if device is None:
+        return None, None, None, "connection_not_found"
+    system = next(
+        (
+            item for item in device.get("material_systems") or []
+            if isinstance(item, dict)
+            and item.get("id") == material_system_id
+            and item.get("provider") == provider
+        ),
+        None,
+    )
+    if system is None:
+        return device, None, None, "material_system_not_found"
+    slot = next(
+        (
+            item for item in system.get("slots") or []
+            if isinstance(item, dict)
+            and item.get("material_slot_id") == commit.get("materialSlotId")
+        ),
+        None,
+    )
+    if slot is None:
+        return device, system, None, "slot_not_found"
+    current_desired = None
+    if any(slot.get(key) is not None for key in ("preset_id", "spool_id", "source_ts")):
+        current_desired = {
+            "presetId": slot.get("preset_id"),
+            "spoolId": slot.get("spool_id"),
+            "sourceTs": str(slot.get("source_ts") or "") or None,
+        }
+    if (
+        slot.get("provider_index") != commit.get("providerIndex")
+        or slot.get("assignment_revision") != commit.get("assignmentRevision")
+        or current_desired != commit.get("desired")
+    ):
+        return device, system, slot, "stale_assignment"
+    return device, system, slot, None
+
+
+def _decode_json_object(body):
+    try:
+        value = json.loads(body.decode("utf-8")) if body else {}
+    except (AttributeError, UnicodeDecodeError, ValueError):
+        return None
+    return value if isinstance(value, dict) else None
+
+
+def _valid_immediate_material_commit(value):
+    if not isinstance(value, dict) or set(value) != {
+        "materialSlotId", "providerIndex", "assignmentRevision", "desired"
+    }:
+        return False
+    if (
+        type(value.get("materialSlotId")) is not int
+        or value["materialSlotId"] <= 0
+        or type(value.get("providerIndex")) is not int
+        or not 0 <= value["providerIndex"] <= 1023
+        or type(value.get("assignmentRevision")) is not int
+        or value["assignmentRevision"] < 0
+    ):
+        return False
+    desired = value.get("desired")
+    if desired is None:
+        return True
+    if not isinstance(desired, dict) or set(desired) != {
+        "presetId", "spoolId", "sourceTs"
+    }:
+        return False
+    return (
+        (desired["presetId"] is None
+         or type(desired["presetId"]) is int and desired["presetId"] > 0)
+        and (desired["spoolId"] is None
+             or type(desired["spoolId"]) is int and desired["spoolId"] > 0)
+        and (desired["sourceTs"] is None
+             or isinstance(desired["sourceTs"], str)
+             and 0 < len(desired["sourceTs"]) <= 64)
+    )
 
 
 # Compatibility name for the existing Happy Hare reconciliation path.
@@ -6650,6 +6749,21 @@ PAGE = r"""<!DOCTYPE html>
   #service-retry:focus-visible {
     outline:2px solid var(--orca-accent,#8b7cf8); outline-offset:3px;
   }
+  .fh-local-setup {
+    --fh-local-bg:#111827; --fh-local-fg:#f3f4f6; --fh-local-muted:#9ca3af;
+    --fh-local-border:rgba(255,255,255,.2); --fh-local-accent:#9810fa;
+    font-family:system-ui,-apple-system,"Segoe UI",sans-serif;
+    backdrop-filter:blur(4px);
+  }
+  .fh-local-setup button { font:inherit; padding:8px 14px; border-radius:8px;
+    border:1px solid var(--fh-local-border); background:transparent;
+    color:var(--fh-local-fg); cursor:pointer; }
+  .fh-local-setup button:disabled { opacity:.45; cursor:wait; }
+  .fh-local-setup :is(input,select,button,summary):focus-visible {
+    outline:2px solid #c084fc; outline-offset:3px;
+  }
+  .fh-local-setup input, .fh-local-setup select { min-width:0; }
+  .fh-local-setup summary { line-height:1.5; }
   @keyframes fh-spin { to { transform:rotate(360deg); } }
   @media (prefers-reduced-motion: reduce) {
     #service-spinner { animation:none; }
@@ -6835,7 +6949,8 @@ function sendPluginCapabilities() {
         capabilities: ['printer-bundle-install', 'printer-bundle-result-v1',
                        'printer-bundle-toggle-v1', 'printer-recovery-v1',
                        'bambu-lan-bridge', 'profile-sync', 'profile-sync-scopes-v1',
-                       'bambu-material-write', 'happy-hare-moonraker', 'printer-setup-v1', 'printer-discovery-v1', 'open-external'] },
+                       'bambu-material-write', 'happy-hare-moonraker', 'material-assignment-v1',
+                       'material-observation-refresh-v1', 'printer-setup-v1', 'printer-discovery-v1', 'open-external'] },
       SITE_ORIGIN);
   } catch (e) { /* iframe not ready */ }
 }
@@ -7008,13 +7123,61 @@ function showOAuthOverlay(url) {
   document.body.appendChild(ov);
 }
 
-function hideBambuOverlay() {
+var localSetupState = null;
+var localSetupFocus = null;
+function reportLocalSetup(state, open, outcome) {
+  var message = { source:'filamenthub-plugin', type:'local-printer-setup-state',
+    provider:state.provider, open:open };
+  if (state.provider === 'bambu') {
+    message.physicalPrinterId = Number(state.physicalPrinterId);
+    message.materialSystemId = Number(state.materialSystemId);
+  }
+  if (!open) message.outcome = outcome || 'cancelled';
+  frame.contentWindow.postMessage(message, SITE_ORIGIN);
+}
+function mountLocalSetup(overlay, state, close, canClose) {
+  if (!localSetupState) localSetupFocus = document.activeElement;
+  localSetupState = state;
+  overlay.className = 'fh-local-setup';
+  frame.inert = true;
+  document.getElementById('bar').inert = true;
+  overlay.addEventListener('keydown', function (event) {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      if (canClose()) close();
+    } else if (event.key === 'Tab') {
+      var fields = Array.prototype.slice.call(overlay.querySelectorAll(
+        'button:not(:disabled),input:not(:disabled),select:not(:disabled),summary'
+      )).filter(function (item) { return item.getClientRects().length > 0; });
+      if (!fields.length) { event.preventDefault(); return; }
+      var first = fields[0], last = fields[fields.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    }
+  });
+  document.body.appendChild(overlay);
+  reportLocalSetup(state, true);
+}
+function closeLocalSetup(overlay, outcome) {
+  overlay.remove();
+  var state = localSetupState;
+  localSetupState = null;
+  frame.inert = false;
+  document.getElementById('bar').inert = false;
+  if (state) reportLocalSetup(state, false, outcome);
+  if (localSetupFocus && localSetupFocus.isConnected) localSetupFocus.focus();
+  localSetupFocus = null;
+}
+function hideBambuOverlay(outcome) {
   activeBambuResult = null;
   pendingBambuSetup = null;
   if (bambuSetupTimer) { clearTimeout(bambuSetupTimer); bambuSetupTimer = null; }
   if (bambuAttemptTimer) { clearTimeout(bambuAttemptTimer); bambuAttemptTimer = null; }
   var overlay = document.getElementById('bambu-overlay');
-  if (overlay) overlay.remove();
+  if (overlay) {
+    if (outcome === 'replacing') overlay.remove();
+    else closeLocalSetup(overlay, typeof outcome === 'string' ? outcome : 'cancelled');
+  }
 }
 function showPrinterSetupOverlay(request) {
   var previous = document.getElementById('printer-setup-overlay');
@@ -7023,10 +7186,10 @@ function showPrinterSetupOverlay(request) {
   var overlay = document.createElement('div');
   overlay.id = 'printer-setup-overlay';
   overlay.style.cssText = 'position:fixed;inset:0;z-index:2147483647;display:flex;' +
-    'align-items:center;justify-content:center;background:rgba(0,0,0,.75);';
+    'align-items:center;justify-content:center;background:rgba(0,0,0,.5);';
   var form = document.createElement('form');
-  form.style.cssText = 'width:min(480px,calc(100% - 32px));padding:24px;border-radius:12px;' +
-    'background:var(--orca-bg,#1e1e2e);color:var(--orca-fg,#e0e0e0);';
+  form.style.cssText = 'width:min(576px,calc(100% - 32px));padding:24px;box-sizing:border-box;border-radius:16px;max-height:calc(100dvh - 32px);overflow-y:auto;border:1px solid rgba(255,255,255,.2);' +
+    'background:var(--fh-local-bg,#1e1e2e);color:var(--fh-local-fg,#e0e0e0);';
   var title = document.createElement('h3');
   title.textContent = copy.title || 'Moonraker';
   form.appendChild(title);
@@ -7058,7 +7221,7 @@ function showPrinterSetupOverlay(request) {
   cancel.onclick = function () {
     stopSyncPolling();
     key.value = '';
-    overlay.remove();
+    closeLocalSetup(overlay, 'cancelled');
     frame.contentWindow.postMessage({ source:'filamenthub-plugin', type:'printer-setup-result',
       requestId:request.requestId, result:{ok:false, code:'cancelled'} }, SITE_ORIGIN);
   };
@@ -7066,6 +7229,7 @@ function showPrinterSetupOverlay(request) {
   submit.type = 'submit';
   submit.textContent = copy.submit || uiCopy.bambuSave;
   submit.style.margin = cancel.style.margin = '18px 8px 0 0';
+  submit.style.background = 'var(--fh-local-accent)';
   form.appendChild(cancel);
   form.appendChild(submit);
   form.onsubmit = function (event) {
@@ -7073,11 +7237,13 @@ function showPrinterSetupOverlay(request) {
     orca.postMessage({source:'filamenthub-plugin', type:'printer-setup-local', operation:'probe',
       requestId:request.requestId, host:host.value.trim(), apiKey:key.value, connectionRef:request.connectionRef || ''});
     key.value = '';
-    overlay.remove();
+    closeLocalSetup(overlay, 'saved');
     startSyncPolling(request.requestId);
   };
   overlay.appendChild(form);
-  document.body.appendChild(overlay);
+  form.setAttribute('role', 'dialog'); form.setAttribute('aria-modal', 'true');
+  title.id = 'local-printer-setup-title'; form.setAttribute('aria-labelledby', title.id);
+  mountLocalSetup(overlay, {provider:'moonraker'}, function () { cancel.click(); }, function () { return true; });
   (request.connectionRef ? key : host).focus();
 }
 function prepareBambuOverlay(binding) {
@@ -7118,34 +7284,34 @@ function handleLocalPrinterSetup(data) {
 function showBambuOverlay(binding) {
   if (bambuSetupTimer) { clearTimeout(bambuSetupTimer); bambuSetupTimer = null; }
   pendingBambuSetup = null;
-  hideBambuOverlay();
   var printerId = Number(binding.physicalPrinterId);
   var systemId = Number(binding.materialSystemId);
   var pairingCode = typeof binding.pairingCode === 'string' ? binding.pairingCode : '';
   if (!Number.isInteger(printerId) || printerId < 1 ||
       !Number.isInteger(systemId) || systemId < 1 || !pairingCode) return;
+  hideBambuOverlay('replacing');
   var overlay = document.createElement('div');
   overlay.id = 'bambu-overlay';
   overlay.style.cssText = 'position:fixed;inset:0;z-index:2147483647;display:flex;' +
-    'align-items:center;justify-content:center;background:rgba(0,0,0,0.72);';
+    'align-items:center;justify-content:center;background:rgba(0,0,0,.5);';
   var box = document.createElement('form');
-  box.style.cssText = 'width:min(520px,calc(100% - 32px));padding:22px;box-sizing:border-box;' +
+  box.style.cssText = 'width:min(576px,calc(100% - 32px));padding:24px;box-sizing:border-box;' +
     'max-height:calc(100dvh - 32px);overflow-y:auto;' +
-    'border-radius:12px;background:var(--orca-bg,#1e1e2e);color:var(--orca-fg,#e0e0e0);' +
-    'border:1px solid var(--orca-border,#3c3c4c);font-size:13px;';
+    'border-radius:16px;background:var(--fh-local-bg,#1e1e2e);color:var(--fh-local-fg,#e0e0e0);' +
+    'border:1px solid var(--fh-local-border,#3c3c4c);font-size:14px;box-shadow:0 25px 50px -12px rgba(0,0,0,.5);';
   var title = document.createElement('div');
   title.textContent = uiCopy.bambuTitle + (binding.printerName ? ' · ' + binding.printerName : '');
   title.id = 'bambu-setup-title';
   box.setAttribute('role', 'dialog');
   box.setAttribute('aria-modal', 'true');
   box.setAttribute('aria-labelledby', title.id);
-  title.style.cssText = 'font-weight:650;font-size:16px;margin-bottom:7px;';
+  title.style.cssText = 'font-weight:600;font-size:18px;margin-bottom:7px;';
   var hint = document.createElement('div');
   hint.textContent = uiCopy.bambuHint;
-  hint.style.cssText = 'color:var(--orca-muted,#a0a0a0);line-height:1.45;margin-bottom:16px;';
+  hint.style.cssText = 'color:var(--fh-local-muted,#a0a0a0);line-height:1.45;margin-bottom:16px;';
   function field(labelText, type, placeholder, required) {
     var wrap = document.createElement('label');
-    wrap.style.cssText = 'display:block;margin-top:11px;color:var(--orca-muted,#a0a0a0);';
+    wrap.style.cssText = 'display:block;margin-top:11px;color:var(--fh-local-muted,#a0a0a0);';
     var label = document.createElement('span');
     label.textContent = labelText;
     label.style.cssText = 'display:block;margin-bottom:5px;';
@@ -7156,7 +7322,7 @@ function showBambuOverlay(binding) {
     input.autocomplete = 'off';
     input.style.cssText = 'width:100%;box-sizing:border-box;padding:9px 10px;border-radius:7px;' +
       'background:rgba(255,255,255,.06);color:inherit;' +
-      'border:1px solid var(--orca-border,#3c3c4c);font:inherit;';
+      'border:1px solid var(--fh-local-border,#3c3c4c);font:inherit;';
     wrap.appendChild(label);
     wrap.appendChild(input);
     box.appendChild(wrap);
@@ -7169,7 +7335,9 @@ function showBambuOverlay(binding) {
     var stop = document.createElement('button');
     stop.type = 'button'; stop.textContent = uiCopy.cancel;
     stop.addEventListener('click', hideBambuOverlay);
-    box.appendChild(stop); overlay.appendChild(box); document.body.appendChild(overlay);
+    box.appendChild(stop); overlay.appendChild(box);
+    mountLocalSetup(overlay, Object.assign({}, binding, {provider:'bambu'}), hideBambuOverlay, function () { return true; });
+    stop.focus();
     return;
   }
   var candidates = Array.isArray(binding.candidates) ? binding.candidates.filter(function (item) {
@@ -7179,14 +7347,14 @@ function showBambuOverlay(binding) {
   var candidateSelect = null;
   if (candidates.length) {
     var candidateWrap = document.createElement('label');
-    candidateWrap.style.cssText = 'display:block;margin-top:11px;color:var(--orca-muted,#a0a0a0);';
+    candidateWrap.style.cssText = 'display:block;margin-top:11px;color:var(--fh-local-muted,#a0a0a0);';
     var candidateLabel = document.createElement('span');
     candidateLabel.textContent = uiCopy.bambuChoosePrinter;
     candidateLabel.style.cssText = 'display:block;margin-bottom:5px;';
     candidateSelect = document.createElement('select');
     candidateSelect.style.cssText = 'width:100%;box-sizing:border-box;padding:9px 10px;border-radius:7px;' +
-      'background:var(--orca-bg,#1e1e2e);color:inherit;' +
-      'border:1px solid var(--orca-border,#3c3c4c);font:inherit;';
+      'background:var(--fh-local-bg,#1e1e2e);color:inherit;' +
+      'border:1px solid var(--fh-local-border,#3c3c4c);font:inherit;';
     candidates.forEach(function (item, index) {
       var option = document.createElement('option');
       option.value = String(index);
@@ -7231,7 +7399,7 @@ function showBambuOverlay(binding) {
   box.appendChild(serialDetails);
   var local = document.createElement('div');
   local.textContent = uiCopy.bambuLocalOnly;
-  local.style.cssText = 'margin-top:12px;color:var(--orca-muted,#a0a0a0);font-size:11px;line-height:1.45;';
+  local.style.cssText = 'margin-top:12px;color:var(--fh-local-muted,#a0a0a0);font-size:11px;line-height:1.45;';
   box.appendChild(local);
   var row = document.createElement('div');
   row.style.cssText = 'display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end;margin-top:18px;';
@@ -7240,9 +7408,9 @@ function showBambuOverlay(binding) {
     element.type = 'button';
     element.textContent = text;
     element.style.cssText = 'padding:7px 14px;border-radius:7px;cursor:pointer;font:inherit;' +
-      'border:1px solid ' + (accent ? 'var(--orca-accent,#8b7cf8)' : 'var(--orca-border,#3c3c4c)') + ';' +
-      'background:' + (accent ? 'var(--orca-accent,#8b7cf8)' : 'transparent') + ';' +
-      'color:' + (accent ? '#fff' : 'var(--orca-fg,#e0e0e0)') + ';';
+      'border:1px solid ' + (accent ? 'var(--fh-local-accent,#8b7cf8)' : 'var(--fh-local-border,#3c3c4c)') + ';' +
+      'background:' + (accent ? 'var(--fh-local-accent,#8b7cf8)' : 'transparent') + ';' +
+      'color:' + (accent ? '#fff' : 'var(--fh-local-fg,#e0e0e0)') + ';';
     return element;
   }
   var remove = button(uiCopy.bambuRemove, false);
@@ -7253,7 +7421,7 @@ function showBambuOverlay(binding) {
         physicalPrinterId:printerId });
       startSyncPolling();
     } catch (e) {}
-    hideBambuOverlay();
+    hideBambuOverlay('removed');
   });
   var cancel = button(uiCopy.cancel, false);
   cancel.addEventListener('click', hideBambuOverlay);
@@ -7270,7 +7438,7 @@ function showBambuOverlay(binding) {
   activeBambuResult = function (data) {
     if (!setupRequestId || data.requestId !== setupRequestId) return;
     if (bambuAttemptTimer) { clearTimeout(bambuAttemptTimer); bambuAttemptTimer = null; }
-    if (data.ok) { hideBambuOverlay(); return; }
+    if (data.ok) { hideBambuOverlay('saved'); return; }
     save.disabled = false; cancel.disabled = false; refresh.disabled = false; remove.disabled = false;
     hint.textContent = uiCopy[data.code] || uiCopy.bambuInvalid;
     code.focus();
@@ -7298,7 +7466,7 @@ function showBambuOverlay(binding) {
     if (event.target === overlay && !save.disabled) hideBambuOverlay();
   });
   overlay.appendChild(box);
-  document.body.appendChild(overlay);
+  mountLocalSetup(overlay, Object.assign({}, binding, {provider:'bambu'}), hideBambuOverlay, function () { return !save.disabled; });
   (candidateSelect ? code : host).focus();
 }
 
@@ -8071,15 +8239,48 @@ def read_bambu_lan_snapshot(config, timeout=BAMBU_MQTT_TIMEOUT):
             pass
 
 
-def _publish_bambu_json(config, serial, payload, timeout=BAMBU_MQTT_TIMEOUT):
+class _BambuCommandDeadlineExpired(TimeoutError):
+    """The host deadline elapsed before the device command was sent."""
+
+
+def _publish_bambu_json(
+    config,
+    serial,
+    payload,
+    timeout=BAMBU_MQTT_TIMEOUT,
+    absolute_deadline=None,
+):
     """Publish one allowlisted local Bambu command over a short TLS session."""
     ensure_worker_generation_active()
     access_code = config.get("access_code") or ""
     if not access_code or not re.fullmatch(r"[A-Za-z0-9._-]{4,80}", serial or ""):
         raise ValueError("invalid Bambu command context")
-    deadline = time.monotonic() + timeout
-    sock = _open_bambu_mqtt(config.get("host") or "", access_code, timeout)
+    started_at = time.monotonic()
+    deadline = started_at + timeout
+    if absolute_deadline is not None:
+        deadline = min(deadline, absolute_deadline)
+
+    def ensure_before_command_deadline():
+        if time.monotonic() < deadline:
+            return
+        if absolute_deadline is not None and deadline == absolute_deadline:
+            raise _BambuCommandDeadlineExpired("Bambu command deadline expired")
+        raise TimeoutError("Bambu MQTT timed out")
+
+    ensure_before_command_deadline()
+    connection_timeout = deadline - started_at
     try:
+        sock = _open_bambu_mqtt(
+            config.get("host") or "", access_code, connection_timeout
+        )
+    except TimeoutError as exc:
+        if absolute_deadline is not None and time.monotonic() >= absolute_deadline:
+            raise _BambuCommandDeadlineExpired(
+                "Bambu command deadline expired"
+            ) from exc
+        raise
+    try:
+        ensure_before_command_deadline()
         variable = _mqtt_field(b"MQTT") + bytes([4, 0xC2]) + struct.pack("!H", 30)
         client_id = ("fhub-" + secrets.token_hex(6)).encode("ascii")
         connection = (
@@ -8090,12 +8291,22 @@ def _publish_bambu_json(config, serial, payload, timeout=BAMBU_MQTT_TIMEOUT):
         )
         with external_operation():
             sock.sendall(b"\x10" + _mqtt_len(len(connection)) + connection)
-        header, connack = _mqtt_read_packet(sock, deadline)
+        try:
+            header, connack = _mqtt_read_packet(sock, deadline)
+        except TimeoutError as exc:
+            if absolute_deadline is not None and time.monotonic() >= absolute_deadline:
+                raise _BambuCommandDeadlineExpired(
+                    "Bambu command deadline expired"
+                ) from exc
+            raise
         if (header & 0xF0) != 0x20 or len(connack) < 2 or connack[1] != 0:
             raise PermissionError("Bambu MQTT authentication rejected")
         topic = ("device/%s/request" % serial).encode("utf-8")
         body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
         publish = _mqtt_field(topic) + body
+        # TCP/TLS and MQTT authentication consume the same host-side budget.
+        # A slow CONNACK must not let an expired assignment reach the printer.
+        ensure_before_command_deadline()
         with external_operation():
             sock.sendall(b"\x30" + _mqtt_len(len(publish)) + publish)
     finally:
@@ -8146,6 +8357,65 @@ def _bambu_material_target(preset_id, profile):
     }
 
 
+def _bambu_committed_spool_target(binding, commit, host_profiles):
+    """Build a target from canonical spool facts and one loaded host preset."""
+    status, body = http_get_bridge_json("/printer-bridge/snapshot", binding["bridge_token"])
+    if status == 401:
+        return None, "auth"
+    if status == 403:
+        return None, "access"
+    if status != 200:
+        return None, "server"
+    snapshot = _decode_json_object(body)
+    if (
+        snapshot is None
+        or snapshot.get("physical_printer_id") != binding.get("physical_printer_id")
+        or snapshot.get("material_system_id") != binding.get("material_system_id")
+    ):
+        return None, "material_system_not_found"
+    slot = next(
+        (
+            item for item in snapshot.get("slots") or []
+            if isinstance(item, dict)
+            and item.get("material_slot_id") == commit.get("materialSlotId")
+        ),
+        None,
+    )
+    desired = commit.get("desired")
+    if slot is None:
+        return None, "slot_not_found"
+    if (
+        slot.get("index") != commit.get("providerIndex")
+        or slot.get("assignment_revision") != commit.get("assignmentRevision")
+        or not isinstance(desired, dict)
+    ):
+        return None, "stale_assignment"
+    preset = slot.get("preset")
+    spool = slot.get("spool")
+    if (
+        not isinstance(preset, dict)
+        or preset.get("id") != desired.get("presetId")
+        or not isinstance(spool, dict)
+        or spool.get("id") != desired.get("spoolId")
+    ):
+        return None, "stale_assignment"
+    preset_id = desired.get("presetId")
+    profile = host_profiles.get(preset_id) if isinstance(host_profiles, dict) else None
+    target = _bambu_material_target(preset_id, profile)
+    if target is None:
+        return None, "preset_not_loaded"
+    material = _bambu_scalar(spool.get("material_type"))
+    color = _bambu_color(spool.get("color_hex"))
+    if material is None or color is None:
+        return None, "spool_facts_unavailable"
+    if material.upper() != str(target["material"]).upper():
+        return None, "material_mismatch"
+    target = dict(target)
+    target["material"] = material[:100]
+    target["color_hex"] = color
+    return target, None
+
+
 def _bambu_material_matches(slot, target):
     if not isinstance(slot, dict) or not isinstance(target, dict):
         return False
@@ -8194,6 +8464,7 @@ def apply_bambu_material_targets(
     targets,
     timeout=BAMBU_MQTT_TIMEOUT,
     settle_delay=0.75,
+    absolute_deadline=None,
 ):
     """Apply non-RFID material metadata and prove the resulting printer state."""
     serial, report = read_bambu_lan_snapshot(config, timeout=timeout)
@@ -8203,6 +8474,8 @@ def apply_bambu_material_targets(
     state = str(report.get("gcode_state") or "").strip().upper()
     if state not in {"IDLE", "FINISH", "FAILED"}:
         return {"ok": False, "code": "printer_busy", "report": report}
+    if absolute_deadline is not None and time.monotonic() >= absolute_deadline:
+        return {"ok": False, "code": "expired", "report": report}
 
     prepared = []
     feed = parse_bambu_feed(report) or {"slots": []}
@@ -8225,12 +8498,17 @@ def apply_bambu_material_targets(
 
     try:
         for _provider_index, locator, target in prepared:
+            if absolute_deadline is not None and time.monotonic() >= absolute_deadline:
+                return {"ok": False, "code": "expired", "report": report}
             _publish_bambu_json(
                 config,
                 serial,
                 _bambu_material_command(locator, target),
                 timeout=timeout,
+                absolute_deadline=absolute_deadline,
             )
+    except _BambuCommandDeadlineExpired:
+        return {"ok": False, "code": "expired", "report": report}
     except (OSError, PermissionError, TimeoutError, ValueError):
         # MQTT has no multi-slot transaction. If the connection breaks after a
         # preceding slot was accepted, preserve a fresh observation so the UI
@@ -9451,6 +9729,62 @@ class FilamentHubCatalog(
             result=result,
         )
 
+    def _begin_immediate_material_request(self, provider, request_id, fingerprint):
+        """Bound and deduplicate device commands within this open host session."""
+        if not hasattr(self, "_material_request_lock"):
+            self._material_request_lock = threading.Lock()
+            self._material_requests = {}
+        now = time.monotonic()
+        key = (provider, request_id)
+        cached_result = None
+        replay_mismatch = False
+        with self._material_request_lock:
+            self._material_requests = {
+                item_key: item for item_key, item in self._material_requests.items()
+                if item["expires"] > now
+            }
+            existing = self._material_requests.get(key)
+            if existing is not None:
+                if existing.get("fingerprint") != fingerprint:
+                    replay_mismatch = True
+                else:
+                    cached_result = existing.get("result")
+            else:
+                self._material_requests[key] = {
+                    "expires": now + 300.0,
+                    "fingerprint": fingerprint,
+                    "result": None,
+                }
+        if existing is not None:
+            if replay_mismatch:
+                cached_result = {
+                    "ok": False,
+                    "code": "replay_mismatch",
+                    "operation": fingerprint[0],
+                    "physicalPrinterId": fingerprint[1],
+                    "materialSystemId": fingerprint[2],
+                    "applied": False,
+                    "observationUploaded": False,
+                }
+            if cached_result is not None:
+                if provider == "bambu":
+                    self._deliver_bambu_material_result(request_id, cached_result)
+                else:
+                    self._deliver_happy_hare_result(request_id, cached_result)
+            return False
+        return True
+
+    def _finish_immediate_material_request(self, provider, request_id, result):
+        if hasattr(self, "_material_request_lock"):
+            with self._material_request_lock:
+                entry = self._material_requests.get((provider, request_id))
+                if entry is not None:
+                    entry["result"] = dict(result)
+        if provider == "bambu":
+            self._deliver_bambu_material_result(request_id, result)
+        else:
+            self._deliver_happy_hare_result(request_id, result)
+
     def _setup_discovery(self, context, observations=(), refresh=False):
         cached = getattr(self, "_printer_discovery", {})
         now = time.monotonic()
@@ -9738,7 +10072,9 @@ class FilamentHubCatalog(
         if binding is None:
             finish(ok=False, code="connection_not_found")
             return
-        inventory, inventory_error = _plugin_material_server_inventory(token)
+        inventory, inventory_error = _plugin_material_server_inventory(
+            token, source_instance_id=local["source_instance_id"]
+        )
         if inventory_error or inventory is None:
             finish(ok=False, code=inventory_error or "server")
             return
@@ -9829,6 +10165,158 @@ class FilamentHubCatalog(
                 "unknown",
             ),
         )
+        wake_bambu_bridge_runtime()
+
+    def _do_bambu_material_immediate(
+        self,
+        request_id,
+        operation,
+        physical_printer_id,
+        material_system_id,
+        token,
+        host_profiles,
+        commit,
+        deadline,
+    ):
+        def finish(**result):
+            result.setdefault("operation", operation)
+            result.setdefault("physicalPrinterId", physical_printer_id)
+            result.setdefault("materialSystemId", material_system_id)
+            self._finish_immediate_material_request(
+                "bambu", request_id, result
+            )
+
+        if not token:
+            finish(ok=False, code="auth", applied=False, observationUploaded=False)
+            return
+        local, binding = _bambu_local_binding(
+            physical_printer_id, material_system_id
+        )
+        if binding is None:
+            finish(ok=False, code="connection_not_found", applied=False,
+                   observationUploaded=False)
+            return
+
+        if operation == "refresh":
+            try:
+                serial, report = read_bambu_lan_snapshot(binding)
+                current, source_instance_id = _prepare_bambu_observation(
+                    binding, serial
+                )
+                snapshot = build_bambu_bridge_snapshot(
+                    current, source_instance_id, report
+                )
+            except (OSError, PermissionError, TimeoutError, TypeError, ValueError):
+                finish(ok=False, code="unreachable", applied=False,
+                       observationUploaded=False)
+                return
+            status, _, _ = http_post_bridge_json(
+                "/printer-bridge/snapshot", current["bridge_token"], snapshot
+            )
+            if status == 401:
+                remove_bambu_bridge(physical_printer_id)
+            finish(
+                ok=status == 200,
+                code=None if status == 200 else "snapshot_failed",
+                applied=False,
+                observationUploaded=status == 200,
+            )
+            return
+
+        if time.monotonic() > deadline:
+            finish(ok=False, code="expired", applied=False,
+                   observationUploaded=False)
+            return
+        _device, _system, _slot, context_error = _material_commit_context(
+            token,
+            local["source_instance_id"],
+            "bambu",
+            physical_printer_id,
+            material_system_id,
+            commit,
+        )
+        if context_error:
+            finish(ok=False, code=context_error, applied=False,
+                   observationUploaded=False)
+            return
+        if commit.get("desired") is None:
+            finish(ok=False, code="physical_clear_unsupported", applied=False,
+                   observationUploaded=False)
+            return
+        if (
+            commit["desired"].get("presetId") is None
+            or commit["desired"].get("spoolId") is None
+        ):
+            finish(ok=False, code="assignment_incomplete", applied=False,
+                   observationUploaded=False)
+            return
+        target, target_error = _bambu_committed_spool_target(
+            binding, commit, host_profiles
+        )
+        if target_error:
+            finish(ok=False, code=target_error, applied=False,
+                   observationUploaded=False)
+            return
+        if time.monotonic() > deadline:
+            finish(ok=False, code="expired", applied=False,
+                   observationUploaded=False)
+            return
+        # Re-read the server commit immediately before the first device read.
+        _device, _system, _slot, context_error = _material_commit_context(
+            token,
+            local["source_instance_id"],
+            "bambu",
+            physical_printer_id,
+            material_system_id,
+            commit,
+        )
+        if context_error:
+            finish(ok=False, code=context_error, applied=False,
+                   observationUploaded=False)
+            return
+        if time.monotonic() >= deadline:
+            finish(ok=False, code="expired", applied=False,
+                   observationUploaded=False)
+            return
+        try:
+            applied = apply_bambu_material_targets(
+                binding,
+                {commit["providerIndex"]: target},
+                absolute_deadline=deadline,
+            )
+        except (OSError, PermissionError, TimeoutError, TypeError, ValueError):
+            finish(ok=False, code="unreachable", applied=False,
+                   observationUploaded=False)
+            return
+        report = applied.get("report") if isinstance(applied, dict) else None
+        upload_status = 0
+        if isinstance(report, dict):
+            try:
+                snapshot = build_bambu_bridge_snapshot(
+                    binding, local["source_instance_id"], report
+                )
+                upload_status, _, _ = http_post_bridge_json(
+                    "/printer-bridge/snapshot", binding["bridge_token"], snapshot
+                )
+            except (KeyError, TypeError, ValueError):
+                upload_status = 0
+            if upload_status == 401:
+                remove_bambu_bridge(physical_printer_id)
+        write_ok = bool(isinstance(applied, dict) and applied.get("ok"))
+        if not write_ok:
+            finish(
+                ok=False,
+                code=(applied.get("code") if isinstance(applied, dict) else None)
+                or "verification_failed",
+                applied=False,
+                observationUploaded=upload_status == 200,
+            )
+            return
+        if upload_status != 200:
+            finish(ok=False, code="snapshot_failed", applied=True,
+                   observationUploaded=False)
+            return
+        finish(ok=True, code=None, applied=True, observationUploaded=True)
         wake_bambu_bridge_runtime()
 
     # on_message runs on the UI thread — offload network + disk work to a worker.
@@ -10066,6 +10554,257 @@ class FilamentHubCatalog(
             printState=refreshed.get("print_state") or None,
             changes=changes,
             **final_common,
+        )
+
+    def _do_happy_hare_material_immediate(
+        self,
+        request_id,
+        operation,
+        physical_printer_id,
+        material_system_id,
+        token,
+        local_connections,
+        commit,
+        deadline,
+    ):
+        def finish(**result):
+            result.setdefault("operation", operation)
+            result.setdefault("physicalPrinterId", physical_printer_id)
+            result.setdefault("materialSystemId", material_system_id)
+            self._finish_immediate_material_request(
+                "happy-hare", request_id, result
+            )
+
+        if not token:
+            finish(ok=False, code="auth", applied=False, observationUploaded=False)
+            return
+        try:
+            extra = verified_local_setup_connections(token)
+        except (ValueError, OSError):
+            finish(ok=False, code="server", applied=False, observationUploaded=False)
+            return
+        local_connections = list(local_connections) + extra
+        source_instance_id = plugin_source_instance_id()
+        inventory, inventory_error = _plugin_material_server_inventory(
+            token, source_instance_id=source_instance_id
+        )
+        if inventory_error or inventory is None:
+            finish(ok=False, code=inventory_error or "server", applied=False,
+                   observationUploaded=False)
+            return
+        device = next(
+            (item for item in inventory["printers"]
+             if item.get("id") == physical_printer_id),
+            None,
+        )
+        if device is None:
+            finish(ok=False, code="connection_not_found", applied=False,
+                   observationUploaded=False)
+            return
+        requested_system = next(
+            (
+                item for item in device.get("material_systems") or []
+                if isinstance(item, dict)
+                and item.get("id") == material_system_id
+                and item.get("provider") == "happy_hare"
+            ),
+            None,
+        )
+        if requested_system is None:
+            finish(ok=False, code="material_system_not_found", applied=False,
+                   observationUploaded=False)
+            return
+        if operation == "assign":
+            if time.monotonic() > deadline:
+                finish(ok=False, code="expired", applied=False,
+                       observationUploaded=False)
+                return
+            device, _system, _slot, context_error = _material_commit_context(
+                token,
+                source_instance_id,
+                "happy_hare",
+                physical_printer_id,
+                material_system_id,
+                commit,
+            )
+            if context_error:
+                finish(ok=False, code=context_error, applied=False,
+                       observationUploaded=False)
+                return
+            if commit.get("desired") is None:
+                finish(ok=False, code="physical_clear_unsupported", applied=False,
+                       observationUploaded=False)
+                return
+            if (
+                commit["desired"].get("presetId") is None
+                or commit["desired"].get("spoolId") is None
+            ):
+                finish(ok=False, code="assignment_incomplete", applied=False,
+                       observationUploaded=False)
+                return
+            inventory = {
+                "source_instance_id": source_instance_id,
+                "printers": [device],
+            }
+
+        connection, snapshot, device, error = resolve_happy_hare_connection(
+            token,
+            local_connections,
+            physical_printer_id,
+            inventory=inventory,
+        )
+        if error or connection is None or snapshot is None or device is None:
+            finish(ok=False, code=error or "connection_not_found", applied=False,
+                   observationUploaded=False)
+            return
+        if "inventory_key_digest" in device and (
+            not snapshot.get("inventory_key_digest")
+            or snapshot["inventory_key_digest"] != device["inventory_key_digest"]
+        ):
+            finish(ok=False, code="inventory_not_connected", applied=False,
+                   observationUploaded=False)
+            return
+
+        if operation == "refresh":
+            status, _result = upload_happy_hare_snapshot(
+                token, physical_printer_id, snapshot
+            )
+            finish(
+                ok=status == 200,
+                code=None if status == 200 else (
+                    "auth" if status == 401
+                    else "access" if status == 403
+                    else "snapshot_failed"
+                ),
+                applied=False,
+                observationUploaded=status == 200,
+            )
+            return
+
+        if snapshot.get("spoolman_support") != "pull":
+            finish(ok=False, code="pull_required", applied=False,
+                   observationUploaded=False)
+            return
+        if not snapshot.get("spool_ids_known"):
+            finish(ok=False, code="spool_ids_unavailable", applied=False,
+                   observationUploaded=False)
+            return
+        if snapshot.get("print_state") in {"printing", "paused"}:
+            finish(ok=False, code="printer_busy", applied=False,
+                   observationUploaded=False)
+            return
+        desired = _desired_happy_hare_spools(device, material_system_id)
+        if desired is None:
+            finish(ok=False, code="material_system_not_found", applied=False,
+                   observationUploaded=False)
+            return
+        provider_index = commit.get("providerIndex")
+        if (
+            provider_index not in desired
+            or provider_index >= snapshot.get("gate_count", 0)
+        ):
+            finish(ok=False, code="slot_not_found", applied=False,
+                   observationUploaded=False)
+            return
+        changes = _happy_hare_assignment_changes(
+            snapshot["actual_spool_ids"], desired
+        )
+        if not changes:
+            _current, _system, _slot, context_error = _material_commit_context(
+                token,
+                source_instance_id,
+                "happy_hare",
+                physical_printer_id,
+                material_system_id,
+                commit,
+            )
+            if context_error:
+                finish(ok=False, code=context_error, applied=False,
+                       observationUploaded=False)
+                return
+            status, _result = upload_happy_hare_snapshot(
+                token, physical_printer_id, snapshot
+            )
+            finish(
+                ok=status == 200,
+                code=None if status == 200 else "snapshot_failed",
+                applied=status == 200,
+                observationUploaded=status == 200,
+            )
+            return
+        if time.monotonic() > deadline:
+            finish(ok=False, code="expired", applied=False,
+                   observationUploaded=False)
+            return
+        # The command pulls the newest server map. The repeated exact commit
+        # check prevents an old browser request from initiating that pull.
+        current_device, _system, _slot, context_error = _material_commit_context(
+            token,
+            source_instance_id,
+            "happy_hare",
+            physical_printer_id,
+            material_system_id,
+            commit,
+        )
+        if context_error:
+            finish(ok=False, code=context_error, applied=False,
+                   observationUploaded=False)
+            return
+        desired = _desired_happy_hare_spools(
+            current_device, material_system_id
+        )
+        if desired is None:
+            finish(ok=False, code="material_system_not_found", applied=False,
+                   observationUploaded=False)
+            return
+        if time.monotonic() >= deadline:
+            finish(ok=False, code="expired", applied=False,
+                   observationUploaded=False)
+            return
+        command_status, _command_result, _command_error = _moonraker_json(
+            connection,
+            "/printer/gcode/script",
+            {"script": "MMU_SPOOLMAN REFRESH=1"},
+        )
+        if command_status != 200:
+            finish(ok=False, code="command_failed", applied=False,
+                   observationUploaded=False)
+            return
+        refreshed = None
+        remaining = changes
+        for delay in (0.5, 1.0, 2.0, 3.0):
+            time.sleep(delay)
+            try:
+                candidate = read_happy_hare_snapshot(connection)
+            except (RuntimeError, ValueError):
+                continue
+            refreshed = candidate
+            remaining = (
+                _happy_hare_assignment_changes(
+                    candidate["actual_spool_ids"], desired
+                )
+                if candidate.get("spool_ids_known")
+                else changes
+            )
+            if not remaining:
+                break
+        if refreshed is None:
+            finish(ok=False, code="verification_failed", applied=False,
+                   observationUploaded=False)
+            return
+        status, _result = upload_happy_hare_snapshot(
+            token, physical_printer_id, refreshed
+        )
+        physically_applied = not remaining
+        if status != 200:
+            finish(ok=False, code="snapshot_failed", applied=physically_applied,
+                   observationUploaded=False)
+            return
+        finish(
+            ok=physically_applied,
+            code=None if physically_applied else "not_applied",
+            applied=physically_applied,
+            observationUploaded=True,
         )
 
     def _do_printer_setup(self, msg, token, local_connections, observations=()):
@@ -10433,6 +11172,80 @@ class FilamentHubCatalog(
             if not isinstance(physical_printer_id, int) or physical_printer_id <= 0:
                 return
             BACKGROUND_WORKER.submit(self._do_remove_bambu, physical_printer_id)
+        elif msg_type in {
+            "bambu-material-assign",
+            "bambu-material-refresh",
+            "happy-hare-material-assign",
+            "happy-hare-material-refresh",
+        }:
+            request_id = msg.get("requestId")
+            physical_printer_id = msg.get("physicalPrinterId")
+            material_system_id = msg.get("materialSystemId")
+            operation = "assign" if msg_type.endswith("-assign") else "refresh"
+            provider = "bambu" if msg_type.startswith("bambu-") else "happy-hare"
+            allowed_keys = {
+                "source", "type", "requestId", "physicalPrinterId",
+                "materialSystemId",
+            }
+            if operation == "assign":
+                allowed_keys.add("commit")
+            if not (
+                set(msg).issubset(allowed_keys)
+                and isinstance(request_id, str)
+                and 0 < len(request_id) <= 100
+                and type(physical_printer_id) is int
+                and physical_printer_id > 0
+                and type(material_system_id) is int
+                and material_system_id > 0
+                and (
+                    operation == "refresh"
+                    or _valid_immediate_material_commit(msg.get("commit"))
+                )
+            ):
+                return
+            commit_fingerprint = (
+                json.dumps(msg.get("commit"), sort_keys=True, separators=(",", ":"))
+                if operation == "assign" else ""
+            )
+            fingerprint = (
+                operation,
+                physical_printer_id,
+                material_system_id,
+                commit_fingerprint,
+            )
+            if not self._begin_immediate_material_request(
+                provider, request_id, fingerprint
+            ):
+                return
+            token = (load_saved_auth() or {}).get("accessToken") or ""
+            deadline = time.monotonic() + 20.0
+            if provider == "bambu":
+                host_profiles = scan_managed_host_filaments() if operation == "assign" else {}
+                BACKGROUND_WORKER.submit(
+                    self._do_bambu_material_immediate,
+                    request_id,
+                    operation,
+                    physical_printer_id,
+                    material_system_id,
+                    token,
+                    host_profiles,
+                    msg.get("commit"),
+                    deadline,
+                )
+            else:
+                observations = observe_printer_presets()
+                local_connections = observe_local_moonraker_connections(observations)
+                BACKGROUND_WORKER.submit(
+                    self._do_happy_hare_material_immediate,
+                    request_id,
+                    operation,
+                    physical_printer_id,
+                    material_system_id,
+                    token,
+                    local_connections,
+                    msg.get("commit"),
+                    deadline,
+                )
         elif msg_type in {"bambu-material-preview", "bambu-material-apply"}:
             request_id = msg.get("requestId")
             physical_printer_id = msg.get("physicalPrinterId")

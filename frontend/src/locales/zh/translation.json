@@ -7551,6 +7551,12 @@
     "mappedPrinter": "打印机: {{name}}",
     "noSystems": "还没有供料系统",
     "noSystemsDesc": "添加系统 — 直接供料、MMU、AMS 或 CFS — 并绑定到你的打印机。",
+    "delivery": {
+      "delivered": "分配已保存并发送到打印机。",
+      "savedOnly": "分配已保存，但暂时无法确认是否已发送到打印机。",
+      "clearUnsupported": "FilamentHub 中的分配已清除。此打印机不提供安全的物理清除操作。",
+      "observationUploadFailed": "分配已发送到打印机，但无法将更新后的状态加载到 FilamentHub。"
+    },
     "newSystem": {
       "add": "添加供料系统",
       "title": "新的供料系统",
@@ -7616,6 +7622,7 @@
       "unknownSpool": "未知料盘"
     },
     "route": {
+      "external": "外置料卷",
       "bypass": "旁路",
       "bypassSelected": "已选择",
       "bypassSelectedLoaded": "已选择 · 检测到耗材",
@@ -7728,7 +7735,8 @@
       "refresh": {
         "title": "Happy Hare 槽位映射",
         "localOnly": "连接信息仅保留在 OrcaSlicer 中",
-        "description": "插件会安全读取真实槽位数量，并将打印机分配与 FilamentHub 进行比较；只有确认后才会更改。",
+        "description": "读取当前 Happy Hare 槽位映射并将观测结果加载到 FilamentHub。",
+        "refreshed": "当前 Happy Hare 槽位映射已加载到 FilamentHub。",
         "fallback": "请在 OrcaSlicer 中打开此页面以预览更改。没有插件时，只能复制 Happy Hare 的官方刷新命令。",
         "check": "检查打印机",
         "copyCommand": "复制命令",
@@ -7760,6 +7768,9 @@
           "unreachable": "Moonraker 未响应或拒绝了本地 API 密钥。",
           "device_not_ready": "打印机连接尚未完成。请在 OrcaSlicer 中运行完整同步。",
           "material_system_not_found": "该打印机已没有这个 Happy Hare 系统。请刷新页面。",
+          "stale_assignment": "分配在送达打印机前已更改；较新的已保存分配保持不变。",
+          "expired": "本地操作在访问打印机前已过期。",
+          "snapshot_failed": "打印机已响应，但无法将当前槽位映射加载到 FilamentHub。",
           "spool_ids_unavailable": "此 Happy Hare 版本未提供料盘 ID 映射，无法盲目应用分配。",
           "pull_required": "应用前请启用 spoolman_support: pull。",
           "printer_busy": "打印或暂停期间禁止执行该命令。",
@@ -7790,7 +7801,7 @@
     },
     "bambu": {
       "title": "Bambu 本地数据",
-      "description": "当前由 OrcaSlicer 本地插件读取数据。该连接不会将打印机锁定到 OrcaSlicer；其他兼容的本地适配器也可以连接到同一打印机记录。",
+      "description": "连接后将显示槽位和状态。连接中断时，料卷和分配仍会保留。",
       "createDescription": "无需填写槽位数量或编号。插件会直接从打印机读取 AMS、AMS HT 和外置料架的真实拓扑。",
       "connect": "查找并连接",
       "changeConnection": "修改连接",
@@ -7799,8 +7810,8 @@
       "checking": "正在检查连接…",
       "connected": "已收到打印机数据",
       "awaitingFirstData": "正在等待打印机数据",
-      "awaitingFirstDataDescription": "服务器已接受连接，但尚未收到打印机快照。请让 OrcaSlicer 在同一局域网中保持运行；如果长时间没有数据，请重新连接打印机。",
-      "waiting": "正在等待本地适配器",
+      "awaitingFirstDataDescription": "连接已保存，正在等待打印机首次响应，无需重新添加。",
+      "waiting": "正在设置连接…",
       "notConnected": "尚未连接",
       "localOnly": "IP 地址、序列号和访问码只保存在插件的本地私有存储中，绝不会发送到 FilamentHub。",
       "stateLabel": "状态",
@@ -7810,7 +7821,8 @@
       "slots_other": "来自打印机的 {{count}} 个槽位",
       "materials": {
         "check": "核对材料",
-        "description": "将已保存的分配与实际 AMS 槽位进行比较。",
+        "description": "读取当前 AMS 材料并将观测结果加载到 FilamentHub。",
+        "refreshed": "当前 AMS 材料已加载到 FilamentHub。",
         "previewTitle": "将所选材料发送到 AMS？",
         "previewDescription": "插件只会更改这些槽位中的材料参数。具体线轴分配仍保存在 FilamentHub 中。",
         "slot": "槽位 {{slot}}",
@@ -7833,6 +7845,12 @@
           "server": "无法从 FilamentHub 获取材料分配。",
           "connection_not_found": "找不到该打印机唯一明确的本地 Bambu 连接。",
           "material_system_not_found": "AMS 系统已不存在。",
+          "stale_assignment": "分配在送达打印机前已更改；较新的已保存分配保持不变。",
+          "expired": "本地操作在访问打印机前已过期。",
+          "preset_not_loaded": "所选预设尚未加载到 OrcaSlicer。",
+          "spool_facts_unavailable": "已保存线轴缺少可安全更新打印机的有效材料或颜色。",
+          "material_mismatch": "所选预设的材料与已分配线轴不匹配。",
+          "snapshot_failed": "打印机已响应，但无法将当前状态加载到 FilamentHub。",
           "stale_preview": "核对后分配发生了变化。请重新核对。",
           "unreachable": "无法通过局域网连接 Bambu 打印机。",
           "printer_changed": "本地连接由另一台打印机响应。",

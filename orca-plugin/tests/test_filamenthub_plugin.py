@@ -11,6 +11,7 @@ import sys
 import threading
 import time
 import tomllib
+import urllib.parse
 import urllib.request
 import zipfile
 from pathlib import Path
@@ -4386,6 +4387,272 @@ def test_happy_hare_context_uses_one_scoped_endpoint(plugin_module, monkeypatch)
     )]
 
 
+def test_happy_hare_immediate_assignment_pulls_fresh_map_and_preserves_other_gate(
+    plugin_module, monkeypatch
+):
+    commit = _immediate_commit(provider_index=0)
+    device = _immediate_device(provider="happy_hare", provider_index=0)
+    device["material_systems"][0]["slots"].append({
+        "material_slot_id": 72,
+        "provider_index": 1,
+        "assignment_revision": 8,
+        "preset_id": 42,
+        "spool_id": 22,
+        "source_ts": "2026-09-05T11:00:00Z",
+    })
+    latest_device = json.loads(json.dumps(device))
+    latest_device["material_systems"][0]["slots"][1].update({
+        "assignment_revision": 9,
+        "spool_id": 99,
+        "source_ts": "2026-09-05T12:02:00Z",
+    })
+    before = {
+        "gate_count": 2,
+        "gates": [{"gate": 0}, {"gate": 1}],
+        "actual_spool_ids": [None, 22],
+        "spool_ids_known": True,
+        "spoolman_support": "pull",
+        "print_state": "standby",
+        "inventory_key_digest": "a" * 64,
+    }
+    after = {**before, "actual_spool_ids": [301, 99]}
+    connection = {"connection_ref": "fh-ref", "print_host": "voron"}
+    monkeypatch.setattr(plugin_module, "verified_local_setup_connections", lambda *_args: [])
+    inventories = iter([device, device, latest_device])
+    monkeypatch.setattr(
+        plugin_module, "_plugin_material_server_inventory",
+        lambda *_args, **_kwargs: ({"printers": [next(inventories)]}, None),
+    )
+    monkeypatch.setattr(
+        plugin_module, "resolve_happy_hare_connection",
+        lambda *_args, **_kwargs: (connection, before, device, None),
+    )
+    commands = []
+    monkeypatch.setattr(
+        plugin_module, "_moonraker_json",
+        lambda _connection, path, payload=None: (
+            commands.append((path, payload)) or (200, {"result": "ok"}, "")
+        ),
+    )
+    monkeypatch.setattr(plugin_module, "read_happy_hare_snapshot", lambda *_args: after)
+    monkeypatch.setattr(plugin_module.time, "sleep", lambda *_args: None)
+    uploads = []
+    monkeypatch.setattr(
+        plugin_module, "upload_happy_hare_snapshot",
+        lambda _token, _printer_id, snapshot: (
+            uploads.append(snapshot) or (200, {})
+        ),
+    )
+    delivered = []
+    catalog = plugin_module.FilamentHubCatalog()
+    monkeypatch.setattr(
+        catalog, "_deliver_happy_hare_result",
+        lambda _request_id, result: delivered.append(result),
+    )
+
+    catalog._do_happy_hare_material_immediate(
+        "assign", "assign", 3, 7, "token", [connection], commit,
+        plugin_module.time.monotonic() + 20,
+    )
+
+    assert commands == [
+        ("/printer/gcode/script", {"script": "MMU_SPOOLMAN REFRESH=1"})
+    ]
+    assert uploads == [after]
+    assert after["actual_spool_ids"][1] == 99
+    assert delivered[0]["ok"] is True
+    assert delivered[0]["applied"] is True
+    assert delivered[0]["observationUploaded"] is True
+
+
+def test_happy_hare_immediate_stale_commit_stops_before_moonraker(
+    plugin_module, monkeypatch
+):
+    device = _immediate_device(provider="happy_hare", revision=5)
+    monkeypatch.setattr(plugin_module, "verified_local_setup_connections", lambda *_args: [])
+    monkeypatch.setattr(
+        plugin_module, "_plugin_material_server_inventory",
+        lambda *_args, **_kwargs: ({"printers": [device]}, None),
+    )
+    monkeypatch.setattr(
+        plugin_module, "resolve_happy_hare_connection",
+        lambda *_args, **_kwargs: pytest.fail("stale assignment must stop before Moonraker"),
+    )
+    delivered = []
+    catalog = plugin_module.FilamentHubCatalog()
+    monkeypatch.setattr(
+        catalog, "_deliver_happy_hare_result",
+        lambda _request_id, result: delivered.append(result),
+    )
+
+    catalog._do_happy_hare_material_immediate(
+        "stale", "assign", 3, 7, "token", [], _immediate_commit(),
+        plugin_module.time.monotonic() + 20,
+    )
+
+    assert delivered[0]["code"] == "stale_assignment"
+    assert delivered[0]["applied"] is False
+
+
+def test_happy_hare_deadline_is_rechecked_after_final_server_read(
+    plugin_module, monkeypatch
+):
+    commit = _immediate_commit(provider_index=0)
+    device = _immediate_device(provider="happy_hare", provider_index=0)
+    snapshot = {
+        "gate_count": 1,
+        "gates": [{"gate": 0}],
+        "actual_spool_ids": [None],
+        "spool_ids_known": True,
+        "spoolman_support": "pull",
+        "print_state": "standby",
+        "inventory_key_digest": "a" * 64,
+    }
+    clock = [10.0]
+    context_reads = [0]
+
+    def current_context(*_args):
+        context_reads[0] += 1
+        if context_reads[0] == 2:
+            clock[0] = 21.0
+        return device, device["material_systems"][0], \
+            device["material_systems"][0]["slots"][0], None
+
+    monkeypatch.setattr(plugin_module.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(plugin_module, "verified_local_setup_connections", lambda *_args: [])
+    monkeypatch.setattr(
+        plugin_module, "_plugin_material_server_inventory",
+        lambda *_args, **_kwargs: ({"printers": [device]}, None),
+    )
+    monkeypatch.setattr(plugin_module, "_material_commit_context", current_context)
+    monkeypatch.setattr(
+        plugin_module, "resolve_happy_hare_connection",
+        lambda *_args, **_kwargs: ({"connection_ref": "fh-ref"}, snapshot, device, None),
+    )
+    monkeypatch.setattr(
+        plugin_module, "_moonraker_json",
+        lambda *_args: pytest.fail("expired final context must not execute command"),
+    )
+    delivered = []
+    catalog = plugin_module.FilamentHubCatalog()
+    monkeypatch.setattr(
+        catalog, "_deliver_happy_hare_result",
+        lambda _request_id, result: delivered.append(result),
+    )
+
+    catalog._do_happy_hare_material_immediate(
+        "deadline", "assign", 3, 7, "token", [], commit, 20.0
+    )
+
+    assert context_reads[0] == 2
+    assert delivered[0]["code"] == "expired"
+
+
+def test_happy_hare_refresh_reads_and_uploads_without_command(
+    plugin_module, monkeypatch
+):
+    device = _immediate_device(provider="happy_hare")
+    snapshot = {
+        "gate_count": 1,
+        "gates": [{"gate": 0}],
+        "actual_spool_ids": [301],
+        "spool_ids_known": True,
+        "spoolman_support": "pull",
+        "print_state": "standby",
+        "inventory_key_digest": "a" * 64,
+    }
+    monkeypatch.setattr(plugin_module, "verified_local_setup_connections", lambda *_args: [])
+    monkeypatch.setattr(
+        plugin_module, "_plugin_material_server_inventory",
+        lambda *_args, **_kwargs: ({"printers": [device]}, None),
+    )
+    monkeypatch.setattr(
+        plugin_module, "resolve_happy_hare_connection",
+        lambda *_args, **_kwargs: ({"connection_ref": "fh-ref"}, snapshot, device, None),
+    )
+    uploads = []
+    monkeypatch.setattr(
+        plugin_module, "upload_happy_hare_snapshot",
+        lambda *_args: (uploads.append(_args[-1]) or (200, {})),
+    )
+    monkeypatch.setattr(
+        plugin_module, "_moonraker_json",
+        lambda *_args: pytest.fail("refresh must not send a printer command"),
+    )
+    delivered = []
+    catalog = plugin_module.FilamentHubCatalog()
+    monkeypatch.setattr(
+        catalog, "_deliver_happy_hare_result",
+        lambda _request_id, result: delivered.append(result),
+    )
+
+    catalog._do_happy_hare_material_immediate(
+        "refresh", "refresh", 3, 7, "token", [], None,
+        plugin_module.time.monotonic() + 20,
+    )
+
+    assert uploads == [snapshot]
+    assert delivered[0]["ok"] is True
+    assert delivered[0]["applied"] is False
+    assert delivered[0]["observationUploaded"] is True
+
+
+def test_immediate_material_request_replay_returns_cached_result_without_resubmit(
+    plugin_module, monkeypatch
+):
+    delivered = []
+    catalog = plugin_module.FilamentHubCatalog()
+    monkeypatch.setattr(
+        catalog, "_deliver_bambu_material_result",
+        lambda request_id, result: delivered.append((request_id, result)),
+    )
+    result = {"ok": False, "code": "write_failed", "operation": "assign"}
+    fingerprint = ("assign", 3, 7, '{"assignmentRevision":4}')
+
+    assert catalog._begin_immediate_material_request(
+        "bambu", "same-request", fingerprint
+    ) is True
+    catalog._finish_immediate_material_request("bambu", "same-request", result)
+    assert catalog._begin_immediate_material_request(
+        "bambu", "same-request", fingerprint
+    ) is False
+
+    assert delivered == [
+        ("same-request", result),
+        ("same-request", result),
+    ]
+
+
+def test_immediate_material_request_rejects_altered_replay(
+    plugin_module, monkeypatch
+):
+    delivered = []
+    catalog = plugin_module.FilamentHubCatalog()
+    monkeypatch.setattr(
+        catalog, "_deliver_bambu_material_result",
+        lambda request_id, result: delivered.append((request_id, result)),
+    )
+    first = ("assign", 3, 7, '{"assignmentRevision":4}')
+    altered = ("assign", 3, 8, '{"assignmentRevision":4}')
+
+    assert catalog._begin_immediate_material_request(
+        "bambu", "same-request", first
+    ) is True
+    assert catalog._begin_immediate_material_request(
+        "bambu", "same-request", altered
+    ) is False
+
+    assert delivered == [("same-request", {
+        "ok": False,
+        "code": "replay_mismatch",
+        "operation": "assign",
+        "physicalPrinterId": 3,
+        "materialSystemId": 8,
+        "applied": False,
+        "observationUploaded": False,
+    })]
+
+
 @pytest.mark.parametrize(
     ("status", "error"),
     [(401, "auth"), (403, "access"), (500, "server")],
@@ -7095,6 +7362,76 @@ def test_bambu_material_write_refuses_busy_or_rfid_slots(
     assert published == []
 
 
+def test_bambu_material_deadline_is_rechecked_after_lan_preflight(
+    plugin_module, monkeypatch
+):
+    monkeypatch.setattr(
+        plugin_module,
+        "read_bambu_lan_snapshot",
+        lambda *_args, **_kwargs: ("SERIAL-1", _bambu_report(gcode_state="IDLE")),
+    )
+    monkeypatch.setattr(plugin_module.time, "monotonic", lambda: 20.0)
+    monkeypatch.setattr(
+        plugin_module,
+        "_publish_bambu_json",
+        lambda *_args, **_kwargs: pytest.fail("expired preflight must not publish"),
+    )
+
+    result = plugin_module.apply_bambu_material_targets(
+        {"host": "printer.local", "access_code": "fixture"},
+        {1: _bambu_material_target()},
+        settle_delay=0,
+        absolute_deadline=20.0,
+    )
+
+    assert result["ok"] is False
+    assert result["code"] == "expired"
+
+
+def test_bambu_publish_refuses_command_when_connack_crosses_host_deadline(
+    plugin_module, monkeypatch
+):
+    clock = [19.0]
+    opened_with = []
+
+    class CrossingConnackSocket(_BambuMqttSocket):
+        def __init__(self):
+            super().__init__([
+                _bambu_mqtt_packet(plugin_module, 0x20, b"\x00\x00")
+            ])
+            self.recv_count = 0
+
+        def recv(self, length):
+            chunk = super().recv(length)
+            self.recv_count += 1
+            if self.recv_count == 3:
+                clock[0] = 20.0
+            return chunk
+
+    sock = CrossingConnackSocket()
+    monkeypatch.setattr(plugin_module.time, "monotonic", lambda: clock[0])
+
+    def open_socket(_host, _access_code, timeout):
+        opened_with.append(timeout)
+        return sock
+
+    monkeypatch.setattr(plugin_module, "_open_bambu_mqtt", open_socket)
+
+    with pytest.raises(plugin_module._BambuCommandDeadlineExpired):
+        plugin_module._publish_bambu_json(
+            {"host": "printer.local", "access_code": "fixture"},
+            "SERIAL-1",
+            {"print": {"command": "ams_filament_setting"}},
+            timeout=12,
+            absolute_deadline=20.0,
+        )
+
+    assert opened_with == [pytest.approx(1.0)]
+    assert sock.sent[0][0] == 0x10
+    assert all(packet[0] != 0x30 for packet in sock.sent)
+    assert sock.closed is True
+
+
 def test_bambu_material_write_is_confirmed_by_a_fresh_printer_snapshot(
     plugin_module, monkeypatch
 ):
@@ -7216,7 +7553,7 @@ def test_bambu_material_apply_rejects_a_stale_server_assignment(
     monkeypatch.setattr(
         plugin_module,
         "_plugin_material_server_inventory",
-        lambda _token: (
+        lambda _token, source_instance_id=None: (
             {
                 "printers": [
                     {
@@ -7273,6 +7610,539 @@ def test_bambu_material_apply_rejects_a_stale_server_assignment(
 
     assert delivered[0][1]["ok"] is False
     assert delivered[0][1]["code"] == "stale_preview"
+
+
+def _immediate_commit(provider_index=1, revision=4):
+    return {
+        "materialSlotId": 71,
+        "providerIndex": provider_index,
+        "assignmentRevision": revision,
+        "desired": {
+            "presetId": 41,
+            "spoolId": 301,
+            "sourceTs": "2026-09-05T12:00:00Z",
+        },
+    }
+
+
+def _immediate_device(provider="bambu", provider_index=1, revision=4):
+    return {
+        "id": 3,
+        "inventory_key_digest": "a" * 64,
+        "connection_refs": ["fh-ref"],
+        "material_systems": [{
+            "id": 7,
+            "provider": provider,
+            "slots": [{
+                "material_slot_id": 71,
+                "provider_index": provider_index,
+                "assignment_revision": revision,
+                "preset_id": 41,
+                "spool_id": 301,
+                "source_ts": "2026-09-05T12:00:00Z",
+            }],
+        }],
+    }
+
+
+@pytest.mark.parametrize(
+    ("mutate", "expected_error"),
+    [
+        (lambda device: device.update(id=99), "connection_not_found"),
+        (lambda device: device["material_systems"][0].update(id=99),
+         "material_system_not_found"),
+        (lambda device: device["material_systems"][0]["slots"][0].update(
+            material_slot_id=99), "slot_not_found"),
+        (lambda device: device["material_systems"][0]["slots"][0].update(
+            provider_index=2), "stale_assignment"),
+        (lambda device: device["material_systems"][0]["slots"][0].update(
+            assignment_revision=5), "stale_assignment"),
+        (lambda device: device["material_systems"][0]["slots"][0].update(
+            preset_id=42), "stale_assignment"),
+        (lambda device: device["material_systems"][0]["slots"][0].update(
+            spool_id=302), "stale_assignment"),
+        (lambda device: device["material_systems"][0]["slots"][0].update(
+            source_ts="2026-09-05T12:00:01Z"), "stale_assignment"),
+    ],
+)
+def test_material_commit_context_rejects_every_addressing_mismatch(
+    plugin_module, monkeypatch, mutate, expected_error
+):
+    device = _immediate_device()
+    mutate(device)
+    sources = []
+    monkeypatch.setattr(
+        plugin_module,
+        "_plugin_material_server_inventory",
+        lambda _token, source_instance_id=None: (
+            sources.append(source_instance_id)
+            or ({"printers": [device]}, None)
+        ),
+    )
+
+    _device, _system, _slot, error = plugin_module._material_commit_context(
+        "account-token",
+        "bound-source-123456",
+        "bambu",
+        3,
+        7,
+        _immediate_commit(),
+    )
+
+    assert error == expected_error
+    assert sources == ["bound-source-123456"]
+
+
+def test_material_commit_context_stops_on_account_access_failure(
+    plugin_module, monkeypatch
+):
+    monkeypatch.setattr(
+        plugin_module,
+        "_plugin_material_server_inventory",
+        lambda *_args, **_kwargs: (None, "access"),
+    )
+
+    result = plugin_module._material_commit_context(
+        "other-account-token", "bound-source-123456", "bambu", 3, 7,
+        _immediate_commit(),
+    )
+
+    assert result == (None, None, None, "access")
+
+
+def test_bambu_immediate_assignment_uses_spool_color_and_exactly_one_slot(
+    plugin_module, monkeypatch
+):
+    commit = _immediate_commit(provider_index=5)
+    local = {"source_instance_id": "fixture-instance-123456"}
+    binding = {
+        "physical_printer_id": 3,
+        "material_system_id": 7,
+        "bridge_token": "fhpb_fixture",
+    }
+    device = _immediate_device(provider_index=5)
+    device["material_systems"][0]["slots"].append({
+        "material_slot_id": 72,
+        "provider_index": 6,
+        "assignment_revision": 1,
+        "preset_id": 42,
+        "spool_id": 302,
+        "source_ts": "2026-09-05T11:00:00Z",
+    })
+    device_after_other_slot_change = json.loads(json.dumps(device))
+    device_after_other_slot_change["material_systems"][0]["slots"][1].update({
+        "assignment_revision": 2,
+        "spool_id": 999,
+        "source_ts": "2026-09-05T12:01:00Z",
+    })
+    monkeypatch.setattr(
+        plugin_module, "_bambu_local_binding", lambda *_args: (local, binding)
+    )
+    inventories = iter([device, device_after_other_slot_change])
+    monkeypatch.setattr(
+        plugin_module,
+        "_plugin_material_server_inventory",
+        lambda *_args, **_kwargs: ({"printers": [next(inventories)]}, None),
+    )
+    desired_snapshot = {
+        "physical_printer_id": 3,
+        "material_system_id": 7,
+        "slots": [{
+            "material_slot_id": 71,
+            "index": 5,
+            "assignment_revision": 4,
+            "preset": {"id": 41, "name": "PLA preset"},
+            "spool": {"id": 301, "material_type": "PLA", "color_hex": "#12AB34"},
+        }],
+    }
+    monkeypatch.setattr(
+        plugin_module,
+        "http_get_bridge_json",
+        lambda *_args: (200, json.dumps(desired_snapshot).encode()),
+    )
+    captured_targets = []
+    monkeypatch.setattr(
+        plugin_module,
+        "apply_bambu_material_targets",
+        lambda _binding, targets, **_kwargs: (
+            captured_targets.append(targets)
+            or {"ok": True, "report": {"gcode_state": "IDLE"}}
+        ),
+    )
+    monkeypatch.setattr(
+        plugin_module,
+        "build_bambu_bridge_snapshot",
+        lambda *_args: {"snapshot": True},
+    )
+    monkeypatch.setattr(
+        plugin_module,
+        "http_post_bridge_json",
+        lambda *_args: (200, b"{}", None),
+    )
+    delivered = []
+    catalog = plugin_module.FilamentHubCatalog()
+    monkeypatch.setattr(
+        catalog,
+        "_deliver_bambu_material_result",
+        lambda request_id, result: delivered.append((request_id, result)),
+    )
+    host_profiles = {41: {
+        "name": "Loaded PLA",
+        "filament_id": "GFL99",
+        "setting_id": "GFSL99_01",
+        "filament_type": "PLA",
+        # The printer target must use the physical spool color below.
+        "filament_colour": "#FF0000",
+        "nozzle_temperature_range_low": "190",
+        "nozzle_temperature_range_high": "230",
+    }}
+
+    catalog._do_bambu_material_immediate(
+        "request-1", "assign", 3, 7, "token", host_profiles,
+        commit, plugin_module.time.monotonic() + 20,
+    )
+
+    assert list(captured_targets[0]) == [5]
+    assert captured_targets[0][5]["color_hex"] == "12AB34"
+    assert captured_targets[0][5]["material"] == "PLA"
+    assert captured_targets[0][5]["filament_id"] == "GFL99"
+    assert delivered[0][1] == {
+        "ok": True,
+        "code": None,
+        "applied": True,
+        "observationUploaded": True,
+        "operation": "assign",
+        "physicalPrinterId": 3,
+        "materialSystemId": 7,
+    }
+
+
+def test_bambu_immediate_assignment_rejects_stale_commit_before_lan(
+    plugin_module, monkeypatch
+):
+    commit = _immediate_commit()
+    stale = _immediate_device(revision=5)
+    monkeypatch.setattr(
+        plugin_module,
+        "_bambu_local_binding",
+        lambda *_args: (
+            {"source_instance_id": "fixture-instance-123456"},
+            {"physical_printer_id": 3, "material_system_id": 7,
+             "bridge_token": "fhpb_fixture"},
+        ),
+    )
+    monkeypatch.setattr(
+        plugin_module,
+        "_plugin_material_server_inventory",
+        lambda *_args, **_kwargs: ({"printers": [stale]}, None),
+    )
+    monkeypatch.setattr(
+        plugin_module,
+        "http_get_bridge_json",
+        lambda *_args: pytest.fail("stale commit must stop before bridge or LAN reads"),
+    )
+    monkeypatch.setattr(
+        plugin_module,
+        "apply_bambu_material_targets",
+        lambda *_args: pytest.fail("stale commit must not reach MQTT"),
+    )
+    delivered = []
+    catalog = plugin_module.FilamentHubCatalog()
+    monkeypatch.setattr(
+        catalog, "_deliver_bambu_material_result",
+        lambda _request_id, result: delivered.append(result),
+    )
+
+    catalog._do_bambu_material_immediate(
+        "stale", "assign", 3, 7, "token", {}, commit,
+        plugin_module.time.monotonic() + 20,
+    )
+
+    assert delivered[0]["code"] == "stale_assignment"
+    assert delivered[0]["applied"] is False
+
+
+def test_bambu_immediate_assignment_rejects_wrong_spool_material(
+    plugin_module, monkeypatch
+):
+    snapshot = {
+        "physical_printer_id": 3,
+        "material_system_id": 7,
+        "slots": [{
+            "material_slot_id": 71,
+            "index": 1,
+            "assignment_revision": 4,
+            "preset": {"id": 41},
+            "spool": {"id": 301, "material_type": "PETG", "color_hex": "#123456"},
+        }],
+    }
+    monkeypatch.setattr(
+        plugin_module,
+        "http_get_bridge_json",
+        lambda *_args: (200, json.dumps(snapshot).encode()),
+    )
+    target, error = plugin_module._bambu_committed_spool_target(
+        {"physical_printer_id": 3, "material_system_id": 7,
+         "bridge_token": "fhpb_fixture"},
+        _immediate_commit(),
+        {41: {
+            "filament_id": "GFL99", "setting_id": "GFSL99_01",
+            "filament_type": "PLA", "filament_colour": "#FFFFFF",
+            "nozzle_temperature_range_low": 190,
+            "nozzle_temperature_range_high": 230,
+        }},
+    )
+
+    assert target is None
+    assert error == "material_mismatch"
+
+
+def test_bambu_refresh_forces_snapshot_upload_without_device_write(
+    plugin_module, monkeypatch
+):
+    binding = {
+        "physical_printer_id": 3,
+        "material_system_id": 7,
+        "bridge_token": "fhpb_fixture",
+    }
+    monkeypatch.setattr(
+        plugin_module, "_bambu_local_binding",
+        lambda *_args: ({"source_instance_id": "fixture-instance-123456"}, binding),
+    )
+    monkeypatch.setattr(
+        plugin_module, "read_bambu_lan_snapshot",
+        lambda *_args: ("SERIAL-1", {"gcode_state": "IDLE"}),
+    )
+    monkeypatch.setattr(
+        plugin_module, "_prepare_bambu_observation",
+        lambda *_args: (binding, "fixture-instance-123456"),
+    )
+    monkeypatch.setattr(
+        plugin_module, "build_bambu_bridge_snapshot",
+        lambda *_args: {"snapshot": True},
+    )
+    uploads = []
+    monkeypatch.setattr(
+        plugin_module, "http_post_bridge_json",
+        lambda *args: (uploads.append(args) or (200, b"{}", None)),
+    )
+    monkeypatch.setattr(
+        plugin_module, "_publish_bambu_json",
+        lambda *_args: pytest.fail("refresh must never write to the printer"),
+    )
+    delivered = []
+    catalog = plugin_module.FilamentHubCatalog()
+    monkeypatch.setattr(
+        catalog, "_deliver_bambu_material_result",
+        lambda _request_id, result: delivered.append(result),
+    )
+
+    catalog._do_bambu_material_immediate(
+        "refresh", "refresh", 3, 7, "token", {}, None,
+        plugin_module.time.monotonic() + 20,
+    )
+
+    assert len(uploads) == 1
+    assert delivered[0]["ok"] is True
+    assert delivered[0]["applied"] is False
+    assert delivered[0]["observationUploaded"] is True
+
+
+def test_bambu_write_with_failed_upload_is_reported_as_uncertain(
+    plugin_module, monkeypatch
+):
+    commit = _immediate_commit()
+    monkeypatch.setattr(
+        plugin_module, "_bambu_local_binding",
+        lambda *_args: (
+            {"source_instance_id": "fixture-instance-123456"},
+            {"physical_printer_id": 3, "material_system_id": 7,
+             "bridge_token": "fhpb_fixture"},
+        ),
+    )
+    monkeypatch.setattr(
+        plugin_module, "_material_commit_context",
+        lambda *_args: (_immediate_device(), {}, {}, None),
+    )
+    monkeypatch.setattr(
+        plugin_module, "_bambu_committed_spool_target",
+        lambda *_args: (_bambu_material_target(), None),
+    )
+    monkeypatch.setattr(
+        plugin_module, "apply_bambu_material_targets",
+        lambda *_args, **_kwargs: {"ok": True, "report": {"gcode_state": "IDLE"}},
+    )
+    monkeypatch.setattr(plugin_module, "build_bambu_bridge_snapshot", lambda *_args: {})
+    monkeypatch.setattr(
+        plugin_module, "http_post_bridge_json", lambda *_args: (0, b"", None)
+    )
+    delivered = []
+    catalog = plugin_module.FilamentHubCatalog()
+    monkeypatch.setattr(
+        catalog, "_deliver_bambu_material_result",
+        lambda _request_id, result: delivered.append(result),
+    )
+
+    catalog._do_bambu_material_immediate(
+        "uncertain", "assign", 3, 7, "token", {}, commit,
+        plugin_module.time.monotonic() + 20,
+    )
+
+    assert delivered[0]["ok"] is False
+    assert delivered[0]["code"] == "snapshot_failed"
+    assert delivered[0]["applied"] is True
+    assert delivered[0]["observationUploaded"] is False
+
+
+@pytest.mark.parametrize(
+    "failure_code",
+    ["printer_busy", "rfid_managed", "write_failed", "verification_failed"],
+)
+def test_bambu_immediate_boundary_never_turns_unconfirmed_write_into_delivery(
+    plugin_module, monkeypatch, failure_code
+):
+    monkeypatch.setattr(
+        plugin_module, "_bambu_local_binding",
+        lambda *_args: (
+            {"source_instance_id": "fixture-instance-123456"},
+            {"physical_printer_id": 3, "material_system_id": 7,
+             "bridge_token": "fhpb_fixture"},
+        ),
+    )
+    monkeypatch.setattr(
+        plugin_module, "_material_commit_context",
+        lambda *_args: (_immediate_device(), {}, {}, None),
+    )
+    monkeypatch.setattr(
+        plugin_module, "_bambu_committed_spool_target",
+        lambda *_args: (_bambu_material_target(), None),
+    )
+    monkeypatch.setattr(
+        plugin_module, "apply_bambu_material_targets",
+        lambda *_args, **_kwargs: {"ok": False, "code": failure_code},
+    )
+    delivered = []
+    catalog = plugin_module.FilamentHubCatalog()
+    monkeypatch.setattr(
+        catalog, "_deliver_bambu_material_result",
+        lambda _request_id, result: delivered.append(result),
+    )
+
+    catalog._do_bambu_material_immediate(
+        "failure", "assign", 3, 7, "token", {}, _immediate_commit(),
+        plugin_module.time.monotonic() + 20,
+    )
+
+    assert delivered[0]["ok"] is False
+    assert delivered[0]["code"] == failure_code
+    assert delivered[0]["applied"] is False
+
+
+def test_bambu_immediate_expired_request_never_reads_or_writes_lan(
+    plugin_module, monkeypatch
+):
+    monkeypatch.setattr(
+        plugin_module, "_bambu_local_binding",
+        lambda *_args: (
+            {"source_instance_id": "fixture-instance-123456"},
+            {"physical_printer_id": 3, "material_system_id": 7,
+             "bridge_token": "fhpb_fixture"},
+        ),
+    )
+    monkeypatch.setattr(
+        plugin_module, "_material_commit_context",
+        lambda *_args: pytest.fail("expired request must not reload or touch LAN"),
+    )
+    delivered = []
+    catalog = plugin_module.FilamentHubCatalog()
+    monkeypatch.setattr(
+        catalog, "_deliver_bambu_material_result",
+        lambda _request_id, result: delivered.append(result),
+    )
+
+    catalog._do_bambu_material_immediate(
+        "expired", "assign", 3, 7, "token", {}, _immediate_commit(),
+        plugin_module.time.monotonic() - 1,
+    )
+
+    assert delivered[0]["code"] == "expired"
+    assert delivered[0]["applied"] is False
+
+
+def test_bambu_material_preview_uses_the_bambu_bridge_source_for_inventory(
+    plugin_module, monkeypatch
+):
+    global_source = "global-plugin-source-1234"
+    bambu_source = "bambu-bridge-source-1234"
+    local = {"source_instance_id": bambu_source}
+    binding = {
+        "physical_printer_id": 3,
+        "material_system_id": 7,
+        "bridge_token": "fhpb_fixture",
+    }
+    events = []
+
+    def local_binding(physical_printer_id, material_system_id):
+        events.append(("binding", physical_printer_id, material_system_id))
+        return local, binding
+
+    requested_sources = []
+
+    def inventory(path, token):
+        query = urllib.parse.parse_qs(urllib.parse.urlsplit(path).query)
+        source_instance_id = query["source_instance_id"][0]
+        requested_sources.append(source_instance_id)
+        events.append(("inventory", source_instance_id, token))
+        return 200, {
+            "source_instance_id": source_instance_id,
+            "printers": [
+                {
+                    "id": 3,
+                    "material_systems": [
+                        {
+                            "id": 7,
+                            "provider": "bambu",
+                            "slots": [],
+                        }
+                    ],
+                }
+            ],
+        }
+
+    monkeypatch.setattr(plugin_module, "_bambu_local_binding", local_binding)
+    monkeypatch.setattr(
+        plugin_module, "plugin_source_instance_id", lambda: global_source
+    )
+    monkeypatch.setattr(plugin_module, "_filamenthub_json_get", inventory)
+    monkeypatch.setattr(
+        plugin_module,
+        "read_bambu_lan_snapshot",
+        lambda _binding: ("SERIAL-1", _bambu_report(gcode_state="IDLE")),
+    )
+    delivered = []
+    catalog = plugin_module.FilamentHubCatalog()
+    monkeypatch.setattr(
+        catalog,
+        "_deliver_bambu_material_result",
+        lambda request_id, result: delivered.append((request_id, result)),
+    )
+
+    catalog._do_bambu_material_action(
+        "request-1", "preview", 3, 7, "plugin-token", {}
+    )
+
+    assert delivered[0][1]["ok"] is True
+    assert events[:2] == [
+        ("binding", 3, 7),
+        ("inventory", bambu_source, "plugin-token"),
+    ]
+
+    inventory_result, inventory_error = plugin_module._happy_hare_server_inventory(
+        "plugin-token"
+    )
+    assert inventory_error is None
+    assert inventory_result["source_instance_id"] == global_source
+    assert requested_sources == [bambu_source, global_source]
 
 
 def test_bambu_material_preview_never_invents_an_unloaded_preset(plugin_module):
@@ -8534,6 +9404,10 @@ def test_bambu_pair_response_after_unload_cannot_restart_observer(
 def test_fresh_bambu_pair_and_first_snapshot_share_one_source_identity(
     plugin_module, tmp_path, monkeypatch, paired_printer, paired_system
 ):
+    monkeypatch.setattr(plugin_module, "DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(
+        plugin_module, "SYNC_STATE_FILE", str(tmp_path / ".fh_sync.json")
+    )
     target = tmp_path / ".fh_bambu.json"
     monkeypatch.setattr(plugin_module, "BAMBU_CONFIG_FILE", str(target))
     monkeypatch.setattr(plugin_module, "_resolved_bambu_address", lambda _host: "192.168.1.42")

@@ -8,17 +8,81 @@ import {
   PLUGIN_MESSAGE_SOURCE,
   reportPluginSessionToPlugin,
   requestBambuMaterialAction,
+  requestBambuObservationRefresh,
+  requestBambuSlotAssignment,
   requestHappyHareAction,
+  requestHappyHareSlotAssignment,
   requestPluginProfileSync,
   requestPluginCapabilities,
   requestPrinterSetup,
   requestInstalledPrinterBundles,
   subscribeToPluginCapabilities,
+  subscribeToLocalPrinterSetup,
   subscribeToPluginNavigation,
   subscribeToPluginRecoverList,
 } from './pluginBridge';
 
 describe('pluginBridge inbound messages', () => {
+  it('accepts only trusted local setup lifecycle fields', () => {
+    const originalParent = window.parent;
+    const parent = { postMessage: vi.fn() };
+    Object.defineProperty(window, 'parent', { configurable: true, value: parent });
+    window.history.pushState({}, '', '/embed/profile');
+    const onState = vi.fn();
+    const unsubscribe = subscribeToLocalPrinterSetup(onState);
+    const validBambu = {
+      source: PLUGIN_MESSAGE_SOURCE,
+      type: 'local-printer-setup-state',
+      open: false,
+      provider: 'bambu',
+      physicalPrinterId: 11,
+      materialSystemId: 21,
+      outcome: 'saved',
+      host: '192.0.2.10',
+      accessCode: 'local-secret',
+      code: 'pairing-secret',
+    };
+    const dispatch = (data: unknown, origin = window.location.origin, source: MessageEventSource = parent as unknown as Window) => {
+      window.dispatchEvent(new MessageEvent('message', { data, origin, source }));
+    };
+
+    try {
+      dispatch(validBambu, 'https://evil.example');
+      dispatch(validBambu, window.location.origin, window);
+      dispatch({ ...validBambu, source: 'untrusted-source' });
+      dispatch({ ...validBambu, provider: 'octoprint' });
+      dispatch({ ...validBambu, physicalPrinterId: 0 });
+      dispatch({ ...validBambu, materialSystemId: -1 });
+      expect(onState).not.toHaveBeenCalled();
+
+      dispatch({
+        ...validBambu,
+        open: true,
+        provider: 'moonraker',
+        physicalPrinterId: 99,
+        materialSystemId: 100,
+        outcome: 'saved',
+      });
+      dispatch(validBambu);
+
+      expect(onState.mock.calls.map(([state]) => state)).toEqual([{
+        open: true,
+        provider: 'moonraker',
+      }, {
+        open: false,
+        provider: 'bambu',
+        physicalPrinterId: 11,
+        materialSystemId: 21,
+        outcome: 'saved',
+      }]);
+      expect(JSON.stringify(onState.mock.calls)).not.toMatch(/host|accessCode|pairing-secret|local-secret/);
+    } finally {
+      unsubscribe();
+      Object.defineProperty(window, 'parent', { configurable: true, value: originalParent });
+      window.history.pushState({}, '', '/');
+    }
+  });
+
   it('accepts navigation only from the trusted parent origin', () => {
     const navigate = vi.fn();
     const unsubscribe = subscribeToPluginNavigation(navigate);
@@ -483,6 +547,159 @@ describe('pluginBridge inbound messages', () => {
         configurable: true,
         value: originalParent,
       });
+      window.history.pushState({}, '', '/');
+    }
+  });
+
+  it('sends only the exact committed slot for immediate material delivery', async () => {
+    const originalParent = window.parent;
+    const postMessage = vi.fn();
+    const parent = { postMessage };
+    Object.defineProperty(window, 'parent', { configurable: true, value: parent });
+    window.history.pushState({}, '', '/embed/profile');
+    const unsubscribe = subscribeToPluginCapabilities(() => undefined);
+
+    try {
+      window.dispatchEvent(new MessageEvent('message', {
+        data: {
+          source: PLUGIN_MESSAGE_SOURCE,
+          type: 'plugin-capabilities',
+          capabilities: ['material-assignment-v1', 'material-observation-refresh-v1'],
+        },
+        origin: window.location.origin,
+        source: parent as unknown as Window,
+      }));
+      const commit = {
+        materialSlotId: 91,
+        providerIndex: 5,
+        assignmentRevision: 12,
+        desired: {
+          presetId: 41,
+          spoolId: 301,
+          sourceTs: '2026-09-05T12:00:00Z',
+        },
+      };
+      const pending = requestBambuSlotAssignment(12, 34, commit);
+      const request = postMessage.mock.calls.at(-1)?.[0];
+
+      expect(request).toEqual({
+        source: PLUGIN_MESSAGE_SOURCE,
+        type: 'bambu-material-assign',
+        requestId: expect.any(String),
+        physicalPrinterId: 12,
+        materialSystemId: 34,
+        commit,
+      });
+      expect(JSON.stringify(request)).not.toMatch(/host|accessCode|serial|color|command|token/i);
+      window.dispatchEvent(new MessageEvent('message', {
+        data: {
+          source: PLUGIN_MESSAGE_SOURCE,
+          type: 'bambu-material-result',
+          requestId: request.requestId,
+          result: {
+            ok: true,
+            operation: 'assign',
+            physicalPrinterId: 12,
+            materialSystemId: 34,
+            applied: true,
+            observationUploaded: true,
+          },
+        },
+        origin: window.location.origin,
+        source: parent as unknown as Window,
+      }));
+      await expect(pending).resolves.toMatchObject({ ok: true, applied: true });
+
+      const hhPending = requestHappyHareSlotAssignment(20, 21, commit);
+      const hhRequest = postMessage.mock.calls.at(-1)?.[0];
+      expect(hhRequest).toMatchObject({
+        type: 'happy-hare-material-assign',
+        physicalPrinterId: 20,
+        materialSystemId: 21,
+        commit,
+      });
+      window.dispatchEvent(new MessageEvent('message', {
+        data: {
+          source: PLUGIN_MESSAGE_SOURCE,
+          type: 'happy-hare-result',
+          requestId: hhRequest.requestId,
+          result: { ok: false, operation: 'assign', code: 'printer_busy',
+            physicalPrinterId: 20, materialSystemId: 21 },
+        },
+        origin: window.location.origin,
+        source: parent as unknown as Window,
+      }));
+      await expect(hhPending).resolves.toMatchObject({ ok: false, code: 'printer_busy' });
+
+      const refreshPending = requestBambuObservationRefresh(12, 34);
+      const refreshRequest = postMessage.mock.calls.at(-1)?.[0];
+      expect(refreshRequest).toEqual({
+        source: PLUGIN_MESSAGE_SOURCE,
+        type: 'bambu-material-refresh',
+        requestId: expect.any(String),
+        physicalPrinterId: 12,
+        materialSystemId: 34,
+      });
+      window.dispatchEvent(new MessageEvent('message', {
+        data: {
+          source: PLUGIN_MESSAGE_SOURCE,
+          type: 'bambu-material-result',
+          requestId: refreshRequest.requestId,
+          result: { ok: true, operation: 'refresh', physicalPrinterId: 12,
+            materialSystemId: 34, observationUploaded: true },
+        },
+        origin: window.location.origin,
+        source: parent as unknown as Window,
+      }));
+      await expect(refreshPending).resolves.toMatchObject({
+        ok: true,
+        observationUploaded: true,
+      });
+    } finally {
+      unsubscribe();
+      Object.defineProperty(window, 'parent', { configurable: true, value: originalParent });
+      window.history.pushState({}, '', '/');
+    }
+  });
+
+  it('rejects an immediate result for another operation or target', async () => {
+    const originalParent = window.parent;
+    const postMessage = vi.fn();
+    const parent = { postMessage };
+    Object.defineProperty(window, 'parent', { configurable: true, value: parent });
+    window.history.pushState({}, '', '/embed/profile');
+    const unsubscribe = subscribeToPluginCapabilities(() => undefined);
+
+    try {
+      window.dispatchEvent(new MessageEvent('message', {
+        data: { source: PLUGIN_MESSAGE_SOURCE, type: 'plugin-capabilities',
+          capabilities: ['material-observation-refresh-v1'] },
+        origin: window.location.origin,
+        source: parent as unknown as Window,
+      }));
+      const pending = requestBambuObservationRefresh(12, 34);
+      const request = postMessage.mock.calls.at(-1)?.[0];
+      window.dispatchEvent(new MessageEvent('message', {
+        data: {
+          source: PLUGIN_MESSAGE_SOURCE,
+          type: 'bambu-material-result',
+          requestId: request.requestId,
+          result: {
+            ok: true,
+            operation: 'assign',
+            physicalPrinterId: 12,
+            materialSystemId: 99,
+            applied: 'yes',
+          },
+        },
+        origin: window.location.origin,
+        source: parent as unknown as Window,
+      }));
+
+      await expect(pending).rejects.toThrow('invalid material operation result');
+    } finally {
+      unsubscribe();
+      Object.defineProperty(window, 'parent', { configurable: true, value: originalParent });
       window.history.pushState({}, '', '/');
     }
   });

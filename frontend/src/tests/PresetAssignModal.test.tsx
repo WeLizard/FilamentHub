@@ -40,6 +40,7 @@ vi.mock('../contexts/AuthContext', () => ({
 vi.mock('../components/Toast', () => ({
   toast: {
     success: vi.fn(),
+    info: vi.fn(),
     error: vi.fn(),
   },
 }));
@@ -48,7 +49,13 @@ describe('PresetAssignModal', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     listMock.mockResolvedValue({ items: [] });
-    assignSlotMock.mockResolvedValue({});
+    assignSlotMock.mockResolvedValue({
+      material_systems: [{
+        id: 2,
+        provider: 'manual',
+        slots: [{ id: 10 }],
+      }],
+    });
     invalidateQueriesMock.mockResolvedValue(undefined);
   });
 
@@ -61,6 +68,7 @@ describe('PresetAssignModal', () => {
         gateIndex={0}
         gate={null}
         physicalPrinterId={1}
+        materialSystemId={2}
         materialSlotId={10}
         assignmentRevision={0}
         expectedSpoolId={null}
@@ -95,6 +103,7 @@ describe('PresetAssignModal', () => {
         gateIndex={0}
         gate={null}
         physicalPrinterId={1}
+        materialSystemId={2}
         materialSlotId={10}
         assignmentRevision={0}
         expectedSpoolId={null}
@@ -148,6 +157,69 @@ describe('PresetAssignModal', () => {
     });
   });
 
+  it('keeps an online assignment saved when the installed host lacks delivery capability', async () => {
+    const { PresetAssignModal } = await import('../components/presetSlots/PresetAssignModal');
+    const { toast } = await import('../components/Toast');
+    const onAssigned = vi.fn();
+    const sourceTs = '2026-09-05T12:00:00Z';
+    assignSlotMock.mockResolvedValue({
+      id: 1,
+      material_systems: [{
+        id: 2,
+        provider: 'bambu',
+        slots: [{
+          id: 10,
+          provider_index: 0,
+          assignment_revision: 4,
+          assignment: { preset_id: 41, spool_id: 23, source_ts: sourceTs },
+        }],
+      }],
+    });
+
+    render(
+      <PresetAssignModal
+        isOpen
+        gateIndex={0}
+        gate={{ id: 10, gate_index: 0, preset_id: 41, spool_id: null,
+          source: 'web_manual', source_ts: sourceTs, is_active: true,
+          hh_material: null, hh_color_hex: null, hh_status: null, updated_at: sourceTs }}
+        physicalPrinterId={1}
+        materialSystemId={2}
+        materialSlotId={10}
+        assignmentRevision={3}
+        expectedSpoolId={null}
+        deviceName="Bambu"
+        systemName="AMS"
+        provider="bambu"
+        spools={[{
+          id: 23, user_id: 1, filament_id: null, initial_weight_g: 1000,
+          used_weight_g: 0, remaining_weight_g: 1000, remaining_pct: 100,
+          state: 'shelf', source: 'manual', price: null, currency: null,
+          lot_nr: null, comment: null, extra: null, filament: null,
+          created_at: sourceTs, updated_at: sourceTs, last_used_at: null,
+        }]}
+        onClose={vi.fn()}
+        onAssigned={onAssigned}
+      />,
+    );
+
+    fireEvent.click(screen.getByText('profilePage.spoolNoFilament'));
+    const assignButton = screen.getByText('presetSlots.modal.assign');
+    fireEvent.click(assignButton);
+
+    await waitFor(() => expect(onAssigned).toHaveBeenCalled());
+    await waitFor(() => expect(assignButton).not.toBeDisabled());
+    fireEvent.click(assignButton);
+    await waitFor(() => expect(onAssigned).toHaveBeenCalledTimes(2));
+    expect(toast.info).toHaveBeenCalledTimes(2);
+    expect(toast.info).toHaveBeenLastCalledWith(
+      'presetSlots.delivery.savedOnly',
+      undefined,
+      'preset-slot-assignment-delivery',
+    );
+    expect(assignSlotMock).toHaveBeenCalledTimes(2);
+  });
+
   it('shows displacement and sends the reviewed spool identity', async () => {
     const { PresetAssignModal } = await import('../components/presetSlots/PresetAssignModal');
     const spool = (id: number) => ({
@@ -189,6 +261,7 @@ describe('PresetAssignModal', () => {
           updated_at: '2026-08-26T00:00:00Z',
         }}
         physicalPrinterId={1}
+        materialSystemId={2}
         materialSlotId={10}
         assignmentRevision={7}
         expectedSpoolId={23}
@@ -256,6 +329,7 @@ describe('PresetAssignModal', () => {
           remaining_grams: null,
         }}
         physicalPrinterId={1}
+        materialSystemId={2}
         materialSlotId={99}
         assignmentRevision={5}
         expectedSpoolId={null}

@@ -7,12 +7,12 @@ import { directFeedAdapter } from './direct';
 import { toast } from '../../Toast';
 import { EdgeConnectionSetup } from '../EdgeConnectionSetup';
 
-const { issuePairingCode, status, revoke, bridgeState, requestAction } = vi.hoisted(() => ({
+const { issuePairingCode, status, revoke, bridgeState, requestRefresh } = vi.hoisted(() => ({
   issuePairingCode: vi.fn(),
   status: vi.fn(),
   revoke: vi.fn(),
   bridgeState: { embedded: false },
-  requestAction: vi.fn(),
+  requestRefresh: vi.fn(),
 }));
 
 vi.mock('../../../api/client', () => ({
@@ -22,10 +22,11 @@ vi.mock('../../../api/client', () => ({
 
 vi.mock('../../../utils/pluginBridge', () => ({
   isPluginEmbed: () => bridgeState.embedded,
-  requestHappyHareAction: requestAction,
+  requestHappyHareObservationRefresh: requestRefresh,
+  requestHappyHareSlotAssignment: vi.fn(),
   requestPluginCapabilities: vi.fn(),
   subscribeToPluginCapabilities: vi.fn((callback) => {
-    callback(new Set(['happy-hare-moonraker']));
+    callback(new Set(['happy-hare-moonraker', 'material-observation-refresh-v1']));
     return vi.fn();
   }),
 }));
@@ -97,6 +98,7 @@ describe('Happy Hare Edge setup', () => {
     issuePairingCode.mockReset();
     status.mockReset();
     revoke.mockReset();
+    requestRefresh.mockReset();
     bridgeState.embedded = false;
   });
 
@@ -140,7 +142,7 @@ describe('Happy Hare Edge setup', () => {
 
   it('reports the same failed check on every click, scoped to this printer', async () => {
     bridgeState.embedded = true;
-    requestAction.mockResolvedValue({ ok: false, code: 'connection_not_found' });
+    requestRefresh.mockResolvedValue({ ok: false, code: 'connection_not_found' });
     const error = vi.spyOn(toast, 'error');
     const queryClient = new QueryClient();
     render(<QueryClientProvider client={queryClient}>{happyHareAdapter.renderActions?.({
@@ -149,6 +151,7 @@ describe('Happy Hare Edge setup', () => {
     const button = await screen.findByText('presetSlots.happyHare.refresh.check');
     fireEvent.click(button);
     await waitFor(() => expect(error).toHaveBeenCalledTimes(1));
+    expect(requestRefresh).toHaveBeenCalledWith(10, 20);
     await waitFor(() => expect(button).not.toBeDisabled());
     fireEvent.click(button);
     await waitFor(() => expect(error).toHaveBeenCalledTimes(2));

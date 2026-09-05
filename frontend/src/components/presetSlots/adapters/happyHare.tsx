@@ -8,24 +8,17 @@ import {
   Copy,
   Loader2,
   RefreshCw,
-  X,
 } from 'lucide-react';
 
 import { devicesAPI } from '../../../api/client';
-import type { UserSpool } from '../../../api/client';
 import {
   isPluginEmbed,
-  requestHappyHareAction,
+  requestHappyHareObservationRefresh,
+  requestHappyHareSlotAssignment,
   requestPluginCapabilities,
   subscribeToPluginCapabilities,
 } from '../../../utils/pluginBridge';
-import type {
-  HappyHareActionResult,
-  HappyHareAssignmentChange,
-  HappyHareImportChange,
-} from '../../../utils/pluginBridge';
 import { toast } from '../../Toast';
-import { ModalOverlay } from '../../ModalOverlay';
 import { translateApiError } from '../../../utils/translateApiError';
 import type { AdapterViewContext, FeedAdapter } from './types';
 
@@ -248,130 +241,45 @@ function useHappyHarePlugin(): boolean | null {
   return available;
 }
 
-function spoolLabel(
-  spools: UserSpool[],
-  spoolId: number | null,
-  unassignedLabel: string,
-): string {
-  if (spoolId == null) return unassignedLabel;
-  const spool = spools.find((item) => item.id === spoolId);
-  if (!spool) return `#${spoolId}`;
-  const filament = spool.filament;
-  const name = [filament?.brand_name, filament?.name].filter(Boolean).join(' ');
-  return name ? `${name} · #${spoolId}` : `#${spoolId}`;
-}
+function useHappyHareMaterialRefresh(): boolean | null {
+  const embedded = isPluginEmbed();
+  const [available, setAvailable] = useState<boolean | null>(embedded ? null : false);
 
-function AssignmentChanges({
-  changes,
-  spools,
-}: {
-  changes: HappyHareAssignmentChange[];
-  spools: UserSpool[];
-}) {
-  const { t } = useTranslation();
-  return (
-    <div className="mt-3 max-h-64 space-y-1.5 overflow-y-auto pr-1">
-      <div className="grid grid-cols-[auto_1fr_auto_1fr] gap-2 px-3 text-[11px] font-medium text-gray-500">
-        <span />
-        <span>{t('presetSlots.happyHare.refresh.currentAssignment')}</span>
-        <span />
-        <span>{t('presetSlots.happyHare.refresh.targetAssignment')}</span>
-      </div>
-      {changes.map((change) => (
-        <div
-          key={change.gate}
-          className="grid grid-cols-[auto_1fr_auto_1fr] items-center gap-2 rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-xs"
-        >
-          <span className="font-medium text-white">
-            {t('presetSlots.happyHare.refresh.gate', { gate: change.gate + 1 })}
-          </span>
-          <span className="truncate text-gray-400">
-            {spoolLabel(
-              spools,
-              change.actualSpoolId,
-              t('presetSlots.assignment.notAssigned'),
-            )}
-          </span>
-          <span className="text-gray-600">→</span>
-          <span className="truncate text-purple-200">
-            {spoolLabel(
-              spools,
-              change.desiredSpoolId,
-              t('presetSlots.assignment.notAssigned'),
-            )}
-          </span>
-        </div>
-      ))}
-    </div>
-  );
-}
+  useEffect(() => {
+    if (!embedded) {
+      setAvailable(false);
+      return undefined;
+    }
+    const unsubscribe = subscribeToPluginCapabilities((capabilities) => {
+      setAvailable(capabilities.has('material-observation-refresh-v1'));
+    });
+    requestPluginCapabilities();
+    const timeout = window.setTimeout(() => setAvailable((current) => current ?? false), 1500);
+    return () => {
+      window.clearTimeout(timeout);
+      unsubscribe();
+    };
+  }, [embedded]);
 
-function RecoveryChanges({
-  changes,
-  spools,
-}: {
-  changes: HappyHareImportChange[];
-  spools: UserSpool[];
-}) {
-  const { t } = useTranslation();
-  if (changes.length === 0) return null;
-  return (
-    <div className="mt-3 rounded-xl border border-purple-400/20 bg-purple-500/10 p-3">
-      <p className="text-xs font-medium text-purple-100">
-        {t('presetSlots.happyHare.refresh.recoveryTitle')}
-      </p>
-      <p className="mt-1 text-[11px] leading-4 text-purple-100/70">
-        {t('presetSlots.happyHare.refresh.recoveryDescription')}
-      </p>
-      <div className="mt-2 flex flex-wrap gap-1.5">
-        {changes.map((change) => (
-          <span
-            key={change.gate}
-            className="rounded-md border border-white/10 bg-black/20 px-2 py-1 text-[11px] text-gray-200"
-          >
-            {t('presetSlots.happyHare.refresh.gate', { gate: change.gate + 1 })}
-            {' · '}
-            {spoolLabel(spools, change.proposedSpoolId, '')}
-          </span>
-        ))}
-      </div>
-    </div>
-  );
+  return available;
 }
 
 function HappyHareRefreshAction({
   printer,
   system,
-  spools,
   pluginAvailable,
-}: Pick<AdapterViewContext, 'printer' | 'system' | 'spools'> & {
+}: Pick<AdapterViewContext, 'printer' | 'system'> & {
   pluginAvailable: boolean | null;
 }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
-  const [loading, setLoading] = useState<'preview' | 'apply' | 'adopt' | null>(null);
-  const [preview, setPreview] = useState<HappyHareActionResult | null>(null);
-  const [copied, setCopied] = useState(false);
-  const [fallbackOpen, setFallbackOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
   const feedbackKey = `happy-hare-${printer.id}-${system.id}`;
-  const changes = preview?.changes ?? [];
-  const importChanges = preview?.importChanges ?? [];
-  const recoveryChanges = importChanges.filter((item) => item.source === 'last_known');
-  const unresolved = preview?.unresolved ?? [];
-  const busy = preview?.printState === 'printing' || preview?.printState === 'paused';
-  const canApply = preview?.ok === true
-    && changes.length > 0
-    && preview.spoolmanSupport === 'pull'
-    && !busy;
-  const canAdopt = preview?.ok === true
-    && importChanges.length > 0
-    && (recoveryChanges.length === 0 || (
-      preview.spoolmanSupport === 'pull' && !busy
-    ));
-  const errorText = (code?: string | null) => (
-    t(code === 'inventory_not_connected' ? 'presetSlots.happyHare.inventoryError' : `presetSlots.happyHare.refresh.errors.${code || 'unknown'}`, {
-      defaultValue: t('presetSlots.happyHare.refresh.errors.unknown'),
-    })
+  const errorText = (code?: string | null) => t(
+    code === 'inventory_not_connected'
+      ? 'presetSlots.happyHare.inventoryError'
+      : `presetSlots.happyHare.refresh.errors.${code || 'unknown'}`,
+    { defaultValue: t('presetSlots.happyHare.refresh.errors.unknown') },
   );
 
   const refreshData = async () => {
@@ -383,237 +291,39 @@ function HappyHareRefreshAction({
     ]);
   };
 
-  const check = async () => {
-    setLoading('preview');
+  const refresh = async () => {
+    setLoading(true);
     try {
-      const result = await requestHappyHareAction('preview', printer.id, system.id);
+      const result = await requestHappyHareObservationRefresh(printer.id, system.id);
       await refreshData();
-      if (!result.ok) {
-        setPreview(null);
-        toast.error(errorText(result.code), undefined, feedbackKey);
-      } else if (
-        (result.changes?.length ?? 0) === 0
-        && (result.importChanges?.length ?? 0) === 0
-        && (result.unresolved?.length ?? 0) === 0
-      ) {
-        setPreview(null);
-        toast.success(t('presetSlots.happyHare.refresh.inSync', {
-          count: result.gateCount ?? 0,
-        }), undefined, feedbackKey);
+      if (result.ok && result.observationUploaded) {
+        toast.success(t('presetSlots.happyHare.refresh.refreshed'), undefined, feedbackKey);
       } else {
-        setPreview(result);
+        toast.error(errorText(result.code), undefined, feedbackKey);
       }
     } catch {
-      setPreview(null);
       toast.error(errorText('timeout'), undefined, feedbackKey);
     } finally {
-      setLoading(null);
+      setLoading(false);
     }
   };
 
-  const apply = async () => {
-    if (!canApply) return;
-    setLoading('apply');
-    try {
-      const result = await requestHappyHareAction(
-        'apply',
-        printer.id,
-        system.id,
-        preview?.desiredAssignments,
-      );
-      await refreshData();
-      if (result.ok) {
-        toast.success(t('presetSlots.happyHare.refresh.applied'));
-        setPreview(null);
-      } else {
-        toast.error(errorText(result.code));
-      }
-    } catch {
-      toast.error(errorText('timeout'));
-    } finally {
-      setLoading(null);
-    }
-  };
-
-  const adopt = async () => {
-    if (!canAdopt) return;
-    setLoading('adopt');
-    try {
-      const result = await requestHappyHareAction(
-        'adopt',
-        printer.id,
-        system.id,
-        preview?.desiredAssignments,
-      );
-      await refreshData();
-      if (result.ok) {
-        toast.success(t(recoveryChanges.length > 0
-          ? 'presetSlots.happyHare.refresh.restored'
-          : 'presetSlots.happyHare.refresh.adopted'));
-        setPreview(null);
-      } else if (result.adopted) {
-        toast.error(t('presetSlots.happyHare.refresh.savedButPending'));
-        setPreview(null);
-      } else {
-        toast.error(errorText(result.code));
-      }
-    } catch {
-      toast.error(errorText('timeout'));
-    } finally {
-      setLoading(null);
-    }
-  };
-
-  const copyFallback = async () => {
-    try {
-      await navigator.clipboard.writeText('MMU_SPOOLMAN REFRESH=1');
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1800);
-    } catch {
-      toast.error(t('common.error'));
-    }
-  };
-
+  if (pluginAvailable === false) return null;
   return (
-    <>
-      <button
-        type="button"
-        onClick={() => {
-          if (pluginAvailable) void check();
-          else if (pluginAvailable === false) {
-            void refreshData();
-            setFallbackOpen(true);
-          }
-        }}
-        disabled={pluginAvailable == null || loading != null}
-        title={t('presetSlots.happyHare.refresh.description')}
-        className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-300/25 bg-emerald-500/10 px-2.5 py-1.5 text-xs font-medium text-emerald-100 transition hover:bg-emerald-500/20 disabled:cursor-wait disabled:opacity-40"
-      >
-        {loading === 'preview'
-          ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          : <RefreshCw className="h-3.5 w-3.5" />}
-        {t(pluginAvailable ? 'presetSlots.happyHare.refresh.check' : 'presetSlots.happyHare.refreshStatus')}
-      </button>
-
-      {fallbackOpen && (
-        <ModalOverlay onClose={() => setFallbackOpen(false)}>
-          <div className="w-full max-w-lg rounded-2xl border border-white/15 bg-gray-950 p-5 text-white shadow-2xl">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <h3 className="text-lg font-semibold">
-                  {t('presetSlots.happyHare.refresh.title')}
-                </h3>
-                <p className="mt-1 text-sm leading-5 text-gray-400">
-                  {t('presetSlots.happyHare.withoutPlugin')}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setFallbackOpen(false)}
-                className="rounded-lg p-1.5 text-gray-400 hover:bg-white/10 hover:text-white"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            <button
-              type="button"
-              onClick={copyFallback}
-              className="mt-4 inline-flex items-center gap-1.5 rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-sm text-gray-200 transition hover:bg-white/10"
-            >
-              {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-              {t(copied
-                ? 'presetSlots.pairing.copied'
-                : 'presetSlots.happyHare.refresh.copyCommand')}
-            </button>
-          </div>
-        </ModalOverlay>
-      )}
-
-      {preview?.ok && (
-        changes.length > 0 || importChanges.length > 0 || unresolved.length > 0
-      ) && (
-        <ModalOverlay
-          onClose={() => { if (!loading) setPreview(null); }}
-          closeOnOverlayClick={!loading}
-          closeOnEscape={!loading}
-        >
-          <div className="w-full max-w-2xl rounded-2xl border border-white/15 bg-gray-950 p-5 text-white shadow-2xl">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <h3 className="text-lg font-semibold">
-                  {t('presetSlots.happyHare.refresh.previewTitle')}
-                </h3>
-                <p className="mt-1 text-sm leading-5 text-gray-400">
-                  {t('presetSlots.happyHare.refresh.previewDescription')}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setPreview(null)}
-                disabled={loading != null}
-                className="rounded-lg p-1.5 text-gray-400 hover:bg-white/10 hover:text-white disabled:opacity-40"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            {changes.length > 0 && <AssignmentChanges changes={changes} spools={spools} />}
-            <RecoveryChanges changes={recoveryChanges} spools={spools} />
-            {unresolved.length > 0 && (
-              <p className="mt-3 rounded-lg border border-amber-400/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
-                {t('presetSlots.happyHare.refresh.unresolved', { count: unresolved.length })}
-              </p>
-            )}
-            {preview.spoolmanSupport !== 'pull' && (changes.length > 0 || recoveryChanges.length > 0) && (
-              <p className="mt-3 rounded-lg border border-amber-400/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
-                {t('presetSlots.happyHare.refresh.pullRequired')}
-              </p>
-            )}
-            {busy && (
-              <p className="mt-3 rounded-lg border border-amber-400/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
-                {t('presetSlots.happyHare.refresh.busy')}
-              </p>
-            )}
-            <div className="mt-5 flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setPreview(null)}
-                disabled={loading != null}
-                className="rounded-lg border border-white/15 px-3 py-2 text-sm text-gray-300 hover:bg-white/5 disabled:opacity-40"
-              >
-                {t('common.cancel')}
-              </button>
-              {importChanges.length > 0 && (
-                <button
-                  type="button"
-                  onClick={adopt}
-                  disabled={!canAdopt || loading != null}
-                  className="inline-flex items-center gap-2 rounded-lg bg-purple-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-purple-500 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  {loading === 'adopt' && <Loader2 className="h-4 w-4 animate-spin" />}
-                  {t(recoveryChanges.length > 0
-                    ? 'presetSlots.happyHare.refresh.restore'
-                    : 'presetSlots.happyHare.refresh.adopt')}
-                </button>
-              )}
-              {changes.length > 0 && (
-                <button
-                  type="button"
-                  onClick={apply}
-                  disabled={!canApply || loading != null}
-                  className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  {loading === 'apply' && <Loader2 className="h-4 w-4 animate-spin" />}
-                  {t('presetSlots.happyHare.refresh.apply')}
-                </button>
-              )}
-            </div>
-          </div>
-        </ModalOverlay>
-      )}
-    </>
+    <button
+      type="button"
+      onClick={() => void refresh()}
+      disabled={pluginAvailable == null || loading}
+      title={t('presetSlots.happyHare.refresh.description')}
+      className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-300/25 bg-emerald-500/10 px-2.5 py-1.5 text-xs font-medium text-emerald-100 transition hover:bg-emerald-500/20 disabled:cursor-wait disabled:opacity-40"
+    >
+      {loading
+        ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+        : <RefreshCw className="h-3.5 w-3.5" />}
+      {t('presetSlots.happyHare.refresh.check')}
+    </button>
   );
 }
-
 function HappyHareSetup(context: AdapterViewContext) {
   const { t } = useTranslation();
   const pluginAvailable = useHappyHarePlugin();
@@ -639,12 +349,11 @@ function HappyHareSetup(context: AdapterViewContext) {
 }
 
 function HappyHareActions(context: AdapterViewContext) {
-  const pluginAvailable = useHappyHarePlugin();
+  const pluginAvailable = useHappyHareMaterialRefresh();
   return (
     <HappyHareRefreshAction
       printer={context.printer}
       system={context.system}
-      spools={context.spools}
       pluginAvailable={pluginAvailable}
     />
   );
@@ -672,6 +381,29 @@ export const happyHareAdapter: FeedAdapter = {
     hintKey: 'presetSlots.happyHare.linkHint',
     snippet: (baseUrl, apiKey) => `[spoolman]
 server: ${baseUrl}/${apiKey}`,
+  },
+  deliverAssignment: async ({ printer, system, slot }) => {
+    const result = await requestHappyHareSlotAssignment(printer.id, system.id, {
+      materialSlotId: slot.id,
+      providerIndex: slot.provider_index,
+      assignmentRevision: slot.assignment_revision,
+      desired: slot.assignment ? {
+        presetId: slot.assignment.preset_id,
+        spoolId: slot.assignment.spool_id,
+        sourceTs: slot.assignment.source_ts,
+      } : null,
+    });
+    if (result.ok && result.applied && result.observationUploaded) {
+      return { status: 'delivered' };
+    }
+    if (result.code === 'physical_clear_unsupported') {
+      return { status: 'unsupported', code: result.code };
+    }
+    return {
+      status: 'saved_only',
+      code: result.code,
+      physicallyApplied: result.applied === true,
+    };
   },
   renderCreateHelp: () => <HappyHareCreationGuide />,
   renderSettings: ({ printer }) => <HostnameField printer={printer} />,

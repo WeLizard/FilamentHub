@@ -5,6 +5,9 @@ Newest first. The top entry is the text pasted into the Plugin Hub on release.
 ## Unreleased
 
 ## 0.1.9
+- Saving a supported material assignment can immediately deliver that exact committed slot to Bambu LAN or Happy Hare. The material check now only reads and uploads current printer observations, and offline or uncertain delivery remains explicit.
+- Checking and applying Bambu materials now finds the saved LAN connection using the same local source as its telemetry, without pairing the printer again.
+- Local connection dialogs follow the FilamentHub style and temporarily hide the embedded setup wizard, so only one setup window is visible.
 - Bambu LAN readings now preserve received printer status when waiting for a later report times out. Missing AMS information is kept separate from an explicitly empty feed system.
 - Printer setup now searches the local IPv4 network for Bambu LAN, Moonraker and OctoPrint announcements. Saved connections and OrcaSlicer profiles remain available as clearly identified hints.
 - A discovered printer can be added or attached to an existing card. Bambu setup fills its local address and serial number, then asks for the LAN code; Moonraker asks for a local API key when required. Addresses and credentials stay on the computer.

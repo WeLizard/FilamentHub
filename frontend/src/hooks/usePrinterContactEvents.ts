@@ -128,13 +128,18 @@ function startContactStream(client: QueryClient): () => void {
     }
     client.setQueryData<PhysicalPrinter[]>(PRINTERS_KEY, (old) => old && applyPrinterContact(old, event));
     if (connector) {
-      client.setQueriesData<{ last_seen_at: string | null }>({
-        predicate: ({ queryKey }) => isBridgeQuery(queryKey, printer.id)
+      const matchingBridge = ({ queryKey }: { queryKey: readonly unknown[] }) => isBridgeQuery(queryKey, printer.id)
           && queryKey[2] === connector.material_system_id
           && (queryKey[0] === 'octoprint-bridge-status'
             ? connector.provider === 'octoprint' && connector.transport === 'bridge_https'
-            : connector.transport === (queryKey[3] ?? 'orca_plugin_lan')),
-      }, (old) => old && ({ ...old, last_seen_at: latestDeviceContact(old.last_seen_at, event.last_seen_at) }));
+            : connector.transport === (queryKey[3] ?? 'orca_plugin_lan'));
+      // The first contact can arrive while the setup query still says unpaired.
+      // Reload its authoritative state instead of freezing that flag forever
+      // while continuing to patch only its heartbeat timestamp.
+      if (client.getQueriesData<{ paired?: boolean }>({ predicate: matchingBridge })
+        .some(([, status]) => status?.paired === false)) requestResync();
+      client.setQueriesData<{ last_seen_at: string | null }>({ predicate: matchingBridge },
+        (old) => old && ({ ...old, last_seen_at: latestDeviceContact(old.last_seen_at, event.last_seen_at) }));
     }
   };
 

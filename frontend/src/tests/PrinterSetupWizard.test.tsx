@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   create: vi.fn(), setup: vi.fn(), plugin: vi.fn(), key: vi.fn(), embed: false,
   printers: vi.fn(), models: vi.fn(), model: vi.fn(), installed: vi.fn(),
   capabilities: ['printer-setup-v1'], adapterSetup: vi.fn(),
+  localSetup: undefined as undefined | ((state: { open: boolean }) => void),
 }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('../contexts/AuthContext', () => ({ useAuth: () => ({ user: { id: 1 } }) }));
@@ -21,6 +22,10 @@ vi.mock('../utils/pluginBridge', () => ({
   requestPluginCapabilities: vi.fn(),
   subscribeToPluginCapabilities: (cb: (caps: Set<string>) => void) => {
     cb(new Set(mocks.capabilities)); return () => {};
+  },
+  subscribeToLocalPrinterSetup: (cb: (state: { open: boolean }) => void) => {
+    mocks.localSetup = cb;
+    return () => { if (mocks.localSetup === cb) mocks.localSetup = undefined; };
   },
 }));
 vi.mock('../components/presetSlots/adapters', async (importOriginal) => {
@@ -58,6 +63,7 @@ function savePrinter() {
 describe('PrinterSetupWizard', () => {
   beforeEach(() => {
     vi.clearAllMocks(); localStorage.clear(); sessionStorage.clear(); mocks.embed = false;
+    mocks.localSetup = undefined;
     mocks.capabilities = ['printer-setup-v1'];
     window.history.replaceState({}, '');
     mocks.create.mockResolvedValue(saved); mocks.setup.mockResolvedValue(saved);
@@ -266,6 +272,28 @@ describe('PrinterSetupWizard', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     savePrinter(); await screen.findByText('printerSetup.saved');
     expect(mocks.create).toHaveBeenCalledTimes(1);
+  });
+  it('keeps wizard fields mounted while the trusted local setup dialog owns input', async () => {
+    mocks.embed = true;
+    mocks.plugin.mockResolvedValue({ ok: true, candidates: [] });
+    show();
+    await namePrinter();
+    const nameInput = screen.getByLabelText('printerSetup.name');
+    fireEvent.change(nameInput, { target: { value: 'Workshop field draft' } });
+    const dialog = screen.getByRole('dialog');
+    const overlay = dialog.parentElement?.parentElement as HTMLElement;
+
+    act(() => mocks.localSetup?.({ open: true }));
+    expect(overlay).toHaveStyle({ visibility: 'hidden' });
+    expect(overlay).toHaveAttribute('aria-hidden', 'true');
+    expect(dialog).toBeInTheDocument();
+    expect(nameInput).toBeInTheDocument();
+
+    act(() => mocks.localSetup?.({ open: false }));
+    expect(overlay).not.toHaveStyle({ visibility: 'hidden' });
+    expect(overlay).not.toHaveAttribute('aria-hidden');
+    expect(screen.getByLabelText('printerSetup.name')).toBe(nameInput);
+    expect(nameInput).toHaveValue('Workshop field draft');
   });
 
   it('keeps partial discovery results and offers a bounded retry or manual path', async () => {

@@ -86,7 +86,7 @@ function observedSlot(
 }
 
 describe('GateMapGrid material slots', () => {
-  it('keeps eight gates and bypass in one wide row', () => {
+  it('lets eight gates and bypass share a centered wide row without changing their order', () => {
     const slots = Array.from({ length: 8 }, (_, provider_index): MaterialSlot => ({
       id: provider_index + 1,
       provider_index,
@@ -118,7 +118,71 @@ describe('GateMapGrid material slots', () => {
       />,
     );
 
-    expect(container.firstElementChild).toHaveClass('xl:grid-cols-9');
+    const scroller = container.firstElementChild as HTMLElement;
+    const grid = scroller.firstElementChild as HTMLElement;
+    expect(scroller).toHaveClass('min-w-0');
+    expect(scroller).not.toHaveClass('overflow-x-auto');
+    expect(grid.style.gridTemplateColumns).toBe('repeat(9, minmax(0, 7rem))');
+    expect(grid).toHaveClass('justify-center');
+    expect(grid.style.minWidth).toBe('');
+    expect(grid).not.toHaveClass('xl:grid-cols-8', 'xl:grid-cols-9');
+    expect(Array.from(container.querySelectorAll('button'), (button) => button.title)).toEqual([
+      '0', '1', '2', '3', '4', '5', '6', '7', 'presetSlots.route.bypass',
+    ]);
+  });
+
+  it('starts a centered second row only after the ninth slot', () => {
+    const slots = Array.from({ length: 10 }, (_, provider_index): MaterialSlot => ({
+      id: provider_index + 1,
+      provider_index,
+      label: null,
+      kind: 'gate',
+      active: true,
+      assignment_revision: 0,
+      assignment: null,
+      legacy_projection: null,
+    }));
+    const { container } = render(
+      <GateMapGrid
+        slots={slots}
+        gates={[]}
+        presets={{}}
+        spools={[]}
+        onGateClick={vi.fn()}
+      />,
+    );
+
+    const grid = container.firstElementChild?.firstElementChild as HTMLElement;
+    const buttons = container.querySelectorAll('button');
+    expect(grid.style.gridTemplateColumns).toBe('repeat(9, minmax(0, 7rem))');
+    expect(buttons[8].style.gridColumnStart).toBe('');
+    expect(buttons[9].style.gridColumnStart).toBe('5');
+  });
+
+  it('contains a long external-spool name inside its card', () => {
+    const label = 'External spool with a deliberately long user-visible name';
+    render(
+      <GateMapGrid
+        slots={[{
+          id: 99,
+          provider_index: 255,
+          label,
+          kind: 'external',
+          active: true,
+          assignment_revision: 0,
+          assignment: null,
+          legacy_projection: null,
+        }]}
+        gates={[]}
+        presets={{}}
+        spools={[]}
+        onGateClick={vi.fn()}
+      />,
+    );
+
+    const route = screen.getByRole('button', { name: label });
+    expect(route).toHaveAttribute('title', label);
+    expect(route.querySelector('svg')).toHaveAttribute('aria-hidden', 'true');
   });
 
   it('shows Happy Hare bypass as a named observed route instead of gate 1023', () => {
@@ -155,10 +219,10 @@ describe('GateMapGrid material slots', () => {
       />,
     );
 
-    expect(screen.getByText('presetSlots.route.bypass')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'presetSlots.route.bypass' })).toBeInTheDocument();
     expect(screen.getByText('presetSlots.route.bypassSelectedLoaded')).toBeInTheDocument();
     expect(screen.queryByText('1023')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByText('presetSlots.route.bypass'));
+    fireEvent.click(screen.getByRole('button', { name: 'presetSlots.route.bypass' }));
     expect(onGateClick).toHaveBeenCalledWith(null, bypass);
   });
 

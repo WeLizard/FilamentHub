@@ -99,13 +99,9 @@ function MaterialSystemSection({ printer, system, presetsSeedMap, spools, spoolC
   const [issuedKey, setIssuedKey] = useState<string | null>(null);
   const [issuingKey, setIssuingKey] = useState(false);
   const [setupOpen, setSetupOpen] = useState(false);
-  const canCollapse = adapter.alwaysCollapsible === true
-    || system.kind === 'mmu'
-    || adapter.topologyFromProvider === true
-    || system.slots.filter((slot) => slot.active).length > 1;
   const collapseStorageKey = `filamenthub:material-system:collapsed:${user?.id ?? 'anonymous'}:${system.id}`;
   const [collapsed, setCollapsed] = useState(
-    () => canCollapse && safeStorage.get(collapseStorageKey) === '1',
+    () => safeStorage.get(collapseStorageKey) === '1',
   );
   const now = useNow();
   const connector = printer.connectors.find(
@@ -124,7 +120,6 @@ function MaterialSystemSection({ printer, system, presetsSeedMap, spools, spoolC
     () => system.slots.filter((slot) => slot.active),
     [system.slots],
   );
-  const compactCardLayout = visibleSlots.length <= 4;
   const gates = useMemo(
     () => visibleSlots.map(materialSlotGateState).filter((gate): gate is GateState => gate !== null),
     [visibleSlots],
@@ -145,7 +140,6 @@ function MaterialSystemSection({ printer, system, presetsSeedMap, spools, spoolC
   };
 
   const toggleCollapsed = () => {
-    if (!canCollapse) return;
     setCollapsed((current) => {
       const next = !current;
       safeStorage.set(collapseStorageKey, next ? '1' : '0');
@@ -264,10 +258,8 @@ function MaterialSystemSection({ printer, system, presetsSeedMap, spools, spoolC
   };
 
   return (
-    <div className={`${collapsed ? '' : 'h-full'} rounded-2xl border border-white/10 bg-white/3 p-5`}>
-      <div className={compactCardLayout
-        ? `${collapsed ? '' : 'mb-4'} grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3 gap-y-2`
-        : `${collapsed ? '' : 'mb-4'} flex flex-wrap items-start justify-between gap-3 md:grid md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]`}>
+    <div className="@container min-w-0 rounded-2xl border border-white/10 bg-white/3 p-5">
+      <div className={`${collapsed ? '' : 'mb-4'} grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3 gap-y-2 @min-[38rem]:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]`}>
         <div className="min-w-0 flex items-center gap-3">
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-purple-500/20">
             <Cpu className="h-5 w-5 text-purple-300" />
@@ -287,10 +279,8 @@ function MaterialSystemSection({ printer, system, presetsSeedMap, spools, spoolC
           </div>
         </div>
 
-        <div className={compactCardLayout
-          ? 'col-span-2 row-start-2 flex min-w-0 flex-col items-start gap-1.5'
-          : 'flex min-w-0 flex-col items-start gap-1.5 md:items-center md:justify-self-center'}>
-          <div className="flex flex-wrap items-center gap-1.5 md:justify-center">
+        <div className="col-span-2 row-start-2 flex min-w-0 flex-col items-start gap-1.5 @min-[38rem]:col-span-1 @min-[38rem]:col-start-2 @min-[38rem]:row-start-1 @min-[38rem]:items-center @min-[38rem]:justify-self-center">
+          <div className="flex flex-wrap items-center gap-1.5 @min-[38rem]:justify-center">
             <span
               title={t(linkState === 'ready' ? 'deviceLink.onDemandTooltip' : 'deviceLink.tooltip')}
               className={[
@@ -377,7 +367,7 @@ function MaterialSystemSection({ printer, system, presetsSeedMap, spools, spoolC
           </div>
 
           {!adapter.link ? null : (
-            <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-gray-400 md:justify-center">
+            <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-gray-400 @min-[38rem]:justify-center">
               <span className="flex items-center gap-1">
                 {!printer.has_api_key ? (
                   <>
@@ -411,20 +401,16 @@ function MaterialSystemSection({ printer, system, presetsSeedMap, spools, spoolC
           {!adapter.link && adapter.renderSettings?.({ printer, system, gates, spools, linkConfirmed })}
         </div>
 
-        <div className={compactCardLayout
-          ? 'col-start-2 row-start-1 flex flex-wrap items-center gap-2 justify-self-end'
-          : 'flex flex-wrap items-center gap-2 md:justify-self-end'}>
-          {canCollapse && (
-            <button
-              type="button"
-              onClick={toggleCollapsed}
-              aria-expanded={!collapsed}
-              title={t(collapsed ? 'presetSlots.expandSystem' : 'presetSlots.collapseSystem')}
-              className="rounded-lg border border-white/10 bg-white/5 p-1.5 text-gray-400 transition hover:bg-white/10 hover:text-white"
-            >
-              <ChevronDown className={`h-3.5 w-3.5 transition-transform ${collapsed ? '' : 'rotate-180'}`} />
-            </button>
-          )}
+        <div className="col-start-2 row-start-1 flex flex-wrap items-center justify-end gap-2 justify-self-end @min-[38rem]:col-start-3">
+          <button
+            type="button"
+            onClick={toggleCollapsed}
+            aria-expanded={!collapsed}
+            title={t(collapsed ? 'presetSlots.expandSystem' : 'presetSlots.collapseSystem')}
+            className="rounded-lg border border-white/10 bg-white/5 p-1.5 text-gray-400 transition hover:bg-white/10 hover:text-white"
+          >
+            <ChevronDown className={`h-3.5 w-3.5 transition-transform ${collapsed ? '' : 'rotate-180'}`} />
+          </button>
           {adapter.renderActions?.({ printer, system, gates, spools, linkConfirmed })}
           <button type="button" onClick={() => setSetupOpen(true)}
             aria-label={t('printerSetup.connectionSettings')}
@@ -530,6 +516,7 @@ function MaterialSystemSection({ printer, system, presetsSeedMap, spools, spoolC
 
       {!collapsed && (
         <GateMapGrid
+          provider={system.provider}
           slots={visibleSlots}
           gates={gates}
           presets={effectivePresetsMap}
@@ -700,13 +687,22 @@ export function PresetSlotsPanel({
           <AddPhysicalPrinterModal isOpen onClose={handleSystemAdded}
             printerProfiles={Array.from(printerProfileNameById, ([id, name]) => ({ id, name }))} />
         )}
-        <div className="grid gap-4 xl:grid-cols-2">
+        <div className="flex flex-wrap items-start justify-center gap-4">
           {materialSections.map(({ printer, system }) => {
             const activeSlotCount = system.slots.filter((slot) => slot.active).length;
+            const preferredColumns = Math.min(Math.max(activeSlotCount, 1), 9);
+            const preferredWidthRem = Math.max(
+              20,
+              preferredColumns * 7 + (preferredColumns - 1) * 0.375 + 2.625,
+            );
             return (
               <div
                 key={system.id}
-                className={activeSlotCount > 4 ? 'xl:col-span-2' : undefined}
+                className="min-w-[min(100%,20rem)]"
+                style={{
+                  flexBasis: `${preferredWidthRem}rem`,
+                  flexGrow: Math.max(preferredColumns, 2),
+                }}
               >
                 <MaterialSystemSection
                   printer={printer}
@@ -736,6 +732,7 @@ export function PresetSlotsPanel({
           slotLabel={modalState.slot.label}
           slotObservation={modalState.slot.observation}
           physicalPrinterId={modalState.printer.id}
+          materialSystemId={modalState.system.id}
           materialSlotId={modalState.slot.id}
           assignmentRevision={modalState.slot.assignment_revision}
           expectedSpoolId={modalState.slot.assignment?.spool_id

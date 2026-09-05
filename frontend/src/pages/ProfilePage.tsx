@@ -88,6 +88,11 @@ const CreatePrinterProfileModal = lazy(() =>
 );
 import { CreatePrintProfileModal } from '../components/CreatePrintProfileModal';
 import { PresetSyncToggle } from '../components/PresetSyncToggle';
+import {
+  ASSIGNMENT_DELIVERY_FEEDBACK_KEY,
+  assignmentDeliveryNotice,
+  assignMaterialSlot,
+} from '../components/presetSlots/assignmentDelivery';
 import { AchievementShowcase } from '../components/AchievementShowcase';
 import { GuidedEmptyState } from '../components/GuidedEmptyState';
 import { PresetSlotsPanel } from '../components/presetSlots/PresetSlotsPanel';
@@ -2369,8 +2374,10 @@ const SpoolCard: React.FC<SpoolCardProps> = ({
 interface FeedTarget {
   key: string;
   printerId: number;
+  materialSystemId: number;
   printerName: string;
   systemName: string;
+  provider: string;
   slots: MaterialSlot[];
 }
 
@@ -2387,8 +2394,10 @@ const collectFeedTargets = (printers: PhysicalPrinter[]): FeedTarget[] => {
           targets.push({
             key: `${printer.id}:${system.id}`,
             printerId: printer.id,
+            materialSystemId: system.id,
             printerName: printer.name,
             systemName: system.name,
+            provider: system.provider,
             slots,
           });
         }
@@ -2407,7 +2416,7 @@ interface SpoolFormProps {
   onCancel: () => void;
 }
 
-const SpoolForm: React.FC<SpoolFormProps> = ({
+export const SpoolForm: React.FC<SpoolFormProps> = ({
   mode,
   spool,
   initialFilamentId = null,
@@ -2854,11 +2863,15 @@ const SpoolForm: React.FC<SpoolFormProps> = ({
     setAssigning(true);
     setErrorText(null);
     try {
-      await physicalPrintersAPI.assignSlot(target.printerId, targetSlot.id, {
+      const outcome = await assignMaterialSlot(target.printerId, target.materialSystemId, targetSlot.id, {
         expected_revision: targetSlot.assignment_revision,
         expected_spool_id: targetSlot.assignment?.spool_id ?? null,
         spool_id: createdSpool.id,
       });
+      const notice = assignmentDeliveryNotice(outcome);
+      if (notice) {
+        toast[notice.tone](t(notice.key), undefined, ASSIGNMENT_DELIVERY_FEEDBACK_KEY);
+      }
       queryClient.invalidateQueries({ queryKey: ['user-spools'] });
       queryClient.invalidateQueries({ queryKey: ['physical-printers'] });
       onSaved();
@@ -2935,19 +2948,21 @@ const SpoolForm: React.FC<SpoolFormProps> = ({
               <div className="flex flex-wrap gap-2">
                 {selectedTarget.slots.map((slot) => {
                   const occupied = slot.assignment?.spool_id != null;
+                  const slotLabel = slot.label?.trim() || String(slot.provider_index);
                   return (
                     <button
                       key={slot.id}
                       type="button"
                       onClick={() => setSelectedSlotId(String(slot.id))}
-                      title={slot.label ?? undefined}
-                      className={`relative w-10 h-10 rounded-lg border text-sm font-mono font-semibold transition-colors ${
+                      title={slotLabel}
+                      aria-label={slotLabel}
+                      className={`relative min-w-10 h-10 rounded-lg border px-2 text-xs font-semibold whitespace-nowrap transition-colors ${
                         selectedSlotId === String(slot.id)
                           ? 'border-purple-500 bg-purple-500/30 text-purple-200'
                           : 'border-white/20 bg-white/5 text-gray-300 hover:bg-white/10'
                       }`}
                     >
-                      {slot.provider_index}
+                      {slotLabel}
                       {occupied && (
                         <span
                           title={t('profilePage.spoolGateStep.slotOccupied')}

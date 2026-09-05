@@ -476,13 +476,13 @@ describe('PresetSlotsPanel', () => {
 
     printerBridgeStatusForQuery = {
       ...printerBridgeStatusForQuery,
-      last_seen_at: '2026-08-14T12:00:00Z',
+      last_observation_at: new Date().toISOString(),
     };
     render(<>{feedAdapterFor('bambu').renderSetup?.(context)}</>);
     expect(screen.getByText('presetSlots.bambu.connected')).toBeInTheDocument();
   });
 
-  it('waits for automatic Happy Hare v4 pairing before using the legacy fallback', async () => {
+  it('waits for automatic Happy Hare v4 pairing without presenting a fake local refresh', async () => {
     const { feedAdapterFor } = await import(
       '../components/presetSlots/adapters'
     );
@@ -514,14 +514,10 @@ describe('PresetSlotsPanel', () => {
       {adapter.renderSetup?.(pairedContext)}
       {adapter.renderActions?.(pairedContext)}
     </>);
-    expect(screen.getAllByText('presetSlots.happyHare.refreshStatus')).toHaveLength(1);
+    expect(screen.queryByText('presetSlots.happyHare.refreshStatus')).not.toBeInTheDocument();
     expect(screen.queryByText('presetSlots.happyHare.refresh.title')).not.toBeInTheDocument();
     expect(screen.queryByText('presetSlots.happyHare.refresh.fallback')).not.toBeInTheDocument();
     expect(screen.queryByText('presetSlots.happyHare.refresh.copyCommand')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByText('presetSlots.happyHare.refreshStatus'));
-    expect(screen.getByText('presetSlots.happyHare.refresh.title')).toBeInTheDocument();
-    expect(screen.getByText('presetSlots.happyHare.withoutPlugin')).toBeInTheDocument();
-    expect(screen.getByText('presetSlots.happyHare.refresh.copyCommand')).toBeInTheDocument();
     expect(paired.container).not.toBeEmptyDOMElement();
   });
 
@@ -584,6 +580,95 @@ describe('PresetSlotsPanel', () => {
     expect(screen.getByTestId('gate-map')).toBeInTheDocument();
   });
 
+  it('sizes printer cards from their slots and keeps card order in the wrapping layout', async () => {
+    const slotsFor = (count: number, idBase: number) => Array.from(
+      { length: count },
+      (_, providerIndex) => ({
+        ...physicalPrinter.material_systems[0].slots[0],
+        id: idBase + providerIndex,
+        provider_index: providerIndex,
+      }),
+    );
+    physicalPrintersForQuery = [{
+      ...physicalPrinter,
+      name: 'Five-slot Voron',
+      material_systems: [{
+        ...physicalPrinter.material_systems[0],
+        slots: slotsFor(5, 100),
+      }],
+    }, {
+      ...physicalPrinter,
+      id: 12,
+      logical_id: 'printer-12',
+      name: 'Three-slot printer',
+      material_systems: [{
+        ...physicalPrinter.material_systems[0],
+        id: 22,
+        slots: slotsFor(3, 200),
+      }],
+    }];
+    const { PresetSlotsPanel } = await import(
+      '../components/presetSlots/PresetSlotsPanel'
+    );
+
+    render(<PresetSlotsPanel spools={[]} printerProfiles={[]} />);
+
+    const fiveSlotCard = screen.getByRole('heading', { name: 'Five-slot Voron' })
+      .closest('.rounded-2xl') as HTMLElement;
+    const threeSlotCard = screen.getByRole('heading', { name: 'Three-slot printer' })
+      .closest('.rounded-2xl') as HTMLElement;
+    const fiveSlotWrapper = fiveSlotCard.parentElement as HTMLElement;
+    const threeSlotWrapper = threeSlotCard.parentElement as HTMLElement;
+    const layout = fiveSlotWrapper.parentElement as HTMLElement;
+
+    expect(fiveSlotCard).toHaveClass('@container', 'min-w-0');
+    expect(threeSlotCard).toHaveClass('@container', 'min-w-0');
+    expect(fiveSlotWrapper).toHaveClass('min-w-[min(100%,20rem)]');
+    expect(fiveSlotWrapper.style.flexBasis).toBe('39.125rem');
+    expect(fiveSlotWrapper.style.flexGrow).toBe('5');
+    expect(threeSlotWrapper).toHaveClass('min-w-[min(100%,20rem)]');
+    expect(threeSlotWrapper.style.flexBasis).toBe('24.375rem');
+    expect(threeSlotWrapper.style.flexGrow).toBe('3');
+    expect(layout).toBe(threeSlotWrapper.parentElement);
+    expect(layout).toHaveClass('flex', 'flex-wrap', 'items-start', 'justify-center');
+    expect(Array.from(layout.querySelectorAll('h2'), (heading) => heading.textContent)).toEqual([
+      'Five-slot Voron',
+      'Three-slot printer',
+    ]);
+  });
+
+  it('uses the shared slot count and keeps wrapped header actions aligned right', async () => {
+    const slots = Array.from({ length: 4 }, (_, providerIndex) => ({
+      ...physicalPrinter.material_systems[0].slots[0],
+      id: 100 + providerIndex,
+      provider_index: providerIndex,
+      label: `AMS 1 · ${providerIndex + 1}`,
+    }));
+    physicalPrintersForQuery = [{
+      ...physicalPrinter,
+      name: 'Discovery Workshop B',
+      material_systems: [{
+        ...physicalPrinter.material_systems[0],
+        provider: 'bambu',
+        kind: 'mmu',
+        slots,
+      }],
+    }];
+    const { PresetSlotsPanel } = await import(
+      '../components/presetSlots/PresetSlotsPanel'
+    );
+
+    render(<PresetSlotsPanel spools={[]} printerProfiles={[]} />);
+
+    expect(screen.getByText('presetSlots.gates')).toBeInTheDocument();
+    expect(screen.queryByText('presetSlots.bambu.slots')).not.toBeInTheDocument();
+    expect(screen.getByTitle('presetSlots.collapseSystem').parentElement).toHaveClass(
+      'flex-wrap',
+      'justify-end',
+      'justify-self-end',
+    );
+  });
+
   it('remembers a collapsed MMU system without changing its assignments', async () => {
     physicalPrintersForQuery = [{
       ...physicalPrinter,
@@ -621,6 +706,23 @@ describe('PresetSlotsPanel', () => {
         provider: 'octoprint',
       }],
     }];
+    const { PresetSlotsPanel } = await import(
+      '../components/presetSlots/PresetSlotsPanel'
+    );
+
+    const first = render(<PresetSlotsPanel spools={[]} printerProfiles={[]} />);
+    fireEvent.click(screen.getByTitle('presetSlots.collapseSystem'));
+    expect(screen.queryByTestId('gate-map')).not.toBeInTheDocument();
+    expect(window.localStorage.getItem('filamenthub:material-system:collapsed:1:21')).toBe('1');
+    first.unmount();
+
+    render(<PresetSlotsPanel spools={[]} printerProfiles={[]} />);
+    expect(screen.queryByTestId('gate-map')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTitle('presetSlots.expandSystem'));
+    expect(screen.getByTestId('gate-map')).toBeInTheDocument();
+  });
+
+  it('keeps a one-slot manual printer collapsible through the same persisted state', async () => {
     const { PresetSlotsPanel } = await import(
       '../components/presetSlots/PresetSlotsPanel'
     );

@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Search, X, Loader2, CheckCircle2, Trash2, Package, Copy, Check, AlertTriangle } from 'lucide-react';
-import { physicalPrintersAPI, presetsAPI, savedPresetsAPI } from '../../api/client';
+import { presetsAPI, savedPresetsAPI } from '../../api/client';
 import type { GateState, MaterialSlotObservation, UserSpool } from '../../api/client';
 import { useAuth } from '../../contexts/AuthContext';
 import { toast } from '../Toast';
@@ -12,6 +12,11 @@ import { ModalOverlay } from '../ModalOverlay';
 import { isUnidentifiedHHFilament, markHHGateEmptyCommand } from '../../utils/hhGateState';
 import { useDebounce } from '../../hooks/useDebounce';
 import { MATERIAL_SLOT_OBSERVATION_FRESH_MS } from '../../utils/materialSlotComparison';
+import {
+  ASSIGNMENT_DELIVERY_FEEDBACK_KEY,
+  assignmentDeliveryNotice,
+  assignMaterialSlot,
+} from './assignmentDelivery';
 
 interface PresetAssignModalProps {
   isOpen: boolean;
@@ -21,6 +26,7 @@ interface PresetAssignModalProps {
   slotLabel?: string | null;
   slotObservation?: MaterialSlotObservation | null;
   physicalPrinterId: number;
+  materialSystemId: number;
   materialSlotId: number;
   assignmentRevision: number;
   expectedSpoolId: number | null;
@@ -41,6 +47,7 @@ export function PresetAssignModal({
   slotLabel = null,
   slotObservation = null,
   physicalPrinterId,
+  materialSystemId,
   materialSlotId,
   assignmentRevision,
   expectedSpoolId,
@@ -141,7 +148,7 @@ export function PresetAssignModal({
     if (selectedPresetId === null && selectedSpoolId === null) return;
     setIsSubmitting(true);
     try {
-      await physicalPrintersAPI.assignSlot(physicalPrinterId, materialSlotId, {
+      const outcome = await assignMaterialSlot(physicalPrinterId, materialSystemId, materialSlotId, {
         expected_revision: assignmentRevision,
         expected_spool_id: expectedSpoolId,
         preset_id: selectedPresetId,
@@ -152,7 +159,16 @@ export function PresetAssignModal({
         queryClient.invalidateQueries({ queryKey: ['spools'] }),
         queryClient.invalidateQueries({ queryKey: ['user-spools'] }),
       ]);
-      toast.success(t('presetSlots.modal.assigned', { gate: slotDisplayLabel }));
+      const notice = assignmentDeliveryNotice(outcome);
+      if (notice) {
+        toast[notice.tone](t(notice.key), undefined, ASSIGNMENT_DELIVERY_FEEDBACK_KEY);
+      } else {
+        toast.success(
+          t('presetSlots.modal.assigned', { gate: slotDisplayLabel }),
+          undefined,
+          ASSIGNMENT_DELIVERY_FEEDBACK_KEY,
+        );
+      }
       onAssigned();
     } catch (err: any) {
       if (err?.response?.status === 409) {
@@ -163,7 +179,11 @@ export function PresetAssignModal({
         ]);
         onClose();
       }
-      toast.error(translateApiError(t, err?.response?.data?.detail, t('common.error')));
+      toast.error(
+        translateApiError(t, err?.response?.data?.detail, t('common.error')),
+        undefined,
+        ASSIGNMENT_DELIVERY_FEEDBACK_KEY,
+      );
     } finally {
       setIsSubmitting(false);
     }
@@ -172,7 +192,7 @@ export function PresetAssignModal({
   const handleClear = async () => {
     setIsSubmitting(true);
     try {
-      await physicalPrintersAPI.assignSlot(physicalPrinterId, materialSlotId, {
+      const outcome = await assignMaterialSlot(physicalPrinterId, materialSystemId, materialSlotId, {
         expected_revision: assignmentRevision,
         expected_spool_id: expectedSpoolId,
         preset_id: null,
@@ -183,7 +203,16 @@ export function PresetAssignModal({
         queryClient.invalidateQueries({ queryKey: ['spools'] }),
         queryClient.invalidateQueries({ queryKey: ['user-spools'] }),
       ]);
-      toast.success(t('presetSlots.modal.assigned', { gate: slotDisplayLabel }));
+      const notice = assignmentDeliveryNotice(outcome);
+      if (notice) {
+        toast[notice.tone](t(notice.key), undefined, ASSIGNMENT_DELIVERY_FEEDBACK_KEY);
+      } else {
+        toast.success(
+          t('presetSlots.modal.assigned', { gate: slotDisplayLabel }),
+          undefined,
+          ASSIGNMENT_DELIVERY_FEEDBACK_KEY,
+        );
+      }
       onAssigned();
     } catch (err: any) {
       if (err?.response?.status === 409) {
@@ -194,7 +223,11 @@ export function PresetAssignModal({
         ]);
         onClose();
       }
-      toast.error(translateApiError(t, err?.response?.data?.detail, t('common.error')));
+      toast.error(
+        translateApiError(t, err?.response?.data?.detail, t('common.error')),
+        undefined,
+        ASSIGNMENT_DELIVERY_FEEDBACK_KEY,
+      );
     } finally {
       setIsSubmitting(false);
     }

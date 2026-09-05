@@ -24,6 +24,7 @@ import { clearPrinterSetupIntent, persistPrinterSetupIntent, readPrinterSetupInt
 import type { PendingPrinterSetup, PrinterSetupRoute } from '../utils/printerSetupRecovery';
 import {
   isPluginEmbed, requestPluginCapabilities, requestPrinterSetup, subscribeToPluginCapabilities,
+  subscribeToLocalPrinterSetup,
 } from '../utils/pluginBridge';
 import type { PrinterSetupCandidate, PrinterSetupResult } from '../utils/pluginBridge';
 
@@ -88,6 +89,11 @@ export function PrinterSetupWizard({
   const [saved, setSaved] = useState<PhysicalPrinter | null>(null);
   const [activated, setActivated] = useState(false);
   const [observed, setObserved] = useState(false);
+  const [localDialogOpen, setLocalDialogOpen] = useState(false);
+  useEffect(() => {
+    if (!isPluginEmbed()) return;
+    return subscribeToLocalPrinterSetup((state) => setLocalDialogOpen(state.open));
+  }, []);
   const [inventoryLinked, setInventoryLinked] = useState(false);
   const [finishInventory, setFinishInventory] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -498,7 +504,7 @@ export function PrinterSetupWizard({
       ? 'printerSetup.saveAndConnect'
       : targetId ? 'printerSetup.connect' : 'printerSetup.save';
 
-  return <ModalOverlay onClose={close} closeOnOverlayClick={!busy && !confirmKey} closeOnEscape={!busy && !confirmKey}>
+  return <ModalOverlay onClose={close} suspended={localDialogOpen} closeOnOverlayClick={!busy && !confirmKey} closeOnEscape={!busy && !confirmKey}>
     <div role="dialog" aria-modal="true" aria-labelledby="printer-setup-title"
       className="flex max-h-[calc(100dvh-2rem)] w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-white/20 bg-gray-900 text-white shadow-2xl">
       <div className="flex items-center justify-between border-b border-white/10 px-6 py-4">

@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { applyPrinterContact, usePrinterContactEvents, type PrinterContactEvent } from './usePrinterContactEvents';
 import type { PhysicalPrinter } from '../api/client';
 
-const api = vi.hoisted(() => ({ list: vi.fn(), contactEvents: vi.fn() }));
+const api = vi.hoisted(() => ({ list: vi.fn(), contactEvents: vi.fn(), bridgeStatus: vi.fn() }));
 vi.mock('../api/client', () => ({ physicalPrintersAPI: api }));
 
 const oldTime = '2026-08-31T00:00:00Z';
@@ -25,6 +25,17 @@ function Surface() {
   return <span>{data?.[0]?.connectors[0]?.last_seen_at}</span>;
 }
 
+function BridgeSurface() {
+  useQuery({ queryKey: ['physical-printers'], queryFn: api.list });
+  useQuery({
+    queryKey: ['printer-bridge-status', 11, 31],
+    queryFn: api.bridgeStatus,
+    staleTime: Infinity,
+  });
+  usePrinterContactEvents(7);
+  return null;
+}
+
 describe('visible printer contact updates', () => {
   class Socket extends EventTarget {
     close() { this.dispatchEvent(new Event('close')); }
@@ -40,6 +51,7 @@ describe('visible printer contact updates', () => {
     Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
     Object.defineProperty(navigator, 'onLine', { configurable: true, value: true });
     api.list.mockResolvedValue([printer]);
+    api.bridgeStatus.mockResolvedValue({ paired: true, last_seen_at: oldTime });
     api.contactEvents.mockImplementation((signal: AbortSignal) => {
       const socket = new Socket();
       streams.push({ socket, signal });
@@ -150,6 +162,62 @@ describe('visible printer contact updates', () => {
       await vi.advanceTimersByTimeAsync(60_000);
     });
     expect(api.list).toHaveBeenCalledTimes(snapshotCalls + 1);
+    view.unmount();
+  });
+
+  it('keeps an unpaired cache provisional until one coalesced server resync replaces it', async () => {
+    const bambuPrinter = {
+      ...printer,
+      connectors: [{
+        ...printer.connectors[0],
+        provider: 'bambu',
+        transport: 'orca_plugin_lan',
+      }],
+    } as PhysicalPrinter;
+    const serverPrinter = {
+      ...bambuPrinter,
+      reports_feed: false,
+      connectors: [{ ...bambuPrinter.connectors[0], last_seen_at: newTime }],
+    } as PhysicalPrinter;
+    api.list.mockReset();
+    api.list.mockResolvedValueOnce([bambuPrinter]).mockResolvedValue([serverPrinter]);
+    api.bridgeStatus.mockReset();
+    api.bridgeStatus
+      .mockResolvedValueOnce({ paired: false, last_seen_at: oldTime })
+      .mockResolvedValue({ paired: true, last_seen_at: newTime });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
+    clients.push(client);
+    const view = render(
+      <QueryClientProvider client={client}><BridgeSurface /></QueryClientProvider>,
+    );
+    await waitFor(() => expect(api.contactEvents).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(
+      client.getQueryData<{ paired: boolean }>(['printer-bridge-status', 11, 31])?.paired,
+    ).toBe(false));
+    const listCalls = api.list.mock.calls.length;
+    vi.useFakeTimers();
+
+    await act(async () => {
+      for (let index = 0; index < 10; index++) send(0, 'contact', update);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(client.getQueryData<{ paired: boolean; last_seen_at: string }>(
+      ['printer-bridge-status', 11, 31],
+    )).toEqual({ paired: false, last_seen_at: newTime });
+    expect(api.bridgeStatus).toHaveBeenCalledTimes(1);
+    expect(api.list).toHaveBeenCalledTimes(listCalls);
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(100); });
+
+    expect(api.bridgeStatus).toHaveBeenCalledTimes(2);
+    expect(api.list).toHaveBeenCalledTimes(listCalls + 1);
+    expect(client.getQueryData(['printer-bridge-status', 11, 31])).toEqual({
+      paired: true,
+      last_seen_at: newTime,
+    });
+    expect(client.getQueryData<PhysicalPrinter[]>(['physical-printers'])?.[0]).toEqual(serverPrinter);
     view.unmount();
   });
 
