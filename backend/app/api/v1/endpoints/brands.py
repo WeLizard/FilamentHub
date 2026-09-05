@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import (
@@ -29,17 +29,10 @@ from app.core.utils import like_pattern
 from app.db.session import get_db
 from app.models.brand import Brand
 from app.models.filament import Filament
-from app.models.filament_analytics_event import FilamentAnalyticsEvent
 from app.models.organization import OrganizationMembership
-from app.models.preset import Preset
-from app.models.preset_printer import PresetPrinter
-from app.models.printer import Printer
+from app.models.preset import PUBLIC_PRESET_STATUSES, Preset
 from app.models.user import User, UserRole
-from app.models.user_saved_preset import UserSavedPreset
-from app.models.user_spool import UserSpool
 from app.schemas.brand import (
-    BrandAnalyticsCountryItem,
-    BrandAnalyticsFilamentItem,
     BrandAnalyticsResponse,
     BrandCreate,
     BrandListResponse,
@@ -47,8 +40,8 @@ from app.schemas.brand import (
     BrandSlugSuggestionResponse,
     BrandUpdate,
     BrandUsageResponse,
-    PopularPrinterItem,
 )
+from app.services.brand_analytics_service import monthly_registered_spools
 from app.services.brand_slug_service import (
     choose_brand_slug,
     resolve_brand_identifier,
@@ -60,7 +53,6 @@ from app.services.file_service import (
     get_upload_root_dir,
     normalize_brand_logo_upload,
 )
-from app.services.organization_access import can_view_private_brand_data
 from app.services.territorial_access import (
     active_grants_for,
     can_edit_brand_common,
@@ -171,115 +163,28 @@ async def get_brand(
     return response
 
 
+async def _analytics_global_scope(db: AsyncSession, user: User, brand_id: int) -> bool:
+    if await db.get(Brand, brand_id) is None:
+        raise_error(404, ERR_BRAND_NOT_FOUND)
+    grants = await active_grants_for(db, user, brand_id)
+    if user.role != UserRole.ADMIN and not grants:
+        raise_error(403, ERR_NO_PERMISSION)
+    return user.role == UserRole.ADMIN or any(grant.country is None for grant in grants)
+
+
 @router.get("/{brand_id}/analytics", response_model=BrandAnalyticsResponse)
 async def get_brand_analytics(
     brand_id: int,
     current_user: Annotated[User, Depends(get_current_active_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> BrandAnalyticsResponse:
-    """Return global or territorial scan analytics for the active workspace."""
-    brand = await db.get(Brand, brand_id)
-    if brand is None:
-        raise_error(404, ERR_BRAND_NOT_FOUND)
-
-    grants = await active_grants_for(db, current_user, brand_id)
-    is_global = current_user.role == UserRole.ADMIN or any(
-        grant.country is None for grant in grants
-    )
-    countries = sorted({grant.country for grant in grants if grant.country is not None})
-    if not is_global and not countries:
-        raise_error(403, ERR_NO_PERMISSION)
-
-    historical_total = int(
-        await db.scalar(
-            select(func.coalesce(func.sum(Filament.scans_count), 0)).where(
-                Filament.brand_id == brand_id
-            )
-        )
-        or 0
-    )
-
-    event_filters = [
-        Filament.brand_id == brand_id,
-        FilamentAnalyticsEvent.event_type == "qr_scan",
-    ]
-    if not is_global:
-        event_filters.append(FilamentAnalyticsEvent.country.in_(countries))
-
-    country_rows = (
-        await db.execute(
-            select(
-                FilamentAnalyticsEvent.country,
-                func.count(FilamentAnalyticsEvent.id),
-            )
-            .join(Filament, Filament.id == FilamentAnalyticsEvent.filament_id)
-            .where(*event_filters)
-            .group_by(FilamentAnalyticsEvent.country)
-            .order_by(FilamentAnalyticsEvent.country)
-        )
-    ).all()
-    captured_total = sum(int(row[1]) for row in country_rows)
-
-    if is_global:
-        known_rows = [row for row in country_rows if row[0] is not None]
-        known_total = sum(int(row[1]) for row in known_rows)
-        unknown_total = max(historical_total - known_total, 0)
-        country_breakdown = [
-            BrandAnalyticsCountryItem(country=row[0], scans=int(row[1]))
-            for row in known_rows
-        ]
-        if unknown_total:
-            country_breakdown.append(
-                BrandAnalyticsCountryItem(country=None, scans=unknown_total)
-            )
-        total_scans = historical_total
-        historical_unattributed = max(historical_total - captured_total, 0)
-    else:
-        country_breakdown = [
-            BrandAnalyticsCountryItem(country=row[0], scans=int(row[1]))
-            for row in country_rows
-        ]
-        total_scans = captured_total
-        historical_unattributed = 0
-
-    if is_global:
-        filament_rows = (
-            await db.execute(
-                select(Filament.id, Filament.name, Filament.scans_count)
-                .where(Filament.brand_id == brand_id)
-                .order_by(Filament.scans_count.desc(), Filament.name)
-            )
-        ).all()
-    else:
-        filament_rows = (
-            await db.execute(
-                select(
-                    Filament.id,
-                    Filament.name,
-                    func.count(FilamentAnalyticsEvent.id).label("scans"),
-                )
-                .join(
-                    FilamentAnalyticsEvent,
-                    FilamentAnalyticsEvent.filament_id == Filament.id,
-                )
-                .where(*event_filters)
-                .group_by(Filament.id, Filament.name)
-                .order_by(func.count(FilamentAnalyticsEvent.id).desc(), Filament.name)
-            )
-        ).all()
-
+    """Return the fixed monthly release without country or filament breakdowns."""
+    is_global = await _analytics_global_scope(db, current_user, brand_id)
     return BrandAnalyticsResponse(
         scope="global" if is_global else "territorial",
-        countries=[] if is_global else countries,
-        total_scans=total_scans,
-        historical_unattributed_scans=historical_unattributed,
-        country_breakdown=country_breakdown,
-        filaments=[
-            BrandAnalyticsFilamentItem(
-                filament_id=row[0], name=row[1], scans=int(row[2] or 0)
-            )
-            for row in filament_rows
-        ],
+        monthly_registered_spools=await monthly_registered_spools(
+            db, brand_id=brand_id, global_scope=is_global
+        ),
     )
 
 
@@ -289,97 +194,28 @@ async def get_brand_usage(
     current_user: Annotated[User, Depends(get_current_active_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> BrandUsageResponse:
-    """Статистика использования материалов бренда для кабинета бренда."""
-    brand = (await db.execute(select(Brand).where(Brand.id == brand_id))).scalar_one_or_none()
-    if not brand:
-        raise_error(404, ERR_BRAND_NOT_FOUND)
-
-    if not await can_view_private_brand_data(db, current_user, brand_id):
-        raise_error(403, ERR_NO_PERMISSION)
-
-    grants = await active_grants_for(db, current_user, brand_id)
-    is_global = current_user.role == UserRole.ADMIN or any(
-        grant.country is None for grant in grants
-    )
-    countries = sorted({grant.country for grant in grants if grant.country is not None})
-    if not is_global and not countries:
-        raise_error(403, ERR_NO_PERMISSION)
-
-    printers_result = await db.execute(
-        select(
-            Printer.id,
-            Printer.name,
-            Printer.manufacturer,
-            func.count(PresetPrinter.id).label("cnt"),
-        )
-        .select_from(PresetPrinter)
-        .join(Preset, Preset.id == PresetPrinter.preset_id)
-        .join(Filament, Filament.id == Preset.filament_id)
-        .join(Printer, Printer.id == PresetPrinter.printer_id)
-        .where(Filament.brand_id == brand_id, Preset.active == True)
-        .group_by(Printer.id, Printer.name, Printer.manufacturer)
-        .order_by(func.count(PresetPrinter.id).desc())
-        .limit(10)
-    )
-    popular_printers = [
-        PopularPrinterItem(
-            printer_id=row.id, name=row.name, manufacturer=row.manufacturer, count=row.cnt
-        )
-        for row in printers_result.all()
-    ] if is_global else []
-
-    spool_query = (
-        select(func.count(UserSpool.id))
-        .select_from(UserSpool)
-        .join(Filament, Filament.id == UserSpool.filament_id)
-        .where(Filament.brand_id == brand_id)
-    )
-    if not is_global:
-        spool_query = spool_query.join(User, User.id == UserSpool.user_id).where(
-            User.country.in_(countries)
-        )
-    spools_tracked = (await db.execute(spool_query)).scalar() or 0
-
+    """Return public catalog coverage and the shared monthly inventory release."""
+    is_global = await _analytics_global_scope(db, current_user, brand_id)
     presets_count = int(
         await db.scalar(
             select(func.count(Preset.id))
-            .select_from(Preset)
             .join(Filament, Filament.id == Preset.filament_id)
-            .where(Filament.brand_id == brand_id)
+            .where(
+                Filament.brand_id == brand_id,
+                Preset.active.is_(True),
+                or_(
+                    Preset.moderation_status.in_(PUBLIC_PRESET_STATUSES),
+                    Preset.is_official.is_(True),
+                ),
+            )
         )
         or 0
     )
-    if is_global:
-        total_preset_usage = int(
-            await db.scalar(
-                select(func.coalesce(func.sum(Preset.usage_count), 0))
-                .select_from(Preset)
-                .join(Filament, Filament.id == Preset.filament_id)
-                .where(Filament.brand_id == brand_id)
-            )
-            or 0
-        )
-    else:
-        total_preset_usage = int(
-            await db.scalar(
-                select(func.count(UserSavedPreset.id))
-                .select_from(UserSavedPreset)
-                .join(Preset, Preset.id == UserSavedPreset.preset_id)
-                .join(Filament, Filament.id == Preset.filament_id)
-                .join(User, User.id == UserSavedPreset.user_id)
-                .where(
-                    Filament.brand_id == brand_id,
-                    User.country.in_(countries),
-                )
-            )
-            or 0
-        )
-
     return BrandUsageResponse(
-        popular_printers=popular_printers,
-        spools_tracked=int(spools_tracked),
-        total_preset_usage=total_preset_usage,
         presets_count=presets_count,
+        monthly_registered_spools=await monthly_registered_spools(
+            db, brand_id=brand_id, global_scope=is_global
+        ),
     )
 
 

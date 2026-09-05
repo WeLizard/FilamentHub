@@ -1,6 +1,7 @@
 """Pydantic schemas for Brand."""
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -71,44 +72,27 @@ class BrandListResponse(BaseModel):
     pages: int
 
 
-class PopularPrinterItem(BaseModel):
-    """Принтер и число привязанных к нему пресетов бренда."""
+class BrandMonthlySpools(BaseModel):
+    """Fixed count of retained spool registrations, gated by distinct owners."""
 
-    printer_id: int
-    name: str
-    manufacturer: str | None = None
-    count: int
+    month: str
+    status: Literal["available", "insufficient_cohort", "unavailable_scope"]
+    value: int | None = Field(None, ge=10)
+    captured_at: datetime | None = None
 
 
 class BrandUsageResponse(BaseModel):
-    """Статистика использования материалов бренда."""
+    """Public catalog count and the same monthly release as brand analytics."""
 
-    popular_printers: list[PopularPrinterItem]
-    spools_tracked: int
-    total_preset_usage: int
     presets_count: int
-
-
-class BrandAnalyticsCountryItem(BaseModel):
-    country: str | None
-    scans: int
-
-
-class BrandAnalyticsFilamentItem(BaseModel):
-    filament_id: int
-    name: str
-    scans: int
+    monthly_registered_spools: BrandMonthlySpools
 
 
 class BrandAnalyticsResponse(BaseModel):
     """Analytics constrained by the active Brand + Organization workspace."""
 
-    scope: str
-    countries: list[str]
-    total_scans: int
-    historical_unattributed_scans: int
-    country_breakdown: list[BrandAnalyticsCountryItem]
-    filaments: list[BrandAnalyticsFilamentItem]
+    scope: Literal["global", "territorial"]
+    monthly_registered_spools: BrandMonthlySpools
 
 
 class BrandSlugSuggestionResponse(BaseModel):

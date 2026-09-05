@@ -68,7 +68,7 @@ import { BrandSettings } from '../components/BrandSettings';
 import { BrandLogoFrame } from '../components/BrandLogoFrame';
 import { toast } from '../components/Toast';
 import { useDebounce } from '../hooks/useDebounce';
-import type { CountryAvailability, Filament, FilamentAvailability, Brand, BrandRequest, Preset } from '../types/api';
+import type { BrandMonthlyRegisteredSpools, CountryAvailability, Filament, FilamentAvailability, Brand, BrandRequest, Preset } from '../types/api';
 import type { AxiosError } from 'axios';
 import { formatDate } from '../utils/formatDate';
 
@@ -196,6 +196,46 @@ interface BrandProfilePageProps {
 const BRAND_MATERIALS_PAGE_SIZE = 24;
 const BRAND_TAB_IDS = ['materials', 'presets', 'qr', 'analytics', 'usage', 'team', 'settings'] as const;
 type BrandTab = typeof BRAND_TAB_IDS[number];
+
+export function formatBrandAnalyticsMonth(month: string, locale: string): string {
+  const match = /^(\d{4})-(\d{2})$/.exec(month);
+  if (!match) return month;
+
+  const year = Number(match[1]);
+  const monthIndex = Number(match[2]) - 1;
+  if (monthIndex < 0 || monthIndex > 11) return month;
+
+  return new Intl.DateTimeFormat(locale, {
+    month: 'long',
+    year: 'numeric',
+    timeZone: 'UTC',
+  }).format(new Date(Date.UTC(year, monthIndex, 1)));
+}
+
+export function formatBrandAnalyticsCapturedAt(capturedAt: string, locale: string): string {
+  const date = new Date(capturedAt);
+  if (Number.isNaN(date.getTime())) return capturedAt;
+
+  return new Intl.DateTimeFormat(locale, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+    timeZone: 'UTC',
+  }).format(date);
+}
+
+export function getMonthlyRegisteredSpoolsValue(
+  metric: BrandMonthlyRegisteredSpools,
+  locale: string,
+  translate: (key: string) => string,
+): string {
+  if (metric.status === 'insufficient_cohort') {
+    return translate('brandProfile.monthlyRegisteredSpoolsInsufficient');
+  }
+  if (metric.status === 'unavailable_scope') {
+    return translate('brandProfile.monthlyRegisteredSpoolsUnavailableScope');
+  }
+  return metric.value === null ? '—' : new Intl.NumberFormat(locale).format(metric.value);
+}
 
 const IMPORT_CSV_COLUMNS = [
   'name',
@@ -485,7 +525,7 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({
   const filamentNameById = (id: number | null | undefined) =>
     filaments.find((f) => f.id === id)?.name ?? null;
 
-  const { data: usageData } = useQuery({
+  const { data: usageData, isLoading: isLoadingUsage } = useQuery({
     queryKey: ['brand-usage', user?.brand_id, user?.active_organization_id],
     queryFn: () => brandsAPI.getUsage(user!.brand_id!),
     enabled: !!user?.brand_id && brandTab === 'usage',
@@ -858,9 +898,6 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({
       </div>
     );
   }
-
-  // Вычисляем статистику
-  const totalScans = analyticsData?.total_scans ?? 0;
 
   return (
     <div className="space-y-6">
@@ -1613,90 +1650,40 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({
         <div className="space-y-6">
           <div>
             <h3 className="text-2xl font-bold text-white">{t('brandProfile.materialAnalytics')}</h3>
-            <p className="mt-1 text-sm text-gray-400">
-              {analyticsData?.scope === 'global'
-                ? t('brandProfile.analyticsGlobalScope')
-                : t('brandProfile.analyticsTerritorialScope', {
-                    countries: (analyticsData?.countries ?? [])
-                      .map((country) => countryName(country, i18n.language))
-                      .join(', '),
-                  })}
-            </p>
-          </div>
-
-          {/* Stats Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-            <StatCard
-              icon={QrCode}
-              label={t('brandProfile.totalScans')}
-              value={totalScans.toString()}
-              color="from-green-500/20 to-emerald-500/20"
-              borderColor="border-green-500/30"
-              iconColor="text-green-400"
-            />
-            <StatCard
-              icon={Package}
-              label={t('brandProfile.qrCodesCount')}
-              value={filaments.filter(f => f.qr_code).length.toString()}
-              color="from-blue-500/20 to-cyan-500/20"
-              borderColor="border-blue-500/30"
-              iconColor="text-blue-400"
-            />
-            <StatCard
-              icon={Eye}
-              label={t('brandProfile.materialsCount')}
-              value={filaments.length.toString()}
-              color="from-purple-500/20 to-pink-500/20"
-              borderColor="border-purple-500/30"
-              iconColor="text-purple-400"
-            />
-          </div>
-
-          {(analyticsData?.country_breakdown.length ?? 0) > 0 && (
-            <div className="rounded-2xl border border-white/20 bg-white/10 p-6 shadow-xl backdrop-blur-sm">
-              <h3 className="mb-4 text-xl font-bold text-white">
-                {t('brandProfile.analyticsByCountry')}
-              </h3>
-              <div className="space-y-3">
-                {analyticsData!.country_breakdown.map((item) => (
-                  <div key={item.country ?? 'unknown'} className="flex items-center justify-between rounded-xl bg-white/5 px-4 py-3">
-                    <span className="text-gray-200">
-                      {item.country
-                        ? countryName(item.country, i18n.language)
-                        : t('brandProfile.analyticsUnknownCountry')}
-                    </span>
-                    <span className="font-semibold text-white">{item.scans}</span>
-                  </div>
-                ))}
-              </div>
-              {(analyticsData?.historical_unattributed_scans ?? 0) > 0 && (
-                <p className="mt-3 text-xs leading-5 text-gray-500">
-                  {t('brandProfile.analyticsHistoricalNote', {
-                    count: analyticsData!.historical_unattributed_scans,
-                  })}
-                </p>
-              )}
-            </div>
-          )}
-
-          {/* Materials Statistics */}
-          <div className="glass-panel rounded-2xl p-6 border border-white/20 shadow-xl">
-            <h3 className="text-xl font-bold text-white mb-4">{t('brandProfile.materialStats')}</h3>
-            {isLoadingAnalytics ? (
-              <div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin text-purple-300" /></div>
-            ) : filaments.length > 0 ? (
-              <div className="space-y-3">
-                {filaments.map((filament) => {
-                  const scans = analyticsData?.filaments.find(
-                    (item) => item.filament_id === filament.id,
-                  )?.scans ?? 0;
-                  return <MaterialStatCard key={filament.id} filament={filament} scans={scans} />;
-                })}
-              </div>
-            ) : (
-              <p className="text-gray-400 text-center py-8">{t('brandProfile.noData')}</p>
+            {analyticsData && (
+              <p className="mt-1 text-sm text-gray-400">
+                {analyticsData.scope === 'global'
+                  ? t('brandProfile.analyticsGlobalScope')
+                  : t('brandProfile.analyticsTerritorialScope')}
+              </p>
             )}
           </div>
+
+          {isLoadingAnalytics ? (
+            <div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin text-purple-300" /></div>
+          ) : analyticsData ? (
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+              <MonthlyRegisteredSpoolsCard metric={analyticsData.monthly_registered_spools} />
+              <StatCard
+                icon={QrCode}
+                label={t('brandProfile.qrCodesCount')}
+                value={filaments.filter((filament) => filament.qr_code).length.toString()}
+                color="from-blue-500/20 to-cyan-500/20"
+                borderColor="border-blue-500/30"
+                iconColor="text-blue-400"
+              />
+              <StatCard
+                icon={Eye}
+                label={t('brandProfile.materialsCount')}
+                value={filaments.length.toString()}
+                color="from-purple-500/20 to-pink-500/20"
+                borderColor="border-purple-500/30"
+                iconColor="text-purple-400"
+              />
+            </div>
+          ) : (
+            <p className="py-8 text-center text-gray-400">{t('brandProfile.noData')}</p>
+          )}
         </div>
       )}
 
@@ -1705,60 +1692,23 @@ export const BrandProfilePage: React.FC<BrandProfilePageProps> = ({
         <div className="space-y-6">
           <h3 className="text-2xl font-bold text-white">{t('brandProfile.usageAnalytics')}</h3>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <StatCard
-              icon={Package}
-              label={t('brandProfile.spoolsTracked')}
-              value={(usageData?.spools_tracked ?? 0).toString()}
-              color="from-green-500/20 to-emerald-500/20"
-              borderColor="border-green-500/30"
-              iconColor="text-green-400"
-            />
-            <StatCard
-              icon={TrendingUp}
-              label={t('brandProfile.presetUsage')}
-              value={(usageData?.total_preset_usage ?? 0).toString()}
-              color="from-purple-500/20 to-pink-500/20"
-              borderColor="border-purple-500/30"
-              iconColor="text-purple-400"
-            />
-            <StatCard
-              icon={Package}
-              label={t('brandProfile.presetsCount')}
-              value={(usageData?.presets_count ?? 0).toString()}
-              color="from-blue-500/20 to-cyan-500/20"
-              borderColor="border-blue-500/30"
-              iconColor="text-blue-400"
-            />
-          </div>
-
-          <div className="glass-panel rounded-2xl p-6 border border-white/20 shadow-xl">
-            <h3 className="text-xl font-bold text-white mb-4">{t('brandProfile.popularPrinters')}</h3>
-            {usageData && usageData.popular_printers.length > 0 ? (
-              <div className="space-y-3">
-                {usageData.popular_printers.map((p) => {
-                  const max = usageData.popular_printers[0].count || 1;
-                  const pct = Math.round((p.count / max) * 100);
-                  return (
-                    <div key={p.printer_id} className="p-3 bg-white/5 rounded-xl">
-                      <div className="flex justify-between mb-2">
-                        <span className="text-white">{p.name}</span>
-                        <span className="text-gray-400">{p.count}</span>
-                      </div>
-                      <div className="w-full bg-white/10 rounded-full h-2">
-                        <div
-                          className="bg-gradient-to-r from-purple-500 to-pink-500 h-2 rounded-full transition-all"
-                          style={{ width: `${pct}%` }}
-                        />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <p className="text-gray-400 text-center py-8">{t('brandProfile.noData')}</p>
-            )}
-          </div>
+          {isLoadingUsage ? (
+            <div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin text-purple-300" /></div>
+          ) : usageData ? (
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+              <MonthlyRegisteredSpoolsCard metric={usageData.monthly_registered_spools} />
+              <StatCard
+                icon={Package}
+                label={t('brandProfile.presetsCount')}
+                value={usageData.presets_count.toString()}
+                color="from-blue-500/20 to-cyan-500/20"
+                borderColor="border-blue-500/30"
+                iconColor="text-blue-400"
+              />
+            </div>
+          ) : (
+            <p className="py-8 text-center text-gray-400">{t('brandProfile.noData')}</p>
+          )}
         </div>
       )}
 
@@ -4017,19 +3967,57 @@ interface StatCardProps {
   color: string;
   borderColor: string;
   iconColor: string;
+  description?: string;
+  valueClassName?: string;
 }
 
-const StatCard: React.FC<StatCardProps> = ({ icon: Icon, label, value, color, borderColor, iconColor }) => (
+const StatCard: React.FC<StatCardProps> = ({
+  icon: Icon,
+  label,
+  value,
+  color,
+  borderColor,
+  iconColor,
+  description,
+  valueClassName = 'text-xl md:text-3xl font-bold text-white',
+}) => (
   <div className={`bg-gradient-to-r ${color} p-3 md:p-6 rounded-xl md:rounded-2xl border ${borderColor} shadow-xl`}>
-    <div className="flex items-center justify-between">
-      <div>
+    <div className="flex items-start justify-between gap-3">
+      <div className="min-w-0">
         <p className="text-gray-300 text-[10px] md:text-sm mb-0.5">{label}</p>
-        <p className="text-xl md:text-3xl font-bold text-white">{value}</p>
+        <p className={`break-words ${valueClassName}`}>{value}</p>
+        {description && <p className="mt-2 text-xs leading-5 text-gray-400">{description}</p>}
       </div>
-      <Icon className={`w-5 h-5 md:w-8 md:h-8 ${iconColor}`} />
+      <Icon className={`h-5 w-5 shrink-0 md:h-8 md:w-8 ${iconColor}`} />
     </div>
   </div>
 );
+
+export const MonthlyRegisteredSpoolsCard: React.FC<{ metric: BrandMonthlyRegisteredSpools }> = ({ metric }) => {
+  const { t, i18n } = useTranslation();
+  const capturedAt = metric.captured_at
+    ? formatBrandAnalyticsCapturedAt(metric.captured_at, i18n.language)
+    : null;
+  const isNumericValue = metric.status === 'available' && metric.value !== null;
+  return (
+    <StatCard
+      icon={Package}
+      label={t('brandProfile.monthlyRegisteredSpools', {
+        month: formatBrandAnalyticsMonth(metric.month, i18n.language),
+      })}
+      value={getMonthlyRegisteredSpoolsValue(metric, i18n.language, t)}
+      valueClassName={isNumericValue
+        ? undefined
+        : 'text-sm font-semibold leading-snug text-white md:text-base'}
+      description={capturedAt
+        ? t('brandProfile.monthlyRegisteredSpoolsCapturedHint', { capturedAt })
+        : t('brandProfile.monthlyRegisteredSpoolsHint')}
+      color="from-green-500/20 to-emerald-500/20"
+      borderColor="border-green-500/30"
+      iconColor="text-green-400"
+    />
+  );
+};
 
 interface FilamentCardProps {
   filament: Filament;
@@ -4359,7 +4347,7 @@ const FilamentCard: React.FC<FilamentCardProps> = ({ filament, onEdit, onDelete,
       )}
 
       {/* Statistics */}
-      <div className="grid grid-cols-3 gap-2 mb-4 text-xs">
+      <div className="mb-4 grid grid-cols-1 gap-2 text-xs">
         <button
           type="button"
           onClick={(e) => { e.stopPropagation(); onShowPresets(filament); }}
@@ -4372,13 +4360,6 @@ const FilamentCard: React.FC<FilamentCardProps> = ({ filament, onEdit, onDelete,
           <div className="text-white font-semibold">{totalPresets}</div>
           <div className="text-gray-400">{t('brandProfile.presetsCount')}</div>
         </button>
-        <div className="text-center p-2 bg-white/5 rounded-lg">
-          <div className="flex items-center justify-center space-x-1 text-gray-400 mb-1">
-            <QrCode className="w-3 h-3" />
-          </div>
-          <div className="text-white font-semibold">{filament.scans_count || 0}</div>
-          <div className="text-gray-400">{t('brandProfile.scans')}</div>
-        </div>
       </div>
 
       {/* Price and Additional Info */}
@@ -4466,10 +4447,6 @@ const QRCodeCard: React.FC<QRCodeCardProps> = ({ filament, onOpen }) => {
         </div>
       </button>
       <div className="flex items-center space-x-4">
-        <div className="text-right">
-          <p className="text-white font-semibold">{filament.scans_count || 0}</p>
-          <p className="text-gray-400 text-sm">{t('brandProfile.scans')}</p>
-        </div>
         <div className="flex space-x-2">
           <button
             onClick={() => handleDownload(600)}
@@ -4486,31 +4463,6 @@ const QRCodeCard: React.FC<QRCodeCardProps> = ({ filament, onOpen }) => {
             <Copy className="w-4 h-4" />
           </button>
         </div>
-      </div>
-    </div>
-  );
-};
-
-interface MaterialStatCardProps {
-  filament: Filament;
-  scans: number;
-}
-
-const MaterialStatCard: React.FC<MaterialStatCardProps> = ({ filament, scans }) => {
-  const { t } = useTranslation();
-  return (
-    <div className="flex items-center justify-between p-4 bg-white/5 rounded-xl">
-      <div className="flex items-center space-x-3">
-        <div className="w-10 h-10 bg-gradient-to-r from-purple-500 to-pink-500 rounded-lg flex items-center justify-center">
-          <Package className="w-5 h-5 text-white" />
-        </div>
-        <div>
-          <p className="text-white font-medium">{filament.name}</p>
-          <p className="text-gray-400 text-sm">{filament.material_type}</p>
-        </div>
-      </div>
-      <div className="text-right">
-        <p className="text-white font-semibold">{scans} {t('brandProfile.scansWord', { count: scans })}</p>
       </div>
     </div>
   );

@@ -6,7 +6,7 @@ Russia и Creality Germany входят в него, каждый со свое�
 
 import pytest
 from httpx import AsyncClient
-from sqlalchemy import select
+from sqlalchemy import event, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import create_access_token, get_password_hash
@@ -602,10 +602,10 @@ async def test_active_workspace_keeps_rights_and_provenance_in_one_organization(
 
 
 @pytest.mark.asyncio
-async def test_analytics_follow_grant_countries_not_the_organization_that_recorded_them(
+async def test_territorial_analytics_never_query_global_inventory_or_scan_details(
     client: AsyncClient, db_session: AsyncSession
 ):
-    """Global sees all; every organization for RU sees the same RU slice only."""
+    """Territorial access cannot expose small country cells or global releases."""
     brand, filament = await _brand_with_one_filament(db_session)
     russia = await _representative(db_session, brand, "ru-analytics", "RU")
     russia_two = await _representative(db_session, brand, "ru2-analytics", "RU")
@@ -613,32 +613,88 @@ async def test_analytics_follow_grant_countries_not_the_organization_that_record
     global_rep = await _representative(db_session, brand, "global-analytics", None)
 
     filament.scans_count = 4
-    db_session.add_all([
-        FilamentAnalyticsEvent(filament_id=filament.id, event_type="qr_scan", country="RU"),
-        FilamentAnalyticsEvent(filament_id=filament.id, event_type="qr_scan", country="RU"),
-        FilamentAnalyticsEvent(filament_id=filament.id, event_type="qr_scan", country="DE"),
-    ])
+    db_session.add_all(
+        [
+            FilamentAnalyticsEvent(filament_id=filament.id, event_type="qr_scan", country="RU"),
+            FilamentAnalyticsEvent(filament_id=filament.id, event_type="qr_scan", country="RU"),
+            FilamentAnalyticsEvent(filament_id=filament.id, event_type="qr_scan", country="DE"),
+        ]
+    )
     await db_session.commit()
 
-    ru_data = (await client.get(
-        f"/api/v1/brands/{brand.id}/analytics", headers=russia
-    )).json()
-    ru_two_data = (await client.get(
-        f"/api/v1/brands/{brand.id}/analytics", headers=russia_two
-    )).json()
-    de_data = (await client.get(
-        f"/api/v1/brands/{brand.id}/analytics", headers=germany
-    )).json()
-    global_data = (await client.get(
-        f"/api/v1/brands/{brand.id}/analytics", headers=global_rep
-    )).json()
+    statements = []
 
-    assert ru_data["scope"] == "territorial"
-    assert ru_data["total_scans"] == ru_two_data["total_scans"] == 2
-    assert de_data["total_scans"] == 1
+    def record_statement(connection, cursor, statement, parameters, context, executemany):
+        statements.append(statement.lower())
+
+    engine = db_session.get_bind()
+    event.listen(engine, "before_cursor_execute", record_statement)
+    try:
+        for headers in (russia, russia_two, germany):
+            for endpoint in ("analytics", "usage"):
+                response = await client.get(
+                    f"/api/v1/brands/{brand.id}/{endpoint}", headers=headers
+                )
+                assert response.status_code == 200
+                data = response.json()
+                metric = data["monthly_registered_spools"]
+                assert metric["status"] == "unavailable_scope"
+                assert metric["value"] is None
+                assert metric["captured_at"] is None
+                assert set(data) == {
+                    "monthly_registered_spools",
+                    "scope" if endpoint == "analytics" else "presets_count",
+                }
+                if endpoint == "analytics":
+                    assert data["scope"] == "territorial"
+    finally:
+        event.remove(engine, "before_cursor_execute", record_statement)
+
+    for table in (
+        "user_spools",
+        "filament_analytics_events",
+        "brand_monthly_analytics_releases",
+        "user_saved_presets",
+    ):
+        assert all(table not in statement for statement in statements)
+    global_data = (
+        await client.get(f"/api/v1/brands/{brand.id}/analytics", headers=global_rep)
+    ).json()
+
     assert global_data["scope"] == "global"
-    assert global_data["total_scans"] == 4
-    assert global_data["historical_unattributed_scans"] == 1
+    assert global_data["monthly_registered_spools"]["status"] == "insufficient_cohort"
+    assert set(global_data) == {"scope", "monthly_registered_spools"}
+
+
+@pytest.mark.asyncio
+async def test_monthly_analytics_require_active_membership_and_the_selected_brand_grant(
+    client: AsyncClient, db_session: AsyncSession
+):
+    brand, _filament = await _brand_with_one_filament(db_session)
+    _user, ordinary = await _outsider(db_session, "analytics-ordinary")
+    other = Brand(name="Foreign analytics brand", slug="foreign-analytics-brand")
+    db_session.add(other)
+    await db_session.flush()
+    foreign = await _representative(db_session, other, "analytics-foreign", None)
+    revoked = await _representative(
+        db_session, brand, "analytics-revoked", None, status=GrantStatus.revoked
+    )
+    inactive = await _representative(db_session, brand, "analytics-inactive", None)
+    member = await db_session.scalar(
+        select(OrganizationMembership)
+        .join(User, User.id == OrganizationMembership.user_id)
+        .where(User.email == "analytics-inactive@example.com")
+    )
+    member.active = False
+    await db_session.commit()
+
+    for endpoint in ("analytics", "usage"):
+        url = f"/api/v1/brands/{brand.id}/{endpoint}"
+        assert (await client.get(url)).status_code == 401
+        for headers in (ordinary, foreign, revoked, inactive):
+            response = await client.get(url, headers=headers)
+            assert response.status_code == 403, response.text
+            assert "monthly_registered_spools" not in response.json()
 
 
 @pytest.mark.asyncio

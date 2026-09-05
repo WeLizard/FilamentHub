@@ -21,27 +21,26 @@ export interface Brand {
   employees_count?: number | null; // Количество сотрудников (только при запросе)
 }
 
-export interface PopularPrinterItem {
-  printer_id: number;
-  name: string;
-  manufacturer: string | null;
-  count: number;
+export type BrandMonthlyRegisteredSpoolsStatus =
+  | 'available'
+  | 'insufficient_cohort'
+  | 'unavailable_scope';
+
+export interface BrandMonthlyRegisteredSpools {
+  month: string;
+  status: BrandMonthlyRegisteredSpoolsStatus;
+  value: number | null;
+  captured_at: string | null;
 }
 
 export interface BrandUsage {
-  popular_printers: PopularPrinterItem[];
-  spools_tracked: number;
-  total_preset_usage: number;
   presets_count: number;
+  monthly_registered_spools: BrandMonthlyRegisteredSpools;
 }
 
 export interface BrandAnalytics {
   scope: 'global' | 'territorial';
-  countries: string[];
-  total_scans: number;
-  historical_unattributed_scans: number;
-  country_breakdown: { country: string | null; scans: number }[];
-  filaments: { filament_id: number; name: string; scans: number }[];
+  monthly_registered_spools: BrandMonthlyRegisteredSpools;
 }
 
 export interface FilamentVisualSettings {
