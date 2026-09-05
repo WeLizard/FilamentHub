@@ -236,10 +236,13 @@ describe('MyPrintersList Orca bundle action', () => {
 
     renderList();
 
-    await waitFor(() => expect(mocks.getPrinterProfile).toHaveBeenCalledWith(33));
+    await waitFor(() => expect(mocks.getPrinterProfile).toHaveBeenCalledWith(
+      33,
+      expect.any(AbortSignal),
+    ));
     fireEvent.click(screen.getByRole('button', { name: /profilePage\.profilesCount:1/ }));
     expect(await screen.findByText('Official machine configuration')).toBeInTheDocument();
-    expect(mocks.getPrinterProfile).toHaveBeenCalledWith(33);
+    expect(mocks.getPrinterProfile).toHaveBeenCalledWith(33, expect.any(AbortSignal));
   });
 
   it('keeps configurations compact, then orders and progressively reveals them', async () => {

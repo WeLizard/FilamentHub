@@ -59,6 +59,7 @@ api.interceptors.request.use((config) => {
     }
   }
 
+  registerReadCancellation(request);
   return config;
 });
 
@@ -66,6 +67,61 @@ interface RetryableAxiosConfig extends InternalAxiosRequestConfig {
   _retry?: boolean;
   _authGeneration?: number;
   _hadSessionCandidate?: boolean;
+  _readCancellationId?: number;
+}
+
+let nextReadCancellationId = 0;
+const activeReadRequests = new Map<number, {
+  controller: AbortController;
+  cleanup: () => void;
+}>();
+
+function releaseReadCancellation(config?: RetryableAxiosConfig): void {
+  const id = config?._readCancellationId;
+  if (id === undefined) return;
+  const entry = activeReadRequests.get(id);
+  if (!entry) return;
+  activeReadRequests.delete(id);
+  entry.cleanup();
+}
+
+function registerReadCancellation(config: RetryableAxiosConfig): void {
+  const method = (config.method || 'GET').toUpperCase();
+  if (!['GET', 'HEAD'].includes(method) || config.url?.split('?')[0].startsWith('/auth/oauth/')) return;
+  if (config.signal?.aborted) throw new axios.CanceledError();
+  const existing = config._readCancellationId === undefined
+    ? undefined : activeReadRequests.get(config._readCancellationId);
+  if (existing) {
+    config.signal = existing.controller.signal;
+    return;
+  }
+
+  const callerSignal = config.signal;
+  const controller = new AbortController();
+  const id = ++nextReadCancellationId;
+  config._readCancellationId = id;
+  const cancel = () => {
+    releaseReadCancellation(config);
+    controller.abort();
+  };
+  activeReadRequests.set(id, {
+    controller,
+    cleanup: () => callerSignal?.removeEventListener?.('abort', cancel),
+  });
+  callerSignal?.addEventListener?.('abort', cancel, { once: true });
+  config.signal = controller.signal;
+}
+
+async function withReadCancellationCleanup<T>(
+  config: RetryableAxiosConfig | undefined,
+  operation: () => Promise<T>,
+): Promise<T> {
+  try {
+    // Await the complete refresh/retry chain before releasing its transport.
+    return await operation();
+  } finally {
+    releaseReadCancellation(config);
+  }
 }
 
 // Переменная для предотвращения множественных запросов refresh
@@ -119,6 +175,12 @@ export class StaleRefreshResponseError extends Error {
 export function beginAuthSessionTransition(): void {
   authGeneration += 1;
   processQueue(new StaleRefreshResponseError());
+  const precedingReads = [...activeReadRequests.values()];
+  activeReadRequests.clear();
+  precedingReads.forEach(({ controller, cleanup }) => {
+    cleanup();
+    controller.abort();
+  });
 }
 
 export const AUTH_SESSION_EXPIRED_EVENT = 'authSessionExpired';
@@ -245,12 +307,13 @@ export async function refreshAuthSession(
 api.interceptors.response.use(
   (response) => {
     const request = response.config as RetryableAxiosConfig;
+    releaseReadCancellation(request);
     if (request._authGeneration !== undefined && request._authGeneration !== authGeneration) {
       throw new StaleRefreshResponseError();
     }
     return response;
   },
-  async (error) => {
+  (error) => withReadCancellationCleanup(error.config, async () => {
     if (error.code === 'ERR_CANCELED' || error.config?.signal?.aborted) {
       return Promise.reject(error);
     }
@@ -430,7 +493,7 @@ api.interceptors.response.use(
     }
     
     return Promise.reject(error);
-  }
+  })
 );
 
 // Auth API
@@ -1701,29 +1764,29 @@ export const printerProfilesAPI = {
     printer_id?: number;
     owner_user_id?: number;
     search?: string;
-  }) => {
-    const response = await api.get<ListResponse<PrinterProfile>>('/printer-profiles/', { params });
+  }, signal?: AbortSignal) => {
+    const response = await api.get<ListResponse<PrinterProfile>>('/printer-profiles/', { params, signal });
     return response.data;
   },
 
   // Fetch all of a user's own configurations across pages (no 100-row truncation).
-  listAllOwned: async (ownerUserId: number): Promise<PrinterProfile[]> => {
+  listAllOwned: async (ownerUserId: number, signal?: AbortSignal): Promise<PrinterProfile[]> => {
     const size = 100;
     const first = await printerProfilesAPI.list({
       owner_user_id: ownerUserId, page: 1, size, active_only: false,
-    });
+    }, signal);
     const items = [...first.items];
     for (let page = 2; page <= first.pages; page += 1) {
       const next = await printerProfilesAPI.list({
         owner_user_id: ownerUserId, page, size, active_only: false,
-      });
+      }, signal);
       items.push(...next.items);
     }
     return items;
   },
 
-  get: async (id: number) => {
-    const response = await api.get<PrinterProfile>(`/printer-profiles/${id}`);
+  get: async (id: number, signal?: AbortSignal) => {
+    const response = await api.get<PrinterProfile>(`/printer-profiles/${id}`, { signal });
     return response.data;
   },
 
@@ -1748,14 +1811,14 @@ export const printerProfilesAPI = {
     return response.data;
   },
 
-  listAllForPrinter: async (printerId: number): Promise<PrinterProfile[]> => {
+  listAllForPrinter: async (printerId: number, signal?: AbortSignal): Promise<PrinterProfile[]> => {
     const size = 100;
     const first = await printerProfilesAPI.list({
       printer_id: printerId,
       page: 1,
       size,
       active_only: true,
-    });
+    }, signal);
     const items = [...first.items];
     for (let page = 2; page <= first.pages; page += 1) {
       const next = await printerProfilesAPI.list({
@@ -1763,7 +1826,7 @@ export const printerProfilesAPI = {
         page,
         size,
         active_only: true,
-      });
+      }, signal);
       items.push(...next.items);
     }
     return items;
@@ -1803,9 +1866,10 @@ export const printProfilesAPI = {
     printer_profile_ids?: number[];
     search?: string;
     category?: string;
-  }) => {
+  }, signal?: AbortSignal) => {
     const response = await api.get<ListResponse<PrintProfile>>('/print-profiles/', {
       params,
+      signal,
       paramsSerializer: { indexes: null },
     });
     return response.data;
@@ -1837,22 +1901,25 @@ export const printProfilesAPI = {
     return response.data;
   },
 
-  listAllOwned: async (ownerUserId: number): Promise<PrintProfile[]> => {
+  listAllOwned: async (ownerUserId: number, signal?: AbortSignal): Promise<PrintProfile[]> => {
     const size = 100;
     const first = await printProfilesAPI.list({
       owner_user_id: ownerUserId, page: 1, size, active_only: false,
-    });
+    }, signal);
     const items = [...first.items];
     for (let page = 2; page <= first.pages; page += 1) {
       const next = await printProfilesAPI.list({
         owner_user_id: ownerUserId, page, size, active_only: false,
-      });
+      }, signal);
       items.push(...next.items);
     }
     return items;
   },
 
-  listAllForConfigurations: async (printerProfileIds: number[]): Promise<PrintProfile[]> => {
+  listAllForConfigurations: async (
+    printerProfileIds: number[],
+    signal?: AbortSignal,
+  ): Promise<PrintProfile[]> => {
     const ids = Array.from(new Set(printerProfileIds)).sort((left, right) => left - right);
     if (ids.length === 0) return [];
     const size = 100;
@@ -1861,7 +1928,7 @@ export const printProfilesAPI = {
       page: 1,
       size,
       active_only: true,
-    });
+    }, signal);
     const items = [...first.items];
     for (let page = 2; page <= first.pages; page += 1) {
       const next = await printProfilesAPI.list({
@@ -1869,7 +1936,7 @@ export const printProfilesAPI = {
         page,
         size,
         active_only: true,
-      });
+      }, signal);
       items.push(...next.items);
     }
     return items.filter((profile) => {
@@ -4471,9 +4538,10 @@ export const physicalPrintersAPI = {
     return response.data;
   },
 
-  listBindings: async (): Promise<PrinterConnectionBinding[]> => {
+  listBindings: async (signal?: AbortSignal): Promise<PrinterConnectionBinding[]> => {
     const response = await api.get<PrinterConnectionBinding[]>(
       '/orcaslicer/printer-connections/bindings',
+      { signal },
     );
     return response.data;
   },
@@ -4484,9 +4552,10 @@ export const physicalPrintersAPI = {
     });
   },
 
-  listBindingsForSettings: async (): Promise<PrinterConnectionBinding[]> => {
+  listBindingsForSettings: async (signal?: AbortSignal): Promise<PrinterConnectionBinding[]> => {
     const response = await api.get<PrinterConnectionBinding[]>(
-      '/orcaslicer/printer-connections/bindings', { params: { include_detached: true } },
+      '/orcaslicer/printer-connections/bindings',
+      { params: { include_detached: true }, signal },
     );
     return response.data;
   },
@@ -4498,9 +4567,10 @@ export const physicalPrintersAPI = {
   },
 
   /** The machine selected in OrcaSlicer as of the last sync, if any. */
-  getCurrent: async (): Promise<CurrentPrinterContext | null> => {
+  getCurrent: async (signal?: AbortSignal): Promise<CurrentPrinterContext | null> => {
     const response = await api.get<CurrentPrinterContext | null>(
       '/orcaslicer/printer-connections/current',
+      { signal },
     );
     return response.data;
   },

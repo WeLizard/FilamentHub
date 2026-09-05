@@ -59,6 +59,129 @@ describe('account request lifecycle', () => {
     state.cookie = false; state.csrf = null; state.plugin = false;
   });
 
+  it.each(['get', 'head'])('aborts an unsignalled %s transport at the identity boundary', async (method) => {
+    const { beginAuthSessionTransition } = await load();
+    state.adapter.mockImplementation((config) => new Promise((_, reject) => {
+      config.signal?.addEventListener('abort', () => reject(new CanceledError(undefined, config)), { once: true });
+    }));
+    const result = state.api!.request({ method, url: '/private-read' }).catch((error) => error);
+    await until(() => state.adapter.mock.calls.length === 1);
+    const config = state.adapter.mock.calls[0][0];
+    expect(config.signal).toBeInstanceOf(AbortSignal);
+    beginAuthSessionTransition();
+    expect(config.signal.aborted).toBe(true);
+    expect(await result).toMatchObject({ code: 'ERR_CANCELED' });
+    expect(state.post).not.toHaveBeenCalled();
+    state.adapter.mockImplementation(async (current) => ({ data: 'new-account', config: current, status: 200, headers: {} }));
+    await expect(state.api!.get('/private-read')).resolves.toMatchObject({ data: 'new-account' });
+  });
+
+  it('keeps the retried HTTP transport cancellable until its response settles', async () => {
+    const { beginAuthSessionTransition } = await load();
+    state.post.mockResolvedValue(refreshed);
+    state.adapter.mockImplementation((config) => {
+      if (!config._retry) return Promise.reject(failure(config));
+      return new Promise((_, reject) => {
+        config.signal?.addEventListener('abort', () => reject(new CanceledError(undefined, config)), { once: true });
+      });
+    });
+    const caller = new AbortController();
+    const add = vi.spyOn(caller.signal, 'addEventListener');
+    const remove = vi.spyOn(caller.signal, 'removeEventListener');
+    const result = state.api!.get('/private-read', { signal: caller.signal }).catch((error) => error);
+    await until(() => state.adapter.mock.calls.length === 2);
+    const retryConfig = state.adapter.mock.calls[1][0];
+    expect(retryConfig.signal.aborted).toBe(false);
+    expect(remove).not.toHaveBeenCalled();
+    beginAuthSessionTransition();
+    expect(retryConfig.signal.aborted).toBe(true);
+    expect(await result).toMatchObject({ code: 'ERR_CANCELED' });
+    expect(add).toHaveBeenCalledOnce();
+    expect(remove).toHaveBeenCalledOnce();
+    expect(state.post).toHaveBeenCalledOnce();
+  });
+
+  it.each(['success', 'failure', 'cancel'])('releases caller listeners and settled transports after %s', async (outcome) => {
+    const { beginAuthSessionTransition } = await load();
+    const caller = new AbortController();
+    const add = vi.spyOn(caller.signal, 'addEventListener');
+    const remove = vi.spyOn(caller.signal, 'removeEventListener');
+    const response = deferred<any>();
+    state.adapter.mockImplementation((config) => {
+      config.signal?.addEventListener('abort', () => response.reject(new CanceledError(undefined, config)), { once: true });
+      return response.promise;
+    });
+    const result = state.api!.get('/private-read', { signal: caller.signal }).catch((error) => error);
+    await until(() => state.adapter.mock.calls.length === 1);
+    const config = state.adapter.mock.calls[0][0];
+    if (outcome === 'success') response.resolve({ data: {}, config, status: 200, headers: {} });
+    else if (outcome === 'failure') response.reject(failure(config, 500));
+    else caller.abort();
+    await result;
+    expect(add).toHaveBeenCalledOnce();
+    expect(remove).toHaveBeenCalledOnce();
+    beginAuthSessionTransition();
+    expect(config.signal.aborted).toBe(outcome === 'cancel');
+  });
+
+  it.each([
+    ['post', '/auth/login'], ['post', '/auth/register'],
+    ['patch', '/private-mutation'], ['get', '/auth/oauth/google/url'],
+  ])('waits for the actual %s %s response across an identity boundary', async (method, url) => {
+    const { beginAuthSessionTransition } = await load();
+    const response = deferred<any>();
+    state.adapter.mockReturnValue(response.promise);
+    const settled = vi.fn();
+    const result = state.api!.request({ method, url }).catch((error) => error).then(settled);
+    await until(() => state.adapter.mock.calls.length === 1);
+    const config = state.adapter.mock.calls[0][0];
+    beginAuthSessionTransition();
+    await Promise.resolve();
+    expect(config.signal).toBeUndefined();
+    expect(settled).not.toHaveBeenCalled();
+    response.resolve({ data: {}, config, status: 200, headers: {} });
+    await result;
+    expect(settled).toHaveBeenCalledOnce();
+  });
+
+  it('allows an active public observer to refetch after its old transport is cancelled', async () => {
+    const { beginAuthSessionTransition } = await load();
+    state.adapter.mockImplementationOnce((config) => new Promise((_, reject) => {
+      config.signal?.addEventListener('abort', () => reject(new CanceledError(undefined, config)), { once: true });
+    })).mockImplementation(async (config) => ({ data: 'fresh-catalog', config, status: 200, headers: {} }));
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const observer = new QueryObserver(client, {
+      queryKey: ['public-catalog'], queryFn: async () => (await state.api!.get('/public-catalog')).data,
+    });
+    const unsubscribe = observer.subscribe(() => {});
+    try {
+      await until(() => state.adapter.mock.calls.length === 1);
+      beginAuthSessionTransition();
+      await client.cancelQueries();
+      await client.refetchQueries({ type: 'active' });
+      expect(observer.getCurrentResult().data).toBe('fresh-catalog');
+      expect(state.adapter.mock.calls[0][0].signal.aborted).toBe(true);
+      expect(state.adapter.mock.calls[1][0].signal.aborted).toBe(false);
+    } finally { unsubscribe(); client.clear(); }
+  });
+
+  it.each(['refresh', 'logout'] as const)('keeps raw %s under the session lock until the HTTP response arrives', async (operation) => {
+    const { authAPI, beginAuthSessionTransition, withAuthSessionLock } = await load();
+    const response = deferred<typeof refreshed>();
+    state.post.mockReturnValue(response.promise);
+    const request = authAPI[operation]();
+    const nextOperation = vi.fn();
+    const next = withAuthSessionLock(async () => { nextOperation(); });
+    await until(() => state.post.mock.calls.length === 1);
+    beginAuthSessionTransition();
+    await Promise.resolve();
+    expect(state.post.mock.calls[0][2].signal).toBeUndefined();
+    expect(nextOperation).not.toHaveBeenCalled();
+    response.resolve(refreshed);
+    await Promise.all([request, next]);
+    expect(nextOperation).toHaveBeenCalledOnce();
+  });
+
   it.each([
     ['spools', 'logout'], ['spools', 'unmount'],
     ['printers', 'logout'], ['printers', 'unmount'],
@@ -134,6 +257,98 @@ describe('account request lifecycle', () => {
       expect(aborted).toHaveBeenCalledOnce();
       expect(state.post).not.toHaveBeenCalled();
       expect(state.remove).not.toHaveBeenCalled();
+    } finally {
+      unsubscribe();
+      client.clear();
+    }
+  });
+
+  it.each([
+    ['printer-profile-list', (apis: Awaited<ReturnType<typeof load>>, signal: AbortSignal) => (
+      apis.printerProfilesAPI.list({ page: 1, size: 50 }, signal)
+    )],
+    ['printer-profile', (apis: Awaited<ReturnType<typeof load>>, signal: AbortSignal) => (
+      apis.printerProfilesAPI.get(7, signal)
+    )],
+    ['print-profile-list', (apis: Awaited<ReturnType<typeof load>>, signal: AbortSignal) => (
+      apis.printProfilesAPI.list({ page: 1, size: 50 }, signal)
+    )],
+    ['printer-bindings', (apis: Awaited<ReturnType<typeof load>>, signal: AbortSignal) => (
+      apis.physicalPrintersAPI.listBindings(signal)
+    )],
+    ['settings-printer-bindings', (apis: Awaited<ReturnType<typeof load>>, signal: AbortSignal) => (
+      apis.physicalPrintersAPI.listBindingsForSettings(signal)
+    )],
+    ['current-printer-context', (apis: Awaited<ReturnType<typeof load>>, signal: AbortSignal) => (
+      apis.physicalPrintersAPI.getCurrent(signal)
+    )],
+  ])('aborts the %s read transport when queries are cancelled', async (_resource, request) => {
+    const apis = await load();
+    const aborted = vi.fn();
+    state.adapter.mockImplementation((config) => new Promise((_, reject) => {
+      config.signal?.addEventListener('abort', () => {
+        aborted();
+        reject(new CanceledError(undefined, config));
+      }, { once: true });
+    }));
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const observer = new QueryObserver<unknown>(client, {
+      queryKey: ['profile-binding-read', _resource],
+      queryFn: ({ signal }) => request(apis, signal),
+    });
+    const unsubscribe = observer.subscribe(() => {});
+    try {
+      await until(() => state.adapter.mock.calls.length === 1);
+      const transport = state.adapter.mock.calls[0][0];
+      expect(transport.signal).toBeInstanceOf(AbortSignal);
+      await client.cancelQueries();
+      expect(transport.signal.aborted).toBe(true);
+      expect(aborted).toHaveBeenCalledOnce();
+    } finally {
+      unsubscribe();
+      client.clear();
+    }
+  });
+
+  it('stops a paginated profile read when cancellation reaches the second page', async () => {
+    const { printerProfilesAPI } = await load();
+    const secondPageAborted = vi.fn();
+    state.adapter.mockImplementation((config) => {
+      const page = Number(config.params?.page);
+      if (page === 1) {
+        return Promise.resolve({
+          data: { items: [], total: 0, page: 1, size: 100, pages: 3 },
+          status: 200,
+          statusText: 'OK',
+          headers: {},
+          config,
+        });
+      }
+      return new Promise((_, reject) => {
+        config.signal?.addEventListener('abort', () => {
+          secondPageAborted();
+          reject(new CanceledError(undefined, config));
+        }, { once: true });
+      });
+    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const observer = new QueryObserver<unknown>(client, {
+      queryKey: ['printer-profiles', 'all-owned', 11],
+      queryFn: ({ signal }) => printerProfilesAPI.listAllOwned(11, signal),
+    });
+    const unsubscribe = observer.subscribe(() => {});
+    try {
+      await until(() => state.adapter.mock.calls.length === 2);
+      const [firstRequest] = state.adapter.mock.calls[0];
+      const [secondRequest] = state.adapter.mock.calls[1];
+      expect(firstRequest.signal).toBeInstanceOf(AbortSignal);
+      expect(secondRequest.signal).toBeInstanceOf(AbortSignal);
+      expect(secondRequest.params.page).toBe(2);
+      await client.cancelQueries();
+      expect(secondRequest.signal.aborted).toBe(true);
+      expect(secondPageAborted).toHaveBeenCalledOnce();
+      await Promise.resolve();
+      expect(state.adapter).toHaveBeenCalledTimes(2);
     } finally {
       unsubscribe();
       client.clear();

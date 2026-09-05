@@ -561,7 +561,7 @@ export const CreatePrintProfileModal: React.FC<CreatePrintProfileModalProps> = (
 
   const printerProfilesQuery = useQuery({
     queryKey: ['create-print-profile-modal', 'printer-profiles', user?.id],
-    queryFn: () => printerProfilesAPI.listAllOwned(user!.id),
+    queryFn: ({ signal }) => printerProfilesAPI.listAllOwned(user!.id, signal),
     enabled: isOpen && Boolean(user?.id),
     staleTime: 60_000,
   });

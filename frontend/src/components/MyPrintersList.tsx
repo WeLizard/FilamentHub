@@ -112,7 +112,7 @@ export function MyPrintersList({
   });
   const { data: bindings } = useQuery({
     queryKey: ['printer-bindings'],
-    queryFn: physicalPrintersAPI.listBindings,
+    queryFn: ({ signal }) => physicalPrintersAPI.listBindings(signal),
   });
 
   const knownProfileIds = useMemo(
@@ -133,13 +133,13 @@ export function MyPrintersList({
   const linkedProfileQueries = useQueries({
     queries: missingLinkedProfileIds.map((profileId) => ({
       queryKey: ['printer-profile', profileId],
-      queryFn: () => printerProfilesAPI.get(profileId),
+      queryFn: ({ signal }) => printerProfilesAPI.get(profileId, signal),
       staleTime: 60_000,
     })),
   });
   const { data: linkedPrintProfiles = [] } = useQuery({
     queryKey: ['print-profiles', 'for-configurations', missingLinkedProfileIds],
-    queryFn: () => printProfilesAPI.listAllForConfigurations(missingLinkedProfileIds),
+    queryFn: ({ signal }) => printProfilesAPI.listAllForConfigurations(missingLinkedProfileIds, signal),
     enabled: missingLinkedProfileIds.length > 0,
     staleTime: 60_000,
   });

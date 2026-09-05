@@ -51,7 +51,8 @@ export const PhysicalPrinterSettingsModal: React.FC<PhysicalPrinterSettingsModal
   const [selectedBindingId, setSelectedBindingId] = useState<number | null>(null);
   const [detachBinding, setDetachBinding] = useState<PrinterConnectionBinding | null>(null);
   const { data: settingsBindings = bindings } = useQuery({
-    queryKey: ['printer-bindings', 'settings'], queryFn: physicalPrintersAPI.listBindingsForSettings,
+    queryKey: ['printer-bindings', 'settings'],
+    queryFn: ({ signal }) => physicalPrintersAPI.listBindingsForSettings(signal),
     enabled: isOpen,
   });
   const [mergeTarget, setMergeTarget] = useState<number | null>(null);
@@ -138,18 +139,18 @@ export const PhysicalPrinterSettingsModal: React.FC<PhysicalPrinterSettingsModal
 
   const { data: profilesList } = useQuery({
     queryKey: ['printer-profiles', 'all-owned', user?.id],
-    queryFn: () => printerProfilesAPI.listAllOwned(user!.id),
+    queryFn: ({ signal }) => printerProfilesAPI.listAllOwned(user!.id, signal),
     enabled: isOpen && !!user,
   });
   const { data: catalogProfiles = [] } = useQuery({
     queryKey: ['printer-profiles', 'for-printer', printerId],
-    queryFn: () => printerProfilesAPI.listAllForPrinter(printerId!),
+    queryFn: ({ signal }) => printerProfilesAPI.listAllForPrinter(printerId!, signal),
     enabled: isOpen && printerId != null,
     staleTime: 60_000,
   });
   const { data: currentOrcaContext } = useQuery({
     queryKey: ['printer-context', 'current'],
-    queryFn: physicalPrintersAPI.getCurrent,
+    queryFn: ({ signal }) => physicalPrintersAPI.getCurrent(signal),
     enabled: isOpen,
     staleTime: 30_000,
   });
@@ -172,7 +173,7 @@ export const PhysicalPrinterSettingsModal: React.FC<PhysicalPrinterSettingsModal
   const linkedProfileQueries = useQueries({
     queries: missingLinkedProfileIds.map((profileId) => ({
       queryKey: ['printer-profile', profileId],
-      queryFn: () => printerProfilesAPI.get(profileId),
+      queryFn: ({ signal }) => printerProfilesAPI.get(profileId, signal),
       staleTime: 60_000,
     })),
   });

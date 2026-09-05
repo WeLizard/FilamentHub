@@ -17,13 +17,13 @@ export function useMyActivePrinterProfiles() {
   const { user } = useAuth();
   const { data } = useQuery({
     queryKey: ['printer-profiles', user?.id],
-    queryFn: () =>
+    queryFn: ({ signal }) =>
       printerProfilesAPI.list({
         owner_user_id: user!.id,
         page: 1,
         size: 50,
         active_only: false,
-      }),
+      }, signal),
     enabled: !!user?.id,
   });
   return (data?.items ?? []).filter(p => p.active);

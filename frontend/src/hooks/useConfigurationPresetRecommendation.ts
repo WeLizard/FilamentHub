@@ -54,7 +54,7 @@ export function useConfigurationPresetRecommendation(
   });
   const profilesQuery = useQuery({
     queryKey: ['printer-profiles', 'all-owned', userId],
-    queryFn: () => printerProfilesAPI.listAllOwned(userId!),
+    queryFn: ({ signal }) => printerProfilesAPI.listAllOwned(userId!, signal),
     enabled: userId !== null,
     staleTime: 30_000,
   });

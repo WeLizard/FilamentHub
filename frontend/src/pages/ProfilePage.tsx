@@ -440,14 +440,14 @@ export const ProfilePage: React.FC = () => {
 
   const { data: printerProfilesData, isLoading: isLoadingPrinterProfiles } = useQuery({
     queryKey: ['printer-profiles', user?.id],
-    queryFn: () => printerProfilesAPI.listAllOwned(user!.id),
+    queryFn: ({ signal }) => printerProfilesAPI.listAllOwned(user!.id, signal),
     enabled: !!user?.id && needsPrinterProfileData,
     staleTime: 60_000,
   });
 
   const { data: printProfilesData, isLoading: _isLoadingPrintProfiles } = useQuery({
     queryKey: ['print-profiles', user?.id],
-    queryFn: () => printProfilesAPI.listAllOwned(user!.id),
+    queryFn: ({ signal }) => printProfilesAPI.listAllOwned(user!.id, signal),
     enabled: !!user?.id && needsPrinterProfileData,
     staleTime: 60_000,
   });

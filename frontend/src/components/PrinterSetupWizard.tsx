@@ -107,7 +107,8 @@ export function PrinterSetupWizard({
     queryKey: ['physical-printers'], queryFn: ({ signal }) => physicalPrintersAPI.list(signal),
   });
   const { data: bindings = [] } = useQuery({
-    queryKey: ['printer-bindings'], queryFn: physicalPrintersAPI.listBindings,
+    queryKey: ['printer-bindings'],
+    queryFn: ({ signal }) => physicalPrintersAPI.listBindings(signal),
     enabled: printers.length > 0,
   });
   const { data: models } = useQuery({

@@ -10,7 +10,7 @@ export function useConfiguredNozzleHrc(): number | null {
 
   const { data: profilesList } = useQuery({
     queryKey: ['printer-profiles', 'all-owned', user?.id],
-    queryFn: () => printerProfilesAPI.listAllOwned(user!.id),
+    queryFn: ({ signal }) => printerProfilesAPI.listAllOwned(user!.id, signal),
     enabled: !!user && selection.printerProfileId != null,
   });
 
