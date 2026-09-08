@@ -414,6 +414,7 @@ def test_owner_script_requires_published_commit_and_exact_owner_tested_wheel() -
 
     assert approval_gate < publish_call
     assert published_commit_gate < approval_gate
+    assert published_commit_gate < script.index("if ($DryRun)")
     assert script.index("if ($DryRun)") < approval_gate
     assert "'push', $Remote, $Branch" not in script
     assert "RequiredCiWorkflow = 'ci.yml'" in script

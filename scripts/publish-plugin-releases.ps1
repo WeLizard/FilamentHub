@@ -1093,18 +1093,6 @@ if ($selected -contains 'print-farm') {
         -Name 'Print Farm'
 }
 
-if ($DryRun) {
-    $actionable = @($plans | Where-Object { $_.Needed -or $_.Repair }).Count
-    $global:FilamentHubPluginReleaseResult = if ($actionable) {
-        [pscustomobject]@{ Status = 'READY'; Detail = 'готов к отдельному выпуску после публикации коммита и зелёного CI' }
-    } else {
-        [pscustomobject]@{ Status = 'CURRENT'; Detail = 'нового релиза не требуется' }
-    }
-    Write-Host 'Dry-run завершён. Push, теги и GitHub Releases не создавались.' -ForegroundColor Green
-    Write-Host 'Owner approval and release asset identity were not verified.'
-    return
-}
-
 foreach ($repositoryPlan in @($plans | Where-Object { $_.Needed -or $_.Repair } |
     Group-Object RepositoryPath | ForEach-Object { $_.Group | Select-Object -First 1 })) {
     Assert-ReleaseCommitPublished `
@@ -1112,6 +1100,18 @@ foreach ($repositoryPlan in @($plans | Where-Object { $_.Needed -or $_.Repair } 
         -BranchName $Branch -Name $repositoryPlan.Name `
         -Repository $repositoryPlan.Repository `
         -RequiredCiWorkflow $repositoryPlan.RequiredCiWorkflow
+}
+
+if ($DryRun) {
+    $actionable = @($plans | Where-Object { $_.Needed -or $_.Repair }).Count
+    $global:FilamentHubPluginReleaseResult = if ($actionable) {
+        [pscustomobject]@{ Status = 'READY'; Detail = 'commit опубликован, CI зелёный; пакет готов к отдельному выпуску' }
+    } else {
+        [pscustomobject]@{ Status = 'CURRENT'; Detail = 'нового релиза не требуется' }
+    }
+    Write-Host 'Dry-run завершён. Push, теги и GitHub Releases не создавались.' -ForegroundColor Green
+    Write-Host 'Owner approval and release asset identity were not verified.'
+    return
 }
 
 Assert-OwnerApprovedCandidates -Plans $plans -ApprovedSha256 $OwnerApprovedSha256 `
