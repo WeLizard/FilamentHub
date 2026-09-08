@@ -1,18 +1,18 @@
-import logging
 import json
+import logging
 import threading
+from datetime import datetime, timezone
 from pathlib import Path
 
-import pytest
-
 import octoprint_filamenthub_bridge
+import pytest
 from octoprint.events import Events
 from octoprint_filamenthub_bridge import (
-    BridgeRequestError,
     CAPABILITIES,
     RETRY_MAX_SECONDS,
     STARTUP_JITTER_MAX_SECONDS,
     USAGE_CHECKPOINT_INTERVAL_SECONDS,
+    BridgeRequestError,
     FilamentHubBridgePlugin,
     _retry_delay,
 )
@@ -131,7 +131,15 @@ def test_rejected_legacy_event_is_retained_without_substituting_new_proof():
     plugin._request = reject
     with pytest.raises(BridgeRequestError):
         plugin._flush_outbox()
-    assert plugin._settings.get(["outbox"]) == original
+    retained = plugin._settings.get(["outbox"])[0]
+    assert {
+        key: value for key, value in retained.items() if not key.startswith("_")
+    } == {
+        key: value for key, value in original[0].items() if not key.startswith("_")
+    }
+    assert retained["_sealed"] is True
+    assert retained["_delivery"]["state"] == "blocked"
+    assert retained["_delivery"]["last_status"] == 409
 
 
 def test_declares_only_capabilities_the_bridge_actually_provides():
@@ -364,7 +372,7 @@ def test_frequent_extrusion_waits_for_one_periodic_checkpoint(monkeypatch):
 
     def request(method, path, payload=None, **kwargs):
         requests.append((method, path, payload))
-        return 200, {}, {}
+        return 200, {}, {"accepted": True} if path == "/usage" else {}
 
     plugin._request = request
     plugin._begin_print({"name": "storm.gcode"})
@@ -506,6 +514,275 @@ def test_sealed_outbox_event_survives_plugin_recreation_and_replays_once():
     assert settings.get(["outbox"]) == []
 
 
+@pytest.mark.parametrize("response", [None, {}, {"accepted": False}])
+def test_usage_is_retained_and_blocked_without_a_positive_ack(response):
+    plugin = FilamentHubBridgePlugin()
+    plugin._settings = FakeSettings()
+    plugin._logger = logging.getLogger("filamenthub-bridge-test")
+    event = {
+        "event_id": "ack-required",
+        "event_type": "terminal",
+        "items": [],
+        "_binding": dict(BINDING),
+    }
+    plugin._settings.set(["outbox"], [event])
+    requests = []
+    plugin._request = lambda method, path, payload: (
+        requests.append(payload) or (200, {}, response)
+    )
+
+    with pytest.raises(BridgeRequestError, match="invalid usage acknowledgement"):
+        plugin._flush_outbox()
+
+    retained = plugin._settings.get(["outbox"])[0]
+    assert retained["event_id"] == "ack-required"
+    assert retained["_sealed"] is True
+    assert retained["_delivery"]["state"] == "blocked"
+    assert len(requests) == 1
+    with pytest.raises(BridgeRequestError):
+        plugin._flush_outbox()
+    assert len(requests) == 1
+
+
+def test_snapshot_and_heartbeat_failures_do_not_starve_usage_delivery():
+    plugin = FilamentHubBridgePlugin()
+    plugin._settings = FakeSettings()
+    plugin._logger = logging.getLogger("filamenthub-bridge-test")
+    plugin._settings.set(
+        ["outbox"],
+        [{
+            "event_id": "deliver-despite-refresh",
+            "event_type": "terminal",
+            "items": [],
+            "_binding": dict(BINDING),
+        }],
+    )
+    plugin._sync_snapshot = lambda: (_ for _ in ()).throw(
+        RuntimeError("snapshot unavailable")
+    )
+    plugin._send_heartbeat = lambda: (_ for _ in ()).throw(
+        RuntimeError("heartbeat unavailable")
+    )
+    delivered = []
+    plugin._request = lambda method, path, payload: (
+        delivered.append(payload) or (200, {}, {"accepted": True})
+    )
+
+    assert plugin._sync_once(force_snapshot=True) is False
+
+    assert [event["event_id"] for event in delivered] == [
+        "deliver-despite-refresh"
+    ]
+    assert plugin._settings.get(["outbox"]) == []
+    assert "snapshot unavailable" in plugin._settings.get(["last_error"])
+    assert "heartbeat unavailable" in plugin._settings.get(["last_error"])
+    assert plugin._settings.get(["last_sync_at"]) is None
+
+
+def test_retryable_delivery_backoff_survives_restart_and_manual_retry():
+    settings = FakeSettings()
+    plugin = FilamentHubBridgePlugin()
+    plugin._settings = settings
+    plugin._logger = logging.getLogger("filamenthub-bridge-test")
+    plugin._settings.set(
+        ["outbox"],
+        [{
+            "event_id": "retry-after-restart",
+            "event_type": "checkpoint",
+            "items": [{"slot_index": 0, "spool_id": 41, "used_length_mm": 2}],
+            "_binding": dict(BINDING),
+        }],
+    )
+    plugin._request = lambda *args, **kwargs: (_ for _ in ()).throw(
+        BridgeRequestError("temporarily unavailable", status_code=503)
+    )
+
+    with pytest.raises(BridgeRequestError, match="temporarily unavailable"):
+        plugin._flush_outbox()
+
+    metadata = settings.get(["outbox"])[0]["_delivery"]
+    assert metadata["state"] == "pending"
+    assert metadata["attempt_count"] == 1
+    assert metadata["next_attempt_at"] is not None
+
+    restarted = FilamentHubBridgePlugin()
+    restarted._settings = settings
+    restarted._logger = logging.getLogger("filamenthub-bridge-test")
+    restarted._sync_snapshot = lambda: None
+    restarted._send_heartbeat = lambda: None
+    calls = []
+    restarted._request = lambda *args, **kwargs: calls.append(args) or (
+        200,
+        {},
+        {"accepted": True},
+    )
+
+    assert restarted._sync_once() is False
+    assert calls == []
+    restarted._flush_outbox()
+    assert len(calls) == 1
+    assert settings.get(["outbox"]) == []
+
+
+@pytest.mark.parametrize(
+    ("error", "expected_status", "minimum_delay", "maximum_delay"),
+    [
+        (BridgeRequestError("rate limited", status_code=429, retry_after_seconds=30), 429, 30, 30),
+        (BridgeRequestError("network unavailable"), None, 4, 6),
+    ],
+)
+def test_retryable_delivery_classification_persists_attempt_and_deadline(
+    monkeypatch,
+    error,
+    expected_status,
+    minimum_delay,
+    maximum_delay,
+):
+    now = datetime(2026, 9, 8, 12, 0, tzinfo=timezone.utc)
+    monkeypatch.setattr(octoprint_filamenthub_bridge, "_utc_now", lambda: now)
+    plugin = FilamentHubBridgePlugin()
+    plugin._settings = FakeSettings()
+    plugin._logger = logging.getLogger("filamenthub-bridge-test")
+    plugin._settings.set(
+        ["outbox"],
+        [{
+            "event_id": "retry-classification",
+            "event_type": "checkpoint",
+            "items": [],
+            "_binding": dict(BINDING),
+        }],
+    )
+    plugin._request = lambda *args, **kwargs: (_ for _ in ()).throw(error)
+
+    with pytest.raises(BridgeRequestError, match=str(error)):
+        plugin._flush_outbox()
+
+    metadata = plugin._settings.get(["outbox"])[0]["_delivery"]
+    retry_at = datetime.fromisoformat(metadata["next_attempt_at"])
+    assert metadata["state"] == "pending"
+    assert metadata["attempt_count"] == 1
+    assert metadata["last_status"] == expected_status
+    assert minimum_delay <= (retry_at - now).total_seconds() <= maximum_delay
+
+
+def test_ordinary_sync_refreshes_state_but_does_not_retry_a_blocked_head():
+    plugin = FilamentHubBridgePlugin()
+    plugin._settings = FakeSettings()
+    plugin._logger = logging.getLogger("filamenthub-bridge-test")
+    plugin._settings.set(
+        ["outbox"],
+        [{
+            "event_id": "already-blocked",
+            "event_type": "terminal",
+            "items": [],
+            "_binding": dict(BINDING),
+            "_delivery": {
+                "state": "blocked",
+                "last_status": 422,
+                "last_error": "invalid route proof",
+            },
+        }],
+    )
+    refreshes = []
+    plugin._sync_snapshot = lambda: refreshes.append("snapshot")
+    plugin._send_heartbeat = lambda: refreshes.append("heartbeat")
+    usage_requests = []
+    plugin._request = lambda *args, **kwargs: usage_requests.append(args) or (
+        200,
+        {},
+        {"accepted": True},
+    )
+
+    assert plugin._sync_once(force_snapshot=True) is False
+
+    assert refreshes == ["snapshot", "heartbeat"]
+    assert usage_requests == []
+    assert plugin._settings.get(["outbox"])[0]["event_id"] == "already-blocked"
+    assert plugin._settings.get(["outbox"])[0]["_delivery"]["state"] == "blocked"
+
+
+def test_blocked_head_is_not_bypassed_and_can_be_explicitly_retried():
+    plugin = FilamentHubBridgePlugin()
+    plugin._settings = FakeSettings()
+    plugin._logger = logging.getLogger("filamenthub-bridge-test")
+    plugin._settings.set(
+        ["outbox"],
+        [
+            {
+                "event_id": "blocked-head",
+                "event_type": "terminal",
+                "items": [],
+                "_binding": dict(BINDING),
+            },
+            {
+                "event_id": "later-event",
+                "event_type": "terminal",
+                "items": [],
+                "_binding": dict(BINDING),
+            },
+        ],
+    )
+    attempted = []
+
+    def reject_head(method, path, payload):
+        attempted.append(payload["event_id"])
+        raise BridgeRequestError("invalid route proof", status_code=422)
+
+    plugin._request = reject_head
+    with pytest.raises(BridgeRequestError, match="invalid route proof"):
+        plugin._flush_outbox()
+    with pytest.raises(BridgeRequestError, match="invalid route proof"):
+        plugin._flush_outbox()
+    assert attempted == ["blocked-head"]
+
+    plugin._request = lambda method, path, payload: (
+        attempted.append(payload["event_id"]) or (200, {}, {"accepted": True})
+    )
+    plugin._flush_outbox(retry_blocked=True)
+    assert attempted == ["blocked-head", "blocked-head", "later-event"]
+    assert plugin._settings.get(["outbox"]) == []
+
+
+def test_outbox_observability_includes_current_retained_blocked_and_soft_warning(
+    monkeypatch,
+):
+    monkeypatch.setattr(octoprint_filamenthub_bridge, "OUTBOX_WARNING_COUNT", 2)
+    plugin = FilamentHubBridgePlugin()
+    plugin._settings = FakeSettings()
+    plugin._settings.set(
+        ["outbox"],
+        [
+            {
+                "event_id": "current-blocked",
+                "observed_at": "2020-01-01T00:00:00+00:00",
+                "items": [],
+                "_binding": dict(BINDING),
+                "_delivery": {"state": "blocked"},
+            },
+            {
+                "event_id": "retained",
+                "observed_at": "2020-01-02T00:00:00+00:00",
+                "items": [],
+                "_binding": {**BINDING, "instance_id": "old-instance"},
+            },
+        ],
+    )
+
+    state = plugin._public_state()
+    metrics = state["outbox_observability"]
+
+    assert metrics["count"] == 2
+    assert metrics["current"] == 1
+    assert metrics["retained"] == 1
+    assert metrics["blocked"] == 1
+    assert metrics["bytes"] > 0
+    assert metrics["oldest_age_seconds"] > 0
+    assert metrics["warning"] is True
+    assert set(metrics["warning_reasons"]) >= {"count", "age"}
+    assert state["current_outbox_size"] == 1
+    assert state["blocked_outbox_size"] == 1
+
+
 def test_public_state_keeps_legacy_current_tool_but_labels_it_as_commanded():
     plugin = FilamentHubBridgePlugin()
     plugin._settings = FakeSettings()
@@ -613,6 +890,8 @@ def test_changed_pairing_cannot_route_cached_spools_after_snapshot_failure():
     plugin._sync_snapshot = lambda: (_ for _ in ()).throw(
         RuntimeError("new snapshot unavailable")
     )
+    plugin._send_heartbeat = lambda: None
+    plugin._flush_outbox = lambda **kwargs: 0
 
     assert plugin._sync_once(force_snapshot=True) is False
     plugin._begin_print({"name": "new-printer.gcode"})
@@ -1014,7 +1293,7 @@ def test_pair_waits_for_delayed_snapshot_apply_and_remains_final_identity():
 
     plugin._sync_snapshot = delayed_snapshot
     plugin._send_heartbeat = lambda: None
-    plugin._flush_outbox = lambda: 0
+    plugin._flush_outbox = lambda **kwargs: 0
     plugin._request = request
     sync_thread = threading.Thread(
         target=lambda: plugin._sync_once(force_snapshot=True)

@@ -7,7 +7,7 @@ import random
 import threading
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 from typing import Dict, Optional, Set
 from urllib.error import HTTPError, URLError
@@ -31,6 +31,13 @@ RETRY_INITIAL_SECONDS = 5
 RETRY_MAX_SECONDS = 300
 INTERVAL_JITTER_RATIO = 0.2
 STARTUP_JITTER_MAX_SECONDS = 120
+OUTBOX_DELIVERY_SCHEMA_VERSION = 1
+OUTBOX_DELIVERY_ERROR_MAX_LENGTH = 300
+OUTBOX_DELIVERY_ATTEMPT_MAX = 1_000_000
+OUTBOX_WARNING_COUNT = 100
+OUTBOX_WARNING_BYTES = 1_000_000
+OUTBOX_WARNING_AGE_SECONDS = 7 * 24 * 60 * 60
+RETRYABLE_DELIVERY_STATUS_CODES = {408, 425, 429}
 
 
 class BridgeRequestError(RuntimeError):
@@ -44,6 +51,14 @@ class BridgeRequestError(RuntimeError):
         super().__init__(message)
         self.status_code = status_code
         self.retry_after_seconds = retry_after_seconds
+
+
+class OutboxDeliveryBlockedError(BridgeRequestError):
+    """The current-binding head needs an explicit retry after repair."""
+
+
+class OutboxDeliveryDeferredError(BridgeRequestError):
+    """The current-binding head is waiting for its persisted retry deadline."""
 
 
 def _retry_after_seconds(headers) -> Optional[float]:
@@ -69,11 +84,78 @@ def _jittered_delay(base_seconds: float) -> float:
 
 
 def _retry_delay(failure_count: int, retry_after_seconds: Optional[float]) -> float:
-    exponent = max(failure_count - 1, 0)
+    exponent = min(max(failure_count - 1, 0), 16)
     base = min(RETRY_INITIAL_SECONDS * (2**exponent), RETRY_MAX_SECONDS)
     return min(
         max(_jittered_delay(base), retry_after_seconds or 0.0),
         RETRY_MAX_SECONDS,
+    )
+
+
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _parse_utc_datetime(value) -> Optional[datetime]:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _delivery_metadata(event: dict, *, now: Optional[datetime] = None) -> dict:
+    now = now or _utc_now()
+    raw = event.get("_delivery")
+    raw = raw if isinstance(raw, dict) else {}
+    queued_at = raw.get("queued_at") or event.get("observed_at")
+    if _parse_utc_datetime(queued_at) is None:
+        queued_at = now.isoformat()
+    attempt_count = raw.get("attempt_count", 0)
+    if isinstance(attempt_count, bool) or not isinstance(attempt_count, int):
+        attempt_count = 0
+    attempt_count = max(0, min(attempt_count, OUTBOX_DELIVERY_ATTEMPT_MAX))
+    state = "blocked" if raw.get("state") == "blocked" else "pending"
+    last_status = raw.get("last_status")
+    if (
+        isinstance(last_status, bool)
+        or not isinstance(last_status, int)
+        or not 100 <= last_status <= 599
+    ):
+        last_status = None
+    last_error = raw.get("last_error")
+    if last_error is not None:
+        last_error = str(last_error)[:OUTBOX_DELIVERY_ERROR_MAX_LENGTH]
+    last_attempt_at = raw.get("last_attempt_at")
+    if _parse_utc_datetime(last_attempt_at) is None:
+        last_attempt_at = None
+    next_attempt_at = raw.get("next_attempt_at")
+    if state == "blocked" or _parse_utc_datetime(next_attempt_at) is None:
+        next_attempt_at = None
+    return {
+        "version": OUTBOX_DELIVERY_SCHEMA_VERSION,
+        "queued_at": queued_at,
+        "state": state,
+        "attempt_count": attempt_count,
+        "last_attempt_at": last_attempt_at,
+        "next_attempt_at": next_attempt_at,
+        "last_status": last_status,
+        "last_error": last_error,
+    }
+
+
+def _is_retryable_delivery_error(exc: Exception) -> bool:
+    if not isinstance(exc, BridgeRequestError):
+        return True
+    status = exc.status_code
+    return (
+        status is None
+        or status in RETRYABLE_DELIVERY_STATUS_CODES
+        or 500 <= status <= 599
     )
 
 
@@ -205,9 +287,9 @@ class FilamentHubBridgePlugin(
             extra_state = {}
             if command == "pair":
                 self._pair(data["server_url"], data["pairing_code"])
-                self._sync_once(force_snapshot=True)
+                self._sync_once(force_snapshot=True, retry_blocked=True)
             elif command == "sync":
-                self._sync_once(force_snapshot=True)
+                self._sync_once(force_snapshot=True, retry_blocked=True)
             elif command == "search_spools":
                 extra_state["spool_options"] = self._search_spools(
                     data.get("query"), data.get("offset")
@@ -332,7 +414,8 @@ class FilamentHubBridgePlugin(
 
     def _public_state(self):
         snapshot = self._settings.get(["snapshot"])
-        retained_outbox_size = self._retained_outbox_size()
+        outbox_observability = self._outbox_observability()
+        retained_outbox_size = outbox_observability["retained"]
         commanded_tool = (
             self._tracker.active_tool
             if self._printing and self._settings.get_boolean(["map_tools_to_slots"])
@@ -364,12 +447,15 @@ class FilamentHubBridgePlugin(
                 sorted(self._tracker.unmapped_tools) if self._printing else []
             ),
             "printing": self._printing,
-            "outbox_size": len(self._settings.get(["outbox"]) or []),
+            "outbox_size": outbox_observability["count"],
+            "current_outbox_size": outbox_observability["current"],
             "retained_outbox_size": retained_outbox_size,
+            "blocked_outbox_size": outbox_observability["blocked"],
+            "outbox_observability": outbox_observability,
             "last_sync_at": self._settings.get(["last_sync_at"]),
             "last_error": (
-                self._retained_usage_error(retained_outbox_size)
-                or self._settings.get(["last_error"])
+                self._settings.get(["last_error"])
+                or self._retained_usage_error(retained_outbox_size)
             ),
         }
 
@@ -624,12 +710,62 @@ class FilamentHubBridgePlugin(
         return binding is not None and cls._normalize_binding(event.get("_binding")) == binding
 
     def _retained_outbox_size(self) -> int:
+        return self._outbox_observability()["retained"]
+
+    def _outbox_observability(self) -> dict:
+        outbox = list(self._settings.get(["outbox"]) or [])
         binding = self._current_binding()
-        return sum(
+        current = [
+            event for event in outbox if self._event_matches_binding(event, binding)
+        ]
+        retained = len(outbox) - len(current)
+        blocked = sum(
             1
-            for event in self._settings.get(["outbox"]) or []
-            if not self._event_matches_binding(event, binding)
+            for event in current
+            if _delivery_metadata(event).get("state") == "blocked"
         )
+        try:
+            serialized_bytes = len(
+                json.dumps(outbox, separators=(",", ":")).encode("utf-8")
+            )
+        except (TypeError, ValueError):
+            serialized_bytes = 0
+        now = _utc_now()
+        queued_times = [
+            _parse_utc_datetime(_delivery_metadata(event, now=now)["queued_at"])
+            for event in outbox
+        ]
+        valid_queued_times = [value for value in queued_times if value is not None]
+        oldest_age_seconds = (
+            max(0, int((now - min(valid_queued_times)).total_seconds()))
+            if valid_queued_times
+            else None
+        )
+        warning_reasons = []
+        if len(outbox) >= OUTBOX_WARNING_COUNT:
+            warning_reasons.append("count")
+        if serialized_bytes >= OUTBOX_WARNING_BYTES:
+            warning_reasons.append("bytes")
+        if (
+            oldest_age_seconds is not None
+            and oldest_age_seconds >= OUTBOX_WARNING_AGE_SECONDS
+        ):
+            warning_reasons.append("age")
+        return {
+            "count": len(outbox),
+            "bytes": serialized_bytes,
+            "oldest_age_seconds": oldest_age_seconds,
+            "current": len(current),
+            "retained": retained,
+            "blocked": blocked,
+            "warning": bool(warning_reasons),
+            "warning_reasons": warning_reasons,
+            "soft_limits": {
+                "count": OUTBOX_WARNING_COUNT,
+                "bytes": OUTBOX_WARNING_BYTES,
+                "age_seconds": OUTBOX_WARNING_AGE_SECONDS,
+            },
+        }
 
     @staticmethod
     def _retained_usage_error(count: int) -> Optional[str]:
@@ -1029,6 +1165,7 @@ class FilamentHubBridgePlugin(
                         reasons.append(reason)
                     pending["reasons"] = reasons
                     pending["observed_at"] = observed_at
+                    pending["_delivery"] = _delivery_metadata(pending)
                     self._settings.set(["outbox"], outbox)
                     self._settings.save()
                     if items:
@@ -1067,6 +1204,7 @@ class FilamentHubBridgePlugin(
         else:
             raise ValueError(f"Unsupported usage event type: {event_type}")
 
+        event["_delivery"] = _delivery_metadata(event)
         outbox.append(event)
         self._settings.set(["outbox"], outbox)
         self._settings.save()
@@ -1179,11 +1317,74 @@ class FilamentHubBridgePlugin(
         if isinstance(response, dict):
             self._apply_server_routing(response.get("routing"))
 
-    def _flush_outbox(self) -> int:
-        with self._connection_lock:
-            return self._flush_outbox_locked()
+    def _record_delivery_failure(
+        self,
+        event: dict,
+        binding: dict,
+        exc: Exception,
+        *,
+        blocked: bool,
+    ) -> float:
+        now = _utc_now()
+        retry_after_seconds = getattr(exc, "retry_after_seconds", None)
+        with self._lock:
+            current = list(self._settings.get(["outbox"]) or [])
+            for index, pending in enumerate(current):
+                if (
+                    pending.get("event_id") == event.get("event_id")
+                    and pending.get("_sealed", False)
+                    and self._normalize_binding(pending.get("_binding")) == binding
+                ):
+                    pending = dict(pending)
+                    metadata = _delivery_metadata(pending, now=now)
+                    attempt_count = min(
+                        metadata["attempt_count"] + 1,
+                        OUTBOX_DELIVERY_ATTEMPT_MAX,
+                    )
+                    delay_seconds = (
+                        RETRY_MAX_SECONDS
+                        if blocked
+                        else _retry_delay(attempt_count, retry_after_seconds)
+                    )
+                    metadata.update(
+                        {
+                            "state": "blocked" if blocked else "pending",
+                            "attempt_count": attempt_count,
+                            "last_attempt_at": now.isoformat(),
+                            "next_attempt_at": (
+                                None
+                                if blocked
+                                else (now + timedelta(seconds=delay_seconds)).isoformat()
+                            ),
+                            "last_status": getattr(exc, "status_code", None),
+                            "last_error": str(exc)[:OUTBOX_DELIVERY_ERROR_MAX_LENGTH],
+                        }
+                    )
+                    pending["_delivery"] = _delivery_metadata(pending, now=now) | metadata
+                    current[index] = pending
+                    self._settings.set(["outbox"], current)
+                    self._settings.save()
+                    return delay_seconds
+        return RETRY_MAX_SECONDS if blocked else RETRY_INITIAL_SECONDS
 
-    def _flush_outbox_locked(self) -> int:
+    def _flush_outbox(
+        self,
+        *,
+        retry_blocked: bool = False,
+        respect_retry_schedule: bool = False,
+    ) -> int:
+        with self._connection_lock:
+            return self._flush_outbox_locked(
+                retry_blocked=retry_blocked,
+                respect_retry_schedule=respect_retry_schedule,
+            )
+
+    def _flush_outbox_locked(
+        self,
+        *,
+        retry_blocked: bool = False,
+        respect_retry_schedule: bool = False,
+    ) -> int:
         while True:
             with self._lock:
                 outbox = list(self._settings.get(["outbox"]) or [])
@@ -1199,8 +1400,38 @@ class FilamentHubBridgePlugin(
                 if event_index is None:
                     return len(outbox)
                 event = dict(outbox[event_index])
-                if not event.get("_sealed", False):
+                metadata = _delivery_metadata(event)
+                if metadata["state"] == "blocked" and not retry_blocked:
+                    raise OutboxDeliveryBlockedError(
+                        metadata["last_error"]
+                        or "A queued usage event is blocked and needs attention.",
+                        status_code=metadata["last_status"],
+                        retry_after_seconds=RETRY_MAX_SECONDS,
+                    )
+                if metadata["state"] == "blocked":
+                    metadata["state"] = "pending"
+                    metadata["next_attempt_at"] = None
+                retry_at = _parse_utc_datetime(metadata["next_attempt_at"])
+                now = _utc_now()
+                if (
+                    respect_retry_schedule
+                    and retry_at is not None
+                    and retry_at > now
+                ):
+                    remaining = min(
+                        max((retry_at - now).total_seconds(), 0.0),
+                        RETRY_MAX_SECONDS,
+                    )
+                    raise OutboxDeliveryDeferredError(
+                        "A queued usage event is waiting for its retry deadline.",
+                        retry_after_seconds=remaining,
+                    )
+                if (
+                    not event.get("_sealed", False)
+                    or event.get("_delivery") != metadata
+                ):
                     event["_sealed"] = True
+                    event["_delivery"] = metadata
                     outbox[event_index] = event
                     self._settings.set(["outbox"], outbox)
                     self._settings.save()
@@ -1213,7 +1444,29 @@ class FilamentHubBridgePlugin(
             # Never hold the print-tracking lock during network I/O. Once FH
             # acknowledges the event, remove that exact event from the latest
             # outbox value so a terminal event appended concurrently survives.
-            self._request("POST", "/usage", request_payload)
+            try:
+                _, _, response = self._request("POST", "/usage", request_payload)
+            except Exception as exc:
+                blocked = not _is_retryable_delivery_error(exc)
+                delay_seconds = self._record_delivery_failure(
+                    event,
+                    binding,
+                    exc,
+                    blocked=blocked,
+                )
+                if isinstance(exc, BridgeRequestError):
+                    exc.retry_after_seconds = max(
+                        exc.retry_after_seconds or 0.0,
+                        delay_seconds,
+                    )
+                raise
+            if not isinstance(response, dict) or response.get("accepted") is not True:
+                exc = OutboxDeliveryBlockedError(
+                    "FilamentHub returned an invalid usage acknowledgement.",
+                    retry_after_seconds=RETRY_MAX_SECONDS,
+                )
+                self._record_delivery_failure(event, binding, exc, blocked=True)
+                raise exc
             with self._lock:
                 current = list(self._settings.get(["outbox"]) or [])
                 for index, pending in enumerate(current):
@@ -1228,16 +1481,30 @@ class FilamentHubBridgePlugin(
                         self._settings.save()
                         break
 
-    def _sync_once(self, *, force_snapshot: bool = False) -> bool:
+    def _sync_once(
+        self,
+        *,
+        force_snapshot: bool = False,
+        retry_blocked: bool = False,
+    ) -> bool:
         with self._connection_lock:
-            return self._sync_once_locked(force_snapshot=force_snapshot)
+            return self._sync_once_locked(
+                force_snapshot=force_snapshot,
+                retry_blocked=retry_blocked,
+            )
 
-    def _sync_once_locked(self, *, force_snapshot: bool = False) -> bool:
+    def _sync_once_locked(
+        self,
+        *,
+        force_snapshot: bool = False,
+        retry_blocked: bool = False,
+    ) -> bool:
         if not self._settings.get(["bridge_token"]):
             return True
+        self._last_retry_after_seconds = None
+        errors = []
+        now_monotonic = time.monotonic()
         try:
-            self._last_retry_after_seconds = None
-            now_monotonic = time.monotonic()
             with self._lock:
                 if (
                     self._printing
@@ -1249,6 +1516,10 @@ class FilamentHubBridgePlugin(
                         event_type="checkpoint",
                         reason="periodic",
                     )
+        except Exception as exc:
+            errors.append(exc)
+            self._logger.warning("Usage checkpoint failed", exc_info=True)
+        try:
             if (
                 force_snapshot
                 or now_monotonic - self._last_snapshot_monotonic
@@ -1256,23 +1527,51 @@ class FilamentHubBridgePlugin(
             ):
                 self._sync_snapshot()
                 self._last_snapshot_monotonic = now_monotonic
+        except Exception as exc:
+            errors.append(exc)
+            self._logger.warning("Snapshot synchronization failed", exc_info=True)
+        try:
             self._send_heartbeat()
-            retained_outbox_size = self._flush_outbox()
+        except Exception as exc:
+            errors.append(exc)
+            self._logger.warning("Heartbeat failed", exc_info=True)
+        try:
+            retained_outbox_size = self._flush_outbox(
+                retry_blocked=retry_blocked,
+                respect_retry_schedule=not retry_blocked,
+            )
+        except Exception as exc:
+            errors.append(exc)
+            retained_outbox_size = self._retained_outbox_size()
+            self._logger.warning("Usage outbox delivery failed", exc_info=True)
+
+        if errors:
+            retry_delays = [
+                getattr(exc, "retry_after_seconds", None) for exc in errors
+            ]
+            self._last_retry_after_seconds = max(
+                (delay for delay in retry_delays if delay is not None),
+                default=None,
+            )
+            self._settings.set(
+                ["last_error"],
+                " | ".join(dict.fromkeys(str(exc) for exc in errors)),
+            )
+            success = False
+        else:
             self._settings.set(["last_sync_at"], datetime.now(timezone.utc).isoformat())
             self._settings.set(
                 ["last_error"], self._retained_usage_error(retained_outbox_size)
             )
-            self._settings.save()
+            success = True
+        self._settings.save()
+        plugin_manager = getattr(self, "_plugin_manager", None)
+        identifier = getattr(self, "_identifier", None)
+        if plugin_manager is not None and identifier is not None:
             self._plugin_manager.send_plugin_message(
                 self._identifier, self._public_state()
             )
-            return True
-        except Exception as exc:
-            self._last_retry_after_seconds = getattr(exc, "retry_after_seconds", None)
-            self._settings.set(["last_error"], str(exc))
-            self._settings.save()
-            self._logger.warning("FilamentHub synchronization failed", exc_info=True)
-            return False
+        return success
 
     def _worker_loop(self) -> None:
         # A host update can restart many OctoPrint instances at once. Spread

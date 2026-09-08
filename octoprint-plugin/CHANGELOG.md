@@ -3,6 +3,12 @@
 Newest first. The top entry is used for GitHub release notes.
 
 ## 0.1.4
+- Removes a pending usage report only after FilamentHub explicitly accepts it,
+  and continues delivering usage even when a printer snapshot or heartbeat
+  temporarily fails.
+- Remembers delivery delays and blocked reports across restarts, avoids repeated
+  invalid requests, and exposes the size, age and state of the local backlog for
+  diagnostics without discarding usage data.
 - Preserves pending usage reports when reconnecting the Bridge and sends them
   only to their original printer connection. Reports with an unknown connection
   remain available for manual recovery, with a clear warning.
