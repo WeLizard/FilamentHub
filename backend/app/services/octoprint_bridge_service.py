@@ -24,7 +24,6 @@ from app.core.errors import (
     ERR_OCTOPRINT_BRIDGE_PAIRING_INVALID,
     ERR_OCTOPRINT_BRIDGE_ROUTING_CONFLICT,
     ERR_OCTOPRINT_BRIDGE_UNAUTHORIZED,
-    ERR_OCTOPRINT_BRIDGE_WRONG_PROVIDER,
     raise_error,
 )
 from app.core.printer_capabilities import normalize_capabilities
@@ -217,13 +216,14 @@ async def _validate_routing_slots(
         raise_error(404, ERR_MATERIAL_SLOT_NOT_FOUND)
 
 
-async def _require_octoprint_system(
+async def _require_material_system(
     db: AsyncSession,
     *,
     user_id: int,
     physical_printer_id: int,
     material_system_id: int,
 ) -> MaterialSystem:
+    """Load an owned system without treating its topology provider as exclusive."""
     await require_physical_printer(db, user_id, physical_printer_id)
     system = await db.scalar(
         select(MaterialSystem).where(
@@ -234,8 +234,6 @@ async def _require_octoprint_system(
     )
     if system is None:
         raise_error(404, ERR_MATERIAL_SYSTEM_NOT_FOUND)
-    if system.provider != OCTOPRINT_PROVIDER:
-        raise_error(409, ERR_OCTOPRINT_BRIDGE_WRONG_PROVIDER)
     return system
 
 
@@ -266,7 +264,7 @@ async def issue_pairing_code(
     physical_printer_id: int,
     material_system_id: int,
 ) -> OctoPrintPairingCodeResponse:
-    system = await _require_octoprint_system(
+    system = await _require_material_system(
         db,
         user_id=user_id,
         physical_printer_id=physical_printer_id,
@@ -334,7 +332,7 @@ async def get_bridge_status(
     physical_printer_id: int,
     material_system_id: int,
 ) -> OctoPrintBridgeStatusResponse:
-    await _require_octoprint_system(
+    await _require_material_system(
         db,
         user_id=user_id,
         physical_printer_id=physical_printer_id,
@@ -443,7 +441,7 @@ async def update_user_routing_configuration(
     material_system_id: int,
     payload: OctoPrintBridgeRoutingUpdateRequest,
 ) -> OctoPrintBridgeRoutingState:
-    await _require_octoprint_system(
+    await _require_material_system(
         db,
         user_id=user_id,
         physical_printer_id=physical_printer_id,
@@ -497,7 +495,7 @@ async def revoke_bridge(
     physical_printer_id: int,
     material_system_id: int,
 ) -> None:
-    await _require_octoprint_system(
+    await _require_material_system(
         db,
         user_id=user_id,
         physical_printer_id=physical_printer_id,

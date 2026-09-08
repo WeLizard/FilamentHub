@@ -205,6 +205,7 @@ async def test_http_ingresses_keep_first_fresh_topology_owner_and_survive_failov
         await post_edge(1, started_at + timedelta(seconds=1), "EDGE_NON_OWNER")
 
     current = (await auth_client.get(f"/api/v1/physical-printers/{printer.id}")).json()
+    capabilities_before_native = current["material_systems"][0]["capabilities"]
     connectors = current["connectors"]
     authorities = [item for item in connectors if item["topology_authority"]]
     assert len(authorities) == 1
@@ -214,6 +215,7 @@ async def test_http_ingresses_keep_first_fresh_topology_owner_and_survive_failov
         [0, 1] if first_ingress == "edge" else [0, 1, 2, 3]
     )
     slot = next(item for item in slots if item["provider_index"] == 0)
+    assigned_revision = slot["assignment_revision"]
     assert slot["assignment"]["spool_id"] == spool.id
     assert slot["observation"]["source"] == owner_source
     observations = {item["source"]: item for item in slot["observations"]}
@@ -227,6 +229,56 @@ async def test_http_ingresses_keep_first_fresh_topology_owner_and_survive_failov
     non_owner_material = "ORCA_NON_OWNER" if first_ingress == "edge" else "EDGE_NON_OWNER"
     assert observations[non_owner_source]["present"] is True
     assert observations[non_owner_source]["material"] == non_owner_material
+
+    native_code = await auth_client.post(
+        f"/api/v1/octoprint-bridge/connections/{printer.id}/{system.id}/pairing-code"
+    )
+    assert native_code.status_code == 200, native_code.text
+    native_pair = await auth_client.post(
+        "/api/v1/octoprint-bridge/pair",
+        json={
+            "pairing_code": native_code.json()["pairing_code"],
+            "instance_id": "octoprint-hh-coexistence",
+            "plugin_version": "0.1.0-test",
+            "octoprint_version": "1.11.8",
+            "capabilities": ["read", "write"],
+        },
+    )
+    assert native_pair.status_code == 200, native_pair.text
+    native_headers = {
+        "X-FilamentHub-Bridge-Token": native_pair.json()["bridge_token"]
+    }
+    native_snapshot = await auth_client.get(
+        "/api/v1/octoprint-bridge/snapshot",
+        headers=native_headers,
+    )
+    assert native_snapshot.status_code == 200, native_snapshot.text
+    native_slot = next(
+        item for item in native_snapshot.json()["slots"] if item["index"] == 0
+    )
+    assert native_snapshot.json()["material_system_id"] == system.id
+    assert native_slot["assignment_revision"] == assigned_revision
+    assert native_slot["spool"]["id"] == spool.id
+
+    with_native = (
+        await auth_client.get(f"/api/v1/physical-printers/{printer.id}")
+    ).json()
+    assert with_native["material_systems"][0]["provider"] == "happy_hare"
+    assert with_native["material_systems"][0]["capabilities"] == sorted(
+        set(capabilities_before_native) | {"read", "write"}
+    )
+    native_connector = next(
+        item
+        for item in with_native["connectors"]
+        if item["provider"] == "octoprint" and item["transport"] == "bridge_https"
+    )
+    assert native_connector["material_system_id"] == system.id
+    assert native_connector["topology_authority"] is False
+    authorities = [
+        item for item in with_native["connectors"] if item["topology_authority"]
+    ]
+    assert len(authorities) == 1
+    assert authorities[0]["transport"] == owner_transport
 
     if first_ingress == "edge":
         revoked = await auth_client.delete(
@@ -273,8 +325,45 @@ async def test_http_ingresses_keep_first_fresh_topology_owner_and_survive_failov
     )
     assert retained["active"] is True
     assert retained["assignment"]["spool_id"] == spool.id
+    assert retained["assignment_revision"] == assigned_revision
     assert retained["observation"]["source"] == next_owner_source
     assert retained["observation"]["material"] == next_owner_material
+
+    active_native = next(
+        item
+        for item in failed_over["connectors"]
+        if item["provider"] == "octoprint" and item["transport"] == "bridge_https"
+    )
+    assert active_native["active"] is True
+    assert active_native["topology_authority"] is False
+
+    native_revoke = await auth_client.delete(
+        f"/api/v1/octoprint-bridge/connections/{printer.id}/{system.id}"
+    )
+    assert native_revoke.status_code == 204, native_revoke.text
+    assert (
+        await auth_client.get(
+            "/api/v1/octoprint-bridge/snapshot",
+            headers=native_headers,
+        )
+    ).status_code == 401
+
+    after_native_revoke = (
+        await auth_client.get(f"/api/v1/physical-printers/{printer.id}")
+    ).json()
+    final_authorities = [
+        item for item in after_native_revoke["connectors"] if item["topology_authority"]
+    ]
+    assert len(final_authorities) == 1
+    assert final_authorities[0]["transport"] == next_owner_transport
+    final_slot = next(
+        item
+        for item in after_native_revoke["material_systems"][0]["slots"]
+        if item["provider_index"] == 0
+    )
+    assert final_slot["assignment"]["spool_id"] == spool.id
+    assert final_slot["assignment_revision"] == assigned_revision
+    assert final_slot["observation"]["source"] == next_owner_source
 
 
 @pytest.mark.asyncio
