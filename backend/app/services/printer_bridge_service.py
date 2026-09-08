@@ -434,6 +434,7 @@ async def record_printer_bridge_usage_batch(
         provider=payload.provider,
         transport=payload.transport,
     )
+    require_printer_bridge_capability(connector, "consumption")
 
     receipt_id = str(payload.sequence)
     payload_data = payload.model_dump(mode="json")
@@ -454,13 +455,6 @@ async def record_printer_bridge_usage_batch(
         connector.last_seen_at = _now()
         await db.commit()
         return response.model_copy(update={"deduplicated": True})
-
-    if "consumption" not in connector.capabilities:
-        raise_error(
-            409,
-            ERR_PRINTER_BRIDGE_CAPABILITY_REQUIRED,
-            {"capability": "consumption"},
-        )
 
     last_sequence = await db.scalar(
         select(func.max(PrinterBridgeReceipt.sequence)).where(
@@ -603,6 +597,19 @@ def validate_snapshot_context(
         or context.credential.source_instance_id != source_instance_id
     ):
         raise_error(401, ERR_PRINTER_BRIDGE_UNAUTHORIZED)
+
+
+def require_printer_bridge_capability(
+    connector: PhysicalPrinterConnector,
+    capability: str,
+) -> None:
+    """Enforce the connector's persisted capability grant at the API boundary."""
+    if capability not in (connector.capabilities or []):
+        raise_error(
+            409,
+            ERR_PRINTER_BRIDGE_CAPABILITY_REQUIRED,
+            {"capability": capability},
+        )
 
 
 def require_configured_system_id(context: PrinterBridgeContext) -> int:

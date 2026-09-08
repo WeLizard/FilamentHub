@@ -299,6 +299,37 @@ async def test_edge_usage_batches_ack_replay_order_and_atomic_ledger_application
     assert replay.status_code == 200
     assert replay.json()["deduplicated"] is True
 
+    capability_removed = await auth_client.post(
+        "/api/v1/printer-bridge/heartbeat",
+        headers=headers,
+        json={
+            **context,
+            "observed_at": datetime.now(timezone.utc).isoformat(),
+            "capabilities": ["read", "presence"],
+        },
+    )
+    assert capability_removed.status_code == 200
+    replay_without_capability = await auth_client.post(
+        "/api/v1/printer-bridge/usage-batches",
+        headers=headers,
+        json=first_payload,
+    )
+    assert replay_without_capability.status_code == 409
+    assert replay_without_capability.json()["detail"] == {
+        "code": "ERR_PRINTER_BRIDGE_CAPABILITY_REQUIRED",
+        "params": {"capability": "consumption"},
+    }
+    capability_restored = await auth_client.post(
+        "/api/v1/printer-bridge/heartbeat",
+        headers=headers,
+        json={
+            **context,
+            "observed_at": datetime.now(timezone.utc).isoformat(),
+            "capabilities": ["read", "presence", "consumption"],
+        },
+    )
+    assert capability_restored.status_code == 200
+
     conflicting_payload = {
         **first_payload,
         "events": [

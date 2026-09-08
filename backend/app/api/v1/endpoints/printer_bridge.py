@@ -35,6 +35,7 @@ from app.services.printer_bridge_service import (
     pair_printer_bridge,
     record_printer_bridge_heartbeat,
     record_printer_bridge_usage_batch,
+    require_printer_bridge_capability,
     require_printer_bridge_token,
     revoke_printer_bridge,
     revoke_printer_bridge_for_user,
@@ -144,6 +145,12 @@ async def observed_snapshot(
         provider=payload.provider,
         transport=payload.transport,
     )
+    if payload.slots:
+        require_printer_bridge_capability(context.connector, "presence")
+    if any(slot.spool_id is not None or slot.spool_identity_known for slot in payload.slots):
+        require_printer_bridge_capability(context.connector, "spool_identity")
+    if any(slot.tag_uid is not None for slot in payload.slots):
+        require_printer_bridge_capability(context.connector, "tag_read")
     return await ingest_printer_bridge_snapshot(
         db,
         user_id=context.connector.user_id,
@@ -165,6 +172,7 @@ async def desired_snapshot(
     if_none_match: Annotated[str | None, Header(alias="If-None-Match")] = None,
 ) -> Response:
     context = await require_printer_bridge_token(db, bridge_token)
+    require_printer_bridge_capability(context.connector, "read")
     result: PrinterBridgeDesiredSnapshotResponse = await build_printer_bridge_desired_snapshot(
         db,
         context.connector,

@@ -57,7 +57,10 @@ from app.services.material_contract_service import (
     build_printer_bridge_desired_snapshot,
     require_physical_printer,
 )
-from app.services.printer_bridge_service import refresh_material_system_capabilities
+from app.services.printer_bridge_service import (
+    refresh_material_system_capabilities,
+    require_printer_bridge_capability,
+)
 from app.services.printer_usage_service import process_printer_usage_event
 
 OCTOPRINT_PROVIDER = "octoprint"
@@ -715,6 +718,13 @@ async def _lock_usage_connection(
 async def build_snapshot(
     db: AsyncSession, context: OctoPrintBridgeContext
 ) -> OctoPrintBridgeSnapshotResponse:
+    require_printer_bridge_capability(context.connector, "read")
+    return await _build_snapshot(db, context)
+
+
+async def _build_snapshot(
+    db: AsyncSession, context: OctoPrintBridgeContext
+) -> OctoPrintBridgeSnapshotResponse:
     connection = await _lock_usage_connection(db, context)
     snapshot = await build_printer_bridge_desired_snapshot(
         db,
@@ -733,6 +743,7 @@ async def list_bridge_spool_options(
     offset: int,
 ) -> OctoPrintBridgeSpoolOptionsResponse:
     """Return a bounded, tenant-scoped picker page for an adapter UI."""
+    require_printer_bridge_capability(context.connector, "read")
     user_id = context.connector.user_id
     statement = (
         select(UserSpool)
@@ -834,6 +845,7 @@ async def update_bridge_spool_assignment(
     payload: OctoPrintBridgeSpoolAssignmentRequest,
 ) -> OctoPrintBridgeSnapshotResponse:
     """Apply an explicit adapter-UI command through the canonical writer."""
+    require_printer_bridge_capability(context.connector, "write")
     user = await db.get(User, context.connector.user_id)
     if user is None:
         raise_error(401, ERR_OCTOPRINT_BRIDGE_UNAUTHORIZED)
@@ -852,7 +864,7 @@ async def update_bridge_spool_assignment(
     # An idempotent assignment returns with spool/slot locks still held. Release
     # them before taking connection/connector locks to issue the next snapshot.
     await db.commit()
-    return await build_snapshot(db, context)
+    return await _build_snapshot(db, context)
 
 
 async def record_usage_event(
@@ -863,6 +875,7 @@ async def record_usage_event(
     # Serialize usage events per Bridge connection. This closes the replay
     # race even when two conflicting retries mention different spools and would
     # therefore not contend on the same inventory rows.
+    require_printer_bridge_capability(context.connector, "consumption")
     connection = await _lock_usage_connection(db, context)
     connector = await db.scalar(
         select(PhysicalPrinterConnector)

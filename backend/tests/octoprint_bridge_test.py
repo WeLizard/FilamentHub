@@ -46,7 +46,13 @@ async def _create_octoprint_system(auth_client: AsyncClient) -> tuple[int, int]:
     return printer_id, system_response.json()["material_systems"][0]["id"]
 
 
-async def _pair(auth_client: AsyncClient, printer_id: int, system_id: int) -> str:
+async def _pair(
+    auth_client: AsyncClient,
+    printer_id: int,
+    system_id: int,
+    *,
+    capabilities: list[str] | None = None,
+) -> str:
     code_response = await auth_client.post(
         f"/api/v1/octoprint-bridge/connections/{printer_id}/{system_id}/pairing-code"
     )
@@ -59,7 +65,9 @@ async def _pair(auth_client: AsyncClient, printer_id: int, system_id: int) -> st
             "instance_id": "octoprint-test-instance",
             "plugin_version": "0.1.0",
             "octoprint_version": "1.11.8",
-            "capabilities": [
+            "capabilities": capabilities
+            if capabilities is not None
+            else [
                 "read",
                 "write",
                 "presence",
@@ -739,6 +747,82 @@ async def test_bridge_spool_picker_and_assignment_use_canonical_desired_state(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("operation", "capabilities", "required_capability"),
+    [
+        ("snapshot", ["write", "consumption"], "read"),
+        ("spools", ["write", "consumption"], "read"),
+        ("assignment", ["read", "consumption"], "write"),
+        ("usage", ["read", "write"], "consumption"),
+    ],
+)
+async def test_native_bridge_operations_require_persisted_capabilities(
+    auth_client: AsyncClient,
+    operation: str,
+    capabilities: list[str],
+    required_capability: str,
+) -> None:
+    printer_id, system_id = await _create_octoprint_system(auth_client)
+    token = await _pair(
+        auth_client,
+        printer_id,
+        system_id,
+        capabilities=capabilities,
+    )
+    headers = {"X-FilamentHub-Bridge-Token": token}
+    printer = (await auth_client.get(f"/api/v1/physical-printers/{printer_id}")).json()
+    slot = printer["material_systems"][0]["slots"][0]
+
+    async def request_operation():
+        if operation == "snapshot":
+            return await auth_client.get(
+                "/api/v1/octoprint-bridge/snapshot", headers=headers
+            )
+        if operation == "spools":
+            return await auth_client.get("/api/v1/octoprint-bridge/spools", headers=headers)
+        if operation == "assignment":
+            return await auth_client.patch(
+                f"/api/v1/octoprint-bridge/material-slots/{slot['id']}",
+                headers=headers,
+                json={
+                    "expected_revision": slot["assignment_revision"],
+                    "expected_spool_id": None,
+                    "spool_id": None,
+                },
+            )
+        return await auth_client.post(
+            "/api/v1/octoprint-bridge/usage",
+            headers=headers,
+            json={
+                "event_id": "capability-test-event",
+                "job_id": "capability-test-job",
+                "outcome": "completed",
+                "items": [],
+            },
+        )
+
+    rejected = await request_operation()
+    assert rejected.status_code == 409
+    assert rejected.json()["detail"] == {
+        "code": "ERR_PRINTER_BRIDGE_CAPABILITY_REQUIRED",
+        "params": {"capability": required_capability},
+    }
+    capability_update = await auth_client.post(
+        "/api/v1/octoprint-bridge/heartbeat",
+        headers=headers,
+        json={
+            "instance_id": "octoprint-test-instance",
+            "plugin_version": "0.1.0",
+            "octoprint_version": "1.11.8",
+            "capabilities": sorted({*capabilities, required_capability}),
+        },
+    )
+    assert capability_update.status_code == 200
+    accepted = await request_operation()
+    assert accepted.status_code == 200
+
+
+@pytest.mark.asyncio
 async def test_pairing_code_is_single_use(
     auth_client: AsyncClient,
 ) -> None:
@@ -906,11 +990,29 @@ async def test_native_octoprint_and_edge_pairing_and_revokes_are_independent(
     await db_session.refresh(system)
     assert edge_connector.active is False
     assert system.capabilities == ["write"]
-    assert (
-        await auth_client.get(
-            "/api/v1/octoprint-bridge/snapshot", headers=replacement_headers
-        )
-    ).status_code == 200
+    printer_payload = (
+        await auth_client.get(f"/api/v1/physical-printers/{printer_id}")
+    ).json()
+    slot = printer_payload["material_systems"][0]["slots"][0]
+    write_only_assignment = await auth_client.patch(
+        f"/api/v1/octoprint-bridge/material-slots/{slot['id']}",
+        headers=replacement_headers,
+        json={
+            "expected_revision": slot["assignment_revision"],
+            "expected_spool_id": None,
+            "spool_id": None,
+        },
+    )
+    assert write_only_assignment.status_code == 200
+    assert write_only_assignment.json()["material_system_id"] == system_id
+    write_only_snapshot = await auth_client.get(
+        "/api/v1/octoprint-bridge/snapshot", headers=replacement_headers
+    )
+    assert write_only_snapshot.status_code == 409
+    assert write_only_snapshot.json()["detail"] == {
+        "code": "ERR_PRINTER_BRIDGE_CAPABILITY_REQUIRED",
+        "params": {"capability": "read"},
+    }
     assert (
         await auth_client.get("/api/v1/printer-bridge/snapshot", headers=edge_headers)
     ).status_code == 401
