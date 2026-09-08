@@ -7571,6 +7571,33 @@
     "noMaterials": "No spools were selected for this print.",
     "timeline": "Print timeline",
     "confirmedConsumption": "Confirmed consumption: {{value}} g",
+    "usageSegments": {
+      "title": "Confirmed consumption by segment",
+      "sequence": "Segment {{count}}",
+      "type": {
+        "checkpoint": "Checkpoint",
+        "terminal": "Print end"
+      },
+      "reason": {
+        "periodic": "Periodic checkpoint",
+        "tool_change": "Tool change",
+        "slot_change": "Slot change",
+        "spool_change": "Spool change",
+        "filament_change": "Filament change",
+        "paused": "Pause",
+        "disconnect": "Disconnect",
+        "shutdown": "Shutdown",
+        "terminal": "Final checkpoint"
+      },
+      "confirmedWeight": "{{value}} g",
+      "spool": "Spool #{{id}}",
+      "slot": "Slot {{index}}",
+      "tool": "Tool T{{index}}",
+      "evidence": {
+        "route_proof": "The spool is confirmed by the usage route.",
+        "current_assignment": "Charged to the slot's tracking assignment at report time; the printer did not confirm physical loading."
+      }
+    },
     "pagination": {
       "label": "Print history pages",
       "previous": "Previous",

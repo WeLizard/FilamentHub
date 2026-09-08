@@ -94,6 +94,9 @@ const secondsLabel = (seconds: number | null, locale: string) => {
   return new Intl.ListFormat(locale, { style: 'short', type: 'unit' }).format(values);
 };
 
+const weightLabel = (weight: number, locale: string) =>
+  new Intl.NumberFormat(locale, { maximumFractionDigits: 2 }).format(weight);
+
 const calculationJobs = (entry: CalculatorHistoryEntry | undefined) =>
   entry?.parsed_jobs?.map((job) => ({
     key: job.job_key,
@@ -534,6 +537,88 @@ export function PrintJobHistoryModal({ printer, onClose }: PrintJobHistoryModalP
                             ))}
                           </div>
                         </div>
+                        {job.usage_segments.length > 0 && (
+                          <div className="min-w-0 sm:col-span-2">
+                            <h4 className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                              {t('printJobs.usageSegments.title')}
+                            </h4>
+                            <div className="mt-2 space-y-2">
+                              {job.usage_segments.map((segment) => (
+                                <section
+                                  key={`${segment.event_id}:${segment.segment_sequence ?? 'legacy'}`}
+                                  className="min-w-0 rounded-xl border border-white/10 bg-slate-900/45 p-3"
+                                >
+                                  <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
+                                    <span className="text-xs font-medium text-slate-200">
+                                      {segment.segment_sequence == null
+                                        ? t(`printJobs.usageSegments.type.${segment.event_type}`)
+                                        : t('printJobs.usageSegments.sequence', {
+                                            count: segment.segment_sequence,
+                                          })}
+                                    </span>
+                                    <span className="text-[11px] text-slate-500">
+                                      {t(`printJobs.usageSegments.type.${segment.event_type}`)}
+                                      {' · '}
+                                      {new Date(segment.observed_at).toLocaleString(i18n.language)}
+                                    </span>
+                                  </div>
+                                  {segment.reasons.length > 0 && (
+                                    <p className="mt-1 break-words text-[11px] text-slate-400">
+                                      {segment.reasons
+                                        .map((reason) =>
+                                          t(`printJobs.usageSegments.reason.${reason}`, {
+                                            defaultValue: reason,
+                                          }),
+                                        )
+                                        .join(' · ')}
+                                    </p>
+                                  )}
+                                  <div className="mt-2 grid min-w-0 gap-2 sm:grid-cols-2">
+                                    {segment.items.map((item) => (
+                                      <div
+                                        key={`${item.slot_index}:${item.tool_index ?? 'none'}:${item.spool_id ?? 'unknown'}`}
+                                        className="min-w-0 rounded-lg border border-white/[0.07] bg-white/[0.035] p-2.5"
+                                      >
+                                        <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+                                          <span className="font-medium tabular-nums text-emerald-200">
+                                            {t('printJobs.usageSegments.confirmedWeight', {
+                                              value: weightLabel(
+                                                item.confirmed_weight_g,
+                                                i18n.language,
+                                              ),
+                                            })}
+                                          </span>
+                                          {item.spool_id != null && (
+                                            <span className="break-words text-slate-300">
+                                              {t('printJobs.usageSegments.spool', {
+                                                id: item.spool_id,
+                                              })}
+                                            </span>
+                                          )}
+                                          <span className="text-slate-400">
+                                            {t('printJobs.usageSegments.slot', {
+                                              index: item.slot_index,
+                                            })}
+                                          </span>
+                                          {item.tool_index != null && (
+                                            <span className="text-slate-400">
+                                              {t('printJobs.usageSegments.tool', {
+                                                index: item.tool_index,
+                                              })}
+                                            </span>
+                                          )}
+                                        </div>
+                                        <p className="mt-1.5 break-words text-[11px] leading-relaxed text-slate-500">
+                                          {t(`printJobs.usageSegments.evidence.${item.evidence}`)}
+                                        </p>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </section>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     )}
                   </article>

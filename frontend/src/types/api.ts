@@ -1367,6 +1367,27 @@ export interface PrintJobEvent {
   received_at: string;
 }
 
+export type PrintJobUsageEvidence = 'route_proof' | 'current_assignment';
+
+export interface PrintJobUsageSegmentItem {
+  slot_index: number;
+  tool_index: number | null;
+  spool_id: number | null;
+  evidence: PrintJobUsageEvidence;
+  confirmed_weight_g: number;
+}
+
+export interface PrintJobUsageSegment {
+  contract_version: 1 | 2;
+  event_id: string;
+  segment_sequence: number | null;
+  event_type: 'checkpoint' | 'terminal';
+  reasons: string[];
+  observed_at: string;
+  recorded_at: string;
+  items: PrintJobUsageSegmentItem[];
+}
+
 export interface PrintJob {
   id: number;
   logical_id: string;
@@ -1389,6 +1410,7 @@ export interface PrintJob {
   updated_at: string;
   materials: PrintJobMaterial[];
   events: PrintJobEvent[];
+  usage_segments: PrintJobUsageSegment[];
 }
 
 export interface PrintJobListResponse {

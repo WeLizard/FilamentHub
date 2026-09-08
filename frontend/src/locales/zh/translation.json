@@ -7565,6 +7565,33 @@
     "noMaterials": "此打印未选择耗材卷。",
     "timeline": "打印进程",
     "confirmedConsumption": "已确认用量：{{value}} 克",
+    "usageSegments": {
+      "title": "按阶段确认的用量",
+      "sequence": "阶段 {{count}}",
+      "type": {
+        "checkpoint": "检查点",
+        "terminal": "打印结束"
+      },
+      "reason": {
+        "periodic": "定期记录",
+        "tool_change": "工具切换",
+        "slot_change": "槽位切换",
+        "spool_change": "耗材卷切换",
+        "filament_change": "耗材切换",
+        "paused": "暂停",
+        "disconnect": "连接断开",
+        "shutdown": "关机",
+        "terminal": "最终记录"
+      },
+      "confirmedWeight": "{{value}} 克",
+      "spool": "耗材卷 #{{id}}",
+      "slot": "槽位 {{index}}",
+      "tool": "工具 T{{index}}",
+      "evidence": {
+        "route_proof": "耗材卷已由用量路由确认。",
+        "current_assignment": "用量按报告时的槽位账面分配扣除；打印机未确认实际装载。"
+      }
+    },
     "pagination": {
       "label": "打印历史分页",
       "previous": "上一页",

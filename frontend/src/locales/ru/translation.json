@@ -7739,6 +7739,33 @@
     "noMaterials": "Катушки для этой печати не указаны.",
     "timeline": "Ход печати",
     "confirmedConsumption": "Подтверждённый расход: {{value}} г",
+    "usageSegments": {
+      "title": "Подтверждённый расход по этапам",
+      "sequence": "Этап {{count}}",
+      "type": {
+        "checkpoint": "Контрольная точка",
+        "terminal": "Завершение печати"
+      },
+      "reason": {
+        "periodic": "Периодическая фиксация",
+        "tool_change": "Смена инструмента",
+        "slot_change": "Смена слота",
+        "spool_change": "Смена катушки",
+        "filament_change": "Смена филамента",
+        "paused": "Пауза",
+        "disconnect": "Отключение",
+        "shutdown": "Выключение",
+        "terminal": "Итоговая фиксация"
+      },
+      "confirmedWeight": "{{value}} г",
+      "spool": "Катушка №{{id}}",
+      "slot": "Слот {{index}}",
+      "tool": "Инструмент T{{index}}",
+      "evidence": {
+        "route_proof": "Катушка подтверждена маршрутом расхода.",
+        "current_assignment": "Списано по учётному назначению слота на момент отчёта; фактическая загрузка принтером не подтверждена."
+      }
+    },
     "pagination": {
       "label": "Страницы истории печатей",
       "previous": "Назад",
