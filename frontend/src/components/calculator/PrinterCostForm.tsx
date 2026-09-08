@@ -30,6 +30,26 @@ const UPKEEP_OPTIONS = [
 
 const roundMoney = (value: number): number => Math.round(value * 100) / 100;
 
+const sameCurrency = (left: string | null | undefined, right: string | null | undefined): boolean =>
+  !left || !right || left.trim().toUpperCase() === right.trim().toUpperCase();
+
+export const calculateDepreciationPerHour = (
+  purchaseCost: number,
+  lifeHours: number,
+  residualValue: number | null = null,
+): number => lifeHours > 0
+  ? Math.max(0, purchaseCost - Math.max(0, residualValue ?? 0)) / lifeHours
+  : 0;
+
+export const resolveEditableMachineRate = (
+  saved: PrinterEconomics,
+  fallbackRate: number,
+): number => {
+  if (saved.machine_hour_rate != null) return saved.machine_hour_rate;
+  if (!sameCurrency(saved.economics_currency, saved.calculator_currency)) return 0;
+  return saved.sources?.rate === 'orca' ? saved.effective_machine_hour_rate : fallbackRate;
+};
+
 export const PrinterCostForm: React.FC<PrinterCostFormProps> = ({
   printerId,
   printerName,
@@ -68,22 +88,26 @@ export const PrinterCostForm: React.FC<PrinterCostFormProps> = ({
   const suggestion = suggestionQuery.data;
   const economicsCurrency = saved?.economics_currency || currency;
   const symbol = currencySymbol(economicsCurrency);
+  const calculatorMoneyMatchesEditor = sameCurrency(
+    economicsCurrency,
+    saved?.calculator_currency,
+  );
 
   useEffect(() => {
     if (!saved) {
       return;
     }
     setValues({
-      purchaseCost: saved.purchase_cost ?? fallback.purchaseCost,
+      purchaseCost: saved.purchase_cost ?? (calculatorMoneyMatchesEditor ? fallback.purchaseCost : 0),
       lifeHours: saved.useful_life_hours ?? fallback.lifeHours ?? suggestion?.useful_life_hours ?? 0,
       powerWatts:
         saved.average_power_watts ?? fallback.powerWatts ?? suggestion?.average_power_watts ?? 0,
       maintenance:
         saved.maintenance_cost_per_hour
-        ?? fallback.maintenance
+        ?? (calculatorMoneyMatchesEditor ? fallback.maintenance : 0)
         ?? suggestion?.maintenance_cost_per_hour
         ?? 0,
-      rate: saved.machine_hour_rate ?? fallback.rate,
+      rate: resolveEditableMachineRate(saved, fallback.rate),
     });
     // Offer what we worked out for this machine instead of four zeroes: the bed comes
     // from its own size, and a person is free to write over any of it.
@@ -93,7 +117,7 @@ export const PrinterCostForm: React.FC<PrinterCostFormProps> = ({
       steppers: saved.power_steppers_w ?? suggestion?.power_steppers_w ?? 0,
       electronics: saved.power_electronics_w ?? suggestion?.power_electronics_w ?? 0,
     });
-  }, [saved, suggestion, fallback]);
+  }, [saved, suggestion, fallback, calculatorMoneyMatchesEditor]);
 
   useEffect(() => () => window.clearTimeout(savedTimerRef.current), []);
 
@@ -112,13 +136,25 @@ export const PrinterCostForm: React.FC<PrinterCostFormProps> = ({
       lifeHours: label(saved.useful_life_hours, fallback.lifeHours <= 0),
       powerWatts: label(saved.average_power_watts, fallback.powerWatts <= 0),
       maintenance: label(saved.maintenance_cost_per_hour, fallback.maintenance <= 0),
-      rate: label(saved.machine_hour_rate),
+      // A rate nobody typed here came from somewhere, and which somewhere decides whether
+      // the number is worth trusting.
+      rate: saved.sources?.rate === 'orca'
+        ? t('printerCost.originOrca')
+        : saved.sources?.rate === 'account'
+          ? t('printerCost.originAccount')
+          : label(saved.machine_hour_rate),
     } as Partial<Record<EconomicsField, string>>;
   }, [saved, fallback, t]);
 
   const breakdown = useMemo(() => {
-    const tariff = saved?.calculator_electricity_cost_per_kwh ?? 0;
-    const depreciation = values.lifeHours > 0 ? values.purchaseCost / values.lifeHours : 0;
+    const tariff = calculatorMoneyMatchesEditor
+      ? saved?.calculator_electricity_cost_per_kwh ?? 0
+      : 0;
+    const depreciation = calculateDepreciationPerHour(
+      values.purchaseCost,
+      values.lifeHours,
+      saved?.residual_value,
+    );
     const electricity = (values.powerWatts / 1000) * tariff;
     return {
       depreciation: roundMoney(depreciation),
@@ -126,7 +162,7 @@ export const PrinterCostForm: React.FC<PrinterCostFormProps> = ({
       maintenance: roundMoney(values.maintenance),
       cost: roundMoney(depreciation + electricity + values.maintenance),
     };
-  }, [values, saved]);
+  }, [values, saved, calculatorMoneyMatchesEditor]);
 
   const rateChoices = useMemo(() => {
     if (breakdown.depreciation <= 0) {

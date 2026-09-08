@@ -82,7 +82,10 @@ export const PrinterEconomicsColumn: React.FC<PrinterEconomicsColumnProps> = ({
   }, [breakdown.cost]);
 
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+    <div
+      id="calculator-machine-economics"
+      className="scroll-mt-24 rounded-2xl border border-white/10 bg-white/[0.03] p-4"
+    >
       <div className="flex items-center justify-between gap-3">
         <span className="flex items-center gap-2 text-sm font-semibold text-white">
           <Printer3DIcon className="text-slate-400" size={16} strokeWidth={2} />

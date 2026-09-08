@@ -4342,6 +4342,7 @@ export interface PrinterEconomics {
   maintenance_cost_per_hour: number | null;
   machine_hour_rate: number | null;
   economics_currency: string | null;
+  calculator_currency: string | null;
   depreciation_per_hour: number;
   electricity_per_hour: number;
   maintenance_per_hour: number;

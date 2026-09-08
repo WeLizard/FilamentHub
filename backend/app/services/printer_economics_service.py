@@ -126,6 +126,7 @@ class ResolvedEconomics:
     amortization_rate_per_hour: float
     printing_rate_per_hour: float
     electricity_cost_per_kwh: float
+    currency: str | None
 
     machine_hour_rate: float
     depreciation_per_hour: float
@@ -144,6 +145,11 @@ def _positive(value: float | int | None) -> float | None:
     except (TypeError, ValueError):
         return None
     return number if number > 0 else None
+
+
+def _currency_code(value: str | None) -> str | None:
+    code = (value or "").strip().upper()
+    return code or None
 
 
 def _parse_orca_time_cost(raw: object) -> float | None:
@@ -315,8 +321,21 @@ async def resolve_economics(
     left over rides on the printing rate. Their sum per hour is the rate again.
     """
     account = await _account_profile(db, printer.user_id)
+    account_currency = _currency_code(account.currency if account else None)
+    printer_currency = _currency_code(printer.economics_currency)
+    currency = account_currency or printer_currency
+    # The calculator cannot add roubles from the account to dollar values stored on a
+    # machine without an exchange-rate contract. Keep the machine's physical facts, but
+    # resolve its money from the account until both sides use the same currency.
+    printer_money_usable = (
+        account_currency is None
+        or printer_currency is None
+        or account_currency == printer_currency
+    )
     tariff = _positive(account.electricity_cost_per_kwh if account else None) or 0.0
     sources: dict[str, str] = {}
+    if not printer_money_usable:
+        sources["printer_money"] = "currency_mismatch"
 
     # Known parts win over the nameplate: an hour of printing is mostly heaters holding
     # a temperature, not every component at full draw.
@@ -347,16 +366,24 @@ async def resolve_economics(
         if power:
             sources["power"] = "estimate"
 
-    purchase = _positive(printer.purchase_cost)
-    residual = max(0.0, float(printer.residual_value or 0.0))
-    life_hours = _positive(printer.useful_life_hours)
+    purchase = _positive(printer.purchase_cost) if printer_money_usable else None
+    residual = (
+        max(0.0, float(printer.residual_value or 0.0))
+        if printer_money_usable
+        else 0.0
+    )
+    life_hours = _positive(printer.useful_life_hours) if printer_money_usable else None
     depreciation = 0.0
     if purchase is not None and life_hours is not None:
         depreciation = max(0.0, (purchase - residual)) / life_hours
         sources["depreciation"] = "printer"
 
-    maintenance = max(0.0, float(printer.maintenance_cost_per_hour or 0.0))
-    if printer.maintenance_cost_per_hour is not None:
+    maintenance = (
+        max(0.0, float(printer.maintenance_cost_per_hour or 0.0))
+        if printer_money_usable
+        else 0.0
+    )
+    if printer_money_usable and printer.maintenance_cost_per_hour is not None:
         sources["maintenance"] = "printer"
 
     wear_and_upkeep = depreciation + maintenance
@@ -368,43 +395,34 @@ async def resolve_economics(
 
     electricity_per_hour = power / 1000.0 * tariff
 
-    machine = await describe_machine(db, printer)
-    rate = machine.orca_time_cost
+    # What a person typed for this machine, then what they keep on the site, and only
+    # then the number their slicer happened to carry in. An imported value must never
+    # quietly outrank the one they entered themselves.
+    rate = _positive(printer.machine_hour_rate) if printer_money_usable else None
     if rate is not None:
-        sources["rate"] = "orca"
+        sources["rate"] = "printer"
     else:
-        rate = _positive(printer.machine_hour_rate)
+        rate = _positive(account.printing_rate_per_hour if account else None)
         if rate is not None:
-            sources["rate"] = "printer"
-    if rate is None:
-        account_printing = float(account.printing_rate_per_hour if account else 0.0)
-        sources["rate"] = "account"
-        return ResolvedEconomics(
-            printer_power_w=power,
-            amortization_rate_per_hour=wear_and_upkeep,
-            printing_rate_per_hour=account_printing,
-            electricity_cost_per_kwh=tariff,
-            machine_hour_rate=account_printing + wear_and_upkeep + electricity_per_hour,
-            depreciation_per_hour=depreciation,
-            electricity_per_hour=electricity_per_hour,
-            maintenance_per_hour=maintenance,
-            machine_cost_per_hour=wear_and_upkeep + electricity_per_hour,
-            rate_below_cost=False,
-            sources=sources,
-        )
+            sources["rate"] = "account"
+        else:
+            machine = await describe_machine(db, printer)
+            rate = machine.orca_time_cost
+            sources["rate"] = "orca" if rate is not None else "none"
 
     machine_cost = wear_and_upkeep + electricity_per_hour
-    margin = rate - machine_cost
+    margin = rate - machine_cost if rate is not None else 0.0
     return ResolvedEconomics(
         printer_power_w=power,
         amortization_rate_per_hour=wear_and_upkeep,
         printing_rate_per_hour=max(0.0, margin),
         electricity_cost_per_kwh=tariff,
-        machine_hour_rate=rate,
+        currency=currency,
+        machine_hour_rate=rate or 0.0,
         depreciation_per_hour=depreciation,
         electricity_per_hour=electricity_per_hour,
         maintenance_per_hour=maintenance,
         machine_cost_per_hour=machine_cost,
-        rate_below_cost=margin < 0,
+        rate_below_cost=rate is not None and margin < 0,
         sources=sources,
     )

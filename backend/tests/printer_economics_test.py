@@ -34,6 +34,7 @@ async def _profile(db: AsyncSession, user: User, **overrides) -> UserCalculatorP
         printer_power_w=overrides.get("printer_power_w", 350.0),
         printing_rate_per_hour=overrides.get("printing_rate_per_hour", 170.0),
         amortization_rate_per_hour=overrides.get("amortization_rate_per_hour", 16.0),
+        currency=overrides.get("currency", "RUB"),
     )
     db.add(profile)
     await db.commit()
@@ -41,17 +42,19 @@ async def _profile(db: AsyncSession, user: User, **overrides) -> UserCalculatorP
 
 
 @pytest.mark.asyncio
-async def test_a_machine_nobody_configured_changes_nothing(
+async def test_the_account_rate_is_the_whole_hour_as_well(
     db_session: AsyncSession, auth_user: User
 ) -> None:
-    """The whole point: existing accounts must keep their numbers to the kopeck."""
+    """One meaning everywhere: the rate covers the hour, it does not sit on top of it."""
     await _profile(db_session, auth_user)
     printer = await _printer(db_session, auth_user)
 
     resolved = await resolve_economics(db_session, printer)
 
     assert resolved.printer_power_w == 350.0
-    assert resolved.printing_rate_per_hour == 170.0
+    assert resolved.machine_hour_rate == 170.0
+    # 170 charged, minus 16 of wear and 2.1 of power that are billed as their own lines.
+    assert round(resolved.printing_rate_per_hour, 2) == 151.9
     assert resolved.amortization_rate_per_hour == 16.0
     assert resolved.sources["rate"] == "account"
     assert resolved.rate_below_cost is False
@@ -203,10 +206,10 @@ async def test_a_value_can_be_cleared_back_to_the_account(
 
 
 @pytest.mark.asyncio
-async def test_orcaslicer_own_hourly_cost_wins_when_a_person_filled_it(
+async def test_what_a_person_entered_outranks_what_orcaslicer_carried_in(
     db_session: AsyncSession, auth_user: User
 ) -> None:
-    """time_cost is Orca's own field; if they set it there, they meant it."""
+    """An imported number must never quietly replace the one they typed themselves."""
     await _profile(db_session, auth_user)
     printer = await _printer(db_session, auth_user, machine_hour_rate=45.0)
     configuration = PrinterProfile(
@@ -231,8 +234,84 @@ async def test_orcaslicer_own_hourly_cost_wins_when_a_person_filled_it(
 
     resolved = await resolve_economics(db_session, printer)
 
+    assert resolved.machine_hour_rate == 45.0
+    assert resolved.sources["rate"] == "printer"
+
+
+@pytest.mark.asyncio
+async def test_orcaslicer_fills_the_gap_when_nobody_named_a_rate(
+    db_session: AsyncSession, auth_user: User
+) -> None:
+    """Last in line, not first: it is the only number left when the site has none."""
+    await _profile(db_session, auth_user, printing_rate_per_hour=0.0)
+    printer = await _printer(db_session, auth_user)
+    configuration = PrinterProfile(
+        owner_user_id=auth_user.id,
+        is_official=False,
+        name="Voron 2.4 350 0.4",
+        slug="voron-2-4-350-economics-gap",
+        active=True,
+        source="orcaslicer",
+        orcaslicer_settings={"time_cost": "80"},
+    )
+    db_session.add(configuration)
+    await db_session.flush()
+    db_session.add(
+        UserPrinterProfileLink(
+            user_id=auth_user.id,
+            physical_printer_id=printer.id,
+            printer_profile_id=configuration.id,
+        )
+    )
+    await db_session.commit()
+
+    resolved = await resolve_economics(db_session, printer)
+
     assert resolved.machine_hour_rate == 80.0
     assert resolved.sources["rate"] == "orca"
+
+
+@pytest.mark.asyncio
+async def test_printer_money_in_another_currency_is_not_mixed_into_the_quote(
+    auth_client: AsyncClient, db_session: AsyncSession, auth_user: User
+) -> None:
+    await _profile(
+        db_session,
+        auth_user,
+        currency="RUB",
+        printing_rate_per_hour=170.0,
+        amortization_rate_per_hour=16.0,
+    )
+    printer = await _printer(
+        db_session,
+        auth_user,
+        economics_currency="USD",
+        purchase_cost=1200.0,
+        useful_life_hours=1000,
+        maintenance_cost_per_hour=4.0,
+        machine_hour_rate=45.0,
+        average_power_watts=400.0,
+    )
+
+    resolved = await resolve_economics(db_session, printer)
+
+    assert resolved.currency == "RUB"
+    assert resolved.machine_hour_rate == 170.0
+    assert resolved.amortization_rate_per_hour == 16.0
+    assert resolved.printer_power_w == 400.0
+    assert resolved.sources["rate"] == "account"
+    assert resolved.sources["wear"] == "account"
+    assert resolved.sources["power"] == "printer"
+    assert resolved.sources["printer_money"] == "currency_mismatch"
+
+    response = await auth_client.get(
+        f"/api/v1/physical-printers/{printer.id}/economics"
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["economics_currency"] == "USD"
+    assert body["calculator_currency"] == "RUB"
+    assert body["effective_machine_hour_rate"] == 170.0
 
 
 @pytest.mark.asyncio

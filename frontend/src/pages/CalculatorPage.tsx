@@ -479,6 +479,29 @@ const resolveMaterialRoleWeights = (
   return roleWeights;
 };
 
+export const isMachineRateMissing = (
+  economics: PrinterEconomics | null,
+  accountMachineHourRate: number,
+): boolean => {
+  if (!economics) {
+    return accountMachineHourRate <= 0;
+  }
+  const rateSource = economics.sources?.rate;
+  return rateSource ? rateSource === 'none' : economics.effective_machine_hour_rate <= 0;
+};
+
+export const isJobMachineRateMissing = (
+  config: CalculatorJobConfig,
+  orderEconomics: PrinterEconomics | null,
+  accountMachineHourRate: number,
+  jobEconomics: Map<number, PrinterEconomics>,
+): boolean => {
+  const economics = config.physicalPrinterId === ''
+    ? orderEconomics
+    : jobEconomics.get(config.physicalPrinterId) ?? null;
+  return isMachineRateMissing(economics, accountMachineHourRate);
+};
+
 export const buildEstimateRequest = (
   form: CalculatorFormState,
   materialLines: CalculatorMaterialLineState[] = [],
@@ -548,11 +571,10 @@ export const buildEstimateRequest = (
         : jobPrinterEconomics.get(config.physicalPrinterId) ?? null;
       const jobEconomicsUsable = Boolean(
         jobEconomics
-        && jobEconomics.configured
         && (
-          !jobEconomics.economics_currency
+          !jobEconomics.calculator_currency
           || !calculationCurrency
-          || normalizeCurrency(jobEconomics.economics_currency) === normalizeCurrency(calculationCurrency)
+          || normalizeCurrency(jobEconomics.calculator_currency) === normalizeCurrency(calculationCurrency)
         ),
       );
       return {
@@ -613,8 +635,17 @@ export const buildEstimateRequest = (
     requestData.postprocessing_rate_per_hour = form.postprocessingRatePerHour;
   }
 
+  // The rate a person sets is the whole hour their customer pays for — the same meaning
+  // it has for a chosen machine. Wear and power are billed as lines of their own, so only
+  // what is left above them rides on the printing rate.
   if (form.printingRatePerHour) {
-    requestData.printing_rate_per_hour = form.printingRatePerHour;
+    const machineCostPerHour =
+      (form.amortizationRatePerHour || 0)
+      + ((form.printerPowerW || 0) / 1000) * (form.electricityCostPerKwh || 0);
+    requestData.printing_rate_per_hour = Math.max(
+      0,
+      Math.round((form.printingRatePerHour - machineCostPerHour) * 100) / 100,
+    );
   }
 
   if (form.amortizationRatePerHour) {
@@ -633,10 +664,10 @@ export const buildEstimateRequest = (
   requestData.min_order_price = form.minOrderPrice || undefined;
 
   const printerCurrencyMatches =
-    !printerEconomics?.economics_currency
+    !printerEconomics?.calculator_currency
     || !calculationCurrency
-    || normalizeCurrency(printerEconomics.economics_currency) === normalizeCurrency(calculationCurrency);
-  if (printerEconomics && printerEconomics.configured && printerCurrencyMatches) {
+    || normalizeCurrency(printerEconomics.calculator_currency) === normalizeCurrency(calculationCurrency);
+  if (printerEconomics && printerCurrencyMatches) {
     requestData.printer_power_w = printerEconomics.calculator_printer_power_w || undefined;
     requestData.printing_rate_per_hour = printerEconomics.calculator_printing_rate_per_hour;
     requestData.amortization_rate_per_hour = printerEconomics.calculator_amortization_rate_per_hour;
@@ -3874,6 +3905,7 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
           printers={printers}
           selectedPrinterId={selectedPrinterId}
           printerEconomics={printerEconomics}
+          jobPrinterEconomics={jobPrinterEconomics}
           printerPickedFrom={printerPickedFrom}
           onPrinterSelect={handlePrinterSelect}
           economicsPrinterId={economicsPrinterId}
@@ -4021,6 +4053,7 @@ interface CalculatorViewProps {
   printers: PhysicalPrinter[];
   selectedPrinterId: number | '';
   printerEconomics: PrinterEconomics | null;
+  jobPrinterEconomics: Map<number, PrinterEconomics>;
   printerPickedFrom: string | null;
   onPrinterSelect: (printerId: number | '') => void;
   economicsPrinterId: number | '';
@@ -4107,6 +4140,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
   printers,
   selectedPrinterId,
   printerEconomics,
+  jobPrinterEconomics,
   printerPickedFrom,
   onPrinterSelect,
   economicsPrinterId,
@@ -4326,16 +4360,43 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
     && materialsReadyForCalculation
     && !isParsingGcode
     && !isCalculating;
+  // Warn before the estimate, not only after it: known wear and electricity can still
+  // produce a plausible number while the customer's machine-time charge is absent.
+  // The resolved source matters even when this printer has no fields of its own.
+  const machineRateMissing = isMachineRateMissing(printerEconomics, form.printingRatePerHour);
+  const missingJobRateKeys = jobConfigs
+    .filter((config) => isJobMachineRateMissing(
+      config,
+      printerEconomics,
+      form.printingRatePerHour,
+      jobPrinterEconomics,
+    ))
+    .map((config) => config.jobKey);
+  const effectiveMachineRateMissing = hasParsedJobs && jobConfigs.length > 0
+    ? missingJobRateKeys.length > 0
+    : machineRateMissing;
+  const orderMachineRateMissing = machineRateMissing
+    && (!hasParsedJobs || jobConfigs.some((config) => config.physicalPrinterId === ''));
   // A cost line that came out at zero is not a cheap order, it is an input nobody
   // filled. Naming which one beats a total that looks authoritative.
   const machineHours = result?.time_hours ?? 0;
   const approximateNotes = result
     ? [
         ...approximatePriceLabels,
+        ...(machineHours > 0 && effectiveMachineRateMissing ? [tc('resultNoPrintingRate')] : []),
         ...(machineHours > 0 && !result.cost_amortization ? [tc('resultNoAmortization')] : []),
         ...(machineHours > 0 && !result.cost_electricity ? [tc('resultNoElectricity')] : []),
       ]
     : [];
+  const focusMachineEconomics = () => {
+    onStaticSettingsOpenChange(true);
+    // The panel is closed at this point, so its anchor exists only after the re-render.
+    window.setTimeout(() => {
+      document
+        .getElementById('calculator-machine-economics')
+        ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 0);
+  };
   const handleCalculateAction = () => {
     if (!calculateActionEnabled) return;
     scrollToResultAfterEstimateRef.current = true;
@@ -5374,6 +5435,8 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                       economics={printerEconomics}
                       currency={quoteProfile.currency}
                       pickedFromLabel={printerPickedFrom}
+                      rateMissing={orderMachineRateMissing}
+                      onFixRate={focusMachineEconomics}
                     />
                   </div>
                 ) : null}
@@ -5439,6 +5502,12 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                       const objectCount = Math.max(1, job.parsed.object_count ?? 1);
                       const objectGroups = job.parsed.object_groups ?? [];
                       const config = getJobConfig(job);
+                      const jobRateMissing = isJobMachineRateMissing(
+                        config,
+                        printerEconomics,
+                        form.printingRatePerHour,
+                        jobPrinterEconomics,
+                      );
                       const canSplitGroups = canSplitCalculatorObjectGroups(objectGroups);
                       const objectsOpen = config.quoteMode === 'groups' || openObjectJobKeys.has(job.key);
                       const quoteMode = config.quoteMode === 'groups'
@@ -5548,6 +5617,11 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                                 ))}
                               </select>
                               <span className="text-[11px] text-slate-500">{tc('jobPrinterHint')}</span>
+                              {jobRateMissing ? (
+                                <span className="basis-full text-[11px] leading-4 text-amber-300/90">
+                                  {tc('jobPrinterRateMissing')}
+                                </span>
+                              ) : null}
                             </label>
                           ) : null}
 
@@ -6011,6 +6085,8 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                 economics={printerEconomics}
                 currency={quoteProfile.currency}
                 pickedFromLabel={printerPickedFrom}
+                rateMissing={orderMachineRateMissing}
+                onFixRate={focusMachineEconomics}
               />
             </WorkspacePanel>
             ) : null}

@@ -481,8 +481,13 @@ async def _economics_response(
             value is not None
             for value in (
                 printer.purchase_cost,
+                printer.residual_value,
                 printer.useful_life_hours,
                 printer.average_power_watts,
+                printer.power_hotend_w,
+                printer.power_bed_w,
+                printer.power_steppers_w,
+                printer.power_electronics_w,
                 printer.maintenance_cost_per_hour,
                 printer.machine_hour_rate,
             )
@@ -498,6 +503,7 @@ async def _economics_response(
         maintenance_cost_per_hour=printer.maintenance_cost_per_hour,
         machine_hour_rate=printer.machine_hour_rate,
         economics_currency=printer.economics_currency,
+        calculator_currency=resolved.currency,
         depreciation_per_hour=round(resolved.depreciation_per_hour, 2),
         electricity_per_hour=round(resolved.electricity_per_hour, 2),
         maintenance_per_hour=round(resolved.maintenance_per_hour, 2),

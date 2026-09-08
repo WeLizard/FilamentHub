@@ -50,6 +50,7 @@ class PrinterEconomicsResponse(BaseModel):
     maintenance_cost_per_hour: float | None
     machine_hour_rate: float | None
     economics_currency: str | None
+    calculator_currency: str | None
 
     depreciation_per_hour: float
     electricity_per_hour: float
