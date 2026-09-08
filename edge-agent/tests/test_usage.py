@@ -75,6 +75,7 @@ class UsageTrackerTest(unittest.TestCase):
                     "slot_index": 0,
                     "spool_id": 99,
                     "used_length_mm": 40,
+                    "evidence": "route_proof",
                     "usage_route_proof": "route-a",
                 }
             ],
@@ -91,6 +92,7 @@ class UsageTrackerTest(unittest.TestCase):
                     "slot_index": 0,
                     "spool_id": 99,
                     "used_length_mm": 20,
+                    "evidence": "route_proof",
                     "usage_route_proof": "route-a-new-generation",
                 }
             ],
@@ -115,6 +117,7 @@ class UsageTrackerTest(unittest.TestCase):
                     "slot_index": 0,
                     "spool_id": 99,
                     "used_length_mm": 40,
+                    "evidence": "current_assignment",
                 }
             ],
         )
@@ -250,8 +253,38 @@ class UsageTrackerTest(unittest.TestCase):
         )[0]
         self.assertEqual(
             event["items"][0],
-            {"slot_index": 7, "spool_id": 55, "used_length_mm": 50.0},
+            {
+                "slot_index": 7,
+                "spool_id": 55,
+                "used_length_mm": 50.0,
+                "evidence": "current_assignment",
+            },
         )
+
+    def test_segments_are_versioned_and_ordered_across_restart(self) -> None:
+        capture_usage_events(
+            self.state,
+            snapshot(state="printing", filament_used=0, print_duration=0, active_slot=0),
+            observed_at="2026-01-01T00:00:00+00:00",
+        )
+        first = capture_usage_events(
+            self.state,
+            snapshot(state="printing", filament_used=40, print_duration=300, active_slot=0),
+            observed_at="2026-01-01T00:05:00+00:00",
+        )[0]
+        with tempfile.TemporaryDirectory() as directory:
+            store = StateStore(Path(directory) / "state.json")
+            store.save(self.state)
+            self.state = store.load()
+        second = capture_usage_events(
+            self.state,
+            snapshot(state="complete", filament_used=60, print_duration=320, active_slot=0),
+            observed_at="2026-01-01T00:05:20+00:00",
+        )[0]
+
+        self.assertEqual(first["contract_version"], 2)
+        self.assertEqual(first["segment_sequence"], 1)
+        self.assertEqual(second["segment_sequence"], 2)
 
     def test_shutdown_flushes_latest_safe_counter_delta(self) -> None:
         capture_usage_events(

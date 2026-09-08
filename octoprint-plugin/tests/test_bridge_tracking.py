@@ -58,8 +58,11 @@ def test_offline_route_generations_survive_lost_ack_and_restart(initial_proof, n
         assert outbox[0]["items"][0]["usage_route_proof"] == initial_proof
     assert outbox[1]["items"] == [{
         "slot_index": 0, "spool_id": next_spool, "used_length_mm": 5,
+        "evidence": "route_proof",
         "usage_route_proof": "route-b",
     }]
+    assert [event["segment_sequence"] for event in outbox] == [1, 2]
+    assert all(event["contract_version"] == 2 for event in outbox)
 
     attempted = []
 
@@ -246,8 +249,15 @@ def test_sent_gcode_starts_tracking_before_delayed_print_started_event():
     assert outbox[0]["event_type"] == "terminal"
     assert outbox[0]["reasons"] == ["terminal"]
     assert outbox[0]["items"] == [
-        {"slot_index": 0, "spool_id": 41, "used_length_mm": 200.0}
+        {
+            "slot_index": 0,
+            "spool_id": 41,
+            "used_length_mm": 200.0,
+            "evidence": "current_assignment",
+        }
     ]
+    assert outbox[0]["contract_version"] == 2
+    assert outbox[0]["segment_sequence"] == 1
 
 
 def test_print_cancelled_queues_usage_as_cancelled():
@@ -321,8 +331,20 @@ def test_tool_and_spool_boundaries_keep_exact_spool_identity():
     assert checkpoint["event_type"] == "checkpoint"
     assert checkpoint["reasons"] == ["tool_change", "spool_change"]
     assert checkpoint["items"] == [
-        {"slot_index": 0, "spool_id": 41, "used_length_mm": 10.0},
-        {"slot_index": 1, "spool_id": 42, "used_length_mm": 5.0},
+        {
+            "slot_index": 0,
+            "spool_id": 41,
+            "used_length_mm": 10.0,
+            "evidence": "current_assignment",
+            "tool_index": 0,
+        },
+        {
+            "slot_index": 1,
+            "spool_id": 42,
+            "used_length_mm": 5.0,
+            "evidence": "current_assignment",
+            "tool_index": 1,
+        },
     ]
 
     plugin.on_gcode_sent(comm, "sent", "G1 E2", None, "G1")
@@ -330,8 +352,15 @@ def test_tool_and_spool_boundaries_keep_exact_spool_identity():
 
     terminal = plugin._settings.get(["outbox"])[1]
     assert terminal["items"] == [
-        {"slot_index": 1, "spool_id": 99, "used_length_mm": 2.0}
+        {
+            "slot_index": 1,
+            "spool_id": 99,
+            "used_length_mm": 2.0,
+            "evidence": "current_assignment",
+            "tool_index": 1,
+        }
     ]
+    assert [checkpoint["segment_sequence"], terminal["segment_sequence"]] == [1, 2]
 
 
 def test_filament_change_is_not_mislabeled_as_runout():
@@ -390,7 +419,12 @@ def test_frequent_extrusion_waits_for_one_periodic_checkpoint(monkeypatch):
     assert len(usage_requests) == 1
     assert usage_requests[0][2]["reasons"] == ["periodic"]
     assert usage_requests[0][2]["items"] == [
-        {"slot_index": 0, "spool_id": 41, "used_length_mm": 200.0}
+        {
+            "slot_index": 0,
+            "spool_id": 41,
+            "used_length_mm": 200.0,
+            "evidence": "current_assignment",
+        }
     ]
     assert plugin._settings.get(["outbox"]) == []
 
@@ -1080,7 +1114,12 @@ def test_unpair_during_print_keeps_the_job_bound_to_the_revoked_connection():
     event = plugin._settings.get(["outbox"])[0]
     assert event["_binding"] == BINDING
     assert event["items"] == [
-        {"slot_index": 0, "spool_id": 41, "used_length_mm": 7.0}
+        {
+            "slot_index": 0,
+            "spool_id": 41,
+            "used_length_mm": 7.0,
+            "evidence": "current_assignment",
+        }
     ]
     assert plugin._public_state()["retained_outbox_size"] == 1
 

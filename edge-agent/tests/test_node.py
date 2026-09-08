@@ -302,8 +302,17 @@ class EdgeNodeTest(unittest.TestCase):
                 event = batch["events"][0]
                 self.assertEqual(
                     event["items"],
-                    [{"slot_index": 0, "spool_id": index + 1001, "used_length_mm": 100.0}],
+                    [
+                        {
+                            "slot_index": 0,
+                            "spool_id": index + 1001,
+                            "used_length_mm": 100.0,
+                            "evidence": "current_assignment",
+                        }
+                    ],
                 )
+                self.assertEqual(event["contract_version"], 2)
+                self.assertEqual(event["segment_sequence"], 1)
                 event_ids.add(event["event_id"])
                 self.assertEqual(
                     StateStore(config.connections[index].state_path).load().usage_outbox, []

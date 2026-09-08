@@ -83,6 +83,7 @@ def _new_tracker(
         "last_total_duration_s": float(usage.get("total_duration_s") or 0.0),
         "last_emitted_print_duration_s": float(usage.get("print_duration_s") or 0.0),
         "route": route,
+        "next_segment_sequence": 1,
         "pending_length_mm": 0.0,
         "terminal_emitted": terminal_emitted,
     }
@@ -111,6 +112,8 @@ def _event(
     outcome: str | None,
     duration_s: float | None,
 ) -> dict[str, Any]:
+    segment_sequence = int(tracker.get("next_segment_sequence") or 1)
+    tracker["next_segment_sequence"] = segment_sequence + 1
     items: list[dict[str, Any]] = []
     if route is not None and length_mm > COUNTER_EPSILON_MM:
         items.append(
@@ -118,12 +121,19 @@ def _event(
                 "slot_index": route["slot_index"],
                 "spool_id": route["spool_id"],
                 "used_length_mm": length_mm,
+                "evidence": (
+                    "route_proof"
+                    if route.get("usage_route_proof") is not None
+                    else "current_assignment"
+                ),
             }
         )
         if route.get("usage_route_proof") is not None:
             items[-1]["usage_route_proof"] = route["usage_route_proof"]
     result: dict[str, Any] = {
+        "contract_version": 2,
         "job_id": tracker["job_id"],
+        "segment_sequence": segment_sequence,
         "event_type": event_type,
         "reasons": reasons,
         "observed_at": observed_at,

@@ -1102,6 +1102,11 @@ class FilamentHubBridgePlugin(
         usage = self._tracker.drain_usage()
         items = []
         unattributed_slots = []
+        tool_slot_map = (
+            self._tool_slot_map()
+            if self._settings.get_boolean(["map_tools_to_slots"])
+            else {}
+        )
         for slot_index, used_length in sorted(usage.items()):
             route = self._job_routes.get(slot_index)
             if used_length <= 0:
@@ -1114,10 +1119,22 @@ class FilamentHubBridgePlugin(
                     "slot_index": slot_index,
                     "spool_id": route["spool_id"],
                     "used_length_mm": used_length,
+                    "evidence": (
+                        "route_proof"
+                        if route.get("usage_route_proof") is not None
+                        else "current_assignment"
+                    ),
                 }
             )
             if route.get("usage_route_proof") is not None:
                 items[-1]["usage_route_proof"] = route["usage_route_proof"]
+            matching_tools = [
+                tool_index
+                for tool_index, mapped_slot in tool_slot_map.items()
+                if mapped_slot == slot_index
+            ]
+            if len(matching_tools) == 1:
+                items[-1]["tool_index"] = matching_tools[0]
         if unattributed_slots:
             self._logger.warning(
                 "Skipped unattributed usage in FilamentHub slot(s): %s",
@@ -1176,8 +1193,10 @@ class FilamentHubBridgePlugin(
                 return 0
             self._usage_event_sequence += 1
             event = {
+                "contract_version": 2,
                 "event_id": (f"{self._job_id}:checkpoint:{self._usage_event_sequence}"),
                 "job_id": self._job_id,
+                "segment_sequence": self._usage_event_sequence,
                 "event_type": "checkpoint",
                 "reasons": [reason],
                 "file_name": self._job_file,
@@ -1188,9 +1207,12 @@ class FilamentHubBridgePlugin(
                 "_binding": self._job_binding,
             }
         elif event_type == "terminal":
+            self._usage_event_sequence += 1
             event = {
+                "contract_version": 2,
                 "event_id": f"{self._job_id}:terminal",
                 "job_id": self._job_id,
+                "segment_sequence": self._usage_event_sequence,
                 "event_type": "terminal",
                 "reasons": [reason],
                 "outcome": outcome,

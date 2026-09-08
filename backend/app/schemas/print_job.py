@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -69,6 +70,25 @@ class PrintJobEventResponse(BaseModel):
     received_at: datetime
 
 
+class PrintJobUsageSegmentItemResponse(BaseModel):
+    slot_index: int
+    tool_index: int | None
+    spool_id: int | None
+    evidence: Literal["route_proof", "current_assignment"]
+    confirmed_weight_g: float
+
+
+class PrintJobUsageSegmentResponse(BaseModel):
+    contract_version: Literal[1, 2]
+    event_id: str
+    segment_sequence: int | None
+    event_type: Literal["checkpoint", "terminal"]
+    reasons: list[str]
+    observed_at: datetime
+    recorded_at: datetime
+    items: list[PrintJobUsageSegmentItemResponse]
+
+
 class PrintJobResponse(BaseModel):
     id: int
     logical_id: str
@@ -91,6 +111,7 @@ class PrintJobResponse(BaseModel):
     updated_at: datetime
     materials: list[PrintJobMaterialResponse]
     events: list[PrintJobEventResponse]
+    usage_segments: list[PrintJobUsageSegmentResponse]
 
 
 class PrintJobListResponse(BaseModel):

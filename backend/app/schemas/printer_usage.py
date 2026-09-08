@@ -8,8 +8,10 @@ from pydantic import BaseModel, Field, model_validator
 
 class PrinterUsageItem(BaseModel):
     slot_index: int = Field(ge=0, le=1023)
+    tool_index: int | None = Field(default=None, ge=0, le=1023)
     spool_id: int = Field(ge=1)
     usage_route_proof: str | None = Field(default=None, min_length=1, max_length=128)
+    evidence: Literal["route_proof", "current_assignment"] | None = None
     used_length_mm: float | None = Field(default=None, gt=0)
     used_weight_g: float | None = Field(default=None, gt=0)
 
@@ -21,8 +23,10 @@ class PrinterUsageItem(BaseModel):
 
 
 class PrinterUsageEvent(BaseModel):
+    contract_version: Literal[1, 2] = 1
     event_id: str = Field(min_length=1, max_length=128)
     job_id: str = Field(min_length=1, max_length=200)
+    segment_sequence: int | None = Field(default=None, ge=1)
     event_type: Literal["checkpoint", "terminal"] = "terminal"
     reasons: list[
         Literal[
@@ -48,6 +52,8 @@ class PrinterUsageEvent(BaseModel):
 
     @model_validator(mode="after")
     def validate_event_shape(self) -> "PrinterUsageEvent":
+        if self.contract_version == 2 and self.segment_sequence is None:
+            raise ValueError("usage contract v2 requires segment_sequence")
         if self.event_type == "terminal" and self.outcome is None:
             raise ValueError("terminal usage event requires an outcome")
         if self.event_type == "checkpoint" and self.outcome is not None:
@@ -60,6 +66,12 @@ class PrinterUsageEvent(BaseModel):
             raise ValueError("each slot may appear only once in a usage event")
         if len(spool_ids) != len(set(spool_ids)):
             raise ValueError("each spool may appear only once in a usage event")
+        for item in self.items:
+            expected_evidence = (
+                "route_proof" if item.usage_route_proof is not None else "current_assignment"
+            )
+            if item.evidence is not None and item.evidence != expected_evidence:
+                raise ValueError("usage evidence must match the submitted route proof")
         return self
 
 

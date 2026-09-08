@@ -3,6 +3,8 @@
 Newest first. The top entry is used for GitHub release notes.
 
 ## 0.1.4
+- Marks each usage checkpoint with a durable order and explicit assignment
+  evidence so FilamentHub can present multi-spool job consumption faithfully.
 - Removes a pending usage report only after FilamentHub explicitly accepts it,
   and continues delivering usage even when a printer snapshot or heartbeat
   temporarily fails.

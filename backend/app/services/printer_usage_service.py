@@ -16,6 +16,7 @@ from app.core.errors import (
     ERR_ACCESS_DENIED,
     ERR_MATERIAL_ASSIGNMENT_CONFLICT,
     ERR_MATERIAL_SLOT_NOT_FOUND,
+    ERR_PRINT_JOB_REPLAY_CONFLICT,
     ERR_PRINTER_BRIDGE_EVENT_CONFLICT,
     ERR_PRINTER_BRIDGE_NOT_CONFIGURED,
     raise_error,
@@ -25,8 +26,8 @@ from app.models.material_slot_assignment import MaterialSlotAssignment
 from app.models.material_system import MaterialSlot, PhysicalPrinterConnector
 from app.models.preset import Preset
 from app.models.preset_gate_state import PresetGateStateSource
-from app.models.preset_usage_event import PresetUsageEventType
-from app.models.print_job import PrintJobStatus
+from app.models.preset_usage_event import PresetUsageEvent, PresetUsageEventType
+from app.models.print_job import PrintJob, PrintJobStatus
 from app.models.printer_bridge_receipt import PrinterBridgeReceipt
 from app.models.user_spool import UserSpool, UserSpoolState
 from app.schemas.printer_usage import PrinterUsageEvent
@@ -64,9 +65,17 @@ def _as_utc(value: datetime) -> datetime:
 
 def usage_payload_data(payload: PrinterUsageEvent) -> dict:
     payload_data = payload.model_dump(mode="json")
+    if payload.contract_version == 1:
+        payload_data.pop("contract_version", None)
+    if payload.segment_sequence is None:
+        payload_data.pop("segment_sequence", None)
     for item in payload_data["items"]:
         if item.get("usage_route_proof") is None:
             item.pop("usage_route_proof", None)
+        if item.get("tool_index") is None:
+            item.pop("tool_index", None)
+        if item.get("evidence") is None:
+            item.pop("evidence", None)
     return payload_data
 
 
@@ -209,13 +218,17 @@ async def process_printer_usage_event(
             raise_error(409, ERR_MATERIAL_ASSIGNMENT_CONFLICT)
 
     route_preset_ids = {route["preset_id"] for route in routes.values()} - {None}
-    existing_presets = dict(
-        (
-            await db.execute(
-                select(Preset.id, Preset.created_at).where(Preset.id.in_(route_preset_ids))
-            )
-        ).all()
-    ) if route_preset_ids else {}
+    existing_presets = (
+        dict(
+            (
+                await db.execute(
+                    select(Preset.id, Preset.created_at).where(Preset.id.in_(route_preset_ids))
+                )
+            ).all()
+        )
+        if route_preset_ids
+        else {}
+    )
 
     received_at = _now()
     occurred_at = _received_source_time(payload.observed_at, received_at)
@@ -230,6 +243,43 @@ async def process_printer_usage_event(
     else:
         status = PrintJobStatus.paused if "paused" in payload.reasons else PrintJobStatus.printing
         job_payload_hash = payload_hash
+    if payload.contract_version == 2:
+        existing_job_id = await db.scalar(
+            select(PrintJob.id)
+            .where(
+                PrintJob.user_id == connector.user_id,
+                PrintJob.source == print_job_source,
+                PrintJob.source_ref == print_job_source_ref,
+            )
+            .with_for_update()
+        )
+        previous_meta = (
+            await db.scalars(
+                select(PresetUsageEvent.meta)
+                .where(
+                    PresetUsageEvent.print_job_id == existing_job_id,
+                    PresetUsageEvent.event_type == PresetUsageEventType.printer_report,
+                )
+                .with_for_update()
+            )
+            if existing_job_id is not None
+            else []
+        )
+        previous_sequences = [
+            meta.get("segment_sequence")
+            for meta in previous_meta
+            if isinstance(meta, dict)
+            and meta.get("contract_version") == 2
+            and isinstance(meta.get("segment_sequence"), int)
+        ]
+        expected_sequence = max(previous_sequences, default=0) + 1
+        if payload.segment_sequence != expected_sequence:
+            raise_error(
+                409,
+                ERR_PRINT_JOB_REPLAY_CONFLICT,
+                {"expected_sequence": expected_sequence},
+            )
+
     print_job, should_record_usage = await ensure_provider_job_event(
         db,
         user_id=connector.user_id,
@@ -322,12 +372,18 @@ async def process_printer_usage_event(
             reported_weight_g=reported_weight,
             meta={
                 "adapter": adapter,
+                "contract_version": payload.contract_version,
+                "event_id": payload.event_id,
                 "job_id": payload.job_id,
+                "segment_sequence": payload.segment_sequence,
                 "outcome": payload.outcome,
                 "event_type": payload.event_type,
                 "reasons": payload.reasons,
                 "observed_at": occurred_at.isoformat(),
                 "slot_index": item.slot_index,
+                "tool_index": item.tool_index,
+                "spool_id": item.spool_id,
+                "evidence": "route_proof" if route is not None else "current_assignment",
                 "file_name": payload.file_name,
                 "duration_s": payload.duration_s,
                 "used_length_mm": item.used_length_mm,

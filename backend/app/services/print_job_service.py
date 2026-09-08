@@ -33,6 +33,8 @@ from app.schemas.print_job import (
     PrintJobMaterialResponse,
     PrintJobResponse,
     PrintJobTransitionCreate,
+    PrintJobUsageSegmentItemResponse,
+    PrintJobUsageSegmentResponse,
 )
 
 TERMINAL_STATUSES = {
@@ -141,6 +143,65 @@ def _estimated_duration_from_calculation(
 
 
 def _response(job: PrintJob) -> PrintJobResponse:
+    grouped_usage_segments: dict[tuple[str, int | None], PrintJobUsageSegmentResponse] = {}
+    for usage_event in job.usage_events:
+        meta = usage_event.meta or {}
+        event_id = meta.get("event_id")
+        slot_index = meta.get("slot_index")
+        observed_at = meta.get("observed_at")
+        if not isinstance(event_id, str) or not isinstance(slot_index, int):
+            continue
+        try:
+            observed_at_value = datetime.fromisoformat(str(observed_at))
+        except (TypeError, ValueError):
+            observed_at_value = usage_event.created_at
+        segment_sequence = (
+            meta.get("segment_sequence") if isinstance(meta.get("segment_sequence"), int) else None
+        )
+        key = (event_id, segment_sequence)
+        segment = grouped_usage_segments.get(key)
+        if segment is None:
+            segment = PrintJobUsageSegmentResponse(
+                contract_version=2 if meta.get("contract_version") == 2 else 1,
+                event_id=event_id,
+                segment_sequence=segment_sequence,
+                event_type=("terminal" if meta.get("event_type") == "terminal" else "checkpoint"),
+                reasons=[str(reason) for reason in meta.get("reasons", [])],
+                observed_at=observed_at_value,
+                recorded_at=usage_event.created_at,
+                items=[],
+            )
+            grouped_usage_segments[key] = segment
+        segment.items.append(
+            PrintJobUsageSegmentItemResponse(
+                slot_index=slot_index,
+                tool_index=(
+                    meta.get("tool_index") if isinstance(meta.get("tool_index"), int) else None
+                ),
+                spool_id=(
+                    meta.get("spool_id")
+                    if isinstance(meta.get("spool_id"), int)
+                    else usage_event.spool_id
+                ),
+                evidence=(
+                    "route_proof" if meta.get("evidence") == "route_proof" else "current_assignment"
+                ),
+                confirmed_weight_g=round(usage_event.delta_weight_g or 0.0, 4),
+            )
+        )
+    usage_segments = list(grouped_usage_segments.values())
+    for segment in usage_segments:
+        segment.items.sort(
+            key=lambda item: (item.slot_index, item.tool_index is None, item.tool_index or 0)
+        )
+    usage_segments.sort(
+        key=lambda segment: (
+            segment.segment_sequence is None,
+            segment.segment_sequence or 0,
+            segment.recorded_at,
+            segment.event_id,
+        )
+    )
     return PrintJobResponse(
         id=job.id,
         logical_id=job.logical_id,
@@ -200,6 +261,7 @@ def _response(job: PrintJob) -> PrintJobResponse:
             )
             for event in job.events
         ],
+        usage_segments=usage_segments,
     )
 
 

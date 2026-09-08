@@ -103,8 +103,15 @@ async def _send(client, bridge, event, sequence=1):
     return await client.post("/api/v1/octoprint-bridge/usage", headers=bridge.headers, json=event)
 
 
-def _event(spool_id, proof, event_id="delayed-A"):
-    return {
+def _event(
+    spool_id,
+    proof,
+    event_id="delayed-A",
+    *,
+    segment_sequence=None,
+    tool_index=None,
+):
+    event = {
         "event_id": event_id,
         "job_id": "offline-attempt",
         "event_type": "checkpoint",
@@ -117,6 +124,12 @@ def _event(spool_id, proof, event_id="delayed-A"):
             }
         ],
     }
+    if segment_sequence is not None:
+        event["contract_version"] = 2
+        event["segment_sequence"] = segment_sequence
+        event["items"][0]["tool_index"] = tool_index
+        event["items"][0]["evidence"] = "route_proof"
+    return event
 
 
 @pytest.fixture(params=["edge", "octoprint"])
@@ -183,7 +196,12 @@ async def test_first_offline_usage_after_identical_spool_replacement_is_attribut
     db_session,
 ):
     bridge = route_bridge
-    original = _event(bridge.spool_a_id, bridge.proof)
+    original = _event(
+        bridge.spool_a_id,
+        bridge.proof,
+        segment_sequence=1,
+        tool_index=0,
+    )
     assert bridge.spool_a_id != bridge.spool_b_id
     assert bridge.spool_a.filament_id == bridge.spool_b.filament_id
     assert bridge.filament.qr_code == "FHUB-SAME-PRODUCT"
@@ -204,8 +222,27 @@ async def test_first_offline_usage_after_identical_spool_replacement_is_attribut
     rejected = await _send(auth_client, bridge, counterfeit, 2)
     assert rejected.status_code == 409
     snapshot_b = await _snapshot(auth_client, bridge)
+    skipped = _event(
+        bridge.spool_b_id,
+        snapshot_b.json()["slots"][0]["usage_route_proof"],
+        "skipped-B",
+        segment_sequence=3,
+        tool_index=1,
+    )
+    rejected_gap = await _send(auth_client, bridge, skipped, 2)
+    assert rejected_gap.status_code == 409
+    assert rejected_gap.json()["detail"] == {
+        "code": "ERR_PRINT_JOB_REPLAY_CONFLICT",
+        "params": {"expected_sequence": 2},
+    }
+    await db_session.refresh(bridge.spool_b)
+    assert bridge.spool_b.used_weight_g == 0
     next_event = _event(
-        bridge.spool_b_id, snapshot_b.json()["slots"][0]["usage_route_proof"], "next-B"
+        bridge.spool_b_id,
+        snapshot_b.json()["slots"][0]["usage_route_proof"],
+        "next-B",
+        segment_sequence=2,
+        tool_index=1,
     )
     continued = await _send(auth_client, bridge, next_event, 2)
     assert continued.status_code == 200, continued.text
@@ -215,6 +252,68 @@ async def test_first_offline_usage_after_identical_spool_replacement_is_attribut
     assert [row.spool_id for row in rows] == [bridge.spool_a_id, bridge.spool_b_id]
     assert all(row.preset_id == bridge.preset_id for row in rows)
     assert rows[0].meta["usage_route"]["spool_id"] == bridge.spool_a_id
+    job = await auth_client.get(f"/api/v1/print-jobs/{rows[0].print_job_id}")
+    assert job.status_code == 200, job.text
+    body = job.json()
+    assert [segment["segment_sequence"] for segment in body["usage_segments"]] == [1, 2]
+    assert [segment["items"][0]["spool_id"] for segment in body["usage_segments"]] == [
+        bridge.spool_a_id,
+        bridge.spool_b_id,
+    ]
+    assert [segment["items"][0]["tool_index"] for segment in body["usage_segments"]] == [
+        0,
+        1,
+    ]
+    assert {
+        item["evidence"] for segment in body["usage_segments"] for item in segment["items"]
+    } == {"route_proof"}
+    assert "usage_route_proof" not in json.dumps(body)
+    assert bridge.proof not in json.dumps(body)
+
+
+async def test_multi_item_checkpoint_is_one_segment_with_ordered_items(
+    route_bridge,
+    auth_client,
+    db_session,
+):
+    bridge = route_bridge
+    printer = await auth_client.get(f"/api/v1/physical-printers/{bridge.printer_id}")
+    slot_one = printer.json()["material_systems"][0]["slots"][1]
+    await _assign(auth_client, bridge.printer_id, slot_one, bridge.spool_b_id, bridge.preset_id)
+    snapshot = await _snapshot(auth_client, bridge)
+    slots = snapshot.json()["slots"]
+    event = {
+        "contract_version": 2,
+        "event_id": "multi-item-segment",
+        "job_id": "multi-item-job",
+        "segment_sequence": 1,
+        "event_type": "checkpoint",
+        "reasons": ["tool_change"],
+        "items": [
+            {
+                "slot_index": slot["index"],
+                "tool_index": slot["index"],
+                "spool_id": slot["spool"]["id"],
+                "usage_route_proof": slot["usage_route_proof"],
+                "evidence": "route_proof",
+                "used_weight_g": 1,
+            }
+            for slot in slots
+        ],
+    }
+    accepted = await _send(auth_client, bridge, event)
+    assert accepted.status_code == 200, accepted.text
+    rows = list(await db_session.scalars(select(PresetUsageEvent)))
+    job = await auth_client.get(f"/api/v1/print-jobs/{rows[0].print_job_id}")
+    assert job.status_code == 200, job.text
+    segments = job.json()["usage_segments"]
+    assert len(segments) == 1
+    assert segments[0]["event_id"] == "multi-item-segment"
+    assert [item["slot_index"] for item in segments[0]["items"]] == [0, 1]
+    assert [item["spool_id"] for item in segments[0]["items"]] == [
+        bridge.spool_a_id,
+        bridge.spool_b_id,
+    ]
 
 
 async def test_original_route_survives_move_archive_empty_and_token_rotation(
@@ -384,6 +483,10 @@ def test_pre_upgrade_event_and_terminal_receipt_hashes_are_unchanged():
     )
     old = event.model_dump(mode="json")
     old["items"][0].pop("usage_route_proof")
+    old["items"][0].pop("tool_index")
+    old["items"][0].pop("evidence")
+    old.pop("contract_version")
+    old.pop("segment_sequence")
     old.pop("event_type")
     old.pop("reasons")
     old.pop("started_at")
@@ -391,6 +494,33 @@ def test_pre_upgrade_event_and_terminal_receipt_hashes_are_unchanged():
     assert usage_payload_hash(event) == _hash(old)
     old.pop("event_id")
     assert _terminal_payload_hash(event) == _hash(old)
+
+
+def test_usage_v2_requires_sequence_and_rejects_false_evidence():
+    base = {
+        "contract_version": 2,
+        "event_id": "v2-checkpoint",
+        "job_id": "v2-job",
+        "event_type": "checkpoint",
+        "items": [{"slot_index": 0, "spool_id": 7, "used_weight_g": 1}],
+    }
+    with pytest.raises(ValueError, match="requires segment_sequence"):
+        PrinterUsageEvent.model_validate(base)
+    with pytest.raises(ValueError, match="evidence must match"):
+        PrinterUsageEvent.model_validate(
+            {
+                **base,
+                "segment_sequence": 1,
+                "items": [
+                    {
+                        **base["items"][0],
+                        "evidence": "route_proof",
+                    }
+                ],
+            }
+        )
+    parsed = PrinterUsageEvent.model_validate({**base, "segment_sequence": 1})
+    assert parsed.items[0].evidence is None
 
 
 async def test_pre_upgrade_batch_receipt_replays_without_new_optional_field(
@@ -413,7 +543,12 @@ async def test_pre_upgrade_batch_receipt_replays_without_new_optional_field(
             "events": [event],
         }
     ).model_dump(mode="json")
-    payload["events"][0]["items"][0].pop("usage_route_proof")
+    event_payload = payload["events"][0]
+    event_payload.pop("contract_version")
+    event_payload.pop("segment_sequence")
+    event_payload["items"][0].pop("usage_route_proof")
+    event_payload["items"][0].pop("tool_index")
+    event_payload["items"][0].pop("evidence")
     connector = await db_session.scalar(
         select(PhysicalPrinterConnector).where(
             PhysicalPrinterConnector.physical_printer_id == bridge.printer_id
