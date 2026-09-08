@@ -22,8 +22,8 @@ from app.models.bundle import (
     BundleSource,
     BundleStatus,
 )
-from app.models.calculator_history_entry import CalculatorHistoryEntry
 from app.models.calculator_gcode_artifact import CalculatorGcodeArtifact
+from app.models.calculator_history_entry import CalculatorHistoryEntry
 from app.models.calculator_profile import UserCalculatorProfile
 from app.models.catalog_import import CatalogImportBatch
 from app.models.crm import (
