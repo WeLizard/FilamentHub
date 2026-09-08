@@ -6958,6 +6958,16 @@ def _bambu_report(**overrides):
     return report
 
 
+def test_bambu_bridge_declares_exact_runtime_capabilities(plugin_module):
+    assert plugin_module._bambu_capabilities({}) == ["read", "write", "presence"]
+    assert plugin_module._bambu_capabilities(_bambu_report()) == [
+        "read",
+        "write",
+        "presence",
+        "tag_read",
+    ]
+
+
 def test_bambu_feed_reports_only_what_the_printer_measured(plugin_module):
     feed = plugin_module.parse_bambu_feed(_bambu_report())
 
