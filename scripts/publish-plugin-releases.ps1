@@ -556,6 +556,56 @@ function Get-LocalCandidateSha256 {
     return $actual
 }
 
+function Get-RemoteBranchCommit {
+    param(
+        [Parameter(Mandatory)][string]$RepositoryPath,
+        [Parameter(Mandatory)][string]$RemoteName,
+        [Parameter(Mandatory)][string]$BranchName
+    )
+
+    $line = & git -C $RepositoryPath ls-remote $RemoteName "refs/heads/$BranchName" 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        throw "Не удалось проверить ветку '$RemoteName/$BranchName' в $RepositoryPath."
+    }
+    if (-not $line) { return $null }
+    return (($line -split "`t")[0]).Trim()
+}
+
+function Assert-ReleaseCommitPublished {
+    param(
+        [Parameter(Mandatory)][string]$RepositoryPath,
+        [Parameter(Mandatory)][string]$RemoteName,
+        [Parameter(Mandatory)][string]$BranchName,
+        [Parameter(Mandatory)][string]$Name,
+        [Parameter(Mandatory)][string]$Repository,
+        [string]$RequiredCiWorkflow
+    )
+
+    $head = Invoke-Checked git @('-C', $RepositoryPath, 'rev-parse', 'HEAD') -Capture
+    $remote = Get-RemoteBranchCommit `
+        -RepositoryPath $RepositoryPath -RemoteName $RemoteName -BranchName $BranchName
+    if ($remote -ne $head) {
+        throw "$Name`: локальный HEAD $head ещё не опубликован как $RemoteName/$BranchName. Сначала отдельно опубликуй коммиты, дождись зелёного CI, затем снова запусти выпуск плагина."
+    }
+    if (-not $RequiredCiWorkflow) { return }
+
+    $json = Invoke-Checked gh @(
+        'run', 'list', '--repo', $Repository, '--workflow', $RequiredCiWorkflow,
+        '--commit', $head, '--event', 'push', '--limit', '10',
+        '--json', 'headSha,status,conclusion,url,createdAt'
+    ) -Capture
+    $run = @($json | ConvertFrom-Json) |
+        Where-Object { $_.headSha -eq $head } |
+        Sort-Object { [datetime]$_.createdAt } -Descending |
+        Select-Object -First 1
+    if (-not $run) {
+        throw "$Name`: для опубликованного commit $head не найден обязательный CI '$RequiredCiWorkflow'."
+    }
+    if ($run.status -ne 'completed' -or $run.conclusion -ne 'success') {
+        throw "$Name`: обязательный CI '$RequiredCiWorkflow' для $head не зелёный (status=$($run.status), result=$($run.conclusion)): $($run.url)"
+    }
+}
+
 function Read-OwnerApprovalKey {
     if ([Console]::IsInputRedirected) {
         throw 'Для подтверждения нужен интерактивный терминал; автоматический запуск использует -OwnerApprovedSha256.'
@@ -796,8 +846,18 @@ function Invoke-ReleaseBatch {
         $index += 1
         Write-Host "`n[$index/$($Components.Count)] $id — $Phase" -ForegroundColor Cyan
         try {
+            $global:FilamentHubPluginReleaseResult = $null
             & $Operation $id | Out-Host
-            [pscustomobject]@{ Component = $id; Status = 'OK'; Detail = $Phase }
+            $componentResult = $global:FilamentHubPluginReleaseResult
+            if ($componentResult) {
+                [pscustomobject]@{
+                    Component = $id
+                    Status = $componentResult.Status
+                    Detail = $componentResult.Detail
+                }
+            } else {
+                [pscustomobject]@{ Component = $id; Status = 'OK'; Detail = $Phase }
+            }
         } catch {
             $detail = $_.Exception.Message
             Write-Host "$id — ОШИБКА: $detail" -ForegroundColor Yellow
@@ -909,6 +969,7 @@ if ($selected -contains 'orcaslicer') {
         Id = 'orcaslicer'; Name = 'FilamentHub for OrcaSlicer'; Version = $version
         Tag = "v$version"; Needed = $needed; Repair = $repair; Published = $published
         RepositoryPath = $script:MainRepositoryRoot; Repository = $mainRepository
+        RequiredCiWorkflow = 'ci.yml'
         Workflow = 'release-filamenthub.yml'; TrustedPublishWorkflow = 'publish-orcacloud.yml'
         CandidateWheel = Join-Path $script:MainRepositoryRoot "orca-plugin/dist/release-$version/wheels/filamenthub-$version-py3-none-any.whl"
         CandidateChecksums = Join-Path $script:MainRepositoryRoot "orca-plugin/dist/release-$version/SHA256SUMS"
@@ -929,6 +990,7 @@ if ($selected -contains 'octoprint') {
         Id = 'octoprint'; Name = 'FilamentHub Bridge for OctoPrint'; Version = $version
         Tag = "octoprint-v$version"; Needed = $needed; Repair = $false; Published = $published
         RepositoryPath = $script:MainRepositoryRoot; Repository = $mainRepository
+        RequiredCiWorkflow = 'ci.yml'
         Workflow = 'release-octoprint.yml'; TrustedPublishWorkflow = $null
         CandidateWheel = Join-Path $script:MainRepositoryRoot "octoprint-plugin/dist/release-$version/octoprint_filamenthubbridge-$version-py3-none-any.whl"
         CandidateChecksums = Join-Path $script:MainRepositoryRoot "octoprint-plugin/dist/release-$version/SHA256SUMS"
@@ -959,6 +1021,7 @@ if ($selected -contains 'print-farm') {
         Id = 'print-farm'; Name = 'Print Farm'; Version = $version
         Tag = "v$version"; Needed = $needed; Repair = $repair; Published = $published
         RepositoryPath = $printFarmRepositoryRoot; Repository = $printFarmRepository
+        RequiredCiWorkflow = $null
         Workflow = 'release-printers.yml'; TrustedPublishWorkflow = 'publish-orcacloud.yml'
         CandidateWheel = Join-Path $printFarmRepositoryRoot "plugins/printers/dist/release-$version/wheels/printers-$version-py3-none-any.whl"
         CandidateChecksums = Join-Path $printFarmRepositoryRoot "plugins/printers/dist/release-$version/SHA256SUMS"
@@ -992,16 +1055,6 @@ if ($CheckVersions) {
     Write-Host 'Проверка версий завершена. Это не проверка сборки или готовности к публикации.'
     return
 }
-$printFarmAhead = 0
-if ($printFarmRepositoryRoot) {
-    $printFarmAhead = [int](Invoke-Checked git @(
-        '-C', $printFarmRepositoryRoot, 'rev-list', '--count', "$Remote/$Branch..HEAD"
-    ) -Capture)
-    if ($printFarmAhead -gt 0 -and ($plans | Where-Object { $_.Id -eq 'print-farm' -and ($_.Needed -or $_.Repair) })) {
-        Write-Host "  Print Farm repository: опубликовать $printFarmAhead подготовленный коммит(ов) ветки $Branch."
-    }
-}
-
 if (-not $HideReleaseNotes) {
     foreach ($plan in @($plans | Where-Object Needed)) {
         if ($plan.Id -in @('orcaslicer', 'octoprint')) {
@@ -1041,26 +1094,28 @@ if ($selected -contains 'print-farm') {
 }
 
 if ($DryRun) {
+    $actionable = @($plans | Where-Object { $_.Needed -or $_.Repair }).Count
+    $global:FilamentHubPluginReleaseResult = if ($actionable) {
+        [pscustomobject]@{ Status = 'READY'; Detail = 'готов к отдельному выпуску после публикации коммита и зелёного CI' }
+    } else {
+        [pscustomobject]@{ Status = 'CURRENT'; Detail = 'нового релиза не требуется' }
+    }
     Write-Host 'Dry-run завершён. Push, теги и GitHub Releases не создавались.' -ForegroundColor Green
     Write-Host 'Owner approval and release asset identity were not verified.'
     return
 }
 
+foreach ($repositoryPlan in @($plans | Where-Object { $_.Needed -or $_.Repair } |
+    Group-Object RepositoryPath | ForEach-Object { $_.Group | Select-Object -First 1 })) {
+    Assert-ReleaseCommitPublished `
+        -RepositoryPath $repositoryPlan.RepositoryPath -RemoteName $Remote `
+        -BranchName $Branch -Name $repositoryPlan.Name `
+        -Repository $repositoryPlan.Repository `
+        -RequiredCiWorkflow $repositoryPlan.RequiredCiWorkflow
+}
+
 Assert-OwnerApprovedCandidates -Plans $plans -ApprovedSha256 $OwnerApprovedSha256 `
     -PromptForOwnerApproval:$PromptForOwnerApproval
-
-$mainPlans = @($plans | Where-Object {
-    $_.RepositoryPath -eq $script:MainRepositoryRoot -and ($_.Needed -or $_.Repair)
-})
-if ($mainPlans.Count -gt 0) {
-    Invoke-Checked git @('-C', $script:MainRepositoryRoot, 'push', $Remote, $Branch)
-}
-if ($selected -contains 'print-farm' -and ($plans | Where-Object { $_.Id -eq 'print-farm' -and ($_.Needed -or $_.Repair) })) {
-    if ($printFarmAhead -gt 0) {
-        Write-Host "Print Farm: публикую $printFarmAhead коммит(ов) ветки $Branch перед релизом."
-        Invoke-Checked git @('-C', $printFarmRepositoryRoot, 'push', $Remote, $Branch)
-    }
-}
 
 foreach ($plan in @($plans | Where-Object { $_.Needed -or $_.Repair })) {
     if ($plan.Repair) {
@@ -1146,5 +1201,12 @@ foreach ($plan in @($plans | Where-Object { $_.Needed -or $_.Repair })) {
 }
 
 if (-not ($plans | Where-Object { $_.Needed -or $_.Repair })) {
+    $global:FilamentHubPluginReleaseResult = [pscustomobject]@{
+        Status = 'CURRENT'; Detail = 'нового релиза не требуется'
+    }
     Write-Host 'Новых версий плагинов нет; GitHub Releases не создавались.' -ForegroundColor Green
+} else {
+    $global:FilamentHubPluginReleaseResult = [pscustomobject]@{
+        Status = 'RELEASED'; Detail = 'независимый релиз завершён'
+    }
 }

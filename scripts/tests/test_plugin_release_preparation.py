@@ -155,22 +155,16 @@ try {
             assert result["release"]["Version"] == "1.2.4"
 
 
-def test_unchanged_print_farm_does_not_push_unrelated_ahead_commits(tmp_path):
-    result = run_ps(tmp_path, r"""
-$selected = @('print-farm')
-$plans = @([pscustomobject]@{ Id = 'print-farm'; Needed = $false; Repair = $false })
-$printFarmAhead = 1
-$printFarmRepositoryRoot = $PSScriptRoot
-$Remote = 'origin'
-$Branch = 'main'
-$global:pushes = 0
-function Invoke-Checked { param($FilePath, $Arguments) $global:pushes += 1 }
-$pushStatement = @($ast.EndBlock.Statements | Where-Object {
-    $_.Extent.Text.StartsWith("if (`$selected -contains 'print-farm'") -and
-    $_.Extent.Text.Contains("'push', `$Remote, `$Branch")
-})
-if ($pushStatement.Count -ne 1) { throw 'Expected one Print Farm branch publication entry point' }
-. ([scriptblock]::Create($pushStatement[0].Extent.Text))
-@{ pushes = $global:pushes } | ConvertTo-Json -Compress
-""")
-    assert result["pushes"] == 0
+def test_plugin_release_never_pushes_a_branch() -> None:
+    script = (ROOT / "scripts/publish-plugin-releases.ps1").read_text(encoding="utf-8")
+
+    assert "'push', $Remote, $Branch" not in script
+    assert "Assert-ReleaseCommitPublished" in script
+
+
+def test_batch_summary_distinguishes_current_ready_and_released_components() -> None:
+    script = (ROOT / "scripts/publish-plugin-releases.ps1").read_text(encoding="utf-8")
+
+    for status in ("CURRENT", "READY", "RELEASED"):
+        assert f"Status = '{status}'" in script
+    assert "Status = 'OK'; Detail = 'выпуск'" not in script

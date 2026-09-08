@@ -403,18 +403,21 @@ def test_owner_script_preflights_literal_orcacloud_metadata() -> None:
     assert '-F "metadata=$metadata"' in script
 
 
-def test_owner_script_requires_the_exact_owner_tested_wheel_before_push() -> None:
+def test_owner_script_requires_published_commit_and_exact_owner_tested_wheel() -> None:
     script = (ROOT / "scripts/publish-plugin-releases.ps1").read_text(
         encoding="utf-8"
     )
 
     approval_gate = script.index("Assert-OwnerApprovedCandidates -Plans $plans")
-    branch_push = script.index("'push', $Remote, $Branch")
+    published_commit_gate = script.index("Assert-ReleaseCommitPublished `")
     publish_call = script.index("Publish-Component @publish", approval_gate)
 
-    assert approval_gate < branch_push
     assert approval_gate < publish_call
+    assert published_commit_gate < approval_gate
     assert script.index("if ($DryRun)") < approval_gate
+    assert "'push', $Remote, $Branch" not in script
+    assert "RequiredCiWorkflow = 'ci.yml'" in script
+    assert "--commit', $head, '--event', 'push'" in script
     assert "orca-plugin/dist/release-$version/wheels/filamenthub-$version" in script
     assert "octoprint-plugin/dist/release-$version/octoprint_filamenthubbridge-$version" in script
     assert "plugins/printers/dist/release-$version/wheels/printers-$version" in script
