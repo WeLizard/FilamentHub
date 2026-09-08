@@ -623,7 +623,7 @@ async def test_non_topology_reports_preserve_owned_map_and_desired_assignment(
     await db_session.refresh(owner)
     assert owner.topology_authority is True
     assert owner.last_topology_at == topology_received_at
-    assert owner.capabilities == ["read", "presence"]
+    assert owner.capabilities == ["presence", "read"]
 
 
 @pytest.mark.asyncio

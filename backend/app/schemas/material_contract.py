@@ -8,20 +8,10 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from app.core.printer_capabilities import CapabilityName
 from app.core.tag_identity import normalize_tag_format, normalize_tag_uid
 from app.models.material_system import TOPOLOGY_EVIDENCE_FRESHNESS
 from app.schemas.printer_connection_observation import PrinterIdentityEvidence
-
-CapabilityName = Literal[
-    "read",
-    "write",
-    "presence",
-    "spool_identity",
-    "consumption",
-    "local_command",
-    "tag_read",
-    "tag_write",
-]
 
 
 class PhysicalPrinterMergeRequest(BaseModel):

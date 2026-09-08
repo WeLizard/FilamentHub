@@ -27,6 +27,7 @@ from app.core.errors import (
     ERR_OCTOPRINT_BRIDGE_WRONG_PROVIDER,
     raise_error,
 )
+from app.core.printer_capabilities import normalize_capabilities
 from app.models.brand import Brand
 from app.models.filament import Filament
 from app.models.material_slot_assignment import MaterialSlotAssignment
@@ -67,14 +68,6 @@ from app.services.printer_usage_service import process_printer_usage_event
 OCTOPRINT_PROVIDER = "octoprint"
 OCTOPRINT_TRANSPORT = "bridge_https"
 PAIRING_TTL = timedelta(minutes=10)
-BRIDGE_CAPABILITIES = {
-    "read",
-    "write",
-    "presence",
-    "spool_identity",
-    "consumption",
-    "local_command",
-}
 
 
 @dataclass(frozen=True)
@@ -110,7 +103,11 @@ def _new_bridge_token() -> str:
 
 
 def _safe_capabilities(values: list[str]) -> list[str]:
-    return sorted(set(values).intersection(BRIDGE_CAPABILITIES))
+    return normalize_capabilities(
+        values,
+        provider=OCTOPRINT_PROVIDER,
+        transport=OCTOPRINT_TRANSPORT,
+    )
 
 
 async def _record_capabilities(

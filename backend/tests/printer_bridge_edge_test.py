@@ -78,7 +78,7 @@ async def test_one_bambu_system_keeps_independent_orca_and_edge_connectors(
     assert all(item.active for item in connectors)
     system = await db_session.get(MaterialSystem, system_id)
     await db_session.refresh(system)
-    assert system.capabilities == ["consumption", "presence", "read"]
+    assert system.capabilities == ["presence", "read"]
 
     revoked = await auth_client.delete(
         f"/api/v1/printer-bridge/connections/{printer_id}/{system_id}",
@@ -86,7 +86,7 @@ async def test_one_bambu_system_keeps_independent_orca_and_edge_connectors(
     )
     assert revoked.status_code == 204
     await db_session.refresh(system)
-    assert system.capabilities == ["consumption", "read"]
+    assert system.capabilities == []
     edge = next(item for item in connectors if item.transport == "edge_agent")
     await db_session.refresh(edge)
     assert edge.active is True

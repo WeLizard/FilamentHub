@@ -214,3 +214,146 @@ async def test_generic_bridge_allows_status_and_heartbeat_without_material_capab
         },
     )
     assert heartbeat.status_code == 200
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("provider", "transport", "allowed"),
+    [
+        ("bambu", "orca_plugin_lan", {"read", "write", "presence", "tag_read"}),
+        ("moonraker", "edge_agent", {"read", "presence", "consumption"}),
+        (
+            "happy_hare",
+            "edge_agent",
+            {"read", "presence", "spool_identity", "consumption", "tag_read"},
+        ),
+    ],
+)
+async def test_generic_bridge_persists_only_manifest_capabilities(
+    auth_client: AsyncClient,
+    provider: str,
+    transport: str,
+    allowed: set[str],
+) -> None:
+    printer_id, system_id, source_instance_id, headers = await _paired_bridge(
+        auth_client,
+        [
+            "read",
+            "write",
+            "presence",
+            "spool_identity",
+            "consumption",
+            "local_command",
+            "tag_read",
+            "tag_write",
+            "future_capability",
+        ],
+        provider=provider,
+        transport=transport,
+    )
+    printer = (await auth_client.get(f"/api/v1/physical-printers/{printer_id}")).json()
+    connector = next(
+        item
+        for item in printer["connectors"]
+        if item["provider"] == provider and item["transport"] == transport
+    )
+    assert set(connector["capabilities"]) == allowed
+    assert allowed <= set(printer["material_systems"][0]["capabilities"])
+    assert not {"local_command", "tag_write"} & set(
+        printer["material_systems"][0]["capabilities"]
+    )
+
+    snapshot = await auth_client.post(
+        "/api/v1/printer-bridge/snapshot",
+        headers=headers,
+        json={
+            **_context(
+                system_id,
+                source_instance_id,
+                provider=provider,
+                transport=transport,
+            ),
+            "observed_at": datetime.now(timezone.utc).isoformat(),
+            "capabilities": [*allowed, "local_command", "tag_write"],
+            "slot_topology_complete": True,
+            "slots": [{"provider_index": 0}],
+        },
+    )
+    assert snapshot.status_code == 200
+    printer = (await auth_client.get(f"/api/v1/physical-printers/{printer_id}")).json()
+    connector = next(
+        item
+        for item in printer["connectors"]
+        if item["provider"] == provider and item["transport"] == transport
+    )
+    assert set(connector["capabilities"]) == allowed
+    assert allowed <= set(printer["material_systems"][0]["capabilities"])
+    assert not {"local_command", "tag_write"} & set(
+        printer["material_systems"][0]["capabilities"]
+    )
+
+    heartbeat = await auth_client.post(
+        "/api/v1/printer-bridge/heartbeat",
+        headers=headers,
+        json={
+            **_context(
+                system_id,
+                source_instance_id,
+                provider=provider,
+                transport=transport,
+            ),
+            "observed_at": datetime.now(timezone.utc).isoformat(),
+            "capabilities": [*allowed, "local_command", "tag_write", "future_capability"],
+        },
+    )
+    assert heartbeat.status_code == 200
+    printer = (await auth_client.get(f"/api/v1/physical-printers/{printer_id}")).json()
+    connector = next(
+        item
+        for item in printer["connectors"]
+        if item["provider"] == provider and item["transport"] == transport
+    )
+    assert set(connector["capabilities"]) == allowed
+    assert allowed <= set(printer["material_systems"][0]["capabilities"])
+    assert not {"local_command", "tag_write"} & set(
+        printer["material_systems"][0]["capabilities"]
+    )
+
+
+@pytest.mark.asyncio
+async def test_unimplemented_bambu_edge_keeps_identity_without_capabilities(
+    auth_client: AsyncClient,
+) -> None:
+    printer_id, system_id, source_instance_id, headers = await _paired_bridge(
+        auth_client,
+        ["read", "presence", "spool_identity", "consumption", "tag_read"],
+        provider="bambu",
+        transport="edge_agent",
+    )
+    printer = (await auth_client.get(f"/api/v1/physical-printers/{printer_id}")).json()
+    connector = next(
+        item
+        for item in printer["connectors"]
+        if item["provider"] == "bambu" and item["transport"] == "edge_agent"
+    )
+    assert connector["capabilities"] == []
+
+    rejected = await auth_client.post(
+        "/api/v1/printer-bridge/snapshot",
+        headers=headers,
+        json={
+            **_context(
+                system_id,
+                source_instance_id,
+                provider="bambu",
+                transport="edge_agent",
+            ),
+            "observed_at": datetime.now(timezone.utc).isoformat(),
+            "slots": [{"provider_index": 0}],
+        },
+    )
+    assert rejected.status_code == 409
+    assert rejected.json()["detail"] == {
+        "code": "ERR_PRINTER_BRIDGE_CAPABILITY_REQUIRED",
+        "params": {"capability": "presence"},
+    }

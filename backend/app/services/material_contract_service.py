@@ -23,6 +23,7 @@ from app.core.errors import (
     ERR_PRINTER_PROFILE_NOT_FOUND,
     raise_error,
 )
+from app.core.printer_capabilities import has_capability, normalize_capabilities
 from app.core.security import device_inventory_digest
 from app.models.filament import Filament
 from app.models.material_slot_assignment import MaterialSlotAssignment
@@ -63,6 +64,7 @@ from app.schemas.printer_bridge import (
     PrinterBridgeDesiredSpoolSnapshot,
 )
 from app.services.material_assignment_service import sync_legacy_material_assignment
+from app.services.printer_capability_service import refresh_material_system_capabilities
 from app.services.printer_usage_route_service import issue_usage_route_proofs
 
 # Happy Hare and the plain Klipper adapter describe the same feed, so they share
@@ -703,7 +705,11 @@ async def upsert_physical_printer_connector(
         )
         db.add(connector)
     connector.material_system_id = payload.material_system_id
-    connector.capabilities = list(payload.capabilities)
+    connector.capabilities = normalize_capabilities(
+        list(payload.capabilities),
+        provider=connector.provider,
+        transport=connector.transport,
+    )
     connector.active = True
     await db.commit()
     return await require_physical_printer(db, user_id, physical_printer_id)
@@ -892,7 +898,16 @@ async def build_printer_bridge_desired_snapshot(
             )
         )
 
-    if system.active and source_instance_id and "consumption" in connector.capabilities:
+    if (
+        system.active
+        and source_instance_id
+        and has_capability(
+            connector.capabilities or [],
+            "consumption",
+            provider=connector.provider,
+            transport=connector.transport,
+        )
+    ):
         await issue_usage_route_proofs(
             db,
             connector=connector,
@@ -1026,7 +1041,11 @@ async def ingest_printer_bridge_snapshot(
         received_at,
     )
     if topology_evidence_is_fresh and payload.capabilities is not None:
-        connector.capabilities = list(payload.capabilities)
+        connector.capabilities = normalize_capabilities(
+            list(payload.capabilities),
+            provider=connector.provider,
+            transport=connector.transport,
+        )
 
     if payload.device_identity and not await remember_identity(
         db,
@@ -1103,8 +1122,6 @@ async def ingest_printer_bridge_snapshot(
                 slot.assignment_revision += 1
         system.kind = next_kind
         system.provider = payload.provider
-    if topology_evidence_is_fresh:
-        system.capabilities = sorted(set(system.capabilities) | set(connector.capabilities))
     system.active = True
 
     accepted = True
@@ -1291,6 +1308,9 @@ async def ingest_printer_bridge_snapshot(
                 ],
                 preserve_existing_assignments=True,
             )
+
+    if topology_evidence_is_fresh:
+        await refresh_material_system_capabilities(db, system.id)
 
     if commit:
         await db.commit()

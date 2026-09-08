@@ -8,7 +8,7 @@ import secrets
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import (
@@ -22,8 +22,8 @@ from app.core.errors import (
     ERR_PRINTER_BRIDGE_WRONG_PROVIDER,
     raise_error,
 )
+from app.core.printer_capabilities import has_capability, normalize_capabilities
 from app.models.material_system import MaterialSystem, PhysicalPrinterConnector
-from app.models.octoprint_bridge import OctoPrintBridgeConnection
 from app.models.printer_bridge_credential import PrinterBridgeCredential
 from app.models.printer_bridge_receipt import PrinterBridgeReceipt
 from app.schemas.printer_bridge import (
@@ -39,6 +39,7 @@ from app.schemas.printer_bridge import (
 )
 from app.schemas.printer_usage import PrinterUsageEventResult
 from app.services.material_contract_service import require_physical_printer
+from app.services.printer_capability_service import refresh_material_system_capabilities
 from app.services.printer_identity_service import discovery_key
 from app.services.printer_usage_service import process_printer_usage_event, usage_payload_data
 
@@ -47,16 +48,6 @@ BAMBU_PROVIDER = "bambu"
 BAMBU_TRANSPORT: PrinterBridgeTransport = "orca_plugin_lan"
 EDGE_TRANSPORT: PrinterBridgeTransport = "edge_agent"
 SUPPORTED_TRANSPORTS = {BAMBU_TRANSPORT, EDGE_TRANSPORT}
-BRIDGE_CAPABILITIES = {
-    "read",
-    "write",
-    "presence",
-    "spool_identity",
-    "consumption",
-    "local_command",
-    "tag_read",
-    "tag_write",
-}
 BATCH_RECEIPT_KIND = "usage_batch"
 PRINT_JOB_SOURCE = "printer_bridge"
 
@@ -112,49 +103,13 @@ def _new_bridge_token() -> str:
     return f"fhpb_{secrets.token_urlsafe(32)}"
 
 
-def _safe_capabilities(values: list[str]) -> list[str]:
-    return sorted(set(values).intersection(BRIDGE_CAPABILITIES))
-
-
-async def refresh_material_system_capabilities(
-    db: AsyncSession,
-    material_system_id: int,
-) -> None:
-    """Project capabilities from active, paired connectors onto one system."""
-    await db.flush()
-    system = await db.get(MaterialSystem, material_system_id)
-    if system is None:
-        return
-    has_bridge_credential = (
-        select(PrinterBridgeCredential.id)
-        .where(
-            PrinterBridgeCredential.connector_id == PhysicalPrinterConnector.id,
-            PrinterBridgeCredential.token_hash.is_not(None),
-            PrinterBridgeCredential.revoked_at.is_(None),
-        )
-        .exists()
-    )
-    has_octoprint_credential = (
-        select(OctoPrintBridgeConnection.id)
-        .where(
-            OctoPrintBridgeConnection.connector_id == PhysicalPrinterConnector.id,
-            OctoPrintBridgeConnection.token_hash.is_not(None),
-            OctoPrintBridgeConnection.revoked_at.is_(None),
-        )
-        .exists()
-    )
-    capability_sets = await db.scalars(
-        select(PhysicalPrinterConnector.capabilities).where(
-            PhysicalPrinterConnector.material_system_id == material_system_id,
-            PhysicalPrinterConnector.active.is_(True),
-            or_(has_bridge_credential, has_octoprint_credential),
-        )
-    )
-    system.capabilities = _safe_capabilities([
-        capability
-        for capabilities in capability_sets.all()
-        for capability in (capabilities or [])
-    ])
+def _safe_capabilities(
+    values: list[str],
+    *,
+    provider: str | None = None,
+    transport: str | None = None,
+) -> list[str]:
+    return normalize_capabilities(values, provider=provider, transport=transport)
 
 
 async def _require_bridge_system(
@@ -371,7 +326,11 @@ async def pair_printer_bridge(
     credential.rotated_at = now if replacing_active_token else credential.rotated_at
     connector.source_instance_id = payload.source_instance_id
     connector.node_instance_id = payload.node_instance_id
-    connector.capabilities = _safe_capabilities(payload.capabilities)
+    connector.capabilities = _safe_capabilities(
+        payload.capabilities,
+        provider=connector.provider,
+        transport=connector.transport,
+    )
     if "read" not in connector.capabilities:
         connector.topology_authority = False
     connector.active = True
@@ -604,7 +563,12 @@ def require_printer_bridge_capability(
     capability: str,
 ) -> None:
     """Enforce the connector's persisted capability grant at the API boundary."""
-    if capability not in (connector.capabilities or []):
+    if not has_capability(
+        connector.capabilities or [],
+        capability,
+        provider=connector.provider,
+        transport=connector.transport,
+    ):
         raise_error(
             409,
             ERR_PRINTER_BRIDGE_CAPABILITY_REQUIRED,
@@ -644,7 +608,11 @@ async def record_printer_bridge_heartbeat(
     context.connector.last_seen_at = received_at
     context.connector.active = True
     if payload.capabilities is not None:
-        context.connector.capabilities = _safe_capabilities(payload.capabilities)
+        context.connector.capabilities = _safe_capabilities(
+            payload.capabilities,
+            provider=context.connector.provider,
+            transport=context.connector.transport,
+        )
         if "read" not in context.connector.capabilities:
             context.connector.topology_authority = False
         await refresh_material_system_capabilities(db, payload.material_system_id)
