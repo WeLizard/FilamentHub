@@ -850,6 +850,12 @@ function Invoke-ReleaseBatch {
             & $Operation $id | Out-Host
             $componentResult = $global:FilamentHubPluginReleaseResult
             if ($componentResult) {
+                if (
+                    -not $componentResult.PSObject.Properties['Status'] -or
+                    -not $componentResult.PSObject.Properties['Detail']
+                ) {
+                    throw "Компонент '$id' вернул неполный результат проверки."
+                }
                 [pscustomobject]@{
                     Component = $id
                     Status = $componentResult.Status
@@ -884,7 +890,11 @@ if ($selected.Count -gt 1) {
         & $entryPath @preflightArguments -Component $id
     })
     if (-not $DryRun -and -not $CheckVersions) {
-        $ready = @($results | Where-Object Status -eq 'OK' | ForEach-Object Component)
+        $ready = @(
+            $results |
+                Where-Object { $_.Status -in @('OK', 'READY') } |
+                ForEach-Object Component
+        )
         $failed = @($results | Where-Object Status -eq 'ERROR')
         $completed = @()
         if ($ready.Count) {
@@ -897,7 +907,15 @@ if ($selected.Count -gt 1) {
     }
     Write-Host "`nИтог по компонентам:" -ForegroundColor Cyan
     foreach ($id in $selected) {
-        $result = $results | Where-Object Component -eq $id
+        $matchedResults = @($results | Where-Object { $_.Component -eq $id })
+        if ($matchedResults.Count -ne 1) {
+            $result = [pscustomobject]@{
+                Status = 'ERROR'
+                Detail = "внутренняя ошибка сводки: получено результатов — $($matchedResults.Count)"
+            }
+        } else {
+            $result = $matchedResults[0]
+        }
         Write-Host "  $id — $($result.Status): $($result.Detail)"
     }
     if (@($results | Where-Object Status -eq 'ERROR').Count) {
