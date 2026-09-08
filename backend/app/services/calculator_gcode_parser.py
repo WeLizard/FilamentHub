@@ -10,6 +10,8 @@ import logging
 import re
 import zipfile
 from collections.abc import Iterable, Iterator
+from dataclasses import dataclass
+from dataclasses import field as dataclass_field
 from itertools import islice
 from typing import Any
 from xml.etree import ElementTree
@@ -41,6 +43,7 @@ _SLICER_KEYWORDS: dict[str, tuple[str, ...]] = {
 
 _VERSION_RE = re.compile(r"\b(\d+\.\d+(?:\.\d+)?(?:[-+._a-z0-9]*)?)\b", re.IGNORECASE)
 _CURA_SETTING_RE = re.compile(r"^SETTING_3\s+(.*)$", re.IGNORECASE)
+_SUPPORT_ROLE_RE = re.compile(r"^TYPE:\s*(Support(?:\s+interface)?)\s*$", re.IGNORECASE)
 _FLOAT_RE = re.compile(r"-?\d+(?:\.\d+)?")
 _OBJECT_CENTER_RE = re.compile(r"\bCENTER=([-\d.]+),([-\d.]+)", re.IGNORECASE)
 _OBJECT_NAME_RE = re.compile(r"\bNAME=([^\s]+)", re.IGNORECASE)
@@ -51,8 +54,6 @@ _PRINT_START_PARAMETER_RE = re.compile(r"\b(EXTRUDER|BED)=([\d.]+)", re.IGNORECA
 _NOZZLE_TEMPERATURE_COMMAND_RE = re.compile(r"^M10(?:4|9)\s+S([\d.]+)", re.IGNORECASE)
 _BED_TEMPERATURE_COMMAND_RE = re.compile(r"^M1(?:4|9)0\s+S([\d.]+)", re.IGNORECASE)
 _GCODE_3MF_PLATE_RE = re.compile(r"^Metadata/plate_(\d+)\.gcode$", re.IGNORECASE)
-_SUPPORT_ROLE_RE = re.compile(r"^TYPE:\s*(Support(?:\s+interface)?)\s*$", re.IGNORECASE)
-_EXTRUSION_ROLE_RE = re.compile(r"^;\s*TYPE:\s*(.+?)\s*$", re.IGNORECASE)
 _GCODE_NUMBER_PATTERN = r"-?(?:\d+(?:\.\d*)?|\.\d+)"
 _EXTRUSION_MOVE_RE = re.compile(
     rf"^(?:G0|G1|G2|G3)\b.*?\bE({_GCODE_NUMBER_PATTERN})",
@@ -91,6 +92,7 @@ def _parse_plain_gcode_payload(
     file_name: str,
     raw_bytes: bytes,
     decoded_text: str | None = None,
+    extrusion_evidence: _ExtrusionEvidence | None = None,
 ) -> dict[str, Any]:
     """Parse one plain (or gzip-compressed) G-code stream.
 
@@ -104,6 +106,8 @@ def _parse_plain_gcode_payload(
 
     lines = GcodeLines(decoded_text)
     slicer_name, slicer_version = _detect_slicer(lines)
+    thumbnail_evidence = _ThumbnailEvidence()
+    extrusion_evidence = extrusion_evidence or _ExtrusionEvidence()
 
     parsed: dict[str, Any] = {
         "file_name": file_name,
@@ -158,7 +162,7 @@ def _parse_plain_gcode_payload(
         "active_material_count": None,
         "is_multi_material": None,
         "toolchange_count": None,
-        "thumbnail_data_url": _extract_thumbnail_data_url(lines),
+        "thumbnail_data_url": None,
         "container_format": "plain_gcode",
         "plate_index": None,
         "available_plate_indices": [],
@@ -197,13 +201,19 @@ def _parse_plain_gcode_payload(
 
     for line in lines:
         stripped = line.strip()
+        if thumbnail_evidence.collecting or (
+            stripped.startswith(";")
+            and stripped[1:].lstrip()[:20].lower().startswith("thumbnail")
+        ):
+            thumbnail_evidence.consume(stripped)
+        extrusion_role = extrusion_evidence.consume(stripped)
         # First character, then the prefix — never an upper-cased copy of the
         # whole line, which is what this cost on every movement command.
         if stripped[:1] in ("E", "e") and stripped[:21].upper() == "EXCLUDE_OBJECT_DEFINE":
             _collect_object_metadata(parsed, collector, stripped)
             continue
 
-        if stripped:
+        if "=" in stripped:
             _collect_inline_command_metadata(parsed, collector, stripped)
 
         if not stripped.startswith(";"):
@@ -214,9 +224,14 @@ def _parse_plain_gcode_payload(
         if not comment:
             continue
 
-        support_role_match = _SUPPORT_ROLE_RE.match(comment)
-        if support_role_match:
-            collector["support_roles"].add(support_role_match.group(1).lower())
+        if extrusion_role is not None:
+            support_role_match = _SUPPORT_ROLE_RE.match(comment)
+            if support_role_match:
+                collector["support_roles"].add(support_role_match.group(1).lower())
+            # TYPE markers are consumed by the extrusion evidence pass. They are
+            # not calculator key/value metadata, and normalizing hundreds of
+            # thousands of them was a large part of a real model's parse time.
+            continue
 
         cura_setting_match = _CURA_SETTING_RE.match(comment)
         if cura_setting_match:
@@ -239,6 +254,8 @@ def _parse_plain_gcode_payload(
     if collector["estimated_first_layer_seconds"] is not None:
         parsed["first_layer_print_time_seconds"] = collector["estimated_first_layer_seconds"]
 
+    parsed["thumbnail_data_url"] = thumbnail_evidence.data_url()
+
     if collector["cura_setting_fragments"]:
         _apply_cura_settings(parsed, "".join(collector["cura_setting_fragments"]))
 
@@ -249,7 +266,7 @@ def _parse_plain_gcode_payload(
     _finalize_fhub_identities(parsed, collector)
     _finalize_objects(parsed, collector)
     _finalize_materials(parsed, collector)
-    _apply_extrusion_role_usage(parsed, lines)
+    extrusion_evidence.apply(parsed)
     _finalize_totals(parsed)
     return parsed
 
@@ -310,16 +327,18 @@ def _parse_gcode_3mf_payload(
                 selected_member,
                 MAX_DECOMPRESSED_GCODE_BYTES,
             )
-            # Decoded once and kept: the role pass below reads the same stream
-            # again after the container's own metadata has been merged.
+            # Decode once. Extrusion evidence is collected beside the metadata
+            # and can be reapplied after the container's own totals are merged.
             decoded_text = _decode_gcode_bytes(
                 file_name=selected_member.filename,
                 raw_bytes=gcode_bytes,
             )
+            extrusion_evidence = _ExtrusionEvidence()
             parsed = _parse_plain_gcode_payload(
                 file_name=selected_member.filename,
                 raw_bytes=gcode_bytes,
                 decoded_text=decoded_text,
+                extrusion_evidence=extrusion_evidence,
             )
             parsed["file_name"] = file_name
             parsed["file_size_bytes"] = len(raw_bytes)
@@ -330,9 +349,9 @@ def _parse_gcode_3mf_payload(
             slice_info = _read_gcode_3mf_slice_info(archive, members, selected_plate_index)
             _merge_gcode_3mf_slice_info(parsed, slice_info)
             # Some Bambu/Orca containers keep per-tool weights only in
-            # slice_info.config. Re-run the role pass after that metadata is
-            # merged so infill/support grams are also available for .gcode.3mf.
-            _apply_extrusion_role_usage(parsed, GcodeLines(decoded_text))
+            # slice_info.config. Resolve the already collected extrusion evidence
+            # again after that metadata is merged; the G-code itself is not read twice.
+            extrusion_evidence.apply(parsed)
             _finalize_totals(parsed)
 
             thumbnail = _read_gcode_3mf_thumbnail(archive, members, selected_plate_index)
@@ -1238,216 +1257,235 @@ def _finalize_materials(parsed: dict[str, Any], collector: dict[str, Any]) -> No
     )
 
 
-def _apply_extrusion_role_usage(parsed: dict[str, Any], lines: Iterable[str]) -> None:
-    """Estimate per-role weight from real extrusion moves, normalized to slicer totals.
+@dataclass(slots=True)
+class _ExtrusionEvidence:
+    """One-pass extrusion facts, resolved to grams after slicer totals are known."""
 
-    Retractions and their matching recoveries are excluded. Normalization against
-    the slicer's per-tool weight keeps the result in grams without inventing a
-    second density/diameter source.
-    """
-    relative_extrusion = False
-    current_tool = 0
+    relative_extrusion: bool = False
+    current_tool: int = 0
     observed_tool: int | None = None
-    observed_toolchange_count = 0
-    current_role = "unclassified"
+    observed_toolchange_count: int = 0
+    current_role: str = "unclassified"
     current_object: str | None = None
-    last_absolute_e: dict[int, float] = {}
-    retraction_debt: dict[int, float] = {}
-    extrusion_by_tool_role: dict[int, dict[str, float]] = {}
-    extrusion_by_tool_object: dict[int, dict[str, float]] = {}
+    last_absolute_e: dict[int, float] = dataclass_field(default_factory=dict)
+    retraction_debt: dict[int, float] = dataclass_field(default_factory=dict)
+    extrusion_by_tool_role: dict[int, dict[str, float]] = dataclass_field(default_factory=dict)
+    extrusion_by_tool_object: dict[int, dict[str, float]] = dataclass_field(default_factory=dict)
 
-    # Every pattern below is anchored to the start of the line and each begins
-    # with a letter of its own, so the first character decides which one can
-    # possibly match. A sliced model is millions of movement commands, and
-    # asking the regex engine about each of them was most of the parsing time.
-    for raw_line in lines:
-        stripped = raw_line.strip()
+    def consume(self, stripped: str) -> str | None:
+        """Collect one already-stripped line and return its extrusion role, if any."""
         if not stripped:
-            continue
+            return None
 
         if stripped[0] == ";":
-            role_match = _EXTRUSION_ROLE_RE.match(stripped)
-            if role_match:
-                current_role = role_match.group(1).strip().lower()
-            continue
+            comment = stripped[1:].lstrip()
+            if comment[:5].lower() == "type:":
+                role = comment[5:].strip().lower()
+                if not role:
+                    return None
+                self.current_role = role
+                return self.current_role
+            return None
 
         if ";" in stripped:
             command = stripped.split(";", 1)[0].strip()
             if not command:
-                continue
+                return None
         else:
             command = stripped
 
+        # Every pattern below is anchored to the start of the line and each
+        # begins with a letter of its own. The first character keeps the regex
+        # engine away from commands it cannot possibly match.
         head = command[0]
-
         if head in "Mm":
             upper_command = command.upper()
             if upper_command == "M82":
-                relative_extrusion = False
+                self.relative_extrusion = False
             elif upper_command == "M83":
-                relative_extrusion = True
-            continue
+                self.relative_extrusion = True
+            return None
 
         if head in "Ee":
             object_start_match = _EXCLUDE_OBJECT_START_RE.match(command)
             if object_start_match:
-                current_object = object_start_match.group(1)
+                self.current_object = object_start_match.group(1)
             elif _EXCLUDE_OBJECT_END_RE.match(command):
-                current_object = None
-            continue
+                self.current_object = None
+            return None
 
         if head in "Tt":
             tool_match = _TOOL_CHANGE_RE.match(command)
             if tool_match:
                 next_tool = int(tool_match.group(1))
-                if observed_tool is not None and next_tool != observed_tool:
-                    observed_toolchange_count += 1
-                observed_tool = next_tool
-                current_tool = next_tool
-            continue
+                if self.observed_tool is not None and next_tool != self.observed_tool:
+                    self.observed_toolchange_count += 1
+                self.observed_tool = next_tool
+                self.current_tool = next_tool
+            return None
 
         if head not in "Gg":
-            continue
+            return None
 
-        reset_match = _EXTRUSION_RESET_RE.match(command)
-        if reset_match:
-            last_absolute_e[current_tool] = float(reset_match.group(1))
-            continue
+        if command[1:3] == "92":
+            reset_match = _EXTRUSION_RESET_RE.match(command)
+            if reset_match:
+                self.last_absolute_e[self.current_tool] = float(reset_match.group(1))
+            return None
 
         move_match = _EXTRUSION_MOVE_RE.match(command)
         if not move_match:
-            continue
+            return None
 
         extrusion_value = float(move_match.group(1))
-        if relative_extrusion:
+        if self.relative_extrusion:
             delta = extrusion_value
         else:
-            previous = last_absolute_e.get(current_tool, 0.0)
+            previous = self.last_absolute_e.get(self.current_tool, 0.0)
             delta = extrusion_value - previous
-            last_absolute_e[current_tool] = extrusion_value
+            self.last_absolute_e[self.current_tool] = extrusion_value
 
-        debt = retraction_debt.get(current_tool, 0.0)
+        debt = self.retraction_debt.get(self.current_tool, 0.0)
         if delta < 0:
-            retraction_debt[current_tool] = debt + abs(delta)
-            continue
+            self.retraction_debt[self.current_tool] = debt + abs(delta)
+            return None
         if delta <= 0:
-            continue
+            return None
 
         recovery = min(debt, delta)
-        retraction_debt[current_tool] = max(0.0, debt - recovery)
+        self.retraction_debt[self.current_tool] = max(0.0, debt - recovery)
         consumed = delta - recovery
         if consumed <= 0:
-            continue
+            return None
 
-        tool_roles = extrusion_by_tool_role.setdefault(current_tool, {})
-        tool_roles[current_role] = tool_roles.get(current_role, 0.0) + consumed
-        if current_object is not None:
-            tool_objects = extrusion_by_tool_object.setdefault(current_tool, {})
-            tool_objects[current_object] = tool_objects.get(current_object, 0.0) + consumed
-
-    if parsed["toolchange_count"] is None and observed_tool is not None:
-        # The first Tn selects the initial tool. Only later transitions are
-        # changes. Prefer slicer metadata when it exists because it may also
-        # know about non-Tn changes such as an explicit manual swap.
-        parsed["toolchange_count"] = observed_toolchange_count
-
-    if not extrusion_by_tool_role or not parsed["materials"]:
-        return
-
-    materials = parsed["materials"]
-    role_tools = list(extrusion_by_tool_role)
-    single_material_fallback = len(materials) == 1 and len(role_tools) == 1
-    total_infill_weight = 0.0
-    total_support_weight = 0.0
-    total_brim_weight = 0.0
-    total_prime_tower_weight = 0.0
-    object_group_weights: dict[str, float] = {}
-    object_group_material_weights: dict[str, dict[int, float]] = {}
-    resolved_any = False
-    all_weighted_materials_resolved = True
-    resolved_material_weight = 0.0
-
-    for material in materials:
-        tool_index = material.get("tool_index")
-        role_tool = role_tools[0] if single_material_fallback else tool_index
-        role_usage = extrusion_by_tool_role.get(role_tool)
-        material_weight = material.get("weight_g")
-        if material_weight is None or material_weight <= 0:
-            continue
-        if not role_usage:
-            all_weighted_materials_resolved = False
-            continue
-
-        total_extrusion = sum(role_usage.values())
-        if total_extrusion <= 0:
-            all_weighted_materials_resolved = False
-            continue
-
-        resolved_material_weight += float(material_weight)
-        grams_per_extrusion_mm = float(material_weight) / total_extrusion
-        infill_extrusion = sum(
-            amount for role, amount in role_usage.items() if "infill" in role
-        )
-        support_extrusion = sum(
-            amount for role, amount in role_usage.items() if role.startswith("support")
-        )
-        brim_extrusion = role_usage.get("brim", 0.0)
-        prime_tower_extrusion = sum(
-            amount
-            for role, amount in role_usage.items()
-            if role in {"prime tower", "wipe tower", "purge tower"}
-        )
-        infill_weight = infill_extrusion * grams_per_extrusion_mm
-        support_weight = support_extrusion * grams_per_extrusion_mm
-        brim_weight = brim_extrusion * grams_per_extrusion_mm
-        prime_tower_weight = prime_tower_extrusion * grams_per_extrusion_mm
-        material["infill_weight_g"] = round(infill_weight, 3)
-        material["support_weight_g"] = round(support_weight, 3)
-        material["brim_weight_g"] = round(brim_weight, 3)
-        material["prime_tower_weight_g"] = round(prime_tower_weight, 3)
-        total_infill_weight += infill_weight
-        total_support_weight += support_weight
-        total_brim_weight += brim_weight
-        total_prime_tower_weight += prime_tower_weight
-        for raw_object_name, object_extrusion in extrusion_by_tool_object.get(role_tool, {}).items():
-            group_name = _normalize_object_group_name(raw_object_name)
-            object_weight = object_extrusion * grams_per_extrusion_mm
-            object_group_weights[group_name] = (
-                object_group_weights.get(group_name, 0.0)
-                + object_weight
+        tool_roles = self.extrusion_by_tool_role.setdefault(self.current_tool, {})
+        tool_roles[self.current_role] = tool_roles.get(self.current_role, 0.0) + consumed
+        if self.current_object is not None:
+            tool_objects = self.extrusion_by_tool_object.setdefault(self.current_tool, {})
+            tool_objects[self.current_object] = (
+                tool_objects.get(self.current_object, 0.0) + consumed
             )
-            material_tool_index = int(tool_index if tool_index is not None else role_tool)
-            group_materials = object_group_material_weights.setdefault(group_name, {})
-            group_materials[material_tool_index] = (
-                group_materials.get(material_tool_index, 0.0) + object_weight
-            )
-        resolved_any = True
+        return None
 
-    if resolved_any:
-        parsed["infill_filament_weight_g"] = round(total_infill_weight, 3)
-        parsed["support_filament_weight_g"] = round(total_support_weight, 3)
-        parsed["brim_filament_weight_g"] = round(total_brim_weight, 3)
-        parsed["prime_tower_filament_weight_g"] = round(total_prime_tower_weight, 3)
-    total_object_weight = sum(object_group_weights.values())
-    if total_object_weight > 0:
-        for group in parsed.get("object_groups", []):
-            group["extrusion_share"] = round(
-                object_group_weights.get(group["name"], 0.0) / total_object_weight,
-                6,
+    def apply(self, parsed: dict[str, Any]) -> None:
+        """Normalize collected extrusion distances to the slicer's material weights."""
+        if parsed["toolchange_count"] is None and self.observed_tool is not None:
+            # The first Tn selects the initial tool. Only later transitions are
+            # changes. Slicer metadata still wins when it has a resolved value.
+            parsed["toolchange_count"] = self.observed_toolchange_count
+
+        if not self.extrusion_by_tool_role or not parsed["materials"]:
+            return
+
+        materials = parsed["materials"]
+        role_tools = list(self.extrusion_by_tool_role)
+        single_material_fallback = len(materials) == 1 and len(role_tools) == 1
+        total_infill_weight = 0.0
+        total_support_weight = 0.0
+        total_brim_weight = 0.0
+        total_prime_tower_weight = 0.0
+        object_group_weights: dict[str, float] = {}
+        object_group_material_weights: dict[str, dict[int, float]] = {}
+        resolved_any = False
+        all_weighted_materials_resolved = True
+        resolved_material_weight = 0.0
+
+        for material in materials:
+            tool_index = material.get("tool_index")
+            role_tool = role_tools[0] if single_material_fallback else tool_index
+            role_usage = self.extrusion_by_tool_role.get(role_tool)
+            material_weight = material.get("weight_g")
+            if material_weight is None or material_weight <= 0:
+                continue
+            if not role_usage:
+                all_weighted_materials_resolved = False
+                continue
+
+            total_extrusion = sum(role_usage.values())
+            if total_extrusion <= 0:
+                all_weighted_materials_resolved = False
+                continue
+
+            resolved_material_weight += float(material_weight)
+            grams_per_extrusion_mm = float(material_weight) / total_extrusion
+            infill_extrusion = sum(
+                amount for role, amount in role_usage.items() if "infill" in role
             )
-            group["material_weights_g"] = {
-                tool_index: round(weight_g, 3)
-                for tool_index, weight_g in sorted(
-                    object_group_material_weights.get(group["name"], {}).items()
+            support_extrusion = sum(
+                amount for role, amount in role_usage.items() if role.startswith("support")
+            )
+            brim_extrusion = role_usage.get("brim", 0.0)
+            prime_tower_extrusion = sum(
+                amount
+                for role, amount in role_usage.items()
+                if role in {"prime tower", "wipe tower", "purge tower"}
+            )
+            infill_weight = infill_extrusion * grams_per_extrusion_mm
+            support_weight = support_extrusion * grams_per_extrusion_mm
+            brim_weight = brim_extrusion * grams_per_extrusion_mm
+            prime_tower_weight = prime_tower_extrusion * grams_per_extrusion_mm
+            material["infill_weight_g"] = round(infill_weight, 3)
+            material["support_weight_g"] = round(support_weight, 3)
+            material["brim_weight_g"] = round(brim_weight, 3)
+            material["prime_tower_weight_g"] = round(prime_tower_weight, 3)
+            total_infill_weight += infill_weight
+            total_support_weight += support_weight
+            total_brim_weight += brim_weight
+            total_prime_tower_weight += prime_tower_weight
+            for raw_object_name, object_extrusion in self.extrusion_by_tool_object.get(
+                role_tool, {}
+            ).items():
+                group_name = _normalize_object_group_name(raw_object_name)
+                object_weight = object_extrusion * grams_per_extrusion_mm
+                object_group_weights[group_name] = (
+                    object_group_weights.get(group_name, 0.0) + object_weight
                 )
-            }
-    if all_weighted_materials_resolved and resolved_material_weight > 0 and parsed.get("object_groups"):
-        object_weight = min(resolved_material_weight, total_object_weight)
-        parsed["object_filament_weight_g"] = round(object_weight, 3)
-        parsed["shared_filament_weight_g"] = round(
-            max(0.0, resolved_material_weight - object_weight),
-            3,
-        )
+                material_tool_index = int(
+                    tool_index if tool_index is not None else role_tool
+                )
+                group_materials = object_group_material_weights.setdefault(group_name, {})
+                group_materials[material_tool_index] = (
+                    group_materials.get(material_tool_index, 0.0) + object_weight
+                )
+            resolved_any = True
+
+        if resolved_any:
+            parsed["infill_filament_weight_g"] = round(total_infill_weight, 3)
+            parsed["support_filament_weight_g"] = round(total_support_weight, 3)
+            parsed["brim_filament_weight_g"] = round(total_brim_weight, 3)
+            parsed["prime_tower_filament_weight_g"] = round(total_prime_tower_weight, 3)
+        total_object_weight = sum(object_group_weights.values())
+        if total_object_weight > 0:
+            for group in parsed.get("object_groups", []):
+                group["extrusion_share"] = round(
+                    object_group_weights.get(group["name"], 0.0) / total_object_weight,
+                    6,
+                )
+                group["material_weights_g"] = {
+                    tool_index: round(weight_g, 3)
+                    for tool_index, weight_g in sorted(
+                        object_group_material_weights.get(group["name"], {}).items()
+                    )
+                }
+        if (
+            all_weighted_materials_resolved
+            and resolved_material_weight > 0
+            and parsed.get("object_groups")
+        ):
+            object_weight = min(resolved_material_weight, total_object_weight)
+            parsed["object_filament_weight_g"] = round(object_weight, 3)
+            parsed["shared_filament_weight_g"] = round(
+                max(0.0, resolved_material_weight - object_weight),
+                3,
+            )
+
+
+def _apply_extrusion_role_usage(parsed: dict[str, Any], lines: Iterable[str]) -> None:
+    """Apply role and object weights when a standalone line source is supplied."""
+    evidence = _ExtrusionEvidence()
+    for raw_line in lines:
+        evidence.consume(raw_line.strip())
+    evidence.apply(parsed)
 
 
 def _finalize_totals(parsed: dict[str, Any]) -> None:
@@ -1534,49 +1572,59 @@ def _finalize_totals(parsed: dict[str, Any]) -> None:
         parsed["object_count"] = None
 
 
-def _extract_thumbnail_data_url(lines: Iterable[str]) -> str | None:
-    thumbnails: list[tuple[int, str]] = []
-    collecting = False
-    current_area = 0
-    current_lines: list[str] = []
+@dataclass(slots=True)
+class _ThumbnailEvidence:
+    """Collect embedded previews while the main metadata pass reads each line."""
 
-    for raw_line in lines:
-        stripped = raw_line.strip()
+    thumbnails: list[tuple[int, str]] = dataclass_field(default_factory=list)
+    collecting: bool = False
+    current_area: int = 0
+    current_lines: list[str] = dataclass_field(default_factory=list)
 
+    def consume(self, stripped: str) -> None:
         begin_match = _THUMBNAIL_BEGIN_RE.match(stripped)
         if begin_match:
-            collecting = True
+            self.collecting = True
             width = int(begin_match.group(1) or 0)
             height = int(begin_match.group(2) or 0)
-            current_area = width * height
-            current_lines = []
-            continue
+            self.current_area = width * height
+            self.current_lines = []
+            return
 
         if _THUMBNAIL_BLOCK_START_RE.match(stripped):
-            collecting = True
-            current_area = 0
-            current_lines = []
-            continue
+            self.collecting = True
+            self.current_area = 0
+            self.current_lines = []
+            return
 
-        if collecting and (_THUMBNAIL_END_RE.match(stripped) or _THUMBNAIL_BLOCK_END_RE.match(stripped)):
-            data_url = _build_thumbnail_data_url(current_lines)
+        if self.collecting and (
+            _THUMBNAIL_END_RE.match(stripped) or _THUMBNAIL_BLOCK_END_RE.match(stripped)
+        ):
+            data_url = _build_thumbnail_data_url(self.current_lines)
             if data_url:
-                thumbnails.append((current_area, data_url))
-            collecting = False
-            current_area = 0
-            current_lines = []
-            continue
+                self.thumbnails.append((self.current_area, data_url))
+            self.collecting = False
+            self.current_area = 0
+            self.current_lines = []
+            return
 
-        if collecting:
+        if self.collecting:
             candidate = stripped[1:].strip() if stripped.startswith(";") else stripped
             if candidate:
-                current_lines.append(candidate)
+                self.current_lines.append(candidate)
 
-    if not thumbnails:
-        return None
+    def data_url(self) -> str | None:
+        if not self.thumbnails:
+            return None
+        return max(self.thumbnails, key=lambda item: item[0])[1]
 
-    thumbnails.sort(key=lambda item: item[0], reverse=True)
-    return thumbnails[0][1]
+
+def _extract_thumbnail_data_url(lines: Iterable[str]) -> str | None:
+    evidence = _ThumbnailEvidence()
+    for raw_line in lines:
+        evidence.consume(raw_line.strip())
+
+    return evidence.data_url()
 
 
 def _build_thumbnail_data_url(lines: list[str]) -> str | None:
