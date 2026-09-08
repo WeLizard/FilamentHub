@@ -506,6 +506,34 @@ function Publish-Commits {
     Write-Host 'GitHub CI начнёт прогон сам. Деплой не пропустит коммит, пока прогон не зелёный.' -ForegroundColor DarkGray
 }
 
+function Publish-PluginCommits {
+    Assert-Command git
+
+    Write-Host ''
+    Write-Host 'Отправка подготовленных коммитов плагинов' -ForegroundColor Cyan
+    Write-Host 'Сначала будет обновлено состояние origin/main, затем ты выберешь готовый коммит.' -ForegroundColor DarkGray
+    Write-Host 'Релиз, тег и production этим действием не создаются.' -ForegroundColor DarkGray
+    Publish-RepositoryCommits -Directory $repositoryRoot -Title 'FilamentHub и OctoPrint Bridge'
+
+    $printFarmCandidate = Join-Path (Split-Path $repositoryRoot -Parent) 'orca-plugins'
+    if (Test-Path -LiteralPath (Join-Path $printFarmCandidate '.git')) {
+        Publish-RepositoryCommits -Directory $printFarmCandidate -Title 'Print Farm'
+    } else {
+        Write-Host 'Print Farm: локальный репозиторий рядом с FilamentHub не найден; этот шаг пропущен.' -ForegroundColor DarkGray
+    }
+
+    Write-Host ''
+    Write-Host 'GitHub CI запущен для отправленных коммитов. Перед релизом выбери «Проверить готовность релизов».' -ForegroundColor Green
+}
+
+function Test-PluginReleaseReadiness {
+    $scriptPath = Join-Path $PSScriptRoot 'publish-plugin-releases.ps1'
+    & $scriptPath -Component all -DryRun
+    if (-not $?) {
+        throw 'Проверка готовности релизов завершилась с ошибкой.'
+    }
+}
+
 function Show-Preflight {
     $candidate = Get-DeploymentCandidate
     Write-Host ''
@@ -904,9 +932,13 @@ function Show-PluginMenu {
         Write-Host '  1. Показать независимые GitHub Releases плагинов'
         Write-Host '  2. Скачать с сайта и проверить все три пакета'
         Write-Host '  3. Проверить все три плагина на странице Download'
-        Write-Host '  4. Выпустить все изменившиеся плагины отдельными releases'
-        Write-Host '  5. Выпустить один выбранный плагин отдельным release'
-        Write-Host '  6. Проверить версии и показать, что нужно подготовить'
+        Write-Host '  4. Отправить подготовленные коммиты плагинов в GitHub'
+        Write-Host '     Обновит origin/main, предложит выбрать коммит и выполнит push. Релизы не создаёт.' -ForegroundColor DarkGray
+        Write-Host '  5. Проверить готовность релизов'
+        Write-Host '     Проверит GitHub Releases, версии, пакеты, опубликованный commit и CI. Ничего не публикует.' -ForegroundColor DarkGray
+        Write-Host '  6. Опубликовать все готовые плагины отдельными releases'
+        Write-Host '  7. Опубликовать один выбранный плагин отдельным release'
+        Write-Host '  8. Только проверить версии и показать, что агенту нужно подготовить'
         Write-Host '  0. Назад'
 
         try {
@@ -918,9 +950,11 @@ function Show-PluginMenu {
                         throw 'Публичная страница Download пока не прошла проверку.'
                     }
                 }
-                '4' { Invoke-PluginReleasePreparation }
-                '5' { Invoke-PluginReleasePreparation -ChooseComponent }
-                '6' { & (Join-Path $PSScriptRoot 'publish-plugin-releases.ps1') -CheckVersions }
+                '4' { Publish-PluginCommits }
+                '5' { Test-PluginReleaseReadiness }
+                '6' { Invoke-PluginReleasePreparation }
+                '7' { Invoke-PluginReleasePreparation -ChooseComponent }
+                '8' { & (Join-Path $PSScriptRoot 'publish-plugin-releases.ps1') -CheckVersions }
                 '0' { return }
                 default { Write-Host 'Неизвестный пункт меню.' -ForegroundColor Yellow }
             }

@@ -80,6 +80,28 @@ try { & $entryPath -DryRun:($env:BATCH_MODE -eq 'dry') } catch { $failure = $_.E
     assert result["events"] == expected
 
 
+def test_batch_reads_each_child_result_from_the_pipeline(tmp_path):
+    result = run_ps(tmp_path, r"""
+$results = @(Invoke-ReleaseBatch -Components @('orcaslicer', 'octoprint', 'print-farm') -Phase 'check' -Operation {
+    param($id)
+    $status = if ($id -eq 'octoprint') { 'READY' } else { 'CURRENT' }
+    [pscustomobject]@{
+        FilamentHubPluginReleaseResult = $true
+        Status = $status
+        Detail = "result:$id"
+    }
+})
+@($results | ForEach-Object {
+    @{ component = $_.Component; status = $_.Status; detail = $_.Detail }
+}) | ConvertTo-Json -Compress
+""")
+    assert result == [
+        {"component": "orcaslicer", "status": "CURRENT", "detail": "result:orcaslicer"},
+        {"component": "octoprint", "status": "READY", "detail": "result:octoprint"},
+        {"component": "print-farm", "status": "CURRENT", "detail": "result:print-farm"},
+    ]
+
+
 @pytest.mark.parametrize("current,published,changed,expected", [
     ("1.2.3", "1.2.3", "plugin/runtime.py", "error"),
     ("1.2.4", "1.2.3", "plugin/runtime.py", True),
@@ -168,3 +190,23 @@ def test_batch_summary_distinguishes_current_ready_and_released_components() -> 
     for status in ("CURRENT", "READY", "RELEASED"):
         assert f"Status = '{status}'" in script
     assert "Status = 'OK'; Detail = 'выпуск'" not in script
+
+
+def test_plugin_menu_exposes_push_check_and_release_as_separate_actions() -> None:
+    script = (ROOT / "scripts/deploy-server.ps1").read_text(encoding="utf-8")
+    menu = script.split("function Show-PluginMenu", 1)[1].split(
+        "function Show-OrcaToolsMenu", 1
+    )[0]
+
+    assert "Отправить подготовленные коммиты плагинов в GitHub" in menu
+    assert "Проверить готовность релизов" in menu
+    assert "Опубликовать все готовые плагины" in menu
+    assert "'4' { Publish-PluginCommits }" in menu
+    assert "'5' { Test-PluginReleaseReadiness }" in menu
+    assert "'6' { Invoke-PluginReleasePreparation }" in menu
+
+    publisher = script.split("function Publish-PluginCommits", 1)[1].split(
+        "function Test-PluginReleaseReadiness", 1
+    )[0]
+    assert "Publish-RepositoryCommits" in publisher
+    assert "Invoke-PluginReleasePreparation" not in publisher

@@ -30,7 +30,10 @@ param(
     [switch]$CheckVersions,
 
     [Parameter()]
-    [switch]$DryRun
+    [switch]$DryRun,
+
+    [Parameter(DontShow)]
+    [switch]$EmitComponentResult
 )
 
 Set-StrictMode -Version Latest
@@ -846,16 +849,22 @@ function Invoke-ReleaseBatch {
         $index += 1
         Write-Host "`n[$index/$($Components.Count)] $id — $Phase" -ForegroundColor Cyan
         try {
-            $global:FilamentHubPluginReleaseResult = $null
-            & $Operation $id | Out-Host
-            $componentResult = $global:FilamentHubPluginReleaseResult
-            if ($componentResult) {
-                if (
-                    -not $componentResult.PSObject.Properties['Status'] -or
-                    -not $componentResult.PSObject.Properties['Detail']
-                ) {
-                    throw "Компонент '$id' вернул неполный результат проверки."
-                }
+            $operationOutput = @(& $Operation $id)
+            $componentResults = @($operationOutput | Where-Object {
+                $_ -and $_.PSObject.Properties['FilamentHubPluginReleaseResult'] -and
+                $_.FilamentHubPluginReleaseResult
+            })
+            @($operationOutput | Where-Object {
+                -not (
+                    $_ -and $_.PSObject.Properties['FilamentHubPluginReleaseResult'] -and
+                    $_.FilamentHubPluginReleaseResult
+                )
+            }) | Out-Host
+            if ($componentResults.Count -gt 1) {
+                throw "Компонент '$id' вернул несколько результатов проверки."
+            }
+            if ($componentResults.Count -eq 1) {
+                $componentResult = $componentResults[0]
                 [pscustomobject]@{
                     Component = $id
                     Status = $componentResult.Status
@@ -885,6 +894,7 @@ if ($selected.Count -gt 1) {
     # components proceed, and each keeps its own exact-artifact approval gate.
     $preflightArguments = @{} + $childArguments
     $preflightArguments.DryRun = $true
+    $preflightArguments.EmitComponentResult = $true
     $results = @(Invoke-ReleaseBatch -Components $selected -Phase 'проверка' -Operation {
         param($id)
         & $entryPath @preflightArguments -Component $id
@@ -898,6 +908,7 @@ if ($selected.Count -gt 1) {
         $failed = @($results | Where-Object Status -eq 'ERROR')
         $completed = @()
         if ($ready.Count) {
+            $childArguments.EmitComponentResult = $true
             $completed = @(Invoke-ReleaseBatch -Components $ready -Phase 'выпуск' -Operation {
                 param($id)
                 & $entryPath @childArguments -Component $id
@@ -1121,14 +1132,35 @@ foreach ($repositoryPlan in @($plans | Where-Object { $_.Needed -or $_.Repair } 
 }
 
 if ($DryRun) {
-    $actionable = @($plans | Where-Object { $_.Needed -or $_.Repair }).Count
-    $global:FilamentHubPluginReleaseResult = if ($actionable) {
-        [pscustomobject]@{ Status = 'READY'; Detail = 'commit опубликован, CI зелёный; пакет готов к отдельному выпуску' }
+    $actionablePlans = @($plans | Where-Object { $_.Needed -or $_.Repair })
+    foreach ($plan in $actionablePlans) {
+        if (-not (Test-Path -LiteralPath $plan.CandidateWheel -PathType Leaf)) {
+            throw "$($plan.Name): не найден собранный пакет '$($plan.CandidateWheel)'. Агент должен сначала собрать и проверить release candidate."
+        }
+        $candidateHash = (Get-FileHash -LiteralPath $plan.CandidateWheel -Algorithm SHA256).Hash.ToLowerInvariant()
+        Get-LocalCandidateSha256 `
+            -Name $plan.Name -WheelPath $plan.CandidateWheel `
+            -ChecksumPath $plan.CandidateChecksums -ExpectedSha256 $candidateHash | Out-Null
+    }
+    $actionable = $actionablePlans.Count
+    $componentResult = if ($actionable) {
+        [pscustomobject]@{
+            FilamentHubPluginReleaseResult = $true
+            Status = 'READY'
+            Detail = 'commit опубликован, CI зелёный; пакет готов к отдельному выпуску'
+        }
     } else {
-        [pscustomobject]@{ Status = 'CURRENT'; Detail = 'нового релиза не требуется' }
+        [pscustomobject]@{
+            FilamentHubPluginReleaseResult = $true
+            Status = 'CURRENT'
+            Detail = 'нового релиза не требуется'
+        }
     }
     Write-Host 'Dry-run завершён. Push, теги и GitHub Releases не создавались.' -ForegroundColor Green
     Write-Host 'Owner approval and release asset identity were not verified.'
+    if ($EmitComponentResult) {
+        $componentResult
+    }
     return
 }
 
@@ -1219,12 +1251,19 @@ foreach ($plan in @($plans | Where-Object { $_.Needed -or $_.Repair })) {
 }
 
 if (-not ($plans | Where-Object { $_.Needed -or $_.Repair })) {
-    $global:FilamentHubPluginReleaseResult = [pscustomobject]@{
-        Status = 'CURRENT'; Detail = 'нового релиза не требуется'
+    $componentResult = [pscustomobject]@{
+        FilamentHubPluginReleaseResult = $true
+        Status = 'CURRENT'
+        Detail = 'нового релиза не требуется'
     }
     Write-Host 'Новых версий плагинов нет; GitHub Releases не создавались.' -ForegroundColor Green
 } else {
-    $global:FilamentHubPluginReleaseResult = [pscustomobject]@{
-        Status = 'RELEASED'; Detail = 'независимый релиз завершён'
+    $componentResult = [pscustomobject]@{
+        FilamentHubPluginReleaseResult = $true
+        Status = 'RELEASED'
+        Detail = 'независимый релиз завершён'
     }
+}
+if ($EmitComponentResult) {
+    $componentResult
 }
