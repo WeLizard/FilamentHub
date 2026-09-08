@@ -277,7 +277,6 @@ async def test_manual_direct_connection_can_be_revoked_before_first_snapshot(aut
     })
     assert paired.status_code == 200, paired.text
     headers = {"X-FilamentHub-Bridge-Token": paired.json()["bridge_token"]}
-    assert (await auth_client.get("/api/v1/printer-bridge/snapshot", headers=headers)).status_code == 200
     revoked = await auth_client.delete(path, params={"transport": "edge_agent"})
     assert revoked.status_code == 204, revoked.text
     assert (await auth_client.get("/api/v1/printer-bridge/snapshot", headers=headers)).status_code == 401

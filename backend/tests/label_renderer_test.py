@@ -201,7 +201,7 @@ def test_label_corner_shape_is_shared_by_svg_and_png(label_data, border):
     if border:
         # Partly covered edge pixels must remain dark, not a white halo from
         # painting and clipping the background independently of its border.
-        edge_pixels = [pixel for pixel in png.get_flattened_data() if 16 <= pixel[3] <= 240]
+        edge_pixels = [pixel for pixel in png.getdata() if 16 <= pixel[3] <= 240]
         assert edge_pixels
         assert max(pixel[0] for pixel in edge_pixels) < 80
 
