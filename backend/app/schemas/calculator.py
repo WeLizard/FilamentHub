@@ -6,6 +6,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.schemas.printer_economics import EconomicsReadinessContract
+
 
 class PricingMethod(str, Enum):
     """Метод расчета стоимости печати."""
@@ -1025,5 +1027,6 @@ class CalculatorProfileResponse(BaseModel):
     quote_number_prefix: str
 
     updated_at: datetime
+    economics_readiness: EconomicsReadinessContract
 
     model_config = ConfigDict(from_attributes=True)

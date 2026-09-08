@@ -7109,6 +7109,7 @@
     "ERR_LABEL_PRESET_CONFLICT": "该版式已在其他标签页中更改。请重新打开编辑器后再试。",
     "ERR_PRINTER_IDENTITY_CONFLICT": "设备标识与已保存的连接冲突。请在“我的打印机”中检查连接；不要合并不同设备。",
     "ERR_PRINTER_MERGE_CONFLICT": "卡片已更改或包含不兼容的数据。请重新检查合并。",
+    "ERR_PRINTER_ECONOMICS_RESIDUAL_ABOVE_PURCHASE": "残值不能高于打印机的购买价格。",
     "ERR_ADMIN_CONFIRMATION_REQUIRED": "请输入发送到您邮箱的验证码以确认此管理员操作。",
     "ERR_ADMIN_CONFIRMATION_EMAIL_REQUIRED": "确认此管理员操作需要已验证的邮箱。",
     "ERR_ADMIN_CONFIRMATION_SESSION_REQUIRED": "请重新登录后再请求验证码。",
@@ -8340,7 +8341,61 @@
     "upkeepMid": "常规",
     "upkeepHigh": "较重",
     "upkeepHint": "简单 — 偶尔换喷嘴和润滑。较重 — 打印磨料、频繁更换喷嘴、定期保养。",
-    "applySuggested": "应用平台数值"
+    "applySuggested": "应用平台数值",
+    "machineSelectedHint": "计算将使用所选打印机的经济参数。",
+    "readiness": {
+      "loading": "正在检查经济参数…",
+      "unavailable": "无法检查经济参数。可以继续计算，但请核对结果。",
+      "configure": "设置经济参数",
+      "sourcesTitle": "数值与来源",
+      "reasonsTitle": "需要处理的原因",
+      "affectedMachines": "需要处理：{{names}}",
+      "saveError": "无法保存经济参数",
+      "loadError": "无法加载这台打印机的经济参数。",
+      "retry": "重试",
+      "resultPartial": "部分经济参数采用估算或标准设置",
+      "resultIncomplete": "必需的经济参数尚未完整填写",
+      "resultUnavailable": "无法检查经济参数是否就绪",
+      "status": {
+        "configured": {
+          "title": "经济参数已配置",
+          "description": "必需数值已填写，可用于计算。"
+        },
+        "partial": {
+          "title": "经济参数需要核对",
+          "description": "可以计算，但部分数值采用估算或标准设置。"
+        },
+        "incomplete": {
+          "title": "经济参数不完整",
+          "description": "可靠计算所需的必填数值尚未完整填写。"
+        }
+      },
+      "sources": {
+        "printer_explicit": "为此打印机设置",
+        "account_explicit": "在账户中设置",
+        "orca_import": "从 OrcaSlicer 导入",
+        "platform_default": "标准数值",
+        "catalog_estimate": "目录估算",
+        "none": "未设置"
+      },
+      "fields": {
+        "currency": "币种",
+        "machine_hour_rate": "机时计价",
+        "electricity_cost_per_kwh": "电价",
+        "printer_power_w": "平均功率",
+        "machine_wear_per_hour": "磨损与维护"
+      },
+      "reasons": {
+        "missing": "缺少数值",
+        "non_positive": "必须大于零",
+        "missing_currency": "缺少币种",
+        "currency_mismatch": "币种不一致",
+        "incomplete_pair": "需要价格和使用寿命",
+        "provenance_unknown": "数值来源尚未确认",
+        "platform_default_used": "正在使用标准数值",
+        "catalog_estimate_used": "正在使用目录估算"
+      }
+    }
   },
   "quoteMarket": {
     "title": "单据格式",

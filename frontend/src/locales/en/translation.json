@@ -7115,6 +7115,7 @@
     "ERR_LABEL_PRESET_CONFLICT": "The layout changed in another tab. Reopen the editor and try again.",
     "ERR_PRINTER_IDENTITY_CONFLICT": "The device identity conflicts with the saved connection. Review connections in My printers; do not merge distinct devices.",
     "ERR_PRINTER_MERGE_CONFLICT": "The cards changed or contain incompatible data. Review the merge again.",
+    "ERR_PRINTER_ECONOMICS_RESIDUAL_ABOVE_PURCHASE": "The residual value cannot exceed the printer purchase price.",
     "ERR_ADMIN_CONFIRMATION_REQUIRED": "Confirm this administrator action with the code sent to your email.",
     "ERR_ADMIN_CONFIRMATION_EMAIL_REQUIRED": "A verified email is required to confirm this administrator action.",
     "ERR_ADMIN_CONFIRMATION_SESSION_REQUIRED": "Sign in again before requesting a confirmation code.",
@@ -8351,7 +8352,61 @@
     "upkeepMid": "Usual",
     "upkeepHigh": "Demanding",
     "upkeepHint": "Easy — the odd nozzle and some lubricant. Demanding — abrasives, frequent nozzle changes, regular servicing.",
-    "applySuggested": "Apply platform values"
+    "applySuggested": "Apply platform values",
+    "machineSelectedHint": "The calculation uses the selected printer's economics.",
+    "readiness": {
+      "loading": "Checking economics readiness…",
+      "unavailable": "Economics could not be checked. You can continue, but review the result.",
+      "configure": "Configure economics",
+      "sourcesTitle": "Values and sources",
+      "reasonsTitle": "Why this needs attention",
+      "affectedMachines": "Needs attention: {{names}}",
+      "saveError": "Could not save economics settings",
+      "loadError": "Could not load this printer's economics settings.",
+      "retry": "Try again",
+      "resultPartial": "some economics values use estimates or standard settings",
+      "resultIncomplete": "required economics values are incomplete",
+      "resultUnavailable": "economics readiness could not be checked",
+      "status": {
+        "configured": {
+          "title": "Economics configured",
+          "description": "Required values are set and usable for the calculation."
+        },
+        "partial": {
+          "title": "Economics needs review",
+          "description": "The calculation can run, but some values use estimates or standard settings."
+        },
+        "incomplete": {
+          "title": "Economics incomplete",
+          "description": "Required values are missing for a reliable calculation."
+        }
+      },
+      "sources": {
+        "printer_explicit": "set for this printer",
+        "account_explicit": "set in the account",
+        "orca_import": "imported from OrcaSlicer",
+        "platform_default": "standard value",
+        "catalog_estimate": "catalog estimate",
+        "none": "not set"
+      },
+      "fields": {
+        "currency": "Currency",
+        "machine_hour_rate": "Machine-hour rate",
+        "electricity_cost_per_kwh": "Electricity tariff",
+        "printer_power_w": "Average power",
+        "machine_wear_per_hour": "Wear and upkeep"
+      },
+      "reasons": {
+        "missing": "value missing",
+        "non_positive": "must be greater than zero",
+        "missing_currency": "currency missing",
+        "currency_mismatch": "currencies do not match",
+        "incomplete_pair": "price and service life are required",
+        "provenance_unknown": "the value's source is unconfirmed",
+        "platform_default_used": "standard values are in use",
+        "catalog_estimate_used": "a catalog estimate is in use"
+      }
+    }
   },
   "quoteMarket": {
     "title": "Document format",

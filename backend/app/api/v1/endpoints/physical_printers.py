@@ -4,15 +4,19 @@ import asyncio
 import random
 import time
 from contextlib import suppress
+from dataclasses import asdict
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request, Response, WebSocket, WebSocketDisconnect, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.dependencies import get_current_active_user, require_printer_bundle_read
 from app.core.errors import (
+    ERR_DEVICE_NOT_FOUND,
     ERR_EXPORT_PRINTER_DISABLED,
+    ERR_PRINTER_ECONOMICS_RESIDUAL_ABOVE_PURCHASE,
     ERR_SERVER_BUSY,
     raise_error,
 )
@@ -35,9 +39,12 @@ from app.schemas.material_contract import (
 )
 from app.schemas.orca_sync import OrcaPrinterRecoveryPlanRequest
 from app.schemas.printer_economics import (
+    EconomicsReadinessContract,
     PrinterEconomicsResponse,
     PrinterEconomicsSuggestion,
+    PrinterEconomicsSuggestionApply,
     PrinterEconomicsUpdate,
+    residual_exceeds_purchase,
 )
 from app.services.material_assignment_service import (
     clear_material_system_assignments,
@@ -480,6 +487,8 @@ async def _economics_response(
     db: AsyncSession, printer: UserPrinterDevice
 ) -> PrinterEconomicsResponse:
     resolved = await resolve_economics(db, printer)
+    if resolved.readiness is None:
+        raise RuntimeError("economics readiness was not resolved")
     return PrinterEconomicsResponse(
         printer_id=printer.id,
         configured=any(
@@ -522,7 +531,27 @@ async def _economics_response(
         ),
         calculator_electricity_cost_per_kwh=round(resolved.electricity_cost_per_kwh, 2),
         sources=resolved.sources,
+        applied_sources=resolved.applied_sources,
+        readiness=EconomicsReadinessContract.model_validate(asdict(resolved.readiness)),
     )
+
+
+async def _locked_economics_printer(
+    db: AsyncSession, user_id: int, physical_printer_id: int
+) -> UserPrinterDevice:
+    """Lock values and their provenance so sparse writes cannot lose each other."""
+    printer = await db.scalar(
+        select(UserPrinterDevice)
+        .where(
+            UserPrinterDevice.id == physical_printer_id,
+            UserPrinterDevice.user_id == user_id,
+        )
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    if printer is None:
+        raise_error(404, ERR_DEVICE_NOT_FOUND)
+    return printer
 
 
 @router.get("/{physical_printer_id}/economics", response_model=PrinterEconomicsResponse)
@@ -544,9 +573,55 @@ async def update_economics(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> PrinterEconomicsResponse:
     """Set once, change whenever. Fields left out keep their current value."""
-    printer = await require_physical_printer(db, current_user.id, physical_printer_id)
+    printer = await _locked_economics_printer(
+        db, current_user.id, physical_printer_id
+    )
+    purchase_cost = (
+        payload.purchase_cost
+        if "purchase_cost" in payload.model_fields_set
+        else printer.purchase_cost
+    )
+    residual_value = (
+        payload.residual_value
+        if "residual_value" in payload.model_fields_set
+        else printer.residual_value
+    )
+    if residual_exceeds_purchase(purchase_cost, residual_value):
+        raise_error(422, ERR_PRINTER_ECONOMICS_RESIDUAL_ABOVE_PURCHASE)
+    field_sources = dict(printer.economics_field_sources or {})
     for field_name in payload.model_fields_set:
-        setattr(printer, field_name, getattr(payload, field_name))
+        value = getattr(payload, field_name)
+        setattr(printer, field_name, value)
+        if value is None:
+            field_sources.pop(field_name, None)
+        else:
+            field_sources[field_name] = "printer_explicit"
+    printer.economics_field_sources = field_sources
+    await db.commit()
+    await db.refresh(printer)
+    return await _economics_response(db, printer)
+
+
+@router.post(
+    "/{physical_printer_id}/economics/apply-suggestion",
+    response_model=PrinterEconomicsResponse,
+)
+async def apply_economics_suggestion(
+    physical_printer_id: int,
+    payload: PrinterEconomicsSuggestionApply,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> PrinterEconomicsResponse:
+    """Persist only server-computed physical estimates with catalog provenance."""
+    printer = await _locked_economics_printer(
+        db, current_user.id, physical_printer_id
+    )
+    suggestion = await suggest_economics(db, printer, payload.usage)
+    field_sources = dict(printer.economics_field_sources or {})
+    for field_name in payload.fields:
+        setattr(printer, field_name, getattr(suggestion, field_name))
+        field_sources[field_name] = "catalog_estimate"
+    printer.economics_field_sources = field_sources
     await db.commit()
     await db.refresh(printer)
     return await _economics_response(db, printer)

@@ -1,14 +1,20 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Loader2 } from 'lucide-react';
 
-import { physicalPrintersAPI, type PrinterEconomics } from '../../api/client';
+import {
+  physicalPrintersAPI,
+  type PrinterEconomics,
+  type PrinterEconomicsUpdate,
+} from '../../api/client';
 import { toast } from '../Toast';
 import { currencySymbol } from '../../utils/currency';
 import { translateApiError } from '../../utils/translateApiError';
 import { EconomicsFields, type EconomicsField, type EconomicsValues } from './EconomicsFields';
 import { PowerPartsBreakdown } from './PowerPartsBreakdown';
+import { EconomicsReadinessPanel } from './EconomicsReadinessPanel';
+import { enqueueEconomicsSave } from '../../utils/economicsReadiness';
 
 interface PrinterCostFormProps {
   printerId: number;
@@ -31,7 +37,29 @@ const UPKEEP_OPTIONS = [
 const roundMoney = (value: number): number => Math.round(value * 100) / 100;
 
 const sameCurrency = (left: string | null | undefined, right: string | null | undefined): boolean =>
-  !left || !right || left.trim().toUpperCase() === right.trim().toUpperCase();
+  Boolean(
+    left
+    && right
+    && left.trim().toUpperCase() === right.trim().toUpperCase(),
+  );
+
+export const resolveEditableMoneyValue = (
+  rawValue: number | null,
+  rawCurrency: string | null | undefined,
+  fallbackValue: number,
+  fallbackCurrency: string | null | undefined,
+  appliedCurrency: string | null | undefined,
+  editorCurrency: string,
+): number => {
+  if (
+    rawValue != null
+    && sameCurrency(rawCurrency, editorCurrency)
+    && sameCurrency(appliedCurrency, editorCurrency)
+  ) {
+    return rawValue;
+  }
+  return sameCurrency(fallbackCurrency, editorCurrency) ? fallbackValue : 0;
+};
 
 export const calculateDepreciationPerHour = (
   purchaseCost: number,
@@ -43,12 +71,72 @@ export const calculateDepreciationPerHour = (
 
 export const resolveEditableMachineRate = (
   saved: PrinterEconomics,
-  fallbackRate: number,
+  editorCurrency: string,
 ): number => {
-  if (saved.machine_hour_rate != null) return saved.machine_hour_rate;
-  if (!sameCurrency(saved.economics_currency, saved.calculator_currency)) return 0;
-  return saved.sources?.rate === 'orca' ? saved.effective_machine_hour_rate : fallbackRate;
+  if (!sameCurrency(saved.readiness?.money_currency, editorCurrency)) return 0;
+  const resolvedRate = saved.readiness?.required_fields.find(
+    (field) => field.key === 'machine_hour_rate',
+  );
+  if (
+    typeof resolvedRate?.value === 'number'
+    && sameCurrency(resolvedRate.source_currency, editorCurrency)
+  ) {
+    return resolvedRate.value;
+  }
+  if (
+    saved.machine_hour_rate != null
+    && sameCurrency(saved.economics_currency, editorCurrency)
+  ) {
+    return saved.machine_hour_rate;
+  }
+  return sameCurrency(saved.calculator_currency, editorCurrency)
+    ? saved.effective_machine_hour_rate
+    : 0;
 };
+
+export const printerEconomicsPatchForField = (
+  field: EconomicsField,
+  value: number | null,
+  currency?: { stored: string | null | undefined; editor: string },
+): PrinterEconomicsUpdate => {
+  let patch: PrinterEconomicsUpdate;
+  switch (field) {
+    case 'purchaseCost':
+      patch = { purchase_cost: value };
+      break;
+    case 'lifeHours':
+      return { useful_life_hours: value == null || value <= 0 ? null : Math.round(value) };
+    case 'powerWatts':
+      return { average_power_watts: value == null || value <= 0 ? null : value };
+    case 'maintenance':
+      patch = { maintenance_cost_per_hour: value };
+      break;
+    case 'rate':
+      patch = { machine_hour_rate: value };
+      break;
+  }
+  if (
+    currency
+    && (!currency.stored || currency.stored.trim().toUpperCase() !== currency.editor.trim().toUpperCase())
+  ) {
+    patch.economics_currency = currency.editor;
+  }
+  return patch;
+};
+
+const POWER_PART_API_FIELDS = {
+  hotend: 'power_hotend_w',
+  bed: 'power_bed_w',
+  steppers: 'power_steppers_w',
+  electronics: 'power_electronics_w',
+} as const;
+
+type PowerPart = keyof typeof POWER_PART_API_FIELDS;
+
+export const printerPowerPartPatch = (
+  part: PowerPart,
+  value: number | null,
+): PrinterEconomicsUpdate => ({ [POWER_PART_API_FIELDS[part]]: value });
 
 export const PrinterCostForm: React.FC<PrinterCostFormProps> = ({
   printerId,
@@ -71,7 +159,11 @@ export const PrinterCostForm: React.FC<PrinterCostFormProps> = ({
   });
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [parts, setParts] = useState({ hotend: 0, bed: 0, steppers: 0, electronics: 0 });
+  const [saveError, setSaveError] = useState(false);
   const savedTimerRef = useRef<number | undefined>(undefined);
+  const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const saveSequenceRef = useRef(0);
+  const mountedRef = useRef(true);
 
   const economicsQuery = useQuery({
     queryKey: ['printer-economics', printerId],
@@ -86,7 +178,7 @@ export const PrinterCostForm: React.FC<PrinterCostFormProps> = ({
 
   const saved = economicsQuery.data;
   const suggestion = suggestionQuery.data;
-  const economicsCurrency = saved?.economics_currency || currency;
+  const economicsCurrency = currency;
   const symbol = currencySymbol(economicsCurrency);
   const calculatorMoneyMatchesEditor = sameCurrency(
     economicsCurrency,
@@ -98,16 +190,26 @@ export const PrinterCostForm: React.FC<PrinterCostFormProps> = ({
       return;
     }
     setValues({
-      purchaseCost: saved.purchase_cost ?? (calculatorMoneyMatchesEditor ? fallback.purchaseCost : 0),
+      purchaseCost: resolveEditableMoneyValue(
+        saved.purchase_cost,
+        saved.economics_currency,
+        fallback.purchaseCost,
+        saved.calculator_currency,
+        saved.readiness.money_currency,
+        economicsCurrency,
+      ),
       lifeHours: saved.useful_life_hours ?? fallback.lifeHours ?? suggestion?.useful_life_hours ?? 0,
       powerWatts:
         saved.average_power_watts ?? fallback.powerWatts ?? suggestion?.average_power_watts ?? 0,
-      maintenance:
-        saved.maintenance_cost_per_hour
-        ?? (calculatorMoneyMatchesEditor ? fallback.maintenance : 0)
-        ?? suggestion?.maintenance_cost_per_hour
-        ?? 0,
-      rate: resolveEditableMachineRate(saved, fallback.rate),
+      maintenance: resolveEditableMoneyValue(
+        saved.maintenance_cost_per_hour,
+        saved.economics_currency,
+        fallback.maintenance,
+        saved.calculator_currency,
+        saved.readiness.money_currency,
+        economicsCurrency,
+      ),
+      rate: resolveEditableMachineRate(saved, economicsCurrency),
     });
     // Offer what we worked out for this machine instead of four zeroes: the bed comes
     // from its own size, and a person is free to write over any of it.
@@ -117,34 +219,15 @@ export const PrinterCostForm: React.FC<PrinterCostFormProps> = ({
       steppers: saved.power_steppers_w ?? suggestion?.power_steppers_w ?? 0,
       electronics: saved.power_electronics_w ?? suggestion?.power_electronics_w ?? 0,
     });
-  }, [saved, suggestion, fallback, calculatorMoneyMatchesEditor]);
+  }, [saved, suggestion, fallback, economicsCurrency]);
 
-  useEffect(() => () => window.clearTimeout(savedTimerRef.current), []);
-
-  const origins = useMemo(() => {
-    if (!saved) {
-      return {};
-    }
-    const label = (own: unknown, isEstimate = false): string =>
-      own != null
-        ? t('printerCost.originOwn')
-        : isEstimate
-          ? t('printerCost.originEstimate')
-          : t('printerCost.originAverage');
-    return {
-      purchaseCost: label(saved.purchase_cost),
-      lifeHours: label(saved.useful_life_hours, fallback.lifeHours <= 0),
-      powerWatts: label(saved.average_power_watts, fallback.powerWatts <= 0),
-      maintenance: label(saved.maintenance_cost_per_hour, fallback.maintenance <= 0),
-      // A rate nobody typed here came from somewhere, and which somewhere decides whether
-      // the number is worth trusting.
-      rate: saved.sources?.rate === 'orca'
-        ? t('printerCost.originOrca')
-        : saved.sources?.rate === 'account'
-          ? t('printerCost.originAccount')
-          : label(saved.machine_hour_rate),
-    } as Partial<Record<EconomicsField, string>>;
-  }, [saved, fallback, t]);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      window.clearTimeout(savedTimerRef.current);
+    };
+  }, []);
 
   const breakdown = useMemo(() => {
     const tariff = calculatorMoneyMatchesEditor
@@ -180,73 +263,58 @@ export const PrinterCostForm: React.FC<PrinterCostFormProps> = ({
     ];
   }, [breakdown.cost]);
 
-  const saveMutation = useMutation({
-    onMutate: () => onStatusChange?.('saving'),
-    mutationFn: ({
-      next,
-      nextParts,
-    }: {
-      next: EconomicsValues;
-      nextParts?: typeof parts;
-    }) =>
-      physicalPrintersAPI.updateEconomics(printerId, {
-        purchase_cost: next.purchaseCost > 0 ? next.purchaseCost : null,
-        useful_life_hours: next.lifeHours > 0 ? Math.round(next.lifeHours) : null,
-        average_power_watts: next.powerWatts > 0 ? next.powerWatts : null,
-        power_hotend_w: (nextParts ?? parts).hotend || null,
-        power_bed_w: (nextParts ?? parts).bed || null,
-        power_steppers_w: (nextParts ?? parts).steppers || null,
-        power_electronics_w: (nextParts ?? parts).electronics || null,
-        maintenance_cost_per_hour: next.maintenance > 0 ? next.maintenance : null,
-        machine_hour_rate: next.rate > 0 ? next.rate : null,
-        economics_currency: economicsCurrency,
-      }),
-    onSuccess: async (economics) => {
-      onStatusChange?.('saved');
-      window.clearTimeout(savedTimerRef.current);
-      savedTimerRef.current = window.setTimeout(() => onStatusChange?.(null), 2000);
-      await queryClient.invalidateQueries({ queryKey: ['printer-economics', printerId] });
-      onSaved?.(economics);
-    },
-    onError: (error) => {
-      const detail = (error as { response?: { data?: { detail?: unknown } } }).response?.data?.detail;
-      toast.error(translateApiError(t, detail, t('printerCost.saveError')));
-    },
-  });
+  const enqueueSave = (request: () => Promise<PrinterEconomics>) => {
+    const sequence = ++saveSequenceRef.current;
+    setSaveError(false);
+    onStatusChange?.('saving');
+    const queued = enqueueEconomicsSave(saveQueueRef.current, request);
+    const task = queued.task;
+    saveQueueRef.current = queued.tail;
+    void task
+      .then((economics) => {
+        if (!mountedRef.current || sequence !== saveSequenceRef.current) return;
+        setSaveError(false);
+        queryClient.setQueryData(['printer-economics', printerId], economics);
+        onSaved?.(economics);
+        onStatusChange?.('saved');
+        window.clearTimeout(savedTimerRef.current);
+        savedTimerRef.current = window.setTimeout(() => onStatusChange?.(null), 2000);
+      })
+      .catch((error) => {
+        if (!mountedRef.current || sequence !== saveSequenceRef.current) return;
+        setSaveError(true);
+        onStatusChange?.(null);
+        const detail = (error as { response?: { data?: { detail?: unknown } } }).response?.data?.detail;
+        toast.error(translateApiError(t, detail, t('printerCost.saveError')));
+      });
+  };
 
   const change = (field: EconomicsField, value: number) =>
     setValues((current) => ({ ...current, [field]: value }));
 
-  const commit = (field: EconomicsField, value: number) => {
-    const next = { ...values, [field]: value };
-    setValues(next);
-    saveMutation.mutate({ next });
+  const commit = (field: EconomicsField, value: number | null) => {
+    setValues((current) => ({ ...current, [field]: value ?? 0 }));
+    const patch = printerEconomicsPatchForField(field, value, {
+      stored: saved?.economics_currency,
+      editor: economicsCurrency,
+    });
+    enqueueSave(() => physicalPrintersAPI.updateEconomics(printerId, patch));
   };
 
-  /** Put the platform's numbers back over what is in the form.
-   *
-   * Empty fields already show them, but a value entered by hand and then regretted has
-   * no way back. The purchase price and the rate stay: those are the person's own and
-   * nothing here knows better.
-   */
+  /** Persist the server's physical estimates without relabelling monetary fields. */
   const applySuggested = () => {
     if (!suggestion) return;
-    const nextParts = {
-      hotend: suggestion.power_hotend_w,
-      bed: suggestion.power_bed_w,
-      steppers: suggestion.power_steppers_w,
-      electronics: suggestion.power_electronics_w,
-    };
-    const total = nextParts.hotend + nextParts.bed + nextParts.steppers + nextParts.electronics;
-    const next = {
-      ...values,
-      lifeHours: suggestion.useful_life_hours,
-      powerWatts: total > 0 ? total : suggestion.average_power_watts,
-      maintenance: suggestion.maintenance_cost_per_hour,
-    };
-    setParts(nextParts);
-    setValues(next);
-    saveMutation.mutate({ next, nextParts });
+    enqueueSave(() => physicalPrintersAPI.applyEconomicsSuggestion(printerId, {
+      usage,
+      fields: [
+        'average_power_watts',
+        'power_hotend_w',
+        'power_bed_w',
+        'power_steppers_w',
+        'power_electronics_w',
+        'useful_life_hours',
+      ],
+    }));
   };
 
   if (economicsQuery.isLoading) {
@@ -257,10 +325,24 @@ export const PrinterCostForm: React.FC<PrinterCostFormProps> = ({
     );
   }
 
+  if (economicsQuery.isError || !saved) {
+    return (
+      <div className="rounded-2xl border border-amber-400/20 bg-amber-500/[0.06] p-4" role="alert">
+        <p className="text-sm text-amber-100">{t('printerCost.readiness.loadError')}</p>
+        <button
+          type="button"
+          onClick={() => void economicsQuery.refetch()}
+          className="mt-3 inline-flex rounded-xl border border-white/10 bg-white/[0.07] px-3 py-2 text-xs font-semibold text-white transition hover:bg-white/10"
+        >
+          {t('printerCost.readiness.retry')}
+        </button>
+      </div>
+    );
+  }
+
   return (
     <EconomicsFields
       values={values}
-      origins={origins}
       symbol={symbol}
       onChange={change}
       onCommit={commit}
@@ -304,29 +386,52 @@ export const PrinterCostForm: React.FC<PrinterCostFormProps> = ({
             setParts(nextParts);
             const total =
               nextParts.hotend + nextParts.bed + nextParts.steppers + nextParts.electronics;
-            const next = total > 0 ? { ...values, powerWatts: total } : values;
-            setValues(next);
-            saveMutation.mutate({ next, nextParts });
+            setValues((current) => ({ ...current, powerWatts: total }));
+          }}
+          onCommit={(part, value) => {
+            const nextParts = { ...parts, [part]: value ?? 0 };
+            setParts(nextParts);
+            const total =
+              nextParts.hotend + nextParts.bed + nextParts.steppers + nextParts.electronics;
+            setValues((current) => ({ ...current, powerWatts: total }));
+            enqueueSave(() => physicalPrintersAPI.updateEconomics(
+              printerId,
+              printerPowerPartPatch(part, value),
+            ));
           }}
         />
       }
       header={
-        suggestion ? (
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="min-w-0 flex-1 text-[11px] leading-4 text-slate-400">
-              {t(`printerCost.confidence.${suggestion.confidence}`, {
-                model: suggestion.model_name ?? printerName,
-              })}
+        <div className="space-y-3">
+          {saveError ? (
+            <p className="rounded-xl border border-amber-400/20 bg-amber-500/[0.06] px-3 py-2 text-xs text-amber-100" role="alert">
+              {t('printerCost.saveError')}
             </p>
-            <button
-              type="button"
-              onClick={applySuggested}
-              className="shrink-0 rounded-full border border-white/10 bg-slate-950/40 px-3 py-1.5 text-xs text-slate-300 transition hover:border-white/20 hover:text-white"
-            >
-              {t('printerCost.applySuggested')}
-            </button>
-          </div>
-        ) : null
+          ) : null}
+          <EconomicsReadinessPanel
+            entries={[{
+              id: `printer-${printerId}`,
+              label: printerName,
+              readiness: saved.readiness,
+            }]}
+          />
+          {suggestion ? (
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="min-w-0 flex-1 text-[11px] leading-4 text-slate-400">
+                {t(`printerCost.confidence.${suggestion.confidence}`, {
+                  model: suggestion.model_name ?? printerName,
+                })}
+              </p>
+              <button
+                type="button"
+                onClick={applySuggested}
+                className="shrink-0 rounded-full border border-white/10 bg-slate-950/40 px-3 py-1.5 text-xs text-slate-300 transition hover:border-white/20 hover:text-white"
+              >
+                {t('printerCost.applySuggested')}
+              </button>
+            </div>
+          ) : null}
+        </div>
       }
       usage={
         <div>
@@ -340,10 +445,6 @@ export const PrinterCostForm: React.FC<PrinterCostFormProps> = ({
                 type="button"
                 onClick={() => {
                   setUsage(option);
-                  const hours = suggestionQuery.data?.useful_life_hours;
-                  if (hours) {
-                    commit('lifeHours', hours);
-                  }
                 }}
                 className={`rounded-full border px-3 py-1.5 text-xs transition ${
                   usage === option

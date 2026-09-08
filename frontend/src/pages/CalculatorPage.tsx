@@ -45,7 +45,10 @@ import {
   type UserSpool,
 } from '../api/client';
 import { SlicedJobsPanel } from '../components/calculator/SlicedJobsPanel';
-import { PrinterCostRow } from '../components/calculator/PrinterCostRow';
+import {
+  PrinterCostRow,
+} from '../components/calculator/PrinterCostRow';
+import type { EconomicsReadinessEntry } from '../components/calculator/EconomicsReadinessPanel';
 import { PrinterEconomicsColumn } from '../components/calculator/PrinterEconomicsColumn';
 import { PowerPartsBreakdown } from '../components/calculator/PowerPartsBreakdown';
 import { QuickPicks } from '../components/calculator/QuickPicks';
@@ -88,6 +91,12 @@ import { quoteMarketRules, resolveQuoteMarket, QUOTE_MARKETS } from '../utils/qu
 import { CALCULATOR_DEFAULTS_STORAGE_KEY } from '../utils/calculatorDefaults';
 import { normalizeFilamentColor, resolveMaterialDisplayColors } from '../utils/calculatorMaterialColors';
 import { formatBytes } from '../utils/formatBytes';
+import {
+  enqueueEconomicsSave,
+  economicsReadinessResultNoteKey,
+  isEconomicsFieldMissing,
+  worstEconomicsReadinessStatus,
+} from '../utils/economicsReadiness';
 import type {
   CalculatorEstimateRequest,
   CalculatorEstimateResponse,
@@ -100,8 +109,10 @@ import type {
   CalculatorPreflightRequest,
   CalculatorPreflightResponse,
   CalculatorProfileResponse,
+  CalculatorProfileUpdate,
   CalculatorPrintJobRequest,
   CrmCustomer,
+  EconomicsReadiness,
   Filament,
   OrcaSliceReport,
   PricingMethod,
@@ -339,6 +350,64 @@ const CALCULATOR_STATIC_FIELDS = [
 type CalculatorStaticSettingKey = (typeof CALCULATOR_STATIC_FIELDS)[number];
 type CalculatorStaticSettings = Pick<CalculatorFormState, CalculatorStaticSettingKey>;
 
+const STATIC_SETTING_API_KEYS: Record<CalculatorStaticSettingKey, keyof CalculatorProfileUpdate> = {
+  electricityCostPerKwh: 'electricity_cost_per_kwh',
+  printerPowerW: 'printer_power_w',
+  powerHotendW: 'power_hotend_w',
+  powerBedW: 'power_bed_w',
+  powerSteppersW: 'power_steppers_w',
+  powerElectronicsW: 'power_electronics_w',
+  modelingRatePerHour: 'modeling_rate_per_hour',
+  postprocessingRatePerHour: 'postprocessing_rate_per_hour',
+  printingRatePerHour: 'printing_rate_per_hour',
+  amortizationRatePerHour: 'amortization_rate_per_hour',
+  maintenanceCostPerHour: 'maintenance_cost_per_hour',
+  printerPurchasePrice: 'printer_purchase_price',
+  printerUsefulHours: 'printer_useful_hours',
+  overheadPercent: 'overhead_percent',
+  markupPercent: 'markup_percent',
+  taxRatePercent: 'tax_rate_percent',
+  fixedCosts: 'fixed_costs',
+  bedPrepCostPerPrint: 'bed_prep_cost_per_print',
+  minOrderPrice: 'min_order_price',
+  roundToNearest: 'round_to_nearest',
+  roundingMode: 'rounding_mode',
+};
+
+export const calculatorProfilePatchForField = <K extends CalculatorStaticSettingKey>(
+  field: K,
+  value: CalculatorFormState[K],
+): CalculatorProfileUpdate => ({
+  [STATIC_SETTING_API_KEYS[field]]:
+    field === 'printerUsefulHours' ? Math.round(value as number) : value,
+} as CalculatorProfileUpdate);
+
+export const mergeCalculatorProfilePatches = (
+  current: CalculatorProfileUpdate,
+  next: CalculatorProfileUpdate,
+): CalculatorProfileUpdate => ({ ...current, ...next });
+
+export const isLatestCalculatorProfileRequest = (
+  requestSequence: number,
+  latestSequence: number,
+): boolean => requestSequence === latestSequence;
+
+export const calculatorCurrencyFromProfile = (
+  profile: Pick<CalculatorProfileResponse, 'currency'>,
+): CurrencyCode => normalizeCurrency(profile.currency);
+
+export const calculatorCurrencyAfterFailedSave = (
+  visibleCurrency: CurrencyCode,
+  confirmedCurrency: CurrencyCode,
+  requestChangedCurrency: boolean,
+  requestSequence: number,
+  latestSequence: number,
+): CurrencyCode => (
+  requestChangedCurrency && isLatestCalculatorProfileRequest(requestSequence, latestSequence)
+    ? confirmedCurrency
+    : visibleCurrency
+);
+
 interface PricingPreset {
   name: string;
   urgencyCoefficient: number;
@@ -486,6 +555,10 @@ export const isMachineRateMissing = (
   if (!economics) {
     return accountMachineHourRate <= 0;
   }
+  const readinessMissing = isEconomicsFieldMissing(economics.readiness, 'machine_hour_rate');
+  if (readinessMissing != null) {
+    return readinessMissing;
+  }
   const rateSource = economics.sources?.rate;
   return rateSource ? rateSource === 'none' : economics.effective_machine_hour_rate <= 0;
 };
@@ -613,8 +686,8 @@ export const buildEstimateRequest = (
   requestData.time_minutes = form.timeMinutes;
   requestData.time_sec = form.timeSec || undefined;
 
-  if (form.electricityCostPerKwh && form.printerPowerW) {
-    requestData.electricity_cost_per_kwh = form.electricityCostPerKwh;
+  requestData.electricity_cost_per_kwh = form.electricityCostPerKwh;
+  if (form.printerPowerW > 0) {
     requestData.printer_power_w = form.printerPowerW;
     // Parts of the order-wide machine, used when a plate names no printer of its own.
     requestData.power_hotend_w = form.powerHotendW || null;
@@ -941,6 +1014,14 @@ const profileToStaticSettings = (
   minOrderPrice: profile.min_order_price,
   roundToNearest: profile.round_to_nearest,
   roundingMode: profile.rounding_mode as RoundingMode,
+});
+
+export const reconcileCalculatorProfileForm = (
+  current: CalculatorFormState,
+  profile: CalculatorProfileResponse,
+): CalculatorFormState => ({
+  ...current,
+  ...profileToStaticSettings(profile),
 });
 
 const loadStoredCalculatorDefaults = (): CalculatorStaticSettings => {
@@ -1760,6 +1841,8 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
     }
   };
   const [form, setForm] = useState<CalculatorFormState>(DEFAULT_FORM_STATE);
+  const formRef = useRef(form);
+  formRef.current = form;
   const [parsedGcode, setParsedGcode] = useState<CalculatorGcodeParseResponse | null>(null);
   const [parsedJobs, setParsedJobs] = useState<ParsedJobState[]>([]);
   const [jobConfigs, setJobConfigs] = useState<CalculatorJobConfig[]>([]);
@@ -1781,6 +1864,10 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
   const [preflightSpoolIdsByLine, setPreflightSpoolIdsByLine] = useState<Record<string, number[]>>({});
   const [autoMaterialMatch, setAutoMaterialMatch] = useState<AutoMaterialMatchNotice | null>(null);
   const [materialPriceSource, setMaterialPriceSource] = useState<MaterialPriceSource>('manual');
+  const [accountEconomicsReadiness, setAccountEconomicsReadiness] = useState<EconomicsReadiness | null>(null);
+  const [accountEconomicsLoading, setAccountEconomicsLoading] = useState(false);
+  const [accountEconomicsError, setAccountEconomicsError] = useState(false);
+  const [accountEconomicsSaving, setAccountEconomicsSaving] = useState(false);
   const [isCloudBusy, setIsCloudBusy] = useState(false);
   const [quoteItems, setQuoteItems] = useState<QuoteItem[]>([]);
   const [quoteCustomerSelection, setQuoteCustomerSelection] = useState('new');
@@ -1812,6 +1899,7 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
 
   const calcCurrencyRef = useRef(quoteProfile.currency);
   calcCurrencyRef.current = quoteProfile.currency;
+  const confirmedEconomicsCurrencyRef = useRef<CurrencyCode>(quoteProfile.currency);
 
   const filamentsQuery = useQuery({
     queryKey: ['calculator-pro', 'filaments'],
@@ -2087,18 +2175,25 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
   }, [selectedSpool, selectedCatalogFilament]);
 
   useEffect(() => {
+    let cancelled = false;
     setForm((prev) => ({
       ...prev,
       ...loadStoredCalculatorDefaults(),
     }));
 
     if (!hasCalculatorAccess) {
+      setAccountEconomicsLoading(false);
       return;
     }
+    setAccountEconomicsLoading(true);
+    setAccountEconomicsError(false);
     void calculatorAPI
       .getProfile()
       .then((profile) => {
-        const profileCurrency = normalizeCurrency(profile.currency);
+        if (cancelled) return;
+        const profileCurrency = calculatorCurrencyFromProfile(profile);
+        confirmedEconomicsCurrencyRef.current = profileCurrency;
+        calcCurrencyRef.current = profileCurrency;
         setForm((prev) => ({
           ...prev,
           ...profileToStaticSettings(profile),
@@ -2114,9 +2209,17 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
         queryClient.setQueryData(USER_PREFERENCES_QUERY_KEY, {
           currency: profileCurrency,
         });
+        setAccountEconomicsReadiness(profile.economics_readiness);
       })
       .catch(() => {
+        if (!cancelled) setAccountEconomicsError(true);
+      })
+      .finally(() => {
+        if (!cancelled) setAccountEconomicsLoading(false);
       });
+    return () => {
+      cancelled = true;
+    };
   }, [hasCalculatorAccess]);
 
   useEffect(() => {
@@ -2510,46 +2613,90 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
   };
 
   const economicsSyncRef = useRef<number | undefined>(undefined);
-  const currencyRef = useRef(quoteProfile.currency);
-  currencyRef.current = quoteProfile.currency;
+  const pendingEconomicsPatchRef = useRef<CalculatorProfileUpdate>({});
+  const economicsRequestSequenceRef = useRef(0);
+  const economicsSaveQueueRef = useRef<Promise<void>>(Promise.resolve());
+
+  useEffect(() => () => window.clearTimeout(economicsSyncRef.current), []);
+
+  const submitAccountEconomicsPatch = (
+    payload: CalculatorProfileUpdate,
+    requestSequence: number,
+  ) => {
+    const requestChangedCurrency = Object.prototype.hasOwnProperty.call(payload, 'currency');
+    const queued = enqueueEconomicsSave(
+      economicsSaveQueueRef.current,
+      () => calculatorAPI.updateProfile(payload),
+    );
+    const task = queued.task;
+    economicsSaveQueueRef.current = queued.tail;
+    void task
+      .then((profile) => {
+        if (isLatestCalculatorProfileRequest(requestSequence, economicsRequestSequenceRef.current)) {
+          const nextForm = reconcileCalculatorProfileForm(formRef.current, profile);
+          const profileCurrency = calculatorCurrencyFromProfile(profile);
+          formRef.current = nextForm;
+          confirmedEconomicsCurrencyRef.current = profileCurrency;
+          calcCurrencyRef.current = profileCurrency;
+          setForm(nextForm);
+          saveStoredCalculatorDefaults(extractStaticSettings(nextForm));
+          setQuoteProfile((current) => ({ ...current, currency: profileCurrency }));
+          setQuoteParties((current) => ({ ...current, currency: profileCurrency }));
+          setAccountEconomicsReadiness(profile.economics_readiness);
+          setAccountEconomicsError(false);
+          queryClient.setQueryData(USER_PREFERENCES_QUERY_KEY, {
+            currency: normalizeCurrency(profile.currency),
+          });
+        }
+      })
+      .catch((error) => {
+        if (isLatestCalculatorProfileRequest(requestSequence, economicsRequestSequenceRef.current)) {
+          const rollbackCurrency = calculatorCurrencyAfterFailedSave(
+            calcCurrencyRef.current,
+            confirmedEconomicsCurrencyRef.current,
+            requestChangedCurrency,
+            requestSequence,
+            economicsRequestSequenceRef.current,
+          );
+          if (rollbackCurrency !== calcCurrencyRef.current) {
+            calcCurrencyRef.current = rollbackCurrency;
+            setQuoteProfile((current) => ({ ...current, currency: rollbackCurrency }));
+            setQuoteParties((current) => ({ ...current, currency: rollbackCurrency }));
+          }
+          setAccountEconomicsError(true);
+          toast.error(translateApiError(t, error, t('printerCost.readiness.saveError')));
+        }
+      })
+      .finally(() => {
+        if (
+          isLatestCalculatorProfileRequest(requestSequence, economicsRequestSequenceRef.current)
+          && Object.keys(pendingEconomicsPatchRef.current).length === 0
+          && economicsSyncRef.current === undefined
+        ) {
+          setAccountEconomicsSaving(false);
+        }
+      });
+  };
 
   const updateStaticField = <K extends CalculatorStaticSettingKey>(field: K, value: CalculatorFormState[K]) => {
-    setForm((prev) => {
-      const next = { ...prev, [field]: value };
-      const settings = extractStaticSettings(next);
-      saveStoredCalculatorDefaults(settings);
-      window.clearTimeout(economicsSyncRef.current);
-      economicsSyncRef.current = window.setTimeout(() => {
-        void calculatorAPI
-          .updateProfile({
-            electricity_cost_per_kwh: settings.electricityCostPerKwh,
-            printer_power_w: settings.printerPowerW,
-            modeling_rate_per_hour: settings.modelingRatePerHour,
-            postprocessing_rate_per_hour: settings.postprocessingRatePerHour,
-            printing_rate_per_hour: settings.printingRatePerHour,
-            amortization_rate_per_hour: settings.amortizationRatePerHour,
-            overhead_percent: settings.overheadPercent,
-            markup_percent: settings.markupPercent,
-            tax_rate_percent: settings.taxRatePercent,
-            fixed_costs: settings.fixedCosts,
-            bed_prep_cost_per_print: settings.bedPrepCostPerPrint,
-            min_order_price: settings.minOrderPrice,
-            round_to_nearest: settings.roundToNearest,
-            rounding_mode: settings.roundingMode,
-            printer_purchase_price: settings.printerPurchasePrice,
-            printer_useful_hours: Math.round(settings.printerUsefulHours),
-            maintenance_cost_per_hour: settings.maintenanceCostPerHour,
-            power_hotend_w: settings.powerHotendW,
-            power_bed_w: settings.powerBedW,
-            power_steppers_w: settings.powerSteppersW,
-            power_electronics_w: settings.powerElectronicsW,
-            currency: currencyRef.current,
-          })
-          .catch(() => {
-          });
-      }, 800);
-      return next;
-    });
+    const next = { ...formRef.current, [field]: value };
+    formRef.current = next;
+    setForm(next);
+    saveStoredCalculatorDefaults(extractStaticSettings(next));
+    const requestSequence = ++economicsRequestSequenceRef.current;
+    pendingEconomicsPatchRef.current = mergeCalculatorProfilePatches(
+      pendingEconomicsPatchRef.current,
+      calculatorProfilePatchForField(field, value),
+    );
+    setAccountEconomicsSaving(true);
+    setAccountEconomicsError(false);
+    window.clearTimeout(economicsSyncRef.current);
+    economicsSyncRef.current = window.setTimeout(() => {
+      economicsSyncRef.current = undefined;
+      const payload = pendingEconomicsPatchRef.current;
+      pendingEconomicsPatchRef.current = {};
+      submitAccountEconomicsPatch(payload, requestSequence);
+    }, 800);
   };
 
   const updateQuoteProfileField = <K extends keyof QuoteProfileState>(field: K, value: QuoteProfileState[K]) => {
@@ -2558,15 +2705,17 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
       return next;
     });
     if (field === 'currency' && hasCalculatorAccess) {
-      void calculatorAPI
-        .updateProfile({ currency: value as string })
-        .then((profile) => {
-          queryClient.setQueryData(USER_PREFERENCES_QUERY_KEY, {
-            currency: normalizeCurrency(profile.currency),
-          });
-        })
-        .catch(() => {
-        });
+      const requestSequence = ++economicsRequestSequenceRef.current;
+      setAccountEconomicsSaving(true);
+      setAccountEconomicsError(false);
+      window.clearTimeout(economicsSyncRef.current);
+      economicsSyncRef.current = undefined;
+      const pendingPayload = pendingEconomicsPatchRef.current;
+      pendingEconomicsPatchRef.current = {};
+      submitAccountEconomicsPatch(
+        mergeCalculatorProfilePatches(pendingPayload, { currency: value as string }),
+        requestSequence,
+      );
     }
     setQuoteParties((prev) => ({
       ...prev,
@@ -3906,6 +4055,18 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
           selectedPrinterId={selectedPrinterId}
           printerEconomics={printerEconomics}
           jobPrinterEconomics={jobPrinterEconomics}
+          accountEconomicsReadiness={accountEconomicsReadiness}
+          economicsReadinessLoading={
+            accountEconomicsLoading
+            || printerEconomicsQuery.isLoading
+            || jobPrinterEconomicsQuery.isLoading
+            || accountEconomicsSaving
+          }
+          economicsReadinessError={
+            accountEconomicsError
+            || printerEconomicsQuery.isError
+            || jobPrinterEconomicsQuery.isError
+          }
           printerPickedFrom={printerPickedFrom}
           onPrinterSelect={handlePrinterSelect}
           economicsPrinterId={economicsPrinterId}
@@ -4054,6 +4215,9 @@ interface CalculatorViewProps {
   selectedPrinterId: number | '';
   printerEconomics: PrinterEconomics | null;
   jobPrinterEconomics: Map<number, PrinterEconomics>;
+  accountEconomicsReadiness: EconomicsReadiness | null;
+  economicsReadinessLoading: boolean;
+  economicsReadinessError: boolean;
   printerPickedFrom: string | null;
   onPrinterSelect: (printerId: number | '') => void;
   economicsPrinterId: number | '';
@@ -4141,6 +4305,9 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
   selectedPrinterId,
   printerEconomics,
   jobPrinterEconomics,
+  accountEconomicsReadiness,
+  economicsReadinessLoading,
+  economicsReadinessError,
   printerPickedFrom,
   onPrinterSelect,
   economicsPrinterId,
@@ -4360,32 +4527,57 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
     && materialsReadyForCalculation
     && !isParsingGcode
     && !isCalculating;
-  // Warn before the estimate, not only after it: known wear and electricity can still
-  // produce a plausible number while the customer's machine-time charge is absent.
-  // The resolved source matters even when this printer has no fields of its own.
   const machineRateMissing = isMachineRateMissing(printerEconomics, form.printingRatePerHour);
-  const missingJobRateKeys = jobConfigs
-    .filter((config) => isJobMachineRateMissing(
-      config,
-      printerEconomics,
-      form.printingRatePerHour,
-      jobPrinterEconomics,
-    ))
-    .map((config) => config.jobKey);
-  const effectiveMachineRateMissing = hasParsedJobs && jobConfigs.length > 0
-    ? missingJobRateKeys.length > 0
-    : machineRateMissing;
   const orderMachineRateMissing = machineRateMissing
     && (!hasParsedJobs || jobConfigs.some((config) => config.physicalPrinterId === ''));
-  // A cost line that came out at zero is not a cheap order, it is an input nobody
-  // filled. Naming which one beats a total that looks authoritative.
-  const machineHours = result?.time_hours ?? 0;
+
+  const economicsReadinessEntries = (() => {
+    const entries = new Map<string, EconomicsReadinessEntry>();
+    const printerName = (printerId: number) => printers.find((printer) => printer.id === printerId)?.name
+      ?? `#${printerId}`;
+    const addAccount = () => entries.set('account', {
+      id: 'account',
+      label: t('printerCost.generalValues'),
+      readiness: accountEconomicsReadiness,
+    });
+    const addPrinter = (printerId: number) => {
+      const economics = jobPrinterEconomics.get(printerId)
+        ?? (selectedPrinterId === printerId ? printerEconomics : null);
+      entries.set(`printer-${printerId}`, {
+        id: `printer-${printerId}`,
+        label: printerName(printerId),
+        readiness: economics?.readiness ?? null,
+      });
+    };
+
+    if (hasParsedJobs) {
+      const configsByJob = new Map(jobConfigs.map((config) => [config.jobKey, config]));
+      displayJobs.forEach((job) => {
+        const printerId = (configsByJob.get(job.key) ?? createDefaultJobConfig(job)).physicalPrinterId;
+        if (printerId !== '') addPrinter(printerId);
+        else if (selectedPrinterId !== '') addPrinter(selectedPrinterId);
+        else addAccount();
+      });
+    } else if (selectedPrinterId !== '') {
+      addPrinter(selectedPrinterId);
+    } else {
+      addAccount();
+    }
+    return [...entries.values()];
+  })();
+  const economicsReadinessUnavailable = economicsReadinessError
+    || (!economicsReadinessLoading && economicsReadinessEntries.some((entry) => !entry.readiness));
+  const overallEconomicsReadinessStatus = worstEconomicsReadinessStatus(
+    economicsReadinessEntries.map((entry) => entry.readiness),
+  );
+  const economicsResultNoteKey = economicsReadinessResultNoteKey(
+    overallEconomicsReadinessStatus,
+    economicsReadinessUnavailable,
+  );
   const approximateNotes = result
     ? [
         ...approximatePriceLabels,
-        ...(machineHours > 0 && effectiveMachineRateMissing ? [tc('resultNoPrintingRate')] : []),
-        ...(machineHours > 0 && !result.cost_amortization ? [tc('resultNoAmortization')] : []),
-        ...(machineHours > 0 && !result.cost_electricity ? [tc('resultNoElectricity')] : []),
+        ...(economicsResultNoteKey ? [t(economicsResultNoteKey)] : []),
       ]
     : [];
   const focusMachineEconomics = () => {
@@ -4929,7 +5121,7 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                         suffix={currencySymbol(quoteProfile.currency)}
                       />
                       <select
-                        className={`${inputClass} w-auto min-w-[8rem] flex-1`}
+                        className={`${inputClass} w-full sm:w-auto sm:min-w-[8rem]`}
                         value={form.roundingMode}
                         aria-label={t('profilePage.calc.roundingMode')}
                         onChange={(event) => onStaticChange('roundingMode', event.target.value as RoundingMode)}
@@ -5432,11 +5624,12 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                       printers={printers}
                       selectedPrinterId={selectedPrinterId}
                       onSelect={onPrinterSelect}
-                      economics={printerEconomics}
-                      currency={quoteProfile.currency}
                       pickedFromLabel={printerPickedFrom}
                       rateMissing={orderMachineRateMissing}
                       onFixRate={focusMachineEconomics}
+                      readinessEntries={economicsReadinessEntries}
+                      readinessLoading={economicsReadinessLoading}
+                      readinessError={economicsReadinessUnavailable}
                     />
                   </div>
                 ) : null}
@@ -6082,11 +6275,12 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                 printers={printers}
                 selectedPrinterId={selectedPrinterId}
                 onSelect={onPrinterSelect}
-                economics={printerEconomics}
-                currency={quoteProfile.currency}
                 pickedFromLabel={printerPickedFrom}
                 rateMissing={orderMachineRateMissing}
                 onFixRate={focusMachineEconomics}
+                readinessEntries={economicsReadinessEntries}
+                readinessLoading={economicsReadinessLoading}
+                readinessError={economicsReadinessUnavailable}
               />
             </WorkspacePanel>
             ) : null}

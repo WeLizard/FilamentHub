@@ -144,6 +144,12 @@ from app.services.legal_document_service import (
     resolve_legal_pack,
 )
 from app.services.organization_access import can_select_active_workspace, list_accessible_brands
+from app.services.printer_economics_service import (
+    clear_incompatible_account_money,
+    lock_account_economics_profile,
+    platform_default_economics_sources,
+    update_account_economics_sources,
+)
 from app.services.provisional_account_service import sweep_abandoned_provisional_accounts
 from app.services.refresh_session_service import (
     InvalidRefreshSessionError,
@@ -1644,21 +1650,29 @@ async def update_user_preferences(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> UserPreferencesResponse:
     """Persist account-wide preferences independently of calculator access."""
-    profile = await db.scalar(
-        select(UserCalculatorProfile).where(UserCalculatorProfile.user_id == current_user.id)
-    )
+    profile = await lock_account_economics_profile(db, current_user.id)
     if profile is None:
         # Picking a currency must not be the moment a profile appears out of the
         # column defaults: those are one country's economics, and stamping another
         # currency on them prices someone's work at foreign numbers.
         defaults, _ = await starting_defaults_for_user(db, current_user)
+        values = calculator_profile_default_values(defaults, profile_currency=data.currency)
         profile = UserCalculatorProfile(
             user_id=current_user.id,
-            **calculator_profile_default_values(defaults, profile_currency=data.currency),
+            currency=data.currency,
+            economics_field_sources=platform_default_economics_sources(),
+            **values,
         )
         db.add(profile)
 
+    previous_currency = profile.currency
     profile.currency = data.currency
+    clear_incompatible_account_money(
+        profile,
+        previous_currency=previous_currency,
+        explicit_fields={"currency"},
+    )
+    update_account_economics_sources(profile, {"currency"}, "account_explicit")
     await db.commit()
     return UserPreferencesResponse(currency=profile.currency)
 

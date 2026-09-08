@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Check, Loader2 } from 'lucide-react';
 
@@ -20,7 +20,7 @@ interface PrinterEconomicsColumnProps {
 }
 
 const selectClass =
-  'w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-cyan-400/60';
+  'w-full rounded-2xl border border-white/10 bg-slate-950/60 px-4 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-cyan-400/60 sm:max-w-[18rem]';
 
 const UPKEEP_OPTIONS = [
   { key: 'upkeepLow', value: 2 },
@@ -53,6 +53,8 @@ export const PrinterEconomicsColumn: React.FC<PrinterEconomicsColumnProps> = ({
   const [usage, setUsage] = useState<Usage>('regular');
   const [status, setStatus] = useState<'saving' | 'saved' | null>(null);
   const editedPrinter = printers.find((printer) => printer.id === editedPrinterId) ?? null;
+
+  useEffect(() => setStatus(null), [editedPrinterId]);
 
   const breakdown = useMemo(() => {
     const depreciation = averaged.lifeHours > 0 ? averaged.purchaseCost / averaged.lifeHours : 0;

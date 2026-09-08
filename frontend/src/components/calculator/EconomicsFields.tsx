@@ -1,4 +1,4 @@
-import { type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ChevronDown, HelpCircle } from 'lucide-react';
 
@@ -14,10 +14,9 @@ export type EconomicsField = keyof EconomicsValues;
 
 interface EconomicsFieldsProps {
   values: EconomicsValues;
-  origins?: Partial<Record<EconomicsField, string>>;
   symbol: string;
   onChange: (field: EconomicsField, value: number) => void;
-  onCommit?: (field: EconomicsField, value: number) => void;
+  onCommit?: (field: EconomicsField, value: number | null) => void;
   breakdown: { depreciation: number; electricity: number; maintenance: number; cost: number };
   detailsOpen: boolean;
   onToggleDetails: () => void;
@@ -33,7 +32,6 @@ const inputClass =
 
 export const EconomicsFields: React.FC<EconomicsFieldsProps> = ({
   values,
-  origins = {},
   symbol,
   onChange,
   onCommit,
@@ -47,7 +45,30 @@ export const EconomicsFields: React.FC<EconomicsFieldsProps> = ({
   header,
 }) => {
   const { t } = useTranslation();
+  const [drafts, setDrafts] = useState<Partial<Record<EconomicsField, string>>>({});
   const margin = Math.round((values.rate - breakdown.cost) * 100) / 100;
+
+  const inputValue = (name: EconomicsField): string => (
+    drafts[name] ?? String(values[name])
+  );
+
+  const changeInput = (name: EconomicsField, rawValue: string) => {
+    setDrafts((current) => ({ ...current, [name]: rawValue }));
+    if (rawValue !== '') {
+      onChange(name, Math.max(0, Number(rawValue) || 0));
+    } else if (!onCommit) {
+      onChange(name, 0);
+    }
+  };
+
+  const commitInput = (name: EconomicsField, rawValue: string) => {
+    setDrafts((current) => {
+      const next = { ...current };
+      delete next[name];
+      return next;
+    });
+    onCommit?.(name, rawValue === '' ? null : Math.max(0, Number(rawValue) || 0));
+  };
 
   const tip = (text: string) => (
     <span className="group/tip relative inline-flex shrink-0 align-middle">
@@ -79,17 +100,15 @@ export const EconomicsFields: React.FC<EconomicsFieldsProps> = ({
         <input
           type="number"
           min="0"
+          inputMode="decimal"
           className={inputClass}
-          value={values[name] || ''}
+          value={inputValue(name)}
           placeholder="0"
-          onChange={(event) => onChange(name, Math.max(0, Number(event.target.value) || 0))}
-          onBlur={(event) => onCommit?.(name, Math.max(0, Number(event.target.value) || 0))}
+          onChange={(event) => changeInput(name, event.target.value)}
+          onBlur={(event) => commitInput(name, event.target.value)}
         />
         <span className="shrink-0 text-xs text-slate-400">{suffix}</span>
       </div>
-      {origins[name] ? (
-        <span className="mt-1 block text-[11px] leading-4 text-slate-500">{origins[name]}</span>
-      ) : null}
       {extra}
     </label>
   );
@@ -169,11 +188,12 @@ export const EconomicsFields: React.FC<EconomicsFieldsProps> = ({
           <input
             type="number"
             min="0"
+            inputMode="decimal"
             className={inputClass}
-            value={values.rate || ''}
+            value={inputValue('rate')}
             placeholder="0"
-            onChange={(event) => onChange('rate', Math.max(0, Number(event.target.value) || 0))}
-            onBlur={(event) => onCommit?.('rate', Math.max(0, Number(event.target.value) || 0))}
+            onChange={(event) => changeInput('rate', event.target.value)}
+            onBlur={(event) => commitInput('rate', event.target.value)}
           />
           <span className="shrink-0 text-xs text-slate-400">
             {t('printerCost.perHour', { symbol })}

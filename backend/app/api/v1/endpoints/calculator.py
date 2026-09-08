@@ -3,6 +3,7 @@
 import logging
 import math
 import re
+from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Annotated
@@ -66,6 +67,7 @@ from app.schemas.calculator import (
     SharedQuoteCreate,
     SharedQuoteResponse,
 )
+from app.schemas.printer_economics import EconomicsReadinessContract
 from app.schemas.user import UserResponse
 from app.services.calculator_defaults_service import (
     calculator_profile_default_values,
@@ -95,6 +97,13 @@ from app.services.calculator_material_identity_service import (
 )
 from app.services.calculator_power_service import average_power_w
 from app.services.calculator_preflight_service import calculate_material_preflight
+from app.services.printer_economics_service import (
+    account_economics_readiness,
+    clear_incompatible_account_money,
+    lock_account_economics_profile,
+    platform_default_economics_sources,
+    update_account_economics_sources,
+)
 from app.services.subscription_service import (
     TrialAlreadyUsedError,
     paywall_enforced,
@@ -700,14 +709,16 @@ async def _build_estimate(data: CalculatorEstimateRequest) -> CalculatorEstimate
             + cost_nozzle_wear
         )
 
-        overhead_percent = data.overhead_percent or 20.0  # По умолчанию 20%
+        overhead_percent = (
+            data.overhead_percent if data.overhead_percent is not None else 20.0
+        )
         cost_overhead = cost_direct * (overhead_percent / 100.0)
 
         fixed_costs = data.fixed_costs or 0.0
 
         cost_before_markup = cost_direct + cost_overhead + fixed_costs
 
-        markup_percent = data.markup_percent or 30.0  # По умолчанию 30%
+        markup_percent = data.markup_percent if data.markup_percent is not None else 30.0
         cost_markup = cost_before_markup * (markup_percent / 100.0)
 
         intermediate_price = cost_before_markup + cost_markup
@@ -1167,10 +1178,18 @@ ENCRYPTED_PROFILE_FIELDS = (
 
 
 def _profile_response(profile: UserCalculatorProfile) -> CalculatorProfileResponse:
-    response = CalculatorProfileResponse.model_validate(profile)
-    return response.model_copy(
-        update={name: decrypt_field(getattr(profile, name)) for name in ENCRYPTED_PROFILE_FIELDS}
+    values = {
+        name: getattr(profile, name)
+        for name in CalculatorProfileResponse.model_fields
+        if name != "economics_readiness"
+    }
+    values.update(
+        {name: decrypt_field(getattr(profile, name)) for name in ENCRYPTED_PROFILE_FIELDS}
     )
+    values["economics_readiness"] = EconomicsReadinessContract.model_validate(
+        asdict(account_economics_readiness(profile))
+    )
+    return CalculatorProfileResponse.model_validate(values)
 
 
 @router.get("/profile", response_model=CalculatorProfileResponse)
@@ -1185,11 +1204,15 @@ async def get_calculator_profile(
     profile = result.scalar_one_or_none()
 
     if not profile:
+        profile = await lock_account_economics_profile(db, current_user.id)
+    if not profile:
         defaults, currency = await starting_defaults_for_user(db, current_user)
+        values = calculator_profile_default_values(defaults, profile_currency=currency)
         profile = UserCalculatorProfile(
             user_id=current_user.id,
             currency=currency,
-            **calculator_profile_default_values(defaults, profile_currency=currency),
+            economics_field_sources=platform_default_economics_sources(),
+            **values,
         )
         db.add(profile)
         await db.commit()
@@ -1205,26 +1228,37 @@ async def update_calculator_profile(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> CalculatorProfileResponse:
     """Create or update the current user's calculator profile."""
-    result = await db.execute(
-        select(UserCalculatorProfile).where(UserCalculatorProfile.user_id == current_user.id)
-    )
-    profile = result.scalar_one_or_none()
+    profile = await lock_account_economics_profile(db, current_user.id)
 
     if not profile:
         defaults, currency = await starting_defaults_for_user(db, current_user)
+        values = calculator_profile_default_values(defaults, profile_currency=currency)
         profile = UserCalculatorProfile(
             user_id=current_user.id,
             currency=currency,
-            **calculator_profile_default_values(defaults, profile_currency=currency),
+            economics_field_sources=platform_default_economics_sources(),
+            **values,
         )
         db.add(profile)
     else:
         _profile_response(profile)
 
-    for field_name, value in data.model_dump(exclude_unset=True).items():
+    changed_values = data.model_dump(exclude_unset=True)
+    previous_currency = profile.currency
+    for field_name, value in changed_values.items():
         if field_name in ENCRYPTED_PROFILE_FIELDS:
             value = encrypt_field(value)
         setattr(profile, field_name, value)
+    clear_incompatible_account_money(
+        profile,
+        previous_currency=previous_currency,
+        explicit_fields=set(changed_values),
+    )
+    update_account_economics_sources(
+        profile,
+        set(changed_values),
+        "account_explicit",
+    )
 
     await db.commit()
     await db.refresh(profile)
@@ -1237,21 +1271,29 @@ async def reset_calculator_profile_defaults(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> CalculatorProfileResponse:
     """Explicitly reset only economics to the current platform defaults."""
-    profile = await db.scalar(
-        select(UserCalculatorProfile).where(UserCalculatorProfile.user_id == current_user.id)
-    )
+    profile = await lock_account_economics_profile(db, current_user.id)
     defaults, starting_currency = await starting_defaults_for_user(db, current_user)
     # An existing profile keeps the currency its owner chose; a fresh one takes the
     # currency of their country.
     currency = profile.currency if profile is not None else starting_currency
     values = calculator_profile_default_values(defaults, profile_currency=currency)
     if profile is None:
-        profile = UserCalculatorProfile(user_id=current_user.id, currency=currency, **values)
+        profile = UserCalculatorProfile(
+            user_id=current_user.id,
+            currency=currency,
+            economics_field_sources=platform_default_economics_sources(),
+            **values,
+        )
         db.add(profile)
     else:
         _profile_response(profile)
         for field_name, value in values.items():
             setattr(profile, field_name, value)
+        update_account_economics_sources(
+            profile,
+            set(values),
+            "platform_default",
+        )
     await db.commit()
     await db.refresh(profile)
     return _profile_response(profile)

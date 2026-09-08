@@ -4396,6 +4396,8 @@ export interface PrinterEconomics {
   calculator_amortization_rate_per_hour: number;
   calculator_electricity_cost_per_kwh: number;
   sources: Record<string, string>;
+  applied_sources: Record<string, import('../types/api').EconomicsSource>;
+  readiness: import('../types/api').EconomicsReadiness;
 }
 
 export interface PrinterEconomicsUpdate {
@@ -4669,6 +4671,27 @@ export const physicalPrintersAPI = {
   ): Promise<PrinterEconomics> => {
     const response = await api.patch<PrinterEconomics>(
       `/physical-printers/${printerId}/economics`,
+      payload,
+    );
+    return response.data;
+  },
+
+  applyEconomicsSuggestion: async (
+    printerId: number,
+    payload: {
+      usage: 'occasional' | 'regular' | 'intensive';
+      fields: Array<
+        | 'average_power_watts'
+        | 'power_hotend_w'
+        | 'power_bed_w'
+        | 'power_steppers_w'
+        | 'power_electronics_w'
+        | 'useful_life_hours'
+      >;
+    },
+  ): Promise<PrinterEconomics> => {
+    const response = await api.post<PrinterEconomics>(
+      `/physical-printers/${printerId}/economics/apply-suggestion`,
       payload,
     );
     return response.data;

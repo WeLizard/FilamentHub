@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, String
+from sqlalchemy import JSON, DateTime, Float, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
 
@@ -49,6 +49,9 @@ class UserCalculatorProfile(Base):
     power_bed_w: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     power_steppers_w: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     power_electronics_w: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    economics_field_sources: Mapped[dict[str, str]] = mapped_column(
+        JSON, nullable=False, default=dict, server_default="{}"
+    )
 
     seller_name: Mapped[str] = mapped_column(String(1024), nullable=False, default="")
     seller_inn: Mapped[str] = mapped_column(String(512), nullable=False, default="")

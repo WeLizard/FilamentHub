@@ -19,8 +19,45 @@ from app.models.calculator_profile import UserCalculatorProfile
 from app.models.physical_printer_profile import UserPrinterProfileLink
 from app.models.printer import Printer
 from app.models.printer_profile import PrinterProfile
+from app.models.user import User
 from app.models.user_printer_device import UserPrinterDevice
+from app.services.calculator_defaults_service import MONETARY_DEFAULT_FIELDS
 from app.services.calculator_power_service import average_power_w
+
+ECONOMICS_SOURCES = {
+    "printer_explicit",
+    "account_explicit",
+    "orca_import",
+    "platform_default",
+    "catalog_estimate",
+    "none",
+}
+PROFILE_ECONOMICS_FIELDS = frozenset(
+    {
+        "electricity_cost_per_kwh",
+        "printer_power_w",
+        "modeling_rate_per_hour",
+        "postprocessing_rate_per_hour",
+        "printing_rate_per_hour",
+        "amortization_rate_per_hour",
+        "overhead_percent",
+        "markup_percent",
+        "tax_rate_percent",
+        "fixed_costs",
+        "bed_prep_cost_per_print",
+        "min_order_price",
+        "round_to_nearest",
+        "rounding_mode",
+        "printer_purchase_price",
+        "printer_useful_hours",
+        "maintenance_cost_per_hour",
+        "power_hotend_w",
+        "power_bed_w",
+        "power_steppers_w",
+        "power_electronics_w",
+        "currency",
+    }
+)
 
 USAGE_LIFE_HOURS = {
     "occasional": 3000,
@@ -135,6 +172,27 @@ class ResolvedEconomics:
     machine_cost_per_hour: float
     rate_below_cost: bool
     sources: dict[str, str] = field(default_factory=dict)
+    applied_sources: dict[str, str] = field(default_factory=dict)
+    readiness: "EconomicsReadiness" | None = None
+
+
+@dataclass(frozen=True)
+class EconomicsReadinessFieldValue:
+    key: str
+    value: float | str | None
+    source: str
+    source_currency: str | None
+    usable: bool
+    missing_reason: str | None = None
+
+
+@dataclass(frozen=True)
+class EconomicsReadiness:
+    version: int
+    status: str
+    money_currency: str | None
+    required_fields: list[EconomicsReadinessFieldValue]
+    reasons: list[str]
 
 
 def _positive(value: float | int | None) -> float | None:
@@ -150,6 +208,169 @@ def _positive(value: float | int | None) -> float | None:
 def _currency_code(value: str | None) -> str | None:
     code = (value or "").strip().upper()
     return code or None
+
+
+def _non_negative(value: float | int | None) -> float | None:
+    if value is None:
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if number >= 0 else None
+
+
+def _stored_source(mapping: object, field_name: str) -> str:
+    if not isinstance(mapping, dict):
+        return "none"
+    source = mapping.get(field_name)
+    return source if source in ECONOMICS_SOURCES else "none"
+
+
+def platform_default_economics_sources(
+    values: dict[str, object] | None = None, *, include_currency: bool = True
+) -> dict[str, str]:
+    """Mark a freshly seeded profile without calling its defaults user input."""
+    fields = (
+        PROFILE_ECONOMICS_FIELDS
+        if include_currency
+        else PROFILE_ECONOMICS_FIELDS - {"currency"}
+    )
+    selected_fields = fields if values is None else set(values) & fields
+    return {field_name: "platform_default" for field_name in selected_fields}
+
+
+def update_account_economics_sources(
+    profile: UserCalculatorProfile,
+    field_names: set[str],
+    source: str,
+) -> None:
+    """Assign field provenance without inferring anything about untouched values."""
+    sources = dict(profile.economics_field_sources or {})
+    for field_name in field_names & PROFILE_ECONOMICS_FIELDS:
+        sources[field_name] = source
+    profile.economics_field_sources = sources
+
+
+def clear_incompatible_account_money(
+    profile: UserCalculatorProfile,
+    *,
+    previous_currency: str | None,
+    explicit_fields: set[str],
+) -> set[str]:
+    """Clear old-currency amounts unless the same request replaces them.
+
+    No exchange-rate contract exists, so retaining a number while changing only
+    its currency code would relabel rather than convert it. Percentages, physical
+    values, useful life and rounding mode are currency-independent and stay intact.
+    """
+    if _currency_code(previous_currency) == _currency_code(profile.currency):
+        return set()
+
+    cleared_fields = set(MONETARY_DEFAULT_FIELDS) - explicit_fields
+    sources = dict(profile.economics_field_sources or {})
+    for field_name in cleared_fields:
+        setattr(profile, field_name, 0)
+        sources.pop(field_name, None)
+    profile.economics_field_sources = sources
+    return cleared_fields
+
+
+def _combined_source(sources: list[str], *, fallback: str = "none") -> str:
+    present = [source for source in sources if source != "none"]
+    if not present:
+        return fallback
+    if len(present) != len(sources):
+        return "none"
+    if "catalog_estimate" in present:
+        return "catalog_estimate"
+    return present[0] if len(set(present)) == 1 else "none"
+
+
+def _readiness(
+    *,
+    currency: str | None,
+    fields: list[EconomicsReadinessFieldValue],
+    extra_reasons: list[str] | None = None,
+) -> EconomicsReadiness:
+    reasons = list(extra_reasons or [])
+    for item in fields:
+        if item.missing_reason and item.missing_reason not in reasons:
+            reasons.append(item.missing_reason)
+        if item.usable and item.source == "none" and "provenance_unknown" not in reasons:
+            reasons.append("provenance_unknown")
+        if item.source == "platform_default" and "platform_default_used" not in reasons:
+            reasons.append("platform_default_used")
+        if item.source == "catalog_estimate" and "catalog_estimate_used" not in reasons:
+            reasons.append("catalog_estimate_used")
+
+    if any(not item.usable for item in fields):
+        readiness_status = "incomplete"
+    elif reasons:
+        readiness_status = "partial"
+    else:
+        readiness_status = "configured"
+    return EconomicsReadiness(
+        version=1,
+        status=readiness_status,
+        money_currency=currency,
+        required_fields=fields,
+        reasons=reasons,
+    )
+
+
+def account_economics_readiness(profile: UserCalculatorProfile) -> EconomicsReadiness:
+    """Resolve account economics without mistaking seeded values for user choices."""
+    currency = _currency_code(profile.currency)
+    sources = profile.economics_field_sources or {}
+
+    rate = _non_negative(profile.printing_rate_per_hour)
+    tariff = _non_negative(profile.electricity_cost_per_kwh)
+    power = _positive(profile.printer_power_w)
+    wear = _non_negative(profile.amortization_rate_per_hour)
+    fields = [
+        EconomicsReadinessFieldValue(
+            key="currency",
+            value=currency,
+            source=_stored_source(sources, "currency"),
+            source_currency=currency,
+            usable=currency is not None,
+            missing_reason=None if currency is not None else "missing_currency",
+        ),
+        EconomicsReadinessFieldValue(
+            key="machine_hour_rate",
+            value=rate,
+            source=_stored_source(sources, "printing_rate_per_hour"),
+            source_currency=currency,
+            usable=rate is not None and rate > 0,
+            missing_reason="non_positive" if rate == 0 else "missing" if rate is None else None,
+        ),
+        EconomicsReadinessFieldValue(
+            key="electricity_cost_per_kwh",
+            value=tariff,
+            source=_stored_source(sources, "electricity_cost_per_kwh"),
+            source_currency=currency,
+            usable=tariff is not None,
+            missing_reason=None if tariff is not None else "missing",
+        ),
+        EconomicsReadinessFieldValue(
+            key="printer_power_w",
+            value=power,
+            source=_stored_source(sources, "printer_power_w"),
+            source_currency=None,
+            usable=power is not None,
+            missing_reason=None if power is not None else "missing",
+        ),
+        EconomicsReadinessFieldValue(
+            key="machine_wear_per_hour",
+            value=wear,
+            source=_stored_source(sources, "amortization_rate_per_hour"),
+            source_currency=currency,
+            usable=wear is not None,
+            missing_reason=None if wear is not None else "missing",
+        ),
+    ]
+    return _readiness(currency=currency, fields=fields)
 
 
 def _parse_orca_time_cost(raw: object) -> float | None:
@@ -311,6 +532,19 @@ async def _account_profile(db: AsyncSession, user_id: int) -> UserCalculatorProf
     )
 
 
+async def lock_account_economics_profile(
+    db: AsyncSession, user_id: int
+) -> UserCalculatorProfile | None:
+    """Serialize account economics writes, including first-profile creation."""
+    await db.scalar(select(User.id).where(User.id == user_id).with_for_update())
+    return await db.scalar(
+        select(UserCalculatorProfile)
+        .where(UserCalculatorProfile.user_id == user_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+
+
 async def resolve_economics(
     db: AsyncSession, printer: UserPrinterDevice
 ) -> ResolvedEconomics:
@@ -321,40 +555,88 @@ async def resolve_economics(
     left over rides on the printing rate. Their sum per hour is the rate again.
     """
     account = await _account_profile(db, printer.user_id)
+    account_sources = account.economics_field_sources if account else {}
+    printer_sources = printer.economics_field_sources or {}
     account_currency = _currency_code(account.currency if account else None)
     printer_currency = _currency_code(printer.economics_currency)
     currency = account_currency or printer_currency
-    # The calculator cannot add roubles from the account to dollar values stored on a
-    # machine without an exchange-rate contract. Keep the machine's physical facts, but
-    # resolve its money from the account until both sides use the same currency.
+    currency_source = (
+        _stored_source(account_sources, "currency")
+        if account_currency is not None
+        else _stored_source(printer_sources, "economics_currency")
+    )
     printer_money_usable = (
-        account_currency is None
-        or printer_currency is None
-        or account_currency == printer_currency
+        printer_currency is not None
+        and currency is not None
+        and printer_currency == currency
     )
-    tariff = _positive(account.electricity_cost_per_kwh if account else None) or 0.0
+    printer_has_money = any(
+        value is not None
+        for value in (
+            printer.purchase_cost,
+            printer.residual_value,
+            printer.maintenance_cost_per_hour,
+            printer.machine_hour_rate,
+        )
+    )
+    extra_reasons: list[str] = []
     sources: dict[str, str] = {}
-    if not printer_money_usable:
+    if printer_has_money and not printer_money_usable:
         sources["printer_money"] = "currency_mismatch"
+        extra_reasons.append(
+            "missing_currency" if printer_currency is None else "currency_mismatch"
+        )
 
-    # Known parts win over the nameplate: an hour of printing is mostly heaters holding
-    # a temperature, not every component at full draw.
-    power = average_power_w(
-        hotend_w=printer.power_hotend_w,
-        bed_w=printer.power_bed_w,
-        steppers_w=printer.power_steppers_w,
-        electronics_w=printer.power_electronics_w,
-        fallback_w=_positive(printer.average_power_watts),
-    )
-    if power:
-        sources["power"] = "printer"
-    else:
-        power = _positive(account.printer_power_w if account else None) or 0.0
-        sources["power"] = "account" if power else "none"
+    tariff_value = _non_negative(account.electricity_cost_per_kwh if account else None)
+    tariff = tariff_value if tariff_value is not None else 0.0
+    tariff_source = _stored_source(account_sources, "electricity_cost_per_kwh")
 
-    if not power:
-        # Nothing anywhere. What we can work out about this machine beats charging the
-        # order as though the printer drew nothing at all.
+    component_fields = {
+        "power_hotend_w": printer.power_hotend_w,
+        "power_bed_w": printer.power_bed_w,
+        "power_steppers_w": printer.power_steppers_w,
+        "power_electronics_w": printer.power_electronics_w,
+    }
+    provided_power_parts = [
+        field_name for field_name, value in component_fields.items() if value is not None
+    ]
+    complete_power_parts = len(provided_power_parts) == len(component_fields)
+    if provided_power_parts and not complete_power_parts:
+        extra_reasons.append("incomplete_pair")
+
+    power = None
+    power_source = "none"
+    if complete_power_parts:
+        power = _positive(
+            average_power_w(
+                hotend_w=printer.power_hotend_w,
+                bed_w=printer.power_bed_w,
+                steppers_w=printer.power_steppers_w,
+                electronics_w=printer.power_electronics_w,
+            )
+        )
+        if power is not None:
+            power_source = _combined_source(
+                [
+                    _stored_source(printer_sources, field_name)
+                    for field_name in component_fields
+                ]
+            )
+            sources["power"] = "printer"
+
+    if power is None:
+        power = _positive(printer.average_power_watts)
+        if power is not None:
+            power_source = _stored_source(printer_sources, "average_power_watts")
+            sources["power"] = "printer"
+
+    if power is None:
+        power = _positive(account.printer_power_w if account else None)
+        if power is not None:
+            power_source = _stored_source(account_sources, "printer_power_w")
+            sources["power"] = "account"
+
+    if power is None:
         suggestion = await suggest_economics(db, printer)
         power = average_power_w(
             hotend_w=suggestion.power_hotend_w,
@@ -362,56 +644,186 @@ async def resolve_economics(
             steppers_w=suggestion.power_steppers_w,
             electronics_w=suggestion.power_electronics_w,
             fallback_w=suggestion.average_power_watts,
-        ) or 0.0
-        if power:
+        )
+        if power is not None:
+            power_source = "catalog_estimate"
             sources["power"] = "estimate"
+    if power is None:
+        power = 0.0
+        sources["power"] = "none"
 
-    purchase = _positive(printer.purchase_cost) if printer_money_usable else None
-    residual = (
-        max(0.0, float(printer.residual_value or 0.0))
-        if printer_money_usable
-        else 0.0
-    )
-    life_hours = _positive(printer.useful_life_hours) if printer_money_usable else None
     depreciation = 0.0
-    if purchase is not None and life_hours is not None:
-        depreciation = max(0.0, (purchase - residual)) / life_hours
-        sources["depreciation"] = "printer"
-
-    maintenance = (
-        max(0.0, float(printer.maintenance_cost_per_hour or 0.0))
-        if printer_money_usable
-        else 0.0
+    depreciation_source = "none"
+    maintenance = 0.0
+    maintenance_source = "none"
+    printer_depreciation_complete = False
+    printer_maintenance_complete = False
+    printer_wear_attempted = any(
+        value is not None
+        for value in (
+            printer.purchase_cost,
+            printer.residual_value,
+            printer.useful_life_hours,
+            printer.maintenance_cost_per_hour,
+        )
     )
-    if printer_money_usable and printer.maintenance_cost_per_hour is not None:
-        sources["maintenance"] = "printer"
+    if printer_money_usable:
+        purchase = _non_negative(printer.purchase_cost)
+        residual_value = _non_negative(printer.residual_value)
+        residual = residual_value if residual_value is not None else 0.0
+        life_hours = _positive(printer.useful_life_hours)
+        if purchase is not None:
+            if purchase == 0:
+                printer_depreciation_complete = True
+                depreciation_source = _stored_source(printer_sources, "purchase_cost")
+            elif life_hours is not None:
+                depreciation = max(0.0, purchase - residual) / life_hours
+                printer_depreciation_complete = True
+                depreciation_sources = [
+                    _stored_source(printer_sources, "purchase_cost"),
+                    _stored_source(printer_sources, "useful_life_hours"),
+                ]
+                if printer.residual_value is not None:
+                    depreciation_sources.append(
+                        _stored_source(printer_sources, "residual_value")
+                    )
+                depreciation_source = _combined_source(depreciation_sources)
 
-    wear_and_upkeep = depreciation + maintenance
-    if "depreciation" not in sources and "maintenance" not in sources:
-        wear_and_upkeep = float(account.amortization_rate_per_hour if account else 0.0)
-        sources["wear"] = "account"
-    else:
+        if printer.maintenance_cost_per_hour is not None:
+            maintenance_value = _non_negative(printer.maintenance_cost_per_hour)
+            if maintenance_value is not None:
+                maintenance = maintenance_value
+                maintenance_source = _stored_source(
+                    printer_sources, "maintenance_cost_per_hour"
+                )
+                printer_maintenance_complete = True
+
+    printer_wear_complete = (
+        printer_money_usable
+        and printer_depreciation_complete
+        and printer_maintenance_complete
+    )
+    if printer_money_usable and printer_wear_attempted and not printer_wear_complete:
+        extra_reasons.append("incomplete_pair")
+
+    account_wear = _non_negative(
+        account.amortization_rate_per_hour if account else None
+    )
+    if printer_wear_complete:
+        wear_and_upkeep = depreciation + maintenance
+        wear_source = _combined_source(
+            [depreciation_source, maintenance_source], fallback="none"
+        )
         sources["wear"] = "printer"
+        sources["depreciation"] = "printer"
+        sources["maintenance"] = "printer"
+    else:
+        # Account amortization is an aggregate wear/upkeep value. It replaces an
+        # incomplete printer override as a whole; adding one printer component to
+        # it would silently double count part of the same cost.
+        depreciation = 0.0
+        maintenance = 0.0
+        depreciation_source = "none"
+        maintenance_source = "none"
+        wear_and_upkeep = account_wear if account_wear is not None else 0.0
+        wear_source = _stored_source(account_sources, "amortization_rate_per_hour")
+        sources["wear"] = "account" if account_wear is not None else "none"
 
     electricity_per_hour = power / 1000.0 * tariff
 
-    # What a person typed for this machine, then what they keep on the site, and only
-    # then the number their slicer happened to carry in. An imported value must never
-    # quietly outrank the one they entered themselves.
-    rate = _positive(printer.machine_hour_rate) if printer_money_usable else None
-    if rate is not None:
+    rate: float | None = None
+    rate_source = "none"
+    rate_missing_reason: str | None = None
+    printer_rate = _non_negative(printer.machine_hour_rate)
+    if printer.machine_hour_rate is not None and printer_money_usable:
+        rate = printer_rate
+        rate_source = _stored_source(printer_sources, "machine_hour_rate")
         sources["rate"] = "printer"
     else:
-        rate = _positive(account.printing_rate_per_hour if account else None)
-        if rate is not None:
+        account_rate = _non_negative(account.printing_rate_per_hour if account else None)
+        account_rate_source = _stored_source(account_sources, "printing_rate_per_hour")
+        account_rate_is_explicit_zero = (
+            account_rate == 0 and account_rate_source == "account_explicit"
+        )
+        if account_rate is not None and (account_rate > 0 or account_rate_is_explicit_zero):
+            rate = account_rate
+            rate_source = account_rate_source
             sources["rate"] = "account"
         else:
             machine = await describe_machine(db, printer)
-            rate = machine.orca_time_cost
-            sources["rate"] = "orca" if rate is not None else "none"
+            if machine.orca_time_cost is not None and printer_currency is not None:
+                if currency is None or printer_currency == currency:
+                    rate = machine.orca_time_cost
+                    rate_source = "orca_import"
+                    sources["rate"] = "orca"
+                else:
+                    rate_missing_reason = "currency_mismatch"
+            elif machine.orca_time_cost is not None:
+                rate_missing_reason = "missing_currency"
+            sources.setdefault("rate", "none")
+
+    if rate == 0:
+        rate_missing_reason = "non_positive"
+    elif rate is None and rate_missing_reason is None:
+        rate_missing_reason = "missing"
 
     machine_cost = wear_and_upkeep + electricity_per_hour
     margin = rate - machine_cost if rate is not None else 0.0
+    required_fields = [
+        EconomicsReadinessFieldValue(
+            key="currency",
+            value=currency,
+            source=currency_source,
+            source_currency=currency,
+            usable=currency is not None,
+            missing_reason=None if currency is not None else "missing_currency",
+        ),
+        EconomicsReadinessFieldValue(
+            key="machine_hour_rate",
+            value=rate,
+            source=rate_source,
+            source_currency=(
+                printer_currency
+                if rate_source in {"printer_explicit", "catalog_estimate", "orca_import"}
+                else account_currency
+            ),
+            usable=rate is not None and rate > 0,
+            missing_reason=rate_missing_reason,
+        ),
+        EconomicsReadinessFieldValue(
+            key="electricity_cost_per_kwh",
+            value=tariff_value,
+            source=tariff_source,
+            source_currency=account_currency,
+            usable=tariff_value is not None,
+            missing_reason=None if tariff_value is not None else "missing",
+        ),
+        EconomicsReadinessFieldValue(
+            key="printer_power_w",
+            value=power if power > 0 else None,
+            source=power_source,
+            source_currency=None,
+            usable=power > 0,
+            missing_reason=None if power > 0 else "missing",
+        ),
+        EconomicsReadinessFieldValue(
+            key="machine_wear_per_hour",
+            value=(
+                wear_and_upkeep if printer_wear_complete or account_wear is not None else None
+            ),
+            source=wear_source,
+            source_currency=(printer_currency if printer_wear_complete else account_currency),
+            usable=printer_wear_complete or account_wear is not None,
+            missing_reason=(
+                None if printer_wear_complete or account_wear is not None else "missing"
+            ),
+        ),
+    ]
+    readiness = _readiness(
+        currency=currency,
+        fields=required_fields,
+        extra_reasons=extra_reasons,
+    )
     return ResolvedEconomics(
         printer_power_w=power,
         amortization_rate_per_hour=wear_and_upkeep,
@@ -423,6 +835,16 @@ async def resolve_economics(
         electricity_per_hour=electricity_per_hour,
         maintenance_per_hour=maintenance,
         machine_cost_per_hour=machine_cost,
-        rate_below_cost=rate is not None and margin < 0,
+        rate_below_cost=rate is not None and rate > 0 and margin < 0,
         sources=sources,
+        applied_sources={
+            "currency": currency_source,
+            "machine_hour_rate": rate_source,
+            "electricity_cost_per_kwh": tariff_source,
+            "printer_power_w": power_source,
+            "machine_wear_per_hour": wear_source,
+            "depreciation_per_hour": depreciation_source,
+            "maintenance_per_hour": maintenance_source,
+        },
+        readiness=readiness,
     )

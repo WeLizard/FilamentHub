@@ -18,6 +18,7 @@ from app.services.printer_economics_service import resolve_economics, suggest_ec
 async def _printer(
     db: AsyncSession, user: User, name: str = "Voron at home", **fields
 ) -> UserPrinterDevice:
+    fields.setdefault("economics_currency", "RUB")
     printer = UserPrinterDevice(
         user_id=user.id, name=name, device_fingerprint=None, supports_hh=False, **fields
     )
@@ -148,6 +149,39 @@ async def test_a_trade_in_value_cannot_exceed_what_the_machine_cost(
         json={"purchase_cost": 50_000, "residual_value": 60_000},
     )
     assert refused.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_sparse_updates_validate_residual_against_saved_purchase(
+    auth_client: AsyncClient, db_session: AsyncSession, auth_user: User
+) -> None:
+    printer = await _printer(db_session, auth_user)
+    initial = await auth_client.patch(
+        f"/api/v1/physical-printers/{printer.id}/economics",
+        json={"purchase_cost": 50_000, "residual_value": 40_000},
+    )
+    assert initial.status_code == 200
+
+    raised_residual = await auth_client.patch(
+        f"/api/v1/physical-printers/{printer.id}/economics",
+        json={"residual_value": 60_000},
+    )
+    lowered_purchase = await auth_client.patch(
+        f"/api/v1/physical-printers/{printer.id}/economics",
+        json={"purchase_cost": 30_000},
+    )
+
+    assert raised_residual.status_code == 422
+    assert lowered_purchase.status_code == 422
+    assert raised_residual.json()["detail"]["code"] == (
+        "ERR_PRINTER_ECONOMICS_RESIDUAL_ABOVE_PURCHASE"
+    )
+    saved = await auth_client.get(
+        f"/api/v1/physical-printers/{printer.id}/economics"
+    )
+    assert saved.status_code == 200
+    assert saved.json()["purchase_cost"] == 50_000.0
+    assert saved.json()["residual_value"] == 40_000.0
 
 
 @pytest.mark.asyncio

@@ -1739,6 +1739,53 @@ export interface CalculatorEstimateResponse {
   applied_tax_rate_percent?: number | null;
 }
 
+export type EconomicsSource =
+  | 'printer_explicit'
+  | 'account_explicit'
+  | 'orca_import'
+  | 'platform_default'
+  | 'catalog_estimate'
+  | 'none';
+
+export type EconomicsReadinessStatus = 'configured' | 'partial' | 'incomplete';
+
+export type EconomicsMissingReason =
+  | 'missing'
+  | 'non_positive'
+  | 'missing_currency'
+  | 'currency_mismatch'
+  | 'incomplete_pair';
+
+export type EconomicsReadinessReason =
+  | EconomicsMissingReason
+  | 'provenance_unknown'
+  | 'platform_default_used'
+  | 'catalog_estimate_used';
+
+export type EconomicsReadinessFieldKey =
+  | 'currency'
+  | 'machine_hour_rate'
+  | 'electricity_cost_per_kwh'
+  | 'printer_power_w'
+  | 'machine_wear_per_hour';
+
+export interface EconomicsReadinessField {
+  key: EconomicsReadinessFieldKey;
+  value: number | string | null;
+  source: EconomicsSource;
+  source_currency: string | null;
+  usable: boolean;
+  missing_reason: EconomicsMissingReason | null;
+}
+
+export interface EconomicsReadiness {
+  version: 1;
+  status: EconomicsReadinessStatus;
+  money_currency: string | null;
+  required_fields: EconomicsReadinessField[];
+  reasons: EconomicsReadinessReason[];
+}
+
 export interface CalculatorMaterialIdentityResolution {
   status: 'resolved' | 'ambiguous' | 'unresolved';
   source?:
@@ -1931,9 +1978,12 @@ export interface CalculatorProfileResponse {
   currency: string;
   quote_number_prefix: string;
   updated_at: string;
+  economics_readiness: EconomicsReadiness;
 }
 
-export type CalculatorProfileUpdate = Partial<Omit<CalculatorProfileResponse, 'updated_at'>>;
+export type CalculatorProfileUpdate = Partial<
+  Omit<CalculatorProfileResponse, 'updated_at' | 'economics_readiness'>
+>;
 
 export type CalculatorProfileDefaults = Omit<
   CalculatorProfileResponse,
@@ -1950,6 +2000,7 @@ export type CalculatorProfileDefaults = Omit<
   | 'disclaimer_mode'
   | 'quote_number_prefix'
   | 'updated_at'
+  | 'economics_readiness'
 >;
 
 export interface CalculatorCountryDefaults {

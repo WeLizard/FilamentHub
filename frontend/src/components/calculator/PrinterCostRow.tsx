@@ -1,19 +1,23 @@
 import { useTranslation } from 'react-i18next';
 import { AlertTriangle } from 'lucide-react';
 
-import type { PhysicalPrinter, PrinterEconomics } from '../../api/client';
+import type { PhysicalPrinter } from '../../api/client';
 import { Printer3DIcon } from '../icons/Printer3DIcon';
-import { currencySymbol } from '../../utils/currency';
+import {
+  EconomicsReadinessPanel,
+  type EconomicsReadinessEntry,
+} from './EconomicsReadinessPanel';
 
 interface PrinterCostRowProps {
   printers: PhysicalPrinter[];
   selectedPrinterId: number | '';
   onSelect: (printerId: number | '') => void;
-  economics: PrinterEconomics | null;
-  currency: string;
   pickedFromLabel?: string | null;
   rateMissing?: boolean;
   onFixRate?: () => void;
+  readinessEntries?: EconomicsReadinessEntry[];
+  readinessLoading?: boolean;
+  readinessError?: boolean;
 }
 
 const selectClass =
@@ -23,32 +27,14 @@ export const PrinterCostRow: React.FC<PrinterCostRowProps> = ({
   printers,
   selectedPrinterId,
   onSelect,
-  economics,
-  currency,
   pickedFromLabel = null,
   rateMissing = false,
   onFixRate,
+  readinessEntries = [],
+  readinessLoading = false,
+  readinessError = false,
 }) => {
   const { t } = useTranslation();
-  const symbol = currencySymbol(economics?.calculator_currency || currency);
-  const rateSource = economics?.sources?.rate;
-  const resolvedRateHint = economics?.rate_below_cost
-    ? t('printerCost.rowCostFloor', {
-        cost: `${economics.machine_cost_per_hour.toFixed(2)} ${symbol}`,
-      })
-    : economics && economics.effective_machine_hour_rate > 0
-      ? rateSource === 'printer' || !rateSource
-        ? t('printerCost.rowConfigured', {
-            rate: `${economics.effective_machine_hour_rate.toFixed(2)} ${symbol}`,
-          })
-        : t('printerCost.rowFallbackRate', {
-            rate: `${economics.effective_machine_hour_rate.toFixed(2)} ${symbol}`,
-            origin: rateSource === 'orca'
-              ? t('printerCost.originOrca')
-              : t('printerCost.originAccount'),
-          })
-      : t('printerCost.notConfiguredHint');
-
   return (
     <div
       id="calculator-printer-row"
@@ -76,11 +62,20 @@ export const PrinterCostRow: React.FC<PrinterCostRowProps> = ({
       <p className="mt-2 text-xs leading-5 text-slate-500">
         {selectedPrinterId === ''
           ? t('printerCost.noPrinterHint')
-          : resolvedRateHint}
+          : t('printerCost.machineSelectedHint')}
         {pickedFromLabel ? ` · ${pickedFromLabel}` : ''}
       </p>
 
-      {rateMissing ? (
+      <div className="mt-3">
+        <EconomicsReadinessPanel
+          entries={readinessEntries}
+          isLoading={readinessLoading}
+          error={readinessError}
+          onConfigure={onFixRate}
+        />
+      </div>
+
+      {rateMissing && readinessEntries.length === 0 && !readinessLoading ? (
         <p className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs leading-5 text-amber-300/90">
           <span className="flex items-start gap-1.5">
             <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />

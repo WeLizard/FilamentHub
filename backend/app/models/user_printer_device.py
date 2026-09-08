@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 from uuid import uuid4
 
 from sqlalchemy import (
+    JSON,
     Boolean,
     DateTime,
     Float,
@@ -62,6 +63,9 @@ class UserPrinterDevice(Base):
     maintenance_cost_per_hour: Mapped[float | None] = mapped_column(Float, nullable=True)
     machine_hour_rate: Mapped[float | None] = mapped_column(Float, nullable=True)
     economics_currency: Mapped[str | None] = mapped_column(String(4), nullable=True)
+    economics_field_sources: Mapped[dict[str, str]] = mapped_column(
+        JSON, nullable=False, default=dict, server_default="{}"
+    )
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

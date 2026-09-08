@@ -10,10 +10,11 @@ interface PowerPartsBreakdownProps {
   steppers: number;
   electronics: number;
   onChange: (part: Part, value: number) => void;
+  onCommit?: (part: Part, value: number | null) => void;
 }
 
 const inputClass =
-  'w-full rounded-xl border border-white/10 bg-slate-950/60 px-3 py-1.5 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-400/60';
+  'w-full max-w-[8rem] rounded-xl border border-white/10 bg-slate-950/60 px-3 py-1.5 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-400/60';
 
 export const PowerPartsBreakdown: React.FC<PowerPartsBreakdownProps> = ({
   hotend,
@@ -21,9 +22,11 @@ export const PowerPartsBreakdown: React.FC<PowerPartsBreakdownProps> = ({
   steppers,
   electronics,
   onChange,
+  onCommit,
 }) => {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
+  const [drafts, setDrafts] = useState<Partial<Record<Part, string>>>({});
   const total = hotend + bed + steppers + electronics;
 
   const part = (name: Part, label: string, value: number) => (
@@ -32,10 +35,25 @@ export const PowerPartsBreakdown: React.FC<PowerPartsBreakdownProps> = ({
       <input
         type="number"
         min="0"
+        inputMode="decimal"
         className={inputClass}
-        value={value || ''}
+        value={drafts[name] ?? String(value)}
         placeholder="0"
-        onChange={(event) => onChange(name, Math.max(0, Number(event.target.value) || 0))}
+        onChange={(event) => {
+          const rawValue = event.target.value;
+          setDrafts((current) => ({ ...current, [name]: rawValue }));
+          if (rawValue !== '') onChange(name, Math.max(0, Number(rawValue) || 0));
+          else if (!onCommit) onChange(name, 0);
+        }}
+        onBlur={(event) => {
+          const rawValue = event.target.value;
+          setDrafts((current) => {
+            const next = { ...current };
+            delete next[name];
+            return next;
+          });
+          onCommit?.(name, rawValue === '' ? null : Math.max(0, Number(rawValue) || 0));
+        }}
       />
     </label>
   );

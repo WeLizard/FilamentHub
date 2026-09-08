@@ -1,7 +1,8 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
-import type { PhysicalPrinter, PrinterEconomics } from '../../api/client';
+import type { PhysicalPrinter } from '../../api/client';
+import type { EconomicsReadiness, EconomicsReadinessStatus, EconomicsSource } from '../../types/api';
 import { PrinterCostRow } from './PrinterCostRow';
 
 vi.mock('react-i18next', () => ({
@@ -13,98 +14,126 @@ vi.mock('react-i18next', () => ({
 
 const printer = { id: 1, name: 'Workshop' } as unknown as PhysicalPrinter;
 
-const economics = (rateSource: string, rate: number): PrinterEconomics => ({
-  printer_id: 1,
-  configured: rateSource === 'printer',
-  purchase_cost: null,
-  residual_value: null,
-  useful_life_hours: null,
-  average_power_watts: 350,
-  power_hotend_w: null,
-  power_bed_w: null,
-  power_steppers_w: null,
-  power_electronics_w: null,
-  maintenance_cost_per_hour: null,
-  machine_hour_rate: rate || null,
-  economics_currency: 'RUB',
-  calculator_currency: 'RUB',
-  depreciation_per_hour: 0,
-  electricity_per_hour: 2.1,
-  maintenance_per_hour: 0,
-  machine_cost_per_hour: 2.1,
-  effective_machine_hour_rate: rate,
-  rate_below_cost: false,
-  calculator_printer_power_w: 350,
-  calculator_printing_rate_per_hour: Math.max(0, rate - 2.1),
-  calculator_amortization_rate_per_hour: 0,
-  calculator_electricity_cost_per_kwh: 6,
-  sources: { rate: rateSource },
+const readiness = (
+  status: EconomicsReadinessStatus,
+  source: EconomicsSource = 'printer_explicit',
+): EconomicsReadiness => ({
+  version: 1,
+  status,
+  money_currency: 'RUB',
+  required_fields: [{
+    key: 'machine_hour_rate',
+    value: status === 'incomplete' ? null : 80,
+    source: status === 'incomplete' ? 'none' : source,
+    source_currency: 'RUB',
+    usable: status !== 'incomplete',
+    missing_reason: status === 'incomplete' ? 'missing' : null,
+  }],
+  reasons: status === 'configured' ? [] : [
+    status === 'partial' ? 'catalog_estimate_used' : 'missing',
+  ],
 });
 
 const renderRow = (
-  resolvedEconomics: PrinterEconomics,
-  rateMissing = false,
+  entries = [{ id: 'printer-1', label: 'Workshop', readiness: readiness('configured') }],
   onFixRate = vi.fn(),
 ) => render(
   <PrinterCostRow
     printers={[printer]}
     selectedPrinterId={printer.id}
     onSelect={vi.fn()}
-    economics={resolvedEconomics}
-    currency="RUB"
-    rateMissing={rateMissing}
+    readinessEntries={entries}
     onFixRate={onFixRate}
   />,
 );
 
-describe('PrinterCostRow rate discoverability', () => {
-  it.each([
-    ['account', 'printerCost.originAccount'],
-    ['orca', 'printerCost.originOrca'],
-  ])('names the %s fallback that will be charged', (rateSource, originKey) => {
-    const view = renderRow(economics(rateSource, 80));
+describe('PrinterCostRow economics readiness', () => {
+  it('shows a configured state before calculation', () => {
+    renderRow();
 
-    expect(view.container).toHaveTextContent('printerCost.rowFallbackRate');
-    expect(view.container).toHaveTextContent(originKey);
-    expect(screen.queryByText('printerCost.rateMissing')).not.toBeInTheDocument();
+    expect(screen.getByText('printerCost.readiness.status.configured.title')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'printerCost.readiness.configure' })).not.toBeInTheDocument();
   });
 
-  it('keeps a printer-owned rate distinct from fallbacks', () => {
-    const view = renderRow(economics('printer', 45));
+  it('uses the exhaustive source label in readiness details', () => {
+    renderRow([{ id: 'printer-1', label: 'Workshop', readiness: readiness('partial', 'catalog_estimate') }]);
 
-    expect(view.container).toHaveTextContent('printerCost.rowConfigured');
-    expect(view.container).not.toHaveTextContent('printerCost.rowFallbackRate');
+    fireEvent.click(screen.getByText('printerCost.readiness.sourcesTitle'));
+    expect(screen.getByText('printerCost.readiness.sources.catalog_estimate')).toBeInTheDocument();
+    expect(screen.getByText('printerCost.readiness.reasons.catalog_estimate_used')).toBeInTheDocument();
   });
 
-  it('labels an account fallback with its resolved currency', () => {
-    const view = renderRow({
-      ...economics('account', 170),
-      economics_currency: 'USD',
-      calculator_currency: 'RUB',
+  it('shows mixed resolved sources without assigning them to individual editor inputs', () => {
+    const contract = readiness('partial', 'account_explicit');
+    contract.required_fields.push({
+      key: 'printer_power_w',
+      value: 320,
+      source: 'catalog_estimate',
+      source_currency: null,
+      usable: true,
+      missing_reason: null,
     });
+    renderRow([{ id: 'printer-1', label: 'Workshop', readiness: contract }]);
 
-    expect(view.container).toHaveTextContent('₽');
-    expect(view.container).not.toHaveTextContent('$');
+    fireEvent.click(screen.getByText('printerCost.readiness.sourcesTitle'));
+    expect(screen.getByText('printerCost.readiness.sources.account_explicit')).toBeInTheDocument();
+    expect(screen.getByText('printerCost.readiness.sources.catalog_estimate')).toBeInTheDocument();
   });
 
-  it('explains a missing rate and offers one direct settings action', () => {
+  it('offers one natural-width action for incomplete economics', () => {
     const onFixRate = vi.fn();
-    renderRow(economics('none', 0), true, onFixRate);
+    renderRow([{ id: 'printer-1', label: 'Workshop', readiness: readiness('incomplete') }], onFixRate);
 
-    expect(screen.getByText('printerCost.rateMissing')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'printerCost.rateMissingAction' }));
+    const action = screen.getByRole('button', { name: 'printerCost.readiness.configure' });
+    expect(action).not.toHaveClass('w-full');
+    fireEvent.click(action);
     expect(onFixRate).toHaveBeenCalledOnce();
   });
 
-  it('names the cost floor when a chosen rate is below machine cost', () => {
-    const view = renderRow({
-      ...economics('printer', 5),
-      machine_cost_per_hour: 20.26,
-      rate_below_cost: true,
-    });
+  it('explains a contract-level incomplete pair', () => {
+    const contract = readiness('partial');
+    contract.reasons = ['incomplete_pair'];
+    renderRow([{ id: 'printer-1', label: 'Workshop', readiness: contract }]);
 
-    expect(view.container).toHaveTextContent('printerCost.rowCostFloor');
-    expect(view.container).toHaveTextContent('20.26');
-    expect(view.container).not.toHaveTextContent('printerCost.rowConfigured');
+    fireEvent.click(screen.getByText('printerCost.readiness.sourcesTitle'));
+    expect(screen.getByText('printerCost.readiness.reasons.incomplete_pair')).toBeInTheDocument();
+  });
+
+  it('does not repeat a contract reason already shown on its field', () => {
+    const view = renderRow([{
+      id: 'printer-1',
+      label: 'Workshop',
+      readiness: readiness('incomplete'),
+    }]);
+
+    fireEvent.click(screen.getByText('printerCost.readiness.sourcesTitle'));
+    const text = view.container.textContent ?? '';
+    expect(text.split('printerCost.readiness.reasons.missing')).toHaveLength(2);
+    expect(screen.queryByText('printerCost.readiness.reasonsTitle')).not.toBeInTheDocument();
+  });
+
+  it('names every affected printer in a mixed batch and uses the worst state', () => {
+    renderRow([
+      { id: 'printer-1', label: 'Workshop', readiness: readiness('partial') },
+      { id: 'printer-2', label: 'Backup', readiness: readiness('incomplete') },
+    ]);
+
+    expect(screen.getByText('printerCost.readiness.status.incomplete.title')).toBeInTheDocument();
+    expect(screen.getByText(/Workshop, Backup/)).toBeInTheDocument();
+  });
+
+  it('keeps a load failure visible', () => {
+    render(
+      <PrinterCostRow
+        printers={[printer]}
+        selectedPrinterId={printer.id}
+        onSelect={vi.fn()}
+        readinessEntries={[]}
+        readinessError
+        onFixRate={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText('printerCost.readiness.unavailable')).toBeInTheDocument();
   });
 });
