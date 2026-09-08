@@ -7848,6 +7848,43 @@
       "moonraker": "Moonraker",
       "octoprint": "OctoPrint"
     },
+    "connectionSources": "Связь: {{sources}}",
+    "connectionChannel": {
+      "edge": "FH Edge",
+      "orca": "OrcaSlicer",
+      "moonraker": "Moonraker",
+      "octoprint": "OctoPrint",
+      "adapter": "Локальный адаптер"
+    },
+    "topologyAuthority": "Топология: {{source}}",
+    "topologyAuthorityWithAge": "Источник топологии: {{source}} · {{age}}",
+    "observationSource": {
+      "happyHareEdge": "Happy Hare через FH Edge",
+      "happyHareMoonraker": "Happy Hare через Moonraker",
+      "bambuLan": "Bambu LAN",
+      "orca": "OrcaSlicer",
+      "octoprint": "OctoPrint",
+      "manual": "Ручной ввод",
+      "adapter": "Локальный адаптер"
+    },
+    "sourceConflict": {
+      "slotIndicator": "Источники сообщают разные данные для этого слота.",
+      "description": "Источники сообщают разные данные: {{fields}}.",
+      "selected": "Сейчас показаны данные источника: {{source}}.",
+      "fields": {
+        "present": "наличие филамента",
+        "active_feed": "активный путь подачи",
+        "spool_id": "катушка",
+        "tag_uid": "метка катушки",
+        "tag_technology": "тип метки",
+        "tag_format": "формат метки",
+        "material": "материал",
+        "color_hex": "цвет",
+        "remaining_percent": "остаток в процентах",
+        "remaining_grams": "остаток в граммах",
+        "data": "данные слота"
+      }
+    },
     "slotCount": {
       "question_one": "Нашли {{count}} слот. Всё верно?",
       "question_few": "Нашли {{count}} слота. Всё верно?",
@@ -7933,6 +7970,7 @@
       "title": "Слот {{gate}}",
       "hhInfo": "Happy Hare: {{material}}",
       "providerInfo": "{{provider}} сообщает: {{observation}}",
+      "providerInfoWithAge": "{{provider}} · {{age}}: {{observation}}",
       "searchPreset": "Поиск пресета...",
       "noPresets": "Пресеты не найдены",
       "noPresetsForFilament": "В вашей библиотеке нет пресетов для этого филамента",

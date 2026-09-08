@@ -7,7 +7,19 @@ const invalidateQueriesMock = vi.fn();
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string) => key,
+    t: (key: string, options?: Record<string, unknown>) => {
+      if (key === 'presetSlots.modal.providerInfoWithAge') {
+        return `${options?.provider} · ${options?.age}: ${options?.observation}`;
+      }
+      if (key === 'presetSlots.sourceConflict.description') {
+        return `${key}:${options?.fields}`;
+      }
+      if (key === 'presetSlots.sourceConflict.selected') {
+        return `${key}:${options?.source}`;
+      }
+      return key;
+    },
+    i18n: { language: 'en' },
   }),
 }));
 
@@ -355,5 +367,55 @@ describe('PresetAssignModal', () => {
         spool_id: 31,
       });
     });
+  });
+
+  it('shows the selected observation source and explains a source conflict without reconciling it', async () => {
+    const { PresetAssignModal } = await import('../components/presetSlots/PresetAssignModal');
+
+    render(
+      <PresetAssignModal
+        isOpen
+        gateIndex={1}
+        gate={null}
+        slotObservation={{
+          source: 'happy_hare_edge',
+          observed_at: '2026-09-08T11:59:00Z',
+          received_at: new Date().toISOString(),
+          present: true,
+          active_feed: false,
+          material: 'PLA',
+          color_hex: '3366FF',
+          remaining_percent: null,
+          remaining_grams: null,
+        }}
+        sourceConflict={{
+          code: 'sources_disagree',
+          fields: ['material', 'color_hex'],
+          sources: ['happy_hare_edge', 'happy_hare_moonraker'],
+        }}
+        physicalPrinterId={1}
+        materialSystemId={2}
+        materialSlotId={10}
+        assignmentRevision={0}
+        expectedSpoolId={null}
+        deviceName="Device"
+        systemName="Happy Hare"
+        provider="happy_hare"
+        spools={[]}
+        onClose={vi.fn()}
+        onAssigned={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText(
+      /presetSlots\.observationSource\.happyHareEdge · deviceLink\.time\.ltMinute/,
+    )).toBeInTheDocument();
+    expect(screen.getByText(
+      'presetSlots.sourceConflict.description:presetSlots.sourceConflict.fields.material and presetSlots.sourceConflict.fields.color_hex',
+    )).toBeInTheDocument();
+    expect(screen.getByText(
+      'presetSlots.sourceConflict.selected:presetSlots.observationSource.happyHareEdge',
+    )).toBeInTheDocument();
+    expect(assignSlotMock).not.toHaveBeenCalled();
   });
 });

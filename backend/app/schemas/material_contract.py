@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.core.tag_identity import normalize_tag_format, normalize_tag_uid
+from app.models.material_system import TOPOLOGY_EVIDENCE_FRESHNESS
 from app.schemas.printer_connection_observation import PrinterIdentityEvidence
 
 CapabilityName = Literal[
@@ -233,6 +234,102 @@ class MaterialSlotObservationResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+MaterialSlotConflictField = Literal[
+    "present",
+    "active_feed",
+    "spool_id",
+    "tag_uid",
+    "tag_technology",
+    "tag_format",
+    "material",
+    "color_hex",
+    "remaining_percent",
+    "remaining_grams",
+]
+
+
+class MaterialSlotSourceConflictResponse(BaseModel):
+    code: Literal["sources_disagree"] = "sources_disagree"
+    fields: list[MaterialSlotConflictField]
+    sources: list[str]
+
+
+_COMPARABLE_SLOT_OBSERVATION_FIELDS: tuple[MaterialSlotConflictField, ...] = (
+    "present",
+    "active_feed",
+    "spool_id",
+    "tag_uid",
+    "tag_technology",
+    "tag_format",
+    "material",
+    "color_hex",
+    "remaining_percent",
+    "remaining_grams",
+)
+
+
+def _utc_datetime(value: datetime) -> datetime:
+    return value.astimezone(timezone.utc) if value.tzinfo else value.replace(tzinfo=timezone.utc)
+
+
+def _fresh_active_slot_observations(slot: Any) -> list[Any]:
+    now = datetime.now(timezone.utc)
+    observations = [
+        observation
+        for observation in slot.observations
+        if observation.connector.active
+        and now - _utc_datetime(observation.received_at) <= TOPOLOGY_EVIDENCE_FRESHNESS
+    ]
+    return sorted(
+        observations,
+        key=lambda observation: (
+            observation.source,
+            observation.connector.provider,
+            observation.connector.transport,
+            observation.connector.id,
+            observation.id,
+        ),
+    )
+
+
+def _slot_source_conflict(
+    observations: list[Any],
+) -> MaterialSlotSourceConflictResponse | None:
+    if len(observations) < 2:
+        return None
+    fields: list[MaterialSlotConflictField] = []
+    sources: set[str] = set()
+    for field_name in _COMPARABLE_SLOT_OBSERVATION_FIELDS:
+        comparable = [
+            (
+                observation.source,
+                _normalized_observation_fact(field_name, getattr(observation, field_name)),
+            )
+            for observation in observations
+            if getattr(observation, field_name) is not None
+        ]
+        if len({value for _, value in comparable}) < 2:
+            continue
+        fields.append(field_name)
+        sources.update(source for source, _ in comparable)
+    if not fields:
+        return None
+    return MaterialSlotSourceConflictResponse(fields=fields, sources=sorted(sources))
+
+
+def _normalized_observation_fact(field_name: str, value: Any) -> Any:
+    if not isinstance(value, str):
+        return value
+    normalized = value.strip()
+    if field_name == "color_hex":
+        return normalized.removeprefix("#").upper()
+    if field_name in {"material", "tag_technology", "tag_format"}:
+        return normalized.casefold()
+    if field_name == "tag_uid":
+        return normalize_tag_uid(normalized)
+    return normalized
+
+
 class MaterialSlotAssignmentResponse(BaseModel):
     id: int
     preset_id: int | None
@@ -251,6 +348,8 @@ class MaterialSlotResponse(BaseModel):
     assignment_revision: int
     assignment: MaterialSlotAssignmentResponse | None = None
     observation: MaterialSlotObservationResponse | None = None
+    observations: list[MaterialSlotObservationResponse] = Field(default_factory=list)
+    source_conflict: MaterialSlotSourceConflictResponse | None = None
     legacy_projection: LegacySlotProjectionResponse | None = None
 
     model_config = {"from_attributes": True}
@@ -281,6 +380,8 @@ class PhysicalPrinterConnectorResponse(BaseModel):
     last_observation_at: datetime | None
     last_snapshot_sequence: int | None
     last_snapshot_source_instance_id: str | None
+    topology_authority: bool
+    last_topology_at: datetime | None
     status_observation: "PhysicalPrinterStatusObservationResponse | None" = None
 
     model_config = {"from_attributes": True}
@@ -370,6 +471,7 @@ class PhysicalPrinterResponse(BaseModel):
                 assignment = MaterialSlotAssignmentResponse.model_validate(
                     slot.assignment, from_attributes=True
                 )
+            observations = _fresh_active_slot_observations(slot)
             slots.append(
                 MaterialSlotResponse(
                     id=slot.id,
@@ -384,6 +486,11 @@ class PhysicalPrinterResponse(BaseModel):
                         if slot.observation is not None
                         else None
                     ),
+                    observations=[
+                        MaterialSlotObservationResponse.model_validate(observation)
+                        for observation in observations
+                    ],
+                    source_conflict=_slot_source_conflict(observations),
                     legacy_projection=projection,
                 )
             )

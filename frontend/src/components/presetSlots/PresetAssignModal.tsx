@@ -3,7 +3,12 @@ import { useTranslation } from 'react-i18next';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Search, X, Loader2, CheckCircle2, Trash2, Package, Copy, Check, AlertTriangle } from 'lucide-react';
 import { presetsAPI, savedPresetsAPI } from '../../api/client';
-import type { GateState, MaterialSlotObservation, UserSpool } from '../../api/client';
+import type {
+  GateState,
+  MaterialSlotObservation,
+  MaterialSlotSourceConflict,
+  UserSpool,
+} from '../../api/client';
 import { useAuth } from '../../contexts/AuthContext';
 import { toast } from '../Toast';
 import { translateApiError } from '../../utils/translateApiError';
@@ -17,6 +22,12 @@ import {
   assignmentDeliveryNotice,
   assignMaterialSlot,
 } from './assignmentDelivery';
+import {
+  formatLastSeen,
+  formatLocalizedList,
+  observationSource,
+  useNow,
+} from '../../utils/deviceLink';
 
 interface PresetAssignModalProps {
   isOpen: boolean;
@@ -25,6 +36,7 @@ interface PresetAssignModalProps {
   slotKind?: string;
   slotLabel?: string | null;
   slotObservation?: MaterialSlotObservation | null;
+  sourceConflict?: MaterialSlotSourceConflict | null;
   physicalPrinterId: number;
   materialSystemId: number;
   materialSlotId: number;
@@ -46,6 +58,7 @@ export function PresetAssignModal({
   slotKind = 'slot',
   slotLabel = null,
   slotObservation = null,
+  sourceConflict = null,
   physicalPrinterId,
   materialSystemId,
   materialSlotId,
@@ -58,7 +71,7 @@ export function PresetAssignModal({
   onClose,
   onAssigned,
 }: PresetAssignModalProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const slotDisplayLabel = slotKind === 'bypass'
@@ -75,6 +88,7 @@ export function PresetAssignModal({
   // When a spool is chosen, the preset list is scoped to its filament to cut
   // the noise of the whole catalog; this opts back into the global search.
   const [showAllPresets, setShowAllPresets] = useState(false);
+  const now = useNow();
 
   const searchRef = useRef<HTMLInputElement>(null);
 
@@ -260,8 +274,14 @@ export function PresetAssignModal({
 
   if (!isOpen) return null;
 
-  const colorHex = gate?.hh_color_hex ? `#${gate.hh_color_hex.replace(/^#/, '')}` : null;
-  const providerLabel = t(`presetSlots.provider.${provider}`, { defaultValue: provider });
+  const observedColor = slotObservation?.color_hex ?? gate?.hh_color_hex;
+  const colorHex = observedColor ? `#${observedColor.replace(/^#/, '')}` : null;
+  const providerLabel = slotObservation
+    ? t(`presetSlots.observationSource.${observationSource(slotObservation.source)}`)
+    : t(`presetSlots.provider.${provider}`, { defaultValue: provider });
+  const observationAge = slotObservation
+    ? formatLastSeen(slotObservation.received_at, t, i18n.language, now)
+    : null;
   const bypassStatus = slotKind !== 'bypass' || slotObservation == null
     ? null
     : slotObservation.active_feed
@@ -271,14 +291,18 @@ export function PresetAssignModal({
           ? t('presetSlots.route.bypassSelectedEmpty')
           : t('presetSlots.route.bypassSelected')
       : t('presetSlots.route.bypassIdle');
-  const observedStatus = gate?.hh_status === 0
+  const observedStatus = slotObservation?.present === false || gate?.hh_status === 0
     ? t('presetSlots.hhStatus.empty')
-    : gate?.hh_status === 1 || gate?.hh_status === 2
+    : slotObservation?.present === true || gate?.hh_status === 1 || gate?.hh_status === 2
       ? t('presetSlots.hhStatus.loaded')
         : t('presetSlots.hhStatus.unknown');
-  const observedDescription = bypassStatus ?? (gate?.hh_status === 1 || gate?.hh_status === 2
-    ? gate?.hh_material ?? observedStatus
-    : [gate?.hh_material, observedStatus].filter(Boolean).join(' · '));
+  const observedMaterial = slotObservation?.material ?? gate?.hh_material;
+  const observedLoaded = slotObservation?.present === true
+    || gate?.hh_status === 1
+    || gate?.hh_status === 2;
+  const observedDescription = bypassStatus ?? (observedLoaded
+    ? observedMaterial ?? observedStatus
+    : [observedMaterial, observedStatus].filter(Boolean).join(' · '));
   const hasProviderObservation = slotObservation != null
     || gate?.hh_status != null
     || gate?.hh_material != null
@@ -333,11 +357,28 @@ export function PresetAssignModal({
               />
             )}
             <span className="text-xs text-gray-400">
-              {t('presetSlots.modal.providerInfo', {
+              {t(observationAge
+                ? 'presetSlots.modal.providerInfoWithAge'
+                : 'presetSlots.modal.providerInfo', {
                 provider: providerLabel,
+                age: observationAge,
                 observation: observedDescription,
               })}
             </span>
+          </div>
+        )}
+
+        {sourceConflict?.code === 'sources_disagree' && (
+          <div className="border-b border-white/5 bg-white/[0.03] px-5 py-2.5 text-xs text-gray-400" role="status">
+            <p>{t('presetSlots.sourceConflict.description', {
+              fields: formatLocalizedList(sourceConflict.fields
+                .map((field) => t(`presetSlots.sourceConflict.fields.${field}`, {
+                  defaultValue: t('presetSlots.sourceConflict.fields.data'),
+                })), i18n.language),
+            })}</p>
+            <p className="mt-1 text-gray-500">
+              {t('presetSlots.sourceConflict.selected', { source: providerLabel })}
+            </p>
           </div>
         )}
 

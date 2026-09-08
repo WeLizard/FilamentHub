@@ -1,11 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import {
+  activeMaterialSystemConnectors,
+  connectorChannels,
   DEVICE_LINK_ACTIVE_MS,
   DEVICE_LINK_DELAYED_MS,
   formatLastSeen,
+  formatLocalizedList,
   getDeviceLinkState,
   latestDeviceContact,
   latestFreshStatusConnector,
+  latestMaterialSystemContact,
+  observationSource,
 } from './deviceLink';
 
 const NOW = Date.parse('2026-07-17T12:00:00Z');
@@ -45,6 +50,72 @@ describe('latestDeviceContact', () => {
       '2026-07-17T11:59:00Z',
     )).toBe('2026-07-17T11:59:00Z');
     expect(latestDeviceContact(null, 'invalid')).toBeNull();
+  });
+});
+
+describe('material-system connector summary', () => {
+  const connectors = [
+    {
+      id: 1,
+      active: true,
+      material_system_id: 21,
+      provider: 'bambu',
+      transport: 'orca_plugin_lan',
+      last_seen_at: iso(DEVICE_LINK_DELAYED_MS),
+    },
+    {
+      id: 2,
+      active: true,
+      material_system_id: 21,
+      provider: 'happy_hare',
+      transport: 'edge_agent',
+      last_seen_at: iso(30_000),
+    },
+    {
+      id: 3,
+      active: false,
+      material_system_id: 21,
+      provider: 'happy_hare',
+      transport: 'moonraker',
+      last_seen_at: iso(1_000),
+    },
+    {
+      id: 4,
+      active: true,
+      material_system_id: 22,
+      provider: 'octoprint',
+      transport: 'octoprint_plugin',
+      last_seen_at: iso(1_000),
+    },
+  ];
+
+  it('uses every active connector for the system and is independent of array order', () => {
+    expect(activeMaterialSystemConnectors(connectors, 21).map((item) => item.id)).toEqual([1, 2]);
+    expect(latestMaterialSystemContact(connectors, 21, iso(0))).toBe(iso(30_000));
+    expect(latestMaterialSystemContact([...connectors].reverse(), 21, iso(0))).toBe(iso(30_000));
+    expect(connectorChannels(activeMaterialSystemConnectors(connectors, 21))).toEqual(['edge', 'orca']);
+  });
+
+  it('uses the legacy printer contact only when the system has no connector', () => {
+    expect(latestMaterialSystemContact(connectors, 23, iso(20_000))).toBe(iso(20_000));
+    expect(latestMaterialSystemContact(connectors, 21, iso(0))).not.toBe(iso(0));
+  });
+});
+
+describe('observationSource', () => {
+  it('maps known sources and keeps unknown identifiers private', () => {
+    expect(observationSource('happy_hare_edge')).toBe('happyHareEdge');
+    expect(observationSource('edge_happy_hare')).toBe('happyHareEdge');
+    expect(observationSource('happy_hare_moonraker')).toBe('happyHareMoonraker');
+    expect(observationSource('bambu_lan_mqtt')).toBe('bambuLan');
+    expect(observationSource('internal_new_adapter_v9')).toBe('adapter');
+  });
+});
+
+describe('formatLocalizedList', () => {
+  it('uses locale-specific list punctuation', () => {
+    expect(formatLocalizedList(['material', 'color'], 'en')).toBe('material and color');
+    expect(formatLocalizedList(['材料', '颜色'], 'zh')).toBe('材料和颜色');
   });
 });
 

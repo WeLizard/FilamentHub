@@ -575,4 +575,43 @@ describe('GateMapGrid material slots', () => {
     expect(screen.queryByText('presetSlots.hhStatus.spool')).not.toBeInTheDocument();
     expect(screen.queryByText('presetSlots.observation.noData')).not.toBeInTheDocument();
   });
+
+  it('marks a slot when fresh sources disagree before it is opened', () => {
+    const slot: MaterialSlot = {
+      ...observedSlot(null, 1, 'PLA', '3366FF'),
+      observation: {
+        source: 'happy_hare_edge',
+        observed_at: FRESH_SOURCE_TS,
+        received_at: FRESH_SOURCE_TS,
+        present: true,
+        active_feed: false,
+        material: 'PLA',
+        color_hex: '3366FF',
+        remaining_percent: null,
+        remaining_grams: null,
+      },
+      source_conflict: {
+        code: 'sources_disagree',
+        fields: ['material'],
+        sources: ['happy_hare_edge', 'happy_hare_moonraker'],
+      },
+    };
+
+    render(
+      <GateMapGrid
+        slots={[slot]}
+        gates={[]}
+        presets={{}}
+        spools={[]}
+        onGateClick={vi.fn()}
+      />,
+    );
+
+    const indicator = screen.getByTitle(
+      'presetSlots.sourceConflict.slotIndicator presetSlots.hhStatus.spoolTooltip',
+    );
+    expect(indicator).toHaveAttribute('aria-label', 'presetSlots.sourceConflict.slotIndicator');
+    expect(indicator).not.toHaveClass('@max-[5rem]:hidden');
+    expect(indicator.querySelector('.lucide-triangle-alert')).toBeInTheDocument();
+  });
 });

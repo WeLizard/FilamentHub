@@ -208,6 +208,7 @@ export function GateMapGrid({
         const observedSpool = hasObservation && slot.observation?.spool_identity_known
           && slot.observation.spool_id != null ? spoolMap.get(slot.observation.spool_id) : null;
         const hasConflict = comparison.conflict != null;
+        const hasSourceConflict = slot.source_conflict?.code === 'sources_disagree';
         // An observation older than the freshness window stops describing the
         // hardware, but it is still the last thing the printer told us. Keeping
         // it visible and dated beats showing the slot as if nothing was known.
@@ -252,29 +253,35 @@ export function GateMapGrid({
               </span>
               {hasObservation ? (
                 <span
+                  aria-label={hasSourceConflict
+                    ? t('presetSlots.sourceConflict.slotIndicator')
+                    : undefined}
                   title={[
-                    hasConflict
-                      ? t(`presetSlots.observation.conflict.${comparison.conflict}`)
+                    hasSourceConflict
+                      ? t('presetSlots.sourceConflict.slotIndicator')
+                      : hasConflict
+                        ? t(`presetSlots.observation.conflict.${comparison.conflict}`)
                       : null,
                     observationTooltip(slot, comparison.observationState, t),
                   ].filter(Boolean).join(' ')}
                   className={[
-                    'inline-flex min-h-5 min-w-0 max-w-full items-center justify-center gap-1 rounded-[5px] px-1.5 text-[9px] @max-[5rem]:hidden',
-                    hasConflict
+                    'inline-flex min-h-5 min-w-0 max-w-full items-center justify-center gap-1 rounded-[5px] px-1.5 text-[9px]',
+                    hasSourceConflict ? '@max-[5rem]:px-1' : '@max-[5rem]:hidden',
+                    hasConflict || hasSourceConflict
                       ? 'bg-amber-500/[0.08] text-amber-200/80'
                       : 'bg-emerald-500/[0.08] text-emerald-200/80',
                   ].join(' ')}
                 >
-                  {hasConflict
+                  {hasConflict || hasSourceConflict
                     ? <AlertTriangle className="h-2.5 w-2.5 shrink-0" />
                     : <CheckCircle2 className="h-2.5 w-2.5 shrink-0" />}
                   {observedColor && comparison.observationState !== 'empty' && (
                     <span
-                      className="h-2 w-2 shrink-0 rounded-full border border-white/20"
+                      className="h-2 w-2 shrink-0 rounded-full border border-white/20 @max-[5rem]:hidden"
                       style={{ backgroundColor: observedColor }}
                     />
                   )}
-                  <span className="truncate">
+                  <span className="truncate @max-[5rem]:hidden">
                     {observationLabel(
                       slot,
                       comparison.observationState,

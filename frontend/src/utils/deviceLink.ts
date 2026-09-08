@@ -17,6 +17,24 @@ export interface DeviceContactFreshness {
   inactiveMs: number;
 }
 
+interface MaterialSystemConnectorLike {
+  active: boolean;
+  material_system_id: number | null;
+  provider: string;
+  transport: string;
+  last_seen_at: string | null;
+}
+
+export type ConnectorChannel = 'edge' | 'orca' | 'moonraker' | 'octoprint' | 'adapter';
+export type ObservationSource =
+  | 'happyHareEdge'
+  | 'happyHareMoonraker'
+  | 'bambuLan'
+  | 'orca'
+  | 'octoprint'
+  | 'manual'
+  | 'adapter';
+
 // The real touch source is the adapter's own request cadence (Moonraker's
 // Spoolman polling, plugin sync), not a fixed heartbeat — thresholds are
 // deliberately generous.
@@ -42,6 +60,63 @@ export function latestDeviceContact(
     }
   }
   return latest;
+}
+
+/** Active links that can report this material system, independent of array order. */
+export function activeMaterialSystemConnectors<T extends MaterialSystemConnectorLike>(
+  connectors: readonly T[],
+  materialSystemId: number,
+): T[] {
+  return connectors.filter(
+    (connector) => connector.active && connector.material_system_id === materialSystemId,
+  );
+}
+
+/** Use the freshest system-specific link, retaining the printer fallback for legacy links. */
+export function latestMaterialSystemContact(
+  connectors: readonly MaterialSystemConnectorLike[],
+  materialSystemId: number,
+  printerLastSeenAt: string | null,
+): string | null {
+  const systemConnectors = activeMaterialSystemConnectors(connectors, materialSystemId);
+  if (systemConnectors.length === 0) return latestDeviceContact(printerLastSeenAt);
+  return latestDeviceContact(...systemConnectors.map((connector) => connector.last_seen_at));
+}
+
+export function connectorChannel(connector: Pick<MaterialSystemConnectorLike, 'provider' | 'transport'>): ConnectorChannel {
+  const value = `${connector.provider} ${connector.transport}`.toLowerCase();
+  if (value.includes('edge')) return 'edge';
+  if (value.includes('orca')) return 'orca';
+  if (value.includes('moonraker') || value.includes('klipper')) return 'moonraker';
+  if (value.includes('octoprint')) return 'octoprint';
+  return 'adapter';
+}
+
+/** Stable, deduplicated channel list. Multiple channels are not themselves a conflict. */
+export function connectorChannels(
+  connectors: readonly Pick<MaterialSystemConnectorLike, 'provider' | 'transport'>[],
+): ConnectorChannel[] {
+  const order: ConnectorChannel[] = ['edge', 'orca', 'moonraker', 'octoprint', 'adapter'];
+  const channels = new Set(connectors.map(connectorChannel));
+  return order.filter((channel) => channels.has(channel));
+}
+
+/** Translate normalized observation provenance without leaking internal source identifiers. */
+export function observationSource(source: string | null | undefined): ObservationSource {
+  const value = source?.toLowerCase() ?? '';
+  if (value.includes('happy_hare') || value.includes('happy-hare') || value.startsWith('hh_')) {
+    if (value.includes('edge')) return 'happyHareEdge';
+    if (value.includes('moonraker') || value === 'hh_snapshot') return 'happyHareMoonraker';
+  }
+  if (value === 'bambu_lan_mqtt') return 'bambuLan';
+  if (value.includes('orca')) return 'orca';
+  if (value.includes('octoprint')) return 'octoprint';
+  if (value === 'manual' || value === 'web_manual') return 'manual';
+  return 'adapter';
+}
+
+export function formatLocalizedList(values: readonly string[], locale: string): string {
+  return new Intl.ListFormat(locale, { style: 'long', type: 'conjunction' }).format(values);
 }
 
 interface StatusConnectorLike {

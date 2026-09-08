@@ -87,7 +87,11 @@ vi.mock('../hooks/usePrinterContactEvents', () => ({ usePrinterContactEvents: vi
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string, options?: Record<string, unknown>) =>
-      typeof options?.name === 'string'
+      typeof options?.sources === 'string'
+        ? `${key}:${options.sources}`
+        : typeof options?.source === 'string'
+          ? `${key}:${options.source}`
+          : typeof options?.name === 'string'
         ? `${key}:${options.name}`
         : typeof options?.id === 'number'
           ? `${key}:${options.id}`
@@ -760,6 +764,60 @@ describe('PresetSlotsPanel', () => {
       expect(screen.getByText('deviceLink.delayed')).toBeInTheDocument();
       act(() => vi.advanceTimersByTime(120_000));
       expect(screen.getByText('deviceLink.inactive')).toBeInTheDocument();
+      view.unmount();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('uses the freshest active material-system connector and treats multiple channels as normal', async () => {
+    const { PresetSlotsPanel } = await import(
+      '../components/presetSlots/PresetSlotsPanel'
+    );
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-08T12:00:00Z'));
+    physicalPrintersForQuery = [{
+      ...physicalPrinter,
+      last_seen_at: '2026-09-01T12:00:00Z',
+      material_systems: [{
+        ...physicalPrinter.material_systems[0],
+        provider: 'octoprint',
+      }],
+      connectors: [
+        {
+          id: 1,
+          material_system_id: 21,
+          provider: 'octoprint',
+          transport: 'orca_plugin_lan',
+          capabilities: [],
+          active: true,
+          last_seen_at: '2026-09-01T12:00:00Z',
+          topology_authority: false,
+          last_topology_at: null,
+        },
+        {
+          id: 2,
+          material_system_id: 21,
+          provider: 'octoprint',
+          transport: 'edge_agent',
+          capabilities: [],
+          active: true,
+          last_seen_at: '2026-09-08T11:59:30Z',
+          topology_authority: true,
+          last_topology_at: '2026-09-08T11:59:20Z',
+        },
+      ],
+    }];
+    try {
+      const view = render(<PresetSlotsPanel spools={[]} printerProfiles={[]} />);
+      expect(screen.getByText('deviceLink.active')).toBeInTheDocument();
+      expect(screen.getByText(
+        'presetSlots.connectionSources:presetSlots.connectionChannel.edge · presetSlots.connectionChannel.orca',
+      )).toBeInTheDocument();
+      expect(screen.getByText(
+        'presetSlots.topologyAuthority:presetSlots.connectionChannel.edge',
+      )).toBeInTheDocument();
+      expect(screen.queryByText('presetSlots.sourceConflict.description')).not.toBeInTheDocument();
       view.unmount();
     } finally {
       vi.useRealTimers();

@@ -21,7 +21,15 @@ import { removeBambuBridgeInPlugin } from '../../utils/pluginBridge';
 import { PresetAssignModal } from './PresetAssignModal';
 import { toast } from '../Toast';
 import { translateApiError } from '../../utils/translateApiError';
-import { formatLastSeen, getDeviceLinkState, latestDeviceContact, useNow } from '../../utils/deviceLink';
+import {
+  activeMaterialSystemConnectors,
+  connectorChannel,
+  connectorChannels,
+  formatLastSeen,
+  getDeviceLinkState,
+  latestMaterialSystemContact,
+  useNow,
+} from '../../utils/deviceLink';
 import { configuredNozzleHrc } from '../../utils/nozzleHardness';
 import { useAuth } from '../../contexts/AuthContext';
 import { safeStorage } from '../../utils/storage';
@@ -104,12 +112,22 @@ function MaterialSystemSection({ printer, system, presetsSeedMap, spools, spoolC
     () => safeStorage.get(collapseStorageKey) === '1',
   );
   const now = useNow();
-  const connector = printer.connectors.find(
-    (item) => item.material_system_id === system.id && item.active,
-  ) ?? null;
-  // The key belongs to the printer, so a system without its own connector still
-  // hears from it; falling back keeps a reporting printer from looking silent.
-  const lastSeenAt = latestDeviceContact(connector?.last_seen_at, printer.last_seen_at);
+  const systemConnectors = useMemo(
+    () => activeMaterialSystemConnectors(printer.connectors, system.id),
+    [printer.connectors, system.id],
+  );
+  const connectionChannels = useMemo(
+    () => connectorChannels(systemConnectors),
+    [systemConnectors],
+  );
+  const topologyAuthority = systemConnectors.find((item) => item.topology_authority) ?? null;
+  // Legacy connections did not identify their material system. Keep the printer
+  // fallback only when no system-specific connector exists.
+  const lastSeenAt = latestMaterialSystemContact(
+    printer.connectors,
+    system.id,
+    printer.last_seen_at,
+  );
   const linkState = getDeviceLinkState(lastSeenAt, now, adapter.contactMode, adapter.contactFreshness);
   const linkConfirmed = printer.reports_feed;
   const providerLabel = t(`presetSlots.provider.${system.provider}`, {
@@ -362,6 +380,30 @@ function MaterialSystemSection({ printer, system, presetsSeedMap, spools, spoolC
             {lastSeenAt && (
               <span className="rounded-full bg-white/5 px-2 py-0.5 text-[11px] text-gray-500">
                 {formatLastSeen(lastSeenAt, t, i18n.language, now)}
+              </span>
+            )}
+            {connectionChannels.length > 0 && (
+              <span className="rounded-full bg-white/5 px-2 py-0.5 text-[11px] text-gray-400">
+                {t('presetSlots.connectionSources', {
+                  sources: connectionChannels
+                    .map((channel) => t(`presetSlots.connectionChannel.${channel}`))
+                    .join(' · '),
+                })}
+              </span>
+            )}
+            {topologyAuthority && connectionChannels.length > 1 && (
+              <span
+                className="rounded-full bg-white/5 px-2 py-0.5 text-[11px] text-gray-500"
+                title={topologyAuthority.last_topology_at
+                  ? t('presetSlots.topologyAuthorityWithAge', {
+                    source: t(`presetSlots.connectionChannel.${connectorChannel(topologyAuthority)}`),
+                    age: formatLastSeen(topologyAuthority.last_topology_at, t, i18n.language, now),
+                  })
+                  : undefined}
+              >
+                {t('presetSlots.topologyAuthority', {
+                  source: t(`presetSlots.connectionChannel.${connectorChannel(topologyAuthority)}`),
+                })}
               </span>
             )}
           </div>
@@ -731,6 +773,7 @@ export function PresetSlotsPanel({
           slotKind={modalState.slot.kind}
           slotLabel={modalState.slot.label}
           slotObservation={modalState.slot.observation}
+          sourceConflict={modalState.slot.source_conflict}
           physicalPrinterId={modalState.printer.id}
           materialSystemId={modalState.system.id}
           materialSlotId={modalState.slot.id}

@@ -7668,6 +7668,43 @@
       "moonraker": "Moonraker",
       "octoprint": "OctoPrint"
     },
+    "connectionSources": "连接：{{sources}}",
+    "connectionChannel": {
+      "edge": "FH Edge",
+      "orca": "OrcaSlicer",
+      "moonraker": "Moonraker",
+      "octoprint": "OctoPrint",
+      "adapter": "本地适配器"
+    },
+    "topologyAuthority": "拓扑：{{source}}",
+    "topologyAuthorityWithAge": "拓扑来源：{{source}} · {{age}}",
+    "observationSource": {
+      "happyHareEdge": "通过 FH Edge 的 Happy Hare",
+      "happyHareMoonraker": "通过 Moonraker 的 Happy Hare",
+      "bambuLan": "Bambu LAN",
+      "orca": "OrcaSlicer",
+      "octoprint": "OctoPrint",
+      "manual": "手动输入",
+      "adapter": "本地适配器"
+    },
+    "sourceConflict": {
+      "slotIndicator": "数据源对此料槽报告了不同的数据。",
+      "description": "不同来源报告了不同数据：{{fields}}。",
+      "selected": "当前显示的数据来源：{{source}}。",
+      "fields": {
+        "present": "耗材存在状态",
+        "active_feed": "当前供料路径",
+        "spool_id": "料盘",
+        "tag_uid": "料盘标签",
+        "tag_technology": "标签类型",
+        "tag_format": "标签格式",
+        "material": "材料",
+        "color_hex": "颜色",
+        "remaining_percent": "剩余百分比",
+        "remaining_grams": "剩余克数",
+        "data": "槽位数据"
+      }
+    },
     "slotCount": {
       "question_other": "找到 {{count}} 个槽位。对吗？",
       "hint": "打印机只会报告放过料盘的槽位。如果实际更多，请填写真实数量。",
@@ -7751,6 +7788,7 @@
       "title": "位置 {{gate}}",
       "hhInfo": "Happy Hare: {{material}}",
       "providerInfo": "{{provider}} 报告：{{observation}}",
+      "providerInfoWithAge": "{{provider}} · {{age}}：{{observation}}",
       "searchPreset": "搜索预设...",
       "noPresets": "未找到预设",
       "noPresetsForFilament": "您的库中没有该耗材的预设",

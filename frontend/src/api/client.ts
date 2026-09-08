@@ -4239,7 +4239,15 @@ export interface MaterialSlot {
   assignment_revision: number;
   assignment: MaterialSlotAssignment | null;
   observation?: MaterialSlotObservation | null;
+  observations?: MaterialSlotObservation[];
+  source_conflict?: MaterialSlotSourceConflict | null;
   legacy_projection: LegacySlotProjection | null;
+}
+
+export interface MaterialSlotSourceConflict {
+  code: 'sources_disagree';
+  fields: string[];
+  sources: string[];
 }
 
 export interface MaterialSlotObservation {
@@ -4280,6 +4288,11 @@ export interface PhysicalPrinterConnector {
   capabilities: string[];
   active: boolean;
   last_seen_at: string | null;
+  last_observation_at?: string | null;
+  last_snapshot_sequence?: number | null;
+  last_snapshot_source_instance_id?: string | null;
+  topology_authority?: boolean;
+  last_topology_at?: string | null;
   status_observation?: PhysicalPrinterStatusObservation | null;
 }
 

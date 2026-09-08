@@ -7676,6 +7676,43 @@
       "moonraker": "Moonraker",
       "octoprint": "OctoPrint"
     },
+    "connectionSources": "Link: {{sources}}",
+    "connectionChannel": {
+      "edge": "FH Edge",
+      "orca": "OrcaSlicer",
+      "moonraker": "Moonraker",
+      "octoprint": "OctoPrint",
+      "adapter": "Local adapter"
+    },
+    "topologyAuthority": "Topology: {{source}}",
+    "topologyAuthorityWithAge": "Topology source: {{source}} · {{age}}",
+    "observationSource": {
+      "happyHareEdge": "Happy Hare via FH Edge",
+      "happyHareMoonraker": "Happy Hare via Moonraker",
+      "bambuLan": "Bambu LAN",
+      "orca": "OrcaSlicer",
+      "octoprint": "OctoPrint",
+      "manual": "Manual entry",
+      "adapter": "Local adapter"
+    },
+    "sourceConflict": {
+      "slotIndicator": "Sources report different data for this slot.",
+      "description": "Sources report different data: {{fields}}.",
+      "selected": "Currently showing data from: {{source}}.",
+      "fields": {
+        "present": "filament presence",
+        "active_feed": "active feed path",
+        "spool_id": "spool",
+        "tag_uid": "spool tag",
+        "tag_technology": "tag type",
+        "tag_format": "tag format",
+        "material": "material",
+        "color_hex": "color",
+        "remaining_percent": "remaining percent",
+        "remaining_grams": "remaining grams",
+        "data": "slot data"
+      }
+    },
     "slotCount": {
       "question_one": "Found {{count}} slot. Is that right?",
       "question_other": "Found {{count}} slots. Is that right?",
@@ -7760,6 +7797,7 @@
       "title": "Gate {{gate}}",
       "hhInfo": "Happy Hare: {{material}}",
       "providerInfo": "{{provider}} reports: {{observation}}",
+      "providerInfoWithAge": "{{provider}} · {{age}}: {{observation}}",
       "searchPreset": "Search preset...",
       "noPresets": "No presets found",
       "noPresetsForFilament": "No presets in your library for this filament",

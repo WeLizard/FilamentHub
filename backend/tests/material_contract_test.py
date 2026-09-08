@@ -321,6 +321,233 @@ async def test_bambu_bridge_keeps_credentials_local_and_observations_separate(
     assert rejected_after_owner_removal.status_code == 401
 
 
+@pytest.mark.asyncio
+async def test_slot_source_evidence_excludes_stale_and_inactive_matching_sources(
+    auth_client: AsyncClient,
+    auth_user: User,
+    db_session: AsyncSession,
+) -> None:
+    now = datetime.now(timezone.utc)
+    printer = UserPrinterDevice(user_id=auth_user.id, name="Source evidence printer")
+    system = MaterialSystem(
+        user_id=auth_user.id,
+        physical_printer=printer,
+        name="Source evidence system",
+        kind="mmu",
+        provider="happy_hare",
+    )
+    slot = MaterialSlot(
+        user_id=auth_user.id,
+        material_system=system,
+        provider_index=0,
+        kind="gate",
+    )
+    connectors = [
+        PhysicalPrinterConnector(
+            user_id=auth_user.id,
+            physical_printer=printer,
+            material_system=system,
+            provider="happy_hare",
+            transport=transport,
+            source_instance_id=f"{transport}-source-instance",
+            active=active,
+            topology_authority=authority,
+            last_topology_at=now if authority else None,
+        )
+        for transport, active, authority in (
+            ("edge_agent", True, True),
+            ("orca_plugin_lan", True, False),
+            ("stale_agent", True, False),
+            ("inactive_agent", False, False),
+        )
+    ]
+    db_session.add_all([printer, system, slot, *connectors])
+    await db_session.flush()
+    for connector, source, received_at, remaining_grams in (
+        (connectors[0], "happy_hare_edge", now, 100),
+        (connectors[1], "happy_hare_moonraker", now, None),
+        (
+            connectors[2],
+            "happy_hare_stale",
+            now - timedelta(seconds=301),
+            900,
+        ),
+        (connectors[3], "happy_hare_inactive", now, 800),
+    ):
+        db_session.add(
+            MaterialSlotObservation(
+                user_id=auth_user.id,
+                connector=connector,
+                material_slot=slot,
+                source=source,
+                observed_at=received_at,
+                received_at=received_at,
+                present=True,
+                active_feed=False,
+                material="PLA",
+                remaining_grams=remaining_grams,
+            )
+        )
+    await db_session.commit()
+
+    response = await auth_client.get(f"/api/v1/physical-printers/{printer.id}")
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    connector_payloads = {item["transport"]: item for item in payload["connectors"]}
+    assert connector_payloads["edge_agent"]["topology_authority"] is True
+    assert connector_payloads["edge_agent"]["last_topology_at"] is not None
+    assert connector_payloads["orca_plugin_lan"]["topology_authority"] is False
+    slot_payload = payload["material_systems"][0]["slots"][0]
+    assert [item["source"] for item in slot_payload["observations"]] == [
+        "happy_hare_edge",
+        "happy_hare_moonraker",
+    ]
+    assert slot_payload["source_conflict"] is None
+
+
+@pytest.mark.asyncio
+async def test_slot_source_conflict_preserves_selected_authoritative_observation(
+    auth_client: AsyncClient,
+    auth_user: User,
+    db_session: AsyncSession,
+) -> None:
+    now = datetime.now(timezone.utc)
+    printer = UserPrinterDevice(user_id=auth_user.id, name="Conflicting source printer")
+    system = MaterialSystem(
+        user_id=auth_user.id,
+        physical_printer=printer,
+        name="Conflicting source system",
+        kind="mmu",
+        provider="happy_hare",
+    )
+    slot = MaterialSlot(
+        user_id=auth_user.id,
+        material_system=system,
+        provider_index=0,
+        kind="gate",
+    )
+    authority = PhysicalPrinterConnector(
+        user_id=auth_user.id,
+        physical_printer=printer,
+        material_system=system,
+        provider="happy_hare",
+        transport="edge_agent",
+        source_instance_id="authority-source-instance",
+        active=True,
+        topology_authority=True,
+        last_topology_at=now,
+    )
+    peer = PhysicalPrinterConnector(
+        user_id=auth_user.id,
+        physical_printer=printer,
+        material_system=system,
+        provider="happy_hare",
+        transport="orca_plugin_lan",
+        source_instance_id="peer-source-instance",
+        active=True,
+    )
+    db_session.add_all([printer, system, slot, authority, peer])
+    await db_session.flush()
+    db_session.add_all(
+        [
+            MaterialSlotObservation(
+                user_id=auth_user.id,
+                connector=authority,
+                material_slot=slot,
+                source="happy_hare_edge",
+                observed_at=now - timedelta(seconds=10),
+                received_at=now,
+                present=True,
+                active_feed=False,
+                material="PLA",
+            ),
+            MaterialSlotObservation(
+                user_id=auth_user.id,
+                connector=peer,
+                material_slot=slot,
+                source="happy_hare_moonraker",
+                observed_at=now,
+                received_at=now,
+                present=False,
+                active_feed=False,
+                material="PLA",
+            ),
+        ]
+    )
+    await db_session.commit()
+
+    response = await auth_client.get(f"/api/v1/physical-printers/{printer.id}")
+    assert response.status_code == 200, response.text
+    slot_payload = response.json()["material_systems"][0]["slots"][0]
+    assert slot_payload["observation"]["source"] == "happy_hare_edge"
+    assert slot_payload["source_conflict"] == {
+        "code": "sources_disagree",
+        "fields": ["present"],
+        "sources": ["happy_hare_edge", "happy_hare_moonraker"],
+    }
+
+
+@pytest.mark.asyncio
+async def test_slot_source_evidence_ignores_equivalent_text_formatting(
+    auth_client: AsyncClient,
+    auth_user: User,
+    db_session: AsyncSession,
+) -> None:
+    now = datetime.now(timezone.utc)
+    printer = UserPrinterDevice(user_id=auth_user.id, name="Equivalent source printer")
+    system = MaterialSystem(
+        user_id=auth_user.id,
+        physical_printer=printer,
+        name="Equivalent source system",
+        kind="mmu",
+        provider="happy_hare",
+    )
+    slot = MaterialSlot(
+        user_id=auth_user.id,
+        material_system=system,
+        provider_index=0,
+        kind="gate",
+    )
+    connectors = [
+        PhysicalPrinterConnector(
+            user_id=auth_user.id,
+            physical_printer=printer,
+            material_system=system,
+            provider="happy_hare",
+            transport=transport,
+            source_instance_id=f"{transport}-source-instance",
+            active=True,
+        )
+        for transport in ("edge_agent", "orca_plugin_lan")
+    ]
+    db_session.add_all([printer, system, slot, *connectors])
+    await db_session.flush()
+    for connector, source, material, color_hex in (
+        (connectors[0], "happy_hare_edge", "PLA", "#aabbcc"),
+        (connectors[1], "happy_hare_moonraker", "pla", "AABBCC"),
+    ):
+        db_session.add(
+            MaterialSlotObservation(
+                user_id=auth_user.id,
+                connector=connector,
+                material_slot=slot,
+                source=source,
+                observed_at=now,
+                received_at=now,
+                present=True,
+                active_feed=False,
+                material=material,
+                color_hex=color_hex,
+            )
+        )
+    await db_session.commit()
+
+    response = await auth_client.get(f"/api/v1/physical-printers/{printer.id}")
+    assert response.status_code == 200, response.text
+    slot_payload = response.json()["material_systems"][0]["slots"][0]
+    assert slot_payload["source_conflict"] is None
+
+
 async def _profile(
     db: AsyncSession,
     *,
