@@ -753,6 +753,7 @@ async def test_bridge_spool_picker_and_assignment_use_canonical_desired_state(
         ("snapshot", ["write", "consumption"], "read"),
         ("spools", ["write", "consumption"], "read"),
         ("assignment", ["read", "consumption"], "write"),
+        ("routing", ["read", "consumption"], "write"),
         ("usage", ["read", "write"], "consumption"),
     ],
 )
@@ -790,6 +791,16 @@ async def test_native_bridge_operations_require_persisted_capabilities(
                     "spool_id": None,
                 },
             )
+        if operation == "routing":
+            return await auth_client.put(
+                "/api/v1/octoprint-bridge/routing",
+                headers=headers,
+                json={
+                    "mode": "tools",
+                    "tool_slot_map": [{"tool_index": 0, "slot_index": 0}],
+                    "expected_revision": 0,
+                },
+            )
         return await auth_client.post(
             "/api/v1/octoprint-bridge/usage",
             headers=headers,
@@ -807,6 +818,13 @@ async def test_native_bridge_operations_require_persisted_capabilities(
         "code": "ERR_PRINTER_BRIDGE_CAPABILITY_REQUIRED",
         "params": {"capability": required_capability},
     }
+    if operation == "routing":
+        unchanged = await auth_client.get(
+            f"/api/v1/octoprint-bridge/connections/{printer_id}/{system_id}"
+        )
+        assert unchanged.status_code == 200
+        assert unchanged.json()["routing"]["mode"] == "manual"
+        assert unchanged.json()["routing"]["revision"] == 0
     capability_update = await auth_client.post(
         "/api/v1/octoprint-bridge/heartbeat",
         headers=headers,
@@ -820,6 +838,9 @@ async def test_native_bridge_operations_require_persisted_capabilities(
     assert capability_update.status_code == 200
     accepted = await request_operation()
     assert accepted.status_code == 200
+    if operation == "routing":
+        assert accepted.json()["mode"] == "tools"
+        assert accepted.json()["revision"] == 1
 
 
 @pytest.mark.asyncio

@@ -467,6 +467,7 @@ async def update_bridge_routing_configuration(
     context: OctoPrintBridgeContext,
     payload: OctoPrintBridgeRoutingUpdateRequest,
 ) -> OctoPrintBridgeRoutingState:
+    require_printer_bridge_capability(context.connector, "write")
     material_system_id = context.connector.material_system_id
     if material_system_id is None:
         raise_error(409, ERR_OCTOPRINT_BRIDGE_NOT_CONFIGURED)
