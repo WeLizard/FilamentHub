@@ -702,7 +702,7 @@ function Invoke-PluginReleasePreparation {
         }
     }
     $scriptPath = Join-Path $PSScriptRoot 'publish-plugin-releases.ps1'
-    Write-Host 'Каждый плагин проверяется отдельно. Для выпуска потребуется SHA-256 проверенного пакета.' -ForegroundColor DarkGray
+    Write-Host 'Каждый плагин проверяется отдельно. Контрольные суммы сверяются автоматически; приёмка пакета подтверждается одной клавишей.' -ForegroundColor DarkGray
     & $scriptPath -Component $components -PromptForOwnerApproval
     if (-not $?) {
         throw 'Скрипт публикации плагинов завершился с ошибкой.'

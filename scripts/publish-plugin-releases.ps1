@@ -556,6 +556,27 @@ function Get-LocalCandidateSha256 {
     return $actual
 }
 
+function Read-OwnerApprovalKey {
+    if ([Console]::IsInputRedirected) {
+        throw 'Для подтверждения нужен интерактивный терминал; автоматический запуск использует -OwnerApprovedSha256.'
+    }
+    return [Console]::ReadKey($true).KeyChar
+}
+
+function Confirm-OwnerTestedCandidate {
+    param(
+        [Parameter(Mandatory)][string]$Name,
+        [Parameter(Mandatory)][string]$WheelPath,
+        [Parameter(Mandatory)][string]$Sha256
+    )
+
+    Write-Host "`n$Name — пакет для выпуска:" -ForegroundColor Cyan
+    Write-Host $WheelPath
+    Write-Host "SHA-256 проверен автоматически: $Sha256" -ForegroundColor DarkGray
+    Write-Host 'Этот пакет проверен в приложении и принят? Y / Д — да; любая другая клавиша — пропустить.'
+    return (Read-OwnerApprovalKey) -cin @('y', 'Y', 'д', 'Д')
+}
+
 function Assert-OwnerApprovedCandidates {
     param(
         [Parameter(Mandatory)][AllowEmptyCollection()][object[]]$Plans,
@@ -567,8 +588,14 @@ function Assert-OwnerApprovedCandidates {
         $approvedHash = if ($ApprovedSha256.ContainsKey($plan.Id)) {
             $ApprovedSha256[$plan.Id]
         } elseif ($PromptForOwnerApproval) {
-            $wheelName = Split-Path -Leaf $plan.CandidateWheel
-            (Read-Host "$($plan.Name): enter the SHA-256 of '$wheelName' tested and accepted by the owner (leave blank to cancel)").Trim()
+            $candidateHash = (Get-FileHash -LiteralPath $plan.CandidateWheel -Algorithm SHA256).Hash.ToLowerInvariant()
+            $candidateHash = Get-LocalCandidateSha256 `
+                -Name $plan.Name -WheelPath $plan.CandidateWheel `
+                -ChecksumPath $plan.CandidateChecksums -ExpectedSha256 $candidateHash
+            if (-not (Confirm-OwnerTestedCandidate -Name $plan.Name -WheelPath $plan.CandidateWheel -Sha256 $candidateHash)) {
+                throw "$($plan.Name): выпуск пропущен — проверка пакета в приложении не подтверждена."
+            }
+            $candidateHash
         } else {
             throw "$($plan.Name): provide -OwnerApprovedSha256 with the exact SHA-256 tested and accepted by the owner for '$($plan.Id)' before publication or repair."
         }

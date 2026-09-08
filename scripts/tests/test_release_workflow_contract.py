@@ -39,6 +39,8 @@ def run_offline_publication(tmp_path: Path, mode: str, scenario: str) -> dict:
             continue
         checksums.append(f"{hashlib.sha256(content).hexdigest()}  {name}")
     (fixture_dir / "SHA256SUMS").write_text("\n".join(checksums), encoding="utf-8")
+    if scenario == "manifest_mismatch":
+        (fixture_dir / "SHA256SUMS").write_text(f"{'0' * 64}  {wheel_name}", encoding="utf-8")
     runner = tmp_path / "exercise-release.ps1"
     runner.write_text(
         r"""
@@ -105,14 +107,21 @@ function Wait-ForWorkflowRun {
 }
 # Retain temporary verification data under pytest's directory for inspection.
 function Remove-Item { param($LiteralPath, [switch]$Recurse, [switch]$Force, $ErrorAction) }
-function Read-Host {
-    param($Prompt)
-    $global:offlinePrompts.Add($Prompt)
+function Read-OwnerApprovalKey {
+    $global:offlinePrompts.Add('Confirm target-app test')
     switch ($env:RELEASE_SCENARIO) {
-        'wrong_approval' { return ('0' * 64) }
-        'malformed_approval' { return 'yes' }
-        'empty_approval' { return '' }
-        default { return $env:RELEASE_EXPECTED_SHA }
+        'wrong_approval' { return 'n' }
+        'malformed_approval' { return '?' }
+        'empty_approval' { return [char]13 }
+        'russian_approval' { return 'Д' }
+        'changed_during_approval' {
+            [IO.File]::WriteAllText(
+                (Join-Path $env:RELEASE_FIXTURES 'filamenthub-1.2.3-py3-none-any.whl'),
+                'changed while the owner was confirming'
+            )
+            return 'Y'
+        }
+        default { return 'Y' }
     }
 }
 $parameters = @{
@@ -280,25 +289,38 @@ def test_owner_preflight_rejects_missing_or_changed_approval(tmp_path, scenario)
     assert result["waits"] == 0
 
 
-@pytest.mark.parametrize("scenario", ["approved", "noop"])
-def test_release_menu_requests_explicit_hashes_only_for_actionable_plans(tmp_path, scenario):
+@pytest.mark.parametrize("scenario", ["approved", "russian_approval", "noop"])
+def test_release_menu_computes_hashes_and_requests_one_key_for_actionable_plans(tmp_path, scenario):
     result = run_offline_publication(tmp_path, "menu", scenario)
 
     assert result["error"] is None, result
     assert result["menuCalls"] == [
         {"dryRun": False, "prompt": True, "components": ["all"]},
     ]
-    assert len(result["prompts"]) == (2 if scenario == "approved" else 0)
+    assert len(result["prompts"]) == (0 if scenario == "noop" else 2)
+    if scenario != "noop":
+        for candidate in result["candidates"]:
+            assert candidate["CandidateSha256"] == hashlib.sha256(b"approved candidate fixture").hexdigest()
     assert result["edits"] == []
     assert result["waits"] == 0
 
 
 @pytest.mark.parametrize("scenario", ["wrong_approval", "malformed_approval", "empty_approval"])
-def test_release_menu_does_not_replace_invalid_owner_input_with_a_local_hash(tmp_path, scenario):
+def test_release_menu_does_not_publish_without_explicit_acceptance(tmp_path, scenario):
     result = run_offline_publication(tmp_path, "menu", scenario)
 
     assert result["error"], result
     assert len(result["prompts"]) == 1, result
+    assert result["edits"] == []
+    assert result["waits"] == 0
+
+
+@pytest.mark.parametrize("scenario,prompts", [("manifest_mismatch", 0), ("changed_during_approval", 1)])
+def test_release_menu_checks_manifest_before_acceptance_and_identity_after_it(tmp_path, scenario, prompts):
+    result = run_offline_publication(tmp_path, "menu", scenario)
+
+    assert result["error"], result
+    assert len(result["prompts"]) == prompts
     assert result["edits"] == []
     assert result["waits"] == 0
 
