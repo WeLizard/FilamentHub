@@ -913,6 +913,7 @@ if ($selected.Count -gt 1) {
                 ForEach-Object Component
         )
         $failed = @($results | Where-Object Status -eq 'ERROR')
+        $current = @($results | Where-Object Status -eq 'CURRENT')
         $completed = @()
         if ($ready.Count) {
             $childArguments.EmitComponentResult = $true
@@ -921,22 +922,27 @@ if ($selected.Count -gt 1) {
                 & $entryPath @childArguments -Component $id
             })
         }
-        $results = @($failed) + @($completed)
+        $results = @($failed) + @($current) + @($completed)
     }
     Write-Host "`nИтог по компонентам:" -ForegroundColor Cyan
-    foreach ($id in $selected) {
+    $summaryResults = @(foreach ($id in $selected) {
         $matchedResults = @($results | Where-Object { $_.Component -eq $id })
         if ($matchedResults.Count -ne 1) {
             $result = [pscustomobject]@{
+                Component = $id
                 Status = 'ERROR'
                 Detail = "внутренняя ошибка сводки: получено результатов — $($matchedResults.Count)"
             }
         } else {
             $result = $matchedResults[0]
         }
+        $result
+    })
+    foreach ($result in $summaryResults) {
+        $id = $result.Component
         Write-Host "  $id — $($result.Status): $($result.Detail)"
     }
-    if (@($results | Where-Object Status -eq 'ERROR').Count) {
+    if (@($summaryResults | Where-Object Status -eq 'ERROR').Count) {
         throw 'Не все компоненты прошли выбранный этап. Результаты остальных сохранены; причины указаны выше.'
     }
     return

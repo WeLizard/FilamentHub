@@ -102,6 +102,53 @@ $results = @(Invoke-ReleaseBatch -Components @('orcaslicer', 'octoprint', 'print
     ]
 
 
+def test_batch_summary_keeps_current_components_after_releasing_ready_one(tmp_path):
+    result = run_ps(tmp_path, r"""
+$global:events = [System.Collections.Generic.List[string]]::new()
+$selectedStatement = @($ast.EndBlock.Statements | Where-Object {
+    $_.Extent.Text.StartsWith('$selected =')
+})[0]
+$dispatch = @($ast.EndBlock.Statements | Where-Object {
+    $_.Extent.Text.StartsWith('if ($selected.Count -gt 1)')
+})[0]
+$batch = $ast.EndBlock.Statements | Where-Object {
+    $_ -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+    $_.Name -eq 'Invoke-ReleaseBatch'
+}
+$entry = $ast.ParamBlock.Extent.Text + "`n" + $batch.Extent.Text + "`n" +
+    $selectedStatement.Extent.Text + "`n" + $dispatch.Extent.Text + @'
+
+$phase = if ($DryRun) { 'check' } else { 'publish' }
+$id = $Component[0]
+$global:events.Add("${phase}:$id")
+$status = if ($DryRun) {
+    if ($id -eq 'octoprint') { 'READY' } else { 'CURRENT' }
+} else {
+    'RELEASED'
+}
+[pscustomobject]@{
+    FilamentHubPluginReleaseResult = $true
+    Status = $status
+    Detail = "${phase}:$id"
+}
+'@
+$entryPath = Join-Path $PSScriptRoot 'entry.ps1'
+[IO.File]::WriteAllText($entryPath, $entry, [Text.UTF8Encoding]::new($true))
+$failure = $null
+try { & $entryPath } catch { $failure = $_.Exception.Message }
+@{ error = $failure; events = @($global:events.ToArray()) } | ConvertTo-Json -Compress
+""")
+    assert result == {
+        "error": None,
+        "events": [
+            "check:orcaslicer",
+            "check:octoprint",
+            "check:print-farm",
+            "publish:octoprint",
+        ],
+    }
+
+
 @pytest.mark.parametrize("current,published,changed,expected", [
     ("1.2.3", "1.2.3", "plugin/runtime.py", "error"),
     ("1.2.4", "1.2.3", "plugin/runtime.py", True),
