@@ -8,6 +8,7 @@ import io
 import os
 import threading
 import time
+import warnings
 import zipfile
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
@@ -313,9 +314,16 @@ async def test_artifact_parse_keeps_the_health_route_responsive(
 
 def test_duplicate_plate_names_are_rejected() -> None:
     output = io.BytesIO()
-    with zipfile.ZipFile(output, "w") as archive:
-        archive.writestr("Metadata/plate_1.gcode", _plain_gcode())
-        archive.writestr("Metadata/plate_1.gcode", _plain_gcode())
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message=r"Duplicate name: 'Metadata/plate_1\.gcode'",
+            category=UserWarning,
+            module="zipfile",
+        )
+        with zipfile.ZipFile(output, "w") as archive:
+            archive.writestr("Metadata/plate_1.gcode", _plain_gcode())
+            archive.writestr("Metadata/plate_1.gcode", _plain_gcode())
     with pytest.raises(ValueError, match="duplicate_plate"):
         parse_gcode_payload("duplicate.gcode.3mf", output.getvalue())
 

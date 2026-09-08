@@ -1657,23 +1657,6 @@ async def delete_physical_printer(db: AsyncSession, user_id: int, physical_print
     """
     printer = await require_physical_printer(db, user_id, physical_printer_id)
     spool_ids = await _loaded_spool_ids_for_device(db, printer.id)
-    system_ids = [system.id for system in printer.material_systems]
-    if system_ids:
-        slot_ids = list(
-            (
-                await db.execute(
-                    select(MaterialSlot.id).where(MaterialSlot.material_system_id.in_(system_ids))
-                )
-            )
-            .scalars()
-            .all()
-        )
-        if slot_ids:
-            await db.execute(
-                delete(MaterialSlotAssignment).where(
-                    MaterialSlotAssignment.material_slot_id.in_(slot_ids)
-                )
-            )
     await db.execute(delete(PresetGateState).where(PresetGateState.device_id == printer.id))
     # Keep production history even in test/dev databases that do not enforce
     # ON DELETE SET NULL themselves. The printer name snapshot remains visible.

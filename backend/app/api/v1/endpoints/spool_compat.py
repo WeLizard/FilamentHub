@@ -367,7 +367,7 @@ async def _resolve_user_and_device(
     result = row.first()
     if result is None:
         return None, None
-    device, user = result.tuple()
+    device, user = result
     touch_device_last_seen(device)
     return user, device
 

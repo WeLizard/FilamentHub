@@ -96,7 +96,7 @@ jobs:
       - name: Run tests (pytest, in-memory SQLite)
         run: pytest --no-cov-on-fail
         env:
-          SECRET_KEY: ci-secret-key
+          SECRET_KEY: ci-secret-key-with-at-least-32-bytes
           DEBUG: "false"
           REDIS_URL: "memory://"
 

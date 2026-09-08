@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from app.models.user import User
 
 # Ensure tests are self-contained and do not require local .env/Redis.
-os.environ["SECRET_KEY"] = "test-secret-key"
+os.environ["SECRET_KEY"] = "test-secret-key-with-at-least-32-bytes"
 os.environ["DEBUG"] = "false"
 os.environ["REDIS_URL"] = "memory://"
 

@@ -24,10 +24,23 @@ failed=""
 run_backend() {
     files=$(echo "$staged" | grep -E '^backend/.*\.py$' || true)
     [ -z "$files" ] && return 0
-    command -v python >/dev/null 2>&1 || {
-        echo "pre-commit: python недоступен, backend-тесты пропущены"
-        return 0
-    }
+
+    backend_python=""
+    for candidate in \
+        "$repo_root/backend/.venv/Scripts/python.exe" \
+        "$repo_root/backend/.venv/bin/python"
+    do
+        [ -f "$candidate" ] || continue
+        backend_python="$candidate"
+        break
+    done
+    if [ -z "$backend_python" ]; then
+        command -v python >/dev/null 2>&1 || {
+            echo "pre-commit: python недоступен, backend-тесты пропущены"
+            return 0
+        }
+        backend_python=python
+    fi
 
     # A changed file's name is the cheapest usable link to its tests:
     # app/services/orcaslicer_exporter.py -> orcaslicer_exporter_test.py.
@@ -36,7 +49,7 @@ run_backend() {
     expr=$(echo "$keys" | paste -sd '|' - | sed 's/|/ or /g')
 
     echo "pre-commit: backend-тесты по '$expr'"
-    ( cd "$repo_root/backend" && python -m pytest tests/ -q -p no:cacheprovider \
+    ( cd "$repo_root/backend" && "$backend_python" -m pytest tests/ -q -p no:cacheprovider \
         --no-cov -k "$expr" ) || failed="$failed backend"
 }
 
