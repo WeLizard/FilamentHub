@@ -68,6 +68,10 @@ _EXTRUSION_RESET_RE = re.compile(
     re.IGNORECASE,
 )
 _TOOL_CHANGE_RE = re.compile(r"^T(\d+)\b", re.IGNORECASE)
+_GCODE_COMMAND_RE = re.compile(
+    r"^(?:N\d+\s*)?(?:[GMT]\d+(?:\.\d+)?|T\d+)(?=\s|[;*]|$)",
+    re.IGNORECASE,
+)
 _FHUB_IDENTITY_RE = re.compile(
     r"^kind=(material_preset|print_profile|printer_profile);"
     r"(?:(?:tool=(\d+));)?id=(\d+)$"
@@ -212,6 +216,7 @@ def _parse_plain_gcode_payload(
         "support_roles": set(),
         "fhub_identities": {},
         "fhub_identity_conflicts": set(),
+        "gcode_command_seen": False,
     }
 
     for line in lines:
@@ -232,6 +237,8 @@ def _parse_plain_gcode_payload(
             _collect_inline_command_metadata(parsed, collector, stripped)
 
         if not stripped.startswith(";"):
+            if _GCODE_COMMAND_RE.match(stripped):
+                collector["gcode_command_seen"] = True
             _collect_temperature_command_metadata(parsed, stripped)
             continue
 
@@ -283,7 +290,29 @@ def _parse_plain_gcode_payload(
     _finalize_materials(parsed, collector)
     extrusion_evidence.apply(parsed)
     _finalize_totals(parsed)
+    if not _has_recognizable_gcode(parsed, collector):
+        raise ValueError("unrecognized_gcode")
     return parsed
+
+
+def _has_recognizable_gcode(parsed: dict[str, Any], collector: dict[str, Any]) -> bool:
+    """Reject arbitrary text while accepting standard commands from an unknown slicer."""
+    if collector["gcode_command_seen"] or parsed["fhub_identities"]:
+        return True
+    return any(
+        parsed[field] is not None
+        for field in (
+            "printer_settings_id",
+            "print_settings_id",
+            "printer_model",
+            "print_time_seconds",
+            "total_filament_weight_g",
+            "total_filament_length_mm",
+            "total_filament_volume_cm3",
+            "layer_height_mm",
+            "nozzle_diameter_mm",
+        )
+    )
 
 
 def is_supported_gcode_filename(file_name: str | None) -> bool:

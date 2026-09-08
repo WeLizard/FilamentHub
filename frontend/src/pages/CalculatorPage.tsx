@@ -40,6 +40,7 @@ import {
   physicalPrintersAPI,
   printerProfilesAPI,
   spoolsAPI,
+  type GcodeArtifact,
   type PhysicalPrinter,
   type PrinterEconomics,
   type UserSpool,
@@ -241,13 +242,30 @@ interface ParsedJobState {
   printerProfileId?: number | null;
 }
 
-type GcodeProcessingPhase = 'uploading' | 'analyzing';
+type GcodeProcessingPhase = 'uploading' | 'restoring' | 'analyzing';
 
-interface GcodeProcessingProgress {
+export interface GcodeProcessingProgress {
   phase: GcodeProcessingPhase;
   uploadedBytes: number;
   totalBytes: number;
+  processedFiles: number;
+  totalFiles: number;
+  currentFileName: string | null;
 }
+
+export const getGcodeProcessingPercent = (
+  progress: GcodeProcessingProgress | null,
+): number | null => {
+  if (!progress || progress.phase === 'restoring') return null;
+  const completed = progress.phase === 'analyzing'
+    ? progress.processedFiles
+    : progress.uploadedBytes;
+  const total = progress.phase === 'analyzing'
+    ? progress.totalFiles
+    : progress.totalBytes;
+  if (total <= 0) return 0;
+  return Math.min(100, Math.round((completed / total) * 100));
+};
 
 export interface CalculatorJobConfig {
   jobKey: string;
@@ -1094,6 +1112,93 @@ const translateCalculator = (t: TFunction, key: string): string =>
 
 const ALL_GCODE_FILES_FAILED = 'all_gcode_files_failed';
 
+const isAbortError = (error: unknown): boolean => {
+  const candidate = error as { code?: string; message?: string; name?: string };
+  return candidate.code === 'ERR_CANCELED'
+    || candidate.message === 'canceled'
+    || candidate.name === 'AbortError';
+};
+
+const apiErrorCode = (error: unknown): string | null => {
+  const detail = (error as { response?: { data?: { detail?: unknown } } })
+    .response?.data?.detail;
+  if (typeof detail === 'string') return detail;
+  if (detail && typeof detail === 'object' && 'code' in detail) {
+    return String((detail as { code: unknown }).code);
+  }
+  return null;
+};
+
+export const isRecoverableGcodeUploadError = (error: unknown): boolean => {
+  if (isAbortError(error)) return false;
+  const response = (error as { response?: { status?: number } }).response;
+  if (!response) return true;
+  if (response.status === 408 || (response.status != null && response.status >= 500)) return true;
+  return ['ERR_GCODE_ARTIFACT_CONFLICT', 'ERR_GCODE_UPLOAD_INCOMPLETE']
+    .includes(apiErrorCode(error) ?? '');
+};
+
+export const isCurrentGcodeOperation = (
+  operationToken: number,
+  currentToken: number,
+): boolean => operationToken === currentToken;
+
+export const runForCurrentGcodeOperation = (
+  operationToken: number,
+  currentToken: number,
+  action: () => void,
+): boolean => {
+  if (!isCurrentGcodeOperation(operationToken, currentToken)) return false;
+  action();
+  return true;
+};
+
+export interface ReusableGcodeArtifact {
+  id: string;
+  uploaded: boolean;
+}
+
+export const resolveGcodeArtifactAttempt = (
+  existing: ReusableGcodeArtifact | undefined,
+  createId: () => string,
+): ReusableGcodeArtifact => existing ?? { id: createId(), uploaded: false };
+
+type GcodeArtifactUploadTransport = Pick<
+  typeof calculatorAPI,
+  'uploadGcodeArtifact' | 'getGcodeArtifact'
+>;
+
+export const uploadGcodeArtifactWithRecovery = async (
+  transport: GcodeArtifactUploadTransport,
+  file: File,
+  artifactId: string,
+  onUploadProgress: (loadedBytes: number) => void,
+  onRestoring: () => void,
+  signal: AbortSignal,
+): Promise<{ artifact: GcodeArtifact; restored: boolean }> => {
+  try {
+    return {
+      artifact: await transport.uploadGcodeArtifact(
+        file,
+        artifactId,
+        (progress) => onUploadProgress(Math.min(file.size, progress.loadedBytes)),
+        signal,
+      ),
+      restored: false,
+    };
+  } catch (error) {
+    if (!isRecoverableGcodeUploadError(error) || signal.aborted) throw error;
+    onRestoring();
+    try {
+      const artifact = await transport.getGcodeArtifact(artifactId, signal);
+      if (artifact.state === 'ready') return { artifact, restored: true };
+    } catch (recoveryError) {
+      if (signal.aborted || isAbortError(recoveryError)) throw recoveryError;
+    }
+    throw error;
+  }
+};
+
 export const resolveGcodeParseError = (error: unknown, t: TFunction): string | null => {
   if (!error) {
     return null;
@@ -1106,11 +1211,7 @@ export const resolveGcodeParseError = (error: unknown, t: TFunction): string | n
     name?: string;
   };
 
-  if (
-    errorWithResponse.code === 'ERR_CANCELED'
-    || errorWithResponse.message === 'canceled'
-    || errorWithResponse.name === 'AbortError'
-  ) {
+  if (isAbortError(errorWithResponse)) {
     return null;
   }
 
@@ -1881,8 +1982,9 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
   const lastBuiltMaterialJobsKeyRef = useRef<string | null>(null);
   const quoteSequenceRef = useRef(0);
   const gcodeAbortControllerRef = useRef<AbortController | null>(null);
+  const gcodeOperationSequenceRef = useRef(0);
   const activeGcodeArtifactIdsRef = useRef(new Set<string>());
-  const reusableGcodeArtifactsRef = useRef(new Map<string, { id: string; uploaded: boolean }>());
+  const reusableGcodeArtifactsRef = useRef(new Map<string, ReusableGcodeArtifact>());
   const lastGcodeFilesRef = useRef<File[]>([]);
 
   useEffect(() => () => {
@@ -1990,16 +2092,52 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
   });
 
   const parseGcodeMutation = useMutation({
-    mutationFn: async (files: File[]) => {
+    mutationFn: async ({
+      files,
+      operationToken,
+    }: {
+      files: File[];
+      operationToken: number;
+    }) => {
+      if (!isCurrentGcodeOperation(operationToken, gcodeOperationSequenceRef.current)) {
+        throw new DOMException('canceled', 'AbortError');
+      }
       const limitedFiles = files.slice(0, 20);
       const controller = new AbortController();
       gcodeAbortControllerRef.current?.abort();
       gcodeAbortControllerRef.current = controller;
-      const totalBytes = limitedFiles.reduce((sum, file) => sum + file.size, 0);
+      let totalBytes = limitedFiles.reduce((sum, file) => {
+        const key = `${file.name}:${file.size}:${file.lastModified}`;
+        return sum + (reusableGcodeArtifactsRef.current.get(key)?.uploaded ? 0 : file.size);
+      }, 0);
       const uploadedBytes = new Array(limitedFiles.length).fill(0) as number[];
       const uploaded: Array<{ file: File; uploadIndex: number; artifactId: string }> = [];
       const failedFiles: string[] = [];
-      setGcodeProcessingProgress({ phase: 'uploading', uploadedBytes: 0, totalBytes });
+      const updateProgress = (progress: GcodeProcessingProgress) => {
+        if (controller.signal.aborted) return;
+        runForCurrentGcodeOperation(
+          operationToken,
+          gcodeOperationSequenceRef.current,
+          () => setGcodeProcessingProgress(progress),
+        );
+      };
+      const ensureCurrentOperation = () => {
+        if (
+          controller.signal.aborted
+          || !isCurrentGcodeOperation(operationToken, gcodeOperationSequenceRef.current)
+        ) {
+          throw new DOMException('canceled', 'AbortError');
+        }
+      };
+      const sentBytes = () => uploadedBytes.reduce((sum, value) => sum + value, 0);
+      updateProgress({
+        phase: totalBytes > 0 ? 'uploading' : 'restoring',
+        uploadedBytes: 0,
+        totalBytes,
+        processedFiles: 0,
+        totalFiles: limitedFiles.length,
+        currentFileName: limitedFiles[0]?.name ?? null,
+      });
 
       try {
         // Finish the upload phase before parsing so aggregate progress never moves
@@ -2007,78 +2145,139 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
         for (const [uploadIndex, file] of limitedFiles.entries()) {
           if (controller.signal.aborted) throw new DOMException('canceled', 'AbortError');
           const fileKey = `${file.name}:${file.size}:${file.lastModified}`;
-          const reusable = reusableGcodeArtifactsRef.current.get(fileKey);
-          let artifactId = reusable?.id ?? crypto.randomUUID();
-          reusableGcodeArtifactsRef.current.set(fileKey, {
-            id: artifactId,
-            uploaded: reusable?.uploaded ?? false,
-          });
+          const reusable = resolveGcodeArtifactAttempt(
+            reusableGcodeArtifactsRef.current.get(fileKey),
+            () => crypto.randomUUID(),
+          );
+          let artifactId = reusable.id;
+          reusableGcodeArtifactsRef.current.set(fileKey, reusable);
           activeGcodeArtifactIdsRef.current.add(artifactId);
           const uploadCurrentArtifact = async () => {
-            await calculatorAPI.uploadGcodeArtifact(
+            updateProgress({
+              phase: 'uploading',
+              uploadedBytes: sentBytes(),
+              totalBytes,
+              processedFiles: uploadIndex,
+              totalFiles: limitedFiles.length,
+              currentFileName: file.name,
+            });
+            const result = await uploadGcodeArtifactWithRecovery(
+              calculatorAPI,
               file,
               artifactId,
-              (progress) => {
-                uploadedBytes[uploadIndex] = Math.min(file.size, progress.loadedBytes);
-                setGcodeProcessingProgress({
+              (loadedBytes) => {
+                uploadedBytes[uploadIndex] = loadedBytes;
+                updateProgress({
                   phase: 'uploading',
-                  uploadedBytes: uploadedBytes.reduce((sum, value) => sum + value, 0),
+                  uploadedBytes: sentBytes(),
                   totalBytes,
+                  processedFiles: uploadIndex,
+                  totalFiles: limitedFiles.length,
+                  currentFileName: file.name,
                 });
               },
+              () => updateProgress({
+                phase: 'restoring',
+                uploadedBytes: sentBytes(),
+                totalBytes,
+                processedFiles: uploadIndex,
+                totalFiles: limitedFiles.length,
+                currentFileName: file.name,
+              }),
               controller.signal,
             );
-            reusableGcodeArtifactsRef.current.set(fileKey, { id: artifactId, uploaded: true });
+            ensureCurrentOperation();
+            if (reusableGcodeArtifactsRef.current.get(fileKey)?.id === artifactId) {
+              reusableGcodeArtifactsRef.current.set(fileKey, { id: artifactId, uploaded: true });
+            }
+            return result.artifact;
           };
           try {
-            if (!reusable?.uploaded) {
+            if (!reusable.uploaded) {
               await uploadCurrentArtifact();
             } else {
               try {
-                await calculatorAPI.getGcodeArtifact(artifactId, controller.signal);
+                updateProgress({
+                  phase: 'restoring',
+                  uploadedBytes: sentBytes(),
+                  totalBytes,
+                  processedFiles: uploadIndex,
+                  totalFiles: limitedFiles.length,
+                  currentFileName: file.name,
+                });
+                const artifact = await calculatorAPI.getGcodeArtifact(
+                  artifactId,
+                  controller.signal,
+                );
+                ensureCurrentOperation();
+                if (artifact.state !== 'ready') throw new Error('artifact_not_ready');
               } catch (error) {
-                if (controller.signal.aborted) throw error;
+                ensureCurrentOperation();
                 activeGcodeArtifactIdsRef.current.delete(artifactId);
                 artifactId = crypto.randomUUID();
                 activeGcodeArtifactIdsRef.current.add(artifactId);
                 reusableGcodeArtifactsRef.current.set(fileKey, { id: artifactId, uploaded: false });
+                totalBytes += file.size;
                 await uploadCurrentArtifact();
               }
             }
-            uploadedBytes[uploadIndex] = file.size;
             uploaded.push({ file, uploadIndex, artifactId });
           } catch (error) {
-            if (controller.signal.aborted) throw error;
-            reusableGcodeArtifactsRef.current.delete(fileKey);
-            activeGcodeArtifactIdsRef.current.delete(artifactId);
+            ensureCurrentOperation();
+            if (!isRecoverableGcodeUploadError(error)) {
+              if (reusableGcodeArtifactsRef.current.get(fileKey)?.id === artifactId) {
+                reusableGcodeArtifactsRef.current.delete(fileKey);
+              }
+              activeGcodeArtifactIdsRef.current.delete(artifactId);
+              void calculatorAPI.deleteGcodeArtifact(artifactId).catch(() => undefined);
+            }
             failedFiles.push(file.name);
           }
         }
 
-        setGcodeProcessingProgress({ phase: 'analyzing', uploadedBytes: totalBytes, totalBytes });
+        if (uploaded.length === 0) throw new Error(ALL_GCODE_FILES_FAILED);
+        updateProgress({
+          phase: 'analyzing',
+          uploadedBytes: sentBytes(),
+          totalBytes,
+          processedFiles: 0,
+          totalFiles: uploaded.length,
+          currentFileName: uploaded[0]?.file.name ?? null,
+        });
         const jobs: ParsedJobState[] = [];
-        for (const item of uploaded) {
+        for (const [parseIndex, item] of uploaded.entries()) {
           let parsed;
           try {
             parsed = await calculatorAPI.parseGcodeArtifact(
               item.artifactId,
               controller.signal,
             );
+            ensureCurrentOperation();
           } catch (error) {
-            if (controller.signal.aborted) throw error;
+            ensureCurrentOperation();
             failedFiles.push(item.file.name);
-            continue;
+          } finally {
+            updateProgress({
+              phase: 'analyzing',
+              uploadedBytes: sentBytes(),
+              totalBytes,
+              processedFiles: parseIndex + 1,
+              totalFiles: uploaded.length,
+              currentFileName: uploaded[parseIndex + 1]?.file.name ?? null,
+            });
           }
-          if (controller.signal.aborted) throw new DOMException('canceled', 'AbortError');
-          jobs.push(...parsed.jobs.map((job) => ({
-            key: parsedJobKey(job, item.uploadIndex),
-            parsed: job,
-          })));
-          activeGcodeArtifactIdsRef.current.delete(item.artifactId);
-          reusableGcodeArtifactsRef.current.delete(
-            `${item.file.name}:${item.file.size}:${item.file.lastModified}`,
-          );
-          void calculatorAPI.deleteGcodeArtifact(item.artifactId).catch(() => undefined);
+          if (parsed) {
+            if (controller.signal.aborted) throw new DOMException('canceled', 'AbortError');
+            jobs.push(...parsed.jobs.map((job) => ({
+              key: parsedJobKey(job, item.uploadIndex),
+              parsed: job,
+            })));
+            activeGcodeArtifactIdsRef.current.delete(item.artifactId);
+            reusableGcodeArtifactsRef.current.delete(
+              `${item.file.name}:${item.file.size}:${item.file.lastModified}`,
+            );
+            void calculatorAPI.deleteGcodeArtifact(item.artifactId).catch(() => undefined);
+          }
         }
         if (jobs.length === 0) {
           throw new Error(ALL_GCODE_FILES_FAILED);
@@ -2924,11 +3123,23 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
     }
   };
 
-  const handleGcodeFiles = async (files: File[]) => {
+  const handleGcodeFiles = async (files: File[], preserveArtifacts = false) => {
+    const operationToken = gcodeOperationSequenceRef.current + 1;
+    gcodeOperationSequenceRef.current = operationToken;
+    if (!preserveArtifacts) {
+      gcodeAbortControllerRef.current?.abort();
+      const replacedArtifactIds = Array.from(activeGcodeArtifactIdsRef.current);
+      activeGcodeArtifactIdsRef.current.clear();
+      reusableGcodeArtifactsRef.current.clear();
+      void Promise.allSettled(
+        replacedArtifactIds.map((artifactId) => calculatorAPI.deleteGcodeArtifact(artifactId)),
+      );
+    }
     lastGcodeFilesRef.current = files;
     parseGcodeMutation.reset();
     try {
-      const batch = await parseGcodeMutation.mutateAsync(files);
+      const batch = await parseGcodeMutation.mutateAsync({ files, operationToken });
+      if (!isCurrentGcodeOperation(operationToken, gcodeOperationSequenceRef.current)) return;
       applyParsedJobs(
         batch.jobs,
         batch.failedFiles.length > 0 || batch.skippedCount > 0
@@ -2943,14 +3154,20 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
       // Mutation state owns the localized error and keeps the current calculator
       // inputs intact so the same in-memory files can be retried directly.
     } finally {
-      setGcodeProcessingProgress(null);
+      runForCurrentGcodeOperation(
+        operationToken,
+        gcodeOperationSequenceRef.current,
+        () => setGcodeProcessingProgress(null),
+      );
     }
   };
 
   const cancelGcodeProcessing = () => {
+    gcodeOperationSequenceRef.current += 1;
     gcodeAbortControllerRef.current?.abort();
     const artifactIds = Array.from(activeGcodeArtifactIdsRef.current);
     activeGcodeArtifactIdsRef.current.clear();
+    reusableGcodeArtifactsRef.current.clear();
     void Promise.allSettled(
       artifactIds.map((artifactId) => calculatorAPI.deleteGcodeArtifact(artifactId)),
     );
@@ -2959,7 +3176,7 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
 
   const retryGcodeProcessing = () => {
     if (lastGcodeFilesRef.current.length > 0) {
-      void handleGcodeFiles(lastGcodeFilesRef.current);
+      void handleGcodeFiles(lastGcodeFilesRef.current, true);
     }
   };
 
@@ -4335,17 +4552,14 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
 }) => {
   const { t, i18n } = useTranslation();
   const tc = (key: string) => translateCalculator(t, key);
-  const gcodeUploadPercent = gcodeProcessingProgress?.totalBytes
-    ? Math.min(
-        100,
-        Math.round(
-          (gcodeProcessingProgress.uploadedBytes / gcodeProcessingProgress.totalBytes) * 100,
-        ),
-      )
-    : 0;
+  const gcodeProgressPercent = getGcodeProcessingPercent(gcodeProcessingProgress) ?? 0;
   const gcodeProcessingLabel = gcodeProcessingProgress?.phase === 'analyzing'
     ? tc('gcodePhaseAnalyzing')
-    : tc('gcodePhaseUploading').replace('{{percent}}', String(gcodeUploadPercent));
+        .replace('{{current}}', String(gcodeProcessingProgress.processedFiles))
+        .replace('{{total}}', String(gcodeProcessingProgress.totalFiles))
+    : gcodeProcessingProgress?.phase === 'restoring'
+      ? tc('gcodePhaseRestoring')
+      : tc('gcodePhaseUploading').replace('{{percent}}', String(gcodeProgressPercent));
   const [advancedSettingsOpen, setAdvancedSettingsOpen] = useState(false);
   const [postprocessChecked, setPostprocessChecked] = useState<Record<string, boolean>>({});
   const [customPresets, setCustomPresets] = useState<PricingPreset[]>(() => loadCustomPricingPresets());
@@ -5494,12 +5708,14 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                       <div className="h-1.5 overflow-hidden rounded-full bg-slate-800">
                         <div
                           className={`h-full rounded-full bg-cyan-400 transition-[width] duration-200 ${
-                            gcodeProcessingProgress.phase === 'analyzing' ? 'animate-pulse' : ''
+                            gcodeProcessingProgress.phase === 'restoring' ? 'animate-pulse' : ''
                           }`}
                           style={{
                             width: gcodeProcessingProgress.phase === 'analyzing'
-                              ? '100%'
-                              : `${gcodeUploadPercent}%`,
+                              ? `${gcodeProgressPercent}%`
+                              : gcodeProcessingProgress.phase === 'restoring'
+                                ? '33%'
+                                : `${gcodeProgressPercent}%`,
                           }}
                         />
                       </div>
@@ -5514,7 +5730,20 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                                 '{{total}}',
                                 formatBytes(gcodeProcessingProgress.totalBytes, i18n.language),
                               )
-                          : tc('gcodeAnalysisDetail')}
+                          : gcodeProcessingProgress.phase === 'restoring'
+                            ? tc('gcodeRestoreDetail').replace(
+                                '{{file}}',
+                                gcodeProcessingProgress.currentFileName ?? '',
+                              )
+                            : tc('gcodeAnalysisDetail')
+                                .replace(
+                                  '{{current}}',
+                                  String(gcodeProcessingProgress.processedFiles),
+                                )
+                                .replace(
+                                  '{{total}}',
+                                  String(gcodeProcessingProgress.totalFiles),
+                                )}
                       </p>
                       <button
                         type="button"
