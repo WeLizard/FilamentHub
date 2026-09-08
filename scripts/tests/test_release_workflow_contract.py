@@ -87,7 +87,7 @@ function Invoke-Checked {
     }
     if ($FilePath -eq 'git') {
         if ($Arguments -contains 'rev-parse' -or $Arguments -contains 'rev-list') {
-            return 'approved-commit'
+            return 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
         }
         if ($Arguments -contains '--list') { return 'v1.2.3' }
     }
@@ -98,7 +98,7 @@ function Wait-ForRelease {
     param($Repository, $Workflow, $TagCommit, $Tag, [switch]$AllowDraft, [switch]$RequireWorkflow)
     return $script:release
 }
-function Get-RemoteTagCommit { param($RepositoryPath, $RemoteName, $Tag) return 'approved-commit' }
+function Get-RemoteTagCommit { param($RepositoryPath, $RemoteName, $Tag) return 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' }
 function Ensure-LocalTag { param($RepositoryPath, $RemoteName, $Tag) }
 function Assert-TrustedPublishRepairable { param($Name, $RepositoryPath, $Tag, $WorkflowPath) }
 function Wait-ForWorkflowRun {
@@ -209,6 +209,7 @@ $plans = $global:offlineCandidates
         Repair-TrustedPublishComponent @parameters
     } else {
         $parameters.Workflow = 'release-filamenthub.yml'
+        $parameters.ReleaseCommit = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
         $parameters.OwnerPublishesDraft = $true
         Publish-Component @parameters
     }
@@ -418,7 +419,9 @@ def test_owner_script_requires_published_commit_and_exact_owner_tested_wheel() -
     assert script.index("if ($DryRun)") < approval_gate
     assert "'push', $Remote, $Branch" not in script
     assert "RequiredCiWorkflow = 'ci.yml'" in script
-    assert "--commit', $head, '--event', 'push'" in script
+    assert "--commit', $remote, '--event', 'push'" in script
+    assert "'diff', '--name-only', $remote, '--'" in script
+    assert "'tag', '-a', $Tag, $ReleaseCommit" in script
     assert "orca-plugin/dist/release-$version/wheels/filamenthub-$version" in script
     assert "octoprint-plugin/dist/release-$version/octoprint_filamenthubbridge-$version" in script
     assert "plugins/printers/dist/release-$version/wheels/printers-$version" in script

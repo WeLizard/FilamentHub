@@ -581,32 +581,39 @@ function Assert-ReleaseCommitPublished {
         [Parameter(Mandatory)][string]$BranchName,
         [Parameter(Mandatory)][string]$Name,
         [Parameter(Mandatory)][string]$Repository,
+        [Parameter(Mandatory)][string[]]$ReleasePaths,
         [string]$RequiredCiWorkflow
     )
 
-    $head = Invoke-Checked git @('-C', $RepositoryPath, 'rev-parse', 'HEAD') -Capture
     $remote = Get-RemoteBranchCommit `
         -RepositoryPath $RepositoryPath -RemoteName $RemoteName -BranchName $BranchName
-    if ($remote -ne $head) {
-        throw "$Name`: локальный HEAD $head ещё не опубликован как $RemoteName/$BranchName. Сначала отдельно опубликуй коммиты, дождись зелёного CI, затем снова запусти выпуск плагина."
+    if (-not $remote) {
+        throw "$Name`: не удалось определить опубликованный commit $RemoteName/$BranchName."
     }
-    if (-not $RequiredCiWorkflow) { return }
+    $unpublishedPaths = Invoke-Checked git (@(
+        '-C', $RepositoryPath, 'diff', '--name-only', $remote, '--'
+    ) + $ReleasePaths) -Capture
+    if ($unpublishedPaths) {
+        throw "$Name`: изменения этого плагина ещё не опубликованы в $RemoteName/${BranchName}:`n$unpublishedPaths`nСначала отправь подготовленный plugin-коммит, дождись зелёного CI и повтори проверку."
+    }
+    if (-not $RequiredCiWorkflow) { return $remote }
 
     $json = Invoke-Checked gh @(
         'run', 'list', '--repo', $Repository, '--workflow', $RequiredCiWorkflow,
-        '--commit', $head, '--event', 'push', '--limit', '10',
+        '--commit', $remote, '--event', 'push', '--limit', '10',
         '--json', 'headSha,status,conclusion,url,createdAt'
     ) -Capture
     $run = @($json | ConvertFrom-Json) |
-        Where-Object { $_.headSha -eq $head } |
+        Where-Object { $_.headSha -eq $remote } |
         Sort-Object { [datetime]$_.createdAt } -Descending |
         Select-Object -First 1
     if (-not $run) {
-        throw "$Name`: для опубликованного commit $head не найден обязательный CI '$RequiredCiWorkflow'."
+        throw "$Name`: для опубликованного commit $remote не найден обязательный CI '$RequiredCiWorkflow'."
     }
     if ($run.status -ne 'completed' -or $run.conclusion -ne 'success') {
-        throw "$Name`: обязательный CI '$RequiredCiWorkflow' для $head не зелёный (status=$($run.status), result=$($run.conclusion)): $($run.url)"
+        throw "$Name`: обязательный CI '$RequiredCiWorkflow' для $remote не зелёный (status=$($run.status), result=$($run.conclusion)): $($run.url)"
     }
+    return $remote
 }
 
 function Read-OwnerApprovalKey {
@@ -730,6 +737,7 @@ function Publish-Component {
         [Parameter(Mandatory)][string]$RepositoryPath,
         [Parameter(Mandatory)][string]$Repository,
         [Parameter(Mandatory)][string]$Tag,
+        [Parameter(Mandatory)][ValidatePattern('^[0-9a-f]{40}$')][string]$ReleaseCommit,
         [Parameter(Mandatory)][string]$Workflow,
         [Parameter(Mandatory)][string[]]$RequiredPatterns,
         [Parameter(Mandatory)][string[]]$ForbiddenPatterns,
@@ -739,21 +747,20 @@ function Publish-Component {
         [string]$TrustedPublishWorkflow
     )
 
-    $head = Invoke-Checked git @('-C', $RepositoryPath, 'rev-parse', 'HEAD') -Capture
     $remoteTagCommit = Get-RemoteTagCommit `
         -RepositoryPath $RepositoryPath -RemoteName $Remote -Tag $Tag
-    if ($remoteTagCommit -and $remoteTagCommit -ne $head) {
-        throw "Remote-тег '$Tag' указывает на $remoteTagCommit, а релизный HEAD — $head."
+    if ($remoteTagCommit -and $remoteTagCommit -ne $ReleaseCommit) {
+        throw "Remote-тег '$Tag' указывает на $remoteTagCommit, а опубликованный релизный commit — $ReleaseCommit."
     }
     Ensure-LocalTag -RepositoryPath $RepositoryPath -RemoteName $Remote -Tag $Tag
     $localTag = Invoke-Checked git @('-C', $RepositoryPath, 'tag', '--list', $Tag) -Capture
     if ($localTag) {
         $localCommit = Invoke-Checked git @('-C', $RepositoryPath, 'rev-list', '-n', '1', $Tag) -Capture
-        if ($localCommit -ne $head) {
-            throw "Локальный тег '$Tag' указывает на $localCommit, а релизный HEAD — $head."
+        if ($localCommit -ne $ReleaseCommit) {
+            throw "Локальный тег '$Tag' указывает на $localCommit, а опубликованный релизный commit — $ReleaseCommit."
         }
     } else {
-        Invoke-Checked git @('-C', $RepositoryPath, 'tag', '-a', $Tag, '-m', "$Name $Tag")
+        Invoke-Checked git @('-C', $RepositoryPath, 'tag', '-a', $Tag, $ReleaseCommit, '-m', "$Name $Tag")
     }
     $tagWasPushed = -not $remoteTagCommit
     if ($tagWasPushed) {
@@ -999,6 +1006,7 @@ if ($selected -contains 'orcaslicer') {
         Tag = "v$version"; Needed = $needed; Repair = $repair; Published = $published
         RepositoryPath = $script:MainRepositoryRoot; Repository = $mainRepository
         RequiredCiWorkflow = 'ci.yml'
+        ReleasePaths = @('orca-plugin', 'scripts/render_plugin_release_notes.py', '.github/workflows/release-filamenthub.yml', '.github/workflows/publish-orcacloud.yml')
         Workflow = 'release-filamenthub.yml'; TrustedPublishWorkflow = 'publish-orcacloud.yml'
         CandidateWheel = Join-Path $script:MainRepositoryRoot "orca-plugin/dist/release-$version/wheels/filamenthub-$version-py3-none-any.whl"
         CandidateChecksums = Join-Path $script:MainRepositoryRoot "orca-plugin/dist/release-$version/SHA256SUMS"
@@ -1020,6 +1028,7 @@ if ($selected -contains 'octoprint') {
         Tag = "octoprint-v$version"; Needed = $needed; Repair = $false; Published = $published
         RepositoryPath = $script:MainRepositoryRoot; Repository = $mainRepository
         RequiredCiWorkflow = 'ci.yml'
+        ReleasePaths = @('octoprint-plugin', 'scripts/render_plugin_release_notes.py', '.github/workflows/release-octoprint.yml')
         Workflow = 'release-octoprint.yml'; TrustedPublishWorkflow = $null
         CandidateWheel = Join-Path $script:MainRepositoryRoot "octoprint-plugin/dist/release-$version/octoprint_filamenthubbridge-$version-py3-none-any.whl"
         CandidateChecksums = Join-Path $script:MainRepositoryRoot "octoprint-plugin/dist/release-$version/SHA256SUMS"
@@ -1051,6 +1060,7 @@ if ($selected -contains 'print-farm') {
         Tag = "v$version"; Needed = $needed; Repair = $repair; Published = $published
         RepositoryPath = $printFarmRepositoryRoot; Repository = $printFarmRepository
         RequiredCiWorkflow = $null
+        ReleasePaths = @('plugins/printers', '.github/workflows/release-printers.yml', '.github/workflows/publish-orcacloud.yml')
         Workflow = 'release-printers.yml'; TrustedPublishWorkflow = 'publish-orcacloud.yml'
         CandidateWheel = Join-Path $printFarmRepositoryRoot "plugins/printers/dist/release-$version/wheels/printers-$version-py3-none-any.whl"
         CandidateChecksums = Join-Path $printFarmRepositoryRoot "plugins/printers/dist/release-$version/SHA256SUMS"
@@ -1098,8 +1108,7 @@ if (-not $HideReleaseNotes) {
 }
 
 $mainReleasePaths = @(
-    'scripts/render_plugin_release_notes.py',
-    'scripts/publish-plugin-releases.ps1'
+    'scripts/render_plugin_release_notes.py'
 )
 if ($selected -contains 'orcaslicer') {
     $mainReleasePaths += @('orca-plugin', '.github/workflows/release-filamenthub.yml', '.github/workflows/publish-orcacloud.yml')
@@ -1122,13 +1131,19 @@ if ($selected -contains 'print-farm') {
         -Name 'Print Farm'
 }
 
-foreach ($repositoryPlan in @($plans | Where-Object { $_.Needed -or $_.Repair } |
-    Group-Object RepositoryPath | ForEach-Object { $_.Group | Select-Object -First 1 })) {
-    Assert-ReleaseCommitPublished `
+foreach ($repositoryGroup in @($plans | Where-Object { $_.Needed -or $_.Repair } |
+    Group-Object RepositoryPath)) {
+    $repositoryPlans = @($repositoryGroup.Group)
+    $repositoryPlan = $repositoryPlans[0]
+    $releasePaths = @($repositoryPlans | ForEach-Object ReleasePaths | Select-Object -Unique)
+    $releaseCommit = Assert-ReleaseCommitPublished `
         -RepositoryPath $repositoryPlan.RepositoryPath -RemoteName $Remote `
         -BranchName $Branch -Name $repositoryPlan.Name `
-        -Repository $repositoryPlan.Repository `
+        -Repository $repositoryPlan.Repository -ReleasePaths $releasePaths `
         -RequiredCiWorkflow $repositoryPlan.RequiredCiWorkflow
+    foreach ($plan in $repositoryPlans) {
+        $plan | Add-Member -NotePropertyName ReleaseCommit -NotePropertyValue $releaseCommit
+    }
 }
 
 if ($DryRun) {
@@ -1204,7 +1219,8 @@ foreach ($plan in @($plans | Where-Object { $_.Needed -or $_.Repair })) {
         'orcaslicer' {
             $publish = @{
                 Name = $plan.Name; RepositoryPath = $plan.RepositoryPath
-                Repository = $plan.Repository; Tag = $plan.Tag; Workflow = $plan.Workflow
+                Repository = $plan.Repository; Tag = $plan.Tag; ReleaseCommit = $plan.ReleaseCommit
+                Workflow = $plan.Workflow
                 RequiredPatterns = @(
                     '^filamenthub-\d+\.\d+\.\d+-.*\.whl$', '^SHA256SUMS$'
                 )
@@ -1221,7 +1237,8 @@ foreach ($plan in @($plans | Where-Object { $_.Needed -or $_.Repair })) {
         'octoprint' {
             $publish = @{
                 Name = $plan.Name; RepositoryPath = $plan.RepositoryPath
-                Repository = $plan.Repository; Tag = $plan.Tag; Workflow = $plan.Workflow
+                Repository = $plan.Repository; Tag = $plan.Tag; ReleaseCommit = $plan.ReleaseCommit
+                Workflow = $plan.Workflow
                 RequiredPatterns = @(
                     '^octoprint_filamenthubbridge-\d+\.\d+\.\d+-.*\.whl$',
                     '^octoprint_filamenthubbridge-\d+\.\d+\.\d+\.tar\.gz$',
@@ -1237,7 +1254,8 @@ foreach ($plan in @($plans | Where-Object { $_.Needed -or $_.Repair })) {
         'print-farm' {
             $publish = @{
                 Name = $plan.Name; RepositoryPath = $plan.RepositoryPath
-                Repository = $plan.Repository; Tag = $plan.Tag; Workflow = $plan.Workflow
+                Repository = $plan.Repository; Tag = $plan.Tag; ReleaseCommit = $plan.ReleaseCommit
+                Workflow = $plan.Workflow
                 RequiredPatterns = @('^printers-\d+\.\d+\.\d+-.*\.whl$', '^SHA256SUMS$')
                 ForbiddenPatterns = @('^filamenthub-', '^octoprint[-_]filamenthubbridge-')
                 ExpectedSha256 = $plan.CandidateSha256
