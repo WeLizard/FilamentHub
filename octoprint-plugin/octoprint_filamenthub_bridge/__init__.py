@@ -195,6 +195,7 @@ class FilamentHubBridgePlugin(
             "snapshot": {},
             "snapshot_etag": None,
             "active_slot": None,
+            "active_slot_source": None,
             "map_tools_to_slots": False,
             "tool_slot_map": {},
             "routing_revision": 0,
@@ -596,6 +597,7 @@ class FilamentHubBridgePlugin(
                 self._settings.set(["snapshot"], {})
                 self._settings.set(["snapshot_etag"], None)
                 self._settings.set(["active_slot"], None)
+                self._settings.set(["active_slot_source"], None)
                 self._settings.set(["map_tools_to_slots"], False)
                 self._settings.set(["tool_slot_map"], {})
                 self._settings.set(["routing_revision"], 0)
@@ -616,6 +618,7 @@ class FilamentHubBridgePlugin(
             self._settings.set(["snapshot"], {})
             self._settings.set(["snapshot_etag"], None)
             self._settings.set(["active_slot"], None)
+            self._settings.set(["active_slot_source"], None)
             self._settings.set(["map_tools_to_slots"], False)
             self._settings.set(["tool_slot_map"], {})
             self._settings.set(["routing_revision"], 0)
@@ -897,6 +900,7 @@ class FilamentHubBridgePlugin(
                     reason="slot_change",
                 )
             self._settings.set(["active_slot"], slot_index)
+            self._settings.set(["active_slot_source"], "manual_declaration")
             self._settings.save()
         self._wake_worker.set()
 
@@ -1070,8 +1074,8 @@ class FilamentHubBridgePlugin(
                 and manual_slot not in available
             ):
                 assigned = sorted(self._job_routes)
-                if assigned:
-                    self._settings.set(["active_slot"], assigned[0])
+                self._settings.set(["active_slot"], assigned[0] if assigned else None)
+                self._settings.set(["active_slot_source"], None)
             self._logger.info(
                 "Tracking print %s with %d assigned FilamentHub spool(s)",
                 self._job_file or self._job_id,
@@ -1300,6 +1304,7 @@ class FilamentHubBridgePlugin(
                     assigned[0] if assigned else (min(available) if available else None)
                 )
                 self._settings.set(["active_slot"], fallback)
+                self._settings.set(["active_slot_source"], None)
 
     def _sync_snapshot(self) -> None:
         headers = {}
@@ -1315,6 +1320,18 @@ class FilamentHubBridgePlugin(
             self._apply_snapshot(payload, response_headers.get("ETag"))
 
     def _send_heartbeat(self) -> None:
+        tool_routing = self._settings.get_boolean(["map_tools_to_slots"])
+        reported_slot_index = (
+            self._active_slot()
+            if not tool_routing or self._selected_tool is not None
+            else None
+        )
+        reported_slot_source = None
+        if reported_slot_index is not None:
+            if tool_routing and self._selected_tool is not None:
+                reported_slot_source = "tool_command"
+            elif self._settings.get(["active_slot_source"]) == "manual_declaration":
+                reported_slot_source = "manual_declaration"
         _, _, response = self._request(
             "POST",
             "/heartbeat",
@@ -1323,7 +1340,8 @@ class FilamentHubBridgePlugin(
                 "plugin_version": PLUGIN_VERSION,
                 "octoprint_version": self._octoprint_version(),
                 "capabilities": CAPABILITIES,
-                "active_slot_index": self._active_slot(),
+                "reported_slot_index": reported_slot_index,
+                "reported_slot_source": reported_slot_source,
                 "routing_mode": (
                     "tools"
                     if self._settings.get_boolean(["map_tools_to_slots"])

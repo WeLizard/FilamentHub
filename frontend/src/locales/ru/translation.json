@@ -8231,7 +8231,12 @@
       "checking": "Проверяем соединение Bridge…",
       "disconnect": "Отключить",
       "disconnected": "OctoPrint Bridge отключён",
-      "activeSlot": "Заявленный вручную слот учёта: {{count}}",
+      "reportedSlot": {
+        "manual_declaration": "Заявленный слот учёта: {{count}}",
+        "tool_command": "Команда маршрутизации ведёт в слот {{count}}",
+        "device_observation": "Принтер сообщает загрузку слота {{count}}",
+        "legacy_unspecified": "Сообщён слот {{count}} (источник неизвестен)"
+      },
       "routingTitle": "Маршрутизация инструментов по слотам",
       "routingDescription": "Согласуйте логические инструменты Tn в OctoPrint с назначениями слотов FilamentHub.",
       "routingMode": {

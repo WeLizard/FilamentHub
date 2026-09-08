@@ -30,7 +30,10 @@ class OctoPrintBridgeConnection(Base):
     instance_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
     plugin_version: Mapped[str | None] = mapped_column(String(50), nullable=True)
     octoprint_version: Mapped[str | None] = mapped_column(String(50), nullable=True)
-    active_slot_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    reported_slot_index: Mapped[int | None] = mapped_column(
+        "active_slot_index", Integer, nullable=True
+    )
+    reported_slot_source: Mapped[str | None] = mapped_column(String(32), nullable=True)
     desired_routing_mode: Mapped[str] = mapped_column(
         String(20), nullable=False, default="manual", server_default="manual"
     )

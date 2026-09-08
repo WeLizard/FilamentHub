@@ -8056,7 +8056,12 @@
       "checking": "Checking the Bridge connection…",
       "disconnect": "Disconnect",
       "disconnected": "OctoPrint Bridge disconnected",
-      "activeSlot": "Manually declared tracking slot: {{count}}",
+      "reportedSlot": {
+        "manual_declaration": "Declared tracking slot: {{count}}",
+        "tool_command": "Routing command points to slot {{count}}",
+        "device_observation": "Printer reports loaded slot {{count}}",
+        "legacy_unspecified": "Reported slot {{count}} (source unavailable)"
+      },
       "routingTitle": "Tool to slot routing",
       "routingDescription": "Keep OctoPrint's logical Tn tools and FilamentHub slot assignments in sync.",
       "routingMode": {

@@ -4348,7 +4348,11 @@ export interface OctoPrintBridgeStatus {
   paired: boolean;
   pairing_expires_at: string | null;
   last_seen_at: string | null;
-  active_slot_index: number | null;
+  reported_slot: {
+    slot_index: number;
+    source: 'manual_declaration' | 'tool_command' | 'device_observation' | 'legacy_unspecified';
+    reported_at: string;
+  } | null;
   instance_id: string | null;
   plugin_version: string | null;
   octoprint_version: string | null;

@@ -8045,7 +8045,12 @@
       "checking": "正在检查 Bridge 连接…",
       "disconnect": "断开连接",
       "disconnected": "OctoPrint Bridge 已断开",
-      "activeSlot": "手动声明的用量归属槽位：{{count}}",
+      "reportedSlot": {
+        "manual_declaration": "声明的用量归属槽位：{{count}}",
+        "tool_command": "路由命令指向槽位 {{count}}",
+        "device_observation": "打印机报告已装载槽位 {{count}}",
+        "legacy_unspecified": "报告的槽位 {{count}}（来源不可用）"
+      },
       "routingTitle": "工具到槽位路由",
       "routingDescription": "同步 OctoPrint 的逻辑 Tn 工具与 FilamentHub 槽位分配。",
       "routingMode": {

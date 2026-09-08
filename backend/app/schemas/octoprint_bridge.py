@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import AliasChoices, BaseModel, Field, model_validator
 
 from app.schemas.printer_usage import PrinterUsageEvent, PrinterUsageItem
 
@@ -40,12 +40,18 @@ class OctoPrintBridgeRoutingUpdateRequest(BaseModel):
         return self
 
 
+class OctoPrintBridgeReportedSlot(BaseModel):
+    slot_index: int = Field(ge=0, le=1023)
+    source: Literal["manual_declaration", "tool_command", "device_observation", "legacy_unspecified"]
+    reported_at: datetime
+
+
 class OctoPrintBridgeStatusResponse(BaseModel):
     configured: bool
     paired: bool
     pairing_expires_at: datetime | None
     last_seen_at: datetime | None
-    active_slot_index: int | None
+    reported_slot: OctoPrintBridgeReportedSlot | None
     instance_id: str | None
     plugin_version: str | None
     octoprint_version: str | None
@@ -73,7 +79,13 @@ class OctoPrintBridgeHeartbeatRequest(BaseModel):
     plugin_version: str = Field(min_length=1, max_length=50)
     octoprint_version: str = Field(min_length=1, max_length=50)
     capabilities: list[str] = Field(default_factory=list, max_length=32)
-    active_slot_index: int | None = Field(default=None, ge=0, le=1023)
+    reported_slot_index: int | None = Field(
+        default=None,
+        ge=0,
+        le=1023,
+        validation_alias=AliasChoices("reported_slot_index", "active_slot_index"),
+    )
+    reported_slot_source: Literal["manual_declaration", "tool_command"] | None = None
     routing_mode: Literal["manual", "tools"] | None = None
     tool_slot_map: list[OctoPrintToolSlotMapping] | None = Field(default=None, max_length=256)
     routing_revision: int | None = Field(default=None, ge=0)
@@ -95,6 +107,15 @@ class OctoPrintBridgeHeartbeatRequest(BaseModel):
                 raise ValueError("each tool may be mapped only once")
             if self.routing_mode == "tools" and not self.tool_slot_map:
                 raise ValueError("tool routing requires at least one mapping")
+        if self.reported_slot_index is None and self.reported_slot_source is not None:
+            raise ValueError("reported slot source requires a slot index")
+        if (
+            self.reported_slot_source == "manual_declaration"
+            and self.routing_mode == "tools"
+        ):
+            raise ValueError("manual declaration cannot report tool routing")
+        if self.reported_slot_source == "tool_command" and self.routing_mode == "manual":
+            raise ValueError("tool command cannot report manual routing")
         return self
 
 

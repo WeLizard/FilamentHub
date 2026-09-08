@@ -40,6 +40,7 @@ from app.schemas.octoprint_bridge import (
     OctoPrintBridgeHeartbeatRequest,
     OctoPrintBridgePairRequest,
     OctoPrintBridgePairResponse,
+    OctoPrintBridgeReportedSlot,
     OctoPrintBridgeRoutingState,
     OctoPrintBridgeRoutingUpdateRequest,
     OctoPrintBridgeSnapshotResponse,
@@ -155,6 +156,19 @@ def _routing_state(connection: OctoPrintBridgeConnection) -> OctoPrintBridgeRout
         tool_slot_map=_normalized_tool_slot_map(connection.desired_tool_slot_map),
         revision=max(int(connection.routing_revision or 0), 0),
         applied_revision=connection.applied_routing_revision,
+    )
+
+
+def _reported_slot(
+    connection: OctoPrintBridgeConnection,
+) -> OctoPrintBridgeReportedSlot | None:
+    if connection.reported_slot_index is None or connection.observed_at is None:
+        return None
+    source = connection.reported_slot_source or "legacy_unspecified"
+    return OctoPrintBridgeReportedSlot(
+        slot_index=connection.reported_slot_index,
+        source=source,
+        reported_at=connection.observed_at,
     )
 
 
@@ -341,7 +355,7 @@ async def get_bridge_status(
             paired=False,
             pairing_expires_at=None,
             last_seen_at=None,
-            active_slot_index=None,
+            reported_slot=None,
             instance_id=None,
             plugin_version=None,
             octoprint_version=None,
@@ -363,7 +377,7 @@ async def get_bridge_status(
             paired=False,
             pairing_expires_at=None,
             last_seen_at=connector.last_seen_at,
-            active_slot_index=None,
+            reported_slot=None,
             instance_id=None,
             plugin_version=None,
             octoprint_version=None,
@@ -379,7 +393,7 @@ async def get_bridge_status(
         paired=connection.token_hash is not None and connection.revoked_at is None,
         pairing_expires_at=connection.pairing_expires_at,
         last_seen_at=connector.last_seen_at,
-        active_slot_index=connection.active_slot_index,
+        reported_slot=_reported_slot(connection),
         instance_id=connection.instance_id,
         plugin_version=connection.plugin_version,
         octoprint_version=connection.octoprint_version,
@@ -623,11 +637,11 @@ async def record_heartbeat(
         raise_error(401, ERR_OCTOPRINT_BRIDGE_UNAUTHORIZED)
     if connector.material_system_id is None:
         raise_error(409, ERR_OCTOPRINT_BRIDGE_NOT_CONFIGURED)
-    if payload.active_slot_index is not None:
+    if payload.reported_slot_index is not None:
         slot_exists = await db.scalar(
             select(MaterialSlot.id).where(
                 MaterialSlot.material_system_id == connector.material_system_id,
-                MaterialSlot.provider_index == payload.active_slot_index,
+                MaterialSlot.provider_index == payload.reported_slot_index,
             )
         )
         if slot_exists is None:
@@ -673,8 +687,11 @@ async def record_heartbeat(
     connection.instance_id = payload.instance_id
     connection.plugin_version = payload.plugin_version
     connection.octoprint_version = payload.octoprint_version
-    connection.active_slot_index = payload.active_slot_index
     connection.observed_at = now
+    connection.reported_slot_index = payload.reported_slot_index
+    connection.reported_slot_source = payload.reported_slot_source
+    if connection.reported_slot_index is not None and connection.reported_slot_source is None:
+        connection.reported_slot_source = "legacy_unspecified"
     await _record_capabilities(db, connector=connector, reported=payload.capabilities)
     connector.last_seen_at = now
     connector.active = True
@@ -684,7 +701,7 @@ async def record_heartbeat(
         paired=True,
         pairing_expires_at=None,
         last_seen_at=connector.last_seen_at,
-        active_slot_index=connection.active_slot_index,
+        reported_slot=_reported_slot(connection),
         instance_id=connection.instance_id,
         plugin_version=connection.plugin_version,
         octoprint_version=connection.octoprint_version,

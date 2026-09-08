@@ -189,20 +189,55 @@ async def test_bridge_pair_snapshot_usage_replay_and_revoke(
             "plugin_version": "0.1.1",
             "octoprint_version": "1.11.8",
             "capabilities": ["read", "write", "spool_identity", "consumption"],
-            "active_slot_index": 0,
+            "reported_slot_index": 0,
+            "reported_slot_source": "manual_declaration",
             "routing_mode": "manual",
             "tool_slot_map": [],
             "routing_revision": 0,
         },
     )
     assert heartbeat_response.status_code == 200
-    assert heartbeat_response.json()["active_slot_index"] == 0
+    assert heartbeat_response.json()["reported_slot"] == {
+        "slot_index": 0,
+        "source": "manual_declaration",
+        "reported_at": heartbeat_response.json()["last_seen_at"],
+    }
+    assert "active_slot_index" not in heartbeat_response.json()
     assert heartbeat_response.json()["routing"] == {
         "mode": "manual",
         "tool_slot_map": [],
         "revision": 1,
         "applied_revision": 1,
     }
+    legacy_heartbeat = await auth_client.post(
+        "/api/v1/octoprint-bridge/heartbeat",
+        headers=bridge_headers,
+        json={
+            "instance_id": "octoprint-test-instance",
+            "plugin_version": "0.1.3",
+            "octoprint_version": "1.11.8",
+            "capabilities": ["read", "write", "spool_identity", "consumption"],
+            "active_slot_index": 0,
+            "routing_mode": "manual",
+            "tool_slot_map": [],
+            "routing_revision": 1,
+        },
+    )
+    assert legacy_heartbeat.status_code == 200
+    assert legacy_heartbeat.json()["reported_slot"]["source"] == "legacy_unspecified"
+    invented_observation = await auth_client.post(
+        "/api/v1/octoprint-bridge/heartbeat",
+        headers=bridge_headers,
+        json={
+            "instance_id": "octoprint-test-instance",
+            "plugin_version": "0.1.4",
+            "octoprint_version": "1.11.8",
+            "capabilities": ["read", "write", "presence", "consumption"],
+            "reported_slot_index": 0,
+            "reported_slot_source": "device_observation",
+        },
+    )
+    assert invented_observation.status_code == 422
     printer_after_heartbeat = await auth_client.get(f"/api/v1/physical-printers/{printer_id}")
     assert printer_after_heartbeat.status_code == 200
     expected_capabilities = ["consumption", "read", "spool_identity", "write"]

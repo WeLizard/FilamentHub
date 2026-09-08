@@ -66,7 +66,11 @@ let octoprintBridgeStatusForQuery: OctoPrintBridgeStatus = {
   paired: true,
   pairing_expires_at: null,
   last_seen_at: '2026-08-28T10:40:57Z',
-  active_slot_index: 0,
+  reported_slot: {
+    slot_index: 0,
+    source: 'tool_command',
+    reported_at: '2026-08-28T10:40:57Z',
+  },
   instance_id: 'octoprint-fixture',
   plugin_version: '0.1.0',
   octoprint_version: '1.11.8',
@@ -211,7 +215,11 @@ describe('PresetSlotsPanel', () => {
       paired: true,
       pairing_expires_at: null,
       last_seen_at: '2026-08-28T10:40:57Z',
-      active_slot_index: 0,
+      reported_slot: {
+        slot_index: 0,
+        source: 'tool_command',
+        reported_at: '2026-08-28T10:40:57Z',
+      },
       instance_id: 'octoprint-fixture',
       plugin_version: '0.1.0',
       octoprint_version: '1.11.8',
@@ -364,7 +372,7 @@ describe('PresetSlotsPanel', () => {
     expect(physicalPrinter.material_systems[0].declared_slot_count).toBe(1);
   });
 
-  it('shows a declared slot only after manual routing is applied', async () => {
+  it('labels declared and commanded slots by their actual source', async () => {
     const { feedAdapterFor } = await import('../components/presetSlots/adapters');
     const octoprintSystem = {
       ...physicalPrinter.material_systems[0],
@@ -380,6 +388,11 @@ describe('PresetSlotsPanel', () => {
 
     octoprintBridgeStatusForQuery = {
       ...octoprintBridgeStatusForQuery,
+      reported_slot: {
+        slot_index: 0,
+        source: 'manual_declaration',
+        reported_at: '2026-08-28T10:40:57Z',
+      },
       routing: {
         mode: 'manual',
         tool_slot_map: [],
@@ -388,21 +401,26 @@ describe('PresetSlotsPanel', () => {
       },
     };
     const pendingManualRouting = render(<>{feedAdapterFor('octoprint').renderSettings?.(context)}</>);
-    expect(screen.queryByText('presetSlots.octoprint.activeSlot')).not.toBeInTheDocument();
+    expect(screen.getByText('presetSlots.octoprint.reportedSlot.manual_declaration')).toBeInTheDocument();
     pendingManualRouting.unmount();
 
     octoprintBridgeStatusForQuery = {
       ...octoprintBridgeStatusForQuery,
+      reported_slot: {
+        slot_index: 1,
+        source: 'tool_command',
+        reported_at: '2026-08-28T10:41:57Z',
+      },
       routing: {
-        mode: 'manual',
-        tool_slot_map: [],
+        mode: 'tools',
+        tool_slot_map: [{ tool_index: 0, slot_index: 1 }],
         revision: 5,
         applied_revision: 5,
       },
     };
     render(<>{feedAdapterFor('octoprint').renderSettings?.(context)}</>);
 
-    expect(screen.getByText('presetSlots.octoprint.activeSlot')).toBeInTheDocument();
+    expect(screen.getByText('presetSlots.octoprint.reportedSlot.tool_command')).toBeInTheDocument();
   });
 
   it('shows OctoPrint Bridge installation instructions without external navigation', async () => {

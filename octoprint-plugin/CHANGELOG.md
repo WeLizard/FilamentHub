@@ -3,6 +3,8 @@
 Newest first. The top entry is used for GitHub release notes.
 
 ## 0.1.4
+- Reports whether a selected slot came from a manual declaration or a G-code
+  tool-routing command, without presenting either as a physical observation.
 - Marks each usage checkpoint with a durable order and explicit assignment
   evidence so FilamentHub can present multi-spool job consumption faithfully.
 - Removes a pending usage report only after FilamentHub explicitly accepts it,

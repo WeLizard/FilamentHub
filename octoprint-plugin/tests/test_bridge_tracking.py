@@ -1506,9 +1506,46 @@ def test_heartbeat_applies_routing_changed_on_filamenthub():
     assert sent[0][2]["routing_mode"] == "manual"
     assert sent[0][2]["tool_slot_map"] == []
     assert sent[0][2]["routing_revision"] == 0
+    assert sent[0][2]["reported_slot_index"] == 0
+    assert sent[0][2]["reported_slot_source"] is None
     assert plugin._settings.get(["map_tools_to_slots"]) is True
     assert plugin._settings.get(["tool_slot_map"]) == {"0": 0, "7": 0}
     assert plugin._settings.get(["routing_revision"]) == 4
+
+
+def test_heartbeat_labels_manual_and_tool_selected_slots_without_claiming_observation():
+    plugin = FilamentHubBridgePlugin()
+    plugin._settings = FakeSettings()
+    plugin._settings.set(["snapshot"], {
+        "slots": [{"index": 2, "spool": {"id": 12}}],
+    })
+    sent = []
+    plugin._request = lambda method, path, payload: (
+        sent.append(payload) or (200, {}, {})
+    )
+
+    plugin._settings.set(["active_slot"], 2)
+    plugin._send_heartbeat()
+    assert sent[-1]["reported_slot_index"] == 2
+    assert sent[-1]["reported_slot_source"] is None
+
+    plugin._select_slot(2)
+    plugin._send_heartbeat()
+    assert sent[-1]["reported_slot_index"] == 2
+    assert sent[-1]["reported_slot_source"] == "manual_declaration"
+
+    plugin._settings.set_boolean(["map_tools_to_slots"], True)
+    plugin._settings.set(["tool_slot_map"], {"0": 2})
+    plugin._printing = True
+    plugin._tracker.active_tool = 0
+    plugin._send_heartbeat()
+    assert sent[-1]["reported_slot_index"] is None
+    assert sent[-1]["reported_slot_source"] is None
+
+    plugin.on_gcode_sent(PrintingComm(), "sent", "T0", None, "T")
+    plugin._send_heartbeat()
+    assert sent[-1]["reported_slot_index"] == 2
+    assert sent[-1]["reported_slot_source"] == "tool_command"
 
 
 def test_heartbeat_does_not_rewrite_unchanged_routing_settings():
