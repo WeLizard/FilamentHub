@@ -93,6 +93,198 @@ async def test_one_bambu_system_keeps_independent_orca_and_edge_connectors(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("revoke_first", ["edge", "native"])
+async def test_moonraker_edge_and_native_octoprint_revokes_are_independent(
+    auth_client: AsyncClient,
+    auth_user: User,
+    db_session: AsyncSession,
+    revoke_first: str,
+) -> None:
+    printer_response = await auth_client.post(
+        "/api/v1/physical-printers",
+        json={"name": "Shared Moonraker printer"},
+    )
+    assert printer_response.status_code == 201, printer_response.text
+    printer_id = printer_response.json()["id"]
+    system_response = await auth_client.post(
+        f"/api/v1/physical-printers/{printer_id}/material-systems",
+        json={
+            "name": "Direct feed",
+            "kind": "direct_feed",
+            "provider": "moonraker",
+            "slot_count": 1,
+        },
+    )
+    assert system_response.status_code == 201, system_response.text
+    system = system_response.json()["material_systems"][0]
+    system_id = system["id"]
+
+    spool = UserSpool(
+        user_id=auth_user.id,
+        state=UserSpoolState.shelf,
+        source="manual",
+        initial_weight_g=1000,
+        used_weight_g=0,
+    )
+    db_session.add(spool)
+    await db_session.commit()
+
+    edge_code = await auth_client.post(
+        f"/api/v1/printer-bridge/connections/{printer_id}/{system_id}/pairing-code",
+        params={"transport": "edge_agent"},
+    )
+    assert edge_code.status_code == 200, edge_code.text
+    source_instance_id = "moonraker-edge-coexistence"
+    edge_pair = await auth_client.post(
+        "/api/v1/printer-bridge/pair",
+        json={
+            "pairing_code": edge_code.json()["pairing_code"],
+            "provider": "moonraker",
+            "transport": "edge_agent",
+            "source_instance_id": source_instance_id,
+            "node_instance_id": "moonraker-edge-node",
+            "plugin_version": "0.1.0-test",
+            "capabilities": ["read", "presence"],
+        },
+    )
+    assert edge_pair.status_code == 200, edge_pair.text
+    edge_headers = {
+        "X-FilamentHub-Bridge-Token": edge_pair.json()["bridge_token"]
+    }
+    edge_snapshot = await auth_client.post(
+        "/api/v1/printer-bridge/snapshot",
+        headers=edge_headers,
+        json={
+            "material_system_id": system_id,
+            "provider": "moonraker",
+            "transport": "edge_agent",
+            "source_instance_id": source_instance_id,
+            "sequence": 1,
+            "observed_at": datetime.now(timezone.utc).isoformat(),
+            "capabilities": ["read", "presence"],
+            "slot_topology_complete": True,
+            "slots": [
+                {
+                    "provider_index": 0,
+                    "kind": "external",
+                    "present": True,
+                }
+            ],
+        },
+    )
+    assert edge_snapshot.status_code == 200, edge_snapshot.text
+
+    printer = (await auth_client.get(f"/api/v1/physical-printers/{printer_id}")).json()
+    slot = printer["material_systems"][0]["slots"][0]
+    assignment = await auth_client.patch(
+        f"/api/v1/physical-printers/{printer_id}/material-slots/{slot['id']}",
+        json={
+            "expected_revision": slot["assignment_revision"],
+            "expected_spool_id": None,
+            "spool_id": spool.id,
+        },
+    )
+    assert assignment.status_code == 200, assignment.text
+
+    native_code = await auth_client.post(
+        f"/api/v1/octoprint-bridge/connections/{printer_id}/{system_id}/pairing-code"
+    )
+    assert native_code.status_code == 200, native_code.text
+    native_pair = await auth_client.post(
+        "/api/v1/octoprint-bridge/pair",
+        json={
+            "pairing_code": native_code.json()["pairing_code"],
+            "instance_id": "octoprint-moonraker-coexistence",
+            "plugin_version": "0.1.0-test",
+            "octoprint_version": "1.11.8",
+            "capabilities": ["read", "write"],
+        },
+    )
+    assert native_pair.status_code == 200, native_pair.text
+    native_headers = {
+        "X-FilamentHub-Bridge-Token": native_pair.json()["bridge_token"]
+    }
+
+    combined = (await auth_client.get(f"/api/v1/physical-printers/{printer_id}")).json()
+    assert combined["material_systems"][0]["provider"] == "moonraker"
+    combined_slot = combined["material_systems"][0]["slots"][0]
+    assert combined_slot["assignment"]["spool_id"] == spool.id
+    assert {
+        (item["provider"], item["transport"])
+        for item in combined["connectors"]
+        if item["active"]
+    } == {
+        ("moonraker", "edge_agent"),
+        ("octoprint", "bridge_https"),
+    }
+    authorities = [item for item in combined["connectors"] if item["topology_authority"]]
+    assert len(authorities) == 1
+    assert (authorities[0]["provider"], authorities[0]["transport"]) == (
+        "moonraker",
+        "edge_agent",
+    )
+    native_snapshot = await auth_client.get(
+        "/api/v1/octoprint-bridge/snapshot",
+        headers=native_headers,
+    )
+    assert native_snapshot.status_code == 200, native_snapshot.text
+    assert native_snapshot.json()["slots"][0]["spool"]["id"] == spool.id
+
+    if revoke_first == "edge":
+        first_revoke = await auth_client.delete(
+            f"/api/v1/printer-bridge/connections/{printer_id}/{system_id}",
+            params={"transport": "edge_agent"},
+        )
+        assert first_revoke.status_code == 204, first_revoke.text
+        assert (
+            await auth_client.get(
+                "/api/v1/octoprint-bridge/snapshot",
+                headers=native_headers,
+            )
+        ).status_code == 200
+    else:
+        first_revoke = await auth_client.delete(
+            f"/api/v1/octoprint-bridge/connections/{printer_id}/{system_id}"
+        )
+        assert first_revoke.status_code == 204, first_revoke.text
+        assert (
+            await auth_client.get(
+                "/api/v1/printer-bridge/snapshot",
+                headers=edge_headers,
+            )
+        ).status_code == 200
+
+    surviving = (await auth_client.get(f"/api/v1/physical-printers/{printer_id}")).json()
+    assert surviving["material_systems"][0]["provider"] == "moonraker"
+    assert surviving["material_systems"][0]["slots"][0]["assignment"]["spool_id"] == spool.id
+
+    if revoke_first == "edge":
+        second_revoke = await auth_client.delete(
+            f"/api/v1/octoprint-bridge/connections/{printer_id}/{system_id}"
+        )
+        assert second_revoke.status_code == 204, second_revoke.text
+    else:
+        second_revoke = await auth_client.delete(
+            f"/api/v1/printer-bridge/connections/{printer_id}/{system_id}",
+            params={"transport": "edge_agent"},
+        )
+        assert second_revoke.status_code == 204, second_revoke.text
+
+    assert (
+        await auth_client.get(
+            "/api/v1/printer-bridge/snapshot",
+            headers=edge_headers,
+        )
+    ).status_code == 401
+    assert (
+        await auth_client.get(
+            "/api/v1/octoprint-bridge/snapshot",
+            headers=native_headers,
+        )
+    ).status_code == 401
+
+
+@pytest.mark.asyncio
 async def test_unpaired_connectors_never_contribute_system_capabilities(
     auth_client: AsyncClient,
     db_session: AsyncSession,
