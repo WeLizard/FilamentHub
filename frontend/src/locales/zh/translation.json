@@ -8010,7 +8010,7 @@
       "bridgeDocs": "安装说明",
       "setupDescription": "在 OctoPrint 中安装 FilamentHub Bridge，在此生成短时配对码，然后在 OctoPrint 的 FilamentHub 标签页中输入。无需将 OctoPrint 暴露到公网。",
       "connectedTitle": "FilamentHub Bridge 已连接",
-      "connectedDescription": "槽位分配会同步到 OctoPrint。Bridge 会报告当前选择的槽位，并在打印结束、取消或失败后发送测得的用量。",
+      "connectedDescription": "槽位分配会同步到 OctoPrint。Bridge 会报告声明的用量归属槽位（并非硬件确认的供料路径），并在打印结束、取消或失败后发送测得的用量。",
       "createDescription": "请选择这台打印机可使用的实际材料位置数量。位置可以是直进料架、MMU 通道或真实工具；Bridge 不会把每个通道伪装成挤出机。",
       "slotCount": "材料位置",
       "issueCode": "生成配对码",
@@ -8018,7 +8018,7 @@
       "checking": "正在检查 Bridge 连接…",
       "disconnect": "断开连接",
       "disconnected": "OctoPrint Bridge 已断开",
-      "activeSlot": "已选槽位：{{count}}",
+      "activeSlot": "手动声明的用量归属槽位：{{count}}",
       "routingTitle": "工具到槽位路由",
       "routingDescription": "同步 OctoPrint 的逻辑 Tn 工具与 FilamentHub 槽位分配。",
       "routingMode": {

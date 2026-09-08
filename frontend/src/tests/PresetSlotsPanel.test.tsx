@@ -364,7 +364,7 @@ describe('PresetSlotsPanel', () => {
     expect(physicalPrinter.material_systems[0].declared_slot_count).toBe(1);
   });
 
-  it('shows a selected slot only for an explicit manual declaration', async () => {
+  it('shows a declared slot only after manual routing is applied', async () => {
     const { feedAdapterFor } = await import('../components/presetSlots/adapters');
     const octoprintSystem = {
       ...physicalPrinter.material_systems[0],
@@ -378,9 +378,18 @@ describe('PresetSlotsPanel', () => {
       linkConfirmed: true,
     };
 
-    const toolRouting = render(<>{feedAdapterFor('octoprint').renderSettings?.(context)}</>);
+    octoprintBridgeStatusForQuery = {
+      ...octoprintBridgeStatusForQuery,
+      routing: {
+        mode: 'manual',
+        tool_slot_map: [],
+        revision: 5,
+        applied_revision: 4,
+      },
+    };
+    const pendingManualRouting = render(<>{feedAdapterFor('octoprint').renderSettings?.(context)}</>);
     expect(screen.queryByText('presetSlots.octoprint.activeSlot')).not.toBeInTheDocument();
-    toolRouting.unmount();
+    pendingManualRouting.unmount();
 
     octoprintBridgeStatusForQuery = {
       ...octoprintBridgeStatusForQuery,

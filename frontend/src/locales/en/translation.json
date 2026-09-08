@@ -8021,7 +8021,7 @@
       "bridgeDocs": "Installation guide",
       "setupDescription": "Install FilamentHub Bridge in OctoPrint, issue a short-lived code here and enter it in the FilamentHub tab in OctoPrint. No public access to OctoPrint is required.",
       "connectedTitle": "FilamentHub Bridge is connected",
-      "connectedDescription": "Slot assignments are synchronized with OctoPrint. The Bridge reports the selected slot and sends measured usage after terminal print events.",
+      "connectedDescription": "Slot assignments are synchronized with OctoPrint. The Bridge reports the declared tracking slot, not a physically confirmed feed path, and sends measured usage after terminal print events.",
       "createDescription": "Choose how many physical material positions this printer can use. A position may be a direct-feed holder, an MMU gate or a real tool; the Bridge will not pretend that every gate is an extruder.",
       "slotCount": "Material positions",
       "issueCode": "Issue pairing code",
@@ -8029,7 +8029,7 @@
       "checking": "Checking the Bridge connection…",
       "disconnect": "Disconnect",
       "disconnected": "OctoPrint Bridge disconnected",
-      "activeSlot": "Selected slot: {{count}}",
+      "activeSlot": "Manually declared tracking slot: {{count}}",
       "routingTitle": "Tool to slot routing",
       "routingDescription": "Keep OctoPrint's logical Tn tools and FilamentHub slot assignments in sync.",
       "routingMode": {
