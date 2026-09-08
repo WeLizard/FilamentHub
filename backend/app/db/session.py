@@ -68,6 +68,9 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
                     session,
                     affected_ids,
                 )
+            from app.services.account_session_service import persist_session_activity
+
+            await persist_session_activity(session)
         except Exception:
             await session.rollback()
             raise

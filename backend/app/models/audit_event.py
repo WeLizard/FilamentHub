@@ -34,6 +34,8 @@ class AuditReason(str, Enum):
     ADMIN_DEMOTE = "admin_demote"
     ADMIN_DELETE = "admin_delete"
     ADMIN_EMAIL_CODE = "admin_email_code"
+    SESSION_REVOKE = "session_revoke"
+    OTHER_SESSIONS_REVOKE = "other_sessions_revoke"
 
 
 class AuditEvent(Base):
@@ -50,7 +52,7 @@ class AuditEvent(Base):
         CheckConstraint(
             "reason IN ('recovery_grant', 'authenticated_change', 'logout', "
             "'refresh_reuse', 'admin_block', 'admin_promote', 'admin_demote', "
-            "'admin_delete', 'admin_email_code')",
+            "'admin_delete', 'admin_email_code', 'session_revoke', 'other_sessions_revoke')",
             name="ck_audit_events_reason",
         ),
         Index("ix_audit_events_actor_time", "actor_user_id", "occurred_at"),

@@ -16,7 +16,7 @@ import time
 from collections import defaultdict
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass, field
-from datetime import timezone
+from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 
@@ -27,6 +27,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.models.material_system import PhysicalPrinterConnector
+from app.models.refresh_session import RefreshSession
 from app.models.revoked_token import RevokedToken
 from app.models.user import User
 from app.models.user_printer_device import UserPrinterDevice
@@ -73,6 +74,7 @@ class ContactSubscription:
     user_id: int
     token_id: str
     auth_version: int = 0
+    session_id: str | None = None
     lease_id: str = field(default_factory=lambda: uuid4().hex)
     queue: asyncio.Queue = field(
         default_factory=lambda: asyncio.Queue(maxsize=MAX_PENDING_EVENTS)
@@ -152,6 +154,8 @@ class PrinterContactBroker:
                             pipe.set(f"{_NAMESPACE}:deny-token:{payload['token_id']}", 1, ex=TICKET_SECONDS + 1)
                         elif payload["type"] == "disconnect":
                             pipe.set(f"{_NAMESPACE}:deny-user:{user_id}", 1, ex=TICKET_SECONDS + 1)
+                        elif payload["type"] == "revoke_session":
+                            pipe.set(f"{_NAMESPACE}:deny-session:{payload['session_id']}", 1, ex=TICKET_SECONDS + 1)
                         pipe.publish(self.channel(user_id), json.dumps(payload, separators=(",", ":")))
                     await pipe.execute()
         except (RedisError, OSError, TimeoutError, ValueError):
@@ -163,6 +167,7 @@ class PrinterContactBroker:
         token_id: str,
         expires_at: float,
         auth_version: int = 0,
+        session_id: str | None = None,
     ) -> str:
         try:
             async with asyncio.timeout(1):
@@ -179,6 +184,7 @@ class PrinterContactBroker:
                     "user_id": user_id,
                     "token_id": token_id,
                     "auth_version": auth_version,
+                    "session_id": session_id,
                     "expires_at": expires_at,
                 }), ex=TICKET_SECONDS)
                 return ticket
@@ -196,17 +202,18 @@ class PrinterContactBroker:
                 if not value:
                     return None
                 session = json.loads(value)
-                if await self._denied(session["user_id"], session["token_id"]):
+                if await self._denied(session["user_id"], session["token_id"], session.get("session_id")):
                     return None
                 return session
         except (RedisError, OSError, TimeoutError, ValueError) as exc:
             self._warn()
             raise StreamUnavailable from exc
 
-    async def _denied(self, user_id: int, token_id: str) -> bool:
+    async def _denied(self, user_id: int, token_id: str, session_id: str | None = None) -> bool:
         return bool(await self.redis.exists(
             f"{_NAMESPACE}:deny-token:{token_id}",
             f"{_NAMESPACE}:deny-user:{user_id}",
+            f"{_NAMESPACE}:deny-session:{session_id}",
         ))
 
     async def _refresh_authorizations(self, subscriptions: list[ContactSubscription]) -> None:
@@ -291,6 +298,12 @@ class PrinterContactBroker:
                 for subscription in self._users.get(user_id, ()):
                     if payload.get("type") == "disconnect":
                         subscription.stop()
+                    elif payload.get("type") == "revoke_session":
+                        if subscription.session_id == payload.get("session_id"):
+                            subscription.stop()
+                    elif payload.get("type") == "revoke_other_sessions":
+                        if subscription.session_id != payload.get("preserved_session_id"):
+                            subscription.stop()
                     else:
                         subscription.offer(payload)
         except (RedisError, OSError, ValueError, KeyError):
@@ -303,8 +316,8 @@ class PrinterContactBroker:
                     subscription.stop()
 
     @asynccontextmanager
-    async def subscribe(self, user_id: int, token_id: str, auth_version: int = 0):
-        subscription = ContactSubscription(user_id, token_id, auth_version)
+    async def subscribe(self, user_id: int, token_id: str, auth_version: int = 0, session_id: str | None = None):
+        subscription = ContactSubscription(user_id, token_id, auth_version, session_id)
         acquired = False
         try:
             async with asyncio.timeout(3):
@@ -341,7 +354,7 @@ class PrinterContactBroker:
                 await ready.wait()
                 # Logout can race ticket consumption and subscription. Check
                 # again after ACK, when later revocations reach the live queue.
-                if subscription.closed or await self._denied(user_id, token_id):
+                if subscription.closed or await self._denied(user_id, token_id, session_id):
                     raise StreamUnavailable
                 # Redis revocation is only a fast path. A lost writer publish
                 # cannot admit an old ticket or authorize a socket for 300s.
@@ -404,22 +417,44 @@ async def _load_authorizations(
     # Lazy import avoids the ORM hook registration cycle in db.session.
     from app.db.session import AsyncSessionLocal
 
-    # At most two indexed queries per worker batch, never a session per socket
+    # At most three indexed queries per worker batch, never a session per socket
     # or a query for every contact. No connection is held between checks.
     async with AsyncSessionLocal() as db:
         active_rows = (
             await db.execute(
-                select(User.id, User.auth_version).where(
+                select(User.id, User.auth_version, User.legacy_access_revoked_at).where(
                     User.id.in_({item.user_id for item in subscriptions}),
                     User.active.is_(True),
                 )
             )
         ).tuples().all()
-        active_versions: dict[int, int] = dict(active_rows)
+        active_versions = {row[0]: row[1] for row in active_rows}
+        legacy_allowed = {row[0] for row in active_rows if row[2] is None}
         revoked_tokens = set((await db.scalars(select(RevokedToken.jti).where(
             RevokedToken.jti.in_({item.token_id for item in subscriptions}),
         ))).all())
+        session_ids = {item.session_id for item in subscriptions if item.session_id is not None}
+        live_families = dict((await db.execute(select(RefreshSession.id, RefreshSession.user_id).where(
+            RefreshSession.id.in_(session_ids), RefreshSession.revoked_at.is_(None),
+            RefreshSession.expires_at > datetime.now(timezone.utc),
+        ))).tuples().all()) if session_ids else {}
+        for item in subscriptions:
+            valid = (
+                live_families.get(item.session_id) == item.user_id
+                if item.session_id is not None else item.user_id in legacy_allowed
+            )
+            if not valid:
+                revoked_tokens.add(item.token_id)
     return active_versions, revoked_tokens
+
+
+def queue_other_sessions_revoked(session: Session, user_id: int, preserved_session_id: str) -> None:
+    """Bind a set-based revocation hint to the same commit as the family updates."""
+    transaction = session.get_nested_transaction() or session.get_transaction()
+    pending = session.info.setdefault(_PENDING, {}).setdefault(transaction, {})
+    pending[(user_id, "other_sessions", user_id)] = {
+        "type": "revoke_other_sessions", "preserved_session_id": preserved_session_id,
+    }
 
 
 def _collect_contacts(session: Session, _flush_context: Any) -> None:
@@ -428,6 +463,11 @@ def _collect_contacts(session: Session, _flush_context: Any) -> None:
     for row in session.new | session.dirty:
         if isinstance(row, RevokedToken) and row in session.new:
             pending[(None, "auth", row.jti)] = {"type": "revoke", "token_id": row.jti}
+        elif isinstance(row, RefreshSession):
+            if row.revoked_at is not None and inspect(row).attrs.revoked_at.history.has_changes():
+                pending[(row.user_id, "session", row.id)] = {
+                    "type": "revoke_session", "session_id": row.id,
+                }
         elif isinstance(row, User):
             active_changed = inspect(row).attrs.active.history.has_changes()
             auth_version_changed = inspect(row).attrs.auth_version.history.has_changes()

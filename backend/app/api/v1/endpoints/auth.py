@@ -15,6 +15,7 @@ from fastapi import (
     Depends,
     File,
     HTTPException,
+    Path,
     Query,
     Request,
     Response,
@@ -60,6 +61,11 @@ from app.models.revoked_token import RevokedToken
 from app.models.user import User, UserRole
 from app.models.user_saved_preset import UserSavedPreset
 from app.schemas.preset import PresetListResponse, PresetResponse
+from app.schemas.session import (
+    AccountSessionListResponse,
+    AccountSessionRevokeResponse,
+    OtherSessionsRevokeResponse,
+)
 from app.schemas.user import (
     AccessibleBrandResponse,
     AccountDeleteRequest,
@@ -101,6 +107,11 @@ from app.services.account_auth_service import (
     reset_password_with_grant,
     revoke_all_account_auth,
     token_data_for_user,
+)
+from app.services.account_session_service import (
+    list_account_sessions,
+    revoke_account_session,
+    revoke_other_account_sessions,
 )
 from app.services.admin_confirmation_service import (
     consume_admin_confirmation,
@@ -509,6 +520,7 @@ async def register(
             db,
             user_id=user.id,
             token_data=token_data,
+            user_agent=request.headers.get("user-agent", ""),
         )
         access_token = create_session_access_token(token_data, refresh_token)
         await db.commit()
@@ -698,6 +710,7 @@ async def login(
         db,
         user_id=user.id,
         token_data=token_data,
+        user_agent=request.headers.get("user-agent", ""),
     )
     access_token = create_session_access_token(token_data, refresh_token)
     await db.commit()
@@ -802,6 +815,8 @@ async def refresh_token(
             refresh_token=refresh_token_value,
             payload=payload,
             user_id=user.id,
+            user_agent=request.headers.get("user-agent", ""),
+            legacy_disabled=user.legacy_refresh_disabled_at is not None,
         )
     except InvalidRefreshSessionError:
         raise_error(
@@ -904,6 +919,42 @@ async def logout(
     await db.commit()
     if _cookie_auth_enabled():
         _clear_auth_cookies(response)
+
+
+@router.get("/sessions", response_model=AccountSessionListResponse)
+async def get_account_sessions(
+    request: Request,
+    response: Response,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    page: int = Query(1, ge=1, le=1_000_000),
+    size: int = Query(20, ge=1, le=100),
+) -> AccountSessionListResponse:
+    response.headers["Cache-Control"] = "private, no-store"
+    return await list_account_sessions(db, request=request, user_id=current_user.id, page=page, size=size)
+
+
+@router.post("/sessions/revoke-others", response_model=OtherSessionsRevokeResponse)
+async def end_other_account_sessions(
+    request: Request,
+    response: Response,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> OtherSessionsRevokeResponse:
+    response.headers["Cache-Control"] = "private, no-store"
+    return await revoke_other_account_sessions(db, request=request, user_id=current_user.id)
+
+
+@router.delete("/sessions/{session_id}", response_model=AccountSessionRevokeResponse)
+async def end_account_session(
+    request: Request,
+    response: Response,
+    session_id: Annotated[str, Path(min_length=1, max_length=43)],
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> AccountSessionRevokeResponse:
+    response.headers["Cache-Control"] = "private, no-store"
+    return await revoke_account_session(db, request=request, user_id=current_user.id, session_id=session_id)
 
 
 @router.get("/me", response_model=UserResponse)
@@ -2088,6 +2139,7 @@ async def oauth_callback(
         db,
         user_id=user.id,
         token_data=token_data,
+        user_agent=request.headers.get("user-agent", ""),
     )
     access_token = create_session_access_token(token_data, refresh_token)
     await db.commit()

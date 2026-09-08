@@ -5627,7 +5627,51 @@
     "allowPrinterRecovery": "允许恢复到 OrcaSlicer",
     "syncToHub": "上传到 FilamentHub",
     "syncToSlicer": "下发到切片软件",
-    "syncNotYet": "暂不可用"
+    "syncNotYet": "暂不可用",
+    "activeSessions": {
+      "title": "活跃的浏览器会话",
+      "description": "当前已登录您的 FilamentHub 账户的浏览器。",
+      "refresh": "刷新",
+      "loading": "正在加载会话...",
+      "loadError": "无法加载会话。",
+      "tryAgain": "重试",
+      "refreshError": "无法刷新。仍显示之前加载的会话。",
+      "actionError": "无法结束会话，请重试。",
+      "current": "此浏览器",
+      "revoke": "结束会话",
+      "revokeNamed": "结束 {{device}} 上的会话",
+      "loadMore": "加载更多",
+      "revokeOthers": "结束所有其他会话",
+      "connectedAppsSeparate": "已连接的应用、切片软件和打印机设备使用独立访问权限，不会显示在这里。",
+      "activityNow": "当前活跃",
+      "activityRecently": "最近活跃",
+      "activityMinutes": "约 {{count}} 分钟前活跃",
+      "activityHours": "约 {{count}} 小时前活跃",
+      "activityDays": "约 {{count}} 天前活跃",
+      "activityEarlier": "一周前曾活跃",
+      "browser": {
+        "chrome": "Chrome",
+        "edge": "Edge",
+        "firefox": "Firefox",
+        "safari": "Safari",
+        "opera": "Opera",
+        "unknown": "未知浏览器"
+      },
+      "os": {
+        "windows": "Windows",
+        "macos": "macOS",
+        "linux": "Linux",
+        "android": "Android",
+        "ios": "iOS",
+        "unknown": "未知系统"
+      },
+      "device": {
+        "desktop": "电脑",
+        "mobile": "手机",
+        "tablet": "平板电脑",
+        "unknown": "未知设备"
+      }
+    }
   },
   "adminUsers": {
     "proAccessTitle": "计算器 Pro 访问（授予/撤销）",

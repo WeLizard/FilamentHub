@@ -44,6 +44,10 @@ class RefreshSession(Base):
         DateTime(timezone=True),
         nullable=True,
     )
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    browser: Mapped[str] = mapped_column(String(16), default="unknown", server_default="unknown")
+    os: Mapped[str] = mapped_column(String(16), default="unknown", server_default="unknown")
+    device_type: Mapped[str] = mapped_column(String(16), default="unknown", server_default="unknown")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),

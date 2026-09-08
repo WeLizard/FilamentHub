@@ -74,6 +74,12 @@ class User(Base):
         nullable=False,
     )
     oauth_provider: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    legacy_access_revoked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    legacy_refresh_disabled_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     oauth_provider_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     role: Mapped[UserRole] = mapped_column(
         SQLEnum(UserRole, values_callable=lambda x: [e.value for e in x]),

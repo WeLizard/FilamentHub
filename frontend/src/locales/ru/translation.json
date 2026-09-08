@@ -5800,7 +5800,51 @@
     "allowPrinterRecovery": "Разрешить восстановление в OrcaSlicer",
     "syncToHub": "В FilamentHub",
     "syncToSlicer": "В слайсер",
-    "syncNotYet": "пока недоступно"
+    "syncNotYet": "пока недоступно",
+    "activeSessions": {
+      "title": "Активные сеансы в браузерах",
+      "description": "Браузеры, в которых сейчас выполнен вход в ваш аккаунт FilamentHub.",
+      "refresh": "Обновить",
+      "loading": "Загружаем сеансы...",
+      "loadError": "Не удалось загрузить сеансы.",
+      "tryAgain": "Повторить",
+      "refreshError": "Не удалось обновить список. Ранее загруженные сеансы остаются на экране.",
+      "actionError": "Не удалось завершить сеанс. Попробуйте ещё раз.",
+      "current": "Этот браузер",
+      "revoke": "Завершить",
+      "revokeNamed": "Завершить сеанс на устройстве {{device}}",
+      "loadMore": "Показать ещё",
+      "revokeOthers": "Завершить все другие сеансы",
+      "connectedAppsSeparate": "Подключённые приложения, слайсеры и устройства принтеров используют отдельный доступ и здесь не показываются.",
+      "activityNow": "Активен сейчас",
+      "activityRecently": "Был активен недавно",
+      "activityMinutes": "Был активен около {{count}} мин назад",
+      "activityHours": "Был активен около {{count}} ч назад",
+      "activityDays": "Был активен около {{count}} дн. назад",
+      "activityEarlier": "Был активен больше недели назад",
+      "browser": {
+        "chrome": "Chrome",
+        "edge": "Edge",
+        "firefox": "Firefox",
+        "safari": "Safari",
+        "opera": "Opera",
+        "unknown": "Неизвестный браузер"
+      },
+      "os": {
+        "windows": "Windows",
+        "macos": "macOS",
+        "linux": "Linux",
+        "android": "Android",
+        "ios": "iOS",
+        "unknown": "Неизвестная система"
+      },
+      "device": {
+        "desktop": "Компьютер",
+        "mobile": "Телефон",
+        "tablet": "Планшет",
+        "unknown": "Неизвестное устройство"
+      }
+    }
   },
   "adminUsers": {
     "proAccessTitle": "Pro-доступ к калькулятору (выдать/отозвать)",

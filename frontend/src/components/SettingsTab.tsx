@@ -16,6 +16,7 @@ import { DeleteAccountModal } from './DeleteAccountModal';
 import { LanguageSwitcher } from './LanguageSwitcher';
 import type { AxiosError } from 'axios';
 import { AdminConfirmationDialog } from './AdminConfirmationDialog';
+import { ActiveSessions } from './ActiveSessions';
 
 interface SettingsTabProps {
   user: User;
@@ -948,6 +949,8 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ user, onUserUpdate }) 
         </div>
       </section>
       </div>
+
+      <ActiveSessions userId={user.id} />
 
       {/* Опасная зона */}
       <section className="rounded-2xl border border-red-500/15 bg-red-500/[0.04] p-5 md:p-6">

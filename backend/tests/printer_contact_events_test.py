@@ -74,12 +74,18 @@ async def test_only_committed_contacts_escape_including_savepoints(db_session, a
 @pytest.mark.asyncio
 async def test_ticket_authenticates_and_releases_database(auth_client, client, db_session, auth_user, monkeypatch):
     from app.api.v1.endpoints import physical_printers
+    from app.core.security import decode_access_token
+    from tests.auth_recovery_hardening_test import _tokens
 
-    async def issue_ticket(user_id, token_id, expires_at, auth_version):
+    access, _ = await _tokens(db_session, auth_user, session_bound=True)
+    auth_client.headers["Authorization"] = f"Bearer {access}"
+
+    async def issue_ticket(user_id, token_id, expires_at, auth_version, session_id):
         assert not db_session.in_transaction()
         assert user_id == auth_user.id
         assert len(token_id) == 64
         assert auth_version == auth_user.auth_version
+        assert session_id == decode_access_token(access)["sid"]
         return "a" * 43
 
     issue = AsyncMock(side_effect=issue_ticket)
@@ -101,6 +107,7 @@ def test_socket_checks_origin_and_single_use_ticket_before_subscribing(monkeypat
         "user_id": 7,
         "token_id": "fingerprint",
         "auth_version": 3,
+        "session_id": "family-7",
         "expires_at": datetime.now(timezone.utc).timestamp() + 20,
     }}
     visited = []
@@ -109,9 +116,10 @@ def test_socket_checks_origin_and_single_use_ticket_before_subscribing(monkeypat
         return tickets.pop(ticket, None)
 
     @asynccontextmanager
-    async def subscribe(user_id, token_id, auth_version):
+    async def subscribe(user_id, token_id, auth_version, session_id):
         assert user_id == 7
         assert auth_version == 3
+        assert session_id == "family-7"
         visited.append("open")
         subscription = contacts.ContactSubscription(user_id, token_id, auth_version)
         subscription.auth_valid_until = float("inf")
@@ -464,3 +472,42 @@ async def test_guard_cancellation_closes_existing_subscriptions():
     task.cancel()
     await asyncio.gather(task, return_exceptions=True)
     assert subscription.closed
+
+
+@pytest.mark.asyncio
+async def test_session_bound_contacts_close_only_revoked_family_after_lost_publish(db_session, auth_user, monkeypatch):
+    from app.core.security import decode_access_token, token_fingerprint
+    from app.db import session as sessions
+    from app.models.refresh_session import RefreshSession
+    from tests.auth_recovery_hardening_test import _tokens
+
+    access_a, _ = await _tokens(db_session, auth_user, session_bound=True)
+    access_b, _ = await _tokens(db_session, auth_user, session_bound=True)
+    sid_a, sid_b = decode_access_token(access_a)["sid"], decode_access_token(access_b)["sid"]
+    first = contacts.ContactSubscription(auth_user.id, token_fingerprint(access_a), session_id=sid_a)
+    second = contacts.ContactSubscription(auth_user.id, token_fingerprint(access_b), session_id=sid_b)
+    missing = contacts.ContactSubscription(auth_user.id, "not-a-real-family-token", session_id="missing")
+    monkeypatch.setattr(sessions, "AsyncSessionLocal", async_sessionmaker(db_session.bind, expire_on_commit=False))
+    reader = contacts.PrinterContactBroker()
+    await reader._refresh_authorizations([first, second, missing])
+    assert first.can_deliver() and second.can_deliver() and not missing.can_deliver()
+    publish = AsyncMock()
+    monkeypatch.setattr(contacts.broker, "publish", publish)
+    row = await db_session.get(RefreshSession, sid_b)
+    row.revoked_at = datetime.now(timezone.utc)
+    await db_session.flush()
+    await db_session.rollback()
+    await contacts.publish_committed_contacts(db_session)
+    assert publish.call_args.args[0] == []
+    row = await db_session.get(RefreshSession, sid_b)
+    row.revoked_at = datetime.now(timezone.utc)
+    await db_session.commit()
+    await contacts.publish_committed_contacts(db_session)
+    assert publish.call_args.args[0] == [(first.user_id, {"type": "revoke_session", "session_id": sid_b})]
+    # The independent reader did not receive that hint, as on a lost publish.
+    assert second.can_deliver()
+    await reader._refresh_authorizations([first, second])
+    assert first.can_deliver() and not second.can_deliver()
+    stale_ticket = contacts.ContactSubscription(first.user_id, token_fingerprint(access_b), session_id=sid_b)
+    await reader._refresh_authorizations([stale_ticket])
+    assert not stale_ticket.can_deliver()

@@ -497,6 +497,30 @@ api.interceptors.response.use(
 );
 
 // Auth API
+export type AccountSessionBrowser = 'chrome' | 'edge' | 'firefox' | 'safari' | 'opera' | 'unknown';
+export type AccountSessionOs = 'windows' | 'macos' | 'linux' | 'android' | 'ios' | 'unknown';
+export type AccountSessionDeviceType = 'desktop' | 'mobile' | 'tablet' | 'unknown';
+
+export interface AccountSession {
+  id: string;
+  is_current: boolean;
+  created_at: string;
+  last_seen_at: string;
+  expires_at: string;
+  browser: AccountSessionBrowser;
+  os: AccountSessionOs;
+  device_type: AccountSessionDeviceType;
+}
+
+export interface AccountSessionListResponse {
+  items: AccountSession[];
+  total: number;
+  page: number;
+  size: number;
+  pages: number;
+  current_session_id: string;
+}
+
 export const authAPI = {
   register: async (data: RegistrationPayload) => {
     return withAuthSessionLock(async () => {
@@ -568,6 +592,24 @@ export const authAPI = {
 
   me: async () => {
     const response = await api.get<User>('/auth/me');
+    return response.data;
+  },
+
+  listSessions: async (
+    params: { page: number; size: number },
+    signal?: AbortSignal,
+  ): Promise<AccountSessionListResponse> => {
+    const response = await api.get<AccountSessionListResponse>('/auth/sessions', { params, signal });
+    return response.data;
+  },
+
+  revokeSession: async (sessionId: string): Promise<{ revoked: boolean; current_session_revoked: boolean }> => {
+    const response = await api.delete(`/auth/sessions/${sessionId}`);
+    return response.data;
+  },
+
+  revokeOtherSessions: async (): Promise<{ revoked_count: number }> => {
+    const response = await api.post('/auth/sessions/revoke-others');
     return response.data;
   },
 

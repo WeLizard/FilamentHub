@@ -48,6 +48,9 @@ vi.mock('../utils/currency', () => ({
 }));
 vi.mock('./DeleteAccountModal', () => ({ DeleteAccountModal: () => null }));
 vi.mock('./LanguageSwitcher', () => ({ LanguageSwitcher: () => null }));
+vi.mock('./ActiveSessions', () => ({
+  ActiveSessions: ({ userId }: { userId: number }) => <div data-testid="active-sessions">{userId}</div>,
+}));
 
 const user = {
   id: 1,
@@ -128,6 +131,12 @@ describe('SettingsTab printer sync settings', () => {
       allow_printer_profiles_export: false,
       allow_print_profiles_export: false,
     }));
+  });
+
+  it('shows browser sessions for the current account identity', () => {
+    renderSettings();
+
+    expect(screen.getByTestId('active-sessions')).toHaveTextContent('1');
   });
 
   it('keeps the ordinary user email change as a direct request', async () => {

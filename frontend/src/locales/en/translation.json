@@ -5633,7 +5633,51 @@
     "allowPrinterRecovery": "Allow recovery to OrcaSlicer",
     "syncToHub": "To FilamentHub",
     "syncToSlicer": "To the slicer",
-    "syncNotYet": "not available yet"
+    "syncNotYet": "not available yet",
+    "activeSessions": {
+      "title": "Active browser sessions",
+      "description": "Browsers where your FilamentHub account is currently signed in.",
+      "refresh": "Refresh",
+      "loading": "Loading sessions...",
+      "loadError": "Sessions could not be loaded.",
+      "tryAgain": "Try again",
+      "refreshError": "Could not refresh. The previously loaded sessions are still shown.",
+      "actionError": "The session could not be ended. Please try again.",
+      "current": "This browser",
+      "revoke": "End session",
+      "revokeNamed": "End session on {{device}}",
+      "loadMore": "Load more",
+      "revokeOthers": "End all other sessions",
+      "connectedAppsSeparate": "Connected apps, slicers and printer devices use separate access and are not shown here.",
+      "activityNow": "Active now",
+      "activityRecently": "Active recently",
+      "activityMinutes": "Active about {{count}} min ago",
+      "activityHours": "Active about {{count}} hr ago",
+      "activityDays": "Active about {{count}} days ago",
+      "activityEarlier": "Active more than a week ago",
+      "browser": {
+        "chrome": "Chrome",
+        "edge": "Edge",
+        "firefox": "Firefox",
+        "safari": "Safari",
+        "opera": "Opera",
+        "unknown": "Unknown browser"
+      },
+      "os": {
+        "windows": "Windows",
+        "macos": "macOS",
+        "linux": "Linux",
+        "android": "Android",
+        "ios": "iOS",
+        "unknown": "Unknown system"
+      },
+      "device": {
+        "desktop": "Computer",
+        "mobile": "Phone",
+        "tablet": "Tablet",
+        "unknown": "Unknown device"
+      }
+    }
   },
   "adminUsers": {
     "proAccessTitle": "Calculator Pro access (grant/revoke)",

@@ -112,12 +112,16 @@ async def issue_refresh_session(
     *,
     user_id: int,
     token_data: dict[str, object],
+    user_agent: str = "",
     now: datetime | None = None,
 ) -> str:
     """Issue a distinct fixed-lifetime refresh family for one login."""
     issued_at = _as_utc(now or datetime.now(timezone.utc))
     expires_at = issued_at + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
     session_id = secrets.token_urlsafe(24)
+    from app.services.account_session_service import normalized_session_metadata
+
+    metadata = normalized_session_metadata(user_agent)
     token = create_refresh_token(
         token_data,
         expires_at=expires_at,
@@ -132,6 +136,8 @@ async def issue_refresh_session(
             expires_at=expires_at,
             rotated_at=issued_at,
             created_at=issued_at,
+            last_seen_at=issued_at,
+            **metadata,
         )
     )
     await db.flush()
@@ -144,6 +150,8 @@ async def rotate_refresh_session(
     refresh_token: str,
     payload: dict,
     user_id: int,
+    user_agent: str = "",
+    legacy_disabled: bool = False,
     now: datetime | None = None,
 ) -> str:
     """Consume one token and return its deterministic, fixed-expiry successor."""
@@ -153,6 +161,8 @@ async def rotate_refresh_session(
         raise InvalidRefreshSessionError
 
     session_id, is_legacy = _session_id(payload, refresh_token)
+    if is_legacy and legacy_disabled:
+        raise InvalidRefreshSessionError
     presented_fingerprint = token_fingerprint(refresh_token)
     successor = _successor_token(refresh_token, payload, session_id)
     successor_fingerprint = token_fingerprint(successor)
@@ -164,6 +174,8 @@ async def rotate_refresh_session(
     )
 
     if session is None and is_legacy:
+        from app.services.account_session_service import normalized_session_metadata
+
         candidate = RefreshSession(
             id=session_id,
             user_id=user_id,
@@ -172,6 +184,8 @@ async def rotate_refresh_session(
             expires_at=expires_at,
             rotated_at=rotated_at,
             created_at=rotated_at,
+            last_seen_at=rotated_at,
+            **normalized_session_metadata(user_agent),
         )
         try:
             async with db.begin_nested():
@@ -213,6 +227,7 @@ async def rotate_refresh_session(
         session.previous_token_fingerprint = presented_fingerprint
         session.current_token_fingerprint = successor_fingerprint
         session.rotated_at = rotated_at
+        session.last_seen_at = rotated_at
         await db.commit()
         return successor
 

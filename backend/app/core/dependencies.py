@@ -33,6 +33,7 @@ from app.core.security import (
 from app.db.session import get_db
 from app.models.revoked_token import RevokedToken
 from app.models.user import User, UserRole
+from app.services.account_session_service import validate_access_family
 from app.services.legal_acceptance_service import requires_current_legal_acceptance
 
 logger = logging.getLogger(__name__)
@@ -128,6 +129,9 @@ async def get_current_user_for_legal_onboarding(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
+    if not await validate_access_family(db, payload=payload, user=user, request=request):
+        raise_error(status.HTTP_401_UNAUTHORIZED, ERR_COULD_NOT_VALIDATE,
+                    headers={"WWW-Authenticate": "Bearer"})
     return user
 
 
@@ -216,6 +220,11 @@ async def _get_current_user_or_plugin_scope(
         )
     if requires_current_legal_acceptance(user):
         raise_error(status.HTTP_403_FORBIDDEN, ERR_LEGAL_ACCEPTANCE_REQUIRED)
+    if token_type == "access" and not await validate_access_family(
+        db, payload=payload, user=user, request=request,
+    ):
+        raise_error(status.HTTP_401_UNAUTHORIZED, ERR_COULD_NOT_VALIDATE,
+                    headers={"WWW-Authenticate": "Bearer"})
     return user
 
 
@@ -347,8 +356,8 @@ async def get_current_active_user_optional(
     token: str | None = None
     using_cookie_auth = False
 
-    if authorization and authorization.startswith("Bearer "):
-        token = authorization.split(" ")[1]
+    if authorization and authorization.lower().startswith("bearer "):
+        token = authorization.split(" ", 1)[1]
     elif _cookie_auth_enabled():
         token = request.cookies.get(settings.AUTH_ACCESS_COOKIE_NAME)
         using_cookie_auth = bool(token)
@@ -386,6 +395,8 @@ async def get_current_active_user_optional(
     ):
         return None
 
+    if not await validate_access_family(db, payload=payload, user=user, request=request):
+        return None
     return user
 
 

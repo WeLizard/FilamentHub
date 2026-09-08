@@ -84,6 +84,9 @@ async def contact_ticket(
     db: Annotated[AsyncSession, Depends(get_db)],
     response: Response,
 ) -> dict:
+    from app.services.account_session_service import current_session_id
+
+    session_id = current_session_id(request)
     user_id = current_user.id
     authorization = request.headers.get("authorization", "")
     token = (
@@ -106,6 +109,7 @@ async def contact_ticket(
             token_fingerprint(token),
             expires_at,
             current_user.auth_version,
+            session_id,
         )
     except StreamLimitReached:
         raise_error(429, ERR_SERVER_BUSY, headers={"Retry-After": "15"})
@@ -132,6 +136,7 @@ async def contact_events(websocket: WebSocket) -> None:
             session["user_id"],
             session["token_id"],
             session.get("auth_version", 0),
+            session.get("session_id"),
         ) as subscription:
             if session["expires_at"] <= time.time() or not subscription.can_deliver():
                 return
