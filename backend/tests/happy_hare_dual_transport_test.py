@@ -88,6 +88,195 @@ def edge_snapshot(
     )
 
 
+async def pair_edge_ingress(
+    auth_client: AsyncClient,
+    *,
+    printer_id: int,
+    system_id: int,
+) -> dict[str, str]:
+    pairing = await auth_client.post(
+        f"/api/v1/printer-bridge/connections/{printer_id}/{system_id}/pairing-code",
+        params={"transport": "edge_agent"},
+    )
+    assert pairing.status_code == 200, pairing.text
+    paired = await auth_client.post(
+        "/api/v1/printer-bridge/pair",
+        json={
+            "pairing_code": pairing.json()["pairing_code"],
+            "provider": "happy_hare",
+            "transport": "edge_agent",
+            "source_instance_id": "edge-dual-http-ingress",
+            "node_instance_id": "edge-dual-http-node",
+            "plugin_version": "0.1.0-test",
+            "capabilities": ["read", "presence"],
+        },
+    )
+    assert paired.status_code == 200, paired.text
+    return {"X-FilamentHub-Bridge-Token": paired.json()["bridge_token"]}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("first_ingress", ["edge", "orca"])
+async def test_http_ingresses_keep_first_fresh_topology_owner_and_survive_failover(
+    auth_client: AsyncClient,
+    auth_user: User,
+    db_session: AsyncSession,
+    first_ingress: str,
+) -> None:
+    printer, system, spool = await setup_printer(db_session, auth_user)
+    edge_headers = await pair_edge_ingress(
+        auth_client,
+        printer_id=printer.id,
+        system_id=system.id,
+    )
+    started_at = datetime.now(timezone.utc) - timedelta(seconds=3)
+
+    async def post_edge(sequence: int, observed_at: datetime, material: str):
+        response = await auth_client.post(
+            "/api/v1/printer-bridge/snapshot",
+            headers=edge_headers,
+            json={
+                "material_system_id": system.id,
+                "provider": "happy_hare",
+                "transport": "edge_agent",
+                "source_instance_id": "edge-dual-http-ingress",
+                "sequence": sequence,
+                "observed_at": observed_at.isoformat(),
+                "capabilities": ["read", "presence"],
+                "slot_topology_complete": True,
+                "slots": [
+                    {
+                        "provider_index": index,
+                        "kind": "gate",
+                        "present": index == 0,
+                        "material": material if index == 0 else None,
+                    }
+                    for index in range(2)
+                ],
+            },
+        )
+        assert response.status_code == 200, response.text
+
+    async def post_orca(observed_at: datetime, material: str):
+        response = await auth_client.post(
+            "/api/v1/orcaslicer/preset-slot-sync/hh/snapshot",
+            json={
+                "physical_printer_id": printer.id,
+                "gate_count": 4,
+                "snapshot_ts": observed_at.isoformat(),
+                "gates": [
+                    {
+                        "gate": index,
+                        "status": 1 if index == 0 else 0,
+                        "material": material if index == 0 else "",
+                    }
+                    for index in range(4)
+                ],
+            },
+        )
+        assert response.status_code == 200, response.text
+
+    if first_ingress == "edge":
+        await post_edge(1, started_at, "EDGE_OWNER")
+        owner_transport = "edge_agent"
+        owner_source = "happy_hare_edge"
+    else:
+        await post_orca(started_at, "ORCA_OWNER")
+        owner_transport = "orca_plugin_lan"
+        owner_source = "happy_hare_moonraker"
+
+    current = (await auth_client.get(f"/api/v1/physical-printers/{printer.id}")).json()
+    slot = next(
+        item for item in current["material_systems"][0]["slots"] if item["provider_index"] == 0
+    )
+    assigned = await auth_client.patch(
+        f"/api/v1/physical-printers/{printer.id}/material-slots/{slot['id']}",
+        json={
+            "expected_revision": slot["assignment_revision"],
+            "expected_spool_id": None,
+            "spool_id": spool.id,
+        },
+    )
+    assert assigned.status_code == 200, assigned.text
+
+    if first_ingress == "edge":
+        await post_orca(started_at + timedelta(seconds=1), "ORCA_NON_OWNER")
+    else:
+        await post_edge(1, started_at + timedelta(seconds=1), "EDGE_NON_OWNER")
+
+    current = (await auth_client.get(f"/api/v1/physical-printers/{printer.id}")).json()
+    connectors = current["connectors"]
+    authorities = [item for item in connectors if item["topology_authority"]]
+    assert len(authorities) == 1
+    assert authorities[0]["transport"] == owner_transport
+    slots = current["material_systems"][0]["slots"]
+    assert [item["provider_index"] for item in slots if item["active"]] == (
+        [0, 1] if first_ingress == "edge" else [0, 1, 2, 3]
+    )
+    slot = next(item for item in slots if item["provider_index"] == 0)
+    assert slot["assignment"]["spool_id"] == spool.id
+    assert slot["observation"]["source"] == owner_source
+    observations = {item["source"]: item for item in slot["observations"]}
+    assert observations.keys() == {
+        "happy_hare_edge",
+        "happy_hare_moonraker",
+    }
+    non_owner_source = (
+        "happy_hare_moonraker" if first_ingress == "edge" else "happy_hare_edge"
+    )
+    non_owner_material = "ORCA_NON_OWNER" if first_ingress == "edge" else "EDGE_NON_OWNER"
+    assert observations[non_owner_source]["present"] is True
+    assert observations[non_owner_source]["material"] == non_owner_material
+
+    if first_ingress == "edge":
+        revoked = await auth_client.delete(
+            "/api/v1/printer-bridge/connection",
+            headers=edge_headers,
+        )
+        assert revoked.status_code == 204, revoked.text
+        await post_orca(started_at + timedelta(seconds=2), "ORCA_FAILOVER")
+        next_owner_transport = "orca_plugin_lan"
+        next_owner_source = "happy_hare_moonraker"
+        next_owner_material = "ORCA_FAILOVER"
+        expected_active_indices = [0, 1, 2, 3]
+    else:
+        orca_connector = await db_session.scalar(
+            select(PhysicalPrinterConnector).where(
+                PhysicalPrinterConnector.physical_printer_id == printer.id,
+                PhysicalPrinterConnector.transport == "orca_plugin_lan",
+            )
+        )
+        assert orca_connector is not None
+        orca_connector.active = False
+        await db_session.commit()
+        await post_edge(2, started_at + timedelta(seconds=2), "EDGE_FAILOVER")
+        next_owner_transport = "edge_agent"
+        next_owner_source = "happy_hare_edge"
+        next_owner_material = "EDGE_FAILOVER"
+        expected_active_indices = [0, 1]
+
+    failed_over = (await auth_client.get(f"/api/v1/physical-printers/{printer.id}")).json()
+    next_authorities = [
+        item for item in failed_over["connectors"] if item["topology_authority"]
+    ]
+    assert len(next_authorities) == 1
+    assert next_authorities[0]["transport"] == next_owner_transport
+    assert [
+        item["provider_index"]
+        for item in failed_over["material_systems"][0]["slots"]
+        if item["active"]
+    ] == expected_active_indices
+    retained = next(
+        item
+        for item in failed_over["material_systems"][0]["slots"]
+        if item["provider_index"] == 0
+    )
+    assert retained["active"] is True
+    assert retained["assignment"]["spool_id"] == spool.id
+    assert retained["observation"]["source"] == next_owner_source
+    assert retained["observation"]["material"] == next_owner_material
+
+
 @pytest.mark.asyncio
 async def test_no_orca_reads_all_gates_and_only_proven_owned_spool_ids(
     auth_client: AsyncClient,
