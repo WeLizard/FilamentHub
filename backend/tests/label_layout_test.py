@@ -72,7 +72,6 @@ def overlaps(a: Box, b: Box) -> bool:
     "brand_options",
     [
         {"brand_logo": False},
-        {"brand_logo": True},
         {"brand_mode": "none"},
         {"brand_mode": "mark"},
         {"brand_mode": "full"},
