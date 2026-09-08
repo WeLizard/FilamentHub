@@ -6,10 +6,12 @@ import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Annotated
+from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import HTMLResponse, Response
 from sqlalchemy import func, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.capacity import Gate
@@ -19,7 +21,12 @@ from app.core.errors import (
     ERR_CALCULATOR_HISTORY_NOT_FOUND,
     ERR_CALCULATOR_TRIAL_ALREADY_USED,
     ERR_FILE_TOO_LARGE,
+    ERR_GCODE_ARTIFACT_CANCELLED,
+    ERR_GCODE_ARTIFACT_CONFLICT,
+    ERR_GCODE_ARTIFACT_NOT_FOUND,
+    ERR_GCODE_ARTIFACT_QUOTA,
     ERR_GCODE_PARSE_FAILED,
+    ERR_GCODE_UPLOAD_INCOMPLETE,
     ERR_INVALID_FILE_EXT,
     ERR_PDF_GENERATION_FAILED,
     ERR_PRICE_PER_HOUR_REQUIRED,
@@ -41,6 +48,8 @@ from app.models.user import User
 from app.schemas.calculator import (
     CalculatorEstimateRequest,
     CalculatorEstimateResponse,
+    CalculatorGcodeArtifactParseResponse,
+    CalculatorGcodeArtifactResponse,
     CalculatorGcodeParseResponse,
     CalculatorHistoryEntryCreate,
     CalculatorHistoryEntryListResponse,
@@ -62,8 +71,22 @@ from app.services.calculator_defaults_service import (
     calculator_profile_default_values,
     starting_defaults_for_user,
 )
+from app.services.calculator_gcode_artifact_service import (
+    ArtifactCancelledError,
+    ArtifactConflictError,
+    ArtifactNotFoundError,
+    ArtifactQuotaError,
+    ArtifactUploadError,
+    cancel_artifact,
+    get_owned_artifact,
+    parse_artifact_payload,
+    reserve_artifact,
+    verify_parse_generation,
+    write_artifact_stream,
+)
 from app.services.calculator_gcode_parser import (
     SUPPORTED_GCODE_EXTENSIONS,
+    GcodeParseCancelled,
     is_supported_gcode_filename,
     parse_gcode_payload,
 )
@@ -840,14 +863,17 @@ async def parse_uploaded_gcode(
             {"ext": file_ext, "expected": ", ".join(SUPPORTED_GCODE_EXTENSIONS)},
         )
 
-    raw_bytes = await file.read()
     max_bytes = settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024
-    if len(raw_bytes) > max_bytes:
-        raise_error(
-            status.HTTP_400_BAD_REQUEST,
-            ERR_FILE_TOO_LARGE,
-            {"max_size": f"{settings.MAX_UPLOAD_SIZE_MB}MB"},
-        )
+    raw_bytes_buffer = bytearray()
+    while chunk := await file.read(1024 * 1024):
+        raw_bytes_buffer.extend(chunk)
+        if len(raw_bytes_buffer) > max_bytes:
+            raise_error(
+                status.HTTP_400_BAD_REQUEST,
+                ERR_FILE_TOO_LARGE,
+                {"max_size": f"{settings.MAX_UPLOAD_SIZE_MB}MB"},
+            )
+    raw_bytes = bytes(raw_bytes_buffer)
 
     try:
         # Reading a sliced model walks every line of it — eight seconds for a
@@ -871,6 +897,164 @@ async def parse_uploaded_gcode(
             user_id=user_id,
         )
     return response
+
+
+def _artifact_response(artifact) -> CalculatorGcodeArtifactResponse:
+    return CalculatorGcodeArtifactResponse(
+        artifact_id=artifact.id,
+        file_name=artifact.original_name,
+        size_bytes=artifact.size_bytes,
+        sha256=artifact.sha256,
+        state=artifact.state,
+        expires_at=artifact.expires_at,
+    )
+
+
+@router.put("/gcode-artifacts/{artifact_id}", response_model=CalculatorGcodeArtifactResponse)
+async def upload_gcode_artifact(
+    artifact_id: UUID,
+    request: Request,
+    current_user: Annotated[User, Depends(require_calculator_access)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    file_name: str = Query(..., min_length=1, max_length=255),
+    expected_size_bytes: int = Query(..., ge=1),
+) -> CalculatorGcodeArtifactResponse:
+    """Store one immutable raw G-code body for subsequent plate parsing."""
+    if not is_supported_gcode_filename(file_name):
+        extension = ".gcode.gz" if file_name.lower().endswith(".gcode.gz") else Path(file_name).suffix.lower()
+        raise_error(
+            status.HTTP_400_BAD_REQUEST,
+            ERR_INVALID_FILE_EXT,
+            {"ext": extension, "expected": ", ".join(SUPPORTED_GCODE_EXTENSIONS)},
+        )
+    max_bytes = settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024
+    if expected_size_bytes > max_bytes:
+        raise_error(
+            status.HTTP_400_BAD_REQUEST,
+            ERR_FILE_TOO_LARGE,
+            {"max_size": f"{settings.MAX_UPLOAD_SIZE_MB}MB"},
+        )
+    content_length = request.headers.get("content-length")
+    if content_length is not None:
+        try:
+            declared_size = int(content_length)
+        except ValueError:
+            raise_error(status.HTTP_400_BAD_REQUEST, ERR_GCODE_UPLOAD_INCOMPLETE)
+        if declared_size != expected_size_bytes:
+            raise_error(status.HTTP_400_BAD_REQUEST, ERR_GCODE_UPLOAD_INCOMPLETE)
+
+    try:
+        artifact, needs_upload = await reserve_artifact(
+            db,
+            artifact_id=str(artifact_id),
+            owner_user_id=current_user.id,
+            file_name=file_name,
+            expected_size_bytes=expected_size_bytes,
+        )
+        await db.commit()
+        if needs_upload:
+            artifact = await write_artifact_stream(
+                db,
+                artifact=artifact,
+                chunks=request.stream(),
+            )
+        return _artifact_response(artifact)
+    except ArtifactNotFoundError:
+        raise_error(status.HTTP_404_NOT_FOUND, ERR_GCODE_ARTIFACT_NOT_FOUND)
+    except ArtifactConflictError:
+        raise_error(status.HTTP_409_CONFLICT, ERR_GCODE_ARTIFACT_CONFLICT)
+    except IntegrityError:
+        # Two requests may reserve the same client operation ID concurrently.
+        # The unique primary key resolves the race; surface it as an idempotency
+        # conflict instead of leaking a database failure as a 500 response.
+        await db.rollback()
+        raise_error(status.HTTP_409_CONFLICT, ERR_GCODE_ARTIFACT_CONFLICT)
+    except ArtifactQuotaError:
+        raise_error(status.HTTP_429_TOO_MANY_REQUESTS, ERR_GCODE_ARTIFACT_QUOTA)
+    except ArtifactUploadError:
+        raise_error(status.HTTP_400_BAD_REQUEST, ERR_GCODE_UPLOAD_INCOMPLETE)
+    except ArtifactCancelledError:
+        raise_error(status.HTTP_409_CONFLICT, ERR_GCODE_ARTIFACT_CANCELLED)
+
+
+@router.get("/gcode-artifacts/{artifact_id}", response_model=CalculatorGcodeArtifactResponse)
+async def get_gcode_artifact(
+    artifact_id: UUID,
+    current_user: Annotated[User, Depends(require_calculator_access)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    response: Response,
+) -> CalculatorGcodeArtifactResponse:
+    """Recover an upload whose original response may have been lost."""
+    response.headers["Cache-Control"] = "private, no-store"
+    try:
+        artifact = await get_owned_artifact(
+            db,
+            artifact_id=str(artifact_id),
+            owner_user_id=current_user.id,
+        )
+        return _artifact_response(artifact)
+    except (ArtifactNotFoundError, ArtifactCancelledError):
+        raise_error(status.HTTP_404_NOT_FOUND, ERR_GCODE_ARTIFACT_NOT_FOUND)
+
+
+@router.post(
+    "/gcode-artifacts/{artifact_id}/parse",
+    response_model=CalculatorGcodeArtifactParseResponse,
+)
+async def parse_gcode_artifact(
+    artifact_id: UUID,
+    current_user: Annotated[User, Depends(require_calculator_access)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    response: Response,
+) -> CalculatorGcodeArtifactParseResponse:
+    """Parse every plate from one stored upload without retransmitting its bytes."""
+    response.headers["Cache-Control"] = "private, no-store"
+    try:
+        artifact = await get_owned_artifact(
+            db,
+            artifact_id=str(artifact_id),
+            owner_user_id=current_user.id,
+            ready_required=True,
+        )
+        jobs, generation = await _gcode_gate.run(parse_artifact_payload, artifact)
+        await verify_parse_generation(
+            db,
+            artifact_id=str(artifact_id),
+            owner_user_id=current_user.id,
+            generation=generation,
+        )
+        resolved = [
+            await resolve_calculator_material_identities(
+                db,
+                CalculatorGcodeParseResponse(**job),
+                user_id=current_user.id,
+            )
+            for job in jobs
+        ]
+        return CalculatorGcodeArtifactParseResponse(jobs=resolved)
+    except ArtifactNotFoundError:
+        raise_error(status.HTTP_404_NOT_FOUND, ERR_GCODE_ARTIFACT_NOT_FOUND)
+    except ArtifactConflictError:
+        raise_error(status.HTTP_409_CONFLICT, ERR_GCODE_ARTIFACT_CONFLICT)
+    except (ArtifactCancelledError, GcodeParseCancelled):
+        raise_error(status.HTTP_409_CONFLICT, ERR_GCODE_ARTIFACT_CANCELLED)
+    except ValueError as exc:
+        logger.warning("Calculator G-code artifact parse failed for %s: %s", artifact_id, exc)
+        raise_error(status.HTTP_400_BAD_REQUEST, ERR_GCODE_PARSE_FAILED)
+
+
+@router.delete("/gcode-artifacts/{artifact_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_gcode_artifact(
+    artifact_id: UUID,
+    current_user: Annotated[User, Depends(require_calculator_access)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> None:
+    """Cancel active work and release a temporary upload."""
+    await cancel_artifact(
+        db,
+        artifact_id=str(artifact_id),
+        owner_user_id=current_user.id,
+    )
 
 
 @router.post("/parse-gcode", response_model=CalculatorGcodeParseResponse)

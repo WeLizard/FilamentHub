@@ -789,6 +789,23 @@ class CalculatorGcodeParseResponse(BaseModel):
     materials: list[CalculatorParsedMaterial] = Field(default_factory=list, description="Материалы, извлечённые из G-code")
 
 
+class CalculatorGcodeArtifactResponse(BaseModel):
+    """Recoverable state of one private, short-lived G-code upload."""
+
+    artifact_id: str
+    file_name: str
+    size_bytes: int | None = Field(None, ge=0)
+    sha256: str | None = Field(None, min_length=64, max_length=64)
+    state: str
+    expires_at: datetime
+
+
+class CalculatorGcodeArtifactParseResponse(BaseModel):
+    """All independently calculable plates from one uploaded artifact."""
+
+    jobs: list[CalculatorGcodeParseResponse] = Field(min_length=1, max_length=256)
+
+
 class CalculatorHistoryFilamentSnapshot(BaseModel):
     """Lightweight filament snapshot stored with a calculator history entry."""
 

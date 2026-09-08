@@ -41,6 +41,7 @@ const axiosState = vi.hoisted(() => {
   const apiInstance: any = vi.fn((config: any) => Promise.resolve({ data: { ok: true }, config }));
   apiInstance.get = vi.fn();
   apiInstance.post = vi.fn();
+  apiInstance.put = vi.fn();
   apiInstance.patch = vi.fn();
   apiInstance.delete = vi.fn();
   apiInstance.interceptors = {
@@ -391,6 +392,52 @@ describe('admin action confirmation requests', () => {
 
     expect(axiosState.apiInstance.patch).toHaveBeenCalledWith('/auth/me/email',
       expect.objectContaining({ new_email: 'next@example.com', confirmation }));
+  });
+});
+
+describe('calculator G-code uploads', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    vi.clearAllMocks();
+  });
+
+  it('uploads one raw artifact and reports bytes sent', async () => {
+    const { calculatorAPI } = await loadClientModule();
+    const progress = vi.fn();
+    const file = new File(['0123456789'], 'job.gcode', { type: 'text/plain' });
+    axiosState.apiInstance.put.mockImplementationOnce(async (_url: string, _body: File, config: any) => {
+      config.onUploadProgress({ loaded: 5, total: 12 });
+      config.onUploadProgress({ loaded: 12, total: 12 });
+      return { data: { artifact_id: 'artifact-1', file_name: file.name, state: 'ready' } };
+    });
+
+    await calculatorAPI.uploadGcodeArtifact(file, 'artifact-1', progress);
+
+    const [url, body, config] = axiosState.apiInstance.put.mock.calls[0];
+    expect(url).toBe('/calculator/gcode-artifacts/artifact-1');
+    expect(body).toBe(file);
+    expect(config.params).toEqual({ file_name: 'job.gcode', expected_size_bytes: 10 });
+    expect(config.headers).toEqual({ 'Content-Type': 'application/octet-stream' });
+    expect(progress).toHaveBeenNthCalledWith(1, { loadedBytes: 5, totalBytes: 12 });
+    expect(progress).toHaveBeenNthCalledWith(2, { loadedBytes: 12, totalBytes: 12 });
+  });
+
+  it('parses and deletes an uploaded artifact without retransmitting the file', async () => {
+    const { calculatorAPI } = await loadClientModule();
+    axiosState.apiInstance.post.mockResolvedValueOnce({ data: { jobs: [{ file_name: 'job.gcode' }] } });
+    axiosState.apiInstance.delete.mockResolvedValueOnce({ data: undefined });
+
+    await calculatorAPI.parseGcodeArtifact('artifact-1');
+    await calculatorAPI.deleteGcodeArtifact('artifact-1');
+
+    expect(axiosState.apiInstance.post).toHaveBeenCalledWith(
+      '/calculator/gcode-artifacts/artifact-1/parse',
+      undefined,
+      { signal: undefined },
+    );
+    expect(axiosState.apiInstance.delete).toHaveBeenCalledWith(
+      '/calculator/gcode-artifacts/artifact-1',
+    );
   });
 });
 

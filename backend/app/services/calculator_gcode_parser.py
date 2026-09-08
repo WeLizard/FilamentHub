@@ -9,7 +9,7 @@ import json
 import logging
 import re
 import zipfile
-from collections.abc import Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
 from dataclasses import field as dataclass_field
 from itertools import islice
@@ -24,6 +24,10 @@ MAX_DECOMPRESSED_GCODE_BYTES = 200 * 1024 * 1024
 MAX_GCODE_3MF_ENTRIES = 1024
 MAX_GCODE_3MF_SLICE_INFO_BYTES = 2 * 1024 * 1024
 MAX_GCODE_3MF_THUMBNAIL_BYTES = 8 * 1024 * 1024
+
+
+class GcodeParseCancelled(Exception):
+    """Raised cooperatively when the owner cancels a running artifact parse."""
 
 _THUMBNAIL_BEGIN_RE = re.compile(r"^;\s*thumbnail begin(?:\s+(\d+)x(\d+))?", re.IGNORECASE)
 _THUMBNAIL_END_RE = re.compile(r"^;\s*thumbnail end", re.IGNORECASE)
@@ -76,6 +80,7 @@ def parse_gcode_payload(
     file_name: str,
     raw_bytes: bytes,
     plate_index: int | None = None,
+    should_cancel: Callable[[], bool] | None = None,
 ) -> dict[str, Any]:
     """Parse supported G-code payload into calculator-friendly metadata."""
     if file_name.lower().endswith(".gcode.3mf"):
@@ -83,9 +88,14 @@ def parse_gcode_payload(
             file_name=file_name,
             raw_bytes=raw_bytes,
             plate_index=plate_index,
+            should_cancel=should_cancel,
         )
 
-    return _parse_plain_gcode_payload(file_name=file_name, raw_bytes=raw_bytes)
+    return _parse_plain_gcode_payload(
+        file_name=file_name,
+        raw_bytes=raw_bytes,
+        should_cancel=should_cancel,
+    )
 
 
 def _parse_plain_gcode_payload(
@@ -93,6 +103,7 @@ def _parse_plain_gcode_payload(
     raw_bytes: bytes,
     decoded_text: str | None = None,
     extrusion_evidence: _ExtrusionEvidence | None = None,
+    should_cancel: Callable[[], bool] | None = None,
 ) -> dict[str, Any]:
     """Parse one plain (or gzip-compressed) G-code stream.
 
@@ -100,11 +111,15 @@ def _parse_plain_gcode_payload(
     than paying for a second decode of a file this size.
     """
     if decoded_text is None:
-        decoded_text = _decode_gcode_bytes(file_name=file_name, raw_bytes=raw_bytes)
+        decoded_text = _decode_gcode_bytes(
+            file_name=file_name,
+            raw_bytes=raw_bytes,
+            should_cancel=should_cancel,
+        )
     if not decoded_text.strip():
         raise ValueError("empty_file")
 
-    lines = GcodeLines(decoded_text)
+    lines = GcodeLines(decoded_text, should_cancel=should_cancel)
     slicer_name, slicer_version = _detect_slicer(lines)
     thumbnail_evidence = _ThumbnailEvidence()
     extrusion_evidence = extrusion_evidence or _ExtrusionEvidence()
@@ -283,22 +298,28 @@ def _read_zip_member_capped(
     archive: zipfile.ZipFile,
     member: zipfile.ZipInfo,
     limit: int,
+    should_cancel: Callable[[], bool] | None = None,
 ) -> bytes:
     """Read one archive member without allowing unbounded decompression."""
     if member.file_size > limit:
         raise ValueError("gcode_3mf_member_too_large")
 
+    payload = bytearray()
     with archive.open(member, "r") as source:
-        payload = source.read(limit + 1)
-    if len(payload) > limit:
-        raise ValueError("gcode_3mf_member_too_large")
-    return payload
+        while chunk := source.read(min(1024 * 1024, limit + 1 - len(payload))):
+            if should_cancel is not None and should_cancel():
+                raise GcodeParseCancelled
+            payload.extend(chunk)
+            if len(payload) > limit:
+                raise ValueError("gcode_3mf_member_too_large")
+    return bytes(payload)
 
 
 def _parse_gcode_3mf_payload(
     file_name: str,
     raw_bytes: bytes,
     plate_index: int | None,
+    should_cancel: Callable[[], bool] | None = None,
 ) -> dict[str, Any]:
     """Parse a Bambu/Orca sliced 3MF bundle entirely in memory."""
     try:
@@ -311,7 +332,10 @@ def _parse_gcode_3mf_payload(
             for member in members:
                 match = _GCODE_3MF_PLATE_RE.fullmatch(member.filename.replace("\\", "/"))
                 if match:
-                    plate_members[int(match.group(1))] = member
+                    parsed_index = int(match.group(1))
+                    if parsed_index in plate_members:
+                        raise ValueError("gcode_3mf_duplicate_plate")
+                    plate_members[parsed_index] = member
 
             available_plate_indices = sorted(plate_members)
             if not available_plate_indices:
@@ -326,12 +350,14 @@ def _parse_gcode_3mf_payload(
                 archive,
                 selected_member,
                 MAX_DECOMPRESSED_GCODE_BYTES,
+                should_cancel,
             )
             # Decode once. Extrusion evidence is collected beside the metadata
             # and can be reapplied after the container's own totals are merged.
             decoded_text = _decode_gcode_bytes(
                 file_name=selected_member.filename,
                 raw_bytes=gcode_bytes,
+                should_cancel=should_cancel,
             )
             extrusion_evidence = _ExtrusionEvidence()
             parsed = _parse_plain_gcode_payload(
@@ -339,6 +365,7 @@ def _parse_gcode_3mf_payload(
                 raw_bytes=gcode_bytes,
                 decoded_text=decoded_text,
                 extrusion_evidence=extrusion_evidence,
+                should_cancel=should_cancel,
             )
             parsed["file_name"] = file_name
             parsed["file_size_bytes"] = len(raw_bytes)
@@ -346,7 +373,12 @@ def _parse_gcode_3mf_payload(
             parsed["plate_index"] = selected_plate_index
             parsed["available_plate_indices"] = available_plate_indices
 
-            slice_info = _read_gcode_3mf_slice_info(archive, members, selected_plate_index)
+            slice_info = _read_gcode_3mf_slice_info(
+                archive,
+                members,
+                selected_plate_index,
+                should_cancel,
+            )
             _merge_gcode_3mf_slice_info(parsed, slice_info)
             # Some Bambu/Orca containers keep per-tool weights only in
             # slice_info.config. Resolve the already collected extrusion evidence
@@ -354,7 +386,12 @@ def _parse_gcode_3mf_payload(
             extrusion_evidence.apply(parsed)
             _finalize_totals(parsed)
 
-            thumbnail = _read_gcode_3mf_thumbnail(archive, members, selected_plate_index)
+            thumbnail = _read_gcode_3mf_thumbnail(
+                archive,
+                members,
+                selected_plate_index,
+                should_cancel,
+            )
             if thumbnail is not None:
                 parsed["thumbnail_data_url"] = thumbnail
             return parsed
@@ -366,6 +403,7 @@ def _read_gcode_3mf_slice_info(
     archive: zipfile.ZipFile,
     members: list[zipfile.ZipInfo],
     plate_index: int,
+    should_cancel: Callable[[], bool] | None = None,
 ) -> dict[str, Any]:
     member = next(
         (
@@ -383,6 +421,7 @@ def _read_gcode_3mf_slice_info(
             archive,
             member,
             MAX_GCODE_3MF_SLICE_INFO_BYTES,
+            should_cancel,
         )
         if b"<!DOCTYPE" in payload.upper() or b"<!ENTITY" in payload.upper():
             raise ValueError("unsafe_gcode_3mf_xml")
@@ -498,6 +537,7 @@ def _read_gcode_3mf_thumbnail(
     archive: zipfile.ZipFile,
     members: list[zipfile.ZipInfo],
     plate_index: int,
+    should_cancel: Callable[[], bool] | None = None,
 ) -> str | None:
     expected_names = {
         f"metadata/plate_{plate_index}.png",
@@ -517,6 +557,7 @@ def _read_gcode_3mf_thumbnail(
         archive,
         member,
         MAX_GCODE_3MF_THUMBNAIL_BYTES,
+        should_cancel,
     )
     if not payload.startswith(b"\x89PNG"):
         return None
@@ -524,10 +565,16 @@ def _read_gcode_3mf_thumbnail(
     return f"data:image/png;base64,{encoded}"
 
 
-def _gunzip_capped(raw_bytes: bytes, limit: int) -> bytes:
+def _gunzip_capped(
+    raw_bytes: bytes,
+    limit: int,
+    should_cancel: Callable[[], bool] | None = None,
+) -> bytes:
     out = bytearray()
     with gzip.GzipFile(fileobj=io.BytesIO(raw_bytes)) as gz:
         while chunk := gz.read(1024 * 1024):
+            if should_cancel is not None and should_cancel():
+                raise GcodeParseCancelled
             out.extend(chunk)
             if len(out) > limit:
                 raise ValueError("gzip_too_large")
@@ -543,7 +590,10 @@ _LINE_BREAKS = frozenset("\n\r\v\f\x1c\x1d\x1e\x85  ")
 _LINE_CHUNK_CHARS = 1024 * 1024
 
 
-def _iter_gcode_lines(text: str) -> Iterator[str]:
+def _iter_gcode_lines(
+    text: str,
+    should_cancel: Callable[[], bool] | None = None,
+) -> Iterator[str]:
     """Yield the lines of a sliced model without ever holding them all.
 
     ``str.splitlines`` on a fifty-megabyte model builds a million and a half
@@ -560,6 +610,8 @@ def _iter_gcode_lines(text: str) -> Iterator[str]:
     length = len(text)
 
     while position < length:
+        if should_cancel is not None and should_cancel():
+            raise GcodeParseCancelled
         end = min(position + _LINE_CHUNK_CHARS, length)
         chunk = carried + text[position:end]
         position = end
@@ -587,21 +639,37 @@ def _iter_gcode_lines(text: str) -> Iterator[str]:
 class GcodeLines:
     """The lines of one sliced model, readable as many times as needed."""
 
-    __slots__ = ("_text",)
+    __slots__ = ("_should_cancel", "_text")
 
-    def __init__(self, text: str) -> None:
+    def __init__(
+        self,
+        text: str,
+        *,
+        should_cancel: Callable[[], bool] | None = None,
+    ) -> None:
         self._text = text
+        self._should_cancel = should_cancel
 
     def __iter__(self) -> Iterator[str]:
-        return _iter_gcode_lines(self._text)
+        if self._should_cancel is None:
+            return _iter_gcode_lines(self._text)
+        return _iter_gcode_lines(self._text, self._should_cancel)
 
 
-def _decode_gcode_bytes(file_name: str, raw_bytes: bytes) -> str:
+def _decode_gcode_bytes(
+    file_name: str,
+    raw_bytes: bytes,
+    should_cancel: Callable[[], bool] | None = None,
+) -> str:
     lower_name = file_name.lower()
     payload = raw_bytes
     if lower_name.endswith(".gz"):
         try:
-            payload = _gunzip_capped(raw_bytes, MAX_DECOMPRESSED_GCODE_BYTES)
+            payload = _gunzip_capped(
+                raw_bytes,
+                MAX_DECOMPRESSED_GCODE_BYTES,
+                should_cancel,
+            )
         except (OSError, EOFError, gzip.BadGzipFile) as exc:
             raise ValueError("invalid_gzip") from exc
 

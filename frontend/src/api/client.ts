@@ -2091,6 +2091,20 @@ export const proofFilesAPI = {
   },
 };
 
+export interface GcodeUploadProgress {
+  loadedBytes: number;
+  totalBytes: number;
+}
+
+export interface GcodeArtifact {
+  artifact_id: string;
+  file_name: string;
+  size_bytes: number | null;
+  sha256: string | null;
+  state: 'uploading' | 'ready' | 'failed' | 'cancelled';
+  expires_at: string;
+}
+
 export const calculatorAPI = {
   startTrial: async (): Promise<User> => {
     const response = await api.post<User>('/calculator/start-trial');
@@ -2107,16 +2121,50 @@ export const calculatorAPI = {
     return response.data;
   },
 
-  parseGcode: async (file: File, plateIndex?: number) => {
-    const formData = new FormData();
-    formData.append('file', file);
-    const response = await api.post<import('../types/api').CalculatorGcodeParseResponse>('/calculator/parse-gcode', formData, {
-      params: plateIndex != null ? { plate_index: plateIndex } : undefined,
+  uploadGcodeArtifact: async (
+    file: File,
+    artifactId: string,
+    onUploadProgress?: (progress: GcodeUploadProgress) => void,
+    signal?: AbortSignal,
+  ): Promise<GcodeArtifact> => {
+    const response = await api.put<GcodeArtifact>(`/calculator/gcode-artifacts/${artifactId}`, file, {
+      params: { file_name: file.name, expected_size_bytes: file.size },
       headers: {
-        'Content-Type': 'multipart/form-data',
+        'Content-Type': 'application/octet-stream',
       },
+      signal,
+      onUploadProgress: onUploadProgress
+        ? (event) => {
+            const loadedBytes = Math.max(0, event.loaded);
+            onUploadProgress({
+              loadedBytes,
+              totalBytes: Math.max(loadedBytes, event.total ?? file.size),
+            });
+          }
+        : undefined,
     });
     return response.data;
+  },
+
+  getGcodeArtifact: async (artifactId: string, signal?: AbortSignal): Promise<GcodeArtifact> => {
+    const response = await api.get<GcodeArtifact>(`/calculator/gcode-artifacts/${artifactId}`, { signal });
+    return response.data;
+  },
+
+  parseGcodeArtifact: async (
+    artifactId: string,
+    signal?: AbortSignal,
+  ): Promise<{ jobs: import('../types/api').CalculatorGcodeParseResponse[] }> => {
+    const response = await api.post<{ jobs: import('../types/api').CalculatorGcodeParseResponse[] }>(
+      `/calculator/gcode-artifacts/${artifactId}/parse`,
+      undefined,
+      { signal },
+    );
+    return response.data;
+  },
+
+  deleteGcodeArtifact: async (artifactId: string): Promise<void> => {
+    await api.delete(`/calculator/gcode-artifacts/${artifactId}`);
   },
 
   listHistory: async (params?: { page?: number; size?: number }) => {

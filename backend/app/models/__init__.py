@@ -23,6 +23,7 @@ from app.models.bundle import (
     BundleStatus,
 )
 from app.models.calculator_history_entry import CalculatorHistoryEntry
+from app.models.calculator_gcode_artifact import CalculatorGcodeArtifact
 from app.models.calculator_profile import UserCalculatorProfile
 from app.models.catalog_import import CatalogImportBatch
 from app.models.crm import (
@@ -160,6 +161,7 @@ __all__ = [
     "BundleStatus",
     "AppSetting",
     "CalculatorHistoryEntry",
+    "CalculatorGcodeArtifact",
     "CatalogImportBatch",
     "UserCalculatorProfile",
     "CrmCustomer",

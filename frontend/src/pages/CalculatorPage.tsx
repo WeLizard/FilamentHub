@@ -230,6 +230,14 @@ interface ParsedJobState {
   printerProfileId?: number | null;
 }
 
+type GcodeProcessingPhase = 'uploading' | 'analyzing';
+
+interface GcodeProcessingProgress {
+  phase: GcodeProcessingPhase;
+  uploadedBytes: number;
+  totalBytes: number;
+}
+
 export interface CalculatorJobConfig {
   jobKey: string;
   repeats: number;
@@ -972,6 +980,39 @@ const splitSeconds = (totalSeconds: number): { hours: number; minutes: number; s
 const translateCalculator = (t: TFunction, key: string): string =>
   t(`profilePage.calculator.${key}`);
 
+const ALL_GCODE_FILES_FAILED = 'all_gcode_files_failed';
+
+export const resolveGcodeParseError = (error: unknown, t: TFunction): string | null => {
+  if (!error) {
+    return null;
+  }
+
+  const errorWithResponse = error as {
+    response?: { data?: { detail?: unknown } };
+    message?: string;
+    code?: string;
+    name?: string;
+  };
+
+  if (
+    errorWithResponse.code === 'ERR_CANCELED'
+    || errorWithResponse.message === 'canceled'
+    || errorWithResponse.name === 'AbortError'
+  ) {
+    return null;
+  }
+
+  if (errorWithResponse.message === ALL_GCODE_FILES_FAILED) {
+    return translateCalculator(t, 'batchParseAllFailed');
+  }
+
+  return translateApiError(
+    t,
+    errorWithResponse.response?.data?.detail ?? errorWithResponse.message,
+    t('profilePage.calc.unknownError'),
+  );
+};
+
 const buildParsedMaterialLabel = (material: CalculatorParsedMaterial, fallbackLabel: string): string =>
   [material.vendor, material.name, material.type].filter(Boolean).join(' · ') || fallbackLabel;
 
@@ -1693,6 +1734,8 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
   const [jobConfigs, setJobConfigs] = useState<CalculatorJobConfig[]>([]);
   const [materialLines, setMaterialLines] = useState<CalculatorMaterialLineState[]>([]);
   const [batchParseWarning, setBatchParseWarning] = useState<string | null>(null);
+  const [gcodeProcessingProgress, setGcodeProcessingProgress] =
+    useState<GcodeProcessingProgress | null>(null);
   const [materialLinesError, setMaterialLinesError] = useState<string | null>(null);
   // Materials whose price nobody has confirmed, captured when the estimate was made.
   const [approximatePriceLabels, setApproximatePriceLabels] = useState<string[]>([]);
@@ -1719,6 +1762,17 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
   const lastAutoMatchedGcodeKeyRef = useRef<string | null>(null);
   const lastBuiltMaterialJobsKeyRef = useRef<string | null>(null);
   const quoteSequenceRef = useRef(0);
+  const gcodeAbortControllerRef = useRef<AbortController | null>(null);
+  const activeGcodeArtifactIdsRef = useRef(new Set<string>());
+  const reusableGcodeArtifactsRef = useRef(new Map<string, { id: string; uploaded: boolean }>());
+  const lastGcodeFilesRef = useRef<File[]>([]);
+
+  useEffect(() => () => {
+    gcodeAbortControllerRef.current?.abort();
+    for (const artifactId of activeGcodeArtifactIdsRef.current) {
+      void calculatorAPI.deleteGcodeArtifact(artifactId).catch(() => undefined);
+    }
+  }, []);
 
   const formatCurrency = useMemo(
     () => makeCurrencyFormatter(quoteProfile.currency || 'RUB'),
@@ -1819,33 +1873,107 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
   const parseGcodeMutation = useMutation({
     mutationFn: async (files: File[]) => {
       const limitedFiles = files.slice(0, 20);
-      const settled = await Promise.allSettled(
-        limitedFiles.map(async (file, uploadIndex) => {
-          const first = await calculatorAPI.parseGcode(file);
-          const plateIndices = first.available_plate_indices ?? [];
-          const remainingPlateIndices = plateIndices.filter(
-            (plateIndex) => plateIndex !== first.plate_index,
+      const controller = new AbortController();
+      gcodeAbortControllerRef.current?.abort();
+      gcodeAbortControllerRef.current = controller;
+      const totalBytes = limitedFiles.reduce((sum, file) => sum + file.size, 0);
+      const uploadedBytes = new Array(limitedFiles.length).fill(0) as number[];
+      const uploaded: Array<{ file: File; uploadIndex: number; artifactId: string }> = [];
+      const failedFiles: string[] = [];
+      setGcodeProcessingProgress({ phase: 'uploading', uploadedBytes: 0, totalBytes });
+
+      try {
+        // Finish the upload phase before parsing so aggregate progress never moves
+        // backwards from analysis to upload when several files were selected.
+        for (const [uploadIndex, file] of limitedFiles.entries()) {
+          if (controller.signal.aborted) throw new DOMException('canceled', 'AbortError');
+          const fileKey = `${file.name}:${file.size}:${file.lastModified}`;
+          const reusable = reusableGcodeArtifactsRef.current.get(fileKey);
+          let artifactId = reusable?.id ?? crypto.randomUUID();
+          reusableGcodeArtifactsRef.current.set(fileKey, {
+            id: artifactId,
+            uploaded: reusable?.uploaded ?? false,
+          });
+          activeGcodeArtifactIdsRef.current.add(artifactId);
+          const uploadCurrentArtifact = async () => {
+            await calculatorAPI.uploadGcodeArtifact(
+              file,
+              artifactId,
+              (progress) => {
+                uploadedBytes[uploadIndex] = Math.min(file.size, progress.loadedBytes);
+                setGcodeProcessingProgress({
+                  phase: 'uploading',
+                  uploadedBytes: uploadedBytes.reduce((sum, value) => sum + value, 0),
+                  totalBytes,
+                });
+              },
+              controller.signal,
+            );
+            reusableGcodeArtifactsRef.current.set(fileKey, { id: artifactId, uploaded: true });
+          };
+          try {
+            if (!reusable?.uploaded) {
+              await uploadCurrentArtifact();
+            } else {
+              try {
+                await calculatorAPI.getGcodeArtifact(artifactId, controller.signal);
+              } catch (error) {
+                if (controller.signal.aborted) throw error;
+                activeGcodeArtifactIdsRef.current.delete(artifactId);
+                artifactId = crypto.randomUUID();
+                activeGcodeArtifactIdsRef.current.add(artifactId);
+                reusableGcodeArtifactsRef.current.set(fileKey, { id: artifactId, uploaded: false });
+                await uploadCurrentArtifact();
+              }
+            }
+            uploadedBytes[uploadIndex] = file.size;
+            uploaded.push({ file, uploadIndex, artifactId });
+          } catch (error) {
+            if (controller.signal.aborted) throw error;
+            reusableGcodeArtifactsRef.current.delete(fileKey);
+            activeGcodeArtifactIdsRef.current.delete(artifactId);
+            failedFiles.push(file.name);
+          }
+        }
+
+        setGcodeProcessingProgress({ phase: 'analyzing', uploadedBytes: totalBytes, totalBytes });
+        const jobs: ParsedJobState[] = [];
+        for (const item of uploaded) {
+          let parsed;
+          try {
+            parsed = await calculatorAPI.parseGcodeArtifact(
+              item.artifactId,
+              controller.signal,
+            );
+          } catch (error) {
+            if (controller.signal.aborted) throw error;
+            failedFiles.push(item.file.name);
+            continue;
+          }
+          if (controller.signal.aborted) throw new DOMException('canceled', 'AbortError');
+          jobs.push(...parsed.jobs.map((job) => ({
+            key: parsedJobKey(job, item.uploadIndex),
+            parsed: job,
+          })));
+          activeGcodeArtifactIdsRef.current.delete(item.artifactId);
+          reusableGcodeArtifactsRef.current.delete(
+            `${item.file.name}:${item.file.size}:${item.file.lastModified}`,
           );
-          const remaining = await Promise.all(
-            remainingPlateIndices.map((plateIndex) => calculatorAPI.parseGcode(file, plateIndex)),
-          );
-          return [first, ...remaining]
-            .sort((left, right) => (left.plate_index ?? 0) - (right.plate_index ?? 0))
-            .map((parsed) => ({ key: parsedJobKey(parsed, uploadIndex), parsed }));
-        }),
-      );
-      const jobs = settled.flatMap((result) => (result.status === 'fulfilled' ? result.value : []));
-      const failedFiles = settled.flatMap((result, index) =>
-        result.status === 'rejected' ? [limitedFiles[index]?.name ?? `#${index + 1}`] : [],
-      );
-      if (jobs.length === 0) {
-        throw new Error('all_gcode_files_failed');
+          void calculatorAPI.deleteGcodeArtifact(item.artifactId).catch(() => undefined);
+        }
+        if (jobs.length === 0) {
+          throw new Error(ALL_GCODE_FILES_FAILED);
+        }
+        return {
+          jobs,
+          failedFiles: Array.from(new Set(failedFiles)),
+          skippedCount: Math.max(0, files.length - limitedFiles.length),
+        };
+      } finally {
+        if (gcodeAbortControllerRef.current === controller) {
+          gcodeAbortControllerRef.current = null;
+        }
       }
-      return {
-        jobs,
-        failedFiles,
-        skippedCount: Math.max(0, files.length - limitedFiles.length),
-      };
     },
   });
 
@@ -2072,20 +2200,7 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
   }, [preflightMutation.error, t]);
 
   const parseGcodeError = useMemo(() => {
-    if (!parseGcodeMutation.error) {
-      return null;
-    }
-
-    const errorWithResponse = parseGcodeMutation.error as {
-      response?: { data?: { detail?: unknown } };
-      message?: string;
-    };
-
-    return translateApiError(
-      t,
-      errorWithResponse.response?.data?.detail ?? errorWithResponse.message,
-      t('profilePage.calc.unknownError'),
-    );
+    return resolveGcodeParseError(parseGcodeMutation.error, t);
   }, [parseGcodeMutation.error, t]);
 
   const historyLoadError = useMemo(() => {
@@ -2630,16 +2745,42 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
   };
 
   const handleGcodeFiles = async (files: File[]) => {
-    const batch = await parseGcodeMutation.mutateAsync(files);
-    applyParsedJobs(
-      batch.jobs,
-      batch.failedFiles.length > 0 || batch.skippedCount > 0
-        ? tc('batchParsePartial')
-            .replace('{{failed}}', String(batch.failedFiles.length))
-            .replace('{{skipped}}', String(batch.skippedCount))
-        : null,
-      parsedJobs.length > 0 ? 'append' : 'replace',
+    lastGcodeFilesRef.current = files;
+    parseGcodeMutation.reset();
+    try {
+      const batch = await parseGcodeMutation.mutateAsync(files);
+      applyParsedJobs(
+        batch.jobs,
+        batch.failedFiles.length > 0 || batch.skippedCount > 0
+          ? tc('batchParsePartial')
+              .replace('{{failed}}', String(batch.failedFiles.length))
+              .replace('{{skipped}}', String(batch.skippedCount))
+          : null,
+        parsedJobs.length > 0 ? 'append' : 'replace',
+      );
+      lastGcodeFilesRef.current = [];
+    } catch {
+      // Mutation state owns the localized error and keeps the current calculator
+      // inputs intact so the same in-memory files can be retried directly.
+    } finally {
+      setGcodeProcessingProgress(null);
+    }
+  };
+
+  const cancelGcodeProcessing = () => {
+    gcodeAbortControllerRef.current?.abort();
+    const artifactIds = Array.from(activeGcodeArtifactIdsRef.current);
+    activeGcodeArtifactIdsRef.current.clear();
+    void Promise.allSettled(
+      artifactIds.map((artifactId) => calculatorAPI.deleteGcodeArtifact(artifactId)),
     );
+    setGcodeProcessingProgress(null);
+  };
+
+  const retryGcodeProcessing = () => {
+    if (lastGcodeFilesRef.current.length > 0) {
+      void handleGcodeFiles(lastGcodeFilesRef.current);
+    }
   };
 
   const applyParsedJobsRef = useRef(applyParsedJobs);
@@ -3712,7 +3853,10 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
           isSpoolsLoading={spoolsQuery.isPending}
           spoolsLoadError={spoolsQuery.isError ? tc('spoolsLoadError') : null}
           isParsingGcode={parseGcodeMutation.isPending}
+          gcodeProcessingProgress={gcodeProcessingProgress}
           parseGcodeError={parseGcodeError}
+          onCancelGcodeProcessing={cancelGcodeProcessing}
+          onRetryGcodeProcessing={retryGcodeProcessing}
           isCalculating={calculateMutation.isPending}
           estimateError={estimateError}
           canSaveHistory={Boolean(result)}
@@ -3853,7 +3997,10 @@ interface CalculatorViewProps {
   isSpoolsLoading: boolean;
   spoolsLoadError: string | null;
   isParsingGcode: boolean;
+  gcodeProcessingProgress: GcodeProcessingProgress | null;
   parseGcodeError: string | null;
+  onCancelGcodeProcessing: () => void;
+  onRetryGcodeProcessing: () => void;
   isCalculating: boolean;
   estimateError: string | null;
   canSaveHistory: boolean;
@@ -3936,7 +4083,10 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
   isSpoolsLoading,
   spoolsLoadError,
   isParsingGcode,
+  gcodeProcessingProgress,
   parseGcodeError,
+  onCancelGcodeProcessing,
+  onRetryGcodeProcessing,
   isCalculating,
   estimateError,
   canSaveHistory,
@@ -3984,6 +4134,17 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
 }) => {
   const { t, i18n } = useTranslation();
   const tc = (key: string) => translateCalculator(t, key);
+  const gcodeUploadPercent = gcodeProcessingProgress?.totalBytes
+    ? Math.min(
+        100,
+        Math.round(
+          (gcodeProcessingProgress.uploadedBytes / gcodeProcessingProgress.totalBytes) * 100,
+        ),
+      )
+    : 0;
+  const gcodeProcessingLabel = gcodeProcessingProgress?.phase === 'analyzing'
+    ? tc('gcodePhaseAnalyzing')
+    : tc('gcodePhaseUploading').replace('{{percent}}', String(gcodeUploadPercent));
   const [advancedSettingsOpen, setAdvancedSettingsOpen] = useState(false);
   const [postprocessChecked, setPostprocessChecked] = useState<Record<string, boolean>>({});
   const [customPresets, setCustomPresets] = useState<PricingPreset[]>(() => loadCustomPricingPresets());
@@ -5070,11 +5231,51 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                     </div>
                     <div className="min-w-0">
                       <p className="text-sm font-medium text-white">
-                        {isParsingGcode ? tc('uploadingGcode') : tc('gcodeDropTitle')}
+                        {isParsingGcode ? gcodeProcessingLabel : tc('gcodeDropTitle')}
                       </p>
                       <p className="mt-0.5 text-[10px] uppercase tracking-[0.14em] text-slate-500">{tc('supportedFormats')}</p>
                     </div>
                   </div>
+                  {isParsingGcode && gcodeProcessingProgress ? (
+                    <div className="mt-3" role="status" aria-live="polite">
+                      <div className="h-1.5 overflow-hidden rounded-full bg-slate-800">
+                        <div
+                          className={`h-full rounded-full bg-cyan-400 transition-[width] duration-200 ${
+                            gcodeProcessingProgress.phase === 'analyzing' ? 'animate-pulse' : ''
+                          }`}
+                          style={{
+                            width: gcodeProcessingProgress.phase === 'analyzing'
+                              ? '100%'
+                              : `${gcodeUploadPercent}%`,
+                          }}
+                        />
+                      </div>
+                      <p className="mt-1.5 text-xs text-slate-400">
+                        {gcodeProcessingProgress.phase === 'uploading'
+                          ? tc('gcodeUploadBytes')
+                              .replace(
+                                '{{uploaded}}',
+                                formatBytes(gcodeProcessingProgress.uploadedBytes, i18n.language),
+                              )
+                              .replace(
+                                '{{total}}',
+                                formatBytes(gcodeProcessingProgress.totalBytes, i18n.language),
+                              )
+                          : tc('gcodeAnalysisDetail')}
+                      </p>
+                      <button
+                        type="button"
+                        className="mt-2 inline-flex min-h-9 items-center rounded-xl border border-slate-600 px-3 text-xs font-semibold text-slate-200 transition hover:border-slate-400 hover:text-white"
+                        onClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          onCancelGcodeProcessing();
+                        }}
+                      >
+                        {tc('gcodeCancel')}
+                      </button>
+                    </div>
+                  ) : null}
                 </label>
 
                 {insidePlugin && (
@@ -5087,8 +5288,15 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
                 </div>
 
                 {parseGcodeError && (
-                  <div className="rounded-[1.25rem] border border-red-400/25 bg-red-500/10 px-4 py-3 text-sm text-red-100">
-                    {parseGcodeError}
+                  <div className="flex flex-wrap items-center justify-between gap-3 rounded-[1.25rem] border border-red-400/25 bg-red-500/10 px-4 py-3 text-sm text-red-100">
+                    <span>{parseGcodeError}</span>
+                    <button
+                      type="button"
+                      className="inline-flex min-h-9 items-center rounded-xl border border-red-300/35 px-3 text-xs font-semibold text-red-50 transition hover:border-red-200"
+                      onClick={onRetryGcodeProcessing}
+                    >
+                      {tc('gcodeRetry')}
+                    </button>
                   </div>
                 )}
                 {batchParseWarning && (

@@ -133,6 +133,13 @@ async def _start_background_tasks(application: FastAPI) -> None:
         name="auth-state-sweeper",
     )
 
+    from app.services.calculator_gcode_artifact_service import run_gcode_artifact_sweeper
+
+    application.state.gcode_artifact_sweeper_task = asyncio.create_task(
+        run_gcode_artifact_sweeper(AsyncSessionLocal),
+        name="calculator-gcode-artifact-sweeper",
+    )
+
     from app.services.qr_identity_service import run_qr_binding_sweeper
 
     application.state.qr_binding_sweeper_task = asyncio.create_task(
@@ -200,6 +207,7 @@ async def _stop_background_tasks(application: FastAPI) -> None:
     for name in (
         "provisional_account_sweeper_task",
         "auth_state_sweeper_task",
+        "gcode_artifact_sweeper_task",
         "qr_binding_sweeper_task",
         "inbound_mail_task",
         "weighted_preset_refresh_task",
@@ -257,6 +265,7 @@ class PublicStaticFiles(StaticFiles):
         "printer_requests/",
         "database_dumps/",
         "wiki_media/",
+        "calculator_gcode_artifacts/",
     )
     _immutable_prefixes = (
         "avatars/",
