@@ -27,6 +27,9 @@ param(
     [switch]$PromptForOwnerApproval,
 
     [Parameter()]
+    [switch]$CheckVersions,
+
+    [Parameter()]
     [switch]$DryRun
 )
 
@@ -159,38 +162,30 @@ function Get-PublishedComponent {
         [Parameter(Mandatory)][string[]]$TagPatterns
     )
 
+    # One paginated, checked API read includes assets. A failed lookup must
+    # never turn an existing release into an apparently unpublished version.
     $json = Invoke-Checked gh @(
-        'release', 'list', '--repo', $Repository, '--limit', '50',
-        '--json', 'tagName,isDraft,isPrerelease,publishedAt'
+        'api', "repos/$Repository/releases?per_page=100", '--paginate', '--slurp'
     ) -Capture
-    $summaries = @($json | ConvertFrom-Json)
-
-    foreach ($tagPattern in $TagPatterns) {
-        foreach ($summary in $summaries) {
-            if ($summary.isDraft -or $summary.isPrerelease -or
-                [string]$summary.tagName -notmatch $tagPattern) {
-                continue
-            }
-            $release = Get-Release -Repository $Repository -Tag ([string]$summary.tagName)
-            if (-not $release -or $release.isDraft -or $release.isPrerelease) {
-                continue
-            }
-            $asset = @($release.assets) |
-                Where-Object { [string]$_.name -match $AssetPattern } |
-                Select-Object -First 1
-            if (-not $asset) {
-                continue
-            }
-            $match = [regex]::Match([string]$asset.name, $AssetPattern)
-            return [pscustomobject]@{
-                Tag = [string]$release.tagName
-                Version = $match.Groups['version'].Value
-                Url = [string]$release.url
-                PublishedAt = [datetime]$release.publishedAt
-            }
+    $releases = @($json | ConvertFrom-Json | ForEach-Object { $_ } | ForEach-Object { $_ })
+    $candidates = @(foreach ($release in $releases) {
+        if ($release.draft -or $release.prerelease) { continue }
+        if (-not @($TagPatterns | Where-Object { $release.tag_name -match $_ }).Count) {
+            continue
         }
-    }
-    return $null
+        $assets = @($release.assets | Where-Object { [string]$_.name -match $AssetPattern })
+        if ($assets.Count -ne 1) {
+            throw "Release '$($release.tag_name)' must contain exactly one matching wheel."
+        }
+        $match = [regex]::Match([string]$assets[0].name, $AssetPattern)
+        [pscustomobject]@{
+            Tag = [string]$release.tag_name
+            Version = $match.Groups['version'].Value
+            Url = [string]$release.html_url
+            PublishedAt = [datetime]$release.published_at
+        }
+    })
+    return $candidates | Sort-Object { [version]$_.Version } -Descending | Select-Object -First 1
 }
 
 function Get-RemoteTagCommit {
@@ -266,7 +261,8 @@ function Test-ComponentNeedsRelease {
         [Parameter(Mandatory)][string]$RepositoryPath,
         [Parameter(Mandatory)][string]$RemoteName,
         [Parameter(Mandatory)][string[]]$SourcePaths,
-        [string[]]$IgnoredPaths = @()
+        [string[]]$IgnoredPaths = @(),
+        [switch]$CheckVersions
     )
 
     if (-not $Published) {
@@ -282,14 +278,22 @@ function Test-ComponentNeedsRelease {
     }
 
     Ensure-LocalTag -RepositoryPath $RepositoryPath -RemoteName $RemoteName -Tag $Published.Tag
-    $arguments = @('-C', $RepositoryPath, 'diff', '--name-only', "$($Published.Tag)..HEAD", '--') + $SourcePaths
+    $arguments = @('-C', $RepositoryPath, 'diff', '--name-only', $Published.Tag, '--') + $SourcePaths
     $changed = Invoke-Checked git $arguments -Capture
+    $untracked = Invoke-Checked git (@('-C', $RepositoryPath, 'ls-files', '--others', '--exclude-standard', '--') + $SourcePaths) -Capture
     $changedPaths = @(
-        @($changed -split "`r?`n") | Where-Object {
-            -not [string]::IsNullOrWhiteSpace($_) -and $_ -notin $IgnoredPaths
-        }
+        @(("$changed`n$untracked") -split "`r?`n") | Where-Object {
+            -not [string]::IsNullOrWhiteSpace($_) -and $_ -notin $IgnoredPaths -and
+            $_ -notmatch '(^|/)(tests?/|test_[^/]*\.py$)'
+        } | Select-Object -Unique
     )
     if ($changedPaths.Count -gt 0) {
+        if ($CheckVersions) {
+            $nextVersion = '{0}.{1}.{2}' -f $current.Major, $current.Minor, ($current.Build + 1)
+            Write-Host "$Name`: опубликована $CurrentVersion; подготовь $nextVersion, синхронизируй версию и changelog." -ForegroundColor Yellow
+            Write-Host ($changedPaths -join "`n")
+            return $true
+        }
         throw "$Name изменён после $($Published.Tag), но версия осталась $CurrentVersion. Обнови версию и changelog:`n$($changedPaths -join "`n")"
     }
     return $false
@@ -753,19 +757,77 @@ function Repair-TrustedPublishComponent {
     Write-Host "$Name опубликован в OrcaCloud: $($release.url)" -ForegroundColor Green
 }
 
+function Invoke-ReleaseBatch {
+    param(
+        [Parameter(Mandatory)][string[]]$Components,
+        [Parameter(Mandatory)][scriptblock]$Operation,
+        [Parameter(Mandatory)][string]$Phase
+    )
+
+    $index = 0
+    foreach ($id in $Components) {
+        $index += 1
+        Write-Host "`n[$index/$($Components.Count)] $id — $Phase" -ForegroundColor Cyan
+        try {
+            & $Operation $id | Out-Host
+            [pscustomobject]@{ Component = $id; Status = 'OK'; Detail = $Phase }
+        } catch {
+            $detail = $_.Exception.Message
+            Write-Host "$id — ОШИБКА: $detail" -ForegroundColor Yellow
+            [pscustomobject]@{ Component = $id; Status = 'ERROR'; Detail = $detail }
+        }
+    }
+}
+
+$selected = @(if ($Component -contains 'all') {
+    @('orcaslicer', 'octoprint', 'print-farm')
+} else {
+    @($Component | Select-Object -Unique)
+})
+if ($selected.Count -gt 1) {
+    $entryPath = $PSCommandPath
+    $childArguments = @{} + $PSBoundParameters
+    $childArguments.Remove('Component')
+    # Check every component before any public operation; only successful
+    # components proceed, and each keeps its own exact-artifact approval gate.
+    $preflightArguments = @{} + $childArguments
+    $preflightArguments.DryRun = $true
+    $results = @(Invoke-ReleaseBatch -Components $selected -Phase 'проверка' -Operation {
+        param($id)
+        & $entryPath @preflightArguments -Component $id
+    })
+    if (-not $DryRun -and -not $CheckVersions) {
+        $ready = @($results | Where-Object Status -eq 'OK' | ForEach-Object Component)
+        $failed = @($results | Where-Object Status -eq 'ERROR')
+        $completed = @()
+        if ($ready.Count) {
+            $completed = @(Invoke-ReleaseBatch -Components $ready -Phase 'выпуск' -Operation {
+                param($id)
+                & $entryPath @childArguments -Component $id
+            })
+        }
+        $results = @($failed) + @($completed)
+    }
+    Write-Host "`nИтог по компонентам:" -ForegroundColor Cyan
+    foreach ($id in $selected) {
+        $result = $results | Where-Object Component -eq $id
+        Write-Host "  $id — $($result.Status): $($result.Detail)"
+    }
+    if (@($results | Where-Object Status -eq 'ERROR').Count) {
+        throw 'Не все компоненты прошли выбранный этап. Результаты остальных сохранены; причины указаны выше.'
+    }
+    return
+}
+
 Assert-Command git
 Assert-Command gh
 Assert-Command python
 
 $script:MainRepositoryRoot = Invoke-Checked git @('rev-parse', '--show-toplevel') -Capture
-$selected = if ($Component -contains 'all') {
-    @('orcaslicer', 'octoprint', 'print-farm')
-} else {
-    @($Component | Select-Object -Unique)
-}
 
-Invoke-Checked gh @('auth', 'status')
+Invoke-Checked gh @('auth', 'status') -Capture | Out-Null
 $mainRepository = Get-RepositoryName -RepositoryPath $script:MainRepositoryRoot
+Write-Host "GitHub: $mainRepository; проверяю актуальный release и исходники." -ForegroundColor DarkGray
 $printFarmRepositoryRoot = $null
 $printFarmRepository = $null
 if ($selected -contains 'print-farm') {
@@ -773,12 +835,12 @@ if ($selected -contains 'print-farm') {
     $printFarmRepository = Get-RepositoryName -RepositoryPath $printFarmRepositoryRoot
 }
 
-if ($selected -contains 'orcaslicer') {
+if (-not $CheckVersions -and $selected -contains 'orcaslicer') {
     Assert-OrcaCloudPublishWorkflow `
         -Path (Join-Path $script:MainRepositoryRoot '.github/workflows/publish-orcacloud.yml') `
         -Name 'FilamentHub OrcaCloud workflow'
 }
-if ($selected -contains 'print-farm') {
+if (-not $CheckVersions -and $selected -contains 'print-farm') {
     Assert-OrcaCloudPublishWorkflow `
         -Path (Join-Path $printFarmRepositoryRoot '.github/workflows/publish-orcacloud.yml') `
         -Name 'Print Farm OrcaCloud workflow'
@@ -804,8 +866,10 @@ if ($selected -contains 'orcaslicer') {
         -TagPatterns @('^v\d+\.\d+\.\d+$', '^plugins-v\d+\.\d+\.\d+$')
     $needed = Test-ComponentNeedsRelease `
         -Name 'FilamentHub for OrcaSlicer' -CurrentVersion $version -Published $published `
-        -RepositoryPath $script:MainRepositoryRoot -RemoteName $Remote -SourcePaths @('orca-plugin')
-    $repair = if (-not $needed -and $published) {
+        -RepositoryPath $script:MainRepositoryRoot -RemoteName $Remote -SourcePaths @('orca-plugin') `
+        -IgnoredPaths @('orca-plugin/build_package.py') `
+        -CheckVersions:$CheckVersions
+    $repair = if (-not $CheckVersions -and -not $needed -and $published) {
         Test-TrustedPublishNeedsRepair `
             -Name 'FilamentHub for OrcaSlicer' `
             -RepositoryPath $script:MainRepositoryRoot -RemoteName $Remote `
@@ -831,7 +895,9 @@ if ($selected -contains 'octoprint') {
         -TagPatterns @('^octoprint-v\d+\.\d+\.\d+$', '^plugins-v\d+\.\d+\.\d+$')
     $needed = Test-ComponentNeedsRelease `
         -Name 'FilamentHub Bridge for OctoPrint' -CurrentVersion $version -Published $published `
-        -RepositoryPath $script:MainRepositoryRoot -RemoteName $Remote -SourcePaths @('octoprint-plugin')
+        -RepositoryPath $script:MainRepositoryRoot -RemoteName $Remote -SourcePaths @('octoprint-plugin') `
+        -IgnoredPaths @('octoprint-plugin/build_package.py') `
+        -CheckVersions:$CheckVersions
     $plans += [pscustomobject]@{
         Id = 'octoprint'; Name = 'FilamentHub Bridge for OctoPrint'; Version = $version
         Tag = "octoprint-v$version"; Needed = $needed; Repair = $false; Published = $published
@@ -851,8 +917,9 @@ if ($selected -contains 'print-farm') {
         -Name 'Print Farm' -CurrentVersion $version -Published $published `
         -RepositoryPath $printFarmRepositoryRoot -RemoteName $Remote `
         -SourcePaths @('plugins/printers') `
-        -IgnoredPaths @('plugins/printers/test_release_workflow.py')
-    $repair = if (-not $needed -and $published) {
+        -IgnoredPaths @('plugins/printers/test_release_workflow.py', 'plugins/printers/build_package.py') `
+        -CheckVersions:$CheckVersions
+    $repair = if (-not $CheckVersions -and -not $needed -and $published) {
         Test-TrustedPublishNeedsRepair `
             -Name 'Print Farm' `
             -RepositoryPath $printFarmRepositoryRoot -RemoteName $Remote `
@@ -879,7 +946,13 @@ foreach ($plan in $plans) {
     } else {
         'не найден'
     }
-    $action = if ($plan.Needed) {
+    $action = if ($CheckVersions -and $plan.Needed) {
+        if ($plan.Published -and $plan.Published.Version -eq $plan.Version) {
+            'повысить версию и обновить changelog'
+        } else {
+            'сохранить неопубликованную версию; дополнить changelog и пересобрать'
+        }
+    } elseif ($plan.Needed) {
         "ВЫПУСТИТЬ $($plan.Tag)"
     } elseif ($plan.Repair) {
         "ПОВТОРИТЬ ORCACLOUD $($plan.Published.Tag)"
@@ -888,12 +961,16 @@ foreach ($plan in $plans) {
     }
     Write-Host "  $($plan.Name): исходник $($plan.Version); опубликован $publishedText; $action"
 }
+if ($CheckVersions) {
+    Write-Host 'Проверка версий завершена. Это не проверка сборки или готовности к публикации.'
+    return
+}
 $printFarmAhead = 0
 if ($printFarmRepositoryRoot) {
     $printFarmAhead = [int](Invoke-Checked git @(
         '-C', $printFarmRepositoryRoot, 'rev-list', '--count', "$Remote/$Branch..HEAD"
     ) -Capture)
-    if ($printFarmAhead -gt 0) {
+    if ($printFarmAhead -gt 0 -and ($plans | Where-Object { $_.Id -eq 'print-farm' -and ($_.Needed -or $_.Repair) })) {
         Write-Host "  Print Farm repository: опубликовать $printFarmAhead подготовленный коммит(ов) ветки $Branch."
     }
 }
@@ -912,13 +989,15 @@ if (-not $HideReleaseNotes) {
 }
 
 $mainReleasePaths = @(
-    'orca-plugin', 'octoprint-plugin',
-    '.github/workflows/release-filamenthub.yml',
-    '.github/workflows/release-octoprint.yml',
-    '.github/workflows/publish-orcacloud.yml',
     'scripts/render_plugin_release_notes.py',
     'scripts/publish-plugin-releases.ps1'
 )
+if ($selected -contains 'orcaslicer') {
+    $mainReleasePaths += @('orca-plugin', '.github/workflows/release-filamenthub.yml', '.github/workflows/publish-orcacloud.yml')
+}
+if ($selected -contains 'octoprint') {
+    $mainReleasePaths += @('octoprint-plugin', '.github/workflows/release-octoprint.yml')
+}
 if ($plans | Where-Object {
     $_.RepositoryPath -eq $script:MainRepositoryRoot -and ($_.Needed -or $_.Repair)
 }) {
@@ -949,7 +1028,7 @@ $mainPlans = @($plans | Where-Object {
 if ($mainPlans.Count -gt 0) {
     Invoke-Checked git @('-C', $script:MainRepositoryRoot, 'push', $Remote, $Branch)
 }
-if ($selected -contains 'print-farm') {
+if ($selected -contains 'print-farm' -and ($plans | Where-Object { $_.Id -eq 'print-farm' -and ($_.Needed -or $_.Repair) })) {
     if ($printFarmAhead -gt 0) {
         Write-Host "Print Farm: публикую $printFarmAhead коммит(ов) ветки $Branch перед релизом."
         Invoke-Checked git @('-C', $printFarmRepositoryRoot, 'push', $Remote, $Branch)

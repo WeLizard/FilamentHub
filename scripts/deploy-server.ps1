@@ -702,20 +702,13 @@ function Invoke-PluginReleasePreparation {
         }
     }
     $scriptPath = Join-Path $PSScriptRoot 'publish-plugin-releases.ps1'
-    & $scriptPath -Component $components -DryRun
-    if (-not $?) {
-        throw 'Предварительная проверка независимых релизов завершилась с ошибкой.'
-    }
-    if (-not (Confirm-Action 'Опубликовать перечисленные независимые релизы?')) {
-        throw 'Публикация релиза отменена.'
-    }
-
-    & $scriptPath -Component $components -HideReleaseNotes -PromptForOwnerApproval
+    Write-Host 'Каждый плагин проверяется отдельно. Для выпуска потребуется SHA-256 проверенного пакета.' -ForegroundColor DarkGray
+    & $scriptPath -Component $components -PromptForOwnerApproval
     if (-not $?) {
         throw 'Скрипт публикации плагинов завершился с ошибкой.'
     }
     if (-not (Test-DownloadPageRelease)) {
-        Write-Host 'GitHub Releases готовы, но Download ещё не обновился. Повтори пункт 9 после деплоя backend или истечения 15-минутного кеша.' -ForegroundColor Yellow
+        Write-Host 'GitHub Releases готовы, но Download ещё не обновился. Повтори пункт 3 этого меню после деплоя backend или истечения 15-минутного кеша.' -ForegroundColor Yellow
     }
 }
 
@@ -913,6 +906,7 @@ function Show-PluginMenu {
         Write-Host '  3. Проверить все три плагина на странице Download'
         Write-Host '  4. Выпустить все изменившиеся плагины отдельными releases'
         Write-Host '  5. Выпустить один выбранный плагин отдельным release'
+        Write-Host '  6. Проверить версии и показать, что нужно подготовить'
         Write-Host '  0. Назад'
 
         try {
@@ -926,6 +920,7 @@ function Show-PluginMenu {
                 }
                 '4' { Invoke-PluginReleasePreparation }
                 '5' { Invoke-PluginReleasePreparation -ChooseComponent }
+                '6' { & (Join-Path $PSScriptRoot 'publish-plugin-releases.ps1') -CheckVersions }
                 '0' { return }
                 default { Write-Host 'Неизвестный пункт меню.' -ForegroundColor Yellow }
             }

@@ -286,7 +286,6 @@ def test_release_menu_requests_explicit_hashes_only_for_actionable_plans(tmp_pat
 
     assert result["error"] is None, result
     assert result["menuCalls"] == [
-        {"dryRun": True, "prompt": False, "components": ["all"]},
         {"dryRun": False, "prompt": True, "components": ["all"]},
     ]
     assert len(result["prompts"]) == (2 if scenario == "approved" else 0)
@@ -441,7 +440,7 @@ def test_print_farm_publish_contract_test_does_not_force_a_plugin_version() -> N
         encoding="utf-8"
     )
 
-    assert "-IgnoredPaths @('plugins/printers/test_release_workflow.py')" in script
+    assert "-IgnoredPaths @('plugins/printers/test_release_workflow.py', 'plugins/printers/build_package.py')" in script
 
 
 def test_owner_script_uses_the_same_trusted_release_order_for_print_farm() -> None:

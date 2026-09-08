@@ -2,6 +2,15 @@
 
 Newest first. The top entry is used for GitHub release notes.
 
+## 0.1.4
+- Preserves pending usage reports when reconnecting the Bridge and sends them
+  only to their original printer connection. Reports with an unknown connection
+  remain available for manual recovery, with a clear warning.
+- Keeps delayed usage tied to the original spool assignment after a spool is
+  replaced, including offline periods and interrupted delivery.
+- Prevents changing the connection during an active print and retains local
+  settings if a print starts while pairing is in progress.
+
 ## 0.1.3
 - Lets users search for, assign, replace or remove the desired spool for any
   existing FilamentHub slot directly from the OctoPrint sidebar. Concurrent
