@@ -47,7 +47,7 @@ class DeployResilienceContractTest(unittest.TestCase):
         console = (ROOT / "scripts/deploy-server.ps1").read_text(encoding="utf-8")
 
         self.assertIn("--all-build-cache", worker)
-        self.assertIn("docker builder prune -f", worker)
+        self.assertIn("docker builder prune -af", worker)
         self.assertNotIn("docker system prune", worker)
         self.assertNotIn("docker image prune", worker)
         self.assertNotIn("docker volume prune", worker)

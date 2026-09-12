@@ -285,7 +285,7 @@ prune_build_cache() {
     info "Docker disk usage before cleanup:"
     docker system df
     if [[ "$PRUNE_ALL_BUILD_CACHE" == true ]]; then
-        docker builder prune -f
+        docker builder prune -af
     else
         docker builder prune -f --filter "until=$retention"
     fi
