@@ -156,17 +156,17 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
   };
 
   return (
-    <PageBackground className="app-shell flex flex-col" ambient>
+    <PageBackground className="app-shell flex w-full min-w-0 flex-col" ambient>
 
       {/* Header - скрываем если открыто через OrcaSlicer или в iframe плагина */}
       {!hideChrome && (
-      <header className="relative bg-black/20 backdrop-blur-sm border-b border-white/10 z-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 sm:py-4">
-          <div className="flex items-center justify-between">
+      <header className="app-shell-safe-top relative z-50 border-b border-white/10 bg-black/20 backdrop-blur-sm">
+        <div className="app-shell-gutter mx-auto max-w-7xl py-3 sm:py-4">
+          <div className="flex min-w-0 items-center justify-between gap-2">
             {/* Logo */}
-            <div className="flex items-center space-x-2 sm:space-x-4">
-              <Link to="/" className="flex items-center space-x-2 sm:space-x-4">
-                <div className="w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center">
+            <div className="flex min-w-0 items-center gap-2 sm:gap-4">
+              <Link to="/" className="flex shrink-0 items-center gap-2 sm:gap-4">
+                <div className="flex h-10 w-10 items-center justify-center sm:h-12 sm:w-12">
                   <img 
                     src="/logo.svg" 
                     alt="FilamentHub Logo" 
@@ -184,7 +184,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
 
               {/* Отметка о бете видна всем, обратная связь внутри неё — вошедшим.
                   Пояснение раскрывается поверх страницы, поэтому шапка не растёт. */}
-              <div className="ml-2 sm:ml-4 shrink-0 sm:relative group">
+              <div className="group hidden shrink-0 sm:relative sm:block">
                 <div className="flex items-center gap-2 rounded-lg border border-amber-400/50 bg-amber-400/15 px-2 py-1 sm:px-2.5 sm:py-1.5">
                   <span className="rounded bg-amber-400 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-gray-900">
                     {t('layout.beta.badge')}
@@ -310,10 +310,11 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
             </nav>
 
             {/* Mobile: Notifications + Hamburger */}
-            <div className="flex xl:hidden items-center space-x-2">
+            <div className="flex shrink-0 items-center gap-1 sm:gap-2 xl:hidden">
               <button
+                type="button"
                 onClick={() => setIsScannerOpen(true)}
-                className="p-2 text-gray-300 hover:text-white hover:bg-white/10 rounded-lg transition-all"
+                className="flex h-11 w-11 items-center justify-center rounded-lg text-gray-300 transition-all hover:bg-white/10 hover:text-white"
                 aria-label={t('qrScanner.open')}
                 title={t('qrScanner.open')}
               >
@@ -325,9 +326,12 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
                 </Suspense>
               )}
               <button
+                type="button"
                 onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-                className="p-2 text-gray-300 hover:text-white hover:bg-white/10 rounded-lg transition-all"
+                className="flex h-11 w-11 items-center justify-center rounded-lg text-gray-300 transition-all hover:bg-white/10 hover:text-white"
                 aria-label={t('layout.nav_menu')}
+                aria-expanded={isMobileMenuOpen}
+                aria-controls="mobile-navigation"
               >
                 {isMobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
               </button>
@@ -338,7 +342,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
         {/* Mobile Menu */}
         {isMobileMenuOpen && (
           <div className="xl:hidden bg-black/40 backdrop-blur-md border-t border-white/10">
-            <div className="px-4 py-3 space-y-2">
+            <nav id="mobile-navigation" aria-label={t('layout.nav_menu')} className="app-shell-gutter space-y-2 py-3">
               <Link
                 to="/"
                 className={`flex items-center space-x-3 px-4 py-3 rounded-lg transition-all ${
@@ -442,19 +446,19 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
                   <LanguageSwitcher />
                 </div>
               )}
-            </div>
+            </nav>
           </div>
         )}
       </header>
       )}
 
       {/* Main Content */}
-      <main className="relative z-10 flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 py-4 sm:py-8">{children}</main>
+      <main className="app-shell-gutter relative z-10 mx-auto w-full min-w-0 max-w-7xl flex-1 py-4 sm:py-8">{children}</main>
 
       {/* Footer - hidden in OrcaSlicer / plugin iframe */}
       {!hideChrome && (
-        <footer className="relative z-10 border-t border-white/10 bg-black/20 backdrop-blur-sm mt-8">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex flex-col sm:flex-row items-center justify-between gap-2 text-[11px] sm:text-xs text-gray-500">
+        <footer className="app-shell-safe-bottom relative z-10 mt-8 border-t border-white/10 bg-black/20 backdrop-blur-sm">
+          <div className="app-shell-gutter mx-auto flex max-w-7xl flex-col items-center justify-between gap-2 py-3 text-[11px] text-gray-500 sm:flex-row sm:text-xs">
             <span>{t('layout.footer_copyright', { year: new Date().getFullYear() })}</span>
             <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1.5 sm:justify-end sm:gap-x-4">
               <Link to="/about" className="hover:text-gray-300 transition-colors">{t('layout.footer_about')}</Link>

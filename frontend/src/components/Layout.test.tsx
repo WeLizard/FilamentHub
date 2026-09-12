@@ -129,6 +129,58 @@ describe('Layout', () => {
     expect(container.querySelector('[aria-hidden="true"]')).toBeInTheDocument();
   });
 
+  it('bounds the shared page canvas and applies safe-area gutters', () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const { container } = render(
+      <MemoryRouter>
+        <QueryClientProvider client={queryClient}>
+          <Layout><div>page content</div></Layout>
+        </QueryClientProvider>
+      </MemoryRouter>,
+    );
+
+    expect(container.querySelector('.app-shell')).toHaveClass('min-w-0', 'w-full');
+    expect(container.querySelector('header')).toHaveClass('app-shell-safe-top');
+    expect(container.querySelector('header > div')).toHaveClass('app-shell-gutter');
+    expect(container.querySelector('main')).toHaveClass('app-shell-gutter', 'min-w-0', 'w-full');
+    expect(container.querySelector('footer')).toHaveClass('app-shell-safe-bottom');
+  });
+
+  it('keeps all primary mobile actions in the header without decorative crowding', () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    render(
+      <MemoryRouter>
+        <QueryClientProvider client={queryClient}>
+          <Layout><LocationProbe /></Layout>
+        </QueryClientProvider>
+      </MemoryRouter>,
+    );
+
+    const menuButton = screen.getByRole('button', { name: 'layout.nav_menu' });
+    expect(menuButton).toHaveClass('h-11', 'w-11');
+    expect(menuButton).toHaveAttribute('aria-expanded', 'false');
+    const headerScanButton = screen.getAllByRole('button', { name: 'qrScanner.open' }).find(
+      (button) => button.parentElement?.classList.contains('xl:hidden'),
+    );
+    expect(headerScanButton).toHaveClass('flex', 'h-11', 'w-11');
+    expect(headerScanButton).not.toHaveClass('hidden');
+    expect(screen.getByText('layout.beta.badge').closest('.group')).toHaveClass(
+      'hidden',
+      'sm:block',
+    );
+
+    fireEvent.click(menuButton);
+
+    expect(menuButton).toHaveAttribute('aria-expanded', 'true');
+    const mobileNavigation = screen.getByRole('navigation', { name: 'layout.nav_menu' });
+    expect(mobileNavigation).toHaveClass('app-shell-gutter');
+    expect(mobileNavigation).not.toContainElement(headerScanButton ?? null);
+  });
+
   it('shows the recognition result before a follow-up action', async () => {
     scanQr.mockResolvedValueOnce({
       filament: { id: 42, brand_name: 'QR Brand', name: 'Exact PLA' },
