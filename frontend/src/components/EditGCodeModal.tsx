@@ -222,17 +222,24 @@ export const EditGCodeModal: React.FC<EditGCodeModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="relative flex-shrink-0 w-[380px] h-[258px] bg-gray-900 rounded-lg border border-white/20 shadow-xl flex flex-col" onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
+    <div
+      role="region"
+      aria-label={title}
+      className="relative flex h-[16.125rem] max-h-[calc(100dvh-2rem)] min-h-0 w-full min-w-0 max-w-[23.75rem] shrink flex-col overflow-hidden rounded-lg border border-white/20 bg-gray-900 shadow-xl"
+      onClick={(e) => e.stopPropagation()}
+      onMouseDown={(e) => e.stopPropagation()}
+    >
       {/* Close button */}
       <button
         type="button"
         onClick={(e) => { e.stopPropagation(); onClose(); }}
-        className="absolute top-2 right-2 z-10 p-1 rounded-md text-gray-400 hover:text-white hover:bg-white/10 transition-colors"
+        aria-label={t('common.close')}
+        className="absolute right-1 top-1 z-10 flex h-11 w-11 items-center justify-center rounded-md text-gray-400 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-400"
       >
         <X className="w-4 h-4" />
       </button>
       {/* Search */}
-      <div className="p-3 border-b border-white/10">
+      <div className="border-b border-white/10 p-3 pr-14">
         <div className="relative">
           <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
           <input
@@ -240,13 +247,13 @@ export const EditGCodeModal: React.FC<EditGCodeModalProps> = ({
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder={t('editGCode.searchPlaceholder')}
-            className="w-full pl-8 pr-3 py-1.5 bg-white/10 border border-white/20 rounded-lg text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+            className="h-11 w-full rounded-lg border border-white/20 bg-white/10 pl-8 pr-3 text-sm text-white placeholder-gray-500 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-purple-500"
           />
         </div>
       </div>
 
       {/* Placeholders List */}
-      <div className="flex-1 overflow-y-auto p-2">
+      <div className="min-h-0 flex-1 overflow-y-auto p-2">
         {Object.keys(filteredCategories).length === 0 ? (
           <div className="text-center text-gray-500 text-xs py-6">
             No placeholders found
@@ -261,13 +268,13 @@ export const EditGCodeModal: React.FC<EditGCodeModalProps> = ({
                   toggleCategory(category);
                 }}
                 onMouseDown={(e) => e.stopPropagation()}
-                className="w-full flex items-center justify-between px-2 py-1 text-xs font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded transition-colors"
+                className="flex min-h-11 w-full items-center justify-between gap-2 rounded px-2 text-xs font-medium text-gray-300 transition-colors hover:bg-white/5 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-400"
               >
-                <span>{category}</span>
+                <span className="min-w-0 break-words text-left">{category}</span>
                 {expandedCategories.has(category) ? (
-                  <ChevronDown className="w-3 h-3" />
+                  <ChevronDown className="h-3 w-3 shrink-0" />
                 ) : (
-                  <ChevronRight className="w-3 h-3" />
+                  <ChevronRight className="h-3 w-3 shrink-0" />
                 )}
               </button>
               
@@ -298,10 +305,10 @@ export const EditGCodeModal: React.FC<EditGCodeModalProps> = ({
                                 e.stopPropagation();
                                 e.preventDefault();
                               }}
-                              className="w-full text-left px-2 py-1 text-[11px] rounded transition-colors text-gray-400 hover:text-white hover:bg-purple-500/20 border border-transparent hover:border-purple-500/30"
+                              className="min-h-11 w-full rounded border border-transparent px-2 py-1 text-left text-[11px] text-gray-400 transition-colors hover:border-purple-500/30 hover:bg-purple-500/20 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-400"
                               title={placeholder.description}
                             >
-                              <div className="font-mono text-[10px] text-purple-300">{formatPlaceholder(placeholder)}</div>
+                              <div className="break-all font-mono text-[10px] text-purple-300">{formatPlaceholder(placeholder)}</div>
                               {placeholder.description && (
                                 <div className="text-gray-500 text-[10px] mt-0.5 truncate">{placeholder.description}</div>
                               )}
