@@ -28,6 +28,8 @@ body {
 }
 
 .app-shell {
+  --app-shell-inline-gutter: 1rem;
+  --app-shell-mobile-header-height: 4.25rem;
   min-height: 100vh;
   min-height: 100dvh;
   min-width: 0;
@@ -35,8 +37,8 @@ body {
 }
 
 .app-shell-gutter {
-  padding-left: max(1rem, env(safe-area-inset-left, 0px));
-  padding-right: max(1rem, env(safe-area-inset-right, 0px));
+  padding-left: calc(var(--app-shell-inline-gutter) + env(safe-area-inset-left, 0px));
+  padding-right: calc(var(--app-shell-inline-gutter) + env(safe-area-inset-right, 0px));
 }
 
 .app-shell-safe-top {
@@ -47,10 +49,24 @@ body {
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
+.app-shell-header-popover {
+  left: calc(0.5rem + env(safe-area-inset-left, 0px));
+  right: calc(0.5rem + env(safe-area-inset-right, 0px));
+  top: calc(var(--app-shell-mobile-header-height) + env(safe-area-inset-top, 0px));
+}
+
 @media (min-width: 40rem) {
-  .app-shell-gutter {
-    padding-left: max(1.5rem, env(safe-area-inset-left, 0px));
-    padding-right: max(1.5rem, env(safe-area-inset-right, 0px));
+  .app-shell {
+    --app-shell-inline-gutter: 1.5rem;
+    --app-shell-mobile-header-height: 5rem;
+  }
+}
+
+@media (min-width: 48rem) {
+  .app-shell-header-popover {
+    left: auto;
+    right: 0;
+    top: 3rem;
   }
 }
 

@@ -346,7 +346,7 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
           type="button"
           onClick={() => void fetchNextPage()}
           disabled={isFetchingNextPage}
-          className="inline-flex min-h-10 items-center justify-center rounded-lg px-4 py-2 text-sm font-medium text-purple-300 transition-colors hover:bg-white/10 hover:text-purple-200 disabled:cursor-wait disabled:opacity-60"
+          className="inline-flex min-h-11 items-center justify-center rounded-lg px-4 py-2 text-sm font-medium text-purple-300 transition-colors hover:bg-white/10 hover:text-purple-200 disabled:cursor-wait disabled:opacity-60"
         >
           {isFetchingNextPage ? t('notifications.loadingMore') : t('notifications.loadMore')}
         </button>
@@ -439,7 +439,7 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
                     return (
                       <div
                         key={notification.id}
-                        className={`p-4 transition-all hover:bg-white/10 cursor-pointer ${
+                        className={`min-h-11 p-4 transition-all hover:bg-white/10 cursor-pointer ${
                           !notification.read ? 'bg-white/5' : ''
                         }`}
                         onClick={() => handleNotificationClick(notification)}
@@ -482,7 +482,7 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
                                       e.stopPropagation();
                                       handleOpenLink(notification.link!);
                                     }}
-                                    className="inline-flex items-center gap-1.5 text-xs font-medium text-purple-300 hover:text-purple-200 mt-2 transition-colors rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-400"
+                                    className="mt-2 inline-flex min-h-11 items-center gap-1.5 rounded text-xs font-medium text-purple-300 transition-colors hover:text-purple-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-400"
                                   >
                                     {t(presentation.actionKey)}
                                     <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
@@ -497,7 +497,7 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
                               deleteNotificationMutation.mutate(notification.id);
                             }}
                             disabled={deleteNotificationMutation.isPending}
-                            className="flex-shrink-0 p-1 rounded hover:bg-white/10 text-gray-400 hover:text-red-400 transition-all"
+                            className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded text-gray-400 transition-all hover:bg-white/10 hover:text-red-400"
                             title={t('notifications.deleteOne')}
                             aria-label={t('notifications.deleteOne')}
                           >
@@ -518,7 +518,7 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
               <div className="p-3 border-t border-white/10 space-y-2">
                 {unreadCount > 0 && (
                   <button
-                    className="w-full text-center text-sm text-purple-400 hover:text-purple-300 transition-all py-2"
+                    className="min-h-11 w-full py-2 text-center text-sm text-purple-400 transition-all hover:text-purple-300"
                     onClick={() => {
                       handleMarkAllAsRead();
                     }}
@@ -528,7 +528,7 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
                   </button>
                 )}
                 <button
-                  className="w-full flex items-center justify-center gap-2 text-center text-sm text-red-400 hover:text-red-300 transition-all py-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex min-h-11 w-full items-center justify-center gap-2 py-2 text-center text-sm text-red-400 transition-all hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-50"
                   onClick={() => {
                     deleteAllNotificationsMutation.mutate();
                   }}
@@ -600,7 +600,7 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
                         setViewNotification(null);
                       }}
                       disabled={deleteNotificationMutation.isPending}
-                      className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 text-xs text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="flex min-h-11 flex-shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-xs text-red-400 transition-all hover:bg-red-500/10 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-50"
                       title={t('notifications.deleteThis')}
                     >
                       {deleteNotificationMutation.isPending ? (
@@ -617,7 +617,7 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
                     </button>
                     <button
                       onClick={() => setViewNotification(null)}
-                      className="flex-shrink-0 text-gray-400 hover:text-white transition-colors p-2 -mt-2 -mr-2"
+                      className="-mr-2 -mt-2 flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-lg text-gray-400 transition-colors hover:bg-white/10 hover:text-white"
                       aria-label={t('common.close')}
                     >
                       <X className="w-5 h-5" />
@@ -637,7 +637,7 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
                       <button
                         type="button"
                         onClick={() => handleOpenLink(viewNotification.link!)}
-                        className="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-semibold text-white bg-purple-600 hover:bg-purple-500 rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-300"
+                        className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-purple-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-purple-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-300"
                       >
                         {t(viewNotificationPresentation.actionKey)}
                         <ArrowRight className="w-4 h-4" aria-hidden="true" />
@@ -677,7 +677,7 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
           id={panelId}
           role="region"
           aria-label={t('notifications.title')}
-          className="fixed md:absolute inset-x-2 md:inset-x-auto md:right-0 top-16 md:top-12 md:w-96 bg-gradient-to-br from-purple-900 to-indigo-900 rounded-xl border border-white/20 shadow-2xl z-[10000] max-h-[70vh] md:max-h-[80vh] overflow-hidden flex flex-col mx-auto md:mx-0 max-w-[calc(100vw-16px)] md:max-w-none"
+          className="app-shell-header-popover fixed mx-auto flex max-h-[70vh] max-w-[calc(100vw-16px)] flex-col overflow-hidden rounded-xl border border-white/20 bg-gradient-to-br from-purple-900 to-indigo-900 shadow-2xl z-[10000] md:absolute md:mx-0 md:max-h-[80vh] md:w-96 md:max-w-none"
         >
           {/* Header */}
           <div className="flex items-center justify-between p-3 md:p-4 border-b border-white/10">
@@ -729,7 +729,7 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
                   return (
                     <div
                       key={notification.id}
-                      className={`p-3 md:p-4 transition-all hover:bg-white/10 cursor-pointer ${
+                      className={`min-h-11 p-3 transition-all hover:bg-white/10 cursor-pointer md:p-4 ${
                         !notification.read ? 'bg-white/5' : ''
                       }`}
                       onClick={() => handleNotificationClick(notification)}
@@ -772,7 +772,7 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
                                     e.stopPropagation();
                                     handleOpenLink(notification.link!);
                                   }}
-                                  className="inline-flex items-center gap-1.5 text-xs font-medium text-purple-300 hover:text-purple-200 mt-2 transition-colors rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-400"
+                                  className="mt-2 inline-flex min-h-11 items-center gap-1.5 rounded text-xs font-medium text-purple-300 transition-colors hover:text-purple-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-400"
                                 >
                                   {t(presentation.actionKey)}
                                   <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />
@@ -787,7 +787,7 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
                             deleteNotificationMutation.mutate(notification.id);
                           }}
                           disabled={deleteNotificationMutation.isPending}
-                          className="flex-shrink-0 p-1 rounded hover:bg-white/10 text-gray-400 hover:text-red-400 transition-all"
+                          className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded text-gray-400 transition-all hover:bg-white/10 hover:text-red-400"
                           title={t('notifications.deleteOne')}
                           aria-label={t('notifications.deleteOne')}
                         >
@@ -808,7 +808,7 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
             <div className="p-2 md:p-3 border-t border-white/10 space-y-2">
               {unreadCount > 0 && (
                 <button
-                  className="w-full text-center text-xs md:text-sm text-purple-400 hover:text-purple-300 transition-all py-2"
+                  className="min-h-11 w-full py-2 text-center text-xs text-purple-400 transition-all hover:text-purple-300 md:text-sm"
                   onClick={() => {
                     handleMarkAllAsRead();
                   }}
@@ -818,7 +818,7 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
                 </button>
               )}
               <button
-                className="w-full flex items-center justify-center gap-2 text-center text-xs md:text-sm text-red-400 hover:text-red-300 transition-all py-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex min-h-11 w-full items-center justify-center gap-2 py-2 text-center text-xs text-red-400 transition-all hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-50 md:text-sm"
                 onClick={() => {
                   deleteAllNotificationsMutation.mutate();
                 }}
@@ -890,7 +890,7 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
                       setViewNotification(null);
                     }}
                     disabled={deleteNotificationMutation.isPending}
-                    className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 text-xs text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="flex min-h-11 flex-shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-xs text-red-400 transition-all hover:bg-red-500/10 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-50"
                     title={t('notifications.deleteThis')}
                   >
                     {deleteNotificationMutation.isPending ? (
@@ -907,7 +907,7 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
                   </button>
                   <button
                     onClick={() => setViewNotification(null)}
-                    className="flex-shrink-0 text-gray-400 hover:text-white transition-colors p-2 -mt-1 -mr-1"
+                    className="-mr-1 -mt-1 flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-lg text-gray-400 transition-colors hover:bg-white/10 hover:text-white"
                     aria-label={t('common.close')}
                   >
                     <X className="w-5 h-5" />
@@ -927,7 +927,7 @@ export const Notifications: React.FC<NotificationsProps> = ({ floating = false }
                     <button
                       type="button"
                       onClick={() => handleOpenLink(viewNotification.link!)}
-                      className="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-semibold text-white bg-purple-600 hover:bg-purple-500 rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-300"
+                      className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-purple-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-purple-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-300"
                     >
                       {t(viewNotificationPresentation.actionKey)}
                       <ArrowRight className="w-4 h-4" aria-hidden="true" />

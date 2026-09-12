@@ -181,6 +181,29 @@ describe('Layout', () => {
     expect(mobileNavigation).not.toContainElement(headerScanButton ?? null);
   });
 
+  it('marks the active destination in desktop and mobile navigation', () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    render(
+      <MemoryRouter initialEntries={['/wiki']}>
+        <QueryClientProvider client={queryClient}>
+          <Layout><LocationProbe /></Layout>
+        </QueryClientProvider>
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'layout.nav_menu' }));
+
+    expect(screen.getAllByRole('link', { name: 'layout.nav_wiki' })).toHaveLength(2);
+    screen.getAllByRole('link', { name: 'layout.nav_wiki' }).forEach((link) => {
+      expect(link).toHaveAttribute('aria-current', 'page');
+    });
+    screen.getAllByRole('link', { name: 'layout.nav_catalog' }).forEach((link) => {
+      expect(link).not.toHaveAttribute('aria-current');
+    });
+  });
+
   it('shows the recognition result before a follow-up action', async () => {
     scanQr.mockResolvedValueOnce({
       filament: { id: 42, brand_name: 'QR Brand', name: 'Exact PLA' },

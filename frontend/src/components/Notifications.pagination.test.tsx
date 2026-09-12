@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -128,5 +128,37 @@ describe('Notifications cursor feed', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent('notifications.loadMoreError');
     expect(screen.getByText('Still visible')).toBeInTheDocument();
+  });
+
+  it('uses the shell popover contract and mobile-sized notification actions', async () => {
+    mocks.listFeed.mockResolvedValue({
+      items: [notification(11, 'Newest')],
+      next_cursor: null,
+      unread_count: 0,
+    });
+    renderNotifications(false);
+
+    const trigger = screen.getByRole('button', { name: 'notifications.title' });
+    expect(trigger).toHaveClass('h-11', 'w-11');
+    fireEvent.click(trigger);
+
+    const panel = await screen.findByRole('region', { name: 'notifications.title' });
+    expect(panel).toHaveClass('app-shell-header-popover');
+    const row = (await screen.findByText('Newest')).closest('[class*="cursor-pointer"]');
+    expect(row).toHaveClass('min-h-11');
+    expect(screen.getByRole('button', { name: 'notifications.deleteOne' })).toHaveClass(
+      'h-11',
+      'w-11',
+    );
+
+    fireEvent.click(row!);
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByRole('button', { name: 'notifications.delete' })).toHaveClass(
+      'min-h-11',
+    );
+    expect(within(dialog).getByRole('button', { name: 'common.close' })).toHaveClass(
+      'h-11',
+      'w-11',
+    );
   });
 });

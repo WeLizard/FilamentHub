@@ -228,6 +228,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
 
               <Link
                 to="/"
+                aria-current={isActive('/') ? 'page' : undefined}
                 className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-all ${
                   isActive('/')
                     ? 'bg-purple-600 text-white shadow-lg shadow-purple-500/25'
@@ -240,6 +241,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
 
               <Link
                 to="/download"
+                aria-current={isActive('/download') ? 'page' : undefined}
                 className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-all ${
                   isActive('/download')
                     ? 'bg-purple-600 text-white shadow-lg shadow-purple-500/25'
@@ -252,6 +254,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
 
               <Link
                 to="/wiki"
+                aria-current={isActive('/wiki') ? 'page' : undefined}
                 className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-all ${
                   isActive('/wiki')
                     ? 'bg-purple-600 text-white shadow-lg shadow-purple-500/25'
@@ -265,6 +268,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
               {user?.role === 'admin' && (
                 <Link
                   to="/admin"
+                  aria-current={isActive('/admin') ? 'page' : undefined}
                   className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-all ${
                     isActive('/admin')
                       ? 'bg-yellow-600 text-white shadow-lg shadow-yellow-500/25'
@@ -279,6 +283,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
               {user && (
                 <Link
                   to="/profile"
+                  aria-current={isActive('/profile') ? 'page' : undefined}
                   className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-all ${
                     isActive('/profile')
                       ? 'bg-purple-600 text-white shadow-lg shadow-purple-500/25'
@@ -345,6 +350,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
             <nav id="mobile-navigation" aria-label={t('layout.nav_menu')} className="app-shell-gutter space-y-2 py-3">
               <Link
                 to="/"
+                aria-current={isActive('/') ? 'page' : undefined}
                 className={`flex items-center space-x-3 px-4 py-3 rounded-lg transition-all ${
                   isActive('/')
                     ? 'bg-purple-600 text-white'
@@ -357,6 +363,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
 
               <Link
                 to="/download"
+                aria-current={isActive('/download') ? 'page' : undefined}
                 className={`flex items-center space-x-3 px-4 py-3 rounded-lg transition-all ${
                   isActive('/download')
                     ? 'bg-purple-600 text-white'
@@ -369,6 +376,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
 
               <Link
                 to="/wiki"
+                aria-current={isActive('/wiki') ? 'page' : undefined}
                 className={`flex items-center space-x-3 px-4 py-3 rounded-lg transition-all ${
                   isActive('/wiki')
                     ? 'bg-purple-600 text-white'
@@ -382,6 +390,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
               {user?.role === 'admin' && (
                 <Link
                   to="/admin"
+                  aria-current={isActive('/admin') ? 'page' : undefined}
                   className={`flex items-center space-x-3 px-4 py-3 rounded-lg transition-all ${
                     isActive('/admin')
                       ? 'bg-yellow-600 text-white'
@@ -397,6 +406,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
                 <>
                   <Link
                     to="/profile"
+                    aria-current={isActive('/profile') ? 'page' : undefined}
                     className={`flex items-center space-x-3 px-4 py-3 rounded-lg transition-all ${
                       isActive('/profile')
                         ? 'bg-purple-600 text-white'
