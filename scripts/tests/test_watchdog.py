@@ -128,6 +128,41 @@ class WatchdogProbeTest(unittest.TestCase):
             "разрешён вход по паролю; разрешён вход root",
         )
 
+    def test_reboot_required_does_not_claim_a_kernel_update(self) -> None:
+        with (
+            patch.object(watchdog, "SERVER", "filamenthub-watchdog@server"),
+            patch.object(watchdog, "BASE_CHECKS", {}),
+        ):
+            checks = watchdog.collect_checks({**SECURE_PROBE, "reboot_required": True})
+
+        self.assertEqual(
+            checks["перезагрузка ОС"],
+            "операционная система сообщает, что после обновления требуется перезагрузка",
+        )
+
+    def test_unchanged_reboot_required_is_not_repeated_the_next_day(self) -> None:
+        problem = "операционная система сообщает, что после обновления требуется перезагрузка"
+        with tempfile.TemporaryDirectory() as directory:
+            state_file = Path(directory) / "state.json"
+            state_file.write_text(
+                json.dumps({"перезагрузка ОС": problem, "_day": "2000-01-01"}),
+                encoding="utf-8",
+            )
+            with (
+                patch.object(watchdog, "SERVER", "filamenthub-watchdog@server"),
+                patch.object(watchdog, "STATE_FILE", state_file),
+                patch.object(watchdog, "read_server_probe", return_value=SECURE_PROBE),
+                patch.object(
+                    watchdog,
+                    "collect_checks",
+                    return_value={"перезагрузка ОС": problem},
+                ),
+                patch.object(watchdog, "notify") as notify,
+            ):
+                self.assertEqual(watchdog.main(), 1)
+
+            notify.assert_not_called()
+
     def test_security_event_is_notified_only_once(self) -> None:
         event = {"id": "event-1", "description": "password для root с 203.0.113.7"}
         probe = {**SECURE_PROBE, "ssh_security_events": [event]}

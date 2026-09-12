@@ -249,7 +249,9 @@ def collect_checks(probe: dict[str, object] | None) -> dict[str, str | None]:
     checks["диск"] = check_disk(probe)
     checks["SSH-политика"] = check_ssh_policy(probe)
     if probe.get("reboot_required") is True:
-        checks["перезагрузка ОС"] = "установлено новое ядро, требуется перезагрузка"
+        checks["перезагрузка ОС"] = (
+            "операционная система сообщает, что после обновления требуется перезагрузка"
+        )
     else:
         checks["перезагрузка ОС"] = None
     return checks
@@ -345,7 +347,10 @@ def main() -> int:
         if problem:
             failing.append(f"{name}: {problem}")
             # A new problem, a changed one, or a standing one worth a daily nudge.
-            if was == "ok" or was != problem or previous.get("_day") != today:
+            # Reboot-required is persistent by design, so repeating the unchanged
+            # marker every day creates noise without adding any new information.
+            repeat_daily = name != "перезагрузка ОС" and previous.get("_day") != today
+            if was == "ok" or was != problem or repeat_daily:
                 notify(f"FilamentHub — {name}: {problem}")
         elif was != "ok":
             notify(f"FilamentHub — {name}: снова в порядке")
