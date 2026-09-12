@@ -45,6 +45,9 @@ vi.mock('../../utils/pluginBridge', () => ({
 }));
 
 describe('PresetHistoryModal responsive layout', () => {
+  const selectedLabel = 'label_without_any_break_opportunity_'.repeat(4);
+  const selectedDescription = 'description_without_any_break_opportunity_'.repeat(12);
+
   beforeEach(() => {
     vi.clearAllMocks();
     listSavedMock.mockResolvedValue({ items: [] });
@@ -62,8 +65,8 @@ describe('PresetHistoryModal responsive layout', () => {
         {
           id: 1,
           version_number: 1,
-          label: 'Очень длинная метка 适用于窄屏幕',
-          label_description: 'Описание версии',
+          label: selectedLabel,
+          label_description: selectedDescription,
           change_source: 'orca_sync',
           squash_count: 1,
           created_at: '2026-09-11T10:00:00Z',
@@ -173,6 +176,11 @@ describe('PresetHistoryModal responsive layout', () => {
     expect(edit).toHaveClass('min-h-11');
     expect(remove).toHaveClass('min-h-11');
     expect(restore).toHaveClass('min-h-11');
+
+    const description = within(dialog).getByText(selectedDescription);
+    expect(description).toHaveClass('min-w-0', 'break-all');
+    expect(description.previousElementSibling).toHaveTextContent(selectedLabel);
+    expect(description.previousElementSibling).toHaveClass('min-w-0', 'break-words');
 
     fireEvent.click(edit);
     expect(within(dialog).getByPlaceholderText('presetVersions.label.placeholder')).toHaveClass('h-11');

@@ -292,9 +292,9 @@ export const PresetHistoryModal: React.FC<Props> = ({ presetId, canRestore = fal
                 ) : selected.label ? (
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div className="min-w-0">
-                      <div className="text-sm text-amber-300 font-medium">🏷 {selected.label}</div>
+                      <div className="min-w-0 break-words text-sm font-medium text-amber-300">🏷 {selected.label}</div>
                       {selected.label_description && (
-                        <div className="text-xs text-gray-400 mt-0.5">{selected.label_description}</div>
+                        <div className="mt-0.5 min-w-0 break-all text-xs text-gray-400">{selected.label_description}</div>
                       )}
                     </div>
                     <div className="flex w-full flex-wrap gap-1 sm:w-auto sm:shrink-0">
