@@ -11,7 +11,7 @@ date: 2026-09-12
 
 homepage: https://filamenthub.ru
 source: https://github.com/WeLizard/FilamentHub/tree/main/octoprint-plugin
-archive: https://github.com/WeLizard/FilamentHub/releases/download/octoprint-v0.1.5/octoprint_filamenthubbridge-0.1.5.tar.gz
+archive: https://github.com/WeLizard/FilamentHub/releases/download/octoprint-v0.1.5/octoprint_filamenthubbridge-0.1.5-py3-none-any.whl
 privacypolicy: https://filamenthub.ru/privacy-policy
 
 tags:

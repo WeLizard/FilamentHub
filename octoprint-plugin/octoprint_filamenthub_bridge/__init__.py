@@ -18,6 +18,15 @@ import flask
 import octoprint.plugin
 from flask_babel import gettext
 from octoprint.events import Events
+from octoprint.plugins.softwareupdate.exceptions import (
+    CheckError,
+    ConfigurationInvalid,
+    NetworkError,
+)
+from octoprint.plugins.softwareupdate.version_checks import (
+    GitHubApiError,
+    GitHubRateLimitCheckError,
+)
 
 from .tracker import ExtrusionTracker
 
@@ -32,10 +41,10 @@ BRIDGE_RELEASES_API_URL = (
     "https://api.github.com/repos/WeLizard/FilamentHub/releases"
 )
 BRIDGE_RELEASE_TAG_PREFIX = "octoprint-v"
-BRIDGE_RELEASE_ARCHIVE_TEMPLATE = (
+BRIDGE_RELEASE_WHEEL_TEMPLATE = (
     "https://github.com/WeLizard/FilamentHub/releases/download/"
     "octoprint-v{target_version}/"
-    "octoprint_filamenthubbridge-{target_version}.tar.gz"
+    "octoprint_filamenthubbridge-{target_version}-py3-none-any.whl"
 )
 BRIDGE_RELEASE_PAGE_SIZE = 100
 BRIDGE_RELEASE_MAX_PAGES = 10
@@ -68,27 +77,65 @@ def _bridge_release_version(value: object) -> tuple[int, int, int] | None:
     return tuple(int(part) for part in parts)
 
 
-def _bridge_release_archive_name(version: tuple[int, int, int]) -> str:
+def _bridge_release_wheel_name(version: tuple[int, int, int]) -> str:
     rendered = ".".join(str(part) for part in version)
-    return f"octoprint_filamenthubbridge-{rendered}.tar.gz"
+    return f"octoprint_filamenthubbridge-{rendered}-py3-none-any.whl"
 
 
-def _bridge_release_has_archive(release: dict, version: tuple[int, int, int]) -> bool:
+def _bridge_release_has_wheel(release: dict, version: tuple[int, int, int]) -> bool:
     tag = f"{BRIDGE_RELEASE_TAG_PREFIX}{'.'.join(str(part) for part in version)}"
-    archive_name = _bridge_release_archive_name(version)
+    wheel_name = _bridge_release_wheel_name(version)
     expected_url = (
         "https://github.com/WeLizard/FilamentHub/releases/download/"
-        f"{tag}/{archive_name}"
+        f"{tag}/{wheel_name}"
     )
     assets = release.get("assets")
     if not isinstance(assets, list):
         return False
     return any(
         isinstance(asset, dict)
-        and asset.get("name") == archive_name
+        and asset.get("name") == wheel_name
         and asset.get("browser_download_url") == expected_url
         for asset in assets
     )
+
+
+def _github_header_int(headers, name: str) -> int | None:
+    try:
+        return int(headers.get(name))
+    except (AttributeError, TypeError, ValueError):
+        return None
+
+
+def _github_rate_limit_reset(headers) -> str | None:
+    reset = _github_header_int(headers, "X-RateLimit-Reset")
+    if reset is None:
+        return None
+    try:
+        return time.strftime("%Y-%m-%d %H:%M", time.gmtime(reset))
+    except (OverflowError, OSError, ValueError):
+        return None
+
+
+def _raise_bridge_release_http_error(exc: HTTPError) -> None:
+    headers = exc.headers
+    remaining = _github_header_int(headers, "X-RateLimit-Remaining")
+    if exc.code == 429 or remaining == 0:
+        raise GitHubRateLimitCheckError(
+            remaining,
+            _github_header_int(headers, "X-RateLimit-Limit"),
+            _github_rate_limit_reset(headers),
+        ) from exc
+    message = "Unknown error"
+    try:
+        payload = exc.read(64 * 1024 + 1)
+        if len(payload) <= 64 * 1024:
+            parsed = json.loads(payload)
+            if isinstance(parsed, dict) and isinstance(parsed.get("message"), str):
+                message = parsed["message"]
+    except (AttributeError, json.JSONDecodeError, UnicodeDecodeError):
+        message = "Not a valid JSON response"
+    raise GitHubApiError(exc.code, message) from exc
 
 
 class BridgeReleaseChecker:
@@ -116,17 +163,27 @@ class BridgeReleaseChecker:
                     "X-GitHub-Api-Version": "2022-11-28",
                 },
             )
-            with opener(request, timeout=15) as response:
-                payload = response.read(BRIDGE_RELEASE_RESPONSE_MAX_BYTES + 1)
+            try:
+                with opener(request, timeout=15) as response:
+                    payload = response.read(BRIDGE_RELEASE_RESPONSE_MAX_BYTES + 1)
+            except HTTPError as exc:
+                _raise_bridge_release_http_error(exc)
+            except (URLError, TimeoutError, OSError) as exc:
+                raise NetworkError(cause=exc) from exc
             if len(payload) > BRIDGE_RELEASE_RESPONSE_MAX_BYTES:
-                raise RuntimeError("Bridge release response is too large.")
-            releases = json.loads(payload)
+                raise CheckError("Bridge release response is too large.")
+            try:
+                releases = json.loads(payload)
+            except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+                raise CheckError(
+                    "GitHub returned invalid JSON for Bridge releases."
+                ) from exc
             if not isinstance(releases, list):
-                raise RuntimeError("GitHub returned an invalid Bridge release list.")
+                raise CheckError("GitHub returned an invalid Bridge release list.")
             yield releases
             if len(releases) < BRIDGE_RELEASE_PAGE_SIZE:
                 return
-        raise RuntimeError("Bridge release history exceeds the supported page limit.")
+        raise CheckError("Bridge release history exceeds the supported page limit.")
 
     def get_latest(
         self,
@@ -143,7 +200,9 @@ class BridgeReleaseChecker:
             f"{BRIDGE_RELEASE_TAG_PREFIX}{current}"
         )
         if current_version is None:
-            raise ValueError(f"Invalid current version for {target}: {current!r}")
+            raise ConfigurationInvalid(
+                f"Invalid current version for {target}: {current!r}"
+            )
 
         information = {
             "local": {"name": str(current), "value": str(current)},
@@ -164,7 +223,9 @@ class BridgeReleaseChecker:
                 ):
                     continue
                 version = _bridge_release_version(release.get("tag_name"))
-                if version is None or not _bridge_release_has_archive(release, version):
+                if version is None or not _bridge_release_has_wheel(
+                    release, version
+                ):
                     continue
                 if latest_version is None or version > latest_version:
                     latest = release
@@ -400,7 +461,7 @@ class FilamentHubBridgePlugin(
                 "type": "python_checker",
                 "python_checker": BRIDGE_RELEASE_CHECKER,
                 "current": PLUGIN_VERSION,
-                "pip": BRIDGE_RELEASE_ARCHIVE_TEMPLATE,
+                "pip": BRIDGE_RELEASE_WHEEL_TEMPLATE,
             }
         }
 
