@@ -242,9 +242,16 @@ export function QrScanResultModal({
                   {t('qrScanResult.inventoryLoading')}
                 </p>
               ) : inventoryQuery.isError && !inventoryQuery.isFetchNextPageError ? (
-                <p className="mt-2 rounded-lg border border-amber-400/25 bg-amber-400/10 px-3 py-2 text-xs text-amber-100">
-                  {t('qrScanResult.inventoryLoadError')}
-                </p>
+                <div className="mt-2 rounded-lg border border-amber-400/25 bg-amber-400/10 px-3 py-2 text-xs text-amber-100">
+                  <p>{t('qrScanResult.inventoryLoadError')}</p>
+                  <button
+                    type="button"
+                    onClick={() => inventoryQuery.refetch()}
+                    className="mt-2 inline-flex items-center rounded-lg border border-amber-200/30 px-3 py-2 text-sm font-medium text-amber-50 transition hover:bg-amber-200/10 disabled:opacity-60"
+                  >
+                    {t('qrScanResult.inventoryRetry')}
+                  </button>
+                </div>
               ) : (
                 <>
                   <p className="mt-1 text-sm text-slate-300">

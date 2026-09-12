@@ -2975,6 +2975,7 @@
     "inventoryLoginHint": "登录后可查看您的线轴。",
     "inventoryLoading": "正在检查您的线轴...",
     "inventoryLoadError": "无法加载您的线轴，但材料已识别。",
+    "inventoryRetry": "重试",
     "inventoryNone": "暂无。",
     "inventoryNoAvailable": "暂无可用线轴。",
     "inventoryOne": "可用：1 个。",

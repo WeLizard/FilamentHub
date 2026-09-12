@@ -1,5 +1,7 @@
 """Owned spool feed pagination and physical-instance identity regressions."""
 
+import base64
+import json
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -135,6 +137,18 @@ async def test_feed_validates_cursor_filters_and_owned_detail(
     invalid_cursor = await auth_client.get("/api/v1/spools/feed", params={"cursor": "broken"})
     assert invalid_cursor.status_code == 422
     assert invalid_cursor.json()["detail"]["code"] == "ERR_SPOOL_CURSOR_INVALID"
+    overflow_cursor = (
+        base64.urlsafe_b64encode(json.dumps([now.isoformat(), 2_147_483_648]).encode())
+        .decode()
+        .rstrip("=")
+    )
+    for params in (
+        {"limit": 0},
+        {"limit": 101},
+        {"cursor": "x" * 513},
+        {"cursor": overflow_cursor},
+    ):
+        assert (await auth_client.get("/api/v1/spools/feed", params=params)).status_code == 422
     invalid_filters = await auth_client.get(
         "/api/v1/spools/feed", params={"state": "shelf", "state_group": "available"}
     )

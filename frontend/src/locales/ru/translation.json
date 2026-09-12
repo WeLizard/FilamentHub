@@ -3147,6 +3147,7 @@
     "inventoryLoginHint": "Войдите, чтобы увидеть свои катушки.",
     "inventoryLoading": "Проверяем ваши катушки...",
     "inventoryLoadError": "Не удалось загрузить катушки. Материал уже распознан.",
+    "inventoryRetry": "Попробовать снова",
     "inventoryNone": "Пока нет.",
     "inventoryNoAvailable": "Нет доступных.",
     "inventoryOne": "Доступна: 1.",

@@ -464,15 +464,22 @@ describe('QrScanResultModal', () => {
     expect(screen.getByText('QR Brand · Exact PLA')).toBeInTheDocument();
   });
 
-  it('keeps recognition and explicit actions available when inventory fails', async () => {
+  it('keeps recognition and explicit actions available and retries an initial inventory failure', async () => {
     const onAddSpool = vi.fn();
-    listSpools.mockRejectedValueOnce(new Error('inventory unavailable'));
+    listSpools
+      .mockRejectedValueOnce(new Error('inventory unavailable'))
+      .mockResolvedValueOnce(feedPage([makeSpool()]));
     renderModal(baseResult, { onAddSpool });
 
     expect(await screen.findByText('qrScanResult.inventoryLoadError')).toBeInTheDocument();
     expect(screen.getByText('QR Brand · Exact PLA')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'qrScanResult.addToShelf' }));
     expect(onAddSpool).toHaveBeenCalledWith('shelf');
+
+    fireEvent.click(screen.getByRole('button', { name: 'qrScanResult.inventoryRetry' }));
+    expect(await screen.findByText('qrScanResult.inventoryOne')).toBeInTheDocument();
+    expect(screen.queryByText('qrScanResult.inventoryLoadError')).not.toBeInTheDocument();
+    expect(listSpools).toHaveBeenCalledTimes(2);
   });
 
   it('loads another page without merging equal product identities', async () => {

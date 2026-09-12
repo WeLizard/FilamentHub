@@ -2980,6 +2980,7 @@
     "inventoryLoginHint": "Sign in to see your spools.",
     "inventoryLoading": "Checking your spools...",
     "inventoryLoadError": "Could not load your spools. The material is already recognized.",
+    "inventoryRetry": "Try again",
     "inventoryNone": "None yet.",
     "inventoryNoAvailable": "None available.",
     "inventoryOne": "Available: 1.",
