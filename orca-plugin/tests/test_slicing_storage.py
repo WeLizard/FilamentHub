@@ -297,6 +297,9 @@ def test_pages_host_opens_https_without_creating_a_loopback_socket(monkeypatch):
     assert "fh_bridge=" in html
     assert page._catalog._direct_bridge_session not in html.split("fh_bridge=", 1)[0]
     assert "127.0.0.1" not in html
+    assert "fetch(target" in html
+    assert module.ui_text("unavailableTitle") in html
+    assert module.ui_text("retry") in html
 
 
 def test_pages_host_enters_the_local_shell_only_after_an_explicit_action(monkeypatch):

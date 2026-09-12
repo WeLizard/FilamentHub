@@ -14,8 +14,10 @@ embed route in our existing frontend.
 
 ## Approach: direct Pages bridge with a local secret boundary
 
-On current OrcaSlicer builds, a tiny `SetPage` bootstrap navigates the native
-Pages tab directly to `https://filamenthub.ru/embed/catalog`. The site uses the
+On current OrcaSlicer builds, a tiny `SetPage` bootstrap checks the site from
+the WebView and navigates the native Pages tab directly to
+`https://filamenthub.ru/embed/catalog`. A failed check stays on a localized
+retry screen instead of exposing the browser's connection-error page. The site uses the
 official top-level `window.orca` bridge, bound to a random per-tab value carried
 in the URL fragment. Opening the tab therefore does not create a Python socket.
 

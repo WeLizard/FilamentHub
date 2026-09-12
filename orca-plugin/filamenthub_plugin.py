@@ -7830,12 +7830,58 @@ def direct_embed_url(bridge_session, language=None):
     return urllib.parse.urlunsplit((*urllib.parse.urlsplit(url)[:4], fragment))
 
 
+DIRECT_PAGE = r"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>
+html,body{height:100%;margin:0}body{display:grid;place-items:center;background:#171724;
+color:#e8e8ef;font:14px system-ui,-apple-system,"Segoe UI",sans-serif}
+.card{width:min(520px,calc(100% - 32px));box-sizing:border-box;padding:24px;
+border:1px solid #3c3c4c;border-radius:16px;background:#20202e;text-align:center}
+.spinner{width:28px;height:28px;margin:0 auto 16px;border:3px solid #3c3c4c;
+border-top-color:#8b7cf8;border-radius:50%;animation:spin .9s linear infinite}
+h1{margin:0 0 10px;font-size:19px}p{margin:0;color:#b8b8c5;line-height:1.5}
+button{display:none;margin:18px auto 0;padding:8px 15px;border:1px solid #8b7cf8;
+border-radius:8px;background:#8b7cf8;color:white;font:inherit;cursor:pointer}
+button:disabled{opacity:.6;cursor:default}@keyframes spin{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.spinner{animation:none}}
+</style></head><body><main class="card" role="status" aria-live="polite">
+<div class="spinner" id="spinner"></div><h1 id="title"></h1><p id="message"></p>
+<button id="retry" type="button"></button></main><script>
+'use strict';
+var target=__TARGET__,copy=__COPY__,title=document.getElementById('title'),
+message=document.getElementById('message'),spinner=document.getElementById('spinner'),
+retry=document.getElementById('retry'),attempt=0;
+function showConnecting(){title.textContent=copy.connectTitle;message.textContent=copy.connectMessage;
+spinner.style.display='block';retry.style.display='none';retry.disabled=true}
+function showUnavailable(){title.textContent=copy.unavailableTitle;message.textContent=copy.unavailableMessage;
+spinner.style.display='none';retry.style.display='block';retry.disabled=false}
+function connect(){var current=++attempt,controller=new AbortController();showConnecting();
+var timeout=setTimeout(function(){controller.abort()},10000);
+fetch(target,{method:'GET',mode:'no-cors',cache:'no-store',credentials:'omit',signal:controller.signal})
+.then(function(){if(current===attempt)location.replace(target)})
+.catch(function(){if(current===attempt)showUnavailable()})
+.finally(function(){clearTimeout(timeout)})}
+retry.textContent=copy.retry;retry.addEventListener('click',connect);connect();
+</script></body></html>"""
+
+
 def render_direct_page(bridge_session):
-    """Navigate the host-owned page to HTTPS without creating a Python socket."""
-    return (
-        "<!DOCTYPE html><html><body><script>location.replace("
-        + json.dumps(direct_embed_url(bridge_session, refresh_ui_language()))
-        + ");</script></body></html>"
+    """Probe in WebView before navigation so network failure stays readable."""
+    language = refresh_ui_language()
+    copy = {
+        key: resolved_ui_catalog(language).get(key, key)
+        for key in (
+            "connectTitle",
+            "connectMessage",
+            "unavailableTitle",
+            "unavailableMessage",
+            "retry",
+        )
+    }
+    return DIRECT_PAGE.replace(
+        "__TARGET__",
+        json.dumps(direct_embed_url(bridge_session, language)).replace("</", "<\\/"),
+    ).replace(
+        "__COPY__", json.dumps(copy, ensure_ascii=False).replace("</", "<\\/")
     )
 
 
