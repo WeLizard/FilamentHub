@@ -59,7 +59,7 @@ def upgrade() -> None:
                     THEN (item->>'is_created')::boolean ELSE false END,
                CASE WHEN lower(item->>'is_saved') IN ('true', 'false')
                     THEN (item->>'is_saved')::boolean ELSE false END,
-               n.created_at
+               CURRENT_TIMESTAMP
         FROM notifications AS n
         CROSS JOIN LATERAL json_array_elements(
             CASE

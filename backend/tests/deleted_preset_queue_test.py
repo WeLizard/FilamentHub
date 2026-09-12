@@ -117,7 +117,7 @@ async def test_deleted_preset_feed_rejects_another_users_notification(
     assert response.status_code == 404
 
 
-def test_migration_backfills_valid_legacy_items_and_reopens_pending_notification():
+def test_migration_backfill_gives_legacy_items_a_full_new_grace_period():
     migration = (
         Path(__file__).parents[1]
         / "alembic"
@@ -125,7 +125,8 @@ def test_migration_backfills_valid_legacy_items_and_reopens_pending_notification
         / "deleted_preset_decision_queue.py"
     ).read_text(encoding="utf-8")
     assert "n.read IS FALSE" not in migration
-    assert "n.created_at" in migration
+    assert "CURRENT_TIMESTAMP" in migration
+    assert "n.created_at" not in migration
     assert "<= 2147483647" in migration
     assert "ON CONFLICT (notification_id, preset_id) DO NOTHING" in migration
     assert "::jsonb - 'deleted_presets'" in migration
