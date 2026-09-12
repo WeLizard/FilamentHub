@@ -189,6 +189,7 @@ async def list_account_sessions(
     size: int,
 ) -> AccountSessionListResponse:
     sid = current_session_id(request)
+    current_metadata = normalized_session_metadata(request.headers.get("user-agent", ""))
     filters = (
         RefreshSession.user_id == user_id,
         RefreshSession.revoked_at.is_(None),
@@ -216,9 +217,17 @@ async def list_account_sessions(
                 created_at=as_utc(row.created_at),
                 last_seen_at=as_utc(row.last_seen_at or row.rotated_at or row.created_at),
                 expires_at=as_utc(row.expires_at),
-                browser=row.browser,
-                os=row.os,
-                device_type=row.device_type,
+                browser=(
+                    current_metadata["browser"]
+                    if row.id == sid and row.browser == "unknown"
+                    else row.browser
+                ),
+                os=current_metadata["os"] if row.id == sid and row.os == "unknown" else row.os,
+                device_type=(
+                    current_metadata["device_type"]
+                    if row.id == sid and row.device_type == "unknown"
+                    else row.device_type
+                ),
             )
             for row in rows
         ],

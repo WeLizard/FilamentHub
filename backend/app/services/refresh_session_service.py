@@ -107,6 +107,19 @@ def _successor_token(refresh_token: str, payload: dict, session_id: str) -> str:
     )
 
 
+def _backfill_session_metadata(session: RefreshSession, user_agent: str) -> bool:
+    """Fill labels missing from rows created before session metadata existed."""
+    from app.services.account_session_service import normalized_session_metadata
+
+    parsed = normalized_session_metadata(user_agent)
+    changed = False
+    for field, value in parsed.items():
+        if getattr(session, field) == "unknown" and value != "unknown":
+            setattr(session, field, value)
+            changed = True
+    return changed
+
+
 async def issue_refresh_session(
     db: AsyncSession,
     *,
@@ -216,6 +229,7 @@ async def rotate_refresh_session(
     )
 
     if presented_fingerprint == session.current_token_fingerprint:
+        metadata_changed = _backfill_session_metadata(session, user_agent)
         # Once a predecessor has been consumed, keep the returned successor
         # stable for the whole retry window.  Otherwise two tabs can advance
         # T0 -> T1 -> T2 before a delayed, legitimate T0 retry arrives; with
@@ -223,6 +237,8 @@ async def rotate_refresh_session(
         # revoke the family.  Returning the current token still renews the
         # access token while bounding refresh-token reuse to this short window.
         if session.previous_token_fingerprint is not None and inside_retry_window:
+            if metadata_changed:
+                await db.commit()
             return refresh_token
         session.previous_token_fingerprint = presented_fingerprint
         session.current_token_fingerprint = successor_fingerprint
@@ -237,6 +253,8 @@ async def rotate_refresh_session(
         and inside_retry_window
     )
     if is_idempotent_retry:
+        if _backfill_session_metadata(session, user_agent):
+            await db.commit()
         return successor
 
     session.revoked_at = rotated_at

@@ -92,6 +92,33 @@ async def test_session_list_is_owned_paginated_and_has_only_safe_metadata(client
     assert not next_page.json()["items"][0]["is_current"]
 
 
+async def test_session_list_recognizes_the_current_migrated_session(client, db_session):
+    _, current, _, _, _ = await setup_sessions(db_session)
+    row = await db_session.get(RefreshSession, decode_access_token(current)["sid"])
+    row.browser = "unknown"
+    row.os = "unknown"
+    row.device_type = "unknown"
+    await db_session.commit()
+
+    response = await client.get(
+        "/api/v1/auth/sessions",
+        headers={
+            **_bearer(current),
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0) Chrome/130.0 Safari/537.36",
+        },
+    )
+
+    assert response.status_code == 200
+    current_item = next(item for item in response.json()["items"] if item["is_current"])
+    assert (current_item["browser"], current_item["os"], current_item["device_type"]) == (
+        "chrome",
+        "windows",
+        "desktop",
+    )
+    await db_session.refresh(row)
+    assert (row.browser, row.os, row.device_type) == ("unknown", "unknown", "unknown")
+
+
 async def test_selected_revocation_stops_all_access_and_refresh_but_preserves_other_credentials(
     client, db_session
 ):
@@ -287,10 +314,39 @@ async def test_bound_refresh_updates_approximate_activity_without_sliding_expiry
     row = await db_session.get(RefreshSession, decode_access_token(first)["sid"])
     old = datetime.now(timezone.utc) - timedelta(hours=2)
     row.last_seen_at = old
+    row.browser = "unknown"
+    row.os = "unknown"
+    row.device_type = "unknown"
     expiry = row.expires_at
     await db_session.commit()
-    response = await client.post("/api/v1/auth/refresh", json={"refresh_token": refresh})
+
+    unknown = await client.post(
+        "/api/v1/auth/refresh",
+        json={"refresh_token": refresh},
+        headers={"User-Agent": ""},
+    )
+    assert unknown.status_code == 200
+    await db_session.refresh(row)
+    assert (row.browser, row.os, row.device_type) == ("unknown", "unknown", "unknown")
+
+    response = await client.post(
+        "/api/v1/auth/refresh",
+        json={"refresh_token": unknown.json()["refresh_token"]},
+        headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0) Chrome/130.0 Safari/537.36"
+        },
+    )
     assert response.status_code == 200
     await db_session.refresh(row)
     assert row.last_seen_at.replace(tzinfo=timezone.utc) > old
     assert row.expires_at.replace(tzinfo=timezone.utc) == expiry.replace(tzinfo=timezone.utc)
+    assert (row.browser, row.os, row.device_type) == ("chrome", "windows", "desktop")
+
+    repeated = await client.post(
+        "/api/v1/auth/refresh",
+        json={"refresh_token": response.json()["refresh_token"]},
+        headers={"User-Agent": "Mozilla/5.0 (Linux; Android 14; Mobile) EdgA/130.0"},
+    )
+    assert repeated.status_code == 200
+    await db_session.refresh(row)
+    assert (row.browser, row.os, row.device_type) == ("chrome", "windows", "desktop")
