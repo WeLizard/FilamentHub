@@ -123,8 +123,8 @@ export function PrintJobHistoryModal({ printer, onClose }: PrintJobHistoryModalP
   });
   const calculationsQuery = useInfiniteQuery({
     queryKey: calculatorHistoryKeys.selectable(50),
-    queryFn: ({ pageParam, signal }) => calculatorAPI.listHistory(
-      { size: 50, cursor: pageParam },
+    queryFn: ({ pageParam, signal }) => calculatorAPI.listHistoryFeed(
+      { limit: 50, cursor: pageParam },
       signal,
     ),
     initialPageParam: null as string | null,
@@ -165,9 +165,13 @@ export function PrintJobHistoryModal({ printer, onClose }: PrintJobHistoryModalP
     if (creating) setSelectedSpools(new Set(assignedSpoolIds));
   }, [assignedSpoolIds, creating]);
 
-  const selectedCalculation = calculations.find(
-    (entry) => entry.id === Number(calculationId),
-  );
+  const selectedCalculationQuery = useQuery({
+    queryKey: calculatorHistoryKeys.detail(Number(calculationId)),
+    queryFn: ({ signal }) => calculatorAPI.getHistory(Number(calculationId), signal),
+    enabled: creating && calculationId !== '',
+    staleTime: 30_000,
+  });
+  const selectedCalculation = selectedCalculationQuery.data;
   const selectedCalculationJobs = calculationJobs(selectedCalculation);
   const slices = (slicesQuery.data ?? []).filter(
     (slice) => slice.physical_printer_id == null || slice.physical_printer_id === printer.id,
@@ -190,6 +194,9 @@ export function PrintJobHistoryModal({ printer, onClose }: PrintJobHistoryModalP
 
   const createMutation = useMutation({
     mutationFn: () => {
+      if (calculationId && !selectedCalculation) {
+        throw new Error('Calculator history detail is not loaded');
+      }
       const payload = {
         title: title.trim(),
         physical_printer_id: printer.id,
@@ -337,7 +344,7 @@ export function PrintJobHistoryModal({ printer, onClose }: PrintJobHistoryModalP
                       <button
                         type="button"
                         onClick={() => void calculationsQuery.refetch()}
-                        className="mt-2 block rounded-lg border border-red-300/20 px-3 py-1.5 text-xs font-medium transition hover:bg-red-300/10"
+                        className="mt-2 inline-flex rounded-lg border border-red-300/20 px-3 py-1.5 text-xs font-medium transition hover:bg-red-300/10"
                       >
                         {t('common.retry')}
                       </button>
@@ -391,7 +398,23 @@ export function PrintJobHistoryModal({ printer, onClose }: PrintJobHistoryModalP
                     ))}
                   </select>
                 </label>
-                {selectedCalculationJobs.length > 1 && (
+                {calculationId && selectedCalculationQuery.isPending ? (
+                  <div className="sm:col-span-2 inline-flex items-center gap-2 text-sm text-slate-400" role="status">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    {t('profilePage.calculator.historyLoading')}
+                  </div>
+                ) : calculationId && selectedCalculationQuery.isError ? (
+                  <div className="sm:col-span-2 rounded-xl border border-red-400/20 bg-red-400/10 p-3 text-sm text-red-200" role="alert">
+                    {t('profilePage.calculator.historyLoadError')}
+                    <button
+                      type="button"
+                      onClick={() => void selectedCalculationQuery.refetch()}
+                      className="mt-2 inline-flex rounded-lg border border-red-300/20 px-3 py-1.5 text-xs font-medium transition hover:bg-red-300/10"
+                    >
+                      {t('common.retry')}
+                    </button>
+                  </div>
+                ) : selectedCalculationJobs.length > 1 && (
                   <label className="sm:col-span-2">
                     <span className="mb-1.5 block text-xs font-medium text-slate-300">
                       {t('printJobs.fields.calculationPlate')}
@@ -472,7 +495,7 @@ export function PrintJobHistoryModal({ printer, onClose }: PrintJobHistoryModalP
               <button
                 type="button"
                 onClick={() => createMutation.mutate()}
-                disabled={!title.trim() || createMutation.isPending}
+                disabled={!title.trim() || createMutation.isPending || (calculationId !== '' && !selectedCalculation)}
                 className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-cyan-400 px-4 py-2.5 text-sm font-semibold text-slate-950 transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400 sm:w-auto"
               >
                 {createMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}

@@ -56,10 +56,11 @@ async def test_history_cursor_is_stable_across_equal_timestamps_and_newer_insert
     db_session.add_all(existing)
     await db_session.commit()
 
-    first = await auth_client.get("/api/v1/calculator/history", params={"size": 2})
+    first = await auth_client.get("/api/v1/calculator/history/feed", params={"limit": 2})
     assert first.status_code == 200, first.text
     first_body = first.json()
     assert [item["id"] for item in first_body["items"]] == [existing[4].id, existing[3].id]
+    assert all(item["source"] == "manual" for item in first_body["items"])
     assert first_body["has_more"] is True
     assert first_body["next_cursor"]
 
@@ -68,20 +69,19 @@ async def test_history_cursor_is_stable_across_equal_timestamps_and_newer_insert
     await db_session.commit()
 
     second = await auth_client.get(
-        "/api/v1/calculator/history",
-        params={"size": 2, "cursor": first_body["next_cursor"]},
+        "/api/v1/calculator/history/feed",
+        params={"limit": 2, "cursor": first_body["next_cursor"]},
     )
     assert second.status_code == 200, second.text
     second_body = second.json()
     assert [item["id"] for item in second_body["items"]] == [existing[2].id, existing[1].id]
     assert not (
-        {item["id"] for item in first_body["items"]}
-        & {item["id"] for item in second_body["items"]}
+        {item["id"] for item in first_body["items"]} & {item["id"] for item in second_body["items"]}
     )
 
     terminal = await auth_client.get(
-        "/api/v1/calculator/history",
-        params={"size": 2, "cursor": second_body["next_cursor"]},
+        "/api/v1/calculator/history/feed",
+        params={"limit": 2, "cursor": second_body["next_cursor"]},
     )
     assert terminal.status_code == 200, terminal.text
     assert [item["id"] for item in terminal.json()["items"]] == [existing[0].id]
@@ -111,10 +111,16 @@ async def test_history_cursor_remains_owner_scoped(
     db_session.add_all([owned, foreign])
     await db_session.commit()
 
-    response = await auth_client.get("/api/v1/calculator/history", params={"size": 10})
+    response = await auth_client.get("/api/v1/calculator/history/feed", params={"limit": 10})
     assert response.status_code == 200, response.text
     assert [item["id"] for item in response.json()["items"]] == [owned.id]
     assert response.json()["total"] == 1
+
+    detail = await auth_client.get(f"/api/v1/calculator/history/{foreign.id}")
+    assert detail.status_code == 404
+    owned_detail = await auth_client.get(f"/api/v1/calculator/history/{owned.id}")
+    assert owned_detail.status_code == 200
+    assert owned_detail.json()["request_data"]["pricing_method"] == "combined"
 
 
 async def test_history_cursor_validation_and_legacy_pages(
@@ -144,6 +150,12 @@ async def test_history_cursor_validation_and_legacy_pages(
     )
     assert malformed.status_code == 422
     assert malformed.json()["detail"]["code"] == "ERR_CALCULATOR_HISTORY_CURSOR_INVALID"
+    compact_malformed = await auth_client.get(
+        "/api/v1/calculator/history/feed",
+        params={"cursor": "not-an-opaque-cursor"},
+    )
+    assert compact_malformed.status_code == 422
+    assert compact_malformed.json()["detail"]["code"] == "ERR_CALCULATOR_HISTORY_CURSOR_INVALID"
     for invalid_cursor in (
         _cursor("9999-12-31T23:59:59.999999-23:59", 1),
         _cursor("0001-01-01T00:00:00+23:59", 1),
@@ -154,13 +166,69 @@ async def test_history_cursor_validation_and_legacy_pages(
             params={"cursor": invalid_cursor},
         )
         assert invalid_boundary.status_code == 422
-        assert (
-            invalid_boundary.json()["detail"]["code"]
-            == "ERR_CALCULATOR_HISTORY_CURSOR_INVALID"
-        )
+        assert invalid_boundary.json()["detail"]["code"] == "ERR_CALCULATOR_HISTORY_CURSOR_INVALID"
     assert (
         await auth_client.get("/api/v1/calculator/history", params={"size": 0})
     ).status_code == 422
     assert (
         await auth_client.get("/api/v1/calculator/history", params={"size": 101})
     ).status_code == 422
+    assert (
+        await auth_client.get("/api/v1/calculator/history/feed", params={"limit": 0})
+    ).status_code == 422
+    assert (
+        await auth_client.get("/api/v1/calculator/history/feed", params={"limit": 101})
+    ).status_code == 422
+
+
+async def test_compact_history_feed_has_a_strict_representative_page_ceiling(
+    auth_client: AsyncClient,
+    auth_user: User,
+    db_session,
+) -> None:
+    await _grant_calculator_access(db_session, auth_user.id)
+    timestamp = datetime(2026, 9, 12, 12, 0, tzinfo=timezone.utc)
+    large_blob = "x" * 50_000
+    rows = []
+    for index in range(100):
+        row = _history(auth_user.id, index, created_at=timestamp)
+        row.title = f"estimate-{index}-" + ("t" * 220)
+        row.request_data = {
+            "pricing_method": "combined",
+            "quantity": 2,
+            "private_snapshot": large_blob,
+        }
+        row.result_data = {
+            "pricing_method": "combined",
+            "cost_total": 120.5,
+            "cost_final": 125.25,
+            "quantity": 2,
+            "full_breakdown": large_blob,
+        }
+        row.parsed_gcode = {
+            "file_name": f"plate-{index}.gcode",
+            "thumbnail_data_url": large_blob,
+            "materials": [large_blob],
+        }
+        row.filament_snapshot = {
+            "id": index + 1,
+            "name": "n" * 1000,
+            "brand_name": "b" * 1000,
+            "material_type": "m" * 500,
+            "color_name": "c" * 1000,
+        }
+        rows.append(row)
+    db_session.add_all(rows)
+    await db_session.commit()
+
+    response = await auth_client.get("/api/v1/calculator/history/feed", params={"limit": 100})
+    assert response.status_code == 200, response.text
+    assert len(response.content) < 125_000
+    body = response.json()
+    assert len(body["items"]) == 100
+    assert "request_data" not in body["items"][0]
+    assert "result_data" not in body["items"][0]
+    assert "parsed_gcode" not in body["items"][0]
+    assert "parsed_jobs" not in body["items"][0]
+    assert body["items"][0]["source"] == "gcode"
+    assert len(body["items"][0]["filament_snapshot"]["name"]) == 200

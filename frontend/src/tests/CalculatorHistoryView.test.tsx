@@ -13,12 +13,38 @@ const entry = (id: number) => ({
   id,
   title: `Estimate ${id}`,
   created_at: '2026-09-12T12:00:00Z',
-  result_data: { cost_final: id, cost_total: id, quantity: 1 },
-  request_data: {},
-  parsed_jobs: [],
+  total_cost: id,
+  quantity: 1,
+  source: 'manual',
 }) as never;
 
 describe('Calculator history feed', () => {
+  it('exposes a retry action when the first compact page fails', async () => {
+    const { HistoryView } = await import('../pages/CalculatorPage');
+    const onRetryLoad = vi.fn();
+    render(
+      <HistoryView
+        entries={[]}
+        historyLoadError="History unavailable"
+        historyLoadMoreError={null}
+        isDeletingHistory={false}
+        restoringEntryId={null}
+        failedRestoreEntryId={null}
+        isLoading={false}
+        isLoadingMore={false}
+        hasMore={false}
+        total={0}
+        onRetryLoad={onRetryLoad}
+        onLoadMore={vi.fn()}
+        onDeleteEntry={vi.fn()}
+        onRestoreEntry={vi.fn()}
+        formatCurrency={(value) => String(value)}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'common.retry' }));
+    expect(onRetryLoad).toHaveBeenCalledTimes(1);
+  });
+
   it('renders appended entries and exposes a retryable next-page error', async () => {
     const { HistoryView } = await import('../pages/CalculatorPage');
     const onLoadMore = vi.fn();
@@ -28,10 +54,13 @@ describe('Calculator history feed', () => {
         historyLoadError={null}
         historyLoadMoreError="Next page failed"
         isDeletingHistory={false}
+        restoringEntryId={null}
+        failedRestoreEntryId={null}
         isLoading={false}
         isLoadingMore={false}
         hasMore
         total={3}
+        onRetryLoad={vi.fn()}
         onLoadMore={onLoadMore}
         onDeleteEntry={vi.fn()}
         onRestoreEntry={vi.fn()}
@@ -54,10 +83,13 @@ describe('Calculator history feed', () => {
         historyLoadError={null}
         historyLoadMoreError={null}
         isDeletingHistory={false}
+        restoringEntryId={null}
+        failedRestoreEntryId={null}
         isLoading={false}
         isLoadingMore={false}
         hasMore={false}
         total={1}
+        onRetryLoad={vi.fn()}
         onLoadMore={vi.fn()}
         onDeleteEntry={vi.fn()}
         onRestoreEntry={vi.fn()}
@@ -66,5 +98,52 @@ describe('Calculator history feed', () => {
     );
 
     expect(screen.queryByRole('button', { name: 'profilePage.calculator.historyLoadMore' })).not.toBeInTheDocument();
+  });
+
+  it('shows hydration progress and exposes retry on the failed entry', async () => {
+    const { HistoryView } = await import('../pages/CalculatorPage');
+    const onRestoreEntry = vi.fn();
+    const { rerender } = render(
+      <HistoryView
+        entries={[entry(1)]}
+        historyLoadError={null}
+        historyLoadMoreError={null}
+        isDeletingHistory={false}
+        restoringEntryId={1}
+        failedRestoreEntryId={null}
+        isLoading={false}
+        isLoadingMore={false}
+        hasMore={false}
+        total={1}
+        onRetryLoad={vi.fn()}
+        onLoadMore={vi.fn()}
+        onDeleteEntry={vi.fn()}
+        onRestoreEntry={onRestoreEntry}
+        formatCurrency={(value) => String(value)}
+      />,
+    );
+    expect(screen.getByRole('button', { name: 'profilePage.calculator.restoreHistoryEntry' })).toBeDisabled();
+
+    rerender(
+      <HistoryView
+        entries={[entry(1)]}
+        historyLoadError={null}
+        historyLoadMoreError={null}
+        isDeletingHistory={false}
+        restoringEntryId={null}
+        failedRestoreEntryId={1}
+        isLoading={false}
+        isLoadingMore={false}
+        hasMore={false}
+        total={1}
+        onRetryLoad={vi.fn()}
+        onLoadMore={vi.fn()}
+        onDeleteEntry={vi.fn()}
+        onRestoreEntry={onRestoreEntry}
+        formatCurrency={(value) => String(value)}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'common.retry' }));
+    expect(onRestoreEntry).toHaveBeenCalledWith(expect.objectContaining({ id: 1 }));
   });
 });

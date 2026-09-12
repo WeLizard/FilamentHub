@@ -59,6 +59,8 @@ from app.schemas.calculator import (
     CalculatorHistoryEntryCreate,
     CalculatorHistoryEntryListResponse,
     CalculatorHistoryEntryResponse,
+    CalculatorHistoryEntrySummary,
+    CalculatorHistoryFeedResponse,
     CalculatorHistoryParsedJob,
     CalculatorMaterialLineCost,
     CalculatorMaterialRoleCost,
@@ -450,15 +452,37 @@ def _serialize_history_entry(entry: CalculatorHistoryEntry) -> CalculatorHistory
     )
 
 
-def _encode_history_cursor(entry: CalculatorHistoryEntry) -> str:
-    created_at = entry.created_at
+def _history_summary_from_mapping(row) -> CalculatorHistoryEntrySummary:
+    snapshot = None
+    if row.filament_name:
+        snapshot = {
+            "name": row.filament_name,
+            "brand_name": row.filament_brand_name,
+        }
+    return CalculatorHistoryEntrySummary(
+        id=row.id,
+        title=row.title,
+        total_cost=float(row.total_cost or 0),
+        quantity=int(row.quantity or 1),
+        source="gcode" if row.has_gcode else "manual",
+        gcode_file=row.gcode_file,
+        filament_snapshot=snapshot,
+        created_at=row.created_at,
+    )
+
+
+def _encode_history_cursor_values(created_at: datetime, entry_id: int) -> str:
     if created_at.tzinfo is None:
         created_at = created_at.replace(tzinfo=timezone.utc)
     payload = json.dumps(
-        [created_at.astimezone(timezone.utc).isoformat(), entry.id],
+        [created_at.astimezone(timezone.utc).isoformat(), entry_id],
         separators=(",", ":"),
     ).encode("utf-8")
     return base64.urlsafe_b64encode(payload).decode("ascii").rstrip("=")
+
+
+def _encode_history_cursor(entry: CalculatorHistoryEntry) -> str:
+    return _encode_history_cursor_values(entry.created_at, entry.id)
 
 
 def _decode_history_cursor(cursor: str) -> tuple[datetime, int]:
@@ -490,6 +514,31 @@ def _decode_history_cursor(cursor: str) -> tuple[datetime, int]:
         OverflowError,
     ):
         raise_error(status.HTTP_422_UNPROCESSABLE_ENTITY, ERR_CALCULATOR_HISTORY_CURSOR_INVALID)
+
+
+def _compact_history_projection() -> tuple:
+    parsed = CalculatorHistoryEntry.parsed_gcode
+    result = CalculatorHistoryEntry.result_data
+    filament = CalculatorHistoryEntry.filament_snapshot
+    gcode_file = func.coalesce(
+        parsed["jobs"][0]["parsed_gcode"]["file_name"].as_string(),
+        parsed["file_name"].as_string(),
+    )
+    return (
+        CalculatorHistoryEntry.id.label("id"),
+        CalculatorHistoryEntry.title.label("title"),
+        func.coalesce(
+            result["cost_final"].as_float(),
+            result["cost_total"].as_float(),
+            0.0,
+        ).label("total_cost"),
+        func.coalesce(result["quantity"].as_integer(), 1).label("quantity"),
+        gcode_file.is_not(None).label("has_gcode"),
+        func.substr(gcode_file, 1, 255).label("gcode_file"),
+        func.substr(filament["name"].as_string(), 1, 200).label("filament_name"),
+        func.substr(filament["brand_name"].as_string(), 1, 200).label("filament_brand_name"),
+        CalculatorHistoryEntry.created_at.label("created_at"),
+    )
 
 
 @router.post("/estimate", response_model=CalculatorEstimateResponse)
@@ -1180,6 +1229,75 @@ async def list_calculator_history(
         next_cursor=_encode_history_cursor(entries[-1]) if has_more and entries else None,
         has_more=has_more,
     )
+
+
+@router.get("/history/feed", response_model=CalculatorHistoryFeedResponse)
+async def list_calculator_history_feed(
+    current_user: Annotated[User, Depends(require_calculator_access)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    limit: int = Query(20, ge=1, le=100),
+    cursor: str | None = Query(None, min_length=1, max_length=512),
+) -> CalculatorHistoryFeedResponse:
+    """Return a compact keyset page without loading full calculation snapshots."""
+    query = select(*_compact_history_projection()).where(
+        CalculatorHistoryEntry.user_id == current_user.id
+    )
+    total = await db.scalar(
+        select(func.count())
+        .select_from(CalculatorHistoryEntry)
+        .where(CalculatorHistoryEntry.user_id == current_user.id)
+    )
+    if cursor is not None:
+        cursor_created_at, cursor_id = _decode_history_cursor(cursor)
+        query = query.where(
+            or_(
+                CalculatorHistoryEntry.created_at < cursor_created_at,
+                and_(
+                    CalculatorHistoryEntry.created_at == cursor_created_at,
+                    CalculatorHistoryEntry.id < cursor_id,
+                ),
+            )
+        )
+    rows = list(
+        (
+            await db.execute(
+                query.order_by(
+                    CalculatorHistoryEntry.created_at.desc(),
+                    CalculatorHistoryEntry.id.desc(),
+                ).limit(limit + 1)
+            )
+        ).all()
+    )
+    has_more = len(rows) > limit
+    page = rows[:limit]
+    return CalculatorHistoryFeedResponse(
+        items=[_history_summary_from_mapping(row) for row in page],
+        total=int(total or 0),
+        next_cursor=(
+            _encode_history_cursor_values(page[-1].created_at, page[-1].id)
+            if has_more and page
+            else None
+        ),
+        has_more=has_more,
+    )
+
+
+@router.get("/history/{entry_id}", response_model=CalculatorHistoryEntryResponse)
+async def get_calculator_history_entry(
+    entry_id: int,
+    current_user: Annotated[User, Depends(require_calculator_access)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> CalculatorHistoryEntryResponse:
+    """Return one full Calculator Pro history entry owned by the current user."""
+    entry = await db.scalar(
+        select(CalculatorHistoryEntry).where(
+            CalculatorHistoryEntry.id == entry_id,
+            CalculatorHistoryEntry.user_id == current_user.id,
+        )
+    )
+    if entry is None:
+        raise_error(status.HTTP_404_NOT_FOUND, ERR_CALCULATOR_HISTORY_NOT_FOUND)
+    return _serialize_history_entry(entry)
 
 
 @router.post(

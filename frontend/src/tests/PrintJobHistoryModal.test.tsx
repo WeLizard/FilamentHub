@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const apiMocks = vi.hoisted(() => ({
   listCalculations: vi.fn(),
+  getCalculation: vi.fn(),
   listJobs: vi.fn(),
   listSlices: vi.fn(),
   listSpools: vi.fn(),
@@ -66,7 +67,10 @@ vi.mock('react-i18next', () => ({
 }));
 
 vi.mock('../api/client', () => ({
-  calculatorAPI: { listHistory: apiMocks.listCalculations },
+  calculatorAPI: {
+    listHistoryFeed: apiMocks.listCalculations,
+    getHistory: apiMocks.getCalculation,
+  },
   orcaSlicesAPI: { list: apiMocks.listSlices },
   printJobsAPI: {
     create: vi.fn(),
@@ -100,6 +104,7 @@ beforeEach(() => {
   apiMocks.listSlices.mockResolvedValue([]);
   apiMocks.listSpools.mockResolvedValue([]);
   apiMocks.listCalculations.mockResolvedValue({ items: [], total: 0, next_cursor: null });
+  apiMocks.getCalculation.mockResolvedValue({ parsed_jobs: [] });
 });
 
 describe('PrintJobHistoryModal usage segments', () => {
@@ -115,40 +120,75 @@ describe('PrintJobHistoryModal usage segments', () => {
     expect(screen.getByText('printJobs.usageSegments.evidence.current_assignment')).toBeInTheDocument();
   });
 
-  it('appends a real second query page, reaches the terminal cursor, and selects its item', async () => {
+  it('retains three query pages, reaches the terminal cursor, and hydrates a page-three item', async () => {
     apiMocks.listCalculations.mockImplementation(async ({ cursor }: { cursor?: string | null }) => (
-      cursor === 'next-page'
+      cursor === 'page-3'
         ? {
-            items: [{ id: 51, title: 'Estimate beyond first page', parsed_jobs: [] }],
-            total: 51,
+            items: [{ id: 52, title: 'Estimate on third page' }],
+            total: 52,
             next_cursor: null,
           }
+        : cursor === 'page-2'
+          ? {
+              items: [{ id: 51, title: 'Estimate on second page' }],
+              total: 52,
+              next_cursor: 'page-3',
+            }
         : {
-            items: [{ id: 50, title: 'Estimate on first page', parsed_jobs: [] }],
-            total: 51,
-            next_cursor: 'next-page',
+            items: [{ id: 50, title: 'Estimate on first page' }],
+            total: 52,
+            next_cursor: 'page-2',
           }
     ));
+    apiMocks.getCalculation.mockResolvedValue({
+      id: 52,
+      title: 'Estimate on third page',
+      parsed_jobs: [{ job_key: 'plate-3', parsed_gcode: { file_name: 'plate-3.gcode' } }],
+    });
     await renderModal();
 
     fireEvent.click(screen.getByRole('button', { name: 'printJobs.new' }));
     expect(await screen.findByRole('option', { name: 'Estimate on first page' })).toBeInTheDocument();
-    expect(screen.queryByRole('option', { name: 'Estimate beyond first page' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'Estimate on third page' })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'profilePage.calculator.historyLoadMore' }));
-    const secondPageOption = await screen.findByRole('option', { name: 'Estimate beyond first page' });
+    expect(await screen.findByRole('option', { name: 'Estimate on second page' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'profilePage.calculator.historyLoadMore' }));
+    const thirdPageOption = await screen.findByRole('option', { name: 'Estimate on third page' });
     expect(screen.queryByRole('button', { name: 'profilePage.calculator.historyLoadMore' })).not.toBeInTheDocument();
 
     const calculationSelect = screen.getByRole('combobox', { name: 'printJobs.fields.calculation' });
-    fireEvent.change(calculationSelect, { target: { value: '51' } });
-    expect(calculationSelect).toHaveValue('51');
-    expect(screen.getByRole('textbox', { name: 'printJobs.fields.name' })).toHaveValue('Estimate beyond first page');
-    expect(secondPageOption).toBeInTheDocument();
+    fireEvent.change(calculationSelect, { target: { value: '52' } });
+    expect(calculationSelect).toHaveValue('52');
+    expect(screen.getByRole('textbox', { name: 'printJobs.fields.name' })).toHaveValue('Estimate on third page');
+    expect(thirdPageOption).toBeInTheDocument();
+    await waitFor(() => expect(apiMocks.getCalculation).toHaveBeenCalledWith(52, expect.any(AbortSignal)));
     expect(apiMocks.listCalculations).toHaveBeenNthCalledWith(
-      2,
-      { size: 50, cursor: 'next-page' },
+      3,
+      { limit: 50, cursor: 'page-3' },
       expect.any(AbortSignal),
     );
+  });
+
+  it('shows a retryable detail error before allowing a selected calculation', async () => {
+    apiMocks.listCalculations.mockResolvedValue({
+      items: [{ id: 60, title: 'Needs hydration' }],
+      total: 1,
+      next_cursor: null,
+    });
+    apiMocks.getCalculation
+      .mockRejectedValueOnce(new Error('detail unavailable'))
+      .mockResolvedValueOnce({ id: 60, title: 'Needs hydration', parsed_jobs: [] });
+    await renderModal();
+    fireEvent.click(screen.getByRole('button', { name: 'printJobs.new' }));
+    const calculationSelect = await screen.findByRole('combobox', { name: 'printJobs.fields.calculation' });
+    fireEvent.change(calculationSelect, { target: { value: '60' } });
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('profilePage.calculator.historyLoadError');
+    fireEvent.click(screen.getByRole('button', { name: /common\.retry/ }));
+    await waitFor(() => expect(apiMocks.getCalculation).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.queryByText('profilePage.calculator.historyLoadError')).not.toBeInTheDocument());
   });
 
   it('shows initial loading and a retryable error instead of an empty selector', async () => {

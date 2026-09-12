@@ -863,6 +863,35 @@ class CalculatorHistoryEntryListResponse(BaseModel):
     has_more: bool = False
 
 
+class CalculatorHistoryFilamentSummary(BaseModel):
+    """Material label fields needed by history cards."""
+
+    name: str
+    brand_name: str | None = None
+
+
+class CalculatorHistoryEntrySummary(BaseModel):
+    """Compact card/selector projection for Calculator Pro history."""
+
+    id: int
+    title: str
+    total_cost: float
+    quantity: int
+    source: Literal["manual", "gcode"]
+    gcode_file: str | None = None
+    filament_snapshot: CalculatorHistoryFilamentSummary | None = None
+    created_at: datetime
+
+
+class CalculatorHistoryFeedResponse(BaseModel):
+    """Bounded compact keyset page of Calculator Pro history."""
+
+    items: list[CalculatorHistoryEntrySummary]
+    total: int
+    next_cursor: str | None = None
+    has_more: bool = False
+
+
 # ── Calculator profile (server-persisted settings) ──────────────────────
 
 

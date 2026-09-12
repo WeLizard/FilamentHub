@@ -2250,6 +2250,25 @@ export const calculatorAPI = {
     return response.data;
   },
 
+  listHistoryFeed: async (
+    params?: { limit?: number; cursor?: string | null },
+    signal?: AbortSignal,
+  ) => {
+    const response = await api.get<import('../types/api').CalculatorHistoryFeedResponse>(
+      '/calculator/history/feed',
+      { params, signal },
+    );
+    return response.data;
+  },
+
+  getHistory: async (entryId: number, signal?: AbortSignal) => {
+    const response = await api.get<import('../types/api').CalculatorHistoryEntry>(
+      `/calculator/history/${entryId}`,
+      { signal },
+    );
+    return response.data;
+  },
+
   saveHistory: async (data: import('../types/api').CalculatorHistoryEntryCreate) => {
     const response = await api.post<import('../types/api').CalculatorHistoryEntry>('/calculator/history', data);
     return response.data;

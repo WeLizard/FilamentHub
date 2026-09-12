@@ -3,4 +3,5 @@ export const calculatorHistoryKeys = {
   feed: (size: number) => ['calculator-pro', 'history', 'feed', size] as const,
   summary: ['calculator-pro', 'history', 'summary'] as const,
   selectable: (size: number) => ['calculator-pro', 'history', 'selectable', size] as const,
+  detail: (entryId: number) => ['calculator-pro', 'history', 'detail', entryId] as const,
 };

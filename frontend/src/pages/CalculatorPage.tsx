@@ -105,6 +105,7 @@ import type {
   CalculatorGcodeParseResponse,
   CalculatorHistoryEntry,
   CalculatorHistoryEntryCreate,
+  CalculatorHistoryEntrySummary,
   CalculatorHistoryFilamentSnapshot,
   CalculatorMaterialLineRequest,
   CalculatorParsedMaterial,
@@ -1957,7 +1958,10 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
   const [approximatePriceLabels, setApproximatePriceLabels] = useState<string[]>([]);
   const [dragActive, setDragActive] = useState(false);
   const [historyFeedback, setHistoryFeedback] = useState<{ kind: 'success' | 'error'; message: string } | null>(null);
-  const [deletingHistoryEntry, setDeletingHistoryEntry] = useState<CalculatorHistoryEntry | null>(null);
+  const [deletingHistoryEntry, setDeletingHistoryEntry] = useState<CalculatorHistoryEntrySummary | null>(null);
+  const [restoringHistoryEntryId, setRestoringHistoryEntryId] = useState<number | null>(null);
+  const [failedRestoreHistoryEntryId, setFailedRestoreHistoryEntryId] = useState<number | null>(null);
+  const restoreHistoryAttemptRef = useRef<number | null>(null);
   const [quoteModalOpen, setQuoteModalOpen] = useState(false);
   const [quoteProfile, setQuoteProfile] = useState<QuoteProfileState>(DEFAULT_QUOTE_PROFILE);
   const [quoteParties, setQuoteParties] = useState<QuotePartyFormState>(DEFAULT_QUOTE_PARTY_FORM);
@@ -2298,8 +2302,8 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
 
   const historyQuery = useInfiniteQuery({
     queryKey: calculatorHistoryKeys.feed(20),
-    queryFn: ({ pageParam, signal }) => calculatorAPI.listHistory(
-      { size: 20, cursor: pageParam },
+    queryFn: ({ pageParam, signal }) => calculatorAPI.listHistoryFeed(
+      { limit: 20, cursor: pageParam },
       signal,
     ),
     initialPageParam: null as string | null,
@@ -2324,7 +2328,8 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
 
   const deleteHistoryMutation = useMutation({
     mutationFn: (entryId: number) => calculatorAPI.deleteHistory(entryId),
-    onSuccess: async () => {
+    onSuccess: async (_result, entryId) => {
+      queryClient.removeQueries({ queryKey: calculatorHistoryKeys.detail(entryId) });
       await queryClient.invalidateQueries({ queryKey: ['calculator-pro', 'history'] });
     },
   });
@@ -3298,7 +3303,7 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
     }
   };
 
-  const handleRestoreHistory = (entry: CalculatorHistoryEntry) => {
+  const applyRestoredHistory = (entry: CalculatorHistoryEntry) => {
     const restoredJobs: ParsedJobState[] = entry.parsed_jobs?.length
       ? entry.parsed_jobs.map((job) => ({ key: job.job_key, parsed: job.parsed_gcode }))
       : entry.parsed_gcode
@@ -3368,11 +3373,44 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
     setHistoryFeedback({ kind: 'success', message: tc('historyRestored') });
   };
 
-  const handleDeleteHistory = (entry: CalculatorHistoryEntry) => {
+  const handleRestoreHistory = async (entry: CalculatorHistoryEntrySummary) => {
+    if (restoreHistoryAttemptRef.current !== null) return;
+    restoreHistoryAttemptRef.current = entry.id;
+    setRestoringHistoryEntryId(entry.id);
+    setFailedRestoreHistoryEntryId(null);
+    setHistoryFeedback(null);
+    try {
+      const fullEntry = await queryClient.fetchQuery({
+        queryKey: calculatorHistoryKeys.detail(entry.id),
+        queryFn: ({ signal }) => calculatorAPI.getHistory(entry.id, signal),
+        staleTime: 30_000,
+      });
+      if (restoreHistoryAttemptRef.current === entry.id) applyRestoredHistory(fullEntry);
+    } catch (error) {
+      if (restoreHistoryAttemptRef.current !== entry.id) return;
+      const errorWithResponse = error as { response?: { data?: { detail?: unknown } }; message?: string };
+      setFailedRestoreHistoryEntryId(entry.id);
+      setHistoryFeedback({
+        kind: 'error',
+        message: translateApiError(
+          t,
+          errorWithResponse.response?.data?.detail ?? errorWithResponse.message,
+          tc('historyLoadError'),
+        ),
+      });
+    } finally {
+      if (restoreHistoryAttemptRef.current === entry.id) {
+        restoreHistoryAttemptRef.current = null;
+        setRestoringHistoryEntryId(null);
+      }
+    }
+  };
+
+  const handleDeleteHistory = (entry: CalculatorHistoryEntrySummary) => {
     setDeletingHistoryEntry(entry);
   };
 
-  const performDeleteHistory = async (entry: CalculatorHistoryEntry) => {
+  const performDeleteHistory = async (entry: CalculatorHistoryEntrySummary) => {
     setDeletingHistoryEntry(null);
     setHistoryFeedback(null);
 
@@ -4332,10 +4370,13 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({
           historyLoadError={historyLoadError}
           historyLoadMoreError={historyQuery.isFetchNextPageError ? tc('historyLoadMoreError') : null}
           isDeletingHistory={deleteHistoryMutation.isPending}
+          restoringEntryId={restoringHistoryEntryId}
+          failedRestoreEntryId={failedRestoreHistoryEntryId}
           isLoading={historyQuery.isPending}
           isLoadingMore={historyQuery.isFetchingNextPage}
           hasMore={historyQuery.hasNextPage}
           total={historyQuery.data?.pages[0]?.total ?? 0}
+          onRetryLoad={() => void historyQuery.refetch()}
           onLoadMore={() => void historyQuery.fetchNextPage()}
           onDeleteEntry={handleDeleteHistory}
           onRestoreEntry={handleRestoreHistory}
@@ -7291,17 +7332,20 @@ const CalculatorView: React.FC<CalculatorViewProps> = ({
 };
 
 interface HistoryViewProps {
-  entries: CalculatorHistoryEntry[];
+  entries: CalculatorHistoryEntrySummary[];
   historyLoadError: string | null;
   historyLoadMoreError: string | null;
   isDeletingHistory: boolean;
+  restoringEntryId: number | null;
+  failedRestoreEntryId: number | null;
   isLoading: boolean;
   isLoadingMore: boolean;
   hasMore: boolean;
   total: number;
+  onRetryLoad: () => void;
   onLoadMore: () => void;
-  onDeleteEntry: (entry: CalculatorHistoryEntry) => void;
-  onRestoreEntry: (entry: CalculatorHistoryEntry) => void;
+  onDeleteEntry: (entry: CalculatorHistoryEntrySummary) => void;
+  onRestoreEntry: (entry: CalculatorHistoryEntrySummary) => void;
   formatCurrency: (value: number | null | undefined) => string;
 }
 
@@ -7310,10 +7354,13 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
   historyLoadError,
   historyLoadMoreError,
   isDeletingHistory,
+  restoringEntryId,
+  failedRestoreEntryId,
   isLoading,
   isLoadingMore,
   hasMore,
   total,
+  onRetryLoad,
   onLoadMore,
   onDeleteEntry,
   onRestoreEntry,
@@ -7332,8 +7379,15 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
       </div>
 
       {historyLoadError ? (
-        <div className="mt-6 rounded-[1.25rem] border border-red-400/25 bg-red-500/10 px-4 py-3 text-sm text-red-100">
-          {historyLoadError}
+        <div className="mt-6 rounded-[1.25rem] border border-red-400/25 bg-red-500/10 px-4 py-3 text-sm text-red-100" role="alert">
+          <p>{historyLoadError}</p>
+          <button
+            type="button"
+            onClick={onRetryLoad}
+            className="mt-3 inline-flex items-center rounded-xl border border-red-300/25 px-3 py-2 text-sm font-medium transition hover:bg-red-300/10"
+          >
+            {t('common.retry')}
+          </button>
         </div>
       ) : null}
 
@@ -7355,12 +7409,11 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
       ) : (
         <div className="mt-6 space-y-4">
           {entries.map((entry) => {
-            const totalCost = entry.result_data.cost_final || entry.result_data.cost_total;
             const filamentLabel =
               entry.filament_snapshot != null
                 ? [entry.filament_snapshot.brand_name, entry.filament_snapshot.name].filter(Boolean).join(' · ')
                 : null;
-            const gcodeFile = entry.parsed_gcode?.file_name ?? null;
+            const isRestoring = restoringEntryId === entry.id;
 
             return (
               <div
@@ -7375,13 +7428,13 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
                     </div>
 
                     <div className="flex flex-wrap gap-2">
-                      <HistoryTag label={tc('totalCost')} value={formatCurrency(totalCost)} />
-                      <HistoryTag label={t('profilePage.calc.quantity')} value={String(entry.result_data.quantity)} />
+                      <HistoryTag label={tc('totalCost')} value={formatCurrency(entry.total_cost)} />
+                      <HistoryTag label={t('profilePage.calc.quantity')} value={String(entry.quantity)} />
                       <HistoryTag
                         label={tc('sourceLabel')}
-                        value={entry.parsed_gcode ? tc('sourceGcode') : tc('sourceManual')}
+                        value={entry.source === 'gcode' ? tc('sourceGcode') : tc('sourceManual')}
                       />
-                      {gcodeFile ? <HistoryTag label={tc('parsedFile')} value={gcodeFile} /> : null}
+                      {entry.gcode_file ? <HistoryTag label={tc('parsedFile')} value={entry.gcode_file} /> : null}
                       {filamentLabel ? <HistoryTag label={tc('materialLabel')} value={filamentLabel} /> : null}
                     </div>
                   </div>
@@ -7389,11 +7442,12 @@ export const HistoryView: React.FC<HistoryViewProps> = ({
                   <div className="flex flex-col gap-2 sm:flex-row">
                     <button
                       type="button"
-                      onClick={() => onRestoreEntry(entry)}
-                      className={ghostButtonClass}
+                      onClick={() => void onRestoreEntry(entry)}
+                      disabled={restoringEntryId !== null}
+                      className={`${ghostButtonClass} disabled:cursor-not-allowed disabled:opacity-60`}
                     >
-                      <CheckCircle2 className="h-4 w-4" />
-                      {tc('restoreHistoryEntry')}
+                      {isRestoring ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                      {failedRestoreEntryId === entry.id ? t('common.retry') : tc('restoreHistoryEntry')}
                     </button>
                     <button
                       type="button"

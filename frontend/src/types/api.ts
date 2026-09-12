@@ -1975,6 +1975,17 @@ export interface CalculatorHistoryEntry {
   updated_at: string;
 }
 
+export interface CalculatorHistoryEntrySummary {
+  id: number;
+  title: string;
+  total_cost: number;
+  quantity: number;
+  source: 'manual' | 'gcode';
+  gcode_file?: string | null;
+  filament_snapshot?: Pick<CalculatorHistoryFilamentSnapshot, 'name' | 'brand_name'> | null;
+  created_at: string;
+}
+
 export interface CalculatorHistoryEntryCreate {
   title?: string | null;
   request_data: CalculatorEstimateRequest;
@@ -1986,6 +1997,13 @@ export interface CalculatorHistoryEntryCreate {
 
 export interface CalculatorHistoryListResponse {
   items: CalculatorHistoryEntry[];
+  total: number;
+  next_cursor?: string | null;
+  has_more?: boolean;
+}
+
+export interface CalculatorHistoryFeedResponse {
+  items: CalculatorHistoryEntrySummary[];
   total: number;
   next_cursor?: string | null;
   has_more?: boolean;
