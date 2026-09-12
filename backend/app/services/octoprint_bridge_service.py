@@ -644,35 +644,13 @@ async def record_heartbeat(
 
     if payload.routing_mode is not None and payload.tool_slot_map is not None:
         reported_mapping = _normalized_tool_slot_map(payload.tool_slot_map)
-        initialized_from_bridge = False
-        if connection.routing_revision == 0:
-            if await _missing_routing_slots(
-                db,
-                material_system_id=connector.material_system_id,
-                mapping=reported_mapping,
-            ):
-                # A pre-contract local mapping can refer to a slot that no longer
-                # exists. Do not let that stale upgrade state break all future
-                # heartbeats; initialize a safe manual configuration instead.
-                connection.desired_routing_mode = "manual"
-                connection.desired_tool_slot_map = []
-            else:
-                connection.desired_routing_mode = payload.routing_mode
-                connection.desired_tool_slot_map = reported_mapping
-            connection.routing_revision = 1
-            initialized_from_bridge = True
-
         reported_revision = int(payload.routing_revision or 0)
-        if (
-            initialized_from_bridge or reported_revision == connection.routing_revision
-        ) and _routing_matches(
+        if reported_revision == connection.routing_revision and _routing_matches(
             connection,
             mode=payload.routing_mode,
             mapping=reported_mapping,
         ):
-            connection.applied_routing_revision = (
-                connection.routing_revision if initialized_from_bridge else reported_revision
-            )
+            connection.applied_routing_revision = reported_revision
         elif reported_revision < connection.routing_revision:
             connection.applied_routing_revision = reported_revision
         else:

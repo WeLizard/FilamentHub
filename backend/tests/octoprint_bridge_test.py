@@ -206,8 +206,8 @@ async def test_bridge_pair_snapshot_usage_replay_and_revoke(
     assert heartbeat_response.json()["routing"] == {
         "mode": "manual",
         "tool_slot_map": [],
-        "revision": 1,
-        "applied_revision": 1,
+        "revision": 0,
+        "applied_revision": 0,
     }
     legacy_heartbeat = await auth_client.post(
         "/api/v1/octoprint-bridge/heartbeat",
@@ -1094,7 +1094,7 @@ async def test_bridge_routing_round_trips_between_octoprint_and_site(
     token = await _pair(auth_client, printer_id, system_id)
     bridge_headers = {"X-FilamentHub-Bridge-Token": token}
 
-    seeded = await auth_client.post(
+    unconfirmed_local_routing = await auth_client.post(
         "/api/v1/octoprint-bridge/heartbeat",
         headers=bridge_headers,
         json={
@@ -1111,15 +1111,12 @@ async def test_bridge_routing_round_trips_between_octoprint_and_site(
             "routing_revision": 0,
         },
     )
-    assert seeded.status_code == 200
-    assert seeded.json()["routing"] == {
-        "mode": "tools",
-        "tool_slot_map": [
-            {"tool_index": 0, "slot_index": 0},
-            {"tool_index": 7, "slot_index": 0},
-        ],
-        "revision": 1,
-        "applied_revision": 1,
+    assert unconfirmed_local_routing.status_code == 200
+    assert unconfirmed_local_routing.json()["routing"] == {
+        "mode": "manual",
+        "tool_slot_map": [],
+        "revision": 0,
+        "applied_revision": None,
     }
 
     site_update = await auth_client.put(
@@ -1130,12 +1127,12 @@ async def test_bridge_routing_round_trips_between_octoprint_and_site(
                 {"tool_index": 0, "slot_index": 0},
                 {"tool_index": 1, "slot_index": 1},
             ],
-            "expected_revision": 1,
+            "expected_revision": 0,
         },
     )
     assert site_update.status_code == 200
-    assert site_update.json()["revision"] == 2
-    assert site_update.json()["applied_revision"] == 1
+    assert site_update.json()["revision"] == 1
+    assert site_update.json()["applied_revision"] is None
 
     old_bridge_state = await auth_client.post(
         "/api/v1/octoprint-bridge/heartbeat",
@@ -1151,12 +1148,12 @@ async def test_bridge_routing_round_trips_between_octoprint_and_site(
                 {"tool_index": 0, "slot_index": 0},
                 {"tool_index": 7, "slot_index": 0},
             ],
-            "routing_revision": 1,
+            "routing_revision": 0,
         },
     )
     assert old_bridge_state.status_code == 200
-    assert old_bridge_state.json()["routing"]["revision"] == 2
-    assert old_bridge_state.json()["routing"]["applied_revision"] == 1
+    assert old_bridge_state.json()["routing"]["revision"] == 1
+    assert old_bridge_state.json()["routing"]["applied_revision"] == 0
 
     applied = await auth_client.post(
         "/api/v1/octoprint-bridge/heartbeat",
@@ -1172,39 +1169,39 @@ async def test_bridge_routing_round_trips_between_octoprint_and_site(
                 {"tool_index": 0, "slot_index": 0},
                 {"tool_index": 1, "slot_index": 1},
             ],
-            "routing_revision": 2,
+            "routing_revision": 1,
         },
     )
     assert applied.status_code == 200
-    assert applied.json()["routing"]["applied_revision"] == 2
+    assert applied.json()["routing"]["applied_revision"] == 1
 
     bridge_update = await auth_client.put(
         "/api/v1/octoprint-bridge/routing",
         headers=bridge_headers,
-        json={"mode": "manual", "tool_slot_map": [], "expected_revision": 2},
+        json={"mode": "manual", "tool_slot_map": [], "expected_revision": 1},
     )
     assert bridge_update.status_code == 200
-    assert bridge_update.json()["revision"] == 3
+    assert bridge_update.json()["revision"] == 2
 
     site_status = await auth_client.get(
         f"/api/v1/octoprint-bridge/connections/{printer_id}/{system_id}"
     )
     assert site_status.status_code == 200
     assert site_status.json()["routing"]["mode"] == "manual"
-    assert site_status.json()["routing"]["revision"] == 3
+    assert site_status.json()["routing"]["revision"] == 2
 
     stale_update = await auth_client.put(
         f"/api/v1/octoprint-bridge/connections/{printer_id}/{system_id}/routing",
         json={
             "mode": "tools",
             "tool_slot_map": [{"tool_index": 0, "slot_index": 0}],
-            "expected_revision": 2,
+            "expected_revision": 1,
         },
     )
     assert stale_update.status_code == 409
     assert stale_update.json()["detail"] == {
         "code": "ERR_OCTOPRINT_BRIDGE_ROUTING_CONFLICT",
-        "params": {"current_revision": 3},
+        "params": {"current_revision": 2},
     }
 
     invalid_slot = await auth_client.put(
@@ -1212,7 +1209,7 @@ async def test_bridge_routing_round_trips_between_octoprint_and_site(
         json={
             "mode": "tools",
             "tool_slot_map": [{"tool_index": 0, "slot_index": 99}],
-            "expected_revision": 3,
+            "expected_revision": 2,
         },
     )
     assert invalid_slot.status_code == 404
@@ -1226,7 +1223,7 @@ async def test_bridge_routing_round_trips_between_octoprint_and_site(
                 {"tool_index": 0, "slot_index": 0},
                 {"tool_index": 0, "slot_index": 1},
             ],
-            "expected_revision": 3,
+            "expected_revision": 2,
         },
     )
     assert duplicate_tool.status_code == 422
